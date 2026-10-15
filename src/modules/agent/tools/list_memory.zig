@@ -58,7 +58,6 @@ pub const ListMemoryOutput = struct {
     @"error": ?[]const u8 = null,
 };
 
-const list_memory = @import("list_memory.zig");
 
 // Helper: substring check
 fn contains(haystack: []const u8, needle: []const u8) bool {
@@ -73,10 +72,10 @@ test "toJson on empty list produces parsed memories=[] with no error" {
     const alloc = std.testing.allocator;
     const list = &[_]memories.MemoryInfo{};
 
-    const json = try list_memory.toJson(alloc, list);
+    const json = try toJson(alloc, list);
     defer alloc.free(json);
 
-    const parsed = try std.json.parseFromSlice(list_memory.ListMemoryOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
+    const parsed = try std.json.parseFromSlice(ListMemoryOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
     defer parsed.deinit();
     try std.testing.expectEqual(@as(usize, 0), parsed.value.memories.len);
     try std.testing.expect(parsed.value.@"error" == null);
@@ -93,10 +92,10 @@ test "toJson carries all four fields per memory, parsed" {
         },
     };
 
-    const json = try list_memory.toJson(alloc, list);
+    const json = try toJson(alloc, list);
     defer alloc.free(json);
 
-    const parsed = try std.json.parseFromSlice(list_memory.ListMemoryOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
+    const parsed = try std.json.parseFromSlice(ListMemoryOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
     defer parsed.deinit();
     try std.testing.expectEqual(@as(usize, 1), parsed.value.memories.len);
     try std.testing.expectEqualStrings("weird <name>.md", parsed.value.memories[0].name);
@@ -116,10 +115,10 @@ test "toJson includes all four fields per memory" {
         },
     };
 
-    const json = try list_memory.toJson(alloc, list);
+    const json = try toJson(alloc, list);
     defer alloc.free(json);
 
-    const parsed = try std.json.parseFromSlice(list_memory.ListMemoryOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
+    const parsed = try std.json.parseFromSlice(ListMemoryOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
     defer parsed.deinit();
     try std.testing.expectEqual(@as(usize, 1), parsed.value.memories.len);
     try std.testing.expectEqualStrings("user-prefs.md", parsed.value.memories[0].name);
@@ -159,10 +158,10 @@ test "execute_list_memory returns missing-dir empty XML, no crash" {
     // Make sure XDG_CONFIG_HOME does not shadow HOME either
     try env.put("XDG_CONFIG_HOME", tmp_home);
 
-    const output = try list_memory.execute_list_memory(alloc, io, &env);
+    const output = try execute_list_memory(alloc, io, &env);
     defer alloc.free(output);
 
-    const parsed = try std.json.parseFromSlice(list_memory.ListMemoryOutput, alloc, output, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
+    const parsed = try std.json.parseFromSlice(ListMemoryOutput, alloc, output, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
     defer parsed.deinit();
     try std.testing.expectEqual(@as(usize, 0), parsed.value.memories.len);
     try std.testing.expect(parsed.value.@"error" == null);
@@ -218,10 +217,10 @@ test "execute_list_memory lists .md files in HOME/.config/pabrik/memories" {
     // make the tool look at ${XDG_CONFIG_HOME}/pabrik/memories (XDG spec) instead.
     try env.put("HOME", tmp_home);
 
-    const output = try list_memory.execute_list_memory(alloc, io, &env);
+    const output = try execute_list_memory(alloc, io, &env);
     defer alloc.free(output);
 
-    const parsed = try std.json.parseFromSlice(list_memory.ListMemoryOutput, alloc, output, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
+    const parsed = try std.json.parseFromSlice(ListMemoryOutput, alloc, output, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
     defer parsed.deinit();
     try std.testing.expectEqual(@as(usize, 2), parsed.value.memories.len);
 
@@ -267,10 +266,10 @@ test "execute_list_memory falls back to filename stem when no H1 present" {
     // HOME-only: see note in the previous test about XDG_CONFIG_HOME precedence.
     try env.put("HOME", tmp_home);
 
-    const output = try list_memory.execute_list_memory(alloc, io, &env);
+    const output = try execute_list_memory(alloc, io, &env);
     defer alloc.free(output);
 
-    const parsed = try std.json.parseFromSlice(list_memory.ListMemoryOutput, alloc, output, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
+    const parsed = try std.json.parseFromSlice(ListMemoryOutput, alloc, output, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
     defer parsed.deinit();
     try std.testing.expectEqual(@as(usize, 1), parsed.value.memories.len);
     try std.testing.expectEqualStrings("random-name.md", parsed.value.memories[0].name);
@@ -282,11 +281,36 @@ test "execute_list_memory with null environment returns error XML" {
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
-    const output = try list_memory.execute_list_memory(alloc, io, null);
+    const output = try execute_list_memory(alloc, io, null);
     defer alloc.free(output);
 
-    const parsed = try std.json.parseFromSlice(list_memory.ListMemoryOutput, alloc, output, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
+    const parsed = try std.json.parseFromSlice(ListMemoryOutput, alloc, output, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
     defer parsed.deinit();
     try std.testing.expectEqualStrings("MissingEnvironment", parsed.value.@"error" orelse "");
     try std.testing.expectEqual(@as(usize, 0), parsed.value.memories.len);
+}
+
+// Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
+// The tool definition above and its executor below live in ONE file.
+
+const pabrikcore = @import("pabrikcore");
+const tools = @import("../../../agentic_loop/tools.zig");
+const ToolExecContext = tools.ToolExecContext;
+const ToolExecResult = tools.ToolExecResult;
+const agent = pabrikcore.agent;
+const list_memory_mod = pabrikcore.list_memory_tool;
+const wrapToolOutput = tools.wrapToolOutput;
+const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+pub fn execListMemory(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
+    // Memories are global only — no cwd involvement. The env comes from ctx
+    // (same path as list_skills); on null we emit an error-tagged XML so the
+    // LLM gets a structured failure instead of a panic.
+    const inner = list_memory_mod.execute_list_memory(ctx.allocator, ctx.io, ctx.environment) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "list_memory", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    const output = try wrapToolOutput(ctx.allocator, "list_memory", tc.function.arguments, true, null, inner);
+    return ToolExecResult{ .output = output, .output_allocated = true };
 }

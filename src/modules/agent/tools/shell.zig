@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: TBD shell.zig — shared shell-execution core used
+// SPDX-License-Identifier: TBD zig — shared shell-execution core used
 // by `bash.zig` and `pwsh.zig`.
 
 const std = @import("std");
@@ -199,7 +199,7 @@ fn wait_pid_boundedPosix(child: *const std.process.Child, deadline_ns: u64) Wait
             const err = std.c.errno(rc);
             if (err == .CHILD) return .{ .outcome = .no_child, .status = 0 };
             std.log.warn(
-                "shell.zig: waitpid(pid={d}) returned unexpected errno {t}; abandoning wait",
+                "zig: waitpid(pid={d}) returned unexpected errno {t}; abandoning wait",
                 .{ pid, err },
             );
             return .{ .outcome = .unexpected_error, .status = 0 };
@@ -244,7 +244,7 @@ fn wait_pid_boundedWindows(
         }
         if (status != .TIMEOUT) {
             std.log.warn(
-                "shell.zig: NtWaitForSingleObject(handle={*}) returned unexpected NTSTATUS {x}; abandoning wait",
+                "zig: NtWaitForSingleObject(handle={*}) returned unexpected NTSTATUS {x}; abandoning wait",
                 .{ handle, @intFromEnum(status) },
             );
             return .{ .outcome = .unexpected_error, .status = 0 };
@@ -866,7 +866,7 @@ pub fn quotePwsh(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
 }
 
 /// The platform's own temp directory. The old code interpolated a literal
-/// `/tmp` into a path that was then handed to a Windows shell.
+/// `/tmp` into a path that was then handed to a Windows 
 pub fn tempDirFor(allocator: std.mem.Allocator, os_tag: OsTag) ![]u8 {
     // `std.c.getenv` is the same accessor the rest of the codebase uses for
     // this (service/state_file.zig reads LOCALAPPDATA through it), and it
@@ -884,7 +884,7 @@ pub fn tempDirFor(allocator: std.mem.Allocator, os_tag: OsTag) ![]u8 {
 
 /// Last-resort temp directory when the environment is unreadable. The POSIX
 /// literal lives ONLY in the POSIX arm — the original bug was interpolating
-/// `/tmp` into a path that was then handed to a Windows shell.
+/// `/tmp` into a path that was then handed to a Windows 
 pub fn defaultTempDir(os_tag: OsTag) []const u8 {
     return if (os_tag == .windows) "C:\\Windows\\Temp" else "/tmp";
 }
@@ -1236,7 +1236,6 @@ pub fn encode_command_urls(allocator: std.mem.Allocator, command: []const u8) ![
 }
 
 const testing = std.testing;
-const shell = @import("shell.zig");
 
 test "RunMode: wire spellings round-trip and an unknown value is rejected" {
     // The three categories the product asks for. `fromWire` returning null is
@@ -1326,7 +1325,7 @@ test "spawn_detached_native: pid == pgid, the log is the child's own stdout, and
     const dir_len = try tmp.dir.realPath(io, &dir_buf);
     const dir = dir_buf[0..dir_len];
 
-    const out = try shell.execute_shell(allocator, io, &.{ "bash", "-c" }, .{
+    const out = try execute_shell(allocator, io, &.{ "bash", "-c" }, .{
         // A grandchild as well, so the tree kill has something to prove.
         .command = "sh -c 'sleep 300 & ' ; echo detached-probe-marker; sleep 300",
         .cwd = dir,
@@ -1381,7 +1380,7 @@ test "spawn_detached_native: pid == pgid, the log is the child's own stdout, and
     attempts = 0;
     var reaped = false;
     while (attempts < 300) : (attempts += 1) {
-        if (shell.reap_pid_nohang(pid) == .exited) {
+        if (reap_pid_nohang(pid) == .exited) {
             reaped = true;
             break;
         }
@@ -1404,8 +1403,8 @@ fn processAliveForTest(pid: u32) bool {
     return true;
 }
 
-test "shell.ShellInput JSON schema: same field set as BashInput (alias carries through)" {
-    // shell.ShellInput is the canonical type; BashInput and PwshInput are
+test "ShellInput JSON schema: same field set as BashInput (alias carries through)" {
+    // ShellInput is the canonical type; BashInput and PwshInput are
     // `pub const = ShellInput` aliases in their per-shell wrappers. The
     // JSON-schema parser must accept the same JSON for both names.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
@@ -1415,7 +1414,7 @@ test "shell.ShellInput JSON schema: same field set as BashInput (alias carries t
     ;
 
     const a = try std.json.parseFromSlice(
-        shell.ShellInput,
+        ShellInput,
         testing.allocator,
         json_str,
         .{},
@@ -1426,11 +1425,11 @@ test "shell.ShellInput JSON schema: same field set as BashInput (alias carries t
     try testing.expectEqual(@as(u32, 5), a.value.timeout.?);
 }
 
-test "shell.ShellOutput has all 8 fields the bash JSON payload uses" {
+test "ShellOutput has all 8 fields the bash JSON payload uses" {
     // The bash_result_to_json payload has: command, stdout, stderr,
     // exit_code, truncated, timeout, stdout_lines, stderr_lines. ShellOutput
     // MUST have the same 8 — pwsh_result_to_json reuses it.
-    const sample = shell.ShellOutput{
+    const sample = ShellOutput{
         .command = "",
         .stdout = "",
         .stderr = "",
@@ -1449,13 +1448,13 @@ test "shell.ShellOutput has all 8 fields the bash JSON payload uses" {
     try testing.expect(@hasField(T, "stderr_lines"));
 }
 
-test "shell.execute_shell runs bash happy path" {
+test "execute_shell runs bash happy path" {
     // After Task 1.5 lands the spawn pipeline, the placeholder is gone.
     // Sanity-check the wrapper: a trivial `true` should exit 0 with empty
     // stdout.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
-    const out = try shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
+    const out = try execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
         .command = "true",
         .cwd = "/tmp",
         .timeout = 5,
@@ -1469,13 +1468,13 @@ test "shell.execute_shell runs bash happy path" {
     try testing.expectEqualStrings("true", out.command);
 }
 
-test "shell.execute_shell enforces timeout (returns TimeoutMissing when null)" {
+test "execute_shell enforces timeout (returns TimeoutMissing when null)" {
     // Smoke check that the precondition guard at the top of
-    // shell.execute_shell is wired up. The plan locks this contract via
+    // execute_shell is wired up. The plan locks this contract via
     // bash_test.zig's existing TimeoutMissing test (kept unchanged).
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
-    const out = shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
+    const out = execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
         .command = "sleep 60",
         .cwd = "/tmp",
         .timeout = null,
@@ -1483,21 +1482,21 @@ test "shell.execute_shell enforces timeout (returns TimeoutMissing when null)" {
     try testing.expectError(error.TimeoutMissing, out);
 }
 
-test "shell.execute_shell rejects timeout above MAX_TIMEOUT_SEC" {
+test "execute_shell rejects timeout above MAX_TIMEOUT_SEC" {
     // A huge deadline is the same as no deadline. The over-max guard
     // fires before any child is spawned, so these run on ALL platforms.
     // Boundary: MAX is accepted (validation passes), MAX+1 is rejected.
-    try testing.expectEqual(@as(u32, 600), shell.MAX_TIMEOUT_SEC);
+    try testing.expectEqual(@as(u32, 600), MAX_TIMEOUT_SEC);
 
-    const over_max = shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
+    const over_max = execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
         .command = "echo should-never-run",
         .cwd = "/tmp",
-        .timeout = shell.MAX_TIMEOUT_SEC + 1,
+        .timeout = MAX_TIMEOUT_SEC + 1,
     });
     try testing.expectError(error.TimeoutTooLarge, over_max);
 
     // The exact value from the user report that motivated the cap.
-    const absurd = shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
+    const absurd = execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
         .command = "echo should-never-run",
         .cwd = "/tmp",
         .timeout = 120000,
@@ -1505,15 +1504,15 @@ test "shell.execute_shell rejects timeout above MAX_TIMEOUT_SEC" {
     try testing.expectError(error.TimeoutTooLarge, absurd);
 }
 
-test "shell.execute_shell accepts timeout at exactly MAX_TIMEOUT_SEC" {
+test "execute_shell accepts timeout at exactly MAX_TIMEOUT_SEC" {
     // Positive control: the boundary value itself must pass validation.
     // Runs `true` (instant) so the 60 s deadline never matters.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
-    const out = try shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
+    const out = try execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
         .command = "true",
         .cwd = "/tmp",
-        .timeout = shell.MAX_TIMEOUT_SEC,
+        .timeout = MAX_TIMEOUT_SEC,
     });
     defer {
         testing.allocator.free(out.command);
@@ -1523,7 +1522,7 @@ test "shell.execute_shell accepts timeout at exactly MAX_TIMEOUT_SEC" {
     try testing.expectEqual(@as(i32, 0), out.exit_code);
 }
 
-test "shell.execute_shell: a pipe holder that escapes the deadline kill cannot hold the call open" {
+test "execute_shell: a pipe holder that escapes the deadline kill cannot hold the call open" {
     // The deadline path kills the child's PROCESS GROUP, so a descendant that
     // stays in the group releases the pipe and the reader threads finally see
     // EOF.
@@ -1531,7 +1530,7 @@ test "shell.execute_shell: a pipe holder that escapes the deadline kill cannot h
 
     const io = std.testing.io;
     const start = std.Io.Timestamp.now(io, .real).nanoseconds;
-    const out = try shell.execute_shell(testing.allocator, io, &.{ "bash", "-c" }, .{
+    const out = try execute_shell(testing.allocator, io, &.{ "bash", "-c" }, .{
         .command = "setsid bash -c 'sleep 6; exec 1>&- 2>&-' &",
         .cwd = "/tmp",
         .timeout = 1,
@@ -1561,7 +1560,7 @@ test "shell.execute_shell: a pipe holder that escapes the deadline kill cannot h
     try testing.expectEqual(@as(usize, 0), abandoned_reader_count.load(.monotonic));
 }
 
-test "shell.timeoutKillPlan: the deadline terminates the child on EVERY platform" {
+test "timeoutKillPlan: the deadline terminates the child on EVERY platform" {
     // The reported Windows hang: both kill sites were `if (comptime
     // builtin.os.tag != .windows)`, so on Windows the deadline recorded
     // `timeout_hit` and then waited on a child nobody had asked to stop — the
@@ -1570,11 +1569,11 @@ test "shell.timeoutKillPlan: the deadline terminates the child on EVERY platform
     try testing.expectEqualSlices(TimeoutKill, &.{.process_group}, timeoutKillPlan(.macos));
 }
 
-test "shell.execute_shell requires cwd in BOTH modes (MandatoryCwdMissing)" {
+test "execute_shell requires cwd in BOTH modes (MandatoryCwdMissing)" {
     // `cwd` is not merely documented as required.
     try testing.expectError(
         error.MandatoryCwdMissing,
-        shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
+        execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
             .command = "echo should-never-run",
             .cwd = null,
             .timeout = 5,
@@ -1585,7 +1584,7 @@ test "shell.execute_shell requires cwd in BOTH modes (MandatoryCwdMissing)" {
     // blank field.
     try testing.expectError(
         error.MandatoryCwdMissing,
-        shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
+        execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
             .command = "echo should-never-run",
             .cwd = "",
             .timeout = 5,
@@ -1596,7 +1595,7 @@ test "shell.execute_shell requires cwd in BOTH modes (MandatoryCwdMissing)" {
     // accepted `cwd`, discarded it, and still reported success.
     try testing.expectError(
         error.MandatoryCwdMissing,
-        shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
+        execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
             .command = "echo should-never-run",
             .cwd = null,
             .background = true,
@@ -1604,13 +1603,13 @@ test "shell.execute_shell requires cwd in BOTH modes (MandatoryCwdMissing)" {
     );
 }
 
-test "shell.execute_shell rejects a relative cwd (CwdNotAbsolute)" {
+test "execute_shell rejects a relative cwd (CwdNotAbsolute)" {
     // A relative path resolves against the server's cwd — the same
     // wrong-directory bug, harder to notice because the caller believes it
     // named a location.
     try testing.expectError(
         error.CwdNotAbsolute,
-        shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
+        execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
             .command = "echo should-never-run",
             .cwd = "src/modules",
             .timeout = 5,
@@ -1632,7 +1631,7 @@ test "foreground: the child runs IN cwd, not in the harness's cwd" {
     const dir_len = try tmp.dir.realPath(io, &dir_buf);
     const dir = dir_buf[0..dir_len];
 
-    const out = try shell.execute_shell(allocator, io, &.{ "bash", "-c" }, .{
+    const out = try execute_shell(allocator, io, &.{ "bash", "-c" }, .{
         .command = "pwd -P",
         .cwd = dir,
         .timeout = 20,
@@ -1662,7 +1661,7 @@ test "background: the DETACHED process starts in cwd, not the server's" {
     const dir_len = try tmp.dir.realPath(io, &dir_buf);
     const dir = dir_buf[0..dir_len];
 
-    const out = try shell.execute_shell(allocator, io, &.{ "bash", "-c" }, .{
+    const out = try execute_shell(allocator, io, &.{ "bash", "-c" }, .{
         .command = "touch bg_cwd_probe_marker",
         .cwd = dir,
         .background = true,
@@ -1689,12 +1688,12 @@ test "background: the DETACHED process starts in cwd, not the server's" {
     }
 }
 
-test "shell.execute_shell background mode is exempt from the max-timeout cap" {
+test "execute_shell background mode is exempt from the max-timeout cap" {
     // Background detaches via nohup and ignores the timeout by design,
     // so an over-max deadline there must NOT return TimeoutTooLarge.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
-    const out = shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
+    const out = execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
         .command = "true",
         .cwd = "/tmp",
         .background = true,
@@ -1715,7 +1714,7 @@ test "ShellInput is structurally identical to BashInput AND PwshInput (alias liv
     // We use `@typeName` of a constructed instance to force Zig to
     // resolve the alias — if the alias is broken in a future refactor,
     // the three names diverge and the test fails closed.
-    const shell_input = shell.ShellInput{ .command = "" };
+    const shell_input = ShellInput{ .command = "" };
     const bash_input = @import("schemas.zig").BashInput{ .command = "" };
     const pwsh_input = @import("pwsh.zig").PwshInput{ .command = "" };
 
@@ -1746,7 +1745,7 @@ test "result_to_json sanitizes binary ELF stdout into valid JSON" {
     // Regression for user report: `head -n 40 $(which qs)` dumps the ELF
     // header (0x7F 'E' 'L' 'F' 0x02 0x01 ... 0x00 + controls).
     const elf_stdout = "\x7FELF\x02\x01\x01\x00\x00\x01\x02<a>&\"'\x0B\x0C\x1F\x7Fend";
-    const out = shell.ShellOutput{
+    const out = ShellOutput{
         .command = "head -n 40 /usr/bin/quickshell",
         .stdout = elf_stdout,
         .stderr = "No errors.",
@@ -1756,7 +1755,7 @@ test "result_to_json sanitizes binary ELF stdout into valid JSON" {
         .stdout_lines = 1,
         .stderr_lines = 0,
     };
-    const payload = try shell.result_to_json(testing.allocator, out);
+    const payload = try result_to_json(testing.allocator, out);
     defer testing.allocator.free(payload);
 
     // Must parse as a JSON object with all 9 fields.
@@ -1787,7 +1786,7 @@ test "result_to_json: MSBuild colour codes become plain text, not ?[7m" {
         "C:\\src\\Microsoft.Common.CurrentVersion.targets(4919,5): " ++
         "\x1b[7mwarning \x1b[0m\x1b[1mMSB\x1b[0m3026: " ++
         "\x1b[0m\x1b[7m\x1b[0mCould not copy the file";
-    const out = shell.ShellOutput{
+    const out = ShellOutput{
         .command = "dotnet build PriceCatalog.csproj",
         .stdout = msbuild_stdout,
         .stderr = "No errors.",
@@ -1797,7 +1796,7 @@ test "result_to_json: MSBuild colour codes become plain text, not ?[7m" {
         .stdout_lines = 1,
         .stderr_lines = 0,
     };
-    const payload = try shell.result_to_json(testing.allocator, out);
+    const payload = try result_to_json(testing.allocator, out);
     defer testing.allocator.free(payload);
 
     var parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, payload, .{});
@@ -1822,7 +1821,7 @@ test "result_to_json: stderr escapes are stripped too, binary controls still scr
     // The two sanitising passes must not undo each other: an ESC-laden
     // stderr loses its colour codes, while a genuine NUL (binary stdout)
     // still becomes U+FFFD rather than silently vanishing.
-    const out = shell.ShellOutput{
+    const out = ShellOutput{
         .command = "build.ps1",
         .stdout = "\x1b[31merror CS1002\x1b[0m;",
         .stderr = "\x1b[1mFAILED\x1b[0m \x00 tail",
@@ -1832,7 +1831,7 @@ test "result_to_json: stderr escapes are stripped too, binary controls still scr
         .stdout_lines = 1,
         .stderr_lines = 1,
     };
-    const payload = try shell.result_to_json(testing.allocator, out);
+    const payload = try result_to_json(testing.allocator, out);
     defer testing.allocator.free(payload);
 
     var parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, payload, .{});

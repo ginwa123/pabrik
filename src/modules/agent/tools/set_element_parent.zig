@@ -144,7 +144,6 @@ pub fn executeSetElementParentToString(
 
 const testing = std.testing;
 
-const set_element_parent = @import("set_element_parent.zig");
 
 /// Open a fresh in-memory sqlite DB with the v6 design schema. Same
 /// shape as the other test files (`setupDbAndItem`) — copied locally
@@ -292,7 +291,7 @@ test "executeSetElementParentToString moves element into existing group" {
     defer alloc.free(child_id);
 
     // Call the LLM tool.
-    const json = try set_element_parent.executeSetElementParentToString(alloc, &ctx.db, .{
+    const json = try executeSetElementParentToString(alloc, &ctx.db, .{
         .element_id = child_id,
         .new_parent_id = group_id,
     });
@@ -362,7 +361,7 @@ test "executeSetElementParentToString rejects leaf-type parent" {
     });
     defer alloc.free(child_id);
 
-    const json = try set_element_parent.executeSetElementParentToString(alloc, &ctx.db, .{
+    const json = try executeSetElementParentToString(alloc, &ctx.db, .{
         .element_id = child_id,
         .new_parent_id = leaf_id,
     });
@@ -406,7 +405,7 @@ test "executeSetElementParentToString rejects non-existent element_id" {
     });
     defer alloc.free(group_id);
 
-    const json = try set_element_parent.executeSetElementParentToString(alloc, &ctx.db, .{
+    const json = try executeSetElementParentToString(alloc, &ctx.db, .{
         .element_id = "elem_does_not_exist",
         .new_parent_id = group_id,
     });
@@ -426,7 +425,7 @@ test "executeSetElementParentToString rejects element_id with invalid prefix" {
     defer alloc.free(ctx.item_id);
     defer alloc.free(ctx.item_path);
 
-    const json = try set_element_parent.executeSetElementParentToString(alloc, &ctx.db, .{
+    const json = try executeSetElementParentToString(alloc, &ctx.db, .{
         .element_id = "not_elem_anything",
         .new_parent_id = "elem_anything",
     });
@@ -485,7 +484,7 @@ test "executeSetElementParentToString with null moves element to top-level" {
     , &.{ page_id, group_id });
 
     // Call set_element_parent with null.
-    const json = try set_element_parent.executeSetElementParentToString(alloc, &ctx.db, .{
+    const json = try executeSetElementParentToString(alloc, &ctx.db, .{
         .element_id = "elem_inner",
         .new_parent_id = null,
     });
@@ -500,3 +499,62 @@ test "executeSetElementParentToString with null moves element to top-level" {
     defer design_model.freeElement(alloc, got);
     try testing.expectEqual(@as(usize, 0), got.parent_id.len);
 }
+
+// Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
+// The tool definition above and its executor below live in ONE file.
+
+const exec_pabrikcore = @import("pabrikcore");
+const tools = @import("../../../agentic_loop/tools.zig");
+const ToolExecContext = tools.ToolExecContext;
+const ToolExecResult = tools.ToolExecResult;
+const agent = exec_pabrikcore.agent;
+const wrapToolOutput = tools.wrapToolOutput;
+const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+pub fn execSetElementParent(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
+    const parsed = std.json.parseFromSlice(
+        SetElementParentInput,
+        ctx.allocator,
+        tc.function.arguments,
+        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "set_element_parent", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer parsed.deinit();
+
+    // set_element_parent doesn't need Io (no disk writes).
+    const inner = executeSetElementParentToString(
+        ctx.allocator,
+        ctx.db,
+        parsed.value,
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "set_element_parent", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer ctx.allocator.free(inner);
+
+    // Detect {{"error":...}} and surface it as a tool failure (so the
+    // LLM sees `success=false` rather than a successful wrapper around
+    // an error body).
+    const json_err_msg: ?[]u8 = blk: {
+        const inner_parsed = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch break :blk null;
+        defer inner_parsed.deinit();
+        if (inner_parsed.value != .object) break :blk null;
+        const e = inner_parsed.value.object.get("error") orelse break :blk null;
+        if (e != .string) break :blk null;
+        break :blk try ctx.allocator.dupe(u8, e.string);
+    };
+    if (json_err_msg) |err_msg| {
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "set_element_parent", tc.function.arguments, false, err_msg, inner);
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    }
+
+    const output = try wrapToolOutput(ctx.allocator, "set_element_parent", tc.function.arguments, true, null, inner);
+    return ToolExecResult{ .output = output, .output_allocated = true };
+}
+

@@ -178,7 +178,6 @@ pub const MovedElementJSON = struct {
     type: []const u8,
 };
 
-const move_element_to_page = @import("move_element_to_page.zig");
 const testing = std.testing;
 
 // =====================================================================
@@ -287,7 +286,7 @@ fn contains(haystack: []const u8, needle: []const u8) bool {
 // =====================================================================
 
 test "move_element_to_page_tool has the expected LLM-facing schema (name, required fields)" {
-    const tool = move_element_to_page.move_element_to_page_tool;
+    const tool = move_element_to_page_tool;
 
     try testing.expectEqualStrings("function", tool.type);
     try testing.expectEqualStrings("move_element_to_page", tool.function.name);
@@ -348,7 +347,7 @@ test "executeMoveElementToPageToString returns a structured success XML on happy
     });
     defer alloc.free(elem_id);
 
-    const json = try move_element_to_page.executeMoveElementToPageToString(
+    const json = try executeMoveElementToPageToString(
         alloc,
         &ctx.db,
         source_page_id,
@@ -372,7 +371,7 @@ test "executeMoveElementToPageToString returns a structured success XML on happy
 
 test "executeMoveElementToPageToString returns an error object on missing element_id" {
     const alloc = testing.allocator;
-    const json = try move_element_to_page.executeMoveElementToPageToString(
+    const json = try executeMoveElementToPageToString(
         alloc,
         undefined, // DB never reached (input validation fails first)
         "page_unused",
@@ -388,7 +387,7 @@ test "executeMoveElementToPageToString returns an error object on missing elemen
 
 test "executeMoveElementToPageToString rejects bad prefixes via an error object" {
     const alloc = testing.allocator;
-    const json = try move_element_to_page.executeMoveElementToPageToString(
+    const json = try executeMoveElementToPageToString(
         alloc,
         undefined,
         "page_unused",
@@ -401,3 +400,87 @@ test "executeMoveElementToPageToString rejects bad prefixes via an error object"
     const err_val = parsed.value.object.get("error") orelse return error.MissingErrorField;
     try testing.expect(contains(err_val.string, "PAGE id"));
 }
+
+// Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
+// The tool definition above and its executor below live in ONE file.
+
+const exec_pabrikcore = @import("pabrikcore");
+const tools = @import("../../../agentic_loop/tools.zig");
+const ToolExecContext = tools.ToolExecContext;
+const ToolExecResult = tools.ToolExecResult;
+const agent = exec_pabrikcore.agent;
+const wrapToolOutput = tools.wrapToolOutput;
+const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+pub fn execMoveElementToPage(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
+    const parsed = std.json.parseFromSlice(
+        MoveElementToPageInput,
+        ctx.allocator,
+        tc.function.arguments,
+        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(
+            ctx.allocator,
+            "move_element_to_page",
+            tc.function.arguments,
+            false,
+            err_msg,
+            "",
+        );
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer parsed.deinit();
+
+    // The tool needs the *active* page_id — the agentic loop currently passes
+    // the page context through `ctx.cwd` or a similar channel.
+    const active_page_id = ctx.active_page_id;
+
+    const inner = executeMoveElementToPageToString(
+        ctx.allocator,
+        ctx.db,
+        active_page_id,
+        parsed.value,
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(
+            ctx.allocator,
+            "move_element_to_page",
+            tc.function.arguments,
+            false,
+            err_msg,
+            "",
+        );
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer ctx.allocator.free(inner);
+
+    // Detect {{"error":...}} and surface it as a tool failure (so the
+    // LLM sees `success=false` rather than a successful wrapper around
+    // an error body).
+    const json_err_msg: ?[]u8 = blk: {
+        const inner_parsed = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch break :blk null;
+        defer inner_parsed.deinit();
+        if (inner_parsed.value != .object) break :blk null;
+        const e = inner_parsed.value.object.get("error") orelse break :blk null;
+        if (e != .string) break :blk null;
+        break :blk try ctx.allocator.dupe(u8, e.string);
+    };
+    if (json_err_msg) |err_msg| {
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "move_element_to_page", tc.function.arguments, false, err_msg, inner);
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    }
+
+    const output = try wrapToolOutput(
+        ctx.allocator,
+        "move_element_to_page",
+        tc.function.arguments,
+        true,
+        null,
+        inner,
+    );
+    return ToolExecResult{ .output = output, .output_allocated = true };
+}
+

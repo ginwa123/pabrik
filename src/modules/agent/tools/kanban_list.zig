@@ -559,7 +559,6 @@ fn itemExists(
 }
 
 const testing = std.testing;
-const kanban_list = @import("kanban_list.zig");
 const kanban_model = pabrikcore.ai_mod.kanban_model;
 fn contains(haystack: []const u8, needle: []const u8) bool {
     return std.mem.indexOf(u8, haystack, needle) != null;
@@ -569,11 +568,11 @@ fn contains(haystack: []const u8, needle: []const u8) bool {
 
 test "toJSON on empty lists produces empty arrays and null hint" {
     const alloc = testing.allocator;
-    const cols = &[_]kanban_list.ColumnSummary{};
-    const tasks = &[_]kanban_list.TaskSummary{};
-    const json = try kanban_list.toJSON(alloc, "ws_1", "item_1", cols, tasks, 0, 20, 0, false, null);
+    const cols = &[_]ColumnSummary{};
+    const tasks = &[_]TaskSummary{};
+    const json = try toJSON(alloc, "ws_1", "item_1", cols, tasks, 0, 20, 0, false, null);
     defer alloc.free(json);
-    const parsed = try std.json.parseFromSlice(kanban_list.KanbanListOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
+    const parsed = try std.json.parseFromSlice(KanbanListOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
     defer parsed.deinit();
     try std.testing.expectEqualStrings("ws_1", parsed.value.workspace_id);
     try std.testing.expectEqualStrings("item_1", parsed.value.item_id);
@@ -586,14 +585,14 @@ test "toJSON on empty lists produces empty arrays and null hint" {
 
 test "toJSON renders column summaries with id/name/position/task_count" {
     const alloc = testing.allocator;
-    const cols = [_]kanban_list.ColumnSummary{
+    const cols = [_]ColumnSummary{
         .{ .id = "col_todo", .name = "todo", .position = 0, .task_count = 2 },
         .{ .id = "col_done", .name = "done", .position = 1, .task_count = 1 },
     };
-    const tasks = &[_]kanban_list.TaskSummary{};
-    const json = try kanban_list.toJSON(alloc, "ws_1", "item_1", &cols, tasks, 0, 20, 0, false, null);
+    const tasks = &[_]TaskSummary{};
+    const json = try toJSON(alloc, "ws_1", "item_1", &cols, tasks, 0, 20, 0, false, null);
     defer alloc.free(json);
-    const parsed = try std.json.parseFromSlice(kanban_list.KanbanListOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
+    const parsed = try std.json.parseFromSlice(KanbanListOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
     defer parsed.deinit();
     try std.testing.expectEqual(@as(usize, 2), parsed.value.columns.len);
     try std.testing.expectEqualStrings("col_todo", parsed.value.columns[0].id);
@@ -606,14 +605,14 @@ test "toJSON renders column summaries with id/name/position/task_count" {
 
 test "toJSON renders task summaries with explicit-null column_id/column_name" {
     const alloc = testing.allocator;
-    const cols = &[_]kanban_list.ColumnSummary{};
-    const tasks = [_]kanban_list.TaskSummary{
+    const cols = &[_]ColumnSummary{};
+    const tasks = [_]TaskSummary{
         .{ .id = "t_a", .name = "Task A", .column_id = "col_todo", .column_name = "todo", .position = 0 },
         .{ .id = "t_b", .name = "Task B", .column_id = null, .column_name = null, .position = -1 },
     };
-    const json = try kanban_list.toJSON(alloc, "ws_1", "item_1", cols, &tasks, 2, 20, 0, false, null);
+    const json = try toJSON(alloc, "ws_1", "item_1", cols, &tasks, 2, 20, 0, false, null);
     defer alloc.free(json);
-    const parsed = try std.json.parseFromSlice(kanban_list.KanbanListOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
+    const parsed = try std.json.parseFromSlice(KanbanListOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
     defer parsed.deinit();
     try std.testing.expectEqual(@as(usize, 2), parsed.value.tasks.len);
     try std.testing.expectEqualStrings("t_a", parsed.value.tasks[0].id);
@@ -628,23 +627,23 @@ test "toJSON renders task summaries with explicit-null column_id/column_name" {
 
 test "toJSON keeps raw characters in column + task names" {
     const alloc = testing.allocator;
-    const cols = [_]kanban_list.ColumnSummary{
+    const cols = [_]ColumnSummary{
         .{ .id = "col_x", .name = "in <review>", .position = 0, .task_count = 0 },
     };
-    const tasks = &[_]kanban_list.TaskSummary{};
-    const json = try kanban_list.toJSON(alloc, "ws_1", "item_1", &cols, tasks, 0, 20, 0, false, null);
+    const tasks = &[_]TaskSummary{};
+    const json = try toJSON(alloc, "ws_1", "item_1", &cols, tasks, 0, 20, 0, false, null);
     defer alloc.free(json);
     // Raw text needs no escaping in JSON — parse and compare verbatim.
-    const parsed = try std.json.parseFromSlice(kanban_list.KanbanListOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
+    const parsed = try std.json.parseFromSlice(KanbanListOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
     defer parsed.deinit();
     try std.testing.expectEqualStrings("in <review>", parsed.value.columns[0].name);
 }
 
 test "errorJSON on missing field returns parsed error payload" {
     const alloc = testing.allocator;
-    const json = try kanban_list.errorJSON(alloc, "workspace_id and item_id are required");
+    const json = try errorJSON(alloc, "workspace_id and item_id are required");
     defer alloc.free(json);
-    const parsed = try std.json.parseFromSlice(kanban_list.KanbanListError, alloc, json, .{ .allocate = .alloc_always });
+    const parsed = try std.json.parseFromSlice(KanbanListError, alloc, json, .{ .allocate = .alloc_always });
     defer parsed.deinit();
     try std.testing.expectEqualStrings("workspace_id and item_id are required", parsed.value.@"error");
 }
@@ -741,8 +740,8 @@ test "listKanbanTasks returns all tasks with column + position" {
     // t4 has no kanban row — unassigned (the LEFT JOIN surfaces this as
     // empty kanban_column_id in the JSON output)
 
-    const rows = try kanban_list.listKanbanTasks(alloc, &s.db, "item_1", null, null, null);
-    defer kanban_list.freeKanbanTaskRows(alloc, rows);
+    const rows = try listKanbanTasks(alloc, &s.db, "item_1", null, null, null);
+    defer freeKanbanTaskRows(alloc, rows);
 
     try testing.expectEqual(@as(usize, 4), rows.len);
     // Unassigned task has empty kanban_column_id (the COALESCE
@@ -772,14 +771,14 @@ test "executeKanbanListToJSON returns columns with task_count" {
     try s.db.exec(alloc, "INSERT INTO kanban (workspace_item_task_id, kanban_column_id, kanban_position) VALUES ('t2', 'col_todo', 1)", &.{});
     try s.db.exec(alloc, "INSERT INTO kanban (workspace_item_task_id, kanban_column_id, kanban_position) VALUES ('t3', 'col_done', 0)", &.{});
 
-    const input = kanban_list.KanbanListInput{
+    const input = KanbanListInput{
         .workspace_id = "ws_1",
         .item_id = "item_1",
     };
-    const json = try kanban_list.executeKanbanListToJSON(alloc, &s.db, input);
+    const json = try executeKanbanListToJSON(alloc, &s.db, input);
     defer alloc.free(json);
 
-    const parsed = try std.json.parseFromSlice(kanban_list.KanbanListOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
+    const parsed = try std.json.parseFromSlice(KanbanListOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
     defer parsed.deinit();
     try std.testing.expectEqual(@as(usize, 3), parsed.value.columns.len);
     // todo has 2 tasks
@@ -806,12 +805,12 @@ test "executeKanbanListToJSON with column_id filter returns only that column's t
     try s.db.exec(alloc, "INSERT INTO kanban (workspace_item_task_id, kanban_column_id, kanban_position) VALUES ('t2', 'col_todo', 1)", &.{});
     try s.db.exec(alloc, "INSERT INTO kanban (workspace_item_task_id, kanban_column_id, kanban_position) VALUES ('t3', 'col_done', 0)", &.{});
 
-    const input = kanban_list.KanbanListInput{
+    const input = KanbanListInput{
         .workspace_id = "ws_1",
         .item_id = "item_1",
         .column_id = "col_todo",
     };
-    const json = try kanban_list.executeKanbanListToJSON(alloc, &s.db, input);
+    const json = try executeKanbanListToJSON(alloc, &s.db, input);
     defer alloc.free(json);
 
     // Both todo tasks should appear
@@ -827,11 +826,11 @@ test "executeKanbanListToJSON returns error JSON when item_id is empty" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const input = kanban_list.KanbanListInput{
+    const input = KanbanListInput{
         .workspace_id = "ws_1",
         .item_id = "",
     };
-    const json = try kanban_list.executeKanbanListToJSON(alloc, &s.db, input);
+    const json = try executeKanbanListToJSON(alloc, &s.db, input);
     defer alloc.free(json);
     try testing.expect(contains(json, "\"error\":"));
     try testing.expect(contains(json, "workspace_id and item_id are required"));
@@ -855,17 +854,17 @@ test "executeKanbanListToJSON column_name is real bytes (use-after-free regressi
         \\VALUES ('t_uaf', 'col_ip', 0)
     , &.{});
 
-    const input = kanban_list.KanbanListInput{
+    const input = KanbanListInput{
         .workspace_id = "ws_1",
         .item_id = "item_1",
     };
-    const json = try kanban_list.executeKanbanListToJSON(alloc, &s.db, input);
+    const json = try executeKanbanListToJSON(alloc, &s.db, input);
     defer alloc.free(json);
 
     // The task's column_name must be the literal string "in progress",
     // not freed/garbled memory. If the use-after-free bug recurs, the
     // slice would point at Zig's 0xAA free-fill pattern.
-    const parsed = try std.json.parseFromSlice(kanban_list.KanbanListOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
+    const parsed = try std.json.parseFromSlice(KanbanListOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
     defer parsed.deinit();
     try std.testing.expectEqual(@as(usize, 1), parsed.value.tasks.len);
     try std.testing.expectEqualStrings("in progress", parsed.value.tasks[0].column_name orelse "");
@@ -888,11 +887,11 @@ test "executeKanbanListToJSON returns error JSON when item_id looks like a task_
     // AI confused task_id (from kanban_move_task input) with item_id.
     // listColumns will silently return 0 rows; we want validation to
     // catch this BEFORE the query runs.
-    const input = kanban_list.KanbanListInput{
+    const input = KanbanListInput{
         .workspace_id = "ws_1",
         .item_id = "task_1782442569739",
     };
-    const json = try kanban_list.executeKanbanListToJSON(alloc, &s.db, input);
+    const json = try executeKanbanListToJSON(alloc, &s.db, input);
     defer alloc.free(json);
     try testing.expect(contains(json, "\"error\":"));
     try testing.expect(contains(json, "item_id"));
@@ -907,11 +906,11 @@ test "executeKanbanListToJSON returns error JSON when item_id looks like a colum
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const input = kanban_list.KanbanListInput{
+    const input = KanbanListInput{
         .workspace_id = "ws_1",
         .item_id = "col_1782442554112968570",
     };
-    const json = try kanban_list.executeKanbanListToJSON(alloc, &s.db, input);
+    const json = try executeKanbanListToJSON(alloc, &s.db, input);
     defer alloc.free(json);
     try testing.expect(contains(json, "\"error\":"));
     try testing.expect(contains(json, "col_"));
@@ -923,11 +922,11 @@ test "executeKanbanListToJSON returns error JSON when item_id looks like a works
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const input = kanban_list.KanbanListInput{
+    const input = KanbanListInput{
         .workspace_id = "ws_1",
         .item_id = "ws_1",
     };
-    const json = try kanban_list.executeKanbanListToJSON(alloc, &s.db, input);
+    const json = try executeKanbanListToJSON(alloc, &s.db, input);
     defer alloc.free(json);
     try testing.expect(contains(json, "\"error\":"));
 }
@@ -939,11 +938,11 @@ test "executeKanbanListToJSON returns error JSON when item_id matches no workspa
     defer s.db.deinit();
 
     // Valid shape (starts with item_) but the row doesn't exist.
-    const input = kanban_list.KanbanListInput{
+    const input = KanbanListInput{
         .workspace_id = "ws_1",
         .item_id = "item_does_not_exist",
     };
-    const json = try kanban_list.executeKanbanListToJSON(alloc, &s.db, input);
+    const json = try executeKanbanListToJSON(alloc, &s.db, input);
     defer alloc.free(json);
     try testing.expect(contains(json, "\"error\":"));
     try testing.expect(contains(json, "no workspace_item"));
@@ -959,15 +958,15 @@ test "executeKanbanListToJSON returns empty-board hint (not error) when item_id 
     // deleted all of them).
     try s.db.exec(alloc, "INSERT INTO workspace_items (id, workspace_id, item_type, name) VALUES ('item_empty', 'ws_1', 'kanban', 'Empty board')", &.{});
 
-    const input = kanban_list.KanbanListInput{
+    const input = KanbanListInput{
         .workspace_id = "ws_1",
         .item_id = "item_empty",
     };
-    const json = try kanban_list.executeKanbanListToJSON(alloc, &s.db, input);
+    const json = try executeKanbanListToJSON(alloc, &s.db, input);
     defer alloc.free(json);
     // NOT an error — the kanban genuinely has no columns. Just an
     // empty "columns" array + a friendly hint.
-    const parsed = try std.json.parseFromSlice(kanban_list.KanbanListOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
+    const parsed = try std.json.parseFromSlice(KanbanListOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
     defer parsed.deinit();
     try std.testing.expect(parsed.value.@"error" == null);
     try std.testing.expectEqual(@as(usize, 0), parsed.value.columns.len);
@@ -993,14 +992,14 @@ test "executeKanbanListToJSON default limit caps at 20" {
         try s.db.exec(alloc, ksql, &.{});
     }
 
-    const input = kanban_list.KanbanListInput{
+    const input = KanbanListInput{
         .workspace_id = "ws_1",
         .item_id = "item_1",
     };
-    const json = try kanban_list.executeKanbanListToJSON(alloc, &s.db, input);
+    const json = try executeKanbanListToJSON(alloc, &s.db, input);
     defer alloc.free(json);
     // Default limit 20 => only 20 tasks in JSON, but total_count 30
-    const parsed = try std.json.parseFromSlice(kanban_list.KanbanListOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
+    const parsed = try std.json.parseFromSlice(KanbanListOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
     defer parsed.deinit();
     try std.testing.expectEqual(@as(u32, 30), parsed.value.total_count);
     try std.testing.expectEqual(@as(u32, 20), parsed.value.limit);
@@ -1025,14 +1024,14 @@ test "executeKanbanListToJSON limit=5 returns 5 tasks" {
         try s.db.exec(alloc, ksql, &.{});
     }
 
-    const input = kanban_list.KanbanListInput{
+    const input = KanbanListInput{
         .workspace_id = "ws_1",
         .item_id = "item_1",
         .limit = 5,
     };
-    const json = try kanban_list.executeKanbanListToJSON(alloc, &s.db, input);
+    const json = try executeKanbanListToJSON(alloc, &s.db, input);
     defer alloc.free(json);
-    const parsed = try std.json.parseFromSlice(kanban_list.KanbanListOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
+    const parsed = try std.json.parseFromSlice(KanbanListOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
     defer parsed.deinit();
     try std.testing.expectEqual(@as(u32, 10), parsed.value.total_count);
     try std.testing.expectEqual(@as(u32, 5), parsed.value.limit);
@@ -1056,15 +1055,15 @@ test "executeKanbanListToJSON offset paginates" {
         try s.db.exec(alloc, ksql, &.{});
     }
 
-    const input = kanban_list.KanbanListInput{
+    const input = KanbanListInput{
         .workspace_id = "ws_1",
         .item_id = "item_1",
         .limit = 5,
         .offset = 5,
     };
-    const json = try kanban_list.executeKanbanListToJSON(alloc, &s.db, input);
+    const json = try executeKanbanListToJSON(alloc, &s.db, input);
     defer alloc.free(json);
-    const parsed = try std.json.parseFromSlice(kanban_list.KanbanListOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
+    const parsed = try std.json.parseFromSlice(KanbanListOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
     defer parsed.deinit();
     try std.testing.expectEqual(@as(u32, 5), parsed.value.offset);
     try std.testing.expect(!parsed.value.has_more);
@@ -1088,12 +1087,12 @@ test "executeKanbanListToJSON limit >100 clamped to 100" {
         try s.db.exec(alloc, ksql, &.{});
     }
 
-    const input = kanban_list.KanbanListInput{
+    const input = KanbanListInput{
         .workspace_id = "ws_1",
         .item_id = "item_1",
         .limit = 200,
     };
-    const json = try kanban_list.executeKanbanListToJSON(alloc, &s.db, input);
+    const json = try executeKanbanListToJSON(alloc, &s.db, input);
     defer alloc.free(json);
     try testing.expect(contains(json, "\"limit\":100"));
 }
@@ -1107,17 +1106,72 @@ test "executeKanbanListToJSON offset beyond total returns empty tasks" {
     try s.db.exec(alloc, "INSERT INTO workspace_item_tasks (id, workspace_item_id, name, task_type) VALUES ('t1', 'item_1', 'Task 1', 'standard')", &.{});
     try s.db.exec(alloc, "INSERT INTO kanban (workspace_item_task_id, kanban_column_id, kanban_position) VALUES ('t1', 'col_todo', 0)", &.{});
 
-    const input = kanban_list.KanbanListInput{
+    const input = KanbanListInput{
         .workspace_id = "ws_1",
         .item_id = "item_1",
         .limit = 10,
         .offset = 100,
     };
-    const json = try kanban_list.executeKanbanListToJSON(alloc, &s.db, input);
+    const json = try executeKanbanListToJSON(alloc, &s.db, input);
     defer alloc.free(json);
-    const parsed = try std.json.parseFromSlice(kanban_list.KanbanListOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
+    const parsed = try std.json.parseFromSlice(KanbanListOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
     defer parsed.deinit();
     try std.testing.expectEqual(@as(u32, 1), parsed.value.total_count);
     try std.testing.expectEqual(@as(usize, 0), parsed.value.tasks.len);
     try std.testing.expect(!parsed.value.has_more);
 }
+
+// Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
+// The tool definition above and its executor below live in ONE file.
+
+const exec_pabrikcore = @import("pabrikcore");
+const tools = @import("../../../agentic_loop/tools.zig");
+const ToolExecContext = tools.ToolExecContext;
+const ToolExecResult = tools.ToolExecResult;
+const agent = exec_pabrikcore.agent;
+const wrapToolOutput = tools.wrapToolOutput;
+const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+pub fn execKanbanList(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
+    const parsed = std.json.parseFromSlice(
+        KanbanListInput,
+        ctx.allocator,
+        tc.function.arguments,
+        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "kanban_list", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer parsed.deinit();
+
+    // executeKanbanListToJSON returns a JSON string. Errors (missing
+    // input, DB failure) are encoded as {"error":...}
+    // so the LLM sees a structured failure rather than a tool crash.
+    const inner = executeKanbanListToJSON(
+        ctx.allocator,
+        ctx.db,
+        parsed.value,
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "kanban_list", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer ctx.allocator.free(inner);
+
+    // Detect the {"error":...} shape and surface it as a tool failure
+    // (so the LLM sees `success=false` rather than a successful wrapper
+    // around an error body).
+    if (std.json.parseFromSlice(struct { @"error": ?[]const u8 = null }, ctx.allocator, inner, .{ .allocate = .alloc_always, .ignore_unknown_fields = true }) catch null) |probe| {
+        defer probe.deinit();
+        if (probe.value.@"error") |err_msg| {
+            const output = try wrapToolOutput(ctx.allocator, "kanban_list", tc.function.arguments, false, err_msg, inner);
+            return ToolExecResult{ .output = output, .output_allocated = true };
+        }
+    }
+
+    const output = try wrapToolOutput(ctx.allocator, "kanban_list", tc.function.arguments, true, null, inner);
+    return ToolExecResult{ .output = output, .output_allocated = true };
+}
+

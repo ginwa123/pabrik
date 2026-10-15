@@ -606,7 +606,6 @@ pub fn localMemoryExists(
     return true;
 }
 
-const memories = @import("memories.zig");
 
 // Helper: substring check
 fn contains(haystack: []const u8, needle: []const u8) bool {
@@ -619,7 +618,7 @@ fn contains(haystack: []const u8, needle: []const u8) bool {
 
 test "get_local_memories_path_for_dir returns <cwd>/.pabrik/memories" {
     const alloc = std.testing.allocator;
-    const path = memories.get_local_memories_path_for_dir(alloc, "/tmp/proj");
+    const path = get_local_memories_path_for_dir(alloc, "/tmp/proj");
     defer if (path) |p| alloc.free(p);
 
     try std.testing.expect(path != null);
@@ -628,7 +627,7 @@ test "get_local_memories_path_for_dir returns <cwd>/.pabrik/memories" {
 
 test "get_local_memories_path_for_dir returns null on empty cwd" {
     const alloc = std.testing.allocator;
-    const path = memories.get_local_memories_path_for_dir(alloc, "");
+    const path = get_local_memories_path_for_dir(alloc, "");
 
     try std.testing.expect(path == null);
 }
@@ -638,7 +637,7 @@ test "get_local_memories_path_for_dir does not resolve relative paths" {
     // resolution. The caller (buildMessages) is responsible for passing
     // an absolute cwd, which it does via realPathFileAlloc.
     const alloc = std.testing.allocator;
-    const path = memories.get_local_memories_path_for_dir(alloc, "relative/proj");
+    const path = get_local_memories_path_for_dir(alloc, "relative/proj");
     defer if (path) |p| alloc.free(p);
 
     try std.testing.expect(path != null);
@@ -648,7 +647,7 @@ test "get_local_memories_path_for_dir does not resolve relative paths" {
 test "get_local_memories_path_for_dir freed slice does not double-free" {
     // Sanity: returned slice is allocator-owned; freeing it does not crash.
     const alloc = std.testing.allocator;
-    const path = memories.get_local_memories_path_for_dir(alloc, "/tmp/x");
+    const path = get_local_memories_path_for_dir(alloc, "/tmp/x");
     try std.testing.expect(path != null);
     alloc.free(path.?);
 }
@@ -665,8 +664,8 @@ test "listMemoriesInDir returns empty slice when dir does not exist" {
     const missing_dir = "/tmp/pabrik-list-memories-missing-dir";
     std.Io.Dir.cwd().deleteTree(io, missing_dir) catch {};
 
-    const list = memories.listMemoriesInDir(alloc, io, missing_dir);
-    defer memories.freeMemoriesList(alloc, list);
+    const list = listMemoriesInDir(alloc, io, missing_dir);
+    defer freeMemoriesList(alloc, list);
 
     try std.testing.expectEqual(@as(usize, 0), list.len);
 }
@@ -689,8 +688,8 @@ test "listMemoriesInDir returns empty slice when dir has no .md files" {
         try std.Io.File.writeStreamingAll(f, io, "should be ignored");
     }
 
-    const list = memories.listMemoriesInDir(alloc, io, tmp_dir);
-    defer memories.freeMemoriesList(alloc, list);
+    const list = listMemoriesInDir(alloc, io, tmp_dir);
+    defer freeMemoriesList(alloc, list);
 
     try std.testing.expectEqual(@as(usize, 0), list.len);
 }
@@ -732,8 +731,8 @@ test "listMemoriesInDir skips .txt, .json, and subdirectories" {
     // A subdirectory that should be skipped (no SKILL.MD analogue for memories)
     try std.Io.Dir.cwd().createDirPath(io, "/tmp/pabrik-list-memories-filter/subdir");
 
-    const list = memories.listMemoriesInDir(alloc, io, tmp_dir);
-    defer memories.freeMemoriesList(alloc, list);
+    const list = listMemoriesInDir(alloc, io, tmp_dir);
+    defer freeMemoriesList(alloc, list);
 
     try std.testing.expectEqual(@as(usize, 1), list.len);
     try std.testing.expectEqualStrings("keep.md", list[0].name);
@@ -774,8 +773,8 @@ test "listMemoriesInDir lists multiple .md files with correct titles" {
         );
     }
 
-    const list = memories.listMemoriesInDir(alloc, io, tmp_dir);
-    defer memories.freeMemoriesList(alloc, list);
+    const list = listMemoriesInDir(alloc, io, tmp_dir);
+    defer freeMemoriesList(alloc, list);
 
     try std.testing.expectEqual(@as(usize, 2), list.len);
 
@@ -815,8 +814,8 @@ test "listMemoriesInDir falls back to filename stem when no H1" {
         try std.Io.File.writeStreamingAll(f, io, "Just some prose, no header.\n");
     }
 
-    const list = memories.listMemoriesInDir(alloc, io, tmp_dir);
-    defer memories.freeMemoriesList(alloc, list);
+    const list = listMemoriesInDir(alloc, io, tmp_dir);
+    defer freeMemoriesList(alloc, list);
 
     try std.testing.expectEqual(@as(usize, 1), list.len);
     try std.testing.expectEqualStrings("random-name.md", list[0].name);
@@ -848,8 +847,8 @@ test "listMemoriesInDir finds H1 in second line (after blank line)" {
         );
     }
 
-    const list = memories.listMemoriesInDir(alloc, io, tmp_dir);
-    defer memories.freeMemoriesList(alloc, list);
+    const list = listMemoriesInDir(alloc, io, tmp_dir);
+    defer freeMemoriesList(alloc, list);
 
     try std.testing.expectEqual(@as(usize, 1), list.len);
     try std.testing.expectEqualStrings("The Real Title", list[0].title);
@@ -872,8 +871,8 @@ test "listMemoriesInDir record path is absolute" {
         try std.Io.File.writeStreamingAll(f, io, "# Test\n");
     }
 
-    const list = memories.listMemoriesInDir(alloc, io, tmp_dir);
-    defer memories.freeMemoriesList(alloc, list);
+    const list = listMemoriesInDir(alloc, io, tmp_dir);
+    defer freeMemoriesList(alloc, list);
 
     try std.testing.expectEqual(@as(usize, 1), list.len);
     try std.testing.expect(std.fs.path.isAbsolute(list[0].path));
@@ -882,8 +881,8 @@ test "listMemoriesInDir record path is absolute" {
 
 test "listMemoriesInDir free contract: empty list is safe to free" {
     const alloc = std.testing.allocator;
-    const list = &[_]memories.MemoryInfo{};
-    memories.freeMemoriesList(alloc, list);
+    const list = &[_]MemoryInfo{};
+    freeMemoriesList(alloc, list);
     // No panic — success criterion.
 }
 
@@ -929,7 +928,7 @@ test "isValidMemoryName rejects empty, whitespace, no .md, slashes, parent ref" 
         "subdir/../foo.md",  // contains parent ref anywhere
     };
     for (reject) |name| {
-        try std.testing.expect(!memories.isValidMemoryName(name));
+        try std.testing.expect(!isValidMemoryName(name));
     }
 }
 
@@ -945,7 +944,7 @@ test "isValidMemoryName accepts simple, hyphenated, and dotted .md names" {
         "  trimmed.md  ",      // leading/trailing whitespace is trimmed
     };
     for (accept) |name| {
-        try std.testing.expect(memories.isValidMemoryName(name));
+        try std.testing.expect(isValidMemoryName(name));
     }
 }
 
@@ -964,10 +963,10 @@ test "readMemoryFile returns null on invalid name" {
 
     // Invalid names should return null even if the file would otherwise
     // be readable — validation is the first guard.
-    try std.testing.expect(memories.readMemoryFile(alloc, io, &env, "") == null);
-    try std.testing.expect(memories.readMemoryFile(alloc, io, &env, "no-extension") == null);
-    try std.testing.expect(memories.readMemoryFile(alloc, io, &env, "../escape.md") == null);
-    try std.testing.expect(memories.readMemoryFile(alloc, io, &env, "sub/dir.md") == null);
+    try std.testing.expect(readMemoryFile(alloc, io, &env, "") == null);
+    try std.testing.expect(readMemoryFile(alloc, io, &env, "no-extension") == null);
+    try std.testing.expect(readMemoryFile(alloc, io, &env, "../escape.md") == null);
+    try std.testing.expect(readMemoryFile(alloc, io, &env, "sub/dir.md") == null);
 }
 
 test "readMemoryFile returns null on missing file" {
@@ -980,7 +979,7 @@ test "readMemoryFile returns null on missing file" {
     defer std.Io.Dir.cwd().deleteTree(io, env_or_err.home_path) catch {};
 
     // No file written yet → null (not a panic / error throw).
-    const result = memories.readMemoryFile(alloc, io, &env, "never-written.md");
+    const result = readMemoryFile(alloc, io, &env, "never-written.md");
     try std.testing.expect(result == null);
 }
 
@@ -999,10 +998,10 @@ test "writeMemoryFile creates parent dir if missing" {
 
     // The memories/ subdir does not exist yet. writeMemoryFile must
     // create it (via createDirPath) before writing the file.
-    try std.testing.expect(memories.writeMemoryFile(alloc, io, &env, "new.md", "# Hello\n"));
+    try std.testing.expect(writeMemoryFile(alloc, io, &env, "new.md", "# Hello\n"));
 
     // Read it back to confirm the write actually landed.
-    const read_back = memories.readMemoryFile(alloc, io, &env, "new.md");
+    const read_back = readMemoryFile(alloc, io, &env, "new.md");
     try std.testing.expect(read_back != null);
     defer if (read_back) |r| alloc.free(r);
     try std.testing.expectEqualStrings("# Hello\n", read_back.?);
@@ -1018,17 +1017,17 @@ test "writeMemoryFile overwrites existing file" {
     defer std.Io.Dir.cwd().deleteTree(io, env_or_err.home_path) catch {};
 
     // First write
-    try std.testing.expect(memories.writeMemoryFile(alloc, io, &env, "mem.md", "v1 content"));
+    try std.testing.expect(writeMemoryFile(alloc, io, &env, "mem.md", "v1 content"));
     {
-        const r1 = memories.readMemoryFile(alloc, io, &env, "mem.md");
+        const r1 = readMemoryFile(alloc, io, &env, "mem.md");
         try std.testing.expect(r1 != null);
         defer if (r1) |r| alloc.free(r);
         try std.testing.expectEqualStrings("v1 content", r1.?);
     }
     // Overwrite with new content
-    try std.testing.expect(memories.writeMemoryFile(alloc, io, &env, "mem.md", "v2 content (longer)"));
+    try std.testing.expect(writeMemoryFile(alloc, io, &env, "mem.md", "v2 content (longer)"));
     {
-        const r2 = memories.readMemoryFile(alloc, io, &env, "mem.md");
+        const r2 = readMemoryFile(alloc, io, &env, "mem.md");
         try std.testing.expect(r2 != null);
         defer if (r2) |r| alloc.free(r);
         try std.testing.expectEqualStrings("v2 content (longer)", r2.?);
@@ -1049,15 +1048,15 @@ test "memoryExists: false on missing, true after write, false after delete" {
     defer std.Io.Dir.cwd().deleteTree(io, env_or_err.home_path) catch {};
 
     // Missing → false
-    try std.testing.expect(!memories.memoryExists(alloc, io, &env, "absent.md"));
+    try std.testing.expect(!memoryExists(alloc, io, &env, "absent.md"));
 
     // Write → true
-    try std.testing.expect(memories.writeMemoryFile(alloc, io, &env, "present.md", "hello"));
-    try std.testing.expect(memories.memoryExists(alloc, io, &env, "present.md"));
+    try std.testing.expect(writeMemoryFile(alloc, io, &env, "present.md", "hello"));
+    try std.testing.expect(memoryExists(alloc, io, &env, "present.md"));
 
     // Delete → false
-    try std.testing.expect(memories.deleteMemoryFile(alloc, io, &env, "present.md"));
-    try std.testing.expect(!memories.memoryExists(alloc, io, &env, "present.md"));
+    try std.testing.expect(deleteMemoryFile(alloc, io, &env, "present.md"));
+    try std.testing.expect(!memoryExists(alloc, io, &env, "present.md"));
 }
 
 // -------------------------------------------------------------------------
@@ -1074,13 +1073,13 @@ test "deleteMemoryFile is idempotent (returns true on missing)" {
     defer std.Io.Dir.cwd().deleteTree(io, env_or_err.home_path) catch {};
 
     // Delete a file that was never written — must return true (idempotent).
-    try std.testing.expect(memories.deleteMemoryFile(alloc, io, &env, "never.md"));
+    try std.testing.expect(deleteMemoryFile(alloc, io, &env, "never.md"));
 
     // And on an invalid name — must return false (validation is the
     // first guard, so an invalid name short-circuits to false before
     // we even check the FS).
-    try std.testing.expect(!memories.deleteMemoryFile(alloc, io, &env, "no-ext"));
-    try std.testing.expect(!memories.deleteMemoryFile(alloc, io, &env, "../escape.md"));
+    try std.testing.expect(!deleteMemoryFile(alloc, io, &env, "no-ext"));
+    try std.testing.expect(!deleteMemoryFile(alloc, io, &env, "../escape.md"));
 }
 
 // -------------------------------------------------------------------------
@@ -1097,12 +1096,12 @@ test "editMemoryFile returns false when target does not exist" {
     defer std.Io.Dir.cwd().deleteTree(io, env_or_err.home_path) catch {};
 
     // Edit on a file that was never written → false.
-    const result = try memories.editMemoryFile(alloc, io, &env, "ghost.md", "replacement");
+    const result = try editMemoryFile(alloc, io, &env, "ghost.md", "replacement");
     try std.testing.expect(!result);
 
     // And the file must NOT have been created as a side-effect — the
     // whole point of edit (vs write) is to require pre-existence.
-    try std.testing.expect(!memories.memoryExists(alloc, io, &env, "ghost.md"));
+    try std.testing.expect(!memoryExists(alloc, io, &env, "ghost.md"));
 }
 
 // ===========================================================================
@@ -1124,7 +1123,7 @@ fn setupLocalDir(alloc: std.mem.Allocator, io: std.Io, label: []const u8) ![]u8 
 
 test "get_local_memory_file_path joins dir and name" {
     const alloc = std.testing.allocator;
-    const path = memories.get_local_memory_file_path(alloc, "/tmp/proj/.pabrik/memories", "foo.md");
+    const path = get_local_memory_file_path(alloc, "/tmp/proj/.pabrik/memories", "foo.md");
     defer if (path) |p| alloc.free(p);
 
     try std.testing.expect(path != null);
@@ -1134,16 +1133,16 @@ test "get_local_memory_file_path joins dir and name" {
 test "get_local_memory_file_path returns null on invalid name" {
     const alloc = std.testing.allocator;
     // `..` segment is rejected by isValidMemoryName (path-traversal guard).
-    try std.testing.expect(memories.get_local_memory_file_path(alloc, "/tmp/proj/.pabrik/memories", "../escape.md") == null);
+    try std.testing.expect(get_local_memory_file_path(alloc, "/tmp/proj/.pabrik/memories", "../escape.md") == null);
     // Missing `.md` extension is rejected.
-    try std.testing.expect(memories.get_local_memory_file_path(alloc, "/tmp/proj/.pabrik/memories", "no-ext") == null);
+    try std.testing.expect(get_local_memory_file_path(alloc, "/tmp/proj/.pabrik/memories", "no-ext") == null);
     // Empty name is rejected.
-    try std.testing.expect(memories.get_local_memory_file_path(alloc, "/tmp/proj/.pabrik/memories", "") == null);
+    try std.testing.expect(get_local_memory_file_path(alloc, "/tmp/proj/.pabrik/memories", "") == null);
 }
 
 test "get_local_memory_file_path returns null on empty dir_path" {
     const alloc = std.testing.allocator;
-    const path = memories.get_local_memory_file_path(alloc, "", "foo.md");
+    const path = get_local_memory_file_path(alloc, "", "foo.md");
     try std.testing.expect(path == null);
 }
 
@@ -1162,9 +1161,9 @@ test "writeLocalMemoryFile creates the parent dir if missing" {
     defer alloc.free(dir);
     defer std.Io.Dir.cwd().deleteTree(io, dir) catch {};
 
-    try std.testing.expect(memories.writeLocalMemoryFile(alloc, io, dir, "new.md", "# Hello\n"));
+    try std.testing.expect(writeLocalMemoryFile(alloc, io, dir, "new.md", "# Hello\n"));
 
-    const read_back = memories.readLocalMemoryFile(alloc, io, dir, "new.md");
+    const read_back = readLocalMemoryFile(alloc, io, dir, "new.md");
     try std.testing.expect(read_back != null);
     defer if (read_back) |r| alloc.free(r);
     try std.testing.expectEqualStrings("# Hello\n", read_back.?);
@@ -1176,7 +1175,7 @@ test "writeLocalMemoryFile refuses a relative dir_path instead of aborting" {
 
     // `dir_path` is a request-supplied `cwd` (local_memories_create/update)
     // that nothing validates as absolute.
-    try std.testing.expect(!memories.writeLocalMemoryFile(alloc, io, "relative/dir", "m.md", "# Hi\n"));
+    try std.testing.expect(!writeLocalMemoryFile(alloc, io, "relative/dir", "m.md", "# Hi\n"));
 }
 
 test "writeLocalMemoryFile overwrites existing file" {
@@ -1187,16 +1186,16 @@ test "writeLocalMemoryFile overwrites existing file" {
     defer alloc.free(dir);
     defer std.Io.Dir.cwd().deleteTree(io, dir) catch {};
 
-    try std.testing.expect(memories.writeLocalMemoryFile(alloc, io, dir, "mem.md", "v1"));
+    try std.testing.expect(writeLocalMemoryFile(alloc, io, dir, "mem.md", "v1"));
     {
-        const r1 = memories.readLocalMemoryFile(alloc, io, dir, "mem.md");
+        const r1 = readLocalMemoryFile(alloc, io, dir, "mem.md");
         try std.testing.expect(r1 != null);
         defer if (r1) |r| alloc.free(r);
         try std.testing.expectEqualStrings("v1", r1.?);
     }
-    try std.testing.expect(memories.writeLocalMemoryFile(alloc, io, dir, "mem.md", "v2 (longer)"));
+    try std.testing.expect(writeLocalMemoryFile(alloc, io, dir, "mem.md", "v2 (longer)"));
     {
-        const r2 = memories.readLocalMemoryFile(alloc, io, dir, "mem.md");
+        const r2 = readLocalMemoryFile(alloc, io, dir, "mem.md");
         try std.testing.expect(r2 != null);
         defer if (r2) |r| alloc.free(r);
         try std.testing.expectEqualStrings("v2 (longer)", r2.?);
@@ -1211,16 +1210,16 @@ test "writeLocalMemoryFile returns false on invalid name" {
     defer alloc.free(dir);
     defer std.Io.Dir.cwd().deleteTree(io, dir) catch {};
 
-    try std.testing.expect(!memories.writeLocalMemoryFile(alloc, io, dir, "../escape.md", "x"));
-    try std.testing.expect(!memories.writeLocalMemoryFile(alloc, io, dir, "no-ext", "x"));
-    try std.testing.expect(!memories.writeLocalMemoryFile(alloc, io, dir, "", "x"));
+    try std.testing.expect(!writeLocalMemoryFile(alloc, io, dir, "../escape.md", "x"));
+    try std.testing.expect(!writeLocalMemoryFile(alloc, io, dir, "no-ext", "x"));
+    try std.testing.expect(!writeLocalMemoryFile(alloc, io, dir, "", "x"));
 }
 
 test "writeLocalMemoryFile returns false on empty dir_path" {
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
-    try std.testing.expect(!memories.writeLocalMemoryFile(alloc, io, "", "foo.md", "x"));
+    try std.testing.expect(!writeLocalMemoryFile(alloc, io, "", "foo.md", "x"));
 }
 
 test "readLocalMemoryFile returns null on missing file" {
@@ -1231,7 +1230,7 @@ test "readLocalMemoryFile returns null on missing file" {
     defer alloc.free(dir);
     defer std.Io.Dir.cwd().deleteTree(io, dir) catch {};
 
-    const content = memories.readLocalMemoryFile(alloc, io, dir, "absent.md");
+    const content = readLocalMemoryFile(alloc, io, dir, "absent.md");
     try std.testing.expect(content == null);
 }
 
@@ -1244,15 +1243,15 @@ test "localMemoryExists: false on missing, true after write, false after delete"
     defer std.Io.Dir.cwd().deleteTree(io, dir) catch {};
 
     // Missing → false
-    try std.testing.expect(!memories.localMemoryExists(alloc, io, dir, "absent.md"));
+    try std.testing.expect(!localMemoryExists(alloc, io, dir, "absent.md"));
 
     // Write → true
-    try std.testing.expect(memories.writeLocalMemoryFile(alloc, io, dir, "present.md", "hello"));
-    try std.testing.expect(memories.localMemoryExists(alloc, io, dir, "present.md"));
+    try std.testing.expect(writeLocalMemoryFile(alloc, io, dir, "present.md", "hello"));
+    try std.testing.expect(localMemoryExists(alloc, io, dir, "present.md"));
 
     // Delete → false
-    try std.testing.expect(memories.deleteLocalMemoryFile(alloc, io, dir, "present.md"));
-    try std.testing.expect(!memories.localMemoryExists(alloc, io, dir, "present.md"));
+    try std.testing.expect(deleteLocalMemoryFile(alloc, io, dir, "present.md"));
+    try std.testing.expect(!localMemoryExists(alloc, io, dir, "present.md"));
 }
 
 test "deleteLocalMemoryFile is idempotent (returns true on missing)" {
@@ -1264,13 +1263,13 @@ test "deleteLocalMemoryFile is idempotent (returns true on missing)" {
     defer std.Io.Dir.cwd().deleteTree(io, dir) catch {};
 
     // Delete a file that was never written — must return true (idempotent).
-    try std.testing.expect(memories.deleteLocalMemoryFile(alloc, io, dir, "never.md"));
+    try std.testing.expect(deleteLocalMemoryFile(alloc, io, dir, "never.md"));
 
     // Invalid name → false (validation is the first guard).
-    try std.testing.expect(!memories.deleteLocalMemoryFile(alloc, io, dir, "no-ext"));
-    try std.testing.expect(!memories.deleteLocalMemoryFile(alloc, io, dir, "../escape.md"));
+    try std.testing.expect(!deleteLocalMemoryFile(alloc, io, dir, "no-ext"));
+    try std.testing.expect(!deleteLocalMemoryFile(alloc, io, dir, "../escape.md"));
     // Empty dir_path → false.
-    try std.testing.expect(!memories.deleteLocalMemoryFile(alloc, io, "", "foo.md"));
+    try std.testing.expect(!deleteLocalMemoryFile(alloc, io, "", "foo.md"));
 }
 
 test "listMemoriesInDir returns the local memory we just wrote" {
@@ -1281,11 +1280,11 @@ test "listMemoriesInDir returns the local memory we just wrote" {
     defer alloc.free(dir);
     defer std.Io.Dir.cwd().deleteTree(io, dir) catch {};
 
-    try std.testing.expect(memories.writeLocalMemoryFile(alloc, io, dir, "alpha.md", "# Alpha\n"));
-    try std.testing.expect(memories.writeLocalMemoryFile(alloc, io, dir, "beta.md", "no h1 here\n"));
+    try std.testing.expect(writeLocalMemoryFile(alloc, io, dir, "alpha.md", "# Alpha\n"));
+    try std.testing.expect(writeLocalMemoryFile(alloc, io, dir, "beta.md", "no h1 here\n"));
 
-    const list = memories.listMemoriesInDir(alloc, io, dir);
-    defer memories.freeMemoriesList(alloc, list);
+    const list = listMemoriesInDir(alloc, io, dir);
+    defer freeMemoriesList(alloc, list);
 
     try std.testing.expectEqual(@as(usize, 2), list.len);
 

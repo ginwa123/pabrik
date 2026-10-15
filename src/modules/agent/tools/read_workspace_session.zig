@@ -806,7 +806,6 @@ pub fn toJSONError(allocator: std.mem.Allocator, err_msg: []const u8) ![]u8 {
 }
 
 const testing = std.testing;
-const rws = @import("read_workspace_session.zig");
 
 fn parseTestJson(alloc: std.mem.Allocator, out: []const u8) !std.json.Parsed(std.json.Value) {
     return std.json.parseFromSlice(std.json.Value, alloc, out, .{});
@@ -925,7 +924,7 @@ test "read_workspace_session: LIST shows workspace peers, excludes self and othe
     }
     const alloc = testing.allocator;
 
-    const out = try rws.execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{});
+    const out = try execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{});
     defer alloc.free(out);
 
     const parsed = try parseTestJson(alloc, out);
@@ -959,7 +958,7 @@ test "read_workspace_session: LIST includes the caller's own session only when o
     }
     const alloc = testing.allocator;
 
-    const out = try rws.execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
+    const out = try execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
         .is_current_session = true,
     });
     defer alloc.free(out);
@@ -984,7 +983,7 @@ test "read_workspace_session: SEARCH excludes the current session by default, in
     const alloc = testing.allocator;
 
     // h1 lives in s1, the caller — filtered out by default.
-    const default_out = try rws.execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
+    const default_out = try execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
         .query = "login",
     });
     defer alloc.free(default_out);
@@ -995,7 +994,7 @@ test "read_workspace_session: SEARCH excludes the current session by default, in
     try testing.expect(hasResultId(default_results, "h2"));
 
     // Opting back in surfaces the caller's own rows.
-    const opted = try rws.execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
+    const opted = try execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
         .query = "login",
         .is_current_session = true,
     });
@@ -1034,7 +1033,7 @@ test "read_workspace_session: SEARCH with no peer session returns empty, never a
         \\       ('h6', 's4', 'user', 'unicorn parade upstairs', 1)
     , &.{});
 
-    const out = try rws.execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s4", .{
+    const out = try execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s4", .{
         .query = "unicorn",
     });
     defer alloc.free(out);
@@ -1050,7 +1049,7 @@ test "read_workspace_session: SEARCH with no peer session returns empty, never a
     try testing.expect(!hasResultId(results, "h6"));
 
     // Opting in finds the caller's own row — and still nothing from w1.
-    const opted = try rws.execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s4", .{
+    const opted = try execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s4", .{
         .query = "unicorn",
         .is_current_session = true,
     });
@@ -1070,7 +1069,7 @@ test "read_workspace_session: SEARCH is workspace-scoped" {
     }
     const alloc = testing.allocator;
 
-    const out = try rws.execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
+    const out = try execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
         .query = "login",
         .is_current_session = true,
     });
@@ -1087,7 +1086,7 @@ test "read_workspace_session: SEARCH is workspace-scoped" {
     try testing.expect(!hasResultId(results, "h3"));
 
     // A term that exists ONLY in the other workspace returns zero hits.
-    const out2 = try rws.execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
+    const out2 = try execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
         .query = "deployment",
     });
     defer alloc.free(out2);
@@ -1104,7 +1103,7 @@ test "read_workspace_session: READ same-workspace works, cross-workspace denied"
     }
     const alloc = testing.allocator;
 
-    const out = try rws.execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
+    const out = try execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
         .session_id = "s3",
     });
     defer alloc.free(out);
@@ -1113,7 +1112,7 @@ test "read_workspace_session: READ same-workspace works, cross-workspace denied"
     try testing.expectEqualStrings("read", parsed.value.object.get("behavior").?.string);
     try testing.expect(hasResultId(parsed.value.object.get("message_index").?.array, "h2"));
 
-    const denied = try rws.execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
+    const denied = try execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
         .session_id = "s2",
     });
     defer alloc.free(denied);
@@ -1132,7 +1131,7 @@ test "read_workspace_session: SEARCH-WITHIN gates the session first" {
     }
     const alloc = testing.allocator;
 
-    const out = try rws.execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
+    const out = try execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
         .session_id = "s3",
         .query = "redesign",
     });
@@ -1142,7 +1141,7 @@ test "read_workspace_session: SEARCH-WITHIN gates the session first" {
     try testing.expectEqualStrings("search-within", parsed.value.object.get("behavior").?.string);
     try testing.expect(hasResultId(parsed.value.object.get("results").?.array, "h2"));
 
-    const denied = try rws.execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
+    const denied = try execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
         .session_id = "s2",
         .query = "deployment",
     });
@@ -1161,7 +1160,7 @@ test "read_workspace_session: caller without workspace gets a clean error" {
     const alloc = testing.allocator;
 
     try s.db.exec(alloc, "INSERT INTO sessions (id, name, status, cwd) VALUES ('sx', 'Lost', 'active', '/nowhere')", &.{});
-    const out = try rws.execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "sx", .{});
+    const out = try execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "sx", .{});
     defer alloc.free(out);
     const parsed = try parseTestJson(alloc, out);
     defer parsed.deinit();
@@ -1178,7 +1177,7 @@ test "read_workspace_session: self-read refused by default, allowed on opt-in, g
 
     // Reading your own session needs an explicit opt-in — otherwise the
     // response is a hint, not your own history back.
-    const self = try rws.execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
+    const self = try execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
         .session_id = "s1",
     });
     defer alloc.free(self);
@@ -1191,7 +1190,7 @@ test "read_workspace_session: self-read refused by default, allowed on opt-in, g
     try testing.expect(std.mem.indexOf(u8, self, "login bug") == null);
 
     // SEARCH-WITHIN on your own session is refused the same way.
-    const self_search = try rws.execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
+    const self_search = try execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
         .session_id = "s1",
         .query = "login",
     });
@@ -1203,7 +1202,7 @@ test "read_workspace_session: self-read refused by default, allowed on opt-in, g
     try testing.expect(std.mem.indexOf(u8, self_search, "login bug") == null);
 
     // Opting in restores the read.
-    const opted = try rws.execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
+    const opted = try execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
         .session_id = "s1",
         .is_current_session = true,
     });
@@ -1213,7 +1212,7 @@ test "read_workspace_session: self-read refused by default, allowed on opt-in, g
     try testing.expect(hasResultId(opted_parsed.value.object.get("message_index").?.array, "h1"));
 
     // live_only + compacted_only rejected.
-    const both = try rws.execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
+    const both = try execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
         .session_id = "s3",
         .live_only = true,
         .compacted_only = true,
@@ -1222,7 +1221,7 @@ test "read_workspace_session: self-read refused by default, allowed on opt-in, g
     try testing.expect(std.mem.indexOf(u8, both, "mutually exclusive") != null);
 
     // message_ids cap enforced.
-    const caps = try rws.execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
+    const caps = try execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
         .session_id = "s3",
         .message_ids = "a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z,a1,b1,c1,d1,e1,f1,g1,h1,i1,j1,k1,l1,m1,n1,o1,p1,q1,r1,s1,t1,u1,v1,w1,x1,y1,z1,zz",
     });
@@ -1234,7 +1233,7 @@ test "read_workspace_session: tool schema advertises is_current_session and defa
     // The JSON schema IS the wire contract with the LLM provider — the
     // registry HTTP endpoint only exposes {name, description}, so this is
     // the only place the new param can be asserted for the wire.
-    const props = rws.read_workspace_session_tool.function.parameters.properties;
+    const props = read_workspace_session_tool.function.parameters.properties;
 
     var found = false;
     for (props) |p| {
@@ -1249,7 +1248,7 @@ test "read_workspace_session: tool schema advertises is_current_session and defa
 
     // Optional param — putting it in `required` would break every existing
     // call that omits it.
-    for (rws.read_workspace_session_tool.function.parameters.required) |r| {
+    for (read_workspace_session_tool.function.parameters.required) |r| {
         try testing.expect(!std.mem.eql(u8, r, "is_current_session"));
     }
 
@@ -1260,6 +1259,51 @@ test "read_workspace_session: tool schema advertises is_current_session and defa
 
     // The tool description and system prompt both have to teach the flag, or
     // the model sees a param with no guidance.
-    try testing.expect(std.mem.indexOf(u8, rws.read_workspace_session_tool.function.description, "is_current_session") != null);
-    try testing.expect(std.mem.indexOf(u8, rws.read_workspace_session_tool_system_prompt, "is_current_session") != null);
+    try testing.expect(std.mem.indexOf(u8, read_workspace_session_tool.function.description, "is_current_session") != null);
+    try testing.expect(std.mem.indexOf(u8, read_workspace_session_tool_system_prompt, "is_current_session") != null);
 }
+
+// Exec adapter — merged from `read_workspace_session.zig` (2026-10-14, task_1791993404141_2).
+// The tool definition above and its executor below live in ONE file.
+
+const exec_pabrikcore = @import("pabrikcore");
+const tools = @import("../../../agentic_loop/tools.zig");
+const ToolExecContext = tools.ToolExecContext;
+const ToolExecResult = tools.ToolExecResult;
+const agent = exec_pabrikcore.agent;
+const read_workspace_session_mod = exec_pabrikcore.read_workspace_session_tool;
+const wrapToolOutput = tools.wrapToolOutput;
+const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+pub fn execReadWorkspaceSession(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
+    const parsed = std.json.parseFromSlice(
+        read_workspace_session_mod.ReadWorkspaceSessionInput,
+        ctx.allocator,
+        tc.function.arguments,
+        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "read_workspace_session", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer parsed.deinit();
+
+    // Workspace scope is derived server-side from the calling session —
+    // the LLM never supplies (or spoofs) a workspace id.
+    const inner = read_workspace_session_mod.execute_read_workspace_session(
+        ctx.allocator,
+        ctx.io,
+        ctx.db,
+        ctx.session_id,
+        parsed.value,
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "read_workspace_session", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+
+    const output = try wrapToolOutput(ctx.allocator, "read_workspace_session", tc.function.arguments, true, null, inner);
+    return ToolExecResult{ .output = output, .output_allocated = true };
+}
+

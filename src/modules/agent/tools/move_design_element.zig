@@ -238,7 +238,6 @@ fn renderSuccessJSON(
 
 const testing = std.testing;
 
-const move_design_element = @import("move_design_element.zig");
 
 fn setupDbAndItem() !struct {
     db: sqlite.SqliteBackend,
@@ -410,7 +409,7 @@ test "executeMoveDesignElementToString with apply_to_children=true (default) cas
     defer alloc.free(child2);
 
     // Call with apply_to_children omitted (defaults to true).
-    const json = try move_design_element.executeMoveDesignElementToString(
+    const json = try executeMoveDesignElementToString(
         alloc,
         &ctx.db,
         .{ .element_id = group, .dx = 100, .dy = 50 },
@@ -464,7 +463,7 @@ test "executeMoveDesignElementToString with apply_to_children=false moves ONLY t
     });
     defer alloc.free(leaf);
 
-    const json = try move_design_element.executeMoveDesignElementToString(
+    const json = try executeMoveDesignElementToString(
         alloc,
         &ctx.db,
         .{ .element_id = leaf, .dx = 30, .dy = 20, .apply_to_children = false },
@@ -531,7 +530,7 @@ test "executeMoveDesignElementToString with width/height/rotation applies to roo
     });
     defer alloc.free(child);
 
-    const json = try move_design_element.executeMoveDesignElementToString(
+    const json = try executeMoveDesignElementToString(
         alloc,
         &ctx.db,
         .{
@@ -581,7 +580,7 @@ test "executeMoveDesignElementToString returns an error object for non-existent 
     defer alloc.free(ctx.item_id);
     defer alloc.free(ctx.item_path);
 
-    const json = try move_design_element.executeMoveDesignElementToString(
+    const json = try executeMoveDesignElementToString(
         alloc,
         &ctx.db,
         .{ .element_id = "elem_ghost", .dx = 10, .dy = 0 },
@@ -601,7 +600,7 @@ test "executeMoveDesignElementToString returns an error object for invalid eleme
     defer alloc.free(ctx.item_id);
     defer alloc.free(ctx.item_path);
 
-    const json = try move_design_element.executeMoveDesignElementToString(
+    const json = try executeMoveDesignElementToString(
         alloc,
         &ctx.db,
         .{ .element_id = "page_something", .dx = 10, .dy = 0 },
@@ -613,3 +612,63 @@ test "executeMoveDesignElementToString returns an error object for invalid eleme
     const err_val = parsed.value.object.get("error") orelse return error.MissingErrorField;
     try testing.expect(contains(err_val.string, "PAGE id"));
 }
+
+// Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
+// The tool definition above and its executor below live in ONE file.
+
+const exec_pabrikcore = @import("pabrikcore");
+const tools = @import("../../../agentic_loop/tools.zig");
+const ToolExecContext = tools.ToolExecContext;
+const ToolExecResult = tools.ToolExecResult;
+const agent = exec_pabrikcore.agent;
+const wrapToolOutput = tools.wrapToolOutput;
+const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+pub fn execMoveDesignElement(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
+    const parsed = std.json.parseFromSlice(
+        MoveDesignElementInput,
+        ctx.allocator,
+        tc.function.arguments,
+        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "move_design_element", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer parsed.deinit();
+
+    // move_design_element doesn't need Io for the cascade path (no
+    // disk writes); the same DB-only signature as set_element_parent.
+    const inner = executeMoveDesignElementToString(
+        ctx.allocator,
+        ctx.db,
+        parsed.value,
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "move_design_element", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer ctx.allocator.free(inner);
+
+    // Detect {{"error":...}} and surface it as a tool failure (so the
+    // LLM sees `success=false` rather than a successful wrapper around
+    // an error body).
+    const json_err_msg: ?[]u8 = blk: {
+        const inner_parsed = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch break :blk null;
+        defer inner_parsed.deinit();
+        if (inner_parsed.value != .object) break :blk null;
+        const e = inner_parsed.value.object.get("error") orelse break :blk null;
+        if (e != .string) break :blk null;
+        break :blk try ctx.allocator.dupe(u8, e.string);
+    };
+    if (json_err_msg) |err_msg| {
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "move_design_element", tc.function.arguments, false, err_msg, inner);
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    }
+
+    const output = try wrapToolOutput(ctx.allocator, "move_design_element", tc.function.arguments, true, null, inner);
+    return ToolExecResult{ .output = output, .output_allocated = true };
+}
+

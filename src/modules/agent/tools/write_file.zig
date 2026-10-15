@@ -161,7 +161,6 @@ pub const write_file_tool = AgentTool{
     },
 };
 
-const write_file = @import("write_file.zig");
 const testing = std.testing;
 const absPath = @import("helpers").test_path.absPath;
 
@@ -210,7 +209,7 @@ test "writeFile - writes ASCII content to a new file in cwd" {
     const path = try absPath(&path_buf, "test_wf_basic.txt");
     defer deleteFile(path);
 
-    var result = try write_file.writeFile(testing.allocator, testing.io, .{
+    var result = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = "Hello, World!",
     });
@@ -229,7 +228,7 @@ test "writeFile - file on disk has exact size equal to content length" {
     defer deleteFile(path);
 
     const content = "0123456789";
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = content,
     });
@@ -246,7 +245,7 @@ test "writeFile - overwrites existing file (truncates)" {
     // First write: 50 bytes of 'A'
     var first_buf: [50]u8 = undefined;
     for (&first_buf) |*b| b.* = 'A';
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = &first_buf,
     });
@@ -254,7 +253,7 @@ test "writeFile - overwrites existing file (truncates)" {
     try testing.expectEqual(@as(u64, 50), fileSize(path));
 
     // Second write: 5 bytes of 'B' — must truncate the old content
-    var result = try write_file.writeFile(testing.allocator, testing.io, .{
+    var result = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = "BBBBB",
     });
@@ -271,7 +270,7 @@ test "writeFile - overwrites with larger content (extends)" {
     const path = try absPath(&path_buf, "test_wf_extend.txt");
     defer deleteFile(path);
 
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = "small",
     });
@@ -279,7 +278,7 @@ test "writeFile - overwrites with larger content (extends)" {
     try testing.expectEqual(@as(u64, 5), fileSize(path));
 
     const bigger = "this is a much longer string than before";
-    var _wf_r2 = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r2 = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = bigger,
     });
@@ -296,12 +295,12 @@ test "writeFile - writing same path twice leaves only the second contents" {
     const path = try absPath(&path_buf, "test_wf_idempotent.txt");
     defer deleteFile(path);
 
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = "first version",
     });
     defer _wf_r.deinit(testing.allocator);
-    var r2 = try write_file.writeFile(testing.allocator, testing.io, .{
+    var r2 = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = "second version wins",
     });
@@ -326,7 +325,7 @@ test "writeFile - create_with_dir=true creates missing parent directory" {
         deleteDir(dir);
     }
 
-    var result = try write_file.writeFile(testing.allocator, testing.io, .{
+    var result = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = "in a fresh dir",
         .create_with_dir = true,
@@ -353,7 +352,7 @@ test "writeFile - create_with_dir=true creates deeply nested parent dirs" {
     const path = try absPath(&path_buf, "test_wf_deeply_nested/a/b/c/deep.txt");
     defer deleteTestTree(&.{ c, b, a, root }, path);
 
-    var result = try write_file.writeFile(testing.allocator, testing.io, .{
+    var result = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = "deep content",
         .create_with_dir = true,
@@ -380,7 +379,7 @@ test "writeFile - create_with_dir=true on existing parent dir is a no-op (idempo
 
     // Now write — create_with_dir=true must succeed without erroring on the
     // already-existing parent (createDirPath is idempotent on POSIX).
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = "into existing parent",
         .create_with_dir = true,
@@ -409,7 +408,7 @@ test "writeFile - create_with_dir=false auto-creates parent on FileNotFound fall
     // create_with_dir defaults to false → the function should still
     // succeed by hitting the FileNotFound catch-all path which calls
     // createDirPath and re-creates the file.
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = "fallback worked",
     });
@@ -433,7 +432,7 @@ test "writeFile - create_with_dir=false auto-creates deeply nested missing paren
     const path = try absPath(&path_buf, "test_wf_fallback_deep/x/y/z/deep.txt");
     defer deleteTestTree(&.{ z, y, x, root }, path);
 
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = "fallback deep",
     });
@@ -453,7 +452,7 @@ test "writeFile - empty content produces a zero-byte file" {
     const path = try absPath(&path_buf, "test_wf_empty.txt");
     defer deleteFile(path);
 
-    var result = try write_file.writeFile(testing.allocator, testing.io, .{
+    var result = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = "",
     });
@@ -468,14 +467,14 @@ test "writeFile - overwriting with empty content truncates to zero bytes" {
     const path = try absPath(&path_buf, "test_wf_empties_old.txt");
     defer deleteFile(path);
 
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = "this content will be wiped",
     });
     defer _wf_r.deinit(testing.allocator);
     try testing.expectEqual(@as(u64, 26), fileSize(path)); // "this content will be wiped" = 26 chars
 
-    var _wf_r2 = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r2 = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = "",
     });
@@ -494,7 +493,7 @@ test "writeFile - multibyte UTF-8 content preserved byte-for-byte" {
 
     // 2-byte (é), 3-byte (中), 4-byte (🚀) UTF-8 sequences
     const content = "café 中文 🚀 émoji";
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = content,
     });
@@ -513,7 +512,7 @@ test "writeFile - binary content with NUL bytes preserved" {
 
     // Content with NUL bytes, control chars, and other binary noise
     const content = "\x00\x01\x02hello\x00world\xFF\xFE\xFD";
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = content,
     });
@@ -532,7 +531,7 @@ test "writeFile - content with all printable ASCII whitespace preserved" {
     defer deleteFile(path);
 
     const content = "tab\there\nnewline\r\ncrlf\ttab2   spaces";
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = content,
     });
@@ -550,7 +549,7 @@ test "writeFile - content containing XML special chars preserved in file" {
 
     // The file on disk stores RAW bytes — escaping is handled by std.json in toJSONSuccess.
     const content = "<tag attr=\"value\">&entity;'apos'</tag>";
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = content,
     });
@@ -566,7 +565,7 @@ test "writeFile - single-byte content" {
     const path = try absPath(&path_buf, "test_wf_single_byte.txt");
     defer deleteFile(path);
 
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = "x",
     });
@@ -589,7 +588,7 @@ test "writeFile - large content (1 MiB) written completely" {
     defer testing.allocator.free(content);
     @memset(content, 'A');
 
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = content,
     });
@@ -634,7 +633,7 @@ test "writeFile - large content (10 MiB) with random pattern preserved byte-for-
     defer testing.allocator.free(content);
     fillPattern(content, 42);
 
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = content,
     });
@@ -682,7 +681,7 @@ test "writeFile - large content OVERWRITES smaller existing file (truncate)" {
         while (p < seed_size) : (p += 1) {
             seed[p] = sentinel[p % sentinel.len];
         }
-        const seed_r = try write_file.writeFile(testing.allocator, testing.io, .{
+        const seed_r = try writeFile(testing.allocator, testing.io, .{
             .path = path,
             .content = seed,
         });
@@ -695,7 +694,7 @@ test "writeFile - large content OVERWRITES smaller existing file (truncate)" {
     defer testing.allocator.free(content);
     fillPattern(content, 7);
 
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = content,
     });
@@ -721,7 +720,7 @@ test "writeFile - large content overwritten by much SMALLER content (truncate)" 
         const big = try testing.allocator.alloc(u8, big_size);
         defer testing.allocator.free(big);
         fillPattern(big, 99);
-        const r = try write_file.writeFile(testing.allocator, testing.io, .{
+        const r = try writeFile(testing.allocator, testing.io, .{
             .path = path,
             .content = big,
         });
@@ -730,7 +729,7 @@ test "writeFile - large content overwritten by much SMALLER content (truncate)" 
     try testing.expectEqual(@as(u64, big_size), fileSize(path));
 
     const small_payload = "small replacement after a large file";
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = small_payload,
     });
@@ -764,7 +763,7 @@ test "writeFile - large content with multi-byte UTF-8 (byte count preserved)" {
         content[i] = 'U';
     }
 
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = content,
     });
@@ -804,7 +803,7 @@ test "writeFile - large content with embedded NUL bytes (binary stream preserved
         b.* = if (idx % 5 == 0) 0 else @as(u8, @truncate(idx & 0xFF));
     }
 
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = content,
     });
@@ -851,7 +850,7 @@ test "writeFile - large content with mixed line endings (\\n + \\r\\n + \\r)" {
         pos += end.len;
     }
 
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = content,
     });
@@ -886,7 +885,7 @@ test "writeFile - large content overwrite preserves file size exactly (no paddin
 
     // First write: 2 MiB of 'A'
     {
-        const r = try write_file.writeFile(testing.allocator, testing.io, .{
+        const r = try writeFile(testing.allocator, testing.io, .{
             .path = path,
             .content = a_buf,
         });
@@ -895,7 +894,7 @@ test "writeFile - large content overwrite preserves file size exactly (no paddin
     try testing.expectEqual(@as(u64, size), fileSize(path));
 
     // Second write: same size, different byte ('B')
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = b_buf,
     });
@@ -919,7 +918,7 @@ test "writeFile - a single-component filename under an absolute path works" {
     const path = try absPath(&path_buf, "test_wf_no_slash.txt");
     defer deleteFile(path);
 
-    var result = try write_file.writeFile(testing.allocator, testing.io, .{
+    var result = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = "no slash here",
     });
@@ -936,7 +935,7 @@ test "writeFile - single-character filename works" {
     const path = try absPath(&path_buf, "x");
     defer deleteFile(path);
 
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = "tiny name",
     });
@@ -953,7 +952,7 @@ test "writeFile - dotfile (hidden file) works" {
     const path = try absPath(&path_buf, ".test_wf_hidden");
     defer deleteFile(path);
 
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = "hidden content",
     });
@@ -974,7 +973,7 @@ test "writeFile - path with directory containing spaces" {
         deleteDir(dir);
     }
 
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = "spaces work too",
         .create_with_dir = true,
@@ -1002,7 +1001,7 @@ test "writeFile - a .. segment is refused on Windows and resolved by the OS on P
     std.Io.Dir.cwd().createDir(testing.io, dir, .default_dir) catch {}; // idempotent
 
     if (@import("builtin").os.tag == .windows) {
-        try testing.expectError(error.InvalidPathReason, write_file.writeFile(
+        try testing.expectError(error.InvalidPathReason, writeFile(
             testing.allocator,
             testing.io,
             .{ .path = path, .content = "via dotdot" },
@@ -1010,7 +1009,7 @@ test "writeFile - a .. segment is refused on Windows and resolved by the OS on P
         return;
     }
 
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = "via dotdot",
     });
@@ -1029,7 +1028,7 @@ test "writeFile - a 255-char filename (POSIX max length) succeeds" {
     const path = try absPath(&path_buf, name_buf[0..]);
     defer deleteFile(path);
 
-    var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+    var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = "long name",
     });
@@ -1047,7 +1046,7 @@ test "writeFileResult.deinit frees the path (no leak)" {
     const path = try absPath(&path_buf, "test_wf_deinit.txt");
     defer deleteFile(path);
 
-    var result = try write_file.writeFile(testing.allocator, testing.io, .{
+    var result = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = "deinit me",
     });
@@ -1064,7 +1063,7 @@ test "writeFileResult.path is heap-allocated (independent of input.slice)" {
     const path = try absPath(&path_buf, "test_wf_path_alloc.txt");
     defer deleteFile(path);
 
-    const result = try write_file.writeFile(testing.allocator, testing.io, .{
+    const result = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = "owned path",
     });
@@ -1081,7 +1080,7 @@ test "writeFileResult.path has same bytes as input path" {
     const path = try absPath(&path_buf, "test_wf_path_bytes.txt");
     defer deleteFile(path);
 
-    const result = try write_file.writeFile(testing.allocator, testing.io, .{
+    const result = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = "x",
     });
@@ -1097,7 +1096,7 @@ test "writeFileResult.path has same bytes as input path" {
 test "toJSONSuccess carries the file_write path with null error" {
     const wf_path = try testing.allocator.dupe(u8, "/abs/path/to/file.txt");
     defer testing.allocator.free(wf_path);
-    const payload = try write_file.toJSONSuccess(testing.allocator, .{ .path = wf_path });
+    const payload = try toJSONSuccess(testing.allocator, .{ .path = wf_path });
     defer testing.allocator.free(payload);
 
     const parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, payload, .{});
@@ -1110,7 +1109,7 @@ test "toJSONSuccess carries the file_write path with null error" {
 test "toJSONSuccess keeps special characters raw (JSON needs no XML escaping)" {
     const wf_path = try testing.allocator.dupe(u8, "/x/with & < > \" ' chars.txt");
     defer testing.allocator.free(wf_path);
-    const payload = try write_file.toJSONSuccess(testing.allocator, .{ .path = wf_path });
+    const payload = try toJSONSuccess(testing.allocator, .{ .path = wf_path });
     defer testing.allocator.free(payload);
 
     const parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, payload, .{});
@@ -1125,7 +1124,7 @@ test "toJSONSuccess keeps special characters raw (JSON needs no XML escaping)" {
 // ===========================================================================
 
 test "toJSONError for PathNotFound contains descriptive message" {
-    const payload = try write_file.toJSONError(
+    const payload = try toJSONError(
         testing.allocator,
         error.PathNotFound,
         "/abs/missing/file.txt",
@@ -1142,7 +1141,7 @@ test "toJSONError for PathNotFound contains descriptive message" {
 }
 
 test "toJSONError for InputOutput contains permission-related message" {
-    const payload = try write_file.toJSONError(
+    const payload = try toJSONError(
         testing.allocator,
         error.InputOutput,
         "/readonly/file.txt",
@@ -1158,7 +1157,7 @@ test "toJSONError for InputOutput contains permission-related message" {
 }
 
 test "toJSONError for generic error uses Unexpected error fallback" {
-    const payload = try write_file.toJSONError(
+    const payload = try toJSONError(
         testing.allocator,
         error.AccessDenied,
         "/some/path",
@@ -1175,7 +1174,7 @@ test "toJSONError for generic error uses Unexpected error fallback" {
 }
 
 test "toJSONError keeps an empty path without crashing" {
-    const payload = try write_file.toJSONError(testing.allocator, error.PathNotFound, "");
+    const payload = try toJSONError(testing.allocator, error.PathNotFound, "");
     defer testing.allocator.free(payload);
 
     const parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, payload, .{});
@@ -1189,15 +1188,15 @@ test "toJSONError keeps an empty path without crashing" {
 // ===========================================================================
 
 test "write_file_tool - type is function" {
-    try testing.expectEqualStrings("function", write_file.write_file_tool.type);
+    try testing.expectEqualStrings("function", write_file_tool.type);
 }
 
 test "write_file_tool - function name is 'write_file'" {
-    try testing.expectEqualStrings("write_file", write_file.write_file_tool.function.name);
+    try testing.expectEqualStrings("write_file", write_file_tool.function.name);
 }
 
 test "write_file_tool - parameters require 'path' and 'content'" {
-    const params = write_file.write_file_tool.function.parameters;
+    const params = write_file_tool.function.parameters;
     try testing.expectEqualStrings("object", params.type);
 
     var found_path = false;
@@ -1211,7 +1210,7 @@ test "write_file_tool - parameters require 'path' and 'content'" {
 }
 
 test "write_file_tool - declares path, content, create_with_dir properties" {
-    const params = write_file.write_file_tool.function.parameters;
+    const params = write_file_tool.function.parameters;
 
     var found_path = false;
     var found_content = false;
@@ -1236,18 +1235,18 @@ test "write_file_tool - declares path, content, create_with_dir properties" {
 }
 
 test "write_file_tool - description mentions text_replace as the partial-edit alternative" {
-    const desc = write_file.write_file_tool.function.description;
+    const desc = write_file_tool.function.description;
     try testing.expect(std.mem.indexOf(u8, desc, "text_replace") != null);
 }
 
 test "write_file_tool - description mentions create_with_dir semantics" {
-    const desc = write_file.write_file_tool.function.description;
+    const desc = write_file_tool.function.description;
     try testing.expect(std.mem.indexOf(u8, desc, "create_with_dir") != null or
         std.mem.indexOf(u8, desc, "parent directories") != null);
 }
 
 test "write_file_tool - create_with_dir is NOT required (has default false)" {
-    const params = write_file.write_file_tool.function.parameters;
+    const params = write_file_tool.function.parameters;
     for (params.required) |req| {
         try testing.expect(!std.mem.eql(u8, req, "create_with_dir"));
     }
@@ -1258,7 +1257,7 @@ test "write_file_tool - create_with_dir is NOT required (has default false)" {
 // ===========================================================================
 
 test "WriteFileInput.create_with_dir defaults to false" {
-    const input: write_file.WriteFileInput = .{
+    const input: WriteFileInput = .{
         .path = "/x",
         .content = "y",
     };
@@ -1288,7 +1287,7 @@ test "writeFile - 5 sequential writes to files in same dir all succeed" {
     for (paths, 0..) |p, i| {
         const content_owned = try std.fmt.allocPrint(testing.allocator, "file {d}", .{i});
         defer testing.allocator.free(content_owned);
-        var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+        var _wf_r = try writeFile(testing.allocator, testing.io, .{
             .path = p,
             .content = content_owned,
             .create_with_dir = true,
@@ -1325,7 +1324,7 @@ test "writeFile - 20 alternating-size overwrites all leave correct final state" 
     var last_was_large = false;
     for (0..20) |_| {
         const content: []const u8 = if (last_was_large) &small else &large;
-        var _wf_r = try write_file.writeFile(testing.allocator, testing.io, .{
+        var _wf_r = try writeFile(testing.allocator, testing.io, .{
             .path = path,
             .content = content,
         });
@@ -1355,11 +1354,11 @@ test "writeFile - two consecutive calls return independent path allocations" {
         deleteFile(path_b);
     }
 
-    var r1 = try write_file.writeFile(testing.allocator, testing.io, .{
+    var r1 = try writeFile(testing.allocator, testing.io, .{
         .path = path_a,
         .content = "aaa",
     });
-    var r2 = try write_file.writeFile(testing.allocator, testing.io, .{
+    var r2 = try writeFile(testing.allocator, testing.io, .{
         .path = path_b,
         .content = "bbb",
     });
@@ -1446,3 +1445,304 @@ test "writeFile: create_with_dir succeeds for a file in the drive root on Window
     defer std.testing.allocator.free(read);
     try std.testing.expectEqualStrings("root file", read);
 }
+
+// Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
+// The tool definition above and its executor below live in ONE file.
+
+const pabrikcore = @import("pabrikcore");
+const tools = @import("../../../agentic_loop/tools.zig");
+const ToolExecContext = tools.ToolExecContext;
+const ToolExecResult = tools.ToolExecResult;
+const agent = pabrikcore.agent;
+const wrapToolOutput = tools.wrapToolOutput;
+const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+const exec_path_validate = @import("helpers").path_validate;
+const exec_testing = std.testing;
+pub fn execWriteFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
+    const parsed = std.json.parseFromSlice(
+        WriteFileInput,
+        ctx.allocator,
+        tc.function.arguments,
+        .{ .allocate = .alloc_always },
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "write_file", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer parsed.deinit();
+
+    // `cwd` is REQUIRED on every path-taking tool: it is the directory this
+    // call works in, and the base a relative `path` resolves against. See
+    // helpers/exec_path_validate.zig for the one implementation of that rule.
+    exec_path_validate.validateCwd(parsed.value.cwd) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "write_file", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    const path_abs = try exec_path_validate.resolveAgainstCwd(ctx.allocator, parsed.value.cwd, parsed.value.path);
+    defer ctx.allocator.free(path_abs);
+
+    // The underlying writer works on the RESOLVED path, so the relative form
+    // the model sent never reaches `std.fs` (a relative path there would
+    // resolve against the SERVER's directory, not `cwd`).
+    var input = parsed.value;
+    input.path = path_abs;
+
+    const write_result = writeFile(ctx.allocator, ctx.io, input) catch |err| {
+        const inner = try toJSONError(ctx.allocator, err, path_abs);
+        const err_msg = try error_explain.explain(ctx.allocator, err, path_abs);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "write_file", tc.function.arguments, false, err_msg, inner);
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    const inner = try toJSONSuccess(ctx.allocator, write_result);
+    write_result.deinit(ctx.allocator);
+    const output = try wrapToolOutput(ctx.allocator, "write_file", tc.function.arguments, true, null, inner);
+    return ToolExecResult{ .output = output, .output_allocated = true };
+}
+
+// ---------------------------------------------------------------------------
+// Overwrite-contract regression tests (added 2026-08-15) PR #261 reverted the
+// absolute-path ban from PR #259.
+
+/// Args JSON for one `write_file` call.
+fn writeFileArgs(a: std.mem.Allocator, target_path: []const u8, content: []const u8) ![]u8 {
+    const dir = std.fs.path.dirname(target_path) orelse target_path;
+    return std.json.Stringify.valueAlloc(a, .{
+        .path = target_path,
+        .content = content,
+        .cwd = dir,
+    }, .{});
+}
+
+/// Helper: build a minimal ToolExecContext whose fields execWriteFile doesn't
+/// actually read (db, logger, config, etc.).
+fn minimalCtx(allocator: std.mem.Allocator) ToolExecContext {
+    var dummy_f32: f32 = 0.0;
+    var dummy_bool: bool = false;
+    return .{
+        .allocator = allocator,
+        .io = exec_testing.io,
+        .db = undefined,
+        .logger = undefined,
+        .session_id = "test_session",
+        .model = "test_model",
+        .cwd = "/tmp",
+        .api_key = "test_key",
+        .base_url = "test_base",
+        .config = undefined,
+        .agent_temperature = &dummy_f32,
+        .is_thinking = &dummy_bool,
+        .environment = null,
+    };
+}
+
+/// Helper: read the full content of a file into a freshly-allocated slice.
+fn readAll(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
+    return std.Io.Dir.cwd().readFileAlloc(exec_testing.io, path, allocator, .limited(4 << 20));
+}
+
+/// Helper: assert the exec output is a success JSON envelope whose
+/// `data.file_write` equals the expected path.
+fn expectWriteFileSuccess(output: []const u8, expected_path: []const u8) !void {
+    const parsed = try std.json.parseFromSlice(std.json.Value, exec_testing.allocator, output, .{});
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+    try exec_testing.expect(obj.get("success").?.bool);
+    try exec_testing.expectEqualStrings(expected_path, obj.get("data").?.object.get("file_write").?.string);
+}
+
+/// Helper: return the on-disk size of a file (0 if missing).
+fn exec_fileSize(path: []const u8) u64 {
+    var f = std.Io.Dir.cwd().openFile(exec_testing.io, path, .{}) catch return 0;
+    defer f.close(exec_testing.io);
+    return std.Io.File.length(f, exec_testing.io) catch 0;
+}
+
+// CONTRACT: execWriteFile must overwrite an existing file with shorter
+// content — the OLD tail bytes must be GONE after the call.
+test "execWriteFile: overwrites existing file (truncates to shorter content)" {
+    var arena = std.heap.ArenaAllocator.init(exec_testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(exec_testing.io, &path_buf);
+    const root_abs = path_buf[0..n];
+
+    const target_name = "overwrite_short.txt";
+    const target_path = try std.fs.path.join(a, &.{ root_abs, target_name });
+
+    // Pre-seed with 100 'A' bytes
+    {
+        const f = try tmp.dir.createFile(exec_testing.io, target_name, .{});
+        defer f.close(exec_testing.io);
+        var buf: [100]u8 = undefined;
+        @memset(&buf, 'A');
+        try std.Io.File.writeStreamingAll(f, exec_testing.io, &buf);
+    }
+    try exec_testing.expectEqual(@as(u64, 100), exec_fileSize(target_path));
+
+    // Call execWriteFile with a 5-byte payload.
+    {
+        const args = try writeFileArgs(a, target_path, "BBBBB");
+        const tc = agent.ToolCall{
+            .id = "call_ow1",
+            .type = "function",
+            .function = .{ .name = "write_file", .arguments = args },
+        };
+
+        const result = try execWriteFile(minimalCtx(a), tc);
+        defer if (result.output_allocated) a.free(result.output);
+
+        // The wrapper must report success
+        try expectWriteFileSuccess(result.output, target_path);
+    }
+
+    // The file must be TRUNCATED to the new length, NOT appended/appended
+    try exec_testing.expectEqual(@as(u64, 5), exec_fileSize(target_path));
+    const read = try readAll(a, target_path);
+    try exec_testing.expectEqualStrings("BBBBB", read);
+}
+
+// CONTRACT: execWriteFile must overwrite an existing file with LONGER
+// content — the file must extend to the new length and contain ONLY the
+// new bytes (no leftover tail from the original shorter file).
+test "execWriteFile: overwrites existing file (extends to longer content)" {
+    var arena = std.heap.ArenaAllocator.init(exec_testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(exec_testing.io, &path_buf);
+    const root_abs = path_buf[0..n];
+
+    const target_name = "overwrite_long.txt";
+    const target_path = try std.fs.path.join(a, &.{ root_abs, target_name });
+
+    // Pre-seed with 5 'X' bytes
+    {
+        const f = try tmp.dir.createFile(exec_testing.io, target_name, .{});
+        defer f.close(exec_testing.io);
+        try std.Io.File.writeStreamingAll(f, exec_testing.io, "XXXXX");
+    }
+    try exec_testing.expectEqual(@as(u64, 5), exec_fileSize(target_path));
+
+    const longer_payload = "this is a much longer string than before";
+    {
+        const args = try writeFileArgs(a, target_path, longer_payload);
+        const tc = agent.ToolCall{
+            .id = "call_ow2",
+            .type = "function",
+            .function = .{ .name = "write_file", .arguments = args },
+        };
+
+        const result = try execWriteFile(minimalCtx(a), tc);
+        defer if (result.output_allocated) a.free(result.output);
+
+        try expectWriteFileSuccess(result.output, target_path);
+        try exec_testing.expectEqual(@as(u64, longer_payload.len), exec_fileSize(target_path));
+        const read = try readAll(a, target_path);
+        try exec_testing.expectEqualStrings(longer_payload, read);
+        // CRITICAL: no leftover 'X' bytes — would prove the file was APPENDED,
+        // not truncated-and-overwritten.
+        try exec_testing.expect(std.mem.indexOf(u8, read, "X") == null);
+    }
+}
+
+// CONTRACT: execWriteFile must OVERWRITE, not append, when called twice in
+// a row with the same path. The second call's content must fully REPLACE
+// the first — not be appended.
+test "execWriteFile: two consecutive calls — second content wins, no append" {
+    var arena = std.heap.ArenaAllocator.init(exec_testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(exec_testing.io, &path_buf);
+    const root_abs = path_buf[0..n];
+
+    const target_name = "consecutive.txt";
+    const target_path = try std.fs.path.join(a, &.{ root_abs, target_name });
+
+    // First call: 13 bytes.
+    {
+        const args1 = try writeFileArgs(a, target_path, "first version");
+        const tc1 = agent.ToolCall{
+            .id = "call_seq1",
+            .type = "function",
+            .function = .{ .name = "write_file", .arguments = args1 },
+        };
+        const r1 = try execWriteFile(minimalCtx(a), tc1);
+        defer if (r1.output_allocated) a.free(r1.output);
+        try expectWriteFileSuccess(r1.output, target_path);
+    }
+
+    // Second call: longer, DIFFERENT content.
+    {
+        const args2 = try writeFileArgs(a, target_path, "second version wins");
+        const tc2 = agent.ToolCall{
+            .id = "call_seq2",
+            .type = "function",
+            .function = .{ .name = "write_file", .arguments = args2 },
+        };
+        const r2 = try execWriteFile(minimalCtx(a), tc2);
+        defer if (r2.output_allocated) a.free(r2.output);
+        try expectWriteFileSuccess(r2.output, target_path);
+    }
+
+    // File must contain ONLY the second call's content — not "first version" + tail
+    const read = try readAll(a, target_path);
+    try exec_testing.expectEqualStrings("second version wins", read);
+    try exec_testing.expectEqual(@as(usize, "second version wins".len), read.len);
+}
+
+// CONTRACT: execWriteFile must overwrite with empty content too — the
+// file must end up at exactly 0 bytes (not "the old content minus the
+// new content size" — i.e. not partial truncation).
+test "execWriteFile: overwriting with empty content truncates to zero bytes" {
+    var arena = std.heap.ArenaAllocator.init(exec_testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(exec_testing.io, &path_buf);
+    const root_abs = path_buf[0..n];
+
+    const target_name = "empty_overwrite.txt";
+    const target_path = try std.fs.path.join(a, &.{ root_abs, target_name });
+
+    // Pre-seed
+    {
+        const f = try tmp.dir.createFile(exec_testing.io, target_name, .{});
+        defer f.close(exec_testing.io);
+        try std.Io.File.writeStreamingAll(f, exec_testing.io, "this content will be wiped");
+    }
+    try exec_testing.expectEqual(@as(u64, 26), exec_fileSize(target_path));
+
+    {
+        const args2 = try writeFileArgs(a, target_path, "");
+        const tc = agent.ToolCall{
+            .id = "call_empty",
+            .type = "function",
+            .function = .{ .name = "write_file", .arguments = args2 },
+        };
+
+        const result = try execWriteFile(minimalCtx(a), tc);
+        defer if (result.output_allocated) a.free(result.output);
+        try expectWriteFileSuccess(result.output, target_path);
+
+        try exec_testing.expectEqual(@as(u64, 0), exec_fileSize(target_path));
+    }
+}
+
