@@ -51,13 +51,25 @@ def comment_tokens(path):
         else:
             i += 1
     text = '\n'.join(chunks)
+    # A JSDoc continuation marker is a line prefix, so it is stripped per line.
+    # A standalone `*` anywhere else is markdown emphasis (`*"quoted"*`) and is
+    # PROSE — dropping it made the guard see a diff where there was none.
     text = re.sub(r'^\s*\*\s?', '', text, flags=re.M)
     text = text.replace('*/', ' ')
-    return [t for t in re.findall(r'\S+', text) if t not in ('/', '*')]
+    # A standalone `/` is a JSDoc delimiter fragment, not prose.
+    return [t for t in re.findall(r'\S+', text) if t != '/']
 
 
 def prose(path):
-    return ''.join(comment_tokens(path))
+    """The comment prose as one string, for an equality test.
+
+    Tokens are joined with a single space and markdown emphasis markers are
+    stripped. A re-wrap legitimately moves a `*` from the end of one line to
+    the start of the next (`reported: *"when…"*.` becoming
+    `reported: *"when…"*.` on a different line boundary), and that is not a
+    prose change — so the comparison must not see it as one.
+    """
+    return ' '.join(t.strip('*') for t in comment_tokens(path))
 
 
 def code(path):
@@ -114,6 +126,38 @@ def code(path):
                     i += 1
                 i += 1
             i += 1
+        elif src[i] == '/' and i + 1 < n and src[i + 1] not in ('/', '*'):
+            # A regex literal, not a comment. `/<directory_listing\s[^>]*…/`
+            # was being read as a comment opener, which swallowed the rest of
+            # the block and collapsed dozens of lines into one. A regex is
+            # recognised by a `/` that is not `//` or `/*` and is preceded by
+            # one of the tokens that can legally precede one.
+            prev = src[max(0, i - 16):i]
+            if re.search(r'[=(,:\[!&|?{};]\s*$', prev) or re.search(r'\b(return|typeof|case|in|of)\s*$', prev):
+                line_has_code = True
+                i += 1
+                in_class = False
+                while i < n:
+                    ch = src[i]
+                    if ch == '\\':
+                        i += 2
+                        continue
+                    if ch == '[':
+                        in_class = True
+                    elif ch == ']':
+                        in_class = False
+                    elif ch == '/' and not in_class:
+                        i += 1
+                        break
+                    elif ch == '\n':
+                        break
+                    i += 1
+                # Skip the regex flags.
+                while i < n and src[i].isalpha():
+                    i += 1
+            else:
+                line_has_code = True
+                i += 1
         elif src[i] == '`':
             line_has_code = True
             i += 1

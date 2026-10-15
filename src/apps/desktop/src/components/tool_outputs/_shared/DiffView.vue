@@ -65,11 +65,11 @@ const props = withDefaults(defineProps<Props>(), {
   initialMode: 'split',
 })
 
-/** Emitted when the user clicks a line-number cell in the diff.
- * Payload is the 1-based line number in the file (the `after`-side line
- * for split view, the actual row's new-line number for unified view).
- * Parents should wire this to the code-editor open handler so the user
- * can land on the exact line they were inspecting. */
+/** Emitted when the user clicks a line-number cell in the diff. Payload is the 1-based line number
+ * in the file (the `after`-side line for split view, the actual row's new-line number for unified
+ * view). */
+/** Parents should wire this to the code-editor open handler so the user can land on the exact line
+ * they were inspecting. */
 const emit = defineEmits<{
   'jump-to-line': [line: number]
 }>()
@@ -130,17 +130,14 @@ function renderHighlighted(text: string, language: string): VNode[] {
 
 const readMode = readStoredMode // suppress unused warning if some bundler tree-shakes
 
+// ──────────────────────────────────────────────────────────────────────────── Sub-components —
+// inline to avoid 3 separate files for tiny helpers.
 // ────────────────────────────────────────────────────────────────────────────
-// Sub-components — inline to avoid 3 separate files for tiny helpers.
-// ────────────────────────────────────────────────────────────────────────────
-
-/** Renders one side (before/after) of the split-view.
- * Structure: an `overflow-x-auto` scroll container > one sizing WRAPPER
- * (`width: max-content; min-width: 100%` — sized once, to fit the widest
- * row or the pane, whichever is larger) > each row (`width: 100%` of that
- * wrapper). Because every row's width comes from the same already-sized
- * wrapper, every row — long or short — paints a background across the
- * exact same width, at any scroll position. */
+/** Renders one side (before/after) of the split-view. Structure: an `overflow-x-auto` scroll
+ * container > one sizing WRAPPER (`width: max-content; min-width: 100%` — sized once, to fit the
+ * widest row or the pane, whichever is larger) > each row (`width: 100%` of that wrapper). */
+/** Because every row's width comes from the same already-sized wrapper, every row — long or short —
+ * paints a background across the exact same width, at any scroll position. */
 const DiffSplitSide = defineComponent({
   name: 'DiffSplitSide',
   props: {
@@ -196,10 +193,9 @@ function renderSplitRow(row: SplitRow, idx: number, side: 'before' | 'after', la
   const text = isBefore ? row.beforeText : row.afterText
   const lineNum = isBefore ? row.beforeLine : row.afterLine
 
-  // Background color: only paint a side when that side actually HAS a
-  // line here. A row can be "changed" while only existing on one side
-  // (e.g. a pure insertion has beforeText === null) — in that case the
-  // *other* side is just empty filler and must stay uncolored, not get
+  // Background color: only paint a side when that side actually HAS a line here.
+  // A row can be "changed" while only existing on one side (e.g. a pure insertion has beforeText
+  // === null) — in that case the *other* side is just empty filler and must stay uncolored, not get
   // painted as if something were deleted/inserted there too.
   let bgColor = ''
   if (row.isChanged) {
@@ -210,14 +206,12 @@ function renderSplitRow(row: SplitRow, idx: number, side: 'before' | 'after', la
     }
   }
 
-  // The text is deliberately NOT tinted per row. An `!important` red/green
-  // color here beats the `.tok-*` classes inside the spans and paints the
-  // whole line monochrome — a diff with no syntax color on exactly the
-  // lines that changed. Added/removed is carried by the row background
-  // (below) and, in unified view, by the colored +/- gutter sign.
-
-  // Clickable gutter: clicking the line number emits jump-to-line so the
-  // parent can open the code editor at that exact line.
+  // The text is deliberately NOT tinted per row. An `!important` red/green color here beats the
+  // `.tok-*` classes inside the spans and paints the whole line monochrome — a diff with no syntax
+  // color on exactly the lines that changed.
+  // Added/removed is carried by the row background (below) and, in unified view, by the colored +/-
+  // gutter sign. Clickable gutter: clicking the line number emits jump-to-line so the parent can
+  // open the code editor at that exact line.
   const isClickable = lineNum !== null
   const gutterClickHandler = isClickable
     ? {
@@ -235,11 +229,11 @@ function renderSplitRow(row: SplitRow, idx: number, side: 'before' | 'after', la
       }
     : {}
 
-  // Row container: a plain block, `width: 100%` of the shared sizing
-  // wrapper (computed once per pane — see DiffSplitSide). Because that
-  // wrapper is already exactly as wide as the widest row (or the pane,
-  // whichever is larger), every row here ends up the same width too —
-  // so a short row's background still spans the full row.
+  // Row container: a plain block, `width: 100%` of the shared sizing wrapper (computed once per
+  // pane — see DiffSplitSide).
+  // Because that wrapper is already exactly as wide as the widest row (or the pane, whichever is
+  // larger), every row here ends up the same width too — so a short row's background still spans
+  // the full row.
   const rowStyle: Record<string, string> = { width: '100%' }
   if (bgColor) {
     rowStyle.backgroundColor = bgColor
@@ -274,12 +268,11 @@ function renderSplitRow(row: SplitRow, idx: number, side: 'before' | 'after', la
         },
         lineNum !== null ? String(lineNum) : '\u00a0',
       ),
-      // Line content. Token-colored spans (code) or a single plain-text
-      // node (plaintext/unknown language — identical to the old rendering).
-      // Sits in normal flow after the sticky gutter; long content extends
-      // past the pane's visible edge, which is what makes the shared
-      // wrapper (and therefore the ancestor scroll container) wide enough
-      // to scroll.
+      // Line content. Token-colored spans (code) or a single plain-text node (plaintext/unknown
+      // language — identical to the old rendering).
+      // Sits in normal flow after the sticky gutter; long content extends past the pane's visible
+      // edge, which is what makes the shared wrapper (and therefore the ancestor scroll container)
+      // wide enough to scroll.
       h(
         'span',
         {
@@ -296,7 +289,6 @@ function renderSplitRow(row: SplitRow, idx: number, side: 'before' | 'after', la
 // on the same line impossible to parse. renderSplitRow and
 // renderUnifiedRow now render token-colored spans (via renderHighlighted)
 // on top of the row bg instead.
-
 /** Renders the unified-view rows: line numbers, diff prefix, and content,
  * all in a single column. Same shared-wrapper sizing approach as
  * DiffSplitSide — see the comment above that component for why this
@@ -368,11 +360,10 @@ function renderUnifiedRow(row: UnifiedRow, idx: number, language: string) {
   const signColorClass =
     row.kind === 'delete' ? 'text-red-500' : row.kind === 'insert' ? 'text-green-500' : ''
 
-  // Unified view: prefer the after-line for click (that's the file's new
-  // state). For delete-only rows there is no after-line; fall back to the
-  // before-line so the user can still jump to that line in the original
-  // (pre-edit) snapshot — for an inserted row that line no longer exists,
-  // but the editor's revealLine clamps gracefully.
+  // Unified view: prefer the after-line for click (that's the file's new state).
+  // For delete-only rows there is no after-line; fall back to the before-line so the user can still
+  // jump to that line in the original (pre-edit) snapshot — for an inserted row that line no longer
+  // exists, but the editor's revealLine clamps gracefully.
   const jumpLine = row.afterLine ?? row.beforeLine
   const gutterClickHandler =
     jumpLine !== undefined && jumpLine !== null
