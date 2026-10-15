@@ -17,6 +17,8 @@ import {
   branchUrlFromPrUrl,
   onPrStatusInvalidated,
 } from '../../helpers/prStatusCache'
+import { useAgentErrorStore } from '../../stores/agentError'
+import { parseAgentErrorHeadline } from '../../helpers/parseAgentErrorHeadline'
 import { sessionEngineDb, toSessionRow } from '../../sync/SessionEngineDb'
 import { runSyncEffect, runSyncEffectOr, runSyncVoid } from '../../sync/runtime'
 import * as api from '../../api'
@@ -43,6 +45,32 @@ const emit = defineEmits<{
 const navigationStore = useNavigationStore()
 const sidebarStore = useSidebarStore()
 const workspacesStore = useWorkspacesStore()
+
+// Same Pinia store the kanban card and ChatView read. It outlives
+// ChatView remounts, so the badge stays in sync across session
+// switches without a second fetch.
+const agentErrorStore = useAgentErrorStore()
+
+type StatusBadgeRow = {
+  id: string
+  last_finish_reason?: string
+  needs_human_review?: boolean
+}
+
+const isAwaitingReview = (row: StatusBadgeRow): boolean =>
+  row.needs_human_review === true && row.last_finish_reason === 'stop'
+
+// The `last_finish_reason === 'stop'` gate is load-bearing: without it a
+// stale `needs_human_review: false` + `finish_reason: 'tool_calls'`
+// state paints a phantom "reviewed" checkmark mid-turn.
+const isReviewed = (row: StatusBadgeRow): boolean =>
+  !isAwaitingReview(row) && row.last_finish_reason === 'stop'
+
+const rowAgentError = (id: string) => agentErrorStore.bySession[id] ?? null
+const rowErrorRetryLabel = (id: string): string | null => {
+  const entry = rowAgentError(id)
+  return entry ? parseAgentErrorHeadline(entry.content).retryLabel : null
+}
 
 // URL-driven "what is the main content area showing?". Derived from
 // the URL so the chat row's active background stays in sync with
@@ -191,6 +219,8 @@ const navItems = ref<
     // Migration 104 — pinned sessions (PINNED section above RECENT).
     is_pinned?: boolean
     pinned_position?: number
+    last_finish_reason?: string
+    needs_human_review?: boolean
   }[]
 >([])
 const chatsHasMore = ref(false)
@@ -578,6 +608,10 @@ const toNavItem = (session: any) => ({
   // false so legacy caches read as unpinned.
   is_pinned: session.is_pinned ?? false,
   pinned_position: session.pinned_position ?? 0,
+  last_finish_reason: session.last_finish_reason || '',
+  // NOT `?? false`: a legacy cache row with no field must read as
+  // "no badge", not "reviewed".
+  needs_human_review: session.needs_human_review ?? undefined,
 })
 
 // Display order for cached paints. The engine stores newest-first;
@@ -657,6 +691,8 @@ const mapNavItemToChat = (r: any): any => ({
   last_human_touched_at: r.last_human_touched_at ?? '',
   is_pinned: r.is_pinned ?? false,
   pinned_position: r.pinned_position ?? 0,
+  last_finish_reason: r.last_finish_reason ?? '',
+  needs_human_review: r.needs_human_review ?? undefined,
 })
 
 // PINNED drag-drop reorder (Migration 104). HTML5 DnD on the pinned
@@ -1259,6 +1295,48 @@ defineExpose({
             </span>
             {{ item.name }}
             <span
+              v-if="isAwaitingReview(item)"
+              class="ml-1 inline-flex items-center align-middle shrink-0"
+              title="AI finished — awaiting your review"
+              data-testid="chat-status-awaiting-review"
+            >
+              <span
+                class="w-2 h-2 rounded-full"
+                style="
+                  background-color: rgb(251, 146, 60);
+                  box-shadow: 0 0 0 0 rgba(251, 146, 60, 0.6);
+                  animation: chat-needs-review-pulse 2.4s ease-out 4 forwards;
+                "
+              />
+            </span>
+            <span
+              v-else-if="isReviewed(item)"
+              class="ml-1 inline-flex items-center align-middle shrink-0 text-green-500"
+              title="Reviewed"
+              data-testid="chat-status-reviewed"
+            >
+              <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+            </span>
+            <span
+              v-if="rowAgentError(item.id)"
+              class="ml-1 inline-flex items-center align-middle shrink-0"
+              style="color: var(--color-red)"
+              :title="
+                rowErrorRetryLabel(item.id)
+                  ? `Agent error — retry ${rowErrorRetryLabel(item.id)}`
+                  : 'Agent error'
+              "
+              data-testid="chat-status-agent-error"
+            >
+              ⚠
+            </span>
+            <span
               v-if="item.sub_agent_name"
               class="ml-1 text-micro font-mono"
               style="color: var(--color-violet)"
@@ -1402,6 +1480,54 @@ defineExpose({
                 <span v-if="prConflicts[item.id]" class="ml-0.5 text-micro font-bold">⚠</span>
               </span>
               {{ item.name }}
+            <!-- Status badge — the same red / yellow / green trio the
+                   kanban card renders (WorkspaceItemTaskCard.vue), so a
+                   session reads identically on the board and in the
+                   sidebar. Orange pulsing dot = the AI finished and is
+                   waiting on you; green check = you have reviewed it;
+                   red ⚠ = the agent errored (hover for the headline). -->
+              <span
+                v-if="isAwaitingReview(item)"
+                class="ml-1 inline-flex items-center align-middle shrink-0"
+                title="AI finished — awaiting your review"
+                data-testid="chat-status-awaiting-review"
+              >
+                <span
+                  class="w-2 h-2 rounded-full"
+                  style="
+                    background-color: rgb(251, 146, 60);
+                    box-shadow: 0 0 0 0 rgba(251, 146, 60, 0.6);
+                    animation: chat-needs-review-pulse 2.4s ease-out 4 forwards;
+                  "
+                />
+              </span>
+              <span
+                v-else-if="isReviewed(item)"
+                class="ml-1 inline-flex items-center align-middle shrink-0 text-green-500"
+                title="Reviewed"
+                data-testid="chat-status-reviewed"
+              >
+                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+              </span>
+              <span
+                v-if="rowAgentError(item.id)"
+                class="ml-1 inline-flex items-center align-middle shrink-0"
+                style="color: var(--color-red)"
+                :title="
+                  rowErrorRetryLabel(item.id)
+                    ? `Agent error — retry ${rowErrorRetryLabel(item.id)}`
+                    : 'Agent error'
+                "
+                data-testid="chat-status-agent-error"
+              >
+                ⚠
+              </span>
               <span
                 v-if="item.sub_agent_name"
                 class="ml-1 text-micro font-mono"
@@ -1529,3 +1655,25 @@ defineExpose({
     @open-pr="openGitPrInBackground"
   />
 </template>
+
+<style scoped>
+/* Prefixed `chat-` so it cannot collide with the kanban card's
+   same-shaped `needs-review-pulse` in its own scoped block. */
+@keyframes chat-needs-review-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(251, 146, 60, 0.6);
+  }
+  70% {
+    box-shadow: 0 0 0 12px rgba(251, 146, 60, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(251, 146, 60, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-testid='chat-status-awaiting-review'] span {
+    animation: none;
+  }
+}
+</style>

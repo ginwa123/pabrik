@@ -1411,6 +1411,8 @@ export interface Chat {
   /// Migration 104 — position inside the pinned region (MAX+1 on pin,
   /// 0 when unpinned). PINNED section sorts by this DESC.
   pinned_position?: number
+  last_finish_reason?: string
+  needs_human_review?: boolean
 }
 
 export interface Message {
@@ -1997,6 +1999,10 @@ export async function getChats(
           // default false so legacy caches read as unpinned.
           is_pinned: session.is_pinned ?? false,
           pinned_position: session.pinned_position ?? 0,
+          last_finish_reason: session.last_finish_reason || '',
+          // NOT `?? false`: a legacy cache row with no field must read
+          // as "no badge", not "reviewed".
+          needs_human_review: session.needs_human_review ?? undefined,
         }
       })
     }
