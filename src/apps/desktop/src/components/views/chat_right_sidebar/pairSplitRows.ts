@@ -1,11 +1,11 @@
 import type { ParsedDiffLine } from './parseUnifiedDiff'
 
-/** A row of the side-by-side (split) diff render.
- * `oldText` / `newText` are the line bodies with the diff prefix already
- * stripped (that is what `parseUnifiedDiff` hands over). A `null` side is a
- * FILLER cell — the row is taller than one of the two files at that point
- * (a pure insertion has no old side; a pure deletion has no new side).
- * Renderers must paint a filler as empty, never as an unchanged line. */
+/** A row of the side-by-side (split) diff render. `oldText` / `newText` are the line bodies with
+ * the diff prefix already stripped (that is what `parseUnifiedDiff` hands over). */
+
+/** A `null` side is a FILLER cell — the row is taller than one of the two files at that point (a
+ * pure insertion has no old side; a pure deletion has no new side). Renderers must paint a filler
+ * as empty, never as an unchanged line. */
 export interface SplitRow {
   kind: 'hunk' | 'context' | 'change'
   /** Full-width row content (a hunk header). `null` for the two-sided rows,
@@ -23,22 +23,18 @@ export interface SplitRow {
   sourceIndexes: number[]
 }
 
-/**
- * Project a parsed unified diff onto side-by-side rows.
- *
- * Inside one hunk git emits a removal run followed by an insertion run, so a
- * change block is paired INDEX-WISE: the 1st removal with the 1st insertion,
- * the 2nd with the 2nd, and whatever is left over on the longer side gets a
- * filler cell opposite it. That is deliberately naive (no similarity scoring
- * — a rename block pairs by position, not by looking alike) because it is
- * predictable and it is what the reader can verify by eye.
- *
- * Hunk headers span the full width; context (and empty) lines render on both
- * sides with their own old/new numbers, which is what makes the two gutters
- * independently readable.
- *
- * Pure: no DOM, no IO. Same input ⇒ same output.
- */
+/** Project a parsed unified diff onto side-by-side rows. */
+
+/** Inside one hunk git emits a removal run followed by an insertion run, so a change block is
+ * paired INDEX-WISE: the 1st removal with the 1st insertion, the 2nd with the 2nd, and whatever is
+ * left over on the longer side gets a filler cell opposite it. */
+
+/** That is deliberately naive (no similarity scoring — a rename block pairs by position, not by
+ * looking alike) because it is predictable and it is what the reader can verify by eye. */
+
+/** Hunk headers span the full width; context (and empty) lines render on both sides with their own
+ * old/new numbers, which is what makes the two gutters independently readable. Pure: no DOM, no IO.
+ * Same input ⇒ same output. */
 export function pairSplitRows(lines: ParsedDiffLine[]): SplitRow[] {
   const rows: SplitRow[] = []
   let removes: { line: ParsedDiffLine; index: number }[] = []
@@ -106,11 +102,11 @@ export function pairSplitRows(lines: ParsedDiffLine[]): SplitRow[] {
   return rows
 }
 
-/** Map every source line index to the split row that carries it.
- * `SidebarDiffView` anchors review threads to a source index; this is how the
- * split render finds the right row for a thread the user left in unified mode
- * (and vice versa). A row's indexes are unique and rows never share one, so
- * the map is exact. */
+/** Map every source line index to the split row that carries it. `SidebarDiffView` anchors review
+ * threads to a source index; this is how the split render finds the right row for a thread the user
+ * left in unified mode (and vice versa). */
+
+/** A row's indexes are unique and rows never share one, so the map is exact. */
 export function splitRowIndexBySourceIndex(rows: SplitRow[]): Map<number, number> {
   const map = new Map<number, number>()
   rows.forEach((row, rowIndex) => {

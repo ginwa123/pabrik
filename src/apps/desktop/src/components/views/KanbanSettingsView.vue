@@ -169,13 +169,12 @@ const workspaceId = computed<string>(() => {
 const notFound = computed(() => !!itemId.value && !item.value)
 const emptyHint = computed(() => !itemId.value)
 
-// ─── Kanban Agent (reuses AgentView) ────────────────────────────────────────
-//
-// Kanban boards reuse the same Knowledge + Tools + System Prompt UI as
-// `item_type='agent'` — AgentView is now agnostic (accepts both
-// AgentKnowledgeRow and AgentKanbanKnowledgeRow via union). The parent
-// (this view) owns the data + API calls; AgentView is a dumb
-// presentational component that emits intents.
+// ─── Kanban Agent (reuses AgentView) ──────────────────────────────────────── Kanban boards reuse
+// the same Knowledge + Tools + System Prompt UI as `item_type='agent'` — AgentView is now agnostic
+// (accepts both AgentKnowledgeRow and AgentKanbanKnowledgeRow via union).
+
+// The parent (this view) owns the data + API calls; AgentView is a dumb presentational component
+// that emits intents.
 
 const kanbanKnowledge = ref<api.AgentKanbanKnowledgeRow[]>([])
 const kanbanTools = ref<string[]>([])
@@ -549,14 +548,15 @@ const goBack = () => {
 
 // ─── Lifecycle ─────────────────────────────────────────────────────────────
 
-// Reset settingsMode when the route changes (so navigating from one
-// kanban's settings to another's starts on the Columns tab, not the
-// Agent tab that the previous kanban had selected). The URL
-// is the source of truth, so we use `router.replace` to strip the
-// ?section= query rather than mutating the computed directly.
-// Reset the settings tab/editor when navigating between kanbans:
-// prev-id guard on update. Writing settingsMode strips ?section= from
-// the URL via its setter; the guard keeps the reset one-shot.
+// Reset settingsMode when the route changes (so navigating from one kanban's settings to another's
+// starts on the Columns tab, not the Agent tab that the previous kanban had selected).
+
+// The URL is the source of truth, so we use `router.replace` to strip the ?section= query rather
+// than mutating the computed directly. Reset the settings tab/editor when navigating between
+// kanbans: prev-id guard on update.
+
+// Writing settingsMode strips ?section= from the URL via its setter; the guard keeps the reset
+// one-shot.
 const prevSettingsItemId = ref(itemId.value)
 onUpdated(() => {
   if (itemId.value !== prevSettingsItemId.value) {

@@ -175,11 +175,11 @@ const parse = (raw: string) => {
     return
   }
 
-  // Metadata — direct child only (avoids matching a <metadata> tag that
-  // might appear inside the compactor's <summary> text). We use
-  // `parent.children` + tag filter instead of `:scope > X` because the
-  // latter is not reliably supported by jsdom's XML parser (and the
-  // project uses jsdom for component tests).
+  // Metadata — direct child only (avoids matching a <metadata> tag that might appear inside the
+  // compactor's <summary> text).
+
+  // We use `parent.children` + tag filter instead of `:scope > X` because the latter is not
+  // reliably supported by jsdom's XML parser (and the project uses jsdom for component tests).
   const metadataEl = directChild(root, 'metadata')
   if (metadataEl) {
     metadata.value = {
@@ -234,11 +234,11 @@ const textOf = (parent: Element, tag: string): string | undefined => {
   return t ? t : undefined
 }
 
-// Parse synchronously during setup (rather than in onMounted) so the
-// component is fully populated by the time it's rendered. This also
-// makes the component testable without a full DOM lifecycle mount
-// (vue-test-utils' `mount()` does call onMounted, but setup-time
-// parsing is more deterministic).
+// Parse synchronously during setup (rather than in onMounted) so the component is fully populated
+// by the time it's rendered.
+
+// This also makes the component testable without a full DOM lifecycle mount (vue-test-utils'
+// `mount()` does call onMounted, but setup-time parsing is more deterministic).
 parse(props.content)
 </script>
 

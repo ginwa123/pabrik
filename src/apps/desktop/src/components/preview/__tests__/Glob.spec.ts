@@ -162,13 +162,12 @@ describe('Glob.vue — behaviour preserved', () => {
   })
 })
 
-// ────────────────────────────────────────────────────────────────────────
-// Empty/no-match results — Arguments must still be reachable.
-//
-// Bug: the expanded body was `v-if="isExpanded && filePaths.length > 0"`
-// and toggle() refused to expand on a warning/empty envelope, so a no-match
-// glob (warning envelope) could never show its Arguments block.
-// ────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────── Empty/no-match results —
+// Arguments must still be reachable.
+
+// Bug: the expanded body was `v-if="isExpanded && filePaths.length > 0"` and toggle() refused to
+// expand on a warning/empty envelope, so a no-match glob (warning envelope) could never show its
+// Arguments block. ────────────────────────────────────────────────────────────────────────
 
 describe('Glob.vue — warning data still shows Arguments (empty/no-match)', () => {
   const warningContent = {

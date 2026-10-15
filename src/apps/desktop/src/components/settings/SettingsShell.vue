@@ -59,11 +59,11 @@ const WORKSPACE_SECTIONS: readonly SettingsSectionItem[] = [
   { id: 'secrets', label: 'Secrets', icon: 'key', group: 'Workspace' },
   { id: 'skills', label: 'Skills', icon: 'books', group: 'Workspace' },
   { id: 'memories', label: 'Memories', icon: 'brain', group: 'Workspace' },
-  // The sections that moved here (Migration 105 + `PabrikConfigEditor`): they
-  // edit THIS workspace's config overlay, which the backend merges over the
-  // user-level config, so a workspace that overrides nothing still behaves
-  // exactly as it did before they existed. DERIVED from the list the workspace
-  // view renders - see AGENT_SECTION_META.
+  // The sections that moved here (Migration 105 + `PabrikConfigEditor`): they edit THIS workspace's
+  // config overlay, which the backend merges over the user-level config, so a workspace that
+  // overrides nothing still behaves exactly as it did before they existed.
+
+  // DERIVED from the list the workspace view renders - see AGENT_SECTION_META.
   ...WORKSPACE_AGENT_SECTIONS.map((id) => ({ id, ...AGENT_SECTION_META[id], group: 'Agent' })),
 ]
 
@@ -80,10 +80,10 @@ const router = (() => {
   try {
     return useRouter()
   } catch (e) {
-    // Router-less mount (unit tests): navigation becomes a no-op. The
-    // section state still works through the local-ref fallback in
-    // `useSettingsSection`, so the null here can never surface as a
-    // wrong section — only as a button that does nothing in tests.
+    // Router-less mount (unit tests): navigation becomes a no-op. The section state still works
+    // through the local-ref fallback in `useSettingsSection`, so the null here can never surface as
+    // a wrong section — only as a button that does nothing in tests.
+
     // Logged so a missing router in production is visible, not silent.
     console.warn('[settings-shell] no router, navigation disabled', e)
     return null

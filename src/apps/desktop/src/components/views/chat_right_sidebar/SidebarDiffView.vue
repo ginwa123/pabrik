@@ -13,11 +13,11 @@ import { fetchWholeFileDiff, type WholeFileDiff } from './wholeFileDiff'
 import SplitDiffTable from './SplitDiffTable.vue'
 import DiffThreads from './DiffThreads.vue'
 
-/** Shared full diff view: file header (collapse toggle, back/filename/stats,
- * scope + mode, Open), loading/error/empty states, the unified OR split
- * render of the hunks, and the review mini-chat popup. Presentational — data
- * flows in via props, user actions flow out via emits. Used full-height in
- * ChatView's centre column; the sidebar panel is list-only. */
+/** Shared full diff view: file header (collapse toggle, back/filename/stats, scope + mode, Open),
+ * loading/error/empty states, the unified OR split render of the hunks, and the review mini-chat
+ * popup. Presentational — data flows in via props, user actions flow out via emits. */
+
+/** Used full-height in ChatView's centre column; the sidebar panel is list-only. */
 const props = defineProps<{
   path: string
   lines: ParsedDiffLine[]
@@ -56,11 +56,11 @@ const emit = defineEmits<{
 const mode = computed<'unified' | 'split'>(() => props.mode ?? 'unified')
 const collapsed = computed(() => props.collapsed === true)
 
-// ── whole-file scope ──────────────────────────────────────────────────────
-// Fetched here (not in the parent) because this component already owns the
-// path + cwd + staged triple the request needs. The cache is module-level, so
-// collapsing and re-expanding a section — which unmounts this component — is
-// still a cache read, not a second request.
+// ── whole-file scope ────────────────────────────────────────────────────── Fetched here (not in
+// the parent) because this component already owns the path + cwd + staged triple the request needs.
+
+// The cache is module-level, so collapsing and re-expanding a section — which unmounts this
+// component — is still a cache read, not a second request.
 const wholeFileResult = ref<WholeFileDiff | null>(null)
 const wholeFileLoading = ref(false)
 const wholeFileError = ref<string | null>(null)
@@ -166,11 +166,11 @@ const openBoxAtRange = (start: number, end: number, context: string) => {
   showMiniChat.value = true
 }
 
-/** Open the review box for the line at `lineIdx` in the rendered lines.
- * Both renders funnel through here: unified passes the clicked row's index,
- * split passes the clicked side's SOURCE index — which is the same index
- * space when whole-file scope replaced the line list, because the split rows
- * are paired from those very lines. */
+/** Open the review box for the line at `lineIdx` in the rendered lines. */
+
+/** Both renders funnel through here: unified passes the clicked row's index, split passes the
+ * clicked side's SOURCE index — which is the same index space when whole-file scope replaced the
+ * line list, because the split rows are paired from those very lines. */
 const openMiniChatAt = (event: MouseEvent, lineIdx: number) => {
   const lines = displayLines.value
   const line = lines[lineIdx]

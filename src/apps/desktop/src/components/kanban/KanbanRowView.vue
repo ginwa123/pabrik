@@ -93,11 +93,10 @@ const emit = defineEmits<{
 
 const workspacesStore = useWorkspacesStore()
 
-// ─── Grouping ──────────────────────────────────────────────────────────────
-//
-// Same filter <KanbanColumn> applies per column (cardsInColumn), hoisted
-// so one pass produces every group. Order within a group is the wire
-// order — the backend already returns each column's tasks in that
+// ─── Grouping ────────────────────────────────────────────────────────────── Same filter
+// <KanbanColumn> applies per column (cardsInColumn), hoisted so one pass produces every group.
+
+// Order within a group is the wire order — the backend already returns each column's tasks in that
 // column's own sort order (per-column sort independence).
 const groups = computed(() =>
   props.columns.map((column) => ({
@@ -170,13 +169,12 @@ const handleMenuStopAll = (columnId: string) => {
   emit('requestStopAllAgents', columnId)
 }
 
-// ─── Per-group sort modal ──────────────────────────────────────────────────
-//
-// The sort state is local to this view (the URL is the source of truth
-// for persistence — <KanbanView> writes `?sorts=` on the sortChange
-// emit). `sortModalColumnId` drives which group's modal is open; the
-// modal reuses <KanbanSortMenu :show-trigger="false"> exactly like
-// <KanbanColumn> does.
+// ─── Per-group sort modal ────────────────────────────────────────────────── The sort state is
+// local to this view (the URL is the source of truth for persistence — <KanbanView> writes
+// `?sorts=` on the sortChange emit).
+
+// `sortModalColumnId` drives which group's modal is open; the modal reuses <KanbanSortMenu
+// :show-trigger="false"> exactly like <KanbanColumn> does.
 const sortModalColumnId = ref<string | null>(null)
 const sortBy = ref<SortField>('position')
 const direction = ref<SortDirection>('asc')
@@ -188,12 +186,12 @@ const handleMenuSort = (columnId: string) => {
   sortModalColumnId.value = columnId
 }
 
-// <KanbanSortMenu> has no custom `click` emit — its `@click` is a native
-// DOM listener that fires on ANY click inside the menu (that is how
-// <KanbanColumn> uses it). The menu emits `update:sortBy` +
-// `update:direction` together per pick (see handleSelect), so the update
-// handlers below assign and emit exactly like the old watchers did: the
-// first run clears `sortModalColumnId`, the second is a no-op.
+// <KanbanSortMenu> has no custom `click` emit — its `@click` is a native DOM listener that fires on
+// ANY click inside the menu (that is how <KanbanColumn> uses it).
+
+// The menu emits `update:sortBy` + `update:direction` together per pick (see handleSelect), so the
+// update handlers below assign and emit exactly like the old watchers did: the first run clears
+// `sortModalColumnId`, the second is a no-op.
 const onSortPicked = () => {
   const columnId = sortModalColumnId.value
   if (!columnId) return
