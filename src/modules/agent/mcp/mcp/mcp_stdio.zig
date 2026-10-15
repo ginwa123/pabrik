@@ -1421,19 +1421,23 @@ test "recv aborts on cancel with truly-silent child" {
 }
 
 /// A real pipe nobody drains: the deterministic stand-in for a child that
-/// stopped reading its stdin. It needs no subprocess and no environment, which
-/// a spawned-child fixture does.
+/// stopped reading its stdin — no subprocess, no environment. POSIX-only, so
+/// `open` reports PipeUnsupported on Windows and the callers skip.
 const TestPipe = struct {
-    read_fd: std.posix.fd_t,
+    read_fd: std.c.fd_t,
     write_file: std.Io.File,
 
     fn open() !TestPipe {
-        var fds: [2]std.posix.fd_t = undefined;
-        if (std.c.pipe(&fds) != 0) return error.PipeFailed;
-        return .{
-            .read_fd = fds[0],
-            .write_file = .{ .handle = fds[1], .flags = .{ .nonblocking = false } },
-        };
+        if (comptime builtin.os.tag == .windows) {
+            return error.PipeUnsupported;
+        } else {
+            var fds: [2]std.c.fd_t = undefined;
+            if (std.c.pipe(&fds) != 0) return error.PipeUnsupported;
+            return .{
+                .read_fd = fds[0],
+                .write_file = .{ .handle = fds[1], .flags = .{ .nonblocking = false } },
+            };
+        }
     }
 
     fn close(self: *TestPipe) void {
@@ -1457,7 +1461,7 @@ test "writeAllBounded returns SendTimeout instead of parking when the pipe never
     // unbounded write parks the caller AND this server's lease, so every other
     // session on it waits too, with no way for Stop to reach them.
     if (builtin.os.tag == .windows) return error.SkipZigTest; // waitWritable is POSIX-only
-    var pipe = try TestPipe.open();
+    var pipe = TestPipe.open() catch return error.SkipZigTest;
     defer pipe.close();
 
     // Past any platform pipe buffer (64 KiB on Linux), so the first chunks fit
@@ -1482,7 +1486,7 @@ test "writeAllBounded returns SendTimeout instead of parking when the pipe never
 
 test "writeAllBounded aborts when the cancel hook fires, even with a huge budget" {
     if (builtin.os.tag == .windows) return error.SkipZigTest;
-    var pipe = try TestPipe.open();
+    var pipe = TestPipe.open() catch return error.SkipZigTest;
     defer pipe.close();
 
     const cancel = struct {
@@ -1503,7 +1507,7 @@ test "writeAllBounded aborts when the cancel hook fires, even with a huge budget
 }
 
 test "writeAllBounded delivers every byte to a live reader, across chunk boundaries" {
-    var pipe = try TestPipe.open();
+    var pipe = TestPipe.open() catch return error.SkipZigTest;
     defer pipe.close();
 
     // 10 KB crosses the 4 KiB write ceiling (three writes) and stays under the

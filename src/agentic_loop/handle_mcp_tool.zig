@@ -515,25 +515,33 @@ const never_reading_server_json = "{\"command\": \"sleep\", \"args\": [\"30\"]}"
 const never_reading_argv: []const []const u8 = &.{ "sleep", "30" };
 
 /// One stdio MCP server entry + everything `handle_mcp_tool_run` needs, wired
-/// to a real local child process (`cat` / `sleep`) rather than a network double.
+/// to a real local child (`cat` / `sleep`) and to a log file the tests read to
+/// count lease attempts (`.err` is the only level it keeps).
 const StdioCallFixture = struct {
     threaded: std.Io.Threaded,
     logger: logger_mod.Logger,
     servers: std.json.Parsed(std.json.Value),
     cfg: config_mod.LlmConfig,
     io: std.Io,
+    log_path: []const u8,
 
-    fn init(server_name: []const u8, server_json: []const u8) !StdioCallFixture {
+    fn init(server_name: []const u8, server_json: []const u8, log_path: []const u8) !StdioCallFixture {
         const allocator = testing.allocator;
         var threaded = std.Io.Threaded.init(allocator, .{});
         errdefer threaded.deinit();
         const io = threaded.io();
+
+        const owned_log_path = try allocator.dupe(u8, log_path);
+        errdefer allocator.free(owned_log_path);
+        std.Io.Dir.cwd().deleteFile(io, owned_log_path) catch {};
 
         var logger = logger_mod.Logger.init(allocator, io, .{
             .min_level = .err,
             .include_location = false,
             .include_request_id = false,
             .include_timestamp = false,
+            .output_mode = .file,
+            .log_file_path = owned_log_path,
         });
         errdefer logger.deinit();
 
@@ -547,6 +555,7 @@ const StdioCallFixture = struct {
             .logger = logger,
             .servers = servers,
             .io = io,
+            .log_path = owned_log_path,
             // No cfg.deinit: the string fields borrow static literals and both
             // maps stay empty, so `servers.deinit()` is the whole teardown.
             .cfg = .{
@@ -564,6 +573,15 @@ const StdioCallFixture = struct {
         };
     }
 
+    /// Error lines the call logged — one per lease-acquire attempt, so this is
+    /// the retry count. The only platform-independent way to assert it:
+    /// wall-clock cannot tell one attempt from three on a coarse-timer host.
+    fn leaseAttempts(self: *StdioCallFixture) usize {
+        const bytes = std.Io.Dir.cwd().readFileAlloc(self.io, self.log_path, testing.allocator, .limited(1 << 20)) catch return 0;
+        defer testing.allocator.free(bytes);
+        return std.mem.count(u8, bytes, "\n");
+    }
+
     /// Call `mcp_<server>_<tool>` through the real entry point.
     fn call(self: *StdioCallFixture, tool_name: []const u8, opts: CallOptions) anyerror![]const u8 {
         const tool_call = agent.ToolCall{
@@ -577,6 +595,8 @@ const StdioCallFixture = struct {
         // Kills the child this fixture spawned via the process-global registry.
         mcp_stdio.StdioRegistry.deinitGlobal();
         self.logger.deinit();
+        std.Io.Dir.cwd().deleteFile(self.io, self.log_path) catch {};
+        testing.allocator.free(self.log_path);
         self.threaded.deinit();
         self.servers.deinit();
     }
@@ -591,7 +611,7 @@ fn elapsedMsSince(io: std.Io, start_ns: i128) u64 {
 
 test "handle_mcp_tool_run: a server another session holds reports MCPServerBusy within ONE lease budget" {
     if (builtin.os.tag == .windows) return error.SkipZigTest; // `sleep` child
-    var fx = try StdioCallFixture.init("busysrv", never_reading_server_json);
+    var fx = try StdioCallFixture.init("busysrv", never_reading_server_json, "./test_mcp_lease_busy.log");
     defer fx.deinit();
 
     // Arrange: another session is mid-transaction on this server.
@@ -604,16 +624,20 @@ test "handle_mcp_tool_run: a server another session holds reports MCPServerBusy 
     const elapsed_ms = elapsedMsSince(fx.io, start);
 
     try testing.expect(result == error.MCPServerBusy);
-    // ONE budget, not three: a busy lease is contention, not a broken child,
-    // so the retry loop must not stack the wait (pre-fix the caller waited
-    // forever and this test never returned at all).
+    // ONE acquire attempt, not three: a busy lease is contention, not a broken
+    // child, so the retry loop must not stack the wait. Counted from the log,
+    // because a 200ms budget measures >1s under macOS/CI timer granularity.
+    try testing.expectEqual(@as(usize, 1), fx.leaseAttempts());
+    // The budget was waited out rather than failed instantly…
     try testing.expect(elapsed_ms >= 150);
-    try testing.expect(elapsed_ms < 1000);
+    // …and this is a hang guard, not a budget check (see above). Pre-fix the
+    // caller never returned at all.
+    try testing.expect(elapsed_ms < 30_000);
 }
 
 test "handle_mcp_tool_run: a cancelled session stops waiting for a busy stdio server" {
     if (builtin.os.tag == .windows) return error.SkipZigTest;
-    var fx = try StdioCallFixture.init("cancsrv", never_reading_server_json);
+    var fx = try StdioCallFixture.init("cancsrv", never_reading_server_json, "./test_mcp_lease_cancelled.log");
     defer fx.deinit();
 
     // The Stop button's state, read from where the loop writes it: the worker row.
@@ -636,6 +660,7 @@ test "handle_mcp_tool_run: a cancelled session stops waiting for a busy stdio se
     const elapsed_ms = elapsedMsSince(fx.io, start);
 
     try testing.expect(result == error.MCPServerBusy);
+    try testing.expectEqual(@as(usize, 1), fx.leaseAttempts());
     try testing.expect(elapsed_ms < 2000);
 }
 
@@ -644,7 +669,7 @@ test "handle_mcp_tool_run: a session that is NOT cancelled still waits out the b
     // value, not on its mere presence — otherwise every MCP call would abort
     // the moment its session row existed.
     if (builtin.os.tag == .windows) return error.SkipZigTest;
-    var fx = try StdioCallFixture.init("livewsrv", never_reading_server_json);
+    var fx = try StdioCallFixture.init("livewsrv", never_reading_server_json, "./test_mcp_lease_uncancelled.log");
     defer fx.deinit();
 
     var db: sqlite.SqliteBackend = .{};
@@ -665,15 +690,16 @@ test "handle_mcp_tool_run: a session that is NOT cancelled still waits out the b
     const elapsed_ms = elapsedMsSince(fx.io, start);
 
     try testing.expect(result == error.MCPServerBusy);
+    try testing.expectEqual(@as(usize, 1), fx.leaseAttempts());
     // Waited the budget, then reported busy — it did not abort early.
     try testing.expect(elapsed_ms >= 350);
-    try testing.expect(elapsed_ms < 1500);
+    try testing.expect(elapsed_ms < 30_000); // hang guard, see the busy test
 }
 
 test "handle_mcp_tool_run: an unheld stdio server answers the call" {
     // Happy path through the new bounded send: an unheld server must still
     // round-trip the request and hand the child's body back as the tool output.
-    var fx = try StdioCallFixture.init("idlesrv", "{\"command\": \"cat\", \"args\": []}");
+    var fx = try StdioCallFixture.init("idlesrv", "{\"command\": \"cat\", \"args\": []}", "./test_mcp_lease_unheld.log");
     defer fx.deinit();
 
     const result = fx.call("mcp_idlesrv_ping", .{}) catch |err| {

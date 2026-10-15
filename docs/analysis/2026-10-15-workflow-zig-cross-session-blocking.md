@@ -349,22 +349,28 @@ Regression tests (behaviour, deterministic fixtures — no network):
   (no subprocess, so the fixture cannot depend on the runner's environment):
   the deadline ⇒ `SendTimeout`; the cancel hook aborts it; a live reader gets
   every byte back across the 4 KiB chunk boundary.
-* `handle_mcp_tool.zig` — a held server ⇒ `MCPServerBusy` within **one** budget
-  (not three); a cancelled session stops waiting while a non-cancelled one waits
-  it out; an unheld server round-trips a real child's answer end-to-end (that
-  last one covers `sendNDJSON` + `recv` byte-for-byte through the real entry
-  point).
+* `handle_mcp_tool.zig` — a held server ⇒ `MCPServerBusy` after **one** lease
+  attempt (not three), counted from the acquire-failure lines the call logs,
+  because wall-clock cannot tell one attempt from three on a coarse-timer host;
+  a cancelled session stops waiting while a non-cancelled one waits it out; an
+  unheld server round-trips a real child's answer end-to-end.
 * Both files are now registered for `zig build test` discovery
   (`agentic_loop/test_runner.zig`, `root.zig`'s test block) — `handle_mcp_tool`
   and `mcp_stdio` were carrying inline tests that never ran.
 
 ### 5.2 Still open (hardening, not defects)
 
-2. **Make `forwardToClients` unable to block the loop** (`unified_events_sse.zig:11`)
+0. **`tryLockUntil` overshoots its budget on a coarse-timer host** (surfaced by
+   the macOS CI run of #955, and pre-existing). It accumulates the *requested*
+   2 ms step (`waited += step`) instead of comparing the real clock against a
+   deadline, so on a host where each `Clock.Duration.sleep(2 ms)` takes ~10 ms a
+   200 ms budget is served in ≈1 s. Still bounded, so not a defect — but a
+   deadline computed once on entry would make the budget mean the budget.
+1. **Make `forwardToClients` unable to block the loop** (`unified_events_sse.zig:11`)
    — per-client outbound queue drained by the existing SSE loops, so an emit is
    enqueue-only. That removes the last "loop thread inside a shared lock" hop and
    makes §2.2 a latency-only concern.
-3. **Optional:** bound `writeStreamingAll` to fd 2 (`Logger.zig:323`) or make the
+2. **Optional:** bound `writeStreamingAll` to fd 2 (`Logger.zig:323`) or make the
    global logger never block on the sink (§2.4); and stop masking a failed MCP
    tools fetch as "retry forever per iteration" (§2.5).
 
