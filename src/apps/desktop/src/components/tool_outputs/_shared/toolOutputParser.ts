@@ -87,14 +87,13 @@ export function extractInt(content: string, tag: string): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-// ─── JSON data-object helpers ──────────────────────────────────────────────
-//
-// Migrated parsers (read_file, shell family, search, ask_user) take the
-// envelope's `data` payload as a parsed object and read fields directly —
-// no tag extraction, no entity decoding (JSON needs none). The helpers
-// below are lenient by design: a JSON string is parsed, a full envelope
-// object (or its JSON string) is unwrapped one level to `.data`, and
-// anything else yields safe defaults so a card never throws.
+// ─── JSON data-object helpers ────────────────────────────────────────────── Migrated parsers
+// (read_file, shell family, search, ask_user) take the envelope's `data` payload as a parsed object
+// and read fields directly — no tag extraction, no entity decoding (JSON needs none).
+
+// The helpers below are lenient by design: a JSON string is parsed, a full envelope object (or its
+// JSON string) is unwrapped one level to `.data`, and anything else yields safe defaults so a card
+// never throws.
 
 /** Coerce unknown input to a plain record. Unparseable input → {}. */
 function asRecord(data: unknown): Record<string, unknown> {
@@ -269,12 +268,12 @@ export function parseWriteFile(data: unknown): ParsedWriteFile {
   }
 }
 
-/** The name a skill tool acted on.
- * `skill_name` is the canonical field on every skill tool payload; `name`
- * is the echo of what was requested and is absent from some rows. An EMPTY
- * `skill_name` counts as absent rather than winning — it would otherwise
- * render a card whose only label is blank, and `??` alone would not catch
- * it because `''` is neither null nor undefined. */
+/** The name a skill tool acted on. `skill_name` is the canonical field on every skill tool payload;
+ * `name` is the echo of what was requested and is absent from some rows. */
+
+/** An EMPTY `skill_name` counts as absent rather than winning — it would otherwise render a card
+ * whose only label is blank, and `??` alone would not catch it because `''` is neither null nor
+ * undefined. */
 function skillNameField(o: Record<string, unknown>): string {
   const primary = strOrNullField(o, 'skill_name')
   if (primary !== null && primary.trim() !== '') return primary
@@ -446,11 +445,11 @@ export function parseBash(data: unknown): ParsedBash {
   const o = unwrapDataRecord(data)
   return {
     command: strOrNullField(o, 'command'),
-    // Second, independent escape guard at the parse seam. The backend
-    // strips in shell.result_to_json; this covers live/partial payloads
-    // and any future raw-bytes producer. It deliberately does NOT try to
-    // repair pre-fix rows — see helpers/stripAnsiEscapes.ts on why those
-    // are unrecoverable rather than heuristically "fixed".
+    // Second, independent escape guard at the parse seam. The backend strips in
+    // shell.result_to_json; this covers live/partial payloads and any future raw-bytes producer.
+
+    // It deliberately does NOT try to repair pre-fix rows — see helpers/stripAnsiEscapes.ts on why
+    // those are unrecoverable rather than heuristically "fixed".
     stdout: stripAnsiEscapes(strField(o, 'stdout')),
     stderr: stripAnsiEscapes(strField(o, 'stderr')),
     exitCode: numOrNullField(o, 'exit_code'),
@@ -461,25 +460,25 @@ export function parseBash(data: unknown): ParsedBash {
   }
 }
 
-/** Parse a pwsh (PowerShell Core) tool result. Same JSON `data` shape as bash —
- * per plan D2 + D10 the schema is structurally identical, only the
- * `tool` field that wraps the envelope differs.
- * Functionally a clone of `parseBash` so future divergence (e.g. pwsh adds a
- * `version` field for the PowerShell version that ran) is a one-line change
- * here. Tests in `toolOutputParser.spec.ts` assert `parsePwsh(x) === parseBash(x)`
- * to catch accidental drift. */
+/** Parse a pwsh (PowerShell Core) tool result. Same JSON `data` shape as bash — per plan D2 + D10
+ * the schema is structurally identical, only the `tool` field that wraps the envelope differs. */
+
+/** Functionally a clone of `parseBash` so future divergence (e.g. pwsh adds a `version` field for
+ * the PowerShell version that ran) is a one-line change here. Tests in `toolOutputParser.spec.ts`
+ * assert `parsePwsh(x) === parseBash(x)` to catch accidental drift. */
 export function parsePwsh(data: unknown): ParsedBash {
   return parseBash(data)
 }
 
-/** Parse a `command` (unified shell) tool result. Same JSON `data` shape as
- * bash — the unified `command` tool reuses the identical 8-field payload
- * (`command`/`stdout`/`stderr`/`exit_code`/`truncated`/`timeout`/
- * `stdout_lines`/`stderr_lines`), only the `tool` wrapper
- * differs. Functionally an alias of `parseBash` so future payload
- * divergence is a one-line change here. Tests assert
- * `parseCommand(x) === parseBash(x)` to catch accidental drift.
- * `parseBash` / `parsePwsh` are intentionally left untouched. */
+/** Parse a `command` (unified shell) tool result. */
+
+/** Same JSON `data` shape as bash — the unified `command` tool reuses the identical 8-field payload
+ * (`command`/`stdout`/`stderr`/`exit_code`/`truncated`/`timeout`/ `stdout_lines`/`stderr_lines`),
+ * only the `tool` wrapper differs. */
+
+/** Functionally an alias of `parseBash` so future payload divergence is a one-line change here.
+ * Tests assert `parseCommand(x) === parseBash(x)` to catch accidental drift. `parseBash` /
+ * `parsePwsh` are intentionally left untouched. */
 export function parseCommand(data: unknown): ParsedBash {
   return parseBash(data)
 }
@@ -557,11 +556,11 @@ export function parseSearch(data: unknown): ParsedSearch {
   }
 }
 
-/** One row of a `search_skills` page. Identity is the name ALONE: the page
- * is one workspace's skills, so there is no tier to tag and no path to
- * hand back. A row that arrived with the old `scope` / `path` keys still
- * parses — the extra keys are simply not read, which keeps a cached
- * transcript from rendering blank rows. */
+/** One row of a `search_skills` page. Identity is the name ALONE: the page is one workspace's
+ * skills, so there is no tier to tag and no path to hand back. */
+
+/** A row that arrived with the old `scope` / `path` keys still parses — the extra keys are simply
+ * not read, which keeps a cached transcript from rendering blank rows. */
 export interface SkillSearchRow {
   name: string
   description: string
@@ -850,17 +849,17 @@ export function parseGenerateImage(data: unknown): ParsedGenerateImage {
 
 //   {"provider":"tinyfish","status":200,"response":{…}}
 
-// TinyFish answers `{results:[…]}`, Brave `{web:{results:[…]}}`, Serper
-// `{organic:[…]}` and a self-hosted SearxNG a bare `[{…}]`. There is
-// deliberately NO normalized result schema, so `response` stays `unknown`
-// here and the renderer is the only layer allowed an opinion about it. A
-// shape this client has never seen is a normal outcome (D13), not an error.
-//
-// A failure carries `error` plus a reason flag — `configured:false`,
-// `unknown_provider` (+ `available`), `host_mismatch` (+ `pinned_host`,
-// `requested_host`), `invalid_curl`, `exhausted` (+ `other_providers`),
-// `unsafe_pinned_url`, `response_too_large` or `http_status`. `transport`
-// is the flagless one: DNS, TLS or timeout, and the message is the envelope.
+// TinyFish answers `{results:[…]}`, Brave `{web:{results:[…]}}`, Serper `{organic:[…]}` and a
+// self-hosted SearxNG a bare `[{…}]`. There is deliberately NO normalized result schema, so
+// `response` stays `unknown` here and the renderer is the only layer allowed an opinion about it.
+
+// A shape this client has never seen is a normal outcome (D13), not an error.
+
+// A failure carries `error` plus a reason flag — `configured:false`, `unknown_provider` (+
+// `available`), `host_mismatch` (+ `pinned_host`, `requested_host`), `invalid_curl`, `exhausted` (+
+// `other_providers`), `unsafe_pinned_url`, `response_too_large` or `http_status`.
+
+// `transport` is the flagless one: DNS, TLS or timeout, and the message is the envelope.
 
 /** The nine reasons a `web_search` envelope can fail, as the card spells them. */
 export type WebSearchErrorFlag =
@@ -965,12 +964,13 @@ export function parseWebSearchError(o: Record<string, unknown>): ParsedWebSearch
   }
 }
 
-/** The exec wrapper reports a failure in TWO places: the envelope's `error`
- * field, and — for the reasons the model can recover from on its own — the
- * whole inner JSON envelope as that field's TEXT. When it is a text
- * envelope, read the flags out of it; when it is a plain sentence, report
- * the sentence and no flag, because a message with no reason key is not
- * evidence of a transport failure. */
+/** The exec wrapper reports a failure in TWO places: the envelope's `error` field, and — for the
+ * reasons the model can recover from on its own — the whole inner JSON envelope as that field's
+ * TEXT. */
+
+/** When it is a text envelope, read the flags out of it; when it is a plain sentence, report the
+ * sentence and no flag, because a message with no reason key is not evidence of a transport
+ * failure. */
 export function parseWebSearchErrorText(text: string): ParsedWebSearchError {
   const o = asRecord(text)
   if (typeof o.error === 'string' && Object.keys(o).length > 1) return parseWebSearchError(o)

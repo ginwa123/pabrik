@@ -111,7 +111,14 @@ def strip_markers(lines, kind):
 # previous line broke: a date (`2026-08-06-x.md`), a version, a hex id, a
 # snake_case word. Anything else after a `/` is prose (`Null on 404 /` +
 # `network failure`) and must keep its space.
-CONTINUATION_RE = re.compile(r'^(?:\d|[a-z][a-z0-9]*(?:_[a-z0-9]+)+|[a-z]+\.[a-z]{2,4}\b)')
+#
+# NOTE the `-` case is deliberately absent. `array, every` + `checkbox showed`
+# is prose, and joining it produced `every-checkbox`, which broke the file.
+CONTINUATION_RE = re.compile(
+    r'^(?:\d'                      # 2026-08-06-x.md, 0.1.2, 42
+    r'|[a-z][a-z0-9]*(?:_[a-z0-9]+)+'   # snake_case_word
+    r'|[a-z]+\.[a-z]{2,4}\b'          # file.md, index.ts
+    r')')
 
 
 def join_prose(prose):

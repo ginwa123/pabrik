@@ -170,11 +170,11 @@ describe('computeAnchorCompensation', () => {
   })
 
   it('still uses the anchor when no bottom target is passed', () => {
-    // The helper is not entitled to judge whether the reader is at the bottom —
-    // that is the caller's read of the live DOM, and it passes `atBottomTarget`
-    // only when the answer was yes. Omitting it must give exactly the
-    // pre-existing anchor behaviour, which is what holds a reader 4000px up in
-    // the history still while the model above them is corrected.
+    // The helper is not entitled to judge whether the reader is at the bottom — that is the
+    // caller's read of the live DOM, and it passes `atBottomTarget` only when the answer was yes.
+
+    // Omitting it must give exactly the pre-existing anchor behaviour, which is what holds a reader
+    // 4000px up in the history still while the model above them is corrected.
     const result = computeAnchorCompensation({
       ...base,
       prevScrollTop: 5000,
@@ -199,22 +199,23 @@ describe('computeAnchorCompensation', () => {
   })
 
   it('a no-op prefix delta still re-pins a bottom reader whose bottom moved', () => {
-    // THE regression (2026-10-10). This used to assert the opposite — that a
-    // `shiftPx === 0` pass writes nothing even at the bottom — and that ordering
-    // is what stranded bottom readers mid-stream.
-    //
-    // Measured in a real browser: EVERY pass of a streaming turn had
-    // `shiftPx === 0`, because content grows AT/AFTER the anchor (so the prefix
-    // is unchanged) and the rendered window shifts with the anchor index (so the
-    // prefix at the anchor is unchanged too). With the bottom branch ordered
-    // after the early return, `atBottomTarget` was computed and then discarded,
-    // and the only thing re-pinning a bottom reader was ChatView's separate
-    // `scrollToBottom()` call. When that lost the race with the measure pass —
-    // timing dependent, hence macOS-only — the reader was left where the last
-    // successful pin put them while the bottom had moved on.
-    //
-    // The anchor path exists to hold a scrolled-up reader STILL. A bottom reader
-    // has no anchor to hold; they need re-pinning whenever the bottom moved.
+    // THE regression (2026-10-10). This used to assert the opposite — that a `shiftPx === 0` pass
+    // writes nothing even at the bottom — and that ordering is what stranded bottom readers
+    // mid-stream.
+
+    // Measured in a real browser: EVERY pass of a streaming turn had `shiftPx === 0`, because
+    // content grows AT/AFTER the anchor (so the prefix is unchanged) and the rendered window shifts
+    // with the anchor index (so the prefix at the anchor is unchanged too).
+
+    // With the bottom branch ordered after the early return, `atBottomTarget` was computed and then
+    // discarded, and the only thing re-pinning a bottom reader was ChatView's separate
+    // `scrollToBottom()` call.
+
+    // When that lost the race with the measure pass — timing dependent, hence macOS-only — the
+    // reader was left where the last successful pin put them while the bottom had moved on. The
+    // anchor path exists to hold a scrolled-up reader STILL.
+
+    // A bottom reader has no anchor to hold; they need re-pinning whenever the bottom moved.
     const result = computeAnchorCompensation({
       ...base,
       prevScrollTop: 96000,
@@ -312,15 +313,15 @@ describe('computeAnchorCompensation', () => {
     expect(result.newScrollTop).toBeGreaterThanOrEqual(0)
   })
 
-  // ── maxScrollTop: bound the target to the range the DOM can reach ─────────
-  //
-  // `measureItems` rebuilds the model and writes scrollTop in ONE synchronous
-  // pass, while the sizer is a `:style` binding Vue applies on its next render.
-  // Without a bound, a target past the element's CURRENT range is truncated by
-  // the browser — silently — which is a teleport rather than a no-op (the pass
-  // meant to hold the reader's view still leaves them short, and the next pass
-  // compensates from the displaced position). Measured 2026-10-12: a +22,235px
-  // compensation written as 138,880 and held at 120,074.
+  // ── maxScrollTop: bound the target to the range the DOM can reach ───────── `measureItems`
+  // rebuilds the model and writes scrollTop in ONE synchronous pass, while the sizer is a `:style`
+  // binding Vue applies on its next render.
+
+  // Without a bound, a target past the element's CURRENT range is truncated by the browser —
+  // silently — which is a teleport rather than a no-op (the pass meant to hold the reader's view
+  // still leaves them short, and the next pass compensates from the displaced position).
+
+  // Measured 2026-10-12: a +22,235px compensation written as 138,880 and held at 120,074.
 
   it('cuts a target that exceeds the reachable range and says so', () => {
     const result = computeAnchorCompensation({
@@ -456,11 +457,11 @@ function dispatchScroll(el: HTMLElement) {
   el.dispatchEvent(new Event('scroll'))
 }
 
-/** Give the rendered children fake offsetHeights: `tallPx` for items
- * above `anchorIndex`, `estimatePx` for the rest. Returns the expected
- * compensation total for the above-anchor set. Pass `onlyIndex` to
- * make exactly ONE above-anchor item tall (the "single long message"
- * case); the rest keep the estimate. */
+/** Give the rendered children fake offsetHeights: `tallPx` for items above `anchorIndex`,
+ * `estimatePx` for the rest. Returns the expected compensation total for the above-anchor set. */
+
+/** Pass `onlyIndex` to make exactly ONE above-anchor item tall (the "single long message" case);
+ * the rest keep the estimate. */
 function mockChildHeights(
   el: HTMLElement,
   anchorIndex: number,
@@ -527,12 +528,11 @@ describe('VirtualScroller measurement anchor compensation', () => {
   })
 
   it('baselines first measurements on the MODEL estimate (median), not defaultItemHeight', async () => {
-    // Regression for failure mode A: the model estimates unmeasured
-    // items with the adaptive median — once the median has learned
-    // 400px, the static 64px prop no longer describes anything. First
-    // measurements above the anchor must be compensated against the
-    // 400px model contribution (plus the in-pass estimator drift),
-    // NOT against 64px.
+    // Regression for failure mode A: the model estimates unmeasured items with the adaptive median
+    // — once the median has learned 400px, the static 64px prop no longer describes anything.
+
+    // First measurements above the anchor must be compensated against the 400px model contribution
+    // (plus the in-pass estimator drift), NOT against 64px.
     const { wrapper, el } = mountScroller(255)
     await nextTick()
 
@@ -572,18 +572,16 @@ describe('VirtualScroller measurement anchor compensation', () => {
     wrapper.unmount()
   })
 
-  // ── The bottom is not an anchor ────────────────────────────────────────
-  //
-  // The report: with many messages and a long response the chat stops
-  // auto-scrolling to the bottom. Mechanism: the reader is at the bottom, the
-  // window expands as the long response grows, a batch of rows above the anchor
-  // measures for the first time, the prefix delta runs to thousands of px, and
-  // the compensation writes scrollTop that far UP. ChatView reads that write —
-  // programmatic or not — as "the user left the bottom", the stick disarms, and
-  // every remaining chunk lands off-screen.
-  //
-  // The reader at the bottom has no view to preserve, so the pass must
-  // re-target them at the bottom instead of around the anchor.
+  // ── The bottom is not an anchor ──────────────────────────────────────── The report: with many
+  // messages and a long response the chat stops auto-scrolling to the bottom.
+
+  // Mechanism: the reader is at the bottom, the window expands as the long response grows, a batch
+  // of rows above the anchor measures for the first time, the prefix delta runs to thousands of px,
+  // and the compensation writes scrollTop that far UP.
+
+  // ChatView reads that write — programmatic or not — as "the user left the bottom", the stick
+  // disarms, and every remaining chunk lands off-screen. The reader at the bottom has no view to
+  // preserve, so the pass must re-target them at the bottom instead of around the anchor.
 
   it('keeps a reader AT THE BOTTOM on the bottom when the model above the anchor shifts', async () => {
     const { wrapper, el } = mountScroller(255)
@@ -722,38 +720,35 @@ describe('VirtualScroller measurement anchor compensation', () => {
     await nextTick()
     vi.advanceTimersByTime(60) // flush initial measure pass
 
-    // Simulate scrolling UP so a new tall item enters the TOP buffer:
-    // move the viewport up by exactly two estimate-slots (128px). The
-    // visibleRange recomputes; item 97 renders above the viewport with
-    // mocked offsetHeight=3000 (the "one long message"). All other
-    // buffer items keep the 64px estimate.
-    //
-    // The tall item MUST sit strictly above the anchor (97 < 98): the
-    // anchor rule compensates only indices strictly above the viewport
-    // start — growth at/below the anchor is real content and flows
-    // through uncompensated (see 'is a no-op when the prefix is
-    // unchanged' above).
+    // Simulate scrolling UP so a new tall item enters the TOP buffer: move the viewport up by
+    // exactly two estimate-slots (128px). The visibleRange recomputes; item 97 renders above the
+    // viewport with mocked offsetHeight=3000 (the "one long message").
+
+    // All other buffer items keep the 64px estimate.
+
+    // The tall item MUST sit strictly above the anchor (97 < 98): the anchor rule compensates only
+    // indices strictly above the viewport start — growth at/below the anchor is real content and
+    // flows through uncompensated (see 'is a no-op when the prefix is unchanged' above).
     mockChildHeights(el, 100, 3000, 64, 97)
     el.scrollTop = 6400 - 128
     el.dispatchEvent(new Event('scroll'))
     await nextTick() // Vue commits the new window incl. item 97
 
-    // NO vi.advanceTimersByTime here — the correction must already be
-    // applied synchronously within the pre-paint tick. Final position =
-    // user's own −128px scroll (preserved) + item 97's growth (+2936)
-    // (compensated) = 6272 + 2936. The estimator median stays 64
-    // (one 3000px sample among ~70×64), so prefix delta = 3000 − 64.
+    // NO vi.advanceTimersByTime here — the correction must already be applied synchronously within
+    // the pre-paint tick. Final position = user's own −128px scroll (preserved) + item 97's growth
+    // (+2936) (compensated) = 6272 + 2936.
+
+    // The estimator median stays 64 (one 3000px sample among ~70×64), so prefix delta = 3000 − 64.
     expect(el.scrollTop).toBe(6400 - 128 + (3000 - 64))
     wrapper.unmount()
   })
 
   it('keeps measuring during sustained scrolling (trailing timer must not starve)', async () => {
-    // Failure mode D: the 50ms measure debounce used to CLEAR+REARM on
-    // every scroll event, so while scroll events kept arriving faster
-    // than 50ms apart it never fired — all pending corrections then
-    // landed in one lump when the gesture stopped (the "scroll, then
-    // it jumps" feel). The scheduler must be max-wait: armed once,
-    // fired at the deadline regardless of later events.
+    // Failure mode D: the 50ms measure debounce used to CLEAR+REARM on every scroll event, so while
+    // scroll events kept arriving faster than 50ms apart it never fired — all pending corrections
+    // then landed in one lump when the gesture stopped (the "scroll, then it jumps" feel).
+
+    // The scheduler must be max-wait: armed once, fired at the deadline regardless of later events.
     const { wrapper, el } = mountScroller(255)
     await nextTick()
 
@@ -764,11 +759,11 @@ describe('VirtualScroller measurement anchor compensation', () => {
 
     const expectedShift = mockChildHeights(el, 100, 300, 64) // 30 × 236
 
-    // Sustained scrolling: events every 40ms — always inside the 50ms
-    // window, so a reset-per-event scheduler would never fire. Dispatch
-    // WITHOUT rewriting scrollTop (see dispatchScroll): the position
-    // genuinely did not change, and writing it would manually undo the
-    // compensation this test observes.
+    // Sustained scrolling: events every 40ms — always inside the 50ms window, so a reset-per-event
+    // scheduler would never fire.
+
+    // Dispatch WITHOUT rewriting scrollTop (see dispatchScroll): the position genuinely did not
+    // change, and writing it would manually undo the compensation this test observes.
     dispatchScroll(el)
     vi.advanceTimersByTime(40)
     dispatchScroll(el)

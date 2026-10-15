@@ -25,22 +25,19 @@ const props = defineProps<{
   item: WorkspaceItem
   isActive: boolean
   workspaceId: string
-  // Drag-and-drop visual state, owned by the parent
-  // <ProjectsList> and passed down so the <li> can dim when
-  // being dragged and show a violet drop indicator on hover. The
-  // handlers themselves live in <ProjectsList> (event delegation
-  // on the <ul>); we just need the visual signal here. See
-  // docs/plans/2026-06-16-workspace-item-position-reorder.md.
+  // Drag-and-drop visual state, owned by the parent <ProjectsList> and passed down so the <li> can
+  // dim when being dragged and show a violet drop indicator on hover. The handlers themselves live
+  // in <ProjectsList> (event delegation on the <ul>); we just need the visual signal here.
+
+  // See docs/plans/2026-06-16-workspace-item-position-reorder.md.
   isItemDragging?: boolean
   isItemDragOver?: boolean
-  // When `isItemDragOver` is true, this flag tells the row whether
-  // the cursor is in the BOTTOM half (true → drop will land AFTER
-  // this row, draw a bottom-line indicator) or the TOP half
-  // (false → drop will land BEFORE this row, draw a top-line
-  // indicator). Lets the user see WHERE the drop will land so
-  // they can fine-tune before releasing the mouse. See
-  // ProjectsList.handleItemDrop for the index math that
-  // accompanies this visual.
+  // When `isItemDragOver` is true, this flag tells the row whether the cursor is in the BOTTOM half
+  // (true → drop will land AFTER this row, draw a bottom-line indicator) or the TOP half (false →
+  // drop will land BEFORE this row, draw a top-line indicator).
+
+  // Lets the user see WHERE the drop will land so they can fine-tune before releasing the mouse.
+  // See ProjectsList.handleItemDrop for the index math that accompanies this visual.
   isItemDragOverInsertAfter?: boolean
 }>()
 
@@ -62,19 +59,18 @@ const emit = defineEmits<{
   ]
   deleteTask: [workspaceId: string, itemId: string, taskId: string]
   renameTask: [workspaceId: string, itemId: string, taskId: string, currentName: string]
-  // The user must click to fetch the next page of tasks for this
-  // item. ProjectsList forwards the event to Sidebar, which calls
-  // workspacesStore.loadMoreTasks. See Design Note 6 in
-  // docs/plans/2026-06-10-workspace-item-task-pagination.md — the
-  // button lives here (not in WorkspaceItemTaskRow.vue) because it is
-  // a sibling of the per-task list, not a property of any individual
-  // task.
+  // The user must click to fetch the next page of tasks for this item. ProjectsList forwards the
+  // event to Sidebar, which calls workspacesStore.loadMoreTasks.
+
+  // See Design Note 6 in docs/plans/2026-06-10-workspace-item-task-pagination.md — the button lives
+  // here (not in WorkspaceItemTaskRow.vue) because it is a sibling of the per-task list, not a
+  // property of any individual task.
   loadMoreTasks: [workspaceId: string, itemId: string]
   // NEW (pinned-tasks feature, plan:
-  // docs/superpowers/plans/2026-06-20-pinned-workspace-item-tasks.md):
-  // pin/unpin and drag-reorder of the pinned subset, both forwarded
-  // up to ProjectsList → Sidebar. See handlePinTask /
-  // handleReorderPinnedTasks below.
+  // docs/superpowers/plans/2026-06-20-pinned-workspace-item-tasks.md): pin/unpin and drag-reorder
+  // of the pinned subset, both forwarded up to ProjectsList → Sidebar.
+
+  // See handlePinTask / handleReorderPinnedTasks below.
   pinTask: [workspaceId: string, itemId: string, taskId: string, isPinned: boolean]
   reorderPinnedTasks: [workspaceId: string, itemId: string, orderedIds: string[]]
   // NEW (design-pages-in-workspace-tree plan, 2026-08-06): design page events from <DesignPageRow>
@@ -99,17 +95,16 @@ const isExpanded = computed(() => {
   return workspacesStore.expandedItemIds[props.item.id] === true
 })
 
-// URL-driven "what is the main content area showing?". The active row
-// styling is now sourced from the URL (?view=workspace&itemId=X) rather
-// than the `isActive` prop (which is still passed by the parent for
-// backwards-compat with other consumers and for the right-side active
-// dot). When the URL changes, the computed re-runs and the row styling
-// updates — no watcher needed, the template binding is enough.
-//
-// NEW (plan: 2026-09-02-kanban-settings-as-page): keep the parent row
-// highlighted when the user is on the kanban settings page. The page
-// is a sub-state of the kanban (same itemId), so the row should stay
-// visually selected until the user navigates elsewhere.
+// URL-driven "what is the main content area showing?". The active row styling is now sourced from
+// the URL (?view=workspace&itemId=X) rather than the `isActive` prop (which is still passed by the
+// parent for backwards-compat with other consumers and for the right-side active dot).
+
+// When the URL changes, the computed re-runs and the row styling updates — no watcher needed, the
+// template binding is enough. NEW (plan: 2026-09-02-kanban-settings-as-page): keep the parent row
+// highlighted when the user is on the kanban settings page.
+
+// The page is a sub-state of the kanban (same itemId), so the row should stay visually selected
+// until the user navigates elsewhere.
 const currentMainView = useCurrentMainView()
 const isCurrentMainView = computed(() => {
   const v = currentMainView.value
@@ -118,11 +113,11 @@ const isCurrentMainView = computed(() => {
   return false
 })
 
-// Computed: true if any of this item's tasks is currently being processed
-// First processing task's id (= session_id per Migration 052 convention,
-// so it's the same key `processingState` uses). The elapsed chip reads
-// this — when null, the chip is hidden. Used to mount ONE time pill at
-// the workspace-item row level when ANY task is running.
+// Computed: true if any of this item's tasks is currently being processed First processing task's
+// id (= session_id per Migration 052 convention, so it's the same key `processingState` uses). The
+// elapsed chip reads this — when null, the chip is hidden.
+
+// Used to mount ONE time pill at the workspace-item row level when ANY task is running.
 const firstProcessingTaskId = computed<string | null>(() => {
   const tasks = props.item.tasks
   if (!tasks || tasks.length === 0) return null
@@ -146,42 +141,42 @@ const handleClick = (event?: MouseEvent) => {
     })
     return
   }
-  // Agent/folder/memory items toggle expand/collapse here.
-  // Kanban items render the board in the main content area (see
-  // AppLayout.vue's KanbanView branch) AND show their tasks inline
-  // (2026-09-10: no expand on kanban mode). Only `design` + `kanban` skip the toggle
-  // (its chevron is a separate click target via handleChevronToggle
-  // so expanding doesn't activate the item). The selectItem event
-  // still fires for ALL types (handled in ProjectsList → Sidebar →
-  // workspacesStore.setActiveWorkspaceItem), so clicking a kanban
-  // still activates it; AppLayout just routes the active item to the
-  // kanban board instead of a list.
+  // Agent/folder/memory items toggle expand/collapse here. Kanban items render the board in the
+  // main content area (see AppLayout.vue's KanbanView branch) AND show their tasks inline
+  // (2026-09-10: no expand on kanban mode).
+
+  // Only `design` + `kanban` skip the toggle (its chevron is a separate click target via
+  // handleChevronToggle so expanding doesn't activate the item).
+
+  // The selectItem event still fires for ALL types (handled in ProjectsList → Sidebar →
+  // workspacesStore.setActiveWorkspaceItem), so clicking a kanban still activates it; AppLayout
+  // just routes the active item to the kanban board instead of a list.
   if (props.item.item_type !== 'design' && props.item.item_type !== 'kanban') {
     workspacesStore.toggleExpandedItem(props.item.id)
   }
-  // Agent and routine items never navigate on plain left-click: their main view
-  // IS the config surface (Agent: Tools / System Prompt / Knowledge;
-  // Routine: description / instruction / schedule), so a click would
-  // yank the user into a settings-looking page. Click only
-  // expands/collapses the inline task list; the config opens via the
-  // right-click "Go to settings" entry (new browser tab).
+  // Agent and routine items never navigate on plain left-click: their main view IS the config
+  // surface (Agent: Tools / System Prompt / Knowledge; Routine: description / instruction /
+  // schedule), so a click would yank the user into a settings-looking page.
+
+  // Click only expands/collapses the inline task list; the config opens via the right-click "Go to
+  // settings" entry (new browser tab).
   if (props.item.item_type === 'agent' || props.item.item_type === 'routine') return
   // Always emit click for external handling (e.g., navigation to
   // the kanban board via activeWorkspaceItemId).
   emit('click', props.item)
 }
 
-// NEW (design-pages-in-workspace-tree plan, 2026-08-06): the chevron
-// itself (▶) toggles expand for design items WITHOUT activating
-// them. Activating happens on the row body (handleClick above) —
-// keeping the two concerns separate matches the Figma sidebar
-// pattern (chevron=expand, row=activate).
+// NEW (design-pages-in-workspace-tree plan, 2026-08-06): the chevron itself (▶) toggles expand for
+// design items WITHOUT activating them.
+
+// Activating happens on the row body (handleClick above) — keeping the two concerns separate
+// matches the Figma sidebar pattern (chevron=expand, row=activate).
 const handleChevronToggle = (event: Event) => {
-  // Stop propagation so the chevron click doesn't ALSO fire the
-  // outer row's @click handler (which would activate the design
-  // item AND expand it). Pre-fix this was the same behaviour for
-  // folders via the click handler, but for design items we want
-  // activation only on the row body, not the chevron.
+  // Stop propagation so the chevron click doesn't ALSO fire the outer row's @click handler (which
+  // would activate the design item AND expand it).
+
+  // Pre-fix this was the same behaviour for folders via the click handler, but for design items we
+  // want activation only on the row body, not the chevron.
   event.stopPropagation()
   workspacesStore.toggleExpandedItem(props.item.id)
   // Lazy fetch design pages on first expand. The cache lives in
@@ -192,12 +187,11 @@ const handleChevronToggle = (event: Event) => {
   }
 }
 
-// Pass-through handlers: <WorkspaceItemTaskRow> emits these three events
-// with the full payload (workspaceId, itemId, taskId, currentName), and
-// we forward them up to <ProjectsList> verbatim. The signatures match
-// the existing ProjectsList / Sidebar contract — see the pre-split
-// version of this file for the inline handlers that previously lived
-// here. No business logic; pure forwarding.
+// Pass-through handlers: <WorkspaceItemTaskRow> emits these three events with the full payload
+// (workspaceId, itemId, taskId, currentName), and we forward them up to <ProjectsList> verbatim.
+
+// The signatures match the existing ProjectsList / Sidebar contract — see the pre-split version of
+// this file for the inline handlers that previously lived here. No business logic; pure forwarding.
 const handleSelectTask = (taskId: string) => {
   emit('selectTask', taskId)
 }
@@ -286,15 +280,15 @@ const handleRenameTask = (
   emit('renameTask', workspaceId, itemId, taskId, currentName)
 }
 
-// Per-column pagination (kanban-per-column-pagination plan,
-// 2026-08-06): the SIDEBAR's "Load more" button aggregates the
-// per-column state. For kanban items, any column with hasMore=true
-// flips the sidebar button on; for non-kanban items, falls back to
-// the (now-removed) board-wide state — which is `undefined` for
-// items that were never paginated board-wide (no behavior change
-// for those). Each `KanbanColumn` in the kanban view has its own
-// per-column pagination so the sidebar's aggregation here is just a
-// convenience for the global "Load more" affordance.
+// Per-column pagination (kanban-per-column-pagination plan, 2026-08-06): the SIDEBAR's "Load more"
+// button aggregates the per-column state.
+
+// For kanban items, any column with hasMore=true flips the sidebar button on; for non-kanban items,
+// falls back to the (now-removed) board-wide state — which is `undefined` for items that were never
+// paginated board-wide (no behavior change for those).
+
+// Each `KanbanColumn` in the kanban view has its own per-column pagination so the sidebar's
+// aggregation here is just a convenience for the global "Load more" affordance.
 const hasMoreTasksForSidebar = computed(() => {
   const colPagination = props.item.columnPagination
   if (!colPagination) return false
@@ -307,12 +301,11 @@ const isLoadingMoreTasksForSidebar = computed(() => {
 })
 
 const handleLoadMoreTasks = (event: Event) => {
-  // Stop the click from bubbling up to the parent <button> (which
-  // would toggle item expansion). The Load More button lives inside
-  // the task-list <div>, which sits next to the main item row, so
-  // bubbling isn't strictly necessary today — but it's
-  // belt-and-braces against a future refactor that moves this
-  // button.
+  // Stop the click from bubbling up to the parent <button> (which would toggle item expansion).
+
+  // The Load More button lives inside the task-list <div>, which sits next to the main item row, so
+  // bubbling isn't strictly necessary today — but it's belt-and-braces against a future refactor
+  // that moves this button.
   event.stopPropagation()
   emit('loadMoreTasks', props.workspaceId, props.item.id)
 }
@@ -330,17 +323,16 @@ const handleReorderPinnedTasks = (orderedIds: string[]) => {
   emit('reorderPinnedTasks', props.workspaceId, props.item.id, orderedIds)
 }
 
-// NEW (design-pages-in-workspace-tree plan, 2026-08-06): pass-through
-// handlers for design-page events emitted by <DesignPageRow>. Sidebar
-// receives them and calls the matching store actions
-// (`setActiveDesignPage` / `setActiveWorkspaceItem` /
-// `deleteDesignPage` / `addDesignPage`).
-//
-// For `selectDesignPage` we ALSO activate the parent design item so
-// the main content area switches to DesignView — otherwise the page
-// would be "selected" but the canvas would still show whatever was
-// previously active. The two-step state change mirrors what
-// DesignView's chat toggle does (openChat also fires both events).
+// NEW (design-pages-in-workspace-tree plan, 2026-08-06): pass-through handlers for design-page
+// events emitted by <DesignPageRow>. Sidebar receives them and calls the matching store actions
+// (`setActiveDesignPage` / `setActiveWorkspaceItem` / `deleteDesignPage` / `addDesignPage`).
+
+// For `selectDesignPage` we ALSO activate the parent design item so the main content area switches
+// to DesignView — otherwise the page would be "selected" but the canvas would still show whatever
+// was previously active.
+
+// The two-step state change mirrors what DesignView's chat toggle does (openChat also fires both
+// events).
 const handleSelectDesignPage = (page: DesignPage) => {
   // 1. Set the page as active first so the click handler in the
   // store's setActiveWorkspaceItem flow doesn't race.
@@ -398,11 +390,11 @@ const handleOpenDesignPageInBackground = (page: DesignPage) => {
   })
 }
 
-// "+ Add Page" — emits to Sidebar which calls the store action.
-// The store handles the API call + cache update + setting the new
-// page as active. ProjectsList / Sidebar manage the actual fetch
-// rather than this component, mirroring how `addTask` is wired
-// (this component never calls the store directly for mutations).
+// "+ Add Page" — emits to Sidebar which calls the store action. The store handles the API call +
+// cache update + setting the new page as active.
+
+// ProjectsList / Sidebar manage the actual fetch rather than this component, mirroring how
+// `addTask` is wired (this component never calls the store directly for mutations).
 const handleAddDesignPage = (event: Event) => {
   event.stopPropagation()
   emit('addDesignPage', props.workspaceId, props.item.id)
@@ -426,37 +418,36 @@ const handlePinnedDragStart = (event: DragEvent) => {
   if (!row) return
   const taskId = row.dataset.taskId
   if (!taskId) return
-  // Use a custom MIME type instead of `text/plain`. The pinned
-  // region lives inside a workspace-item `<li>`, and the parent's
-  // <ProjectsList> attaches its own `@dragstart` handler on the
-  // outer `<ul>` for item reorder. Both handlers fire on the same
-  // dragstart (this one first, then the parent after bubbling),
-  // and `setData('text/plain', ...)` is destructive — whichever
-  // runs second overwrites the first. Using a dedicated MIME type
-  // (`application/x-pinned-task-id`) keeps the payload intact for
-  // the drop handler without colliding with the parent's
-  // `text/plain` payload.
+  // Use a custom MIME type instead of `text/plain`. The pinned region lives inside a workspace-item
+  // `<li>`, and the parent's <ProjectsList> attaches its own `@dragstart` handler on the outer
+  // `<ul>` for item reorder.
+
+  // Both handlers fire on the same dragstart (this one first, then the parent after bubbling), and
+  // `setData('text/plain', ...)` is destructive — whichever runs second overwrites the first.
+
+  // Using a dedicated MIME type (`application/x-pinned-task-id`) keeps the payload intact for the
+  // drop handler without colliding with the parent's `text/plain` payload.
   event.dataTransfer?.setData('application/x-pinned-task-id', taskId)
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move'
   }
 }
 
-// dragOver bookkeeping: which pinned row the cursor is currently
-// over, and whether the insertion point is above (cursor in the
-// row's top half) or below (cursor in the bottom half). Reset on
-// dragleave / drop. The state drives both the splice math in
-// `handlePinnedDrop` AND the yellow drop-indicator bar in the
-// template (rendered as a sibling of each row in the v-for).
+// dragOver bookkeeping: which pinned row the cursor is currently over, and whether the insertion
+// point is above (cursor in the row's top half) or below (cursor in the bottom half). Reset on
+// dragleave / drop.
+
+// The state drives both the splice math in `handlePinnedDrop` AND the yellow drop-indicator bar in
+// the template (rendered as a sibling of each row in the v-for).
 const dragOverTaskId = ref<string | null>(null)
 const dragInsertBefore = ref(false) // true = insert before the target row
 
-// Per-row drop indicator: 'above' | 'below' | null. Returned to
-// the v-for as the `drop-indicator` prop on each WorkspaceItemTaskRow
-// so the row can render a 2px yellow border on the appropriate
-// edge. Centralizing the conditional in one place keeps the
-// template terse and makes the indicator state easy to assert on
-// in unit tests.
+// Per-row drop indicator: 'above' | 'below' | null. Returned to the v-for as the `drop-indicator`
+// prop on each WorkspaceItemTaskRow so the row can render a 2px yellow border on the appropriate
+// edge.
+
+// Centralizing the conditional in one place keeps the template terse and makes the indicator state
+// easy to assert on in unit tests.
 type DropIndicator = 'above' | 'below' | null
 const dropIndicatorFor = (taskId: string): DropIndicator => {
   if (dragOverTaskId.value !== taskId) return null
@@ -496,11 +487,11 @@ const handlePinnedDragOver = (event: DragEvent) => {
 }
 
 const handlePinnedDragLeave = (event: DragEvent) => {
-  // Only clear the indicator when the cursor LEAVES the region
-  // entirely. If it moves between rows inside the region, dragleave
-  // fires too but `relatedTarget` is still inside the region — keep
-  // the indicator visible in that case. The dragover handler will
-  // update `dragOverTaskId` for the new row.
+  // Only clear the indicator when the cursor LEAVES the region entirely. If it moves between rows
+  // inside the region, dragleave fires too but `relatedTarget` is still inside the region — keep
+  // the indicator visible in that case.
+
+  // The dragover handler will update `dragOverTaskId` for the new row.
   const region = event.currentTarget as HTMLElement | null
   const next = event.relatedTarget as Node | null
   if (region && next && region.contains(next)) return
@@ -514,11 +505,11 @@ const handlePinnedDrop = (event: DragEvent) => {
   event.preventDefault()
   const dataTransfer = event.dataTransfer
   if (!dataTransfer) return
-  // Read from the custom MIME type written by handlePinnedDragStart.
-  // Using `text/plain` here would also work in isolation, but
-  // colliding with the parent <ProjectsList>'s `text/plain`
-  // payload (item id) means whichever handler ran last on the
-  // dragstart wins. See the long comment in handlePinnedDragStart.
+  // Read from the custom MIME type written by handlePinnedDragStart. Using `text/plain` here would
+  // also work in isolation, but colliding with the parent <ProjectsList>'s `text/plain` payload
+  // (item id) means whichever handler ran last on the dragstart wins.
+
+  // See the long comment in handlePinnedDragStart.
   const draggedId = dataTransfer.getData('application/x-pinned-task-id')
   if (!draggedId) return
 
@@ -544,15 +535,15 @@ const handlePinnedDrop = (event: DragEvent) => {
   if (targetId && targetId !== draggedId) {
     const targetIdx = pinned.findIndex((t) => t.id === targetId)
     if (targetIdx !== -1) {
-      // "Cursor in top half" = "I want the dragged row to be just
-      // ABOVE the target row" (insertBefore=true). "Cursor in
-      // bottom half" = "I want the dragged row to be just BELOW
-      // the target row" (insertBefore=false). Adjust the target
-      // index for the source removal: if the source is BEFORE the
-      // target in the original order, removing it shifts the target
-      // left by one. So:
-      //   insertBefore=true:  toIdx = targetIdx - (source before target ? 1 : 0)
-      //   insertBefore=false: toIdx = targetIdx + 1 - (source before target ? 1 : 0)
+      // "Cursor in top half" = "I want the dragged row to be just ABOVE the target row"
+      // (insertBefore=true). "Cursor in bottom half" = "I want the dragged row to be just BELOW the
+      // target row" (insertBefore=false).
+
+      // Adjust the target index for the source removal: if the source is BEFORE the target in the
+      // original order, removing it shifts the target left by one.
+
+      // So: insertBefore=true:  toIdx = targetIdx - (source before target ? 1 : 0)
+      // insertBefore=false: toIdx = targetIdx + 1 - (source before target ? 1 : 0)
       const sourceBeforeTarget = fromIdx < targetIdx
       if (insertBefore) {
         toIdx = sourceBeforeTarget ? targetIdx - 1 : targetIdx

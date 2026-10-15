@@ -105,22 +105,19 @@ export interface ScrollerState {
   exposedKeys: string[]
 }
 
-/**
- * Diagnostic snapshot of the **outer flex wrapper** that contains the
- * VirtualScroller. This is the layer ABOVE the scroller, so it answers
- * "did the layout chain even reach the scroller's parent?".
- *
- * When `containerInfo.null` AND `wrapperState.offsetHeight === 0`, you
- * know the layout chain is broken higher up (the parent flex container
- * isn't sized). When `wrapperState.offsetHeight > 0` but the scroller
- * is 0×0, the layout chain reaches the wrapper but the scroller itself
- * isn't getting a height (the `flex flex-col` requirement from the
- * ChatView fix).
- *
- * `display` and `flexDirection` are only populated when dimensions are
- * weird (≥ 0) — `getComputedStyle` forces a style recalc which is
- * expensive at 60 Hz, so we only pay for it on the suspicious path.
- */
+/** Diagnostic snapshot of the **outer flex wrapper** that contains the VirtualScroller. This is the
+ * layer ABOVE the scroller, so it answers "did the layout chain even reach the scroller's parent?". */
+
+/** When `containerInfo.null` AND `wrapperState.offsetHeight === 0`, you know the layout chain is
+ * broken higher up (the parent flex container isn't sized). */
+
+/** When `wrapperState.offsetHeight > 0` but the scroller is 0×0, the layout chain reaches the
+ * wrapper but the scroller itself isn't getting a height (the `flex flex-col` requirement from the
+ * ChatView fix). */
+
+/** `display` and `flexDirection` are only populated when dimensions are weird (≥ 0) —
+ * `getComputedStyle` forces a style recalc which is expensive at 60 Hz, so we only pay for it on
+ * the suspicious path. */
 export interface WrapperState {
   refNull: boolean
   offsetHeight: number
@@ -168,10 +165,10 @@ export type ScrollReason =
   | 'measure-compensation' // measureItems anchor compensation wrote scrollTop
   | 'scroll-to-bottom-target' // scrollToBottom chose realBottom vs modelBottom
   | 'isAtBottom-decision' // handleVirtualScroll isAtBottom retained vs flipped
-  // Warn-level reason: handleVirtualScroll fired but the container
-  // ref chain was null (component unmounted, inner ref not yet
-  // bound, or layout chain broke). The scrollerState/wrapperState
-  // blocks in the warn context tell you which — see the
+  // Warn-level reason: handleVirtualScroll fired but the container ref chain was null (component
+  // unmounted, inner ref not yet bound, or layout chain broke).
+
+  // The scrollerState/wrapperState blocks in the warn context tell you which — see the
   // `scroller=...` / `wrapper=...` tag rendering in `emit()`.
   | 'no-container'
   // Debug-level reason (per-frame sample)
@@ -202,27 +199,22 @@ export interface ScrollContext {
    * what each field tells you. Without this, a `scrollHeight: 0` reading is just a useless zero;
    * with it, you can see *which* check failed. */
   containerInfo: ContainerInfo
-  /**
-   * Which function in ChatView produced this log line, e.g.
-   * `'loadChatHistory'`, `'updateStreamingMessage'`,
-   * `'watcher:messages-length'`, `'onSpacersResized'`. Set by the
-   * call site (the logger can't infer it without a stack trace on
-   * every call, which is too expensive).
-   *
-   * Without this, multiple suspicious-state lines from different
-   * call sites (e.g. `ZERO-SIZE` from initial-load vs SSE chunk
-   * vs watcher) look identical and you can't tell whether the
-   * bug is in the initial-load path, the SSE chunk path, the
-   * loadMore path, or the watcher. With it, a
-   * `grep caller=updateStreamingMessage` immediately isolates the
-   * streaming-path bug.
-   */
+  /** Which function in ChatView produced this log line, e.g. `'loadChatHistory'`,
+   * `'updateStreamingMessage'`, `'watcher:messages-length'`, `'onSpacersResized'`. Set by the call
+   * site (the logger can't infer it without a stack trace on every call, which is too
+   * expensive). */
+
+  /** Without this, multiple suspicious-state lines from different call sites (e.g. `ZERO-SIZE` from
+   * initial-load vs SSE chunk vs watcher) look identical and you can't tell whether the bug is in
+   * the initial-load path, the SSE chunk path, the loadMore path, or the watcher. */
+
+  /** With it, a `grep caller=updateStreamingMessage` immediately isolates the streaming-path bug. */
   caller?: string
-  /** Diagnostic snapshot of the VirtualScroller **component** (see
-   * `ScrollerState` doc). Tells you whether the ref binding is
-   * even valid — the most common reason for `containerInfo.null`
-   * is that the component is unmounted and the ref is null, which
-   * is a completely different bug from "container exists but 0×0". */
+  /** Diagnostic snapshot of the VirtualScroller **component** (see `ScrollerState` doc). */
+
+  /** Tells you whether the ref binding is even valid — the most common reason for
+   * `containerInfo.null` is that the component is unmounted and the ref is null, which is a
+   * completely different bug from "container exists but 0×0". */
   scrollerState?: ScrollerState
   /**    * Diagnostic snapshot of the outer flex wrapper (see `WrapperState` doc). Tells you whether the
    * layout chain reached the scroller's parent. Crucial for distinguishing "wrapper is sized but
@@ -246,48 +238,47 @@ export const BOTTOM_THRESHOLD = 10
  * `HYSTERESIS_PX`. */
 export const MODEL_OVERSHOOT_HYSTERESIS_PX = 50
 
-/**
- * Tolerance for the at-bottom judgement once it is measured against the
- * STABLE anchor (`settledBottom`) rather than a live `bottomScrollTop()`.
- *
- * `BOTTOM_THRESHOLD` alone (10px) is too tight for a stable-anchor read: the
- * anchor is written at the end of a measure pass, and the model can still
- * converge before the next scroll event is handled. That residual is the
- * model's own movement, not the reader's, so it must not disarm the stick —
- * see the `atBottomEdge` note in ChatView.
- *
- * The bound is `BOTTOM_THRESHOLD + MODEL_OVERSHOOT_HYSTERESIS_PX` (60px): the
- * overshoot the real-bottom override is allowed to introduce before it engages,
- * which is the largest step the ruler can take between two frames. It is
- * deliberately NOT `maxTailGap` (100px) — that would swallow a reader sitting
- * 101px up, which `retainedThroughGrowth`'s own cap (`< 100`) exists to keep
- * disengaged. A genuine scroll-up is still caught immediately.
- */
+/** Tolerance for the at-bottom judgement once it is measured against the STABLE anchor
+ * (`settledBottom`) rather than a live `bottomScrollTop()`. */
+
+/** `BOTTOM_THRESHOLD` alone (10px) is too tight for a stable-anchor read: the anchor is written at
+ * the end of a measure pass, and the model can still converge before the next scroll event is
+ * handled. */
+
+/** That residual is the model's own movement, not the reader's, so it must not disarm the stick —
+ * see the `atBottomEdge` note in ChatView. */
+
+/** The bound is `BOTTOM_THRESHOLD + MODEL_OVERSHOOT_HYSTERESIS_PX` (60px): the overshoot the
+ * real-bottom override is allowed to introduce before it engages, which is the largest step the
+ * ruler can take between two frames. */
+
+/** It is deliberately NOT `maxTailGap` (100px) — that would swallow a reader sitting 101px up,
+ * which `retainedThroughGrowth`'s own cap (`< 100`) exists to keep disengaged. A genuine scroll-up
+ * is still caught immediately. */
 export const AT_BOTTOM_STABLE_TOLERANCE_PX = BOTTOM_THRESHOLD + MODEL_OVERSHOOT_HYSTERESIS_PX
 
-/** Within this many px of the top counts as "at the top". Mirrors
- * `BOTTOM_THRESHOLD` so the two edges behave symmetrically in the
- * logger. Note: this is the threshold for the `reached-top` /
- * `left-top` state-transition log. The lazy-load trigger uses a
- * much larger threshold (`loadMoreThreshold` = 200px on the
- * VirtualScroller) — the user can be 200px from the top and have
- * `loadMore` fire, but only at <10px do we log `reached-top`. */
+/** Within this many px of the top counts as "at the top". Mirrors `BOTTOM_THRESHOLD` so the two
+ * edges behave symmetrically in the logger. Note: this is the threshold for the `reached-top` /
+ * `left-top` state-transition log. */
+
+/** The lazy-load trigger uses a much larger threshold (`loadMoreThreshold` = 200px on the
+ * VirtualScroller) — the user can be 200px from the top and have `loadMore` fire, but only at <10px
+ * do we log `reached-top`. */
 export const TOP_THRESHOLD = 10
 
 /** Debug-level scroll samples are throttled to this interval. */
 const DEBUG_THROTTLE_MS = 200
 
-// ─── Programmatic-scroll tracking ─────────────────────────────────────────────
-//
-// Browsers DO fire a `scroll` event when you assign `container.scrollTop`.
-// We can't prevent that, but we CAN mark the next few scroll events as
-// "programmatic" so the logger can label them. `markProgrammatic()` bumps
-// the counter; `consumeProgrammatic()` returns true exactly once per
+// ─── Programmatic-scroll tracking ───────────────────────────────────────────── Browsers DO fire a
+// `scroll` event when you assign `container.scrollTop`. We can't prevent that, but we CAN mark the
+// next few scroll events as "programmatic" so the logger can label them.
+
+// `markProgrammatic()` bumps the counter; `consumeProgrammatic()` returns true exactly once per
 // pending mark.
-//
-// Pattern: `scrollToBottom()` calls `markProgrammatic()` BEFORE assigning
-// scrollTop, so the resulting scroll event reads `origin: 'programmatic'`
-// even though the browser fires it asynchronously.
+
+// Pattern: `scrollToBottom()` calls `markProgrammatic()` BEFORE assigning scrollTop, so the
+// resulting scroll event reads `origin: 'programmatic'` even though the browser fires it
+// asynchronously.
 
 let programmaticScrollsRemaining = 0
 let programmaticScrollsResetTimer: ReturnType<typeof setTimeout> | null = null
@@ -312,12 +303,12 @@ export const consumeProgrammatic = (): boolean => {
   return false
 }
 
-// ─── Throttled debug queue ────────────────────────────────────────────────────
-//
-// Per-frame scroll samples are coalesced: we keep only the most recent
-// context, and flush it 200ms after the last scroll event. This gives
-// you 5 samples/sec instead of 60, with the final position always
-// represented (trailing-edge flush).
+// ─── Throttled debug queue ──────────────────────────────────────────────────── Per-frame scroll
+// samples are coalesced: we keep only the most recent context, and flush it 200ms after the last
+// scroll event.
+
+// This gives you 5 samples/sec instead of 60, with the final position always represented
+// (trailing-edge flush).
 
 let pendingDebugContext: ScrollContext | null = null
 let pendingDebugTimer: ReturnType<typeof setTimeout> | null = null
@@ -583,12 +574,12 @@ const emit = (ctx: ScrollContext, level: 'debug' | 'info' | 'warn' | 'error'): v
 
 // ─── Helpers exported for callers ─────────────────────────────────────────────
 
-/** Build the diagnostic `ContainerInfo` block for a container element.
- * We deliberately AVOID calling `getComputedStyle` on every scroll
- * event — it forces a style recalculation, which is expensive at
- * 60 Hz. We only compute it when the dimensions look suspicious
- * (`scrollHeight === 0 || clientHeight === 0`), which is the only
- * time the diagnostic is useful anyway. */
+/** Build the diagnostic `ContainerInfo` block for a container element. We deliberately AVOID
+ * calling `getComputedStyle` on every scroll event — it forces a style recalculation, which is
+ * expensive at 60 Hz. */
+
+/** We only compute it when the dimensions look suspicious (`scrollHeight === 0 || clientHeight ===
+ * 0`), which is the only time the diagnostic is useful anyway. */
 const buildContainerInfo = (container: HTMLElement | null | undefined): ContainerInfo => {
   if (!container) return { null: true, offsetHeight: 0, offsetParent: null }
   const scrollHeight = container.scrollHeight
@@ -609,13 +600,13 @@ const buildContainerInfo = (container: HTMLElement | null | undefined): Containe
   return info
 }
 
-/** Build the diagnostic `ScrollerState` block for a VirtualScroller
- * component ref. Reads the component instance to determine whether
- * the ref is even populated, whether the inner container is
- * populated, and which exposed methods exist.
- * Accepts the full ref object (`.value` style) so we can distinguish
- * "ref object exists but `.value` is null" from "ref object itself
- * is missing". Both are passed as `{ value: unknown }` shapes. */
+/** Build the diagnostic `ScrollerState` block for a VirtualScroller component ref. Reads the
+ * component instance to determine whether the ref is even populated, whether the inner container is
+ * populated, and which exposed methods exist. */
+
+/** Accepts the full ref object (`.value` style) so we can distinguish "ref object exists but
+ * `.value` is null" from "ref object itself is missing". Both are passed as `{ value: unknown }`
+ * shapes. */
 const buildScrollerState = (scrollerRef: { value: unknown } | null | undefined): ScrollerState => {
   if (!scrollerRef) {
     return {
@@ -654,21 +645,17 @@ const buildScrollerState = (scrollerRef: { value: unknown } | null | undefined):
   }
 }
 
-/**
- * THE bottom edge, in scrollTop coordinates — the same number the
- * VirtualScroller's `scrollToBottom` is about to target.
- *
- * `scrollHeight - clientHeight` is only the bottom edge when the sizer agrees
- * with the real content. `VirtualScroller` deliberately targets the real
- * content bottom instead whenever the model overshoots by more than its
- * hysteresis, and the tail-gap cap (`maxTailGap`, 100px by default) makes that
- * overshoot the NORMAL case at the end of a long chat. Anything that asks
- * "is the reader at the bottom?" must ask the scroller, or it will answer
- * "no" for a reader sitting on the last message.
- *
- * Falls back to the DOM edge when the scroller ref is not populated (mount
- * races) or exposes no `bottomScrollTop` (a stub, an older child).
- */
+/** THE bottom edge, in scrollTop coordinates — the same number the VirtualScroller's
+ * `scrollToBottom` is about to target. `scrollHeight - clientHeight` is only the bottom edge when
+ * the sizer agrees with the real content. */
+
+/** `VirtualScroller` deliberately targets the real content bottom instead whenever the model
+ * overshoots by more than its hysteresis, and the tail-gap cap (`maxTailGap`, 100px by default)
+ * makes that overshoot the NORMAL case at the end of a long chat. */
+
+/** Anything that asks "is the reader at the bottom?" must ask the scroller, or it will answer "no"
+ * for a reader sitting on the last message. Falls back to the DOM edge when the scroller ref is not
+ * populated (mount races) or exposes no `bottomScrollTop` (a stub, an older child). */
 const resolveBottomEdge = (
   scrollerRef: { value: unknown } | null | undefined,
   container: HTMLElement | null | undefined,
@@ -737,13 +724,15 @@ export const buildScrollContext = (
   const scrollTop = container?.scrollTop ?? 0
   const scrollHeight = container?.scrollHeight ?? 0
   const clientHeight = container?.clientHeight ?? 0
-  // `distanceFromBottom` must be the number the CALLER decided with. ChatView
-  // measures against the scroller's `bottomScrollTop()` — the real content
-  // bottom — because `scrollHeight - clientHeight` can sit `maxTailGap` (100px)
-  // below the position a successful auto-stick actually lands on. A logger
-  // that recomputed the DOM number here would print a `distanceFromBottom`
-  // that contradicts the `isAtBottom` on the very same line, which is the one
-  // thing this logger exists to prevent.
+  // `distanceFromBottom` must be the number the CALLER decided with.
+
+  // ChatView measures against the scroller's `bottomScrollTop()` — the real content bottom —
+  // because `scrollHeight - clientHeight` can sit `maxTailGap` (100px) below the position a
+  // successful auto-stick actually lands on.
+
+  // A logger that recomputed the DOM number here would print a `distanceFromBottom` that
+  // contradicts the `isAtBottom` on the very same line, which is the one thing this logger exists
+  // to prevent.
   const bottomEdge = resolveBottomEdge(fallback.virtualScrollerRef, container)
   return {
     chatId: fallback.chatId,
