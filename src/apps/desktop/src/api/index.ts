@@ -194,9 +194,8 @@ export interface DesignPage {
   updated_at: string
 }
 
-/** Element types emitted by the backend's `ElementType` enum. Wire form is
- * the lowercase `tagName` string; the backend maps it back at the handler
- * boundary. */
+/** Element types emitted by the backend's `ElementType` enum. Wire form is the
+ * lowercase `tagName` string; the backend maps it back at the handler boundary. */
 /**
  * Normalize the `type` field on a design element from the wire.
  *
@@ -228,10 +227,9 @@ export const normalizeDesignElementType = <
 
 export type DesignElementType = 'rectangle' | 'ellipse' | 'text' | 'image' | 'frame' | 'group'
 
-/** Wire shape for design elements (rows in `design_page_elements`). Mirrors
- * the backend's `http_response.DesignElementResponse`. Numeric fields are
- * `number` because JSON has no integer/float distinction, and optional
- * string fields use `''` as the "no value" sentinel. */
+/** Wire shape for design elements (rows in `design_page_elements`). Mirrors the
+ * backend's `http_response.DesignElementResponse`. Numeric fields are `number`
+ * (JSON has no int/float distinction); optional strings use `''` as "no value". */
 export interface DesignElement {
   id: string
   page_id: string
@@ -272,10 +270,9 @@ export interface DesignElementGeometry {
   rotation?: number
 }
 
-/** Wire shape for design-mode SSE events (`design_element_created` /
- * `_updated` / `_deleted`). All three share one payload struct; the
- * `action` discriminator routes them. Field names are the backend's
- * snake_case JSON keys. */
+/** Wire shape for design-mode SSE events (`design_element_created` / `_updated` /
+ * `_deleted`). All three share one payload struct; the `action` discriminator
+ * routes them. Field names are the backend's snake_case JSON keys. */
 export interface DesignElementEvent {
   action: 'created' | 'updated' | 'deleted' | 'reordered'
   workspace_id: string
@@ -351,10 +348,9 @@ export interface Task {
   // or '' for cwd-less). Optional so legacy task literals in tests keep type-checking. Threaded
   // into the 3-level cwd fallback chain: per-task cwd → kanban-level path → sandbox.
   cwd?: string
-  // NEW (kanban task git-branch badge). The current git branch for the
-  // task's cwd — worktree cwd if bound, else the parent item's `path`.
-  // `null` when the cwd is not a git repo or HEAD is detached; the UI
-  // omits the badge. snake_case matches the wire format.
+  // NEW (kanban task git-branch badge). The current git branch for the task's
+  // cwd — worktree cwd if bound, else the parent item's `path`. `null` when the
+  // cwd is not a git repo or HEAD is detached; the UI omits the badge.
   git_branch?: string | null
 }
 
@@ -435,15 +431,14 @@ export async function getWorkspacesItems(
 
 // Cold-start fallback for the "New Chat" action.
 //
-// The invariant is "every workspace has a default project, and a miss
-// creates one" — `GET /workspaces/:id/items` already enforces it
-// server-side, so a client lookup is normally a pure local find.
+// The invariant is "every workspace has a default project, and a miss creates
+// one" — `GET /workspaces/:id/items` already enforces it server-side, so a
+// client lookup is normally a pure local find. This endpoint covers the one
+// case the list cannot: the app was open when Migration 094 ran, so the
+// store's list predates the `is_default` column.
 //
-// This endpoint covers the one case the list cannot: the app was open when
-// Migration 094 ran, so the store's list predates the `is_default` column.
-//
-// Idempotent — 200 + `created: false` when it already existed, 201 +
-// `created: true` when this call created it. Takes no body.
+// Idempotent — 200 + `created: false` when it already existed, 201 + `created:
+// true` when this call created it. Takes no body.
 export async function getOrCreateDefaultProject(
   workspace_id: string,
 ): Promise<{ item: WorkspaceItem; created: boolean }> {
@@ -480,11 +475,9 @@ export async function updateWorkspace(id: string, data: Partial<Workspace>): Pro
 /**
  * Persist a new top-to-bottom display order for workspaces.
  * POST /api/workspaces/reorder with body `{ordered_ids: [...]}`. The server
- * reverses the array (top of list = highest position) and throws on non-2xx
- * so the caller can roll back its optimistic update.
- *
- * The list is the *full* ordered set, not a delta — reordering two adjacent
- * rows re-sends every workspace ID. The backend is idempotent.
+ * reverses the array (top of list = highest position) and throws on non-2xx so
+ * the caller can roll back its optimistic update. The list is the *full*
+ * ordered set, not a delta; the backend is idempotent.
  */
 export async function reorderWorkspaces(
   orderedIds: string[],
@@ -496,9 +489,9 @@ export async function reorderWorkspaces(
 }
 
 /** Persist a new top-to-bottom display order for one workspace's items.
- * POST /api/workspaces/:workspace_id/items/reorder with body
- * `{ordered_ids: [...]}`. Mirrors `reorderWorkspaces` but scoped to a
- * single workspace; the list is the *full* ordered set, not a delta. */
+ * POST /api/workspaces/:workspace_id/items/reorder with body `{ordered_ids: [...]}`.
+ * Mirrors `reorderWorkspaces` but scoped to a single workspace; the list is the
+ * *full* ordered set, not a delta. */
 export async function reorderWorkspaceItems(
   workspaceId: string,
   orderedIds: string[],
@@ -558,12 +551,12 @@ export async function getTasks(
   itemId: string,
   limit = 10,
   cursor?: string,
-  // NEW (2026-08-06): NO default values. Pass `undefined` for both when no
-  // sort is in play and let the backend's default (`updated_at desc`)
-  // handle it — same wire result, cleaner URL, less coupling.
+  // NEW (2026-08-06): NO default values. Pass `undefined` for both when no sort
+  // is in play and let the backend's default (`updated_at desc`) handle it —
+  // same wire result, cleaner URL, less coupling.
   //
-  // Both must be provided together: the backend's cursor format depends on
-  // the sort field, so sending only one falls back to "no sort params".
+  // Both must be provided together: the backend's cursor format depends on the
+  // sort field, so sending only one falls back to "no sort params".
   sortBy?: 'created_at' | 'updated_at' | 'name',
   direction?: 'asc' | 'desc',
   columnId?: string,
@@ -604,15 +597,9 @@ export async function getTasks(
  * Fetch ONE workspace item task by id (kanban Task details dialog).
  * GET /api/workspaces/:ws/items/:item/tasks/:task_id → { task } | 404.
  *
- * Resolves to the Task, or null on 404 (task deleted / wrong item in
- * the path). Replaces the old refreshTask list-refetch (limit=100) —
- * one row on the wire instead of the whole board.
- *
- * 404 is silent (no error toast) — "the task is gone" is an expected
- * state, not an error worth surfacing. Other failures (network, 5xx)
- * throw ApiError; the store's best-effort catch handles them.
- *
- * Plan: docs/superpowers/plans/2026-08-24-kanban-task-detail-single-fetch.md
+ * Resolves to the Task, or null on 404 — "the task is gone" is an expected
+ * state, so 404 is silent. Other failures (network, 5xx) throw ApiError; the
+ * store's best-effort catch handles them.
  */
 export async function getTask(
   workspaceId: string,
@@ -632,19 +619,13 @@ export async function getTask(
 }
 
 /**
- * Stamp `workspace_item_tasks.last_human_touched_at` so the kanban
- * card flips from the orange "AI finished — awaiting review" dot
- * to the green "reviewed" checkmark. Fire-and-forget: the caller
- * does NOT await this — failures log a warning but don't surface
- * as toasts (the user's primary action has already succeeded).
+ * Stamp `workspace_item_tasks.last_human_touched_at` so the kanban card flips
+ * from the orange "AI finished — awaiting review" dot to the green "reviewed"
+ * checkmark. Fire-and-forget: the caller does NOT await this — failures log a
+ * warning but don't surface as toasts.
  *
- * Idempotent on the server side (re-stamping is harmless — the
- * column is just a monotonic timestamp). The backend also emits
- * a `kanban_task.human_touched` SSE event so other connected
- * clients refresh without a manual round-trip.
- *
- * Plan: docs/plans/2026-07-26-kanban-task-notification-icon.md
- *   (Chunk 7 — frontend open-task stamp).
+ * Idempotent server-side. The backend also emits a `kanban_task.human_touched`
+ * SSE event so other connected clients refresh without a round-trip.
  */
 /**
  * Lazy media fetch for ONE task (media-flags change).
@@ -676,11 +657,10 @@ export async function getTaskMedia(
 
 export type TaskMedia = { imageUrls: string[]; videoUrls: string[] }
 
-/** Parallel media fetch for MANY tasks (media-flags change).
- * Fires one `getTaskMedia` per id concurrently and settles every leg
- * (`Promise.allSettled`): a single 404 / network blip resolves that
- * entry to null instead of rejecting the whole batch. Callers awaiting
- * N tasks pay ~one round-trip, not N sequential ones. */
+/** Parallel media fetch for MANY tasks (media-flags change). Fires one
+ * `getTaskMedia` per id concurrently and settles every leg (`Promise.allSettled`):
+ * a single 404 / network blip resolves that entry to null instead of rejecting
+ * the whole batch. Callers awaiting N tasks pay ~one round-trip, not N. */
 export async function getTasksMedia(
   workspaceId: string,
   itemId: string,
