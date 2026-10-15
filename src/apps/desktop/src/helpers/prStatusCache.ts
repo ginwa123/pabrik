@@ -69,11 +69,11 @@ export function isPrConflictValue(mergeable: string, merge_state: string): boole
 
 const cache = new Map<string, CacheEntry>()
 const inflight = new Map<string, Promise<PrInfo>>()
-/** Per-key generation, bumped by `invalidatePrStatus`. A fetch captures the
- * value it started under and refuses to write its answer if the generation
- * moved — deleting the in-flight slot alone is not enough, because the pending
- * promise's own continuation would put the now-stale answer straight back into
- * the cache. */
+/** Per-key generation, bumped by `invalidatePrStatus`. */
+
+/** A fetch captures the value it started under and refuses to write its answer if the generation
+ * moved — deleting the in-flight slot alone is not enough, because the pending promise's own
+ * continuation would put the now-stale answer straight back into the cache. */
 const epoch = new Map<string, number>()
 
 function bumpEpoch(k: string): void {
@@ -102,22 +102,18 @@ class PrStatusSubscriberError extends Data.TaggedError('PrStatusSubscriberError'
   readonly reason: string
 }> {}
 
-/**
- * Register `cb` to run whenever a cached answer is invalidated, with the
- * (cwd, branch) it was for. Returns the unsubscribe handle — call it from
- * `onUnmounted`.
- *
- * WHY A CALLBACK AND NOT A `watch`: `local/no-watch` bans reacting to change
- * inside a component, and the signal here originates OUTSIDE it — a merge in
- * another tab arrives on the SSE bus, and this tab's own merge happens in a
- * sibling component (`MergeBox`). Neither has a handler in the badge that could
- * "live where the change was made". A registered callback is the spelling this
- * repo sanctions for that: the producer calls the consumer, instead of the
- * consumer watching a value.
- *
- * Each badge filters on the pair, so one merge reloads exactly the badge whose
- * branch it was.
- */
+/** Register `cb` to run whenever a cached answer is invalidated, with the (cwd, branch) it was for.
+ * Returns the unsubscribe handle — call it from `onUnmounted`. */
+
+/** WHY A CALLBACK AND NOT A `watch`: `local/no-watch` bans reacting to change inside a component,
+ * and the signal here originates OUTSIDE it — a merge in another tab arrives on the SSE bus, and
+ * this tab's own merge happens in a sibling component (`MergeBox`). */
+
+/** Neither has a handler in the badge that could "live where the change was made". A registered
+ * callback is the spelling this repo sanctions for that: the producer calls the consumer, instead
+ * of the consumer watching a value. */
+
+/** Each badge filters on the pair, so one merge reloads exactly the badge whose branch it was. */
 export function onPrStatusInvalidated(cb: (change: PrStatusInvalidation) => void): () => void {
   invalidationSubscribers.add(cb)
   return () => {
@@ -344,13 +340,13 @@ function earliestMarkerIndex(prUrl: string): number {
   return best
 }
 
-/** Repo base derived from a PR/MR URL — the part before the change-request
- * segment: `https://github.com/owner/repo` from
- * `…/owner/repo/pull/123`, and `https://gitlab.com/group/sub/repo` from
- * `…/group/sub/repo/-/merge_requests/7`.
- * Previously this only understood `/pull/`, so it returned `''` for every
- * GitLab MR URL — which silently disabled the "open branch in new tab"
- * menu item for the entire GitLab user base rather than showing an error. */
+/** Repo base derived from a PR/MR URL — the part before the change-request segment:
+ * `https://github.com/owner/repo` from `…/owner/repo/pull/123`, and
+ * `https://gitlab.com/group/sub/repo` from `…/group/sub/repo/-/merge_requests/7`. */
+
+/** Previously this only understood `/pull/`, so it returned `''` for every GitLab MR URL — which
+ * silently disabled the "open branch in new tab" menu item for the entire GitLab user base rather
+ * than showing an error. */
 export function repoBaseFromPrUrl(prUrl: string): string {
   if (!prUrl) return ''
   const idx = earliestMarkerIndex(prUrl)
@@ -358,12 +354,12 @@ export function repoBaseFromPrUrl(prUrl: string): string {
   return prUrl.slice(0, idx)
 }
 
-/** Branch page URL derived from the PR URL's repo base.
- * The `/tree/` vs `/-/tree/` split is not cosmetic: GitLab puts a `/-/`
- * discriminator before sub-paths, so a GitHub-shaped link on a GitLab repo
- * is a 404. Deriving the shape from the URL (rather than the provider
- * string) keeps this correct even when the caller never learned the
- * provider, e.g. a bare MR URL off the board badge. */
+/** Branch page URL derived from the PR URL's repo base. The `/tree/` vs `/-/tree/` split is not
+ * cosmetic: GitLab puts a `/-/` discriminator before sub-paths, so a GitHub-shaped link on a GitLab
+ * repo is a 404. */
+
+/** Deriving the shape from the URL (rather than the provider string) keeps this correct even when
+ * the caller never learned the provider, e.g. a bare MR URL off the board badge. */
 export function branchUrlFromPrUrl(prUrl: string, branch: string): string {
   const base = repoBaseFromPrUrl(prUrl)
   if (!base || !branch) return ''

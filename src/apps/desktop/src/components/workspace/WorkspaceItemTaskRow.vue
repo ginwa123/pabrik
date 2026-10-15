@@ -37,16 +37,13 @@
   keyboard-operable unit. Same pattern as DesignPageRow.vue.
 -->
 <script setup lang="ts">
-// Extracted from WorkspaceItem.vue on 2026-06-10. This component owns
-// ONLY the per-task row inside the expanded workspace-item panel —
-// the item row (chevron / name / hover buttons) and the expansion
-// state stay in WorkspaceItem. Event payload is identical to the
-// pre-split contract; WorkspaceItem re-emits these events up to
-// ProjectsList unchanged.
-//
-// 2026-07-02: split the card variant out into
-// WorkspaceItemTaskCard.vue. The shared logic (event handlers +
-// drop indicator) now lives in composables/useTaskActions.ts.
+// Extracted from WorkspaceItem.vue on 2026-06-10. This component owns ONLY the per-task row inside
+// the expanded workspace-item panel — the item row (chevron / name / hover buttons) and the
+// expansion state stay in WorkspaceItem.
+
+// Event payload is identical to the pre-split contract; WorkspaceItem re-emits these events up to
+// ProjectsList unchanged. 2026-07-02: split the card variant out into WorkspaceItemTaskCard.vue.
+// The shared logic (event handlers + drop indicator) now lives in composables/useTaskActions.ts.
 import { inject, ref, computed, type Ref } from 'vue'
 import { useCurrentMainView } from '../../composables/useCurrentMainView'
 import { useContextMenu } from '../../composables/useContextMenu'
@@ -61,11 +58,11 @@ import { parseAgentErrorHeadline } from '../../helpers/parseAgentErrorHeadline'
 import { useWorkspacesStore } from '../../stores/workspaces'
 import { useNotificationStore } from '../../stores/notifications'
 
-// Re-inject processingState from App.vue (same key WorkspaceItem and
-// ChatsList consume). Keyed by task.id == session_id. Reading it
-// directly here — rather than threading it down as a prop from
-// WorkspaceItem — keeps the contract identical to the other sidebar
-// consumers and avoids prop drilling.
+// Re-inject processingState from App.vue (same key WorkspaceItem and ChatsList consume). Keyed by
+// task.id == session_id.
+
+// Reading it directly here — rather than threading it down as a prop from WorkspaceItem — keeps the
+// contract identical to the other sidebar consumers and avoids prop drilling.
 const processingState = inject<Ref<Record<string, boolean>>>(
   'processingState',
   ref<Record<string, boolean>>({}),
@@ -78,20 +75,20 @@ const props = defineProps<TaskComponentProps>()
 // menu row (the backend answers 409 while a worker is in flight).
 const isBusy = computed(() => processingState.value[props.task.id] === true)
 
-// URL-driven "what is the main content area showing?". Active styling
-// for this task row derives from the URL
-// (?view=workspace&itemId=Y/chat/task_X) rather than from
-// workspacesStore.activeTaskId. The store flag is still mutated by
-// AppLayout for view-routing (it must stay — removing it would break
-// the kanban-side task navigation), but the visual "is this row
-// active?" is now sourced from the URL so refresh / deep links /
-// browser back / forward all keep the row's highlight consistent.
-//
-// SIMPLIFY-URL-BROWSER (2026-08-15): the legacy `kind: 'task'`
-// variant has been dropped from useCurrentMainView. The chat-open
-// state is encoded as `chatTaskId` on the `kind: 'workspace'`
-// variant. The bare `itemId` field on workspace is what the parent
-// workspace item row reads — we don't compare it here.
+// URL-driven "what is the main content area showing?". Active styling for this task row derives
+// from the URL (?view=workspace&itemId=Y/chat/task_X) rather than from
+// workspacesStore.activeTaskId.
+
+// The store flag is still mutated by AppLayout for view-routing (it must stay — removing it would
+// break the kanban-side task navigation), but the visual "is this row active?" is now sourced from
+// the URL so refresh / deep links / browser back / forward all keep the row's highlight consistent.
+
+// SIMPLIFY-URL-BROWSER (2026-08-15): the legacy `kind: 'task'` variant has been dropped from
+// useCurrentMainView. The chat-open state is encoded as `chatTaskId` on the `kind: 'workspace'`
+// variant.
+
+// The bare `itemId` field on workspace is what the parent workspace item row reads — we don't
+// compare it here.
 const currentMainView = useCurrentMainView()
 const isActive = computed(
   () =>
@@ -129,11 +126,11 @@ const onTaskContextMenu = (event: MouseEvent) => {
   openAt(event)
 }
 
-// Enter / Space activate the row; ContextMenu / Shift+F10 open the action
-// menu. The root is a <div role="button"> rather than a real <button> — see
-// the header comment for why. This restores the keyboard contract the
-// native element would have given us, and the menu keys are what keep
-// rename / delete reachable now that the hover buttons are gone.
+// Enter / Space activate the row; ContextMenu / Shift+F10 open the action menu. The root is a <div
+// role="button"> rather than a real <button> — see the header comment for why.
+
+// This restores the keyboard contract the native element would have given us, and the menu keys are
+// what keep rename / delete reachable now that the hover buttons are gone.
 const handleRowKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault()
@@ -174,14 +171,15 @@ const pinTaskFromMenu = () => {
   emit('pinTask', props.workspaceId, props.itemId, props.task.id, !props.task.is_pinned)
 }
 
-// Rename / delete from the menu. Same contract as `pinTaskFromMenu`
-// above: emit straight up with the identical payload the old hover
-// buttons produced. The `useTaskActions` handlers are deliberately NOT
-// called — they take a DOM event solely to `stopPropagation()` it away
-// from the row's @click, a defence the nested buttons needed. The menu
-// is Teleported to `body`, so its clicks never traverse the row and
-// there is nothing to stop; synthesising a MouseEvent to satisfy the
-// signature would be noise.
+// Rename / delete from the menu. Same contract as `pinTaskFromMenu` above: emit straight up with
+// the identical payload the old hover buttons produced.
+
+// The `useTaskActions` handlers are deliberately NOT called — they take a DOM event solely to
+// `stopPropagation()` it away from the row's @click, a defence the nested buttons needed.
+
+// The menu is Teleported to `body`, so its clicks never traverse the row and there is nothing to
+// stop; synthesising a MouseEvent to satisfy the signature would be noise.
+
 // The delete confirmation stays owned by whoever performs the delete (Sidebar's ConfirmDialog) —
 // the row contributes no dialog of its own, so one "Delete task" can only ever open one confirm.
 const renameTaskFromMenu = () => {

@@ -86,11 +86,11 @@ const emit = defineEmits<{
   // appropriate handlers (useDesignHandlers, store actions).
   group: [targetIds: string[]]
   ungroup: [elementId: string]
-  // NEW (2026-08-06, design-leave-group plan): pull the SINGLE
-  // selected element out of its current parent group/frame to
-  // top-level. Wired through DesignView → useDesignHandlers →
-  // workspacesStore.reparentDesignElementsBatch. Independent of the
-  // Ungroup action (which dissolves the selected group itself).
+  // NEW (2026-08-06, design-leave-group plan): pull the SINGLE selected element out of its current
+  // parent group/frame to top-level. Wired through DesignView → useDesignHandlers →
+  // workspacesStore.reparentDesignElementsBatch.
+
+  // Independent of the Ungroup action (which dissolves the selected group itself).
   leaveGroup: [elementId: string]
   // NEW (Chunk 7, design-move-to-page plan, 2026-08-06): bubble the "Move to page..." selection up
   // to the host so it can open the MoveToPageDialog with the right element id. The dialog handles
@@ -139,13 +139,12 @@ const layerTree = computed<LayerTreeNode[]>(() => {
   for (const e of props.elements) {
     const node: LayerTreeNode = { element: e, children: [] }
     nodes.set(e.id, node)
-    // The backend's `listElements` returns `COALESCE(de.parent_id, '')`
-    // — so a top-level element (parent_id IS NULL) arrives as
-    // `parent_id === ""` (empty string), NOT null/undefined. Treat
-    // empty string the same as nullish so top-level rows land in the
-    // `null` bucket instead of a separate `""` bucket that the final
-    // `byParent.get(null) ?? []` returns empty. See the regression
-    // test in LayersPanel.spec.ts for the wire shape.
+    // The backend's `listElements` returns `COALESCE(de.parent_id, '')` — so a top-level element
+    // (parent_id IS NULL) arrives as `parent_id === ""` (empty string), NOT null/undefined.
+
+    // Treat empty string the same as nullish so top-level rows land in the `null` bucket instead of
+    // a separate `""` bucket that the final `byParent.get(null) ?? []` returns empty. See the
+    // regression test in LayersPanel.spec.ts for the wire shape.
     const pid = e.parent_id || null
     if (!byParent.has(pid)) byParent.set(pid, [])
     byParent.get(pid)!.push(node)
@@ -179,13 +178,12 @@ const toggleCollapse = (elementId: string): void => {
   collapsedIds.value = next
 }
 
-/** Walk the tree to find a node by id. Returns the node + its
- * sibling array (the parent's children) + the node's index within
- * that array. Used by `handleMoveUp` / `handleMoveDown` to swap
- * with the previous / next sibling.
- * For a top-level element, `siblings` is `layerTree` (the top-level
- * array) and `parent` is `null`. For a nested element, `siblings`
- * is the parent's `children` array. */
+/** Walk the tree to find a node by id. Returns the node + its sibling array (the parent's children)
+ * + the node's index within that array. Used by `handleMoveUp` / `handleMoveDown` to swap with the
+ * previous / next sibling. */
+
+/** For a top-level element, `siblings` is `layerTree` (the top-level array) and `parent` is `null`.
+ * For a nested element, `siblings` is the parent's `children` array. */
 function findNode(
   nodes: LayerTreeNode[],
   elementId: string,
@@ -213,10 +211,9 @@ function findNode(
 // pair, below the last) use the TOP_LEVEL_SENTINEL id — the same
 // sentinel the composable treats as "leave any group".
 
-// Multi-drag: when the dragged row is in `selectedIds` AND the
-// selection has > 1 element, the composable sets draggedIds to the
-// FULL set. The LayerRow's per-row visual flags (`isBeingDragged`)
-// reflect that — every selected row gets the dragging class.
+// Multi-drag: when the dragged row is in `selectedIds` AND the selection has > 1 element, the
+// composable sets draggedIds to the FULL set. The LayerRow's per-row visual flags
+// (`isBeingDragged`) reflect that — every selected row gets the dragging class.
 
 const dragDrop = useLayerDragDrop({
   elements: () => props.elements,
@@ -240,11 +237,11 @@ function cloneTree(nodes: LayerTreeNode[]): LayerTreeNode[] {
   }))
 }
 
-/** Move the element at `elementId` up by one (toward the top of the
- * panel). In a tree, "up" means swapping with the previous SIBLING
- * within the same parent's children array. For top-level elements,
- * the parent is the panel itself (the top-level `layerTree`).
- * Emits `reorder` with the new top-to-bottom depth-first id list. */
+/** Move the element at `elementId` up by one (toward the top of the panel). In a tree, "up" means
+ * swapping with the previous SIBLING within the same parent's children array. For top-level
+ * elements, the parent is the panel itself (the top-level `layerTree`). */
+
+/** Emits `reorder` with the new top-to-bottom depth-first id list. */
 const handleMoveUp = (elementId: string): void => {
   if (props.readonly) return
   const found = findNode(layerTree.value, elementId)
@@ -259,14 +256,13 @@ const handleMoveUp = (elementId: string): void => {
   const current = siblings[idx]!
   siblings[idx - 1] = current
   siblings[idx] = above
-  // Wire-up (undo/redo plan Chunk 1): was `emit('reorder',
-  // flattenTopDown(cloned))` which went up to DesignView → re-emitted
-  // upward → AppLayout had no listener → silent drop. Now we call
-  // the store action directly with `mode: 'bring_forward'`. The
-  // store action mirrors the response into the local design_elements
-  // array; the layers panel re-renders from that array on the next
-  // tick. Selecting just `[elementId]` (not the full order) matches
-  // the keyboard shortcut's behavior (Cmd+] / Cmd+[).
+  // Wire-up (undo/redo plan Chunk 1): was `emit('reorder', flattenTopDown(cloned))` which went up
+  // to DesignView → re-emitted upward → AppLayout had no listener → silent drop. Now we call the
+  // store action directly with `mode: 'bring_forward'`.
+
+  // The store action mirrors the response into the local design_elements array; the layers panel
+  // re-renders from that array on the next tick. Selecting just `[elementId]` (not the full order)
+  // matches the keyboard shortcut's behavior (Cmd+] / Cmd+[).
   void workspacesStore.reorderDesignElements(
     activeWorkspaceId.value!,
     activeWorkspaceItemId.value!,

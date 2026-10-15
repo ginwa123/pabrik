@@ -63,17 +63,12 @@ function makeItems(n: number): Item[] {
   return Array.from({ length: n }, (_, i) => ({ id: i }))
 }
 
-/**
- * The FIXED version of the rAF re-stick body. Read scrollHeight and
- * clientHeight ONCE inside the rAF, compute the target explicitly,
- * then assign. This is the function that should replace the raw
- * `container.scrollTop = container.scrollHeight` line in
- * ChatView.vue's onContentShift rAF.
- *
- * Returns `{ restuck, target }` so the test can assert what the
- * function decided without needing the container's scrollTop to
- * actually change (jsdom doesn't enforce clamp semantics).
- */
+/** The FIXED version of the rAF re-stick body. Read scrollHeight and clientHeight ONCE inside the
+ * rAF, compute the target explicitly, then assign. This is the function that should replace the raw
+ * `container.scrollTop = container.scrollHeight` line in ChatView.vue's onContentShift rAF. */
+
+/** Returns `{ restuck, target }` so the test can assert what the function decided without needing
+ * the container's scrollTop to actually change (jsdom doesn't enforce clamp semantics). */
 function restickToBottom(args: {
   container: HTMLElement
   isAtBottom: boolean
@@ -202,12 +197,12 @@ describe('ChatView onContentShift restick (extracted)', () => {
   })
 
   it('T5 (red→green for the fix): when sizer grows but a STALE scrollHeight is read, the explicit-compute path still lands at the NEW max — once the caller re-reads on the next contentShift', async () => {
-    // Simulates the bug race: caller reads scrollHeight once (gets the
-    // OLD value because Vue's DOM patch hasn't flushed yet), assigns
-    // scrollTop to the stale max. Then the next contentShift fires,
-    // and the second read picks up the NEW scrollHeight. The guard
-    // `newScrollHeight === lastObservedScrollHeight` correctly catches
-    // the change and resticks at the proper new bottom.
+    // Simulates the bug race: caller reads scrollHeight once (gets the OLD value because Vue's DOM
+    // patch hasn't flushed yet), assigns scrollTop to the stale max. Then the next contentShift
+    // fires, and the second read picks up the NEW scrollHeight.
+
+    // The guard `newScrollHeight === lastObservedScrollHeight` correctly catches the change and
+    // resticks at the proper new bottom.
     const wrapper = mount(VirtualScroller, {
       props: { items: makeItems(10), defaultItemHeight: 80, buffer: 0, totalCount: 10 },
     })
@@ -306,13 +301,14 @@ describe('ChatView onContentShift restick (extracted)', () => {
     })
 
     it('T6c: wasAtBottom must be captured BEFORE beginPreserve (preserve scroll events corrupt the flag)', () => {
-      // The preserve dance (beginPreserve → messages mutation →
-      // endPreserve) fires scroll events that pass through
-      // handleVirtualScroll. If wasAtBottom were read AFTER endPreserve,
-      // a mid-preserve scroll event could have already flipped
-      // isAtBottom=false and the re-validation would be skipped. This
-      // test pins the ordering contract: the flag is a snapshot taken
-      // before any preserve-induced scroll can fire.
+      // The preserve dance (beginPreserve → messages mutation → endPreserve) fires scroll events
+      // that pass through handleVirtualScroll.
+
+      // If wasAtBottom were read AFTER endPreserve, a mid-preserve scroll event could have already
+      // flipped isAtBottom=false and the re-validation would be skipped.
+
+      // This test pins the ordering contract: the flag is a snapshot taken before any
+      // preserve-induced scroll can fire.
       const isAtBottom = { value: true }
       // Snapshot BEFORE the preserve (as the fix requires):
       const wasAtBottom = isAtBottom.value
@@ -323,14 +319,13 @@ describe('ChatView onContentShift restick (extracted)', () => {
     })
   })
 
-  // ── Static contract: production ChatView.vue must run the re-validation ────
-  //
-  // The extracted-function tests above pin the MATH; this one pins the
-  // WIRING. Without it the extracted function could drift from production
-  // silently (the exact failure mode that let Bug C ship). Greps the
-  // loadChatHistory loadMore branch for the three required elements:
-  // the pre-preserve snapshot, the post-preserve re-stick call, and the
-  // explicit Math.max compute (no clamp-delegate).
+  // ── Static contract: production ChatView.vue must run the re-validation ──── The
+  // extracted-function tests above pin the MATH; this one pins the WIRING. Without it the extracted
+  // function could drift from production silently (the exact failure mode that let Bug C ship).
+
+  // Greps the loadChatHistory loadMore branch for the three required elements: the pre-preserve
+  // snapshot, the post-preserve re-stick call, and the explicit Math.max compute (no
+  // clamp-delegate).
   it('T6d (red→green): production loadChatHistory re-validates bottom after endPreserve when user was at bottom', async () => {
     const { readFileSync } = await import('node:fs')
     const { resolve } = await import('node:path')

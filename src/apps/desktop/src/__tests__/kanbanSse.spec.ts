@@ -230,11 +230,11 @@ describe('useKanbanSseStore (bus-backed)', () => {
   })
 
   it('skips fetchKanbanTasks on self-echo moved events (local-mutation dedupe)', async () => {
-    // Drag-and-drop via moveTaskToColumn registers the task id in
-    // recentLocalMutations; when the backend fans the `moved` SSE
-    // event back to the mover, the handler mirrors + returns WITHOUT
-    // the tasks?limit=100 refetch. Remote moves (no registration)
-    // still refetch (see the moved test above).
+    // Drag-and-drop via moveTaskToColumn registers the task id in recentLocalMutations; when the
+    // backend fans the `moved` SSE event back to the mover, the handler mirrors + returns WITHOUT
+    // the tasks?limit=100 refetch.
+
+    // Remote moves (no registration) still refetch (see the moved test above).
     _clearRecentLocalMutationsForTests()
     try {
       const ws = useWorkspacesStore()
@@ -492,13 +492,14 @@ describe('useKanbanSseStore (bus-backed)', () => {
   })
 
   it('triggers fetchKanbanTasksForAllColumns on unassigned (no new_column_id)', async () => {
-    // Per-column pagination (Option B, 2026-08-06): unassign events
-    // have `new_column_id: null` (the task is being detached from any
-    // column). We don't know which column it WAS in (the SSE payload
-    // doesn't carry the source column id), so conservatively refetch
-    // ALL columns via fetchKanbanTasksForAllColumns. For move/assign
-    // events with a non-null new_column_id, the single-column
-    // fetchKanbanTasks fires (see the moved/assigned tests above).
+    // Per-column pagination (Option B, 2026-08-06): unassign events have `new_column_id: null` (the
+    // task is being detached from any column).
+
+    // We don't know which column it WAS in (the SSE payload doesn't carry the source column id), so
+    // conservatively refetch ALL columns via fetchKanbanTasksForAllColumns.
+
+    // For move/assign events with a non-null new_column_id, the single-column fetchKanbanTasks
+    // fires (see the moved/assigned tests above).
     const ws = useWorkspacesStore()
     const fetchAllColumnsSpy = vi.spyOn(ws, 'fetchKanbanTasksForAllColumns').mockResolvedValue()
     const fetchTasksSpy = vi.spyOn(ws, 'fetchKanbanTasks').mockResolvedValue()
@@ -600,13 +601,14 @@ describe('useKanbanSseStore (bus-backed)', () => {
     )
   })
 
-  // ─── Active sort forwarding (kanban-sort-by plan Chunk 3) ───
-  // The SSE handler refetches tasks on kanban_task events. When the
-  // user has picked a sort (e.g. name desc), the refetch MUST use
-  // the same sort — otherwise the user's view silently reverts to
-  // updated_at desc and the just-received event lands in the wrong
-  // visual order. The handler reads activeSortBy +
-  // activeSortDirection (written by fetchKanbanTasks on the most
+  // ─── Active sort forwarding (kanban-sort-by plan Chunk 3) ─── The SSE handler refetches tasks on
+  // kanban_task events.
+
+  // When the user has picked a sort (e.g. name desc), the refetch MUST use the same sort —
+  // otherwise the user's view silently reverts to updated_at desc and the just-received event lands
+  // in the wrong visual order.
+
+  // The handler reads activeSortBy + activeSortDirection (written by fetchKanbanTasks on the most
   // recent user-initiated fetch) and forwards them.
   it('forwards the active sort to fetchKanbanTasks on kanban_task events', async () => {
     const ws = useWorkspacesStore()
@@ -723,11 +725,11 @@ describe('useKanbanSseStore (bus-backed)', () => {
     const store = useKanbanSseStore()
     await store.initKanbanSse('ws_1')
 
-    // Event for a DIFFERENT workspace — the store's filter drops it
-    // before reaching the workspacesStore fetch call. The bus's
-    // kanban channel is global (the backend fans out kanban events
-    // to every connected client), so the client-side filter is what
-    // keeps each workspace's kanban state scoped.
+    // Event for a DIFFERENT workspace — the store's filter drops it before reaching the
+    // workspacesStore fetch call.
+
+    // The bus's kanban channel is global (the backend fans out kanban events to every connected
+    // client), so the client-side filter is what keeps each workspace's kanban state scoped.
     const event: KanbanColumnEvent = {
       action: 'updated',
       workspace_id: 'ws_OTHER',

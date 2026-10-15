@@ -199,11 +199,12 @@ describe('VirtualScroller — a 1000-message chat with full-screen-tall bubbles'
   })
 
   it('keeps a bottom reader on the bottom when a pass deflates the model above the anchor', async () => {
-    // The opposite swing, and the one in the recorded browser capture: rows
-    // above the anchor settle far SHORTER than the model reserved. The prefix
-    // delta is large and NEGATIVE, so the anchor rule would subtract it from
-    // scrollTop and park the reader in the history — which is what disarms the
-    // auto-stick and leaves the rest of the response off-screen.
+    // The opposite swing, and the one in the recorded browser capture: rows above the anchor settle
+    // far SHORTER than the model reserved.
+
+    // The prefix delta is large and NEGATIVE, so the anchor rule would subtract it from scrollTop
+    // and park the reader in the history — which is what disarms the auto-stick and leaves the rest
+    // of the response off-screen.
     const { wrapper, el, vm } = mountLongChat()
     // Learn the profile INFLATED, then let it settle to the real heights.
     await learnProfile(el, 1.8)
@@ -223,16 +224,16 @@ describe('VirtualScroller — a 1000-message chat with full-screen-tall bubbles'
   })
 
   it('holds the invariant across a long response, pass after pass', async () => {
-    // One pass proving the rule is not one pass proving it survives a whole
-    // turn. The reported symptom only shows up once the stick has already
-    // died, so the LATER passes are the ones that matter.
-    //
-    // Each cycle is deliberately SYNCHRONOUS — park, paint, pass, assert. No
-    // timer advancement between them, so no debounced pass runs behind the
-    // assertions and the state stays attributable. Letting the timers run
-    // here compounds a dozen implicit passes and the numbers stop meaning
-    // anything (this harness reported a reader BELOW the bottom edge, which a
-    // real browser clamps away and jsdom does not).
+    // One pass proving the rule is not one pass proving it survives a whole turn. The reported
+    // symptom only shows up once the stick has already died, so the LATER passes are the ones that
+    // matter. Each cycle is deliberately SYNCHRONOUS — park, paint, pass, assert.
+
+    // No timer advancement between them, so no debounced pass runs behind the assertions and the
+    // state stays attributable.
+
+    // Letting the timers run here compounds a dozen implicit passes and the numbers stop meaning
+    // anything (this harness reported a reader BELOW the bottom edge, which a real browser clamps
+    // away and jsdom does not).
     const { wrapper, el, vm } = mountLongChat()
     await learnProfile(el)
 
@@ -270,12 +271,12 @@ describe('VirtualScroller — a 1000-message chat with full-screen-tall bubbles'
       }
       expect(Math.abs(gap)).toBeLessThanOrEqual(SLACK_PX)
     }
-    // The model really was being corrected during the turn, so the gaps above
-    // are measured against a moving bottom and not a static one. Asserted as
-    // "the bottom moved at some point" rather than "it ended higher":
-    // `measureItems` keeps a `HYSTERESIS_PX` (50px) dead-band for rows above
-    // the anchor, so a small final step is legitimately absorbed and the total
-    // can settle back where it started.
+    // The model really was being corrected during the turn, so the gaps above are measured against
+    // a moving bottom and not a static one.
+
+    // Asserted as "the bottom moved at some point" rather than "it ended higher": `measureItems`
+    // keeps a `HYSTERESIS_PX` (50px) dead-band for rows above the anchor, so a small final step is
+    // legitimately absorbed and the total can settle back where it started.
     expect(Math.max(...bottoms)).toBeGreaterThan(bottom0)
     wrapper.unmount()
   })
@@ -287,11 +288,11 @@ describe('VirtualScroller — a 1000-message chat with full-screen-tall bubbles'
     const { wrapper, el, vm } = mountLongChat()
     await learnProfile(el)
 
-    // Request a position deep in the history, then let the settle passes run.
-    // The reader is NOT expected to still be at exactly the requested pixel —
-    // measuring the rows that scroll in legitimately corrects the model above
-    // them, and the anchor carries them along. So the baseline is the settled
-    // position, not the request.
+    // Request a position deep in the history, then let the settle passes run. The reader is NOT
+    // expected to still be at exactly the requested pixel — measuring the rows that scroll in
+    // legitimately corrects the model above them, and the anchor carries them along.
+
+    // So the baseline is the settled position, not the request.
     const inHistory = Math.round(vm.bottomScrollTop() * 0.4)
     scrollTo(el, inHistory)
     await nextTick()

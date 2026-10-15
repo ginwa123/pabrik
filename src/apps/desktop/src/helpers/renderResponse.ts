@@ -2,36 +2,31 @@ import { marked } from 'marked'
 import { isThinkingTags, getThinkingTags, stripThinkingTags } from './stripTags'
 import { tryUnwrapToolOutput } from './unwrapToolOutput'
 
-/**
- * Render a chat message's content to HTML.
- *
- * Extracted from ChatView.vue (2026-08-27, task_1787761084050_0) and
- * memoized: the previous in-component implementation called
- * `marked.parse` synchronously inside `v-html`, so every re-render of
- * ChatView re-parsed every visible message's markdown. For a long
- * chat (50+ messages) with SSE chunks landing every ~100ms, that's
- * O(visible_messages × renders_per_second) parse calls per second.
- * The cache collapses that to O(unique_messages) per content mutation
- * — the per-render parse loop goes away.
- *
- * Cache key is `${role}|${tool_name}|${trimmedContent}`. The
- * function trims `content` at the top, so leading/trailing whitespace
- * variants share an entry (otherwise a streaming assistant message
- * would fill the cache with every chunk that happened to have a
- * trailing newline).
- *
- * The cache is bounded to `MAX_CACHE_ENTRIES`; when it fills up, the
- * entire cache is cleared. A long chat with thousands of distinct
- * message variants will see periodic cache misses after each clear,
- * but the typical pattern is "100s of renders over the same 50
- * messages" — the clear never fires.
- *
- * The 4 trailing `diffview_*` / `finish_reason` / `tool_calls_json`
- * parameters are kept for diff readability with the original Vue
- * call sites. They are NOT used by the function body — the visible
- * return value depends only on `(content, role, tool_name)`, which is
- * also what the cache keys on.
- */
+/** Render a chat message's content to HTML. */
+
+/** Extracted from ChatView.vue (2026-08-27, task_1787761084050_0) and memoized: the previous
+ * in-component implementation called `marked.parse` synchronously inside `v-html`, so every
+ * re-render of ChatView re-parsed every visible message's markdown. */
+
+/** For a long chat (50+ messages) with SSE chunks landing every ~100ms, that's O(visible_messages ×
+ * renders_per_second) parse calls per second. The cache collapses that to O(unique_messages) per
+ * content mutation — the per-render parse loop goes away. */
+
+/** Cache key is `${role}|${tool_name}|${trimmedContent}`. The function trims `content` at the top,
+ * so leading/trailing whitespace variants share an entry (otherwise a streaming assistant message
+ * would fill the cache with every chunk that happened to have a trailing newline). */
+
+/** The cache is bounded to `MAX_CACHE_ENTRIES`; when it fills up, the entire cache is cleared. */
+
+/** A long chat with thousands of distinct message variants will see periodic cache misses after
+ * each clear, but the typical pattern is "100s of renders over the same 50 messages" — the clear
+ * never fires. */
+
+/** The 4 trailing `diffview_*` / `finish_reason` / `tool_calls_json` parameters are kept for diff
+ * readability with the original Vue call sites. */
+
+/** They are NOT used by the function body — the visible return value depends only on `(content,
+ * role, tool_name)`, which is also what the cache keys on. */
 const escapeHtml = (text: string): string => {
   const div = document.createElement('div')
   div.textContent = text
@@ -76,11 +71,11 @@ export const renderResponse = (
   content: string,
   role: string,
   tool_name?: string,
-  // 4 trailing parameters kept for diff readability with the original
-  // Vue call sites. They are not used by the function body — the
-  // return value depends only on (content, role, tool_name), which is
-  // also what the cache keys on. Underscored to make the
-  // "intentionally unused" intent explicit to linters.
+  // 4 trailing parameters kept for diff readability with the original Vue call sites. They are not
+  // used by the function body — the return value depends only on (content, role, tool_name), which
+  // is also what the cache keys on.
+
+  // Underscored to make the "intentionally unused" intent explicit to linters.
   _diffviewBefore?: string,
   _diffviewAfter?: string,
   _finish_reason?: string,
@@ -102,11 +97,11 @@ export const renderResponse = (
 
   const trimmed = content.trim()
   if (!trimmed) {
-    // A `tool` row can legitimately be empty — 403 such rows in the live DB,
-    // mostly a result that has not landed yet and a handful of tools that
-    // return nothing at all. A registered tool renders a "running…" card, but
-    // an UNREGISTERED one has only this pill, and `''` made the whole row
-    // invisible. The name is the least a reader can be shown.
+    // A `tool` row can legitimately be empty — 403 such rows in the live DB, mostly a result that
+    // has not landed yet and a handful of tools that return nothing at all.
+
+    // A registered tool renders a "running…" card, but an UNREGISTERED one has only this pill, and
+    // `''` made the whole row invisible. The name is the least a reader can be shown.
     const emptyTool = role === 'tool' && tool_name ? toolNamePill(tool_name) : ''
     cache.set(key, emptyTool)
     return emptyTool
@@ -177,12 +172,12 @@ const renderTool = (content: string, tool_name: string | undefined): string => {
     return `<span class="tool-inline">glob → "${pattern}"${resultsText}</span>`
   }
 
-  // Collapsed-bubble summary for the inline tool pill in ChatView.
-  // Mirrors the structured ListDirectory.vue card so users see the
-  // same info (path + entry count) whether they look at the
-  // collapsed bubble or the expanded body. The wire shape is
-  // `<directory_listing path="..." count="N">...</directory_listing>`
-  // (see src/modules/agent/tools/list_directory.zig).
+  // Collapsed-bubble summary for the inline tool pill in ChatView. Mirrors the structured
+  // ListDirectory.vue card so users see the same info (path + entry count) whether they look at the
+  // collapsed bubble or the expanded body.
+
+  // The wire shape is `<directory_listing path="..." count="N">...</directory_listing>` (see
+  // src/modules/agent/tools/list_directory.zig).
   if (tool_name === 'list_directory') {
     const errorMatch = content.match(/<error>([\s\S]*?)<\/error>/)
     if (errorMatch) {
@@ -220,10 +215,10 @@ const renderTool = (content: string, tool_name: string | undefined): string => {
   }
 
   // Bare name: the card is the answer, and a one-line chip cannot hold it.
-  // `web_search` used to preview the query here, but its result is an
-  // untyped provider payload — the provider NAME is the only field this
-  // envelope guarantees, and a chip that reads `web_search → "tinyfish"`
-  // (the first quoted string in the JSON) describes nothing.
+
+  // `web_search` used to preview the query here, but its result is an untyped provider payload —
+  // the provider NAME is the only field this envelope guarantees, and a chip that reads `web_search
+  // → "tinyfish"` (the first quoted string in the JSON) describes nothing.
   if (
     tool_name === 'search_skills' ||
     tool_name === 'use_skill' ||

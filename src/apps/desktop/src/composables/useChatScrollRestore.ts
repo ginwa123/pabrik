@@ -98,11 +98,13 @@ export function useChatScrollRestore(
   resolveBottomEdge?: (container: HTMLElement) => number,
 ): {
   restore: () => number | null
-  /** Whether a restoreable value is stored, judged WITHOUT the container.
-   * `restore()` cannot answer this: it returns `null` both for "nothing
-   * saved" and for "the container is not scrollable yet", and the caller must
-   * treat those two differently — fall through to the bottom immediately
-   * versus wait for the scroller to measure. See the header note. */
+  /** Whether a restoreable value is stored, judged WITHOUT the container. */
+
+  /** `restore()` cannot answer this: it returns `null` both for "nothing saved" and for "the
+   * container is not scrollable yet", and the caller must treat those two differently — fall
+   * through to the bottom immediately versus wait for the scroller to measure. */
+
+  /** See the header note. */
   hasSavedPosition: () => boolean
   restorePosition: (value: number) => void
 } {
@@ -113,14 +115,14 @@ export function useChatScrollRestore(
     }
     return el.scrollHeight - el.clientHeight
   }
-  // Alias the key rather than mirroring it into a local ref.
-  //
-  // This used to be `const keyRef = ref(initialKey)` plus a
-  // `{ immediate: true }` watcher copying `storageKey.value` into it. The
-  // watcher needed the `immediate` flag precisely because the snapshot could
-  // not see the current value on its own, and it still could not cover a key
-  // that changed between setup and the first flush. Aliasing reads the live
-  // value every time, so a dynamic key is correct from the first access and
+  // Alias the key rather than mirroring it into a local ref. This used to be `const keyRef =
+  // ref(initialKey)` plus a `{ immediate: true }` watcher copying `storageKey.value` into it.
+
+  // The watcher needed the `immediate` flag precisely because the snapshot could not see the
+  // current value on its own, and it still could not cover a key that changed between setup and the
+  // first flush.
+
+  // Aliasing reads the live value every time, so a dynamic key is correct from the first access and
   // no watcher is needed at all.
   const keyRef: Ref<string> = typeof storageKey === 'string' ? ref(storageKey) : storageKey
 
@@ -172,22 +174,22 @@ export function useChatScrollRestore(
     if (el) writeSaved(el.scrollTop)
   }
 
-  // Captured synchronously during setup so restore() can return it
-  // immediately (matches the existing kanban composable's contract).
-  // Reads the raw saved value (no "near bottom" gating here — that's
-  // restore()'s job, computed against the CURRENT container geometry
-  // which is only known after the VirtualScroller has measured items).
+  // Captured synchronously during setup so restore() can return it immediately (matches the
+  // existing kanban composable's contract).
+
+  // Reads the raw saved value (no "near bottom" gating here — that's restore()'s job, computed
+  // against the CURRENT container geometry which is only known after the VirtualScroller has
+  // measured items).
   const savedScrollTop: number | null = readSaved()
 
   let attachedEl: HTMLElement | null = null
 
-  // Wire the container when it becomes available. The chat's
-  // VirtualScroller is conditionally rendered (v-if), so on first
-  // mount containerRef may still be null — the scroller only
-  // appears once `isLoading` flips to true inside loadChatHistory's
-  // initial-load branch. That arrival re-renders the host, which lands
-  // in the update hook (post-flush, like the old watcher) with the
-  // element present. Idempotent per element.
+  // Wire the container when it becomes available. The chat's VirtualScroller is conditionally
+  // rendered (v-if), so on first mount containerRef may still be null — the scroller only appears
+  // once `isLoading` flips to true inside loadChatHistory's initial-load branch.
+
+  // That arrival re-renders the host, which lands in the update hook (post-flush, like the old
+  // watcher) with the element present. Idempotent per element.
   const wireChatContainer = (el: HTMLElement | null) => {
     if (!el) return
     if (attachedEl === el) return
@@ -241,11 +243,12 @@ export function useChatScrollRestore(
     return savedScrollTop
   }
 
-  /** True when localStorage holds a positive value for the current key.
-   * Deliberately reads NOTHING from the container: the question is "did this
-   * reader ever leave a position behind?", which is a fact about storage, not
-   * about layout. Answering it from `restore()` instead would make a
-   * not-yet-measured scroller look like "nothing to restore". */
+  /** True when localStorage holds a positive value for the current key. Deliberately reads NOTHING
+   * from the container: the question is "did this reader ever leave a position behind?", which is a
+   * fact about storage, not about layout. */
+
+  /** Answering it from `restore()` instead would make a not-yet-measured scroller look like
+   * "nothing to restore". */
   const hasSavedPosition = (): boolean =>
     savedScrollTop !== null && savedScrollTop > 0
 

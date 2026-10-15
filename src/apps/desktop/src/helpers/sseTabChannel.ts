@@ -153,12 +153,14 @@ export function createTabChannel(opts: TabChannelOptions): TabChannel {
   let onMessage: ((event: { data: unknown }) => void) | null = null
   let onVisibility: (() => void) | null = null
 
-  /** Total ordering for leadership. A single NUMERIC rank is not enough: two tabs
-   * created in the same millisecond tie, and a tie never resolves - both keep
-   * leading and the profile ends up with two connections (caught by
-   * `sseTabChannel.spec.ts > two tabs that start simultaneously converge`). So
-   * compare the tuple instead: visible beats hidden, then the older tab wins,
-   * then tabId breaks the tie. */
+  /** Total ordering for leadership. */
+
+  /** A single NUMERIC rank is not enough: two tabs created in the same millisecond tie, and a tie
+   * never resolves - both keep leading and the profile ends up with two connections (caught by
+   * `sseTabChannel.spec.ts > two tabs that start simultaneously converge`). */
+
+  /** So compare the tuple instead: visible beats hidden, then the older tab wins, then tabId breaks
+   * the tie. */
   function outranksTheirs(peer: Peer): boolean {
     if (peer.visible !== isVisible()) return isVisible()
     if (peer.startedAt !== startedAt) return startedAt < peer.startedAt
@@ -314,10 +316,11 @@ export function createTabChannel(opts: TabChannelOptions): TabChannel {
           }
           return
         }
-        // A visible tab takes over from a hidden leader: browsers throttle hidden
-        // tabs, so leaving a stale hidden leader in charge stalls the whole
-        // profile. Without this, a visible tab that JOINS while a hidden tab leads
-        // would never claim (only the visibilitychange path did).
+        // A visible tab takes over from a hidden leader: browsers throttle hidden tabs, so leaving
+        // a stale hidden leader in charge stalls the whole profile.
+
+        // Without this, a visible tab that JOINS while a hidden tab leads would never claim (only
+        // the visibilitychange path did).
         if (shouldPreemptHiddenLeader(peer)) {
           scheduleElection('visible tab preempting hidden leader', true)
           return

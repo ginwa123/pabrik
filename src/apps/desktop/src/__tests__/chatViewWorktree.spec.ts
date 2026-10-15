@@ -68,15 +68,16 @@ if (
   }
 }
 
-// ─── shared SSE stub ────────────────────────────────────────────────────────
-// Mirrors the helper in `sseBus.spec.ts` / `App.spec.ts` — kept inline
-// rather than shared to avoid coupling between the two spec files.
-// The stub satisfies the SseClient interface (close / reconnect /
-// getState / onStateChange) so the bus's global client slot can be
-// filled without opening a real EventSource in jsdom. This spec
-// exercises the worktree status button and the cross-session listener
-// isolation — see kanbanSse.spec.ts / workspacesStoreSessionEvents.spec.ts
-// for the event-dispatch pattern using `__dispatchSseBus`.
+// ─── shared SSE stub ──────────────────────────────────────────────────────── Mirrors the helper
+// in `sseBus.spec.ts` / `App.spec.ts` — kept inline rather than shared to avoid coupling between
+// the two spec files.
+
+// The stub satisfies the SseClient interface (close / reconnect / getState / onStateChange) so the
+// bus's global client slot can be filled without opening a real EventSource in jsdom.
+
+// This spec exercises the worktree status button and the cross-session listener isolation — see
+// kanbanSse.spec.ts / workspacesStoreSessionEvents.spec.ts for the event-dispatch pattern using
+// `__dispatchSseBus`.
 function makeStubClient(initial: SseState): SseClient {
    
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -93,16 +94,17 @@ function makeStubClient(initial: SseState): SseClient {
 }
 
 // ─── default mocks ──────────────────────────────────────────────────────────
-// `installChatViewMocks` wires up the api.* dependencies the
-// component touches in onMounted. The `getChatHistory` callback lets
-// each test customize the `git_worktree_cwd` field (and the cwd) the
-// mocked response returns.
-//
-// After the single-global-EventSource migration ChatView no longer
-// calls `api.createUnifiedSseConnection` directly and the bus no
-// longer exposes a per-session subscribe/unsubscribe API. The global
-// bus is installed once per test (in `beforeEach`) with a stub global
-// SseClient; tests drive `llm`/`queue` events via `__dispatchSseBus`.
+// `installChatViewMocks` wires up the api.* dependencies the component touches in onMounted.
+
+// The `getChatHistory` callback lets each test customize the `git_worktree_cwd` field (and the cwd)
+// the mocked response returns.
+
+// After the single-global-EventSource migration ChatView no longer calls
+// `api.createUnifiedSseConnection` directly and the bus no longer exposes a per-session
+// subscribe/unsubscribe API.
+
+// The global bus is installed once per test (in `beforeEach`) with a stub global SseClient; tests
+// drive `llm`/`queue` events via `__dispatchSseBus`.
 function installChatViewMocks(opts: {
   gitWorktreeCwd?: string
   cwd?: string
@@ -183,10 +185,10 @@ describe('ChatView worktree status button', () => {
   let app: VueApp | null = null
 
   beforeEach(() => {
-    // jsdom 29 in this project's Vitest does not provide localStorage.
-    // navigation.ts reads localStorage at store init (loadSidebarCollapsed
-    // etc.), so we stub a minimal in-memory implementation that
-    // satisfies the `localStorage.getItem/.setItem/.removeItem` calls.
+    // jsdom 29 in this project's Vitest does not provide localStorage. navigation.ts reads
+    // localStorage at store init (loadSidebarCollapsed etc.), so we stub a minimal in-memory
+    // implementation that satisfies the `localStorage.getItem/.setItem/.removeItem` calls.
+
     // See nav.spec.ts for the same pattern.
     if (typeof localStorage === 'undefined' || typeof localStorage.getItem !== 'function') {
       const store: Record<string, string> = {}
@@ -207,14 +209,15 @@ describe('ChatView worktree status button', () => {
     // Pinia must be active for any useXxxStore() call.
     setActivePinia(createPinia())
 
-    // Install the bus BEFORE mounting ChatView so ChatView's
-    // `useSseBus()` calls in `connectSse()` find an installed bus
-    // (the bus throws "useSseBus called before installSseBus" if not
-    // installed). Replace the global client so we never touch
-    // jsdom's EventSource — the stub satisfies the SseClient
-    // interface (close / reconnect / getState / onStateChange). The
-    // bus's single global SseClient carries all 5 channels; tests
-    // drive `llm` and `queue` events via `__dispatchSseBus`.
+    // Install the bus BEFORE mounting ChatView so ChatView's `useSseBus()` calls in `connectSse()`
+    // find an installed bus (the bus throws "useSseBus called before installSseBus" if not
+    // installed).
+
+    // Replace the global client so we never touch jsdom's EventSource — the stub satisfies the
+    // SseClient interface (close / reconnect / getState / onStateChange).
+
+    // The bus's single global SseClient carries all 5 channels; tests drive `llm` and `queue`
+    // events via `__dispatchSseBus`.
     __resetSseBus()
     app = createApp({})
     installSseBus(app)

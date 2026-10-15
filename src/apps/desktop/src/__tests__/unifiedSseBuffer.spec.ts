@@ -62,18 +62,17 @@ import { createUnifiedSseConnection } from '../api'
 import * as sseClient from '../helpers/sseClient'
 
 describe('createUnifiedSseConnection: single-buffer design (regression for Plan Reviewer #1)', () => {
-  // Mock the SseClient so we capture the onEvent callback without
-  // needing a real EventSource. Returns a stub SseClient (we never
-  // call .close() etc. in these tests).
-  //
-  // Spy lifecycle note: vi.spyOn() returns a live spy. We set the
-  // mockImplementation once at describe-level (NOT in beforeEach,
-  // because vi.spyOn() + vi.mockRestore() in afterEach would tear
-  // the spy down and the next beforeEach's mockImplementation call
-  // would be on a dead spy). Instead, we just reset capturedOnEvent
-  // and the mockImplementation re-uses the closure-scoped variable
-  // fresh each test by reassigning the implementation in beforeEach
-  // WITHOUT calling mockRestore.
+  // Mock the SseClient so we capture the onEvent callback without needing a real EventSource.
+  // Returns a stub SseClient (we never call .close() etc. in these tests). Spy lifecycle note:
+  // vi.spyOn() returns a live spy.
+
+  // We set the mockImplementation once at describe-level (NOT in beforeEach, because vi.spyOn() +
+  // vi.mockRestore() in afterEach would tear the spy down and the next beforeEach's
+  // mockImplementation call would be on a dead spy).
+
+  // Instead, we just reset capturedOnEvent and the mockImplementation re-uses the closure-scoped
+  // variable fresh each test by reassigning the implementation in beforeEach WITHOUT calling
+  // mockRestore.
   const spy = vi.spyOn(sseClient, 'createSseClient')
   let capturedOnEvent: ((raw: string, eventType: string) => void) | null = null
 
@@ -390,12 +389,13 @@ describe('createUnifiedSseConnection: single-buffer design (regression for Plan 
     }
 
     // Now fire a kanban named event — it MUST reach the consumer.
-    // (If the buffer had been corrupted by accumulated bytes, the
-    // JSON.parse for the next default-message event would have
-    // failed silently and the kanban named-event branch would
+
+    // (If the buffer had been corrupted by accumulated bytes, the JSON.parse for the next
+    // default-message event would have failed silently and the kanban named-event branch would
     // still work since named events are dispatched independently.
-    // To really catch the bug we need a default-message event AFTER
-    // the dropped events — see below.)
+
+    // To really catch the bug we need a default-message event AFTER the dropped events — see
+    // below.)
     capturedOnEvent!(
       JSON.stringify({
         action: 'created',
@@ -413,13 +413,13 @@ describe('createUnifiedSseConnection: single-buffer design (regression for Plan 
       expect.objectContaining({ column_id: 'col-1', action: 'created' }),
     )
 
-    // Follow up: fire a VALID default-message event AFTER the dropped
-    // ones. If the buffer was tangled, this `indexOf('{')` would
-    // land inside the LAST dropped event, `lastIndexOf('}')` would
-    // land at the end of the kanban cb invocation's leftover
-    // bytes, the slice would be malformed JSON, JSON.parse would
-    // fail, and the cb would never fire. With the fix, the buffer
-    // is clean and the dispatch works.
+    // Follow up: fire a VALID default-message event AFTER the dropped ones.
+
+    // If the buffer was tangled, this `indexOf('{')` would land inside the LAST dropped event,
+    // `lastIndexOf('}')` would land at the end of the kanban cb invocation's leftover bytes, the
+    // slice would be malformed JSON, JSON.parse would fail, and the cb would never fire.
+
+    // With the fix, the buffer is clean and the dispatch works.
     const afterCb = vi.fn()
     const client2 = createUnifiedSseConnection({
       channels: {
@@ -462,23 +462,19 @@ describe('createUnifiedSseConnection: single-buffer design (regression for Plan 
   })
 })
 
-/**
- * Regression tests for Chunk 4 of
- * docs/superpowers/plans/2026-06-30-single-sse-all-sessions.md:
- *
- * The `UnifiedChannels.llm` / `.queue` shapes now accept an OPTIONAL
- * `sessionId`. When the caller omits it (the bus, in Chunk 2), the
- * factory must send a BARE `llm` / `queue` token (not `llm:` /
- * `queue:`) so the backend's `parseChannels` routes to the central
- * broadcast keys. When the caller provides a `sessionId`, the
- * factory sends the per-session routing token `llm:<sid>` /
- * `queue:<sid>` (kept for back-compat with any future caller that
- * wants server-side filtering).
- *
- * These tests capture the URL passed to `createSseClient` (the
- * existing describe above captures only `onEvent`; this one captures
- * the URL via its own spy + a per-test reset).
- */
+/** Regression tests for Chunk 4 of docs/superpowers/plans/2026-06-30-single-sse-all-sessions.md:
+ * The `UnifiedChannels.llm` / `.queue` shapes now accept an OPTIONAL `sessionId`. */
+
+/** When the caller omits it (the bus, in Chunk 2), the factory must send a BARE `llm` / `queue`
+ * token (not `llm:` / `queue:`) so the backend's `parseChannels` routes to the central broadcast
+ * keys. */
+
+/** When the caller provides a `sessionId`, the factory sends the per-session routing token
+ * `llm:<sid>` / `queue:<sid>` (kept for back-compat with any future caller that wants server-side
+ * filtering). */
+
+/** These tests capture the URL passed to `createSseClient` (the existing describe above captures
+ * only `onEvent`; this one captures the URL via its own spy + a per-test reset). */
 describe('createUnifiedSseConnection: bare vs per-session tokens (Chunk 4)', () => {
   const spy = vi.spyOn(sseClient, 'createSseClient')
   let capturedUrl: string | null = null
@@ -658,14 +654,14 @@ describe('createUnifiedSseConnection: pre-registers all granular event names', (
 
   it('dispatches design_elements_geometry_batch_updated to opts.channels.design', () => {
     // Bug history (2026-08-06): the move-batch endpoint emitted
-    // `design_elements_geometry_batch_updated` SSE events, but the
-    // dispatcher's if-chain only handled the three singular event
-    // names. The browser dropped the batch event before our
-    // handler ran (no listener registered for that event type),
-    // AND the dispatcher would have ignored it anyway. The dedupe
-    // check in `stores/designSse.ts` therefore never ran for batch
-    // updates. Fix: register the event type AND dispatch it to
-    // the same `design` channel.
+    // `design_elements_geometry_batch_updated` SSE events, but the dispatcher's if-chain only
+    // handled the three singular event names.
+
+    // The browser dropped the batch event before our handler ran (no listener registered for that
+    // event type), AND the dispatcher would have ignored it anyway. The dedupe check in
+    // `stores/designSse.ts` therefore never ran for batch updates.
+
+    // Fix: register the event type AND dispatch it to the same `design` channel.
     let capturedOnEvent: ((raw: string, type: string) => void) | null = null
     spy.mockImplementation(((opts: sseClient.SseClientOptions) => {
       capturedOnEvent = opts.onEvent
