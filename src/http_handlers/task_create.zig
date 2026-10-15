@@ -12,6 +12,7 @@ const memories_mod = pabrikcore.memories;
 const tags_validation = @import("tags_validation.zig");
 const image_urls_validation = @import("image_urls_validation.zig");
 const video_urls_validation = @import("video_urls_validation.zig");
+const skills_store = pabrikcore.skills_store;
 
 /// Process-local monotonic counter for task_id generation.
 var task_id_counter: std.atomic.Value(u64) = .init(0);
@@ -57,6 +58,9 @@ pub const TaskCreateError = error{
     CwdTooLong,
     CwdNotAbsolute,
     CwdContainsControlChar,
+    // 400 — per-task skill name validation (Migration 110).
+    SkillNameTooLong,
+    SkillNameContainsControlChar,
     // Underlying I/O / alloc errors (required by the type system
     // even though they're unreachable on the per-request arena)
     OutOfMemory,
@@ -288,6 +292,17 @@ fn createStandardTask(
         break :blk raw;
     };
 
+    const validated_skill_name = blk: {
+        const raw = input.body.skill_name orelse "";
+        if (raw.len == 0) break :blk raw;
+        if (raw.len > skills_store.MAX_NAME_BYTES) return error.SkillNameTooLong;
+        for (raw) |c| {
+            if (c < 0x20 or c == 0x7f) return error.SkillNameContainsControlChar;
+        }
+        if (!skills_store.isValidSkillName(raw)) return error.SkillNameContainsControlChar;
+        break :blk raw;
+    };
+
     const task = ai_mod.workspace_item_tasks.createWorkspaceItemTask(
         allocator,
         db,
@@ -305,6 +320,7 @@ fn createStandardTask(
         validated_cwd,
         // Migration 090 — video_urls (trailing param). Same contract.
         validated_video_urls,
+        validated_skill_name,
     ) catch return error.StandardTaskCreateFailed;
 
     // Chunk 5 of kanban-task-notification-icon: creating a card is a human
@@ -533,6 +549,8 @@ pub fn tasksCreateHandler(
             error.CwdTooLong,
             error.CwdNotAbsolute,
             error.CwdContainsControlChar => 400,
+            error.SkillNameTooLong,
+            error.SkillNameContainsControlChar => 400,
             error.MemoryNameRequired, error.InvalidMemoryName,
             error.MemoryContentRequired => 400,
             error.WorkspaceItemNotFound => 404,
@@ -554,6 +572,8 @@ pub fn tasksCreateHandler(
             error.CwdTooLong => "cwd path too long (max 4 KiB)",
             error.CwdNotAbsolute => "cwd must be an absolute path",
             error.CwdContainsControlChar => "cwd contains a control character",
+            error.SkillNameTooLong => "skill name too long",
+            error.SkillNameContainsControlChar => "skill name must be a directory-safe token (letters, digits, dot, dash, underscore)",
             error.MemoryNameRequired => "memory_name is required for memory tasks",
             error.InvalidMemoryName => "Invalid memory name (must end in .md, no /, no ..)",
             error.MemoryContentRequired => "memory_content is required for memory tasks",

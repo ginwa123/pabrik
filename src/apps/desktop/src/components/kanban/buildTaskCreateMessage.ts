@@ -19,11 +19,11 @@
  *                                    `base` argument of `set_git_worktree`,
  *                                    so the worktree branches FROM it
  *                                    instead of the repo's current HEAD.
- *
  * Pure function — no Vue, no store, trivially unit-testable. The
  * caller (KanbanView.handleCreateTaskSave) passes the already-trimmed
- * task name; the description, worktree path and base branch are trimmed
- * here so whitespace-only input degrades to the shorter form.
+ * task name; the description, worktree path, base branch and skill
+ * name are trimmed here so whitespace-only input degrades to the
+ * shorter form.
  */
 export function buildTaskCreateMessage(
   name: string,
@@ -31,6 +31,7 @@ export function buildTaskCreateMessage(
   useGitWorktree: boolean,
   worktreePath?: string,
   baseBranch?: string,
+  skillName?: string,
 ): string {
   const lines: string[] = [`Task : ${name}`]
   const desc = description.trim()
@@ -47,6 +48,10 @@ export function buildTaskCreateMessage(
     if (base !== '') {
       lines.push(`Base: ${base}`)
     }
+  }
+  const skill = (skillName ?? '').trim()
+  if (skill !== '') {
+    lines.push('', `#Skill ${skill}`)
   }
   return lines.join('\n')
 }

@@ -239,6 +239,7 @@ const emit = defineEmits<{
       // (NEW) populates this field; skipped / picker-canceled
       // leaves it as ''. Plan:
       // docs/superpowers/plans/2026-08-06-kanban-cwd-session-optional.md
+      skillName: string
       cwdSession?: string
     },
   ]
@@ -281,6 +282,7 @@ const emit = defineEmits<{
       // create and create-and-run modes; the host threads it into
       // runAgentOnNewTask's `cwd` (overriding the kanban-level path
       // + sandbox fallback).
+      skillName: string
       cwdSession?: string
     },
   ]
@@ -404,6 +406,18 @@ const isProfilePickerOpen = ref(false)
 const profilePickerRef = ref<HTMLElement | null>(null)
 const availableProfiles = ref<ProfileEntry[]>([])
 const profilesLoading = ref(false)
+
+// Skill picker (create only). '' = no skill. Source is api.getSkills - the same rows search_skills reads,
+// so a picked name always resolves in use_skill({ name }).
+interface SkillEntry {
+  name: string
+  description: string
+}
+const selectedSkill = ref('')
+const isSkillPickerOpen = ref(false)
+const skillPickerRef = ref<HTMLElement | null>(null)
+const availableSkills = ref<SkillEntry[]>([])
+const skillsLoading = ref(false)
 
 // NEW (plan: 2026-08-06-kanban-add-task-button-placement). Column
 // dropdown state (create mode only). selectedColumnId mirrors the
@@ -639,6 +653,8 @@ const openDialog = async (): Promise<void> => {
     worktreeBaseBranch.value = ''
     tags.value = [] // NEW: start with empty tags in create mode
     selectedProfile.value = '' // NEW: profile selector defaults to backend default
+    selectedSkill.value = ''
+    isSkillPickerOpen.value = false
     // NEW (plan: 2026-08-14-kanban-task-detail-edit-cwd). Sync
     // cwdSession from the parent kanban's path on dialog open so
     // the picker shows the kanban-level fallback by default.
@@ -719,6 +735,7 @@ const openDialog = async (): Promise<void> => {
   if (isCreateMode.value) {
     void loadProfiles()
     void loadHomeDir()
+    void loadSkills()
   }
   // Sync selectedColumnId from the parent's `column` prop on open
   // (create mode only). Re-assigning the same id is a no-op, so the
@@ -963,6 +980,7 @@ const handleSave = () => {
       // `cwd` param and to runAgentOnNewTask's `cwd` for the
       // create-and-run flow.
       cwdSession: cwdSession.value,
+      skillName: selectedSkill.value,
     })
   } else {
     emit('save', {
@@ -1020,6 +1038,7 @@ const handleRunAgent = () => {
     // Mirror of handleSave's cwdSession — see that handler for the
     // 3-level fallback chain contract.
     cwdSession: cwdSession.value,
+    skillName: selectedSkill.value,
   })
 }
 
@@ -1133,6 +1152,38 @@ const toggleProfilePicker = () => {
 const selectProfile = (name: string) => {
   selectedProfile.value = name
   isProfilePickerOpen.value = false
+}
+
+const loadSkills = async () => {
+  if (!isCreateMode.value) return
+  skillsLoading.value = true
+  try {
+    const wsId = props.workspaceId ?? ''
+    if (wsId === '') {
+      availableSkills.value = []
+      return
+    }
+    const res = await api.getSkills(wsId)
+    availableSkills.value = (res.skills ?? []).map((sk) => ({
+      name: sk.name,
+      description: sk.description ?? '',
+    }))
+    // eslint-disable-next-line local/no-try-catch -- mirrors loadProfiles directly above: a failed fetch must degrade to an empty picker, not break the dialog
+  } catch (err) {
+    console.error('Failed to load skills:', err)
+    availableSkills.value = []
+  } finally {
+    skillsLoading.value = false
+  }
+}
+
+const toggleSkillPicker = () => {
+  isSkillPickerOpen.value = !isSkillPickerOpen.value
+}
+
+const selectSkill = (name: string) => {
+  selectedSkill.value = name
+  isSkillPickerOpen.value = false
 }
 
 // ─── Metadata helpers ───────────────────────────────────────────────────
@@ -1721,6 +1772,82 @@ const isMediaLoading = computed<boolean>(() => {
             </div>
           </div>
         </div>
+
+          <div v-if="isCreateMode" ref="skillPickerRef" class="relative shrink-0">
+            <button
+              type="button"
+              @click.stop="toggleSkillPicker"
+              class="px-2.5 py-1 rounded-md text-dense hover:opacity-80 inline-flex items-center gap-1.5 transition-opacity duration-200"
+              style="
+                background-color: var(--semantic-sidebar-bg);
+                border: 1px solid var(--color-border);
+                color: var(--semantic-text);
+              "
+              :title="
+                selectedSkill
+                  ? `Agent will use skill: ${selectedSkill}`
+                  : 'No skill - the agent discovers one itself if needed'
+              "
+              data-testid="kanban-task-detail-skill-picker"
+            >
+              <UiIcon name="clipboard" />
+              <span class="font-medium">Skill</span>
+              <span style="color: var(--semantic-text-muted)">{{
+                selectedSkill || 'None'
+              }}</span>
+              <span class="text-micro shrink-0" style="color: var(--semantic-text-dim)">&#9662;</span>
+            </button>
+            <div
+              v-if="isSkillPickerOpen"
+              class="absolute top-full mt-1 left-0 min-w-[260px] max-w-[320px] rounded-lg shadow-lg z-20 overflow-hidden"
+              style="
+                background-color: var(--semantic-card-bg);
+                border: 1px solid var(--color-border);
+              "
+              data-testid="kanban-task-detail-skill-picker-dropdown"
+              @click.stop
+            >
+              <button
+                type="button"
+                @click="selectSkill('')"
+                class="w-full text-left px-3 py-2 text-dense hover:opacity-80 flex items-center justify-between"
+                style="color: var(--semantic-text)"
+                data-testid="kanban-task-detail-skill-picker-item"
+              >
+                <span class="font-medium">None (agent decides)</span>
+                <span v-if="selectedSkill === ''">&#10003;</span>
+              </button>
+              <button
+                v-for="sk in availableSkills"
+                :key="sk.name"
+                type="button"
+                @click="selectSkill(sk.name)"
+                class="w-full text-left px-3 py-2 text-dense hover:opacity-80"
+                style="color: var(--semantic-text); border-top: 1px solid var(--color-border)"
+                data-testid="kanban-task-detail-skill-picker-item"
+              >
+                <div class="flex items-center justify-between gap-2">
+                  <span class="font-medium truncate">{{ sk.name }}</span>
+                  <span v-if="selectedSkill === sk.name" class="shrink-0">&#10003;</span>
+                </div>
+                <div
+                  v-if="sk.description"
+                  class="text-micro mt-0.5 line-clamp-2"
+                  style="color: var(--semantic-text-muted)"
+                >
+                  {{ sk.description }}
+                </div>
+              </button>
+              <div
+                v-if="!skillsLoading && availableSkills.length === 0"
+                class="px-3 py-2 text-dense"
+                style="color: var(--semantic-text-muted)"
+                data-testid="kanban-task-detail-skill-picker-empty"
+              >
+                No skills installed. Add one in Settings.
+              </div>
+            </div>
+          </div>
 
         <!-- Row 2: Unattended mode toggle (always shown).
                    Separated from the pickers by a hairline divider so

@@ -229,6 +229,7 @@ export interface Task {
   // wire tasks raw, so the wire name IS the TS name. No
   // normalization needed.
   git_branch?: string | null
+  skill_name?: string
 }
 
 // localStorage keys for state persistence
@@ -3441,6 +3442,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
       cwd?: string
       isAutoRetryUntilStop?: string
       selected_profile_model?: string
+      skillName?: string
     },
   ): Promise<api.KanbanCreateResponse> {
     const wirePayload:
@@ -3459,6 +3461,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
             cwd: params.cwd,
             isAutoRetryUntilStop: params.isAutoRetryUntilStop,
             selected_profile_model: params.selected_profile_model,
+            skill_name: params.skillName,
           }
         : mode === 'create_session'
           ? {
@@ -3473,6 +3476,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
               // Persists on the new sessions row (see Task 2's
               // KanbanCreateSessionOnlyPayload comment in api/index.ts).
               selected_profile_model: params.selected_profile_model,
+              skill_name: params.skillName,
             }
           : {
               mode: 'create',
@@ -3483,6 +3487,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
               videoUrls: params.videoUrls,
               cwd: params.cwd,
               isAutoRetryUntilStop: params.isAutoRetryUntilStop,
+              skillName: params.skillName,
             }
 
     try {

@@ -9,6 +9,11 @@
  *   #Notes UseGitWorktree         <- only when useGitWorktree is true
  *   Path: <worktreePath>          <- only when useGitWorktree is true
  *                                    AND worktreePath is non-empty
+ *   #Skill <skillName>            <- only when skillName is non-empty.
+ *                                    The exact `skills.name` the user
+ *                                    picked in the New-task dialog. The
+ *                                    agent reads this line and calls
+ *                                    `use_skill({ name })` with it.
  */
 import { describe, expect, it } from 'vitest'
 
@@ -120,6 +125,69 @@ describe('buildTaskCreateMessage', () => {
       buildTaskCreateMessage('My task', 'blablabla', true, '/tmp/wt/x'),
     ).toBe(
       'Task : My task\nDescription: blablabla\n\n#Notes UseGitWorktree\nPath: /tmp/wt/x',
+    )
+  })
+})
+
+// Migration 110 - the `#Skill <name>` directive. Independent of the
+// worktree toggle: a task can ask for a skill without a worktree, and
+// vice versa.
+describe('buildTaskCreateMessage - #Skill directive (Migration 110)', () => {
+  it('no skill produces no #Skill line (the canonical sentinel)', () => {
+    expect(buildTaskCreateMessage('My task', 'desc', false, '', '', '')).toBe(
+      'Task : My task\nDescription: desc',
+    )
+  })
+
+  it('undefined skill produces no #Skill line', () => {
+    expect(buildTaskCreateMessage('My task', 'desc', false)).toBe(
+      'Task : My task\nDescription: desc',
+    )
+  })
+
+  it('skill alone appends the #Skill line after a blank line', () => {
+    expect(buildTaskCreateMessage('My task', '', false, '', '', 'pdf')).toBe(
+      'Task : My task\n\n#Skill pdf',
+    )
+  })
+
+  it('skill + description appends the #Skill line after Description', () => {
+    expect(buildTaskCreateMessage('My task', 'desc', false, '', '', 'pdf')).toBe(
+      'Task : My task\nDescription: desc\n\n#Skill pdf',
+    )
+  })
+
+  it('whitespace-only skill degrades to no #Skill line', () => {
+    expect(buildTaskCreateMessage('My task', 'desc', false, '', '', '   ')).toBe(
+      'Task : My task\nDescription: desc',
+    )
+  })
+
+  it('trims a padded skill name', () => {
+    expect(buildTaskCreateMessage('My task', '', false, '', '', '  pdf  ')).toBe(
+      'Task : My task\n\n#Skill pdf',
+    )
+  })
+
+  it('skill + worktree emits both directives, worktree block first', () => {
+    expect(
+      buildTaskCreateMessage('My task', 'desc', true, '/tmp/wt/x', 'origin/main', 'pdf'),
+    ).toBe(
+      'Task : My task\nDescription: desc\n\n#Notes UseGitWorktree\nPath: /tmp/wt/x\nBase: origin/main\n\n#Skill pdf',
+    )
+  })
+
+  it('skill + bare worktree emits both bare directives', () => {
+    expect(buildTaskCreateMessage('My task', '', true, '', '', 'pdf')).toBe(
+      'Task : My task\n\n#Notes UseGitWorktree\n\n#Skill pdf',
+    )
+  })
+
+  it('a dotted skill name survives verbatim', () => {
+    // Skill names allow dots (e.g. `pdf.tools.v2`) - the name is the
+    // row's identity, so it must not be normalized away.
+    expect(buildTaskCreateMessage('My task', '', false, '', '', 'pdf.tools.v2')).toBe(
+      'Task : My task\n\n#Skill pdf.tools.v2',
     )
   })
 })
