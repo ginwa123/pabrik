@@ -543,6 +543,7 @@ const handlePinnedDrop = (event: DragEvent) => {
               v-if="firstProcessingTaskId"
               :session-id="firstProcessingTaskId"
               test-id="item-elapsed-chip"
+              variant="text"
             />
             <!-- Loading spinner (folder contents fetching — independent
                of LLM worker state). Takes the slot when the user just

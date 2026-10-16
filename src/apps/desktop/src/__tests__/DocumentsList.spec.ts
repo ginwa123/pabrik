@@ -96,7 +96,8 @@ describe('DocumentsList — section chrome', () => {
   })
 
   it('nests no control inside the section header', async () => {
-    const wrapper = mountList()
+    const router = await makeRouter()
+    const wrapper = mountList(router)
     await nextTick()
     expect(wrapper.findAll('button button')).toHaveLength(0)
     wrapper.unmount()

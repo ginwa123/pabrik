@@ -1265,7 +1265,12 @@ defineExpose({
                 >{{ item.relativeTime || 'now' }}</span
               >
             </span>
-            <WorkerElapsedChip v-else :session-id="item.id" test-id="chat-elapsed-chip" />
+            <WorkerElapsedChip
+              v-else
+              :session-id="item.id"
+              test-id="chat-elapsed-chip"
+              variant="text"
+            />
           </span>
         </button>
       </div>
@@ -1465,7 +1470,12 @@ defineExpose({
                   >{{ item.relativeTime || 'now' }}</span
                 >
               </span>
-              <WorkerElapsedChip v-else :session-id="item.id" test-id="chat-elapsed-chip" />
+              <WorkerElapsedChip
+                v-else
+                :session-id="item.id"
+                test-id="chat-elapsed-chip"
+                variant="text"
+              />
             </span>
           </button>
         </template>

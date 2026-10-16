@@ -571,6 +571,24 @@
         </ul>
       </div>
 
+      <h2>Implemented, measured on the built app</h2>
+      <p>
+        The fix is on this branch. I rebuilt the frontend, served the worktree's own <code>dist/</code> on a
+        private port and read the rendered panel with <code>agent-browser</code>. These numbers are from the
+        running app, not from the crop below.
+      </p>
+      <div class="panel">
+        <ul>
+          <li>Project row box <code>[13..287]</code> to <code>[0..287]</code>, and its label <code>41</code> to <code>28</code>.</li>
+          <li>A task inside an expanded project: box <code>[0..287]</code>, label <code>28</code>. The same two numbers as a project row, which is what flat means here.</li>
+          <li>The New Chat label <code>44</code> to <code>28</code>.</li>
+          <li>The four headers now all sit at the gutter, 28px tall, each with a count. Pinned and Recent had none of those three, and Recent had no count at all.</li>
+          <li>Buttons nested inside a button: <code>3</code> to <code>0</code>.</li>
+          <li>Vertical rules inside the panel: <code>2</code> to <code>1</code>, and the one left is the panel's own right edge.</li>
+          <li>No list carries a left margin or a left border any more.</li>
+        </ul>
+      </div>
+
       <h2>Before: the panel as it renders today</h2>
       <p>
         Each numbered callout is a deviation with a file and a line. The strip under the crop pins the

@@ -14,6 +14,21 @@ what action) the same way. Nothing in this plan changes what the panel does, onl
 No behaviour change. No new endpoint, no new store, no change to the virtualiser, to paging, to drag
 reorder, to the context menus, or to which rows exist. The panel keeps its current buttons and targets.
 
+## Status
+
+Implemented on this branch and measured on the built app: `15d412fcd` (one row grammar, nothing indents)
+and `6abe330e8` (one section header, no button inside a button), plus the time treatment and the New Chat
+columns.
+
+Fixed: findings 1 to 9, and 11 to 17. The browser reads the project row, the task row and New Chat at box
+`[0..287]` with their labels at `28`, zero nested buttons, and one vertical rule left, which is the panel's
+own edge.
+
+Remaining: finding 10's structural half. The pinned and the recent rows are still two copies of one block
+of markup, and their elapsed-chip test ids are aligned now, so the drift is gone but the duplication is
+not; extracting them into one `SidebarRow` component is the next change. Worth a look with it:
+`KanbanTaskRow.vue:318` shares `variant="text"`, which is `--text-micro` now.
+
 ## The contract as it stands
 
 `style.css` declares the geometry the panel is supposed to resolve against: `--sb-gutter: 12px`,

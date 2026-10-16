@@ -333,7 +333,7 @@ const errorRetryLabel = computed(() =>
     <!-- How long this task has been running. Time pill is the only
          activity marker — the circle spinner was removed as redundant. -->
     <span class="ml-2 shrink-0 flex items-center">
-      <WorkerElapsedChip :session-id="task.id" test-id="task-elapsed-chip" />
+      <WorkerElapsedChip :session-id="task.id" test-id="task-elapsed-chip" variant="text" />
     </span>
     <OpenInNewTabMenu
       v-if="menuPos"

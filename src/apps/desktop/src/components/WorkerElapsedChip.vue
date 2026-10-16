@@ -122,7 +122,7 @@ const title = computed(() => {
 }
 
 .worker-elapsed--text {
-  font-size: var(--text-meta);
+  font-size: var(--text-micro);
 }
 
 /* Amber = the heartbeat is old enough that the run is about to be reaped
