@@ -120,7 +120,7 @@ describe('KanbanTaskDetailDialog — Create task & run agent', () => {
         // Empty string = no per-task cwd. See comment on the
         // earlier "emits create" test for the full rationale.
         cwdSession: '',
-        skillName: '',
+        skillNames: [],
       },
     ])
   })

@@ -7,6 +7,7 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const on_event_sent_kanban = pabrikcore.ai_mod.on_event_sent_kanban;
 const model_guard = @import("../agentic_loop/llm_history_model_guard.zig");
+const task_skills = @import("task_skills.zig");
 
 /// HTTP request body for kanban task create.
 pub const KanbanTaskCreateBody = struct {
@@ -22,8 +23,12 @@ pub const KanbanTaskCreateBody = struct {
     cwd: ?[]const u8 = null,
     is_auto_retry_until_stop: ?[]const u8 = null,
     selected_profile_model: ?[]const u8 = null,
-    /// Skill name for this task (Migration 110). Empty = no skill.
-    /// Also baked into the create_and_run queue_message as #Skill <name>.
+    /// Skill names for this task (Migration 112), a real JSON array. Empty =
+    /// no skill. Also baked into the create_and_run queue_message, one
+    /// `#Skill <name>` line per name.
+    skill_names: ?[]const []const u8 = null,
+    /// Migration 110's single-name field, accepted for older clients and read
+    /// only when `skill_names` is absent.
     skill_name: ?[]const u8 = null,
     /// Migration 111 — tasks this new card waits for (ids on the same board).
     depends_on: ?[]const []const u8 = null,
@@ -138,6 +143,7 @@ pub fn kanbanTasksCreateHandler(
         .image_urls = parsed.image_urls,
         .video_urls = parsed.video_urls,
         .cwd = parsed.cwd,
+        .skill_names = parsed.skill_names,
         .skill_name = parsed.skill_name,
         .depends_on = parsed.depends_on,
     };
@@ -214,17 +220,19 @@ pub fn kanbanTasksCreateHandler(
                 profile = ap;
             }
         }
-        // Migration 110 — agent only sees queue_message on its first turn; skills never reach the system prompt.
-        // Bake the directive here or the row's skill_name is invisible to the agent.
+        // Migration 112 — the agent only sees queue_message on its first turn,
+        // so every skill must ride there as a `#Skill <name>` line. The
+        // frontend no longer bakes it: it used to, so one skill arrived twice.
         const queue_message = blk: {
             const base = parsed.queue_message orelse "";
-            const skill = std.mem.trim(u8, parsed.skill_name orelse "", " \t\n\r");
-            if (skill.len == 0) break :blk base;
-            break :blk std.fmt.allocPrint(
+            const joined = task_skills.normalize(
                 allocator,
-                "{s}\n\n#Skill {s}",
-                .{ base, skill },
-            ) catch base;
+                parsed.skill_names,
+                parsed.skill_name,
+            ) catch "";
+            const block = task_skills.directives(allocator, joined) catch "";
+            if (block.len == 0) break :blk base;
+            break :blk std.fmt.allocPrint(allocator, "{s}{s}", .{ base, block }) catch base;
         };
         // image_urls/video_urls on the wire are `||`-joined (Migration
         // 069/090 shapes); pass through to the worker pool verbatim.

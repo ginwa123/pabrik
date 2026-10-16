@@ -4439,7 +4439,9 @@ pub const WorkspaceItemTaskInfo = struct {
     /// Per-task cwd override (Migration 070).
     cwd: []u8 = &.{},
 
-    skill_name: []u8 = &.{},
+    /// `||`-joined skill names for this task (Migration 112). Empty string is
+    /// the canonical "no skill" sentinel.
+    skill_names: []u8 = &.{},
 
     /// Joined from `sessions.git_worktree_cwd` (Migration 046). Empty string
     /// when no session row exists or no worktree is bound. Owned by the
@@ -4465,7 +4467,7 @@ pub const WorkspaceItemTaskInfo = struct {
         if (self.image_urls.len > 0) allocator.free(self.image_urls);
         if (self.video_urls.len > 0) allocator.free(self.video_urls);
         if (self.cwd.len > 0) allocator.free(self.cwd);
-        if (self.skill_name.len > 0) allocator.free(self.skill_name);
+        if (self.skill_names.len > 0) allocator.free(self.skill_names);
         if (self.git_worktree_cwd.len > 0) allocator.free(self.git_worktree_cwd);
         if (self.git_branch) |gb| allocator.free(gb);
     }
@@ -4522,9 +4524,10 @@ pub fn createWorkspaceItemTask(
     /// `||`-delimited `data:video/...;base64,...` URLs (Migration 090).
     /// Same null/empty/literal contract as image_urls above.
     video_urls: ?[]const u8,
-    /// Skill name for this task (Migration 110). Empty = no skill.
-    /// A NAME, not an id — use_skill({ name }) takes the name, which is the row's identity.
-    skill_name: ?[]const u8,
+    /// `||`-joined skill names this task asks its agent to use (Migration
+    /// 112, which widened Migration 110's single name). Empty = no skill.
+    /// Names, not ids — `use_skill({ name })` takes the name.
+    skill_names: ?[]const u8,
 ) !WorkspaceItemTaskInfo {
     if (!std.mem.eql(u8, task_type, "standard") and !std.mem.eql(u8, task_type, "routine")) {
         return error.InvalidTaskType;
@@ -4538,7 +4541,7 @@ pub fn createWorkspaceItemTask(
     const returned_image_urls: []const u8 = image_urls orelse "";
     const returned_video_urls: []const u8 = video_urls orelse "";
     const returned_cwd: []const u8 = cwd orelse "";
-    const returned_skill_name: []const u8 = skill_name orelse "";
+    const returned_skill_names: []const u8 = skill_names orelse "";
     {
         var cols_buf: std.ArrayList(u8) = .empty;
         defer cols_buf.deinit(allocator);
@@ -4617,15 +4620,15 @@ pub fn createWorkspaceItemTask(
             }
         }
 
-        // Migration 110 — same dynamic-SQL builder pattern for the skill
-        // name. Empty string MUST be a SQL '' literal (see the
+        // Migration 112 — same dynamic-SQL builder pattern for the skill
+        // names. Empty string MUST be a SQL '' literal (see the
         // SqliteBackend.exec empty-slice-binds-as-NULL rule above).
-        if (skill_name) |sk| {
+        if (skill_names) |sk| {
             if (sk.len == 0) {
-                try cols_buf.appendSlice(allocator, ", skill_name");
+                try cols_buf.appendSlice(allocator, ", skill_names");
                 try vals_buf.appendSlice(allocator, ", ''");
             } else {
-                try cols_buf.appendSlice(allocator, ", skill_name");
+                try cols_buf.appendSlice(allocator, ", skill_names");
                 try vals_buf.appendSlice(allocator, ", ?");
                 try bind_values.append(allocator, sk);
             }
@@ -4666,9 +4669,9 @@ pub fn createWorkspaceItemTask(
         // unconditionally so `deinit` can free consistently (the empty-string
         // path also gets duped — a 0-byte allocation, freed via `free('cwd')`
         .cwd = try allocator.dupe(u8, returned_cwd),
-        // Migration 110 — persist the skill name we just INSERTed. Same
+        // Migration 112 — persist the skill names we just INSERTed. Same
         // unconditional dupe so `deinit` frees consistently.
-        .skill_name = try allocator.dupe(u8, returned_skill_name),
+        .skill_names = try allocator.dupe(u8, returned_skill_names),
     };
 }
 
@@ -5004,7 +5007,7 @@ pub fn getWorkspaceItemTaskById(
     // 18-column contract, indices 0-17) minus cursor/sort/pagination —
     // replaced by `WHERE t.id = ? ...
     const sql =
-        \\SELECT t.id, t.name, t.workspace_item_id, t.description, t.created_at, t.updated_at, t.task_type, COALESCE(t.is_pinned, 0), COALESCE(t.pinned_position, 0), k.kanban_column_id, COALESCE(k.kanban_position, 0), COALESCE(s.is_auto_retry_until_stop, '0'), COALESCE(s.last_finish_reason, ''), CASE WHEN COALESCE(s.last_finish_reason, '') = 'stop' AND (t.last_human_touched_at_nano IS NULL OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000) THEN 1 ELSE 0 END, t.tags, COALESCE(s.git_worktree_cwd, ''), t.cwd, CASE WHEN COALESCE(t.image_urls, '') != '' THEN 1 ELSE 0 END, CASE WHEN COALESCE(t.video_urls, '') != '' THEN 1 ELSE 0 END, COALESCE(t.skill_name, '') FROM workspace_item_tasks t LEFT JOIN kanban k ON k.workspace_item_task_id = t.id LEFT JOIN sessions s ON s.id = t.id WHERE t.workspace_item_id = ? AND t.id = ? LIMIT 1
+        \\SELECT t.id, t.name, t.workspace_item_id, t.description, t.created_at, t.updated_at, t.task_type, COALESCE(t.is_pinned, 0), COALESCE(t.pinned_position, 0), k.kanban_column_id, COALESCE(k.kanban_position, 0), COALESCE(s.is_auto_retry_until_stop, '0'), COALESCE(s.last_finish_reason, ''), CASE WHEN COALESCE(s.last_finish_reason, '') = 'stop' AND (t.last_human_touched_at_nano IS NULL OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000) THEN 1 ELSE 0 END, t.tags, COALESCE(s.git_worktree_cwd, ''), t.cwd, CASE WHEN COALESCE(t.image_urls, '') != '' THEN 1 ELSE 0 END, CASE WHEN COALESCE(t.video_urls, '') != '' THEN 1 ELSE 0 END, COALESCE(t.skill_names, '') FROM workspace_item_tasks t LEFT JOIN kanban k ON k.workspace_item_task_id = t.id LEFT JOIN sessions s ON s.id = t.id WHERE t.workspace_item_id = ? AND t.id = ? LIMIT 1
     ;
 
     var rows = try db.query(allocator, sql, &.{ workspace_item_id, task_id });
@@ -5042,7 +5045,7 @@ pub fn getWorkspaceItemTaskById(
             .is_have_image = std.mem.eql(u8, row.values[17], "1"),
             .is_have_video = std.mem.eql(u8, row.values[18], "1"),
             // '' = no skill.
-            .skill_name = try allocator.dupe(u8, row.values[19]),
+            .skill_names = try allocator.dupe(u8, row.values[19]),
         };
         row.deinit(allocator);
         return task;
@@ -5186,7 +5189,7 @@ pub fn listWorkspaceItemTasksWithCursor(
         // Auto-retry-until-stop: LEFT JOIN sessions on t.id = sessions.id
         // (per the project convention task.id == session.id; standard tasks
         // that have no matching session row get NULL → COALESCE to '0').
-        "SELECT t.id, t.name, t.workspace_item_id, t.description, t.created_at, t.updated_at, t.task_type, COALESCE(t.is_pinned, 0), COALESCE(t.pinned_position, 0), k.kanban_column_id, COALESCE(k.kanban_position, 0), COALESCE(s.is_auto_retry_until_stop, '0'), COALESCE(s.last_finish_reason, ''), CASE WHEN COALESCE(s.last_finish_reason, '') = 'stop' AND (t.last_human_touched_at_nano IS NULL OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000) THEN 1 ELSE 0 END, t.tags, COALESCE(s.git_worktree_cwd, ''), t.cwd, CASE WHEN COALESCE(t.image_urls, '') != '' THEN 1 ELSE 0 END, CASE WHEN COALESCE(t.video_urls, '') != '' THEN 1 ELSE 0 END, COALESCE(t.skill_name, '') FROM workspace_item_tasks t LEFT JOIN kanban k ON k.workspace_item_task_id = t.id LEFT JOIN sessions s ON s.id = t.id WHERE t.workspace_item_id = ?{s}{s}{s} {s} LIMIT {s}",
+        "SELECT t.id, t.name, t.workspace_item_id, t.description, t.created_at, t.updated_at, t.task_type, COALESCE(t.is_pinned, 0), COALESCE(t.pinned_position, 0), k.kanban_column_id, COALESCE(k.kanban_position, 0), COALESCE(s.is_auto_retry_until_stop, '0'), COALESCE(s.last_finish_reason, ''), CASE WHEN COALESCE(s.last_finish_reason, '') = 'stop' AND (t.last_human_touched_at_nano IS NULL OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000) THEN 1 ELSE 0 END, t.tags, COALESCE(s.git_worktree_cwd, ''), t.cwd, CASE WHEN COALESCE(t.image_urls, '') != '' THEN 1 ELSE 0 END, CASE WHEN COALESCE(t.video_urls, '') != '' THEN 1 ELSE 0 END, COALESCE(t.skill_names, '') FROM workspace_item_tasks t LEFT JOIN kanban k ON k.workspace_item_task_id = t.id LEFT JOIN sessions s ON s.id = t.id WHERE t.workspace_item_id = ?{s}{s}{s} {s} LIMIT {s}",
         .{ cursor_clause, column_id_clause, q_clause, order_by, limit_str },
     );
     defer allocator.free(sql);
@@ -5266,7 +5269,7 @@ pub fn listWorkspaceItemTasksWithCursor(
             // Video urls (Migration 090): index 18. Same contract.
             .is_have_video = std.mem.eql(u8, row.values[18], "1"),
             // '' = no skill.
-            .skill_name = try allocator.dupe(u8, row.values[19]),
+            .skill_names = try allocator.dupe(u8, row.values[19]),
         };
         try tasks.append(allocator, task);
         row.deinit(allocator);
@@ -5674,7 +5677,7 @@ fn setupDb() !TestCtx {
         \\    image_urls TEXT NOT NULL DEFAULT '',
         \\    video_urls TEXT NOT NULL DEFAULT '',
         \\    -- Migration 110 — the skill this task asks the agent to use.
-        \\    skill_name TEXT NOT NULL DEFAULT ''
+        \\    skill_names TEXT NOT NULL DEFAULT ''
         \\)
     , &.{});
     try db.exec(alloc,

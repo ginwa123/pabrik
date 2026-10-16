@@ -1139,8 +1139,9 @@ const handleCreateTaskSave = async (payload: {
   // 2026-08-06-kanban-no-base64-in-desc). Files the dialog staged in create mode
   // (KanbanDescriptionEditor.pendingFiles).
   pendingFiles?: PreviewFile[]
-  // NEW (Migration 070 — kanban-cwd-session-optional plan). Per-task cwd override.
-  skillName?: string
+  // NEW (Migration 112 — kanban multi-skill task create). The skills the
+  // dialog picked, in pick order. Empty array = no skill.
+  skillNames?: string[]
   cwdSession?: string
 }) => {
   if (!activeCreateColumnId.value) return
@@ -1185,7 +1186,6 @@ const handleCreateTaskSave = async (payload: {
             payload.useGitWorktree ?? false,
             payload.worktreePath ?? '',
             payload.worktreeBaseBranch ?? '',
-            payload.skillName ?? '',
           )
         : undefined
 
@@ -1196,7 +1196,7 @@ const handleCreateTaskSave = async (payload: {
       cwd: payload.cwdSession,
       isAutoRetryUntilStop: payload.is_auto_retry_until_stop,
       selected_profile_model: payload.selectedProfile,
-      skillName: payload.skillName,
+      skillNames: payload.skillNames ?? [],
       queue_message: queueMessage,
       imageUrls: uploadedImageUrls,
     })
