@@ -177,6 +177,57 @@ const Drain = struct {
     }
 };
 
+/// Windows' process group, as a Job Object: every descendant of an assigned
+/// process joins it, so one `TerminateJobObject` takes the whole tree down —
+/// what `kill(-pgid)` does for the POSIX path.
+const WindowsJob = if (builtin.os.tag == .windows) struct {
+    handle: std.os.windows.HANDLE,
+
+    extern "kernel32" fn CreateJobObjectW(
+        job_attributes: ?*anyopaque,
+        name: ?[*:0]const u16,
+    ) callconv(.winapi) ?std.os.windows.HANDLE;
+    extern "kernel32" fn AssignProcessToJobObject(
+        job: std.os.windows.HANDLE,
+        process: std.os.windows.HANDLE,
+    ) callconv(.winapi) u32;
+    extern "kernel32" fn TerminateJobObject(
+        job: std.os.windows.HANDLE,
+        exit_code: u32,
+    ) callconv(.winapi) u32;
+
+    /// Put `process` in a fresh job, or null when Windows refused (an outer
+    /// job that forbids nesting). The deadline path then falls back to the
+    /// direct-child kill it always had.
+    fn attach(process: std.os.windows.HANDLE) ?WindowsJob {
+        const handle = CreateJobObjectW(null, null) orelse return null;
+        if (AssignProcessToJobObject(handle, process) == 0) {
+            std.os.windows.CloseHandle(handle);
+            return null;
+        }
+        return .{ .handle = handle };
+    }
+
+    /// `process` itself and every process it spawned.
+    fn terminate(self: WindowsJob) void {
+        _ = TerminateJobObject(self.handle, 1);
+    }
+
+    fn close(self: WindowsJob) void {
+        std.os.windows.CloseHandle(self.handle);
+    }
+} else struct {
+    // POSIX has real process groups — `run` kills the whole tree through
+    // `kill(-pgid)` — so there is no job to make and nothing to take down.
+    fn terminate(self: @This()) void {
+        _ = self;
+    }
+
+    fn close(self: @This()) void {
+        _ = self;
+    }
+};
+
 /// Spawn `argv`, capture stdout + stderr, reap the child, never abort.
 ///
 /// `argv[0]` is the program, resolved through `PATH` like any exec.
@@ -200,6 +251,13 @@ pub fn run(
         .stderr = .pipe,
         .pgid = if (own_pg) 0 else null,
     });
+
+    // Windows' process group for this child, so the deadline path can take
+    // its descendants down with it (`WindowsJob`). Best effort: null when
+    // Windows refuses to nest a job.
+    var job: ?WindowsJob = null;
+    if (builtin.os.tag == .windows) job = WindowsJob.attach(child.id.?);
+    defer if (job) |j| j.close();
 
     // Take ownership of both pipes and detach them from the Child in one
     // step.
@@ -272,6 +330,11 @@ pub fn run(
                     std.posix.kill(-pid, .KILL) catch {};
                 }
             }
+        } else if (job) |j| {
+            // Windows' process group, for the same reason: the descendants
+            // go too, so the pipes close and no drain thread is left wedged
+            // behind an orphan that `TerminateProcess` did not reach.
+            j.terminate();
         }
         child.kill(io);
 

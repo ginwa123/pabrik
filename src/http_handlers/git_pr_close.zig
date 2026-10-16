@@ -296,10 +296,9 @@ fn ghScript(fx: *Fixture, argv_file: []const u8, close_code: u8, close_stderr: [
         var err_w: std.Io.Writer = .fixed(&err_buf);
         try hf.cmdEmitLine(&err_w, .stderr, null);
         break :blk try std.fmt.allocPrint(fx.allocator,
-            // `%~n0` is the script's own name, the Windows analogue of the
-            // POSIX branch's `basename "$0"`: the assertion below expects
-            // argv[0] in the record. `%~n0` and %* share ONE line because the
-            // Windows record IS cmd's single command tail.
+            // `%~n0` is the script's own name — the analogue of the POSIX
+            // branch's `basename "$0"` — and it shares ONE line with %*,
+            // because the Windows record IS cmd's single command tail.
             \\@echo off
             \\if "%~2"=="close" (
             \\  > "{s}" echo %~n0 %*

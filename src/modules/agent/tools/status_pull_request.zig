@@ -645,10 +645,9 @@ const Fixture = struct {
         return self.inner.root;
     }
 
-    /// Write a fixture program that behaves as `payload` describes. NOT the
-    /// `renderProgram` + `writeProgramText` pair: on Windows the payloads
-    /// live in sidecar data files only THIS path writes, so a body rendered
-    /// the other way references files that do not exist and emits nothing.
+    /// Write a fixture program that behaves as `payload` describes. NOT
+    /// `renderProgram` + `writeProgramText`: on Windows the payloads live in
+    /// sidecar files only THIS path writes, so that way emits nothing.
     fn writeProgram(self: *Fixture, name: []const u8, payload: hf.Payload) ![]u8 {
         return self.inner.writeProgram(name, payload);
     }

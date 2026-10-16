@@ -68,11 +68,8 @@ pub const Fixture = struct {
         const script = try renderProgram(self.allocator, payload);
         defer self.allocator.free(script);
         // On Windows the payloads live in sidecar data files the batch file
-        // relays to its streams, because `cmd.exe`'s `echo` cannot emit a
-        // byte-exact payload. On POSIX the payload is inline in the script.
-        // BOTH files, including an empty one: a script may reference a stream
-        // through `repeat` alone, and `type` on a missing file fails loudly
-        // on the stderr the caller is capturing.
+        // relays to its streams (`cmdEmitLine`). Both files, even an empty
+        // one: a script may reference a stream through `repeat` alone.
         if (builtin.os.tag == .windows) {
             try self.tmp.dir.writeFile(std.testing.io, .{
                 .sub_path = sidecarFileName(.stdout),
@@ -86,10 +83,8 @@ pub const Fixture = struct {
         return self.writeProgramText(name, script);
     }
 
-    /// `writeProgram` for a body the CALLER rendered — for the fixtures
-    /// whose behaviour is a branch `Payload` cannot express
-    /// (`git_pr_close.ghScript`). On Windows such a body has to write its
-    /// own sidecar data files (`sidecarFileName` + `cmdEmitLine`), or it
+    /// `writeProgram` for a body the caller rendered (`git_pr_close.ghScript`).
+    /// On Windows such a body must write its own sidecar data files, or it
     /// names files that do not exist and emits nothing.
     pub fn writeProgramText(self: *Fixture, name: []const u8, script: []const u8) ![]u8 {
         const file_name = try self.programFileName(name);
@@ -123,13 +118,9 @@ pub const Fixture = struct {
     }
 };
 
-/// Render `payload` as a script this host can execute. Every `Payload`
-/// field has a POSIX line and a Windows line, so a new field cannot be
-/// silently honoured on one host and ignored on the other.
-///
-/// Private on purpose: a Windows body NAMES the sidecar data files, and
-/// only `Fixture.writeProgram` writes them. Rendering this text and handing
-/// it to `writeProgramText` produces a fixture that emits nothing at all.
+/// Render `payload` as a script this host can execute. Private: a Windows
+/// body NAMES the sidecar data files, and only `Fixture.writeProgram`
+/// writes them — handing the text to `writeProgramText` emits nothing.
 fn renderProgram(allocator: std.mem.Allocator, payload: Payload) ![]u8 {
     return switch (builtin.os.tag) {
         .windows => renderCmd(allocator, payload),
@@ -210,11 +201,8 @@ fn renderCmd(allocator: std.mem.Allocator, payload: Payload) ![]u8 {
     try w.writeAll("@echo off\n");
 
     // WHY NOT `echo`: it appends a space, ends with CRLF, and cannot emit a
-    // NUL. The payload therefore lives in a sidecar data file the TEST
-    // writes, which `cmdEmitLine` relays to the stream byte-exactly.
-    // `else if`, mirroring `renderSh`: `repeat` REPLACES the single emission,
-    // it does not add one, or a `repeat = n` payload would come out n + 1
-    // times and every exact-length assertion would be off by one copy.
+    // NUL. `else if`, mirroring `renderSh`: `repeat` REPLACES the single
+    // emission, or a `repeat = n` payload comes out n + 1 times.
     if (payload.repeat) |n| {
         try cmdEmitLine(w, .stdout, n);
     } else if (payload.stdout.len > 0) {
@@ -262,9 +250,8 @@ fn renderCmd(allocator: std.mem.Allocator, payload: Payload) ![]u8 {
 pub const DataStream = enum { stdout, stderr };
 
 /// The sidecar data file a `.cmd` fixture relays one stream's bytes from.
-/// One name per stream, so a payload writing both cannot have one clobber
-/// the other, and a caller that renders its own `.cmd` body
-/// (`git_pr_close.ghScript`) can name the same file without re-deriving it.
+/// One name per stream, so a payload writing both cannot clobber the other
+/// and a caller-rendered `.cmd` body can name the same file.
 pub fn sidecarFileName(stream: DataStream) []const u8 {
     return switch (stream) {
         .stdout => "pabrik-fixture-out.bin",
@@ -273,18 +260,8 @@ pub fn sidecarFileName(stream: DataStream) []const u8 {
 }
 
 /// Write the batch statement that relays a sidecar file's bytes to `stream`,
-/// `repeat` times when given. Every Windows fixture body goes through here,
-/// so the emit primitive lives in exactly one place.
-///
-/// WHY `type` AND NOT `copy /b`: `copy` opens `CON`/`NUL` itself, so
-/// `copy /b <file> con` writes to the CONSOLE and `copy /b <file> nul` to
-/// the null device — neither reaches a redirected stdout handle. Both still
-/// print their `        1 file(s) copied.` status line through the child's
-/// own stdout, so a caller capturing the child got that line instead of the
-/// payload (the CI Windows build's 22 failures, every one of them a fixture
-/// whose bytes never arrived). `type` writes through the process's own
-/// stdout/stderr handles and is byte-exact: NUL, 0x1A, invalid UTF-8 and a
-/// missing trailing newline all survive.
+/// `repeat` times when given. WHY `type`, NOT `copy /b`: `copy` opens
+/// `CON`/`NUL` itself, so a redirected stdout gets only its status line.
 pub fn cmdEmitLine(w: *std.Io.Writer, stream: DataStream, repeat: ?usize) !void {
     // A redirection, not a second file: `1>&2` dups the child's own stderr
     // handle, which is the pipe the caller reads.
@@ -316,15 +293,9 @@ pub fn argvRecordedShape() ArgvShape {
     };
 }
 
-/// Everything a recorded argv can be split on: the line break of the POSIX
-/// shape, the spaces of the Windows one, and `"`.
-///
-/// The quote is a SEPARATOR, not data. On Windows the record is cmd's raw
-/// command tail, and Zig's `argvToScriptCommandLineWindows` quotes an
-/// argument the moment it holds anything outside a conservative safe set —
-/// ONE comma is enough, so `gh pr view --json number,title` comes back as
-/// `--json "number,title"`. Those quotes belong to the command line, so a
-/// needle built from real argv values must not have to reproduce them.
+/// Everything a recorded argv can be split on: the POSIX shape's line break,
+/// the Windows one's spaces, and `"` — a SEPARATOR, not data, because the
+/// Windows record is cmd's tail and Zig quotes any argument with a comma.
 const argv_separators = " \t\r\n\"";
 
 /// True when the recorded argv contains `needle` as a whole argument,
