@@ -1,10 +1,7 @@
 <script setup lang="ts">
-/** "Create a PR" dialog. Mounted by ChatView.vue when the user clicks
- * "Create a PR" in the WorktreeMenu.
- * On mount, calls api.getGitWorktreeInfo(worktreePath) to pre-fill the
- * title and body. User can edit before clicking "Create". The submit
- * calls api.createGitPr(...) and emits 'pr-created' with the URL on
- * success or 'error' with the message on failure. */
+/** "Create a PR" dialog. Mounted by ChatView.vue when the user clicks "Create a PR" in the
+ * WorktreeMenu. On mount, calls api.getGitWorktreeInfo(worktreePath) to pre-fill the title and
+ * body. User can edit before clicking "Create". */
 import { ref, onMounted, computed } from 'vue'
 import * as api from '../../api'
 import { forgeWording } from '../../helpers/forgeWording'

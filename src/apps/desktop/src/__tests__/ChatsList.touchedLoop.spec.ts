@@ -1,21 +1,5 @@
-/**
- * Touched-echo loop regression tests.
- *
- * Bug: ChatsList.loadChats() fired POST /touched on every load while a
- * chat was open, and the backend answers that POST with an SSE
- * `session.updated` event. The old `onSessionEvent(() => loadChats())`
- * reloaded on EVERY event — including that echo — so the UI looped
- * forever: GET /llm/session → POST /touched → SSE → GET → POST …
- * (alternating rows in the Network tab, all from api/index.ts:79).
- *
- * Fix (ChatsList.vue):
- *  - fireSessionTouched fires at most once per sessionId per mount
- *    (touchedFiredFor guard, cleared on POST failure for retry);
- *  - `updated` events inside the echo window after our own touch are
- *    swallowed (no refetch);
- *  - all other session events go through a 400ms trailing debounce so
- *    an SSE burst coalesces into a single GET.
- */
+/** Touched-echo loop regression tests. Bug: ChatsList.loadChats() fired POST /touched on every load
+ * while a chat was open, and the backend answers that POST with an SSE `session.updated` event. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp, nextTick, ref } from 'vue'

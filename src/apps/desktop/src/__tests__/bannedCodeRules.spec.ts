@@ -1,19 +1,5 @@
-/**
- * Regression guard for the banned-code rules.
- *
- * A lint rule that silently stops matching is worse than no rule — it looks
- * enforced and enforces nothing. So this spec pins BOTH directions:
- *
- *   - `forbids` — each ban actually fires on code shaped like the bug.
- *   - `allows`  — each ban stays silent on the legitimate forms that are
- *     common in this repo. This half is the one that matters most: a rule
- *     with false positives gets deleted, and deleting it takes the ban with
- *     it. Every `allows` case below is a shape that really exists in
- *     `src/` — the side-effect `watch(() => props.x, () => load())` idiom
- *     alone is ~46 of the 103 real call sites.
- *
- * Run with the repo's normal suite: `pnpm run test`.
- */
+/** Regression guard for the banned-code rules. A lint rule that silently stops matching is worse
+ * than no rule — it looks enforced and enforces nothing. */
 import { describe, expect, it } from 'vitest'
 import { Linter } from 'eslint'
 import tsParser from '@typescript-eslint/parser'
@@ -63,8 +49,6 @@ function lint(code: string, rules: RuleName[] = ALL_RULES): string[] {
     },
     // The filename is REQUIRED: a flat config's `files` array is a matching filter, so without a
     // path to match against the block is silently skipped and every rule reports nothing.
-    // That failure mode is invisible — the linter returns [] and the assertions below would pass
-    // vacuously.
     'probe.ts',
   )
   return messages.map((m) => m.ruleId as string)
@@ -158,9 +142,6 @@ describe('local/no-derived-state-watch', () => {
 
   it('allows a body that resets state and never reads the new value', () => {
     // SseStatusBadge counts SSE reconnects.
-    // `attempt.value = 0` and `attempt.value += 1` depend on the counter's own history, not on the
-    // watched value, so `computed()` cannot express them and the "use computed" advice would be
-    // nonsense — the bus reconnects on its own and there is no local handler to move this into.
     expect(
       lint(
         `watch(bus.state, (s) => { if (s === 'up') { attempt.value += 1 } else { attempt.value = 0 } })`,
@@ -236,7 +217,6 @@ describe('local/no-watch-feedback-loop', () => {
     // Regression: an early version treated the property name as a dependency, so `() =>
     // props.isStopping` "watched" `isStopping` and every prop-mirror (FileInput.vue:159,
     // TextReplace.vue:34, McpServerModal.vue:63) was reported as a loop.
-    // `props` is the dependency, not `isStopping`.
     expect(
       lint(`watch(() => props.isStopping, (v) => { isStopping.value = v ?? false })`, ONLY_LOOP),
     ).toEqual([])
@@ -436,9 +416,6 @@ describe('the rules compose without false positives on real shapes', () => {
   it('a realistic component using computed + side-effect watch + logged catch trips ONLY the blanket bans', () => {
     // Under the blanket bans this previously-clean shape reports exactly two hits —
     // `local/no-watch` and `local/no-try-catch` — and nothing else.
-    // That pins the policy change: the targeted rules still see no derived state, no loop, no
-    // silent catch here; only the backstops fire. The `catch` logs AND writes a rendered error ref,
-    // so `no-silent-fallback-catch` correctly stays quiet — the construct ban is what catches it.
     const code = `
       import { ref, watch, computed } from 'vue'
       export function useRows(props) {

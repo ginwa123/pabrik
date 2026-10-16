@@ -406,8 +406,6 @@ describe('VirtualScroller publishes the bottom it actually lands on', () => {
     // The invariant that must hold in EVERY configuration, asserted unconditionally so the test can
     // never quietly pass by skipping: the published anchor is a position the container can actually
     // be at, and it is never above the DOM max.
-    // An anchor past the max is unreachable — the browser clamps there — so every at-bottom
-    // comparison against it is permanently false. Which is the bug, wearing a different variable.
     expect(anchor).toBeLessThanOrEqual(domEdge)
     expect(anchor).toBeGreaterThanOrEqual(0)
   })
@@ -551,34 +549,9 @@ describe('useChatScrollRestore asks the caller where the bottom is', () => {
   })
 })
 
-// ── Wiring: the components must still call what the math assumed ────────────
-// ── The moving-target ruler (2026-10-10) ────────────────────────────────────
-//
-// The shared ruler fixed the DISAGREEMENT between two notions of the bottom. It
-// did not fix the fact that the shared one is recomputed from live DOM on every
-// read, and its two inputs move independently:
-//
-//     domEdge    = scrollHeight - clientHeight       (the height MODEL)
-//     realBottom = topSpacer + content.offsetHeight  (the RENDERED rows)
-//
-// The real-bottom override engages only while `domEdge - realBottom` exceeds
-// HYSTERESIS_PX. So when the model converges — or the rendered window shifts and
-// `topSpacer` jumps — the SAME stationary reader is measured against a different
-// number. Instrumented trace from a real browser, one SSE chunk apart, the reader
-// never having moved:
-//
-//     frame A: bottomEdge=30114  scrollTop=30071  -> 43px short -> atBottom=false
-//     frame B: bottomEdge=30093  scrollTop=30093  ->  0px short -> atBottom=true
-//
-// The reader did not move 43px; the RULER moved. `isAtBottom` therefore
-// oscillates, the jump-to-bottom arrow blinks, and every follow gate disarms on
-// the short frames. `retainedThroughGrowth` papers over most of them, but it is
-// capped at <100px and does not fire when `contentGrew` is false — so on a slow
-// runner the last settle lands on a short frame and the arrow is up when anything
-// samples it. That is the macOS flake in
-// `chatview_at_bottom_stick_ui_test.py::test_the_stick_survives_a_sizer_that_overshoots_the_content`.
-// The fix: judge against `settledBottom` — where the bottom sat when the stick LAST acted — which
-// only changes when the scroller deliberately repositions.
+// ── Wiring: the components must still call what the math assumed ──────────── ── The moving-target
+// ruler (2026-10-10) ──────────────────────────────────── The shared ruler fixed the DISAGREEMENT
+// between two notions of the bottom.
 describe('the live ruler is a moving target, and the stick must not care', () => {
   const clientHeight = 800
 
@@ -697,13 +670,6 @@ describe('wiring — both sides really use the shared ruler', () => {
     // If scrollToBottom ever grows its own copy of the math, the two drift — which is the entire
     // class of bug this spec exists for. Asserted on the FUNCTION BODY, not on one exact statement
     // sequence.
-    // The body legitimately grew a line: it now records where it left the reader (`settledBottom`)
-    // so the next measure pass can tell that a bottom reader has not moved.
-    // A regex pinned to the old two-line shape failed on that bookkeeping even though the
-    // delegation never changed — a contract test that breaks on a rename of a local is not
-    // protecting the contract.
-    // What is pinned is the claim itself: the value scrolled to comes from `bottomScrollTop()`, and
-    // the arithmetic the shared ruler exists to eliminate is absent from the body.
     const body =
       /const scrollToBottom = \(behavior: ScrollBehavior = 'auto'\) => \{([\s\S]*?)\n\}/.exec(src)
     const fn = body?.[1] ?? ''
@@ -734,7 +700,6 @@ describe('wiring — both sides really use the shared ruler', () => {
     // The anchor REPLACES the live read; it is not max-ed with it. `settledBottom` comes from
     // `bottomScrollTop()` at the end of a pass, and when the real-bottom override disengages that
     // read returns the DOM edge — up to `maxTailGap` HIGHER than where the reader sits.
-    // Max-ing it in inflates the gap and disarms the very stick this protects.
     expect(src).toMatch(
       /typeof settled === 'number' && Number\.isFinite\(settled\)\s*\?\s*settled\s*:\s*liveEdge/,
     )

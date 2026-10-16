@@ -238,21 +238,8 @@ export function fallbackTitle(kind: TabKind): string {
   }
 }
 
-/**
- * Legacy kanban-settings deep links used `?tab=<section>` for the inner
- * Columns/Agent switch (`columns|agent`, plus the pre-unified
- * `tools|knowledge|memories`). That key is now owned by browser tab-mode
- * (`?tab=<tabId>`), and the settings page moved to `?section=` — but
- * `syncFromTarget` (the single navigation funnel) would otherwise claim
- * a legacy `?tab=memories` as an unknown browser tab ID and rewrite it
- * to a fresh `tab_xxx` before the page ever sees it, silently dropping
- * the section. This migration runs first in the funnel: on the
- * kanban-settings path, a `?tab=` holding a legacy section value is
- * moved to `?section=` (with the `tools|knowledge|memories` → `agent`
- * collapse the view itself uses) so old bookmarks keep landing on the
- * Agent tab. Browser tab IDs (`tab_…`) and non-settings paths pass
- * through untouched; an explicit `?section=` always wins.
- */
+/** Legacy kanban-settings deep links used `?tab=<section>` for the inner Columns/Agent switch
+ * (`columns|agent`, plus the pre-unified `tools|knowledge|memories`). */
 const KANBAN_SETTINGS_LEGACY_TABS = new Set(['columns', 'agent', 'tools', 'knowledge', 'memories'])
 
 export function migrateLegacySettingsTab(

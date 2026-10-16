@@ -1,34 +1,7 @@
-/**
- * Behavioural tests for the kanban `?sorts=` URL round-trip
- * (plan 2026-08-06-kanban-sort-by.md + the 2026-08-06 follow-up
- * to kanban-per-column-pagination.md).
- *
- * **Bug fixed (2026-08-06):** "when click chatview, my sort url
- * is gone" — opening a task from the kanban drops the `?sorts=`
- * param. The task dialog mounts, the user picks nothing in the
- * dialog, closes → the URL is now `?view=workspace&...` WITHOUT
- * the sort state. The user's per-column sort choices are silently
- * lost.
- *
- * **Fix:** Sidebar.handleSelectTask snapshots the live `route.query
- * .sorts` into `workspacesStore.savedSortsParam` before navigating
- * to `?view=workspace&...&itemId=Y/chat/task_X`. AppLayout.handleCloseTaskView
- * reads from that store field and writes it back into the URL. The
- * snapshot is consumed (cleared) on close so a subsequent close
- * without a fresh task-open doesn't accidentally restore a stale
- * sort.
- *
- * SIMPLIFY-URL-BROWSER (2026-08-15): the legacy `?view=task&task=Y`
- * URL shape has been collapsed into the workspace URL with the chat
- * task id encoded as `/chat/<taskId>` on `itemId`. The sort
- * round-trip invariant is preserved end-to-end.
- *
- * This test mounts AppLayout, drives the router through
- * `?view=workspace&...&sorts=...` → `?view=workspace&...&itemId=Y/chat/task_Y`
- * → close → `?view=workspace&...`, and asserts that the `sorts` param
- * round-trips. No static-contract checks — every assertion is
- * on the live URL after a router push.
- */
+/** Behavioural tests for the kanban `?sorts=` URL round-trip (plan 2026-08-06-kanban-sort-by.md +
+ * the 2026-08-06 follow-up to kanban-per-column-pagination.md). **Bug fixed (2026-08-06):** "when
+ * click chatview, my sort url is gone" — opening a task from the kanban drops the `?sorts=`
+ * param. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, createApp } from 'vue'
@@ -283,9 +256,6 @@ describe('AppLayout — kanban ?sorts= URL round-trip via task view', () => {
     ] as any
     rewireApiForFixture(store)
     // No snapshot — user opened the task from a workspace that didn't have ?sorts= in its URL.
-    // The close handler must NOT add a sorts= param (that would produce ?view=workspace&sorts=
-    // which KanbanView's parseSortsParam treats as "empty" anyway, but it's still cleaner to not
-    // write the param at all).
     expect(store.savedSortsParam).toBe('')
 
     const wrapper = mountAppLayout()

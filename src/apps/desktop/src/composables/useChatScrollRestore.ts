@@ -79,21 +79,8 @@ const BOTTOM_THRESHOLD_PX = 40
 export function useChatScrollRestore(
   containerRef: Ref<HTMLElement | null>,
   storageKey: Ref<string> | string,
-  /**
-   * Resolves the scrollTop that counts as "the bottom" for this container.
-   *
-   * The DOM's `scrollHeight - clientHeight` is only the bottom when the sizer
-   * agrees with the real content. A VirtualScroller deliberately targets the
-   * REAL content bottom instead when its height model overshoots (and its
-   * tail-gap cap makes that overshoot routine at the end of a long chat), so a
-   * position saved while the reader sat on the last message can sit up to
-   * `maxTailGap` below the DOM edge. Comparing that save against the DOM edge
-   * would (a) fail to recognise it as "still at the bottom" and restore a
-   * stale position, and (b) clamp the restore to the DOM edge, parking the
-   * reader in the blank region below the transcript. ChatView passes the
-   * scroller's `bottomScrollTop`; the default keeps the pre-VirtualScroller
-   * behaviour for plain containers.
-   */
+  /** Resolves the scrollTop that counts as "the bottom" for this container. The DOM's `scrollHeight
+   * - clientHeight` is only the bottom when the sizer agrees with the real content. */
   resolveBottomEdge?: (container: HTMLElement) => number,
 ): {
   restore: () => number | null
@@ -114,11 +101,6 @@ export function useChatScrollRestore(
   }
   // Alias the key rather than mirroring it into a local ref. This used to be `const keyRef =
   // ref(initialKey)` plus a `{ immediate: true }` watcher copying `storageKey.value` into it.
-  // The watcher needed the `immediate` flag precisely because the snapshot could not see the
-  // current value on its own, and it still could not cover a key that changed between setup and the
-  // first flush.
-  // Aliasing reads the live value every time, so a dynamic key is correct from the first access and
-  // no watcher is needed at all.
   const keyRef: Ref<string> = typeof storageKey === 'string' ? ref(storageKey) : storageKey
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -171,9 +153,6 @@ export function useChatScrollRestore(
 
   // Captured synchronously during setup so restore() can return it immediately (matches the
   // existing kanban composable's contract).
-  // Reads the raw saved value (no "near bottom" gating here — that's restore()'s job, computed
-  // against the CURRENT container geometry which is only known after the VirtualScroller has
-  // measured items).
   const savedScrollTop: number | null = readSaved()
 
   let attachedEl: HTMLElement | null = null
@@ -181,8 +160,6 @@ export function useChatScrollRestore(
   // Wire the container when it becomes available. The chat's VirtualScroller is conditionally
   // rendered (v-if), so on first mount containerRef may still be null — the scroller only appears
   // once `isLoading` flips to true inside loadChatHistory's initial-load branch.
-  // That arrival re-renders the host, which lands in the update hook (post-flush, like the old
-  // watcher) with the element present. Idempotent per element.
   const wireChatContainer = (el: HTMLElement | null) => {
     if (!el) return
     if (attachedEl === el) return

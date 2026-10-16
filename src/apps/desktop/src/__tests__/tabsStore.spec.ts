@@ -8,12 +8,8 @@ import { __dispatchSseBus, __resetSseBus, installSseBus } from '../helpers/sseBu
 import { useTabsStore } from '../stores/tabs'
 import { makeLocalStorageStub } from './helpers'
 
-/** Task 2 of the tab-mode plan. The invariants asserted here are the ones
- * the reviewer signed off on:
- *   1. the list is never empty;
- *   2. closing the active tab activates right-then-left;
- *   3. `?tab=` is honoured only when it names exactly this target;
- *   4. persistence is per window and corrupt storage never throws. */
+/** Task 2 of the tab-mode plan. The invariants asserted here are the ones the reviewer signed off
+ * on: 1. the list is never empty; 2. closing the active tab activates right-then-left; 3. */
 const WINDOW_ID = 'w_testwindow'
 
 const chat = (session: string) => ({ view: 'chat', session })

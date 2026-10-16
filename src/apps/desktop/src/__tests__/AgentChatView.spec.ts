@@ -9,9 +9,6 @@ import ChatAppBar from '../components/views/ChatAppBar.vue'
 
 // Stub ChatView — it transitively pulls in many Pinia stores (useNavigationStore,
 // useWorkspacesStore, etc.) and a real SSE bus instance, none of which we need to exercise here.
-// The stub honours the real `showHeader` contract: it renders the shared ChatAppBar when the flag
-// is set and re-emits `close` from the bar's ✕, so these tests assert what AgentChatView actually
-// WIRES rather than ChatView's internals (covered by ChatAppBarParity.spec.ts).
 const ChatViewStub = defineComponent({
   name: 'ChatView',
   props: ['chatId', 'chatName', 'type', 'cwd', 'showHeader', 'embedded'],

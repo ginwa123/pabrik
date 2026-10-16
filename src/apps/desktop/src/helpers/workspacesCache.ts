@@ -1,22 +1,6 @@
-/**
- * Persistent cache for `GET /api/workspaces?is_include_items=false`.
- *
- * Stale-while-revalidate: the workspaces store paints the last-known
- * list synchronously on init so the dropdown/sidebar shows rows
- * immediately, then the network fetch revalidates in the background.
- * There is deliberately NO TTL — a stale list is better than an empty
- * sidebar for the seconds the fetch is in flight, and every init is
- * followed by a real fetch anyway.
- *
- * localStorage (not module memory): the point is surviving a full page
- * reload — the cold-boot case where `/api/workspaces` queues behind
- * heavy SQLite queries and takes seconds. Entries are one small array
- * (~100 bytes per workspace), comfortably inside the storage quota.
- *
- * Fail-silent: every storage access is wrapped, so private mode,
- * quota errors, or a missing `localStorage` (vitest/jsdom setups that
- * don't provide one) degrade to a plain cache miss.
- */
+/** Persistent cache for `GET /api/workspaces?is_include_items=false`. Stale-while-revalidate: the
+ * workspaces store paints the last-known list synchronously on init so the dropdown/sidebar shows
+ * rows immediately, then the network fetch revalidates in the background. */
 import type { Workspace } from '../api'
 import { userScopedKey } from './userScope'
 

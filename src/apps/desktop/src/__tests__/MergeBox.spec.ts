@@ -1,21 +1,5 @@
-/**
- * MergeBox — the merge button's own contract.
- *
- * Two rules this file exists to protect:
- *
- *   1. A state that may not merge must SAY WHY, visibly. "Disabled with a
- *      tooltip" is unreachable at the panel's 200px minimum and unreadable in
- *      a screenshot; the reason is the headline's second line.
- *   2. A CLI that exits 0 without merging is not a merge. The box renders the
- *      server's `pending` as "not merged yet" and never as "Merged", because
- *      `glab mr merge` can return 0 having only armed auto-merge and a GitHub
- *      merge queue accepts a PR without merging it.
- *
- * The state table is asserted directly as well: it is the product (the words
- * and the enabled/disabled verdict the user reads), not an implementation
- * detail, and one case per row of it is what keeps a forge's new vocabulary
- * word from silently becoming "mergeable".
- */
+/** MergeBox — the merge button's own contract. Two rules this file exists to protect: 1. A state
+ * that may not merge must SAY WHY, visibly. */
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import MergeBox from '../components/views/chat_right_sidebar/MergeBox.vue'
@@ -82,8 +66,6 @@ const state = (over: Partial<Record<string, unknown>> = {}) =>
 // jsdom in this vitest does not provide localStorage cleanly — `window.localStorage` is undefined
 // even at a valid origin. That is a known quirk of this suite, worked around in exactly this way by
 // navigation.spec.ts.
-// The stand-in is installed on the bare global because that is what the app's own code reads
-// (useChatRightSidebar.ts).
 beforeEach(() => {
   mergePrMock.mockReset()
   getPrStatusMock.mockReset()

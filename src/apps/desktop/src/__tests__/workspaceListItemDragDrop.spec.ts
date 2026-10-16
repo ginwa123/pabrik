@@ -110,8 +110,6 @@ describe('ProjectsList item drag-and-drop', () => {
     event.dataTransfer = dt
     // JSDOM's `getBoundingClientRect()` returns a zeroed DOMRect, so the midpoint of any element is
     // (0 + 0/2) = 0.
-    // That makes the cursor-Y half-test collapse to "clientY > 0 = bottom half, clientY <= 0 = top
-    // half" — which lets us drive the behavior from tests without mocking layout.
     event.clientY = clientY
     return event as DragEvent
   }
@@ -175,11 +173,6 @@ describe('ProjectsList item drag-and-drop', () => {
   it('does not emit when an item is dropped on the same slot', async () => {
     // The item handler short-circuits on self-drop — mirrors the workspace-level handler (which has
     // the same check).
-    // This is a deliberate design choice: the same-order no-op is a UX-level concern (the user
-    // explicitly dropped on the same row, so the UI shouldn't flicker) and it's cheaper to skip the
-    // event entirely than to round-trip through the store's same-order check.
-    // The store's same-order check still exists as defense-in-depth (see
-    // workspacesStoreItemReorder.spec.ts).
     const workspaces = [
       makeWorkspace('ws_a', 'A', [makeItem('item1', '1'), makeItem('item2', '2')]),
     ]
@@ -236,26 +229,8 @@ describe('ProjectsList item drag-and-drop', () => {
   })
 
   it('inserts the source BEFORE the target when dropped in the TOP half of the target row (top-to-bottom)', async () => {
-    // Regression test for the top-to-bottom off-by-one bug.
-    //
-    // Before the fix, `handleItemDrop` did:
-    //   splice(fromIdx, 1)
-    //   splice(toIdx, 0, moved)
-    // where `toIdx` came from the ORIGINAL array. When the source
-    // was at a LOWER index than the target (toIdx > fromIdx), the
-    // target row's index in the modified array had shifted left by
-    // 1 — so inserting at the original `toIdx` placed the source 1
-    // position AFTER the target, not at it.
-    //
-    // Example: [A, B, C, D, E], drag A onto D.
-    //   Buggy:  splice(0, 1) + splice(3, 0, A) → [B, C, D, A, E]
-    //                                          (A lands AFTER D)
-    //   Fixed:  splice(0, 1) + splice(2, 0, A) → [B, C, A, D, E]
-    //                                          (A lands BEFORE D)
-    //
-    // The fix uses the cursor's Y position to decide "before" vs
-    // "after" the target row, which is the standard Trello/Jira UX.
-    // clientY=0 maps to the top half in JSDOM (see makeDragEvent).
+    // Regression test for the top-to-bottom off-by-one bug. Before the fix, `handleItemDrop` did:
+    // splice(fromIdx, 1) splice(toIdx, 0, moved) where `toIdx` came from the ORIGINAL array.
     const workspaces = [
       makeWorkspace('ws_a', 'A', [
         makeItem('item1', '1'),
@@ -334,9 +309,6 @@ describe('ProjectsList item drag-and-drop', () => {
 
   it('inserts the source BEFORE the target when dropped in the TOP half of the target row (bottom-to-top)', async () => {
     // Mirrors the first regression test but in the opposite drag direction.
-    // Existing tests already covered this case (the bottom-to-top direction happened to give the
-    // right result even with the buggy algorithm), but the test is included here to lock in the new
-    // explicit semantics so a future refactor can't silently regress either direction.
     const workspaces = [
       makeWorkspace('ws_a', 'A', [
         makeItem('item1', '1'),
@@ -412,9 +384,6 @@ describe('ProjectsList item drag-and-drop', () => {
   it('swaps adjacent items when the source is dropped in the BOTTOM half of the target row', async () => {
     // Adjacent edge case. With [A, B, C], drag B onto C and drop in the bottom half — expected
     // result is [A, C, B] (swap).
-    // The OLD buggy algorithm also produced [A, C, B] for this case, but the new algorithm gets
-    // there for a different reason (explicit "insert after target" semantics). This test pins the
-    // new behavior so a future change can't quietly break it.
     const workspaces = [
       makeWorkspace('ws_a', 'A', [
         makeItem('item1', 'A'),
@@ -446,10 +415,6 @@ describe('ProjectsList item drag-and-drop', () => {
   it('shows a TOP-line drop indicator when the cursor is in the TOP half of the target row', async () => {
     // Visual-feedback contract test. After the fix, the drop indicator must show WHERE the drop
     // will land — a top-line means "insert before", a bottom-line means "insert after".
-    // Without this, the user can't see that a top-to-bottom drop in the top half will land BEFORE
-    // the target row (vs the pre-fix behavior of landing one slot too far down).
-    // The test pins the boxShadow string so a future regression that removes the
-    // top-line/bottom-line distinction fails here.
     const workspaces = [
       makeWorkspace('ws_a', 'A', [makeItem('item1', '1'), makeItem('item2', '2')]),
     ]

@@ -1,20 +1,4 @@
-/**
- * KanbanDescriptionEditor `@` picker — server search mirror (Task 3).
- *
- * Mirrors FileInput Task 2 (plan:
- * docs/superpowers/plans/2026-09-08-chatview-search-files-perf.md Task 3):
- *   - Typing `@comp` calls `api.searchFiles(cwd, q, limit)` ONCE (no
- *     N-sequential-fetch full-tree walk via raw `fetch`).
- *   - snake_case `is_directory` rows are detected as dirs (the legacy
- *     raw-walk code read `entry.isDirectory` camelCase → undefined →
- *     every dir rendered as 📄 and recursion never fired).
- *   - Render caps at 50 rows even when the server returns 200 entries;
- *     footer reads `showing X of Y`.
- *   - Same-cwd reopen with an empty query reuses the per-cwd cache
- *     (no second network call).
- *   - A stale (superseded) response is discarded via the generation
- *     counter.
- */
+/** KanbanDescriptionEditor `@` picker — server search mirror (Task 3). */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import KanbanDescriptionEditor from './KanbanDescriptionEditor.vue'

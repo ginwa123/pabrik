@@ -23,16 +23,8 @@ vi.mock('../stripTags', () => ({
 import { marked } from 'marked'
 import { renderResponse, _resetRenderResponseCache } from '../renderResponse'
 
-// renderResponse is rendered into the chat for every visible message
-// on every re-render of ChatView. For a long chat (50+ messages) with
-// SSE streaming chunks landing every ~100ms, that's O(visible_messages
-// × renders_per_second) calls to marked.parse per second — most of
-// them returning the same HTML for a message whose content hasn't
-// changed. Memoization collapses that to O(unique_messages_per_chat)
-// total parse calls (one per message per content mutation), removing
-// the visible "scroll jank during long chats" hot path.
-// 2026-08-27 desktop scroll-perf cross-platform plan, follow-up to task_1787761084050_0: the P1+P2
-// VirtualScroller fixes handled the layout-pipeline side; this is the content-pipeline side.
+// renderResponse is rendered into the chat for every visible message on every re-render of
+// ChatView.
 describe('renderResponse memoization', () => {
   beforeEach(() => {
     vi.mocked(marked.parse).mockClear()

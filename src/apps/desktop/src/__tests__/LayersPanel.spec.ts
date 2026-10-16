@@ -1,19 +1,6 @@
-/**
- * Behavioural mount tests for LayersPanel.vue.
- *
- * The component renders the vertical list of elements on the active
- * page (ordered top-to-bottom by z-index) with per-row select /
- * up / down / delete buttons.
- *
- * Tree contract (Chunk 7 of grouped-layers plan):
- *  - A flat list of DesignElement[] becomes a tree by grouping
- *    children under their `parent_id`. LayersPanel exposes the
- *    recursive `<LayerRow>` component to render it.
- *  - Selection across the tree is still flat (highlight rows whose
- *    id is in `selectedIds` regardless of nesting).
- *  - Children indented by `depth * 16px`.
- *  - Chevron toggle hides children when collapsed.
- */
+/** Behavioural mount tests for LayersPanel.vue. The component renders the vertical list of elements
+ * on the active page (ordered top-to-bottom by z-index) with per-row select / up / down / delete
+ * buttons. */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -91,11 +78,6 @@ describe('LayersPanel.vue — flat list (no parent_id set)', () => {
     // The backend's design_model.listElements uses COALESCE(de.parent_id, '') AS parent_id so
     // top-level elements (parent_id IS NULL) arrive at the frontend with parent_id === "" — NOT
     // null, NOT undefined.
-    // The LayersPanel tree builder previously used const pid = e.parent_id ?? null which kept "" as
-    // "" (empty string is not nullish), so the row went into the byParent.get("") bucket instead of
-    // the null bucket, and byParent.get(null) ?? [] returned [].
-    // The header correctly showed "Layers (2)" but no rows rendered — the bug this regression test
-    // pins.
     const elements = [
       makeElement({ id: 'elem_backdrop', name: 'backdrop', type: 'rectangle', z_index: 0, position: 0, parent_id: '' }),
       makeElement({ id: 'elem_card', name: 'dialog-card', type: 'frame', z_index: 0, position: 1, parent_id: '' }),
@@ -268,23 +250,9 @@ describe('LayersPanel.vue — tree render (parent_id set)', () => {
   })
 })
 
-// ─── Drop-zone rows (Chunk 4 Task 4.2 of drag-to-reparent plan) ──────────
-//
-// LayersPanel renders N+1 top-level drop-zone rows between real elements
-// (one BEFORE the first row + one AFTER every top-level row). They use
-// the synthetic `TOP_LEVEL_SENTINEL` element with `name: ''` and the
-// `kind="drop-zone"` prop. These rows are NOT real element rows — they
-// are drag-drop targets and must not look like element rows.
-//
-// Bug 2026-08-06: drop-zone rows rendered `(unnamed)` as their name and
-// `▭` as their type icon, making them indistinguishable from real
-// element rows. Users asked "are these ungrouped children?" — the
-// answer was "no, they are drop zones", but the visual made the
-// question reasonable. These tests pin the corrected visual:
-//   - drop-zone rows do NOT show `(unnamed)`
-//   - drop-zone rows do NOT show a type icon
-//   - drop-zone rows do NOT show action buttons (up/down/delete)
-//   - drop-zone rows carry the `design-layer-drop-zone-top-level` testid
+// ─── Drop-zone rows (Chunk 4 Task 4.2 of drag-to-reparent plan) ────────── LayersPanel renders N+1
+// top-level drop-zone rows between real elements (one BEFORE the first row + one AFTER every
+// top-level row).
 describe('LayersPanel.vue — top-level drop-zone rows (must not look like element rows)', () => {
   let wrapper: VueWrapper | null = null
 

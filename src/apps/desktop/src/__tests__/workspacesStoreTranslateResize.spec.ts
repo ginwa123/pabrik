@@ -1,17 +1,6 @@
-/**
- * Behavioural tests for `workspacesStore.translateDesignElement` and
- * `workspacesStore.resizeDesignElement`.
- *
- * These exercise the new single-element endpoints that replace the
- * conflated PATCH /geometry. They verify:
- *   (a) the right URL is hit via the api module spy,
- *   (b) the response is mirrored into `item.design_elements[]`.
- *
- * The store's `WorkspaceItem` type does NOT carry a `workspace_id`
- * field (it lives on the API shape, not the store shape) so the
- * fixtures use `as any` casts — same pattern as
- * `workspacesStoreMoveBatch.spec.ts`.
- */
+/** Behavioural tests for `workspacesStore.translateDesignElement` and
+ * `workspacesStore.resizeDesignElement`. These exercise the new single-element endpoints that
+ * replace the conflated PATCH /geometry. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

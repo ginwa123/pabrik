@@ -1,8 +1,5 @@
-/** Parsed parts of the standardized tool result envelope (JSON form).
- * Returned by `unwrapToolOutput` / `tryUnwrapToolOutput`.
- * Wire shape (see docs/superpowers/plans/2026-09-18-agent-tool-output-json-schema.md §1):
- *   {"tool":"read_file","parameters":{...},"success":true,
- *    "data":{...},"error":null,"v":1} */
+/** Parsed parts of the standardized tool result envelope (JSON form). Returned by
+ * `unwrapToolOutput` / `tryUnwrapToolOutput`. */
 export interface UnwrappedToolOutput {
   /** Tool name (e.g. "read_file") */
   name: string

@@ -1,22 +1,4 @@
-/**
- * The tab list.
- *
- * Design notes the reviewer needs (the full rationale lives in
- * docs/superpowers/plans/2026-09-13-tab-mode-like-a-browser.md):
- *
- *  * A tab stores a router target (`path` + `query`), so activating one
- *    is just a navigation — the render chain in AppLayout is untouched.
- *  * `syncFromTarget` is the single funnel: every navigation in the app
- *    (sidebar, chats list, dialog, deep link, Back) lands here, which is
- *    why no call site has to know the tab list exists. The store never
- *    imports the router — it returns the navigation to apply and lets
- *    AppLayout perform it.
- *  * Persistence is per window (`helpers/windowId.ts`) so a second app
- *    window gets its own strip, while a reload keeps this one.
- *  * Writes are synchronous but skipped when the serialized payload is
- *    unchanged. A debounce would risk dropping the last action on an
- *    immediate reload, and the payload is tiny.
- */
+/** The tab list. */
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 

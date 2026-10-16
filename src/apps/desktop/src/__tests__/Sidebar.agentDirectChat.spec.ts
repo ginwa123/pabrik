@@ -1,18 +1,4 @@
-/**
- * Behavioural tests for agent-mode direct-to-chat (2026-09-09).
- *
- * Requirement: in an agent-mode workspace item (`item_type === 'agent'`),
- * clicking the green `+` (Add Task) skips the `New Task` picker dialog
- * (`AddTaskPickerDialog` with Standard Chat / Routine / Memory cards) and
- * directly creates a Standard Chat task (`New Chat`) and opens its chat —
- * the same create+navigate path `handleAddTaskPick('standard')` performs.
- *
- * Non-agent parents (folder, kanban-via-sidebar) keep the picker flow.
- *
- * The picker dialog uses `<Teleport to="body">`, so picker-visibility
- * assertions use `document.body.querySelector` instead of `wrapper.find`
- * (see skill `vue-teleport-vitest-document-queryselector`).
- */
+/** Behavioural tests for agent-mode direct-to-chat (2026-09-09). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, createApp } from 'vue'
@@ -71,8 +57,7 @@ function makeItem(itemType: string): any {
 
 // `any`: `ReturnType<typeof vi.fn>` resolves to `Mock<Procedure | Constructable>` in this vitest
 // version, which `vue-tsc --build` rejects at the `mockReturnValue({ replace })` call below (TS2322
-// — not assignable to `Mock<Procedure>`). The mock is only asserted with `toHaveBeenCalled*`, so
-// `any` loses nothing. eslint-disable-next-line @typescript-eslint/no-explicit-any
+// — not assignable to `Mock<Procedure>`).
 let replaceMock: any
 
 function mountSidebar() {

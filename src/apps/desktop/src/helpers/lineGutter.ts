@@ -1,17 +1,6 @@
-/**
- * lineGutter — per-line gutter marks for the Code view.
- *
- * The Code view renders worktree (new-file) content, so every mark is keyed
- * by NEW-file line number: `added` (green bar), `modified` (orange bar),
- * `deleted` (red tick where lines were removed). A maximal run of changed
- * lines is one group; inside a group the first min(removed, added) added
- * lines are modifications, surplus adds are additions, and surplus removes
- * collapse to a single deleted tick that never overwrites a stronger mark.
- * Adjacent marked lines merge into change blocks for the up/down navigator.
- *
- * Input is structural (`GutterSourceLine`) so helpers never import from
- * views — `ParsedDiffLine` from `parseUnifiedDiff` is assignable as-is.
- */
+/** lineGutter — per-line gutter marks for the Code view. The Code view renders worktree (new-file)
+ * content, so every mark is keyed by NEW-file line number: `added` (green bar), `modified` (orange
+ * bar), `deleted` (red tick where lines were removed). */
 export type GutterKind = 'added' | 'modified' | 'deleted'
 
 export interface GutterSourceLine {

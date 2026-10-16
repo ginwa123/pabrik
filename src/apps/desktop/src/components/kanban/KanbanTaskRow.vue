@@ -112,8 +112,6 @@ const isBusy = computed(() => !!processingState.value[props.task.id])
 
 // ─── Status rail ─────────────────────────────────────────────────────────── Ordered by what a
 // reader is looking for: an error outranks a review request, which outranks work in flight.
-// `reviewed` is a positive signal rather than a problem, so it sits last — a wall of green means
-// "you can skip all of this", which is worth seeing but not alarming.
 const agentErrorStore = useAgentErrorStore()
 const agentError = computed(() => agentErrorStore.bySession[props.task.id] ?? null)
 const errorRetryLabel = computed(() =>
@@ -213,7 +211,6 @@ function tagChipStyle(tag: string): Record<string, string> {
 // ─── Keyboard ────────────────────────────────────────────────────────────── The row root is a
 // <div role="button"> because it hosts nested interactive controls (pin / rename / delete /
 // details) and HTML forbids button-inside-button.
-// Enter / Space restore the keyboard contract the native element would have given us.
 const handleRowKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault()

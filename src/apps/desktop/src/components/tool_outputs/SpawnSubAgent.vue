@@ -150,20 +150,8 @@ const copyResponse = async (e: Event, response: string) => {
   await navigator.clipboard.writeText(response)
 }
 
-// ─── Live-progress rendering (2026-08-23) ──────────────────────────────
-//
-// Source-of-truth precedence: parsed envelope (from content) > live
-// progress (from props). The parsed-envelope view never changes
-// post-completion, while progress is ephemeral. Live mode is "on"
-// whenever progress is non-empty AND no envelope has been parsed yet.
-//
-// Live rows render inside the same `<div v-if="isExpanded">` slot
-// (auto-shown) so the existing card chrome is reused: badge, peek
-// button, inherited-context chip, etc. Behavioural differences:
-//   - Header counts show running/done/failed instead of ✓N ✗N
-//   - Rows render even when expandedAgents is empty
-//   - The toggle caret becomes a no-op (replaces '+' with nothing)
-//   - Failed rows get the red error styling immediately
+// ─── Live-progress rendering (2026-08-23) ────────────────────────────── Source-of-truth
+// precedence: parsed envelope (from content) > live progress (from props).
 const liveProgress = computed(() => props.progress ?? [])
 
 const inLiveMode = computed(

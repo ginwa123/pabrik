@@ -57,20 +57,10 @@ describe('sendChatMessage', () => {
   })
 })
 
-/**
- * The attachment wire format.
- *
- * `image_urls` / `video_urls` ride as ONE string. The backend joins them with
- * `||` (`insert_llm_histories.zig`, `image_urls_validation.zig`, and the wire
- * docs on `http_response.zig`), and the three kanban task endpoints in this
- * same module already sent `||`.
- *
- * `sendChatMessage` was the one that sent a single `|`. Both spellings decode
- * identically once the reader drops empty segments, so the mismatch was
- * invisible in isolation — but `queue_queued` echoes this exact string
- * verbatim into an SSE frame, so the queued row held a differently-shaped value
- * than every other endpoint produced.
- */
+/** The attachment wire format. `image_urls` / `video_urls` ride as ONE string. The backend joins
+ * them with `||` (`insert_llm_histories.zig`, `image_urls_validation.zig`, and the wire docs on
+ * `http_response.zig`), and the three kanban task endpoints in this same module already sent
+ * `||`. */
 describe('sendChatMessage — attachment wire format', () => {
   beforeEach(() => {
     setActivePinia(createPinia())

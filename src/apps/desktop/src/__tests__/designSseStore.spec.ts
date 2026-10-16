@@ -1,25 +1,6 @@
-/**
- * Unit tests for the bus-backed designSse Pinia store (Chunk 6 of
- * docs/superpowers/plans/2026-07-08-design-mode-redesign.md).
- *
- * Mirrors kanbanSse.spec.ts byte-for-byte in structure. The store
- * no longer opens its own EventSource — it subscribes via
- * `useSseBus().on('design', ...)`. Tests:
- *   - install the bus via `installSseBus` + swap in a stub global
- *     client (so we never touch the network in tests)
- *   - drive design events via `__dispatchSseBus('design', event)` —
- *     the bus test injection point routes the event through the
- *     same `dispatch()` function production uses
- *   - assert the workspace-id filter drops events for other workspaces
- *   - assert the design dispatch logic calls
- *     `workspacesStore.fetchDesignElements`
- *   - assert `closeDesignSse` detaches the listener so events after
- *     close are NOT delivered
- *   - assert `initDesignSse` is idempotent (second call doesn't add
- *     a second listener)
- *   - assert `closeDesignSse` clears `activeWorkspaceId` so a later
- *     init can re-bind cleanly
- */
+/** Unit tests for the bus-backed designSse Pinia store (Chunk 6 of
+ * docs/superpowers/plans/2026-07-08-design-mode-redesign.md). Mirrors kanbanSse.spec.ts
+ * byte-for-byte in structure. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp } from 'vue'

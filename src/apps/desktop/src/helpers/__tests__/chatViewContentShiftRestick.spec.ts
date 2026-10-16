@@ -1,58 +1,5 @@
-/**
- * Regression tests for the re-stick-to-bottom path that ChatView's
- * `onContentShift` performs after every VirtualScroller layout shift.
- *
- * USER SYMPTOM (task_1787595375531_0, "when new data come in, why i can
- * scroll until bottom like this"):
- *
- *   When SSE chunks arrive, the chat view's user-facing scroll position
- *   ends up NOT at the bottom of the content. The user can scroll
- *   further DOWN into empty sizer space, even though the chat is
- *   supposed to stick to the bottom on new data. The visible content
- *   ends near the top of the viewport, with a large blank gap below.
- *
- * SUSPECTED ROOT CAUSE — `container.scrollTop = container.scrollHeight`
- * in ChatView.vue:765 relies on the browser to clamp the value down to
- * `scrollHeight - clientHeight`. The clamp IS correct in steady state,
- * but the assignment is engine-timing-fragile: if the rAF callback's
- * read of `container.scrollHeight` lands BEFORE the sizer's new
- * `:style.height` binding has flushed to the DOM (e.g. another
- * microtask yielded), the user lands at the OLD bottom, and after
- * the browser updates scrollHeight the user can scroll further DOWN
- * into a "newly revealed" gap = the symptom.
- *
- * WHY THIS TEST EXISTS:
- *
- *   We test the COMPUTED TARGET VALUE at the rAF callback boundary.
- *   When the rAF fires and reads container.scrollHeight + clientHeight,
- *   the re-stick target MUST be the explicit `scrollHeight - clientHeight`,
- *   not a raw `scrollHeight` assignment that depends on browser clamp
- *   semantics. The fixed implementation reads both at the same time
- *   and computes the max explicitly.
- *
- * Test cases:
- *
- *   T1: a sequence of SSE chunks (items appended) ends with scrollTop at
- *       the new scrollHeight - clientHeight (the bottom). Verifies the
- *       explicit-compute path lands correctly.
- *
- *   T2: the guard `newScrollHeight === lastObservedScrollHeight` does
- *       NOT spuriously skip a needed restick when the items length grew
- *       but the computed accumulatedHeights didn't change (a theoretical
- *       edge that can happen when items are pushed but default-height
- *       estimates stay equal — e.g. pushing tiny items).
- *
- *   T3: explicit-compute vs browser-clamp produce the same final
- *       scrollTop for every sane scrollHeight/clientHeight pair.
- *
- *   T4: when isAtBottom is false (user scrolled up), no re-stick
- *       happens — preserves the existing UX contract.
- *
- * These tests run against an extracted, pure restick-decision function
- * (the one being introduced in ChatView.vue:onContentShift) so we
- * exercise the EXACT math that runs in production, without dragging
- * in the 3963-line ChatView component graph.
- */
+/** Regression tests for the re-stick-to-bottom path that ChatView's `onContentShift` performs after
+ * every VirtualScroller layout shift. */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import VirtualScroller from '../VirtualScroller.vue'
@@ -199,8 +146,6 @@ describe('ChatView onContentShift restick (extracted)', () => {
     // Simulates the bug race: caller reads scrollHeight once (gets the OLD value because Vue's DOM
     // patch hasn't flushed yet), assigns scrollTop to the stale max. Then the next contentShift
     // fires, and the second read picks up the NEW scrollHeight.
-    // The guard `newScrollHeight === lastObservedScrollHeight` correctly catches the change and
-    // resticks at the proper new bottom.
     const wrapper = mount(VirtualScroller, {
       props: { items: makeItems(10), defaultItemHeight: 80, buffer: 0, totalCount: 10 },
     })
@@ -233,24 +178,8 @@ describe('ChatView onContentShift restick (extracted)', () => {
     wrapper.unmount()
   })
 
-  // ── Bug C (task_1787638309623_3): loadMore prepend drops the re-stick ──────
-  //
-  // During a loadMore prepend, `suppressContentShiftStick = true` swallows
-  // every contentShift event. After `endPreserve` resolves, the flag is
-  // re-armed but the bottom is NEVER re-validated — even when the user was
-  // at bottom before the prepend. If the prepended items' heights were
-  // still estimates when endPreserve measured them (images/code blocks
-  // settle later), the sizer grows AFTER the preserve window closes and
-  // nothing scrolls to absorb it: a gap below the last message that
-  // persists until the next SSE chunk (which may never come — the stream
-  // may have ended before the user scrolled up to load history).
-  //
-  // T6 pins the DECISION function the loadChatHistory loadMore branch must
-  // run after `suppressContentShiftStick = false`: if the user was at
-  // bottom before the preserve began, re-stick explicitly (same
-  // Math.max(0, scrollHeight - clientHeight) compute as the contentShift
-  // path). If they were scrolled up reading history, do nothing — the
-  // preserve already restored their anchor position.
+  // ── Bug C (task_1787638309623_3): loadMore prepend drops the re-stick ────── During a loadMore
+  // prepend, `suppressContentShiftStick = true` swallows every contentShift event.
   describe('Bug C: post-preserve bottom re-validation', () => {
     /**      * The decision function the loadMore branch runs after re-arming suppressContentShiftStick.
      * Mirrors the production fix in ChatView.vue's loadChatHistory loadMore path. */
@@ -301,10 +230,6 @@ describe('ChatView onContentShift restick (extracted)', () => {
     it('T6c: wasAtBottom must be captured BEFORE beginPreserve (preserve scroll events corrupt the flag)', () => {
       // The preserve dance (beginPreserve → messages mutation → endPreserve) fires scroll events
       // that pass through handleVirtualScroll.
-      // If wasAtBottom were read AFTER endPreserve, a mid-preserve scroll event could have already
-      // flipped isAtBottom=false and the re-validation would be skipped.
-      // This test pins the ordering contract: the flag is a snapshot taken before any
-      // preserve-induced scroll can fire.
       const isAtBottom = { value: true }
       // Snapshot BEFORE the preserve (as the fix requires):
       const wasAtBottom = isAtBottom.value
@@ -318,9 +243,6 @@ describe('ChatView onContentShift restick (extracted)', () => {
   // ── Static contract: production ChatView.vue must run the re-validation ──── The
   // extracted-function tests above pin the MATH; this one pins the WIRING. Without it the extracted
   // function could drift from production silently (the exact failure mode that let Bug C ship).
-  // Greps the loadChatHistory loadMore branch for the three required elements: the pre-preserve
-  // snapshot, the post-preserve re-stick call, and the explicit Math.max compute (no
-  // clamp-delegate).
   it('T6d (red→green): production loadChatHistory re-validates bottom after endPreserve when user was at bottom', async () => {
     const { readFileSync } = await import('node:fs')
     const { resolve } = await import('node:path')
@@ -347,12 +269,7 @@ describe('ChatView onContentShift restick (extracted)', () => {
       /const wasAtBottom = isAtBottom\.value[\s\S]*beginPreserve/,
     )
 
-    // 2. Post-preserve re-stick guarded by the snapshot. UPDATED
-    // (2026-08-26 real-bottom fix): the inline `scrollHeight -
-    // clientHeight` computation was replaced by a delegation to the
-    // scroller's scrollToBottom, which targets the REAL rendered
-    // content bottom when the window shows the last item (a residual
-    // sizer overshoot can no longer land the stick in blank space).
+    // 2. Post-preserve re-stick guarded by the snapshot.
     expect(branch).toMatch(
       /if \(wasAtBottom\)[\s\S]*scrollToBottom\('auto'\)/,
     )

@@ -1,15 +1,4 @@
-/**
- * Tests for helpers/codeHighlight.ts.
- *
- * Verifies:
- *  - detectLanguage maps extensions to monaco ids (matches CodeEditor's
- *    old inline table) and falls back to plaintext
- *  - highlightLine tokenizes keywords/strings/comments/numbers/functions/
- *    types per language, keeps `#`/`//` inside strings as strings, and
- *    passes plaintext through as a single plain token
- *  - highlightLinesForFile (the render-site entry point) resolves the
- *    language from the path ONCE and returns one token list per line
- */
+/** Tests for helpers/codeHighlight.ts. */
 import { describe, expect, it } from 'vitest'
 
 import {

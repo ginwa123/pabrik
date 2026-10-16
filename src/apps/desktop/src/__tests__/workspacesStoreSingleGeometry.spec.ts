@@ -1,38 +1,5 @@
-/**
- * Behavioural tests for `workspacesStore.updateDesignElementGeometry`
- * (single-element drag/resize path).
- *
- * The single-element action is the "easy" drag path: user drags a
- * non-group/non-frame rectangle, ellipse, text, or image element.
- * Every pointermove emits an `update` patch which routes through
- * `useDesignHandlers.updateElement` → this action → PATCH
- * `/geometry` → emit `design_element_updated` SSE.
- *
- * Two invariants this spec locks in:
- *
- *   1. The action must mirror the API response into
- *      `item.design_elements[].x/y/width/height/rotation` so the
- *      DesignElement wrapper's `elementStyle.left/top` (bound to
- *      `props.element.x/y`) updates reactively during drag. Without
- *      the mirror, the element visually freezes at its
- *      pointerdown-time position until the next SSE event triggers a
- *      full `fetchDesignElements` reconcile — which never happens
- *      during a continuous drag because the SSE dedupe (1500 ms TTL)
- *      skips every locally-issued event. Symptom: the user sees the
- *      element "can't move" while 60+/sec of `/geometry` PATCHes
- *      flood the network (visible in DevTools Network tab).
- *
- *   2. The action must register the mutated element_id in the SSE
- *      dedupe Map (mirrors the existing batch-endpoint contract from
- *      workspacesStoreBatchGeometry.spec.ts:87).
- *
- * The mirror is local-only — the SSE event from the backend will
- * overwrite the entry with the server-confirmed value on arrival
- * (or skip the GET entirely when the SSE dedupe wins). Either way,
- * the element's visual position stays consistent.
- *
- * Plan: docs/superpowers/plans/2026-08-06-design-single-element-drag-mirror.md
- */
+/** Behavioural tests for `workspacesStore.updateDesignElementGeometry` (single-element drag/resize
+ * path). Plan: docs/superpowers/plans/2026-08-06-design-single-element-drag-mirror.md */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

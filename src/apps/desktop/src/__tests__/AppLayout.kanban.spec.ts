@@ -1,27 +1,5 @@
-/**
- * Tests for AppLayout's main-content rendering when the active
- * workspace item is a kanban (post-2026-06-21 migration). The
- * kanban board used to render inline in the sidebar; it now lives
- * in the main content area as a sibling of ChatView.
- *
- *   - <KanbanView> renders in the main content area when
- *     activeWorkspaceItem.item_type === 'kanban' and no task is
- *     active
- *   - When an active task is set AND the task's parent is the
- *     active kanban, BOTH <KanbanView> and <ChatView> render
- *     simultaneously in the 3-column layout (sidebar | kanban |
- *     chatview). The ChatView's ✕ close button clears the active
- *     task and returns to the kanban-only view.
- *   - When the active task's parent is NOT the active kanban
- *     (e.g. a folder task), only <ChatView> renders (the original
- *     single-column behavior is preserved).
- *   - Folder items still render the empty-state placeholder
- *     (no <KanbanView>)
- *   - The kanban events (addColumn, moveTask, etc.) wire through
- *     to the workspaces store
- *
- * Plan: docs/superpowers/plans/2026-06-21-workspace-item-kanban.md
- */
+/** Tests for AppLayout's main-content rendering when the active workspace item is a kanban
+ * (post-2026-06-21 migration). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount } from '@vue/test-utils'
@@ -41,9 +19,6 @@ import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 
 // Test-only stub SseClient. Mirrors the helper in App.spec.ts / sseBus.spec.ts (kept inline rather
 // than shared to avoid coupling between spec files).
-// Starts in 'open' state — the SseStatusBadge is a no-op for 'open' and 'closed', so the AppLayout
-// mount won't render any pill, which keeps the existing assertions about <KanbanView> / <ChatView>
-// placement clean.
 function makeStubClient(initial: SseState = 'open'): SseClient {
    
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -65,10 +40,6 @@ function makeStubClient(initial: SseState = 'open'): SseClient {
 }
 
 // Install the SSE bus singleton BEFORE mounting AppLayout.
-// Required by (a) the workspaces store's installSessionEventHandlers which calls useSseBus() in its
-// init() (line 1553 of stores/workspaces.ts), and (b) the <SseStatusBadge /> child of AppLayout
-// which calls useSseBus() in its setup.
-// App.vue's production onMounted does this install; in tests we do it explicitly per beforeEach.
 function installBusForTests() {
   __resetSseBus()
   installSseBus(createApp({}))
@@ -158,8 +129,6 @@ function mountAppLayout(workspaces: Workspace[] = []) {
         // Stub KanbanView with the chat-pane branch + resize handle so the AppLayout-level
         // integration tests can still exercise "active task belongs to kanban → chat pane visible +
         // resize handle draggable".
-        // The real KanbanView's chat-pane logic + resize state machine are covered by
-        // KanbanView.chatPane.spec.ts.
         KanbanView: {
           template: `
             <div data-kanban-view="stub" :data-item-id="item.id">
@@ -290,22 +259,9 @@ describe('AppLayout — kanban task view (3-column layout)', () => {
   })
 
   it('the kanban task chat REPLACES the board — <KanbanView> is not rendered alongside it', async () => {
-    // The "click a kanban card" flow now opens the task's chat
-    // view alongside the kanban (not in place of it). The user's
-    // kanban context is preserved while they chat, and a ✕ button
-    // in the chat header collapses the chat column back to the
-    // kanban-only view.
-    //
-    // Pre-2026-06-24, this test asserted the kanban unmounted
-    // (`expect(view.exists()).toBe(false)`) because ChatView
-    // took priority over KanbanView. Post-3-column, both render
-    // in a flex row container. The 3-column branch's v-else-if
-    // condition requires:
-    //   activeTask && activeWorkspaceItem.item_type === 'kanban'
-    //   && activeTaskWorkspaceItemId === activeWorkspaceItem.id
-    // The last clause is what distinguishes this case from a
-    // task whose parent is a folder (those still use the
-    // single-column ChatView branch).
+    // The "click a kanban card" flow now opens the task's chat view alongside the kanban (not in
+    // place of it). The user's kanban context is preserved while they chat, and a ✕ button in the
+    // chat header collapses the chat column back to the kanban-only view.
     const kanban = makeKanbanItem({
       tasks: [makeTask({ kanban_column_id: 'col_todo' })],
     })
@@ -386,9 +342,6 @@ describe('AppLayout — kanban task view (3-column layout)', () => {
     // activeTaskWorkspaceItemId === FOLDER_ID, not KANBAN_ID. The kanban chat branch's last
     // condition (`activeTaskWorkspaceItemId === activeWorkspaceItem.id`) is false — the chat does
     // NOT mount.
-    // The KanbanView mount does render (the kanban is the active workspace item) but without the
-    // chat pane. This is the canonical "clicked a card whose parent is a folder while viewing a
-    // kanban" edge case.
     const view = wrapper.find('[data-kanban-view="stub"]')
     expect(view.exists()).toBe(false)
     const threeCol = wrapper.find('[data-kanban-with-chat]')
@@ -399,22 +352,11 @@ describe('AppLayout — kanban task view (3-column layout)', () => {
   // The 4 resize-handle / localStorage-persist tests that USED to live here were deleted as part of
   // the kanban-embed-chatview refactor (plan Task 5): the resize state machine + handle moved from
   // AppLayout into KanbanView.
-  // Behavioural coverage is now in src/__tests__/KanbanView.chatPane.spec.ts (drag updates width,
-  // mouseup persists to localStorage, falls back to 40% default).
-  // AppLayout-level tests no longer exercise the resize machinery — they only verify the
-  // integration boundary: AppLayout mounts KanbanView with the right props and forwards events from
-  // KanbanView.
 })
 
 describe('AppLayout — kanban survives route navigation (regression: activeWorkspaceItemId is NOT cleared by ?view=workspace)', () => {
   // Pre-migration, the AppLayout's route.query watcher (line 727-732) cleared activeWorkspaceItemId
   // whenever the URL query `view === 'workspace'`.
-  // Sidebar's handleSelectItem navigates to that exact URL, so if we had wired the kanban to the
-  // active workspace item + workspace URL, the route watcher would have cleared the kanban
-  // selection the moment it was set, leaving the user with an empty main content area.
-  // Post-migration, AppLayout renders <KanbanView> when the active item is a kanban. The route
-  // watcher must NOT clear activeWorkspaceItemId in that case — the kanban IS the active workspace
-  // item.
   beforeEach(() => {
     setActivePinia(createPinia())
     installBusForTests()
@@ -477,23 +419,9 @@ describe('AppLayout — kanban survives route navigation (regression: activeWork
     wrapper.unmount()
   })
 
-  // Regression guard for commit d0a05eb0 ("feat(design): Figma-
-  // lite redesign — file-backed HTML + 3 LLM tools", PR #90).
-  // That commit added the design+chat 3-column branch at line
-  // ~1530 but accidentally typed `v-if` instead of `v-else-if`.
-  // The typo split the main-content chain in two: chain A still
-  // renders the kanban view (line ~1490), and chain B (the new
-  // chain starting at the typo'd `v-if`) renders the workspace
-  // folder preview at line ~1616 because `currentView === 'workspace'`
-  // is the first branch in chain B that's true. The user sees
-  // the kanban board above the workspace folder card (the
-  // "strange UI at the bottom" report from task 1784047851096).
-  //
-  // Fix: that block is now `v-else-if` (merged back into chain A).
-  // This test pins the contract: when the active workspace item
-  // is a kanban AND the URL is ?view=workspace, only the kanban
-  // view renders — the workspace folder preview's
-  // data-testid="workspace-folder-preview" must NOT be in the DOM.
+  // Regression guard for commit d0a05eb0 ("feat(design): Figma- lite redesign — file-backed HTML +
+  // 3 LLM tools", PR #90). That commit added the design+chat 3-column branch at line ~1530 but
+  // accidentally typed `v-if` instead of `v-else-if`.
   it('kanban renders alone — workspace folder preview is NOT in the DOM (?view=workspace + kanban active)', async () => {
     const kanban = makeKanbanItem()
     const wrapper = mountAppLayout([

@@ -1,20 +1,4 @@
-/**
- * Tests for ReadWorkspaceSession.vue.
- *
- * Verifies:
- *  - dispatches correctly between behavior="list" / "search" / "search-within" / "read" / denied / error envelopes
- *  - header summary text reflects behavior, query/session, and count/total_count
- *  - "N of M" badge appears only when total_count > count (paginated)
- *  - search entries render id, role badge, session name, snippet with [match] highlighting
- *  - read entries render id, role badge, preview, and full content toggle
- *    when present (with the truncated attr surfaced as a "(truncated)" label)
- *  - list entries render session name, id, status, message count, preview
- *  - denied envelope renders the denial (never content) with a Denied badge
- *  - error envelope renders the error text in red, hides entries
- *  - empty result renders the per-behavior hint
- *  - click on header toggles expanded state (only when there are entries, an error, a denial, or args)
- *  - copy-id buttons copy the id to clipboard
- */
+/** Tests for ReadWorkspaceSession.vue. */
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 

@@ -1,38 +1,4 @@
-/**
- * Tests for useKanbanScrollRestore — verifies the
- * save-on-scroll + restore-on-mount contract.
- *
- * Why these tests exist:
- *   The kanban columns row inside <KanbanView> needs to preserve
- *   its horizontal scroll position across Vue's standalone ↔
- *   3-column layout transition (the bug fixed by plan
- *   docs/superpowers/plans/2026-07-23-preserve-kanban-horizontal-scroll.md).
- *   Without this composable, the new instance's overflow-x-auto
- *   container starts at scrollLeft = 0 every time the layout flips.
- *   These tests pin the contract so a future refactor can't
- *   regress it.
- *
- * Coverage:
- *   - restores saved scrollLeft on mount (after rAF × 2)
- *   - clamps restored value to scrollWidth - clientWidth
- *   - skips restore when saved value is 0
- *   - persists on `scrollend` immediately (no timer advance)
- *   - persists on `scroll` after the 250 ms debounce
- *   - flushes the pending debounced write on unmount
- *   - swallows localStorage throw (private-mode / quota-exceeded)
- *
- * jsdom setup notes:
- *   - localStorage must be stubbed (jsdom 29 dropped it from
- *     default globals — same trick as useCodeEditor.spec.ts:26-43).
- *   - scrollWidth / clientWidth are not laid out in jsdom; we
- *     override them with `Object.defineProperty` so the clamp
- *     math has real numbers.
- *   - `requestAnimationFrame` is provided by jsdom but synchronous
- *     in tests; awaiting it twice in the composable produces a
- *     microtask + macrotask cycle. We advance with
- *     `await Promise.resolve()` × N + `vi.advanceTimersByTime(0)`
- *     where needed.
- */
+/** Tests for useKanbanScrollRestore — verifies the save-on-scroll + restore-on-mount contract. */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, nextTick, ref, type Ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -192,7 +158,6 @@ describe('useKanbanScrollRestore', () => {
     // The composable MUST still attach scroll listeners even when there's no saved value — the user
     // might scroll from scratch, and without a listener the first saved value would never land in
     // localStorage.
-    // Verify by scrolling + dispatching scrollend → localStorage should now have a non-null value.
     harness.container.scrollLeft = 200
     harness.container.dispatchEvent(new Event('scrollend'))
     expect(localStorage.getItem('kanban-scroll-item_test')).toBe('200')

@@ -130,9 +130,6 @@ onMounted(() => {
 
 // No `watch()` here — `local/no-watch` bans ALL new watchers, including the single-source
 // side-effect form.
-// Reloads are driven by the parent instead: it owns the tab (URL `?prs=`) and calls the exposed
-// `reload()` from the event handlers that cause the change (tab click, open, route guard). Mount
-// covers the open case via the `v-if` above.
 defineExpose({ reload: load })
 
 // ─── Meta line ─────────────────────────────────────────────────────────────

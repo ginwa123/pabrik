@@ -1,28 +1,5 @@
-/**
- * Migration 082 - ChatsList time pill + stale-dot display tests.
- *
- * The sidebar's time pill is sourced from `formatRelativeTime(
- * last_human_touched_at ?? updated_at)` (the user-facing human time
- * falls back to the AI-tainted updated_at for legacy rows). The
- * amber `chat-stale-dot` appears when `updated_at > last_human_touched_at`
- * (i.e. the AI has touched since the human's last touch).
- *
- * Six cases (per spec §4):
- *   1. populated `last_human_touched_at` - renders that time
- *   2. null/empty - falls back to `updated_at`
- *   3. populated < updated - renders human time + stale dot
- *   4. populated == updated - no stale dot (in sync)
- *   5. populated > updated (defensive, clock skew) - no stale dot
- *   6. both null/empty - renders "now" + no stale dot
- *
- * Mock pattern: use `vi.mock` with `importActual` to mock the api
- * module's `getChats` function only (matches the established
- * `apiGetChats.spec.ts` pattern - which works reliably under the
- * project's vue-test-utils + vitest setup).
- *
- * Plan: docs/superpowers/plans/2026-08-29-chat-sidebar-last-human-touched.md
- * Task 8.
- */
+/** Migration 082 - ChatsList time pill + stale-dot display tests. Plan:
+ * docs/superpowers/plans/2026-08-29-chat-sidebar-last-human-touched.md Task 8. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp, nextTick, ref, type Ref } from 'vue'

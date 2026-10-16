@@ -1,19 +1,7 @@
 <script setup lang="ts">
-/**
- * The attachment strip on a user turn: one fixed-size thumbnail per attached
- * image, one player per attached clip, click an image to open the lightbox.
- *
- * Extracted from `ChatView.vue` so the `src` binding is reachable by a mount
- * test. The block used to live inline in ChatView's 4000-line template, which
- * cannot render its transcript in jsdom (VirtualScroller needs real layout
- * measurements), so the one thing that actually breaks — a thumbnail bound to
- * `:src=""` — had no test that could reach it. That is how a
- * `||`-joined wire value went on rendering a broken-image icon for years.
- *
- * The `src` never comes straight from the caller: `renderableMediaUrls`
- * drops blanks, so an empty or whitespace-only entry never reaches `:src`
- * however the list was produced.
- */
+/** The attachment strip on a user turn: one fixed-size thumbnail per attached image, one player per
+ * attached clip, click an image to open the lightbox. Extracted from `ChatView.vue` so the `src`
+ * binding is reachable by a mount test. */
 import { renderableMediaUrls } from '../../helpers/mediaUrls'
 
 defineProps<{

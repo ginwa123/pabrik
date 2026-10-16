@@ -1,21 +1,5 @@
-/**
- * Tests for AppLayout's URL → activeWorkspaceItemId persistence on
- * page reload. Before this feature, the URL `?view=workspace` was
- * preserved on reload but the active kanban/folder/design item was
- * lost (the in-memory `activeWorkspaceItemId` reset to null on every
- * page refresh). This file pins:
- *
- *   1. Sidebar's handleSelectItem emits `navigate` with
- *      (workspaceId, itemId) so the parent can mirror them into URL
- *   2. AppLayout's handleNavigate('workspace', ..., wsId, itemId)
- *      pushes the workspaceId + itemId query params alongside view
- *   3. On mount, AppLayout reads (workspaceId, itemId) from URL and
- *      restores activeWorkspaceItemId once the workspaces list loads
- *   4. A stale URL (item no longer exists) does not crash — the
- *      kanban-empty state is shown and the pending restore clears.
- *
- * Plan: feature "url browser kanban" (workspace kanban URL persistence).
- */
+/** Tests for AppLayout's URL → activeWorkspaceItemId persistence on page reload. Plan: feature "url
+ * browser kanban" (workspace kanban URL persistence). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick } from 'vue'
@@ -408,12 +392,6 @@ describe('AppLayout — design item URL persistence (Chunk 3 of design-url-persi
   // FIX (chatview-bug, task_1785726648589): when the user navigates from a design item to a kanban
   // (or folder), the store's `activeDesignPageId` is NOT reset by `setActiveWorkspaceItem` — it
   // stays whatever the design's active page was.
-  // The URL watcher reads `[activeWorkspaceItemId, activeDesignPageId]` and writes the URL based on
-  // both. Pre-fix, the watcher included `pageId` in the URL purely because `activeDesignPageId` was
-  // truthy, without checking whether the new active item is a design.
-  // The URL ended up as `?view=workspace&itemId=KANBAN_ID&pageId=DESIGN_PAGE_ID` — stale, and a
-  // reload would try to restore the design page against a kanban that doesn't have pages. The fix:
-  // only include `pageId` in the URL when the active item is a design.
   it('activeWorkspaceItem → URL watcher does NOT leak stale pageId when switching from design to kanban', async () => {
     const replaceMock = vi.fn()
 
@@ -1193,8 +1171,6 @@ describe('AppLayout — code viewer surface (the right sidebar must survive)', (
   // Regression: opening a file from the right-sidebar Explorer replaced the WHOLE <main> with the
   // viewer overlay, so ChatView — which owns that sidebar, the header and the composer — was never
   // mounted and the sidebar (plus its composer underneath) vanished.
-  // The viewer now renders inside ChatView; the overlay is a fallback for contexts with no chat on
-  // screen.
   beforeEach(() => {
     setActivePinia(createPinia())
     installBusForTests()

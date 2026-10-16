@@ -11,25 +11,8 @@ export interface SubAgentArgs {
   inherited_context?: string
 }
 
-/**
- * Extract the sub_agents array from an assistant message's tool_calls_json,
- * matched by tool_call_id. Returns null when:
- *   - tool_calls_json is missing/unparseable
- *   - tool_call_id is missing/empty
- *   - no tool call with the given id exists
- *   - the matching tool call is not spawn_sub_agent
- *   - the matching call's arguments are not parseable
- *   - the matching call's sub_agents is not an array
- *   - any sub-agent is missing the required `agent_name`, `instruction`,
- *     or `tools` field, or those fields have the wrong shape, or
- *     `agent_name` is empty, or `tools` is empty / contains "all"
- *     (mirrors the backend MissingSubAgentTools / EmptySubAgentTools /
- *     AllToolsNotAllowed rejections — the backend never executes such a
- *     spawn, so the UI shows no cards for it)
- *
- * `arguments` may be either a JSON string (OpenAI format) or an already-parsed
- * object — both are handled.
- */
+/** Extract the sub_agents array from an assistant message's tool_calls_json, matched by
+ * tool_call_id. */
 export function parseSpawnSubAgentArgs(
   toolCallsJson: string | null | undefined,
   toolCallId: string | null | undefined,
@@ -71,10 +54,6 @@ export function parseSpawnSubAgentArgs(
   if (!args || !Array.isArray(args.sub_agents)) return null
 
   // Defensive copy: only include known fields, don't trust the LLM's shape.
-  // `tools` is required (backend rejects missing/empty/"all" at parse
-  // time), so entries without a usable list are dropped here too —
-  // otherwise the UI would render cards for a spawn that never executes.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.
   return args.sub_agents.map((sa: any) => {
     if (
       !sa ||

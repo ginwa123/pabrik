@@ -1,18 +1,5 @@
-/**
- * Tests for Search.vue — the chatview toast card for the `search` agent tool.
- *
- * Locks in the operator-visible behaviour that fixes the
- * "unknown pattern not found" rendering bug:
- *  - When the JSON data payload contains `pattern` / `path`,
- *    the header MUST show `"X"` and `in Y` (not the literal "unknown").
- *  - When the payload contains a `warning` (no-match warning),
- *    the warning text MUST appear in the header's right-hand side.
- *  - The default view MUST stay minimal — the operator can click to
- *    expand and see the full Arguments block (handled by the surrounding
- *    ChatView parent, not Search.vue itself).
- *
- * See docs/superpowers/plans/2026-08-06-search-better-error.md.
- */
+/** Tests for Search.vue — the chatview toast card for the `search` agent tool. See
+ * docs/superpowers/plans/2026-08-06-search-better-error.md. */
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 import { defineComponent, h, provide } from 'vue'
@@ -172,9 +159,6 @@ describe('Search.vue — match-found payload (regression guard)', () => {
 
 // ──────────────────────────────────────────────────────────────────────── Empty/no-match results —
 // Arguments must still be reachable.
-// Bug: the expanded body was `v-if="isExpanded && fileResults.length > 0"` and toggle() refused to
-// expand on a warning/empty payload, so a no-match search (warning payload) could never show its
-// Arguments block. ────────────────────────────────────────────────────────────────────────
 describe('Search.vue — warning payload still shows Arguments (empty/no-match)', () => {
   const warningContent = {
     pattern: 'foo',
@@ -208,14 +192,9 @@ describe('Search.vue — warning payload still shows Arguments (empty/no-match)'
   })
 })
 
-// ────────────────────────────────────────────────────────────────────────
-// Output contract (JSON migration, schema §2.3):
-//   * every value arrives as plain JSON — no entity decoding,
-//   * the payload carries returned/total/truncated.
-// The card must render `<`/`&` snippets verbatim — a `<file …>` look-alike
-// inside a snippet must NOT become a file row — and a capped search must
-// not look exhaustive.
-// ────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────── Output contract (JSON
+// migration, schema §2.3): * every value arrives as plain JSON — no entity decoding, * the payload
+// carries returned/total/truncated.
 const payloadWithSummary = (
   file: { path: string; total: number; count: number; lines: MatchFixture[] },
   summary: { returned: number; total: number; truncated: boolean },

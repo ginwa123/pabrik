@@ -60,8 +60,6 @@ const nameError = computed<string | null>(() => {
 
 // ─── Picker data source ──────────────────────────────────────────────────── Adapts the existing
 // listFolder/getSystemFolder API to the picker's agnostic (path: string) => Promise<T[]> contract.
-// Same helper as AddItemDialog — duplicated here (not extracted) to keep the two dialogs
-// independently editable.
 const loadItemsForPicker = async (path: string): Promise<FolderEntry[]> => {
   const data = path ? await listFolder(path) : await getSystemFolder()
   return (data.entries || []) as FolderEntry[]
@@ -78,8 +76,6 @@ const handleCreate = () => {
   // Path is OPTIONAL (since 2026-08-06) — only `name` is required. Empty string is forwarded when
   // the user skipped the picker; the backend's `NULLIF(?, '')` writes `NULL` for empty paths,
   // creating a cwd-less kanban.
-  // The session_create handler then creates a sandbox directory per chat session when the session's
-  // `cwd_session` field is empty (matches the pre-fix code path for older cwd-less kanbans).
   if (trimmedName) {
     emit('create', trimmedName, selectedPath.value)
     handleClose()

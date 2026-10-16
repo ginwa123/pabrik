@@ -140,7 +140,6 @@ describe('WorkspaceItem item-row elapsed chip', () => {
     // The two indicators live in different slots (loading on the right, elapsed chip right-aligned)
     // and represent independent states (folder-contents fetch vs. LLM worker), so they must be able
     // to show at the same time.
-    // This guards against a future regression that re-joins them into a single v-if chain.
     const processingState: Ref<Record<string, boolean>> = ref({ task_alpha: true })
     const now = Date.now()
     const workerActivity = ref<Record<string, WorkerActivity>>({

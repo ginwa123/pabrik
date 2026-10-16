@@ -1,38 +1,5 @@
-// AppLayout — design chat dialog mount wiring.
-//
-// When the user clicks the top-right 💬 button in DesignView, the
-// `open-chat` event fires with `{ pageId, pageName, workspaceItemTaskId }`.
-// AppLayout's `handleDesignOpenChat` does:
-//   1. workspacesStore.setActiveTask(payload.workspaceItemTaskId)
-//   2. sets a local `activeDesignChatTaskId` ref
-//   3. sets a local `activeDesignChatPageName` ref
-// The new `<DesignChatDialog>` mount reads these local refs (NOT the
-// store's `activeTask` computed — see bug fix comment below) and
-// renders centred on top of the design canvas.
-//
-// Bug fix (2026-08-06, user report "chat button keep not popup,
-// chatview"): the dialog's v-if gate was previously `activeTask &&
-// ...item_type === 'design'`. The `activeTask` computed walks
-// `workspaces.value[].items[].tasks` looking for the task — but
-// in production design items have empty `tasks` arrays after
-// `init()` (the backend's `getWorkspacesItems` returns items
-// WITHOUT tasks for design items, AND `init()` skips the per-item
-// `api.getTasks` fetch for `item_type === 'design'` — see
-// workspaces.ts:639). So `activeTask` was always null for design
-// items, the dialog v-if never fired, and the chat button had no
-// effect. The fix: gate on `activeDesignChatTaskId` (a local ref
-// captured from the openChat payload's FK) instead.
-//
-// This spec verifies the mount gates correctly:
-//   - No design chat task set → dialog not rendered
-//   - handleDesignOpenChat on a design item → dialog rendered
-//   - handleDesignOpenChat on a non-design item (e.g. kanban) →
-//     dialog NOT rendered (kanban renders its chat as its own view)
-//   - The design dialog does NOT depend on the store's `activeTask`
-//     computed (the bug) — verified by NOT populating tasks on
-// the design item, simulating the production state where init() strips them. The test follows the
-// established vue-teleport-vitest-document-queryselector pattern (attachTo: document.body +
-// document.querySelector).
+// AppLayout — design chat dialog mount wiring. When the user clicks the top-right 💬 button in
+// DesignView, the `open-chat` event fires with `{ pageId, pageName, workspaceItemTaskId }`.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
@@ -148,11 +115,8 @@ describe('AppLayout — design chat dialog mount', () => {
       configurable: true,
     })
     installBusForTests()
-    // Stub the workspace-store API calls fired by AppLayout's onMounted
-    // → initializeFromSystemFolder → init() → getWorkspaces(). Without
-    // these, jsdom's fetch throws an ERR_INVALID_URL on every test
-    // (no test server) — the error is caught by AppLayout's own
-    // try/catch so the test still passes, but it floods the output.
+    // Stub the workspace-store API calls fired by AppLayout's onMounted →
+    // initializeFromSystemFolder → init() → getWorkspaces().
     vi.spyOn(api, 'getWorkspaces').mockResolvedValue({ workspaces: [] })
     vi.spyOn(api, 'getWorkspacesItems').mockResolvedValue({ items: [], count: 0 })
     vi.spyOn(api, 'getTasks').mockResolvedValue({ tasks: [], has_more: false, next_cursor: null })
@@ -257,11 +221,6 @@ describe('AppLayout — design chat dialog mount', () => {
     // THE BUG: before this fix, the dialog v-if was `activeTask && item_type === 'design'`. The
     // store's `activeTask` computed returns null for design items because their tasks array is
     // empty post-init(). So clicking 💬 had no visible effect — the dialog never appeared.
-    // THE FIX: the dialog now gates on `activeDesignChatTaskId` (a local ref set by
-    // handleDesignOpenChat from the workspaceItemTaskId FK), and uses a synthetic Task object for
-    // ChatView's API.
-    // This test simulates the full bug scenario: design item with NO tasks (production state), user
-    // clicks 💬, dialog should appear.
     const store = useWorkspacesStore()
     store.workspaces = [
       {

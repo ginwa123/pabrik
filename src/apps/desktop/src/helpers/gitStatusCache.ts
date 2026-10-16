@@ -1,23 +1,6 @@
-/**
- * Persistent cache for `GET /api/git/status`, keyed by cwd.
- *
- * Stale-while-revalidate: ChatView paints the last-known status for a
- * cwd synchronously on init / cwd switch so the bottom chip shows a
- * branch immediately, then the network fetch revalidates it in the
- * background. There is deliberately NO TTL here — a stale branch is
- * better than an empty chip for the ~100ms the fetch is in flight,
- * and every read is followed by a real fetch anyway.
- *
- * localStorage (not a module-level Map like `prStatusCache`): the
- * point of this cache is surviving a full page reload — "init" means
- * app boot, not just component remount. Entries are one small object
- * per cwd (~150 bytes), so hundreds of cwds still fit comfortably in
- * the storage quota.
- *
- * Fail-silent: every storage access is wrapped, so private mode,
- * quota errors, or a missing `localStorage` (vitest/jsdom setups that
- * don't provide one) degrade to a plain cache miss.
- */
+/** Persistent cache for `GET /api/git/status`, keyed by cwd. Stale-while-revalidate: ChatView
+ * paints the last-known status for a cwd synchronously on init / cwd switch so the bottom chip
+ * shows a branch immediately, then the network fetch revalidates it in the background. */
 import type { GitStatus } from '../api'
 import { userScopedKey } from './userScope'
 
@@ -27,18 +10,8 @@ function storageKey(cwd: string): string {
   return userScopedKey(`${KEY_PREFIX}${cwd}`)
 }
 
-/**
- * Normalizes whatever JSON was stored (or what an older/newer backend
- * emitted) into the `GitStatus` shape ChatView renders. The wire can
- * carry `null` for `branch`/`status`/`current` (optional fields on
- * `GitStatusResponse`); ChatView already treats those as "no value"
- * (`branch || 'detached'`), and empty string reads identically here —
- * normalizing keeps the cached paint byte-for-byte consistent with
- * what the interface declares.
- *
- * Returns null when the payload isn't recognizable at all, so corrupt
- * or foreign data under our key can never render a broken chip.
- */
+/** Normalizes whatever JSON was stored (or what an older/newer backend emitted) into the
+ * `GitStatus` shape ChatView renders. */
 function normalizeStatus(raw: unknown): GitStatus | null {
   if (!raw || typeof raw !== 'object') return null
   const s = raw as Record<string, unknown>

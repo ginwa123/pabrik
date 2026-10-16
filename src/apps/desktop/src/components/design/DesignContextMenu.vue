@@ -43,18 +43,10 @@ const props = defineProps<{
   x: number
   y: number
   targetIds: string[]
-  /** The full element list for the active page. Used to determine
-   * whether the current `targetIds` selection contains exactly one
-   * group/frame (the only state in which Ungroup can fire —
-   * matches Figma: Ungroup is greyed out unless the single selection
-   * is a group), and whether the single selection has a `parent_id`
-   * set (the only state in which Leave group can fire — matches
-   * Figma: "Pull out of group" is greyed out for top-level elements). */
-  // `parent_id` accepts the same shape the API returns: a non-empty
-  // string means the element is currently inside a group/frame;
-  // empty string (`COALESCE(parent_id, '')`) or null/undefined means
-  // top-level. The canLeaveGroup computed treats empty/null/
-  // undefined the same way (no parent → button is disabled).
+  /** The full element list for the active page. */
+  // `parent_id` accepts the same shape the API returns: a non-empty string means the element is
+  // currently inside a group/frame; empty string (`COALESCE(parent_id, '')`) or null/undefined
+  // means top-level.
   elements: ReadonlyArray<{ id: string; type: string; parent_id?: string | null }>
 }>()
 
@@ -84,8 +76,6 @@ const canGroup = computed(() => props.targetIds.length >= 2)
 // Leave group is enabled only when EXACTLY ONE element is selected AND that element has a non-empty
 // `parent_id` (it's currently nested inside a group or frame). Mirrors Figma's "Pull out of group"
 // — the affordance is greyed out for already top-level rows.
-// Independent of `canUngroup`: a group/frame can ALSO be inside another group (nested), in which
-// case both Leave group AND Ungroup can fire.
 const canLeaveGroup = computed(() => {
   if (props.targetIds.length !== 1) return false
   const targetId = props.targetIds[0]

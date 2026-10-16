@@ -1,25 +1,5 @@
 <script setup lang="ts">
-/**
- * Dropdown menu for the git indicator in the chat status bar.
- *
- * Shows different actions based on whether a worktree is bound:
- *
- * With worktree (`hasWorktree=true`):
- *   - `pr`      "Create a PR"    — currently disabled (frontend-only)
- *   - `folder`  "View in folder" — currently disabled (frontend-only)
- *   - `trash`   "Clear worktree" — currently disabled (frontend-only)
- *
- * Without worktree (`hasWorktree=false`):
- *   - `tree`    "Create worktree" — emits 'create-worktree' (parent opens CreateWorktreeDialog)
- *   - `folder`  "Open in folder" — currently disabled (frontend-only, same feature as "View in folder")
- *   - `refresh` "Refresh status" — emits 'refresh' so the parent re-fetches git status
- *
- * Every leading glyph is a `<UiIcon>`, so the rows line up on one box and
- * take their colour from the surrounding CSS variable.
- *
- * The menu closes itself after any action via the parent's v-if binding.
- * Disabled items stay visible but cannot be clicked.
- */
+/** Dropdown menu for the git indicator in the chat status bar. */
 import { ref, onMounted, onUnmounted } from 'vue'
 import UiIcon from '../ui/UiIcon.vue'
 

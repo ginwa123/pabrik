@@ -102,7 +102,6 @@ function isValidMemoryName(rawName: string): boolean {
 // ─── Picker data source ──────────────────────────────────────────────────── Adapts the existing
 // listFolder/getSystemFolder API to the picker's agnostic (path: string) => Promise<T[]> contract.
 // When path is empty we return the system folder root entries.
-// Same pattern as AddItemDialog.vue:44.
 const loadItemsForPicker = async (path: string): Promise<FolderEntry[]> => {
   const data = path ? await listFolder(path) : await getSystemFolder()
   return (data.entries || []) as FolderEntry[]
@@ -138,9 +137,6 @@ const handleCreate = async () => {
     // 'standalone' (default) flow: the dialog calls createLocalMemory directly and emits (name,
     // content, path). The content arg is the same value sent to the API (the dialog's textarea).
     // Parents that don't need content (the legacy standalone flow) can ignore it.
-    // The 'task' mode does NOT call the API — it just emits the data the parent needs to call
-    // addTask. The parent's task_create.zig will write the .md file and insert the task row in one
-    // POST.
     if (props.mode === 'task') {
       const finalPath = `${cwd.value}/.pabrik/memories/${trimmedName}`
       emit('create', trimmedName, content.value, finalPath)

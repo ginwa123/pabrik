@@ -1,15 +1,6 @@
-/**
- * Unit tests for the <html> wrapper-tag helpers in stripTags.ts.
- *
- * Plan: docs/superpowers/plans/2026-08-23-html-tag-support.md (Task 2)
- *
- * The <html> tag lets the LLM emit raw HTML that the chat UI renders
- * as a live sandboxed-iframe block. These tests lock in:
- *   - getHtmlTags: extract inner payload(s) of <html>...</html>
- *   - isHtmlTags: true when content is ONLY html blocks (+ optional think)
- *   - stripThinkingTags: unwraps <html> like <plain>/<markdown>, drops
- *     <think> when a sibling wrapper exists, keeps visibility non-empty
- */
+/** Unit tests for the <html> wrapper-tag helpers in stripTags.ts. Plan:
+ * docs/superpowers/plans/2026-08-23-html-tag-support.md (Task 2) The <html> tag lets the LLM emit
+ * raw HTML that the chat UI renders as a live sandboxed-iframe block. */
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   _resetStripThinkingTagsCache,
@@ -164,10 +155,6 @@ describe('stripThinkingTags — fenced markdown wrappers', () => {
 // 2026-09-11 — chatview open/stream freeze. ChatView re-scans the WHOLE loaded transcript with
 // stripThinkingTags on every `messages` mutation (filteredMessages + hasBubbleContent +
 // renderResponse), and one SSE chunk = one mutation.
-// Measured on the real DB (newest-100 rows of a 2.21 MB session): 34 of the 43 ms per chunk were
-// the repeated stripThinkingTags passes. The memo collapses repeat calls over unchanged messages to
-// a Map lookup, so only the streaming message is re-scanned.
-// These tests lock in the memo's observable contract.
 describe('stripThinkingTags — memoization (per-chunk render cost)', () => {
   beforeEach(() => {
     _resetStripThinkingTagsCache()

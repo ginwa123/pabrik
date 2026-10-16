@@ -1,35 +1,6 @@
-/**
- * End-to-end test for the "single active row in the sidebar" contract
- * (plan 2026-08-06-sidebar-single-active-state.md, Task 7).
- *
- * The sidebar derives its `active` styling from the URL (via
- * `useCurrentMainView`), not from store flags. Per the spec, the
- * documented mental model is:
- *
- *   URL ?view=workspace&itemId=X&pageId=Z
- *     → the workspace item + the design page row whose id === Z.
- *       BOTH rows get the active bg + accent bar — this forms a
- *       meaningful hierarchy breadcrumb (the user sees both "I'm in
- *       design" and "I'm on this page"). The expanded workspace
- *       header is NOT active (Task 6 dropped that). Net: 2 active
- *       rows in the sidebar.
- *
- *   URL ?view=chat&session=X
- *     → no workspace item or page is active. The chat row's
- *       highlight lives inside <ChatsList> and isn't a sidebar-row
- *       count in this contract. Net: 0 active rows in the sidebar's
- *       workspace tree.
- *
- *   URL ?view=workspace&itemId=Y (no pageId)
- *     → just the workspace item row (no page active). 1 active row.
- *
- * Pre-fix the sidebar would show 3 active rows simultaneously
- * (expanded workspace + active item + active page) — the user's
- * reported "sidebar active is confusing" symptom.
- *
- * Spec: docs/superpowers/specs/2026-08-06-sidebar-single-active-state-design.md
- * Plan: docs/superpowers/plans/2026-08-06-sidebar-single-active-state.md
- */
+/** End-to-end test for the "single active row in the sidebar" contract (plan
+ * 2026-08-06-sidebar-single-active-state.md, Task 7). The sidebar derives its `active` styling from
+ * the URL (via `useCurrentMainView`), not from store flags. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, createApp } from 'vue'
@@ -139,8 +110,6 @@ function mountSidebar() {
 // Count the rendered sidebar's active rows. The "active row" signal is the inline `style` attribute
 // containing `--semantic-active-bg` — both the workspace item row and the design page row inject
 // that CSS variable into the inline `style` when they are the URL-driven active row.
-// Hover styles live in `class="hover:bg-[--semantic-active-bg]"` (Tailwind arbitrary value), NOT in
-// the inline style, so we scope the regex to `style="..."` to avoid false positives.
 function countActiveRows(html: string): number {
   const matches = html.match(/style="[^"]*--semantic-active-bg[^"]*"/g)
   return matches?.length ?? 0

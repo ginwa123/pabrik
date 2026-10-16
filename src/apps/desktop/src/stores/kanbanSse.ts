@@ -25,9 +25,6 @@ import { useWorkspacesStore, isRecentLocalMutation } from './workspaces'
 
 export const useKanbanSseStore = defineStore('kanbanSse', () => {
   // Mutable ref so `setActiveWorkspaceId` can update the filter without re-subscribing.
-  // The `bus.on('kanban', ...)` closure captured at install time reads `activeWorkspaceId.value` on
-  // EVERY event, so flipping it takes effect immediately for incoming events (no need to detach +
-  // re-attach the listener).
   const activeWorkspaceId = ref<string>('')
 
   // The unsubscribe function for the bus listener. Stashed so
@@ -36,9 +33,6 @@ export const useKanbanSseStore = defineStore('kanbanSse', () => {
   let offKanban: (() => void) | null = null
 
   // Unsubscribe for the bus's "you may have missed events" signal (see `helpers/sseTabChannel.ts`).
-  // The `bus.state` subscription below covers transitions the SseClient itself emits; this covers
-  // the two cases where the state never changes but deliveries were still lost: taking over the
-  // shared connection from another tab, and returning from a long hidden period.
   let offResync: (() => void) | null = null
 
   // Disposer for the `bus.state → fetchInitialKanban` subscription.
@@ -82,22 +76,11 @@ export const useKanbanSseStore = defineStore('kanbanSse', () => {
       const ws = useWorkspacesStore()
       // Dispatch by event family. Column events refresh the column list (renames, reorder, add,
       // delete); task events refresh the task list (move, assign, unassign).
-      // A full re-fetch (vs in-place patch) is the simplest correct action — sibling positions
-      // renumber as part of every move, and the SSE payload doesn't include the new positions of
-      // every sibling, so client-side patching would be brittle.
-      // The `'column_id' in event` / `'task_id' in event` check narrows the discriminated union
-      // (`KanbanColumnEvent` has `column_id`, `KanbanTaskEvent` has `task_id`, neither has the
-      // other).
       if ('column_id' in event) {
         void ws.fetchKanbanColumns(event.workspace_id, event.item_id)
       } else if ('task_id' in event) {
         // `human_touched` (chatview-open api-spam fix, 2026-08-24): fired by `PUT
         // .../tasks/:id/touched` every time the user opens a task's chat.
-        // The wire payload carries the full after-state (`needs_human_review: false`, no column
-        // change) so we patch the local task IN PLACE and return — NO refetch.
-        // Pre-fix, this event fell through to the unassign branch below (`new_column_id` is null on
-        // the wire) and fired one `tasks?limit=100` per column — 7 calls / ~5 MB on a 270-task
-        // board — just from opening a chatview.
         if (event.action === 'human_touched') {
           ws.applyHumanTouched(
             event.workspace_id,
@@ -110,18 +93,7 @@ export const useKanbanSseStore = defineStore('kanbanSse', () => {
           )
           return
         }
-        // Mirror the local task's column (and position) BEFORE the
-        // refetch. Without this mirror, `fetchKanbanTasks`'s merge
-        // logic — `otherTasks = filter(t => t.kanban_column_id !==
-        // columnId)` — keeps the stale source-column copy AND adds
-        // the fresh destination-column copy from the wire, producing
-        // a visible duplicate in the user's UI until refresh.
-        //
-        // User-initiated moves don't hit this because
-        // `moveTaskToColumn` mutates the local column id before the
-        // SSE round-trip. Non-UI moves (agent's `kanban_move_task`
-        // tool, edits from another tab) bypass `moveTaskToColumn`,
-        // so we have to mirror here.
+        // Mirror the local task's column (and position) BEFORE the refetch.
         ws.mirrorKanbanTaskMove(
           event.workspace_id,
           event.item_id,
@@ -143,41 +115,14 @@ export const useKanbanSseStore = defineStore('kanbanSse', () => {
         // doesn't reset the user's narrowed view to the unfiltered list. activeSearchQueries is a
         // Map<itemId, string>; undefined when no search active.
         const q = ws.activeSearchQueries.get(event.item_id)
-        // Kanban sort-by (Chunk 3): forward the active sort so a
-        // remote move during a non-default sort re-fetches in the
-        // SAME order the user is looking at. Without this, the
-        // just-received event lands in the wrong visual position
-        // (the api's 'updated_at' / 'desc' default would silently
-        // override the user's pick). activeSortBy +
-        // activeSortDirection are Map<itemId, ...> populated by
-        // fetchKanbanTasks; both are undefined when no user sort
-        // is active (init path).
+        // Kanban sort-by (Chunk 3): forward the active sort so a remote move during a non-default
+        // sort re-fetches in the SAME order the user is looking at.
         const sortBy = ws.activeSortBy.get(event.item_id)
         const direction = ws.activeSortDirection.get(event.item_id)
 
-        // Per-column SSE refetch (Option B, 2026-08-06): refetch
-        // JUST the affected column, not the whole board. The event
-        // carries `new_column_id` (the destination column for move /
-        // assign; null for unassign). For unassign, we still need
-        // to refresh the source column (where the task was) — but
-        // since the SSE payload doesn't carry the source column id,
-        // we conservatively iterate all columns. This is the rare
-        // edge case (unassign is manual via the UI), so the cost
-        // is acceptable.
-        //
-        // Single-row fast path (not a blind limit=100 column fetch):
-        // the mirror above already applied the event's column,
-        // position AND in-array slot, so one GET for the moved row
-        // is enough to converge with server truth. A cursor/delta
-        // fetch on latest local updated_at cannot replace this —
-        // moveTask writes ONLY the kanban join table (column +
-        // position renumbering) and never bumps updated_at, so an
-        // updated_at-delta would return empty for exactly this
-        // event. The full column fetch remains the fallback when
-        // the task isn't cached (event beat the initial load — the
-        // fresh page materializes the missing row), while searching
-        // (the mirror bypasses the backend q filter), or under a
-        // custom sort (array order no longer matches the view).
+        // Per-column SSE refetch (Option B, 2026-08-06): refetch JUST the affected column, not the
+        // whole board. The event carries `new_column_id` (the destination column for move / assign;
+        // null for unassign).
         const affectedColumnId = event.new_column_id
         if (affectedColumnId && affectedColumnId.length > 0) {
           const hasSearch = q !== undefined && q.length > 0
@@ -217,13 +162,6 @@ export const useKanbanSseStore = defineStore('kanbanSse', () => {
     // Re-sync the kanban state from the DB on every (re)connect of the bus's underlying global
     // SseClient. The server may have restarted and lost in-memory state (just like the workers SSE
     // pattern in App.vue:44-58, `fetchInitialWorkers`).
-    // The bus's state transitions to 'open' on first connect AND on every successful reconnect from
-    // 'reconnecting'.
-    // `{ immediate: true }` covers the fast path where the bus is already 'open' by the time we get
-    // here (the SseClient defers its first `start()` via `setTimeout(0)`, so App.vue's
-    // `installSseBus` may have already opened the stream before AppLayout.vue mounted).
-    // Explicit `onStateChange` subscription on the underlying SseClient (not a reactive watcher).
-    // The immediate check covers the fast path where the bus is already open when init runs.
     if (bus.state.value === 'open') void fetchInitialKanban(activeWorkspaceId.value)
     stopOpenSub =
       __getSseBusGlobalClient()?.onStateChange((s) => {
@@ -232,10 +170,6 @@ export const useKanbanSseStore = defineStore('kanbanSse', () => {
 
     // Stale-on-wake (cross-tab sharing): the subscription above only fires on state transitions the
     // SseClient itself emits.
-    // A window that TOOK OVER the shared connection, or that returns from a long hidden period
-    // (browsers freeze and throttle hidden tabs, so deliveries and rendering were skipped), may
-    // have missed events with no state change at all.
-    // Re-fetch from the API — every tab can do that directly, whoever holds the SSE connection.
     offResync =
       bus.onResync?.(() => {
         if (activeWorkspaceId.value !== '') void fetchInitialKanban(activeWorkspaceId.value)

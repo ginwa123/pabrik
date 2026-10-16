@@ -8,25 +8,9 @@ import {
   type ModelResolve,
 } from '../../api'
 
-/**
- * The profile form.
- *
- * THE SHAPE OF THIS FORM IS THE FEATURE. It shows THREE things — the model, one
- * line of facts, the API key — and every other knob lives behind `Advanced` with
- * a placeholder that states its own default (`inherit — openai`).
- *
- * Why: the face of this dialog used to expose 12 controls, and two of them
- * (`max_capacity_tokens`, `compaction_threshold_percent`) decided when a chat
- * throws its history away. Nobody could tell what the numbers were, because the
- * app did not know either — `LLMModels.getModelTokenCount` returned a built-in
- * 200_000 for every model that was not MiniMax. models.dev knows, the backend
- * now stores it, and this form shows the two numbers that actually matter:
- * the context window, and where compaction fires.
- *
- * The fact line is read-only on purpose. It is not a control; it is the answer
- * to "what will this profile do", including WHERE the answer came from
- * (`models.dev` vs `built-in`).
- */
+/** The profile form. THE SHAPE OF THIS FORM IS THE FEATURE. It shows THREE things — the model, one
+ * line of facts, the API key — and every other knob lives behind `Advanced` with a placeholder that
+ * states its own default (`inherit — openai`). */
 export interface LlmConfig {
   model: string
   base_url: string
@@ -230,9 +214,6 @@ const factWarning = computed<string | null>(() => {
 // === Transport gating (`backend`, orthogonal to `url_style`) ============= A CLI profile
 // (claude-code, opencode) runs a local binary: no base URL, no API key, no HTTP body shape, and no
 // request-body knobs.
-// Those controls are HIDDEN rather than shown-but-ignored, and the CLI's own knobs appear instead.
-// Hidden fields keep their values (never nulled) so flipping backends back and forth does not
-// discard what the user typed.
 const isClaudeCodeBackend = computed<boolean>(() => props.modelValue.backend === 'claude-code')
 const isOpencodeBackend = computed<boolean>(() => props.modelValue.backend === 'opencode')
 /** True for any local-CLI backend — the set that hides every HTTP control. */
@@ -290,8 +271,6 @@ const showsEffort = computed<boolean>(
 
 // === Overrides ========================================================== Every numeric override
 // is `null` until the user types.
-// An empty field is the ONLY spelling of "inherit" — there is no checkbox, and a cleared field
-// emits `null`, never `""` (an empty slice binds as SQL NULL server-side).
 const advancedOpen = ref(false)
 const showKey = ref(false)
 

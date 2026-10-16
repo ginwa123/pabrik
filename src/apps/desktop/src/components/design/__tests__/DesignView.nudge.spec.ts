@@ -1,14 +1,6 @@
-/**
- * Behavioral tests for DesignView.vue's keyboard nudge (arrow keys
- * move selection by 1px; Shift+arrow by 10px). Plan:
- * docs/superpowers/plans/2026-07-25-design-element-drag-and-drop.md
- * (Chunk 4, Task 4.1).
- *
- * 3 tests:
- *   1. Arrow key nudges selection by 1 design-px.
- *   2. Shift+arrow nudges by 10 design-px.
- *   3. Arrow keys are no-op when nothing is selected.
- */
+/** Behavioral tests for DesignView.vue's keyboard nudge (arrow keys move selection by 1px;
+ * Shift+arrow by 10px). Plan: docs/superpowers/plans/2026-07-25-design-element-drag-and-drop.md
+ * (Chunk 4, Task 4.1). 3 tests: 1. Arrow key nudges selection by 1 design-px. 2. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -77,11 +69,7 @@ describe('DesignView keyboard nudge', () => {
     })
     try {
       await flushPromises()
-      // Select the element by dispatching a native pointerdown on its
-      // root. Use native dispatchEvent (NOT wrapper.trigger) — jsdom 29
-      // makes MouseEvent.button a readonly getter, which @vue/test-utils
-      // tries to assign post-construction (same workaround used in
-      // DesignElement.drag.spec.ts).
+      // Select the element by dispatching a native pointerdown on its root.
       const elementEl = wrapper.find('[data-design-element]').element as HTMLElement
       elementEl.setPointerCapture = () => {}
       elementEl.releasePointerCapture = () => {}

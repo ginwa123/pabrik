@@ -1,27 +1,5 @@
-// Pinia store for workspace-scoped secrets (Migration 101).
-//
-// Two things this store deliberately does NOT do:
-//
-//  1. No client-side workspace filter. The backend scopes every read AND
-//     every write by the `workspace_id` in the path, so a secret from
-//     another workspace is never in the response to filter out. Adding a
-//     `secrets.filter(s => s.workspace_id === id)` guard here would be a
-//     second, weaker copy of a rule that already lives in SQL — and the
-//     kind of duplicate that drifts.
-//  2. No retention of a secret VALUE. Not in a ref, not in the row, not in
-//     a log line. `Secret` has no value field because the server never
-//     sends one; the store must not become the place where one survives a
-//     save. `createSecret` and `rotateSecret` take the value as an argument,
-//     hand it straight to `apiFetch`, and the only thing they keep is the
-//     row the server returns — which has none. Every input that ever held a
-//     value is cleared by the component the instant it is submitted.
-//
-// `error` is RENDERED, never write-only. That is the whole contract of this
-// store: "this workspace has no secrets" and "we could not find out whether
-// it has any" are different answers, and a backend outage must never be
-// rendered as an empty list. `loaded` carries the third state — "not
-// fetched yet" — so a fresh view shows neither a misleading empty state
-// nor a stale one.
+// Pinia store for workspace-scoped secrets (Migration 101). Two things this store deliberately does
+// NOT do: 1. No client-side workspace filter.
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { Cause, Data, Effect, Exit } from 'effect'

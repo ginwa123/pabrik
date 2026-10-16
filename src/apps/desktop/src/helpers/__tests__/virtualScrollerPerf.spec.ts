@@ -1,39 +1,6 @@
-/**
- * Unit tests for the P1 performance helpers used by VirtualScroller.vue.
- *
- * Why this file exists (task_1787551495337_9, "make virtual scroller more
- * smooth"):
- *
- *   1. `quantizePx` — measured heights are read from `offsetHeight`, which
- *      in Chromium can be fractional (sub-pixel layout). Fractional stored
- *      heights quantize differently between the measure pass and the
- *      browser's own layout, producing ±1px spacer drift → micro-jitter.
- *      Rounding to integers makes the hysteresis dead-band exact and the
- *      prefix sums stable across frames.
- *
- *   2. `AdaptiveItemHeightEstimator` — ChatView passes a fixed
- *      `defaultItemHeight=64`, but real chat bubbles are almost always
- *      taller (200-3000px). Every unmeasured item is estimated at 64px,
- *      so the top/bottom spacers are systematically wrong until measured,
- *      and every measurement pass triggers anchor compensation. Learning
- *      the running MEDIAN of measured heights gives far better estimates
- *      for never-measured items → fewer wrong spacers → fewer compensation
- *      shifts → smoother scroll.
- *
- *      A moving median is only safe while the reader is at the bottom, though:
- *      the scroller multiplies it by the number of NEVER-rendered items, so
- *      scrolling (which re-feeds the estimator from the new window) rescaled the
- *      whole model by `unmeasuredCount x delta` and the anchor compensation
- *      wrote that rescale into `scrollTop` — the "transcript jumps up and down
- *      while SSE streams" report (task_1791776348154_5). `freeze()` locks the
- *      estimate once its window is full; the tests below pin that it takes
- *      effect, is idempotent, and is undone by `reset()`. The end-to-end
- *      witness is tests/functional_ui/chatview_stream_scroll_stability_ui_test.py
- *      (jsdom reports 0 for every offsetHeight, so the scroll-geometry class of
- *      bug is not expressible here).
- *
- * Both are pure (no DOM, no Vue) so they can be tested without mounting.
- */
+/** Unit tests for the P1 performance helpers used by VirtualScroller.vue. Why this file exists
+ * (task_1787551495337_9, "make virtual scroller more smooth"): 1. `quantizePx` — measured heights
+ * are read from `offsetHeight`, which in Chromium can be fractional (sub-pixel layout). */
 import { describe, it, expect } from 'vitest'
 import { quantizePx, AdaptiveItemHeightEstimator } from '../virtualScrollerPerf'
 
@@ -185,9 +152,6 @@ describe('AdaptiveItemHeightEstimator', () => {
 
     // A whole window of much SHORTER rows arrives — exactly what scrolling into a run of one-liners
     // does.
-    // The placeholder must not follow: the scroller multiplies it by the never-rendered item count,
-    // so following would rescale the list and the anchor compensation would turn that rescale into
-    // a scrollTop write.
     for (let i = 0; i < 8; i++) est.observe(40)
     expect(est.estimate()).toBe(200)
   })

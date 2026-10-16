@@ -1,9 +1,5 @@
-/** Task 2 — SseEvent carries live session_skills.
- * Backend: sse_on_event_send_llm_history.zig:45
- * (SseEventLLMHistory.session_skills, next to is_error). REST-vs-SSE key
- * note: the REST GET /messages path exposes these as `skills`
- * (getChatHistory), while the live SSE wire uses `session_skills` —
- * keep both keys, don't unify. */
+/** Task 2 — SseEvent carries live session_skills. Backend: sse_on_event_send_llm_history.zig:45
+ * (SseEventLLMHistory.session_skills, next to is_error). */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'

@@ -1,26 +1,4 @@
-/**
- * Tests for SaveMemory.vue.
- *
- * Card layout (the whole point of the component):
- *   collapsed: `save_memory  <id>  ·  <tag> <tag> <tag> +N  ✓  +`
- *   expanded:  the same header (it stays visible) + the stored note
- *   The id and the tags live ONLY in the header — the expanded body must
- *   not repeat them, because the header is right above it.
- *
- * Verifies:
- *  - parses the success envelope (id + created_at + updated_at)
- *  - parses the error envelope (<error> tag → red border, no body)
- *  - header shows the id + tag chips inline in BOTH states; no body preview
- *  - the hover title carries the full id, every tag, the note and the
- *    saved timestamp (the created/updated pair is not rendered as rows)
- *  - renders the SAVED BODY from the tool-call args (`parameters`),
- *    because `executeSaveMemory` never echoes the note back
- *  - hides `content` from the Arguments block; copy button yields the full
- *    (unclipped) body
- *  - copy-id button is wired to clipboard (jsdom stub) and only present on success
- *  - a result with no body renders an empty-state hint
- *  - click on header toggles expanded state
- */
+/** Tests for SaveMemory.vue. */
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 

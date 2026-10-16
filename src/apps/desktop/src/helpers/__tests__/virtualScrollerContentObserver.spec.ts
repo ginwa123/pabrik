@@ -138,9 +138,6 @@ describe('VirtualScroller idle content-size observer', () => {
 
     // A scroll just happened (Date.now is fake-timer controlled, so the observer sees it as recent)
     // and growth lands on top of it.
-    // The scroll debounce (50ms) owns this measurement: advancing just past it — but before the RO
-    // debounce (150ms) could fire — must already show the converged model. The RO may still fire
-    // later, but only as a harmless no-op (model already exact).
     el.dispatchEvent(new Event('scroll'))
     mockAllChildren(el, 200)
     mockContentH(el, 4000)
@@ -174,8 +171,6 @@ describe('VirtualScroller idle content-size observer', () => {
     // 1px of box noise: no measure may be scheduled. (Children are deliberately moved to 130 — a
     // 30px growth the observer must NOT pick up from a 1px box delta. In a real browser the box
     // always reflects child growth, so this only exercises the noise gate.
-    // The pre-phase drain guarantees no other path is pending, so a 2600 here can only come from a
-    // broken gate.)
     mockAllChildren(el, 130)
     mockContentH(el, 2001)
     fireContentRO()

@@ -1,21 +1,6 @@
-/**
- * ChatView git-status cache-first paint (stale-while-revalidate).
- *
- * Contract under test:
- *   1. On init/cwd-switch, `checkGitStatus` paints the persisted
- *      localStorage entry SYNCHRONOUSLY — the bottom chip shows the
- *      last-known branch while `api.getGitStatus` is still in flight.
- *   2. When the background fetch resolves, its response overwrites the
- *      painted cache (fresh data wins).
- *   3. On a cache miss the chip stays hidden until the fetch answers
- *      (pre-existing behaviour is preserved — no flash of wrong data).
- *
- * The fetch is mocked with a controllable deferred so the test can
- * assert the in-between state: cache painted, network still pending.
- *
- * The mount harness mirrors __tests__/chatViewWorktree.spec.ts (kept
- * inline per that file's "no shared harness" note).
- */
+/** ChatView git-status cache-first paint (stale-while-revalidate). Contract under test: 1. On
+ * init/cwd-switch, `checkGitStatus` paints the persisted localStorage entry SYNCHRONOUSLY — the
+ * bottom chip shows the last-known branch while `api.getGitStatus` is still in flight. 2. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'

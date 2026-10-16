@@ -1,24 +1,5 @@
-/**
- * Tests for ListDirectory.vue — the tool-output card component for the
- * `list_directory` agent tool.
- *
- * Wire shape (from src/modules/agent/tools/list_directory.zig):
- *
- *   <directory_listing path="/proj" count="3">
- *     <directory name="src" path="/proj/src" is_symlink="false"/>
- *     <file name="main.zig" path="/proj/main.zig" is_symlink="false"/>
- *   </directory_listing>
- *
- * Verifies (behavioural — interact like a user):
- *  - renders the data-testid matching the message id (for E2E selectors)
- *  - success path: tool name + path (truncated) + entry count + ✓ status
- *  - header line uses singular/plural "entry" correctly (1 entry vs N entries)
- *  - expanded body lists every directory first, then files (icons differ)
- *  - empty listing (count=0) renders an empty-state hint when expanded
- *  - error path: red border + ✗ badge + error message inline
- *  - click on header toggles expanded; copy buttons stopPropagation so they
- *    don't accidentally toggle the parent
- */
+/** Tests for ListDirectory.vue — the tool-output card component for the `list_directory` agent
+ * tool. */
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, provide } from 'vue'

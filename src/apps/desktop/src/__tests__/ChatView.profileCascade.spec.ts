@@ -1,26 +1,5 @@
-/**
- * Tests for ChatView's profile chip + picker — the cascade display.
- *
- * The chip in the chat status bar must reflect the EFFECTIVE profile the
- * backend will use, not just the per-session `selected_profile_model`.
- *
- * Cascade precedence (per workflow.zig::resolveProfileField):
- *   1. per-session `selected_profile_model` (when non-empty AND profile exists)
- *   2. `config.active_profile`         (when non-null AND non-empty)
- *   3. top-level config               (default fallback)
- *
- * Pre-fix, the chip only showed `selectedProfile ?? 'Default'` with tooltip
- * "Using default (top-level config)". That misled the user into thinking
- * the top-level was used when the active profile was actually applied.
- *
- * The fix: ChatView loads `active_profile` from getPabrikConfig() alongside
- * `profiles`. The chip displays the effective profile (per-session selection
- * or active profile, falling back to "Default" only when neither exists).
- * The tooltip reflects the actual cascade; the picker shows ✓ on the
- * effective row + an `(active)` badge next to the active profile.
- *
- * Plan: docs/superpowers/plans/2026-08-06-chatview-profile-cascade-display.md
- */
+/** Tests for ChatView's profile chip + picker — the cascade display. Plan:
+ * docs/superpowers/plans/2026-08-06-chatview-profile-cascade-display.md */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, ref } from 'vue'

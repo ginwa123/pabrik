@@ -92,7 +92,6 @@ export function useSettingsSection(options: UseSettingsSectionOptions) {
   // Mount normalization: the getter falls back to localStorage when the URL has no `?section=`,
   // which would render the stored section with a clean URL. Rewrite the URL to reflect the section
   // actually shown, and persist a deep link to storage so the next clean load restores it.
-  // Replace, not push — mount is not a navigation.
   onMounted(() => {
     if (!router || !route) return
     try {

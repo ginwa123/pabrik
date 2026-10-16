@@ -1,40 +1,6 @@
-/**
- * isBackgroundCommandOutput — detect + parse the session-queue envelope the
- * background-process watcher/cron inserts when a detached `command` finishes.
- *
- * THREE shapes are recognised, and they are tried newest-first:
- *
- *   1. JSON — what the backend emits TODAY, built by `buildCompletionMessage`
- *      in `src/agentic_loop/background_process.zig`:
- *
- *        {"pid":1234,"command":"sleep 10","stdout":"hello\nworld",
- *         "truncated":false,"total_bytes":null,"log_path":null}
- *
- *      `total_bytes` + `log_path` are non-null only when the log was capped.
- *
- *   2. XML `<background_command>…</background_command>` — what the same
- *      function emitted BEFORE the XML→JSON migration (#563 changed the
- *      backend and left this file behind), so a row queued back then still
- *      renders as a card instead of a raw bubble.
- *
- *   3. Legacy prose — `This is an output from background command (pid …,
- *      command \`…\`):` + a 3–5 double-quote fence.
- *
- * Shape 1 was MISSING until this change: the parser knew only 2 and 3, so every
- * completion queued since #563 fell through to `false` and rendered as raw JSON
- * in a user bubble. The backend's test asserted the JSON while this file's spec
- * asserted the XML — green on both sides of the break.
- *
- * Returns:
- *   - parseBackgroundCommandOutput: `{ pid, command, body, truncated,
- *     logPath }` or `null` for ordinary text / foreground `<command>` XML.
- *   - isBackgroundCommandOutput: `true` iff the content holds the JSON
- *     envelope, a `<background_command>` block, or the legacy prose prefix.
- *   - backgroundToShellXml: re-emits the parsed fields as the 8-tag shell
- *     envelope so the existing shell card renderer displays it unchanged.
- *
- * Pure functions; safe to call inside `computed`.
- */
+/** isBackgroundCommandOutput — detect + parse the session-queue envelope the background-process
+ * watcher/cron inserts when a detached `command` finishes. THREE shapes are recognised, and they
+ * are tried newest-first: 1. */
 import { Effect, Either, Data } from 'effect'
 import {
   extractBool,

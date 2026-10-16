@@ -80,11 +80,8 @@ const reportError = (message: string) => {
   emit('error', message)
 }
 
-// Reload when the resolved workspace changes: mount covers the initial
-// load, prev-id guard on update covers workspace switches. The
-// data-workspace binding below keeps this component's own render effect
-// subscribed to the store workspace (row content alone would not
-// re-render us on a switch) — that render is what fires the guard.
+// Reload when the resolved workspace changes: mount covers the initial load, prev-id guard on
+// update covers workspace switches.
 const prevWorkspaceId = ref<string | null>(workspaceId.value)
 onMounted(() => {
   prevWorkspaceId.value = workspaceId.value

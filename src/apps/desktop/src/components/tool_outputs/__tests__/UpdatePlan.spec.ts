@@ -1,15 +1,4 @@
-/**
- * Tests for UpdatePlan.vue.
- *
- * Verifies:
- *  - parses the success envelope (session_id + updated_at)
- *  - parses the error envelope (<error> tag → red border, no rows)
- *  - header label shows the session_id on success, "error" on failure
- *  - expanded body renders the session_id + updated_at rows
- *  - empty envelope (no session_id, no updated_at) renders an empty-state hint
- *  - click on header toggles expanded state
- *  - inner envelope extraction works both with and without the <tool> wrapper
- */
+/** Tests for UpdatePlan.vue. */
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -301,11 +290,6 @@ describe('UpdatePlan.vue — inner envelope extraction', () => {
 // ──────────────────────────────────────────────────────────────────────── Description rendering
 // (content from the <plan><![CDATA[...]]></plan> block in the response envelope — mirrors
 // get_plan's wire shape).
-// The backend's `executeUpdatePlan` embeds the just-written body in `<plan><![CDATA[...]]></plan>`
-// so the frontend renders the checklist directly from the response, NOT from the tool's input
-// arguments.
-// Same UX as expanding a GetPlan card — users see what the agent just wrote without having to call
-// get_plan separately. ────────────────────────────────────────────────────────────────────────
 describe('UpdatePlan.vue — plan body from <plan> CDATA', () => {
   it('renders the plan body as a checklist inside the expanded body', async () => {
     const body = '- [x] step 1 done\n- [ ] step 2 todo\n- [ ] step 3 todo'
@@ -512,9 +496,6 @@ describe('UpdatePlan.vue — full <tool> envelope from the dispatcher', () => {
   it('does NOT silently fall back to <parameters> if the <plan> block is missing', async () => {
     // Construct an envelope where <parameters> carries the agent's input but the response
     // envelope's <data> has NO <plan> block (legacy backend, or a backend bug).
-    // The component must NOT silently read from <parameters> — that field is the agent's input, not
-    // the canonical plan body. The user sees session + updated metadata only (no checklist), which
-    // is the safe fallback behavior.
     const body = '- [x] step 1'
     const fullEnvelope = wrapAsFullToolEnvelope(
       makeSuccessContent(), // no body → no <plan> block

@@ -143,8 +143,6 @@ describe('WorkspaceItemTaskCard — context menu', () => {
   // Regression (task_1791030815108_1): the card used to mount its own ConfirmDialog, which only
   // forwarded `deleteTask` — the click then reached Sidebar's confirm too, so one "Delete task"
   // opened TWO stacked dialogs.
-  // The card now emits straight up and the terminal owner (Sidebar) is the only thing that asks for
-  // confirmation.
   it('delete emits deleteTask and mounts NO dialog of its own', async () => {
     const wrapper = mountCard({ id: 't1', name: 'Alpha' })
     await openMenu(wrapper)

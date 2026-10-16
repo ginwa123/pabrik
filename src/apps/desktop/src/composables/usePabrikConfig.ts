@@ -10,9 +10,8 @@ import { computed, ref } from 'vue'
 import type { PabrikConfig } from '../api'
 import { userConfigSource, type PabrikConfigSource } from '../helpers/configSource'
 
-/**  * @param source where the config is read from and written to. Defaults to the user-level config,
- * which is what every existing caller wants; the workspace scope passes `workspaceConfigSource(id)`
- * instead. See `helpers/configSource.ts` for why the two are not interchangeable. */
+/** @param source where the config is read from and written to. See `helpers/configSource.ts` for
+ * why the two are not interchangeable. */
 export function usePabrikConfig(source: PabrikConfigSource = userConfigSource()) {
   const config = ref<PabrikConfig | null>(null)
   const loaded = ref(false)

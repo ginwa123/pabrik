@@ -110,8 +110,6 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     await flushPromises()
     // Make a real edit so the save bar appears. Switching tabs used to be enough BY ACCIDENT - the
     // Profiles section emitted an update while hydrating, which happened to mark the config dirty.
-    // This test failed for exactly that reason (reproduced on the unmodified component), so it now
-    // makes the edit its assertion is actually about.
     await wrapper.find('[data-testid="toggle-notify-on-complete"]').setValue(true)
     await flushPromises()
     expect(wrapper.find('[data-testid="save-btn"]').exists()).toBe(true)
@@ -407,8 +405,6 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     // The General tab MUST write all four operational settings through (syncToConfig does this
     // unconditionally). This is a regression guard so a future refactor doesn't accidentally drop
     // one of them and silently re-introduce the hidden-field bug.
-    // Toggling ONLY `notify_on_error` must still surface the other unchanged fields in the PUT
-    // body.
     mockGet.mockResolvedValueOnce({
       notify_on_complete: true,
       notify_on_error: false,
@@ -670,9 +666,6 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     // The bar used to be the last child of the editor, so the only save/reset controls sat below a
     // section the user has to scroll through. It is now the first thing after the Form/JSON toggle,
     // which is what keeps the actions reachable from any scroll position.
-    // Asserted on DOM ORDER, not on a class: the bar is a `shrink-0` flex item OUTSIDE the `flex-1
-    // overflow-y-auto` region, so `sticky` is a no-op there and the placement is decided purely by
-    // where it is mounted. A class assertion would pass on a bar still at the bottom.
     mockGet.mockResolvedValueOnce({
       notify_on_complete: false,
       notify_on_error: false,

@@ -341,8 +341,6 @@ describe('useCurrentMainView', () => {
   // ── Document page (Migration 095) ─────────────────────────────────── `/app/{ws}/doc/{id}` is a
   // PATH shape: the document REPLACES the main view instead of layering `?doc=` over whatever was
   // open.
-  // `?doc=` is kept below as a legacy fallback so a pre-migration bookmark still opens the document
-  // until AppLayout's boot rewrite moves it.
   it('returns the document view for a /doc/ path', () => {
     mockRoute({}, '/app/ws_1/doc/doc_1')
     let v!: ReturnType<typeof useCurrentMainView>
@@ -396,9 +394,6 @@ describe('useCurrentMainView', () => {
   it('a stale ?doc= query no longer names a document', () => {
     // Migration 095 shipped documents as a `?doc=` overlay and was replaced by the `/doc/` path
     // before that shape was in wide use, so there is no fallback.
-    // If a `?doc=` ever reaches the app it must be ignored, not silently render the document under
-    // a URL that does not describe it — otherwise the document is again reachable at an ambiguous
-    // URL that says nothing about which page owns it.
     mockRoute({ doc: 'doc_1' }, '/app/ws_1')
     let v!: ReturnType<typeof useCurrentMainView>
     function setup() {

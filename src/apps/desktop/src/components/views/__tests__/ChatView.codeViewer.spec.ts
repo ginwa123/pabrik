@@ -1,25 +1,5 @@
-/**
- * Where the code viewer renders — ChatView's center column instead of a
- * full-surface overlay (kanban task_1790594549955_1, follow-up: "the
- * right sidebar should be visible").
- *
- * BEFORE: `AppLayout` claimed the whole `<main>` for the viewer
- * (`currentView === 'code-editor'`), so the `<main>` chain stopped and
- * `ChatView` — which owns the right sidebar (Explorer / Files changed /
- * Terminal), the header and the composer — was never mounted. The user
- * clicked a file IN that sidebar and the sidebar disappeared.
- *
- * NOW: `AppLayout` provides the open-file session; ChatView renders it in
- * the same center slot as the stacked diff and hides messages + composer
- * while it is up, so the sidebar survives. `AppLayout` keeps the overlay
- * only for contexts with no chat on screen.
- *
- * Full ChatView mounts are too heavy for a unit test (the repo's static
- * contract pattern — cf. ChatView.centerDiff.spec.ts), so this greps the
- * two sources that must agree. The browser-level behaviour is covered by
- * `tests/functional_ui/code_editor_viewer_ui_test.py` (real bundle,
- * real Chromium: sidebar + viewer visible, composer gone).
- */
+/** Where the code viewer renders — ChatView's center column instead of a full-surface overlay
+ * (kanban task_1790594549955_1, follow-up: "the right sidebar should be visible"). */
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'

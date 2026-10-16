@@ -1,16 +1,5 @@
-/**
- * Regression for frontend double-task bug (task_1788811916878_4):
- * same task id visible in 2 columns until refresh.
- *
- * Root cause: fetchKanbanTasks merge only evicted the fetched column:
- *   otherTasks = tasks.filter(t => t.kanban_column_id !== columnId)
- * When the mirror missed (SSE before load, unknown task, parallel race,
- * rapid A->B->C moves), the stale source-column copy survived and the
- * fresh dest copy was appended -> duplicate id in 2 columns.
- *
- * Fix: merge must also evict any existing entry whose id is in the fresh
- * response (last-writer-wins, single copy).
- */
+/** Regression for frontend double-task bug (task_1788811916878_4): same task id visible in 2
+ * columns until refresh. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import * as api from '../api'

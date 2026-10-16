@@ -1,14 +1,4 @@
-/**
- * Unit tests for the workspaces store's `renameDesignPage` action.
- *
- * Covers the optimistic-update + rollback contract, mirroring
- * `workspacesStoreRenameTask.spec.ts`:
- *
- *   - Renames a page in the cache + PATCHes with the trimmed name.
- *   - Rolls back on API failure.
- *   - Rejects empty / unchanged names (no-op).
- *   - No-op when the page isn't in the local cache.
- */
+/** Unit tests for the workspaces store's `renameDesignPage` action. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -70,7 +60,6 @@ describe('useWorkspacesStore.renameDesignPage', () => {
     ]
     // Set the design pages cache directly (mirrors what fetchDesignPages
     // would have populated).
-     
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(ws as any).designPagesByItemId = {
       item_design: [

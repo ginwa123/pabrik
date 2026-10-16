@@ -97,9 +97,6 @@ describe("FileInput — Stop button (visible only when isLLMProcessing)", () => 
   it('H: when isLLMProcessing flips from true to false while isStopping=true, the watch resets isStopping to false', async () => {
     // We start with both isLLMProcessing=true and isStopping=true (parent has been waiting for
     // SSE).
-    // When the SSE worker-deleted event lands and processingState flips, isLLMProcessing goes false
-    // → FileInput's internal watch should reset isStopping to false so the next time the agent runs
-    // and the user clicks Stop, the spinner doesn't get stuck on.
     const wrapper = await mountInput({
       isLLMProcessing: true,
       isStopping: true,

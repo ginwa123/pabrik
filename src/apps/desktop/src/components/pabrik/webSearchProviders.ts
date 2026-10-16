@@ -1,34 +1,6 @@
-/**
- * webSearchProviders — the parser/serializer pair for the top-level
- * `web_search` key in config.json.
- *
- * The wire shape is a map of provider name to `PabrikWebSearchProvider`
- * (see `api/index.ts`). The UI edits it as a LIST of rows, because a
- * provider's name is editable in place and an object map cannot express
- * "the key I am currently typing" without a dance. `parse` hydrates the
- * list, `serialize` writes it back.
- *
- * Three properties this pair guarantees, all of which the backend
- * depends on:
- *
- * 1. **`key` is omitted, never emptied.** A self-hosted provider has no
- *    credential; `""` is not the same thing (an empty slice binds as SQL
- *    NULL and `isUsable` treats a declared-but-blank credential as
- *    unusable).
- * 2. **A masked key round-trips unchanged.** `key` may arrive from the
- *    API as an obfuscation string such as `sk••••7f2` rather than as the
- *    secret. Sending it back verbatim is a no-op on the server;
- *    replacing it with `""` would silently destroy the stored secret.
- *    This module therefore never invents a key value — it only decides
- *    whether to emit the one it was given.
- * 3. **`curl` is stored without the secret.** It carries the literal text
- *    `{key}` where the credential goes, never the credential itself.
- *
- * `enabled` is omit-when-true on the wire, mirroring
- * `serializeMcpServers` and the backend's default: only `false` is ever
- * written, so a save never adds churn to a config that relies on the
- * default.
- */
+/** webSearchProviders — the parser/serializer pair for the top-level `web_search` key in
+ * config.json. The wire shape is a map of provider name to `PabrikWebSearchProvider` (see
+ * `api/index.ts`). */
 import type { PabrikWebSearchProvider } from '../../api'
 
 /** The literal placeholder `curl` must contain when a key is set. */
@@ -131,9 +103,6 @@ export function serializeWebSearchProviders(
 // ─── Host pin checks ──────────────────────────────────────────────────────── A TS port of
 // `hostOfUrl` / `isNonPublicHost` / `checkHostPolicy` from
 // `src/modules/agent/tools/web_search_curl.zig`.
-// Hand-rolled rather than `new URL` so a malformed URL produces a message instead of a thrown
-// `TypeError` from inside an input handler, and so the host rules stay line-for-line comparable
-// with the backend's.
 /** The `host[:port]` of a URL, or `''` when there is none. */
 function hostOfUrl(url: string): string {
   const schemeEnd = url.indexOf('://')
@@ -231,8 +200,6 @@ export function validateWebSearchRows(rows: WebSearchProviderRow[]): Record<stri
 function validateWebSearchRow(row: WebSearchProviderRow): string | null {
   // A row the user added and never filled in is not an error: it has no name, so
   // `serializeWebSearchProviders` drops it and it never reaches the wire.
-  // Blocking the whole settings save over a placeholder row would be a worse failure than the one
-  // we are guarding against.
   const untouched =
     !row.name.trim() &&
     !row.url.trim() &&

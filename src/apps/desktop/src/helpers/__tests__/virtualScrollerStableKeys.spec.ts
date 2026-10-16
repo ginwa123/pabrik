@@ -58,8 +58,6 @@ describe('VirtualScroller stable-key height cache', () => {
   it('a measured item keeps its height after an index shift (regroup simulation)', async () => {
     // 20 items, all measured at DISTINCT heights. Then the parent PREPENDS 2 items (the
     // messageGroups regroup case: a new group inserted at the front shifts every later index).
-    // With index-keyed heights, item "0"'s height would now be attributed to the new item at index
-    // 2 — corrupting the sizer. With stable keys, item "0" keeps its own height.
     const { wrapper, el } = mountKeyed(20)
     await nextTick()
 
@@ -168,8 +166,6 @@ describe('VirtualScroller stable-key height cache', () => {
     // NOW the model overshoots: the sizer binding says 29389 (stale model) while the real rendered
     // content is only 20×64=1280. jsdom: scrollHeight is whatever we define it to be — set it to
     // the phantom value the browser would report from the inflated sizer.
-    // Also mock the content div's offsetHeight (jsdom does no layout; the browser's real value
-    // would be 1280).
     Object.defineProperty(el, 'scrollHeight', { value: 29389, configurable: true })
     Object.defineProperty(content, 'offsetHeight', { value: 20 * 64, configurable: true })
     // jsdom has no scrollTo; stub it to capture the target.

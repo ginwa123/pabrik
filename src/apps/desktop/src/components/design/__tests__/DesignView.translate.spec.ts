@@ -1,25 +1,6 @@
-/**
- * Behavioural tests for the SINGLE-element drag wire.
- *
- * Plan: docs/superpowers/plans/2026-08-06-split-move-resize.md
- *
- * The wire is:
- *   1. User pointerdown on a single (non-group) element body.
- *   2. DesignElement.vue fires `translate` with the (dx, dy) cursor delta.
- *   3. DesignView.vue's `@translate="handleElementTranslate"` handler
- *      receives the delta and emits `translateElement(id, dx, dy)` upward.
- *   4. AppLayout.vue's `@translate-element="handleDesignTranslateElement"`
- *      calls `useDesignHandlers.translateElement` which calls
- *      `workspacesStore.translateDesignElement` which POSTs
- *      `/api/workspaces/.../elements/:id/translate`.
- *
- * This test exercises steps 1-3 by mounting DesignView, dispatching
- * pointerdown + pointermove + pointerup, and asserting the
- * `translateElement` emit carries the right (id, dx, dy).
- *
- * Companion spec `workspacesStoreTranslateResize.spec.ts` covers
- * step 4 at the store layer.
- */
+/** Behavioural tests for the SINGLE-element drag wire. Plan:
+ * docs/superpowers/plans/2026-08-06-split-move-resize.md The wire is: 1. User pointerdown on a
+ * single (non-group) element body. 2. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -217,8 +198,7 @@ describe('DesignView single-element drag → translate emit', () => {
 
   /** Regression: the OLD wire bailed when selectedIds had 2+ elements (the old assumption was
    * "single-element drag ⇒ exactly one selected"); the NEW wire still fires because the `translate`
-   * event carries the elementId directly. The drag SOURCE is the // eslint-disable-next-line
-   * @typescript-eslint/no-explicit-any */
+   * event carries the elementId directly. */
   /** drag source — not the selection set. / */
   it('still fires translate when selectedIds has multiple ids (drag source carries elementId)', async () => {
     const _store = useWorkspacesStore()

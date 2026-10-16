@@ -64,12 +64,6 @@ describe('createUnifiedSseConnection: single-buffer design (regression for Plan 
   // Mock the SseClient so we capture the onEvent callback without needing a real EventSource.
   // Returns a stub SseClient (we never call .close() etc. in these tests). Spy lifecycle note:
   // vi.spyOn() returns a live spy.
-  // We set the mockImplementation once at describe-level (NOT in beforeEach, because vi.spyOn() +
-  // vi.mockRestore() in afterEach would tear the spy down and the next beforeEach's
-  // mockImplementation call would be on a dead spy).
-  // Instead, we just reset capturedOnEvent and the mockImplementation re-uses the closure-scoped
-  // variable fresh each test by reassigning the implementation in beforeEach WITHOUT calling
-  // mockRestore.
   const spy = vi.spyOn(sseClient, 'createSseClient')
   let capturedOnEvent: ((raw: string, eventType: string) => void) | null = null
 
@@ -328,26 +322,9 @@ describe('createUnifiedSseConnection: single-buffer design (regression for Plan 
     expect(workersCb).toHaveBeenCalledTimes(1)
   })
 
-  /**
-   * Regression for Code Reviewer Critical Fix (2026-06-30):
-   * when the caller's `channels` set does NOT include a consumer for
-   * a default-message event shape the backend emits, the buffer
-   * MUST still advance past the event. Otherwise the buffer grows
-   * unboundedly on every dropped event.
-   *
-   * Setup: subscribe only to `kanban` (no workers/sessions/llm).
-   * Action: fire 50 worker-shaped default-message events (which no
-   * consumer will match), then fire 1 kanban named event.
-   * Expectation: the kanban callback fires (buffer didn't get
-   * corrupted). The buffer was advanced past every worker event
-   * even though no consumer matched.
-   *
-   * Without the fix: the buffer accumulates 50 worker events, then
-   * `indexOf('{')` and `lastIndexOf('}')` span ALL of them,
-   * producing malformed JSON, which trips `JSON.parse`, which
-   * slides 1 byte, and the buffer becomes a tangled mess — the
-   * kanban event never reaches the consumer.
-   */
+  /** Regression for Code Reviewer Critical Fix (2026-06-30): when the caller's `channels` set does
+   * NOT include a consumer for a default-message event shape the backend emits, the buffer MUST
+   * still advance past the event. Otherwise the buffer grows unboundedly on every dropped event. */
   it('advances the buffer past default-message events with no matching consumer', () => {
     // Re-spy with a fresh mockImplementation (the describe-level
     // spy already exists; just update its impl to capture the new
@@ -386,11 +363,6 @@ describe('createUnifiedSseConnection: single-buffer design (regression for Plan 
     }
 
     // Now fire a kanban named event — it MUST reach the consumer.
-    // (If the buffer had been corrupted by accumulated bytes, the JSON.parse for the next
-    // default-message event would have failed silently and the kanban named-event branch would
-    // still work since named events are dispatched independently.
-    // To really catch the bug we need a default-message event AFTER the dropped events — see
-    // below.)
     capturedOnEvent!(
       JSON.stringify({
         action: 'created',
@@ -409,10 +381,6 @@ describe('createUnifiedSseConnection: single-buffer design (regression for Plan 
     )
 
     // Follow up: fire a VALID default-message event AFTER the dropped ones.
-    // If the buffer was tangled, this `indexOf('{')` would land inside the LAST dropped event,
-    // `lastIndexOf('}')` would land at the end of the kanban cb invocation's leftover bytes, the
-    // slice would be malformed JSON, JSON.parse would fail, and the cb would never fire.
-    // With the fix, the buffer is clean and the dispatch works.
     const afterCb = vi.fn()
     const client2 = createUnifiedSseConnection({
       channels: {
@@ -551,24 +519,8 @@ describe('createUnifiedSseConnection: bare vs per-session tokens (Chunk 4)', () 
   })
 })
 
-/**
- * Regression tests for the granular `event:` names commit.
- *
- * The factory must pre-register EVERY named event type the backend can
- * emit — the browser's EventSource only dispatches each `event: <name>`
- * to listeners registered for that exact name. Missing a name here
- * means the server-side `event:` line is silently dropped on the
- * floor (the JS handler never fires). See SseClient JSDoc + the
- * project memory browser-eventsource-named-events.md.
- *
- * The full set (must stay in lockstep with on_event_sent.zig +
- * llm_history.zig in the backend):
- *   - kanban_column, kanban_task
- *   - queue_queued, queue_deleted  (was 'queue_message' before)
- *   - llm_chunk, llm_full
- *   - worker_created, worker_updated, worker_deleted
- *   - session_created, session_deleted, session_updated
- */
+/** Regression tests for the granular `event:` names commit. See SseClient JSDoc + the project
+ * memory browser-eventsource-named-events.md. */
 describe('createUnifiedSseConnection: pre-registers all granular event names', () => {
   const REQUIRED_EVENT_TYPES = [
     'kanban_column',
@@ -583,15 +535,9 @@ describe('createUnifiedSseConnection: pre-registers all granular event names', (
     'session_created',
     'session_deleted',
     'session_updated', // task_1786507100896 — auto-rename on first user message + unattended toggle
-    // Design-mode events (src/ai_workflow/tui/on_event_sent_design.zig):
-    //   - design_element_created / _updated / _deleted — single
-    //   - design_elements_geometry_batch_updated — batch (emitted
-    //     by `updateElementsBatch` AND `moveElementsWithDescendantsBatch`).
-    // Without this registration the browser's EventSource drops the
-    // event before our handler ever sees it (see project memory
-    // browser-eventsource-named-events.md), which means the dedupe
-    // check in `stores/designSse.ts` never runs and the local-mutation
-    // skip path is dead code for batch updates.
+    // Design-mode events (src/ai_workflow/tui/on_event_sent_design.zig): - design_element_created /
+    // _updated / _deleted — single - design_elements_geometry_batch_updated — batch (emitted by
+    // `updateElementsBatch` AND `moveElementsWithDescendantsBatch`).
     'design_element_created',
     'design_element_updated',
     'design_element_deleted',
@@ -646,10 +592,6 @@ describe('createUnifiedSseConnection: pre-registers all granular event names', (
     // Bug history (2026-08-06): the move-batch endpoint emitted
     // `design_elements_geometry_batch_updated` SSE events, but the dispatcher's if-chain only
     // handled the three singular event names.
-    // The browser dropped the batch event before our handler ran (no listener registered for that
-    // event type), AND the dispatcher would have ignored it anyway. The dedupe check in
-    // `stores/designSse.ts` therefore never ran for batch updates.
-    // Fix: register the event type AND dispatch it to the same `design` channel.
     let capturedOnEvent: ((raw: string, type: string) => void) | null = null
     spy.mockImplementation(((opts: sseClient.SseClientOptions) => {
       capturedOnEvent = opts.onEvent
@@ -687,21 +629,8 @@ describe('createUnifiedSseConnection: pre-registers all granular event names', (
     )
   })
 
-  /**
-   * Regression test for task_1786507100896: when the backend emits a
-   * session rename on first user message (LLM auto-name), the
-   * downstream consumer's `sessions` callback MUST fire. Pre-fix, the
-   * backend emitted `event_type = "session_unknown"` (the fallthrough
-   * in sse_on_event_send_session.zig's if/else) and the frontend's
-   * additionalEventTypes didn't include the new name, so the browser's
-   * EventSource dropped the event and the sidebar task row kept
-   * showing the old name until refresh.
-   *
-   * This test simulates the wire format: caller fires
-   * `(rawJsonString, 'session_updated')` into the factory's
-   * onEvent callback. We assert the sessions channel callback runs
-   * exactly once with the parsed SessionEvent.
-   */
+  /** Regression test for task_1786507100896: when the backend emits a session rename on first user
+   * message (LLM auto-name), the downstream consumer's `sessions` callback MUST fire. */
   it('routes session_updated wire events to the sessions channel callback', () => {
     const sessionsCb = vi.fn()
     let capturedOnEvent: ((raw: string, eventType: string) => void) | null = null

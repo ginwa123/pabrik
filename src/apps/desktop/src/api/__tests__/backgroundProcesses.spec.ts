@@ -1,15 +1,5 @@
-/**
- * Tests for the session background-process API fns.
- *
- * Backend: background_processes_list.zig + background_process_log_get.zig
- * (commit b69111f7). Wire shapes:
- * - GET /api/llm/session/:sid/background_processes
- *   -> `{ processes: [{ pid, command, log_path, started_at, status,
- *       running }], count }` (200 + empty list when no rows).
- * - GET /api/llm/session/:sid/background_processes/:pid/log?max_bytes=N
- *   -> `{ pid, log_path, total_bytes, truncated, content }` (TAIL);
- *   missing log -> 200 marker content; unknown pid -> 404.
- */
+/** Tests for the session background-process API fns. Backend: background_processes_list.zig +
+ * background_process_log_get.zig (commit b69111f7). */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'

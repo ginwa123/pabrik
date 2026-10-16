@@ -1,54 +1,6 @@
-/**
- * Tests for useChatScrollRestore — verifies the save-on-scroll +
- * restore-on-mount contract for ChatView's VirtualScroller.
- *
- * Why these tests exist:
- *   When a user opens a task from the kanban sidebar, ChatView
- *   mounts with `:key="task-<id>"`. Closing + reopening a different
- *   task remounts ChatView (fresh state, scrollTop = 0). Reopening
- *   the same task ALSO remounts ChatView because the parent's
- *   `:key` change in the surrounding `v-if/v-else-if` chain drops the
- *   previous instance. Without this composable, the user loses
- *   their scroll position every time they close + reopen a chat.
- *
- *   The composable persists `scrollTop` to localStorage keyed by
- *   `chat-scroll-<task_id>` (per the project's `task.id ==
- *   session.id` convention from migration 052). On reopen, the
- *   composable exposes a `restore()` function that the ChatView
- *   calls to get the saved value — if non-null and not "near
- *   bottom", ChatView calls `scrollToPosition(saved)` instead of
- *   `scrollToBottom`. The "near bottom" branch covers the common
- *   case where the user closed while at the bottom and should
- *   land at the (possibly slightly grown) genuine bottom.
- *
- * Coverage:
- *   - restores saved scrollTop on mount (after scrollHeight is known)
- *   - clamps restored value to scrollHeight - clientHeight
- *   - restore() returns null when no saved value
- *   - restore() returns null when saved value is 0
- *   - restore() returns null when container is not scrollable
- *   - restore() returns null when saved position is "near bottom"
- *     (within BOTTOM_THRESHOLD_PX of the max)
- *   - restorePosition(value) clamps + applies a given value
- *   - persists scrollTop on scrollend immediately
- *   - persists scrollTop on scroll after 250 ms debounce
- *   - flushes the pending debounced write on unmount
- *   - handles localStorage.setItem throw gracefully
- *
- * jsdom setup notes:
- *   - localStorage must be stubbed (jsdom 29 dropped it from
- *     default globals — same trick as useCodeEditor.spec.ts:26-43).
- *   - scrollHeight / clientHeight are not laid out in jsdom; we
- *     override them with `Object.defineProperty` so the clamp
- *     math has real numbers.
- *   - `requestAnimationFrame` polyfill mirrors
- *     useKanbanScrollRestore.spec.ts:70-82.
- *   - The composable waits for `scrollHeight > clientHeight` OR
- *     a 500ms safety net before reading (chat items are async-
- *     measured, unlike the kanban's static columns), so we
- *     configure scrollHeight BEFORE mounting the harness rather
- *     than waiting for items to render.
- */
+/** Tests for useChatScrollRestore — verifies the save-on-scroll + restore-on-mount contract for
+ * ChatView's VirtualScroller. Why these tests exist: When a user opens a task from the kanban
+ * sidebar, ChatView mounts with `:key="task-<id>"`. */
 import {
   afterEach,
   beforeAll,

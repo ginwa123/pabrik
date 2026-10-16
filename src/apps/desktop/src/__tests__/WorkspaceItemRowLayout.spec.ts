@@ -1,22 +1,6 @@
-/**
- * Behavioural test for the WorkspaceItem row layout contract
- * (task i-see-bad-ui-ux follow-up: centered project names on agent site).
- *
- * The item row is a flex row: chevron + name + ONE right cluster.
- * A previous fix left TWO `ml-auto` children (meta container + actions
- * container) in the row — two auto margins in one flex row split the
- * free space between them and pushed the project name toward center
- * (screenshot: pabrik / website pabrik / ruangsql all centered).
- *
- * Locks, by mounting the real component and querying rendered DOM:
- *   1. The row button has exactly ONE direct child carrying `ml-auto`
- *      (single right cluster — centering becomes impossible).
- *   2. The name span grows (`flex-1`), truncates, and carries the full
- *      name as its title (left-aligned + tooltip recovery).
- *   3. Idle item with tasks shows the count and no elapsed chip.
- *   4. Busy item shows the elapsed chip and hides the count
- *      (single-slot exclusivity — never two trailing markers).
- */
+/** Behavioural test for the WorkspaceItem row layout contract (task i-see-bad-ui-ux follow-up:
+ * centered project names on agent site). The item row is a flex row: chevron + name + ONE right
+ * cluster. */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -113,7 +97,6 @@ describe('WorkspaceItem — row layout single right cluster', () => {
     // Native <button> UA stylesheet is text-align:center, which inherits into the flex-1 truncate
     // name span and centers titles (screenshot: pabrik / website pabrik / ruangsql all centered).
     // text-left on the button overrides the UA default; text-left on the name is defense in depth.
-    // TaskRow + DocumentsList rows already carry it — this row was the only one missing it.
     const wrapper = mountItem(makeFolderItem())
     await flushPromises()
     await nextTick()

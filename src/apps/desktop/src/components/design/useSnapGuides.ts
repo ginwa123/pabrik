@@ -1,28 +1,5 @@
-/**
- * Snap-to-edges math for design-mode drag.
- *
- * Algorithm:
- *   1. The dragged element's bbox at the cursor's current position.
- *   2. For every OTHER element on the page, compute the distance from
- *      each of the 3 edges/centers (left, center, right) of the dragged
- *      bbox to the matching edge/center of the target.
- *   3. The closest pair within 6 design-px wins. The dx/dy needed to
- *      align them is the snap delta.
- *
- * The canvas background feature has been removed (plan
- * docs/superpowers/plans/2026-07-29-remove-canvas-background.md), so
- * there is no longer a "canvas center" fallback target. Snap fires
- * only when an actual element-edge snap target is within 6 design-px.
- *
- * Returns:
- *   - dx: design-px delta to ADD to the user's input dx
- *   - dy: same for y
- *   - guides: array of { axis, position } pairs to render as 1px lines
- *
- * Why a separate file: the math is pure (no DOM, no Vue) so it's
- * trivially testable in isolation. DesignView imports the function
- * and calls it on every pointermove.
- */
+/** Snap-to-edges math for design-mode drag. Algorithm: 1. The dragged element's bbox at the
+ * cursor's current position. 2. */
 export interface Bbox { id: string; x: number; y: number; width: number; height: number }
 export interface SnapGuide { axis: 'x' | 'y'; position: number }
 export interface SnapResult {
@@ -60,8 +37,6 @@ export function computeSnapDelta(
   }
   // Snap-to-start targets: the original left, center, and right edges of the dragged element.
   // Within 6px of start, the cursor gets pulled back to the original position (Figma UX).
-  // These are a SECONDARY target — they only fire when no other-element snap fires (priority:
-  // element-snap > snap-to-start).
   const snapToStartX: number[] = [
     dragged.x, dragged.x + dragged.width, dragged.x + dragged.width / 2,
   ]
@@ -79,8 +54,6 @@ export function computeSnapDelta(
 
   // Stage 1: element-to-element snap (6px threshold, strict). Note the `dist > 0` guard: a snap
   // fires only when the cursor is APPROACHING the target (distance > 0).
-  // When the cursor is exactly on the target (dist == 0), no correction is needed (the user already
-  // landed there) and emitting a guide would be noise.
   for (const movedEdgeX of movedEdgesX) {
     for (const t of otherElementEdgesX) {
       const dist = Math.abs(movedEdgeX - t)
@@ -107,9 +80,6 @@ export function computeSnapDelta(
   // Stage 2: snap-to-start fallback. Only fires when no other- element snap fired on that axis. The
   // dragged element's original edges are added as targets so a tiny drag (within 6px of start)
   // pulls the cursor back to the original position.
-  // Lower priority than element-to-element snap so a real alignment opportunity always wins. The
-  // `isStart` flag suppresses guide emission (snapping back to start is silent — no alignment line
-  // drawn).
   if (!elementSnapXFired) {
     for (const movedEdgeX of movedEdgesX) {
       for (const t of snapToStartX) {

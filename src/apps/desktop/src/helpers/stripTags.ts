@@ -84,11 +84,6 @@ function computeStripThinkingTags(content: string): string {
   // 2026-08-24 (task_1787545088500_6, bug B) — the LLM sometimes wraps a <markdown> answer in a
   // ```html / ```markdown / ``` fence (real DB rows 1787542307914248765 + 1787545407823788849 from
   // session task_1787540075329_3).
-  // The fence survives the unwrap above and `marked.parse` then renders the ENTIRE message as one
-  // literal <pre> code block — users see raw `##`/`**`/ `[link](url)` as plain text instead of
-  // formatted markdown.
-  // Only strip fences anchored at the start/end of the string so we don't disturb mid-line triple
-  // backticks or fenced code blocks inside the markdown body (which a user might have written).
   result = result.replace(/^```(?:html|markdown|md)?\s*\n/i, '').replace(/\n```\s*$/i, '')
 
   return result.trim()

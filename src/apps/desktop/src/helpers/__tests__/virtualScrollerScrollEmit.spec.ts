@@ -51,13 +51,8 @@ describe('VirtualScroller scroll emit', () => {
     dispatchScroll(wrapper, 0)
     await nextTick()
 
-    // `wrapper.emitted('scroll')` returns an array of arrays —
-    // one entry per emit, each entry being the args. We expect
-    // exactly one emit for the one scroll we dispatched. Note:
-    // vue-test-utils' types are nested-undefined under strict
-    // `noUncheckedIndexedAccess`, so the `!` non-null assertions
-    // on the inner access are intentional — the `expect(...).toBeDefined()`
-    // + `toHaveLength(1)` above already prove the outer exists.
+    // `wrapper.emitted('scroll')` returns an array of arrays — one entry per emit, each entry being
+    // the args. We expect exactly one emit for the one scroll we dispatched.
     const emits = wrapper.emitted('scroll')
     expect(emits).toBeDefined()
     expect(emits).toHaveLength(1)

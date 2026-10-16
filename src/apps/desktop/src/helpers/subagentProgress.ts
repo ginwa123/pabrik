@@ -38,9 +38,8 @@ export type ProgressStatus = 'launched' | 'completed' | 'failed'
 /** Sub-agent lifecycle status as exposed to UI rendering. */
 export type SubAgentRowStatus = 'running' | 'done' | 'failed'
 
-/**  * Wire shape of one `role="subagent_progress"` SSE event, as parsed from `JSON.parse(raw)` in the
- * SSE bus handler. All fields except `status`/`agent_index`/`total_agents` are optional because the
- * `launched` event arrives first (with no response) and later events add the completion details. */
+/** Wire shape of one `role="subagent_progress"` SSE event, as parsed from `JSON.parse(raw)` in the
+ * SSE bus handler. */
 export interface SubAgentProgressEvent {
   /**    * MUST be `'subagent_progress'`. The bus handler uses this to route into `applyProgressEvent`
    * instead of the regular message-list path. */
@@ -149,8 +148,6 @@ export function applyProgressEvent(
 
   // Don't regress: a `launched` event arriving AFTER `completed` (out-of-order delivery on a real
   // network is rare but possible) must NOT downgrade a done row back to running.
-  // Only `failed` can override `done` (a sub-agent that succeeded but then had its result truncated
-  // is a real edge case worth showing).
   let finalStatus: SubAgentRowStatus = statusForUi
   if (prev.status === 'done' && statusForUi === 'running') {
     finalStatus = 'done'

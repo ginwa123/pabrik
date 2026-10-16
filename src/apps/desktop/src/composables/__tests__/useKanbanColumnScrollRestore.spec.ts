@@ -1,44 +1,5 @@
-/**
- * Tests for useKanbanColumnScrollRestore — the save-on-scroll +
- * restore-on-appear contract for a kanban column's vertical scroll.
- *
- * Why these tests exist:
- *   A kanban column's card list is a <VirtualScroller> whose
- *   overflow-y-auto container is destroyed whenever the view around the
- *   board unmounts. That now happens on a normal user action: the tab
- *   strip switching from the board tab to a task-chat tab and back (and,
- *   with tab mode off, opening a task at all — the chat replaces the
- *   board). Without this composable the rebuilt column starts at
- *   scrollTop = 0, so the user loses their place in a column holding 50+
- *   cards. These tests pin the contract so a future refactor can't
- *   regress it.
- *
- * Coverage:
- *   - restores the saved scrollTop once the container appears
- *   - clamps the restored value to scrollHeight - clientHeight
- *   - skips restore when nothing was saved / the value is 0
- *   - skips restore when the container cannot scroll yet (max <= 0)
- *   - wires up when the container appears LATE (the VirtualScroller is
- *     behind v-if="cardsInColumn.length > 0", so on a cold load it is not
- *     in the DOM at setup) — the reason this composable exists separately
- *     from its horizontal sibling
- *   - persists on `scrollend` immediately
- *   - persists on `scroll` after the 250 ms debounce
- *   - flushes the last CAPTURED value on unmount, never a fresh DOM read
- *     (a torn-down element reports scrollTop = 0, which would wipe a good
- *     saved position)
- *   - swallows a localStorage write throw (private mode / quota)
- *
- * jsdom setup notes:
- *   - localStorage must be stubbed (jsdom 29 dropped it from default
- *     globals — same trick as useKanbanScrollRestore.spec.ts:26-43).
- *   - scrollHeight / clientHeight are not laid out in jsdom; they are
- *     overridden per test so the clamp math has real numbers.
- *   - jsdom does NOT dispatch a `scroll` event when `scrollTop` is
- *     assigned, so each test sets scrollTop and dispatches explicitly.
- *   - `scrollend` is feature-detected with `in`; the harness installs it
- *     explicitly for the fast-path test.
- */
+/** Tests for useKanbanColumnScrollRestore — the save-on-scroll + restore-on-appear contract for a
+ * kanban column's vertical scroll. */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, nextTick, ref, type Ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -250,8 +211,6 @@ describe('useKanbanColumnScrollRestore', () => {
     // The regression this composable exists for: a kanban column renders its VirtualScroller under
     // `v-if="cardsInColumn.length > 0"`, so on a cold load (tasks still arriving) there is no
     // element at setup time.
-    // If the listeners were attached only in onMounted, this column's position would never be saved
-    // in the first place.
     localStorage.setItem(KEY, '640')
     const harness = mountHarness()
     await harness.setVisible(false)

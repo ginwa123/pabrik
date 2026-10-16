@@ -4,60 +4,7 @@ import { useRoute } from 'vue-router'
 import { parseAppPath } from '../helpers/appUrl'
 import { parseItemIdWithChat } from '../helpers/buildItemIdWithChat'
 
-/**
- * The single source of truth for "what is the main content area
- * currently showing?". Derived from the URL — never from store
- * flags that can drift.
- *
- * The sidebar components consume this to decide which row (if any)
- * is "active". Exactly one row in the sidebar should be active at
- * any time, and that row must match the kind + id below.
- *
- * ## URL contract (path-based, 2026-09-22 revamp)
- *
- * Path shapes (see `helpers/appUrl.ts`) map onto the existing kinds —
- * a project IS a workspace item, so no new kind was needed:
- *
- *   /app                                        → none (landing)
- *   /app/{ws}                                   → workspace {workspaceId}
- *   /app/{ws}/chat/{sid}                        → chat {sessionId, workspaceId}
- *   /app/{ws}/projects/{pid}[?pageId=…]         → workspace {workspaceId, itemId, pageId}
- *   /app/{ws}/projects/{pid}/chat/{tid}         → workspace {… + chatTaskId}
- *
- * The documents viewer (Migration 095) is a path shape like every other
- * main view:
- *
- *   /app/{ws}/doc/{id}                           → document {documentId, workspaceId}
- *
- * It REPLACES the main view rather than overlaying it, so it takes no
- * precedence over the other shapes — there is nothing underneath it to
- * win over, and the chat it was opened from is unmounted.
- *
- * Legacy `?view=chat|task|workspace` query URLs on `/app` still parse
- * to the old shapes until the AppLayout boot rewrite converts them.
- *
- * The legacy `kind: 'task'` variant is gone (simplify-url-browser,
- * 2026-08-15). The chat-open state is now encoded as a
- * `/chat/<taskId>` suffix on the `itemId` query value when
- * `view=workspace`. Legacy `?view=task&task=X` URLs are silently
- * rewritten to the new shape in `AppLayout.onMounted` before this
- * composable is consulted — the composable itself doesn't handle the
- * legacy shape.
- *
- * ## kanban-settings variant (plan: 2026-09-02-kanban-settings-as-page)
- *
- * Path-based vue-router route `/app/kanban/:itemId/settings`. itemId
- * comes from `route.params` (path); workspaceId is optional and comes
- * from `?workspaceId=X` query (used by the back navigation to round-
- * trip back to `?view=workspace&workspaceId=X&itemId=Y`). The kanban's
- * owning workspaceId is derived from the store by the page itself
- * (itemId is globally unique, no need to encode workspaceId).
- *
- * Specs:
- *   - docs/superpowers/specs/2026-08-06-sidebar-single-active-state-design.md
- *   - docs/superpowers/specs/2026-08-15-simplify-url-browser-design.md
- *   - docs/superpowers/plans/2026-09-02-kanban-settings-as-page.md
- */
+/** The single source of truth for "what is the main content area currently showing?". */
 export type CurrentMainView =
   | { kind: 'chat'; sessionId: string; workspaceId?: string }
   | {
@@ -97,14 +44,11 @@ export function useCurrentMainView(): ComputedRef<CurrentMainView> {
     // Path-based contract first (plan: 2026-09-22-revamp-ui-chats). A project is a workspace item,
     // so path projects map onto the existing `workspace` kind (itemId = projectId) — every
     // row-highlight consumer keeps working unchanged.
-    // Legacy `?view=` URLs are handled below until the boot rewrite removes them.
     const parsed = parseAppPath(route?.path ?? '')
 
-    // Document page (Migration 095). A PATH shape, so it is just another main view — no precedence
-    // fight with the other shapes, and no overlay to stack on top of whatever was open before.
-    // No `?doc=` fallback: Migration 095 shipped that overlay shape and was replaced by this path
-    // shape before it was in wide use, so there are no links in the wild to keep working and no
-    // second way for the URL to name a document.
+    // Document page (Migration 095). No `?doc=` fallback: Migration 095 shipped that overlay shape
+    // and was replaced by this path shape before it was in wide use, so there are no links in the
+    // wild to keep working and no second way for the URL to name a document.
     if (parsed.kind === 'doc') {
       return { kind: 'document', documentId: parsed.documentId, workspaceId: parsed.workspaceId }
     }
@@ -143,7 +87,6 @@ export function useCurrentMainView(): ComputedRef<CurrentMainView> {
         // Parse the wire-shape itemId (may carry `/chat/<taskId>` suffix when the chat dialog is
         // open). The bare id is exposed as `itemId`; the optional chat task id is exposed as
         // `chatTaskId`.
-        // Consumers that need the raw wire value should read `route.query.itemId` directly.
         const parsed = parseItemIdWithChat(q.itemId)
         return {
           kind: 'workspace',

@@ -1,28 +1,5 @@
-/**
- * Behavioural tests asserting that the undo/redo feature is HIDDEN
- * from the user in design mode (2026-08-06).
- *
- * The feature was intentionally disabled in response to a product
- * request. The user-visible surface is removed:
- *   - The <DesignHistoryButtons> toolbar (was in the canvas header)
- *   - The Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z, Cmd/Ctrl+Y keyboard shortcuts
- *     bound in DesignView's keydown handler.
- *
- * Internal plumbing is INTENTIONALLY retained so the feature can be
- * re-enabled without re-deriving capture sites:
- *   - `useDesignHistory` composable still exists
- *   - `designHistory` Pinia store still exists
- *   - All `history.capture*()` calls in DesignView.vue / PropertiesPanel
- *     / LayersPanel / DesignElement still fire (they're harmless dead
- *     code without undo/redo, but provide a clean re-enable path)
- *
- * These tests lock in the "feature is hidden" invariant. If a future
- * contributor re-enables the buttons or keyboard shortcuts, these
- * tests fail and force them to also delete this spec file.
- *
- * 6 behavioural tests. Project convention is behavioural only —
- * see ~/.config/pabrik/memories/static-contract-test-when-to-prefer-behavioural.md.
- */
+/** Behavioural tests asserting that the undo/redo feature is HIDDEN from the user in design mode
+ * (2026-08-06). The feature was intentionally disabled in response to a product request. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -201,6 +178,4 @@ describe('DesignView undo/redo feature is hidden (2026-08-06)', () => {
   // ─── Regression guard — see DesignView.endToEnd.spec.ts ───────────── The "capture calls still
   // fire" invariant is verified by the arrow-key nudge test in DesignView.endToEnd.spec.ts (it
   // asserts capturePreState + capturePostState both fire 3 times for 3 arrow presses).
-  // Re-asserting here would duplicate coverage; the failure modes are the same and one canonical
-  // regression test is cleaner than two near-identical ones.
 })

@@ -1,14 +1,5 @@
-/**
- * Behavioural tests for `CodeViewerStage` — the code viewer's three
- * states, shared by both hosts (ChatView's center column and
- * AppLayout's full-surface overlay) so they can never drift apart.
- *
- * Context: the viewer used to be a monaco instance that only appeared
- * in production bundles (blank in the shipped app, task_1790594549955_1)
- * and used to take the whole `<main>`, which unmounted ChatView and took
- * the right sidebar (Explorer / Files changed / Terminal) with it. It is
- * now a plain DOM viewer rendered by whichever surface owns the screen.
- */
+/** Behavioural tests for `CodeViewerStage` — the code viewer's three states, shared by both hosts
+ * (ChatView's center column and AppLayout's full-surface overlay) so they can never drift apart. */
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import CodeViewerStage from '../CodeViewerStage.vue'

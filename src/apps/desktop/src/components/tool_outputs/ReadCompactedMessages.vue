@@ -4,41 +4,8 @@ import { extractParam } from '../../helpers/extractParam'
 import ToolParameters from './_shared/ToolParameters.vue'
 import { normalizeToolContent } from './_shared/toolOutputParser'
 
-/**
- * ReadCompactedMessages — renders the rich `<read_compacted_messages>`
- * envelope returned by the `read_compacted_messages` tool. The tool is the
- * ONLY way an agent can recover messages dropped by long-context
- * compaction (see `read_compacted_messages.zig`), so surfacing it as a
- * structured card matters: a raw-XML dump in the chat is unreadable.
- *
- * Two output shapes, both well-formed by construction:
- *
- *   Success:
- *     <read_compacted_messages mode="index|full">
- *       <session_id>...</session_id>
- *       <count>N</count>
- *       <message_index>
- *         <entry>
- *           <id>h_xxx</id>
- *           <role>user|assistant|tool</role>
- *           <created_at>YYYY-MM-DD HH:MM:SS</created_at>
- *           <preview>... (always, ≤100 chars)</preview>
- *           <tool_call_id>...</tool_call_id>   <!-- only for tool role -->
- *           <tool_name>...</tool_name>         <!-- only for tool role -->
- *           <content>...</content>             <!-- only when mode=full AND id in message_ids -->
- *         </entry>
- *         ...
- *       </message_index>
- *     </read_compacted_messages>
- *
- *   Error:
- *     <read_compacted_messages><error>...</error></read_compacted_messages>
- *
- * Parsing uses regex (matches the pattern in ReadFile/SearchSkills/Search)
- * because the backend emits well-formed XML and regex is plenty for this
- * fixed shape. DOMParser (used by CompactionCard) would also work but is
- * heavier than necessary here.
- */
+/** ReadCompactedMessages — renders the rich `<read_compacted_messages>` envelope returned by the
+ * `read_compacted_messages` tool. */
 interface MessageEntry {
   id: string
   role: string

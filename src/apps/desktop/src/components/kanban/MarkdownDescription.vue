@@ -46,31 +46,20 @@ const props = withDefaults(
   },
 )
 
-// Matches `/path/to/file` (group 1) with an optional leading `@`.
-// The `@` is supported for backward compatibility with descriptions
-// authored before the rich editor change — both `@/path` and `/path`
-// render as chips. The stored chip path INCLUDES the leading `/` (the
-// leading `@` is stripped) so consumers don't need to special-case.
-//
-// Character class restrictions keep false positives low:
-//   - Must start with `/` (matches file paths, not URLs with schemes)
-// - Allows word chars, dots, slashes, hyphens - Excludes whitespace, closing brackets, quotes,
-// backticks - Excludes `<` to prevent capturing across HTML tag boundaries To opt out of chip
-// rendering for a specific `/path`, wrap it in backticks — the inline-code styling takes over.
+// Matches `/path/to/file` (group 1) with an optional leading `@`. The `@` is supported for backward
+// compatibility with descriptions authored before the rich editor change — both `@/path` and
+// `/path` render as chips.
 const FILE_PATH_REGEX = /@?(\/[^\s)\]}>,"'<`]+)/g
 
 // The chip is built as an HTML string and injected with v-html, so a Vue component cannot draw its
 // leading mark. These are the `file` subpaths from `components/ui/icons.ts`, inlined once so the
 // chip and `<UiIcon name="file">` render the same shape.
-// Both subpaths share one `<path>` — a multi-subpath `d` draws identically to two sibling paths.
 const FILE_CHIP_MARK =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2zM14 2v5a1 1 0 0 0 1 1h5"/></svg>'
 
 // Private-use Unicode char used as a sentinel in the source before it is fed to marked. Marked
 // treats unknown chars as plain text and passes them through verbatim, so the placeholder survives
 // the round-trip and we can substitute the chip span in afterwards.
-// Using `\uE000` (private use area) means there's essentially zero chance a user types this exact
-// sequence naturally.
 const PLACEHOLDER_PREFIX = '\uE000_FILECHIP_'
 const PLACEHOLDER_SUFFIX = '_\uE000'
 
@@ -81,20 +70,8 @@ const emit = defineEmits<{
   'file-click': [path: string]
 }>()
 
-// Render the source through marked, then splice `/path` tokens into
-// clickable chip spans.
-//
-// Three-phase approach (placeholder substitution):
-//   1. Protect data: URLs from the file-path regex. A `data:image/...`
-//      URL contains `/png` (the MIME extension) which would
-//      otherwise match FILE_PATH_REGEX and corrupt the img src.
-//   2. Replace each `/path` (or `@/path`) with
-//      `\uE000_FILECHIP_<i>_\uE000` and stash the path in an array.
-//      Marked never sees the path so it can't try to autolink or
-//      wrap it in `<a>`.
-//   3. Run marked.parse() on the placeholder-bearing source.
-//   4. Post-process: substitute each placeholder with a chip span,
-//      then restore the data: URLs.
+// Render the source through marked, then splice `/path` tokens into clickable chip spans.
+// Three-phase approach (placeholder substitution): 1. Protect data: URLs from the file-path regex.
 const renderedHtml = computed<string>(() => {
   if (!props.source) return ''
 

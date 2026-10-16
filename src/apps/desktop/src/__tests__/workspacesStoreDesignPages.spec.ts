@@ -1,27 +1,6 @@
-/**
- * Unit tests for the design-pages cache in the workspaces store.
- *
- * Pre-fix (before the design-pages-in-workspace-tree plan), page
- * CRUD owned its own `pages` ref + handlers in DesignView.vue. The
- * logic was tested via UI clicks against DesignView.spec.ts. After
- * this PR, the cache lives in the workspaces store and the sidebar
- * tree is the primary UI consumer — so the tests live here, where
- * the logic actually lives now.
- *
- * 5 tests migrated from DesignView.spec.ts (the page CRUD suite)
- * rewritten to call the store actions directly:
- *   1. addDesignPage appends to the cache + sets activeDesignPageId
- *   2. auto-increment placeholder name (Untitled → Untitled 1 → ...)
- *   3. auto-increment respects user-named "Untitled N" pages
- *   4. deleteDesignPage switches activeDesignPageId to a sensible next
- *   5. deleting the LAST page leaves activeDesignPageId empty
- *
- * The mock pattern follows the project memory
- * `apiFetch-mock-must-include-text-and-pinia`: apiFetch calls
- * useNotificationStore() on every non-2xx response, which requires
- * an active Pinia; the response mock must include `text()` so
- * apiFetch can extract the body for the error toast.
- */
+/** Unit tests for the design-pages cache in the workspaces store. Pre-fix (before the
+ * design-pages-in-workspace-tree plan), page CRUD owned its own `pages` ref + handlers in
+ * DesignView.vue. The logic was tested via UI clicks against DesignView.spec.ts. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -101,10 +80,6 @@ describe('workspacesStore — design pages cache', () => {
     // No existing pages. The first POST uses 'Untitled', the next uses 'Untitled 1', then 'Untitled
     // 2'. The naming logic lives in the SIDEBAR's handleAddDesignPage (which picks the next name
     // before calling the store), so this test goes through Sidebar.via's handler chain.
-    // We simulate the same call-named increment sequence by reading the body the store action would
-    // send for each input. Actually: addDesignPage just takes a name. The auto-increment logic
-    // lives in computeNextUntitledName (Sidebar.vue).
-    // Verify that contract here by passing 3 names computed the same way.
     fetchMock
       .mockResolvedValueOnce({
         ok: true, status: 200,

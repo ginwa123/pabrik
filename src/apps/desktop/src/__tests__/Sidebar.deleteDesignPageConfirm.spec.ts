@@ -1,21 +1,6 @@
-/**
- * Behavioural tests for `Sidebar.handleDeleteDesignPage` confirmation flow
- * (task 1785912441877, 2026-08-06).
- *
- * **Bug fixed (2026-08-06):** Clicking × on a design page in the sidebar
- * tree immediately called `workspacesStore.deleteDesignPage` — too easy to
- * nuke a page by accident. Now the click opens the existing `ConfirmDialog`
- * (already wired via `openDeleteConfirm(...)`) and only DELETEs after the
- * user explicitly clicks "Delete" in the dialog.
- *
- * Mirrors the existing confirmation pattern for workspaces / items / tasks
- * (`Sidebar.handleDeleteWorkspace`, `handleDeleteItem`, `handleDeleteTask`).
- *
- * No static-contract checks — every assertion is on the live dialog state
- * + the store action called. The dialog is rendered through `<Teleport
- * to="body">` so DOM assertions use `document.body.querySelector` instead
- * of `wrapper.find` (see skill `vue-teleport-vitest-document-queryselector`).
- */
+/** Behavioural tests for `Sidebar.handleDeleteDesignPage` confirmation flow (task 1785912441877,
+ * 2026-08-06). **Bug fixed (2026-08-06):** Clicking × on a design page in the sidebar tree
+ * immediately called `workspacesStore.deleteDesignPage` — too easy to nuke a page by accident. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, createApp } from 'vue'
@@ -230,8 +215,6 @@ describe('Sidebar.handleDeleteDesignPage — confirmation dialog (2026-08-06)', 
     // Regression guard for the only piece of new logic in this diff: the try/catch around
     // `workspacesStore.deleteDesignPage` MUST call `useNotificationStore().notifyError('Failed to
     // delete page', ...)` on rejection so a failed backend DELETE isn't a silent UX failure.
-    // Without this test, a future refactor could remove the try/catch and the dialog would still
-    // appear to work (4 happy-path tests pass).
     const store = useWorkspacesStore()
     const { useNotificationStore } = await import('../stores/notifications')
     vi.spyOn(store, 'deleteDesignPage').mockRejectedValue(new Error('boom'))

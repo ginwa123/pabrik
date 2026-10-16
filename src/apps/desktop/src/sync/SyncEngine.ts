@@ -1,41 +1,5 @@
-/**
- * Generic local-first sync engine.
- *
- * Storage-agnostic orchestration: cache-then-delta reads, cursor tracking,
- * write-through, and older-page loads from cache. Knows nothing about chat —
- * concrete children (e.g. ChatEngineDb) wire the object-store name, the
- * compare function and the network fetcher.
- *
- * Effect notes
- * ------------
- * Every operation returns an `Effect` instead of a `Promise`. The important
- * change is not the promise wrapper, it is the second type parameter:
- *
- *   - Operations documented as best-effort (`putLocal`, `removeLocal`,
- *     `setCursor`, `clear`) keep their "must never break the UI" contract and
- *     therefore have an error channel of `never`. They still swallow, but
- *     with `Effect.catchAll` and a warning, instead of a bare `catch {}` that
- *     discarded the reason entirely.
- *   - Operations a caller may want to reason about (`primeFromCache`,
- *     `getCursor`, `loadOlderFromCache`) surface `SyncError`, so "the backend
- *     is down" is no longer indistinguishable from "there is nothing new".
- *
- * Two structural changes fall out of the port:
- *
- *  - The engine no longer keeps a private in-memory mirror. The `SyncStore`
- *    is always present — `IndexedDbStoreLive` falls back to memory when
- *    IndexedDB is unavailable, and `makeMemorySyncStore` is the SSR/spec
- *    variant — so the two parallel memory maps that used to exist (one here,
- *    one inside the store) collapse into one.
- *  - The store is injected as a value rather than a `Layer`, and each engine
- *    instance keeps its own — the pre-port behaviour, deliberately. A
- *    `Layer.sync` would construct a fresh instance per `Effect.provide`
- *    (rebuilding the IndexedDB connection on every operation), and sharing one
- *    instance across engines changes which rows a given engine can see, which
- *    is a separate behavioural change that needs its own test coverage.
- *    `IndexedDbStoreLive` remains available for callers that compose a whole
- *    program and want the store in context.
- */
+/** Generic local-first sync engine. Storage-agnostic orchestration: cache-then-delta reads, cursor
+ * tracking, write-through, and older-page loads from cache. */
 import { Effect, Either } from 'effect'
 import type { SyncError } from './SyncError'
 import { SyncRemoteError } from './SyncError'

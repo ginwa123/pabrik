@@ -211,14 +211,9 @@ describe('older-history prefetch — invalidation', () => {
   it('writes messageCursor exactly five times: reset, cached restore, cached delta, initial page, commit', async () => {
     const source = await readChatViewSource()
     const writes = source.match(/messageCursor\.value = /g) ?? []
-    // 1. `= null` — reset before an initial load
-    // 2. `= storedCursor` — cached mount restores the sync cursor for paint
-    // 3. `= delta.nextCursor` — cached mount advances past the tail
-    // 4. `= data.next_cursor` — the initial page's cursor
-    // 5. `= page.nextCursor` — every prepend commit advances it
-    // (A prefetch ARM must never be one of these — asserted separately.
-    // The tab-switch resync path must not write it either: it merges the
-    // tail without touching scroll-back state.)
+    // 1. `= null` — reset before an initial load 2. `= storedCursor` — cached mount restores the
+    // sync cursor for paint 3. `= delta.nextCursor` — cached mount advances past the tail 4. `=
+    // data.next_cursor` — the initial page's cursor 5.
     expect(writes).toHaveLength(5)
     const resyncBody = fnBody(source, 'bus.onResync?.(() => {', '}) ?? null')
     expect(resyncBody).not.toMatch(/messageCursor\.value = /)

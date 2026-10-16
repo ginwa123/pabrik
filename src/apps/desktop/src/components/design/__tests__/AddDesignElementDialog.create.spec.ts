@@ -1,33 +1,6 @@
-/**
- * Regression test for the bug "design mode, add element manual not
- * working".
- *
- * Bug: clicking "+ Element" → filling the dialog → clicking "Add"
- * had no effect because <DesignView> in AppLayout.vue did not
- * subscribe to `@create-element`. The emit was silently dropped,
- * the dialog closed (because @close was wired), no element was
- * added, and the canvas appeared unchanged.
- *
- * This spec covers the THREE points where the wire can break:
- *
- *   (1) AddDesignElementDialog emits `create` with the right
- *       { name, type, html } payload.
- *   (2) DesignView listens to `@create`, re-emits `@createElement`
- *       with the same payload (one layer up).
- *   (3) useDesignHandlers.createElement routes to the api
- *       `addDesignElement` wrapper with the right (workspaceId,
- *       itemId, pageId, body).
- *
- * (4) The integration binding <DesignView
- *     @create-element="handleDesignCreateElement"> in AppLayout.vue
- *     is verified by a sibling grep-based check in the bug-fix
- *     commit (see "verify" section in the plan). Mounting the full
- *     AppLayout for this would require the SSE bus + nav store
- *     setup; the unit tests below prove each link independently
- *     and a missing AppLayout binding is a one-line grep failure.
- *
- * Pattern: vue-teleport-vitest-document-queryselector (project skill).
- */
+/** Regression test for the bug "design mode, add element manual not working". Bug: clicking "+
+ * Element" → filling the dialog → clicking "Add" had no effect because <DesignView> in
+ * AppLayout.vue did not subscribe to `@create-element`. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -127,8 +100,6 @@ describe('AddDesignElementDialog: `create` emit shape (link 1)', () => {
 
     // Click Add. The dialog only auto-fills the HTML textarea when the type field CHANGES (the
     // watch in AddDesignElementDialog.vue fires on `elementType` change, not on initial show).
-    // The submit handler `initialHtml.value.trim() || defaultHtmlFor(type)` falls back to the type
-    // default when the textarea is empty.
     findInDom<HTMLButtonElement>(
       '[data-testid="add-design-element-submit"]',
     )?.click()

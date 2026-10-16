@@ -1,30 +1,5 @@
-/**
- * Behavioural tests for KanbanView's per-column-sort + URL persistence +
- * per-column backend fetch wiring.
- *
- * Plan (kanban-sort-independence, take 2, 2026-08-06):
- *  - Each KanbanColumn has its own sortBy + direction (already done).
- *  - When a column's sort changes, the column emits `sort-change` with
- *    the new sortBy + direction. KanbanView's `handleColumnSortChange`
- *    listens and:
- *      a) fires `fetchKanbanTasks(col_id, sortBy, direction)` for ONLY
- *         that column — other columns' data is untouched.
- *      b) updates the URL: `?sorts=col_<id>:<sortBy>:<direction>,...`
- *  - On mount, KanbanView parses the URL's `sorts` param and applies
- *    each column's sort via setSortMode (defineExpose seam) + fires
- *    per-column `fetchKanbanTasks` for the columns mentioned in the
- *    URL.
- *
- * The CRITICAL user requirement (kanban-sort-independence): "only
- * column A endpoint that called, other column should not call
- * endpoint" — when the user picks a sort in one column, only THAT
- * column's fetch fires. The watcher's only job is URL persistence.
- *
- * URL format:
- *   ?sorts=col_1:name:asc,col_2:created_at:desc,col_3:updated_at:asc
- * Comma-separated; each entry is `col_<id>:<sortBy>:<direction>`.
- * Default sorts (position + asc) are OMITTED to keep URLs clean.
- */
+/** Behavioural tests for KanbanView's per-column-sort + URL persistence + per-column backend fetch
+ * wiring. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises } from '@vue/test-utils'
@@ -61,10 +36,7 @@ const makeItem = (overrides: Partial<WorkspaceItem> = {}): WorkspaceItem => ({
   tasks: [],
   // NOTE (kanban-sort-independence, 2026-08-06, onmount single-fetch): tests that want to assert on
   // the per-column fetch from `loadColumnsAndTasks` (URL restore) should NOT pre-populate
-  // columnPagination — that would skip the fetch.
-  // Tests that want to assert on click-only fetches (e.g. the "picking a sort" describe block) DO
-  // pre-populate so the initial mount's fetch doesn't muddy the assertion. See each describe block
-  // for its setup.
+  // columnPagination — that would skip the fetch. See each describe block for its setup.
   columnPagination: {},
   ...overrides,
 })
@@ -130,12 +102,6 @@ describe('KanbanView — per-column sort triggers API call (only the changed col
   it('picking "Created (oldest)" on column A fires fetchKanbanTasks for col_a only (col_b is NOT called)', async () => {
     // The CRITICAL user-reported bug (kanban-sort-independence, take 2): "only column a endpoint
     // that called, other column should not call endpoint".
-    // Before this fix, the watcher called fetchKanbanTasksForAllColumns which fired N parallel
-    // requests (one per column) — all with the same sort_by. Now only the changed column's fetch
-    // fires.
-    // Pre-populate columnPagination so the initial mount's loadColumnsAndTasks doesn't fire its own
-    // per-column fetch (which would muddy this click-isolation assertion). The click handler's
-    // per-column fetch is the ONLY fetchKanbanTasks call in this test.
     const item = makeItem({
       columnPagination: {
         col_a: { cursor: null, hasMore: false, isLoading: false },
@@ -441,8 +407,6 @@ describe('KanbanView — URL restore fires per-column fetchKanbanTasks', () => {
     // Default sort (position+asc) is a no-op for the URL-sort override path — nonDefaultUrlEntries
     // filters it out. But col_a IS still fetched (regression fix 2026-08-06: other columns should
     // NOT stay empty when the URL has only default entries).
-    // The fetch uses NO sortBy/direction params so the backend applies its natural ORDER BY
-    // (kanban_position asc) — the same default it would have used on first-time visit.
     const item = makeItem({
       tasks: [makeTask('t_z', 'Zeta', 0), makeTask('t_a', 'Alpha', 1)],
     })

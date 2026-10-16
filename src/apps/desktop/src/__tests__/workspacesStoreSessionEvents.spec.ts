@@ -241,16 +241,8 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
     expect(ws.activeTaskId).toBeNull()
   })
 
-  // Regression: switching from a chat to a task used to leave the
-  // navigation store's `activeChatId` populated with the prior chat's
-  // id. The next SSE session_created event (broadcast on every
-  // /api/llm/session POST — session_create.zig:230-240) drives
-  // ChatsList.loadChats, which finds the orphan activeChatId in
-  // navigation.sessionId, emits a `navigate chat-<old_id>`, and the
-  // AppLayout drops the user out of the task they were just typing
-  // into and back into the prior chat. Mirrors the navigation
-  // store's own setActiveTask (navigation.ts:123-132), which has
-  // always cleared activeChatId on every set.
+  // Regression: switching from a chat to a task used to leave the navigation store's `activeChatId`
+  // populated with the prior chat's id.
   it('setActiveTask clears navigationStore.activeChatId on non-null taskId', async () => {
     const ws = await setupHandlersAndSeed()
     const nav = useNavigationStore()
@@ -318,10 +310,6 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
 
   // ─── onSessionEvent fan-out (ChatsList regression fix) ─────────────────── The internal handler
   // mutates workspace tree state.
-  // External components (ChatsList.vue's `navItems` mirror) need to be notified too — they have
-  // their own shape (relativeTime, processing flag, etc.) that's not derived from the workspace
-  // tree.
-  // The fan-out fires after the internal handler so subscribers can safely re-fetch from the API.
   it('fan-outs session.updated events to onSessionEvent subscribers', async () => {
     const ws = await setupHandlersAndSeed()
 

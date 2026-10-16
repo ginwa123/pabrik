@@ -1,50 +1,5 @@
-/**
- * "resume scroll why not match with user expectation? — it's always a bit on top"
- *
- * The reader closes a chat mid-transcript, reopens the same task, and lands
- * ABOVE where they were reading. Not at the top, not at the bottom — a bit up.
- *
- * ── The mechanism ───────────────────────────────────────────────────────────
- *
- * The restore is applied one frame after mount, but at that moment
- * VirtualScroller's height model is still ALL ESTIMATES: `defaultItemHeight`
- * is 64 and the first `measureItems` pass does not run until ~100 ms later. So
- * the restore is decided against a geometry that does not exist yet:
- *
- *   1. `restore()`'s "near bottom" test compares the saved value against the
- *      ESTIMATED bottom edge, so a reader who closed mid-transcript reads as
- *      "still at the bottom" and gets `scrollToBottom` instead of their own
- *      position.
- *   2. `scrollToPosition(saved)` clamps to the ESTIMATED max, so even when the
- *      restore does fire it writes a real coordinate into an estimated model —
- *      and the first measure pass then compensates the reader by the whole
- *      estimate error above the anchor.
- *
- * Measured on the real component before the fix: saved=9000 landed at 19200
- * (the bottom), saved=500 landed at 1452, saved=5000 landed at 15608.
- *
- * ── What is asserted here ───────────────────────────────────────────────────
- *
- * The app's own answer, on the real component with the real VirtualScroller:
- * the container's `scrollTop` once the mount settles. jsdom has no layout, so
- * row heights are mocked the way the sibling virtualScroller specs do — but the
- * restore path, the clamp, the measure pass and the at-bottom classification
- * are all production code.
- *
- * The saved position is deliberately in the MIDDLE of the transcript, well
- * clear of the "near bottom" branch, so the only thing that can move it is the
- * bug.
- *
- * ⛔ WHY THIS FILE OVERRIDES `Element.prototype.scrollTo` UNCONDITIONALLY
- *
- * `src/__tests__/setup.ts` already installs a polyfill that ASSIGNS `scrollTop`
- * and nothing else. A real browser also fires the `scroll` event, and
- * ChatView's `handleVirtualScroll` is what maintains `isAtBottom` — without the
- * event the flag keeps its initial `true`, `onContentShift` re-sticks to the
- * bottom, and the test manufactures a failure the product does not have. The
- * usual `if (typeof … === 'undefined')` guard therefore never fires here, and
- * copying it from a sibling spec silently produces a lying test.
- */
+/** "resume scroll why not match with user expectation? — it's always a bit on top" The reader
+ * closes a chat mid-transcript, reopens the same task, and lands ABOVE where they were reading. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick } from 'vue'
@@ -317,8 +272,6 @@ describe('ChatView — reopening a chat lands where the reader left it', () => {
   it('a reader who closed on the last message still lands on the last message', async () => {
     // The other half of the contract: the "near bottom" branch must keep working, and it must now
     // be judged against the MEASURED bottom.
-    // A save at the real bottom is above the estimated bottom, so the old code read it as "scrolled
-    // up" and restored a stale position instead of following the tail.
     localStorage.setItem('chat-scroll-task_tail', String(REAL_BOTTOM))
     installApiMocks()
 

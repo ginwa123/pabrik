@@ -1,22 +1,6 @@
-/**
- * Tests for the kanban branch of WorkspaceItem.vue after the
- * inline-board → main-content migration (2026-06-21). The kanban
- * board NO LONGER renders inside WorkspaceItem (it lives in
- * AppLayout's main content area). These tests verify:
- *   - item_type='kanban' does NOT render <KanbanView> inline
- *   - item_type='kanban' does NOT render <KanbanColumnEditor>
- *   - item_type='kanban' does NOT emit the kanban-* events
- *     (those now fire from <AppLayout>'s <KanbanView>)
- *   - item_type='folder' (or other) renders the existing task list
- *   - clicking a kanban item emits 'click' but does NOT toggle
- *     expansion (folder items still toggle)
- *
- * The actual <KanbanView> rendering in the main content area is
- * tested in AppLayout.kanban.spec.ts.
- *
- * Plan: docs/superpowers/plans/2026-06-21-workspace-item-kanban.md
- *   Migration chunk / step "Move kanban board to AppLayout"
- */
+/** Tests for the kanban branch of WorkspaceItem.vue after the inline-board → main-content migration
+ * (2026-06-21). Plan: docs/superpowers/plans/2026-06-21-workspace-item-kanban.md Migration chunk /
+ * step "Move kanban board to AppLayout" */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, type VueWrapper } from '@vue/test-utils'
@@ -108,8 +92,6 @@ describe('WorkspaceItem — item_type branching (post-kanban-migration)', () => 
     // Pre-migration, this test verified that KanbanView rendered inline in the sidebar.
     // Post-migration, the kanban board lives in <AppLayout> (rendered in the main content area when
     // activeWorkspaceItem.item_type === 'kanban').
-    // WorkspaceItem should NOT render any board-related DOM — just the item row and the task list
-    // (for folder items).
     wrapper = mountItem(makeKanbanItem())
     expandItem()
     await nextTick()
@@ -206,7 +188,6 @@ describe('WorkspaceItem — kanban click behavior', () => {
     // Pre-migration, WorkspaceItem re-emitted kanban-* events bubbled up from its inline
     // <KanbanView>. Post-migration, WorkspaceItem has no <KanbanView>, so it cannot bubble any
     // kanban events.
-    // The new flow: <KanbanView> in AppLayout emits directly to AppLayout's handlers.
     wrapper = mountItem(
       makeKanbanItem({
         kanban_columns: [makeColumn({ id: 'col_x', position: 0 })],

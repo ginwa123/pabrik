@@ -105,8 +105,6 @@ describe('WorkspaceItemTaskRow — agent-error indicator', () => {
 
     // The wrap carries the `.error-icon-wrap` class (the subject of the scoped hover rule) and the
     // tooltip carries `.error-tooltip` (the descendant that gets `opacity:1; visibility:visible`).
-    // Both classes are wired by the template; the hover transition itself is asserted via DOM event
-    // dispatch below.
     const wrapEl = wrapper
       .find('[data-testid="task-agent-error-row"]')
       .element as HTMLElement
@@ -119,15 +117,9 @@ describe('WorkspaceItemTaskRow — agent-error indicator', () => {
     expect(tooltipEl).toBeTruthy()
     expect(tooltipEl.classList.contains('error-tooltip')).toBe(true)
 
-    // Dispatch pointerenter on the wrap — the same event Vue
-    // synthesizes for `:hover` listeners and the trigger that would
-    // make a real browser resolve the `.error-icon-wrap:hover
-    // .error-tooltip` selector. No assertion on the resulting
-    // pseudo-class state (jsdom doesn't run a layout engine) — the
-    // compile-time rule presence is guaranteed by vue-tsc passing
-    // the file; the runtime hover rule is exercised in production
-    // by the same selector pair that already powers the kanban
-    // card's tooltip (Task 5).
+    // Dispatch pointerenter on the wrap — the same event Vue synthesizes for `:hover` listeners and
+    // the trigger that would make a real browser resolve the `.error-icon-wrap:hover
+    // .error-tooltip` selector.
     await wrapEl.dispatchEvent(new Event('pointerenter', { bubbles: true }))
     await nextTick()
 

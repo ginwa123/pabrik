@@ -1,34 +1,5 @@
-/**
- * Shared PR-status fetch for kanban card git-branch badges.
- *
- * Problem: a board mounts ~140 cards at once and every card fired its
- * own `GET /api/git/pr/status` (one `gh pr view` subprocess each).
- * Under that burst, transient failures (timeouts, 429/5xx from the
- * API) were common — and with no retry the badge stayed grey forever.
- *
- * This module collapses the burst:
- *   - in-flight dedupe: simultaneous callers for the same
- *     `cwd::branch` share one request (141 cards → ~30 unique
- *     branches → ~30 requests).
- *   - 60s TTL cache: remounts / "Load more" pages reuse the result
- *     instead of re-hammering `gh`. A merged PR shows its color on
- *     the next fetch after the TTL expires.
- *   - retry with backoff (2 retries): transient failures get a second
- *     chance. 404 (no PR for the branch — e.g. `main`) is
- *     deterministic and is NOT retried.
- *
- * Fail-silent contract is preserved: total failure resolves to `''`
- * and the card keeps its current dim look. Final failures go to
- * `console.warn` (devtools only) so the next grey-icon report comes
- * with evidence instead of silence.
- *
- * The TTL alone is the wrong answer for a state change the app itself
- * caused: a merge from the PR tab changes the branch's PR on the forge,
- * but the TTL still serves the pre-merge `open` to every mounted badge.
- * `invalidatePrStatus` is that answer — and the badges that must re-read
- * register a callback with `onPrStatusInvalidated` instead of watching
- * (see that function for why).
- */
+/** Shared PR-status fetch for kanban card git-branch badges. Problem: a board mounts ~140 cards at
+ * once and every card fired its own `GET /api/git/pr/status` (one `gh pr view` subprocess each). */
 import { Cause, Data, Effect } from 'effect'
 import { ApiError, getPrStatus } from '../api'
 import { describeCause } from './effectRuntime'
@@ -117,30 +88,8 @@ export function onPrStatusInvalidated(cb: (change: PrStatusInvalidation) => void
   }
 }
 
-/**
- * Drop every cached answer for one repo + branch so the next fetch re-asks the
- * forge, and tell the registered badges to re-read.
- *
- * Called after a merge (the PR tab's `MergeBox`, and the `git_pr_state` SSE
- * event) and after a close from the board-level PR list: the badge would
- * otherwise keep its stale `open` color until the 60s TTL expired AND
- * something re-read it.
- *
- * PROVIDER-AGNOSTIC ON PURPOSE. The event is "this branch's change request
- * changed state", which holds for whichever forge owns it — and the previous
- * provider-scoped delete was a silent no-op in practice: the board's PR list
- * passed the provider it had just learned (`github`), while every badge had
- * asked with no provider at all, so the stale entry survived in exactly the
- * case the call existed for. One re-asked forge call is the cheap direction
- * to be wrong in; a badge that lies about a merge is not.
- *
- * Matching on the `cwd::branch::` prefix is unambiguous: a git ref name may
- * not contain `:` (`git check-ref-format`), so `feature` can never match
- * `feature/x`.
- *
- * The in-flight slot is dropped AND its epoch bumped — a mutation that lands
- * mid-fetch must not let the stale answer populate the cache afterwards.
- */
+/** Drop every cached answer for one repo + branch so the next fetch re-asks the forge, and tell the
+ * registered badges to re-read. */
 export function invalidatePrStatus(cwd: string, branch: string): void {
   if (!cwd || !branch) return
   const prefix = `${cwd}::${branch}::`
@@ -292,23 +241,8 @@ export function fetchPrConflictCached(
  * GitLab `/-/merge_requests/` URL is not mistaken for something else. */
 const PR_URL_MARKERS = ['/-/merge_requests/', '/pull/'] as const
 
-/**
- * Wire the `git_pr_state` SSE channel (see
- * src/agentic_loop/git_pr_state_events.zig) into this cache.
- *
- * Call ONCE, from `App.vue`, next to `installSseBus()`.
- *
- * Why the cache owns this and not each badge: a badge must not re-ask the
- * forge on every render, and the event names exactly the pair the cache is
- * keyed on (`cwd` + `branch`) — so a merge or close performed ANYWHERE (another
- * tab, another machine, the forge's own web UI) lands on one
- * `invalidatePrStatus` call, whose tick makes every mounted badge re-read.
- *
- * `MergeBox` also invalidates directly, for the merge THIS tab performed: that
- * path needs no round-trip and does not depend on the stream being up.
- *
- * Returns the unsubscribe handle so the owner can drop it on teardown.
- */
+/** Wire the `git_pr_state` SSE channel (see src/agentic_loop/git_pr_state_events.zig) into this
+ * cache. Call ONCE, from `App.vue`, next to `installSseBus()`. */
 export function subscribePrStatusEvents(bus: SseBus): () => void {
   return bus.on('gitPrState', (event) => {
     invalidatePrStatus(event.cwd, event.branch)

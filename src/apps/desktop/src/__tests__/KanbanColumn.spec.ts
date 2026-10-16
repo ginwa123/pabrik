@@ -1,16 +1,6 @@
-/**
- * Tests for KanbanColumn — a single column with header (inline rename
- * + count badge + ⋮ menu), cards list, footer "+ Add" button, and
- * drop zone.
- *
- * Mounts with provide: { processingState } (KanbanCard → WorkspaceItemTask
- * injects it). The dragstart/drop handlers are exercised in KanbanView
- * tests; here we focus on the column-level UX: header rendering,
- * inline rename, menu open/close, footer add, card filtering.
- *
- * Plan: docs/superpowers/plans/2026-06-21-workspace-item-kanban.md
- *   Chunk 6 / Task 6.4
- */
+/** Tests for KanbanColumn — a single column with header (inline rename + count badge + ⋮ menu),
+ * cards list, footer "+ Add" button, and drop zone. Plan:
+ * docs/superpowers/plans/2026-06-21-workspace-item-kanban.md Chunk 6 / Task 6.4 */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, type VueWrapper } from '@vue/test-utils'

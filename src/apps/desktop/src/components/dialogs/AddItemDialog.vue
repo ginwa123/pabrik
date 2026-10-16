@@ -36,10 +36,7 @@ const selectedPath = ref('')
 const showPicker = ref(false)
 const nameInput = ref<HTMLInputElement | null>(null)
 // `true` after the user has interacted with the name field (typed anything OR blurred the field).
-// Used to gate the visible "Name is required" error — we don't show the error on first open (the
-// field is already empty by design; the user hasn't done anything wrong yet).
-// Once they've typed then cleared, OR blurred without typing, the error appears to explain why Add
-// is disabled. Plan: docs/superpowers/plans/2026-07-10-empty-workspace-item-bug.md.
+// Plan: docs/superpowers/plans/2026-07-10-empty-workspace-item-bug.md.
 const nameTouched = ref(false)
 // Computed error string. `null` when no error should be shown.
 // Mirrors `PabrikConfigEditor.vue:295` / `FileInput.vue:543` styling.

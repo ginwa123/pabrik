@@ -77,9 +77,6 @@ describe('VirtualScroller many-messages glitch audit', () => {
   it('T1: settled sizer equals modelTotal at the bottom (no stale-window expand)', async () => {
     // jsdom reports offsetHeight 0 (no layout), so the content div's template-ref measurement would
     // stay 0 and the at-bottom expand path could never trigger in-test.
-    // Real browsers report the real window height once (at mount) and then go STALE (the ref
-    // callback does not refire on child updates). Simulate that: prototype-level 43000px for the
-    // content div only — per-child own-property mocks below shadow it, exactly like real layout.
     const protoDesc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')
     Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
       configurable: true,

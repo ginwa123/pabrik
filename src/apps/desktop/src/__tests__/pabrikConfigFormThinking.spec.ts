@@ -1,13 +1,5 @@
-// Vitest tests for the model-thinking fields in LlmConfigForm.vue
-// (plan 2026-08-23-model-thinking + 2026-09-01-migrate-openai-legacy-to-response).
-//
-// Covers:
-//  - The new fields are wired into the form data interface.
-//  - When `thinking === 'off'`, the budget + effort row is hidden (all styles).
-//  - Per-style gating: anthropic shows budget hides effort, openai/openai-response show effort hides budget.
-//  - The input emits `null` for blank values, parsed integers for
-//    valid input, and clamps to >= 1024.
-//  - Hidden fields preserve values (not nulled) on style switch.
+// Vitest tests for the model-thinking fields in LlmConfigForm.vue (plan 2026-08-23-model-thinking +
+// 2026-09-01-migrate-openai-legacy-to-response).
 import { describe, it, expect } from 'vitest'
 import { mount, VueWrapper } from '@vue/test-utils'
 import LlmConfigForm from '../components/pabrik/LlmConfigForm.vue'

@@ -74,8 +74,6 @@ const emit = defineEmits<{
 
 // ─── Submenu ──────────────────────────────────────────────────────────── Hovering (or arrowing
 // onto) the "Move to column" row opens this panel.
-// Two independent states, not one: `subOpen` is the intent and `subPos` is where to paint it,
-// because the panel is measured after mount (its width depends on the longest column name).
 const subOpen = ref(false)
 const subPos = ref({ left: 0, top: 0 })
 const subRef = ref<HTMLElement | null>(null)
@@ -112,13 +110,7 @@ const closeSub = () => {
 const focusIdx = ref(-1)
 const rootRef = ref<HTMLElement | null>(null)
 
-/** Rows in visual order, skipping the ones this card doesn't render.
- * Queried from the DOM rather than collected through function refs: the
- * "Stop agent" row is v-if'd on `isAgentRunning`, and a function ref is
- * re-invoked when such a row remounts — a `push`-into-a-ref array would
- * then hold a detached element alongside the live one, and the arrow keys
- * would walk into a row that is no longer on screen. A query is always
- * exactly the rows currently rendered. */
+/** Rows in visual order, skipping the ones this card doesn't render. */
 const navRows = (): HTMLElement[] =>
   Array.from(rootRef.value?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])
 

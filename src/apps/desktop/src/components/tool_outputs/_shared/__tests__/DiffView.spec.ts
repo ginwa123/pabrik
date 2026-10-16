@@ -1,18 +1,4 @@
-/**
- * Tests for DiffView.vue.
- *
- * Verifies:
- *  - renders split-view by default; toggle to unified swaps the view
- *  - shows the change count when there are changes
- *  - shows file path in the header when provided
- *  - sticky gutter cells render with the line-number content (and DON'T
- *    show "0" for inserts/deletes that have no before/after line)
- *  - empty before/after renders '(no content)' placeholder
- *  - REGRESSION: line-shift after insert renders as 1 changed row, not
- *    falsely flagging all subsequent lines
- *  - hunk headers appear in unified view with `@@ -start,count +start,count @@`
- *  - data-row / data-changed attrs reflect the diff state (for E2E selectors)
- */
+/** Tests for DiffView.vue. */
 import { mount } from '@vue/test-utils'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
@@ -244,18 +230,9 @@ describe('DiffView', () => {
     expect(wrapper.emitted('jump-to-line')).toBeFalsy()
   })
 
-  // ─────────────────────────────────────────────────────────────────────
-  // Clean split-view rendering (chunks 5+6 redesign)
-  //
-  // Layout (top → bottom in DOM):
-  //   1. PANE — <div class="overflow-x-auto ..."> (the scroll container)
-  //   2. SHARED WRAPPER — <div style="width: max-content; min-width: 100%">
-  //        sized once per pane so every row inherits the same final width
-  //   3. ROW — <div class="block whitespace-pre" style="width: 100%;
-  //        background-color: rgba(...)"> for changed rows. NO [data-bg]
-  //        child — the bg is on the row itself. NO inline highlights
-  //        (no <span class="...line-through...">, no per-word bg).
-  // ─────────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────── Clean split-view
+  // rendering (chunks 5+6 redesign) Layout (top → bottom in DOM): 1. PANE — <div
+  // class="overflow-x-auto ..."> (the scroll container) 2.
   it('split view: changed row has bg color on itself, NO inline highlights', () => {
     // User feedback: the previous version mixed row bg + per-word strikethrough + per-word
     // highlights on the same line, which was unreadable. The new design is row bg on the row
@@ -454,8 +431,6 @@ describe('DiffView', () => {
       // Nothing inside a changed row may carry an `!important` text tint (`!text-red-500`): it wins
       // over `.tok-*` in the compiled CSS and paints the whole line one color. The row BACKGROUND
       // is what marks added/removed.
-      // (jsdom loads no stylesheet, so asserting the DOM class is the only honest witness here —
-      // and it is exactly the class whose removal makes the tokens visible in a browser.)
       expect(importantTextTints(row)).toEqual([])
       expect(row.findAll('.tok-keyword').length).toBeGreaterThan(0)
     }

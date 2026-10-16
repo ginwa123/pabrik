@@ -63,18 +63,8 @@ const emit = defineEmits<{
   copySpec: []
 }>()
 
-// ─── State ──────────────────────────────────────────────────────────────────
-// Active tab is URL-backed (?section=columns|agent). `section` is used
-// instead of `tab` because `?tab=<tabId>` is owned by the browser-style
-// tab mode (helpers/tabTarget.ts, stores/tabs.ts) — sharing the key meant
-// a URL like `?tab=tab_xxx` fell through to 'columns' and clicking Agent
-// clobbered the browser tab ID, so the tab store snapped the URL back
-// and the Agent tab looked unclickable. Default to 'columns' when the
-// query is missing or unknown — keeps the URL clean (no ?section=columns
-// in the default state).
-// Legacy `?tab=agent|tools|knowledge|memories|columns` (pre tab-mode)
-// links still land correctly; any other `?tab=` value (notably the
-// `tab_<id>` browser IDs) is ignored so the browser tab stays intact.
+// ─── State ────────────────────────────────────────────────────────────────── Active tab is
+// URL-backed (?section=columns|agent).
 const settingsMode = computed<SettingsMode>({
   get: () => {
     const readSection = (v: unknown): SettingsMode | null => {
@@ -169,8 +159,6 @@ const emptyHint = computed(() => !itemId.value)
 // ─── Kanban Agent (reuses AgentView) ──────────────────────────────────────── Kanban boards reuse
 // the same Knowledge + Tools + System Prompt UI as `item_type='agent'` — AgentView is now agnostic
 // (accepts both AgentKnowledgeRow and AgentKanbanKnowledgeRow via union).
-// The parent (this view) owns the data + API calls; AgentView is a dumb presentational component
-// that emits intents.
 const kanbanKnowledge = ref<api.AgentKanbanKnowledgeRow[]>([])
 const kanbanTools = ref<string[]>([])
 const kanbanSystemPrompts = ref<api.AgentKanbanSystemPromptRow[]>([])
@@ -541,11 +529,6 @@ const goBack = () => {
 // ─── Lifecycle ───────────────────────────────────────────────────────────── Reset settingsMode
 // when the route changes (so navigating from one kanban's settings to another's starts on the
 // Columns tab, not the Agent tab that the previous kanban had selected).
-// The URL is the source of truth, so we use `router.replace` to strip the ?section= query rather
-// than mutating the computed directly. Reset the settings tab/editor when navigating between
-// kanbans: prev-id guard on update.
-// Writing settingsMode strips ?section= from the URL via its setter; the guard keeps the reset
-// one-shot.
 const prevSettingsItemId = ref(itemId.value)
 onUpdated(() => {
   if (itemId.value !== prevSettingsItemId.value) {

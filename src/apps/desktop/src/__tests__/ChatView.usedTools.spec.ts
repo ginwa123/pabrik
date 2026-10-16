@@ -1,26 +1,6 @@
-/**
- * Tests for the `used_tools` tool dispatcher in ChatView.vue.
- *
- * `used_tools` used to fall through to the generic `v-else` fallback, which
- * dumped the raw payload into a one-liner:
- *   used_tools → ✓ {"count":10,"tools":[{"name":"update_plan",…]}
- * It now has a dedicated card. This spec pins the wiring so a future
- * dispatcher refactor cannot silently push `used_tools` back into the
- * fallback (the `v-else-if` branch order is load-bearing here — the generic
- * `v-else` sits last in the chain).
- *
- * Behavioural contract:
- *   - `tool_name === 'used_tools'` dispatches to <UsedTools :message="msg" />,
- *     on both the success and the error branch.
- *   - `search_tool` still dispatches to <ProgressiveTool> and NOT to
- *     <UsedTools> — the two cards share the name/description row shape, so a
- *     widened branch would be easy to introduce by accident.
- *   - An unrelated tool name renders neither stub (generic fallback territory).
- *
- * Mirrors ChatView.updatePlan.spec.ts (stub via vi.mock, assert on a
- * data-tool-name marker) so the internal rendering of UsedTools.vue stays in
- * components/tool_outputs/__tests__/UsedTools.spec.ts.
- */
+/** Tests for the `used_tools` tool dispatcher in ChatView.vue. `used_tools` used to fall through to
+ * the generic `v-else` fallback, which dumped the raw payload into a one-liner: used_tools → ✓
+ * {"count":10,"tools":[{"name":"update_plan",…]} It now has a dedicated card. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, ref } from 'vue'

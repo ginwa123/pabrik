@@ -23,8 +23,7 @@ import * as api from '../api'
 
 // Local SseClient stub — mirrors the pattern in sidebarActiveState.spec.ts. The real SseClient type
 // isn't exported from sseBus, so we type the stub as `any` to match the `__setSseBusGlobalClient`
-// signature. Each method returns a no-op so the bus internals stay quiet.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// signature.
 function makeStubClient(initial: 'connecting'): any {
   const stub = {
     state: initial,

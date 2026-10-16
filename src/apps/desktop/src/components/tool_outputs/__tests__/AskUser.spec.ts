@@ -1,19 +1,6 @@
-/**
- * AskUser.vue — the `ask_user` tool card.
- *
- * The card renders from the JSON `data` object and, while
- * the state is `pending`, POSTs the answer. These tests pin:
- *
- *   1. every state renders (pending single/multi/free-text, answered, skipped,
- *      abandoned, unavailable, invalid);
- *   2. the EXACT body the endpoint receives — `question_id` + `answer`, a JSON
- *      array for multi-select, and `skip:true` for Skip;
- *   3. the keyboard affordances (digit pick, Enter to send, Esc to skip);
- *   4. that a failed POST leaves a Retry affordance instead of silently
- *      swallowing the answer.
- *
- * Plan: docs/superpowers/plans/2026-09-16-agent-tool-ask-user.md
- */
+/** AskUser.vue — the `ask_user` tool card. The card renders from the JSON `data` object and, while
+ * the state is `pending`, POSTs the answer. Plan:
+ * docs/superpowers/plans/2026-09-16-agent-tool-ask-user.md */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import AskUser from '../AskUser.vue'
@@ -178,9 +165,6 @@ describe('AskUser — rendering', () => {
 
   it('reads the outcome from an envelope that LOST its parameters block', () => {
     // The answer endpoint rewrites the tool row in place.
-    // A variant emits an envelope with no `parameters`, which makes `unwrapToolOutput` throw —
-    // ChatView then hands the card the raw envelope string, and without this fallback the card
-    // rendered a bare PENDING question: every resolved question looked unanswered.
     const raw = JSON.stringify({
       tool: 'ask_user',
       success: true,

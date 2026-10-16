@@ -1,7 +1,4 @@
-/** Behavioural tests for the cached `GET /api/workspaces?is_include_items=false` client.
- * Contract: init paints the last-known list instantly (no TTL — stale
- * rows beat an empty sidebar), the live fetch revalidates behind it,
- * corrupt entries never render, and storage failures degrade to a miss. */
+/** Behavioural tests for the cached `GET /api/workspaces?is_include_items=false` client. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {

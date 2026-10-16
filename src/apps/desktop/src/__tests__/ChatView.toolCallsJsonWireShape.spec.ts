@@ -1,26 +1,4 @@
-/**
- * Regression tests for the 2026-08-24 "stray TOOLS pill" wire-shape bug.
- *
- * Background (task_1787545088500_6, bug A): the backend SseEventLLMHistory
- * struct (src/ai_workflow/tui/agentic_loop/sse_on_event_send_llm_history.zig)
- * serializes `tool_calls_json` onto the wire — that's the assistant row's
- * serialized `tool_calls` array (e.g. `[{"id":"...","function":{"name":"bash"}}]`).
- * The frontend ChatView.vue groupToolNames computed (line ~1376) needs this
- * field to walk `parsed[i].id` and suppress the pill when every tool_call
- * has a matching tool row in the transcript.
- *
- * Without this field on the wire:
- *  1. The frontend SseEvent interface (api/index.ts ~1331) drops it — TS
- *     can't even prove it exists at compile time.
- *  2. The SSE full-handler push (ChatView.vue ~2300) never sets it on the
- *     pushed message, so groupToolNames falls into the `finish_reason ===
- *     'tool_calls'` heuristic and the pill flashes during the live-SSE
- *     window between assistant and tool rows.
- *
- * These tests are SOURCE-CONTRACT tests because the bug is at the wire
- * boundary — there is no runtime feedback until a real SSE round-trip
- * happens. Same pattern as ChatView.toolsPillStability.spec.ts.
- */
+/** Regression tests for the 2026-08-24 "stray TOOLS pill" wire-shape bug. */
 import { describe, it, expect } from 'vitest'
 
 const readFile = async (relPath: string): Promise<string> => {
@@ -39,8 +17,6 @@ describe('SseEvent interface — tool_calls_json field (source contract)', () =>
     // The SseEvent interface MUST carry tool_calls_json so the SSE full-handler in ChatView.vue can
     // push it onto the message. Without this the field arrives as an untyped property and the Vue
     // template can't see it — pill suppression is bypassed.
-    // Anchor on the interface declaration to make the assertion robust against surrounding field
-    // additions.
     const ifaceStart = source.indexOf('export interface SseEvent {')
     expect(ifaceStart).toBeGreaterThan(-1)
     const ifaceEnd = source.indexOf('}', ifaceStart)

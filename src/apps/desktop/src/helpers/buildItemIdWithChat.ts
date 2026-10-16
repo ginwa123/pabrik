@@ -1,16 +1,6 @@
-/**
- * buildItemIdWithChat — encode / decode the `/chat/<taskId>` suffix
- * on the `itemId` query value used by AppLayout's URL scheme.
- *
- * Background: the chat-open workspace URL has the shape
- *   ?view=workspace&workspaceId=X&itemId=item_Y/chat/task_W
- * The `itemId` value carries an extra `/chat/<taskId>` suffix when
- * the chat dialog is open. This helper centralises the parse +
- * build logic so every URL writer / reader stays consistent.
- *
- * Plan: docs/superpowers/plans/2026-08-15-simplify-url-browser.md
- * Spec: docs/superpowers/specs/2026-08-15-simplify-url-browser-design.md
- */
+/** buildItemIdWithChat — encode / decode the `/chat/<taskId>` suffix on the `itemId` query value
+ * used by AppLayout's URL scheme. Plan: docs/superpowers/plans/2026-08-15-simplify-url-browser.md
+ * Spec: docs/superpowers/specs/2026-08-15-simplify-url-browser-design.md */
 /** The literal separator between the bare item id and the chat task id. */
 export const CHAT_SUFFIX = '/chat/'
 

@@ -1,27 +1,5 @@
-/**
- * Tests for KanbanDescriptionEditor — the kanban task description editor
- * with image paste/paperclip support and the `@`-trigger file picker.
- *
- * The component is a textarea wrapper that:
- *   - Holds the markdown text as v-model.
- *   - Shows image previews (paste + paperclip) above the textarea.
- *   - Opens a file-picker dropdown when the user types `@`.
- *   - Inserts `@/path` at the cursor when a file is picked.
- *   - Downscales oversize images to 4 MB before base64-encoding.
- *
- * Test coverage:
- *   - v-model two-way binding (typing into the textarea emits update).
- *   - The paperclip button triggers the hidden file input.
- *   - @-trigger opens the dropdown (cwd passed to /system/folder).
- *   - Picking a file inserts `@/path` at the cursor.
- *   - Image paste inserts a data URL into the textarea + preview row.
- *   - Removing a preview removes the matching data URL from the textarea.
- *   - Char counter reflects the text length.
- *   - testId is applied to the textarea + paperclip + counter.
- *
- * Plan: docs/superpowers/plans/2026-07-25-kanban-description-rich-editor.md
- * Chunk 2 — KanbanDescriptionEditor component.
- */
+/** Tests for KanbanDescriptionEditor — the kanban task description editor with image
+ * paste/paperclip support and the `@`-trigger file picker. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import KanbanDescriptionEditor from '../components/kanban/KanbanDescriptionEditor.vue'
@@ -383,7 +361,6 @@ describe('KanbanDescriptionEditor — create-mode image paste (no taskId)', () =
     // Migration 069 changed edit mode to use the same staged- pendingFiles flow as create mode (the
     // old `uploadTaskAttachment` endpoint was deleted entirely). The editor's job is just to expose
     // the file; the host's `updateTaskDetails({ imageUrls })` does the persistence.
-    // The textarea stays untouched — the new column carries the images.
     const wrapper = await mountEditor({ modelValue: '', taskId: 'task_x' })
     await pasteImage(wrapper, makeFile('inline.png'))
 

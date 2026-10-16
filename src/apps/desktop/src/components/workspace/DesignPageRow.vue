@@ -78,12 +78,9 @@ const emit = defineEmits<{
   openDesignPageInBackground: [page: DesignPage]
 }>()
 
-// URL-driven "what is the main content area showing?". The active
-// styling is now sourced from the URL (?view=workspace&pageId=X) rather
-// than the `isActivePage` prop (which is still passed by the parent for
-// backwards-compat with other consumers). When the URL changes, the
-// computed re-runs and the row styling updates — no watcher needed, the
-// template binding is enough.
+// URL-driven "what is the main content area showing?". The active styling is now sourced from the
+// URL (?view=workspace&pageId=X) rather than the `isActivePage` prop (which is still passed by the
+// parent for backwards-compat with other consumers).
 const currentMainView = useCurrentMainView()
 const isCurrentMainView = computed(
   () =>

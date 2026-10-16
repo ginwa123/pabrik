@@ -1,20 +1,6 @@
-/**
- * Behavioural tests for DesignPageRow.vue.
- *
- * Plan: docs/superpowers/plans/2026-08-06-design-pages-in-workspace-tree.md
- *
- * 6 tests covering the row's behavioral contract:
- *  1. Renders the page name.
- *  2. Click emits `selectPage` with the page object.
- *  3. × button emits `deletePage` with the page object.
- *  4. × button click does NOT also emit `selectPage` (stopPropagation).
- *  5. Active page gets the violet active style; inactive doesn't.
- *  6. data-testid `design-page-row-${pageId}` is present.
- *
- * Active styling is driven by URL (?view=workspace&pageId=X) via the
- * `useCurrentMainView` composable (see sidebar-single-active-state plan).
- * Tests stub vue-router so the URL is controllable per test.
- */
+/** Behavioural tests for DesignPageRow.vue. Plan:
+ * docs/superpowers/plans/2026-08-06-design-pages-in-workspace-tree.md 6 tests covering the row's
+ * behavioral contract: 1. Renders the page name. 2. */
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import DesignPageRow from '../components/workspace/DesignPageRow.vue'

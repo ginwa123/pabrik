@@ -1,15 +1,5 @@
-/**
- * The busy indicator for the SELECTED workspace lives in the Projects
- * section header as a dot + "N running" text — never an elapsed time
- * pill. The elapsed pill lives ONLY on the owning row (ChatsList /
- * WorkspaceItem) so one run renders one pill (wireframe R1,
- * task i-see-bad-ui-ux: duplicate 6h 37m in row + header).
- *
- * ProjectsList reads the same `processingState` ref App.vue provides
- * and renders the running indicator when ANY task in ANY item of the
- * selected workspace is running. Asserts behaviour by mounting the
- * real component and querying the rendered DOM.
- */
+/** The busy indicator for the SELECTED workspace lives in the Projects section header as a dot + "N
+ * running" text — never an elapsed time pill. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, type Ref } from 'vue'

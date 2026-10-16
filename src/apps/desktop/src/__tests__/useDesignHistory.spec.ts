@@ -1,20 +1,5 @@
-/**
- * Behavioural tests for `useDesignHistory` composable.
- *
- * The composable owns the push/pop API + capture helpers for design
- * undo/redo. The test surface covers:
- *   - Basic push/pop round-trip
- *   - Stack ordering (last pushed = first popped)
- *   - Future-cleared-on-push (Figma parity)
- *   - No-op detection (no entry pushed if before == after)
- *   - Capacity cap (101st entry evicts the oldest)
- *   - Multi-element capture (one entry with N changes)
- *   - Delete capture (full element + htmlBody)
- *   - Group capture (parentId + childIds)
- *
- * 8 behavioural tests — no static-contract grep tests (project rule:
- * ~/.config/pabrik/memories/static-contract-test-when-to-prefer-behavioural.md).
- */
+/** Behavioural tests for `useDesignHistory` composable. The composable owns the push/pop API +
+ * capture helpers for design undo/redo. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { ref, type ComputedRef } from 'vue'

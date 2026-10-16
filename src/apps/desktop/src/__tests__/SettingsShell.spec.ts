@@ -108,8 +108,6 @@ describe('SettingsShell', () => {
   it('lists the workspace sections in order, under their group headings', async () => {
     // This used to be asserted against the editor's own tab strip, which is gone: the shell owns
     // navigation now, so the ORDER lives here.
-    // Order matters - the four moved config sections come after the workspace ones, under their own
-    // heading, because they are a different kind of thing.
     const router = await makeRouter('/app/ws_1/settings')
     wrapper = mountShell(router, { scope: 'workspace', workspaceId: 'ws_1' })
     await flushPromises()
@@ -163,8 +161,6 @@ describe('SettingsShell', () => {
     // Regression: the tab used to navigate to `workspaceOptions[0]` unconditionally, and the list
     // API sorts by `position DESC, created_at DESC` — so it left the user's workspace for whenever
     // they had last moved to the top.
-    // The settings URL lost the workspace id, and one workspace's Profiles list (per-workspace
-    // config overlays, Migration 105) was shown while the user was working in another.
     const router = await makeRouter('/app/settings')
     const push = vi.spyOn(router, 'push')
     useWorkspacesStore().activeWorkspaceId = 'ws_2'

@@ -1,20 +1,4 @@
-/**
- * Tests for LoadMemory.vue.
- *
- * Verifies:
- *  - parses the success envelope (query, count, total_count, results)
- *  - parses the error envelope (<error> tag → red border)
- *  - parses per-memory entries (id, tags, timestamps, snippet, optional content)
- *  - snippet [match]…[/match] markers are highlighted as <mark>
- *  - tags are split on "||" into individual chips
- *  - "N of M" badge appears only when paginated (total_count > count)
- *  - "with content" badge appears when with_content="1" was passed
- *  - empty result (count=0) renders "No memories match ..." hint
- *  - click on header toggles expanded state (only when entries or error)
- *  - click on copy-id button copies the id (jsdom stub) without toggling expansion
- *  - per-entry "Show content" toggle reveals optional <content>
- *  - "(truncated)" badge appears when backend cut content at 2 KiB cap
- */
+/** Tests for LoadMemory.vue. */
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 

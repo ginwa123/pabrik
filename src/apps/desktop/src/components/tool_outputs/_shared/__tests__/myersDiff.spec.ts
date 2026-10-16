@@ -138,8 +138,6 @@ describe('myersDiff', () => {
     // We compare at line granularity — each line is atomic. Two single-line inputs where one line
     // is a strict prefix of the other: LCS length is 0 (they're different lines), so SES is "delete
     // + insert".
-    // This verifies the algorithm completes in finite time on 10k-char lines without pathological
-    // behaviour.
     const longBefore = 'x'.repeat(10_000)
     const longAfter = 'x'.repeat(10_000) + 'tail'
     const ops = myersDiff([longBefore], [longAfter])

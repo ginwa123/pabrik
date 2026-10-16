@@ -1,24 +1,4 @@
-/**
- * FileInput `/skill-` picker — trigger, fetch-once, filter, insert, error.
- *
- * Contract under test:
- *   - Typing `/skill-` opens the picker and calls `api.getSkills(ws)` ONCE
- *     per workspace per mount (client-side substring filter after that —
- *     no refetch while typing past the dash).
- *   - Enter inserts the canonical `/skill-<name>` token, Esc closes
- *     without inserting.
- *   - A `getSkills` rejection renders the error block, never an empty list.
- *   - With no workspace scope (or no pinia) `/skill-` does not open.
- *   - The trigger is the literal `/skill-` prefix at message start or
- *     after whitespace. A bare `/`, a path like `/home/ginwa/pabrik`,
- *     `http://` and `a/b` never open it.
- *
- * And the `/skill-` completion hint that precedes it:
- *   - A proper prefix of the command (`/s`, `/sk`, `/ski`, `/skil`,
- *     `/skill`) renders ONE suggestion row reading `/skill-`.
- *   - Enter or Tab rewrites the token to `/skill-` and the picker opens.
- *   - The hint never fetches skills and never renders the picker list.
- */
+/** FileInput `/skill-` picker — trigger, fetch-once, filter, insert, error. */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -355,9 +335,6 @@ describe('FileInput — /skill picker', () => {
 
   // The discoverability step that precedes the picker: the user has typed enough to be heading for
   // the skill command but not the dash yet, so the composer offers the one completion that exists.
-  // These specs pin the hint as its OWN surface (`skill-command-suggestion`) rather than reusing
-  // `skill-picker-list`, so the "a partial `/sk` does not open the picker" specs above keep meaning
-  // what they say.
   describe('the /skill- completion hint', () => {
     const HINT = '[data-testid="skill-command-suggestion"]'
     const PICKER = '[data-testid="skill-picker-list"]'

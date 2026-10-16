@@ -3,20 +3,9 @@ import { mount } from '@vue/test-utils'
 import UiIcon from '../components/ui/UiIcon.vue'
 import { ICON_PATHS, type UiIconName } from '../components/ui/icons'
 
-/**
- * `UiIcon` is the replacement for every emoji that used to stand in for
- * an icon, so these tests answer three questions the app depends on:
- *
- *  1. Does every name in the registry actually render geometry? A key
- *     with an empty path array renders a silent 0x0 hole where an icon
- *     should be, and nothing else in the suite would notice.
- *  2. Is the glyph identifiable after the fact? `data-icon` is the
- *     reason an icon-only control is assertable at all; the old emoji
- *     had nothing to pin a spec to.
- *  3. Does it stay decorative by default? An `aria-hidden` icon next
- *     to a visible label is correct; the same icon announced as
- *     "Trash" after "Delete" is the bug.
- */
+/** `UiIcon` is the replacement for every emoji that used to stand in for an icon, so these tests
+ * answer three questions the app depends on: 1. Does every name in the registry actually render
+ * geometry? */
 describe('UiIcon', () => {
   const names = Object.keys(ICON_PATHS) as UiIconName[]
 

@@ -1,21 +1,6 @@
-/**
- * Provider-aware wording for the PR/MR surface.
- *
- * The backend stores a provider per attached change request
- * (`sessions.pr_provider`) and now answers `GET /api/git/pr/status` for
- * GitLab as well as GitHub. The UI has to follow, because "pull request"
- * is not a GitLab user's word — they say "merge request" — and two of the
- * constructs this module used to emit are outright wrong on GitLab:
- *
- *  - `<pr-url>/conflicts` is a GitHub-only route. GitLab has no such
- *    path; a link built that way is a guaranteed 404.
- *  - `<repo>/tree/<branch>` is GitHub-only. GitLab inserts a `/-/`
- *    discriminator, so its branch page is `<repo>/-/tree/<branch>`.
- *
- * One table, used by every component, is the only way those two stay
- * correct; the bug this replaces was three components each hardcoding
- * `github.com` prose.
- */
+/** Provider-aware wording for the PR/MR surface. The backend stores a provider per attached change
+ * request (`sessions.pr_provider`) and now answers `GET /api/git/pr/status` for GitLab as well as
+ * GitHub. */
 /** The vocabulary of one forge. `noun` is sentence case, `short` is caps. */
 export interface ForgeWording {
   noun: string

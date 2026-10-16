@@ -1,19 +1,4 @@
-// Human-readable "time since" for the per-task surfaces (kanban card,
-// kanban row-mode row). Extracted from WorkspaceItemTaskCard.vue so the
-// card and the row render the same string from the same code — the row
-// mode list is a reading surface, and a "2h ago" that disagrees with the
-// card's "2h ago" is a bug report waiting to happen.
-//
-// Accepts the three shapes `Task.updatedAt` / `Task.createdAt` can hold
-// on the wire:
-//   - a JS Date instance (after the store's snake_case → camelCase
-//     normalization)
-//   - an ISO datetime string, or the backend's SQLite
-//     "YYYY-MM-DD HH:MM:SS" shape (space separator, UTC)
-//   - a unix-ms number
-//
-// Returns '' for null/undefined/unparseable input so callers can guard
-// with v-if and avoid rendering an empty pill.
+// Human-readable "time since" for the per-task surfaces (kanban card, kanban row-mode row).
 export function formatTaskTimestamp(input: Date | string | number | null | undefined): string {
   if (input === null || input === undefined) return ''
   let d: Date

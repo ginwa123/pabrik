@@ -244,12 +244,6 @@ const setupCodeBlockCopyButtons = () => {
 
 // NOTE: renderResponse is no longer defined here — it was extracted to `helpers/renderResponse.ts`
 // and exported via `@/helpers`.
-// The extraction added module-scoped memoization keyed on `${role}|${tool_name}|${trimmed}`, so a
-// long chat's messages don't re-parse the same markdown on every re-render: O(unique_messages) per
-// mutation instead of per render.
-// ─── <html> wrapper-tag rendering ───────────────────────────────────────── When the LLM wraps raw
-// HTML in <html>...</html>, the chat UI renders each block as a live sandboxed iframe (null origin
-// — the security boundary; inner scripts can't touch parent DOM/cookies).
 interface HtmlSegment {
   /** Text before this html block (markdown-rendered inline). */
   before: string
@@ -403,8 +397,6 @@ const onHtmlFrameResize = (event: MessageEvent): void => {
 // Detect a compaction summary message — a user-role message whose content is the
 // `<compact_messages>` envelope written by `compactMessageInMemoryNew`. The user bubble renders it
 // as a structured `CompactionCard` instead of a wall of escaped XML.
-// Detection is content-prefix based because the API carries no `is_compaction` flag; the compactor
-// writes this exact prefix and nothing else does.
 const isCompactionMessage = (msg: { role: string; content: string } | undefined): boolean => {
   if (!msg) return false
   if (msg.role !== 'user') return false
@@ -427,17 +419,9 @@ const messageCursor = ref<string | null>(null)
 // risk that tradeoff; the load-more threshold drives histories beyond one page.
 const PAGE_SIZE = 1000
 
-// ── Sub-agent peek ────────────────────────────────────────────────
-// Owns the slide-over panel for watching a single sub-agent's
-// progress. The composable is only mounted when `peekPanel` is
+// ── Sub-agent peek ──────────────────────────────────────────────── Owns the slide-over panel for
+// watching a single sub-agent's progress. The composable is only mounted when `peekPanel` is
 // non-null (lazy) so we don't open SSE channels speculatively.
-//
-// Two flows reach the panel:
-//   1. 👁 click on a <SpawnSubAgent> row  →  SpawnSubAgent emits
-//      `peek`  →  ChatView calls `nav.openPeek(payload)`. The
-// composable mounts on the next render. 2. "Open full" in the panel → panel emits `openFull(sid)` →
-// ChatView closes the peek + navigates the URL to switch the main chat view to the sub-agent's
-// session.
 const nav = useNavigationStore()
 const router = useRouter()
 const route = useRoute()
@@ -537,10 +521,6 @@ async function copyAllReviewComments() {
 
 // Sidebar file-row click (or header Open button): open the file in the in-app code browser, which
 // also updates the app URL (view=code-editor).
-// Captured at setup: inject() only resolves against an active component instance, and a DOM event
-// handler has none — calling it inside the handler returned undefined and made this a silent no-op.
-// Null-guarded for mounts outside an AppLayout subtree (unit tests), where the click is
-// legitimately a no-op.
 const openInEditor = useInjectOpenInCodeEditor()
 function onChatSidebarOpenFile(payload: { path: string; line?: number }) {
   if (!openInEditor || !effectiveCwd.value) return
@@ -559,16 +539,9 @@ const centerDiffScrollRef = ref<HTMLElement | null>(null)
 
 const showCenterDiff = computed(() => centerDiff.value !== null)
 
-// ── Centre-diff view state: two axes, one owner ───────────────────────────
-//   mode          — LAYOUT (unified | split). Global, so it lives in the URL
-//                   (?diffmode=) with a localStorage fallback for "I always
-//                   read split". A view switch must be linkable + survive
-//                   refresh (house rule), hence the param and not a bare ref.
-//   collapsedPaths / wholeFilePaths — SCOPE, per file. Session state like a
-//                   scroll position: 40 stale per-file rows in the URL would
-//                   be worse than a reset. Only the BULK collapse is mirrored
-//                   into ?diffcollapse=1, so "show me just the file list" is
-//                   still deep-linkable in one param.
+// ── Centre-diff view state: two axes, one owner ─────────────────────────── mode          — LAYOUT
+// (unified | split). Global, so it lives in the URL (?diffmode=) with a localStorage fallback for
+// "I always read split".
 const DIFF_MODE_STORAGE_KEY = 'pabrik.centerdiff.mode'
 
 const readStoredDiffMode = (): 'unified' | 'split' => {
@@ -810,7 +783,6 @@ function syncDiffParam(path: string | null) {
 // (The old currentPath watcher lived here — every assignment site below now calls syncDiffParam
 // explicitly. Replace, not push — scrolling must not spam history entries.) Start/stop the
 // scroll-spy to match the file list (replaces the old centerFiles.length watcher).
-// Called explicitly after every assignment.
 const syncCenterSpy = () => {
   if (centerFiles.value.length === 0) stopCenterSpy()
   else void nextTick(() => startCenterSpy())
@@ -821,10 +793,6 @@ function onCenterDiffRetry() {
 }
 
 // Re-read the session's worktree binding from the backend.
-// The binding is created/removed mid-chat by the LLM's set_git_worktree tool, so the mount-time
-// value from loadChatHistory() goes stale — the sidebar (and git chip) would keep showing the
-// session's original cwd (e.g. main) instead of the bound worktree.
-// Uses the lightweight session detail endpoint (no message payload), not messages?limit=1.
 async function refreshWorktreeBinding() {
   if (!sessionId.value || isPendingSession.value) return
   try {
@@ -886,9 +854,6 @@ function onOpenWorkspaceSession(sessionId: string): void {
 // SSE connection. Both the `llm` and `queue` channels now flow through the global `sseBus` (opened
 // once by App.vue). The bus's single global SseClient carries ALL 5 channels (including bare 'llm'
 // and bare 'queue').
-// Listeners here filter by `event.session_id === sid` on the JS side — defense-in-depth against
-// backend routing regressions. The same listener filter would also be needed in a future multi-tab
-// scenario where multiple ChatViews share one EventSource.
 const isStreaming = ref(false)
 const streamingContent = ref('')
 let streamContentVersion = 0
@@ -911,13 +876,7 @@ interface VirtualScrollerExposed {
   scrollToIndex: (index: number, behavior?: ScrollBehavior) => void
   scrollToTop: (behavior?: ScrollBehavior) => void
   scrollToBottom: (behavior?: ScrollBehavior) => void
-  /** The scrollTop that counts as "the bottom" — the same number
-   * `scrollToBottom` is about to use. `handleVirtualScroll` MUST measure
-   * at-bottom against this rather than `scrollHeight - clientHeight`: when
-   * the height model overshoots the real content, the DOM's max sits up to
-   * `maxTailGap` (100px) BELOW the last message, so the DOM measure reports
-   * a perfectly good auto-stick as "the user left the bottom" and disarms
-   * every later stick for the rest of the mount. */
+  /** The scrollTop that counts as "the bottom" — the same number `scrollToBottom` is about to use. */
   bottomScrollTop: () => number
   /** Where the bottom sat when the stick LAST acted (end of the last measure pass, or the last
    * `scrollToBottom`), or null before anything positioned the list. A getter on the child, so it
@@ -956,13 +915,6 @@ const fileInputRef = ref<{ focusInput?: () => void } | null>(null)
 // Persist chat scroll position per-task across mount/unmount. The composable attaches its own
 // scroll/scrollend listeners to the VirtualScroller's container ref (via the computed
 // `scrollerContainerRef` below) and flushes pending writes on unmount.
-// The storage key is `chat-scroll-<taskId>` — same identity as the session id per the project's
-// task.id == session.id convention (migration 052).
-// Note: `virtualScrollerRef.value.containerRef` is the HTMLElement directly (NOT a ref object),
-// because `defineExpose` in VirtualScroller.vue auto-unwraps refs.
-// The existing code in `handleVirtualScroll` reads `.containerRef.value` (double-unwrapped), which
-// silently returns undefined — the code falls back to the event `target` so the bug is invisible.
-// Don't copy that pattern.
 const scrollerContainerRef = computed<HTMLElement | null>(
   () => virtualScrollerRef.value?.containerRef ?? null,
 )
@@ -985,40 +937,13 @@ const chatScrollRestore = useChatScrollRestore(
 // Guard flag for the messages-length watcher's auto-stick. During the initial load, the
 // loadChatHistory branch handles the scroll explicitly (either restore a saved position via
 // scrollToPosition or land at the bottom via scrollToBottom).
-// Without this guard, the watcher would yank the user back to the bottom immediately after the
-// restore — defeating the feature.
 let isInitialLoad = false
 
-// Ref to the outer flex wrapper around the VirtualScroller. The logger
-// reads this so it can report "did the layout chain reach the
-// scroller's parent?" — without it, a 0×0 VirtualScroller could mean
-// either "the wrapper isn't sized" (layout bug higher up) or "the
-// wrapper is sized but the scroller isn't" (the `flex flex-col` bug
-// the recent fix addressed). The two cases need different fixes; the
-// logger needs the wrapper's dimensions to tell them apart.
+// Ref to the outer flex wrapper around the VirtualScroller.
 const messagesWrapperRef = ref<HTMLElement | null>(null)
 
-// ─── Floating composer: the `--chat-composer-inset` contract ────────────────
-//
-// The composer dock is `position: absolute` on the chat column, so the
-// transcript scrolls *under* it. Four things need to know how tall that dock
-// is, and none of them can be a reactive ref: the textarea autogrows on every
-// input event, and a reactive dep read in the render function would re-run
-// ChatView's whole (very large) render on every keystroke.
-//
-// So the height is written straight to the DOM as a CSS custom property on
-// the chat column, and everything reads it in CSS:
-//   - `.composer-scrim`         — the fade's own extent
-//   - `.last-transcript-row`    — bottom padding on the newest message, so it
-//                                 can always be scrolled clear of the dock
-//   - `.chat-scroll-to-bottom`  — keeps the arrow above the dock
-//   - `.chat-scroll-slider`     — (in ChatScrollSlider) keeps the track
-//                                 reachable when the viewport is narrow
-// Because it is plain CSS padding, VirtualScroller's `measureItems()` picks
-// the clearance up through `el.offsetHeight` for free — the sizer grows, and
-// its `scrollToBottom` (`realBottom = topSpacer + contentH`) lands on the
-// padded bottom, so auto-stick keeps the last message visible with no change
-// to the scroller's height model.
+// ─── Floating composer: the `--chat-composer-inset` contract ──────────────── The composer dock is
+// `position: absolute` on the chat column, so the transcript scrolls *under* it.
 let chatColumnEl: HTMLElement | null = null
 const setChatColumnEl = (el: unknown) => {
   chatColumnEl = (el as HTMLElement | null) ?? null
@@ -1054,29 +979,13 @@ onUnmounted(() => {
 
 // True for the newest transcript group only. Pads that ONE row so the final message scrolls clear
 // of the floating composer.
-// Index-based on purpose: `:last-child` would pad whichever row the virtual window happens to end
-// on, which is a mid-transcript row whenever the window does not cover the tail (leaving a ~150px
-// hole in the middle of the conversation).
 const isLastGroup = (index: number) => index === messageGroups.value.length - 1
 
-// Timestamp (ms since epoch) of the most recent auto-stick assignment. Set at every site that
-// programmatically writes `container.scrollTop` to keep the chat pinned to the bottom — the SSE
-// chunk handler, the messages-length watcher, the SSE `full` event handler, and `onSpacersResized`.
-// `handleLoadMore` consults this (via `isAutoStickActive`) to decide whether a prepend right now
-// would fight an active stick. See `helpers/autoStickGate.ts` for the gating math. Starts at 0,
-// which the gate treats as "never fired" — so the very first `loadMore` after mount isn't blocked.
+// Timestamp (ms since epoch) of the most recent auto-stick assignment. See
+// `helpers/autoStickGate.ts` for the gating math.
 const lastAutoStickAt = ref(0)
 
 // contentShift handler (P2, task_1787551495337_9) — replaces the old spacer MutationObserver.
-// VirtualScroller now positions its window with `translate3d` inside a sizer div (no spacer
-// `style.height` mutations left to observe), so it emits an explicit `contentShift` event whenever
-// the virtual layout's geometry changes.
-// Whenever that happens — which is asynchronously after VirtualScroller measures real item heights
-// (~50-100ms after mount, and again whenever new items scroll into view) — we re-stick to the
-// bottom IF the user was at bottom.
-// This is "stick-to-bottom" behavior and naturally handles both the initial-load measurement drift
-// and the chain-reaction where measuring one batch of items reveals more items that get measured
-// too. Once the user scrolls up, isAtBottom flips to false and we stop fighting them.
 let spacerRafId: number | null = null
 let lastObservedScrollHeight = 0
 // True while a loadMore preserve window is in flight — contentShift
@@ -1097,18 +1006,8 @@ const onContentShift = (shift: { topSpacer: number; bottomSpacer: number; total:
     // total height) won't trigger a re-scroll.
     if (newScrollHeight === lastObservedScrollHeight) return
     const delta = newScrollHeight - lastObservedScrollHeight
-    // ── Fix: only stick on GROWTH, not shrink (2026-09-02) ──────────
-    // Shrinking is the sizer clamp itself (modelTotal -> realTotal),
-    // not new content. Sticking on shrink causes the down-clamp loop:
-    // sizer 22163 -> stick to 21007 -> sizer 21788 -> stick to 20632
-    // -> sizer 20433 -> stick to 19277 -> sizer jumps back to 22163
-    // (because at 19277 range no longer includes last item) -> gap.
-    // Ignore sub-threshold growth (<10px, BOTTOM_THRESHOLD): rounding /
-    // border noise that cannot change at-bottom state. Anything larger
-    // is real content the stick must follow — ignoring e.g. a 34px
-    // post-jump measure correction strands the reader above the newest
-    // message with the arrow hidden (standalone header layout,
-    // task_1791737106508_0).
+    // ── Fix: only stick on GROWTH, not shrink (2026-09-02) ────────── Shrinking is the sizer clamp
+    // itself (modelTotal -> realTotal), not new content.
     if (delta <= 0 || delta < 10) {
       lastObservedScrollHeight = newScrollHeight
       return
@@ -1156,8 +1055,6 @@ const onContentShift = (shift: { topSpacer: number; bottomSpacer: number; total:
     }
     // We are going to assign scrollTop. Mark the next scroll event as programmatic BEFORE the
     // assignment so the browser-fired scroll reads origin='programmatic' in handleVirtualScroll.
-    // This is the critical bit: without it, a stick-to-bottom action looks identical to a user
-    // scroll in the logs.
     scrollLogger.markProgrammatic()
     // Record the auto-stick timestamp so the loadMore gate knows the
     // stick is actively engaged right now (not just that the LLM is
@@ -1206,43 +1103,16 @@ const error = ref<string | null>(null)
 // True while the REMOTE half of the transcript load is still outstanding. The load has two halves:
 // the cache prime (IndexedDB, fast) and the network page/delta (slow — bound by
 // `INITIAL_HISTORY_TIMEOUT_MS`, currently 45 s, plus the retry schedule).
-// `isLoading` tracks neither cleanly, because a cached mount clears it the instant the cached rows
-// paint: it answers "the local half is done", not "the transcript is known". This flag is the
-// network half.
-// `isInitializing` (declared next to `messageGroups`, which it reads) is the readgate built on top
-// of it.
 const isRemoteLoadPending = ref(false)
 const hasMoreMessages = ref(true)
 const isAtBottom = ref(true)
 // "The server has answered, and the answer was: zero messages." The empty state must be gated on
 // this, not on `messageGroups.length === 0` alone.
-// Before it existed, ANY state that wasn't actively loading — a failed fetch, a mid-retry window, a
-// not-yet-assigned session — rendered "How can I help you?" for sessions with hundreds of messages.
-// The distinction that matters to the reader is "empty" vs "not known yet", and only a completed
-// load can tell us which one we are looking at. Reset to false at the start of every load and set
-// true only when an attempt completes without throwing.
 const historyConfirmed = ref(false)
 
 // File previews render inline inside the chat bubble (see PresentFiles.vue +
 // PreviewContentRenderer.vue). There is no side panel — wide HTML content offers an "Open in new
 // tab" action instead.
-// Whether the VirtualScroller's container is currently scrollable (`scrollHeight > clientHeight`).
-// When the container IS scrollable, the user can scroll to the top to trigger loadMore via the
-// VirtualScroller's `@load-more` event — so the "Load more messages" button hides and avoids UI
-// clutter.
-// When the container is NOT scrollable (the common short-chat case in the screenshot in
-// docs/plans/2026-06-04-chat-lazy-load-button.md), the user has no scroll-driven path, so the
-// button is the only way to reach older messages.
-// Updated by the VirtualScroller via the `@scrollability-change` event (not read through the
-// template ref).
-// The event pattern is used because component-instance proxies do not establish reactive
-// dependencies on inner ref values when accessed through `childRef.value.someRef.value` — a parent
-// `computed` reading that chain would not re-evaluate when the child's value changes.
-// With the event, this is a plain `ref<boolean>` that the template can react to via standard Vue
-// reactivity.
-// Defaults to `false` so the initial-render 0×0 flicker shows the affordance; the VirtualScroller's
-// watch with `immediate: true` fires the event synchronously during setup, overwriting this default
-// with the real value before the first render.
 const scrollerIsScrollable = ref(false)
 const sessionCwd = ref('')
 // Bound git worktree path (empty string when no worktree is bound).
@@ -1254,11 +1124,6 @@ const gitWorktreeCwd = ref('')
 // session's original cwd). Falls back to the session's original cwd.
 const effectiveCwd = computed(() => gitWorktreeCwd.value || sessionCwd.value)
 // Branch for the right sidebar.
-// The bottom status bar's `gitStatus` is the single source of truth — the sidebar used to fetch its
-// own branch via getGitChanges, and the two concurrent fetches raced on worktree switches (sidebar
-// showing stale 'main' while the bottom chip already followed the worktree).
-// `undefined` while loading so the sidebar falls back to its own fetched branch instead of flashing
-// 'detached'.
 const sidebarBranch = computed(() =>
   gitStatus.value ? gitStatus.value.branch || 'detached' : undefined,
 )
@@ -1267,18 +1132,11 @@ const maxCapacityTotalTokens = ref(200000)
 
 // ─── Profile selection ──────────────────────────────────────────────────────── Per-session model
 // selection.
-// The chip in the status bar shows the EFFECTIVE profile (per-session `selected_profile_model` →
-// `config.active_profile` → top-level default) and lets the user pick a profile from the list in
-// PabrikConfig.
-// Per-session selection is persisted via PUT /api/llm/session/:id and forwarded to the next LLM
-// call via POST /api/llm/session. The chip mirrors the backend cascade in
-// `workflow.zig::resolveProfileField` so the user sees the same name that's actually applied.
 const availableProfiles = ref<Array<{ name: string; model: string; base_url: string }>>([])
 const selectedProfile = ref<string | null>(null)
 // User-chosen default profile from PabrikSettings → Profiles → "Set active". `null` when no profile
-// is marked active (or no profiles configured). The chatview shows this as the chip's effective
-// selection when no per-session override is set.
-// See plan docs/superpowers/plans/2026-08-06-chatview-profile-cascade-display.md.
+// is marked active (or no profiles configured). See plan
+// docs/superpowers/plans/2026-08-06-chatview-profile-cascade-display.md.
 const activeProfile = ref<string | null>(null)
 const showProfilePicker = ref(false)
 const isUpdatingProfile = ref(false)
@@ -1323,14 +1181,6 @@ const loadProfiles = async () => {
 
 // Effective profile the chip / picker reflect — mirrors the backend cascade in
 // `workflow.zig::resolveProfileField`.
-// `selectedProfile` wins; if the user has not picked one for this session, `activeProfile` (the
-// PabrikSettings "Set active" default) applies; otherwise the chip shows "Default" and the backend
-// uses the top-level config.
-// NOTE: we use `||` (not `??`) so an empty string from the session's `selected_profile_model` falls
-// through to the active profile.
-// `??` only catches `null` / `undefined`, but the per-session value arrives as `""` (empty string)
-// when the user never picked one — see `api.getSession.selectedProfile` which returns the raw
-// string. Falling through `||` makes the empty-string case match the cascade.
 const effectiveProfile = computed<string | null>(() => {
   const sel = selectedProfile.value
   if (sel && sel.length > 0) return sel
@@ -1373,11 +1223,6 @@ const closeOnOutsideClick = (e: MouseEvent) => {
 // ─── Worktree dropdown + PR dialog ──────────────────────────────────────────── The chat status
 // bar's git branch indicator becomes a clickable button when a worktree is bound (`gitWorktreeCwd`
 // is non-empty).
-// Clicking opens a small dropdown (WorktreeMenu) with three actions: Create a PR, View in folder,
-// Clear worktree.
-// Create a PR opens the CreatePrDialog modal; Clear worktree asks the LLM to call
-// `set_git_worktree(clear=true)` (LLM-mediated so the cleanup re-uses the existing tool path — see
-// plan design decision #5).
 const showWorktreeMenu = ref(false)
 const worktreeMenuRef = ref<HTMLElement | null>(null)
 const showCreatePrDialog = ref(false)
@@ -1395,8 +1240,6 @@ const onWorktreeMenuViewFolder = () => {
   // Open the worktree path (or session cwd if no worktree) in the system file manager.
   // Implementation: use the existing /api/system/folder?path=<worktree> to confirm the directory is
   // accessible, then emit a window event that the right-sidebar file explorer subscribes to.
-  // For v1, the simplest implementation is to copy the path to the clipboard and show a toast — see
-  // ChatsList.vue for the clipboard pattern.
   const path = gitWorktreeCwd.value || sessionCwd.value
   navigator.clipboard.writeText(path)
   // TODO: open a folder-explorer modal in a follow-up
@@ -1412,8 +1255,6 @@ const onWorktreeMenuClear = async () => {
   // Send a system message to the LLM asking it to clear the worktree. The LLM calls
   // set_git_worktree(clear=true), which removes the directory and clears the binding. The SSE event
   // updates the UI.
-  // Uses sessionCwd.value (the session's ORIGINAL cwd) so the LLM's context matches the session it
-  // was started from.
   if (!sessionId.value) return
   try {
     await api.sendChatMessage(
@@ -1451,7 +1292,6 @@ const onCreateWorktree = async (path: string) => {
   // The dialog passes the user's absolute path verbatim. The LLM calls
   // set_git_worktree(path=<path>) which validates (must be absolute, no .., basename matches
   // [A-Za-z0-9._-]{1,100}) and runs git worktree add.
-  // The branch is auto-derived as worktree/<basename(path)>.
   const message = `Please call set_git_worktree with path=${path} to create a new worktree for me.`
   try {
     await api.sendChatMessage(
@@ -1468,9 +1308,8 @@ const onCreateWorktree = async (path: string) => {
 }
 
 // ─── Scroll logger ──────────────────────────────────────────────────────────── A dedicated logger
-// for the scroll subsystem. Bound to the active chat so every line is tagged with chatId. Recreated
-// when sessionId changes so the log context is never stale.
-// See helpers/scrollLogger.ts for what fields every line carries and why.
+// for the scroll subsystem. Bound to the active chat so every line is tagged with chatId. See
+// helpers/scrollLogger.ts for what fields every line carries and why.
 let scrollLogger: ScrollLogger = createScrollLogger(props.chatId)
 const refreshScrollLogger = () => {
   scrollLogger = createScrollLogger(sessionId.value || props.chatId)
@@ -1480,51 +1319,21 @@ const refreshScrollLogger = () => {
 const sessionSkills = ref<api.SkillInfo[]>([])
 const showSkillsPopup = ref(false)
 
-// Track which tool items are expanded.
-//
-// 2026-08-23 auto-collapse fix — keys are STABLE per-message ids, NOT
-// positional `${groupIndex}-${idx}` pairs. Positional keys broke the
-// moment any SSE event mutated `messages`: messageGroups recomputes,
-// group/message indices shift (a new assistant row inserts a group
-// before the tool rows; dedupe/hidden-row filtering changes counts),
-// and every stored key silently started pointing at a DIFFERENT card.
-// The user's manually-expanded card lost its key → collapsed itself;
-// worse, an unrelated card could render pre-expanded. Message ids are
-// stable across re-computation (DB nanos from REST history, or the
-// synthetic-but-consistent ids minted by the SSE handler), so
-// expansion survives any number of live updates.
+// Track which tool items are expanded. 2026-08-23 auto-collapse fix — keys are STABLE per-message
+// ids, NOT positional `${groupIndex}-${idx}` pairs.
 const expandedToolIds = ref<Set<string>>(new Set())
 
 // 2026-08-23 spawn-subagent-live-progress: per-tool_call_id map of sub-agent progress rows. Fed by
 // role="subagent_progress" SSE events on the existing `llm` bus channel (no new event_type).
-// The map entry is cleared once the parent's final <results> tool result arrives so the
-// parsed-envelope view takes over rendering.
 const subAgentProgressMap = ref<SubAgentProgressMap>({})
 
-// 2026-08-25 agent-error-card (task_1787663566535_2): live-only list of
-// agentic-loop error/retry diagnostics. Fed by `full` SSE events with
-// is_error=true (workflow.zig's 3 diagnostic sites — never persisted,
-// is_skip_db=true). Rendered OUTSIDE the VirtualScroller (below it) so
-// the scroller's height-estimate model never sees these rows; state
-// lives in the agentError store (keyed by session_id) so the card
-// survives ChatView remounts on session switches.
-//
-// 2026-08-25 task_1787668954023_2: SINGLE-LATEST semantics — only the most
-// recent error is rendered. New error events overwrite the previous entry
-// (status of a retry chain progressing: 1/10 → 2/10 → ... → final 10/10
-// bail, all on the same card). This avoids the pile-up you see in the
-// screenshot. The card is also cleared as soon as ANY non-error `full`
-// SSE event arrives for this session (handled in the SSE listener below)
-/// — meaning the moment the agent recovers, the error card disappears.
-// 2026-08-29 agent-error-persistent: state moved into the `useAgentErrorStore` Pinia store so the
-// card survives AppLayout's `:key="activeChatId"` remounts on sidebar navigation. The interface now
-// lives in the store module; here we read the per-session entry via a computed.
+// 2026-08-25 agent-error-card (task_1787663566535_2): live-only list of agentic-loop error/retry
+// diagnostics. Fed by `full` SSE events with is_error=true (workflow.zig's 3 diagnostic sites —
+// never persisted, is_skip_db=true).
 const agentErrorStore = useAgentErrorStore()
 // Per-session derived read. Reads from the store (keyed by sessionId) so the card survives ChatView
 // remounts caused by AppLayout's :key="activeChatId" or StandardTaskChatView's
 // :key="chat-${task.id}" on session/task switches.
-// A user visiting session A, switching to session B, then returning to session A still sees the
-// most recent error diagnostic for A.
 const agentError = computed<AgentErrorEntry | null>(() => agentErrorStore.errorFor(sessionId.value))
 
 // Image preview state
@@ -1564,10 +1373,6 @@ const toolExpandKey = (msg: Message, groupIndex: number, idx: number): string =>
 // Code-editor wiring for the fallback `<DiffView>` rendered for tools that don't have a dedicated
 // component (e.g. legacy tools). When the user clicks a line number in the fallback diff we forward
 // to the in-app editor — but only when we know the target file path.
-// We don't have a stable path here (the fallback is rendered for any tool with diffview_*), so we
-// silently no-op when the path is missing.
-// Most tools with diff content now route through the dedicated `<TextReplace>` component (which
-// knows the path); this fallback is for legacy/edge cases.
 const fallbackOpenInEditor = useInjectOpenInCodeEditor()
 const handleFallbackJumpToLine = (line: number) => {
   // No-op: we don't have a target file path in the fallback context. The click affordance still
@@ -1600,7 +1405,6 @@ const checkGitStatus = async () => {
   // Cache-first paint: on init or a cwd switch, synchronously show the last-known status from
   // localStorage so the chip has a branch to render while the remote fetch below revalidates it in
   // the background (stale-while-revalidate).
-  // Poll ticks for the same cwd skip this — their in-memory value is newer than the cache.
   if (gitStatusCwd !== cwd) {
     gitStatusCwd = cwd
     const cached = readGitStatusCache(cwd)
@@ -1630,24 +1434,9 @@ const stopGitStatusPoll = () => {
   }
 }
 
-// Filter out empty messages for display (check stripped content).
-//
-// 2026-08-23 hidden-messages fix — three exemptions ADDED to the
-// original "drop if stripThinkingTags(content) is empty" rule:
-//
-//   1. `image_urls` populated → KEEP. A user message with attached
-//      images but no text (content='') was permanently invisible:
-//      it was dropped HERE, before hasBubbleContent's image check
-//      (line ~1289) could ever see it. The images exist; show them.
-//
-//   2. `role === 'tool'` → KEEP. Tool result rows are rendered by
-//      structured components (ReadFile, Bash, ...) that parse their
-//      own envelope from content — several tools legitimately carry
-//      whitespace-only or empty raw content while still rendering a
-//      meaningful card. Dropping them here broke the tool sequence.
-// 3. `reasoning_content` present → KEEP. Thinking models can emit reasoning with an empty final
-// text body; the message is not empty, and the assistant bubble now renders a collapsible reasoning
-// section for it (see template, assistant branch).
+// Filter out empty messages for display (check stripped content). 2026-08-23 hidden-messages fix —
+// three exemptions ADDED to the original "drop if stripThinkingTags(content) is empty" rule: 1.
+// `image_urls` populated → KEEP.
 const filteredMessages = computed(() =>
   messages.value.filter((m) => {
     // Always keep tool_calls messages even if content is only thinking tags
@@ -1676,13 +1465,7 @@ interface MessageGroup {
   timestamp: Date
 }
 
-/** Stable identity for a message group (2026-08-26 stable-keys fix).
- * The VirtualScroller keys its height cache by this — a group keeps
- * its measured height wherever it moves in the array. messageGroups
- * re-merges/re-filters on every SSE event, shifting indices; with
- * index-keyed heights those shifts corrupted the sizer (heights
- * describing the wrong rows → phantom gaps → blank stick-to-bottom).
- * The first message's DB id is stable across regrouping. */
+/** Stable identity for a message group (2026-08-26 stable-keys fix). */
 const groupKey = (group: MessageGroup): string =>
   group.messages[0]?.id ?? `empty-${group.timestamp.getTime()}`
 
@@ -1708,49 +1491,11 @@ const messageGroups = computed((): MessageGroup[] => {
 
   // 2026-08-23 blank-block fix — drop groups with nothing renderable BEFORE the VirtualScroller
   // ever sees them.
-  // The previous approach (v-if inside the slot) left empty groups in the items array, where their
-  // height stayed at the scroller's 200px ESTIMATE forever (measureItems only measures rendered
-  // children).
-  // The estimated total then far exceeded the real content height, and scrollToBottom — which
-  // trusts the estimate — landed the visible window PAST all real items: a fully blank chat.
-  // Filtering here keeps the scroller's item list in sync with what actually renders;
-  // hasBubbleContent in the template remains as defense-in-depth.
   return groups.filter((g, i) => hasBubbleContent(g, i))
 })
 
-/**
- * Ready-gate: true while the transcript load is outstanding AND there is
- * nothing for the reader to look at yet. Drives the initializing skeleton and
- * the composer disable.
- *
- * It is deliberately the *readgate* — "has anything painted?" — and not "has
- * the request finished?", because the two mount paths need opposite answers:
- *
- *   - Cold mount (nothing cached): `messageGroups` is empty for the whole
- *     network page, so the skeleton covers the remote fetch — the retry
- *     schedule included. Unchanged.
- *   - Cached mount with rows painted: `messageGroups` is non-empty the moment
- *     the cache paints, so the skeleton comes down on that paint and the
- *     network tail refresh runs behind real content. That is the entire point
- *     of painting the cache, so this gate must NOT wait for
- *     `isRemoteLoadPending` to clear.
- *   - Cached mount that painted nothing renderable: `messageGroups` stays
- *     empty, so the skeleton stays up through the fall-through to the full
- *     page that `runHistoryLoadAttempt` now performs. Before this, that
- *     window rendered a blank column.
- *
- * Deliberately NOT gated on SSE, git status, stream snapshot, or queued
- * messages — all best-effort/late by design, and waiting on them would wedge
- * the composer disabled after the chat is already usable. Pending drafts
- * (`pending-*`) skip history fetch by design, so they count as ready
- * immediately.
- *
- * Declared here rather than with the other state because it reads
- * `messageGroups`, which is built from `filteredMessages` / `hasBubbleContent`
- * declared further up this file; a `const` read above its own declaration is
- * a TDZ error. `isInitializing` is only ever read from the template, so there
- * is no script call site that needs it earlier.
- */
+/** Ready-gate: true while the transcript load is outstanding AND there is nothing for the reader to
+ * look at yet. Drives the initializing skeleton and the composer disable. */
 const isInitializing = computed(
   () =>
     !isPendingSession.value &&
@@ -1769,8 +1514,6 @@ const groupKeyForMessageId = (messageId: string): string | null => {
 // ── User-pill rail (2026-09-09 chatview user pill) ────────────────────── One pill per user group;
 // click jumps the scroller to that group. Per-group (not per-message) because VirtualScroller items
 // ARE groups — scrollToItem(groupIndex) is exact.
-// Compaction envelopes are skipped (system artifacts, not user turns). Uniform stack order (not
-// proportional to height) so the rail stays predictable under virtualization estimates.
 const userPills = computed((): UserPill[] => {
   const pills: UserPill[] = []
   messageGroups.value.forEach((g, i) => {
@@ -1872,22 +1615,9 @@ const bgShellContent = (m: { content?: string }): string => {
 const isBgOnlyGroup = (group: { role: string; messages: { content?: string }[] }): boolean =>
   group.role === 'user' && group.messages.length > 0 && group.messages.every(isBgUserMsg)
 
-// ─── FIX: Compute tool call names per assistant group ─────────────────────────
-// For each group index, returns the tool names string if the group is an
-// assistant turn that triggered tool calls BUT the tool outputs are NOT shown
-// anywhere in the transcript. When tool outputs ARE shown (same group is tool,
-// next group is tool, OR a later non-adjacent tool row carries a matching
-// tool_call_id) we return null — the structured tool card already conveys
-// what was called.
-//
-// 2026-08-23 stray-TOOLS-pill fix — the previous adjacency check
-// (`messageGroups[i+1]?.role === 'tool'`) flashed a pill during the
-// live-SSE window between the assistant tool_calls row arriving and
-// the tool result row arriving. Worse, it could persist wrongly if
-// the tool group was later collapsed / dropped / merged by
-// filteredMessages or hasBubbleContent. Now we walk the WHOLE
-// transcript for matching tool_call_ids — robust against ordering,
-// merging, and live SSE interleaving.
+// ─── FIX: Compute tool call names per assistant group ───────────────────────── For each group
+// index, returns the tool names string if the group is an assistant turn that triggered tool calls
+// BUT the tool outputs are NOT shown anywhere in the transcript.
 const groupToolNames = computed((): (string | null)[] => {
   // Pre-collect every tool_call_id that has a matching tool row in the
   // transcript. The id set is the single source of truth for "is this
@@ -1943,9 +1673,6 @@ const groupToolNames = computed((): (string | null)[] => {
       }
 
       // finish_reason set but tool_calls_json missing/unparseable.
-      // Only show the "..." pill when the tool call is NOT yet represented by a rendered tool row
-      // (otherwise the live SSE window between tool_calls and tool_result would flash a stray pill
-      // that immediately gets replaced by a structured card).
       if (msg.finish_reason === 'tool_calls') {
         // We can't match by id here (tool_calls_json is missing), so fall back to the adjacency
         // heuristic: if a tool group appears ANYWHERE in the transcript after this group, the tool
@@ -1967,11 +1694,6 @@ const groupToolNames = computed((): (string | null)[] => {
 })
 
 // ─── Inherited Context: thread sub_agents args from assistant message to tool result.
-// The tool result message carries a tool_call_id; we walk backwards through messageGroups to find
-// the assistant message whose tool_calls_json contains a call with that id, then extract the
-// sub_agents array via parseSpawnSubAgentArgs.
-// Returns null when no match is found, which the SpawnSubAgent component treats as "no
-// inherited_context badge".
 function findSubAgentArgsForToolGroup(
   toolCallId: string | undefined,
   groups: MessageGroup[],
@@ -1998,24 +1720,12 @@ function findSubAgentArgsForToolGroup(
 // ─── Bubble Visibility ──────────────────────────────────────────────────────── Check if a message
 // has visible text content (i.e. content that survives stripThinkingTags and is non-empty after
 // trim).
-// An assistant message saved with finish_reason='tool_calls' often has raw content that is *only*
-// `<thinking>...</thinking>` tags — the raw string is non-empty, but renderResponse() strips those
-// tags and renders an empty string, producing a visible-but-empty bubble.
-// The bubble check must match what the renderer actually shows, not the raw column.
 const hasVisibleContent = (m: Message): boolean => {
   const stripped = stripThinkingTags(m.content || '')
   return stripped.trim().length > 0
 }
 
 // Check if a message group has any visible content for its bubble.
-// Hides empty bubbles (e.g., a user message with no text and no images,
-// or an assistant message with no content and no tool-call header).
-//
-// 2026-08-23 hidden-messages fix — the user branch previously checked
-// ONLY group.messages[0]; with consecutive user messages (queue-drain
-// bursts) the 2nd+ messages were invisible even when non-empty. Now
-// ANY message in the group having images, visible text, or reasoning
-// keeps the bubble alive.
 const hasBubbleContent = (group: MessageGroup, groupIndex: number): boolean => {
   if (group.role === 'user') {
     return group.messages.some(
@@ -2041,12 +1751,6 @@ const hasBubbleContent = (group: MessageGroup, groupIndex: number): boolean => {
 // ─── Chat History ──────────────────────────────────────────────────────────── 2026-09-04
 // spawn-subagent-refresh-persist (task_1788505292766_1) — rehydrate live sub-agent rows after a
 // (re)load.
-// Progress events are SSE-ephemeral; a refresh/re-mount wipes subAgentProgressMap with no replay.
-// For every spawn_sub_agent tool row still in placeholder state (no `<summary>` → the tool hasn't
-// completed), fetch the backend's authoritative snapshot and fold it into the map.
-// Best-effort: any failure (server restarted → progress=[]; network error) leaves Task 0's
-// "starting…" fallback in place. Skipped on loadMore (scroll-back fetches older, already-completed
-// history).
 const rehydrateSubAgentProgress = async () => {
   const placeholders = messages.value.filter(isPlaceholderSpawnRow)
   if (placeholders.length === 0) return
@@ -2373,34 +2077,16 @@ const claimBufferedOlderPage = (): BufferedOlderPage | null => {
   return page
 }
 
-/**
- * COMMIT — prepend a fetched older page through the preserve path.
- *
- * Moved verbatim from the old `loadChatHistory(true)` branch: suppress the
- * contentShift re-stick, snapshot `wasAtBottom`, `beginPreserve`, dedupe by id,
- * prepend, advance the cursor, `nextTick`, mark the restore programmatic,
- * `endPreserve`, re-seed `lastObservedScrollHeight`, and re-stick when the user
- * was at the bottom. The only additions are the `trigger`/`bufferedAgeMs`
- * fields in the logs and the REFILL arm at the end.
- *
- * The caller (`maybeLoadOlder`) owns `isLoadingMore` / `isCommittingOlder`.
- */
+/** COMMIT — prepend a fetched older page through the preserve path. */
 const commitOlderPage = async (
   page: BufferedOlderPage,
   trigger: 'buffered' | 'foreground' | 'manual',
 ) => {
   const newMessages = page.messages
   // Suppress the contentShift re-stick for the duration of the preserve.
-  // The user is scrolling *up* to load older history (not at the bottom), so the stick-to-bottom
-  // behavior is useless here — and its re-stick callback firing on every layout shift during the
-  // forceRender/measure/anchor dance is what was causing the visible flicker.
-  // Detaching the rAF handler eliminates that work entirely for this window.
   suppressContentShiftStick = true
 
   // Snapshot the at-bottom state BEFORE the preserve begins.
-  // The preserve dance (beginPreserve → messages mutation → endPreserve) fires scroll events that
-  // pass through handleVirtualScroll and would corrupt the live `isAtBottom` flag — the snapshot is
-  // the only trustworthy signal for the post-preserve re-validation below (task_1787638309623_3).
   const wasAtBottom = isAtBottom.value
 
   // Preserve scroll position when prepending new (older) messages at the top.
@@ -2428,8 +2114,6 @@ const commitOlderPage = async (
   virtualScrollerRef.value?.beginPreserve(newCount)
   // 2026-09-09 user-pill pagination fix — dedupe: drop pages already present (retry after a failed
   // endPreserve, overlapping cursor pages, or an SSE `full` echo that landed mid-preserve).
-  // Without this the same id prepended twice renders double bubbles and corrupts group indices the
-  // pill rail jumps to.
   const seenIds = new Set(messages.value.map((m) => m.id))
   const freshMessages = newMessages.filter((m) => !seenIds.has(m.id))
   messages.value = [...freshMessages.slice().reverse(), ...messages.value]
@@ -2470,29 +2154,13 @@ const commitOlderPage = async (
     },
   })
 
-  // Re-arm the re-stick. Re-seed `lastObservedScrollHeight` from the
-  // current `scrollHeight`, so the next contentShift is compared
-  // against the post-preserve state — not the stale pre-preserve
-  // value, which would have made the very first post-preserve shift
-  // look like a "measurement update" and re-trigger the stick path.
+  // Re-arm the re-stick.
   lastObservedScrollHeight = virtualScrollerRef.value?.containerRef?.scrollHeight ?? 0
   suppressContentShiftStick = false
 
-  // ── Post-preserve bottom re-validation (task_1787638309623_3) ────────
-  //
-  // The suppress window above SWALLOWED every contentShift event, so
-  // if the user was at bottom before the prepend, nothing re-validated
-  // the bottom after `endPreserve` restored the anchor. If the
-  // prepended items' heights were still estimates when endPreserve
-  // measured them (images/code blocks settle later), the sizer grows
-  // AFTER the preserve window closes and nothing scrolls to absorb
-  // it — a persistent gap below the last message (the "new items on
-  // demand create big gaps" symptom).
-  //
-  // `wasAtBottom` was snapshotted BEFORE `beginPreserve` (the preserve
-  // dance fires scroll events that would corrupt the live flag).
-  // Explicit Math.max compute — same contract as the contentShift
-  // re-stick, no browser-clamp delegate.
+  // ── Post-preserve bottom re-validation (task_1787638309623_3) ──────── The suppress window above
+  // SWALLOWED every contentShift event, so if the user was at bottom before the prepend, nothing
+  // re-validated the bottom after `endPreserve` restored the anchor.
   if (wasAtBottom) {
     const c = virtualScrollerRef.value?.containerRef
     if (c) {
@@ -2501,13 +2169,8 @@ const commitOlderPage = async (
       // Delegated to the scroller's scrollToBottom (real-bottom
       // target — same rationale as the onContentShift stick).
       virtualScrollerRef.value?.scrollToBottom('auto')
-      // Re-engage the stick explicitly: the user WAS at bottom before
-      // the prepend, and we just moved them to the new bottom on their
-      // behalf. The preserve dance's programmatic scroll events may
-      // have flipped isAtBottom=false mid-prepend (the round-2 guard
-      // only retains the stick for users who were already engaged) —
-      // without this re-arm, the next SSE chunk's contentShift would
-      // skip and leave a gap below the last message.
+      // Re-engage the stick explicitly: the user WAS at bottom before the prepend, and we just
+      // moved them to the new bottom on their behalf.
       isAtBottom.value = true
       scrollLogger.info({
         ...afterCtx,
@@ -2583,18 +2246,9 @@ const evaluateOlderPrefetch = () => {
   lastPrefetchSkip = skip
 }
 
-/**
- * The single entry point for "load older messages".
- *
- * Replaces the old `handleLoadMore` guard chain and is the only path that
- * commits a page, so the guards run exactly once per attempt:
- *   - the auto-stick gate applies ONLY to `trigger === 'edge'` (the scroll
- *     trigger). The manual button deliberately bypasses it, matching the
- *     previous behaviour where the button called `loadChatHistory(true)`
- *     directly — an explicit user click must never be swallowed by a stream.
- *   - `isLoadingMore` / `isCommittingOlder` are set SYNCHRONOUSLY with the
- *     buffer claim, before the first `await` (double-commit contract).
- */
+/** The single entry point for "load older messages". Replaces the old `handleLoadMore` guard chain
+ * and is the only path that commits a page, so the guards run exactly once per attempt: - the
+ * auto-stick gate applies ONLY to `trigger === 'edge'` (the scroll trigger). */
 const maybeLoadOlder = async (trigger: 'edge' | 'manual') => {
   const container = virtualScrollerRef.value?.containerRef
   const ctx = buildScrollContext(container, {
@@ -2605,24 +2259,8 @@ const maybeLoadOlder = async (trigger: 'edge' | 'manual') => {
     wrapperRef: messagesWrapperRef,
   })
 
-  // Each guard is its own `if` (not chained with `||`) so we can
-  // log exactly which one blocked. Order matters: the auto-stick
-  // gate is first because it's the most common cause of "I
-  // scrolled to the top during streaming and nothing loaded".
-  //
-  // Gate suppression (not blanket suppression): the previous
-  // guard `isLLMProcessing && isAtBottom` blocked loadMore for
-  // the ENTIRE duration of the stream, which made pagination
-  // impossible while a long response was streaming. The new
-  // guard is timestamp-based: only suppress if the auto-stick
-  // actually fired recently (within AUTO_STICK_GATE_MS). That
-  // way:
-  //   - Active stream (chunks every <100ms)
-  //     → gate is fresh → suppress (no jitter from prepend
-  //       fighting the next chunk's stick).
-  //   - Slow model, paused stream, or user scrolled up
-  //     → gate goes stale → allow loadMore.
-  // See `helpers/autoStickGate.ts` for the gating math.
+  // Each guard is its own `if` (not chained with `||`) so we can log exactly which one blocked. See
+  // `helpers/autoStickGate.ts` for the gating math.
   const now = Date.now()
   const sinceLastAutoStickMs = lastAutoStickAt.value === 0 ? -1 : now - lastAutoStickAt.value
   if (trigger === 'edge' && isAutoStickActive(lastAutoStickAt.value, now, isAtBottom.value)) {
@@ -2828,20 +2466,9 @@ const runHistoryLoadAttempt = async () => {
       } catch {
         // Painted cache stands; the next mount retries the tail.
       }
-      // Painted rows exist either way, so "this session is empty" is now
-      // ruled out — the empty state may be shown again if the session is
-      // later reloaded.
-      //
-      // "Painted rows" has to mean rows the transcript can actually DRAW.
-      // A cache holding only unrenderable rows — an assistant turn whose
-      // content never landed, a tool row the renderer does not know — leaves
-      // `messageGroups` empty, and confirming emptiness from it would print
-      // "How can I help you?" over a session full of messages (the bug class
-      // PR #719 fixed for the network path). Confirm only when something is
-      // on screen; otherwise fall through to the authoritative full page
-      // below, which is the only thing that can answer. `isRemoteLoadPending`
-      // keeps the skeleton up across that fall-through, so the reader gets
-      // the placeholder instead of a blank column.
+      // Painted rows exist either way, so "this session is empty" is now ruled out — the empty
+      // state may be shown again if the session is later reloaded. "Painted rows" has to mean rows
+      // the transcript can actually DRAW.
       if (messageGroups.value.length > 0) {
         historyConfirmed.value = true
         setupCodeBlockCopyButtons()
@@ -2856,8 +2483,6 @@ const runHistoryLoadAttempt = async () => {
   // `fetchChatHistoryEffect`, not `getChatHistory`: the latter answers a failed fetch with an empty
   // transcript, which is exactly the "this session has no messages" lie the empty state would then
   // render.
-  // Here the failure is a `ChatHistoryError` on the error channel; `runPromise` re-raises it and
-  // `runHistoryLoadAttemptEffect` re-types it for the retry loop.
   const data = await Effect.runPromise(
     api.fetchChatHistoryEffect(
       sessionId.value,
@@ -2931,7 +2556,6 @@ const runHistoryLoadAttempt = async () => {
       // Sync cursor must be the newest row, not the pagination cursor: the backend omits
       // next_cursor when has_more is false (wiping the cursor to null), and on a full page it
       // points at the oldest row (re-fetching the same page next mount).
-      // Either way the next mount degrades to a full desc limit=1000 load.
       if (rows.length === allRows.length) {
         await runSyncVoid(
           chatEngineDb.setCursor(sid, newestCursor(allRows, data.next_cursor ?? null, null)),
@@ -2959,45 +2583,10 @@ const runHistoryLoadAttempt = async () => {
     await nextTick()
     // Wait one paint frame so the browser has actually laid out the VirtualScroller items (nextTick
     // alone only waits for Vue's DOM update, not for layout/paint).
-    // After this, the MutationObserver set up in onMounted takes over: whenever spacers resize
-    // (from measurement updates) it'll re-stick to the bottom as long as the user hasn't scrolled
-    // up.
     await new Promise<void>((r) => requestAnimationFrame(() => r()))
 
-    // Try to restore the user's previous scroll position (set by
-    // useChatScrollRestore when they last closed this task). If
-    // no saved position exists OR the saved position is "near
-    // bottom" (within BOTTOM_THRESHOLD_PX of max), restore()
-    // returns null and we fall through to the existing
-    // scrollToBottom behavior. This is the chat-specific
-    // counterpart of the kanban composable's restore-on-mount
-    // path.
-    //
-    // ── Wait for a MEASURED model before deciding ─────────────────────────
-    //
-    // Both halves of the decision read the container's geometry, and at this
-    // point that geometry is still the ESTIMATE: `defaultItemHeight` is 64 and
-    // the scroller's first `measureItems` pass does not run until ~100 ms
-    // after mount. So on a 100-row chat the model claims a 6400px sizer
-    // (max 5600) against a real 20000px transcript (max 19200), and:
-    //
-    //   - `restore()`'s "near bottom" test compares the saved value against
-    //     5600, so a reader who closed mid-transcript reads as AT the bottom
-    //     and gets `scrollToBottom` instead of their own position.
-    //   - `scrollToPosition(saved)` clamps to 5600, so even when the restore
-    //     does fire it writes a real coordinate into an estimated model — and
-    //     the first measure pass then compensates the reader by the whole
-    //     estimate error above the anchor.
-    //
-    // Measured on the real component: saved=9000 landed at 19200 (the bottom),
-    // saved=500 landed at 1452, saved=5000 landed at 15608. That is the
-    // "reopening a chat always lands a bit on top" report.
-    //
-    // One measure pass is enough to wait for — `heightEstimator.observe()`
-    // feeds the running median and `estimateHeight` returns it for EVERY
-    // unmeasured item, so the whole model converges at once rather than row by
-    // row. The wait is bounded so a scroller that never measures (empty chat,
-    // a 0x0 container) still lands somewhere instead of hanging the mount.
+    // Try to restore the user's previous scroll position (set by useChatScrollRestore when they
+    // last closed this task).
     if (chatScrollRestore.hasSavedPosition()) {
       await waitForScrollerMeasured()
     }
@@ -3028,18 +2617,6 @@ const runHistoryLoadAttempt = async () => {
   historyConfirmed.value = true
 
   // NOTE — deliberately NO prefetch evaluation here.
-  //
-  // An eager one-shot evaluation at this point reads unsettled geometry: the
-  // initial-load scroll (`chatScrollRestore.restore()` / `scrollToBottom`) is
-  // applied a tick AFTER this function returns, so `container.scrollTop` is
-  // still 0 and the arm radius check passes — burning a scroll-back request on
-  // every chat open, which then gets dropped when the real position lands.
-  // Verified in the browser (chatview_lazy_prefetch_ui_test.py): the eager
-  // request was issued at `scrollTop = 0` and dropped ~1 frame later.
-  //
-  // The arm therefore waits for the first real user scroll event, which is also
-  // when the prefetch is actually useful. A chat restored to a position near
-  // the top arms on its first upward scroll — still ~1.5 viewports early.
 }
 
 /** The promise-shaped attempt above, as an `Effect`. */
@@ -3056,23 +2633,8 @@ const runHistoryLoadAttemptEffect = (): Effect.Effect<void, ChatHistoryError> =>
       }),
   })
 
-/**
- * Initial load / refresh (the old `loadChatHistory(false)`).
- *
- * Wraps `runHistoryLoadAttempt` in the retry schedule, then decides what a
- * fully-failed load means. Two invariants this owns:
- *
- *   1. `isLoading` stays true across every attempt, so `isInitializing` keeps
- *      the skeleton up and the composer disabled for the whole wait. The user
- *      sees "still loading" — never a transcript that claims to be empty.
- *   2. `historyConfirmed` is only set by a SUCCESSFUL attempt, so the empty
- *      state cannot render off a failed fetch. A fully-failed load lands in
- *      the error state with its Retry button.
- *
- * The `loadMore` branch that used to live here moved to `maybeLoadOlder` /
- * `commitOlderPage`; this function no longer has a `loadMore` parameter, so the
- * two scroll-back call sites can no longer accidentally take the slow path.
- */
+/** Initial load / refresh (the old `loadChatHistory(false)`). Wraps `runHistoryLoadAttempt` in the
+ * retry schedule, then decides what a fully-failed load means. Two invariants this owns: 1. */
 const loadChatHistory = async () => {
   if (!sessionId.value || isPendingSession.value) return
 
@@ -3137,8 +2699,6 @@ const scrollToBottom = async (force = false, trigger: string = 'unspecified') =>
   // Defense: during `beginPreserve`/`endPreserve`, the VirtualScroller is adjusting `scrollTop`
   // itself to keep the user's view stable while older messages are prepended. An external
   // `scrollToBottom` here fights that adjustment and produces visible jitter.
-  // The preserve window is short (<100ms typically) so suppressing is safe — the next SSE chunk
-  // will trigger a fresh scrollToBottom.
   if (virtualScrollerRef.value?.isPreservingScroll) return
   if (virtualScrollerRef.value) {
     if (force || isAtBottom.value) {
@@ -3176,21 +2736,6 @@ const scrollToBottom = async (force = false, trigger: string = 'unspecified') =>
 // ─── Follow the newest turn ────────────────────────────────────────────────── "Take me to the
 // newest turn", as an explicit act by the reader rather than an inference from where they happen to
 // be sitting.
-// Sending and queueing are that act: the reader is looking at history, they ask for a turn, and the
-// turn they asked for is what they should be looking at.
-// It has to re-arm `isAtBottom` and not merely pass `force = true`, because `isAtBottom` is what
-// three separate gates read afterwards — the `messages.length` watcher returns early without it,
-// `onContentShift` skips, and a non-forced `scrollToBottom` does nothing.
-// A reader scrolled up into history is `isAtBottom === false` by definition, and there is no
-// optimistic push (see `handleFileInputSubmit`), so the turn that answers the send arrives over SSE
-// a frame or two later and is exactly the content those gates are there to follow.
-// A forced scroll alone cannot do this.
-// It writes `container.scrollTop` and leaves the flag to the native `scroll` event that follows —
-// and the browser fires none when the write is a no-op, which is the common case here: the
-// scroller's sizer already reports a max scrollTop that the container is sitting at.
-// The flag then stays false and the turn lands below the fold with nothing left to bring it up.
-// Setting the flag first is what makes the follow deterministic instead of a race with an event
-// that may not come.
 const followNewestTurn = (trigger: string) => {
   isAtBottom.value = true
   lastAutoStickAt.value = Date.now()
@@ -3200,9 +2745,6 @@ const followNewestTurn = (trigger: string) => {
 
 // Triggered by VirtualScroller when the user scrolls within `loadMoreThreshold` of the top (because
 // `loadMoreAtTop` is true). Auto-paginates older messages.
-// Thin wrapper: the guard chain + buffered-page commit live in `maybeLoadOlder` (which the
-// positional commit in `handleVirtualScroll` and the manual button also call), so every trigger
-// shares one implementation.
 const handleLoadMore = () => {
   void maybeLoadOlder('edge')
 }
@@ -3210,9 +2752,6 @@ const handleLoadMore = () => {
 // Triggered by VirtualScroller when one of ITS internal guards prevented `loadMore` from being
 // emitted — i.e. the user WAS within the load edge but the scroller still chose not to emit
 // (because `isPreservingScroll`, `!hasMore`, `!isScrollable`, or `items.length === 0`).
-// This is the "scroller-side" companion to `handleLoadMore`'s guard logging — together they cover
-// every reason lazy load might not have fired. The `source: 'VirtualScroller'` field in `extra`
-// distinguishes these from ChatView-side suppressions when you're grepping.
 const handleLoadMoreSuppressed = (guard: string) => {
   const container = virtualScrollerRef.value?.containerRef
   const ctx = buildScrollContext(container, {
@@ -3230,25 +2769,13 @@ const handleLoadMoreSuppressed = (guard: string) => {
   })
 }
 
-// Track isAtBottom from the VirtualScroller's scroll event so we can decide
-// whether to auto-scroll on new messages and when to show the "scroll to
-// bottom" button.
-//
-// `previousIsAtTop` is a module-scope (not ref) because it only feeds
-// the logger — nothing else needs to react to it. Storing the
-// "did we just reach the top" transition is what powers the
-// `reached-top` / `left-top` log lines, which are the answer to
-// "user scrolled to the top of the chat — why didn't lazy load fire?" If the `reached-top` line is
-// followed by silence (no `load-more-threshold-reached` and no `load-more-suppressed`), the
-// loadMore event was never fired in the first place.
+// Track isAtBottom from the VirtualScroller's scroll event so we can decide whether to auto-scroll
+// on new messages and when to show the "scroll to bottom" button. `previousIsAtTop` is a
+// module-scope (not ref) because it only feeds the logger — nothing else needs to react to it.
 let previousIsAtTop = false
 // Module-scope state for the additional handleVirtualScroll logs below. Like `previousIsAtTop`,
 // these are pure diagnostics — nothing else reads them. Using plain `let` (not ref) avoids any
 // reactive work; the values exist only to feed the logger.
-// Sentinel `-1` for the numeric "previous" values signals "no prior event yet" so the delta-based
-// logs (`direction-change`, `content-resized`) can skip their first call.
-// The `first-scroll` info log captures that initial state explicitly, so the missing deltas on call
-// #1 don't look like a bug.
 let previousScrollTop = -1
 let previousScrollHeight = -1
 let previousDirection: 'up' | 'down' | null = null
@@ -3260,12 +2787,8 @@ const handleVirtualScroll = (
   isProgrammatic = false,
 ) => {
   // Prefer the event target — it's the actual DOM element that dispatched the scroll event, so the
-  // browser guarantees it exists for the lifetime of this handler.
-  // The ref chain (`virtualScrollerRef.value?.containerRef`) is null during mount/remount races
-  // (chat switch, initial mount before Vue binds the template ref, v-if toggle), but the target is
-  // always live. See the `scroll` emit JSDoc in VirtualScroller.vue for the full rationale.
-  // The ref chain is kept as a defensive fallback for any future caller that doesn't supply a
-  // target (none today).
+  // browser guarantees it exists for the lifetime of this handler. See the `scroll` emit JSDoc in
+  // VirtualScroller.vue for the full rationale.
   const container = target ?? virtualScrollerRef.value?.containerRef
   if (!container) {
     // Tripwire — with the target in hand this branch should be unreachable. If it ever fires, the
@@ -3284,73 +2807,12 @@ const handleVirtualScroll = (
   const { scrollHeight, clientHeight } = container
   const actualScrollTop = container.scrollTop
   const scrollTopMatches = Math.abs(scrollTop - actualScrollTop) < 1
-  // ── "The bottom" is whatever scrollToBottom is about to target ──────────
-  // NOT `scrollHeight - clientHeight`. The sizer is a height MODEL; when it
-  // overshoots the real content, the DOM's max is up to `maxTailGap` (100px
-  // by default) below the last message — and `VirtualScroller.scrollToBottom`
-  // deliberately parks the reader at the real content bottom instead, so the
-  // DOM's max is a position the reader is never AT. Measuring against it
-  // meant every successful auto-stick immediately reported itself as "the user
-  // left the bottom", which disarmed all four auto-stick gates for the rest of
-  // the mount (scrollToBottom(force=false), the onContentShift re-stick, the
-  // SSE-chunk remeasure, the messages-length watcher). That is the
-  // "sometimes it does not autoscroll to bottom" report: the reader sat at the
-  // bottom, the FAB said otherwise, and the stream stopped following.
-  //
-  // The scroller owns this number because it owns the blank-viewport override
-  // that makes the two disagree. Fall back to the DOM measure when the ref is
-  // not populated (mount races, a caller without a scroller) — that path
-  // existed before the override did, so it is the safe default.
-  //
-  // ── Stable anchor, not a live read (2026-10-10) ─────────────────────────
-  //
-  // `bottomScrollTop()` is a MOVING TARGET, and that is the "the stick dies
-  // mid-stream" flake. Its two inputs move independently:
-  //
-  //     domEdge    = scrollHeight - clientHeight       (the height MODEL)
-  //     realBottom = topSpacer + content.offsetHeight  (the RENDERED rows)
-  //     if (domEdge - realBottom + clientHeight > HYSTERESIS_PX) use realBottom
-  //
-  // The override engages only while the model overshoots by more than
-  // `HYSTERESIS_PX` (50px). So when the model converges — or the rendered
-  // window shifts and `topSpacer` jumps — the SAME stationary reader is
-  // suddenly measured against a different number. Instrumented trace, one
-  // chunk apart, reader never having moved:
-  //
-  //     frame A: bottomEdge=30114  scrollTop=30071  -> 43px short -> atBottom=false
-  //     frame B: bottomEdge=30093  scrollTop=30093  ->  0px short -> atBottom=true
-  //
-  // The reader did not move 43px; the RULER moved. `isAtBottom` therefore
-  // oscillates, the jump-to-bottom arrow blinks, and every follow gate that
-  // reads the flag disarms on the "short" frames. `retainedThroughGrowth`
-  // below papers over most of them, but it is capped at <100px and does not
-  // fire when `contentGrew` is false — so on a slow runner the last settle
-  // lands on a short frame and the arrow is up when anything samples it.
-  //
-  // The fix is to judge against the bottom AS IT WAS when the stick last
-  // acted — `settledBottom`, which `measureItems` and `scrollToBottom`
-  // already maintain for exactly this reason (see its own comment about
-  // judging `wasAtBottom` against a stale rather than a live read). That
-  // number only changes when the scroller deliberately repositions, so a
-  // stationary reader stays at-bottom across the model's own convergence.
-  //
-  // The tolerance widens to absorb the model's convergence between the last
-  // pass and this event: `BOTTOM_THRESHOLD` (10px) plus the overshoot hysteresis
-  // (50px) — the largest step the ruler can take between two frames. It is
-  // deliberately NOT `maxTailGap` (100px): that would swallow a reader sitting
-  // 101px up, which `retainedThroughGrowth`'s own `< 100` cap exists to keep
-  // disengaged. A genuine scroll-up is still caught immediately.
+  // ── "The bottom" is whatever scrollToBottom is about to target ────────── NOT `scrollHeight -
+  // clientHeight`.
   const settled = virtualScrollerRef.value?.settledBottom
   const liveEdge = virtualScrollerRef.value?.bottomScrollTop?.() ?? scrollHeight - clientHeight
   // The anchor is the bottom the reader was LAST parked at, so it is the number the reader's
   // position is actually referenced to.
-  // Taking `Math.max` of the two would be exactly wrong: `settledBottom` is written from
-  // `bottomScrollTop()` at the end of a pass, and when the real-bottom override DISENGAGES that
-  // read returns the DOM edge — up to `maxTailGap` HIGHER than where the reader sits.
-  // Max-ing it in inflates the gap and disarms the stick it is meant to protect. So: use the anchor
-  // when we have one, and fall back to the live read only before anything has positioned the list.
-  // The widened tolerance below covers the anchor being slightly stale; the live read stays the
-  // tight path.
   const bottomEdge =
     typeof settled === 'number' && Number.isFinite(settled) ? settled : liveEdge
   const distanceFromBottom = Math.max(0, bottomEdge - actualScrollTop)
@@ -3374,8 +2836,6 @@ const handleVirtualScroll = (
   // "Lazy-load zone" is the VirtualScroller's `loadMoreThreshold` (200px) — wider than the 10px
   // `reached-top` log. A user entering the zone hasn't reached the top yet, but lazy load is about
   // to consider firing.
-  // This is the WARN-equivalent info: "user is heading toward the top — expect a `load-more-*` line
-  // soon".
   const isInLazyLoadZone = distanceFromTop < 200 && !newIsAtTop
   const isFirstScroll = previousScrollTop === -1
   const ctx = buildScrollContext(container, {
@@ -3392,8 +2852,6 @@ const handleVirtualScroll = (
   // ── First-scroll info ─────────────────────────────────────────────── Captures the chat's
   // initial state on the very first scroll event. Without this, "delta=0" lines for the first few
   // events look like a bug in the delta math.
-  // Also surfaces whether the VirtualScroller's reported `scrollTop` matches the container's (they
-  // should agree to within 1px; a >1px mismatch is a stale param bug, not a cosmetic issue).
   if (isFirstScroll) {
     scrollLogger.info({
       ...ctx,
@@ -3411,11 +2869,6 @@ const handleVirtualScroll = (
   }
   // ── Direction-change info ─────────────────────────────────────────── The user reversed scroll
   // direction (e.g. was scrolling up to read history, then back down).
-  // This is the "why did the chat jump to the bottom when I was scrolling up?" signal — if a
-  // `reached-bottom` log follows a `direction-change` with `direction: 'up'`, the auto-stick fired
-  // in the middle of an upward gesture.
-  // If you see this in the logs and the next state transition is `left-bottom` (not
-  // `reached-bottom`), the user's direction reversal was respected correctly.
   if (directionChanged) {
     scrollLogger.info({
       ...ctx,
@@ -3430,19 +2883,8 @@ const handleVirtualScroll = (
       },
     })
   }
-  // ── Content-resized info ────────────────────────────────────────────
-  //
-  // `scrollHeight` changed between two scroll events. Causes:
-  //   - New message appended (SSE chunk, messages-length watcher)
-  //   - Image finished loading / unmounted
-  //   - VirtualScroller measured or relayouted items
-  //   - User toggled message-grouping, attachments, or code fold
-  // Combined with the next state-transition log, this answers
-  // "did content grow while I was scrolled up reading?" — if so,
-  // the user's reading position may no longer reference the same
-  // message it did a moment ago. Negative `deltaHeight` (content
-  // shrank) is logged too — that's a code-fold collapse or
-  // optimistic message rollback.
+  // ── Content-resized info ──────────────────────────────────────────── `scrollHeight` changed
+  // between two scroll events.
   if (contentGrew) {
     scrollLogger.info({
       ...ctx,
@@ -3461,8 +2903,6 @@ const handleVirtualScroll = (
   // ── Lazy-load-zone info ───────────────────────────────────────────── The user is within
   // `loadMoreThreshold` (200px) of the top but hasn't reached the 10px `reached-top` threshold yet.
   // The VirtualScroller's onScroll debounce is probably about to fire `loadMore`.
-  // If you see this line followed by silence (no `load-more-threshold-reached` and no
-  // `load-more-suppressed`), the debounce was reset by another scroll event before it could fire.
   if (isInLazyLoadZone) {
     scrollLogger.info({
       ...ctx,
@@ -3497,8 +2937,6 @@ const handleVirtualScroll = (
 
   // ── State transitions are loud ───────────────────────────────────── This is the most useful
   // line in the whole logger.
-  // "User was at bottom, scrolled up 200px" vs "Auto-stick fired, isAtBottom is true again" are the
-  // two events that answer every "why did the chat jump?" question.
   if (newIsAtBottom !== previousIsAtBottom) {
     scrollLogger.info({
       ...ctx,
@@ -3513,21 +2951,8 @@ const handleVirtualScroll = (
       },
     })
   }
-  // ── Top edge transitions ─────────────────────────────────────────────
-  //
-  // Mirrors the bottom-edge logging above. The two edges behave
-  // symmetrically: the user can be 200px from the top and have
-  // `loadMore` fire (the lazy-load threshold), but the
-  // `reached-top` state-transition log only fires at <10px — the
-  // same `BOTTOM_THRESHOLD` analog (`TOP_THRESHOLD`). A user who's
-  // at the top of the chat is by definition within lazy-load range,
-  // so the `reached-top` line should ALWAYS be followed by either:
-  //   - `load-more-threshold-reached` (the loadMore fired)
-  //   - `load-more-suppressed`  (a guard blocked it)
-  // If you see `reached-top` with neither of those, the loadMore
-  // event was lost (e.g. the VirtualScroller's onScroll debounce
-  // was reset by a new scroll event, or the handler returned
-  // before debounce fired).
+  // ── Top edge transitions ───────────────────────────────────────────── Mirrors the bottom-edge
+  // logging above.
   if (newIsAtTop !== previousIsAtTop) {
     scrollLogger.info({
       ...ctx,
@@ -3543,65 +2968,8 @@ const handleVirtualScroll = (
     })
     previousIsAtTop = newIsAtTop
   }
-  // Tight 10px threshold: a chat message is typically 50-100px tall, so
-  // reading the last message puts you well outside this window. This
-  // prevents SSE chunks, the messages-length watcher, and the spacer
-  // MutationObserver from yanking the user back to the bottom while
-  // they're reading history.
-  //
-  // The initial chat load is unaffected — it uses `scrollToBottom(true)`
-  // (force=true), which always scrolls regardless of this flag. So
-  // opening a session still lands at the bottom, but once the user
-  // scrolls up even a few pixels, the auto-scroll disengages.
-  //
-  // ── Content-grew-under-a-stationary-viewport guard (task_1787595375531_0) ──
-  //
-  // When scrollHeight grows (SSE chunk / measurement pass) while the
-  // user's scrollTop is UNCHANGED (deltaTop === 0), the user did NOT
-  // scroll — the bottom simply moved away from them. Flipping
-  // isAtBottom=false here permanently disengages the auto-stick: every
-  // later contentShift sees isAtBottom=false and skips (the
-  // `spacer-resize-skip` log), so the gap never closes and grows with
-  // every chunk — the "huge blank space below" symptom.
-  //
-  // Log evidence (scroll#228→#231): top=10638 constant, scrollHeight
-  // 11641→11732 (+91), bottom 0→91px, `left-bottom` fired with
-  // deltaTop=0, then every re-stick skipped forever after.
-  //
-  // Fix: only DIS-engage when the user actually moved (deltaTop < 0 —
-  // a real upward scroll). A stationary viewport with growing content
-  // keeps the stick engaged so the next contentShift re-stick closes
-  // the gap.
-  //
-  // ── Round-2 refinement (task_1787638309623_3): previousIsAtBottom gate ──
-  //
-  // The round-1 guard (`newIsAtBottom || (contentGrew && !userScrolledUp)`)
-  // couldn't distinguish "user AT bottom, content grows away" from "user
-  // ALREADY scrolled up reading, content grows below, viewport
-  // stationary". In the second case it RE-ENGAGED the stick
-  // (previousIsAtBottom=false → true), and the next contentShift yanked
-  // the user to the bottom mid-read — the "bouncing text" symptom.
-  //
-  // Log evidence (scroll#234-#247): user scrolling up (top 33249→30533,
-  // bottom 4436px), SSE chunk grew scrollHeight +172 with deltaTop≈0,
-  // `spacer-resize-stick` fired and teleported the user to top=35039
-  // (bottom=4px).
-  //
-  // Fix: only RETAIN the stick if it WAS engaged. A user who already
-  // scrolled up must never be re-engaged by content growth — only by
-  // actually scrolling back down to the bottom (newIsAtBottom).
-  // ── Programmatic-write guard (2026-08-25 append-gap fix) ──────────────
-  //
-  // `userScrolledUp` must mean "the USER scrolled up", not "scrollTop
-  // decreased". VirtualScroller's anchor compensation (measureItems)
-  // and endPreserve restoration write scrollTop directly; those writes
-  // fire native scroll events that arrive here with
-  // `isProgrammatic=true` (4th emit arg). A downward compensation
-  // (measured height < estimate — streamed markdown settling shorter)
-  // previously read as a real upward gesture: isAtBottom flipped
-  // false, the auto-stick disengaged, and every later SSE chunk's
-  // contentShift hit the spacer-resize-skip guard — the gap below the
-  // last message accumulated with each chunk and never self-healed.
+  // Tight 10px threshold: a chat message is typically 50-100px tall, so reading the last message
+  // puts you well outside this window.
   const userScrolledUp = !isProgrammatic && deltaTop < 0
   // ── Fix: cap retention (2026-09-02) ─────────────────────────────── Previously retained even
   // with bottom=1730px gap, keeping isAtBottom=true forever and causing every contentShift to stick
@@ -3611,8 +2979,6 @@ const handleVirtualScroll = (
   const nextIsAtBottom = newIsAtBottom || retainedThroughGrowth
   // ── Deep-dive: isAtBottom decision (2026-09-02) ──────────────────── Log every time the retained
   // path changes the outcome, or when contentGrew is true (the blinking-loop trigger).
-  // This is the single line that answers "why did isAtBottom stay true with bottom=1633px?" —
-  // without it you have to infer from spacer-resize-stick vs skip.
   if (contentGrew || retainedThroughGrowth || newIsAtBottom !== nextIsAtBottom) {
     scrollLogger.info({
       ...ctx,
@@ -3664,10 +3030,6 @@ const handleVirtualScroll = (
 
 // ─── SSE ───────────────────────────────────────────────────────────────────── Bus listener
 // unsubscribes.
-// Declared at script-setup scope so they persist across `connectSse`/`disconnectSse` calls
-// (re-declaring them inside the function would reset them to null on every mount, losing the
-// unsubscribe). Initialized to null; set by `connectSse`, cleared by `disconnectSse`.
-// Same pattern as the existing `sseScrollPending` flag below.
 let offLlm: (() => void) | null = null
 let offQueue: (() => void) | null = null
 // Stale-on-wake (cross-tab sharing): fires when this window takes over the
@@ -3737,9 +3099,6 @@ const connectSse = () => {
   const bus = useSseBus()
   // Subscribe FIRST so we don't miss any bus events that arrive between registration and the next
   // tick.
-  // The `event.session_id !== sid` filter is defense-in-depth — the bus's single global EventSource
-  // carries ALL sessions' llm/queue events (no per-session routing), and the listener-side filter
-  // scopes each ChatView to its own sid.
   offLlm = bus.on('llm', (event: api.SseEvent) => {
     if (event.session_id !== sid) return
 
@@ -3747,9 +3106,6 @@ const connectSse = () => {
 
     // 2026-08-23 spawn-subagent-live-progress: route sub-agent progress events into the
     // per-tool_call_id map and STOP here.
-    // Touching `messages.value` would pollute the chat transcript (these rows are ephemeral, NOT
-    // persisted) and would also toggle the dedupe gate above. The progress map is the SINGLE
-    // consumer for role="subagent_progress".
     if ((event as SubAgentProgressEvent).role === 'subagent_progress') {
       subAgentProgressMap.value = applyProgressEvent(
         subAgentProgressMap.value,
@@ -3766,8 +3122,6 @@ const connectSse = () => {
     // 2026-08-23 llm-chunk-streaming: gate on the three event types ChatView actually handles —
     // `chunk` (append delta), `chunk_final` (token-stream-end marker that updates maxTotalTokens),
     // and `full` (replace streaming-* row with canonical DB row).
-    // Other types (`reasoning_chunk`, `tool_call_delta`, `connected`) are handled by their own
-    // dedicated branches above.
     if (event.type !== 'chunk' && event.type !== 'chunk_final' && event.type !== 'full') {
       return
     }
@@ -3775,13 +3129,6 @@ const connectSse = () => {
     // 2026-08-25 agent-error-card (task_1787663566535_2) + 2026-08-25 dedupe
     // (task_1787668954023_2): agentic-loop diagnostics (retry attempts + TooManyRetries bails)
     // arrive as `full` events with is_error=true.
-    // Route them into the dedicated agentError slot (single-card, latest-wins) and STOP — they must
-    // never enter messages.value (they'd render as a plain user bubble and pollute the transcript).
-    // Each new error overwrites the previous one (so 1/10 → 2/10 → ... → 10/10 all show on the same
-    // card).
-    // The card also auto-clears as soon as ANY non-error `full` event arrives below in this
-    // handler, or on a non-error `chunk_final` run-end marker — i.e. the moment the agent recovers
-    // from the retry chain, the error disappears.
     if (event.type === 'full' && event.is_error) {
       agentErrorStore.setError(sid, event.content || '', event.id || undefined)
       nextTick(() => scrollToBottom(false, 'agent-error-card'))
@@ -3798,16 +3145,9 @@ const connectSse = () => {
       return
     }
 
-    // 2026-08-23 llm-chunk-streaming: in-stream final marker emitted by
-    // workflow.zig right before the canonical llm_full row. Carries
-    // usage + signals "token stream over" so the typing indicator can
-    // stop early. Do NOT push a message here — the full event that
-    // follows replaces the streaming-* row with the canonical DB row.
-    // 2026-09-10 agent-error-chunk_final-clear: a non-error chunk_final
-    // means the token stream completed, i.e. the agent recovered from
-    // any prior retry chain — clear the error card here too, so a
-    // terminal `full` that lacks finish_reason / renderable payload
-    // can't leave a stale card behind.
+    // 2026-08-23 llm-chunk-streaming: in-stream final marker emitted by workflow.zig right before
+    // the canonical llm_full row. Carries usage + signals "token stream over" so the typing
+    // indicator can stop early.
     if (event.type === 'chunk_final') {
       if (event.total_tokens) {
         maxTotalTokens.value = event.total_tokens
@@ -3858,8 +3198,6 @@ const connectSse = () => {
       // 2026-09-01 fix: placeholder → final update for the same tool call shares the same `id` (row
       // id). The placeholder SSE (empty `<data>`) arrives first, then the final SSE (`<results>`)
       // for the same row.
-      // Without this, the frontend would push a DUPLICATE message (same id, same tool_call_id,
-      // different content) and render two cards. Update in place instead.
       if (event.id) {
         const existingById = messages.value.find((m) => m.id === event.id)
         if (existingById) {
@@ -3915,12 +3253,6 @@ const connectSse = () => {
       // 2026-08-23 TOOLS-pill-spam fix — the backend re-emits an SSE for EVERY tool completion via
       // getLatestMessage(), which (backend bug B1, see handle_tool.zig) often returns the ASSISTANT
       // tool_calls row instead of the completed tool placeholder.
-      // The frontend then receives several role=assistant events with tool_calls_json per turn;
-      // each became a new assistant group and groupToolNames rendered a "TOOLS" pill for each —
-      // pill spam between tool rows.
-      // Dedupe: skip any event that duplicates an existing message on role + content +
-      // tool_call_id. Genuine repeats from the server (same DB row re-emitted) collapse to one;
-      // distinct rows differ in tool_call_id and still render.
       const dup = messages.value.find((m) => {
         if (m.role !== role) return false
         if ((m.tool_call_id ?? '') !== (event.tool_call_id ?? '')) return false
@@ -3955,19 +3287,12 @@ const connectSse = () => {
         // Decode the `||`-joined wire string the backend sends. A plain `split('|')` would turn
         // `A||B` into `["A", "", "B"]`, and the empty entry renders as `<img src="">` — a
         // broken-image icon in the transcript.
-        // `splitMediaUrlsWire` drops empty segments, so `A|B`, `A||B` and `A||B||C` all decode to N
-        // real URLs.
         image_urls: splitMediaUrlsWire(event.image_url),
         video_urls: splitMediaUrlsWire(event.video_url),
         finish_reason: event.finish_reason,
         tool_call_id: event.tool_call_id,
-        // 2026-08-24 (task_1787545088500_6, bug A) — carry the wire
-        // field through the SSE full-event push. Without this, the
-        // SSE path arrived at groupToolNames with tool_calls_json
-        // undefined → JSON.parse never ran → suppression was bypassed
-        // → "tools" pill flashed between every card. The REST path
-        // (loadChatHistory ~line 1579) already had this — keep both
-        // sites in sync.
+        // 2026-08-24 (task_1787545088500_6, bug A) — carry the wire field through the SSE
+        // full-event push.
         tool_calls_json: event.tool_calls_json,
         is_input: event.is_input,
         is_output: event.is_output,
@@ -3993,8 +3318,6 @@ const connectSse = () => {
       // One more auto-stick fires (scrollToBottom below) for the final, post-stream assistant
       // message. Mark the timestamp so the loadMore gate sees the stick as still active during the
       // tail of the message-complete render frame.
-      // After ~500ms (AUTO_STICK_GATE_MS) the gate lifts and the user can scroll-up-and-prepend as
-      // normal.
       lastAutoStickAt.value = Date.now()
       nextTick(() => {
         // Recompute the height model BEFORE the auto-stick (append-gap
@@ -4014,9 +3337,6 @@ const connectSse = () => {
       // 2026-08-23 spawn-subagent-live-progress: when the FINAL spawn_sub_agent tool result row
       // lands, drop the corresponding live-progress entry so the parsed-envelope view (which lives
       // in `content`) takes over rendering immediately.
-      // Without this, the map's running rows would sit invisibly under the now-populated <results>
-      // envelope (the component precedence logic hides them, but the map memory leaks across
-      // renders).
       if (
         role === 'tool' &&
         event.tool_name === 'spawn_sub_agent' &&
@@ -4071,9 +3391,6 @@ const connectSse = () => {
       })
       // A queued turn renders no transcript row — it is only ever a row in the composer's queue
       // panel — so nothing in `messages` grows and none of the auto-stick triggers fire.
-      // The row that finally reaches the transcript is the live worker draining this turn, which
-      // can be minutes away, and by then the reader may well have scrolled off the end. Arm the
-      // follow now, at the moment they asked for the turn.
       followNewestTurn('queue-queued')
     } else if (event.action === 'deleted') {
       queuedMessages.value = queuedMessages.value.filter((m) => m.id !== event.id)
@@ -4082,9 +3399,6 @@ const connectSse = () => {
   // Stale-on-wake (cross-tab sharing): if this window just took over the shared connection, or
   // slept through a long hidden period, llm/queue events may have been missed entirely — fetch just
   // the tail (cursor+asc) and merge it.
-  // A full loadChatHistory here repainted the whole list, yanked the scroll position, and (before
-  // the newestCursor fix) re-fetched up to PAGE_SIZE rows on every tab return. Empty view (nothing
-  // painted yet) still takes the full path so the first paint, cursor, and scroll state initialize.
   offResync =
     bus.onResync?.(() => {
       if (sessionId.value !== sid) return
@@ -4143,9 +3457,6 @@ const disconnectSse = () => {
 // Coalesce flag for SSE-driven `scrollToBottom` calls. SSE chunks can fire 20+ times/sec, but we
 // only need one scrollToBottom per animation frame. Without this, the console floods with
 // `scroll-to-bottom-conditional` lines and we do redundant geometry reads.
-// The user reads content, not scroll position — one frame (16ms) of lag is imperceptible. Declared
-// at script-setup scope so the flag persists across calls to `updateStreamingMessage` (re-declaring
-// it inside the function would reset it every time, defeating the coalesce).
 let sseScrollPending = false
 
 const updateStreamingMessage = () => {
@@ -4153,8 +3464,6 @@ const updateStreamingMessage = () => {
   // Every SSE chunk drives an auto-stick via scrollToBottom below (coalesced to one-per-frame).
   // Mark the timestamp NOW, before the rAF coalesce, so the gate reflects the chunk that just
   // arrived — not the rAF callback that runs up to 16ms later.
-  // With chunks firing 20+/sec this keeps the gate always-fresh during active streaming; with a
-  // slow model the timestamp goes stale between chunks and the user can loadMore.
   lastAutoStickAt.value = Date.now()
   const existingMsg = messages.value.find(
     (m) => m.role === 'assistant' && m.id.startsWith('streaming-'),
@@ -4174,7 +3483,6 @@ const updateStreamingMessage = () => {
     // Coalesce: SSE chunks can fire 20+ times/sec, but we only need one scrollToBottom per
     // animation frame. Without this, the console floods with `scroll-to-bottom-conditional` lines
     // and we do redundant geometry reads.
-    // The user reads content, not scroll position — one frame (16ms) of lag is imperceptible.
     if (!sseScrollPending) {
       sseScrollPending = true
       requestAnimationFrame(() => {
@@ -4183,8 +3491,6 @@ const updateStreamingMessage = () => {
         // Recompute the height model BEFORE scrolling (append-gap fix), but ONLY when the stick is
         // engaged. A scrolled-up user must not be disturbed: remeasure mutates the sizer, and sizer
         // mutations during active reading = the bouncing-text bug.
-        // Gaps below are acceptable while reading; the moment the user returns to the bottom, this
-        // branch re-runs and tightens.
         if (isAtBottom.value) virtualScrollerRef.value?.remeasure()
         scrollToBottom(false, 'sse-chunk')
       })
@@ -4207,11 +3513,6 @@ onMounted(async () => {
   // Refresh lands on chat, never auto-opens the diff: a reload keeps the ?diff= the scroll-spy
   // wrote while the viewer was open, and the panel no longer restores from it — strip it here so
   // the URL stays truthful (Back does the same on explicit exit).
-  // NOTE: left exactly as-is on purpose.
-  // Optional-chaining this read (the obvious fix for a router-less mount) makes onMounted run
-  // FURTHER in unit mounts where `useRoute()` is undefined, and two unrelated ChatView specs
-  // (profile picker, autofocus) were written against the early-abort behaviour — they fail.
-  // Turning it into a behaviour change belongs with those specs, not with the diff view.
   if (typeof route.query.diff === 'string' && !showCenterDiff.value) syncDiffParam(null)
 
   if (sessionId.value) {
@@ -4234,8 +3535,6 @@ onMounted(async () => {
     // 2026-09-02 stream-resume-on-reselect (task_1787673548905_0) — seed the streaming-*
     // placeholder with the backend's partial text so subsequent chunk events APPEND to the
     // recovered content instead of starting from an empty buffer.
-    // The SSE listener is already active. Best-effort: a failed snapshot fetch must never block
-    // chat loading.
     const snapshotStartVersion = streamContentVersion
     try {
       const snap = await api.getStreamSnapshot(sessionId.value)
@@ -4292,8 +3591,6 @@ window.addEventListener('message', onHtmlFrameResize)
 
 // Session-change entry point (replaces the two old sessionId watchers). The component is keyed per
 // chat, so the id is fixed for the component lifetime — this runs once from onMounted below.
-// It loads the session's profile selection AND refreshes the scroll logger so the chatId tag in
-// every line stays accurate.
 const onSessionChanged = async (newId: string) => {
   refreshScrollLogger()
   // Any page armed for the previous session is invalid — drop it before
@@ -4327,19 +3624,11 @@ onUpdated(() => {
     // Any push to `messages` triggers an auto-stick (scrollToBottom below). Mark the timestamp
     // synchronously so the loadMore gate sees the stick as active during the same render frame the
     // message landed in.
-    // Catches user-message sends, tool results, pagination prepends (handled separately by
-    // endPreserve, but the watcher also fires), and the streaming message's first push before
-    // updateStreamingMessage's own mark takes over.
     lastAutoStickAt.value = Date.now()
     nextTick(() => {
       // Recompute the height model BEFORE the auto-stick (append-gap fix): a new item's real height
       // is unknown until it renders; the sizer's estimate may overshoot (phantom gap) or undershoot
       // (stick lands short).
-      // Gated on isAtBottom — scrolled-up readers are never disturbed; at-bottom users get an exact
-      // sizer so the stick shows the real last message.
-      // (The gate MUST be re-checked here, not just at fire time above: the user can scroll up in
-      // between, and sizer mutations during active reading are the bouncing-text bug — same
-      // contract as updateStreamingMessage's rAF branch.)
       if (isAtBottom.value) virtualScrollerRef.value?.remeasure()
       scrollToBottom(false, 'messages-length')
     })
@@ -4411,20 +3700,9 @@ const handleFileInputSubmit = async (userMessage: string, files?: File[]) => {
     return
   }
 
-  // 2026-08-23 auto-collapse fix — NO optimistic local push.
-  // Previously the user's own message was pushed to `messages` with a
-  // synthetic `optimistic-user-*` id, then replaced when the backend's
-  // queue-drain re-emitted it via SSE `full`. Two problems:
-  //   (a) the local push sat at the END of the array, while the
-  //       server's canonical row carried the correct DB id and
-  //       chronological position — the optimistic was visible only
-  //       briefly before the dedupe swapped them;
-  //   (b) every push shifted `messageGroups`, which — combined with
-  //       positional expand keys — silently re-keyed tool cards the
-  //       user had just expanded (see expandedToolIds comment).
-  // Now we let the SSE echo deliver the canonical row. The user sees
-  // a brief gap (server round-trip) but the rendered card carries the
-  // real DB id from the start, with stable expansion semantics.
+  // 2026-08-23 auto-collapse fix — NO optimistic local push. Previously the user's own message was
+  // pushed to `messages` with a synthetic `optimistic-user-*` id, then replaced when the backend's
+  // queue-drain re-emitted it via SSE `full`.
   try {
     await api.sendChatMessage(
       currentSessionId,
@@ -4448,8 +3726,6 @@ const handleFileInputSubmit = async (userMessage: string, files?: File[]) => {
     // The first pin aimed at the bottom of the transcript as it stood BEFORE this turn — there is
     // no optimistic push, so the turn is still in flight at this point and the bottom moves when it
     // renders.
-    // Pin again against the settled position so the turn the server accepted is the one on screen,
-    // whether it arrived over SSE or was pushed here as an error card.
     followNewestTurn('send-message-settled')
   }
 }
@@ -4457,14 +3733,6 @@ const handleFileInputSubmit = async (userMessage: string, files?: File[]) => {
 // ─── Stop session ────────────────────────────────────────────────────────── The FileInput
 // component renders a Stop button (visible only when `isLLMProcessing === true`) that emits
 // `stop-session`.
-// We translate that into a `POST /api/llm/session/<sid>/stop` which flips the worker's `cancelled`
-// flag. The workflow breaks at the next iteration boundary, deletes the worker, and the SSE `worker
-// deleted` event removes the session from `processingState`.
-// The button's `v-if="isLLMProcessing"` auto-hides when that event lands. We deliberately do NOT
-// optimistically flip `isLLMProcessing` locally — the SSE event races with the API response and
-// could cause a flicker (button hides → re-shows → hides).
-// FileInput owns its own `isStopping` flag for the spinner; `processingState` is the source of
-// truth.
 const handleStopSession = async () => {
   if (!sessionId.value) return
   try {

@@ -199,9 +199,6 @@ describe('LayersPanel context menu', () => {
   it('opens the menu with the full selection as targetIds when right-clicking an already-selected row (no shift required)', async () => {
     // Figma parity: right-click on a row that's already in the multi-selection — regardless of
     // shift — opens the menu against the FULL selection.
-    // The earlier implementation incorrectly collapsed the targetIds to a single id when shiftKey
-    // was false, which broke the "Select all then right-click" workflow (Group selection was
-    // disabled because targetIds.length became 1).
     const elements = [
       makeElement({ id: 'elem_a', z_index: 2, position: 0 }),
       makeElement({ id: 'elem_b', z_index: 1, position: 1 }),

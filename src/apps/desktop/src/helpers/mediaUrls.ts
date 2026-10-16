@@ -1,23 +1,5 @@
-/**
- * The `||`-delimited media-URL wire format.
- *
- * `llm_history.image_url` / `.video_url` (and `workspace_item_tasks.image_urls`)
- * hold a single TEXT column carrying N base64 data URLs. The backend joins them
- * with TWO pipes — see `insert_llm_histories.zig` ("Join multiple image URLs
- * with || delimiter"), `image_urls_validation.zig`, and the wire docs on
- * `http_response.zig`.
- *
- * The read side is deliberately more permissive than the writer: every reader in
- * the codebase splits on a SINGLE `|` and drops empty segments
- * (`image_urls_validation.zig:64`, `video_urls_validation.zig:43`,
- * `llm_history.zig` history rows, Android's `ChatApi.splitPipeDelimited`). That
- * handles `A|B`, `A||B` and `A||B||C` identically, so it survives both the
- * current writer and any `|`-joined value still sitting in the queue table.
- *
- * Splitting on a single `|` WITHOUT dropping empties is the bug this module
- * exists to prevent: `"A||B".split('|')` yields `["A", "", "B"]`, and the `""`
- * becomes `<img src="">` — a broken-image icon in the transcript.
- */
+/** The `||`-delimited media-URL wire format. `llm_history.image_url` / `.video_url` (and
+ * `workspace_item_tasks.image_urls`) hold a single TEXT column carrying N base64 data URLs. */
 export const MEDIA_URLS_WIRE_DELIMITER = '||'
 
 /**  * Join staged attachments into the wire string. Empty / blank entries are dropped so a

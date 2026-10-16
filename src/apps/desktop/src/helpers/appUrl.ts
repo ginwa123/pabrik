@@ -213,21 +213,7 @@ export interface LegacyAppUrl {
   query: Record<string, string>
 }
 
-/**
- * Detect a legacy URL that needs the one-time boot rewrite to the path
- * contract. Returns null when the URL is already canonical.
- *
- * Legacy shapes:
- * - `/app/chat/:sid` → `/app/{ws}/chat/:sid` (ws resolved via session detail)
- * - `/app/task/:tid` → `/app/{ws}/projects/{item}/chat/:tid` (ws+item via task lookup)
- * - `?view=chat&session=X`, `?view=task&task=X…`, `?view=workspace&…` on `/app`
- * - any trailing-slash path (normalize only — no workspace lookup needed)
- *
- * The caller fills in the workspace-dependent path: this function reports
- * WHAT kind of legacy URL it is and carries the preservable query through.
- * Session/task → workspace resolution lives in AppLayout (it owns the
- * store + the session-detail `workspace_id` fetch), not here.
- */
+/** Detect a legacy URL that needs the one-time boot rewrite to the path contract. */
 export function detectLegacyAppUrl(
   rawPath: string,
   rawQuery: Record<string, unknown> | null | undefined,
@@ -263,27 +249,9 @@ export function detectLegacyAppUrl(
   return null
 }
 
-/**
- * Stale-write guard for ChatView's diff URL writers (`syncDiffParam`,
- * `syncDiffQuery`).
- *
- * Path-based URLs carry the session in the path, not the query, so the
- * legacy `route.query.view/session` guards are no-ops there. A dying view
- * (chat A unmounting while ChatsList navigates to chat B) must not issue
- * `router.replace` once the path names another session: it either cancels
- * B's pending navigation (view snaps back to A) or stamps A's `?diff=` onto
- * B's URL — the "click a left chat after opening a right-sidebar file does
- * nothing" repro.
- *
- * Returns true when the view owning `sessionId` must NOT touch `routePath`:
- * - `/app/{ws}/chat/{sid}` with `sid !== sessionId` (including the
- *   post-switch path `/app/{ws}/chat/B` seen from dying A);
- * - `/app/{ws}/projects/{p}/chat/{tid}` with `tid !== sessionId`;
- * - `/app/{ws}`, `/app/{ws}/projects/{p}`, `/app/{ws}/doc/{d}` — ChatView
- *   never owns those surfaces, so any write from it is stale.
- * Landing (`/app`) and unknown paths return false and defer to the legacy
- * query guards (deep links, router-less mounts).
- */
+/** Stale-write guard for ChatView's diff URL writers (`syncDiffParam`, `syncDiffQuery`). Path-based
+ * URLs carry the session in the path, not the query, so the legacy `route.query.view/session`
+ * guards are no-ops there. */
 export function isChatRouteStaleForSession(routePath: string, sessionId: string): boolean {
   // parseAppPath is pure string matching with no throws (no I/O, no JSON),
   // so no try/catch: a malformed path returns { kind: 'other' } below.

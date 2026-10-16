@@ -1,28 +1,4 @@
-/**
- * Per-user browser-storage namespacing (plan 2026-09-25, W5).
- *
- * Every localStorage / IndexedDB key in the app is origin-global: two users
- * signing in on the same browser profile share one key space, so B inherits
- * A's cached workspace list, active chat, open tabs, task media and diff
- * comments — and logout clears none of it. This module is the single place
- * that turns a logical key into a per-user physical key.
- *
- * Contract:
- * - `userScopedKey(key)` returns the key unchanged when there is no identity
- *   (auth off, or `/api/auth/me` not resolved yet) — so the auth-off path is
- *   byte-identical and needs no migration.
- * - With an identity it returns `key::u:<userId>`.
- * - The identity is cached in module memory and refreshed from
- *   `getAuthMeCached()`; `setCurrentUserId` is the synchronous setter used by
- *   the auth flow (login / logout / identity change) so a caller never has to
- *   await before reading a key.
- *
- * Why a suffix and not a prefix: existing keys are already namespaced by
- * feature (`pabrik-workspaces:v1`, `active-chat-id`), and a suffix keeps the
- * feature prefix readable in devtools while making the user boundary
- * unambiguous. It also means a legacy (unscoped) key can never collide with a
- * scoped one.
- */
+/** Per-user browser-storage namespacing (plan 2026-09-25, W5). */
 import { getAuthMeCached } from './authMe'
 
 /** Separator between the logical key and the user id. */

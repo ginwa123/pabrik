@@ -1,32 +1,5 @@
-// Pinia store for workspace-scoped documents (Migration 095).
-//
-// Two things this store deliberately does NOT do:
-//
-//  1. No client-side workspace filter. The backend scopes every read by
-//     the `workspace_id` in the path, so a document from another
-//     workspace is never in the response to filter out. Adding a
-//     `documents.filter(d => d.workspace_id === id)` guard here would be
-//     a second, weaker copy of a rule that already lives in SQL — and the
-//     kind of duplicate that drifts.
-//  2. No local `isActive` flag. Which document is open is derived from the
-//     URL (`/app/{ws}/doc/<id>`), so a refresh, a Back/Forward, or a shared
-//     link all restore the same view. Same reasoning as
-//     `ChatsList.isCurrentChat`.
-//
-// `try`/`catch` appears in the write actions and nowhere else: this is the
-// sanctioned seam for a fallible operation, and each one records the
-// failure in `error` so the component can render it. A catch that
-// returned an empty list with no error would be the exact bug the
-// "No try/catch in the desktop app" rule exists to prevent — "no
-// documents" and "could not load documents" would look identical.
-//
-// The list is cache-first (`sync/DocumentEngineDb`, IndexedDB) like the
-// sidebar's Recent chats: paint cached rows immediately, then revalidate
-// and replace. `fetchDocuments` therefore has NO try/catch at all — the
-// Effect seam carries the failure, and `runSyncResult` hands the reason
-// back so `error` can still be rendered. That distinction is the whole
-// point: degrading to an empty list here would resurrect the exact bug
-// the paragraph above describes, just with a cache in front of it.
+// Pinia store for workspace-scoped documents (Migration 095). Two things this store deliberately
+// does NOT do: 1. No client-side workspace filter.
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import * as api from '../api'

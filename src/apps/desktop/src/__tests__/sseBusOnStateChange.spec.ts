@@ -4,23 +4,9 @@ import { createApp } from 'vue'
 import { installSseBus, __resetSseBus, __setSseBusGlobalClient } from '../helpers/sseBus'
 import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 
-/**
- * Regression cover for the bug behind
- * `chat_row_context_menu_ui_test.py::test_stop_agent_cancels_the_running_worker`:
- *
- * `App.vue` used to subscribe via
- * `__getSseBusGlobalClient()?.onStateChange(...)`. With cross-tab sharing
- * the client is created inside the `onBecomeLeader` callback, so it does
- * not exist yet when a component's `onMounted` runs — the `?.`
- * short-circuited, the callback was never registered, and the first
- * `open` was missed. `fetchInitialWorkers()` never fired, so
- * `processingState` stayed empty and the sidebar's Stop-agent row (and
- * every processing spinner) never appeared.
- *
- * The bus-level `onStateChange` must deliver to subscribers registered
- * BEFORE any client exists, and keep delivering across a client swap
- * (leader handover).
- */
+/** Regression cover for the bug behind
+ * `chat_row_context_menu_ui_test.py::test_stop_agent_cancels_the_running_worker`: `App.vue` used to
+ * subscribe via `__getSseBusGlobalClient()?.onStateChange(...)`. */
 describe('sseBus onStateChange — subscribers survive a late-created client', () => {
   beforeEach(() => {
     vi.resetModules()

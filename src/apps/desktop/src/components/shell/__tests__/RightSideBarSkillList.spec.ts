@@ -1,19 +1,6 @@
-/*
- * RightSideBarSkillList.vue — the sidebar's skills pane.
- *
- * One list now (a skill is a row scoped to one workspace), fed by
- * `getSkills(workspaceId)`. Three things are pinned here because they are
- * where this pane breaks:
- *
- *  1. The scope comes from the RESOLVED `activeWorkspace`, not the raw
- *     `activeWorkspaceId` ref. These tests populate `workspaces` and
- *     never touch the ref, which is exactly the state a user lands in
- *     after clicking a project row — and the raw ref is null there.
- *  2. A failed request renders its reason; it never renders as "No
- *     skills available". That is the empty-vs-unavailable confusion.
- *  3. An empty list is empty, and a payload missing the `skills` key is
- *     malformed rather than empty.
- */
+/** RightSideBarSkillList.vue — the sidebar's skills pane. One list now (a skill is a row scoped to
+ * one workspace), fed by `getSkills(workspaceId)`. Three things are pinned here because they are
+ * where this pane breaks: 1. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'

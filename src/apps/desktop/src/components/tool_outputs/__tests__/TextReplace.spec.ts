@@ -1,14 +1,4 @@
-/**
- * Tests for TextReplace.vue — chunks 5+6.
- *
- * Verifies:
- *  - renders the shared ToolCardHeader with the parsed `path` and the success/failure badge
- *  - has `data-testid="text-replace-card"` for E2E selectors
- *  - on success with a diff, expanding renders the shared `<DiffView>` and a click on a
- *    line number forwards `jump-to-line` to the injected editor handler with the
- *    exact (path, cwd, line) triple
- *  - silently no-ops the jump when cwd is missing (graceful fallback)
- */
+/** Tests for TextReplace.vue — chunks 5+6. */
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, provide } from 'vue'

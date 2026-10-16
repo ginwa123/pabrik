@@ -1,16 +1,5 @@
-/**
- * Card-first async media: cards render from the flag-only list payload
- * first, then thumbnails load behind via GET .../tasks/:id/media.
- *
- * Contract:
- *   1. fetchKanbanTasks with a flagged-but-unloaded task triggers a
- *      background getTasksMedia and patches imageUrls in place
- *      (badge -> thumb, no extra caller needed).
- *   2. fetchKanbanTasks with no media flags never calls getTasksMedia.
- *   3. Local cache first: a cached thumb paints synchronously on list
- *      land while the background GET still revalidates + write-throughs.
- *   4. Write-through: a fresh fetch populates the cache for next boot.
- */
+/** Card-first async media: cards render from the flag-only list payload first, then thumbnails load
+ * behind via GET .../tasks/:id/media. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { flushPromises } from '@vue/test-utils'

@@ -104,8 +104,6 @@ const statusIndicator = computed(() => (isSuccess.value ? '✓' : '✗'))
 
 // Header label: parameter prompt (truncated) on success, "error" on failure. Fall back to the
 // envelope's count + model when the prompt is missing (e.g. legacy row without parameters).
-// When falling back, only show the `× count` suffix when count > 1 — mirrors `rightMeta` below so
-// the header doesn't say "1× dall-e-3" when there's only one image.
 const headerLabel = computed(() => {
   if (!isSuccess.value) return parsed.value.error ?? 'error'
   const prompt = args.value.prompt

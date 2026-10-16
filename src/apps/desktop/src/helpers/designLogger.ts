@@ -1,41 +1,4 @@
-/**
- * designLogger.ts
- *
- * A focused logger for the design-mode drag/resize wire.
- *
- * Why this exists: when the user drags a group and only the group
- * moves but not its children ("first drag works, second needs
- * refresh"), or when non-group elements don't move, the failure mode
- * is one of:
- *
- *   - useDesignHandlers.translateElement's activeDesignPageId check
- *     fails (no-op, no API call fired)
- *   - The element's pointerdown handler emits `groupDrag` instead of
- *     `translate` (because isGroupLike|inMultiselect test was wrong)
- *   - dragStartPositions Map still has the first drag's baseline
- *     when the second drag fires (handleGroupDrag's
- *     `if (dragStartPositions === null)` check leaked)
- *   - store.translateDesignElement / moveDesignElementsBatch hit
- *     activeDesignPageId empty (silent no-op)
- *   - The SSE handler's `isRecentLocalMutation` Map returned false
- *     and `fetchDesignElements` ran with stale state on top of the
- *     optimistic local mirror
- *
- * Without per-call logs you can't tell WHICH layer broke. The log
- * lines below fire at every key step in the wire (pointerdown,
- * emit, store call, response mirror, SSE receipt) so a single
- * DevTools console scroll answers:
- *
- *   1. Did the element pointerdown fire?
- *   2. Did the right gesture path branch (move-vs-resize-vs-group)?
- *   3. What was the cursor delta?
- *   4. Did the store see the call (with what args)?
- *   5. Did the SSE echo back?
- *   6. Did the local mirror update as expected?
- *
- * Design mirrors scrollLogger.ts (info / warn / error, lazy stack
- * capture on warn+error, caller field, single emit site).
- */
+/** designLogger.ts A focused logger for the design-mode drag/resize wire. */
 import { ref } from 'vue'
 
 // ─── Configuration ─────────────────────────────────────────────────────────
@@ -64,11 +27,6 @@ if (typeof localStorage !== 'undefined') {
 // AUTO-ENABLE: a developer-mode browser that has the `__designLogger` escape hatch registered must
 // have loaded the new bundle. If the user reloads the page or the `__designLogger` flag wasn't set,
 // fall back to "auto on" so they immediately see diagnostics.
-// The user can still call `__designLogger.off()` to silence it. This is dev-only. Detection:
-// `window.__designLogger` was set by the bottom of this file (the escape hatch install).
-// If it's not present, the bundle running is OLD (pre-logger) and the page should auto-enable so
-// the next page reload picks up the new bundle. We use a single-shot check at module-load time to
-// avoid re-running on every navigation.
 if (import.meta.env.DEV && typeof window !== 'undefined') {
   const w = window as unknown as { __designLoggerAlreadyInstalled?: boolean }
   if (!w.__designLoggerAlreadyInstalled && !enabledRef.value) {

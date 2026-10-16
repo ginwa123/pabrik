@@ -13,7 +13,6 @@ import type { DesignElement } from '../api'
 // ─── Entry shape ──────────────────────────────────────────────────── Mirrors
 // `useDesignHistory.HistoryEntry` (kept in sync — there is no shared types module yet because Pinia
 // stores and composables resolve their own types lazily).
-// When adding a new field, update both places.
 export type EntryKind =
   | 'update'
   | 'delete'
@@ -64,11 +63,8 @@ export const HISTORY_CAP = 100
 const SCHEMA_VERSION = 'v1'
 
 export const useDesignHistoryStore = defineStore('designHistory', () => {
-  // `stacksByPage` is keyed by `pageId`. Each value holds a past +
-  // future stack scoped to that page. Per-item scoping (workspaceId
-  // + itemId + pageId) is enforced by the localStorage key, not by
-  // the in-memory map (the in-memory map is process-local; if a
-  // user has multiple tabs open they each have their own map).
+  // `stacksByPage` is keyed by `pageId`. Each value holds a past + future stack scoped to that
+  // page.
   const stacksByPage = ref<Record<string, HistoryStack>>({})
 
   function getStack(pageId: string): HistoryStack {

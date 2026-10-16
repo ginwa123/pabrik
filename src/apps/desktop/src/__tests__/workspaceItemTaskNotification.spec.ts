@@ -1,21 +1,5 @@
-/**
- * Component tests for the kanban task notification icon — the orange
- * "AI finished — awaiting review" dot and the green "reviewed"
- * checkmark on <WorkspaceItemTaskCard>.
- *
- * Plan: docs/plans/2026-07-26-kanban-task-notification-icon.md (Chunk 6)
- *
- * Card states (single branch — per-task routine branches were
- * deleted in Migration 084, so all task types share these):
- *   1. AI running → elapsed time pill (the circle spinner was removed).
- *   2. needs_human_review=true, not running → ORANGE PULSING DOT.
- *   3. needs_human_review=false AND last_finish_reason='stop',
- *      not running → GREEN CHECKMARK.
- *   4. AI never ran (last_finish_reason='' or undefined) → no icon.
- *   5. finish_reason != 'stop' (e.g. 'tool_calls', 'length') → no icon
- *      even if needs_human_review was true by some bug — the SQL
- *      predicate guards this, but the UI also defensively gates.
- */
+/** Component tests for the kanban task notification icon — the orange "AI finished — awaiting
+ * review" dot and the green "reviewed" checkmark on <WorkspaceItemTaskCard>. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, type VueWrapper } from '@vue/test-utils'

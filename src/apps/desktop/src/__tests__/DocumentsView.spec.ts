@@ -1,20 +1,6 @@
-/**
- * The documents viewer (Migration 095).
- *
- * The behaviours that are easy to break and invisible until a user hits
- * them:
- *
- *  1. `content` is a WHOLE-body replace, so "omitted" and "cleared" must
- *     stay distinguishable in the editor. Sending `content: ''` when the
- *     user only renamed the title would destroy the document.
- *  2. Markdown is rendered through `helpers/markdown.ts`, which escapes
- *     raw HTML before parsing. A document body is authored by an agent
- *     that may have quoted a file it read, so `v-html` on unescaped
- *     markdown is a real XSS sink, not a theoretical one.
- *  3. Switching documents while mounted reloads. `onMounted`-only would
- *     leave the previous body under the new title — the Back/Forward
- *     case.
- */
+/** The documents viewer (Migration 095). The behaviours that are easy to break and invisible until
+ * a user hits them: 1. `content` is a WHOLE-body replace, so "omitted" and "cleared" must stay
+ * distinguishable in the editor. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick } from 'vue'
@@ -68,8 +54,6 @@ beforeEach(() => {
   // Seed the workspace itself, not the raw `activeWorkspaceId` ref. The view resolves its workspace
   // through the `activeWorkspace` computed (precedence: explicit → persisted → item-owning → first
   // workspace), so seeding the ref alone no longer gives it anything to fetch against.
-  // Seeding real store state is also what the app has: the ref is only set by the header dropdown
-  // or a `?workspaceId=` URL restore.
   useWorkspacesStore().workspaces = [
     { id: 'ws_1', name: 'agentic coding', icon: '📁', expanded: true, items: [] },
   ]

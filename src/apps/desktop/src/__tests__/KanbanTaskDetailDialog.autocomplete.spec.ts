@@ -1,29 +1,6 @@
-/**
- * Behavioural tests for KanbanTaskDetailDialog — tag autocomplete
- * wiring (Task 2.7 of the kanban-task-tags-autocomplete plan).
- *
- * The dialog owns a `useKanbanTagSuggestions` composable instance and
- * passes its `tags` / `hasMore` / `loading` / `loadNextPage` into the
- * <KanbanTagsInput> child. These tests verify:
- *   - The composable is mounted with the dialog's task's
- *     workspace_item_id + the new `workspaceId` prop.
- *   - Tags already on the task's draft chips are filtered out of the
- *     suggestions bound to <KanbanTagsInput>.
- *   - In create mode (no task yet), no fetch is attempted — the
- *     composable is mounted with `itemId = ''` which is a no-op.
- *   - Resetting the composable happens on dialog close + reopen so a
- *     different task opens a fresh fetch.
- *   - The composable's `loadNextPage` is wired into the input's
- *     `onLoadMore` prop.
- *
- * Mount pattern: same as KanbanTaskDetailDialog.spec.ts — Teleport
- * to body, attachTo: document.body, document.querySelector for DOM
- * assertions. Pinia is set up in beforeEach because apiFetch's
- * error path uses useNotificationStore().
- *
- * Plan: docs/superpowers/plans/2026-07-30-kanban-task-tags-autocomplete.md
- *   Chunk 2 / Task 2.7
- */
+/** Behavioural tests for KanbanTaskDetailDialog — tag autocomplete wiring (Task 2.7 of the
+ * kanban-task-tags-autocomplete plan). Plan:
+ * docs/superpowers/plans/2026-07-30-kanban-task-tags-autocomplete.md Chunk 2 / Task 2.7 */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -158,9 +135,6 @@ describe('KanbanTaskDetailDialog — tag autocomplete wiring', () => {
     // Plan: docs/superpowers/plans/2026-08-06-kanban-tags-autocomplete-in-create-mode.md The
     // previous test ("does NOT fetch in create mode") locked in a bug: users opening the "+ Add
     // task" dialog could not see the kanban's existing tags in the dropdown.
-    // The fetch needs only the kanban's workspace_item_id (from the column prop), which is provided
-    // in BOTH edit and create modes. In create mode, host wires activeCreateColumn (always non-null
-    // when the dialog is open).
     const spy = vi
       .spyOn(api, 'getKanbanTagSuggestions')
       .mockResolvedValue({
@@ -185,13 +159,8 @@ describe('KanbanTaskDetailDialog — tag autocomplete wiring', () => {
   })
 
   it('renders the existing-tag dropdown in create mode so the user can one-click pick a tag', async () => {
-    // Plan: docs/superpowers/plans/2026-08-06-kanban-tags-autocomplete-in-create-mode.md
-    // Regression guard for the user-reported symptom: "when create a task,
-    // the auto tags not trigger". With the gate removed, focusing the tag
-    // input on a brand-new task must surface the kanban's existing tags
-    // (matching what the user already sees in the screenshot — kanban, git,
-    // git_worktree are existing kanban tags, and the user expects to be able
-    // to pick them in the new-task dropdown).
+    // Plan: docs/superpowers/plans/2026-08-06-kanban-tags-autocomplete-in-create-mode.md Regression
+    // guard for the user-reported symptom: "when create a task, the auto tags not trigger".
     vi.spyOn(api, 'getKanbanTagSuggestions').mockResolvedValue({
       tags: [
         { name: 'kanban', count: 5, last_used_at: null },

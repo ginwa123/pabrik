@@ -1,21 +1,6 @@
-/**
- * Where a config editor reads and writes its `PabrikConfig`.
- *
- * The editor (`PabrikConfigEditor.vue`) used to call the user-scope API
- * functions directly, which made "user settings" and "workspace settings" the
- * same code path with no seam to tell them apart. Two scopes now exist and
- * they are NOT interchangeable:
- *
- *   * `userConfigSource()`      -> `/api/config/pabrik`. Applies everywhere.
- *   * `workspaceConfigSource()` -> `/api/workspaces/:id/config`. Applies to
- *     one workspace, and the server merges it over the user config rather
- *     than replacing it.
- *
- * The difference that matters for the UI is not the URL, it is `scope`: the
- * workspace editor has to render an "Inherited / Overridden" affordance,
- * because a workspace that has overridden nothing is a meaningful state that
- * the user-level editor does not have.
- */
+/** Where a config editor reads and writes its `PabrikConfig`. The editor (`PabrikConfigEditor.vue`)
+ * used to call the user-scope API functions directly, which made "user settings" and "workspace
+ * settings" the same code path with no seam to tell them apart. */
 import {
   deleteProfile as apiDeleteProfile,
   getPabrikConfig,
@@ -44,13 +29,8 @@ export function isWorkspaceAgentSection(id: string): boolean {
 export interface PabrikConfigSource {
   /** Which scope this source edits. Drives labels, not requests. */
   readonly scope: ConfigScope
-  /** Load the config to edit.
-   * User scope swallows a transport failure into `{}` (pre-existing
-   * behaviour: the page still renders defaults). Workspace scope does NOT -
-   * it lets the rejection through, and the editor turns that into a visible
-   * notification, because "this workspace inherits the user config" and "we
-   * could not read this workspace's config" must not render the same way on
-   * a page whose whole job is to say which one applies. */
+  /** Load the config to edit. User scope swallows a transport failure into `{}` (pre-existing
+   * behaviour: the page still renders defaults). */
   load(): Promise<PabrikConfig>
   /** Persist the whole edited config. */
   save(config: PabrikConfig): Promise<void>

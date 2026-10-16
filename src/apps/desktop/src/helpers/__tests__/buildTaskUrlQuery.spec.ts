@@ -1,20 +1,4 @@
-/**
- * Behavioural tests for `buildTaskUrlQuery` and `pickBreadcrumbFromChat`.
- *
- * Plans:
- *   - docs/superpowers/plans/2026-08-06-add-workspace-id-params.md (workspaceId always present)
- *   - docs/superpowers/plans/2026-08-15-simplify-url-browser.md (collapse view=task into /chat/ suffix)
- *
- * The user's report (task_1785774094183): task URLs were missing
- * `workspaceId`. The 2026-08-06 helper fixed that.
- *
- * The 2026-08-15 simplify-url-browser refactor changed the wire
- * shape: the helper now emits `view=workspace` (NOT `view=task`)
- * with the chat task id encoded as `/chat/<taskId>` suffix on
- * `itemId`. The redundant `session` query param is dropped
- * (per `task.id == session_id`, the chat task id in the suffix
- * IS the session id).
- */
+/** Behavioural tests for `buildTaskUrlQuery` and `pickBreadcrumbFromChat`. */
 import { describe, expect, it } from 'vitest'
 import { buildTaskUrlQuery, pickBreadcrumbFromQuery } from '../buildTaskUrlQuery'
 

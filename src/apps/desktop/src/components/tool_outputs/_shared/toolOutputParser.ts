@@ -1,38 +1,6 @@
-/**
- * Typed parsers for tool-output JSON `data` payloads.
- *
- * Each parser takes the envelope's `data` payload as a parsed object (via
- * `normalizeToolContent`, which also unwraps full envelopes and JSON
- * strings), reads fields directly, and gracefully handles missing keys
- * (returns `null` for missing optional fields, sensible defaults for
- * missing required fields where applicable).
- *
- * Parsers are pure functions; safe to call inside `computed`. JSON needs
- * no entity decoding — values arrive byte-exact from `std.json`.
- *
- * The legacy XML helpers (`extractTag`, `extractBool`, `extractInt`,
- * `unescapeXml`) are retained for `helpers/isBackgroundCommandOutput.ts`,
- * the only remaining XML consumer. New code must not use them.
- *
- * Conventions:
- *   - Singular boolean fields default to `false` (absent key = false).
- *   - Optional strings return `null` when missing, not empty string.
- *   - Optional numbers return `null` when missing or unparseable.
- */
-/**
- * Decode XML entities produced by the backend's `toXmlSuccess` / `xmlError`.
- * Mirrors `llm_history.zig xmlEscape` (its inverse) exactly. The order matters:
- * `&amp;` MUST be replaced last, otherwise the other replacements would
- * double-decode earlier `&amp;`-prefixed entities (e.g. `&amp;quot;` would
- * incorrectly become `"` instead of `&quot;`).
- *
- * Decodes:
- *   - `&lt;`   → `<`
- *   - `&gt;`   → `>`
- *   - `&quot;` → `"`
- *   - `&apos;` → `'`
- *   - `&amp;`  → `&`   (last)
- */
+/** Typed parsers for tool-output JSON `data` payloads. */
+/** Decode XML entities produced by the backend's `toXmlSuccess` / `xmlError`. Mirrors
+ * `llm_history.zig xmlEscape` (its inverse) exactly. */
 import { stripAnsiEscapes } from '../../../helpers/stripAnsiEscapes'
 
 export function unescapeXml(s: string): string {
@@ -89,9 +57,6 @@ export function extractInt(content: string, tag: string): number | null {
 // ─── JSON data-object helpers ────────────────────────────────────────────── Migrated parsers
 // (read_file, shell family, search, ask_user) take the envelope's `data` payload as a parsed object
 // and read fields directly — no tag extraction, no entity decoding (JSON needs none).
-// The helpers below are lenient by design: a JSON string is parsed, a full envelope object (or its
-// JSON string) is unwrapped one level to `.data`, and anything else yields safe defaults so a card
-// never throws.
 /** Coerce unknown input to a plain record. Unparseable input → {}. */
 function asRecord(data: unknown): Record<string, unknown> {
   if (typeof data === 'string') {
@@ -443,8 +408,6 @@ export function parseBash(data: unknown): ParsedBash {
     command: strOrNullField(o, 'command'),
     // Second, independent escape guard at the parse seam. The backend strips in
     // shell.result_to_json; this covers live/partial payloads and any future raw-bytes producer.
-    // It deliberately does NOT try to repair pre-fix rows — see helpers/stripAnsiEscapes.ts on why
-    // those are unrecoverable rather than heuristically "fixed".
     stdout: stripAnsiEscapes(strField(o, 'stdout')),
     stderr: stripAnsiEscapes(strField(o, 'stderr')),
     exitCode: numOrNullField(o, 'exit_code'),
@@ -557,17 +520,7 @@ export interface SkillSearchRow {
   description: string
 }
 
-/**
- * `search_skills` result. Mirrors `ParsedSearchTool` field-for-field
- * (`query` / `count` / `total` / `truncated` / `hint`) so the two catalog
- * cards share one paging convention, plus the paging and pattern fields
- * `search_tool` has no use for (`pattern_mode` / `pattern_warning` /
- * `offset` / `limit` / `next_offset`).
- *
- * There is no `scope`. The row set is already one workspace's, and a name
- * is unique inside a workspace, so a scope could only ever have been a
- * second, redundant key.
- */
+/** `search_skills` result. */
 export interface ParsedSearchSkills {
   query: string
   patternMode: string | null
@@ -826,20 +779,8 @@ export function parseGenerateImage(data: unknown): ParsedGenerateImage {
   }
 }
 
-// ─── web_search ────────────────────────────────────────────────────────────
-// Parses the JSON `data` payload produced by `exec_web_search` in
-// `src/agentic_loop/tools_exec_web_search.zig`.
-// On success the payload is UNTYPED PASSTHROUGH (D13): `response` holds the
-// provider's own JSON, verbatim and untouched.
-//   {"provider":"tinyfish","status":200,"response":{…}}
-// TinyFish answers `{results:[…]}`, Brave `{web:{results:[…]}}`, Serper `{organic:[…]}` and a
-// self-hosted SearxNG a bare `[{…}]`. There is deliberately NO normalized result schema, so
-// `response` stays `unknown` here and the renderer is the only layer allowed an opinion about it.
-// A shape this client has never seen is a normal outcome (D13), not an error.
-// A failure carries `error` plus a reason flag — `configured:false`, `unknown_provider` (+
-// `available`), `host_mismatch` (+ `pinned_host`, `requested_host`), `invalid_curl`, `exhausted` (+
-// `other_providers`), `unsafe_pinned_url`, `response_too_large` or `http_status`.
-// `transport` is the flagless one: DNS, TLS or timeout, and the message is the envelope.
+// ─── web_search ──────────────────────────────────────────────────────────── Parses the JSON
+// `data` payload produced by `exec_web_search` in `src/agentic_loop/tools_exec_web_search.zig`.
 /** The nine reasons a `web_search` envelope can fail, as the card spells them. */
 export type WebSearchErrorFlag =
   | 'configured'
@@ -1085,21 +1026,9 @@ export function parseListDirectory(data: unknown): ParsedListDirectory {
   }
 }
 
-// ─── mcp_* (universal MCP tool) ─────────────────────────────────────────────
-//
-// Any tool whose name starts with `mcp_` (e.g. `mcp_graphify_graph_stats`,
-// `mcp_db_query`) renders through the universal `<McpTool>` card. The backend
-// (`handle_tool.zig`) stores MCP results as RAW server text (not a wrapped
-// envelope) on success, and as a wrapped
-// `wrapToolOutput(..., success=false, err, "")` JSON envelope on failure — so the
-// parser tolerates BOTH shapes:
-//
-//   raw success:   `Nodes: 14885 Edges: 21958 ...` (or JSON)
-//   error envelope: `{"tool":"mcp_...","parameters":{},"success":false,"data":null,"error":"..."}`
-//
-// `toolName` is the full registry name (`mcp_<server>_<tool>`). The server is
-// the segment between the first and second underscore; the sub-tool is the
-// remainder (which may itself contain underscores, e.g. `graph_stats`).
+// ─── mcp_* (universal MCP tool) ───────────────────────────────────────────── Any tool whose name
+// starts with `mcp_` (e.g. `mcp_graphify_graph_stats`, `mcp_db_query`) renders through the
+// universal `<McpTool>` card.
 export interface ParsedMcp {
   /** Full registry name (e.g. `mcp_graphify_graph_stats`). */
   toolName: string
@@ -1218,32 +1147,9 @@ export function parseMcp(toolName: string, data: unknown): ParsedMcp {
   }
 }
 
-// ─── progressive tools (search_tool / view_tool / use_tool) ──────────────────
-//
-// Universal `<ProgressiveTool>` card: the three agent tools that let the model
-// browse a catalog of not-yet-enabled tools and equip one for the session.
-// Backend renderers live in `src/agentic_loop/progressive_catalog.zig`; the
-// exec adapter wraps them with the standard `wrapToolOutput` JSON envelope,
-// and the card reads the inner `data` object here.
-//
-//   search_tool success:
-//     {"query":"q","server":"s"|null,"count":N,"total":M,
-//      "tools":[{"name":"n","kind":"builtin|mcp","server":"s",
-//        "equipped":"session|no","summary":"one-liner"}, ...],
-//      "truncated":false,"hint":"..."|null}
-//   view_tool found:
-//     {"name":"n","kind":"...","server":"s","equipped":"session|no",
-//      "description":"...","parameters":{...}|"..."|null,
-//      "note":null,"hint":"..."}
-//   view_tool miss:
-//     {"name":"n","found":false,"error":"...",
-//      "did_you_mean":["..."],"hint":"..."}
-//   use_tool found (minimal equip signal — no repeated schema, view_tool
-//   already showed it):
-//     {"name":"n","kind":"...","equipped":true,
-//      "inserted":true|false,"wait_next_turn":true|false,
-// "source":"session"|null,"note":"..."} use_tool miss:
-// {"name":"n","equipped":false,"inserted":false, "error":"...","did_you_mean":[...],"hint":"..."}
+// ─── progressive tools (search_tool / view_tool / use_tool) ────────────────── Universal
+// `<ProgressiveTool>` card: the three agent tools that let the model browse a catalog of
+// not-yet-enabled tools and equip one for the session.
 export interface ProgressiveCatalogEntry {
   name: string
   kind: string

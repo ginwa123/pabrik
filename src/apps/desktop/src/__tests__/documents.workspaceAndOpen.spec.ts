@@ -240,8 +240,6 @@ describe('Documents — a project click still counts as "a workspace is selected
   it('the viewer resolves the workspace and fetches, instead of hanging on "Loading document…"', async () => {
     // DocumentsView receives only `documentId` — it has to learn the workspace from the store
     // itself. Pre-fix its `watch` bailed on a null workspace, so no fetch ever happened.
-    // The documents store is deliberately LEFT EMPTY: `loadDocument` short-circuits on a cache hit,
-    // so seeding it would make the spec pass on the broken code. The fetch call is the assertion.
     seedProjectClickNavigation()
     const wrapper = mount(DocumentsView, { props: { documentId: DOC_ID } })
     await flush()
@@ -421,12 +419,6 @@ describe('AppLayout — a document is a PAGE, not a ?doc= overlay', () => {
   it('a stale ?doc= URL is NOT rewritten to the document path', async () => {
     // No fallback by design: Migration 095 shipped the overlay shape and was replaced by the
     // `/doc/` path before it was in wide use, so there are no links in the wild to keep working.
-    // Rendering the document here would restore the ambiguous URL that says nothing about which
-    // page owns the document.
-    // Assert the REPLACE, not the rendered view: `router` is a mock here, so a boot rewrite would
-    // not actually move the route and `documents-view` would stay absent either way. Asserting the
-    // view would be a green test that passes whether or not the rewrite exists.
-    // The absence of a `router.replace` to the doc path is the observable difference.
     navigate(PROJECT_PATH, { doc: DOC_ID })
     useDocumentsStore().documents = [DOC]
     useDocumentsStore().loaded = true

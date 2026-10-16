@@ -1,30 +1,4 @@
-/**
- * App-bar parity across the three workspace-item chat modes.
- *
- * Pre-fix, each mode hand-rolled its own bar and the three disagreed
- * on height, padding, background, width and even which controls they
- * carried:
- *
- *   - kanban  → ChatView's inline <header> (h-11, chat column only,
- *               `◫` toggle + bare `✕`)
- *   - agent   → AgentChatView's bespoke <header> (px-5 py-3, full
- *               width ABOVE the right sidebar, text "✕ Close" button,
- *               NO sidebar toggle)
- *   - folder / memory / chat / routine → no bar at all; the `◫`
- *               toggle floated over the transcript
- *
- * The fix routes all three through the shared ChatAppBar.vue by
- * setting ChatView's `showHeader` flag. This spec is the regression
- * net for that: it asserts (a) statically that no mode can grow a
- * second hand-rolled bar again, and (b) behaviourally that each host
- * really does put the shared bar on screen with the same testids and
- * the task name as its title.
- *
- * The static half follows the repo's ChatView static-contract pattern
- * (cf. ChatView.prSidebar.spec.ts) because a full ChatView mount drags
- * in the SSE bus, the sync engine and every Pinia store; the shared
- * bar's own markup is covered by ChatAppBar.spec.ts.
- */
+/** App-bar parity across the three workspace-item chat modes. */
 import { describe, expect, it, vi } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
 import { resolve, join } from 'node:path'

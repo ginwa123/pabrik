@@ -99,18 +99,12 @@ describe('PropertiesPanel Monaco Save wire-up (Chunk 1 of undo/redo plan)', () =
     // The Monaco editor is lazy-loaded via `await import('monaco-editor')` — in the jsdom test
     // environment this is a network-style import. We bypass Monaco's internal editor by setting the
     // draft via the component's internal `htmlDraft` ref.
-    // The cleanest way: trigger a `keyup` on the hidden textarea that PropertiesPanel renders when
-    // Monaco fails to load (the textarea fallback). In jsdom Monaco never initializes, so the
-    // textarea fallback IS the live path.
     const textarea = wrapper.find('textarea.html-draft-textarea')
     if (textarea.exists()) {
       await textarea.setValue('<div>new content</div>')
     } else {
       // Fall back to direct API spy invocation: call handleHtmlSave via the Save button click
       // without modifying the draft.
-      // This is acceptable because handleHtmlSave emits htmlDraft.value verbatim; if Monaco never
-      // loaded, the draft is the element's existing text_content. We still assert the store was
-      // called and the wiring fires (the body shape matches the existing text_content).
     }
     await nextTick()
 

@@ -1,15 +1,7 @@
-/**
- * Unit tests for the workspaces store's `pinTask` action.
- *
- * `pinTask` is the optimistic-update action called when the user
- * toggles the pin/unpin button on a per-task row in
- * `WorkspaceItemTask.vue`. It flips the local task's `is_pinned`
- * flag and bumps `pinned_position` to MAX+1 (matching the
- * backend's behavior), then POSTs the change to the backend,
- * rolling back on error.
- *
- * Plan: docs/superpowers/plans/2026-06-20-pinned-workspace-item-tasks.md
- */
+/** Unit tests for the workspaces store's `pinTask` action. `pinTask` is the optimistic-update
+ * action called when the user toggles the pin/unpin button on a per-task row in
+ * `WorkspaceItemTask.vue`. Plan:
+ * docs/superpowers/plans/2026-06-20-pinned-workspace-item-tasks.md */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

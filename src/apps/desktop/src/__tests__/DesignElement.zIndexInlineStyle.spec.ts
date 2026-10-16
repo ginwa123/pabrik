@@ -55,10 +55,7 @@ describe('DesignElement.vue — elementStyle applies z_index as inline CSS z-ind
 
 // Pinia is required because `DesignElement.vue::setup` now imports `useWorkspacesStore` (added
 // 2026-08-06 so the element can look up its parent for the "click on child → select parent"
-// redirect).
-// The store is created here but remains empty — the lookup returns null for any element, which the
-// component treats as "no parent found → safe-degrade to existing behaviour" (select the element
-// itself, no z-index impact). See DesignElement.drag.spec.ts for the parent-found tests.
+// redirect). See DesignElement.drag.spec.ts for the parent-found tests.
   beforeEach(() => {
     setActivePinia(createPinia())
   })

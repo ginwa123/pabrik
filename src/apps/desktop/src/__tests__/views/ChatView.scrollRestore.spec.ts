@@ -1,47 +1,4 @@
-/**
- * Tests for ChatView's scroll-position restore behavior on mount.
- *
- * Why these tests exist:
- *   When a user opens a task, scrolls up to read older messages,
- *   closes the chatview (✕), and reopens the same task, the chat
- *   should land back at the same scroll position they left — not
- *   auto-stick to the bottom every time. Without
- *   useChatScrollRestore + the `isInitialLoad` guard in ChatView,
- *   the new instance's VirtualScroller container starts at
- *   scrollTop = 0 / bottom and the user loses their reading
- *   position.
- *
- * These tests verify the END-TO-END integration: a pre-seeded
- * localStorage value causes the ChatView to scroll to that position
- * on mount (instead of the bottom). The composable itself is
- * tested separately in useChatScrollRestore.spec.ts; this file
- * focuses on the wiring inside ChatView.vue.
- *
- * Coverage:
- *   - restores the saved scroll position when the saved value is
- *     in the middle (the common case: user scrolled up to read)
- *   - falls through to scrollToBottom when the saved value is
- *     "near bottom" (within BOTTOM_THRESHOLD_PX = 40px of max)
- *   - falls through to scrollToBottom when no saved value exists
- *   - falls through to scrollToBottom when the saved value is 0
- *   - persists the scroll position when the user scrolls up
- *   - uses a per-task key (different chat IDs have different scroll
- *     positions)
- *   - flushes the pending save on unmount
- *
- * jsdom setup notes:
- *   - HTMLElement.prototype.scrollTo is NOT implemented in jsdom.
- *     The chatViewWorktree.spec.ts polyfill is a no-op — but for
- *     THESE tests we need scrollTo to actually update scrollTop,
- *     so this spec installs its own polyfill that mirrors the
- *     browser behavior.
- *   - scrollHeight / clientHeight are not laid out in jsdom. The
- *     tests override them via Object.defineProperty to simulate
- *     a known geometry after the VirtualScroller has mounted.
- *   - The VirtualScroller measures items via ResizeObserver +
- *     a 100ms setTimeout(measureItems). The `waitForInitialLoad`
- *     helper waits 250ms to be safe.
- */
+/** Tests for ChatView's scroll-position restore behavior on mount. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'
@@ -130,10 +87,6 @@ Element.prototype.scrollTo = function scrollToPolyfill(
 // jsdom does NOT lay out elements. scrollHeight and clientHeight default to 0 on every element, so
 // ChatView's restore would see max=0 and no-op. Override the getters on the prototype so every
 // element reports known values from mount onwards.
-// A CONSTANT scrollHeight is deliberate here: this file is about the composable's save/restore
-// contract (per-task keys, the debounce, the unmount flush), not about the height model converging.
-// The estimate-vs-measured bug that made a real restore land wrong needs a scrollHeight that
-// CHANGES as the scroller measures, and lives in ChatView.scrollRestoreLands.spec.ts.
 Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
   configurable: true,
   get(): number {
@@ -163,12 +116,6 @@ function makeStubClient(initial: SseState): SseClient {
 
 function installApiMocks(): void {
   // getChatHistory returns 100 user-role messages so the chat is scrollable.
-  // The VirtualScroller's @total-count + 200px default item height gives a scrollHeight of 20,000px
-  // against an 800px container (clientHeight) — enough room to test "scrollTop in the middle"
-  // without hitting the "near bottom" branch.
-  // Seed the module-level transcript the hoisted `vi.mock` factory serves. A `vi.spyOn` cannot
-  // reach the load any more — see the note above the factory — so the rows have to go in through
-  // `historyRows`.
   historyRows.length = 0
   for (let i = 0; i < 100; i++) {
     historyRows.push({
@@ -217,7 +164,6 @@ async function mountChatView(chatId: string): Promise<VueWrapper> {
   // The onMounted chain is async: loadChatHistory → connectSse → startGitStatusPoll →
   // getQueuedMessages → loadProfiles (sync). Wait for the VirtualScroller's `isStreaming` ref (set
   // after SSE connect) + several ticks.
-  // Tests that depend on the initial-load scroll branch fire next.
   for (let i = 0; i < 20; i++) {
     await new Promise((r) => setTimeout(r, 0))
     await nextTick()

@@ -168,8 +168,6 @@ describe('CodeEditor.vue — source contract', () => {
     // The production bundle broke because `import('monaco-editor')` was left as a runtime
     // specifier. The viewer renders with the repo's zero-dependency tokenizer, so the package must
     // not be named here.
-    // (Matched as a quoted specifier — the `ui-monospace … Monaco …` font stack is a font name, not
-    // a module.)
     expect(code).not.toMatch(/['"`]monaco-editor['"`]/)
   })
 

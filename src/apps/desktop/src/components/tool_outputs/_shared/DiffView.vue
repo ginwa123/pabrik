@@ -9,41 +9,8 @@ import {
 } from './myersDiff'
 import { detectLanguage, highlightLine } from '@/helpers/codeHighlight'
 
-/**
- * Renders a side-by-side or unified diff for two strings.
- *
- * Split-view is the default (matches GitHub). Unified-view uses git-style
- * `@@ -start,count +start,count @@` hunk headers.
- *
- * Horizontal scroll behaviour: long lines scroll horizontally; the line-number
- * gutter stays sticky on the LEFT so the user always sees which line they're
- * looking at. Row backgrounds (red for delete, green for insert) extend across
- * the full row width.
- *
- * IMPORTANT layout note on row widths: each pane renders ONE shared
- * "sizing wrapper" around all its rows (`width: max-content; min-width:
- * 100%`), and every individual row is just `width: 100%` *of that
- * wrapper*. The wrapper's max-content width naturally equals the widest
- * row's content (or the pane width, whichever is larger) — so once it's
- * computed, every row (long or short) gets that exact same width.
- *
- * This is NOT the same as putting `width: max-content; min-width: 100%`
- * on each row independently (an earlier version of this component did
- * that, and a CSS-table version after it) — both of those size/position
- * each row's box from its OWN content, which only matches the pane width
- * while unscrolled. As soon as you scroll right (because some other row
- * is longer), a short row's box still ends at the original pane width
- * measured from content-x 0, so the background falls short of the
- * viewport's right edge — and table-cell + position:sticky combinations
- * are unreliable enough across browsers that they can also kill
- * horizontal scrolling outright. A single shared wrapper avoids all of
- * that: width is computed once, and plain block/inline-block layout is
- * used throughout, so the gutter's position:sticky keeps working and
- * overflow-x:auto scrolling is unaffected.
- *
- * The component is purely presentational — input is two strings. The user's
- * mode preference is persisted to `localStorage` under `diffview.mode`.
- */
+/** Renders a side-by-side or unified diff for two strings. Split-view is the default (matches
+ * GitHub). Unified-view uses git-style `@@ -start,count +start,count @@` hunk headers. */
 interface Props {
   /** "Before" content (string; will be split into lines). */
   before: string
@@ -194,9 +161,6 @@ function renderSplitRow(row: SplitRow, idx: number, side: 'before' | 'after', la
   const lineNum = isBefore ? row.beforeLine : row.afterLine
 
   // Background color: only paint a side when that side actually HAS a line here.
-  // A row can be "changed" while only existing on one side (e.g. a pure insertion has beforeText
-  // === null) — in that case the *other* side is just empty filler and must stay uncolored, not get
-  // painted as if something were deleted/inserted there too.
   let bgColor = ''
   if (row.isChanged) {
     if (isBefore && row.beforeText !== null) {
@@ -209,9 +173,6 @@ function renderSplitRow(row: SplitRow, idx: number, side: 'before' | 'after', la
   // The text is deliberately NOT tinted per row. An `!important` red/green color here beats the
   // `.tok-*` classes inside the spans and paints the whole line monochrome — a diff with no syntax
   // color on exactly the lines that changed.
-  // Added/removed is carried by the row background (below) and, in unified view, by the colored +/-
-  // gutter sign. Clickable gutter: clicking the line number emits jump-to-line so the parent can
-  // open the code editor at that exact line.
   const isClickable = lineNum !== null
   const gutterClickHandler = isClickable
     ? {
@@ -231,9 +192,6 @@ function renderSplitRow(row: SplitRow, idx: number, side: 'before' | 'after', la
 
   // Row container: a plain block, `width: 100%` of the shared sizing wrapper (computed once per
   // pane — see DiffSplitSide).
-  // Because that wrapper is already exactly as wide as the widest row (or the pane, whichever is
-  // larger), every row here ends up the same width too — so a short row's background still spans
-  // the full row.
   const rowStyle: Record<string, string> = { width: '100%' }
   if (bgColor) {
     rowStyle.backgroundColor = bgColor
@@ -270,9 +228,6 @@ function renderSplitRow(row: SplitRow, idx: number, side: 'before' | 'after', la
       ),
       // Line content. Token-colored spans (code) or a single plain-text node (plaintext/unknown
       // language — identical to the old rendering).
-      // Sits in normal flow after the sticky gutter; long content extends past the pane's visible
-      // edge, which is what makes the shared wrapper (and therefore the ancestor scroll container)
-      // wide enough to scroll.
       h(
         'span',
         {
@@ -289,11 +244,7 @@ function renderSplitRow(row: SplitRow, idx: number, side: 'before' | 'after', la
 // on the same line impossible to parse. renderSplitRow and
 // renderUnifiedRow now render token-colored spans (via renderHighlighted)
 // on top of the row bg instead.
-/** Renders the unified-view rows: line numbers, diff prefix, and content,
- * all in a single column. Same shared-wrapper sizing approach as
- * DiffSplitSide — see the comment above that component for why this
- * matters for background consistency on short rows and for keeping
- * horizontal scroll working. */
+/** Renders the unified-view rows: line numbers, diff prefix, and content, all in a single column. */
 const DiffUnifiedSide = defineComponent({
   name: 'DiffUnifiedSide',
   props: {
@@ -361,9 +312,6 @@ function renderUnifiedRow(row: UnifiedRow, idx: number, language: string) {
     row.kind === 'delete' ? 'text-red-500' : row.kind === 'insert' ? 'text-green-500' : ''
 
   // Unified view: prefer the after-line for click (that's the file's new state).
-  // For delete-only rows there is no after-line; fall back to the before-line so the user can still
-  // jump to that line in the original (pre-edit) snapshot — for an inserted row that line no longer
-  // exists, but the editor's revealLine clamps gracefully.
   const jumpLine = row.afterLine ?? row.beforeLine
   const gutterClickHandler =
     jumpLine !== undefined && jumpLine !== null

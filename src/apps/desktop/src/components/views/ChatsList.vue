@@ -72,18 +72,13 @@ const rowErrorRetryLabel = (id: string): string | null => {
   return entry ? parseAgentErrorHeadline(entry.content).retryLabel : null
 }
 
-// URL-driven "what is the main content area showing?". Derived from the URL so the chat row's
-// active background stays in sync with refresh / deep links / browser back / forward — no store
-// flag can drift. See useCurrentMainView for the full contract.
-// URL-driven "what is the main content area showing?". Derived from the URL so the chat row's
-// active background stays in sync with refresh / deep links / browser back / forward — no store
-// flag can drift. See useCurrentMainView for the full contract.
+// URL-driven "what is the main content area showing?". See useCurrentMainView for the full
+// contract. See useCurrentMainView for the full contract.
 const currentMainView = useCurrentMainView()
 
 // Workspace scope for the CHATS list (plan: 2026-09-22-revamp-ui-chats). The list shows ONLY this
 // workspace's sessions — the backend filters via `?workspace_id=`. Source: the URL path workspace
 // when present, else the store's active workspace (landing / transition windows).
-// Undefined → global list (back-compat; the boot rewrite scopes it on the next tick).
 const scopedWorkspaceId = computed(() => {
   const v = currentMainView.value
   if (v.kind === 'chat' && v.workspaceId) return v.workspaceId
@@ -103,14 +98,9 @@ const isCurrentChat = (sessionId: string): boolean =>
 const isStale = (human: string | undefined, updated: string | undefined): boolean => {
   if (!human) return false
   if (!updated) return false
-  // Both fields are SQLite datetime UTC strings ('YYYY-MM-DD HH:MM:SS')
-  // - identical format - so lexicographic string comparison is the
-  // most accurate (and fastest) way to detect 'updated_at > human_time'.
-  // String comparison matches the SELECT layer's
-  // `needs_human_review` predicate (llm_history.zig), which compares
-  // `t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) * 1000)`
-  // - also a unix-vs-datetime comparison that resolves to the same
-  // truth (newer string > older string).
+  // Both fields are SQLite datetime UTC strings ('YYYY-MM-DD HH:MM:SS') - identical format - so
+  // lexicographic string comparison is the most accurate (and fastest) way to detect 'updated_at >
+  // human_time'.
   return updated > human
 }
 
@@ -247,10 +237,6 @@ const burstChatPrStatus = () => {
 
 // A merge or close ANYWHERE — this tab's MergeBox, or the `git_pr_state` SSE event from another
 // client — drops the shared cache entry and calls this back.
-// A mounted row cannot see a Map deletion, so without it the branch icon keeps the colour it
-// fetched before the merge until the row happens to remount.
-// A subscription, not a `watch`: `local/no-watch` bans reacting to change inside a component, and
-// this signal comes from OUTSIDE it (the forge, via the backend). The producer calls us instead.
 let unsubscribePrStatus: (() => void) | null = null
 onMounted(() => {
   unsubscribePrStatus = onPrStatusInvalidated(() => {
@@ -364,7 +350,6 @@ const confirmRename = async (name: string) => {
 // ─── Unattended mode ───────────────────────────────────────────────────────
 // `is_auto_retry_until_stop` lives on `sessions`, so this one genuinely has to go through
 // updateSession — which means selectedProfile must be sent back explicitly.
-// Passing only the flag would take the same profile-clearing path described above.
 const isUnattended = (chat: { is_auto_retry_until_stop?: string }): boolean =>
   chat.is_auto_retry_until_stop === '1'
 
@@ -411,8 +396,6 @@ const stopAgentFromMenu = async () => {
 
 // Right-click menu on the git icon: open GitHub branch / PR URLs in a new tab. Separate position
 // state from the row menu so a git-icon right-click never opens the chat menu.
-// URLs resolve via the shared PR-info cache (GET /api/git/pr/status already returns pr_url); the
-// branch URL derives from the PR repo base + /tree/<branch>.
 const { menuPos: gitMenuPos, openAt: openGitMenuAt, close: closeGitMenu } = useContextMenu()
 const gitMenuBranch = ref('')
 const gitMenuBranchUrl = ref('')
@@ -455,9 +438,6 @@ const openGitPrInBackground = () => {
 }
 
 // Sort toggle extracted to a method so the template stays a single expression.
-// An inline multi-statement handler needs a semicolon separator, which the repo prettier config
-// (semi:false, printWidth:100) strips when it wraps the long line, breaking the Vue template
-// compiler (see ChatsList activeFromUrl specs).
 const onSortToggle = () => {
   chatsSortDirection.value = chatsSortDirection.value === 'desc' ? 'asc' : 'desc'
   navigationStore.setChatsSortDirection(chatsSortDirection.value)
@@ -470,15 +450,8 @@ const chatsResizeStartY = ref(0)
 const chatsResizeStartPx = ref(0)
 
 // ChatsList maintains its OWN navItems mirror of workspacesStore state, populated by loadChats().
-// To keep navItems in sync with session renames/deletes/creates, we subscribe to the store's
-// session event fan-out (registered via workspacesStore.onSessionEvent).
-// The callback re-runs loadChats() — the simplest correct path since navItems has its own shape
-// (relativeTime, processing flag, etc.) that's not derived from the workspace tree.
-// Without this subscription, session events would update the workspace tree but leave the sidebar
-// stale until manual reload. See `docs/superpowers/plans/2026-06-30-unify-sse-endpoints.md` Chunk 5
-// / Task 5.3 for the migration context.
-// Virtual scroller ref
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.
+// See `docs/superpowers/plans/2026-06-30-unify-sse-endpoints.md` Chunk 5 / Task 5.3 for the
+// migration context.
 const virtualScrollerRef = ref<any>(null)
 
 // Get computed chats height in pixels from percentage
@@ -543,9 +516,6 @@ const optimisticClearStaleDot = (id: string) => {
 
 // Loop-guard (touched-echo fix): fireSessionTouched fires at most ONCE per sessionId per component
 // lifetime.
-// Without this, loadChats() → POST touched → backend SSE session.updated → onSessionEvent →
-// loadChats() → POST touched … loops forever (alternating GET /llm/session + POST /touched in the
-// Network tab).
 const touchedFiredFor = new Set<string>()
 const touchedAtMs = new Map<string, number>()
 // Echo window: a session.updated arriving within this long after our
@@ -670,10 +640,7 @@ const togglePinFromMenu = async () => {
   }
 }
 
-// Minimal Chat shape for the cache write-through above. The engine
-// stores the full server row in `raw`; the list mapper is the only
-// shape ChatsList owns, so rebuild the wire object from it.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.
+// Minimal Chat shape for the cache write-through above.
 const mapNavItemToChat = (r: any): any => ({
   session_id: r.id,
   session_name: r.name,
@@ -693,7 +660,6 @@ const mapNavItemToChat = (r: any): any => ({
 // PINNED drag-drop reorder (Migration 104). HTML5 DnD on the pinned rows only (small list, no
 // virtualization): dragstart captures the id, dragover tracks the target + before/after half, drop
 // splices + POSTs the full top-to-bottom order.
-// Mirrors WorkspaceItem's pinned reorder (custom MIME type so parent drag handlers ignore it).
 const dragPinnedId = ref<string | null>(null)
 const dragPinnedOverId = ref<string | null>(null)
 const dragPinnedBefore = ref(false)
@@ -755,15 +721,6 @@ const onPinnedDragEnd = () => {
 // Empty-refresh resilience. `api.getChats` swallows every transport failure — a rejected fetch, the
 // 15s `apiFetch` timeout aborting a slow request, a non-2xx — and resolves `{ sessions: [], total:
 // 0 }`.
-// At this call site "the request failed" is therefore indistinguishable from "this workspace has no
-// chats".
-// Painting that empty page over a populated list is what made RECENT go blank and STAY blank: only
-// a scope change or a session SSE event reloads the list, and a plain streaming chat fires neither.
-// So an empty page that lands on top of painted rows is treated as a failed refresh: keep the rows,
-// say so in the console, and revalidate on a bounded backoff.
-// The backoff budget is finite so a genuinely emptied workspace (last chat deleted) still converges
-// to an empty list — that path splices the row locally first, so `navItems` is already empty and
-// never takes the keep-the-rows branch below.
 const LOAD_RETRY_DELAYS_MS = [1_000, 3_000, 8_000, 20_000]
 let loadRetryTimer: ReturnType<typeof setTimeout> | undefined
 let loadRetryAttempt = 0
@@ -892,8 +849,6 @@ const loadMoreChats = async () => {
   // Cache-first scroll-back in desc mode (mirrors ChatView.fetchOlderPage): the write-through below
   // accumulates every fetched page, so older rows are usually already local. Cursor unchanged,
   // id-dedupe covers overlap.
-  // Asc mode stays network-only — "older" has no meaning against a backend cursor that pages in
-  // display order.
   if (chatsSortDirection.value === 'desc' && navItems.value.length > 0) {
     const oldest = navItems.value[navItems.value.length - 1]?.sortKey ?? ''
     const cached = await runSyncEffectOr(
@@ -946,8 +901,6 @@ const toggleNavSection = () => {
 
 // Workspace switch refetch (plan: 2026-09-22-revamp-ui-chats). The list is scoped per workspace, so
 // a scope change clears the old workspace's rows FIRST (no stale frame) and refetches.
-// Clearing before the async fetch lands is what keeps the wrong workspace's chats from flashing on
-// a fast switch. Runs from the scope guard below (mount seeds it; updates refetch on scope change).
 const switchWorkspaceScope = () => {
   navItems.value = []
   chatsNextCursor.value = null
@@ -1060,43 +1013,8 @@ const removeChat = async (chatId: string) => {
   }
 }
 
-// Migration 063 — the unattended-mode toggle USED to live as a
-// clickable badge in this list. After moving it into the Task
-// details dialog (KanbanTaskDetailDialog.vue), the toggle handler
-// (`toggleAutoRetry`) was deleted and the badge spans were removed
-// from the template — the toggle is now flipped via the dialog's
-// `@update-unattended` emit, which the host wires to
-// `api.updateSession`. The `is_auto_retry_until_stop` field on
-// each navItem is still rendered server-truth via SSE re-fetch, so
-// any other UI that wants to show unattended state (e.g. a status
-// icon) can read it from `item.is_auto_retry_until_stop === '1'`.
-// ─── Session Events via sseBus ─────────────────────────────────────────────────
-//
-// Session events (renames / deletes / creates) arrive through the
-// global sseBus (opened once by App.vue). The workspaces store
-// installs its own `bus.on('session', ...)` handler in its `init()`
-// for internal tree mutation; we register a second listener here
-// (via `workspacesStore.onSessionEvent(cb)`) to re-fetch our
-// navItems mirror whenever any session event arrives — the nav
-// list isn't derived from the workspace tree, so the internal
-// handler's match-by-task-id path is a no-op for us. See Chunk 6
-// of the unify-frontend-sse plan.
-// Lifecycle
-// Subscribe to session events at setup time (synchronously) so the
-// `onUnmounted` cleanup hook can also be registered synchronously
-// (Vue 3 lifecycle injection APIs must run during setup, not after
-// the first `await` inside `onMounted`). The callback re-runs
-// loadChats() — works whether it fires before or after mount.
-//
-// Touched-echo fix: our own POST touched emits a session.updated SSE
-// that echoes back within milliseconds. Reloading on that echo would
-// re-enter loadChats() → fireSessionTouched → … forever. So:
-//  - `updated` events inside the echo window after our own touch are
-//    swallowed (no refetch — the optimistic patch already cleared
-//    the dot locally);
-//  - all other events (created/deleted, renames from elsewhere) go
-//    through a short trailing debounce so an SSE burst coalesces
-//    into a single GET instead of one per event.
+// Migration 063 — the unattended-mode toggle USED to live as a clickable badge in this list. See
+// Chunk 6 of the unify-frontend-sse plan.
 let sseReloadTimer: ReturnType<typeof setTimeout> | undefined
 const scheduleSseReload = () => {
   if (sseReloadTimer !== undefined) return // burst already coalesced

@@ -1,19 +1,6 @@
-/**
- * useProfileDelete — optimistic-update + rollback for LLM profile
- * deletion.
- *
- * On `deleteProfile(name)`:
- *   1. Snapshot the current `profiles` and `activeProfile` so we can
- *      roll back if the API call fails.
- *   2. Remove the profile from local state immediately (UI feels
- *      instant).
- *   3. Call the backend. On success, fire `onSuccess`. On failure,
- *      restore the snapshot and fire `onError`.
- *
- * A `isDeleting` flag is exposed for the UI to disable the delete
- * button while the request is in flight, and to prevent concurrent
- * deletes from racing.
- */
+/** useProfileDelete — optimistic-update + rollback for LLM profile deletion. On
+ * `deleteProfile(name)`: 1. Snapshot the current `profiles` and `activeProfile` so we can roll back
+ * if the API call fails. 2. */
 import { ref, type Ref } from 'vue'
 
 import { deleteProfile as apiDeleteProfile, type ProfileDeleteResponse } from '../api'

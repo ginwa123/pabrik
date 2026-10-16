@@ -1,27 +1,6 @@
-/**
- * Shared "content iframe reports its own height" protocol.
- *
- * A sandboxed content iframe (`sandbox="allow-scripts"`, NULL origin)
- * cannot be measured from the parent — `contentDocument` is off-limits, so
- * the parent has no way to learn the height of what the frame rendered.
- * The frame therefore measures ITSELF and `postMessage`s the result back;
- * the parent's only job is writing a clamped `iframe.style.height`.
- *
- * Without this, every such frame keeps the browser's default iframe height
- * (150 px) and long content ends up behind an inner scrollbar — an iframe
- * inside a scroller inside the chat.
- *
- * Two consumers, each with its own `source` token so that a message is only
- * ever applied to the frame that sent it (both listeners see every
- * `message` on the window):
- *
- *   - `PreviewContentRenderer.vue`  → `show-preview-auto-resize`
- *   - `ChatView.vue` `<html>` blocks → `chat-html-frame-auto-resize`
- *
- * Security: the injected script has no network access, no `eval`, and no
- * parent-DOM access. It reads its own document metrics and posts one plain
- * object. The parent's handler only writes a clamped pixel height.
- */
+/** Shared "content iframe reports its own height" protocol. A sandboxed content iframe
+ * (`sandbox="allow-scripts"`, NULL origin) cannot be measured from the parent — `contentDocument`
+ * is off-limits, so the parent has no way to learn the height of what the frame rendered. */
 /** Reporter tag for the inline preview HTML iframe. */
 export const PREVIEW_AUTO_RESIZE_SOURCE = 'show-preview-auto-resize'
 

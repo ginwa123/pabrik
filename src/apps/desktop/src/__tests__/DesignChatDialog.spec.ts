@@ -1,20 +1,4 @@
-// DesignChatDialog — centred modal dialog that wraps <ChatView> for the
-// design page chat. Kept as a modal after the kanban chat became a tab:
-// the design chat is opened from a canvas header button and by an FK-driven
-// auto-open, not by a per-card click (see plan
-// 2026-08-06-design-chat-as-dialog). Each design page is
-// paired 1:1 with a workspace_item_tasks row (per the FK plan
-// 2026-07-28-design-page-workspace-item-task-fk.md), so the chat task
-// is the same Task type the kanban path uses — the only difference
-// is the gating condition (item_type === 'design') and the page
-// context (pageName goes in the header).
-//
-// Tests follow the project's established Teleport-based dialog
-// pattern (see vue-teleport-vitest-document-queryselector skill):
-//   - attachTo: document.body so the wrapper stays alive
-//   - document.querySelector for DOM assertions (NOT wrapper.find —
-//     the teleported content is not in the wrapper's DOM tree)
-//   - afterEach: wrapper.unmount() + force-remove teleported nodes
+// DesignChatDialog — centred modal dialog that wraps <ChatView> for the design page chat.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
@@ -251,7 +235,6 @@ describe('DesignChatDialog', () => {
     // In design mode each page is paired 1:1 with a task via the FK (per
     // 2026-07-28-design-page-workspace-item-task-fk.md), so a "task swap" only happens when the
     // user clicks a different page's 💬 button — both task AND pageName change together.
-    // The title (pageName) updates AND ChatView remounts (new task.id).
     wrapper = mountDialog({
       show: true,
       task: TASK_A,

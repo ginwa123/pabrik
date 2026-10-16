@@ -1,19 +1,6 @@
-/**
- * Component tests for the rename-task action on the task row in
- * WorkspaceItem.vue.
- *
- * The action used to be a hover pencil button on the row; it now lives
- * in the row's right-click menu (<OpenInNewTabMenu>), the same
- * migration <WorkspaceItemTaskCard> made. These tests mount
- * <WorkspaceItem> — the real parent chain — so they cover the
- * integration: the row opens its menu, the menu row emits, and
- * WorkspaceItem re-emits renameTask up to ProjectsList unchanged.
- *
- * The old stopPropagation guard is gone with the button: the menu is
- * Teleported to `body`, so its clicks never traverse the row and
- * cannot fire the row's selectTask. The "does NOT emit selectTask"
- * test below asserts that outcome directly.
- */
+/** Component tests for the rename-task action on the task row in WorkspaceItem.vue. The action used
+ * to be a hover pencil button on the row; it now lives in the row's right-click menu
+ * (<OpenInNewTabMenu>), the same migration <WorkspaceItemTaskCard> made. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, type Ref } from 'vue'

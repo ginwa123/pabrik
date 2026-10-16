@@ -1,31 +1,4 @@
-/**
- * Behavioural tests for `Sidebar.handleSelectTask` URL behaviour.
- *
- * Plans:
- *   - 2026-08-06-better-url-browser: click appends (not replaces) the URL.
- *   - 2026-08-06-add-workspace-id-params: task URLs include workspaceId.
- *   - 2026-08-15-simplify-url-browser: collapse view=task into the
- *     workspace URL with /chat/<taskId> suffix on itemId.
- *
- * **Bug fixed (2026-08-06):** "when click task in kanban, no need
- * replace url, but append the url browser" — clicking a kanban task
- * REPLACED the URL with `?view=task&task=X&itemId=Y`, dropping the
- * workspace + per-column sort context. After the fix, clicking a
- * kanban task PRESERVES the current URL context (workspaceId,
- * itemId, sorts, pageId) so:
- *
- *   1. The browser back button returns to the kanban URL naturally
- *      (router.push vs router.replace).
- *   2. The URL shows the user where they came from — the kanban URL
- *      with `view=task&task=X` appended on top.
- *   3. The savedSortsParam snapshot mechanism remains the fallback
- *      for cases where the user lands on the task view WITHOUT a
- *      kanban URL (e.g. deep link via bookmark) — the round-trip
- *      test in AppLayout.sortUrlRoundTrip.spec.ts still passes.
- *
- * No static-contract checks — every assertion is on the live URL
- * after a router push.
- */
+/** Behavioural tests for `Sidebar.handleSelectTask` URL behaviour. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, createApp } from 'vue'
@@ -291,9 +264,6 @@ describe('Sidebar.handleSelectTask — APPEND URL, not REPLACE (better-url-brows
     // The URL is a deep link — no workspaceId in route.query. The new URL MUST add workspaceId from
     // the active store state (setActiveTask auto-discovers the parent item + workspace via
     // workspacesStore.setActiveTask's parent-item lookup at workspaces.ts:3366).
-    // This addresses the user's report (task_1785774094183): task URLs were missing `workspaceId`
-    // and the user wanted it added so the URL bar shows the kanban / design context (share /
-    // refresh / back work).
     setRouteQuery({
       view: 'workspace',
       workspaceId: WS_ID,
@@ -347,8 +317,6 @@ describe('Sidebar.handleSelectTask — APPEND URL, not REPLACE (better-url-brows
 
   // ─── add-workspace-id-params plan (2026-08-06) ────────────────── The user reported
   // (task_1785774094183): task URLs were missing `workspaceId`.
-  // These tests lock in the new contract: when the user clicks a task in kanban / design mode, the
-  // new task URL MUST include workspaceId (from the active store state).
   it('writes workspaceId from the active store even when the URL breadcrumb lacks it (add-workspace-id-params, 2026-08-06)', async () => {
     const store = useWorkspacesStore()
     store.workspaces = [

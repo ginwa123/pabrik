@@ -238,7 +238,6 @@ describe('KanbanColumnEditor description field', () => {
   // Note: tests in this block use document.querySelector (via findInDom) instead of wrapper.find()
   // because the editor renders inside <Teleport to="body"> — Vue Test Utils' wrapper.find() does
   // not traverse the teleport destination.
-  // Same convention as the existing tests at the top of this file.
   it('shows a description textarea in add mode', async () => {
     document.body.innerHTML = ''
     const wrapper = mount(KanbanColumnEditor, {

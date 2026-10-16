@@ -1,16 +1,6 @@
-/**
- * Tests for CopyKanbanSpecDialog — the per-board "copy spec from
- * another kanban" modal. Mount pattern: same as
- * KanbanSettingsDialog.spec.ts (Teleport + attachTo: document.body
- * + document.querySelector for DOM assertions).
- *
- * The dialog uses a custom click-to-open listbox (not a native
- * <select>) so tests interact with it by clicking the trigger
- * button to expose the options, then clicking the option.
- *
- * Plan: docs/superpowers/plans/2026-07-04-copy-kanban-spec.md
- *   (Chunk 4, Task 4.1)
- */
+/** Tests for CopyKanbanSpecDialog — the per-board "copy spec from another kanban" modal. Mount
+ * pattern: same as KanbanSettingsDialog.spec.ts (Teleport + attachTo: document.body +
+ * document.querySelector for DOM assertions). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

@@ -168,7 +168,6 @@ export interface SplitDiffFile {
 // Split a multi-file unified diff (e.g. `gh pr diff` output) into per-file chunks at `diff --git`
 // boundaries. Pure: no IO, no Vue. Status comes from the header lines: `new file mode` → A,
 // `deleted file mode` → D, `similarity index`/`rename from` → R, else M.
-// Unparseable leading text (e.g. empty diff) yields [].
 export function splitDiffByFile(diffText: string): SplitDiffFile[] {
   const out: SplitDiffFile[] = []
   const lines = diffText.split('\n')

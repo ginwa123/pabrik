@@ -65,12 +65,6 @@ import type { SseClient, SseState, SseStateInfo } from '../../helpers/sseClient'
 
 // ── The hoisted api mock ──────────────────────────────────────────────────── Two seams, both
 // required, both hoisted.
-// `chatEngineDb` binds `fetchFn = getChatHistory` as a constructor default evaluated at module
-// load, so a later `vi.spyOn` cannot reach it; and ChatView's authoritative load calls
-// `api.fetchChatHistoryEffect` directly.
-// Mocking only one leaves the real fetch running, the retry loop holding `isLoading`,
-// `isInitializing` never clearing, and the `<VirtualScroller>` never mounting — the spec then dies
-// with ".virtual-scroller not mounted" having tested nothing.
 const historyRows: unknown[] = []
 const historyResponse = () => ({
   messages: historyRows,
@@ -340,8 +334,6 @@ describe('ChatView — 1000 messages, full-screen-tall bodies, thoughts, long re
       // Deliberately NOT byte-identical to the seeded tall bodies: the `full` handler drops an
       // event that duplicates an existing row on role + content + tool_call_id (the 2026-08-23
       // TOOLS-pill-spam fix), and 20% of the seed carries exactly `FULL_SCREEN_BODY`.
-      // Seeding the duplicates is correct for a real transcript, but it means the final row has to
-      // carry something the history does not.
       content: `${FULL_SCREEN_BODY}\n\nFinal line that only this turn has.`,
       reasoning_content: THOUGHT,
       finish_reason: 'stop',
@@ -365,8 +357,6 @@ describe('ChatView — 1000 messages, full-screen-tall bodies, thoughts, long re
     // The exact arming moment the reported bug used to be lost at: the reader goes up to read
     // history, comes back with the app's own jump-to-bottom affordance (which re-arms
     // `isAtBottom`), and THEN a long response arrives.
-    // The first long chunk is where the remeasure used to strand them and kill the stick for the
-    // rest of the turn.
     const session = 'tall_stick_return'
     installApiMocks()
     wrapper = await mountChatView(session, processingState)
@@ -389,13 +379,7 @@ describe('ChatView — 1000 messages, full-screen-tall bodies, thoughts, long re
     // contract, and the reason the fix is a re-target rather than "always jump".
     expect(container.scrollTop).toBe(5000)
 
-    // Come back to the tail, the way a reader does. The button is
-    // `@click="scrollToBottom(true, …)"`: it WRITES scrollTop and lets the
-    // resulting native scroll event update `isAtBottom`. jsdom does not fire
-    // that event for a programmatic write (the polyfill above only assigns
-    // `scrollTop`), so the flag would stay false and the test would blame the
-    // product for a browser behaviour jsdom skips. Emit the event the browser
-    // would emit.
+    // Come back to the tail, the way a reader does.
     const arrow = wrapper.find('.chat-scroll-to-bottom')
     expect(arrow.exists()).toBe(true)
     await arrow.trigger('click')

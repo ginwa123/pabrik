@@ -1,48 +1,6 @@
-/**
- * Chat surface stacking containment — structural contract.
- *
- * The document viewer is now its own PAGE (`/app/<ws>/doc/<id>`) and
- * REPLACES the chat, so it no longer needs this containment — that was
- * the follow-up fix. What is STILL an overlay over a mounted chat, and
- * still needs it, are AppLayout's other full-surface views, all still at
- * `z-index: 10` inside the same `<main>`:
- *
- *     GitFileViewer / Skill Viewer / code-editor   z-index: 10
- *
- * Opening one of those from a chat session reproduced exactly the same
- * leak, so this file's scope is those.
- *
- * WHY (this is the part that is easy to get wrong later).
- * `<main>` is `position: relative` and `.chat-column` is
- * `position: relative` — but NEITHER sets a `z-index`, and
- * `position: relative` with `z-index: auto` does NOT open a stacking
- * context. So the chat's internal z-ladder and an overlay's `z-index: 10`
- * were being compared in the SAME root stacking context, where the chat
- * wins on raw numbers:
- *
- *     .chat-scroll-slider / .user-pill-rail   z-index: 20
- *     .composer-dock                          z-index: 30
- *     .chat-scroll-to-bottom                  z-index: 31
- *     AppLayout overlays                      z-index: 10   <-- loses
- *
- * Every chat tier is above 10, so all of them leaked. Confirmed in a
- * real browser with `elementFromPoint` at the centre of each chrome
- * element: all three returned the CHAT element, never the overlay.
- *
- * THE FIX: `isolation: isolate` on `.chat-column`. This contains the
- * chat's ENTIRE z-ladder inside one stacking context, so no tier the
- * chat adds in future can escape past an app-level overlay. Raising an
- * overlay to z-40 would only move the goalposts, and would break again
- * the first time a chat element needs a higher tier.
- *
- * jsdom has no layout engine and does not apply SFC <style> blocks, so
- * neither the computed `isolation` nor the paint order can be asserted
- * here — the first would read `''` on the buggy AND the fixed source,
- * the second needs a browser. What is pinned is the DECISION that
- * produces the paint order (the stacking context) plus the raw CSS that
- * implements it, so a later refactor cannot quietly drop the
- * containment.
- */
+/** Chat surface stacking containment — structural contract. The document viewer is now its own PAGE
+ * (`/app/<ws>/doc/<id>`) and REPLACES the chat, so it no longer needs this containment — that was
+ * the follow-up fix. */
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
@@ -193,9 +151,6 @@ describe('ChatView stacking containment — document overlay must cover the chat
     // The isolation above is what makes this ordering irrelevant to the result — but these ARE the
     // numbers that regressed the bug, so keep them visible. If someone drops `isolation`, this is
     // exactly the comparison that lets the chat win.
-    // AppLayout is the source, not DocumentsView: the document is a page now and carries no z-index
-    // at all. GitFileViewer / the Skill Viewer / the code-editor overlay are still `absolute
-    // inset-0` at z-10 in the same <main>, and still overlay a mounted chat.
     const overlayZ = Number(appLayoutSrc.match(/z-index:\s*(\d+)/)?.[1])
     const tierZ = CHROME_Z_TIERS.map((t) => t.z)
     expect({ overlayZ, tierZ, allChatTiersWin: tierZ.every((z) => z > overlayZ) }).toEqual({

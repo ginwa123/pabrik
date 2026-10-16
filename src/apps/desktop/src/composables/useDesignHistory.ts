@@ -1,28 +1,5 @@
-/**
- * `useDesignHistory` — core composable for design-mode undo/redo.
- *
- * Owns the push/pop API + capture helpers. The Pinia store
- * (`useDesignHistoryStore`) is just the data layer; this composable
- * owns the business logic: capturing pre-state, diffing, applying
- * inverse/forward, and wiring up to `workspacesStore` for the
- * actual API calls.
- *
- * Usage:
- *   const pageId = computed(() => activePageId.value)
- *   const history = useDesignHistory(pageId)
- *
- *   history.capturePreState(['elem_A', 'elem_B'])
- *   // ... user drags both elements ...
- *   await history.capturePostState(['elem_A', 'elem_B'])
- *
- *   // Cmd+Z triggers:
- *   await history.undo()
- *
- * The composable reads/writes to the active workspace + item via
- * `workspacesStore.activeWorkspace / activeWorkspaceItemId` at call
- * time — no need to plumb ids through props (matches the pattern in
- * `useDesignHandlers.updateElement`).
- */
+/** `useDesignHistory` — core composable for design-mode undo/redo. Owns the push/pop API + capture
+ * helpers. */
 import { computed, type ComputedRef } from 'vue'
 import { useDesignHistoryStore, type HistoryEntry } from '../stores/designHistory'
 import { useWorkspacesStore } from '../stores/workspaces'
@@ -172,8 +149,6 @@ export function useDesignHistory(pageId: ComputedRef<string>): UseDesignHistory 
     // Chunk 6 (undo/redo plan): if the caller didn't provide an HTML body, fetch it from the
     // backend BEFORE the delete happens. The captured body is what `applyInverse` will PATCH back
     // on undo.
-    // Without this, undo restores the SQL row but the on-disk HTML file is gone (deleteElement
-    // deletes it best-effort).
     const enriched = await Promise.all(
       elements.map(async (e) => {
         if (e.htmlBody !== null) return e
@@ -324,9 +299,6 @@ export function useDesignHistory(pageId: ComputedRef<string>): UseDesignHistory 
           // Inverse of a reorder is... another reorder with the before/after swapped. We don't
           // currently have an "absolute set order" API; the closest is reorderDesignElements with
           // `bring_forward` / `send_backward`.
-          // Full inverse is out of scope for v1 (the keyboard path's inverse is "back to the
-          // original z-index values", which would need either a snapshot diff or a new endpoint).
-          // For now we no-op.
         }
         break
       case 'group':

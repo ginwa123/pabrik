@@ -1,13 +1,6 @@
-// Behavioural tests for AgentSystemPromptDialog (plan
-// 2026-08-21-agent-system-prompt, Task 4). Covers open/reset, create
-// payload, edit/save payload, canSubmit gating (content required,
+// Behavioural tests for AgentSystemPromptDialog (plan 2026-08-21-agent-system-prompt, Task 4).
+// Covers open/reset, create payload, edit/save payload, canSubmit gating (content required,
 // whitespace-only rejected), busy/error rendering.
-//
-// NOTE (vue-teleport-vitest-document-queryselector): the dialog uses
-// <Teleport to="body">, so wrapper.find() can't see the teleported DOM.
-// Mount with attachTo: document.body and assert via document.querySelector
-// + native .click(); wrapper.emitted() still works because it tracks the
-// vm, not the DOM tree.
 import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'

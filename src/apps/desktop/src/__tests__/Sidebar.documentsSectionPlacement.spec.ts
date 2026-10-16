@@ -1,29 +1,5 @@
-/**
- * The sidebar's scroll ownership — why this file exists.
- *
- * The report was "the Documents section sits at the bottom of the sidebar
- * and is far away from Projects". The cause was purely geometric:
- *
- *     <nav class="flex-1 flex flex-col overflow-hidden">
- *       <ChatsList />                                  shrink-0
- *       <div class="flex-1 min-h-0 overflow-hidden">   ← absorbed ALL leftover height
- *         <ProjectsList />
- *       </div>
- *       <DocumentsList />                               shrink-0  ← always last, always bottom
- *     </nav>
- *
- * `flex-1` on the Projects wrapper made that section exactly as tall as
- * the space the other two did not need. With a short project list that is
- * a screen-tall EMPTY box, and Documents — documented as living BELOW
- * Projects — is stranded at the bottom of the viewport.
- *
- * These read the RENDERED dom (shallow mount, children stubbed) rather
- * than grepping the .vue source: the classes that decide the layout are
- * the ones the browser sees, and a comment or a reformatted template can
- * never make this pass or fail by accident. jsdom has no layout engine,
- * so the measuring half — an actual pixel gap — lives in
- * `tests/functional_ui/sidebar_documents_placement_test.py`.
- */
+/** The sidebar's scroll ownership — why this file exists. The report was "the Documents section
+ * sits at the bottom of the sidebar and is far away from Projects". */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { mount } from '@vue/test-utils'

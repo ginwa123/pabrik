@@ -63,16 +63,8 @@ describe('F2 — user group renders ALL messages (source contract)', () => {
 })
 
 describe('F3 — NO optimistic user message push (source contract)', () => {
-  // 2026-08-23 auto-collapse fix — the optimistic local push that
-  // lived in handleFileInputSubmit was removed. Two reasons:
-  //   (a) the optimistic id (`optimistic-user-*`) was always going
-  //       to be swapped for the server's canonical DB id milliseconds
-  //       later — a visible flicker with zero benefit;
-  //   (b) every push mutated `messages`, which recomputed
-  //       `messageGroups`, which (with positional expand keys) silently
-  //       re-keyed every tool card the user had expanded.
-  // The user's message now appears via the SSE `full` echo with a
-  // stable DB id from the start. These tests lock that contract in.
+  // 2026-08-23 auto-collapse fix — the optimistic local push that lived in handleFileInputSubmit
+  // was removed.
   it('does NOT push a local optimistic user bubble in handleFileInputSubmit', async () => {
     const source = await readChatViewSource()
     // The optimistic push has been removed; the send-error path now

@@ -86,9 +86,6 @@ import { useDesignContextMenu } from '../../composables/useDesignContextMenu'
 import {
   // NEW (design-pages-in-workspace-tree plan, 2026-08-06): the sidebar tree now owns the page list
   // via `designPagesByItemId` in the workspaces store.
-  // The local `listDesignPages` / `createDesignPage` / `deleteDesignPage` API calls below are
-  // removed — `loadPages` now calls `workspacesStore.fetchDesignPages` and the + Page / × delete
-  // buttons route through the store actions so the cache stays authoritative.
   type DesignElement as DesignElementApi,
   type DesignPage,
 } from '../../api'
@@ -113,32 +110,11 @@ const emit = defineEmits<{
   createElement: [body: { name: string; type: DesignElementApi['type']; html: string }]
   updateElement: [elementId: string, patch: Partial<DesignElementApi>]
   // NEW (2026-08-06, split-move-resize plan) — typed translate/resize events.
-  // The `updateElement` event is kept for back-compat with any caller still using the PATCH
-  // /geometry shape; new code emits `translateElement` (POST /translate, delta, cascades for
-  // groups) or `resizeElement` (POST /resize, absolute, no cascade).
   translateElement: [elementId: string, dx: number, dy: number]
   resizeElement: [elementId: string, patch: Partial<DesignElementApi>]
   deleteElement: [elementId: string]
   htmlChanged: [elementId: string, html: string]
-  // NEW: top-right chat toggle. AppLayout finds or creates a
-  // "Design Chat" task on this design item and sets it as the
-  // active task so the existing 3-column layout (DesignView |
-  // resize-handle | ChatView) renders alongside the canvas.
-  // Plan: docs/superpowers/plans/2026-06-13-design-mode.md
-  // (chat integration, added 2026-07-14 after user feedback).
-  //
-  // 2026-07-28 per-page scoping (plan:
-  // docs/superpowers/plans/2026-07-28-design-per-page-chat-sessions.md):
-  // the emit now carries the active page's {pageId, pageName} so
-  // AppLayout can look up the chat task for THIS page only.
-  // Empty values (page not loaded yet) → AppLayout short-circuits
-  // and does NOT create a chat task with an empty name.
-  //
-  // 2026-07-28 FK rewrite (plan:
-  // docs/superpowers/plans/2026-07-28-design-page-workspace-item-task-fk.md):
-  // the payload now also carries `workspaceItemTaskId` from the page
-  // row. AppLayout uses this directly as the chat task id — no name
-  // matching, no legacy migration, no `taskHasMessages` probe.
+  // NEW: top-right chat toggle.
   openChat: [
     payload: {
       pageId: string
@@ -186,8 +162,6 @@ async function dispatchReorder(
 
 // Chunk 5: handlers for the 4 reorder + select-all + delete events emitted by the LayersPanel
 // context menu (and the canvas's own DesignContextMenu).
-// The reorder handlers reuse dispatchReorder; select-all replaces selectedIds with the full element
-// list; delete mirrors the existing Backspace shortcut.
 function handleDesignSelectAll(): void {
   selectedIds.value = new Set(elements.value.map((e) => e.id))
 }
@@ -231,10 +205,6 @@ const effectiveItemId = computed(() => props.itemId || props.item.id)
 // ─── Pages state ─────────────────────────────────────────────────────── NEW
 // (design-pages-in-workspace-tree plan, 2026-08-06): pages now live in the workspaces store's
 // `designPagesByItemId` cache, NOT in DesignView-local state.
-// The sidebar tree (WorkspaceItem.vue) and the canvas header both read from the same map.
-// DesignView reads `activeDesignPageId` from the store through its single-source `activePageId`
-// computed; page activation (which fetches elements for the new page) runs from the explicit
-// claim-and-activate path.
 const pages = computed<DesignPage[]>(() => {
   if (!effectiveItemId.value) return []
   return workspacesStore.designPagesByItemId[effectiveItemId.value] ?? []
@@ -289,20 +259,11 @@ const isElementsLoading = computed(() => {
 // ─── Selection state ─────────────────────────────────────────────────── Multi-select (Figma
 // model). Empty Set = nothing selected. Plain click = exclusive select (replaces the selection);
 // Shift+click = toggle membership (adds/removes without affecting the rest); Escape = clear all.
-// The PropertiesPanel and LayersPanel use the same Set so the right rail stays in sync with the
-// canvas outline.
 const selectedIds = ref<Set<string>>(new Set())
 
-// Per-element nudge offset accumulator. The keyboard handler reads
-// `el.x + offset[id].x` instead of `el.x` so consecutive ArrowLeft
-// presses compose (the second press starts where the first one ended).
-// `updateDesignElementGeometry` is a fire-and-forget PATCH that does
-// NOT mirror the response back into `elements.value` (see the
-// performance comment in stores/workspaces.ts around the function),
-// so without this accumulator the element would only move on the
-// FIRST press and stay frozen on every subsequent press.
-//
-// Reset on page change (different elements scope).
+// Per-element nudge offset accumulator. The keyboard handler reads `el.x + offset[id].x` instead of
+// `el.x` so consecutive ArrowLeft presses compose (the second press starts where the first one
+// ended).
 const nudgeOffsets = new Map<string, { x: number; y: number }>()
 
 const activeElements = computed<DesignElementApi[]>(() => {
@@ -313,11 +274,6 @@ const isSingleSelect = computed(() => selectedIds.value.size === 1)
 // PropertiesPanel only renders its single-element form when exactly one NEW (Chunk 6 of
 // grouped-layers plan): useDesignHandlers composable providing `groupSelection` for the Cmd+G
 // shortcut.
-// We pass the args this component owns (`selectedIds` is local; the ids come from props +
-// activePageId).
-// AppLayout uses a SEPARATE `useDesignHandlers()` invocation (no args) for updateElement /
-// deleteElement — those handlers re-read activeDesignPageId from the store on each call so they
-// don't need DesignView-local refs.
 const designHandlers = useDesignHandlers({
   workspaceId: computed(() => props.workspaceId),
   itemId: computed(() => effectiveItemId.value),
@@ -332,9 +288,6 @@ const history = useDesignHistory(computed(() => activePageId.value))
 
 // ─── Snap guides state ──────────────────────────────────────────────── While a drag is in
 // progress, snap math (computeSnapDelta) emits the 1px violet alignment guides the user should see.
-// Rendered as an SVG overlay INSIDE the canvas div (above the elements but below the resize
-// handles). Cleared on drag-end (DesignElement emits `dragEnd` on pointerup; the parent listens via
-// @drag-end on the canvas's <DesignElement> invocation).
 const snapGuides = ref<SnapGuide[]>([])
 
 // ─── Preview/Edit mode ──────────────────────────────────────────────────
@@ -478,16 +431,8 @@ const loadPages = async (): Promise<void> => {
     // NEW (design-pages-in-workspace-tree plan, 2026-08-06): the store owns the cache.
     // fetchDesignPages is idempotent via an in-flight guard, so concurrent calls (sidebar expand +
     // canvas mount) share the same network request.
-    // The `pages` computed above updates from the cached value once the promise resolves.
     const fetched = await workspacesStore.fetchDesignPages(props.workspaceId, effectiveItemId.value)
-    // Pick the active page in this priority:
-    //   1. The store's activeDesignPageId (set by AppLayout's onMounted
-    //      URL restore when the page reloads with ?pageId=Z) — wins over
-    //      the local activePageId so the reload restores the user's
-    //      last-clicked tab even if the component instance is fresh.
-    //   2. The local activePageId (preserved across re-renders within
-    //      the same item switch via selectPage below).
-    //   3. The first fetched page (default for new users).
+    // Pick the active page in this priority: 1.
     const storePageId = workspacesStore.activeDesignPageId
     if (
       storePageId &&
@@ -519,9 +464,6 @@ onMounted(() => {
 // Page activation (mirrors KanbanView's loadColumns pattern). Runs the side effects of a page
 // change: clear the selection (it belongs to the old page), drop cached nudge offsets, and fetch
 // the new page's elements.
-// Every assignment to `activePageId` flows through the computed setter into the store FIRST, so
-// AppLayout's design handlers (handleDesignUpdateElement / handleDesignDeleteElement) always see
-// the latest selection — the store ref starts at '' and clears in onUnmounted (below).
 const activatePage = (pageId: string): void => {
   selectedIds.value = new Set()
   // Nudge offsets are per-element; fresh page means every cached
@@ -543,9 +485,6 @@ const claimAndActivatePage = (): void => {
 }
 // Choice gate: replicates the old local-ref assignment semantics — the store (and the effects) only
 // see a choice that differs from the last one this component made.
-// In particular, loadPages falling back to '' on an empty page list must NOT wipe a preset store
-// page (the old ref started at '' so that fallback was a silent no-op — see
-// AppLayout.createElement.spec.ts).
 const lastChosenPage = ref('')
 const choosePage = (choice: string): void => {
   if (choice === lastChosenPage.value) return
@@ -646,9 +585,6 @@ const handleKeydown = (event: KeyboardEvent): void => {
   }
 
   // Chunk 4: Backspace / Delete → delete current selection.
-  // The existing input-focus guard at the top of handleKeydown protects PropertiesPanel inputs from
-  // being interpreted as delete-element presses (Backspace inside a number input deletes the
-  // input's selection, not the design element).
   if (
     (event.key === 'Backspace' || event.key === 'Delete') &&
     !event.ctrlKey &&
@@ -686,8 +622,6 @@ const handleKeydown = (event: KeyboardEvent): void => {
   // Cmd/Ctrl+P toggles Preview/Edit mode. Plain P (no modifier) is a common type-to-pan shortcut in
   // design tools — not used here, but we intentionally don't bind it so the future pan-tool doesn't
   // conflict.
-  // Cmd+P conflicts with browser Print on some platforms; users can use the toolbar button as a
-  // fallback.
   if (
     (event.key === 'p' || event.key === 'P') &&
     (event.ctrlKey || event.metaKey) &&
@@ -702,9 +636,6 @@ const handleKeydown = (event: KeyboardEvent): void => {
   // NEW (Chunk 6 of grouped-layers plan): Cmd/Ctrl+G groups the current selection into a new
   // `group` at the union bbox. Figma convention. The composable enforces the 2+ selection rule
   // silently (mirrors Figma's Cmd+G).
-  // Chunk 9: Cmd/Ctrl+Shift+G is the inverse — dissolve the single selected group/frame. Only fires
-  // when exactly one element is selected AND its type is `group` or `frame` (the composable
-  // enforces this silently, mirroring Figma's greyed-out Ungroup).
   if (
     (event.key === 'g' || event.key === 'G') &&
     (event.ctrlKey || event.metaKey) &&
@@ -728,11 +659,6 @@ const handleKeydown = (event: KeyboardEvent): void => {
   // Undo/redo keyboard shortcuts (Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z, Cmd/Ctrl+Y) were intentionally
   // removed in 2026-08-06 when the feature was hidden from the design UI. Browser-native Cmd+Z now
   // reaches the user unimpeded.
-  // The composable's undo/redo + the internal `history.capture*()` calls below remain intact for a
-  // clean future re-enable — see DesignView.undoHidden.spec.ts. Fit-to-viewport shortcuts — F
-  // (Figma convention) or Shift+1.
-  // Both ignored when modifier keys (Ctrl/Cmd/Alt) are held to avoid colliding with browser / OS
-  // shortcuts.
   if (
     (event.key === 'f' || event.key === 'F' || (event.key === '1' && event.shiftKey)) &&
     !event.ctrlKey &&
@@ -767,8 +693,6 @@ const handleKeydown = (event: KeyboardEvent): void => {
       // The element's "effective" position is the cached `el.x` plus the accumulated nudge delta
       // (since the last time `elements.value` was fresh). Without this, the second arrow press
       // would read the stale `el.x` and re-emit the same x, freezing the element.
-      // The canvas background feature has been removed, so arrow keys move freely — no clamp
-      // against page bounds.
       const off = nudgeOffsets.get(id) ?? { x: 0, y: 0 }
       const baseX = el.x + off.x
       const baseY = el.y + off.y
@@ -827,34 +751,12 @@ onUnmounted(() => {
   // NOTE: we intentionally do NOT clear `activeDesignPageId` here. Why: AppLayout's main-content
   // v-else-if chain renders TWO <DesignView> instances for the same design item — one in the
   // single-column branch (no chat open) and one inside the 3-column branch (chat open).
-  // Both use the same `:key="'design-' + activeWorkspaceItem.id"`, but Vue treats them as distinct
-  // components because they're at different v-else-if positions. Toggling the 💬 chat button swaps
-  // branches and triggers an unmount → mount cycle on every chat toggle.
-  // Pre-fix behavior: the unmount hook cleared `activeDesignPageId` to ''. The freshly-mounted
-  // DesignView then ran `loadPages()`, saw the empty store value, and fell back to `fetched[0]?.id`
-  // — the FIRST page.
-  // Result: clicking 💬 while on (say) "Kanban Mode" visually jumped back to "AI Chat View", the
-  // first tab.
-  // The clear was originally added (Task 1.2 of design-element- drag-and-drop) to defend against
-  // `useDesignHandlers` routing PATCH/PUT/DELETE to a stale page after navigating away from the
-  // design view.
-  // But `useDesignHandlers` only fires from DesignView's own mutations — when no DesignView is
-  // mounted, no patch can be triggered, so the stale value is harmless.
-  // And cross-item navigation is already handled correctly inside `loadPages()`: if the store page
-  // id doesn't match any page in the freshly-fetched list, the second branch defaults to
-  // `fetched[0]?.id` (the new item's first page).
-  // Leaving the value alone is strictly an improvement: the chat toggle now preserves the user's
-  // last-clicked tab, AND navigating away and back to the same design item restores the
-  // last-clicked tab instead of resetting to the first page.
 })
 
 // ─── Handlers ──────────────────────────────────────────────────────────
 const handleCanvasClick = (event: MouseEvent): void => {
   // In Preview mode, canvas clicks are user-typed values inside iframes or pan gestures — neither
   // should clear the selection.
-  // The iframes' `pointer-events: auto` (set in DesignElement.vue for Preview) means clicks on
-  // element bodies never reach this handler anyway, but we guard the canvas-background case too so
-  // panning doesn't deselect during a Preview session.
   if (isPreviewMode.value) return
   // If we just finished a pan-drag (Space + drag), swallow the click so it doesn't deselect the
   // active element. The browser dispatches a synthetic click after pointerup; without this guard,
@@ -886,9 +788,6 @@ function handleCanvasContextMenu(event: MouseEvent): void {
 const isPanning = ref(false)
 
 // Pointer-drag pan. Fires on the canvas scroll container; only does anything when Space is held.
-// Mutates scrollLeft / scrollTop directly (NOT a CSS transform — the inner div already has
-// `transform: scale()` and combining the two would compound). setPointerCapture ensures move events
-// keep firing even if the pointer leaves the container mid-drag.
 const startCanvasPan = (event: PointerEvent): void => {
   if (!isSpacePressed.value) return
   // Primary button only — middle / right clicks do different things
@@ -935,15 +834,6 @@ const startCanvasPan = (event: PointerEvent): void => {
 }
 
 // NEW: chat-toggle click handler (top-right 💬 button in the canvas header bar).
-// Emits the openChat event upward with the active page's {pageId, pageName} — AppLayout (the only
-// listener) finds or creates the per-page chat task (named "Design Chat: <pageName>") and switches
-// to the 3-column layout.
-// The button itself has no local state; the chat panel's visibility is owned by AppLayout (it shows
-// when activeTaskId is set for this design item, hides when activeTaskId is cleared). 2026-07-28
-// per-page scoping: the active page drives the chat lookup.
-// When `activePage.value` is null (pages not loaded yet or no page selected), we emit empty values
-// and AppLayout will short-circuit — better to skip than to create a chat task with an empty name
-// that would orphan future migrations.
 const handleOpenChat = (): void => {
   const page = activePage.value
   emit('openChat', {
@@ -953,25 +843,9 @@ const handleOpenChat = (): void => {
   })
 }
 
-// Compute the next available placeholder name for a new design
-// page. Mirrors the macOS / Figma convention: the very first
-// untitled page is `"Untitled"` (no suffix), every subsequent one is
+// Compute the next available placeholder name for a new design page. Mirrors the macOS / Figma
+// convention: the very first untitled page is `"Untitled"` (no suffix), every subsequent one is
 // `"Untitled N"` where `N` is `max(existing numbers) + 1`.
-//
-// Why high-water-mark + 1 and NOT "smallest unused slot"? If the
-// user already has pages named "Untitled 5" and "Untitled 9",
-// picking "Untitled 1" would feel arbitrary and out of sequence
-// when they scan the tab strip — they'd expect the next number to
-// be 10, not 1. macOS Finder behaves the same way: opening
-// multiple new documents produces "Untitled", "Untitled 2",
-// "Untitled 3" (skipping 1) when 1 is already taken by an older
-// session.
-//
-// The `UNIQUE(workspace_item_id, name)` constraint on `design_pages`
-// means we MUST never collide with an existing name. Tracking the
-// unnumbered `"Untitled"` separately is necessary because that
-// row occupies "slot 0" — if we ignored it, a second click would
-// try to POST another `"Untitled"` and the backend would 409.
 const UNTITLEDBASE_NAME = 'Untitled'
 const UNTITLEDPATTERN = /^Untitled (\d+)$/
 const computeNextUntitledName = (existingPages: ReadonlyArray<{ name: string }>): string => {
@@ -999,9 +873,6 @@ const computeNextUntitledName = (existingPages: ReadonlyArray<{ name: string }>)
 
 // Add a new design page. NEW (design-pages-in-workspace-tree plan, 2026-08-06): routes through the
 // workspaces store so the sidebar tree's DesignPageRow array updates without a refetch.
-// The store's `addDesignPage` action returns the new page object; we set it as active and update
-// the store's active page (claim-and-activate, which fetches elements, runs when the page actually
-// changed). Returns the new page id for test convenience.
 const handleAddPage = async (): Promise<string | undefined> => {
   if (!props.workspaceId || !effectiveItemId.value) return undefined
   if (addPageInFlight.value) return undefined
@@ -1033,16 +904,11 @@ const addPageInFlight = ref<boolean>(false)
 
 // Exposed via `wrapper.vm.handleSelectPage` in DesignView.pageSync.spec.ts. Vue 3's `<script
 // setup>` auto-surfaces top-level bindings but eslint can't see the `vm.X` reflection path, so the
-// rule fires. The two declarations below (`_handleDeletePage`, `_handleElementSelect`) are truly
-// unused so they get the `_` prefix to silence the rule. eslint-disable-next-line
-// @typescript-eslint/no-unused-vars
+// rule fires.
 const handleSelectPage = (pageId: string): void => {
   // Mirror to the store first so AppLayout's design handlers (handleDesignUpdateElement /
   // handleDesignDeleteElement) always see the latest selection, even if the page-change
   // early-returns below.
-  // The store ref is the single source of truth from the sidebar tree's click handler too.
-  // choosePage mirrors to the store (guarded setter), then runs the selection-clear + elements
-  // fetch exactly when the page changed (no-op when re-clicking the current tab).
   choosePage(pageId)
   // Re-emit for any external listener (AppLayout's @select-page
   // does nothing today, but the contract is preserved).
@@ -1050,10 +916,7 @@ const handleSelectPage = (pageId: string): void => {
 }
 
 // Delete a design page. NEW (design-pages-in-workspace-tree plan, 2026-08-06): routes through the
-// store so the cache + `activeDesignPageId` fallback happen in one place. The store's
-// `deleteDesignPage` action picks the next-active page (same index as the deleted one, falling
-// back to the previous; or empty if the item now has no pages).
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for diff readability.
+// store so the cache + `activeDesignPageId` fallback happen in one place.
 const _handleDeletePage = async (pageId: string): Promise<void> => {
   if (!props.workspaceId || !effectiveItemId.value) return
   if (deletePageInFlight.value) return
@@ -1220,9 +1083,6 @@ const handleLayerSelect = (payload: { elementId: string; additive: boolean }): v
 
 // NEW (Chunk 4 Task 4.3 of drag-to-reparent plan): the LayersPanel emits `reparent` after a
 // successful drag-and-drop.
-// The payload is the raw composable result `{ elementIds, newParentId }` — we just relay it to
-// `designHandlers.reparentLayers`, which routes through the batch endpoint and handles errors via
-// toast.
 const handleLayerReparent = (payload: {
   elementIds: string[]
   newParentId: string | null
@@ -1239,8 +1099,6 @@ const handleLayerReparent = (payload: {
 // NEW (Chunk 2 of the right-click group menu plan): when the layers panel emits `group` from the
 // context menu, mirror the Cmd+G path: inject the targetIds into the local `selectedIds` ref so
 // `useDesignHandlers.groupSelection()` (which reads from `selectedIds.value`) acts on them.
-// On success the composable clears the selection itself. Undo/redo plan: capture the group entry
-// before the selection gets cleared.
 const handleDesignGroupFromContextMenu = (targetIds: string[]): void => {
   if (targetIds.length < 2) return
   selectedIds.value = new Set(targetIds)
@@ -1254,10 +1112,6 @@ const handleDesignGroupFromContextMenu = (targetIds: string[]): void => {
 // Expand a selection to include the transitive children of any group / frame in the selection. When
 // a user selects just the group (not its children), this lets them drag the group AND every
 // descendant in one motion — matching Figma's behaviour.
-// The expansion is per-call (does NOT mutate `selectedIds`) so the layers panel / context menu
-// still
-// show the user-selected set.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for diff readability.
 function _expandSelectionWithDescendants(
   ids: ReadonlySet<string>,
   all: ReadonlyArray<DesignElementApi>,
@@ -1285,8 +1139,6 @@ function _expandSelectionWithDescendants(
 // Chunk 9 of grouped-layers plan: dissolve the single selected group/frame. Mirrors
 // handleDesignGroupFromContextMenu but takes a single id (groups always dissolve one at a time).
 // Cmd+Shift+G and the right-click menu both route here.
-// The composable reads selectedIds.value but doesn't need it pre-seeded — it just operates on the
-// passed elementId.
 const handleDesignUngroupFromContextMenu = (elementId: string): void => {
   if (!elementId) return
   void designHandlers.ungroupSelection(elementId)
@@ -1295,8 +1147,6 @@ const handleDesignUngroupFromContextMenu = (elementId: string): void => {
 // NEW (2026-08-06, design-leave-group plan): pull the SINGLE selected element out of its current
 // parent group/frame to top-level. Distinct from Ungroup (which dissolves the selected group
 // itself) — the parent group survives and any other children stay nested.
-// Figma parity for "Pull out of group". Routes through the same reparent-batch endpoint used by the
-// drag-out affordance (PR #151), with newParentId=null.
 const handleDesignLeaveGroupFromContextMenu = (elementId: string): void => {
   if (!elementId) return
   if (!props.workspaceId || !effectiveItemId.value || !activePageId.value) return
@@ -1306,7 +1156,6 @@ const handleDesignLeaveGroupFromContextMenu = (elementId: string): void => {
 // NEW (2026-08-06, design-move-to-page plan, Chunk 8): open the MoveToPageDialog with the
 // right-clicked element. The dialog itself drives the API call — we just open it with the right
 // element id and source page.
-// The MoveToPageDialog handles errors internally (error message via the toast).
 const moveToPageDialogElementId = ref<string>('')
 const moveToPageDialogVisible = computed({
   get: () => moveToPageDialogElementId.value !== '',
@@ -1335,26 +1184,8 @@ const handleDesignMoveToPageDialogClose = (): void => {
   moveToPageDialogElementId.value = ''
 }
 
-// Chunk 2: group drag. When the user drags any element that's part of a multi-selection,
-// DesignElement emits `groupDrag` with the cursor delta (design-px, zoom-adjusted).
-// We translate that into N individual `updateDesignElementGeometry` calls — one per selected id —
-// using the LOCAL element list as the source of truth (it's already filtered to the active page, so
-// no need to re-query).
-// The direct-store path bypasses the AppLayout round-trip on purpose: a 3-element drag would
-// otherwise generate 3 emits per pointermove × the store's throttle. Direct calls keep latency at
-// one round-trip per 50ms for the WHOLE selection.
-// BUG FIX (2026-07-29): the original implementation used `el.x + finalDx` where `el.x` is the
-// element's CURRENT position from `elements.value`.
-// But after the first PATCH round-trips, the SSE re-fetch overwrites `element.design_elements` with
-// the new server state — so `el.x` is the LATEST server position, not the pointerdown-time
-// position.
-// Adding the cursor delta to the LATEST position compounds the delta on every pointermove, and the
-// element visually jumps further than the cursor. The user reported this as "design mode drag
-// element moves so fast".
-// The fix: capture each element's position the FIRST time `handleGroupDrag` fires (the drag start),
-// then use that snapshot for every subsequent PATCH in the same drag.
-// The cursor's delta is applied to the ORIGINAL position, so the PATCH is always the correct
-// absolute target — matching the single-element drag's `start.x + dx` pattern in DesignElement.vue.
+// Chunk 2: group drag. BUG FIX (2026-07-29): the original implementation used `el.x + finalDx`
+// where `el.x` is the element's CURRENT position from `elements.value`.
 let dragStartPositions: Map<string, { x: number; y: number }> | null = null
 
 const handleGroupDrag = (delta: { dx: number; dy: number }): void => {
@@ -1467,25 +1298,9 @@ const handleGroupDrag = (delta: { dx: number; dy: number }): void => {
   }
 }
 
-// Undo/redo plan (Chunk 4): gesture boundary capture. The
-// pre-state is captured at drag-start (pointerdown); the post-
-// state at drag-end (pointerup trailing emit). The composable
-// diffs them and pushes an entry if changed. dragStart/dragEnd
-// also fire for resize and group drag (DesignElement handles
-// all three gesture paths uniformly via these emits).
-//
-// REGRESSION (2026-07-30): this handler REPLACED the original
-// `clearSnapGuides` on the `@drag-end` binding. The old function
-// reset `dragStartPositions` (the group-drag baseline snapshot
-// used by `handleGroupDrag` to defeat the SSE-re-fetch compound
-// delta); this new handler must ALSO reset it, otherwise a
-// SECOND consecutive group drag reuses the FIRST drag's baseline
-// and PATCHes `firstOriginal + secondDelta` instead of
-// `secondOriginal + secondDelta` — the element lags the cursor
-// by `firstDelta` design-px on the second drag. Reset here
-// synchronously: `capturePostState` does not depend on the snapshot (it reads from the store
-// directly), so the order is irrelevant to its correctness; synchronous is just safer for a
-// quick-follow-up second drag.
+// Undo/redo plan (Chunk 4): gesture boundary capture. The pre-state is captured at drag-start
+// (pointerdown); the post- state at drag-end (pointerup trailing emit). REGRESSION (2026-07-30):
+// this handler REPLACED the original `clearSnapGuides` on the `@drag-end` binding.
 const handleDragStart = (ids: string[]): void => {
   void history.capturePreState(ids)
 }
@@ -1531,8 +1346,6 @@ const handlePropertiesHtmlChanged = (html: string): void => {
 // ─── Zoom (transform: scale on the canvas wrapper) ──────────────────── Pure-view state; doesn't
 // change page dimensions or element positions. Persists per design item in localStorage so a user
 // who zooms to 75% on one design item doesn't affect another item.
-// Range 0.1× to 4.0× covers everything from "see the whole page when it overflows" to "pixel-peep
-// the navbar".
 const ZOOM_KEY_PREFIX = 'design-view-zoom-'
 const ZOOM_DEFAULT = 1.0
 const ZOOM_MIN = 0.1
@@ -1574,13 +1387,6 @@ const zoomReset = (): void => setZoom(1.0)
 // Fit-to-viewport: compute the zoom level that makes the union bbox of all elements fit inside the
 // scroll container with a small margin, then scroll the container so the elements appear centered.
 // Mirrors Figma's Shift+1 ("Zoom to fit").
-// Picked up by the keyboard shortcut (F / Shift+1) and the toolbar button. Reads the live DOM
-// dimensions so resizing the window refits.
-// The canvas background feature has been removed (plan:
-// docs/superpowers/plans/2026-07-29-remove-canvas-background.md), so there is no longer a fixed
-// 1440×1024 page rectangle to fit. We now fit to the union bbox of the elements on the active page.
-// If there are no elements, we fall back to a 1440×1024 default (matches the legacy view the user
-// saw before this plan).
 const ZOOM_FIT_MARGIN = 48 // px of padding around the fitted canvas
 const ZOOM_FIT_DEFAULT_W = 1440
 const ZOOM_FIT_DEFAULT_H = 1024
@@ -1624,24 +1430,7 @@ const zoomFit = (): void => {
   })
 }
 
-// Pinch-to-zoom via Pointer Events (trackpad / touchscreen /
-// Linux WebKitGTK). The `@wheel`-with-Ctrl shortcut above works on
-// mouse wheels and macOS Safari / WKWebView (the browser auto-sets
-// ctrlKey on Mac trackpad pinch), but two inputs go through @wheel
-// nowhere — both need their own handler:
-//
-//   1. WebKitGTK 4.1 (desktop app on Linux) does NOT auto-convert
-//      trackpad pinches to wheel events. They silently disappear.
-//   2. Touchscreen pinches dispatch Touch events (or PointerEvents
-//      with pointerType='touch'), never wheel events.
-//
-// We listen for ≥2 simultaneous pointers on the canvas container and
-// compute zoom from the ratio of current finger-distance to the
-// distance at pinch-start. Mouse pointerType is intentionally ignored
-// — a single-mouse user can't physically pinch.
-// Pair this with `touch-action: pan-x pan-y` on the same container (set in the template below) so
-// the browser stops doing viewport-level pinch-zoom there — only the canvas scales, not the sidebar
-// / chrome.
+// Pinch-to-zoom via Pointer Events (trackpad / touchscreen / Linux WebKitGTK).
 interface PinchPointer {
   startX: number
   startY: number
@@ -1720,9 +1509,6 @@ const handleCanvasWheel = (event: WheelEvent): void => {
 
   // Anchor the zoom at the cursor position so zoom-in feels natural (the point under the cursor
   // stays under the cursor after the scale).
-  // Compute the cursor's offset from the canvas origin in CONTENT coordinates (accounting for
-  // current scroll), then adjust scrollTop / scrollLeft so the same content point is under the
-  // cursor after the new scale is applied.
   const container = event.currentTarget as HTMLElement | null
   if (!container) {
     setZoom(next)
@@ -1758,9 +1544,6 @@ onUpdated(() => {
 // ─── Page-size inputs were removed ────────────────────────────────────── The W × H header inputs
 // have been removed (plan docs/superpowers/plans/2026-07-29-remove-canvas-background.md): pages no
 // longer have a visible rectangle / enforced boundary.
-// The `design_pages.width` + `height` columns remain in the DB for backward compat (and the
-// `setDesignPage` / `updateDesignPage` LLM tools still accept W × H as a "preferred export size"),
-// but the canvas UI no longer exposes them.
 </script>
 
 <template>

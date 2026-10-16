@@ -1,18 +1,4 @@
-/**
- * Tests for KanbanView.handleCreateTaskSave's
- * `mode: 'create_and_run'` branch.
- *
- * Plan: 2026-08-06-kanban-create-task-run-agent.md (Task 3 / Step 3.1)
- *       2026-08-14-kanban-task-create-endpoints.md (Task 5 / Step 5.1)
- *
- * Updated for the kanban-specific endpoint refactor: handleCreateTaskSave
- * now calls `workspacesStore.addKanbanTask(mode, payload)` (NOT the
- * addTask + runAgentOnNewTask dance). The store action delegates to
- * `api.createKanbanTask` which POSTs to /api/.../kanban/tasks.
- *
- * Mount pattern: shallow mount with stub children + vi.spyOn for the
- * store actions. We assert the call shape, not the implementation details.
- */
+/** Tests for KanbanView.handleCreateTaskSave's `mode: 'create_and_run'` branch. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -230,8 +216,6 @@ describe('KanbanView.handleCreateTaskSave — create_and_run', () => {
     // Partial-success: the store action's catch block decides whether to surface a toast. In the
     // new contract the store action's mocked-resolved path (not rejected) bypasses the catch — the
     // store's notifyError lives in the catch path.
-    // The component surfaces its own error via `createError` (the dialog stays open for retry). We
-    // don't re-toast here to avoid duplicates.
   })
 
   it('still creates the task in plain create mode (existing behavior unchanged)', async () => {
@@ -361,12 +345,7 @@ describe('KanbanView.handleCreateTaskSave — create_session (plain Create task 
 
   it("plain Create task → mode='create_session' is dispatched to addKanbanTask (no queue_message)", async () => {
     // The plain "Create task" button in the dialog emits `create` and KanbanView's @create listener
-    // forwards it as `mode: 'create_session'` (see template line ~1250 of KanbanView.vue). Driving
-    // the listener through the stubbed dialog button proved flaky in CI (the stub's emit
-    // propagation is sensitive to test-utils version pins), so this test exercises the same
-    // end-to-end behaviour via the handler directly with the mode the listener is supposed to
-    // inject. The actual template wiring is one-line and reviewed in the PR diff.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // forwards it as `mode: 'create_session'` (see template line ~1250 of KanbanView.vue).
     const fakeTask = { id: 'task_new', name: 'My task', task_type: 'standard' } as any
     const fakeSession = { id: 'task_new', name: 'My task', status: 'idle' }
     const store = useWorkspacesStore()

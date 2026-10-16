@@ -1,16 +1,4 @@
-/**
- * Tests for Glob.vue — the chatview tool card for the `glob` agent tool.
- *
- * Locks in the 2026-08-23 de-bubble migration (task_1787481940400_1):
- *  - The root element MUST carry the shared `.chat-tool-card` class
- *    (defined :deep in ChatView.vue + SubAgentPeekPanel.vue) so glob
- *    renders like every other de-bubbled tool card (bash, search, …)
- *    instead of the old boxed bubble frame.
- *  - The old scoped bubble frame (.gl: border-radius 6px, box border,
- *    card background) MUST be gone.
- *  - Warning data (warning field) still render the warning
- *    text and bind the orange left-rule variant.
- */
+/** Tests for Glob.vue — the chatview tool card for the `glob` agent tool. */
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -161,9 +149,6 @@ describe('Glob.vue — behaviour preserved', () => {
 
 // ──────────────────────────────────────────────────────────────────────── Empty/no-match results —
 // Arguments must still be reachable.
-// Bug: the expanded body was `v-if="isExpanded && filePaths.length > 0"` and toggle() refused to
-// expand on a warning/empty envelope, so a no-match glob (warning envelope) could never show its
-// Arguments block. ────────────────────────────────────────────────────────────────────────
 describe('Glob.vue — warning data still shows Arguments (empty/no-match)', () => {
   const warningContent = {
     pattern: 'foo',

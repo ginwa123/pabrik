@@ -1,22 +1,6 @@
-/**
- * Repro for the board-URL-renders-chat anomaly (task_1789421136160_2).
- *
- * Screenshots: URL is the board URL
- * (`/app?view=workspace&workspaceId=WS&itemId=BOARD`, sidebar on the board)
- * but <main> still shows the chat transcript.
- *
- * Root cause: browser Back/Forward changes ONLY the URL — no sidebar
- * handler runs, so the stores keep the previous view's state. The
- * popstate watcher in AppLayout only synced the `/chat/<taskId>` suffix
- * (task chats); it never reconciled board-vs-chat transitions:
- *   - Back from a standalone chat (`?view=chat&session=X`) to a board URL
- *     left `activeWorkspaceItemId=null` + `activeChatId` set → ChatView
- *     kept winning on a board URL.
- *   - Forward from a board to a chat URL left `activeChatId` empty →
- *     Chats list rendered instead of the chat.
- *   - Tab mode: `syncFromRoute` switched tabs on Back/Forward but never
- *     mirrored the tab target into the stores.
- */
+/** Repro for the board-URL-renders-chat anomaly (task_1789421136160_2). Screenshots: URL is the
+ * board URL (`/app?view=workspace&workspaceId=WS&itemId=BOARD`, sidebar on the board) but <main>
+ * still shows the chat transcript. */
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, reactive } from 'vue'

@@ -158,8 +158,6 @@ onUnmounted(() => {
 const readEvalRun = () => (typeof route.query.eval_run === 'string' ? route.query.eval_run : '')
 // Subscribed in the template (data-eval-run below) so back/forward navigation that changes
 // ?eval_run= re-renders this panel — that render is what fires the onUpdated guard above.
-// Row slots alone would not subscribe the panel itself (same trap as ChatsList's
-// data-workspace-scope binding).
 const evalRunParam = computed(readEvalRun)
 const prevSessionId = ref(props.sessionId)
 const prevEvalRun = ref(readEvalRun())

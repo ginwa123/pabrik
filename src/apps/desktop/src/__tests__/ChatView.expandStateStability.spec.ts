@@ -59,8 +59,6 @@ describe('expandedToolIds — stable per-message keys (source contract)', () => 
     // Find every line that reads `expandedToolIds.has(...)`. None of them may use the old
     // positional `${groupIndex}-${idx}` template literal — every read must route through the
     // helper.
-    // This is the invariant that actually prevents the auto-collapse: even one leftover positional
-    // read would re-introduce the bug.
     const hasUsages = source.match(/expandedToolIds\.has\([^)]*\)/g) ?? []
     expect(hasUsages.length).toBeGreaterThan(0)
     for (const usage of hasUsages) {

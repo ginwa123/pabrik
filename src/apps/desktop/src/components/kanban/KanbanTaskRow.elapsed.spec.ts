@@ -1,16 +1,6 @@
-/**
- * KanbanTaskRow — the elapsed chip in the metadata line.
- *
- * The row already said "busy" two ways (a yellow 3px rail and the muted
- * `● agent running` label). This spec pins the third signal the wireframe
- * added: how long the run has been going, and whether it is still
- * heart-beating.
- *
- * The interesting cases are the ones a spinner cannot express:
- *  - a long run with a fresh heartbeat → yellow, not amber
- *  - a run whose heartbeat has gone quiet → amber
- *  - an idle row → no chip at all, and the rail stays transparent
- */
+/** KanbanTaskRow — the elapsed chip in the metadata line. The row already said "busy" two ways (a
+ * yellow 3px rail and the muted `● agent running` label). This spec pins the third signal the
+ * wireframe added: how long the run has been going, and whether it is still heart-beating. */
 import { mount } from '@vue/test-utils'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref, type Ref } from 'vue'

@@ -1,13 +1,6 @@
-// Static-contract regression test: when an active workspace item has
-// `item_type === 'kanban'` or `'design'`, the workspace-memories view
-// branch in AppLayout.vue must NOT render <WorkspaceItemMemoriesView>,
-// even if the item has a `path` set. This locks in the fix for the
-// duplicate-header / wrong-view bug where a kanban was showing the
-// memories list instead of the kanban board (KanbanView branch should
-// win in the v-else-if chain, but the defensive `item_type` guard
-// prevents regressions if the chain order changes in the future).
-//
-// See plan: docs/superpowers/plans/2026-07-21-local-memories-workspace-item.md
+// Static-contract regression test: when an active workspace item has `item_type === 'kanban'` or
+// `'design'`, the workspace-memories view branch in AppLayout.vue must NOT render
+// <WorkspaceItemMemoriesView>, even if the item has a `path` set.
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'

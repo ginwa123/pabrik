@@ -28,24 +28,7 @@ export function useInjectOpenInCodeEditor(): OpenInCodeEditorFn | null {
   return inject(OPEN_IN_CODE_EDITOR_KEY, null)
 }
 
-/**
- * The open file the code viewer is showing, shared by provide/inject.
- *
- * `AppLayout` owns the session (`useCodeEditorSession`); this is the same
- * reactive state, handed down so a SURFACE can render the file itself
- * instead of being covered by `AppLayout`'s full-surface overlay:
- *
- *   - `ChatView` renders it in its center column, beside the chat-owned
- *     right sidebar (Explorer / Files changed / Terminal) — the same slot
- *     the stacked center diff uses. This is why opening a file no longer
- *     makes the sidebar vanish.
- *   - `AppLayout` still renders `CodeViewerStage` as the full-surface
- *     fallback for every context that has no chat on screen (kanban
- *     board, design canvas, settings, the chats list).
- *
- * The refs are the session's own objects (no copies, no second source of
- * truth) — the template bindings in `AppLayout` alias the same ones.
- */
+/** The open file the code viewer is showing, shared by provide/inject. */
 export type CodeViewerState = {
   file: Ref<FolderEntry | null>
   content: Ref<string>

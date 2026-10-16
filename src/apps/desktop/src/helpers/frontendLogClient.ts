@@ -1,66 +1,6 @@
-/**
- * frontendLogClient.ts
- *
- * Captures browser-side errors and ships them to the backend
- * `POST /api/logs` endpoint for the frontend-error-logs feature
- * (plan: `docs/superpowers/plans/2026-07-17-frontend-error-logs.md`).
- *
- * Why this exists
- * ───────────────
- * The desktop app's frontend used to be a black box from the backend's
- * perspective: `window.onerror`, unhandled promise rejections, and
- * `console.error`/`console.warn` calls were observable only in the
- * user's DevTools, never reachable from the backend SQLite-backed log
- * store. This module fills that gap by:
- *
- *   1. Listening to `window.error` / `window.unhandledrejection` to
- *      capture uncaught exceptions and rejected promises.
- *   2. Patching `console.error` / `console.warn` (preserving the
- *      original console behavior) so anything the app logs shows up
- *      in the backend too — without changing how the app currently
- *      logs.
- *   3. Debouncing sends (250 ms) and capping the in-memory queue (50
- *      events, dropping 25 on overflow) so a tight error loop can't
- *      flood the network.
- *   4. Using `navigator.sendBeacon` on `pagehide` and `beforeunload`
- *      so the LAST batch of events is delivered before the page
- *      unloads, even if the debounce timer hasn't fired yet.
- *
- * Design contract
- * ───────────────
- * Public surface (TypeScript):
- *   • `LogLevel`, `LogKind`, `LogEvent` — wire-format types.
- *   • `FrontendLogContext` / `FrontendLogClientOptions` — DI seams for
- *     the route + session id and for test-only environment injection.
- *   • `installFrontendLogClient(opts)` — installs all listeners and
- *     returns a `FrontendLogClientHandle` whose `.close()` undoes
- *     every side effect (listeners removed, console unpatched, queue
- *     drained, timers cleared).
- *
- *   The `{ target, fetchFn, sendBeaconFn }` option is purely for test
- *   injection — production code should always let them default to
- *   `window`, `globalThis.fetch`, and `target.navigator.sendBeacon`.
- *   Tests inject a fake `target` (jsdom), a stub `fetchFn`, and a stub
- *   `sendBeaconFn` so they can fully observe the queue.
- *
- * Acceptance criteria (plan Chunk 5)
- * ───────────────────────────────────
- *   • Captures `window.onerror` (4xx: `level=error`, `kind=window_error`).
- *   • Captures `unhandledrejection` (`level=error`, `kind=unhandled_rejection`).
- *   • Captures `console.error` (`level=error`, `kind=console_error`).
- *   • Captures `console.warn` (`level=warn`, `kind=console_warn`).
- *   • Debounces POSTs at 250 ms.
- *   • Caps in-memory queue at 50, drops 25 + logs an overflow warning
- *     when full.
- *   • `sendBeacon` on `pagehide` + `beforeunload` to flush remaining
- *     events.
- *   • `close()` cleanly tears down all listeners and un-patches the
- *     console.
- *   • Enriches events with `route_path` + `session_id` from the
- *     supplied `getContext()` callback at flush time (not at enqueue
- *     time, so a stale value isn't captured if the user navigates
- *     between events).
- */
+/** frontendLogClient.ts Captures browser-side errors and ships them to the backend `POST /api/logs`
+ * endpoint for the frontend-error-logs feature (plan:
+ * `docs/superpowers/plans/2026-07-17-frontend-error-logs.md`). */
 export type LogLevel = 'error' | 'warn' | 'info' | 'debug'
 export type LogKind =
   | 'window_error'

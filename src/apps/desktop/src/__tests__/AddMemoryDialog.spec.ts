@@ -65,9 +65,6 @@ function mountDialog(initialShow = true, cwd = TEST_CWD) {
   // Wipe the body before each mount. attachTo: document.body creates a new <div data-v-app> for
   // each mount, and these accumulate in jsdom even after wrapper.unmount() (the divs persist as
   // empty containers).
-  // The accumulated divs cause weird interactions with subsequent mounts — most notably, the
-  // Teleport target can become confused when there are many empty data-v-app divs already in the
-  // body. Clearing the body here ensures a clean slate. Same pattern as AddItemDialog.spec.ts:70.
   document.body.innerHTML = ''
   return mount(AddMemoryDialog, {
     attachTo: document.body,

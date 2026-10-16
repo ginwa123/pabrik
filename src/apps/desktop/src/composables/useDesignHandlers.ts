@@ -410,25 +410,8 @@ export function useDesignHandlers(args?: UseDesignHandlersArgs) {
     }
   }
 
-  /**
-   * NEW (Chunk 2 Task 2.3 of drag-to-reparent plan). Figma-style
-   * drag-and-drop affordance: reparent 1 OR N selected rows into
-   * the same target (a `group`/`frame` row, or top-level). Routes
-   * ALWAYS through the batch endpoint — uniform behaviour
-   * regardless of selection size; the backend handles N=1
-   * efficiently.
-   *
-   * `newParentId` semantics:
-   *   - string = the group/frame id to move into
-   *   - null = leave any current group, become top-level
-   *
-   * Quiet no-op when any of wsId/itemId/pageId is empty OR
-   * `elementIds` is empty (matches the pattern of `updateElement` /
-   * `deleteElement` / `groupSelection`).
-   *
-   * On error (e.g. cycle) the store is unchanged and the error
-   * propagates as a notification toast.
-   */
+  /** NEW (Chunk 2 Task 2.3 of drag-to-reparent plan). Figma-style drag-and-drop affordance:
+   * reparent 1 OR N selected rows into the same target (a `group`/`frame` row, or top-level). */
   async function reparentLayers(payload: {
     workspaceId: string
     itemId: string
@@ -455,21 +438,9 @@ export function useDesignHandlers(args?: UseDesignHandlersArgs) {
     }
   }
 
-  /**
-   * NEW (Plan: docs/superpowers/plans/2026-08-06-move-element-with-descendants.md).
-   * Figma-style drag affordance: translate 1 OR N elements by a single
-   * (dx, dy) delta — the backend cascades the delta to every
-   * transitive descendant of each item's element via a recursive CTE.
-   * One HTTP call per pointermove covers arbitrary subtree depth.
-   *
-   * `items` shape mirrors the API wrapper:
-   *   { element_id, dx, dy, width?, height?, rotation? }
-   *   - dx/dy is mandatory (zero is valid for a pure resize)
-   *   - width/height/rotation apply ONLY to the element_id (not descendants)
-   *
-   * On error the store is unchanged and the error propagates as a
-   * notification toast.
-   */
+  /** NEW (Plan: docs/superpowers/plans/2026-08-06-move-element-with-descendants.md). Figma-style
+   * drag affordance: translate 1 OR N elements by a single (dx, dy) delta — the backend cascades
+   * the delta to every transitive descendant of each item's element via a recursive CTE. */
   async function moveElementWithDescendants(payload: {
     workspaceId: string
     itemId: string

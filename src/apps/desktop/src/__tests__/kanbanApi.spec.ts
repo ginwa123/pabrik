@@ -25,7 +25,6 @@ describe('api.kanban', () => {
     // apiFetch calls useNotificationStore() on every non-2xx response to fire an error toast.
     // Without an active Pinia the call throws. setActivePinia(createPinia()) mounts a fresh store
     // for each test so the toast path can run without crashing.
-    // (See project memory apiFetch-mock-must-include-text-and-pinia.)
     setActivePinia(createPinia())
   })
 
@@ -187,10 +186,6 @@ describe('api.kanban', () => {
       // apiFetch wraps via JSON.stringify(body), and JSON.stringify strips `undefined` values from
       // objects — so the optional `position` is omitted from the wire payload when the caller
       // didn't supply it.
-      // `description` defaults to the empty string ("no description" sentinel) so the backend's
-      // parseFromSliceLeaky sees a string (not null) for the NOT NULL DEFAULT '' column.
-      // The backend's parseFromSliceLeaky treats the absent field as `null` for `?i64` / `?[]const
-      // u8` types (matches how addColumn / addTask do it elsewhere).
       expect(body).toEqual({ name: 'review', description: '' })
     })
   })

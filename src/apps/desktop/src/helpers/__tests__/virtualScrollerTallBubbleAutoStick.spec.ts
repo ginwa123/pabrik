@@ -65,21 +65,7 @@ const ITEM_COUNT = 1000
 /** `AT_BOTTOM_SLACK_PX` in VirtualScroller; mirrored so the test pins the contract. */
 const SLACK_PX = 10
 
-/**
- * A realistic bubble-height profile for a 1000-message chat, in px.
- *
- * Deliberately heterogeneous, because uniformity is what hides this class of
- * bug: with every row the same height the prefix correction cancels out and
- * nothing moves.
- *
- *   - 60% a normal paragraph bubble (~180px)
- *   - 25% a tall paste / diff / long tool output (~520px)
- *   - 12% TALLER THAN THE WHOLE VIEWPORT (900-1400px) — a full-screen message
- *   - 3%  a one-liner reply (~70px)
- *
- * Deterministic (index-derived, never random) so a failure reproduces exactly
- * and the test cannot flake on an unlucky draw.
- */
+/** A realistic bubble-height profile for a 1000-message chat, in px. */
 function bubbleHeight(index: number): number {
   const bucket = index % 100
   if (bucket < 60) return 180
@@ -201,9 +187,6 @@ describe('VirtualScroller — a 1000-message chat with full-screen-tall bubbles'
   it('keeps a bottom reader on the bottom when a pass deflates the model above the anchor', async () => {
     // The opposite swing, and the one in the recorded browser capture: rows above the anchor settle
     // far SHORTER than the model reserved.
-    // The prefix delta is large and NEGATIVE, so the anchor rule would subtract it from scrollTop
-    // and park the reader in the history — which is what disarms the auto-stick and leaves the rest
-    // of the response off-screen.
     const { wrapper, el, vm } = mountLongChat()
     // Learn the profile INFLATED, then let it settle to the real heights.
     await learnProfile(el, 1.8)
@@ -226,11 +209,6 @@ describe('VirtualScroller — a 1000-message chat with full-screen-tall bubbles'
     // One pass proving the rule is not one pass proving it survives a whole turn. The reported
     // symptom only shows up once the stick has already died, so the LATER passes are the ones that
     // matter. Each cycle is deliberately SYNCHRONOUS — park, paint, pass, assert.
-    // No timer advancement between them, so no debounced pass runs behind the assertions and the
-    // state stays attributable.
-    // Letting the timers run here compounds a dozen implicit passes and the numbers stop meaning
-    // anything (this harness reported a reader BELOW the bottom edge, which a real browser clamps
-    // away and jsdom does not).
     const { wrapper, el, vm } = mountLongChat()
     await learnProfile(el)
 
@@ -270,9 +248,6 @@ describe('VirtualScroller — a 1000-message chat with full-screen-tall bubbles'
     }
     // The model really was being corrected during the turn, so the gaps above are measured against
     // a moving bottom and not a static one.
-    // Asserted as "the bottom moved at some point" rather than "it ended higher": `measureItems`
-    // keeps a `HYSTERESIS_PX` (50px) dead-band for rows above the anchor, so a small final step is
-    // legitimately absorbed and the total can settle back where it started.
     expect(Math.max(...bottoms)).toBeGreaterThan(bottom0)
     wrapper.unmount()
   })
@@ -287,7 +262,6 @@ describe('VirtualScroller — a 1000-message chat with full-screen-tall bubbles'
     // Request a position deep in the history, then let the settle passes run. The reader is NOT
     // expected to still be at exactly the requested pixel — measuring the rows that scroll in
     // legitimately corrects the model above them, and the anchor carries them along.
-    // So the baseline is the settled position, not the request.
     const inHistory = Math.round(vm.bottomScrollTop() * 0.4)
     scrollTo(el, inHistory)
     await nextTick()

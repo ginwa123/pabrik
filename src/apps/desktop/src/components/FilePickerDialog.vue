@@ -110,11 +110,6 @@ const selectLabel = computed(() => props.selectButtonText ?? 'Select')
 // Default enableRecentHistory to true (Recent tab is the user's primary flow). Vue 3.5's runtime
 // default for `boolean?` is `false`, so we treat `false` AND `undefined` as "use default" and
 // `true` as "on".
-// An explicit `false` is therefore ambiguous — callers who want to opt out today would also need to
-// pass `false` AND see it preserved. To disambiguate, callers must NOT pass `false` (they pass
-// `undefined` or nothing).
-// For now, this is consistent with the existing `showHidden?: boolean` which Vue 3.5 also defaults
-// to false on absence.
 const enableRecent = computed<boolean>(() =>
   props.enableRecentHistory === undefined ? true : !!props.enableRecentHistory,
 )
@@ -153,7 +148,6 @@ const showHiddenLocal = computed<boolean>({
 })
 // ── Address-bar editing state ────────────────────────────────────────── When isPathEditing is
 // true the clickable breadcrumb is replaced with a single text input pre-filled with currentPath.
-// Enter navigates to whatever is typed (after normalization); Escape reverts.
 // See beginPathEdit / commitPathEdit / cancelPathEdit below.
 const isPathEditing = ref(false)
 const pathDraft = ref('')
@@ -280,21 +274,9 @@ function parseBreadcrumb(path: string): Array<{ name: string; path: string }> {
 
 const breadcrumb = computed(() => parseBreadcrumb(currentPath.value))
 
-// ─── Address-bar normalization ────────────────────────────────────────────
-// Accepts whatever the user typed in the address input and returns a
-// canonical absolute path, or `null` when the input is unusable.
-//
-// Rules:
-//   - empty / whitespace                              → null (no-op)
-//   - '~' / '~/'                                      → '/'
-//   - Windows absolute (`C:\...`, `C:/...`, UNC)      → accepted as-is
-//     (separator runs collapsed, one trailing separator stripped
-//     unless the result is a root)
-//   - POSIX absolute (starts with '/')                → collapsed runs of
-//     slashes, trailing slash stripped unless root
-//   - relative path starting with './' or '../'       → relative to currentPath
-//   - bare relative path like 'docs' or 'a/b'         → joined with currentPath
-// Trailing slashes are stripped except for roots.
+// ─── Address-bar normalization ──────────────────────────────────────────── Accepts whatever the
+// user typed in the address input and returns a canonical absolute path, or `null` when the input
+// is unusable.
 function normalizeAddressInput(raw: string): string | null {
   const trimmed = raw.trim()
   if (!trimmed) return null
@@ -324,9 +306,6 @@ function normalizeAddressInput(raw: string): string | null {
 
   // Relative path: resolve against currentPath so a bare "docs" jumps into "./docs" inside the
   // current view instead of being treated as invalid.
-  // Dot-prefixed relpaths ('./a', '../a/b') are normalized as path concatenation (no realpath — we
-  // don't have access to a filesystem here and the upstream caller's loadItems will be the one that
-  // surfaces "not found" if the path doesn't exist).
   const base = currentPath.value
   if (trimmed.startsWith('./') || trimmed.startsWith('../')) {
     const rel = trimmed.replace(/^\.\//, '')
@@ -512,14 +491,7 @@ function handleCancel() {
 
 const canSelect = computed(() => !!effectiveSelection.value)
 
-// Effective selection for the Select button. Order of preference:
-//   1. selectedPath — the user explicitly clicked a folder in the content pane.
-//   2. currentPath — the user navigated to a folder via the tree, breadcrumb,
-//      Up button, Backspace, or address bar. The currently-open folder is a
-//      valid selection (mirrors Finder / Explorer / zenity --directory).
-// The POSIX root '/' and the system root '' are treated as "no selection" —
-// falling back to either would emit a meaningless path that every caller
-// rejects. Windows drive roots (`C:\`) ARE valid selections. Plan:
+// Effective selection for the Select button. Plan:
 // docs/superpowers/plans/2026-08-13-folder-picker-select-button-current-folder.md
 const effectiveSelection = computed<string>(() => {
   if (mode.value !== 'folder') return selectedPath.value
@@ -541,7 +513,6 @@ const showCurrentFolderHint = computed<boolean>(
 // ─── Tab state (Recent / Browse) ───────────────────────────────────────────── Default: Recent.
 // The Recent tab is the user's primary path — most-of-the-time they pick a folder they've picked
 // before. The Browse tab is the power-user / unfamiliar-folder flow.
-// The active tab is a ref (not persisted) — the user always re-enters via Recent on each open.
 const activeTab = ref<'recent' | 'browse'>('recent')
 const recentStore = useRecentFoldersStore()
 const recentList = computed(() => recentStore.list())
@@ -814,7 +785,6 @@ async function openDialog() {
   // Windows first-open fallback: the POSIX default '/' doesn't exist on Windows, so the chain above
   // loads nothing and sets loadError. Retry once at the system root ('') which the callers resolve
   // via getSystemFolder (backend home / USERPROFILE).
-  // On POSIX '/' virtually always loads, so this branch never fires there.
   if (startPath === '/' && contentEntries.value.length === 0 && loadError.value) {
     loadError.value = null
     await expandAncestors('')
@@ -833,8 +803,6 @@ function closeDialog() {
 
 // Open guard: run openDialog on mount when the parent created this dialog with modelValue already
 // true (the common v-if + v-model="show" pattern) plus closed->open updates.
-// Without the mount run the dialog renders but contentEntries / treeEntriesCache stay empty, so the
-// user sees "No folders / Empty folder" until they navigate manually.
 const wasOpen = ref(props.modelValue)
 const syncModelValue = (show: boolean) => {
   if (show) {

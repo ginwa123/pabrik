@@ -1,30 +1,4 @@
-/**
- * KanbanView URL preservation — the regressions that the static-`useRoute`
- * harness could not see.
- *
- * Both pre-existing KanbanView router specs (`KanbanView.sortByApi.spec.ts`,
- * `KanbanView.rowMode.spec.ts`) mock `useRoute` with a STATIC object whose
- * `query` is frozen at mount, and `router.replace` with a bare `vi.fn()` that
- * mutates nothing. That makes two whole classes of bug structurally invisible:
- *
- *   1. **Staleness** — `flatQuery()` reads `route.query`, which vue-router only
- *      updates at navigation *finalization* (≥6 microtask hops after the call).
- *      With a frozen mock, `route.query` never changes, so a writer that reads
- *      a stale snapshot looks identical to one that reads a fresh one.
- *   2. **Path shape** — the mock hardcodes `path: '/app'`, so a writer that
- *      emits the legacy `?view=workspace` shape instead of the canonical
- *      `/app/{ws}/projects/{item}` path is indistinguishable from a correct one.
- *
- * These tests use a REAL memory router and assert on
- * `router.currentRoute.value` after `flushPromises()`, so both classes are
- * observable.
- *
- * Why the path shape matters (the actual user-visible bug): the legacy
- * `?view=workspace` URL is rewritten once at boot by
- * `AppLayout.rewriteLegacyQuery`, whose sub-state whitelist is hardcoded. Any
- * param missing from that whitelist is silently dropped on reload — which is
- * how `?layout=rows` was lost for shared links and second machines.
- */
+/** KanbanView URL preservation — the regressions that the static-`useRoute` harness could not see. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

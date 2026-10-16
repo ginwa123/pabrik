@@ -20,17 +20,7 @@
 import { describe, it, expect } from 'vitest'
 import type { SseEvent } from '../api'
 
-// --------------------------------------------------------------------------
-// 1. Compile-time assertion: SseEvent.is_input / is_output are `boolean`,
-//    not `string`.
-// --------------------------------------------------------------------------
-// These module-level blocks do not run as test logic — they are
-// compile-time checks. If the field types revert to `string`, the
-// error-suppression directives below would no longer have any error
-// to suppress (because strings would suddenly be allowed). In that
-// case, `bun run build` (vue-tsc) would fail with an "unused"
-// directive error, pointing directly at the regression.
-// Valid: assign actual booleans. No directive needed; type matches.
+// -------------------------------------------------------------------------- 1.
 const _typeCheck: Pick<SseEvent, 'is_input' | 'is_output'> = {
   is_input: true,
   is_output: false,
@@ -47,15 +37,7 @@ const _typeCheckBadString2: Pick<SseEvent, 'is_output'> = { is_output: '0' }
 void _typeCheckBadString1
 void _typeCheckBadString2
 
-// --------------------------------------------------------------------------
-// 2. Runtime: the wire format shape is true/false booleans
-// --------------------------------------------------------------------------
-// The backend (src/ai_workflow/tui/on_event_sent_sanitize_test.zig +
-// the new llm_history_is_input_output_test.zig) locks in the wire
-// format on the Zig side. On the frontend side, we mirror the same
-// expectations: the event payload's is_input / is_output must arrive
-// as real booleans, and the comparison `event.is_output === true` must
-// succeed where the old `=== '1'` would have failed.
+// -------------------------------------------------------------------------- 2.
 describe('SseEvent.is_input / is_output wire format', () => {
   it('exposes is_input and is_output as booleans on the event payload', () => {
     // Runtime belt-and-suspenders: even if the type checker passes, a wrong-shape value should be

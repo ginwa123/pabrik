@@ -142,30 +142,9 @@ const emit = defineEmits<{
   runAgent: [payload: { taskId: string }]
 }>()
 
-// ─── Per-column sort state (kanban-sort-by, plan Task 3) ────────────────
-//
-// Each KanbanColumn owns its own sortBy + direction refs (LOCAL —
-// not in the store, not in the URL, not lifted to KanbanView). Two
-// columns can have different sorts simultaneously.
-//
-// The sort is APPLIED BACKEND-SIDE per column. When the user picks
-// a sort, KanbanView's `handleColumnSortChange` calls
-// `fetchKanbanTasks` for ONLY the changed column with that column's
-// own sortBy/direction. The wire data arrives in the right
-// per-column order — `cardsInColumn` below just filters.
-//
-// The parent receives a `sortChange` emit so it can:
-//   1. URL-persist the per-column sort (`?sorts=col_X:<field>:<dir>`)
-//   2. Fire the per-column backend re-fetch (see #1 above).
-//
-// Re-mounting the column (via KanbanView's :key=) resets to the
-// defaults (Manual / drag-reorder). The user picks via the
-// "Sort tasks…" entry in the column's ⋮ menu (opens the centered
-// modal mounted below).
-//
-// Exposed via defineExpose so tests (and the URL restore code in
-// KanbanView's onMount) can drive the sort state without touching
-// the modal flow.
+// ─── Per-column sort state (kanban-sort-by, plan Task 3) ──────────────── Each KanbanColumn owns
+// its own sortBy + direction refs (LOCAL — not in the store, not in the URL, not lifted to
+// KanbanView). Two columns can have different sorts simultaneously.
 type SortField = 'position' | 'created_at' | 'updated_at' | 'name'
 type SortDirection = 'asc' | 'desc'
 const sortBy = ref<SortField>('position')
@@ -181,17 +160,7 @@ const setSortMode = (newSortBy: SortField, newDirection: SortDirection) => {
 
 defineExpose({ setSortMode })
 
-// ─── Derived data ──────────────────────────────────────────────────────────
-// Cards in this column. Just filters by the column id — the
-// backend's per-column fetch already returns tasks in the
-// column's own sort order (the `sortChange` handler in
-// KanbanView calls `fetchKanbanTasks(col.id, sortBy, direction)`
-// for ONLY the changed column; the wire data arrives in the
-// right per-column order). No client-side re-sort needed.
-//
-// Tasks without a kanban_column_id (unassigned) are excluded —
-// they live in their own region (out of scope for v1).
-//
+// ─── Derived data ────────────────────────────────────────────────────────── Cards in this column.
 // Plan: docs/superpowers/plans/2026-08-06-kanban-sort-independence.md
 const cardsInColumn = computed<Task[]>(() => {
   return props.tasks.filter((t) => t.kanban_column_id === props.column.id).slice()
@@ -199,18 +168,7 @@ const cardsInColumn = computed<Task[]>(() => {
 
 // ─── Virtual scrolling + lazy load (kanban-virtual-scroll, 2026-08-06) ─── The cards list is
 // rendered through <VirtualScroller>, which mounts only the rows currently in the viewport (plus a
-// buffer above and below).
-// With 100+ tasks on a column, the DOM stays small (8-12 rows at any moment) — no more "lazy load
-// adds items in TOP not BOTTOM" confusion, where the new page displaced existing rows and pushed
-// the user's scroll position visually upward.
-// Lazy-load is owned by the scroller: it fires `@load-more` when the user scrolls within
-// `loadMoreThreshold` of the bottom edge. We map that to `workspacesStore.loadMoreTasksForColumn`
-// (per-column pagination).
-// The store's `columnPagination[colId].isLoading` guard makes concurrent calls no-ops, so the
-// scroller's debounce is belt-and-suspenders but harmless.
-// For short columns where the scroller is NOT scrollable (`scrollerIsScrollable === false`), we
-// expose a manual "Load more" button as a keyboard-only / no-scroll affordance. Plan:
-// docs/superpowers/plans/2026-08-06-kanban-virtual-scroll.md
+// buffer above and below). Plan: docs/superpowers/plans/2026-08-06-kanban-virtual-scroll.md
 const workspacesStore = useWorkspacesStore()
 
 // Resolve the parent WorkspaceItem once. Used to read `hasMore` / `isLoading` for both the
@@ -236,18 +194,12 @@ const loadingMoreTasks = computed(
 // True while this column's FIRST page is in flight. Without it the column renders its "No tasks
 // yet" empty state during the fetch — a false statement about the user's data, since the column may
 // well have tasks. The skeleton below gates on this instead.
-// Read from the store's dedicated signal rather than `columnPagination[colId].isLoading`: the
-// ABSENCE of a `columnPagination` entry is the sentinel KanbanView's mount path uses to decide
-// which columns still need fetching, so the entry cannot be pre-created with `isLoading: true`.
 const isFirstPageLoading = computed(() =>
   workspacesStore.isFirstPageLoading(props.itemId, props.column.id),
 )
 
 // Drives the manual "Load more" button visibility. When the scroller IS scrollable, the
 // auto-trigger handles loading and the button would be redundant.
-// When NOT scrollable (short column), the auto- trigger can never fire, so we surface the button as
-// the user's only way to fetch more. Driven by the VirtualScroller's `@scrollability-change` event
-// (immediate:true means it fires once on mount with the initial value).
 const scrollerIsScrollable = ref(false)
 const handleScrollabilityChange = (scrollable: boolean) => {
   scrollerIsScrollable.value = scrollable
@@ -270,33 +222,8 @@ const handleManualLoadMore = () => {
   void workspacesStore.loadMoreTasksForColumn(props.workspaceId, props.itemId, props.column.id)
 }
 
-// ─── Auto-fetch when the viewport fits the page (kanban-virtual-scroll) ───
-//
-// VirtualScroller's `@load-more` ONLY fires when the user is near the
-// bottom of a scrollable container. When the entire page (10 cards) fits
-// in the viewport, the container is NOT scrollable — so `@load-more`
-// never fires — and the user is stuck clicking "Load more" until the
-// column overflows. Bad UX (user feedback 2026-08-06: "if limit 10, why
-// not auto fetch? it keeps like that until i click the load more").
-//
-// Fix: when the column has fewer cards than one page AND `hasMore` is
-// true, automatically fetch the next page. The update guard re-fires when
-// the new page arrives (cardsInColumn.length grows), recursively
-// pulling pages until either `hasMore` flips false OR the column
-// becomes scrollable (at which point the VirtualScroller's @load-more
-// takes over).
-//
-// Guardrails:
-//   - `moreTasksAvailable` gates on the backend's `hasMore` — the
-//     recursion terminates when the backend says "no more".
-//   - `loadingMoreTasks` gates on the store's `isLoading` flag — no
-//     concurrent fetches.
-//   - `cardsInColumn.length < PAGE_SIZE` is the "doesn't overflow" check.
-//     Once the column becomes scrollable, the condition is false and
-//     the guard goes silent — VirtualScroller handles the rest.
-//   - `hasAutoFetched` is a one-shot guard so the update hook doesn't loop
-//     forever on the SAME DOM state — but the guard IS re-armed by
-//     `cardsInColumn.length` changes, so each new page re-arms it.
+// ─── Auto-fetch when the viewport fits the page (kanban-virtual-scroll) ─── VirtualScroller's
+// `@load-more` ONLY fires when the user is near the bottom of a scrollable container.
 const PAGE_SIZE = 10
 const hasAutoFetched = ref(false)
 const maybeAutoFetchNextPage = () => {
@@ -323,7 +250,6 @@ const maybeAutoFetchNextPage = () => {
 // One explicit path instead of four watchers: mount covers the initial state, and a prev-combo
 // guard on update covers all four inputs (new page arrivals change the card count; pagination flags
 // and the scrollability flag arrive via the handler above).
-// The `hasAutoFetched` guard inside the handler keeps repeat runs harmless.
 const prevAutoFetchKey = ref('')
 const autoFetchKey = () =>
   `${cardsInColumn.value.length}|${moreTasksAvailable.value ? '1' : '0'}|${loadingMoreTasks.value ? '1' : '0'}|${scrollerIsScrollable.value ? '1' : '0'}`
@@ -371,14 +297,6 @@ const commitInlineRename = () => {
 
 // ─── Per-column vertical scroll persistence ──────────────────────────────── The card list lives
 // in a <VirtualScroller> with its own overflow-y-auto container.
-// That container is torn down and rebuilt whenever the view around the board unmounts — switching
-// to a task-chat tab and back, or (tab mode off) opening a task at all, since the chat replaces the
-// board.
-// Without this the rebuilt column starts at `scrollTop = 0` and the user loses their place in a
-// long column.
-// The key is item-scoped as well as column-scoped: column ids are globally unique today, but a key
-// that can only ever describe one board's one column keeps that from becoming a silent cross-board
-// collision later.
 const virtualScrollerRef = ref<ColumnScrollerExposed | null>(null)
 const scrollerContainerRef = computed<HTMLElement | null>(
   () => virtualScrollerRef.value?.containerRef ?? null,
@@ -403,7 +321,6 @@ const closeMenu = () => {
 // The header "⋮" menu offers Rename + Delete. Both delegate to the host (KanbanView /
 // WorkspaceItem), which opens KanbanColumnEditor in the right mode. Sort tasks… opens the
 // per-column sort modal mounted in this component.
-// We close the menu on click; the host is responsible for showing the editor.
 const handleMenuRename = () => {
   menuOpen.value = false
   emit('requestRenameColumn', props.column.id)
@@ -443,12 +360,6 @@ const handleMenuStopAll = () => {
 // ─── Per-column sort modal (kanban-sort-by, plan Task 4) ───────────── Mounted inside the column's
 // <section> (not Teleport'd). The modal uses position: fixed + inset-0, so it visually centres
 // regardless of where it sits in the DOM.
-// Inside the modal we render <KanbanSortMenu :show-trigger="false"> — the menu items without the
-// trigger button. v-model:sortBy + v-model:direction bind to local refs (the per-column state).
-// The modal stays open across picks until the user dismisses (matches the dropdown's
-// close-on-select behaviour — here the modal IS the wrapper, so we close it on item click).
-// Esc + backdrop click closes the modal. The show-trigger=false KanbanSortMenu does NOT install its
-// own Esc handler, so we add one here.
 const sortModalOpen = ref(false)
 const sortModalKey = ref(0)
 
@@ -457,23 +368,9 @@ const openSortModal = () => {
   sortModalOpen.value = true
 }
 
-// Close the modal AND emit the sort change unconditionally — even if the
-// user picked the SAME sort (Manual again, etc.), the parent's per-column
-// fetch should still fire so the wire data is refreshed.
-//
-// This is wired as `@click` on <KanbanSortMenu>, which declares no `click`
-// emit — so it is a NATIVE listener on the menu's root <div>. That is
-// deliberate and safe here: the menu's root has no padding or background of
-// its own, so every pixel is covered by the <ul> of items, and the click
-// that OPENS the modal cannot reach it (the modal is a sibling subtree, not
-// on the opening click's propagation path, and it is not yet mounted when
-// that event dispatches). The only reachable case is a click on an item,
-// where <KanbanSortMenu>'s own handler has already written the new
-// sortBy/direction via v-model before the event bubbles here.
-// <KanbanRowView> uses the equivalent pair of single-source update handlers instead.
-// Both are correct; this one additionally fires on a re-pick of the same
-// value, which is the behaviour the comment above describes.
-// Plan: docs/superpowers/plans/2026-08-06-kanban-sort-independence.md
+// Close the modal AND emit the sort change unconditionally — even if the user picked the SAME sort
+// (Manual again, etc.), the parent's per-column fetch should still fire so the wire data is
+// refreshed. Plan: docs/superpowers/plans/2026-08-06-kanban-sort-independence.md
 const handleSortModalSelect = () => {
   sortModalOpen.value = false
   emit('sortChange', { sortBy: sortBy.value, direction: direction.value })
@@ -512,17 +409,12 @@ onUnmounted(() => {
 // ─── Drag-and-drop state (drop zone) ─────────────────────────────────────── Same pattern as
 // WorkspaceItemTask's pinned-region drop handler: track which card the cursor is over (so we can
 // compute the drop position) and update visual feedback in real-time.
-// For v1 we compute the position as the END of the receiving column on drop (matches the plan's
-// "append to end" semantics — the user can always reorder within a column in a future iteration).
 const isDragOver = ref(false)
 const isDragging = ref(false)
 
 const handleDragOver = (event: DragEvent) => {
   // preventDefault is REQUIRED for HTML5 DnD — without it the browser cancels the drop with a "not
   // allowed" cursor.
-  // We also check that the drag is a kanban card drag (has the MIME type we set in
-  // KanbanCard.handleDragStart), and if not, return early so the cursor shows "no entry" —
-  // preventing accidental drops from the pinned-tasks region or the item-reorder handler.
   if (!event.dataTransfer) return
   if (!event.dataTransfer.types.includes('application/x-kanban-task-id')) {
     return
@@ -563,10 +455,6 @@ const handleDrop = (event: DragEvent) => {
 // ─── Context-menu "Move to column" ──────────────────────────────────── The card's context menu
 // emits the DESTINATION column only — it cannot see the rest of the board, so it cannot know the
 // append position.
-// This component can (`props.tasks` is the whole board), so it resolves the position and re-emits
-// as `moveTask`, the same shape and the same host handler the drag-and-drop path above uses.
-// Reusing the drop rule (position = the target column's current card count) is deliberate: doing
-// one and then the other must not produce divergent state.
 const handleMoveToColumn = (payload: { taskId: string; columnId: string }) => {
   // No-op when the target is the card's current column — the POST would
   // renumber siblings for no visible change.
@@ -594,10 +482,6 @@ const handleDragEndCapture = () => {
 
 // ─── Drag-and-drop state (column reorder) ────────────────────────────────── Column header
 // drag-and-drop (separate from the per-card DnD above).
-// Uses a dedicated MIME type `application/x-kanban-column-id` so the payload can't collide with
-// `application/x-kanban-task-id` (cards).
-// The dragover/drop handlers on the header only react when the drag carries the column MIME — card
-// drags are ignored here, so a card drag onto a header doesn't trigger a column reorder.
 const isColumnDragOver = ref(false)
 
 const handleColumnDragStart = (event: DragEvent) => {

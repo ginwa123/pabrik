@@ -1,29 +1,6 @@
-/**
- * The merge box's state machine and its method vocabulary.
- *
- * Two jobs, one table each, for the reason `forgeWording.ts` exists: three
- * components each hardcoding prose is how the `<pr-url>/conflicts` 404
- * happened. Here the stakes are higher than a wrong word — this table decides
- * whether the merge button may be pressed at all.
- *
- * THE INPUT IS ALREADY ON THE WIRE. `GET /api/git/pr/status` returns
- * `mergeable` and `merge_state` on every poll (the PR tab polls it every
- * 30 s while it is visible), so the box needs no extra request to know
- * whether it can merge and why not. The Checks tab is not an option: it is
- * `v-if`-mounted only when clicked, so on the PR tab its data does not exist.
- *
- * WHAT THE TWO FIELDS MEAN
- *   GitHub   merge_state = `mergeStateStatus`, the forge's own verdict
- *            (CLEAN / UNSTABLE / BLOCKED / BEHIND / DIRTY / DRAFT /
- *            HAS_HOOKS / UNKNOWN); mergeable = MERGEABLE / CONFLICTING /
- *            UNKNOWN.
- *   GitLab   merge_state = `merge_status`, mergeable = `detailed_merge_status`
- *            (the closer analogue of mergeStateStatus).
- *
- * An unrecognised value resolves to `pending` — never to `ready`. A forge that
- * adds a vocabulary word must not be able to turn a disabled button into a
- * merge.
- */
+/** The merge box's state machine and its method vocabulary. Two jobs, one table each, for the
+ * reason `forgeWording.ts` exists: three components each hardcoding prose is how the
+ * `<pr-url>/conflicts` 404 happened. */
 import type { ForgeWording } from './forgeWording'
 
 export type MergeBoxState = 'ready' | 'caution' | 'blocked' | 'pending' | 'merged' | 'closed'

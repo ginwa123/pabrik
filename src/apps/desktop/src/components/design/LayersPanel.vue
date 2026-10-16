@@ -89,7 +89,6 @@ const emit = defineEmits<{
   // NEW (2026-08-06, design-leave-group plan): pull the SINGLE selected element out of its current
   // parent group/frame to top-level. Wired through DesignView → useDesignHandlers →
   // workspacesStore.reparentDesignElementsBatch.
-  // Independent of the Ungroup action (which dissolves the selected group itself).
   leaveGroup: [elementId: string]
   // NEW (Chunk 7, design-move-to-page plan, 2026-08-06): bubble the "Move to page..." selection up
   // to the host so it can open the MoveToPageDialog with the right element id. The dialog handles
@@ -115,23 +114,9 @@ function handleLayerContextMenu(payload: { event: MouseEvent; targetIds: string[
   contextMenu.open(payload.event, payload.targetIds)
 }
 
-/**
- * Build a tree of nested `LayerTreeNode`s from a flat `DesignElement[]`.
- *
- * Algorithm:
- *   1. Walk all elements; create a `LayerTreeNode` for each.
- *   2. Bucket them by `parent_id` (or `null` for top-level).
- *   3. For each node, look up its children by its own id and assign.
- *   4. Sort each bucket by z_index DESC then position ASC (matches
- *      the legacy flat sort).
- *   5. Return the top-level bucket (parent_id === null).
- *
- * Why a fresh Map<string, LayerTreeNode> for each pass instead of
- * mutating `elements` directly: each `LayerTreeNode.children` must
- * reference the SAME `LayerTreeNode` instance that the loop just
- * created (not a fresh one), otherwise the tree would lose the
- * upward link to the parent.
- */
+/** Build a tree of nested `LayerTreeNode`s from a flat `DesignElement[]`. Algorithm: 1. Walk all
+ * elements; create a `LayerTreeNode` for each. 2. Bucket them by `parent_id` (or `null` for
+ * top-level). 3. For each node, look up its children by its own id and assign. 4. */
 const layerTree = computed<LayerTreeNode[]>(() => {
   const byParent = new Map<string | null, LayerTreeNode[]>()
   const nodes = new Map<string, LayerTreeNode>()
@@ -139,9 +124,7 @@ const layerTree = computed<LayerTreeNode[]>(() => {
     const node: LayerTreeNode = { element: e, children: [] }
     nodes.set(e.id, node)
     // The backend's `listElements` returns `COALESCE(de.parent_id, '')` — so a top-level element
-    // (parent_id IS NULL) arrives as `parent_id === ""` (empty string), NOT null/undefined.
-    // Treat empty string the same as nullish so top-level rows land in the `null` bucket instead of
-    // a separate `""` bucket that the final `byParent.get(null) ?? []` returns empty. See the
+    // (parent_id IS NULL) arrives as `parent_id === ""` (empty string), NOT null/undefined. See the
     // regression test in LayersPanel.spec.ts for the wire shape.
     const pid = e.parent_id || null
     if (!byParent.has(pid)) byParent.set(pid, [])
@@ -201,11 +184,6 @@ function findNode(
 // ─── Drag-and-drop state (Chunk 4 Task 4.2) ──────────────────────────── LayersPanel owns the drag
 // state machine via `useLayerDragDrop`. The composable returns the drag handlers + per-row visual
 // state predicates; we pass those down to each <LayerRow>.
-// Top-level drop zones (above the first top-level row, between each pair, below the last) use the
-// TOP_LEVEL_SENTINEL id — the same sentinel the composable treats as "leave any group".
-// Multi-drag: when the dragged row is in `selectedIds` AND the selection has > 1 element, the
-// composable sets draggedIds to the FULL set. The LayerRow's per-row visual flags
-// (`isBeingDragged`) reflect that — every selected row gets the dragging class.
 const dragDrop = useLayerDragDrop({
   elements: () => props.elements,
   selectedIds: () => new Set(props.selectedIds),
@@ -249,9 +227,6 @@ const handleMoveUp = (elementId: string): void => {
   // Wire-up (undo/redo plan Chunk 1): was `emit('reorder', flattenTopDown(cloned))` which went up
   // to DesignView → re-emitted upward → AppLayout had no listener → silent drop. Now we call the
   // store action directly with `mode: 'bring_forward'`.
-  // The store action mirrors the response into the local design_elements array; the layers panel
-  // re-renders from that array on the next tick. Selecting just `[elementId]` (not the full order)
-  // matches the keyboard shortcut's behavior (Cmd+] / Cmd+[).
   void workspacesStore.reorderDesignElements(
     activeWorkspaceId.value!,
     activeWorkspaceItemId.value!,

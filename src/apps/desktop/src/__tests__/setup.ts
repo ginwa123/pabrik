@@ -42,22 +42,7 @@ if (typeof (globalThis as { ResizeObserver?: unknown }).ResizeObserver === 'unde
   }
 }
 
-// jsdom does not implement `Element.prototype.scrollTo`. VirtualScroller.vue
-// calls `containerRef.value.scrollTo(...)` in scrollToBottom, scrollToTop,
-// and scrollToPosition — and ChatView's scrollToBottom is invoked from
-// setTimeout / nextTick after the test's assertions have completed. Without
-// this polyfill, those post-test async callbacks throw
-// `TypeError: containerRef.value.scrollTo is not a function` and surface
-// as unhandled rejections in the vitest output (vitest reports them as "caught unhandled errors"
-// but `dangerouslyIgnoreUnhandledErrors` lets the suite exit 0 — the warnings still pollute CI logs
-// and obscure real regressions).
-// Implementation: parse the ScrollToOptions (or the two-arg form ScrollToOptions-like), and assign
-// scrollTop + scrollLeft on the element.
-// Tests that rely on `container.scrollTop === N` to assert scroll-restore behavior (see
-// ChatView.scrollRestore.spec.ts) require a real assignment — a no-op polyfill would break those
-// tests.
-// `behavior: 'smooth'` is silently ignored (jsdom doesn't run animation frames; tests that need to
-// assert on smooth-scroll easing should mock the component instead).
+// jsdom does not implement `Element.prototype.scrollTo`.
 if (typeof Element !== 'undefined' && !Element.prototype.scrollTo) {
   Element.prototype.scrollTo = function scrollToPolyfill(
     this: Element,
@@ -82,16 +67,6 @@ if (typeof Element !== 'undefined' && !Element.prototype.scrollTo) {
 // Stub global fetch so relative-URL API calls in tests don't throw "Failed to parse URL from
 // /api/..." TypeErrors. Tests that need real API behavior should mock the api module (vi.spyOn(api,
 // ...)) instead of letting this stub fire.
-// Without this stub, store actions like `fetchKanbanColumns` and `loadFoldersForCwdPicker` produce
-// unhandled rejections during test cleanup and vitest counts them as errors (exit 1) even when the
-// test itself passes.
-// The stub resolves with a generic 404 JSON response — every apiFetch call goes through `silent`
-// checks before notifyError, so callers can observe the rejection normally; the stub just avoids
-// the URL-parse TypeError that would otherwise escape the test.
-// Replace global fetch with a stub that returns 404 for any URL. jsdom env may already provide its
-// own fetch, so we always overwrite.
-// Without this stub, unmocked api calls in tests hit `new URL(/api/...)` which fails to parse (no
-// base URL set up) and produces unhandled rejections that vitest counts as errors (exit 1).
 const stubFetch: typeof fetch = async () =>
   new Response(JSON.stringify({ error: 'fetch stubbed in test env' }), {
     status: 404,
@@ -99,30 +74,8 @@ const stubFetch: typeof fetch = async () =>
   })
 ;(globalThis as { fetch: typeof fetch }).fetch = stubFetch
 
-// Install the SSE bus ONCE for the whole test file. Why this is in
-// setup.ts (not in every test's beforeEach):
-//
-//   1. ChatView's onMounted calls connectSse() which calls useSseBus().
-//      If a test mounts AppLayout (which renders ChatView) and the bus
-//      is torn down between mount and connectSse, useSseBus throws.
-//
-//   2. ChatView also schedules scrollToBottom via setTimeout / nextTick
-//      AFTER the test body has returned and afterEach has run. If the
-//      bus was reset by afterEach, the post-test async chain throws
-//      `useSseBus called before installSseBus` and surfaces as an
-//      unhandled rejection in the vitest output.
-//
-// The pre-existing per-spec beforeEach that calls
-// `__resetSseBus() → installSseBus(createApp({})) → __setSseBusGlobalClient(stub)`
-// is still safe — installSseBus() is idempotent (`if (_instance) return
-// _instance`), and our global installSseBus() here just re-asserts the
-// invariant the spec expects.
-//
-// App.spec.ts's "unmounting App.vue calls bus.close() on the bus
-// singleton" test still works because it relies on App.vue's own
-// onUnmounted → useSseBus().close() (which nulls the singleton), not
-// on __resetSseBus. The global install here doesn't prevent close()
-// from nulling _instance.
+// Install the SSE bus ONCE for the whole test file. Why this is in setup.ts (not in every test's
+// beforeEach): 1. ChatView's onMounted calls connectSse() which calls useSseBus().
 import { createApp } from 'vue'
 import { installSseBus, __setSseBusGlobalClient } from '../helpers/sseBus'
 

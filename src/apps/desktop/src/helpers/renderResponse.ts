@@ -67,7 +67,6 @@ export const renderResponse = (
   // 4 trailing parameters kept for diff readability with the original Vue call sites. They are not
   // used by the function body — the return value depends only on (content, role, tool_name), which
   // is also what the cache keys on.
-  // Underscored to make the "intentionally unused" intent explicit to linters.
   _diffviewBefore?: string,
   _diffviewAfter?: string,
   _finish_reason?: string,
@@ -91,8 +90,6 @@ export const renderResponse = (
   if (!trimmed) {
     // A `tool` row can legitimately be empty — 403 such rows in the live DB, mostly a result that
     // has not landed yet and a handful of tools that return nothing at all.
-    // A registered tool renders a "running…" card, but an UNREGISTERED one has only this pill, and
-    // `''` made the whole row invisible. The name is the least a reader can be shown.
     const emptyTool = role === 'tool' && tool_name ? toolNamePill(tool_name) : ''
     cache.set(key, emptyTool)
     return emptyTool
@@ -166,8 +163,6 @@ const renderTool = (content: string, tool_name: string | undefined): string => {
   // Collapsed-bubble summary for the inline tool pill in ChatView. Mirrors the structured
   // ListDirectory.vue card so users see the same info (path + entry count) whether they look at the
   // collapsed bubble or the expanded body.
-  // The wire shape is `<directory_listing path="..." count="N">...</directory_listing>` (see
-  // src/modules/agent/tools/list_directory.zig).
   if (tool_name === 'list_directory') {
     const errorMatch = content.match(/<error>([\s\S]*?)<\/error>/)
     if (errorMatch) {
@@ -205,9 +200,6 @@ const renderTool = (content: string, tool_name: string | undefined): string => {
   }
 
   // Bare name: the card is the answer, and a one-line chip cannot hold it.
-  // `web_search` used to preview the query here, but its result is an untyped provider payload —
-  // the provider NAME is the only field this envelope guarantees, and a chip that reads `web_search
-  // → "tinyfish"` (the first quoted string in the JSON) describes nothing.
   if (
     tool_name === 'search_skills' ||
     tool_name === 'use_skill' ||
@@ -292,16 +284,9 @@ const renderTool = (content: string, tool_name: string | undefined): string => {
   }
 
   if (tool_name === 'update_plan') {
-    // Collapsed-bubble summary for the inline tool pill in ChatView.
-    // Mirrors the structured UpdatePlan.vue card so users see "wrote
-    // N bytes" whether they look at the collapsed bubble or expand
-    // the structured card. We approximate the byte count from the
-    // envelope's `<updated_at>` timestamp + the presence of
-    // `<session_id>` — the raw `content` argument isn't the LLM's
-    // input, so we can't show the exact byte count without
-    // threading the tool-call params through; the byte count from
-    // the plan body would require re-unwrapping, so we settle for
-    // a length-derived estimate from the inner envelope.
+    // Collapsed-bubble summary for the inline tool pill in ChatView. Mirrors the structured
+    // UpdatePlan.vue card so users see "wrote N bytes" whether they look at the collapsed bubble or
+    // expand the structured card.
     const updateError = content.match(/<error>([\s\S]*?)<\/error>/)
     if (updateError && updateError[1]) {
       return `<span class="tool-inline">${tool_name} → ${escapeHtml(updateError[1].trim()) || 'error'}</span>`
@@ -346,20 +331,8 @@ const renderTool = (content: string, tool_name: string | undefined): string => {
     return `<span class="tool-inline">${tool_name} → ${agentCount} agents (${succeeded} succeeded, ${failed} failed)</span>`
   }
 
-  // Unregistered tool — no card claimed this name, so this pill is all the
-  // transcript shows until the reader expands the row (ChatView prints the
-  // payload there via `toolPayloadPreview`).
-  //
-  // The pill therefore must NOT carry the payload:
-  //   - it used to print the first 80 characters of `data`, which for
-  //     `set_pull_request` was a raw JSON blob
-  //     (`set_pull_request ✓ {"session_id":"task_…","attached":true,…`) with
-  //     no way to read the rest on one line;
-  //   - when the content was not a JSON envelope at all — legacy `<tool>` XML
-  //     rows, raw MCP passthrough — it printed the ENTIRE body with no cap.
-  //     An `add_element` row in the live DB is 52 KB, so a single collapsed
-  //     row carried the whole payload.
-  // Name + status is the honest one-line summary; the data is one click away.
+  // Unregistered tool — no card claimed this name, so this pill is all the transcript shows until
+  // the reader expands the row (ChatView prints the payload there via `toolPayloadPreview`).
   const unwrapped = tryUnwrapToolOutput(content)
   if (unwrapped === null) {
     return toolNamePill(tool_name || 'tool')

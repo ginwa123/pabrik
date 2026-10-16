@@ -26,7 +26,6 @@ import { makeLocalStorageStub } from './helpers'
 // jsdom 29 dropped `Element.prototype.scrollTo`. The VirtualScroller calls
 // `containerRef.value.scrollTo({top, behavior})` on every render; without the polyfill the test log
 // floods with "containerRef.value.scrollTo is not a function" unhandled errors.
-// Mirrors the same polyfill in chatViewWorktree.spec.ts:62-71.
 if (
   typeof (globalThis as { HTMLElement?: { prototype: { scrollTo?: unknown } } }).HTMLElement
     ?.prototype.scrollTo === 'undefined'
@@ -94,14 +93,6 @@ function installChatViewMocks() {
 // ─── mount helper ───────────────────────────────────────────────────────── Mounts ChatView with
 // `processingState[chatId] === true` so the `isLLMProcessing` computed is true and the Stop button
 // (in FileInput) renders.
-// Returns the wrapper + a promise that resolves once the component is fully mounted (awaiting the
-// streaming listener registration via the sseBus, the same pattern as
-// chatViewWorktree.spec.ts:150).
-// IMPORTANT: `processingState` MUST be a Vue `ref()` (a reactive proxy), not a plain `{ value: ...
-// }` object.
-// Vue's reactivity tracks reassignments to the ref's `.value` via the proxy; plain objects are
-// invisible to the reactivity system, so mutations to `.value` won't trigger re-renders even though
-// the object identity is preserved. Use `ref({})` from 'vue', never `{} as any`.
 async function mountChatViewProcessing(chatId = 'session_proc') {
   const processingState = ref<Record<string, boolean>>({})
   processingState.value[chatId] = true
@@ -173,8 +164,6 @@ describe('ChatView — Stop button (cancel running agent)', () => {
     expect(stopSpy).toHaveBeenCalledTimes(1)
     // The sessionId passed must be un-prefixed (no `chat-`) because the backend route uses the raw
     // session_id.
-    // ChatView strips the prefix in onMounted (`sessionId.value = props.chatId.replace(/^chat-/,
-    // '')`, line 2001) so `sessionId.value` is the right thing to pass.
     expect(stopSpy).toHaveBeenCalledWith('session_proc')
    
   })
@@ -220,15 +209,9 @@ describe('ChatView — Stop button (cancel running agent)', () => {
     // The button is shown while processing.
     expect(wrapper!.find('[data-testid="stop-session-button"]').exists()).toBe(true)
 
-    // Simulate the backend cancelling + deleting the worker by
-    // dispatching the SSE `worker deleted` event the workflow
-    // emits after the loop break. In production this is what App.vue's `handleWorkerEvent` listens
-    // for and translates into a removal from `processingState`. We bypass App.vue (it's not mounted
-    // in this test) and directly mutate the provided ref via the `processingState` instance ref
-    // kept by the mount helper. We rebuild the whole object reference so the ref's `.value`
-    // reassignment triggers Vue's reactivity reliably (delete on the inner object also works with a
-    // proxy, but the reassignment is the documented contract for `ref`). eslint-disable-next-line
-    // @typescript-eslint/no-explicit-any
+    // Simulate the backend cancelling + deleting the worker by dispatching the SSE `worker deleted`
+    // event the workflow emits after the loop break. In production this is what App.vue's
+    // `handleWorkerEvent` listens for and translates into a removal from `processingState`.
     const provides = (wrapper!.vm as any).$.provides as Record<string, unknown>
     const ps = provides['processingState'] as Ref<Record<string, boolean>>
      

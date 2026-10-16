@@ -15,52 +15,7 @@ export function quantizePx(value: number): number {
   return Math.round(value)
 }
 
-/**
- * Running-median estimator for unmeasured item heights.
- *
- * WHY: ChatView passes a fixed `defaultItemHeight=64`, but real chat
- * bubbles are almost always taller (200–3000px). Every unmeasured item
- * is estimated at 64px, so spacers are systematically short until
- * measured and every measurement pass triggers anchor compensation.
- * Learning the running MEDIAN of measured heights gives far better
- * estimates for never-measured items → fewer wrong spacers → fewer
- * compensation shifts → smoother scroll.
- *
- * Median (not mean) so one giant code-block message can't skew the
- * estimate for everyone.
- *
- * Complexity: `observe()` is O(log n) search + O(n) splice where
- * n ≤ maxSamples (a small constant, default 64) — effectively O(1) per
- * call. `estimate()` is O(1).
- *
- * ── `freeze()` — why a moving estimate is dangerous (2026-10-12) ──────────
- *
- * The estimate is not a private detail of this class: the scroller multiplies
- * it by the number of items that have NEVER been rendered, because those items
- * have no measured height and take this value instead. So a 1px move here moves
- * the whole list's height model by `unmeasuredCount` px.
- *
- * That is fine while the reader is at the bottom, and it is a scroll-jump
- * machine while they are not. Measured on a 600-message chat, scrolling up
- * 100px at a time during an SSE stream (probe:
- * tests/functional_ui/chatview_stream_scroll_stability_ui_test.py):
- *
- *     pass #18: oldAnchorTop 116536 -> newAnchorTop 138771   (+22,235)
- *
- * Nothing was measured in that pass above the anchor — 561 never-rendered
- * items were simply re-estimated 41px higher, because the window had moved and
- * this estimator had sampled the rows that came with it. The scroller's anchor
- * compensation faithfully turned that rescale into a `scrollTop` write of
- * 138,880px, the browser clamped it against the sizer that had not re-rendered
- * yet, the reader was teleported, and the next pass computed −38,808 to undo it.
- * The user sees that as the transcript jumping up and down mid-stream.
- *
- * `freeze()` stops it at the source: `estimate()` keeps returning the value it
- * had at freeze time, so a placeholder can no longer move under a reader who is
- * looking at the rows above it. Accuracy is not lost — a rendered row is
- * MEASURED, and measurements always win (`itemHeights` on the scroller side) —
- * only the guess about rows the reader has not reached yet stops moving.
- */
+/** Running-median estimator for unmeasured item heights. */
 export class AdaptiveItemHeightEstimator {
   /** Sorted sample store (ascending px). */
   private samples: number[] = []

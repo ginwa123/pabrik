@@ -160,8 +160,6 @@ describe('sseBus', () => {
 
     // The swap itself already called `original.close()` exactly once (the `_globalClient &&
     // _globalClient !== client` branch in __setSseBusGlobalClient).
-    // The test asserts bus.close() does NOT call it again — which would happen if bus.close() reads
-    // the closure-scoped `globalClient` (the pre-fix bug).
     expect(originalCloseSpy).toHaveBeenCalledTimes(1)
 
     const bus = useSseBus()

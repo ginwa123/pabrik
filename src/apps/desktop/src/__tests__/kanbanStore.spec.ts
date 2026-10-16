@@ -398,22 +398,8 @@ describe('useWorkspacesStore — kanban actions', () => {
     })
   })
 
-  // ─── reorderKanbanColumn ────────────────────────────────────────────────
-  //
-  // The column header drag-and-drop reorder action. The DnD handler
-  // in <KanbanColumn> only knows the dragged column's id and the
-  // target column's id (the dropped-on column); this action resolves
-  // the target's position and calls the API, then re-fetches the
-  // full column list (siblings may have been renumbered by the
-  // backend, and the PATCH response only includes the moved column).
-  //
-  // Tests cover:
-  //   1. happy path: PATCH with the target's position + re-fetch
-  //   2. no-op when the target column doesn't exist locally
-  //      (defensive — the action shouldn't blow up if the local
-  //      store is stale)
-  //   3. no-op when the item has no kanban_columns yet
-  //      (defensive — same reason)
+  // ─── reorderKanbanColumn ──────────────────────────────────────────────── The column header
+  // drag-and-drop reorder action.
   describe('reorderKanbanColumn', () => {
     it('calls api.updateKanbanColumn with the target column\'s position and re-fetches via listKanbanColumns', async () => {
       const store = seedStore([
@@ -590,9 +576,6 @@ describe('useWorkspacesStore — kanban actions', () => {
 
   // ─── fetchKanbanColumns ───────────────────────────────────────────────── The "board renders
   // empty after page reload" fix.
-  // Without this action, item.kanban_columns stays undefined (the workspaces/items endpoint does
-  // not embed columns) and the user sees an empty board even though the seeded 3 default columns
-  // live in the DB.
   describe('fetchKanbanColumns', () => {
     it('calls api.listKanbanColumns and populates item.kanban_columns', async () => {
       const store = seedStore([
@@ -695,10 +678,6 @@ describe('useWorkspacesStore — kanban actions', () => {
   // ─── updateKanbanItemName ─────────────────────────────────────────────── The kanban header
   // rename (from KanbanSettingsDialog's inline pencil or KanbanView's header pencil) hits the store
   // via this action.
-  // The contract: optimistic-update item.name BEFORE the API call resolves so the UI updates
-  // immediately; roll back on error.
-  // The PUT handler accepts `{name}` and writes the column; when the API call throws, `item.name`
-  // must be restored to the pre-call value (so the UI doesn't lie about the rename).
   describe('updateKanbanItemName', () => {
     it('calls api.updateWorkspaceItem with the new name and optimistic-updates the local store', async () => {
       const store = seedStore([

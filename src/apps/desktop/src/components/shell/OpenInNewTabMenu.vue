@@ -1,22 +1,7 @@
 <script setup lang="ts">
 import UiIcon from '../ui/UiIcon.vue'
-/**
- * Shared right-click menu for kanban task cards.
- * Teleported to body so overflow ancestors (virtual scrollers,
- * kanban columns) never clip it. Hosts own the payload and wire
- * `@open` (chat) + `@open-details` (task detail) to their
- * window.open calls; visibility is `v-if` on the host's menu state.
- *
- * The details item is opt-in via `showDetails` so sidebar rows
- * (WorkspaceItemTaskRow) keep the single chat item while kanban
- * cards (WorkspaceItemTaskCard) offer both.
- *
- * `showRename` / `showDelete` are the same opt-in pattern for the
- * sidebar task row, whose pin / rename / delete hover buttons were
- * migrated here. Every row is opt-in so the file / workspace-item /
- * workspace-switcher hosts that share this menu never grow a row
- * they cannot act on.
- */
+/** Shared right-click menu for kanban task cards. Teleported to body so overflow ancestors (virtual
+ * scrollers, kanban columns) never clip it. */
 withDefaults(
   defineProps<{
     x: number

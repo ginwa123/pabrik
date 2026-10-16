@@ -1,17 +1,6 @@
-/**
- * Tests for KanbanList.vue — the tool_output component that renders
- * the XML response from the `kanban_list` agent tool. The component is
- * purely presentational (no API calls), so no mocks are needed.
- *
- * Mirrors the SetGitWorktree / SearchSkills tool_output style. Covers
- * the three XML shapes the backend can produce (see kanban_list.zig:200-236):
- *   1. Success with columns + tasks
- *   2. Empty board (kanban exists but 0 columns) — uses <hint> not <error>
- *   3. Error case — wrapped in <error>
- *
- * Note: the content passed here is the *inner* XML (`<data>` of the
- * tool envelope, extracted by ChatView.vue's `innerToolData`).
- */
+/** Tests for KanbanList.vue — the tool_output component that renders the XML response from the
+ * `kanban_list` agent tool. The component is purely presentational (no API calls), so no mocks are
+ * needed. Mirrors the SetGitWorktree / SearchSkills tool_output style. */
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 

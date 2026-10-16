@@ -1,28 +1,6 @@
-/**
- * Surgical stage/unstage — the `+` / `−` buttons must NOT re-fetch the
- * git-status list.
- *
- * Before this, `stageFile` / `unstageFile` answered with
- * `await loadGitStatus()` — a full `git status --porcelain -uall` plus
- * untracked-directory expansion, then a second folder-wide diff request. On a
- * 40-file worktree that is two git spawns and a re-render of every row, for a
- * change that moved exactly one path between two lists. The list visibly
- * blanks and repopulates.
- *
- * Now the backend emits `git_file_staged` / `git_file_unstaged` on the
- * central `git_file_stage` routing key (see
- * src/agentic_loop/git_file_stage_events.zig) and the panel moves ONE row.
- *
- * What this spec pins:
- *   1. clicking `+` / `−` issues ZERO `getGitChanges` calls — the row moves
- *      locally, so the list never blinks;
- *   2. the row lands in the right list (Changes → Staged, Untracked →
- *      Staged, Staged → Changes);
- *   3. an SSE event for a DIFFERENT cwd is ignored — one tab can show
- *      several worktrees;
- *   4. a `failed` event moves nothing;
- *   5. the manual ↻ refresh and the commit flow KEEP the full reload path.
- */
+/** Surgical stage/unstage — the `+` / `−` buttons must NOT re-fetch the git-status list. Before
+ * this, `stageFile` / `unstageFile` answered with `await loadGitStatus()` — a full `git status
+ * --porcelain -uall` plus untracked-directory expansion, then a second folder-wide diff request. */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
@@ -273,9 +251,6 @@ describe('SidebarDiffPanel surgical stage/unstage', () => {
 
   it('a path staged AND further modified: + on the Changes row moves that row', async () => {
     // index M + worktree M — the backend reports the path in BOTH lists.
-    // The `from` list must come from the ACTION (the `+` only ever sits on a Changes row), not from
-    // list precedence: precedence would see it in Staged, compute to === from, and leave the
-    // clicked row sitting there while the POST reported success.
     getGitChangesMock.mockResolvedValue({
       ...CHANGES,
       staged_files: [{ index_status: 'M', worktree_status: 'M', path: 'both.txt' }],
