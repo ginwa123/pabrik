@@ -1136,7 +1136,7 @@ defineExpose({
           data-pinned="true"
           :data-drop-before="dragPinnedOverId === item.id && dragPinnedBefore ? 'true' : undefined"
           :data-drop-after="dragPinnedOverId === item.id && !dragPinnedBefore ? 'true' : undefined"
-          class="relative w-full flex items-center gap-2 px-[var(--sb-gutter)] h-[var(--sb-row)] rounded-lg text-dense transition-all duration-150 border-t border-transparent overflow-hidden"
+          class="relative w-full flex items-center px-[var(--sb-gutter)] h-[var(--sb-row)] rounded-lg text-dense transition-all duration-150 border-t border-transparent overflow-hidden text-left"
           :class="isCurrentChat(item.id) ? 'border-[--color-border]/60' : ''"
           :style="
             isCurrentChat(item.id)
@@ -1144,13 +1144,10 @@ defineExpose({
               : 'color: var(--semantic-text-muted);'
           "
         >
-          <span class="flex-1 text-left truncate min-w-0" :title="item.name">
-            <!-- Same branch badge as RECENT rows: icon-only git branch with
-                 PR status color + conflict hint. Tooltip carries branch and
-                 worktree path. -->
+          <span class="w-[var(--sb-mark)] shrink-0 flex items-center">
             <span
               v-if="item.git_branch && prStatuses[item.id]"
-              class="mr-1 inline-flex items-center align-middle cursor-context-menu"
+              class="inline-flex items-center cursor-context-menu"
               :style="chatBranchStyle(item.id)"
               :title="chatBranchTitle(item) + ' — right-click to open the change request'"
               :data-pr-status="prStatuses[item.id] || undefined"
@@ -1174,10 +1171,21 @@ defineExpose({
               </svg>
               <span v-if="prConflicts[item.id]" class="ml-0.5 text-micro font-bold">⚠</span>
             </span>
-            {{ item.name }}
+          </span>
+          <span class="flex-1 min-w-0 truncate text-left" :title="item.name">{{ item.name }}</span>
+          <span class="ml-2 flex items-center gap-1.5 shrink-0">
+            <span
+              v-if="item.sub_agent_name"
+              class="text-micro"
+              style="color: var(--color-violet)"
+              :title="
+                item.parent_session_id ? 'Sub-agent of ' + item.parent_session_id : 'Sub-agent'
+              "
+              ><UiIcon name="tools" size-class="w-3 h-3" /> {{ item.sub_agent_name }}</span
+            >
             <span
               v-if="isAwaitingReview(item)"
-              class="ml-1 inline-flex items-center align-middle shrink-0"
+              class="inline-flex items-center shrink-0"
               title="AI finished — awaiting your review"
               data-testid="chat-status-awaiting-review"
             >
@@ -1192,11 +1200,17 @@ defineExpose({
             </span>
             <span
               v-else-if="isReviewed(item)"
-              class="ml-1 inline-flex items-center align-middle shrink-0 text-green-500"
+              class="inline-flex items-center shrink-0 text-green-500"
               title="Reviewed"
               data-testid="chat-status-reviewed"
             >
-              <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <svg
+                class="w-3 h-3"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2.5"
+              >
                 <path
                   stroke-linecap="round"
                   stroke-linejoin="round"
@@ -1206,7 +1220,7 @@ defineExpose({
             </span>
             <span
               v-if="rowAgentError(item.id)"
-              class="ml-1 inline-flex items-center align-middle shrink-0"
+              class="inline-flex items-center shrink-0"
               style="color: var(--color-red)"
               :title="
                 rowErrorRetryLabel(item.id)
@@ -1218,45 +1232,27 @@ defineExpose({
               ⚠
             </span>
             <span
-              v-if="item.sub_agent_name"
-              class="ml-1 text-micro font-mono"
-              style="color: var(--color-violet)"
-              :title="
-                item.parent_session_id ? 'Sub-agent of ' + item.parent_session_id : 'Sub-agent'
-              "
-              ><UiIcon name="tools" size-class="w-3 h-3" /> {{ item.sub_agent_name }}</span
+              v-if="!isProcessing(item.id)"
+              class="text-micro opacity-70 flex items-center gap-1"
             >
+              <span
+                v-if="shouldShowStaleDot(item)"
+                class="w-1 h-1 rounded-full bg-amber-400"
+                title="AI is still working — your last touch was earlier"
+                data-testid="chat-stale-dot"
+              />
+              <span
+                :title="
+                  item.last_human_touched_at
+                    ? 'Last human activity'
+                    : 'Last activity (never touched by you yet)'
+                "
+                data-testid="chat-time-pill"
+                >{{ item.relativeTime || 'now' }}</span
+              >
+            </span>
+            <WorkerElapsedChip v-else :session-id="item.id" test-id="chat-elapsed-chip" />
           </span>
-          <span
-            v-if="!isProcessing(item.id)"
-            class="text-micro opacity-60 shrink-0 ml-2 flex items-center gap-1"
-          >
-            <span
-              v-if="shouldShowStaleDot(item)"
-              class="w-1 h-1 rounded-full bg-amber-400"
-              title="AI is still working — your last touch was earlier"
-              data-testid="chat-stale-dot"
-            />
-            <span
-              :title="
-                item.last_human_touched_at
-                  ? 'Last human activity'
-                  : 'Last activity (never touched by you yet)'
-              "
-              data-testid="chat-time-pill"
-              >{{ item.relativeTime || 'now' }}</span
-            >
-          </span>
-          <!-- Elapsed time for a running worker. Takes the slot the
-               relative-time pill vacates above, so the row never grows a
-               second trailing element. Time pill is the only activity
-               marker — the circle spinner was removed as redundant. -->
-          <WorkerElapsedChip
-            v-else
-            :session-id="item.id"
-            test-id="chat-elapsed-chip"
-            class="ml-2"
-          />
         </button>
       </div>
     </div>
@@ -1323,7 +1319,7 @@ defineExpose({
             @auxclick="onChatRowAuxClick($event, item)"
             @contextmenu.prevent="onChatRowContextMenu($event, item)"
             :data-testid="`chat-row-${item.id}`"
-            class="relative w-full flex items-center gap-2 px-[var(--sb-gutter)] h-[var(--sb-row)] rounded-lg text-dense transition-all duration-150 border-t border-transparent overflow-hidden"
+            class="relative w-full flex items-center px-[var(--sb-gutter)] h-[var(--sb-row)] rounded-lg text-dense transition-all duration-150 border-t border-transparent overflow-hidden text-left"
             :class="isCurrentChat(item.id) ? 'border-[--color-border]/60' : ''"
             :style="
               isCurrentChat(item.id)
@@ -1331,12 +1327,10 @@ defineExpose({
                 : 'color: var(--semantic-text-muted);'
             "
           >
-            <span class="flex-1 text-left truncate min-w-0" :title="item.name">
-              <!-- Icon-only branch badge for chats with a pull request.
-                   Tooltip carries the branch and worktree path. -->
+            <span class="w-[var(--sb-mark)] shrink-0 flex items-center">
               <span
                 v-if="item.git_branch && prStatuses[item.id]"
-                class="mr-1 inline-flex items-center align-middle cursor-context-menu"
+                class="inline-flex items-center cursor-context-menu"
                 :style="chatBranchStyle(item.id)"
                 :title="chatBranchTitle(item) + ' — right-click to open the change request'"
                 :data-pr-status="prStatuses[item.id] || undefined"
@@ -1360,16 +1354,23 @@ defineExpose({
                 </svg>
                 <span v-if="prConflicts[item.id]" class="ml-0.5 text-micro font-bold">⚠</span>
               </span>
-              {{ item.name }}
-            <!-- Status badge — the same red / yellow / green trio the
-                   kanban card renders (WorkspaceItemTaskCard.vue), so a
-                   session reads identically on the board and in the
-                   sidebar. Orange pulsing dot = the AI finished and is
-                   waiting on you; green check = you have reviewed it;
-                   red ⚠ = the agent errored (hover for the headline). -->
+            </span>
+            <span class="flex-1 min-w-0 truncate text-left" :title="item.name">{{
+              item.name
+            }}</span>
+            <span class="ml-2 flex items-center gap-1.5 shrink-0">
+              <span
+                v-if="item.sub_agent_name"
+                class="text-micro"
+                style="color: var(--color-violet)"
+                :title="
+                  item.parent_session_id ? 'Sub-agent of ' + item.parent_session_id : 'Sub-agent'
+                "
+                ><UiIcon name="tools" size-class="w-3 h-3" /> {{ item.sub_agent_name }}</span
+              >
               <span
                 v-if="isAwaitingReview(item)"
-                class="ml-1 inline-flex items-center align-middle shrink-0"
+                class="inline-flex items-center shrink-0"
                 title="AI finished — awaiting your review"
                 data-testid="chat-status-awaiting-review"
               >
@@ -1384,11 +1385,17 @@ defineExpose({
               </span>
               <span
                 v-else-if="isReviewed(item)"
-                class="ml-1 inline-flex items-center align-middle shrink-0 text-green-500"
+                class="inline-flex items-center shrink-0 text-green-500"
                 title="Reviewed"
                 data-testid="chat-status-reviewed"
               >
-                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <svg
+                  class="w-3 h-3"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                >
                   <path
                     stroke-linecap="round"
                     stroke-linejoin="round"
@@ -1398,7 +1405,7 @@ defineExpose({
               </span>
               <span
                 v-if="rowAgentError(item.id)"
-                class="ml-1 inline-flex items-center align-middle shrink-0"
+                class="inline-flex items-center shrink-0"
                 style="color: var(--color-red)"
                 :title="
                   rowErrorRetryLabel(item.id)
@@ -1410,54 +1417,27 @@ defineExpose({
                 ⚠
               </span>
               <span
-                v-if="item.sub_agent_name"
-                class="ml-1 text-micro font-mono"
-                style="color: var(--color-violet)"
-                :title="
-                  item.parent_session_id ? 'Sub-agent of ' + item.parent_session_id : 'Sub-agent'
-                "
-                ><UiIcon name="tools" size-class="w-3 h-3" /> {{ item.sub_agent_name }}</span
+                v-if="!isProcessing(item.id)"
+                class="text-micro opacity-70 flex items-center gap-1"
               >
+                <span
+                  v-if="shouldShowStaleDot(item)"
+                  class="w-1 h-1 rounded-full bg-amber-400"
+                  title="AI is still working — your last touch was earlier"
+                  data-testid="chat-stale-dot"
+                />
+                <span
+                  :title="
+                    item.last_human_touched_at
+                      ? 'Last human activity'
+                      : 'Last activity (never touched by you yet)'
+                  "
+                  data-testid="chat-time-pill"
+                  >{{ item.relativeTime || 'now' }}</span
+                >
+              </span>
+              <WorkerElapsedChip v-else :session-id="item.id" test-id="chat-elapsed-chip" />
             </span>
-            <!-- Migration 082 - replace AI-tainted updated_at with the human
-                 time (last_human_touched_at ?? updated_at). Stale dot
-                 appears when the AI has touched since the human's
-                 last touch ("AI is ahead of you"). Hover tooltips
-                 distinguish "Last human activity" vs "Last activity
-                 (never touched by you yet)" so the source of the
-                 timestamp is discoverable without a comment.
-                 Plan: docs/superpowers/plans/2026-08-29-chat-sidebar-last-human-touched.md (Task 8) -->
-            <!-- Keep the elapsed time pill as the only right-side activity marker while processing. -->
-            <span
-              v-if="!isProcessing(item.id)"
-              class="text-micro opacity-60 shrink-0 ml-2 flex items-center gap-1"
-            >
-              <span
-                v-if="shouldShowStaleDot(item)"
-                class="w-1 h-1 rounded-full bg-amber-400"
-                title="AI is still working — your last touch was earlier"
-                data-testid="chat-stale-dot"
-              />
-              <span
-                :title="
-                  item.last_human_touched_at
-                    ? 'Last human activity'
-                    : 'Last activity (never touched by you yet)'
-                "
-                data-testid="chat-time-pill"
-                >{{ item.relativeTime || 'now' }}</span
-              >
-            </span>
-            <!-- Elapsed time for a running worker. Takes the slot the
-                 relative-time pill vacates above, so the row never grows a
-                 second trailing element. Time pill is the only activity
-                 marker — the circle spinner was removed as redundant. -->
-            <WorkerElapsedChip
-              v-else
-              :session-id="item.id"
-              test-id="chat-nav-elapsed-chip"
-              class="ml-2"
-            />
           </button>
         </template>
       </VirtualScroller>

@@ -331,7 +331,11 @@ const handleItemDragEnd = () => {
           />
           <span
             class="text-micro"
-            style="color: var(--semantic-text-dim); opacity: 0.7; font-variant-numeric: tabular-nums"
+            style="
+              color: var(--semantic-text-dim);
+              opacity: 0.7;
+              font-variant-numeric: tabular-nums;
+            "
             >{{ runningTaskCountInWorkspace(workspace) }} running</span
           >
         </span>
@@ -432,7 +436,7 @@ const handleItemDragEnd = () => {
          stranded at the bottom of a full-height Projects box. -->
     <div>
       <Transition name="collapse">
-        <div v-show="sidebarStore.projectsExpanded" class="pb-2">
+        <div v-show="sidebarStore.projectsExpanded">
           <!-- Projects loading skeleton — shown while the workspace tree
                is fetching and no items are painted yet. Keeps the section
                from flashing "No projects yet" on a slow boot. -->
@@ -441,13 +445,9 @@ const handleItemDragEnd = () => {
             :rows="4"
             test-id="projects-loading-skeleton"
           />
-          <!-- Selected workspace items (single workspace — revamp plan).
-               One indent step per level (--sb-indent); the row supplies
-               its own gutter, so the guide never double-counts. -->
           <ul
             v-if="workspace"
-            class="ml-[var(--sb-indent)] space-y-0 border-l"
-            style="border-color: var(--color-border)"
+            class="space-y-0"
             @dragstart="handleItemDragStart"
             @dragover="handleItemDragOver"
             @dragleave="handleItemDragLeave"
@@ -463,7 +463,6 @@ const handleItemDragEnd = () => {
               :is-item-dragging="draggingItemId === item.id"
               :is-item-drag-over="dragOverItemId === item.id && draggingItemId !== item.id"
               :is-item-drag-over-insert-after="dragOverItemInsertAfter"
-              class="first:mt-1.5"
               @click="handleItemClick(workspace.id, $event.id)"
               @open-item-in-background="emit('openItemInBackground', $event)"
               @go-to-settings="emit('goToSettings', $event)"

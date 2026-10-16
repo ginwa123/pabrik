@@ -492,10 +492,10 @@ const handlePinnedDrop = (event: DragEvent) => {
           @click="handleClick($event)"
           @auxclick="onItemRowAuxClick"
           @contextmenu.prevent="onItemRowContextMenu"
-          class="relative flex-1 flex items-center gap-2 px-[var(--sb-gutter)] h-[var(--sb-row)] rounded-lg text-dense text-left transition-colors duration-150"
+          class="relative flex-1 flex items-center px-[var(--sb-gutter)] h-[var(--sb-row)] rounded-lg text-dense text-left transition-colors duration-150"
           :style="
             isCurrentMainView
-              ? `background-color: #2e2d29; color: #fff; box-shadow: inset 2px 0 0 0 var(--color-violet);`
+              ? 'background: var(--semantic-active-bg); color: var(--semantic-active-text); box-shadow: inset 2px 0 0 0 var(--color-violet);'
               : `color: var(--semantic-text-muted);`
           "
         >
@@ -510,7 +510,7 @@ const handlePinnedDrop = (event: DragEvent) => {
                too, and the project name at 28, matching the section
                titles. Rotates when expanded. -->
           <span
-            class="shrink-0 text-meta transition-transform duration-200"
+            class="w-[var(--sb-mark)] shrink-0 flex items-center text-meta transition-transform duration-200"
             data-testid="item-row-chevron"
             :style="{
               transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
@@ -536,7 +536,7 @@ const handlePinnedDrop = (event: DragEvent) => {
                dot, or count — never two at once. Previously each had its
                own ml-auto and they overlapped into a floating pill
                (wireframe R2). -->
-          <span class="ml-auto flex items-center gap-1.5 shrink-0">
+          <span class="ml-2 flex items-center gap-1.5 shrink-0">
             <!-- How long that task has been running. Time pill is the only
                activity marker — the circle spinner was removed as redundant. -->
             <WorkerElapsedChip
@@ -548,26 +548,23 @@ const handlePinnedDrop = (event: DragEvent) => {
                of LLM worker state). Takes the slot when the user just
                clicked expand and we're still downloading the
                directory listing. -->
-            <span
-              v-else-if="item.isLoading"
-              data-testid="item-loading-spinner"
-            >
-            <svg class="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
-              <circle
-                class="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                stroke-width="4"
-              />
-              <path
-                class="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              />
-            </svg>
-          </span>
+            <span v-else-if="item.isLoading" data-testid="item-loading-spinner">
+              <svg class="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
+                <circle
+                  class="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  stroke-width="4"
+                />
+                <path
+                  class="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                />
+              </svg>
+            </span>
             <!-- Active Indicator (for FolderExplorer selection). -->
             <span
               v-else-if="isActive"
@@ -581,7 +578,11 @@ const handlePinnedDrop = (event: DragEvent) => {
             <span
               v-else-if="!item.isLoading && (item.tasks?.length || 0) > 0"
               class="text-micro item-count"
-              style="color: var(--semantic-text-dim); opacity: 0.7; font-variant-numeric: tabular-nums"
+              style="
+                color: var(--semantic-text-dim);
+                opacity: 0.7;
+                font-variant-numeric: tabular-nums;
+              "
               data-testid="item-task-count"
             >
               {{ item.tasks?.length }}
@@ -610,7 +611,7 @@ const handlePinnedDrop = (event: DragEvent) => {
           item.tasks &&
           item.tasks.length > 0
         "
-        class="ml-[var(--sb-indent)] mt-1.5 space-y-0 pl-[var(--sb-gutter)] border-l border-[--color-border]/30"
+        class="space-y-0"
       >
         <!-- Pinned region: drag-and-drop reorders only within this
              list. The drop handler calls handleReorderPinnedTasks.
@@ -722,7 +723,7 @@ const handlePinnedDrop = (event: DragEvent) => {
       -->
       <div
         v-if="isExpanded && item.item_type === 'design'"
-        class="ml-[var(--sb-indent)] mt-1.5 space-y-0 pl-[var(--sb-gutter)] border-l border-[--color-border]/30"
+        class="space-y-0"
         data-testid="design-pages-section"
       >
         <!-- Per-page rows -->

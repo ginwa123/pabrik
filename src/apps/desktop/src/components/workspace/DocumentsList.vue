@@ -189,14 +189,10 @@ onUpdated(() => {
         No documents yet
       </p>
 
-      <ul
-        v-else
-        class="ml-[var(--sb-indent)] space-y-0 border-l"
-        style="border-color: var(--color-border)"
-      >
+      <ul v-else class="space-y-0">
         <li v-for="doc in documents" :key="doc.id">
           <button
-            class="relative w-full flex items-center gap-2 px-[var(--sb-gutter)] h-[var(--sb-row)] rounded-lg text-dense transition-all duration-150 border-t border-transparent overflow-hidden text-left"
+            class="relative w-full flex items-center px-[var(--sb-gutter)] h-[var(--sb-row)] rounded-lg text-dense transition-all duration-150 border-t border-transparent overflow-hidden text-left"
             :data-testid="`document-row-${doc.id}`"
             :style="
               isCurrentDocument(doc.id)
@@ -205,7 +201,8 @@ onUpdated(() => {
             "
             @click="selectDocument(doc.id)"
           >
-            <span class="truncate">{{ doc.title }}</span>
+            <span class="w-[var(--sb-mark)] shrink-0" aria-hidden="true"></span>
+            <span class="flex-1 min-w-0 truncate">{{ doc.title }}</span>
           </button>
         </li>
       </ul>

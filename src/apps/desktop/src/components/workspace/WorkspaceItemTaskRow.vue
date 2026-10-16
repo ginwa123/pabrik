@@ -209,13 +209,13 @@ const errorRetryLabel = computed(() =>
   <div
     role="button"
     tabindex="0"
-    class="relative flex items-center gap-2 px-[var(--sb-gutter)] h-[var(--sb-row)] rounded-lg text-dense group/task cursor-pointer transition-colors duration-150 w-full text-left"
+    class="relative flex items-center px-[var(--sb-gutter)] h-[var(--sb-row)] rounded-lg text-dense group/task cursor-pointer transition-colors duration-150 w-full text-left"
     :data-task-id="task.id"
     :data-drop-indicator="dropIndicator ?? undefined"
     data-task-row
     :style="{
-      color: isActive ? '#e6e6e0' : 'var(--semantic-text-dim)',
-      backgroundColor: isActive ? '#2e2d2a' : 'transparent',
+      color: isActive ? 'var(--semantic-active-text)' : 'var(--semantic-text-dim)',
+      backgroundColor: isActive ? 'var(--semantic-active-bg)' : 'transparent',
       boxShadow: dropIndicatorBoxShadow,
     }"
     @click="handleSelectTask"
@@ -230,15 +230,17 @@ const errorRetryLabel = computed(() =>
            compact list. Hidden while the worker is running so
            the row shows a SINGLE visual marker (either the bullet
            when idle, or the elapsed time pill when processing). -->
-    <span
-      v-if="!processingState[task.id]"
-      class="w-1 h-1 rounded-full shrink-0"
-      :style="{
-        backgroundColor: isActive || task.is_pinned ? '#e8c87a' : 'var(--semantic-text-dim)',
-        opacity: isActive || task.is_pinned ? 1 : 0.6,
-      }"
-    />
-    <!-- 2026-08-29 agent-error-row (task_1787985074550_0) — sidebar
+    <span class="w-[var(--sb-mark)] shrink-0 flex items-center">
+      <span
+        v-if="!processingState[task.id]"
+        class="w-1 h-1 rounded-full shrink-0"
+        :style="{
+          backgroundColor:
+            isActive || task.is_pinned ? 'var(--color-yellow)' : 'var(--semantic-text-dim)',
+          opacity: isActive || task.is_pinned ? 1 : 0.6,
+        }"
+      />
+      <!-- 2026-08-29 agent-error-row (task_1787985074550_0) — sidebar
            variant of the kanban-card indicator. No border ring (no
            row-level border exists); no meta pill (the row has no
            meta row). Just the icon with the same hover-tooltip so
@@ -249,76 +251,78 @@ const errorRetryLabel = computed(() =>
            bullet above, NOT a v-else-if) because retry attempts
            fire WHILE the worker is still active and the indicator
            must coexist with the time pill. -->
-    <span
-      v-if="agentError"
-      class="relative shrink-0 error-icon-wrap"
-      data-testid="task-agent-error-row"
-    >
       <span
-        class="w-3 h-3 rounded-full flex items-center justify-center"
-        style="background: rgba(196, 116, 110, 0.18); border: 1px solid var(--color-red)"
-        aria-label="Agent error"
+        v-if="agentError"
+        class="relative shrink-0 error-icon-wrap"
+        data-testid="task-agent-error-row"
       >
         <span
-          style="color: var(--color-red); font-size: var(--text-micro); line-height: 1"
-          aria-hidden="true"
-          >⚠</span
+          class="w-3 h-3 rounded-full flex items-center justify-center"
+          style="background: rgba(196, 116, 110, 0.18); border: 1px solid var(--color-red)"
+          aria-label="Agent error"
         >
-      </span>
-      <!-- sb-scope: overlay — a floating card, not a row in the panel.
+          <span
+            style="color: var(--color-red); font-size: var(--text-micro); line-height: 1"
+            aria-hidden="true"
+            >⚠</span
+          >
+        </span>
+        <!-- sb-scope: overlay — a floating card, not a row in the panel.
            It keeps its own 240px width on purpose (narrower than the
            kanban card's 280px because sidebar rows are denser) and its
            own type scale, so Sidebar.spacing.spec.ts skips this block. -->
-      <!-- Same tooltip markup as the kanban card, but 240px wide
+        <!-- Same tooltip markup as the kanban card, but 240px wide
              (the card uses 280px); sidebar rows are denser so the
              narrower tooltip feels less obtrusive. -->
-      <div
-        class="error-tooltip absolute left-0 top-full mt-1.5 w-[240px] z-50 rounded-lg p-2 pointer-events-none opacity-0 invisible transition-opacity duration-150"
-        style="
-          background: #0e0e0c;
-          border: 1px solid rgba(196, 116, 110, 0.45);
-          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-        "
-        role="tooltip"
-        data-testid="task-agent-error-row-tooltip"
-      >
-        <div class="flex items-center gap-2 mb-1.5">
-          <span style="color: var(--color-red); font-size: var(--text-meta)" aria-hidden="true"
-            >⚠</span
-          >
-          <span class="text-meta font-medium" style="color: var(--color-red)">Agent error</span>
-          <span
-            v-if="errorRetryLabel"
-            class="text-micro px-1.5 py-0.5 rounded-full"
-            style="background: rgba(196, 116, 110, 0.18); color: #e8928c"
-            data-testid="task-agent-error-row-retry"
-            >retry {{ errorRetryLabel }}</span
-          >
-        </div>
         <div
-          class="text-meta leading-snug"
-          style="color: var(--semantic-text-muted)"
-          data-testid="task-agent-error-row-headline"
+          class="error-tooltip absolute left-0 top-full mt-1.5 w-[240px] z-50 rounded-lg p-2 pointer-events-none opacity-0 invisible transition-opacity duration-150"
+          style="
+            background: #0e0e0c;
+            border: 1px solid rgba(196, 116, 110, 0.45);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+          "
+          role="tooltip"
+          data-testid="task-agent-error-row-tooltip"
         >
-          {{ errorHeadline }}
+          <div class="flex items-center gap-2 mb-1.5">
+            <span style="color: var(--color-red); font-size: var(--text-meta)" aria-hidden="true"
+              >⚠</span
+            >
+            <span class="text-meta font-medium" style="color: var(--color-red)">Agent error</span>
+            <span
+              v-if="errorRetryLabel"
+              class="text-micro px-1.5 py-0.5 rounded-full"
+              style="background: rgba(196, 116, 110, 0.18); color: #e8928c"
+              data-testid="task-agent-error-row-retry"
+              >retry {{ errorRetryLabel }}</span
+            >
+          </div>
+          <div
+            class="text-meta leading-snug"
+            style="color: var(--semantic-text-muted)"
+            data-testid="task-agent-error-row-headline"
+          >
+            {{ errorHeadline }}
+          </div>
         </div>
-      </div>
-      <!-- /sb-scope: overlay -->
+        <!-- /sb-scope: overlay -->
+      </span>
+      <!-- Pin indicator (always visible when pinned). -->
+      <span
+        v-if="task.is_pinned"
+        class="w-3 h-3 flex items-center justify-center shrink-0"
+        style="color: var(--color-yellow)"
+        title="Pinned"
+        data-testid="task-pin-indicator"
+      >
+        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+          <path
+            d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"
+          />
+        </svg>
+      </span>
     </span>
-    <!-- Pin indicator (always visible when pinned). -->
-    <span
-      v-if="task.is_pinned"
-      class="w-3 h-3 flex items-center justify-center shrink-0 text-yellow-400"
-      title="Pinned"
-      data-testid="task-pin-indicator"
-    >
-      <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
-        <path
-          d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"
-        />
-      </svg>
-    </span>
-    <span class="flex-1 truncate">{{ task.name }}</span>
+    <span class="flex-1 min-w-0 truncate">{{ task.name }}</span>
     <!-- The three hover action buttons that used to live here
          (pin / rename / delete) are gone: they ate ~72px of a ~200px
          panel and truncated the task name. Every one of them now lives
@@ -328,7 +332,9 @@ const errorRetryLabel = computed(() =>
 
     <!-- How long this task has been running. Time pill is the only
          activity marker — the circle spinner was removed as redundant. -->
-    <WorkerElapsedChip :session-id="task.id" test-id="task-elapsed-chip" />
+    <span class="ml-2 shrink-0 flex items-center">
+      <WorkerElapsedChip :session-id="task.id" test-id="task-elapsed-chip" />
+    </span>
     <OpenInNewTabMenu
       v-if="menuPos"
       :x="menuPos.x"

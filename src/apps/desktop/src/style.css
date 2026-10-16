@@ -73,12 +73,13 @@
   --semantic-hover-text: #d5cea3;
 
   /* ── Sidebar geometry ─────────────────────────────────────────────
-     One gutter, one row height, one indent step, one hit box. The whole
-     left panel resolves against these four; they are the only place a
-     sidebar measurement should be written down. */
+     One gutter, one row height, one mark column, one hit box. Nothing in
+     the panel indents, so --sb-indent is declared for other surfaces and
+     read by none of these three menus. */
   --sb-gutter: 12px;   /* left edge of every row, title, icon and action */
   --sb-row: 32px;      /* every list row, all three menus, all depths   */
-  --sb-indent: 12px;   /* one step per nesting level                     */
+  --sb-mark: 16px;     /* the single slot left of every label: one mark */
+  --sb-indent: 12px;   /* one step per nesting level, unused in the panel */
   --sb-hit: 24px;      /* every row action's click/touch box            */
 
   /* Sidebar TYPE is not here on purpose: the left panel picks steps off
