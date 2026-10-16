@@ -39,6 +39,17 @@ fn err(allocator: std.mem.Allocator, status: u16, res: gserverz.HttpResponse, ms
     });
 }
 
+/// The last sync attempt's FAILURE, when it failed — absent when it succeeded or
+/// never ran, since an empty string reads as "failed for no reason". This is what
+/// lets the profile editor answer "no catalog yet — why?".
+fn writeLastSync(w: *std.Io.Writer, attempt: refresh_mod.LastAttempt) !void {
+    if (attempt.ok or attempt.error_name.len == 0) return;
+    try w.writeAll(",\"last_sync_error\":");
+    try jsonStr(w, attempt.error_name);
+    try w.writeAll(",\"last_sync_at_ms\":");
+    try w.print("{d}", .{attempt.at_ms});
+}
+
 /// Freshness of the cached snapshot. `absent` when nothing was ever synced —
 /// which is NOT the same as "synced, zero models", and the UI must not render
 /// them the same way.
@@ -72,12 +83,13 @@ pub fn modelsCatalogHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
     // Narrow (or absent) catalog: an empty list plus the reason, never a 500.
     // "No catalog yet" is a state the picker has to be able to draw.
     const cat = catalog.getSingleton() orelse {
-        return res.jsonResponse(.{
-            .status_code = 200,
-            .data = try std.fmt.allocPrint(allocator,
-                "{{\"total\":0,\"returned\":0,\"models\":[],\"catalog\":\"{s}\"}}",
-                .{(catalogState(allocator, ctx.io, di.db)).name()}),
-        });
+        var aw: std.Io.Writer.Allocating = .init(allocator);
+        defer aw.deinit();
+        const w = &aw.writer;
+        try w.print("{{\"total\":0,\"returned\":0,\"models\":[],\"catalog\":\"{s}\"", .{(catalogState(allocator, ctx.io, di.db)).name()});
+        try writeLastSync(w, refresh_mod.lastAttempt());
+        try w.writeByte('}');
+        return res.jsonResponse(.{ .status_code = 200, .data = try aw.toOwnedSlice() });
     };
 
     // Collect matches, then sort, then page. Sorting before paging is what
@@ -118,6 +130,7 @@ pub fn modelsCatalogHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
     try jsonStr(w, catalogState(allocator, ctx.io, di.db).name());
     try w.writeAll(",\"fetched_at_ms\":");
     try w.print("{d}", .{cat.fetched_at_ms});
+    try writeLastSync(w, refresh_mod.lastAttempt());
     try w.writeAll(",\"models\":[");
     for (hits.items[0..returned], 0..) |m, i| {
         if (i > 0) try w.writeByte(',');
@@ -180,6 +193,7 @@ pub fn modelsResolveHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
             "no catalog yet — the built-in window applies until the first sync"
         else
             "this model is not in the catalog — the built-in window applies");
+        try writeLastSync(w, refresh_mod.lastAttempt());
         try w.writeAll("}");
         return res.jsonResponse(.{ .status_code = 200, .data = try aw.toOwnedSlice() });
     };
@@ -228,6 +242,7 @@ pub fn modelsResolveHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
     } else try w.writeAll("null");
     try w.writeAll(",\"fetched_at_ms\":");
     try w.print("{d}", .{cat.?.fetched_at_ms});
+    try writeLastSync(w, refresh_mod.lastAttempt());
     try w.writeByte('}');
 
     return res.jsonResponse(.{ .status_code = 200, .data = try aw.toOwnedSlice() });

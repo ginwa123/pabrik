@@ -124,6 +124,51 @@ describe('LlmConfigForm — the fact line', () => {
     expect(line).toContain('200k')
   })
 
+  it('names the failing sync when the catalog is absent because every sync fails', async () => {
+    vi.mocked(resolveModelOutcome).mockResolvedValue({
+      kind: 'ok',
+      value: {
+        model: 'muse-spark-1.3-contributor',
+        catalog: 'absent',
+        source: 'builtin',
+        context_window: 200_000,
+        reason: 'no catalog yet — the built-in window applies until the first sync',
+        // What the backend now sends when the last `POST /api/models/refresh`
+        // (or the hourly timer) failed: the parse error that kept the DB empty.
+        last_sync_error: 'InvalidPayloadJson',
+        last_sync_at_ms: 1_760_000_000_000,
+      },
+    })
+
+    const wrapper = mountForm({ model: 'muse-spark-1.3-contributor' })
+    await flushPromises()
+
+    const line = wrapper.find('[data-testid=model-fact-line]').text()
+    // The CAUSE, not just the state: "nothing synced yet" would tell the user to
+    // wait, which is exactly the wrong advice when the sync is failing.
+    expect(line).toContain('catalog sync failed')
+    expect(line).toContain('InvalidPayloadJson')
+    expect(line).toContain('200k')
+  })
+
+  it('still says "no catalog yet" when the sync has simply not run', async () => {
+    vi.mocked(resolveModelOutcome).mockResolvedValue({
+      kind: 'ok',
+      value: {
+        model: 'muse-spark-1.3-contributor',
+        catalog: 'absent',
+        source: 'builtin',
+        context_window: 200_000,
+        reason: 'no catalog yet — the built-in window applies until the first sync',
+      },
+    })
+
+    const wrapper = mountForm({ model: 'muse-spark-1.3-contributor' })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid=model-fact-line]').text()).toContain('no catalog yet')
+  })
+
   it('reports WHY when the resolve call itself fails, instead of showing nothing', async () => {
     vi.mocked(resolveModelOutcome).mockResolvedValue({ kind: 'error', message: 'backend down' })
 
