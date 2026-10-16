@@ -17,9 +17,10 @@ import { runSyncEffect, runSyncEffectOr, runSyncVoid } from '../../sync/runtime'
 import { useChatScrollRestore } from '../../composables/useChatScrollRestore'
 import {
   stripThinkingTags,
-  isHtmlTags,
   VirtualScroller,
   renderResponse,
+  hasRichBlocks,
+  extractRichBlocks,
   toolPayloadPreview,
   CHAT_HTML_FRAME_RESIZE_SOURCE,
   autoResizeScript,
@@ -136,6 +137,7 @@ import { hasSkillEnvelope, splitSkillEnvelope } from '../../helpers/skillEnvelop
 // for agentic-loop error/retry diagnostics (is_error=true SSE events).
 import AgentErrorCard from '../chat/AgentErrorCard.vue'
 import ChatAttachments from '../chat/ChatAttachments.vue'
+import MermaidDiagram from '../chat/MermaidDiagram.vue'
 import UserPillRail, { type UserPill } from '../chat/UserPillRail.vue'
 import ChatScrollSlider from '../chat/ChatScrollSlider.vue'
 import { pickActivePillIndex, isPillGroup, estimateViewportEnd } from '../chat/activePill'
@@ -242,47 +244,6 @@ const setupCodeBlockCopyButtons = () => {
       block.appendChild(btn)
     })
   })
-}
-
-// NOTE: renderResponse is no longer defined here — it was extracted to `helpers/renderResponse.ts`
-// and exported via `@/helpers`.
-interface HtmlSegment {
-  /** Text before this html block (markdown-rendered inline). */
-  before: string
-  /** Inner payload of the <html>...</html> block (goes into srcdoc). */
-  html: string
-}
-
-/** True when the message contains at least one closed <html> block. */
-const msgHasHtml = (content: string | undefined): boolean => {
-  if (!content) return false
-  return isHtmlTags(content) || /<html>[\s\S]*?<\/html>/i.test(content)
-}
-
-/**  * Split a message into segments: for each closed <html>...</html> block, one segment carrying the
- * preceding markdown and the block's inner HTML. Unclosed tags mid-stream fall through to the
- * legacy v-html path. */
-const extractHtmlBlocks = (content: string): HtmlSegment[] => {
-  const segments: HtmlSegment[] = []
-  const regex = /<html>([\s\S]*?)<\/html>/gi
-  let lastIndex = 0
-  let match: RegExpExecArray | null
-  while ((match = regex.exec(content)) !== null) {
-    const before = content.slice(lastIndex, match.index)
-    const inner = match[1] ?? ''
-    if (before.trim() || segments.length === 0) {
-      segments.push({ before: before.trim(), html: inner })
-    } else {
-      // Consecutive blocks: attach empty `before` to keep pairing.
-      segments.push({ before: '', html: inner })
-    }
-    lastIndex = regex.lastIndex
-  }
-  const tail = content.slice(lastIndex).trim()
-  if (tail || segments.length === 0) {
-    segments.push({ before: tail, html: '' })
-  }
-  return segments
 }
 
 /**  * The `<html>` frame is a separate document with a NULL origin, so the app's CSS custom properties
@@ -4453,28 +4414,31 @@ const compactSession = async () => {
                            padded area below it. -->
                       <div v-if="group.messages.some(hasVisibleContent)" class="assistant-messages">
                         <div v-for="(msg, idx) in group.messages" :key="idx" class="assistant-item">
-                          <!-- <html> blocks render as live sandboxed iframes
-                               (null origin = security boundary); any text
-                               outside the tags still renders as markdown.
-                               Legacy messages take the v-else path unchanged. -->
-                          <template v-if="msg.role === 'assistant' && msgHasHtml(msg.content)">
+                          <!-- <html> and <mermaid> blocks render as themselves;
+                               `sandbox="allow-scripts"` with no same-origin is
+                               the null-origin security boundary. -->
+                          <template v-if="msg.role === 'assistant' && hasRichBlocks(msg.content)">
                             <template
-                              v-for="(seg, sIdx) in extractHtmlBlocks(msg.content || '')"
+                              v-for="(seg, sIdx) in extractRichBlocks(msg.content || '')"
                               :key="sIdx"
                             >
                               <!-- eslint-disable-next-line vue/no-v-html -->
                               <span
-                                v-if="seg.before"
-                                v-html="marked.parse(seg.before, { async: false })"
+                                v-if="seg.kind === 'markdown' && seg.payload"
+                                v-html="marked.parse(seg.payload, { async: false })"
                               ></span>
                               <iframe
-                                v-if="seg.html"
+                                v-else-if="seg.kind === 'html' && seg.payload"
                                 class="chat-html-frame"
                                 sandbox="allow-scripts"
                                 scrolling="no"
                                 style="overflow: hidden"
-                                :srcdoc="buildHtmlSrcdoc(seg.html)"
+                                :srcdoc="buildHtmlSrcdoc(seg.payload)"
                               ></iframe>
+                              <MermaidDiagram
+                                v-else-if="seg.kind === 'mermaid' && seg.payload"
+                                :source="seg.payload"
+                              />
                             </template>
                           </template>
                           <span

@@ -36,6 +36,8 @@ export {
 } from './prefetchOlderMessages'
 export type { PrefetchDecision, PrefetchInput, PrefetchSkip } from './prefetchOlderMessages'
 export { renderResponse } from './renderResponse'
+export { extractRichBlocks, hasRichBlocks } from './richBlocks'
+export type { RichSegment } from './richBlocks'
 export { toolPayloadPreview, TOOL_PAYLOAD_PREVIEW_MAX } from './toolPayloadPreview'
 export { formatCompactTokens } from './formatCompact'
 export {

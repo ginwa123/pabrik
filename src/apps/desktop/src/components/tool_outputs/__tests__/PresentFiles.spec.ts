@@ -4,6 +4,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import PresentFiles from '../PresentFiles.vue'
 import { FRAME_CANVAS_FALLBACK } from '@/helpers'
+import { _resetMermaidLoader } from '@/helpers/mermaid'
+
+// A presented mermaid file renders through <MermaidDiagram>; mermaid itself
+// is mocked because jsdom has no layout.
+const { initializeMock, renderMock } = vi.hoisted(() => ({
+  initializeMock: vi.fn(),
+  renderMock: vi.fn(),
+}))
+
+vi.mock('mermaid', () => ({ default: { initialize: initializeMock, render: renderMock } }))
+
+const MERMAID_SOURCE = 'flowchart TD\n  A[Prompt] --> B[Diagram]'
 
 // The html/pdf/text branches fetch source over same-origin `fetch` —
 // stub it so no test performs a real network call and previews resolve
@@ -23,6 +35,10 @@ beforeEach(() => {
       }) as Response,
   )
   vi.stubGlobal('fetch', fetchMock)
+  _resetMermaidLoader()
+  initializeMock.mockClear()
+  renderMock.mockReset()
+  renderMock.mockResolvedValue({ svg: '<svg data-rendered="yes"></svg>' })
   URL.createObjectURL = vi.fn(() => 'blob:mock-preview') as unknown as typeof URL.createObjectURL
   URL.revokeObjectURL = vi.fn() as unknown as typeof URL.revokeObjectURL
 })
@@ -293,6 +309,32 @@ describe('PresentFiles', () => {
     expect(wrapper.find('[data-testid="present-files-inline-text-0"]').exists()).toBe(true)
     // The stubbed fetch returns '<h1>Hello</h1>' → <h1> via marked().
     expect(wrapper.find('[data-testid="present-files-inline-text-0"]').html()).toContain('<h1')
+  })
+
+  it('mermaid files (.mmd) render as a diagram, not as their own source text', async () => {
+    // `application/octet-stream` is what a server guesses for `.mmd`: the
+    // extension, not the mime, is what identifies a mermaid file.
+    fetchMock.mockImplementationOnce(
+      async () => ({ ok: true, status: 200, text: async () => MERMAID_SOURCE }) as Response,
+    )
+    const wrapper = mountCard({
+      status: 'presented',
+      count: 1,
+      files: [
+        {
+          path: '/tmp/flow.mmd',
+          bytes: 26,
+          mime: 'application/octet-stream',
+          label: 'flow.mmd',
+        },
+      ],
+    })
+    await flushPromises()
+
+    const inline = wrapper.find('[data-testid="present-files-inline-text-0"]')
+    expect(inline.exists()).toBe(true)
+    expect(inline.find('[data-testid="preview-mermaid"]').exists()).toBe(true)
+    expect(renderMock.mock.calls[0]?.[1]).toBe(MERMAID_SOURCE)
   })
 })
 

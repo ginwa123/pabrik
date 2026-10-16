@@ -1386,6 +1386,29 @@ test "ResponseFormatting teaches the <html> wrapper tag" {
 }
 
 // -------------------------------------------------------------------------
+// ResponseFormatting — <mermaid> wrapper tag (2026-10-17 mermaid-support)
+// -------------------------------------------------------------------------
+
+test "ResponseFormatting teaches the <mermaid> wrapper tag" {
+    // The model must know it CAN wrap Mermaid source in <mermaid>...</mermaid>
+    // so the chat UI renders it as a diagram (MermaidDiagram.vue).
+    // Capability phrasing ("you can use"), not mandate.
+    const prompt: []const u8 = ResponseFormatting;
+
+    // The tag pair is present.
+    try std.testing.expect(contains(prompt, "<mermaid>"));
+    try std.testing.expect(contains(prompt, "</mermaid>"));
+    // The capability phrasing the user asked for.
+    try std.testing.expect(contains(prompt, "Diagram Responses"));
+    try std.testing.expect(contains(prompt, "you can use"));
+    // Verbatim-emission note (wire-format requirement: an escaped or fenced
+    // payload does not reach the renderer as Mermaid source).
+    try std.testing.expect(contains(prompt, "verbatim"));
+    // The renderer owns the theme; a `%%{init}%%` directive would fight it.
+    try std.testing.expect(contains(prompt, "%%{init}%%"));
+}
+
+// -------------------------------------------------------------------------
 // Regression: build_agent_prompt was moved from src/modules/agent/prompts.zig
 // into src/agentic_loop/prompts_build_messages_for_agent_prompt.zig on
 
@@ -1740,7 +1763,6 @@ test "SkillWriteToolRule states when NOT to write and what a skill body needs" {
     try std.testing.expect(!contains(prompt, ".nalar/skills/"));
     try std.testing.expect(!contains(prompt, "is_global"));
 }
-
 
 // -------------------------------------------------------------------------
 // GitWorktreeToolRule + PullRequestToolRule — the session VCS-binding

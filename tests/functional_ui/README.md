@@ -312,3 +312,26 @@ null origin). Plan:
 4. legacy markdown messages render unchanged, zero iframes
 5. unclosed `<html>` (mid-stream shape) degrades safely: raw text
    shows through the legacy path, no iframe, no page errors
+
+### `<mermaid>` wrapper-tag tests (`chatview_mermaid_ui_test.py`, 5 tests)
+
+The LLM can wrap Mermaid source in `<mermaid>...</mermaid>` (the
+`ResponseFormatting` prompt offers it); the chatview renders each block
+as a live SVG diagram (`components/chat/MermaidDiagram.vue`, mermaid
+imported lazily and themed from the app's CSS variables). A
+```` ```mermaid ```` fence renders the same way.
+
+1. a `<mermaid>` block → a laid-out `<svg>` with both nodes and labels,
+   drawn in the APP palette (node fill `rgb(40,39,39)`, label ink
+   `rgb(197,201,197)`, no stock `#ECECFF`), on the card surface
+2. a ```` ```mermaid ```` fence renders the same diagram
+3. mixed prose + block: markdown outside the tag still renders, and no
+   html iframe is produced
+4. a diagram that does not PARSE falls back to its own source (no svg,
+   the reason in `[data-testid="chat-mermaid-error"]`, no page errors)
+5. legacy markdown messages are untouched — zero diagram containers
+
+The `present_files` card draws presented diagrams too:
+`chatview_present_files_ui_test.py::test_present_files_markdown_and_mmd_render_diagrams`
+presents a real `.md` (prose around a fence) and a real `.mmd` (bare
+source), and asserts both render as app-themed SVG inside the card.
