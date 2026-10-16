@@ -1,19 +1,6 @@
 import type { McpServer } from '../../api'
 
-/**
- * Raw wire shape of a single MCP server entry as it appears in
- * config.json's `mcp_servers` map. Discriminated union matching the
- * type on `PabrikConfig.mcp_servers` (api/index.ts):
- * - presence of `command` ⇒ stdio
- * - presence of `url` ⇒ http
- * We use the union form (not a struct with all-optional fields) so
- * TypeScript can discriminate `command: string` from `command: undefined`
- * when we type-narrow on `typeof server.command === 'string'`.
- *
- * `enabled` is omit-when-true on the wire: only `false` is ever
- * emitted (see serializeMcpServers). Missing hydrates to `undefined`
- * (renders as enabled).
- */
+/** Raw wire shape of a single MCP server entry as it appears in config.json's `mcp_servers` map. */
 export type RawMcpServerEntry =
   | { url: string; headers?: Record<string, string>; enabled?: boolean }
   | { command: string; args?: string[]; env?: string[]; cwd?: string; enabled?: boolean }

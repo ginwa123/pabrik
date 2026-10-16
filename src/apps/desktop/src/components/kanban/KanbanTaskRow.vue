@@ -98,11 +98,9 @@ const { handleSelectTask, handleDeleteTask, handleRenameTask, handlePinToggle } 
   emit,
 )
 
-// ─── Active state ──────────────────────────────────────────────────────────
-
-// URL-driven, like the sidebar row: the highlight must survive refresh,
-// deep links and Back/Forward, so it is derived from the route rather
-// than from a store flag that can drift.
+// ─── Active state ────────────────────────────────────────────────────────── URL-driven, like the
+// sidebar row: the highlight must survive refresh, deep links and Back/Forward, so it is derived
+// from the route rather than from a store flag that can drift.
 const currentMainView = useCurrentMainView()
 const isActive = computed(
   () =>
@@ -112,12 +110,8 @@ const isActive = computed(
 
 const isBusy = computed(() => !!processingState.value[props.task.id])
 
-// ─── Status rail ───────────────────────────────────────────────────────────
-//
-// Ordered by what a reader is looking for: an error outranks a review
-// request, which outranks work in flight. `reviewed` is a positive
-// signal rather than a problem, so it sits last — a wall of green means
-// "you can skip all of this", which is worth seeing but not alarming.
+// ─── Status rail ─────────────────────────────────────────────────────────── Ordered by what a
+// reader is looking for: an error outranks a review request, which outranks work in flight.
 const agentErrorStore = useAgentErrorStore()
 const agentError = computed(() => agentErrorStore.bySession[props.task.id] ?? null)
 const errorRetryLabel = computed(() =>
@@ -170,7 +164,6 @@ const statusTestId = computed<string | null>(() => {
 })
 
 // ─── Metadata line ────────────────────────────────────────────────────────
-
 const lastUpdated = computed<Date | string | null>(() => {
   if (props.task.updatedAt) return props.task.updatedAt
   if (props.task.createdAt) return props.task.createdAt
@@ -224,12 +217,9 @@ function tagChipStyle(tag: string): Record<string, string> {
   return { backgroundColor: c.bg, border: `1px solid ${c.border}`, color: c.text }
 }
 
-// ─── Keyboard ──────────────────────────────────────────────────────────────
-//
-// The row root is a <div role="button"> because it hosts nested
-// interactive controls (pin / rename / delete / details) and HTML
-// forbids button-inside-button. Enter / Space restore the keyboard
-// contract the native element would have given us.
+// ─── Keyboard ────────────────────────────────────────────────────────────── The row root is a
+// <div role="button"> because it hosts nested interactive controls (pin / rename / delete /
+// details) and HTML forbids button-inside-button.
 const handleRowKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault()

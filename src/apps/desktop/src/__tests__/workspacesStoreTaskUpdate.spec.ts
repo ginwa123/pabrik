@@ -1,21 +1,5 @@
-/**
- * Unit tests for the workspaces store's `updateTaskDetails` action.
- *
- * `updateTaskDetails` is the optimistic-update action called when the
- * user edits a task's name and/or description in the kanban task
- * detail dialog (KanbanTaskDetailDialog.vue, Chunk 3 of the
- * kanban-task-detail-dialog plan). It applies the changes locally
- * first, then PUTs the patch to /api/workspaces/tasks/:task_id,
- * rolling back on error.
- *
- * Behaviors under test (mirrors the renameTask test contract):
- *  1. Updates both name AND description optimistically.
- *  2. Updates description only when name is omitted (no-op for name).
- *  3. Rolls back BOTH name and description on API failure.
- *  4. Treats `description === ''` as a valid clear (not a no-op).
- *
- * Plan: docs/superpowers/plans/2026-07-16-kanban-task-detail-dialog.md
- */
+/** Unit tests for the workspaces store's `updateTaskDetails` action. Plan:
+ * docs/superpowers/plans/2026-07-16-kanban-task-detail-dialog.md */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

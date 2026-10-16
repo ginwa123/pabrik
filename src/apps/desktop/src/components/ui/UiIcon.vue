@@ -1,20 +1,6 @@
 <script setup lang="ts">
-/**
- * The one component every non-brand glyph in the app renders through.
- *
- * It replaces the emoji that used to stand in for icons. The rule this
- * enforces (`AGENTS.md` — "No Emoji as Icons; Use Inline SVG") is not
- * taste: an emoji's pixel height comes from the platform's emoji font,
- * so a row built from 📝 ➕ 🗑️ 🔄 📋 ❓ was six sizes tall instead of one,
- * and the same commit drew differently on Windows, macOS and Linux. An
- * SVG inherits `currentColor` and its box from the `size` prop, so a
- * panel that mixes a label and an icon gets one row height and one
- * palette.
- *
- * What it also buys is assertability. A spec can pin `data-icon="trash"`
- * and the registry can answer "is `trash` a name?"; neither is possible
- * against an emoji, which is why the emoji status column was untestable.
- */
+/** The one component every non-brand glyph in the app renders through. It replaces the emoji that
+ * used to stand in for icons. */
 import { computed } from 'vue'
 import { ICON_PATHS, type UiIconName } from './icons'
 

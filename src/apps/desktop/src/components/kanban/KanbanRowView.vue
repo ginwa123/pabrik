@@ -93,12 +93,8 @@ const emit = defineEmits<{
 
 const workspacesStore = useWorkspacesStore()
 
-// ─── Grouping ──────────────────────────────────────────────────────────────
-//
-// Same filter <KanbanColumn> applies per column (cardsInColumn), hoisted
-// so one pass produces every group. Order within a group is the wire
-// order — the backend already returns each column's tasks in that
-// column's own sort order (per-column sort independence).
+// ─── Grouping ────────────────────────────────────────────────────────────── Same filter
+// <KanbanColumn> applies per column (cardsInColumn), hoisted so one pass produces every group.
 const groups = computed(() =>
   props.columns.map((column) => ({
     column,
@@ -108,11 +104,9 @@ const groups = computed(() =>
 
 const isCollapsed = (columnId: string): boolean => props.collapsedIds.includes(columnId)
 
-// ─── Per-column pagination ─────────────────────────────────────────────────
-
-// Mirrors <KanbanColumn>: the parent WorkspaceItem carries
-// `columnPagination[colId]`, populated by fetchKanbanTasks and reset on
-// SSE refetch / search / sort.
+// ─── Per-column pagination ───────────────────────────────────────────────── Mirrors
+// <KanbanColumn>: the parent WorkspaceItem carries `columnPagination[colId]`, populated by
+// fetchKanbanTasks and reset on SSE refetch / search / sort.
 const parentItem = computed(() => {
   if (!props.workspaceId || !props.itemId) return null
   return (
@@ -140,7 +134,6 @@ const handleLoadMore = (columnId: string) => {
 }
 
 // ─── Per-group ⋮ menu ──────────────────────────────────────────────────────
-
 // One open menu at a time, keyed by column id. Click-outside + Esc close
 // it — same lifecycle as <KanbanColumn>'s menu.
 const openMenuColumnId = ref<string | null>(null)
@@ -170,13 +163,9 @@ const handleMenuStopAll = (columnId: string) => {
   emit('requestStopAllAgents', columnId)
 }
 
-// ─── Per-group sort modal ──────────────────────────────────────────────────
-//
-// The sort state is local to this view (the URL is the source of truth
-// for persistence — <KanbanView> writes `?sorts=` on the sortChange
-// emit). `sortModalColumnId` drives which group's modal is open; the
-// modal reuses <KanbanSortMenu :show-trigger="false"> exactly like
-// <KanbanColumn> does.
+// ─── Per-group sort modal ────────────────────────────────────────────────── The sort state is
+// local to this view (the URL is the source of truth for persistence — <KanbanView> writes
+// `?sorts=` on the sortChange emit).
 const sortModalColumnId = ref<string | null>(null)
 const sortBy = ref<SortField>('position')
 const direction = ref<SortDirection>('asc')
@@ -188,12 +177,8 @@ const handleMenuSort = (columnId: string) => {
   sortModalColumnId.value = columnId
 }
 
-// <KanbanSortMenu> has no custom `click` emit — its `@click` is a native
-// DOM listener that fires on ANY click inside the menu (that is how
-// <KanbanColumn> uses it). The menu emits `update:sortBy` +
-// `update:direction` together per pick (see handleSelect), so the update
-// handlers below assign and emit exactly like the old watchers did: the
-// first run clears `sortModalColumnId`, the second is a no-op.
+// <KanbanSortMenu> has no custom `click` emit — its `@click` is a native DOM listener that fires on
+// ANY click inside the menu (that is how <KanbanColumn> uses it).
 const onSortPicked = () => {
   const columnId = sortModalColumnId.value
   if (!columnId) return
@@ -219,7 +204,6 @@ const handleSortModalBackdrop = () => {
 }
 
 // ─── Inline column rename ──────────────────────────────────────────────────
-
 // Single-clicking a group name starts an edit-in-place, matching
 // <KanbanColumn>. Enter commits, Escape/blur cancels.
 const renamingColumnId = ref<string | null>(null)

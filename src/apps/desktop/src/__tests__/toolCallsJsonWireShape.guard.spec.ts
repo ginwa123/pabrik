@@ -1,10 +1,6 @@
-/** Regression lock: tool_calls_json wire shape (task_1787590621966_10)
- * Root cause of "msg.tool_calls_json?.trim is not a function":
- * the backend's on_event_sent.zig SSE emitter serialized the assistant
- * row's tool_calls as a JSON ARRAY while ChatView.vue:1390 calls
- * `.trim()` (string-only). Fixed backend-side (serialize once at emit)
- * AND hardened frontend-side with typeof guards. These source-contract
- * tests pin BOTH layers so neither can silently regress. */
+/** Regression lock: tool_calls_json wire shape (task_1787590621966_10) Root cause of
+ * "msg.tool_calls_json?.trim is not a function": the backend's on_event_sent.zig SSE emitter
+ * serialized the assistant row's tool_calls as a JSON ARRAY while ChatView.vue:1390 calls. */
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'

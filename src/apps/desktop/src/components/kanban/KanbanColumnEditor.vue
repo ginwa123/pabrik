@@ -45,7 +45,6 @@ const emit = defineEmits<{
 }>()
 
 // ─── State ─────────────────────────────────────────────────────────────────
-
 const name = ref('')
 const nameInput = ref<HTMLInputElement | null>(null)
 const description = ref('')
@@ -60,7 +59,6 @@ const isDone = ref(false)
 const DESCRIPTION_MAX = 500
 
 // ─── Computed labels & description per mode ────────────────────────────────
-
 // Single source of truth for the header + description text. Keeps the
 // template branch-free and ensures all 3 modes stay visually consistent.
 const headerText = computed(() => {
@@ -100,7 +98,6 @@ const submitLabel = computed(() => {
 const isDestructive = computed(() => props.mode === 'delete')
 
 // ─── Handlers ──────────────────────────────────────────────────────────────
-
 const handleSubmit = () => {
   if (props.mode === 'delete') {
     emit('delete')
@@ -133,11 +130,9 @@ const handleKeydown = (event: KeyboardEvent) => {
   }
 }
 
-// ─── Lifecycle ─────────────────────────────────────────────────────────────
-
-// Seed the name field on first render (so a rename modal opened with show=true at mount time has
-// the column's name pre-filled, not an empty string), and reset + refocus on every subsequent open
-// via the open-sync guard below.
+// ─── Lifecycle ───────────────────────────────────────────────────────────── Seed the name field
+// on first render (so a rename modal opened with show=true at mount time has the column's name
+// pre-filled, not an empty string), and reset + refocus on every subsequent open via the open-sync.
 name.value = props.initialName ?? ''
 isDone.value = props.initialIsDone ?? false
 const handleOpen = async () => {

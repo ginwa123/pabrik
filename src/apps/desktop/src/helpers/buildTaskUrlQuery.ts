@@ -1,55 +1,5 @@
-/**
- * buildTaskUrlQuery — helper that builds the URL query object that
- * opens a chat dialog on a workspace item. The wire shape is:
- *
- *   ?view=workspace&workspaceId=X&itemId=item_Y/chat/task_W[&pageId=Z][&sorts=…]
- *
- * The chat task id is encoded as a `/chat/<taskId>` suffix on the
- * `itemId` value (see `buildItemIdWithChat`). This replaces the
- * legacy shape `?view=task&task=X&workspaceId=Y&itemId=Z` which
- * carried the same context under two different `view` values.
- *
- * Spec: docs/superpowers/specs/2026-08-15-simplify-url-browser-design.md
- *
- * ## Why this exists
- *
- * Before this helper, several Vue call sites wrote task-URL
- * navigation with only `task` (and sometimes `itemId`), never
- * `workspaceId`. The user originally reported
- * (task_1785774094183): "add workspace_id params when view the
- * task, like in kanban mode or design mode" — the URL
- * `?view=task&task=X&itemId=Y` was missing `workspaceId`, breaking
- * URL-based persistence for deep-link / refresh / share. The 2026-08-06
- * fix moved the resolution logic into this helper.
- *
- * The 2026-08-15 simplify-url-browser refactor updated the wire shape:
- * this helper now emits `view=workspace` (NOT `view=task`) with the
- * chat task id encoded as the `/chat/<taskId>` suffix on `itemId`.
- * The redundant `session` query param is dropped (it's equal to the
- * task id per `task.id == session_id`).
- *
- * ## Algorithm
- *
- * Resolution order for workspaceId / itemId (first non-empty wins):
- *
- *   1. Active store state (`activeWorkspaceId`, `activeWorkspaceItemId`).
- *      AUTHORITATIVE — the user clicked the task from a workspace
- *      context, so the URL must reflect it.
- *   2. URL breadcrumb fallback (`route.query.workspaceId` etc.) for
- *      deep-link / share-link round-trips.
- *
- * `pageId` is gated on the active item type being `'design'` (avoids
- * cross-leak from a stale design page into a kanban URL).
- *
- * `sorts` is preserved from the URL breadcrumb (kanban per-column
- * sort state — survives the workspace → chat round-trip via the
- * existing `savedSortsParam` snapshot).
- *
- * ## Pure function
- *
- * No Vue / Pinia / vue-router imports. Pass in the active state.
- * Trivially testable.
- */
+/** buildTaskUrlQuery — helper that builds the URL query object that opens a chat dialog on a
+ * workspace item. */
 import {
   buildItemIdWithChat,
   parseItemIdWithChat,
@@ -134,15 +84,9 @@ export function buildTaskUrlQuery(input: TaskUrlContext): Record<string, string>
     else if (urlPageId) query.pageId = urlPageId
   }
 
-  // ─── sorts (kanban view-specific, lives in URL only) ─────────────
-  // The kanban per-column sort state (`?sorts=col_X:name:asc,...`)
-  // lives in the URL and is NOT tracked by the workspaces store.
-  // The user expects it to survive the workspace → chat round-trip
-  // (the close-restore flow in AppLayout.handleCloseTaskView reads
-  // savedSortsParam, which is snapshot from route.query.sorts at
-  // handleSelectTask time). Preserve it in the new task URL so the
-  // URL stays self-describing ("I'm on kanban X with sort S,
-  // viewing chat Y").
+  // ─── sorts (kanban view-specific, lives in URL only) ───────────── The kanban per-column sort
+  // state (`?sorts=col_X:name:asc,...`) lives in the URL and is NOT tracked by the workspaces
+  // store.
   if (urlBreadcrumb.sorts) query.sorts = urlBreadcrumb.sorts
 
   // ─── layout (kanban view mode, lives in URL only) ──────────────── Same reasoning as `sorts`:

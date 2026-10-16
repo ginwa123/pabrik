@@ -1,26 +1,5 @@
-/**
- * Source-contract tests for the 2026-09-09 chatview user-pill work:
- * cursor-pagination fixes + pill-rail wiring in ChatView.vue.
- *
- * Background: the loadMore branch of loadChatHistory never advanced
- * `messageCursor`/`hasMoreMessages` (assignments lived only in the
- * initial-load branch), so every 2nd+ loadMore re-sent the same cursor
- * and re-prepended the same page forever. No dedupe existed, and
- * PAGE_SIZE=1000 defeated pagination.
- *
- * ChatView is a 4000-line SFC (hard to mount — see
- * ChatView.hiddenMessages.spec.ts). These tests lock the SOURCE-LEVEL
- * invariants so a refactor that reverts any fix is caught immediately.
- *
- * The pill-rail GUTTER lives here too. The rail is `position: absolute`,
- * so it is out of flow and its pills paint straight over the message
- * bubbles; the wrapper has to reserve the strip. That is a geometry
- * claim jsdom cannot make (no layout engine, no custom-property
- * resolution), so what is pinned is the class binding plus the CSS that
- * consumes it — the two ends that must both exist for the gutter to
- * appear. The painted result is asserted in a real browser by
- * tests/functional_ui/chatview_pillrail_overlap_test.py.
- */
+/** Source-contract tests for the 2026-09-09 chatview user-pill work: cursor-pagination fixes +
+ * pill-rail wiring in ChatView.vue. */
 import { describe, it, expect } from 'vitest'
 
 const readChatViewSource = async (): Promise<string> => {
@@ -36,12 +15,9 @@ describe('pagination — cursor advances on loadMore', () => {
     // Initial load: cursor + exhaustion flag come straight from the REST page.
     expect(source.match(/messageCursor\.value = data\.next_cursor/g) ?? []).toHaveLength(1)
     expect(source.match(/hasMoreMessages\.value = data\.has_more/g) ?? []).toHaveLength(1)
-    // Every prepend (scroll-back, buffered prefetch, manual button) is routed
-    // through `commitOlderPage`, which advances the cursor from the COMMITTED
-    // page. Without this the 2nd+ page re-sends the same cursor and
-    // re-prepends the same messages forever. Task_1789505423062_0 moved this
-    // out of `loadChatHistory`'s old `loadMore` branch — assert it survives in
-    // its new home rather than at the old location.
+    // Every prepend (scroll-back, buffered prefetch, manual button) is routed through
+    // `commitOlderPage`, which advances the cursor from the COMMITTED page. Without this the 2nd+
+    // page re-sends the same cursor and re-prepends the same messages forever.
     const commitBody = source.slice(
       source.indexOf('const commitOlderPage = async ('),
       source.indexOf('const evaluateOlderPrefetch = '),
@@ -122,10 +98,9 @@ describe('pill-rail gutter — the rail must not overlap the transcript', () => 
   })
 
   it('the gutter is wide enough to clear the rail footprint', async () => {
-    // The rail sits at `right: 18px` with 4px padding and 24px pills, so
-    // its footprint reaches 46px in from the wrapper's right edge. A
-    // narrower gutter would leave the pills still overlapping the text.
-    // 48px also covers the pill's `scaleX(1.25)` hover growth (24 → 30px).
+    // The rail sits at `right: 18px` with 4px padding and 24px pills, so its footprint reaches 46px
+    // in from the wrapper's right edge. A narrower gutter would leave the pills still overlapping
+    // the text. 48px also covers the pill's `scaleX(1.25)` hover growth (24 → 30px).
     const source = await readChatViewSource()
     const m = source.match(/--pill-rail-gutter:\s*(\d+)px/)
     expect(m).not.toBeNull()
@@ -133,12 +108,8 @@ describe('pill-rail gutter — the rail must not overlap the transcript', () => 
   })
 
   it('the gutter is applied as padding-right on the transcript rows', async () => {
-    // `padding-right`, NOT a margin or a width on the scroller:
-    // VirtualScroller's `measureItems()` reads `el.offsetHeight`, so a
-    // horizontal padding is invisible to the height model. A
-    // `padding-bottom` would be folded into the height and shift every
-    // scroll anchor — the class of bug the floating-composer fix already
-    // fought once.
+    // `padding-right`, NOT a margin or a width on the scroller: VirtualScroller's `measureItems()`
+    // reads `el.offsetHeight`, so a horizontal padding is invisible to the height model.
     const source = await readChatViewSource()
     const rule = source.match(
       /\.messages-scroll-hide-native\.has-pill-rail :deep\(\[data-group-key\]\),[\s\S]*?\}/,

@@ -1,9 +1,6 @@
-/** Folder-mode diff, end to end in the panel.
- * The contract this pins: the frontend reads diffs ONLY through folder mode.
- * `loadFullList` makes ONE POST for the whole repo and primes the shared
- * snapshot, so clicking a file row costs ZERO further requests. There is no
- * per-file fallback left to degrade into — that fallback is what produced a
- * session's worth of `diff?path=…&file=…` rows. */
+/** Folder-mode diff, end to end in the panel. The contract this pins: the frontend reads diffs ONLY
+ * through folder mode. `loadFullList` makes ONE POST for the whole repo and primes the shared
+ * snapshot, so clicking a file row costs ZERO further requests. */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import SidebarDiffPanel from '../chat_right_sidebar/SidebarDiffPanel.vue'

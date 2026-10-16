@@ -1,34 +1,6 @@
-/**
- * frontendLogClient.spec.ts
- *
- * Unit tests for `helpers/frontendLogClient.ts`. Covers the 10
+/** frontendLogClient.spec.ts Unit tests for `helpers/frontendLogClient.ts`. Covers the 10
  * behaviours required by plan Chunk 6 of
- * `docs/superpowers/plans/2026-07-17-frontend-error-logs.md`:
- *
- *   1.  `window.error`            → POST `kind=window_error`
- *                                    with `stack` / `source` / `line`
- *   2.  `window.unhandledrejection` → POST `kind=unhandled_rejection`
- *   3.  Patched `console.error`    → POST `kind=console_error`
- *                                    (original still called)
- *   4.  Patched `console.warn`     → POST `kind=console_warn`
- *   5.  `console.log/info/debug`   → NOT POSTed
- *   6.  100 fast `console.error`   → exactly 1 POST (debounce coalesces)
- *   7.  `pagehide`                 → uses `navigator.sendBeacon`, not fetch
- *   8.  Failed POST (rejected)     → batch dropped, no retry
- *   9.  Queue overflow             → drops oldest 25 + 1 overflow warn
- *  10.  `getContext()` is invoked per-flush (fresh route / session)
- *
- * Tests inject a fake `Window`, `fetchFn`, and `sendBeaconFn` via the
- * `FrontendLogClientOptions` seams so the queue can be observed end-
- * to-end without a real network. `vi.useFakeTimers()` controls the
- * 250 ms debounce window so flushes fire deterministically.
- *
- * Style mirrors `sseClient.spec.ts` (separate fakes per concern,
- * `vi.useFakeTimers()` in `beforeEach`, `vi.useRealTimers()` in
- * `afterEach`, `handle.close()` in `afterEach` so listeners and
- * console patches don't leak across tests).
- */
-
+ * `docs/superpowers/plans/2026-07-17-frontend-error-logs.md`: 1. */
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 import {
@@ -36,13 +8,9 @@ import {
   type FrontendLogClientHandle,
 } from '../helpers/frontendLogClient'
 
-// ─── Minimal FakeWindow ──────────────────────────────────────────────────
-// Mirrors what `installFrontendLogClient` actually reads from the target:
-// `addEventListener` (3 event types), `removeEventListener` (3 types),
-// `console.{error,warn,log,info,debug}` (only `error` + `warn` are
-// patched, but the helper accepts the whole console). We do NOT need
-// `dispatchEvent` for these tests (we fire listeners directly), but the
-// type includes it so the helper can be cast as `Window` cleanly.
+// ─── Minimal FakeWindow ────────────────────────────────────────────────── Mirrors what
+// `installFrontendLogClient` actually reads from the target: `addEventListener` (3 event types),
+// `removeEventListener` (3 types), `console.{error,warn,log,info,debug}` (only `error` + `warn`.
 interface FakeWindow {
   addEventListener: (type: string, cb: EventListenerOrEventListenerObject) => void
   removeEventListener: (type: string, cb: EventListenerOrEventListenerObject) => void
@@ -61,13 +29,7 @@ interface FakeWindowBundle {
   errorListeners: Set<EventListenerOrEventListenerObject>
   rejectionListeners: Set<EventListenerOrEventListenerObject>
   unloadListeners: Set<EventListenerOrEventListenerObject>
-  // Captured references to the ORIGINAL vi.fn() spies for console.error
-  // and console.warn. After `installFrontendLogClient` runs, the
-  // module REPLACES `window.console.error` / `window.console.warn`
-  // with a closure that internally calls these originals (bound at
-  // install time). Asserting on the (post-install) `window.console.*`
-  // reference would fail with "not a spy" — the spies have moved.
-  // The assertions need to use `originalErrorSpy` / `originalWarnSpy`.
+  // Captured references to the ORIGINAL vi.fn() spies for console.error and console.warn.
   originalErrorSpy: ReturnType<typeof vi.fn>
   originalWarnSpy: ReturnType<typeof vi.fn>
 }
@@ -120,7 +82,6 @@ function fireListeners(
 }
 
 // ─── Test suite ──────────────────────────────────────────────────────────
-
 describe('frontendLogClient', () => {
   let fetchMock: ReturnType<typeof vi.fn>
   let beaconMock: ReturnType<typeof vi.fn>
@@ -224,13 +185,9 @@ describe('frontendLogClient', () => {
     const { window, originalErrorSpy } = makeFakeWindow()
     makeHandle(window)
 
-    // The fake window's console.error is a vi.fn() (originalErrorSpy)
-    // that the install function captured as `originalError` (bound to
-    // console). Calling the (now-patched) window.console.error
-    // should: (a) enqueue a console_error event, (b) call the
-    // original spy. We assert on the captured spy reference —
-    // `window.console.error` itself has been REPLACED by the patch
-    // function, so it's no longer a vi.fn().
+    // The fake window's console.error is a vi.fn() (originalErrorSpy) that the install function
+    // captured as `originalError` (bound to console). Calling the (now-patched)
+    // window.console.error should: (a) enqueue a console_error event, (b) call the original spy.
     window.console.error('boom')
 
     await vi.runAllTimersAsync()
@@ -295,14 +252,8 @@ describe('frontendLogClient', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     const body = JSON.parse(init.body as string)
-    // 100 events trigger queue overflow at MAX_QUEUE_SIZE=50 — the
-    // module drops the oldest 25 and enqueues a `console_warn`
-    // overflow marker on each overflow. We don't assert an exact
-    // count (the overflow math is intricate and tested separately in
-    // #9); we DO assert that:
-    //   (a) coalescing produced exactly one POST (the debounce claim),
-    //   (b) the batch is non-empty,
-    //   (c) every event has kind ∈ {console_error, console_warn}.
+    // 100 events trigger queue overflow at MAX_QUEUE_SIZE=50 — the module drops the oldest 25 and
+    // enqueues a `console_warn` overflow marker on each overflow.
     expect(body.events.length).toBeGreaterThan(0)
     expect(body.events.length).toBeLessThanOrEqual(100)
     for (const ev of body.events) {
@@ -341,11 +292,8 @@ describe('frontendLogClient', () => {
 
     await vi.runAllTimersAsync()
 
-    // fetchFn was invoked exactly once; the rejection is caught inside
-    // flush() and the batch is silently dropped (no retry, no second
-    // POST). The module also calls originalWarn with a diagnostic —
-    // we don't assert that here because originalWarn is captured
-    // BEFORE the patch (so it's NOT the spy on window.console.warn).
+    // fetchFn was invoked exactly once; the rejection is caught inside flush() and the batch is
+    // silently dropped (no retry, no second POST).
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 

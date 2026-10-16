@@ -1,31 +1,11 @@
-/**
- * Tests for GetPlan.vue.
- *
- * Verifies:
- *  - parses the present-plan envelope (CDATA-wrapped markdown body)
- *  - parses the empty-plan envelope (<empty/> sentinel)
- *  - parses the error envelope (<error> tag → red border)
- *  - header label shows "N items" / "(empty)" / "error" per state
- *  - right meta shows "N/M done" / "no plan set" / error message
- *  - expanded body renders the checklist with ☐ / ☑ glyphs
- *  - checked items get line-through styling
- *  - plain (non-checklist) lines render as text rows
- *  - body with no checklist lines shows the "(no checklist)" hint
- *  - empty result shows the "No plan set" hint
- *  - click on header toggles expanded state
- *  - inner envelope extraction works both with and without the <tool> wrapper
- */
+/** Tests for GetPlan.vue. */
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import GetPlan from '../GetPlan.vue'
 
+// ──────────────────────────────────────────────────────────────────────── Helpers
 // ────────────────────────────────────────────────────────────────────────
-// Helpers
-// ────────────────────────────────────────────────────────────────────────
-
-/** Build a present-plan JSON envelope with the markdown body the backend
- * emits (`executeGetPlan` returns `{plan: <markdown>}`). */
 const makePresentContent = (markdown: string): string =>
   JSON.stringify({
     tool: 'get_plan',
@@ -84,7 +64,6 @@ const wrapInToolEnvelope = (inner: string): string => {
 // ────────────────────────────────────────────────────────────────────────
 // Tests
 // ────────────────────────────────────────────────────────────────────────
-
 describe('GetPlan.vue — present plan', () => {
   let clipboardWrites: string[] = []
 

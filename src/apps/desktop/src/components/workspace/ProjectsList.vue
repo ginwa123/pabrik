@@ -9,11 +9,9 @@ import WorkspaceItemComponent from './WorkspaceItem.vue'
 import * as api from '../../api'
 import SidebarSkeleton from '../shell/SidebarSkeleton.vue'
 
-// The single SELECTED workspace (header dropdown + Projects section,
-// plan: docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md).
-// null = no workspace selected/exists — the template renders an
-// empty-state hint instead of rows. In <script setup>, defineProps
-// returns a `props` object that you must destructure or reference.
+// The single SELECTED workspace (header dropdown + Projects section, plan:
+// docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md). null = no workspace
+// selected/exists — the template renders an empty-state hint instead of rows.
 const props = defineProps<{
   workspace: Workspace | null
   activeWorkspaceItemId: string | null
@@ -54,20 +52,12 @@ const emit = defineEmits<{
   renameDesignPage: [workspaceId: string, itemId: string, pageId: string, currentName: string]
   openDesignPageInBackground: [payload: { workspaceId: string; itemId: string; pageId: string }]
   loadMoreTasks: [workspaceId: string, itemId: string]
-  // Drag-and-drop reordering for items of a single workspace.
-  // Emitted on a successful drop with the workspace id and the new
-  // top-to-bottom array of item IDs. The Sidebar parent forwards
-  // this to `workspacesStore.reorderWorkspaceItems` which performs
-  // the optimistic update + API call + rollback on error. Scoped
-  // to a single workspace (cross-workspace drops are no-ops).
+  // Drag-and-drop reordering for items of a single workspace. Emitted on a successful drop with the
+  // workspace id and the new top-to-bottom array of item IDs.
   reorderWorkspaceItems: [workspaceId: string, orderedItemIds: string[]]
   // NEW (pinned-tasks feature, plan:
-  // docs/superpowers/plans/2026-06-20-pinned-workspace-item-tasks.md):
-  // pin/unpin and drag-reorder of the pinned subset, forwarded
-  // from <WorkspaceItem>. Sidebar handles these and calls the
-  // store. The signature is intentionally identical to the
-  // WorkspaceItem's `pinTask` / `reorderPinnedTasks` events so the
-  // pass-through is a one-liner.
+  // docs/superpowers/plans/2026-06-20-pinned-workspace-item-tasks.md): pin/unpin and drag-reorder
+  // of the pinned subset, forwarded from <WorkspaceItem>.
   pinTask: [workspaceId: string, itemId: string, taskId: string, isPinned: boolean]
   reorderPinnedTasks: [workspaceId: string, itemId: string, orderedIds: string[]]
   // Right-click "Go to settings" from a workspace item row.
@@ -79,31 +69,15 @@ const sidebarStore = useSidebarStore()
 const workspacesStore = useWorkspacesStore()
 const activeAddMenu = ref<string | null>(null)
 
-// Sidebar shows every project — the header search filter was removed
-// (v2 sidebar UX: no search, always-visible actions, tighter indent).
-
-// ─── Drag-and-drop state (item reordering) ────────────────────────────────
-// Scoped to a single workspace's items — the revamp plan removed
-// workspace-level reorder (docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md).
-// `draggingItemId` + `draggingItemWorkspaceId` track the
-// source; `dragOverItemId` tracks the current drop target.
-// `draggingItemWorkspaceId` is needed so a cross-workspace drop can
-// be detected and silently no-op'd (defense in depth — the HTML5
-// DnD API doesn't have a built-in "are these from the same
-// container?" check). See
-// docs/plans/2026-06-16-workspace-item-position-reorder.md.
+// Sidebar shows every project — the header search filter was removed (v2 sidebar UX: no search,
+// always-visible actions, tighter indent). ─── Drag-and-drop state (item reordering)
+// ──────────────────────────────── Scoped to a single workspace's items.
 const draggingItemId = ref<string | null>(null)
 const draggingItemWorkspaceId = ref<string | null>(null)
 const dragOverItemId = ref<string | null>(null)
-// When the cursor is hovering over `dragOverItemId`, this boolean
-// records whether the cursor is in the BOTTOM half of that row
-// (true) or the TOP half (false). The drop handler uses this to
-// decide "insert after the target" vs "insert before the target"
-// — see handleItemDrop for the index math. The template also
-// reads this to draw a top-line vs bottom-line drop indicator so
-// the user can see WHERE the drop will land. Without this, a
-// top-to-bottom drop would land one slot too far down (the
-// pre-fix bug) AND the user wouldn't be able to see why.
+// When the cursor is hovering over `dragOverItemId`, this boolean records whether the cursor is in
+// the BOTTOM half of that row (true) or the TOP half (false). The drop handler uses this to decide
+// "insert after the target" vs "insert before the target" — see handleItemDrop for the index math.
 const dragOverItemInsertAfter = ref(false)
 
 // Close dropdown when clicking outside
@@ -134,11 +108,9 @@ const toggleAddMenu = (workspaceId: string) => {
   }
 }
 
-// Count of running workers across all items in this workspace
-// (= session_id per Migration 052 convention, same key `processingState`
-// uses). The header shows a dot + "N running" text — never an elapsed
-// time pill. The elapsed pill lives ONLY on the row that owns the run
-// (ChatsList / WorkspaceItem), so one run renders one pill (wireframe R1).
+// Count of running workers across all items in this workspace (= session_id per Migration 052
+// convention, same key `processingState` uses). The header shows a dot + "N running" text — never
+// an elapsed time pill.
 const runningTaskCountInWorkspace = (workspace: Workspace): number => {
   const state = processingState.value
   let n = 0
@@ -199,16 +171,9 @@ const handleLoadMoreTasks = (workspaceId: string, itemId: string) => {
   emit('loadMoreTasks', workspaceId, itemId)
 }
 
-// ─── Drag-and-drop handlers (item reordering) ──────────────────────────────
-// Event delegation pattern: the handlers live on the per-workspace
-// `<ul>` (so they're created once per workspace) but the
-// draggable + data-* attributes live on each `<li>` inside
-// `<WorkspaceItem>`. The handlers use `event.target.closest(...)`
-// to find the `<li>` the cursor is over. The `<ul>` is also a
-// better anchor than each `<li>` because the `<li>` has children
-// (the clickable button, the spinner, etc.) whose DnD events bubble
-// up here, so we get one consistent handler for all of them.
-
+// ─── Drag-and-drop handlers (item reordering) ────────────────────────────── Event delegation
+// pattern: the handlers live on the per-workspace `<ul>` (so they're created once per workspace)
+// but the draggable + data-* attributes live on each `<li>` inside `<WorkspaceItem>`.
 const handleItemDragStart = (event: DragEvent) => {
   const target = event.target as HTMLElement | null
   const li = target?.closest('[data-item-id]') as HTMLElement | null
@@ -219,14 +184,8 @@ const handleItemDragStart = (event: DragEvent) => {
   draggingItemId.value = itemId
   draggingItemWorkspaceId.value = workspaceId
   if (event.dataTransfer) {
-    // Dedicated MIME type so the item payload doesn't collide with
-    // workspace or pinned-task payloads. Without this, the
-    // WorkspaceItem's pinned-task handler (which fires before us
-    // on a pinned-row dragstart via bubbling) would set
-    // `text/plain` first, then we'd overwrite it here with the
-    // item id, causing the pinned reorder drop to read the item
-    // id and silently fail (the task isn't in the item's pinned
-    // list — the store rejects the reorder).
+    // Dedicated MIME type so the item payload doesn't collide with workspace or pinned-task
+    // payloads.
     event.dataTransfer.effectAllowed = 'move'
     event.dataTransfer.setData('application/x-item-id', itemId)
   }
@@ -285,14 +244,9 @@ const handleItemDrop = (event: DragEvent) => {
   if (targetWorkspaceId !== draggingItemWorkspaceId.value) return
   // Drop on self: no-op.
   if (targetItemId === draggingItemId.value) return
-  // Find the workspace and compute the new order: take the
-  // current items, splice the source out, then insert at a
-  // position computed from the cursor's Y offset within the
-  // target row. Top half = insert BEFORE the target, bottom
-  // half = insert AFTER the target (Trello/Jira UX). This gives
-  // users precise control regardless of drag direction and fixes
-  // the off-by-one bug in the previous "always insert at the
-  // target's original index" algorithm.
+  // Find the workspace and compute the new order: take the current items, splice the source out,
+  // then insert at a position computed from the cursor's Y offset within the target row. Top half =
+  // insert BEFORE the target, bottom half = insert AFTER the target (Trello/Jira UX).
   const workspace = props.workspace
   if (!workspace || workspace.id !== targetWorkspaceId) return
   const items = workspace.items.slice()
@@ -307,18 +261,8 @@ const handleItemDrop = (event: DragEvent) => {
   const removed = items.splice(fromIdx, 1)
   const moved = removed[0]
   if (!moved) return
-  // After `splice(fromIdx, 1)`, items with index >= fromIdx have
-  // shifted left by 1 in the modified array. The target row sits
-  // at `toIdx - 1` (if toIdx > fromIdx) or `toIdx` (if toIdx <
-  // fromIdx). The desired insertion point in the modified array
-  // is therefore the target's current index, optionally +1 for
-  // "insert after".
-  //
-  // Examples with [A, B, C, D, E]:
-  //   A on D top half    → toIdx=3>fromIdx=0 → ins at 2 → [B,C,A,D,E]
-  //   A on D bottom half → toIdx=3>fromIdx=0 → ins at 3 → [B,C,D,A,E]
-  //   E on B top half    → toIdx=1<fromIdx=4 → ins at 1 → [A,E,B,C,D]
-  //   E on B bottom half → toIdx=1<fromIdx=4 → ins at 2 → [A,B,E,C,D]
+  // After `splice(fromIdx, 1)`, items with index >= fromIdx have shifted left by 1 in the modified
+  // array. The target row sits at `toIdx - 1` (if toIdx > fromIdx) or `toIdx` (if toIdx < fromIdx).
   const targetIdxInModified = toIdx > fromIdx ? toIdx - 1 : toIdx
   const insertAt = targetIdxInModified + (insertAfter ? 1 : 0)
   items.splice(insertAt, 0, moved)

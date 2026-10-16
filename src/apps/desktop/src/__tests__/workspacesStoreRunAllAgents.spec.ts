@@ -1,14 +1,6 @@
-/**
- * Tests for workspacesStore.runAllAgentsInColumn — the store action that
- * wraps api.runAllAgentsInColumn for the column "Run all agents" flow
- * (plan: docs/superpowers/plans/2026-09-09-run-all-agents-by-column.md,
- * Task 4, Option C).
- *
- * Thin wrapper (no client-side task iteration — the server owns the
- * list, so pagination is irrelevant). Mocked api returning
- * `{started:2, skipped:1, failed:0}` resolves to the same summary;
- * API throw → empty-lists summary, no unhandled rejection.
- */
+/** Tests for workspacesStore.runAllAgentsInColumn — the store action that wraps
+ * api.runAllAgentsInColumn for the column "Run all agents" flow (plan:
+ * docs/superpowers/plans/2026-09-09-run-all-agents-by-column.md, Task 4, Option C). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

@@ -77,7 +77,7 @@ pub fn deleteTaskUseCase(
         return error.TaskDeleteFailed;
     };
 
-    // Migration 110 — drop this task's dependency edges (both directions): a
+    // Migration 111 — drop this task's dependency edges (both directions): a
     // dangling edge would freeze the card that waits on it forever. Best-effort,
     // since the task row is gone either way.
     kanban_deps.deleteForTask(allocator, db, task_id) catch |err| {

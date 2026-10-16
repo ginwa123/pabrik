@@ -1,16 +1,6 @@
-/**
- * CenterDiffSection — the collapse contract, and the ONE trap it hides.
- *
- * The `IntersectionObserver` is the only automatic gate on mounting the heavy
- * diff body, and a COLLAPSED section never intersects. So a section the user
- * expands has to mount directly, or "Expand all" renders a column of empty
- * stubs and the promise "expanding still gets you the diff" is silently
- * broken.
- *
- * The other half of the contract is that the DEFAULT path is untouched: a
- * section that starts expanded still waits for the observer (that is what
- * keeps a 40-file diff fast to scroll).
- */
+/** CenterDiffSection — the collapse contract, and the ONE trap it hides. The `IntersectionObserver`
+ * is the only automatic gate on mounting the heavy diff body, and a COLLAPSED section never
+ * intersects. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { shallowMount, flushPromises } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -116,11 +106,9 @@ describe('CenterDiffSection collapse', () => {
 
     await wrapper.setProps({ collapsed: true })
     await nextTick()
-    // `collapsed` reaches the view (which keeps its header and drops the
-    // table — asserted directly in SidebarDiffView.split.spec.ts), and the
-    // section keeps its anchor id, so ?diff= / a sidebar click can still find
-    // and re-expand it. This mount is SHALLOW, so the stub's internals are
-    // deliberately not asserted here.
+    // `collapsed` reaches the view (which keeps its header and drops the table — asserted directly
+    // in SidebarDiffView.split.spec.ts), and the section keeps its anchor id, so ?diff= / a sidebar
+    // click can still find and re-expand it.
     expect(diff.props('collapsed')).toBe(true)
     expect(wrapper.get('[data-testid="center-diff-section"]').attributes('id')).toBe(
       sectionProps.sectionId,

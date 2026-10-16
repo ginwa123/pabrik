@@ -247,11 +247,9 @@ describe('ChatsList git icon', () => {
   })
 
   it('re-reads the branch icon after a merge invalidates the shared cache', async () => {
-    // The reported bug: the RECENT row's branch icon kept the `open` green it
-    // fetched before the merge, because a row reads the shared 60s cache once on
-    // mount and again only when its branch/cwd key changes. The invalidation
-    // (MergeBox for this tab, the `git_pr_state` SSE event for every other one)
-    // drops the entry and ticks; the row must then re-read and recolour.
+    // The reported bug: the RECENT row's branch icon kept the `open` green it fetched before the
+    // merge, because a row reads the shared 60s cache once on mount and again only when its
+    // branch/cwd key changes.
     vi.spyOn(api, 'getChats').mockResolvedValue({
       sessions: [
         {

@@ -1,25 +1,5 @@
 <script setup lang="ts">
-/**
- * The forge's own mark — GitHub or GitLab — as inline SVG.
- *
- * The panel used to say 🔀 for both, which is the exact bug
- * `helpers/forgeWording.ts` exists to prevent in prose: a GitLab user's
- * merge request rendered with the same glyph as a GitHub user's pull
- * request, so nothing on screen said which forge they were looking at.
- * A brand mark answers that without a word, and it is legible at 12px
- * where a label would truncate.
- *
- * Both paths are the Simple Icons 24x24 marks (CC0-1.0). They are filled
- * with `currentColor` rather than their brand hex on purpose: the app is
- * dark-only and muted (--semantic-text #c5c9c5, --color-violet #8992a7),
- * and GitLab's #FC6D26 orange beside the kanagawa palette reads as an
- * error. A mark that inherits the surrounding text colour stays legible
- * in every context and never fights the palette.
- *
- * Unknown providers fall back to GitHub — the same default
- * `forgeWording()` uses, because `pr_provider` is empty on every session
- * created before GitLab support existed.
- */
+/** The forge's own mark — GitHub or GitLab — as inline SVG. */
 import { computed } from 'vue'
 
 const GITHUB_PATH =

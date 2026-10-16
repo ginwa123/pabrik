@@ -1,20 +1,5 @@
-/**
- * Unit tests for the kanban store actions (Chunk 5 of the
- * workspace-item-kanban plan + the follow-up fetchKanbanColumns
- * action that fixes the "board renders empty after page reload"
- * bug). Covers: addKanbanItem, fetchKanbanColumns, addKanbanColumn,
- * updateKanbanColumn, deleteKanbanColumn, moveTaskToColumn.
- *
- * Each action is mocked at the api.* boundary (the apiFetch
- * wrappers in api/index.ts) and the test asserts that the
- * store's local state is updated correctly. Mirrors the
- * workspacesStoreTaskTypes.spec.ts pattern: a top-level
- * `seedStore()` helper, vi.spyOn(api, ...) per action, and
- * `setActivePinia(createPinia())` in beforeEach.
- *
- * Plan: docs/superpowers/plans/2026-06-21-workspace-item-kanban.md
- *   Chunk 5 / Task 5.1
- */
+/** Unit tests for the kanban store actions (Chunk 5 of the workspace-item-kanban plan + the
+ * follow-up fetchKanbanColumns action that fixes the "board renders empty after page reload" bug). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -107,7 +92,6 @@ describe('useWorkspacesStore — kanban actions', () => {
   }
 
   // ─── addKanbanItem ──────────────────────────────────────────────────────
-
   describe('addKanbanItem', () => {
     it('calls api.createKanban and pushes the new item with its columns into the workspace', async () => {
       const store = seedStore()
@@ -161,23 +145,9 @@ describe('useWorkspacesStore — kanban actions', () => {
       errorSpy.mockRestore()
     })
 
-    // ─── "Untitled project" regression ─────────────────────────────────
-    //
-    // The bug: the backend used to return a flat `CreateKanbanResponse`
-    // (no wrapper) so the frontend's `const { item, columns } = await
-    // api.createKanban(...)` got both as undefined, the local store
-    // pushed an item with all fields undefined, and the sidebar
-    // rendered the `{{ item.name || 'Untitled project' }}` fallback
-    // until the user reloaded (the reloaded state came from
-    // getWorkspacesItems which has the correct shape).
-    //
-    // The defense-in-depth fix: even if the API ever regresses to a
-    // bare `{id, success}` envelope or omits `name`/`item_type`/`path`,
-    // the store action falls back to the form's values so the
-    // sidebar always renders the typed name. This test pins the
-    // contract — without the fallback, the new item would have
-    // `name: undefined` and the sidebar would render "Untitled
-    // project" until reload.
+    // ─── "Untitled project" regression ───────────────────────────────── The bug: the backend used
+    // to return a flat `CreateKanbanResponse` (no wrapper) so the frontend's `const { item, columns
+    // } = await api.createKanban(...)` got both as undefined, the local store pushed an item with.
     it('falls back to the form name when the API response omits it (regression for "Untitled project" bug)', async () => {
       const store = seedStore()
       // API returns an item with no `name` / `item_type` / `path`.
@@ -187,7 +157,6 @@ describe('useWorkspacesStore — kanban actions', () => {
         item: {
           id: 'kanban_bare',
           // name missing — old backend shape
-         
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any,
          
@@ -208,7 +177,6 @@ describe('useWorkspacesStore — kanban actions', () => {
   })
 
   // ─── addKanbanColumn ────────────────────────────────────────────────────
-
   describe('addKanbanColumn', () => {
     it('calls api.addKanbanColumn and appends the new column sorted by position', async () => {
       const store = seedStore([
@@ -290,7 +258,6 @@ describe('useWorkspacesStore — kanban actions', () => {
   })
 
   // ─── updateKanbanColumn ────────────────────────────────────────────────
-
   describe('updateKanbanColumn', () => {
     it('calls api.updateKanbanColumn and replaces the local board with the backend\'s full response', async () => {
       const store = seedStore([
@@ -410,23 +377,8 @@ describe('useWorkspacesStore — kanban actions', () => {
     })
   })
 
-  // ─── reorderKanbanColumn ────────────────────────────────────────────────
-  //
-  // The column header drag-and-drop reorder action. The DnD handler
-  // in <KanbanColumn> only knows the dragged column's id and the
-  // target column's id (the dropped-on column); this action resolves
-  // the target's position and calls the API, then re-fetches the
-  // full column list (siblings may have been renumbered by the
-  // backend, and the PATCH response only includes the moved column).
-  //
-  // Tests cover:
-  //   1. happy path: PATCH with the target's position + re-fetch
-  //   2. no-op when the target column doesn't exist locally
-  //      (defensive — the action shouldn't blow up if the local
-  //      store is stale)
-  //   3. no-op when the item has no kanban_columns yet
-  //      (defensive — same reason)
-
+  // ─── reorderKanbanColumn ──────────────────────────────────────────────── The column header
+  // drag-and-drop reorder action.
   describe('reorderKanbanColumn', () => {
     it('calls api.updateKanbanColumn with the target column\'s position and re-fetches via listKanbanColumns', async () => {
       const store = seedStore([
@@ -528,7 +480,6 @@ describe('useWorkspacesStore — kanban actions', () => {
   })
 
   // ─── deleteKanbanColumn ─────────────────────────────────────────────────
-
   describe('deleteKanbanColumn', () => {
     it('calls api.deleteKanbanColumn, removes the column, and unassigns tasks in that column', async () => {
       const store = seedStore([
@@ -569,7 +520,6 @@ describe('useWorkspacesStore — kanban actions', () => {
   })
 
   // ─── moveTaskToColumn ───────────────────────────────────────────────────
-
   describe('moveTaskToColumn', () => {
     it('calls api.moveTask and updates the local task\'s kanban_column_id and kanban_position', async () => {
       const store = seedStore([
@@ -605,12 +555,8 @@ describe('useWorkspacesStore — kanban actions', () => {
     })
   })
 
-  // ─── fetchKanbanColumns ─────────────────────────────────────────────────
-  // The "board renders empty after page reload" fix. Without this
-  // action, item.kanban_columns stays undefined (the workspaces/items
-  // endpoint does not embed columns) and the user sees an empty
-  // board even though the seeded 3 default columns live in the DB.
-
+  // ─── fetchKanbanColumns ───────────────────────────────────────────────── The "board renders
+  // empty after page reload" fix.
   describe('fetchKanbanColumns', () => {
     it('calls api.listKanbanColumns and populates item.kanban_columns', async () => {
       const store = seedStore([
@@ -710,16 +656,9 @@ describe('useWorkspacesStore — kanban actions', () => {
     })
   })
 
-  // ─── updateKanbanItemName ───────────────────────────────────────────────
-  //
-  // The kanban header rename (from KanbanSettingsDialog's inline
-  // pencil or KanbanView's header pencil) hits the store via this
-  // action. The contract: optimistic-update item.name BEFORE the
-  // API call resolves so the UI updates immediately; roll back on
-  // error. The PUT handler accepts `{name}` and writes the column;
-  // when the API call throws, `item.name` must be restored to the
-  // pre-call value (so the UI doesn't lie about the rename).
-
+  // ─── updateKanbanItemName ─────────────────────────────────────────────── The kanban header
+  // rename (from KanbanSettingsDialog's inline pencil or KanbanView's header pencil) hits the store
+  // via this action.
   describe('updateKanbanItemName', () => {
     it('calls api.updateWorkspaceItem with the new name and optimistic-updates the local store', async () => {
       const store = seedStore([

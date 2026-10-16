@@ -1,23 +1,6 @@
-/**
- * Provider-aware wording for the PR/MR surface.
- *
- * The backend stores a provider per attached change request
- * (`sessions.pr_provider`) and now answers `GET /api/git/pr/status` for
- * GitLab as well as GitHub. The UI has to follow, because "pull request"
- * is not a GitLab user's word — they say "merge request" — and two of the
- * constructs this module used to emit are outright wrong on GitLab:
- *
- *  - `<pr-url>/conflicts` is a GitHub-only route. GitLab has no such
- *    path; a link built that way is a guaranteed 404.
- *  - `<repo>/tree/<branch>` is GitHub-only. GitLab inserts a `/-/`
- *    discriminator, so its branch page is `<repo>/-/tree/<branch>`.
- *
- * One table, used by every component, is the only way those two stay
- * correct; the bug this replaces was three components each hardcoding
- * `github.com` prose.
- */
-
-/** The vocabulary of one forge. `noun` is sentence case, `short` is caps. */
+/** Provider-aware wording for the PR/MR surface. The backend stores a provider per attached change
+ * request (`sessions.pr_provider`) and now answers `GET /api/git/pr/status` for GitLab as well as
+ * GitHub. */
 export interface ForgeWording {
   noun: string
   short: string
@@ -49,11 +32,7 @@ const GITLAB: ForgeWording = {
   hasConflictPage: false,
 }
 
-/** Wording for `provider`, defaulting to GitHub when it is empty or
- * unrecognised. Defaulting matters: `pr_provider` is empty on every
- * session created before GitLab support existed, and those are all
- * GitHub — so an unknown provider is a known-GitHub one far more often
- * than not, and guessing wrong is cosmetic while guessing blank is not. */
+/** Wording for `provider`, defaulting to GitHub when it is empty or unrecognised. */
 export function forgeWording(provider?: string | null): ForgeWording {
   return provider === 'gitlab' ? GITLAB : GITHUB
 }

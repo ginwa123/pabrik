@@ -1,32 +1,6 @@
-/**
- * The center-diff ⤴ "Open file in code browser" button — BEHAVIOURAL.
- *
- * THE BUG (user report: "button open code editor not work"). Clicking
- * the ⤴ button in a stacked center-diff file header did nothing.
- *
- * ROOT CAUSE. `onChatSidebarOpenFile` called `useInjectOpenInCodeEditor()`
- * INSIDE the click handler. Vue's `inject()` resolves against the
- * current component instance; a DOM event handler has none, so the call
- * returned `undefined` instead of the provided function. The handler's
- * own guard (`if (!openInEditor || ...) return`) then swallowed the
- * click as a silent no-op — no error, no navigation, nothing.
- *
- * WHY THE OLD SPEC MISSED IT. `ChatView.prOpen.spec.ts` was a source
- * grep asserting the literal string `const openInEditor =
- * useInjectOpenInCodeEditor()` exists somewhere in the file. It cannot
- * distinguish a setup-scope call (works) from a handler-scope call
- * (returns undefined), so it stayed GREEN against broken code. A grep
- * pinned the string, not the scope — and the scope was the whole bug.
- *
- * WHY THIS SPEC IS STRONGER. It mounts the real ChatView under a real
- * provider, opens a real center diff, and CLICKS the real button. It
- * fails on the pre-fix source because `inject()` genuinely cannot
- * resolve inside a handler — which a source grep can never prove.
- *
- * The companion source assertion in the last test pins the SCOPE
- * (setup body, not nested inside a function), so a future refactor that
- * re-nests the call is caught without a browser.
- */
+/** The center-diff ⤴ "Open file in code browser" button — BEHAVIOURAL. THE BUG (user report:
+ * "button open code editor not work"). Clicking the ⤴ button in a stacked center-diff file header
+ * did nothing. ROOT CAUSE. */
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'

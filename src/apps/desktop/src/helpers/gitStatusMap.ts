@@ -1,15 +1,4 @@
-/**
- * gitStatusMap — pure join logic between `GET /api/git/changes` and the
- * file-explorer tree.
- *
- * The backend returns three path lists (`staged_files`, `modified_files`,
- * `untracked_files`) with repo-relative paths and single-char porcelain
- * statuses (`line[0..1]` in `parseGitStatus`, so untracked arrives as
- * `"?"`, never `"??"`). This module folds those lists into one
- * `path -> badge` map plus the rollups the explorer needs (per-folder
- * counts, footer summary). No DOM, no fetch — takes the wire response,
- * returns data.
- */
+/** gitStatusMap — pure join logic between `GET /api/git/changes` and the file-explorer tree. */
 import type { GitChangesResponse, GitFileChange } from '../api'
 
 export type GitBadgeKind = 'staged' | 'modified' | 'untracked' | 'deleted' | 'renamed'

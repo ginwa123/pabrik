@@ -1,12 +1,5 @@
-// ChatAppBar — the ONE app bar shared by every workspace-item chat
-// mode (kanban / agent / standard folder-chat).
-//
-// These tests pin the bar's contract so the three modes cannot drift
-// apart again. Pre-fix each mode hand-rolled its own bar: agent mode
-// had a full-width `px-5 py-3` header with a text "✕ Close" button and
-// no sidebar toggle, kanban mode had a `h-11` bar beside the sidebar,
-// and folder mode had no bar at all.
-
+// ChatAppBar — the ONE app bar shared by every workspace-item chat mode (kanban / agent / standard
+// folder-chat). These tests pin the bar's contract so the three modes cannot drift apart again.
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ChatAppBar from '../components/views/ChatAppBar.vue'

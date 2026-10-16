@@ -1,26 +1,5 @@
-/**
- * Tests for ChatView's profile chip + picker — the cascade display.
- *
- * The chip in the chat status bar must reflect the EFFECTIVE profile the
- * backend will use, not just the per-session `selected_profile_model`.
- *
- * Cascade precedence (per workflow.zig::resolveProfileField):
- *   1. per-session `selected_profile_model` (when non-empty AND profile exists)
- *   2. `config.active_profile`         (when non-null AND non-empty)
- *   3. top-level config               (default fallback)
- *
- * Pre-fix, the chip only showed `selectedProfile ?? 'Default'` with tooltip
- * "Using default (top-level config)". That misled the user into thinking
- * the top-level was used when the active profile was actually applied.
- *
- * The fix: ChatView loads `active_profile` from getPabrikConfig() alongside
- * `profiles`. The chip displays the effective profile (per-session selection
- * or active profile, falling back to "Default" only when neither exists).
- * The tooltip reflects the actual cascade; the picker shows ✓ on the
- * effective row + an `(active)` badge next to the active profile.
- *
- * Plan: docs/superpowers/plans/2026-08-06-chatview-profile-cascade-display.md
- */
+/** Tests for ChatView's profile chip + picker — the cascade display. Plan:
+ * docs/superpowers/plans/2026-08-06-chatview-profile-cascade-display.md */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, ref } from 'vue'
@@ -63,12 +42,9 @@ function makeStubClient(initial: SseState): SseClient {
   return stub as SseClient
 }
 
-// ─── mocks ────────────────────────────────────────────────────────────────
-
-// Per-test overrides via setup() so each test can change
-// getPabrikConfig / getSession responses without re-mounting the global
-// vi.mock() harness.
-
+// ─── mocks ──────────────────────────────────────────────────────────────── Per-test overrides via
+// setup() so each test can change getPabrikConfig / getSession responses without re-mounting the
+// global vi.mock() harness.
 function installChatViewMocks(opts: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   config?: any
@@ -104,11 +80,9 @@ function installChatViewMocks(opts: {
   vi.spyOn(api, 'getPabrikConfig').mockResolvedValue(opts.config ?? { profiles: {} })
 }
 
-// ─── mount helper ────────────────────────────────────────────────────────
-
-// Mounts ChatView with the provided sessionId. Returns the wrapper plus
-// resolved refs once the component is mounted and the initial
-// async data (getPabrikConfig + getSession) has resolved.
+// ─── mount helper ──────────────────────────────────────────────────────── Mounts ChatView with
+// the provided sessionId. Returns the wrapper plus resolved refs once the component is mounted and
+// the initial async data (getPabrikConfig + getSession) has resolved.
 async function mountChatViewWithSession(sessionId: string) {
   const processingState = ref<Record<string, boolean>>({})
 
@@ -176,7 +150,6 @@ function readChip(wrapper: VueWrapper): {
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────
-
 describe('ChatView profile chip — cascade display', () => {
   it('shows the active profile when no chat session has been opened yet (active = default)', async () => {
     installChatViewMocks({

@@ -55,7 +55,7 @@ fn useCase(
         break :blk branch;
     };
 
-    // Migration 110 — this task's dependencies, each resolved against its
+    // Migration 111 — this task's dependencies, each resolved against its
     // current column. Freed by the `defer` at the end of the function, i.e.
     // AFTER the response JSON has copied the borrowed slices.
     const dep_edges = ai_mod.kanban_deps.listEdgesForTask(allocator, db, task_id) catch

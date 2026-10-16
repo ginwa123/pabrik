@@ -1,15 +1,6 @@
-/**
- * The v2 profile form's OWN contract: the fact line and the model picker.
- *
- * The existing LlmConfigForm specs cover what the form EMITS. These cover what
- * it TELLS YOU — which is the whole point of the redesign, and the part that
- * would otherwise be untested decoration.
- *
- * The rule under test: a number shown to the user must say where it came from.
- * `1,000,000 context` means the catalog knows the model. `200k context` with a
- * `built-in` tag means pabrik is guessing, and the user must be able to see the
- * difference.
- */
+/** The v2 profile form's OWN contract: the fact line and the model picker. The existing
+ * LlmConfigForm specs cover what the form EMITS. These cover what it TELLS YOU — which is the whole
+ * point of the redesign, and the part that would otherwise be untested decoration. */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 

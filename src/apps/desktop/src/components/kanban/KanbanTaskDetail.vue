@@ -123,12 +123,9 @@ const props = withDefaults(
     // tag-suggestions composable. Empty string = no fetch attempted (legacy callers + tests that
     // don't care about suggestions).
     workspaceId?: string
-    // NEW (plan: 2026-08-06-kanban-add-task-button-placement). The
-    // available columns for the create-mode column dropdown. Empty
-    // array = no dropdown rendered (legacy callers, edit mode, or
-    // kanbans that haven't loaded columns yet). Edit mode passes
-    // empty. The host (KanbanView) passes `sortedColumns` from the
-    // active kanban.
+    // NEW (plan: 2026-08-06-kanban-add-task-button-placement). The available columns for the
+    // create-mode column dropdown. Empty array = no dropdown rendered (legacy callers, edit mode,
+    // or kanbans that haven't loaded columns yet). Edit mode passes empty.
     availableColumns?: KanbanColumn[]
     // NEW (kanban task dependencies). Candidate tasks for the
     // dependency picker (same board). Empty = picker hidden.
@@ -150,22 +147,8 @@ const props = withDefaults(
   },
 )
 
-// ─── Tag suggestions composable (Task 2.7) ─────────────────────────────
-// Lazily fetches distinct tags from other tasks on this kanban for
-// the autocomplete dropdown in <KanbanTagsInput>. The composable's
-// internal `loaded`/`hasMore`/`loading` refs drive the dropdown
-// gating — calls to ensureLoaded() on dialog open, and loadNextPage()
-// from the IntersectionObserver on the input's scroll sentinel.
-// The composable handles empty workspaceId / empty itemId gracefully
-// (no fetch attempted), so we can pass the fallbacks unconditionally
-// without conditional wiring. We source the item id from the column
-// prop (which carries the parent kanban's workspace_item_id) —
-// Task itself doesn't carry workspace_item_id, but every active task
-// in the kanban is reachable via column.workspace_item_id. Pass
-// refs (not raw strings) so the composable can react when the
-// column becomes available — earlier we passed raw strings and
-// the composable was permanently bound to empty IDs when the
-// dialog opened before column was resolved.
+// ─── Tag suggestions composable (Task 2.7) ───────────────────────────── Lazily fetches distinct
+// tags from other tasks on this kanban for the autocomplete dropdown in <KanbanTagsInput>.
 const tagSuggestions = useKanbanTagSuggestions(
   computed(() => props.workspaceId ?? ''),
   computed(() => props.column?.workspace_item_id ?? ''),
@@ -189,11 +172,7 @@ const emit = defineEmits<{
       mode: 'create'
       name: string
       description: string
-      // Auto-retry-until-stop (Option A): the toggle's live value
-      // at the moment of Create. `'1'` (default — feature on)
-      // is forwarded too so the host can pass it through to
-      // api.createTask; the helper filters out `'0'` so the backend
-      // only inserts a sessions row when the user actually opted in.
+      // Auto-retry-until-stop (Option A): the toggle's live value at the moment of Create.
       is_auto_retry_until_stop: '0' | '1'
       // Create-mode only. `true` = isolate the agent in a fresh git
       // worktree (host bakes `#Notes UseGitWorktree` into the
@@ -211,29 +190,17 @@ const emit = defineEmits<{
       // tag strings. Empty array = no tags. Host forwards via
       // api.createTask's `tags` param; backend validates + persists.
       tags: string[]
-      // NEW (plan: 2026-08-06-kanban-task-profile-selector). Selected
-      // profile-model name (empty string = backend default / top-level
-      // config). Forwarded to the host for both `create` and
-      // `create-and-run`; Path A only threads it through to the
-      // backend when the user clicks "Create task & run agent".
+      // NEW (plan: 2026-08-06-kanban-task-profile-selector). Selected profile-model name (empty
+      // string = backend default / top-level config).
       selectedProfile: string
-      // NEW (plan: 2026-08-06-kanban-no-base64-in-desc). Files the
-      // dialog's editor staged in create mode (no base64 ever written
-      // into `description`). Always present — empty array when no
-      // images were pasted/picked. Host uploads each via
-      // `api.uploadTaskAttachment(taskId, file)` AFTER addTask
-      // returns the new taskId, then patches the description with
-      // `![name](<url>)` markdown via `updateTaskDetails`.
+      // NEW (plan: 2026-08-06-kanban-no-base64-in-desc). Files the dialog's editor staged in create
+      // mode (no base64 ever written into `description`). Always present — empty array when no
+      // images were pasted/picked.
       pendingFiles: PreviewFile[]
-      // NEW (Migration 070 — kanban-cwd-session-optional plan).
-      // Per-task cwd override. Absolute path on disk or '' for
-      // cwd-less. Empty string is the canonical "no per-task cwd"
-      // sentinel — the backend stores '' and the session_create
-      // 3-level fallback chain falls back to the kanban's path +
-      // the per-session sandbox. The dialog's folder picker
-      // (NEW) populates this field; skipped / picker-canceled
-      // leaves it as ''. Plan:
+      // NEW (Migration 070 — kanban-cwd-session-optional plan). Per-task cwd override. Absolute
+      // path on disk or '' for cwd-less. Plan:
       // docs/superpowers/plans/2026-08-06-kanban-cwd-session-optional.md
+      skillName: string
       cwdSession?: string
     },
   ]
@@ -241,11 +208,9 @@ const emit = defineEmits<{
   // BEFORE the optimistic UI flip so the host can capture the
   // pre-toggle value (in case it needs to roll back on PUT failure).
   'update-unattended': [payload: { value: '0' | '1'; previous: '0' | '1' }]
-  // NEW (plan: 2026-08-06-kanban-create-task-run-agent). Emitted
-  // when the user clicks "Create task & run agent" in create mode.
-  // Same payload shape as `create` but with mode='create_and_run'
-  // so the host can branch on it. The host (KanbanView) handles
-  // the create + move + run + navigate dance.
+  // NEW (plan: 2026-08-06-kanban-create-task-run-agent). Emitted when the user clicks "Create task
+  // & run agent" in create mode. Same payload shape as `create` but with mode='create_and_run' so
+  // the host can branch on it.
   'create-and-run': [
     payload: {
       mode: 'create_and_run'
@@ -266,44 +231,24 @@ const emit = defineEmits<{
       // NEW (plan: 2026-08-06-kanban-no-base64-in-desc). Mirror of
       // the `pendingFiles` field on the `create` emit above.
       pendingFiles: PreviewFile[]
-      // NEW (Migration 070 — kanban-cwd-session-optional plan).
-      // Mirror of the `cwdSession` field on the `create` emit
-      // above. The dialog's folder picker populates this in both
-      // create and create-and-run modes; the host threads it into
-      // runAgentOnNewTask's `cwd` (overriding the kanban-level path
-      // + sandbox fallback).
+      // NEW (Migration 070 — kanban-cwd-session-optional plan). Mirror of the `cwdSession` field on
+      // the `create` emit above.
+      skillName: string
       cwdSession?: string
     },
   ]
-  // NEW (plan: 2026-08-06-kanban-add-task-button-placement). Create
-  // mode only. Fires when the user picks a different column from the
-  // create-mode dropdown. The parent (KanbanView) updates its
-  // `activeCreateColumnId` so the final `moveTaskToColumn` on submit
-  // puts the new task in the chosen column. Edit mode does not emit
-  // this event — the task is already in a column, and migrating an
-  // existing task to a new column is out of scope.
+  // NEW (plan: 2026-08-06-kanban-add-task-button-placement). Create mode only. Fires when the user
+  // picks a different column from the create-mode dropdown.
   'column-change': [columnId: string]
-  // NEW (plan: 2026-08-14-kanban-task-detail-edit-cwd). Edit mode
-  // only. Fires when the user picks a different cwd from the picker
-  // in edit mode. The host persists immediately via
-  // `api.updateTaskSimple(task.id, { cwd })`, matching the
-  // `update-unattended` immediate-save UX (iOS-style — no Save click
-  // required). In create mode the cwd selection is forwarded via the
-  // `create` / `create-and-run` emit's `cwdSession` field instead, so
-  // this emit is only meaningful in edit mode.
+  // NEW (plan: 2026-08-14-kanban-task-detail-edit-cwd). Edit mode only. Fires when the user picks a
+  // different cwd from the picker in edit mode.
   'update-cwd': [payload: { cwd: string }]
-  // NEW (plan: 2026-08-18-kanban-task-detail-start-agent). Edit
-  // mode only. Fires when the user clicks the ▶ Start agent
-  // button. The host calls `workspacesStore.startAgentOnTask(...)`
-  // which POSTs to the new backend endpoint; the agent runs on the
-  // existing chat history without queueing a new user message.
-  // The button is `:disabled` while `processingState[task.id]`
-  // is true, so this emit only fires when no worker is in flight.
+  // NEW (plan: 2026-08-18-kanban-task-detail-start-agent). Edit mode only. Fires when the user
+  // clicks the ▶ Start agent button.
   'start-agent': [payload: { taskId: string }]
 }>()
 
 // ─── Form state ──────────────────────────────────────────────────────────
-
 const name = ref('')
 const description = ref('')
 const unattended = ref<'0' | '1'>('1')
@@ -311,16 +256,9 @@ const unattended = ref<'0' | '1'>('1')
 // the host bakes `#Notes UseGitWorktree` into the create_and_run
 // queue_message. Plain create ignores it (no queue_message there).
 const useGitWorktree = ref(false)
-// Worktree path input (create mode only, visible when the toggle is
-// ON). Canonical root is $HOME/.config/pabrik/.worktrees (Option A) —
-// prefilled on toggle-on as <slug>-<timestamp> from the task name plus
-// Date.now() so concurrent tasks never collide; the user can accept or
-// edit it. Empty = agent picks the path itself (bare `#Notes UseGitWorktree`).
-// The prefill is always an absolute path: validatePath in
-// set_git_worktree.zig rejects `~`-prefixed paths (not absolute), so a
-// literal `~` would fail at tool-call time. Home is resolved via
-// getSystemFolder().home; until loaded we fall back to `~` for display
-// and expand on emit.
+// Worktree path input (create mode only, visible when the toggle is ON). Canonical root is
+// $HOME/.config/pabrik/.worktrees (Option A) — prefilled on toggle-on as <slug>-<timestamp> from
+// the task name plus Date.now() so concurrent tasks never collide; the user can accept or edit it.
 const WORKTREE_DIR_SUFFIX = '.config/pabrik/.worktrees'
 const homeDir = ref('')
 const resolveWorktreeDir = (): string => {
@@ -341,11 +279,9 @@ const expandWorktreePath = (raw: string): string => {
   return trimmed
 }
 const worktreePath = ref('')
-// Base ref the new worktree branches FROM (create mode only, visible when
-// the toggle is ON). Empty = no `Base:` line in the queue_message, so the
-// agent branches from the repo's current HEAD (the pre-existing behavior).
-// The dropdown lists the repo's real refs (`GitBaseBranchSelect`) and
-// lets the user name one the list does not show.
+// Base ref the new worktree branches FROM (create mode only, visible when the toggle is ON). Empty
+// = no `Base:` line in the queue_message, so the agent branches from the repo's current HEAD (the
+// pre-existing behavior).
 const worktreeBaseBranch = ref('')
 const slugifyWorktreeName = (raw: string): string => {
   const slug = raw
@@ -357,35 +293,20 @@ const slugifyWorktreeName = (raw: string): string => {
   return slug || 'task'
 }
 const tags = ref<string[]>([])
-// NEW (kanban task dependencies). Chosen dependency ids, edited
-// via KanbanDependsInput and persisted through the same save
-// path as tags (no second save mechanism).
+// NEW (kanban task dependencies). Chosen dependency ids, edited via KanbanDependsInput and
+// persisted through the same save path as tags (no second save mechanism).
 const dependsOn = ref<string[]>([])
-// Template ref for the chip input — handleSave calls commitDraft()
-// imperatively before reading `tags.value` so a draft tag typed but
-// not yet committed (Enter/comma not pressed) isn't dropped on Save.
-// The component's @blur handler covers the normal case; this is the
-// explicit "click Save without leaving the field" safety net.
+// Template ref for the chip input — handleSave calls commitDraft() imperatively before reading
+// `tags.value` so a draft tag typed but not yet committed (Enter/comma not pressed) isn't dropped
+// on Save.
 const tagsInputRef = ref<{ commitDraft: () => void } | null>(null)
 // Template ref for the description editor — used in CREATE MODE to read the staged image files
 // (pendingFiles) so the dialog can hand them to the host's create-then-upload orchestrator. The
 // editor exposes pendingFiles via defineExpose; see KanbanDescriptionEditor.vue for the contract.
 const descriptionEditorRef = ref<{ pendingFiles: PreviewFile[] } | null>(null)
 const nameInput = ref<HTMLInputElement | null>(null)
-// Description is UNLIMITED (no maxlength) — the backend stores TEXT with no length check.
-// The description is ALWAYS shown as the editor (textarea + paperclip +
-// char counter). A "Preview" toggle used to flip to <MarkdownDescription>
-// for a rendered view, but the toggle was removed per user feedback —
-// the dialog stays focused on the editor. Image/file-paths in the
-// description still render correctly when the task is viewed elsewhere
-// (e.g. <WorkspaceItemTaskCard> on the kanban board, the chat view's
-// task description render).
-//
-// (plan: 2026-08-06-kanban-no-base64-in-desc) — see also.
-
-// NEW (plan: 2026-08-06-kanban-task-profile-selector). Profile-model picker state (create mode
-// only). selectedProfile='' = backend default / "Default (top-level config)". Loaded from LlmConfig
-// profiles; mirrors ChatView's picker pattern.
+// Description is UNLIMITED (no maxlength) — the backend stores TEXT with no length check. The
+// description is ALWAYS shown as the editor (textarea + paperclip + char counter).
 interface ProfileEntry {
   name: string
   model: string
@@ -397,12 +318,21 @@ const profilePickerRef = ref<HTMLElement | null>(null)
 const availableProfiles = ref<ProfileEntry[]>([])
 const profilesLoading = ref(false)
 
-// NEW (plan: 2026-08-06-kanban-add-task-button-placement). Column
-// dropdown state (create mode only). selectedColumnId mirrors the
-// parent's `column` prop on dialog open; the picker emits
-// `column-change` so the host updates its activeCreateColumnId in
-// real-time. Click outside the picker closes it (mirrors the profile
-// picker behaviour).
+// Skill picker (create only). '' = no skill. Source is api.getSkills - the same rows search_skills reads,
+// so a picked name always resolves in use_skill({ name }).
+interface SkillEntry {
+  name: string
+  description: string
+}
+const selectedSkill = ref('')
+const isSkillPickerOpen = ref(false)
+const skillPickerRef = ref<HTMLElement | null>(null)
+const availableSkills = ref<SkillEntry[]>([])
+const skillsLoading = ref(false)
+
+// NEW (plan: 2026-08-06-kanban-add-task-button-placement). Column dropdown state (create mode
+// only). selectedColumnId mirrors the parent's `column` prop on dialog open; the picker emits
+// `column-change` so the host updates its activeCreateColumnId in real-time.
 const selectedColumnId = ref<string | null>(props.column?.id ?? null)
 const isColumnPickerOpen = ref(false)
 const columnPickerRef = ref<HTMLElement | null>(null)
@@ -415,73 +345,19 @@ const selectColumn = (id: string) => {
   emit('column-change', id)
 }
 
-// NEW (Migration 070 — kanban-cwd-session-optional plan). Per-task
-// cwd picker state (create mode only). Default: when the parent
-// kanban has a path, pre-populate the picker with that path (the
-// kanban's project root becomes the new task's per-task cwd by
-// default; the user can change or skip). When the parent kanban is
-// cwd-less, the picker starts empty.
-//
-// `cwdSession` is the per-task cwd we emit to the parent. Empty
-// string = "no per-task cwd" (falls back to kanban-level path +
-// sandbox). The picker writes the absolute path; the picker dialog's
-// "cancel" / backdrop-close leaves it empty.
-//
-// Starts empty — populated lazily by openDialog() via the mount/update
-// open guard below (openKey covers show, task id, and mode).
-// Initializing from the ref literal
-// (`ref<string>(props.cwd ?? '')`) used to work, but broke when the
-// parent re-mounted the dialog with a different cwd (the ref would keep its first-mount value). The
-// open guard handles BOTH initial mount AND re-mount correctly. Plan:
-// docs/superpowers/plans/2026-08-14-kanban-task-detail-edit-cwd.md
+// NEW (Migration 070 — kanban-cwd-session-optional plan). Per-task cwd picker state (create mode
+// only). Plan: docs/superpowers/plans/2026-08-14-kanban-task-detail-edit-cwd.md
 const cwdSession = ref<string>('')
 const isCwdPickerOpen = ref(false)
 const cwdPickerRef = ref<HTMLElement | null>(null)
-// Pre-populate from the parent kanban's `cwd` prop on dialog open.
-// The parent (KanbanView) passes the kanban's `path` (kanban-level
-// cwd) as this prop — when set, the new task's per-task cwd defaults
-// to it (the user can change or skip). When the parent kanban is
-// cwd-less, the picker starts empty.
-//
-// NEW (plan: 2026-08-14-kanban-task-detail-edit-cwd): in edit
-// mode, pre-populate from `props.task?.cwd` instead — the task's
-// persisted per-task cwd takes precedence over the kanban-level
-// fallback so the picker reflects "where does THIS task run"
-// rather than the kanban's project root.
-//
-// Initialized from the prop (NOT via the open guard below) so the picker
-// has the right value on the very first render — without the
-// initial-value read, the guard would need `show` to flip false→true to
-// fire, which leaves the picker empty if the parent mounts the dialog
-// with `show=true` on the first tick (same pattern as
-// `selectedColumnId` above, which also initializes from its prop).
-//
-// NEW (plan: 2026-08-14-kanban-task-detail-edit-cwd). Edit mode
-// initializer: when the dialog opens in edit mode, sync `cwdSession`
-// from the task's persisted `cwd` field (empty string for
-// cwd-less tasks, path for tasks with a per-task cwd set). Mirrors
-// the create-mode pre-population from `props.cwd` (the parent
-// kanban's path). Without this branch the picker would render the
-// empty-state placeholder on every edit-mode dialog open, making
-// "where does this task run?" an unanswerable question until the user
-// clicked the picker.
-//
-// Implementation note: openDialog() via the openKey guard below
-// handles the initial sync AND the rare "user clicks task A then
-// task B with the dialog already open" re-sync — cwd re-syncs
-// whenever show flips true OR the target task swaps.
-// cwdSession sync lives in the open handler below (it sets the same
-// values in both modes), so no separate show-only sync is needed.
+// Pre-populate from the parent kanban's `cwd` prop on dialog open. The parent (KanbanView) passes
+// the kanban's `path` (kanban-level cwd) as this prop — when set, the new task's per-task cwd
+// defaults to it (the user can change or skip).
 const toggleCwdPicker = () => {
   isCwdPickerOpen.value = !isCwdPickerOpen.value
 }
-// NEW (plan: 2026-08-14-kanban-task-detail-edit-cwd). In edit mode
-// the picker fires `update-cwd` so the host persists immediately
-// (same iOS-style immediate-save UX as the unattended toggle). In
-// create mode the cwd selection is captured in `cwdSession` and
-// forwarded via the `create` / `create-and-run` emit's
-// `cwdSession` field on Save — `update-cwd` is a no-op there
-// because the task doesn't exist yet (no row to PATCH).
+// NEW (plan: 2026-08-14-kanban-task-detail-edit-cwd). In edit mode the picker fires `update-cwd` so
+// the host persists immediately (same iOS-style immediate-save UX as the unattended toggle).
 const selectCwd = (path: string) => {
   cwdSession.value = path
   isCwdPickerOpen.value = false
@@ -495,47 +371,22 @@ const handleDocumentClickCwd = (event: MouseEvent) => {
   if (
     cwdPickerRef.value &&
     target &&
-    // Allow the FilePickerDialog dropdown contents to escape the
-    // ref's containment check. The picker teleports to <body> so
-    // it isn't a DOM descendant of cwdPickerRef — without this
-    // allow-list, any click inside the picker (including the Browse
-    // tab and the search input) closes the dropdown immediately,
-    // forcing the user to re-click the picker trigger to reopen
-    // it. Plan: docs/superpowers/plans/2026-08-14-kanban-task-detail-edit-cwd.md
+    // Allow the FilePickerDialog dropdown contents to escape the ref's containment check. Plan:
+    // docs/superpowers/plans/2026-08-14-kanban-task-detail-edit-cwd.md
     !cwdPickerRef.value.contains(target) &&
     // Walk up from the click target to see if any ancestor is the teleported FilePickerDialog root.
     // The dialog root carries the `data-testid="file-picker-dialog"` testid, so we can match it
     // (and its Teleport-portal descendants) without touching the picker ref.
     !(target as Element | null)?.closest?.('[data-testid="file-picker-dialog"]')
   ) {
-    // User intent: clicking outside the picker should NOT close it
-    // by accident — the picker has explicit Cancel and Select affordances
-    // for closing. The legacy close-on-outside-click behaviour caught
-    // false positives every time the user clicked on the kanban column
-    // body, another card, the dialog backdrop, etc. while the picker
-    // was open (e.g. moving the mouse over to read context), forcing
-    // them to reopen it. The new contract: once open, the picker stays
-    // open until the user clicks the picker trigger again, selects a
-    // folder, or presses Cancel/Select inside the FilePickerDialog.
-    // (Backdrop click on the KanbanTaskDetailDialog itself still closes
-    // the whole dialog, but that's a different handler at the dialog
-    // root — see `@click.self="handleClose"` on the modal container.)
-    // Plan: docs/superpowers/plans/2026-08-14-kanban-task-detail-edit-cwd.md
+    // User intent: clicking outside the picker should NOT close it by accident — the picker has
+    // explicit Cancel and Select affordances for closing.
     return // no-op: explicitly do NOT close the picker on outside click
   }
 }
 
-// NEW (plan: 2026-08-06-kanban-folder-picker-style). Computed
-// style object for the cwd picker button. The previous version used
-// a static `style="..."` attribute with template expressions
-// (`cwdSession ? ... : ...`) inline — Vue does NOT evaluate
-// expressions inside static style attributes, so the resulting CSS
-// was syntactically invalid and the browser silently dropped the
-// `color` and `background-color` properties. The picker looked
-// identical regardless of whether cwd was set. This computed is
-// the proper `:style` binding so the conditional resolves correctly at render time. When cwd is
-// set: bright text on the active-bg (clearly reads as "you picked something"). When cwd is empty:
-// dim text on the sidebar-bg (clearly reads as "skip / optional").
+// NEW (plan: 2026-08-06-kanban-folder-picker-style). Computed style object for the cwd picker
+// button.
 const cwdPickerStyle = computed<Record<string, string>>(() => ({
   backgroundColor: cwdSession.value ? 'var(--semantic-active-bg)' : 'var(--semantic-sidebar-bg)',
   border: '1px solid var(--color-border)',
@@ -568,15 +419,7 @@ const closeFilePreview = () => {
   previewFilePath.value = null
 }
 
-// Persisted-image gallery preview. The thumbnail strip renders <img>
-// tags but had no click handler, so users on already-created tasks
-// (edit mode) could see the thumbnails but could NOT preview them at
-// full size — the create-mode flow goes through FilePreview.vue (File
-// + blob: URL) which doesn't fit persisted data: URLs. This ref
-// holds the currently-popped image src; clicking a thumbnail sets it,
-// Esc / backdrop-click clears it. The overlay is Teleported to body
-// so it escapes the dialog's overflow:hidden ancestors and renders
-// full-screen.
+// Persisted-image gallery preview.
 const imagePopupUrl = ref<string | null>(null)
 const openImagePopup = (url: string) => {
   imagePopupUrl.value = url
@@ -597,24 +440,18 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleImagePopupKe
 // form-state reset rule, and which emit fires on submit.
 const isCreateMode = computed<boolean>(() => props.mode === 'create')
 
-// Which commit the user actually pressed. Declared ahead of openDialog
-// below so the open handler can clear it.
-// `creating` is one host flag covering both create paths, so on its own
-// the footer cannot tell "Create task" from "Create task & run agent".
-// The `null` branch is deliberate: the host can raise `creating`
-// through a path this dialog did not initiate, and then there is
-// nothing to attribute, so the label falls back to neutral "Creating…".
+// Which commit the user actually pressed. Declared ahead of openDialog below so the open handler
+// can clear it. `creating` is one host flag covering both create paths, so on its own the footer
+// cannot tell "Create task" from "Create task & run agent".
 const pendingAction = ref<'create' | 'create_and_run' | null>(null)
 
 // Reset form whenever the dialog opens OR the target task changes. In create mode we always start
 // blank (regardless of `task`). In edit mode we prefill from `task` (today's behavior). Runs from
 // the mount/update open guard below instead of a watcher.
 const openDialog = async (): Promise<void> => {
-  // The commit split button narrates the in-flight action via
-  // pendingAction; clear any stale attribution from the previous
-  // session here, in the open handler, instead of watching isCreating.
-  // (pendingCommitLabel already returns null when !isCreating, so this
-  // is hygiene for the next open, not a render dependency.)
+  // The commit split button narrates the in-flight action via pendingAction; clear any stale
+  // attribution from the previous session here, in the open handler, instead of watching
+  // isCreating.
   pendingAction.value = null
   if (isCreateMode.value) {
     name.value = ''
@@ -625,12 +462,11 @@ const openDialog = async (): Promise<void> => {
     worktreeBaseBranch.value = ''
     tags.value = [] // NEW: start with empty tags in create mode
     selectedProfile.value = '' // NEW: profile selector defaults to backend default
-    // NEW (plan: 2026-08-14-kanban-task-detail-edit-cwd). Sync
-    // cwdSession from the parent kanban's path on dialog open so
-    // the picker shows the kanban-level fallback by default.
-    // The legacy code initialized from the ref literal (`ref<string>(props.cwd ?? '')`)
-    // which silently broke when the parent passed a different
-    // cwd on a subsequent open with the same dialog instance.
+    selectedSkill.value = ''
+    isSkillPickerOpen.value = false
+    // NEW (plan: 2026-08-14-kanban-task-detail-edit-cwd). Sync cwdSession from the parent kanban's
+    // path on dialog open so the picker shows the kanban-level fallback by default. The legacy code
+    // initialized from the ref literal (`ref<string>(props.cwd ??
     cwdSession.value = props.cwd ?? ''
   } else if (props.task) {
     name.value = props.task.name
@@ -641,25 +477,11 @@ const openDialog = async (): Promise<void> => {
     tags.value = props.task.tags ?? []
     // Dependencies prefill (same optional + fallback pattern).
     dependsOn.value = props.task.depends_on ? [...props.task.depends_on] : []
-    // NEW (plan: 2026-08-14-kanban-task-detail-edit-cwd).
-    // Sync the per-task cwd picker with the task's persisted cwd
-    // in edit mode. Equivalent to the create-mode
-    // `cwdSession.value = props.cwd ?? ''` for create, but reads
-    // the task row. `task?.cwd ?? ''` coerces legacy
-    // pre-Migration-070 tasks (whose `cwd` is undefined) to the
-    // empty-state placeholder — same UX as the read-only strip
-    // that lived in the metadata strip pre-fix. This branch
-    // also covers the rare "user clicks task A then task B with
-    // the dialog already open" case via the openKey guard's
-    // `props.task?.id` segment.
+    // NEW (plan: 2026-08-14-kanban-task-detail-edit-cwd). Sync the per-task cwd picker with the
+    // task's persisted cwd in edit mode. Equivalent to the create-mode `cwdSession.value =
+    // props.cwd ?? ''` for create, but reads the task row.
     cwdSession.value = props.task.cwd ?? ''
-    // Media-flags change — list/get carry only `is_have_image` /
-    // `is_have_video` flags; the gallery lazy-loads via the
-    // store's fetchTaskMedia (GET .../tasks/:id/media) when a flag
-    // is true and the arrays are still empty. imageUrls is a
-    // computed tracking `props.task.imageUrls` so optimistic
-    // `updateTaskDetails({ imageUrls })` writes still re-render
-    // without a re-open.
+    // Media-flags change — list/get carry only `is_have_image` / `is_have_video` flags.
     if (props.task?.id) {
       const t = props.task
       const needMedia =
@@ -684,18 +506,9 @@ const openDialog = async (): Promise<void> => {
   // from the previous dialog session so a different kanban (or a fresh open of the same one)
   // doesn't see stale suggestions from the previous task.
   tagSuggestions.reset()
-  // Don't await — let the fetch happen in the background. The
-  // dropdown only opens when the user focuses the input, which is
-  // itself a separate trigger; awaiting here would block the
-  // focus call on a network round-trip for no benefit.
-  // NEW (plan: 2026-08-06-kanban-tags-autocomplete-in-create-mode):
-  // Removed `props.task` from the guard. The fetch needs only the
-  // kanban's workspace_item_id (from column.workspace_item_id),
-  // which is available in BOTH edit and create modes via the host
-  // bindings. The composable's fetchPage already short-circuits on
-  // empty item_id (useKanbanTagSuggestions.ts:73-76), so the gate
-  // was redundant AND was the reason the existing-tag dropdown never
-  // appeared in the "+ Add task" dialog.
+  // Don't await — let the fetch happen in the background. The dropdown only opens when the user
+  // focuses the input, which is itself a separate trigger; awaiting here would block the focus call
+  // on a network round-trip for no benefit.
   if (props.workspaceId) {
     void tagSuggestions.ensureLoaded()
   }
@@ -705,6 +518,7 @@ const openDialog = async (): Promise<void> => {
   if (isCreateMode.value) {
     void loadProfiles()
     void loadHomeDir()
+    void loadSkills()
   }
   // Sync selectedColumnId from the parent's `column` prop on open
   // (create mode only). Re-assigning the same id is a no-op, so the
@@ -715,7 +529,6 @@ const openDialog = async (): Promise<void> => {
 }
 
 // selectedColumnId sync lives at the end of the open handler above.
-
 // Open guard: run the open handler on mount-with-show plus any update
 // that changes show, the target task, the mode, or the column.
 const prevOpenKey = ref('')
@@ -733,13 +546,8 @@ onUpdated(() => {
   }
 })
 
-// NEW (plan: 2026-08-06-kanban-add-task-button-placement). Register
-// the click-outside listener for the column picker at mount,
-// deregister at unmount. Mirrors the profile picker's pattern (the
-// profile picker uses inline @click.stop on its dropdown to avoid
-// the same listener — both approaches are fine; the column picker
-// uses the document listener because the dropdown is a sibling of
-// the trigger button rather than a child).
+// NEW (plan: 2026-08-06-kanban-add-task-button-placement). Register the click-outside listener for
+// the column picker at mount, deregister at unmount.
 onMounted(() => {
   document.addEventListener('click', handleDocumentClickColumn)
   // NEW (Migration 070 — kanban-cwd-session-optional plan). Same
@@ -761,12 +569,9 @@ const isDirty = computed<boolean>(() => {
   if (!props.task) return false
   const nameChanged = name.value.trim() !== props.task.name
   const descChanged = description.value !== (props.task.description ?? '')
-  // Migration 067 — tags dirty check. Compare arrays via JSON.stringify
-  // (cheap for ≤ 30 tags). Stable order matters: the chip input
-  // preserves the user's add order, but if the backend ever returns
-  // a different order, the dialog will treat the row as "dirty"
-  // and push a no-op update. Acceptable; the order is stable
-  // because we never re-sort tags on the backend.
+  // Migration 067 — tags dirty check. Compare arrays via JSON.stringify (cheap for ≤ 30 tags).
+  // Stable order matters: the chip input preserves the user's add order, but if the backend ever
+  // returns a different order, the dialog will treat the row as "dirty" and push a no-op update.
   const tagsBefore = props.task.tags ?? []
   const tagsAfter = tags.value
   const tagsEqual =
@@ -787,13 +592,8 @@ const canSave = computed<boolean>(() => isDirty.value && isValid.value)
 // just the title). The unattended toggle flows through separately.
 const canRunAgent = computed<boolean>(() => isValid.value)
 
-// In-flight gate for the create-mode commit controls. While the
-// host's create request is in flight (`creating` prop true) every
-// commit control is disabled. The handlers also early-return as
-// belt-and-suspenders (a disabled button drops clicks at the
-// browser level, but the guard makes the emit impossible even if a
-// click slips through — e.g. the mousedown-commits-draft path
-// re-enabling the button mid-click).
+// In-flight gate for the create-mode commit controls. While the host's create request is in flight
+// (`creating` prop true) every commit control is disabled.
 const isCreating = computed<boolean>(() => props.creating === true)
 const canCommitCreate = computed<boolean>(() => !isCreating.value && isValid.value)
 
@@ -802,31 +602,18 @@ const pendingCommitLabel = computed<string | null>(() => {
   return pendingAction.value === 'create_and_run' ? 'Starting…' : 'Creating…'
 })
 
-// Inject the processingState map (provided by App.vue; populated via
-// SSE worker events). The Start agent menu item is `:disabled` when a
-// worker is already running for this task's session. Edit-mode only —
-// create mode has its own ▶ Create task & run agent control.
-//
-// Defensive: `inject()` may return `undefined` if the provider is
-// missing (e.g. tests that mount the dialog in isolation). The
-// computed below treats that as "no worker running" (button enabled).
-//
-// Plan: docs/superpowers/specs/2026-08-18-kanban-task-detail-start-agent.md
+// Inject the processingState map (provided by App.vue; populated via SSE worker events). The Start
+// agent menu item is `:disabled` when a worker is already running for this task's session. Plan:
+// docs/superpowers/specs/2026-08-18-kanban-task-detail-start-agent.md
 const processingState = inject<Record<string, boolean> | undefined>('processingState', undefined)
 const isWorkerRunning = computed<boolean>(() => {
   if (!props.task?.id) return false
   return processingState?.[props.task.id] === true
 })
 
-// ─── Commit split button ────────────────────────────────────────────────
-// The two commit actions are one split control: the left half is the
-// action we expect you to want, the caret menu holds the alternative
-// (create mode → "Create task only", edit mode → "▶ Start agent").
-//
-// The menu is always mounted and toggled with v-show rather than v-if.
-// display:none already removes a subtree from the a11y tree and the tab
-// order, so nothing is exposed while closed, and keeping it mounted
-// preserves the popup's state across toggles.
+// ─── Commit split button ──────────────────────────────────────────────── The two commit actions
+// are one split control: the left half is the action we expect you to want, the caret menu holds
+// the alternative (create mode → "Create task only", edit mode → "▶ Start agent").
 const commitMenuOpen = ref(false)
 const commitMenuRef = ref<HTMLElement | null>(null)
 
@@ -853,13 +640,8 @@ const handleDocumentClickCommitMenu = (event: MouseEvent) => {
   }
 }
 
-// ─── Handlers ───────────────────────────────────────────────────────────
-
-// NEW (plan: 2026-08-18-kanban-task-detail-start-agent). Edit-mode
-// handler for the ▶ Start agent button. Emits `start-agent` with the
-// task id; KanbanView's handler calls workspacesStore.startAgentOnTask,
-// which POSTs to the new backend endpoint. The dialog stays open on
-// failure (host sets errorMessage); closes on success.
+// ─── Handlers ─────────────────────────────────────────────────────────── NEW (plan:
+// 2026-08-18-kanban-task-detail-start-agent). Edit-mode handler for the ▶ Start agent button.
 const handleStartAgent = () => {
   if (isWorkerRunning.value) return
   if (!props.task?.id) return
@@ -883,18 +665,12 @@ const handleSave = () => {
   // double-click can't emit `create` twice (duplicate tasks). Edit mode is unaffected — the host
   // only binds `creating` on the create-mode mount.
   if (isCreateMode.value && isCreating.value) return
-  // Belt + suspenders: if the user typed a tag and clicked Save
-  // without pressing Enter/comma, the KanbanTagsInput still holds the
-  // draft in its local `draftInput` ref. The mousedown handler
-  // below commits it before click logic runs, but commit again here
-  // to handle the (rarer) case where mousedown didn't fire (e.g.
-  // keyboard activation via Space/Enter).
+  // Belt + suspenders: if the user typed a tag and clicked Save without pressing Enter/comma, the
+  // KanbanTagsInput still holds the draft in its local `draftInput` ref.
   tagsInputRef.value?.commitDraft()
-  // canSave reads tags.value; re-check after the commit in case the
-  // user's draft was the only "dirty" signal and committing it
-  // didn't change isDirty (e.g. duplicate draft). canSave recomputes
-  // reactively, but the read here is intentional — the Save button
-  // is disabled while canSave is false.
+  // canSave reads tags.value; re-check after the commit in case the user's draft was the only
+  // "dirty" signal and committing it didn't change isDirty (e.g. duplicate draft). canSave
+  // recomputes reactively, but the read here is intentional.
   if (!canSave.value) return
   // Attribute the in-flight state to this action so the split button can
   // narrate which commit the user actually pressed.
@@ -904,13 +680,9 @@ const handleSave = () => {
       mode: 'create',
       name: name.value.trim(),
       description: description.value,
-      // Forward the unattended toggle's current value. The
-      // immediate-flip handler (handleUnattendedToggle) already
-      // updated `unattended` via PUT in edit mode; in create
-      // mode there's no session row yet, so this is the FIRST
-      // (and only) time the value gets sent. Host threads it
-      // through to api.createTask -> backend POST /tasks which
-      // inserts a sessions row when the value is '1'.
+      // Forward the unattended toggle's current value. The immediate-flip handler
+      // (handleUnattendedToggle) already updated `unattended` via PUT in edit mode; in create mode
+      // there's no session row yet, so this is the FIRST (and only) time the value gets sent.
       is_auto_retry_until_stop: unattended.value,
       // Forwarded for the create-and-run path (baked into queue_message).
       // Expanded to absolute so a `~` prefill never reaches the wire —
@@ -926,29 +698,15 @@ const handleSave = () => {
       // captures but does NOT persist on plain create (Path A — the backend's task_create.zig has
       // no selected_profile_model field).
       selectedProfile: selectedProfile.value,
-      // NEW (plan: 2026-08-06-kanban-no-base64-in-desc). Create
-      // mode image attachments: the editor never writes base64
-      // into `description`. Instead it stages pasted/picked
-      // images in `pendingFiles`. The host (KanbanView.
-      // handleCreateTaskSave) reads them after `addTask`
-      // returns the new taskId, uploads each via
-      // `api.uploadTaskAttachment(taskId, file)`, then patches
-      // the description with `![name](<url>)` markdown. Empty
-      // array (not undefined) so the host can use the length
-      // without a guard.
+      // NEW (plan: 2026-08-06-kanban-no-base64-in-desc). Create mode image attachments: the editor
+      // never writes base64 into `description`. Instead it stages pasted/picked images in
+      // `pendingFiles`.
       pendingFiles: [...(descriptionEditorRef.value?.pendingFiles ?? [])],
-      // NEW (Migration 070 — kanban-cwd-session-optional plan).
-      // Per-task cwd override. The dialog's folder picker
-      // populates `cwdSession` (defaults to the parent kanban's
-      // path when set; empty when the kanban is cwd-less or the
-      // user skipped the picker). Empty string is the canonical
-      // "no per-task cwd" sentinel — the backend stores '' and
-      // the session_create 3-level fallback chain falls back to
-      // the kanban-level path + the per-session sandbox. Host
-      // threads this through to workspacesStore.addTask's
-      // `cwd` param and to runAgentOnNewTask's `cwd` for the
-      // create-and-run flow.
+      // NEW (Migration 070 — kanban-cwd-session-optional plan). Per-task cwd override. The dialog's
+      // folder picker populates `cwdSession` (defaults to the parent kanban's path when set; empty
+      // when the kanban is cwd-less or the user skipped the picker).
       cwdSession: cwdSession.value,
+      skillName: selectedSkill.value,
     })
   } else {
     // Dependencies ride the same save only when changed: omitted
@@ -977,11 +735,9 @@ const handleClose = () => {
   emit('close')
 }
 
-// Mirror of handleSave but for the create dialog's primary half
-// ("▶ Create task & run agent"), and for Enter on the name field.
-// Emits `create-and-run` with mode='create_and_run' so the host can
-// branch. Same payload as `create` (same fields, different mode
-// discriminator) so the host's single handler can switch on mode.
+// Mirror of handleSave but for the create dialog's primary half ("▶ Create task & run agent"), and
+// for Enter on the name field. Emits `create-and-run` with mode='create_and_run' so the host can
+// branch.
 const handleRunAgent = () => {
   if (!canRunAgent.value) return
   // In-flight guard: while the host's create request is in flight,
@@ -1012,19 +768,11 @@ const handleRunAgent = () => {
     // Mirror of handleSave's cwdSession — see that handler for the
     // 3-level fallback chain contract.
     cwdSession: cwdSession.value,
+    skillName: selectedSkill.value,
   })
 }
 
-// Commit any draft tag typed in the chip input the moment the user
-// mousedowns the Save button. Why mousedown and not @blur on the
-// input: the Save button has `:disabled="!canSave"`, and a draft
-// tag typed without Enter/comma leaves canSave=false (the draft is
-// in the chip input's local ref, not in `tags.value` yet). If we
-// only relied on @blur, the click would land on a still-disabled
-// button and the browser would drop it. mousedown is NOT gated by
-// the disabled attribute (it's a low-level event), so we can
-// commit the draft, the canSave computed flips to true, and the
-// subsequent click event fires on the now-enabled button.
+// Commit any draft tag typed in the chip input the moment the user mousedowns the Save button.
 const commitTagsDraftOnSaveMouseDown = () => {
   tagsInputRef.value?.commitDraft()
 }
@@ -1044,15 +792,8 @@ const handleKeydown = (event: KeyboardEvent) => {
 // which delegates its own selectCwd to the inner panel).
 defineExpose({ selectCwd })
 
-// Toggle the unattended-mode flag. Emits `update-unattended` so the
-// host can call api.updateSession(task.id, { isAutoRetryUntilStop })
-// and persist it. We do NOT roll back on PUT failure here — the
-// host owns the optimistic-vs-server-truth contract (and would
-// re-bind task.is_auto_retry_until_stop via the workspaces store
-// on next SSE event). For the common case where the user toggles
-// and the host's PUT succeeds, the visual state matches the server
-// immediately, which is the whole point of the toggle being
-// immediate (not deferred to Save click).
+// Toggle the unattended-mode flag. Emits `update-unattended` so the host can call
+// api.updateSession(task.id, { isAutoRetryUntilStop }) and persist it.
 const handleUnattendedToggle = (event: Event) => {
   const target = event.target as HTMLInputElement
   const newValue: '0' | '1' = target.checked ? '1' : '0'
@@ -1087,14 +828,9 @@ const loadHomeDir = async () => {
   }
 }
 
-// Plan 2026-08-06-kanban-task-profile-selector. Load the profiles this
-// workspace can actually RUN with (mirrors ChatView.loadProfiles). Called on
-// dialog open in create mode; failure -> empty list (the picker still works,
-// just only shows "Default").
-//
-// The workspace scope matters: a run merges this workspace's config overlay
-// over the user config, so a profile defined only in the overlay is selectable
-// here and the user-scope `/api/config/pabrik` would not list it.
+// Plan 2026-08-06-kanban-task-profile-selector. Load the profiles this workspace can actually RUN
+// with (mirrors ChatView.loadProfiles). Called on dialog open in create mode; failure -> empty list
+// (the picker still works, just only shows "Default").
 const loadProfiles = async () => {
   if (!isCreateMode.value) return
   profilesLoading.value = true
@@ -1127,8 +863,39 @@ const selectProfile = (name: string) => {
   isProfilePickerOpen.value = false
 }
 
-// ─── Metadata helpers ───────────────────────────────────────────────────
+const loadSkills = async () => {
+  if (!isCreateMode.value) return
+  skillsLoading.value = true
+  try {
+    const wsId = props.workspaceId ?? ''
+    if (wsId === '') {
+      availableSkills.value = []
+      return
+    }
+    const res = await api.getSkills(wsId)
+    availableSkills.value = (res.skills ?? []).map((sk) => ({
+      name: sk.name,
+      description: sk.description ?? '',
+    }))
+    // eslint-disable-next-line local/no-try-catch -- mirrors loadProfiles directly above: a failed fetch must degrade to an empty picker, not break the dialog
+  } catch (err) {
+    console.error('Failed to load skills:', err)
+    availableSkills.value = []
+  } finally {
+    skillsLoading.value = false
+  }
+}
 
+const toggleSkillPicker = () => {
+  isSkillPickerOpen.value = !isSkillPickerOpen.value
+}
+
+const selectSkill = (name: string) => {
+  selectedSkill.value = name
+  isSkillPickerOpen.value = false
+}
+
+// ─── Metadata helpers ───────────────────────────────────────────────────
 const taskTypeLabel = computed<string | null>(() => {
   const t = props.task?.task_type
   if (t === 'memory') return 'Memory'
@@ -1139,11 +906,9 @@ const columnLabel = computed<string | null>(() => {
   return props.column?.name ?? null
 })
 
-// NEW (Task 2.7): Filter the suggestions composable's tags down to
-// the names that are NOT already on the current task's draft chips.
-// The model can't know about an unsaved draft, so we hide
-// already-committed chips client-side. Case-insensitive set lookup
-// so "Bug" doesn't show as a suggestion when the task has "bug".
+// NEW (Task 2.7): Filter the suggestions composable's tags down to the names that are NOT already
+// on the current task's draft chips. The model can't know about an unsaved draft, so we hide
+// already-committed chips client-side.
 const filteredTagSuggestions = computed<string[]>(() => {
   const excludeLower = new Set(tags.value.map((t) => t.toLowerCase()))
   return tagSuggestions.tags.value
@@ -1151,25 +916,16 @@ const filteredTagSuggestions = computed<string[]>(() => {
     .filter((n) => !excludeLower.has(n.toLowerCase()))
 })
 
-// NEW (kanban task dependencies). Picker candidates: same-board
-// tasks as {id, name} pairs (the picker filters out self via
-// selfTaskId). Incomplete dep ids mark blocked chips distinctly.
+// NEW (kanban task dependencies). Picker candidates: same-board tasks as {id, name} pairs (the
+// picker filters out self via selfTaskId). Incomplete dep ids mark blocked chips distinctly.
 const dependsCandidates = computed<Array<{ id: string; name: string }>>(() =>
   (props.tasks ?? []).map((t) => ({ id: t.id, name: t.name })),
 )
 const blockedDepIds = computed<string[]>(() => (props.task?.blocked_by ?? []).map((b) => b.task_id))
 
-// NEW (Migration 069 — kanban image urls column). The dialog's
-// image gallery reads from the task row's `imageUrls` array. In
-// edit mode this is the persisted column (loaded via the store's
-// normalizeTaskTags from the `||`-joined wire string). In create
-// mode the editor stages add/remove ops in its own `previewFiles`
-// ref (mirrored into `pendingFiles` for the host to PATCH on save),
-// so the gallery is naturally empty until the task is persisted.
-//
-// Tracking `props.task?.imageUrls` directly (not a local ref) keeps the gallery in sync with the
-// host's optimistic `updateTaskDetails({ imageUrls })` write — the store mutates the task in place,
-// the computed re-evaluates, the gallery re-renders without any re-open dance.
+// NEW (Migration 069 — kanban image urls column). The dialog's image gallery reads from the task
+// row's `imageUrls` array. In edit mode this is the persisted column (loaded via the store's
+// normalizeTaskTags from the `||`-joined wire string).
 const imageUrls = computed<string[]>(() => props.task?.imageUrls ?? [])
 // Media-flags change — async lazy media: flags true but arrays still empty means the background
 // fetchTaskMedia hasn't resolved yet. Shows a lightweight loading hint instead of a blank gap.
@@ -1743,6 +1499,82 @@ const isMediaLoading = computed<boolean>(() => {
             </div>
           </div>
         </div>
+
+          <div v-if="isCreateMode" ref="skillPickerRef" class="relative shrink-0">
+            <button
+              type="button"
+              @click.stop="toggleSkillPicker"
+              class="px-2.5 py-1 rounded-md text-dense hover:opacity-80 inline-flex items-center gap-1.5 transition-opacity duration-200"
+              style="
+                background-color: var(--semantic-sidebar-bg);
+                border: 1px solid var(--color-border);
+                color: var(--semantic-text);
+              "
+              :title="
+                selectedSkill
+                  ? `Agent will use skill: ${selectedSkill}`
+                  : 'No skill - the agent discovers one itself if needed'
+              "
+              data-testid="kanban-task-detail-skill-picker"
+            >
+              <UiIcon name="clipboard" />
+              <span class="font-medium">Skill</span>
+              <span style="color: var(--semantic-text-muted)">{{
+                selectedSkill || 'None'
+              }}</span>
+              <span class="text-micro shrink-0" style="color: var(--semantic-text-dim)">&#9662;</span>
+            </button>
+            <div
+              v-if="isSkillPickerOpen"
+              class="absolute top-full mt-1 left-0 min-w-[260px] max-w-[320px] rounded-lg shadow-lg z-20 overflow-hidden"
+              style="
+                background-color: var(--semantic-card-bg);
+                border: 1px solid var(--color-border);
+              "
+              data-testid="kanban-task-detail-skill-picker-dropdown"
+              @click.stop
+            >
+              <button
+                type="button"
+                @click="selectSkill('')"
+                class="w-full text-left px-3 py-2 text-dense hover:opacity-80 flex items-center justify-between"
+                style="color: var(--semantic-text)"
+                data-testid="kanban-task-detail-skill-picker-item"
+              >
+                <span class="font-medium">None (agent decides)</span>
+                <span v-if="selectedSkill === ''">&#10003;</span>
+              </button>
+              <button
+                v-for="sk in availableSkills"
+                :key="sk.name"
+                type="button"
+                @click="selectSkill(sk.name)"
+                class="w-full text-left px-3 py-2 text-dense hover:opacity-80"
+                style="color: var(--semantic-text); border-top: 1px solid var(--color-border)"
+                data-testid="kanban-task-detail-skill-picker-item"
+              >
+                <div class="flex items-center justify-between gap-2">
+                  <span class="font-medium truncate">{{ sk.name }}</span>
+                  <span v-if="selectedSkill === sk.name" class="shrink-0">&#10003;</span>
+                </div>
+                <div
+                  v-if="sk.description"
+                  class="text-micro mt-0.5 line-clamp-2"
+                  style="color: var(--semantic-text-muted)"
+                >
+                  {{ sk.description }}
+                </div>
+              </button>
+              <div
+                v-if="!skillsLoading && availableSkills.length === 0"
+                class="px-3 py-2 text-dense"
+                style="color: var(--semantic-text-muted)"
+                data-testid="kanban-task-detail-skill-picker-empty"
+              >
+                No skills installed. Add one in Settings.
+              </div>
+            </div>
+          </div>
 
         <!-- Row 2: Unattended mode toggle (always shown).
                    Separated from the pickers by a hairline divider so

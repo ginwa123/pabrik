@@ -270,14 +270,9 @@ async function fetchHtmlFor(f: ParsedPresentFile): Promise<void> {
   }
 }
 
-/** Build the HTML iframe's `srcdoc` value. Do NOT escape `<`, `>`, `&`,
- * `"` here — Vue's `:srcdoc` binding goes through setAttribute, which
- * encodes them, and the iframe parser decodes them back (same contract
- * as PreviewContentRenderer's html branch). The margin reset keeps
- * unstyled docs flush like the previous direct-navigation render.
- * The frame reports its own content height (postMessage) so the parent
- * grows it to FULL height — no inner scrollbar, the outer chat owns
- * scrolling. The no-scrollbar style hides any residual frame scrollbars. */
+/** Build the HTML iframe's `srcdoc` value. Do NOT escape `<`, `>`, `&`, `"` here — Vue's `:srcdoc`
+ * binding goes through setAttribute, which encodes them, and the iframe parser decodes them back
+ * (same contract as PreviewContentRenderer's html branch). */
 const PRESENT_FILES_HTML_RESIZE_SOURCE = 'present-files-html-auto-resize'
 
 function htmlSrcDoc(f: ParsedPresentFile): string {

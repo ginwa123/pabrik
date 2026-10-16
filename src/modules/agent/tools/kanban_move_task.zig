@@ -42,7 +42,7 @@ pub const KanbanMoveTaskInput = struct {
     /// task is appended to the end (server picks a high position
     /// that the renumber will compact to last).
     position: ?i64 = null,
-    /// Migration 110 — skip the dependency gate. Only for a blocker the agent
+    /// Migration 111 — skip the dependency gate. Only for a blocker the agent
     /// can justify out loud in its reply; the default (false) refuses the move
     /// and names the unfinished tasks instead.
     force: bool = false,
@@ -277,7 +277,7 @@ pub fn executeKanbanMoveTaskToJSON(
     const position_str = try std.fmt.allocPrint(allocator, "{d}", .{position});
     defer allocator.free(position_str);
 
-    // 3. Call kanban_model.moveTaskChecked — this applies the Migration 110
+    // 3. Call kanban_model.moveTaskChecked — this applies the Migration 111
     //    dependency gate, then handles the sibling renumber atomically.
     pabrikcore.ai_mod.kanban_model.moveTaskChecked(
         allocator,
@@ -385,7 +385,7 @@ pub const BlockedDependency = struct {
     column_name: []const u8,
 };
 
-/// Payload for a move the dependency gate refused (Migration 110).
+/// Payload for a move the dependency gate refused (Migration 111).
 pub const KanbanMoveBlocked = struct {
     success: bool = false,
     blocked: bool = true,
@@ -577,7 +577,7 @@ fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
         \\)
     , &.{});
 
-    // Migration 110 — the dependency edges the gate reads.
+    // Migration 111 — the dependency edges the gate reads.
     try db.exec(alloc,
         \\CREATE TABLE kanban_task_dependencies (
         \\  task_id TEXT NOT NULL,

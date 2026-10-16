@@ -1,18 +1,6 @@
-/**
- * buildItemIdWithChat — encode / decode the `/chat/<taskId>` suffix
- * on the `itemId` query value used by AppLayout's URL scheme.
- *
- * Background: the chat-open workspace URL has the shape
- *   ?view=workspace&workspaceId=X&itemId=item_Y/chat/task_W
- * The `itemId` value carries an extra `/chat/<taskId>` suffix when
- * the chat dialog is open. This helper centralises the parse +
- * build logic so every URL writer / reader stays consistent.
- *
- * Plan: docs/superpowers/plans/2026-08-15-simplify-url-browser.md
- * Spec: docs/superpowers/specs/2026-08-15-simplify-url-browser-design.md
- */
-
-/** The literal separator between the bare item id and the chat task id. */
+/** buildItemIdWithChat — encode / decode the `/chat/<taskId>` suffix on the `itemId` query value
+ * used by AppLayout's URL scheme. Plan: docs/superpowers/plans/2026-08-15-simplify-url-browser.md
+ * Spec: docs/superpowers/specs/2026-08-15-simplify-url-browser-design.md */
 export const CHAT_SUFFIX = '/chat/'
 
 /**  * Combine a workspace item id with an optional chat task id. Throws if `itemId` itself already
@@ -51,13 +39,9 @@ export function parseItemIdWithChat(raw: string): {
 /** Subset of vue-router LocationQuery that we accept. */
 export type UrlQueryInput = Record<string, unknown>
 
-/** Pick breadcrumb params (`workspaceId`, `itemId`, `pageId`, `sorts`)
- * from a vue-router LocationQuery and return them as a plain
- * `Record<string, string>`. Used to preserve context when building
- * task URLs that append to the current URL.
- * Moved from `buildTaskUrlQuery.ts` (where it was inlined) so the
- * helpers can be co-located and the `pickBreadcrumbFromQuery` import
- * remains a one-line re-export. */
+/** Pick breadcrumb params (`workspaceId`, `itemId`, `pageId`, `sorts`) from a vue-router
+ * LocationQuery and return them as a plain `Record<string, string>`. Used to preserve context when
+ * building task URLs that append to the current URL. */
 export function pickBreadcrumbFromQuery(query: Record<string, unknown>): Record<string, string> {
   const out: Record<string, string> = {}
   // `layout` is the kanban columns/rows view mode. It lives in the URL only

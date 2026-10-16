@@ -1,6 +1,5 @@
 // Behavioural tests for AgentView. Mounts the component with stub
 // props and asserts the wired emits + conditional rendering.
-
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -503,7 +502,6 @@ describe('AgentView', () => {
   })
 
   // ─── System Prompt section (plan 2026-08-21-agent-system-prompt) ────
-
   describe('System Prompt section', () => {
     const promptRow = () => ({
       id: 'asp_1',

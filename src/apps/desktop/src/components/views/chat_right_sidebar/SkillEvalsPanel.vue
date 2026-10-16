@@ -43,7 +43,6 @@ const applying = ref<string | null>(null)
 const applyError = ref<string | null>(null)
 
 // ─── the URL param ──────────────────────────────────────────────────────
-
 const readRunParam = (): string => {
   const v = route.query.eval_run
   return typeof v === 'string' ? v : ''
@@ -60,11 +59,9 @@ const syncRunParam = (runId: string) => {
 
 const selectedRunId = ref<string>(readRunParam())
 
-/** Empty-state shortcut to the toggle that actually controls this panel.
- * `?section=evals` is the URL-backed tab param PabrikConfigEditor.vue reads, so
- * the destination is deep-linkable and survives a refresh. `push`, not
- * `replace`: leaving the chat to change a setting is a real navigation step
- * the user may want to Back out of. */
+/** Empty-state shortcut to the toggle that actually controls this panel. `?section=evals` is the
+ * URL-backed tab param PabrikConfigEditor.vue reads, so the destination is deep-linkable and
+ * survives a refresh. */
 function openSettings() {
   // `evals` is a WORKSPACE-scoped section (Migration 105), so the shortcut has
   // to carry the workspace in the path the way the settings nav does. Pushing
@@ -77,7 +74,6 @@ function openSettings() {
 }
 
 // ─── loading ────────────────────────────────────────────────────────────
-
 async function load() {
   loading.value = true
   error.value = null
@@ -130,7 +126,6 @@ async function apply(result: SkillEvalResult) {
 }
 
 // ─── lifecycle ──────────────────────────────────────────────────────────
-
 let unsubscribe: (() => void) | null = null
 
 onMounted(() => {
@@ -159,11 +154,8 @@ onUnmounted(() => {
 // guards on update cover both. The run branch keeps the select+load pairing the old watcher had — a
 // param echo of our own selectRun (param already equals selectedRunId) stays load-free.
 const readEvalRun = () => (typeof route.query.eval_run === 'string' ? route.query.eval_run : '')
-// Subscribed in the template (data-eval-run below) so back/forward
-// navigation that changes ?eval_run= re-renders this panel — that
-// render is what fires the onUpdated guard above. Row slots alone
-// would not subscribe the panel itself (same trap as ChatsList's
-// data-workspace-scope binding).
+// Subscribed in the template (data-eval-run below) so back/forward navigation that changes
+// ?eval_run= re-renders this panel — that render is what fires the onUpdated guard above.
 const evalRunParam = computed(readEvalRun)
 const prevSessionId = ref(props.sessionId)
 const prevEvalRun = ref(readEvalRun())
@@ -189,7 +181,6 @@ onUpdated(() => {
 })
 
 // ─── derived ────────────────────────────────────────────────────────────
-
 const missingPaths = (r: SkillEvalResult): string[] => {
   try {
     const parsed = JSON.parse(r.missing_paths || '[]')

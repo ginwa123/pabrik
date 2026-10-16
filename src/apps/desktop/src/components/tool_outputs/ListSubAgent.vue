@@ -86,11 +86,8 @@ const props = defineProps<{
 
 const isExpanded = ref(false)
 
-/** Envelope `<parameters>` for this tool message.
- * `list_sub_agent` takes no input, so this is `{}` on the real wire and
- * <ToolParameters> renders nothing (its hasArgs guard skips '' / '{}').
- * Derived here — NOT threaded as a prop — because this component takes
- * `:message` (whole role=tool message), never `:content`/`:parameters`. */
+/** Envelope `<parameters>` for this tool message. `list_sub_agent` takes no input, so this is `{}`
+ * on the real wire and <ToolParameters> renders nothing (its hasArgs guard skips '' / '{}'). */
 const envelopeParams = computed(
   () => tryUnwrapToolOutput(props.message.content)?.parameters ?? '{}',
 )

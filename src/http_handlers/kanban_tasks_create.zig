@@ -22,7 +22,10 @@ pub const KanbanTaskCreateBody = struct {
     cwd: ?[]const u8 = null,
     is_auto_retry_until_stop: ?[]const u8 = null,
     selected_profile_model: ?[]const u8 = null,
-    /// Migration 110 — tasks this new card waits for (ids on the same board).
+    /// Skill name for this task (Migration 110). Empty = no skill.
+    /// Also baked into the create_and_run queue_message as #Skill <name>.
+    skill_name: ?[]const u8 = null,
+    /// Migration 111 — tasks this new card waits for (ids on the same board).
     depends_on: ?[]const []const u8 = null,
 };
 
@@ -135,6 +138,7 @@ pub fn kanbanTasksCreateHandler(
         .image_urls = parsed.image_urls,
         .video_urls = parsed.video_urls,
         .cwd = parsed.cwd,
+        .skill_name = parsed.skill_name,
         .depends_on = parsed.depends_on,
     };
 
@@ -210,7 +214,18 @@ pub fn kanbanTasksCreateHandler(
                 profile = ap;
             }
         }
-        const queue_message = parsed.queue_message orelse "";
+        // Migration 110 — agent only sees queue_message on its first turn; skills never reach the system prompt.
+        // Bake the directive here or the row's skill_name is invisible to the agent.
+        const queue_message = blk: {
+            const base = parsed.queue_message orelse "";
+            const skill = std.mem.trim(u8, parsed.skill_name orelse "", " \t\n\r");
+            if (skill.len == 0) break :blk base;
+            break :blk std.fmt.allocPrint(
+                allocator,
+                "{s}\n\n#Skill {s}",
+                .{ base, skill },
+            ) catch base;
+        };
         // image_urls/video_urls on the wire are `||`-joined (Migration
         // 069/090 shapes); pass through to the worker pool verbatim.
         const image_urls_wire = parsed.image_urls orelse "";

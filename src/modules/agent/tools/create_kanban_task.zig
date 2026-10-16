@@ -38,7 +38,7 @@ pub const CreateKanbanTaskInput = struct {
     /// `data:image/<mime>;base64,<payload>` URLs (10 MB cap, enforced by
     /// `image_urls_validation.validateImageUrls`).
     image_urls: ?[]const u8 = null,
-    /// Migration 110 — optional array of task ids on the SAME board that must
+    /// Migration 111 — optional array of task ids on the SAME board that must
     /// finish before this new card may change column.
     depends_on: ?[]const []const u8 = null,
     /// Optional unattended-mode flag. `"1"` enables the agent to retry past
@@ -499,6 +499,10 @@ pub fn executeKanbanTaskToJSON(
         // Migration 090 — video_urls. Tool input is image-only;
         // null omits the column (DEFAULT '' applies).
         null,
+        // Migration 110 — skill name. The agent tool has no skill
+        // input (the agent loads skills itself with `use_skill`), so
+        // null omits the column (DEFAULT '' applies).
+        null,
     ) catch {
         // NOTE: do NOT `defer allocator.free(msg)` here — `errorJSONOwned`
         // takes ownership of `msg` and frees it on success.
@@ -523,7 +527,7 @@ pub fn executeKanbanTaskToJSON(
         std.log.warn("create_kanban_task: kanban auto-assign failed (non-fatal): {s}", .{@errorName(err)});
     };
 
-    // 9a. Migration 110 — dependencies, validated against the same board. The
+    // 9a. Migration 111 — dependencies, validated against the same board. The
     //     card row exists by now, so the message names the offending rule and
     //     the task id to fix instead of forcing a recreate.
     if (input.depends_on) |raw_ids| {

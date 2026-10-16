@@ -1,6 +1,5 @@
 // Behavioural tests for the agentTools Pinia store.
 // Plan: 2026-08-15-agent-mode (Task 14)
-
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useAgentToolsStore } from '../stores/agentTools'

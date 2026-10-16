@@ -49,7 +49,7 @@ pub const TaskUpdateError = error{
     /// a 25 MB cap.
     InvalidVideoUrls,
     VideoUrlsTooLarge,
-    /// Migration 110 — `depends_on` rejects a task that names itself, a task
+    /// Migration 111 — `depends_on` rejects a task that names itself, a task
     /// from a DIFFERENT kanban, a set that would close a dependency cycle, and
     /// a set over the 32-dependency cap.
     DependencySelfReference,
@@ -307,7 +307,7 @@ fn useCase(allocator: std.mem.Allocator, input: TaskUpdateInput) TaskUpdateError
         input.db.exec(allocator, sql_buf.items, bind_values.items) catch return error.FailedToUpdateTask;
     }
 
-    // Dependencies branch (Migration 110 — kanban task dependencies).
+    // Dependencies branch (Migration 111 — kanban task dependencies).
     // REPLACE-ALL semantics: a present array (including `[]`) replaces the
     // whole set; an absent field leaves it untouched.
     if (input.body.depends_on) |raw_ids| {

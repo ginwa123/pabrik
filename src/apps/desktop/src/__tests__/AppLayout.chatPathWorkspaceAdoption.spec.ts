@@ -1,31 +1,6 @@
-/**
- * Repro for "url browser not match with selected workspace"
- * (task_1791556124905_10).
- *
- * Screenshots: the browser URL is `/app/ws_1785055733544_…/chat/task_…`
- * (workspace "agentic coding") while the sidebar header shows a
- * DIFFERENT workspace ("testttt", ws_1790703859430_…).
- *
- * Root cause: `handleBootUrl` (AppLayout.vue:160) adopts the chat from
- * the path but NEVER adopts the workspace encoded in that same path.
- * `initializeFromSystemFolder` is then called with
- * `preferredWorkspaceId === undefined` (the `parsed.kind === 'chat'`
- * branch is excluded from the preferred list at AppLayout.vue:186-190),
- * so the store falls back to the persisted `pabrik-active-workspace`
- * localStorage key — which is whatever workspace was selected last,
- * in a different tab or a previous session.
- *
- * The URL is the source of truth for every other path kind
- * (`workspace`, `project`, `projectChat` all pass their id through as
- * `preferredWorkspaceId`), and `reconcileRoute` DOES adopt the
- * workspace for `project`/`projectChat` paths (AppLayout.vue:2577).
- * The `chat` kind is the one shape that reads the workspace out of the
- * URL for the chat itself and then ignores it for the workspace.
- *
- * Consequence: the sidebar (WorkspaceSwitcher, ProjectsList,
- * DocumentsList, ChatsList) all render the persisted workspace while
- * the URL names another one — exactly the reported mismatch.
- */
+/** Repro for "url browser not match with selected workspace" (task_1791556124905_10). Screenshots:
+ * the browser URL is `/app/ws_1785055733544_…/chat/task_…` (workspace "agentic coding") while the
+ * sidebar header shows a DIFFERENT workspace ("testttt", ws_1790703859430_…). */
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, reactive } from 'vue'

@@ -20,7 +20,7 @@ pub const KanbanColumnResponse = struct {
     description: []const u8,
     position: i64,
     created_at: []const u8,
-    /// Migration 110 — a card that lands in this column has finished the work
+    /// Migration 111 — a card that lands in this column has finished the work
     /// it describes, so it stops blocking the tasks that depend on it.
     is_done: bool = false,
 };
@@ -35,7 +35,7 @@ pub fn makeKanbanColumnResponse(col: anytype) KanbanColumnResponse {
         .description = col.description,
         .position = col.position,
         .created_at = col.created_at,
-        // `anytype` callers that predate Migration 110 (and the test literals
+        // `anytype` callers that predate Migration 111 (and the test literals
         // that copy them) have no `is_done`, and a field they cannot carry must
         // not fail to compile.
         .is_done = if (@hasField(@TypeOf(col), "is_done")) col.is_done else false,
@@ -133,7 +133,8 @@ pub const TaskCreateRequest = struct {
     /// Per-task cwd override (Migration 070 — kanban-cwd-session- optional
     /// plan, 2026-08-06).
     cwd: ?[]const u8 = null,
-    /// Migration 110 — the tasks this NEW task waits for. Optional; a real
+    skill_name: ?[]const u8 = null,
+    /// Migration 111 — the tasks this NEW task waits for. Optional; a real
     /// JSON array of task ids belonging to the same kanban.
     depends_on: ?[]const []const u8 = null,
 };
@@ -154,7 +155,7 @@ pub const TaskUpdateRequest = struct {
     /// Per-task cwd override (Migration 070 — kanban-cwd-session- optional
     /// plan, 2026-08-06).
     cwd: ?[]const u8 = null,
-    /// Migration 110 — the tasks this task waits for. `null` (field absent)
+    /// Migration 111 — the tasks this task waits for. `null` (field absent)
     /// leaves the existing set untouched; an array (including `[]`) REPLACES
     /// it. A real JSON array of task ids, unlike `tags`.
     depends_on: ?[]const []const u8 = null,
@@ -470,7 +471,7 @@ pub const WorkspaceItemTaskResponse = struct {
     /// `workspace_items.path`).
     git_branch: ?[]const u8 = null,
 
-    /// Migration 110 — ids of the tasks this task waits for. Always present
+    /// Migration 111 — ids of the tasks this task waits for. Always present
     /// (an empty array means "no dependencies").
     depends_on: []const []const u8 = &.{},
 
@@ -484,7 +485,7 @@ pub const WorkspaceItemTaskResponse = struct {
     is_blocked: bool = false,
 };
 
-/// One blocking dependency in a task payload (Migration 110).
+/// One blocking dependency in a task payload (Migration 111).
 pub const TaskDependencyBlocker = struct {
     task_id: []const u8,
     name: []const u8,

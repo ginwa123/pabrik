@@ -1,17 +1,6 @@
-/*
- * SkillDetail.vue — the edit path.
- *
- * The companion file (`SkillDetail.spec.ts`) pins reading and deleting.
- * This one pins the two things an edit can get wrong that a read cannot:
- *
- *   1. A patch that mentions only ONE field must not blank the other. The
- *      store loads the current row first, but the FORM decides what it
- *      sends — so a form that posts `{ content }` alone would wipe the
- *      description, and the assertion here is on the exact body.
- *   2. The name is not editable. It is the `use_skill({ name })` argument
- *      and the `skill_eval` identity, so a rename field would be an
- *      invitation to break both silently.
- */
+/** SkillDetail.vue — the edit path. The companion file (`SkillDetail.spec.ts`) pins reading and
+ * deleting. This one pins the two things an edit can get wrong that a read cannot: 1. A patch that
+ * mentions only ONE field must not blank the other. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'

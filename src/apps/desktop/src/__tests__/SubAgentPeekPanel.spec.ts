@@ -1,24 +1,14 @@
-/** Tests for SubAgentPeekPanel — the slide-over for watching a
- * sub-agent's progress without leaving the parent chat.
- * Since the reuse refactor (task_1788604407681_2) the panel is thin
- * chrome (header / error banner / footer) around an embedded ChatView
- * in read-only mode. Message rendering + tool output components are
- * ChatView's job — this spec asserts the chrome and the embed wiring,
- * not message bubbles (those belong to ChatView's own specs). */
+/** Tests for SubAgentPeekPanel — the slide-over for watching a sub-agent's progress without leaving
+ * the parent chat. Since the reuse refactor (task_1788604407681_2) the panel is thin chrome (header
+ * / error banner / footer) around an embedded ChatView in read-only mode. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import SubAgentPeekPanel from '../components/pabrik/SubAgentPeekPanel.vue'
 import type { Message } from '../api'
 
-// Stub the embedded ChatView so we can assert the embed wiring
-// without mounting the full 4000-line chat (VirtualScroller, SSE,
-// FileInput, …). The stub records its props for assertions.
-//
-// NOTE: the stub is defined inline (not via a top-level const) because
-// `vi.mock` factories are hoisted above the module body — referencing
-// an outer const from the factory hits the TDZ at import time. Lookup
-// in tests uses `findComponent({ name: 'ChatView' })`.
+// Stub the embedded ChatView so we can assert the embed wiring without mounting the full 4000-line
+// chat (VirtualScroller, SSE, FileInput, …). The stub records its props for assertions.
 vi.mock('../components/views/ChatView.vue', async () => {
   const { h } = await vi.importActual<typeof import('vue')>('vue')
   return {
@@ -153,7 +143,6 @@ describe('SubAgentPeekPanel', () => {
   // ── ChatView embed (task_1788604407681_2) ─────────────────────────── The panel body reuses
   // ChatView in read-only mode instead of a hand-mirrored tool-dispatch chain. Message bubbles,
   // tool cards, markdown, and error cards are ChatView's responsibility.
-
   it('embeds ChatView with the sub-agent session id + name', () => {
     const wrapper = mount(SubAgentPeekPanel, { props: makeBaseProps() })
     const stub = wrapper.find('[data-testid="chatview-stub"]')

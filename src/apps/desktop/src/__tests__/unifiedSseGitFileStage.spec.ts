@@ -1,22 +1,6 @@
-/**
- * The `git_file_stage` channel at the API layer.
- *
- * `SidebarDiffPanel.stage.spec.ts` drives the panel and dispatches synthetic
- * events through `__dispatchSseBus` — which deliberately bypasses
- * `api/index.ts`. That leaves the OTHER half of the four-place registration
- * untested: a named SSE event that is not in `additionalEventTypes` is dropped
- * by the browser's `EventSource` before `onEvent` ever fires (the PR #215 /
- * `session_unknown` class), and a name with no `onEvent` dispatch branch
- * falls through to the default-message JSON buffer.
- *
- * This spec captures the real `onEvent` callback `createUnifiedSseConnection`
- * hands to the SseClient and calls it exactly as the browser would. That is
- * the only honest witness for "the event reaches the channel callback".
- *
- * The spy-on-`createSseClient` harness is the one `unifiedSseBuffer.spec.ts`
- * established — no mock EventSource, no fake timers.
- */
-
+/** The `git_file_stage` channel at the API layer. `SidebarDiffPanel.stage.spec.ts` drives the panel
+ * and dispatches synthetic events through `__dispatchSseBus` — which deliberately bypasses
+ * `api/index.ts`. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createUnifiedSseConnection } from '../api'

@@ -1,15 +1,5 @@
-/**
- * "Move to column" — the new context-menu submenu.
- *
- * Two halves are covered:
- *   1. <WorkspaceItemTaskCard> emits the DESTINATION only (it cannot see
- *      the board, so it cannot know the append position).
- *   2. <KanbanColumn> resolves that into the existing `moveTask` shape
- *      its host already handles for drag-and-drop — which is the whole
- *      reason <KanbanView> and AppLayout needed no changes.
- *
- * Plan: docs/superpowers/plans/2026-09-25-kanban-card-context-menu-move-to-column.md
- */
+/** "Move to column" — the new context-menu submenu. Plan:
+ * docs/superpowers/plans/2026-09-25-kanban-card-context-menu-move-to-column.md */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref } from 'vue'
@@ -21,11 +11,8 @@ import { makeLocalStorageStub } from './helpers'
 
 const ITEM_ID = 'item_1'
 
-// Typed factory rather than a bare literal: KanbanColumn carries
-// workspace_item_id + created_at, and a plain object literal silently
-// drifts from the interface the component actually receives. The type is
-// aliased because this file also imports the <KanbanColumn> component —
-// same setup as KanbanColumn.spec.ts.
+// Typed factory rather than a bare literal: KanbanColumn carries workspace_item_id + created_at,
+// and a plain object literal silently drifts from the interface the component actually receives.
 const makeColumn = (overrides: Partial<KanbanColumnType> = {}): KanbanColumnType => ({
   id: 'col_todo',
   workspace_item_id: ITEM_ID,

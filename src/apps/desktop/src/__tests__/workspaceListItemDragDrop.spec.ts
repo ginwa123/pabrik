@@ -1,16 +1,4 @@
-/**
- * Unit tests for the drag-and-drop handlers on workspace ITEMS in
- * ProjectsList.vue. The handlers convert the HTML5 drag events
- * (dragstart, dragover, drop, dragend) on a per-workspace `<ul>`
- * (event delegation) into a `reorder-workspace-items` emit with
- * the new top-to-bottom ID order, scoped to the workspace the
- * drop target belongs to.
- *
- * Scoped to a single workspace's items — the 2026-09-22 revamp
- * plan removed workspace-level reorder from the UI.
- *
- * Plan: docs/superpowers/plans/2026-06-16-workspace-item-position-reorder.md
- */
+/** Unit tests for the drag-and-drop handlers on workspace ITEMS in ProjectsList.vue. */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { defineComponent, h, nextTick } from 'vue'
@@ -23,17 +11,8 @@ import {
 } from '../stores/workspaces'
 import { makeLocalStorageStub } from './helpers'
 
-/**
- * Minimal stub for WorkspaceItemComponent that renders just the
- * `<li>` with the data-* attributes the parent uses for event
- * delegation. The real component has a lot of children (button,
- * spinner, task list, etc.) that we don't need for the
- * drag-and-drop test — the events bubble up to the parent `<ul>`
- * and the handler uses `closest('[data-item-id]')` to find the
- * source. Keeping the stub minimal avoids the real component's
- * deep dep tree (WorkspaceItemTask, etc.) which would slow the
- * test down and require its own setup.
- */
+/** Minimal stub for WorkspaceItemComponent that renders just the `<li>` with the data-* attributes
+ * the parent uses for event delegation. */
 const WorkspaceItemStub = defineComponent({
   name: 'WorkspaceItem',
   props: {
@@ -119,11 +98,8 @@ describe('ProjectsList item drag-and-drop', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const event = new Event(type, { bubbles: true, cancelable: true }) as any
     event.dataTransfer = dt
-    // JSDOM's `getBoundingClientRect()` returns a zeroed DOMRect, so
-    // the midpoint of any element is (0 + 0/2) = 0. That makes the
-    // cursor-Y half-test collapse to "clientY > 0 = bottom half,
-    // clientY <= 0 = top half" — which lets us drive the behavior
-    // from tests without mocking layout.
+    // JSDOM's `getBoundingClientRect()` returns a zeroed DOMRect, so the midpoint of any element is
+    // (0 + 0/2) = 0.
     event.clientY = clientY
     return event as DragEvent
   }
@@ -185,15 +161,8 @@ describe('ProjectsList item drag-and-drop', () => {
   })
 
   it('does not emit when an item is dropped on the same slot', async () => {
-    // The item handler short-circuits on self-drop — mirrors
-    // the workspace-level handler (which has the same check).
-    // This is a deliberate design choice: the same-order
-    // no-op is a UX-level concern (the user explicitly dropped
-    // on the same row, so the UI shouldn't flicker) and it's
-    // cheaper to skip the event entirely than to round-trip
-    // through the store's same-order check. The store's
-    // same-order check still exists as defense-in-depth (see
-    // workspacesStoreItemReorder.spec.ts).
+    // The item handler short-circuits on self-drop — mirrors the workspace-level handler (which has
+    // the same check).
     const workspaces = [
       makeWorkspace('ws_a', 'A', [makeItem('item1', '1'), makeItem('item2', '2')]),
     ]
@@ -250,26 +219,8 @@ describe('ProjectsList item drag-and-drop', () => {
   })
 
   it('inserts the source BEFORE the target when dropped in the TOP half of the target row (top-to-bottom)', async () => {
-    // Regression test for the top-to-bottom off-by-one bug.
-    //
-    // Before the fix, `handleItemDrop` did:
-    //   splice(fromIdx, 1)
-    //   splice(toIdx, 0, moved)
-    // where `toIdx` came from the ORIGINAL array. When the source
-    // was at a LOWER index than the target (toIdx > fromIdx), the
-    // target row's index in the modified array had shifted left by
-    // 1 — so inserting at the original `toIdx` placed the source 1
-    // position AFTER the target, not at it.
-    //
-    // Example: [A, B, C, D, E], drag A onto D.
-    //   Buggy:  splice(0, 1) + splice(3, 0, A) → [B, C, D, A, E]
-    //                                          (A lands AFTER D)
-    //   Fixed:  splice(0, 1) + splice(2, 0, A) → [B, C, A, D, E]
-    //                                          (A lands BEFORE D)
-    //
-    // The fix uses the cursor's Y position to decide "before" vs
-    // "after" the target row, which is the standard Trello/Jira UX.
-    // clientY=0 maps to the top half in JSDOM (see makeDragEvent).
+    // Regression test for the top-to-bottom off-by-one bug. Before the fix, `handleItemDrop` did:
+    // splice(fromIdx, 1) splice(toIdx, 0, moved) where `toIdx` came from the ORIGINAL array.
     const workspaces = [
       makeWorkspace('ws_a', 'A', [
         makeItem('item1', '1'),
@@ -347,12 +298,7 @@ describe('ProjectsList item drag-and-drop', () => {
   })
 
   it('inserts the source BEFORE the target when dropped in the TOP half of the target row (bottom-to-top)', async () => {
-    // Mirrors the first regression test but in the opposite drag
-    // direction. Existing tests already covered this case (the
-    // bottom-to-top direction happened to give the right result
-    // even with the buggy algorithm), but the test is included
-    // here to lock in the new explicit semantics so a future
-    // refactor can't silently regress either direction.
+    // Mirrors the first regression test but in the opposite drag direction.
     const workspaces = [
       makeWorkspace('ws_a', 'A', [
         makeItem('item1', '1'),
@@ -426,12 +372,8 @@ describe('ProjectsList item drag-and-drop', () => {
   })
 
   it('swaps adjacent items when the source is dropped in the BOTTOM half of the target row', async () => {
-    // Adjacent edge case. With [A, B, C], drag B onto C and drop in
-    // the bottom half — expected result is [A, C, B] (swap). The
-    // OLD buggy algorithm also produced [A, C, B] for this case,
-    // but the new algorithm gets there for a different reason
-    // (explicit "insert after target" semantics). This test pins
-    // the new behavior so a future change can't quietly break it.
+    // Adjacent edge case. With [A, B, C], drag B onto C and drop in the bottom half — expected
+    // result is [A, C, B] (swap).
     const workspaces = [
       makeWorkspace('ws_a', 'A', [
         makeItem('item1', 'A'),
@@ -461,14 +403,8 @@ describe('ProjectsList item drag-and-drop', () => {
   })
 
   it('shows a TOP-line drop indicator when the cursor is in the TOP half of the target row', async () => {
-    // Visual-feedback contract test. After the fix, the drop
-    // indicator must show WHERE the drop will land — a top-line
-    // means "insert before", a bottom-line means "insert after".
-    // Without this, the user can't see that a top-to-bottom drop
-    // in the top half will land BEFORE the target row (vs the
-    // pre-fix behavior of landing one slot too far down). The
-    // test pins the boxShadow string so a future regression that
-    // removes the top-line/bottom-line distinction fails here.
+    // Visual-feedback contract test. After the fix, the drop indicator must show WHERE the drop
+    // will land — a top-line means "insert before", a bottom-line means "insert after".
     const workspaces = [
       makeWorkspace('ws_a', 'A', [makeItem('item1', '1'), makeItem('item2', '2')]),
     ]

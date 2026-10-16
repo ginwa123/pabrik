@@ -1,37 +1,8 @@
 import { marked } from 'marked'
 
-/**
- * Markdown rendering for surfaces that are NOT the chat transcript.
- *
- * `renderResponse` (renderResponse.ts) already covers the transcript: it
- * caches per message and special-cases `role`. Tool cards render outside
- * that path — an `ask_user` question, a plan body, a skill description —
- * and each of those had reached for a hand-rolled `{{ text }}`
- * interpolation, which shows the model its own `**bold**` and `` `code` ``
- * verbatim (the `ask_user` card was the reported case: a markdown-shaped
- * question rendered as one wall of `**Option 1 — …**`).
- *
- * Three functions, one per shape a card needs:
- *
- *   renderMarkdownHtml       — block markdown → `v-html` (the question).
- *   renderInlineMarkdownHtml — inline markdown → `v-html` (a one-line cell).
- *   stripMarkdownSyntax      — markdown → plain text (labels that MUST stay
- *                              text: a header pill, an option button's
- *                              label, a chip whose text is also the answer
- *                              value posted back to the model).
- *
- * The caller owns the styling: wrap the `v-html` host in `.markdown-content`
- * (global rules in `style.css`) and add any card-scoped overrides.
- *
- * Trust model (XSS): identical to the transcript's — `marked.parse` with no
- * sanitizer; the repo ships no DOMPurify. A question is authored by the
- * model, which may quote a file it read, so it is not strictly
- * self-XSS-only. Raw HTML in the source is therefore escaped before the
- * parse, which removes the `<img onerror=…>` / `<script>` class of problem
- * while leaving every legitimate markdown construct (emphasis, code, lists,
- * links, tables) intact.
- */
-
+/** Markdown rendering for surfaces that are NOT the chat transcript. `renderResponse`
+ * (renderResponse.ts) already covers the transcript: it caches per message and special-cases
+ * `role`. */
 const escapeHtmlChars = (text: string): string =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
@@ -90,22 +61,7 @@ const flattenCells = (cells: readonly unknown[]): string =>
     .replace(/\s+/g, ' ')
     .trim()
 
-/**
- * Walk the lexer output and keep only the words.
- *
- * Emphasis, links, headings, blockquotes, list items and tables all wrap
- * their text in a nested `tokens` / `items` array, so the walk recurses;
- * `Tokens.Generic` (an extension's custom token) falls through to the same
- * shape and therefore still contributes its text.
- *
- * `sep` is the string placed BETWEEN two adjacent tokens at THIS level.
- * It is `' '` at the top (the lexer's top level is a list of blocks, so two
- * blocks are two thoughts) and `''` one level down (a paragraph's children
- * are inline and already carry their own spacing). That distinction is the
- * whole point: joining a paragraph's children with spaces turns
- * `**staging**, but skip 087` into `staging , but skip 087`, which then
- * renders in the header pill and the answer chip.
- */
+/** Walk the lexer output and keep only the words. */
 const flattenTokens = (tokens: readonly unknown[], sep: string): string => {
   const parts: string[] = []
   for (const entry of tokens) {
@@ -157,11 +113,8 @@ const flattenTokens = (tokens: readonly unknown[], sep: string): string => {
   return parts.join(sep)
 }
 
-/** Strip markdown syntax, keep the words. Blank → `''`.
- * Whitespace collapses to single spaces, so a multi-line question's first
- * 60 characters read as one line in a header pill. A real lexer pass (not
- * a regex) means nested emphasis inside a list item and tables come out
- * right instead of leaving stray `*` behind. */
+/** Strip markdown syntax, keep the words. Blank → `''`. Whitespace collapses to single spaces, so a
+ * multi-line question's first 60 characters read as one line in a header pill. */
 export const stripMarkdownSyntax = (source: string | null | undefined): string => {
   if (!source) return ''
   try {

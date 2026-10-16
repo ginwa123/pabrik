@@ -51,7 +51,6 @@ const props = defineProps<{
 const isExpanded = ref(props.expanded ?? false)
 
 // ─── Envelope ──────────────────────────────────────────────────────────────
-
 const normalized = computed(() => normalizeToolContent(props.content))
 
 const parsed = computed<ParsedWebSearch>(() => {
@@ -64,10 +63,9 @@ const parsed = computed<ParsedWebSearch>(() => {
   return { ...p, success: false, error: parseWebSearchErrorText(text) }
 })
 
-/** The provider, preferring the envelope's own word for it and falling back to
- * the name the call asked for — a `configured` failure names no provider at
- * all, and a card that then says "unknown" loses the only fact it has.
- * `||`, not `??`: an envelope may carry `"provider":""`, which is no name. */
+/** The provider, preferring the envelope's own word for it and falling back to the name the call
+ * asked for — a `configured` failure names no provider at all, and a card that then says "unknown"
+ * loses the only fact it has. */
 interface WebSearchArgs {
   provider?: string
   curl?: string
@@ -90,7 +88,6 @@ const args = computed<WebSearchArgs>(() => {
 const provider = computed(() => parsed.value.provider || args.value.provider || null)
 
 // ─── The results convention ────────────────────────────────────────────────
-
 interface ResultRow {
   key: string
   title: string
@@ -102,12 +99,9 @@ interface ResultRow {
   position: string | null
 }
 
-/** Whether a provider-supplied URL may become an `href`.
- * The payload is passthrough (D13): the backend pins the host it REQUESTS and
- * scrubs the key, but it never inspects what came back, so a `url` here is
- * whatever the provider wrote. Only http(s) becomes a link; anything else
- * (`javascript:`, `data:`, a bare word) is shown as plain text, because a
- * clickable one runs in this app's origin. */
+/** Whether a provider-supplied URL may become an `href`. The payload is passthrough (D13): the
+ * backend pins the host it REQUESTS and scrubs the key, but it never inspects what came back, so a
+ * `url` here is whatever the provider wrote. */
 function isWebUrl(url: string): boolean {
   return /^https?:\/\//i.test(url)
 }
@@ -131,10 +125,8 @@ function firstText(record: Record<string, unknown>, keys: string[]): string {
   return ''
 }
 
-/** The ranked list, or null when the payload is not the `results` convention.
- * The check is deliberately narrow: a TOP-LEVEL `results` whose every member
- * is an object. Brave nests the same array under `web`, SearxNG returns a
- * bare array — both are real payloads and both render as formatted JSON. */
+/** The ranked list, or null when the payload is not the `results` convention. The check is
+ * deliberately narrow: a TOP-LEVEL `results` whose every member is an object. */
 const rows = computed<ResultRow[] | null>(() => {
   const raw = asRecord(parsed.value.response).results
   if (!Array.isArray(raw)) return null
@@ -159,7 +151,6 @@ const rows = computed<ResultRow[] | null>(() => {
 const hasResultRows = computed(() => rows.value !== null)
 
 // ─── Formatted JSON fallback ───────────────────────────────────────────────
-
 /**  * Pretty-print an untyped payload. `JSON.stringify` can refuse (a cycle, a BigInt); the card then
  * says the payload is unprintable instead of showing an empty block that reads like "no results". */
 const prettyResponse = computed(() => {
@@ -177,7 +168,6 @@ const prettyResponse = computed(() => {
 const copyValue = computed(() => (parsed.value.success ? prettyResponse.value : ''))
 
 // ─── Failure detail ────────────────────────────────────────────────────────
-
 const alternatives = computed(() => {
   const error = parsed.value.error
   if (!error) return []
@@ -193,7 +183,6 @@ const hostMismatch = computed(() => {
 const httpStatus = computed(() => parsed.value.error?.httpStatus ?? null)
 
 // ─── Header ────────────────────────────────────────────────────────────────
-
 const rightMeta = computed(() => {
   if (!parsed.value.success) return null
   if (hasResultRows.value) {

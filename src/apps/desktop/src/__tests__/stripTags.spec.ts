@@ -1,15 +1,6 @@
-/**
- * Unit tests for the <html> wrapper-tag helpers in stripTags.ts.
- *
- * Plan: docs/superpowers/plans/2026-08-23-html-tag-support.md (Task 2)
- *
- * The <html> tag lets the LLM emit raw HTML that the chat UI renders
- * as a live sandboxed-iframe block. These tests lock in:
- *   - getHtmlTags: extract inner payload(s) of <html>...</html>
- *   - isHtmlTags: true when content is ONLY html blocks (+ optional think)
- *   - stripThinkingTags: unwraps <html> like <plain>/<markdown>, drops
- *     <think> when a sibling wrapper exists, keeps visibility non-empty
- */
+/** Unit tests for the <html> wrapper-tag helpers in stripTags.ts. Plan:
+ * docs/superpowers/plans/2026-08-23-html-tag-support.md (Task 2) The <html> tag lets the LLM emit
+ * raw HTML that the chat UI renders as a live sandboxed-iframe block. */
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   _resetStripThinkingTagsCache,
@@ -99,13 +90,7 @@ describe('stripThinkingTags — <html> interplay', () => {
   })
 })
 
-// 2026-08-24 — bug-trace task_1787545088500_6: when the LLM wraps a final
-// answer in ```html / ``` / ```markdown fences around <markdown>...</markdown>
-// (or even with no wrapper at all), the fence survives stripThinkingTags and
-// marked.parse renders the ENTIRE message as a literal <pre> code block —
-// the user sees raw `##`/`**`/`[link](url)` as text instead of formatted
-// markdown. stripThinkingTags MUST strip these outer fences so the wrapped
-// markdown reaches marked.parse cleanly.
+// 2026-08-24.
 describe('stripThinkingTags — fenced markdown wrappers', () => {
   it('strips ```html fence around <markdown> (real DB row shape)', () => {
     // Bytes-verbatim copy of row 1787545407823788849 from
@@ -161,15 +146,9 @@ describe('stripThinkingTags — fenced markdown wrappers', () => {
   })
 })
 
-// 2026-09-11 — chatview open/stream freeze.
-//
-// ChatView re-scans the WHOLE loaded transcript with stripThinkingTags on
-// every `messages` mutation (filteredMessages + hasBubbleContent +
-// renderResponse), and one SSE chunk = one mutation. Measured on the real DB
-// (newest-100 rows of a 2.21 MB session): 34 of the 43 ms per chunk were the
-// repeated stripThinkingTags passes. The memo collapses repeat calls over
-// unchanged messages to a Map lookup, so only the streaming message is
-// re-scanned. These tests lock in the memo's observable contract.
+// 2026-09-11 — chatview open/stream freeze. ChatView re-scans the WHOLE loaded transcript with
+// stripThinkingTags on every `messages` mutation (filteredMessages + hasBubbleContent +
+// renderResponse), and one SSE chunk = one mutation.
 describe('stripThinkingTags — memoization (per-chunk render cost)', () => {
   beforeEach(() => {
     _resetStripThinkingTagsCache()

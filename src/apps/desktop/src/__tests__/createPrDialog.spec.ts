@@ -1,32 +1,6 @@
-/**
- * Tests for CreatePrDialog.vue — the "Create a pull request" modal
- * mounted by ChatView when the user clicks "Create a PR" in the
- * WorktreeMenu.
- *
- * The component is async at three points:
- *   1. onMounted: fetches worktree info to pre-fill title/body
- *   2. Auto-fill button: re-fetches with the CURRENT base branch
- *      so the diff is computed against whatever the user has typed
- *   3. Submit: posts the PR via api.createGitPr and emits
- *      `pr-created` (with the URL) or `error`
- *
- * The component has 4 `data-testid`s:
- *   - `create-pr-base`     — the base-branch <input>
- *   - `create-pr-title`    — the PR-title <input>
- *   - `create-pr-body`     — the PR-body <textarea>
- *   - `create-pr-submit`   — the violet "Create PR" submit button
- *   - `create-pr-regenerate` — the ↻ Auto-fill button
- *
- * Guards the Chunk 6 wiring:
- *   - On-mount fetch uses `api.getGitWorktreeInfo(worktreePath)` with
- *     NO `base` argument (the backend falls back to its default-base
- *     detection)
- *   - Auto-fill re-fetches with `api.getGitWorktreeInfo(worktreePath,
- *     base.value)` — the second arg is the user's CURRENT base
- *   - Submit emits `pr-created` on success, `error` on failure
- *   - The submit button is gated on `title.trim() !== ''`
- *   - All action buttons disable while submitting or regenerating
- */
+/** Tests for CreatePrDialog.vue — the "Create a pull request" modal mounted by ChatView when the
+ * user clicks "Create a PR" in the WorktreeMenu. The component is async at three points: 1.
+ * onMounted: fetches worktree info to pre-fill title/body 2. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -349,11 +323,9 @@ describe('CreatePrDialog', () => {
     await wrapper.find('[data-testid="create-pr-submit"]').trigger('click')
     await nextTick()
 
-    // The plan specifies `data-testid="create-pr-submit"` on the
-    // submit button. The close (✕) button in the dialog header is
-    // NOT given a testid in the production code, so identify it as
-    // the button with text content `Cancel` (in the footer) and the
-    // ✕ (in the header). Both bind `:disabled="isSubmitting"`.
+    // The plan specifies `data-testid="create-pr-submit"` on the submit button. The close (✕)
+    // button in the dialog header is NOT given a testid in the production code, so identify it as
+    // the button with text content `Cancel` (in the footer) and the ✕ (in the header).
     const buttons = wrapper.findAll('button')
     const cancelBtn = buttons.find((b) => b.text() === 'Cancel')!
     const closeBtn = buttons.find((b) => b.text().trim() === '✕')!

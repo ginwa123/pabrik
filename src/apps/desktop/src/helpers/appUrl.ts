@@ -1,47 +1,4 @@
-/**
- * appUrl — the single builder / parser for the app's path-based URL
- * contract (plan: 2026-09-22-revamp-ui-chats-workspace-scoped).
- *
- * ## Contract
- *
- *   /app                                            landing (creates a workspace)
- *   /app/{workspaceId}                              workspace selected
- *   /app/{workspaceId}/chat/{sessionId}             chat open
- *   /app/{workspaceId}/doc/{documentId}             document open (Migration 095)
- *   /app/{workspaceId}/projects/{projectId}         project open
- *   /app/{workspaceId}/projects/{projectId}/chat/{taskId}
- *                                                   task chat over a project
- *                                                   (path suffix — mirrors the
- *                                                   old `itemId/chat/T` suffix)
- *
- * Project sub-state stays in the query string: `?pageId=…&detail=…&sorts=…`.
- * Canonical form has NO trailing slash (the router accepts `/…/` and the
- * AppLayout rewrite strips it via `router.replace`).
- *
- *   /app/settings                                  USER-scope settings
- *                                                   (General only)
- *   /app/{workspaceId}/settings                     WORKSPACE-scope settings
- *                                                   (`?section=` picks the
- *                                                   section)
- *
- * Both settings shapes carry their scope in the PATH, so a settings page can
- * always tell which workspace it is about - the scope itself is not a query
- * param. Unchanged: `/app/kanban/:itemId/settings`.
- * Legacy (rewritten once at boot to the shapes above, never emitted):
- * `/app/chat/:sid`, `/app/task/:tid`, and every `?view=…` query URL.
- *
- * ## Why this exists
- *
- * Before this helper, every navigation call site hand-built
- * `{ path: '/app', query: { view: 'workspace', … } }` objects inline
- * (~193 `view:` matches across src + specs). The path migration would
- * have scattered string concat everywhere; instead every writer goes
- * through `buildAppUrl` and every reader through `parseAppPath`, so
- * the contract lives in exactly one file.
- *
- * Pure functions — no Vue / Pinia / vue-router imports. Trivially testable.
- */
-
+/** appUrl. */
 import { parseItemIdWithChat } from './buildItemIdWithChat'
 import { buildTaskUrlQuery, type TaskUrlContext } from './buildTaskUrlQuery'
 
@@ -76,13 +33,9 @@ export type ParsedAppPath =
   | { kind: 'projectChat'; workspaceId: string; projectId: string; chatTaskId: string }
   | { kind: 'other'; path: string }
 
-/** First path segments that are route keywords, never workspace ids.
- * Without this, `/app/chat/sess_9` would parse as workspace `chat` —
- * the legacy routes must stay `{ kind: 'other' }` so the boot rewrite
- * (not the normal view derivation) handles them. `doc` is here for a
- * different reason: a bare `/app/doc` is a malformed document URL, and
- * silently reading it as a workspace named "doc" would boot the user
- * into a workspace that does not exist. */
+/** First path segments that are route keywords, never workspace ids. Without this,
+ * `/app/chat/sess_9` would parse as workspace `chat` — the legacy routes must stay `{ kind: 'other'
+ * }` so the boot rewrite (not the normal view derivation) handles them. */
 const RESERVED_FIRST_SEGMENTS = new Set(['chat', 'doc', 'task', 'settings', 'kanban', 'projects'])
 
 const nonEmpty = (v: string | null | undefined): v is string =>
@@ -130,18 +83,8 @@ export function buildAppUrl(input: AppUrlTarget): AppUrlLocation {
   return { path, query }
 }
 
-/**
- * Where Settings lives, given the workspace in scope and a remembered section.
- *
- * The workspace rides in the PATH, so no settings page ever has to guess which
- * workspace it is about. `/app/settings` - the user scope, General only, the
- * one settings surface that genuinely is not about any workspace - is the
- * answer only when nothing names a workspace at all.
- *
- * `section` is whatever the CALLER wants opened; the page itself ignores an id
- * it does not render and falls back to its stored/default section, so a stale
- * value cannot render the wrong tab.
- */
+/** Where Settings lives, given the workspace in scope and a remembered section. The workspace rides
+ * in the PATH, so no settings page ever has to guess which workspace it is about. */
 export function buildSettingsUrl(
   workspaceId: string | null | undefined,
   section?: string | null,
@@ -190,13 +133,8 @@ export function isAppPath(rawPath: string): boolean {
   return parseAppPath(rawPath).kind !== 'other'
 }
 
-/** Path-shaped twin of `buildTaskUrlQuery` (same `TaskUrlContext`
- * input, same workspace/item/pageId/sorts resolution incl. URL
- * breadcrumb fallback). Emits `/app/{ws}/projects/{item}/chat/{task}`
- * instead of the `?view=workspace&itemId=Y/chat/T` query object, so
- * overlay-close handlers and task navigations don't duplicate the
- * resolution rules. The `view` key `buildTaskUrlQuery` always emits
- * is dropped — the path carries it. */
+/** Path-shaped twin of `buildTaskUrlQuery` (same `TaskUrlContext` input, same
+ * workspace/item/pageId/sorts resolution incl. URL breadcrumb fallback). */
 export function buildTaskAppUrl(input: TaskUrlContext): AppUrlLocation {
   const q = buildTaskUrlQuery(input)
   const wsId = q.workspaceId ?? ''
@@ -223,21 +161,7 @@ export interface LegacyAppUrl {
   query: Record<string, string>
 }
 
-/**
- * Detect a legacy URL that needs the one-time boot rewrite to the path
- * contract. Returns null when the URL is already canonical.
- *
- * Legacy shapes:
- * - `/app/chat/:sid` → `/app/{ws}/chat/:sid` (ws resolved via session detail)
- * - `/app/task/:tid` → `/app/{ws}/projects/{item}/chat/:tid` (ws+item via task lookup)
- * - `?view=chat&session=X`, `?view=task&task=X…`, `?view=workspace&…` on `/app`
- * - any trailing-slash path (normalize only — no workspace lookup needed)
- *
- * The caller fills in the workspace-dependent path: this function reports
- * WHAT kind of legacy URL it is and carries the preservable query through.
- * Session/task → workspace resolution lives in AppLayout (it owns the
- * store + the session-detail `workspace_id` fetch), not here.
- */
+/** Detect a legacy URL that needs the one-time boot rewrite to the path contract. */
 export function detectLegacyAppUrl(
   rawPath: string,
   rawQuery: Record<string, unknown> | null | undefined,
@@ -273,27 +197,9 @@ export function detectLegacyAppUrl(
   return null
 }
 
-/**
- * Stale-write guard for ChatView's diff URL writers (`syncDiffParam`,
- * `syncDiffQuery`).
- *
- * Path-based URLs carry the session in the path, not the query, so the
- * legacy `route.query.view/session` guards are no-ops there. A dying view
- * (chat A unmounting while ChatsList navigates to chat B) must not issue
- * `router.replace` once the path names another session: it either cancels
- * B's pending navigation (view snaps back to A) or stamps A's `?diff=` onto
- * B's URL — the "click a left chat after opening a right-sidebar file does
- * nothing" repro.
- *
- * Returns true when the view owning `sessionId` must NOT touch `routePath`:
- * - `/app/{ws}/chat/{sid}` with `sid !== sessionId` (including the
- *   post-switch path `/app/{ws}/chat/B` seen from dying A);
- * - `/app/{ws}/projects/{p}/chat/{tid}` with `tid !== sessionId`;
- * - `/app/{ws}`, `/app/{ws}/projects/{p}`, `/app/{ws}/doc/{d}` — ChatView
- *   never owns those surfaces, so any write from it is stale.
- * Landing (`/app`) and unknown paths return false and defer to the legacy
- * query guards (deep links, router-less mounts).
- */
+/** Stale-write guard for ChatView's diff URL writers (`syncDiffParam`, `syncDiffQuery`). Path-based
+ * URLs carry the session in the path, not the query, so the legacy `route.query.view/session`
+ * guards are no-ops there. */
 export function isChatRouteStaleForSession(routePath: string, sessionId: string): boolean {
   // parseAppPath is pure string matching with no throws (no I/O, no JSON),
   // so no try/catch: a malformed path returns { kind: 'other' } below.

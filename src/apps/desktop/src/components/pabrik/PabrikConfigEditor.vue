@@ -48,20 +48,9 @@ const emit = defineEmits<{
   notification: [message: string, type: 'success' | 'error']
 }>()
 
-// ─── Scope ────────────────────────────────────────────────────────────────
-// Navigation lives in `SettingsShell` (flat sidebar items + `?section=`), so
-// this component renders ONE section at a time and owns no tab strip.
-//
-// One editor, two scopes. The user scope (`/app/settings`) edits the config
-// that applies everywhere; the workspace scope edits ONE workspace's overlay,
-// which the backend merges over that config. Everything below is identical
-// except where the config is read from and written to, which is what
-// `source` abstracts - see `helpers/configSource.ts`.
-//
-// Defaults preserve the user-scope page exactly: all five sections, strip
-// shown, user config source. The workspace scope passes the four sections
-// that moved there and hides the strip, because the settings shell already
-// navigates sections.
+// ─── Scope ──────────────────────────────────────────────────────────────── Navigation lives in
+// `SettingsShell` (flat sidebar items + `?section=`), so this component renders ONE section at a
+// time and owns no tab strip. One editor, two scopes.
 type Tab = 'general' | 'profiles' | 'mcp' | 'tools' | 'evals'
 
 const props = withDefaults(
@@ -91,30 +80,16 @@ defineExpose({
   resetSettings: () => handleReset(),
 })
 
-// ─── Tab state ────────────────────────────────────────────────────────────
-// Plan 2026-08-24-config-simplify-remove-defaults: 'defaults' tab removed.
-// Plan 2026-08-25-notify-on-error-and-retry-ms-in-settings: 'general' tab
-// added as the FIRST tab — operational settings (notification toggles +
-// retry delay) are the broadest, most-frequently-touched UI surface.
-// Plan 2026-09-04-subagents-per-profile: 'sub-agents' tab removed —
-// sub-agents live inside each profile row (Profiles tab expand chevron).
-
-// Same key the shell's section state persists to — read here so the URL-backed
-// computed below can fall back to it when the URL has no `?section=`.
+// ─── Tab state ──────────────────────────────────────────────────────────── Plan
+// 2026-08-24-config-simplify-remove-defaults: 'defaults' tab removed.
 const TAB_STORAGE_KEY = 'pabrik-settings-active-tab'
 
 /**  * The section ids this editor accepts. Derived from the `sections` prop, so a URL or a stored value
  * pointing at a section this editor does not offer falls back instead of rendering nothing. */
 const TAB_IDS = computed<readonly string[]>(() => props.sections)
-// ─── Edit mode: the form, or the raw JSON ────────────────────────────────
-// Some edits are far easier to express as JSON - pasting a whole profile map
-// from another machine, or reading the exact keys the backend will store -
-// and a workspace's config IS a JSON document on the wire. So the raw view is
-// a first-class mode, not a hidden escape hatch.
-//
-// It lives in the URL (`?mode=json`) for the same reason `?section=` does:
-// refresh, Back/Forward and a shared link must restore the view. `form` is
-// the default and is stripped from the query to keep URLs clean.
+// ─── Edit mode: the form, or the raw JSON ──────────────────────────────── Some edits are far
+// easier to express as JSON - pasting a whole profile map from another machine, or reading the
+// exact keys the backend will store - and a workspace's config IS a JSON document on the wire.
 type EditorMode = 'form' | 'json'
 const MODE_PARAM = 'mode'
 
@@ -122,11 +97,9 @@ const jsonText = ref('')
 /** Has the textarea's content been folded into the in-memory config? */
 const jsonApplied = ref(false)
 
-/** What is wrong with the textarea, or null when it is applicable.
- * Live, not on-submit: the Apply button is disabled and the reason is on
- * screen while the user types, so an invalid paste never looks like it
- * worked. Never reformats the text - rewriting what somebody is typing is
- * the fastest way to lose an edit. */
+/** What is wrong with the textarea, or null when it is applicable. Live, not on-submit: the Apply
+ * button is disabled and the reason is on screen while the user types, so an invalid paste never
+ * looks like it worked. */
 const jsonProblem = computed<string | null>(() => {
   const text = jsonText.value.trim()
   if (text.length === 0) return 'Nothing to apply — the JSON is empty.'
@@ -153,15 +126,9 @@ const tabsStore = useTabsStore()
 const router = useRouter()
 const route = useRoute()
 
-// ─── Active tab: URL (?section=) → localStorage → general ────────────────
-// D5 of plan 2026-09-22-tools-menu-config-default-tools: every tab
-// switch lands in the URL so refresh / Back-Forward / shared links
-// keep the open section. Query key MUST stay `section` — `?tab=` is
-// owned by browser tab-mode (helpers/tabTarget.ts, stores/tabs.ts).
-// `route`/`router` are undefined when this component mounts without a
-// router (unit tests), hence the `activeTabLocal` fallback ref: with
-// no route to invalidate the computed, clicks must mutate a tracked
-// ref to re-render.
+// ─── Active tab: URL (?section=) → localStorage → general ──────────────── D5 of plan
+// 2026-09-22-tools-menu-config-default-tools: every tab switch lands in the URL so refresh /
+// Back-Forward / shared links keep the open section.
 function readStoredTab(): Tab | null {
   try {
     const saved = localStorage.getItem(TAB_STORAGE_KEY)
@@ -249,12 +216,8 @@ function showJson() {
   mode.value = 'json'
 }
 
-/** Leave JSON mode.
- * Refuses to leave when the textarea holds text that has NOT been applied and
- * cannot be - leaving would silently discard an edit the user is mid-way
- * through. EMPTY is not "unusable": there is nothing to lose, so leaving is
- * allowed (which is what makes a `?mode=json` deep link escapable before the
- * textarea has been seeded). */
+/** Leave JSON mode. Refuses to leave when the textarea holds text that has NOT been applied and
+ * cannot be - leaving would silently discard an edit the user is mid-way through. */
 function showForm() {
   if (mode.value === 'json' && jsonText.value.trim().length > 0 && !applyJson()) return
   mode.value = 'form'
@@ -264,11 +227,9 @@ function onJsonInput() {
   jsonApplied.value = false
 }
 
-/** Fold the textarea into the in-memory config, then re-hydrate the sections.
- * Written straight to `config` rather than through `setConfig`: `setConfig`
- * re-snapshots, which would mark this edit as already-saved and hide the save
- * bar. The snapshot must keep describing what the SERVER last gave us.
- * Returns false (leaving the config untouched) when the text is unusable. */
+/** Fold the textarea into the in-memory config, then re-hydrate the sections. Written straight to
+ * `config` rather than through `setConfig`: `setConfig` re-snapshots, which would mark this edit as
+ * already-saved and hide the save bar. */
 function applyJson(): boolean {
   if (jsonProblem.value !== null) return false
   config.value = JSON.parse(jsonText.value) as PabrikConfig
@@ -278,15 +239,8 @@ function applyJson(): boolean {
 }
 
 onMounted(async () => {
-  // Every view switch lands in the URL (?section=) so refresh /
-  // Back-Forward / shared links keep the open tab. The computed getter
-  // above falls back to localStorage when the URL has no `?section=`,
-  // which renders the stored tab with a clean URL (the reported bug:
-  // Tools active at /app/settings with no ?section=tools). Normalize
-  // on mount: the URL is rewritten to reflect the tab actually shown,
-  // and a deep link is persisted to storage so the next clean load
-  // restores it. Replace, not push — mount is not a navigation.
-  // Guarded: unit tests mount without a router.
+  // Every view switch lands in the URL (?section=) so refresh / Back-Forward / shared links keep
+  // the open tab.
   try {
     if (router && route) {
       const actual = activeTab.value
@@ -315,18 +269,9 @@ onMounted(async () => {
   } catch {
     /* router absent in tests */
   }
-  // Plan 2026-08-24-config-simplify-remove-defaults: the legacy
-  // localStorage fallback (which existed solely to seed the removed
-  // Defaults form) is gone. The API response is the only source.
-  // Read through the SOURCE. Calling `getPabrikConfig` here would pin this
-  // component to the user scope no matter which source it was given - the
-  // workspace page would then render (and later save) the WRONG config, which
-  // is the one failure of this extraction that is invisible on screen.
-  // ONE load path, shared with the reset/copy buttons: three copies of
-  // "read, setConfig, syncFromConfig" is three places to forget one of
-  // them. `reload` also seeds the JSON textarea, which is what a
-  // `?mode=json` deep link needs - without it the textarea opens empty,
-  // which looks exactly like "this config is empty".
+  // Plan 2026-08-24-config-simplify-remove-defaults: the legacy localStorage fallback (which
+  // existed solely to seed the removed Defaults form) is gone. The API response is the only source.
+  // Read through the SOURCE.
   await reload()
 })
 
@@ -336,11 +281,8 @@ const activeProfile = ref<string | null>(null)
 // Plan 2026-09-04-subagents-per-profile: no global list — per-profile
 // `profilesList[].sub_agents` is the only editor.
 const mcpServersList = ref<McpServer[]>([])
-// Web search providers (`web_search` in config.json). Edited as rows
-// rather than as the raw map — see components/pabrik/webSearchProviders.ts.
-// `webSearchErrors` is keyed by row id and holds whatever the last save
-// (or the pre-flight check) said about THAT row; the section renders it
-// verbatim instead of collapsing it into a generic failure.
+// Web search providers (`web_search` in config.json). Edited as rows rather than as the raw map —
+// see components/pabrik/webSearchProviders.ts.
 const webSearchRows = ref<WebSearchProviderRow[]>([])
 const webSearchErrors = ref<Record<string, string>>({})
 // Default tool checklist (Tools tab). `null` = config.json has no
@@ -348,14 +290,8 @@ const webSearchErrors = ref<Record<string, string>>({})
 // back until the user changes a checkbox.
 const toolsList = ref<string[] | null>(null)
 
-// Plan 2026-08-25-notify-on-error-and-retry-ms-in-settings: the General
-// tab uses a single `defineModel<PabrikGeneralSettings>` v-model surface
-// in PabrikGeneralSection.vue. The orchestrator hydrates from the loaded
-// config on first load, and writes back through `syncToConfig` when the
-// user mutates a control. Each of the three keys is a top-level
-// `PabrikConfig` field — `notify_on_complete`, `notify_on_error`,
-// `retry_delay_ms` — so the diff in `usePabrikConfig` tracks them as
-// primitives.
+// Plan 2026-08-25-notify-on-error-and-retry-ms-in-settings: the General tab uses a single
+// `defineModel<PabrikGeneralSettings>` v-model surface in PabrikGeneralSection.vue.
 const generalSettings = ref<PabrikGeneralSettings>({
   notify_on_complete: false,
   notify_on_error: false,
@@ -414,11 +350,8 @@ function syncFromConfig() {
   // an array hydrates the checklist as an explicit selection.
   toolsList.value = c.tools ?? null
 
-  // Plan 2026-08-25-notify-on-error-and-retry-ms-in-settings: hydrate
-  // the General tab from the loaded config. Three top-level fields,
-  // each defaulted to a safe zero so a missing-on-disk config still
-  // renders without crashing (the orchestrator's diff treats missing
-  // and explicit zero as different — see usePabrikConfig.spec.ts).
+  // Plan 2026-08-25-notify-on-error-and-retry-ms-in-settings: hydrate the General tab from the
+  // loaded config.
   generalSettings.value = {
     notify_on_complete: c.notify_on_complete ?? false,
     notify_on_error: c.notify_on_error ?? false,
@@ -442,18 +375,8 @@ function syncFromConfig() {
   skillEvalsSettings.value = { enabled: skillEvalsHydrated.value }
 }
 
-// ─── Models & compaction ──────────────────────────────────────────────
-//
-// THE TWO FIELDS THAT HAD NO UI. `max_capacity_token_model` and
-// `compaction_threshold_percent` are cascade steps 3 — the values every profile
-// that does not override them resolves against — and between the removal of the
-// Defaults tab and this block NOTHING could set them. The profile dialog's
-// "falls back to top-level defaults" pointed at a setting no user could reach.
-//
-// They stay NULL by default. `null` is not a number, it is "ask the catalog,
-// then the built-in" — which is why the inputs are empty rather than pre-filled
-// with 80 or 200000.
-
+// ─── Models & compaction ────────────────────────────────────────────── THE TWO FIELDS THAT HAD NO
+// UI.
 const catalogFreshness = ref<'fresh' | 'stale' | 'absent'>('absent')
 const catalogModelTotal = ref<number | null>(null)
 const catalogError = ref<string | null>(null)
@@ -525,14 +448,8 @@ onMounted(() => void loadCatalogStatus())
 function syncToConfig() {
   if (!config.value) return
   const c = config.value
-  // Only write list fields when non-empty, so the structural shape
-  // of the config stays close to the original (loaded) snapshot. The
-  // composable's diff treats `undefined` and missing keys as
-  // equivalent, but it can't tell the difference between "user
-  // deleted everything" and "user never had anything here" if we
-  // always materialize empty objects/arrays.
-  //
-  // Plan 2026-08-24-config-simplify-remove-defaults: the top-level LLM
+  // Only write list fields when non-empty, so the structural shape of the config stays close to the
+  // original (loaded) snapshot. Plan 2026-08-24-config-simplify-remove-defaults: the top-level LLM
   // defaults are no longer sent — profiles + operational settings only.
   const profiles = profilesToRecord(profilesList.value)
   const mcpServers = serializeMcpServers(mcpServersList.value)
@@ -548,12 +465,8 @@ function syncToConfig() {
     // Plan 2026-09-10-web-launch-toggle: 4th operational setting,
     // always written through like its siblings.
     web_launch_enabled: generalSettings.value.web_launch_enabled,
-    // Skill Evals: write the switch on top of the raw block, so the budget
-    // knobs the UI doesn't expose survive the save untouched. Guarded on
-    // "the user actually moved it" — materializing the key for a config
-    // that never had one would make `dirty` true the moment settings
-    // loads, since the diff would compare a fresh `skill_evals` against a
-    // snapshot with no such key.
+    // Skill Evals: write the switch on top of the raw block, so the budget knobs the UI doesn't
+    // expose survive the save untouched.
     ...(skillEvalsSettings.value.enabled !== skillEvalsHydrated.value
       ? {
           skill_evals: {
@@ -958,23 +871,8 @@ async function setActiveProfile(name: string) {
   }
 }
 
-// Clear the active profile — same instant-save path as setActiveProfile,
-// but writes `active_profile: ""` (empty string) to config.json. The
-// `pabrik_config_put.zig:246-252` handler treats an empty `active_profile`
-// value as "clear" (sets `config_json.active_profile = null` on disk).
-//
-// Why empty string and not `undefined` / JSON null?
-// Pre-fix the frontend sent `active_profile: undefined`, which JSON.stringify
-// strips to no key in the PUT body. The backend's `?[]const u8` type
-// couldn't distinguish "key absent" from "key: null" — both yielded
-// `None` and the handler skipped the field. Using `undefined` left the
-// user's "Set active" default in place (the Reset button silently
-// failed). The empty-string sentinel works within the existing wire
-// contract — the handler at pabrik_config_put.zig:250 already maps
-// `ap.len == 0` to "clear" exactly for this purpose.
-
-// Mirrors the existing `setActiveProfile` flow so the UI feedback
-// (success / error notification) is consistent.
+// Clear the active profile — same instant-save path as setActiveProfile, but writes
+// `active_profile: ""` (empty string) to config.json.
 async function clearActiveProfile() {
   const previous = activeProfile.value
   activeProfile.value = null
@@ -1008,11 +906,9 @@ async function handleSave() {
   // Capture the OFF→ON transition BEFORE save (prevWebLaunch tracks the
   // last persisted flag; generalSettings holds the pending edit).
   const autoOpen = generalSettings.value.web_launch_enabled && !prevWebLaunch.value
-  // Pre-flight the web search rows against the rules the backend
-  // enforces. A provider the backend would refuse would otherwise be
-  // written to disk and then silently dropped by the runtime's parser —
-  // the agent would report "no providers configured" while the user has
-  // one on screen. Blocking here names the row instead.
+  // Pre-flight the web search rows against the rules the backend enforces. A provider the backend
+  // would refuse would otherwise be written to disk and then silently dropped by the runtime's
+  // parser — the agent would report "no providers configured" while the user has one on screen.
   const rowErrors = validateWebSearchRows(webSearchRows.value)
   if (Object.keys(rowErrors).length > 0) {
     webSearchErrors.value = rowErrors
@@ -1047,10 +943,9 @@ function handleReset() {
   syncFromConfig()
 }
 
-// ─── Web launch (browser mode) ──────────────────────────────────────────
-// Plan 2026-09-10-web-launch-toggle: the General tab pill shows the live
-// browser URL from `GET /api/web/status`. `webUrl` is null while unknown
-// (pill renders a waiting hint, Open/Copy disabled).
+// ─── Web launch (browser mode) ────────────────────────────────────────── Plan
+// 2026-09-10-web-launch-toggle: the General tab pill shows the live browser URL from `GET
+// /api/web/status`.
 const webUrl = ref<string | null>(null)
 const prevWebLaunch = ref(false)
 
@@ -1104,9 +999,6 @@ function confirmDeleteProfile() {
 }
 
 // ─── Loading ─────────────────────────────────────────────────────────────
-/**  * Re-read the effective config through the source. The mount path's only load path. (It used to be
- * shared with a reset/copy control; that control is gone - the boot seeding IS the migration, so
- * there is nothing left to reset to or copy in.) */
 async function reload() {
   try {
     const data = await source.load()

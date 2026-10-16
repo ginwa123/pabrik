@@ -1,21 +1,6 @@
 <script setup lang="ts">
-/**
- * WebSearchSection — the `web_search` provider list in Settings.
- *
- * Sits on the same tab as McpServersSection: both answer "where does the
- * agent reach outside this machine". Unlike MCP servers, a provider is
- * edited IN PLACE rather than through a modal — the fields are five
- * small text inputs and a textarea, and a modal would hide the rest of
- * the list the user is comparing them against.
- *
- * The row model is `WebSearchProviderRow` (webSearchProviders.ts); the
- * `id` field is UI identity only and never reaches config.json.
- *
- * `errors` is keyed by row id and owned by the parent (PabrikConfigEditor),
- * which is where a rejected save — or the local pre-flight check —
- * lands. The component renders whatever it is handed verbatim and never
- * substitutes a generic failure of its own.
- */
+/** WebSearchSection — the `web_search` provider list in Settings. Sits on the same tab as
+ * McpServersSection: both answer "where does the agent reach outside this machine". */
 import EmptyState from './EmptyState.vue'
 import SettingsSkeleton from './SettingsSkeleton.vue'
 import type { WebSearchProviderRow } from './webSearchProviders'

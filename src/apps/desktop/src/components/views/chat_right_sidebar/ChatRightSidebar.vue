@@ -65,11 +65,8 @@ function loadPanel(): SidebarPanel {
 
 const activePanel = ref<SidebarPanel>(loadPanel())
 
-// The rail. The panel's name is the active segment's own label, so there is
-// no separate title row above it — one row of chrome instead of two. Glyphs
-// are the app's existing vocabulary (no icon dependency); each is
-// aria-hidden so a screen reader reads "Explorer", not "black square
-// Explorer".
+// The rail. The panel's name is the active segment's own label, so there is no separate title row
+// above it — one row of chrome instead of two.
 const PANEL_SEGMENTS: { id: SidebarPanel; glyph: string; label: string }[] = [
   { id: 'explorer', glyph: '▤', label: 'Explorer' },
   { id: 'changes', glyph: '⎇', label: 'Changes' },
@@ -141,7 +138,6 @@ const close = () => emit('update:open', false)
 // No cwd watcher here: SidebarDiffPanel already watches props.cwd itself (clears its tab cache +
 // reloads). A second fetch from this level doubled every worktree switch and the two concurrent
 // getGitChanges calls could resolve out of order (stale branch wins).
-
 defineExpose({
   // Reload the panel's current tab (PR tab re-syncs merge state too).
   // Falls back to git status for older panel refs without refresh().

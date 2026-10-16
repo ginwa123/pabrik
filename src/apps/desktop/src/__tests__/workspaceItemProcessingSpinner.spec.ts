@@ -1,9 +1,6 @@
-/** Regression tests for the workspace item row activity marker. The
- * per-TASK row already has its marker, and the per-ITEM row (the
- * project row) must have one too — so a user who collapsed the task list
- * can still tell "this project is busy". WorkspaceItem reads the same
- * `processingState` ref App.vue provides. The circle spinner was removed —
- * the elapsed time pill is now the only marker. */
+/** Regression tests for the workspace item row activity marker. The per-TASK row already has its
+ * marker, and the per-ITEM row (the project row) must have one too — so a user who collapsed the
+ * task list can still tell "this project is busy". */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, type Ref } from 'vue'
@@ -138,11 +135,9 @@ describe('WorkspaceItem item-row elapsed chip', () => {
   })
 
   it('item-loading spinner and item elapsed chip can render simultaneously in separate slots', async () => {
-    // The two indicators live in different slots (loading on the right,
-    // elapsed chip right-aligned) and represent independent states
-    // (folder-contents fetch vs. LLM worker), so they must be able
-    // to show at the same time. This guards against a future
-    // regression that re-joins them into a single v-if chain.
+    // The two indicators live in different slots (loading on the right, elapsed chip right-aligned)
+    // and represent independent states (folder-contents fetch vs. LLM worker), so they must be able
+    // to show at the same time.
     const processingState: Ref<Record<string, boolean>> = ref({ task_alpha: true })
     const now = Date.now()
     const workerActivity = ref<Record<string, WorkerActivity>>({

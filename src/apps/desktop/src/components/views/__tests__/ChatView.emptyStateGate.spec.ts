@@ -1,26 +1,5 @@
-/**
- * Static contract: the chatview's EMPTY STATE may only render on a
- * server-confirmed empty transcript.
- *
- * Bug (screenshot: a session with a full transcript showing
- * "How can I help you? / Start a conversation by typing a message below",
- * reported as "if server is slow, keep await, don't show a like this"):
- *
- *  1. `apiFetch` aborts every request at 15 s. The transcript page is
- *     `PAGE_SIZE = 1000` rows and the constant's own comment warns about
- *     "slow TTFB with base64 image_urls" — so a slow backend trips the abort.
- *  2. `getChatHistory` swallowed every failure into
- *     `{ messages: [], ... }`. An aborted fetch therefore reached
- *     `loadChatHistory` as a SUCCESSFUL EMPTY transcript.
- *  3. The empty state was gated on "no groups and not loading" — a state that
- *     an unavailable backend also produces. ChatView's `catch` (and the
- *     `chat-load-error` block + Retry it feeds) was unreachable, because the
- *     throwing function it wrapped never threw.
- *
- * Full ChatView mount is too heavy for a unit test, so this spec greps the
- * source, following the repo's static-contract pattern (cf.
- * ChatView.worktreeSidebar.spec.ts).
- */
+/** Static contract: the chatview's EMPTY STATE may only render on a server-confirmed empty
+ * transcript. */
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -47,12 +26,9 @@ describe('ChatView empty state is gated on a server-confirmed empty transcript',
   })
 
   it('the transcript is fetched with the typed variant, not the swallowing one', () => {
-    // `getChatHistory` answering `[]` on failure IS the bug; the initial load
-    // must use `fetchChatHistoryEffect`, whose error channel keeps "the
-    // backend is down" separate from "there are no messages". Scoped to
-    // `runHistoryLoadAttempt` — `fetchOlderPage` legitimately keeps the
-    // swallowing variant (a failed speculative page must not block the
-    // foreground scroll-back path).
+    // `getChatHistory` answering `[]` on failure IS the bug; the initial load must use
+    // `fetchChatHistoryEffect`, whose error channel keeps "the backend is down" separate from
+    // "there are no messages".
     const attemptBody = chatViewSrc.slice(
       chatViewSrc.indexOf('const runHistoryLoadAttempt = async () =>'),
       chatViewSrc.indexOf('const runHistoryLoadAttemptEffect'),

@@ -1,18 +1,5 @@
-/**
- * Tests for the workspaces store's session-events handling.
- *
- * The backend cascade for task rename emits a `session.updated`
- * event on /api/sessions/stream. After the unify-frontend-sse
- * migration (Chunk 6), the workspaces store receives session
- * events through the global sseBus (opened once by App.vue)
- * rather than opening its own EventSource. We use the bus's
- * test injection point (`__dispatchSseBus`) to drive events
- * deterministically.
- *
- * task.id == session_id (per AppLayout.vue:651
- * `:chat-id="activeTask.id"`), so the lookup is a straight
- * equality match on task.id.
- */
+/** Tests for the workspaces store's session-events handling. The backend cascade for task rename
+ * emits a `session.updated` event on /api/sessions/stream. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp } from 'vue'
@@ -180,11 +167,7 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
     const nav = useNavigationStore()
     const ws = await setupHandlersAndSeed()
     ws.setActiveTask('other_task')
-    // Re-apply the header AFTER setActiveTask — as of 2026-07-14,
-    // workspacesStore.setActiveTask calls clearActiveChat on the
-    // navigation store (see the regression test below for the
-    // rationale), so we need to set the header explicitly here to
-    // isolate the "SSE event handler ignores non-active task" contract.
+    // Re-apply the header AFTER setActiveTask.
     nav.setActiveChatName('Other Task Header')
 
     dispatch({
@@ -249,16 +232,8 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
     expect(ws.activeTaskId).toBeNull()
   })
 
-  // Regression: switching from a chat to a task used to leave the
-  // navigation store's `activeChatId` populated with the prior chat's
-  // id. The next SSE session_created event (broadcast on every
-  // /api/llm/session POST — session_create.zig:230-240) drives
-  // ChatsList.loadChats, which finds the orphan activeChatId in
-  // navigation.sessionId, emits a `navigate chat-<old_id>`, and the
-  // AppLayout drops the user out of the task they were just typing
-  // into and back into the prior chat. Mirrors the navigation
-  // store's own setActiveTask (navigation.ts:123-132), which has
-  // always cleared activeChatId on every set.
+  // Regression: switching from a chat to a task used to leave the navigation store's `activeChatId`
+  // populated with the prior chat's id.
   it('setActiveTask clears navigationStore.activeChatId on non-null taskId', async () => {
     const ws = await setupHandlersAndSeed()
     const nav = useNavigationStore()
@@ -276,18 +251,9 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
   })
 
   it('setActiveTask(null) does NOT clear navigationStore.activeChatId', async () => {
-    // REGRESSION (2026-07-16, `view=chat&session=X` showed welcome page
-    // instead of <ChatView>): the unconditional `clearActiveChat()`
-    // in `setActiveTask` was breaking the chat-nav paths in
-    // Sidebar.vue:316-322 and ChatsList.vue:220-232, where
-    // `setActiveChat(...)` is called immediately BEFORE
-    // `setActiveTask(null)`. The clear undid the just-set chat and
-    // left `activeChatId === ''`, so the v-else-if chain at
-    // AppLayout.vue:1611 (`activeChatId.startsWith('chat-')`) failed
-    // and fell through to <Chats/> (welcome). Now: clearing the
-    // task must NOT clear the chat — callers that need both cleared
-    // (e.g. handleCloseTaskView in AppLayout.vue:528) explicitly
-    // call `navigationStore.clearActiveChat()` themselves.
+    // REGRESSION (2026-07-16, `view=chat&session=X` showed welcome page instead of <ChatView>): the
+    // unconditional `clearActiveChat()` in `setActiveTask` was breaking the chat-nav paths in
+    // Sidebar.vue:316-322 and ChatsList.vue:220-232, where `setActiveChat(...)` is called.
     const ws = await setupHandlersAndSeed()
     const nav = useNavigationStore()
     ws.setActiveTask('task_1')
@@ -301,17 +267,9 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
   })
 
   it('setActiveTask(taskId) DOES clear navigationStore.activeChatId', async () => {
-    // The opposite-direction invariant: ACTIVATING a task must clear
-    // any active chat, otherwise the v-else-if chain at
-    // AppLayout.vue:1459 (`currentView === 'task' && activeTask`)
-    // and the v-else-if at AppLayout.vue:1611
-    // (`activeChatId.startsWith('chat-')`) would BOTH be true,
-    // picking whichever renders first (whichever v-else-if chain
-    // wins) and leaving the other branch out of sync. The previous
-    // unconditional `clearActiveChat()` happened to satisfy this
-    // requirement as a side effect of also clearing on null — the
-    // new conditional version preserves the "activate a task → no
-    // chat left over" contract.
+    // The opposite-direction invariant: ACTIVATING a task must clear any active chat, otherwise the
+    // v-else-if chain at AppLayout.vue:1459 (`currentView === 'task' && activeTask`) and the
+    // v-else-if at AppLayout.vue:1611 (`activeChatId.startsWith('chat-')`) would BOTH be true.
     const ws = await setupHandlersAndSeed()
     const nav = useNavigationStore()
     nav.setActiveChat('pre_task', 'Pre-Task Chat')
@@ -324,14 +282,8 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
     expect(ws.activeTaskId).toBe('task_1')
   })
 
-  // ─── onSessionEvent fan-out (ChatsList regression fix) ───────────────────
-  //
-  // The internal handler mutates workspace tree state. External
-  // components (ChatsList.vue's `navItems` mirror) need to be
-  // notified too — they have their own shape (relativeTime,
-  // processing flag, etc.) that's not derived from the workspace
-  // tree. The fan-out fires after the internal handler so
-  // subscribers can safely re-fetch from the API.
+  // ─── onSessionEvent fan-out (ChatsList regression fix) ─────────────────── The internal handler
+  // mutates workspace tree state.
   it('fan-outs session.updated events to onSessionEvent subscribers', async () => {
     const ws = await setupHandlersAndSeed()
 

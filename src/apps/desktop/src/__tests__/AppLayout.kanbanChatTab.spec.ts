@@ -1,23 +1,6 @@
-// AppLayout — kanban task chat as a <main> view (its own tab).
-//
-// When the user opens a kanban task (URL
-// `?view=workspace&...&itemId=Y/chat/task_<id>`, or by clicking a card) the
-// stores hold `activeTask` + `activeTaskWorkspaceItemId`. Since the chat is
-// its own tab, the AppLayout render chain gives that tab a CHAT body and the
-// bare board tab a BOARD body — so this spec has two jobs:
-//
-//   1. the gate: chat only for a task whose parent IS the active kanban item
-//   2. the chain: the chat and the board are mutually exclusive, never stacked
-//
-// (2) is the important one. The kanban VIEW branch only tests
-// `item_type === 'kanban'`, so a chat branch written as `v-if` — or placed
-// after the KanbanView branch — would render the board AND the chat at once.
-// The old modal could not catch that: a Teleport rendered outside the chain.
-
-// This spec used to be `AppLayout.kanbanChatDialog.spec.ts` and queried
-// `document` for the teleported dialog. There is no modal any more, so it
-// queries the mounted wrapper instead.
-
+// AppLayout — kanban task chat as a <main> view (its own tab). When the user opens a kanban task
+// (URL `?view=workspace&...&itemId=Y/chat/task_<id>`, or by clicking a card) the stores hold
+// `activeTask` + `activeTaskWorkspaceItemId`.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
@@ -150,9 +133,8 @@ describe('AppLayout — kanban task chat as its own view', () => {
     })
     installBusForTests()
     // Stub the workspace-store API calls fired by AppLayout's onMounted →
-    // initializeFromSystemFolder → init(). Without them jsdom's fetch throws
-    // ERR_INVALID_URL (no test server); AppLayout catches it, but it floods
-    // the output. Each test rewires these to preserve its fixture.
+    // initializeFromSystemFolder → init(). Without them jsdom's fetch throws ERR_INVALID_URL (no
+    // test server); AppLayout catches it, but it floods the output.
     vi.spyOn(api, 'getWorkspaces').mockResolvedValue({ workspaces: [] })
     vi.spyOn(api, 'getWorkspacesItems').mockResolvedValue({ items: [], count: 0 })
     vi.spyOn(api, 'getTasks').mockResolvedValue({ tasks: [], has_more: false, next_cursor: null })

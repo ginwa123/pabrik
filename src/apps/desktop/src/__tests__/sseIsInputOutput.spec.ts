@@ -1,63 +1,26 @@
-/**
- * Regression test for the boolean wire format of `is_input` / `is_output`.
- *
- * Background: the backend emits these fields as JSON booleans
- * (`"is_input": true`, `"is_output": false`), not as strings (`"1"` / `"0"`)
- * and not as numbers (`1` / `0`). The TypeScript types must match (boolean),
- * and the runtime comparison in `ChatView.vue` must use `=== true`
- * (boolean), not `=== '1'` (string). Before this refactor, the frontend
- * declared the fields as `string` and compared with `=== '1'`, which would
- * silently fail against the new boolean wire format.
- *
- * This test guards against:
- *   1. `is_input` / `is_output` reverting to `string` in the TS interface
- *      (compile-time check via `@ts-expect-error`)
- *   2. The runtime value shape drifting back to strings
- *   3. `ChatView.vue` regressing to a `=== '1'` string compare
- *
- * Plan: docs/plans/2026-07-01-is-input-output-bool-consistency.md (Chunk 4)
- */
+/** Regression test for the boolean wire format of `is_input` / `is_output`. The backend emits these as
+ * JSON booleans, not strings or numbers; the TS types must match and `ChatView.vue` must compare with
+ * `=== true`. Guards against the types reverting to `string` and against a `=== '1'` compare. */
 import { describe, it, expect } from 'vitest'
 import type { SseEvent } from '../api'
 
-// --------------------------------------------------------------------------
-// 1. Compile-time assertion: SseEvent.is_input / is_output are `boolean`,
-//    not `string`.
-// --------------------------------------------------------------------------
-// These module-level blocks do not run as test logic — they are
-// compile-time checks. If the field types revert to `string`, the
-// error-suppression directives below would no longer have any error
-// to suppress (because strings would suddenly be allowed). In that
-// case, `bun run build` (vue-tsc) would fail with an "unused"
-// directive error, pointing directly at the regression.
-
-// Valid: assign actual booleans. No directive needed; type matches.
+// -------------------------------------------------------------------------- 1.
 const _typeCheck: Pick<SseEvent, 'is_input' | 'is_output'> = {
   is_input: true,
   is_output: false,
 }
 void _typeCheck
 
-// Invalid: assign strings. Each offending line gets its own directive (vue-tsc matches
-// @ts-expect-error to the IMMEDIATELY-preceding source line, so a single directive on the const
-// line wouldn't cover all the field-level assignment errors below). @ts-expect-error -- string is
-// NOT a valid is_input; must be boolean.
+// Invalid: assign strings. Each offending line gets its own directive, because vue-tsc matches a
+// suppression to the IMMEDIATELY-preceding line — one directive cannot cover both fields below.
+// @ts-expect-error -- string is NOT a valid is_input; must be boolean.
 const _typeCheckBadString1: Pick<SseEvent, 'is_input'> = { is_input: '1' }
 // @ts-expect-error -- string is NOT a valid is_output; must be boolean.
 const _typeCheckBadString2: Pick<SseEvent, 'is_output'> = { is_output: '0' }
 void _typeCheckBadString1
 void _typeCheckBadString2
 
-// --------------------------------------------------------------------------
-// 2. Runtime: the wire format shape is true/false booleans
-// --------------------------------------------------------------------------
-// The backend (src/ai_workflow/tui/on_event_sent_sanitize_test.zig +
-// the new llm_history_is_input_output_test.zig) locks in the wire
-// format on the Zig side. On the frontend side, we mirror the same
-// expectations: the event payload's is_input / is_output must arrive
-// as real booleans, and the comparison `event.is_output === true` must
-// succeed where the old `=== '1'` would have failed.
-
+// -------------------------------------------------------------------------- 2.
 describe('SseEvent.is_input / is_output wire format', () => {
   it('exposes is_input and is_output as booleans on the event payload', () => {
     // Runtime belt-and-suspenders: even if the type checker passes, a wrong-shape value should be

@@ -1,5 +1,5 @@
 //! `PATCH /api/workspaces/:workspace_id/items/:item_id/tasks/:task_id/move`.
-//! Migration 110 gates it: a task waiting on an unfinished dependency may not
+//! Migration 111 gates it: a task waiting on an unfinished dependency may not
 //! change column (409 + blockers) unless the body sets `force`.
 
 const std = @import("std");

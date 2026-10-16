@@ -1,31 +1,5 @@
-/**
- * Behavioural test for the design-items-hide-tasks-section change.
- *
- * Pre-fix (PR #168 + earlier), expanded design items rendered BOTH
- * a tasks list section (showing `fix-layout`, `Design Chat: AI Chat
- * View`, etc. — the chat tasks linked 1:1 to each design page) AND
- * the design pages section (showing AI Chat View, Kanban Mode, etc.).
- * The chat tasks are noise because clicking them routes to the same
- * design page (per the per-page chat scoping plan).
- *
- * This PR hides the tasks section entirely for design items so the
- * sidebar shows ONLY the design pages — matching the user's mental
- * model ("llls under config agentic ai" shows just the task, but
- * design items now show only pages because the chat tasks aren't
- * meaningfully different from the pages themselves).
- *
- * Plan: docs/superpowers/plans/2026-08-06-design-pages-hide-tasks-for-design.md
- *
- * 4 tests:
- *   1. Design item expanded: tasks section NOT rendered, design
- *      pages section IS rendered.
- *   2. Kanban item expanded (regression check): tasks section
- *      rendered as before.
- *   3. Folder item expanded (regression check): tasks section
- *      rendered as before.
- *   4. Design item with NO pages, NO tasks: tasks section absent,
- *      pages section absent (just the row, nothing under it).
- */
+/** Behavioural test for the design-items-hide-tasks-section change. Plan:
+ * docs/superpowers/plans/2026-08-06-design-pages-hide-tasks-for-design.md 4 tests: 1. */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

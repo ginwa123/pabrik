@@ -12,6 +12,7 @@ const memories_mod = pabrikcore.memories;
 const tags_validation = @import("tags_validation.zig");
 const image_urls_validation = @import("image_urls_validation.zig");
 const video_urls_validation = @import("video_urls_validation.zig");
+const skills_store = pabrikcore.skills_store;
 const kanban_deps = pabrikcore.ai_mod.kanban_deps;
 
 /// Process-local monotonic counter for task_id generation.
@@ -58,7 +59,10 @@ pub const TaskCreateError = error{
     CwdTooLong,
     CwdNotAbsolute,
     CwdContainsControlChar,
-    // 400 — `depends_on` validation (Migration 110): a task cannot depend on
+    // 400 — per-task skill name validation (Migration 110).
+    SkillNameTooLong,
+    SkillNameContainsControlChar,
+    // 400 — `depends_on` validation (Migration 111): a task cannot depend on
     // itself, on a task from another kanban, on a set that would close a
     // cycle, or on more than 32 tasks.
     DependencySelfReference,
@@ -251,7 +255,7 @@ fn createStandardTask(
     input: TaskCreateInput,
     task_id: []const u8,
 ) TaskCreateError!StandardResult {
-    // Migration 110 — resolve the requested dependencies BEFORE the task row
+    // Migration 111 — resolve the requested dependencies BEFORE the task row
     // exists, so a rejected set (self-reference, a task from another board, a
     // cycle, over the cap) cannot leave a half-created card behind.
     const dep_ids: [][]const u8 = if (input.body.depends_on) |raw_ids|
@@ -324,6 +328,17 @@ fn createStandardTask(
         break :blk raw;
     };
 
+    const validated_skill_name = blk: {
+        const raw = input.body.skill_name orelse "";
+        if (raw.len == 0) break :blk raw;
+        if (raw.len > skills_store.MAX_NAME_BYTES) return error.SkillNameTooLong;
+        for (raw) |c| {
+            if (c < 0x20 or c == 0x7f) return error.SkillNameContainsControlChar;
+        }
+        if (!skills_store.isValidSkillName(raw)) return error.SkillNameContainsControlChar;
+        break :blk raw;
+    };
+
     const task = ai_mod.workspace_item_tasks.createWorkspaceItemTask(
         allocator,
         db,
@@ -341,6 +356,7 @@ fn createStandardTask(
         validated_cwd,
         // Migration 090 — video_urls (trailing param). Same contract.
         validated_video_urls,
+        validated_skill_name,
     ) catch return error.StandardTaskCreateFailed;
 
     // Chunk 5 of kanban-task-notification-icon: creating a card is a human
@@ -439,7 +455,7 @@ fn createStandardTask(
         }
     }
 
-    // Migration 110 — the task row exists now, so the validated edges can be
+    // Migration 111 — the task row exists now, so the validated edges can be
     // written.
     if (dep_ids.len > 0) {
         kanban_deps.replace(allocator, db, task_id, dep_ids) catch
@@ -576,6 +592,8 @@ pub fn tasksCreateHandler(
             error.CwdTooLong,
             error.CwdNotAbsolute,
             error.CwdContainsControlChar => 400,
+            error.SkillNameTooLong,
+            error.SkillNameContainsControlChar => 400,
             error.DependencySelfReference,
             error.DependencyNotInItem,
             error.DependencyCycle,
@@ -601,6 +619,8 @@ pub fn tasksCreateHandler(
             error.CwdTooLong => "cwd path too long (max 4 KiB)",
             error.CwdNotAbsolute => "cwd must be an absolute path",
             error.CwdContainsControlChar => "cwd contains a control character",
+            error.SkillNameTooLong => "skill name too long",
+            error.SkillNameContainsControlChar => "skill name must be a directory-safe token (letters, digits, dot, dash, underscore)",
             error.DependencySelfReference => "depends_on: a task cannot depend on itself",
             error.DependencyNotInItem => "depends_on: every id must be a task of the same kanban item",
             error.DependencyCycle => "depends_on: that would create a dependency cycle",

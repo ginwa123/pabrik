@@ -150,13 +150,9 @@ const statusLine = computed(() => {
   return parts.join(' · ')
 })
 
-// ─── Routine Agent (reuses AgentView, mirrors KanbanSettingsView) ──────────
-//
-// Same ownership split: this view owns the data + API calls against the
-// agent_routines mirror (Migration 087); AgentView is presentational and
-// emits intents. Routine ids are D3 (agent_routines.id == itemId), so no
-// workspace walk is needed — props carry workspaceId + itemId directly.
-
+// ─── Routine Agent (reuses AgentView, mirrors KanbanSettingsView) ────────── Same ownership split:
+// this view owns the data + API calls against the agent_routines mirror (Migration 087); AgentView
+// is presentational and emits intents.
 const routineKnowledge = ref<api.AgentRoutineKnowledgeRow[]>([])
 const routineTools = ref<string[]>([])
 const routineSystemPrompts = ref<api.AgentRoutineSystemPromptRow[]>([])
@@ -191,7 +187,6 @@ async function loadRoutineAgent() {
 }
 
 // ─── AgentView dialog state (mirrors KanbanSettingsView) ───────────────────
-
 const routineKnowledgeDialogOpen = ref(false)
 const routineKnowledgeError = ref<string | null>(null)
 const routineKnowledgeBusy = ref(false)

@@ -1,9 +1,5 @@
-/** Tests for GitBaseBranchSelect — the searchable base-branch dropdown in
- * the kanban "New task" dialog's git-worktree block.
- * Value contract: `modelValue` is the SHORT ref name (`origin/main`)
- * that the dialog bakes into the create-task message's `Base:` line and
- * the agent then passes as `set_git_worktree`'s `base` argument. Empty
- * string = no `Base:` line (branch from the repo HEAD). */
+/** Tests for GitBaseBranchSelect — the searchable base-branch dropdown in the kanban "New task"
+ * dialog's git-worktree block. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 

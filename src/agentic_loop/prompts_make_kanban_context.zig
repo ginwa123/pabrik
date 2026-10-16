@@ -65,7 +65,7 @@ pub fn makeKanbanContext(
                 try out.appendSlice(allocator, " — ");
                 try out.appendSlice(allocator, trimmed_desc);
             }
-            // Migration 110 — which columns finish a task, i.e. which ones
+            // Migration 111 — which columns finish a task, i.e. which ones
             // unblock the cards that depend on this one.
             if (c.is_done) {
                 try out.appendSlice(allocator, " — **a card here has COMPLETED its work** (it unblocks the cards that depend on it)");
@@ -397,7 +397,7 @@ const KanbanColumn = struct {
     description: []u8,
     position: i64,
     created_at: []u8,
-    /// Migration 110 — rendered as "a card here has COMPLETED its work".
+    /// Migration 111 — rendered as "a card here has COMPLETED its work".
     is_done: bool = false,
 };
 

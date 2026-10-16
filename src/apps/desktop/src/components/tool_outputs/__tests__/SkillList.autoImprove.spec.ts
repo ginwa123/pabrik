@@ -1,16 +1,6 @@
-/*
- * SkillList.vue — the per-row agent lock.
- *
- * The list is the only surface that shows every skill at once, so it is
- * where "which of these may the agent touch?" is answerable. Two things
- * have to hold:
- *
- *   1. Each row's checkbox shows THAT row's flag — a list that rendered
- *      one shared value would claim a pinned skill is editable.
- *   2. Toggling a row re-reads the list (the server normalises nothing
- *      here, but the row is the authority) and does NOT select the skill:
- *      the checkbox sits inside the row's click target.
- */
+/** SkillList.vue — the per-row agent lock. The list is the only surface that shows every skill at
+ * once, so it is where "which of these may the agent touch?" is answerable. Two things have to
+ * hold: 1. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'

@@ -1,24 +1,5 @@
-/**
- * P2 structural tests for VirtualScroller.vue
- * (task_1787551495337_9, "make virtual scroller more smooth").
- *
- * What P2 changes, and what each test pins:
- *
- *   1. Sizer + transform DOM contract — the two spacer DIVs are replaced
- *      by ONE sizer div sized to the total content height, and the
- *      rendered window is positioned with `translate3d(0, topSpacer px,
- *      0)`. Why: mutating a spacer's `height` style invalidates layout
- *      for the whole scroller every window shift; a transform is a
- *      GPU-composited change that triggers neither layout nor paint of
- *      the shifted content.
- *
- *   2. `contentShift` emit — ChatView currently re-sticks to bottom via
- *      a MutationObserver on the container's style attributes (spacer
- *      height writes). With transforms there is no height mutation to
- *      observe, so the scroller must emit an explicit event whenever the
- *      positioning values change. Payload: { topSpacer, bottomSpacer,
- *      total }.
- */
+/** P2 structural tests for VirtualScroller.vue (task_1787551495337_9, "make virtual scroller more
+ * smooth"). What P2 changes, and what each test pins: 1. */
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'

@@ -1,27 +1,6 @@
-/**
- * The sidebar's spacing contract.
- *
- * Four left edges and three row heights accumulated in this panel because
- * nothing ever asserted a measurement — the one "contract" comment in the
- * tree pointed at a spec that did not exist. These tests assert the values
- * against the --sb-* geometry tokens, so a row that hand-rolls its own
- * pixel count fails here rather than in a screenshot review.
- *
- * Type used to live here too, as four --sb-fs-* tokens. It does not any
- * more: the sidebar picks steps off the app-wide scale in style.css
- * (see type-scale.spec.ts), so a sidebar label and the same label in a
- * dialog are the same number by construction. The tests below still pin
- * WHICH step each part of the panel uses, because "smallest" is not a
- * contract — 10px for a section title and 10px for a timestamp is a
- * decision, and it is the one the reviewer asked to shrink.
- *
- * Deliberately NOT a pixel-diff of a screenshot: that fails on a 1px
- * antialiasing change and passes on a 14px indent regression.
- *
- * Note: no `expect(value, message)` form — eslint-plugin-jest/valid-expect
- * rejects a second argument, so per-file context goes in the failure text
- * via the collected map instead.
- */
+/** The sidebar's spacing contract. Four left edges and three row heights accumulated in this panel
+ * because nothing ever asserted a measurement — the one "contract" comment in the tree pointed at a
+ * spec that did not exist. */
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -67,11 +46,9 @@ const read = (p: string) => readFileSync(resolve(SRC, p), 'utf8')
 
 type Line = { n: number; text: string }
 
-/** Lines between `sb-scope: overlay` markers are floating popovers
- * (tooltips, dropdown cards), not rows in the three menus. They keep
- * their own width and type scale on purpose, so the row contract does
- * not apply to them. The marker is explicit and reviewable rather than a
- * regex guessing at what counts as a popover. */
+/** Lines between `sb-scope: overlay` markers are floating popovers (tooltips, dropdown cards), not
+ * rows in the three menus. They keep their own width and type scale on purpose, so the row contract
+ * does not apply to them. */
 function menuLines(src: string): Line[] {
   const out: Line[] = []
   let inOverlay = false

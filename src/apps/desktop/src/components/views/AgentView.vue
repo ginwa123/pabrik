@@ -33,19 +33,7 @@ interface Props {
   knowledge: AgnosticKnowledgeRow[]
   tools: string[]
   systemPrompts?: AgnosticSystemPromptRow[]
-  /**
-   * True while the PARENT's agent-bundle fetch is in flight.
-   *
-   * The three parents (AppLayout, KanbanSettingsView, RoutineView)
-   * fetch fire-and-forget with no flag of their own, so `knowledge`
-   * and `systemPrompts` start as `[]` and the panels below render
-   * their empty states — "No knowledge files yet." for an agent that
-   * has five. This prop lets them hold a skeleton instead.
-   *
-   * Named `parentLoading`, not `loading`: the component already owns
-   * a local `loading` ref for its OWN tool-registry fetch, and a
-   * same-named prop is a `vue/no-dupe-keys` collision.
-   */
+  /** True while the PARENT's agent-bundle fetch is in flight. */
   parentLoading?: boolean
 }
 
@@ -69,17 +57,8 @@ const emit = defineEmits<{
 const agentToolsStore = useAgentToolsStore()
 const loading = ref(true)
 
-// ─── Tools panel UI state ───────────────────────────────────────────────
-//
-// `searchQuery` filters the registry by name OR description (case-
-// insensitive). Kept local — the registry is loaded once on mount and
-// cached in the Pinia store, so re-filtering on every keystroke is
-// cheap and doesn't need debouncing.
-//
-// `toolsFilter` narrows the list by enabled state (All / Enabled /
-// Disabled chips) and COMPOSES with `searchQuery` — a tool must pass both to be visible.
-// `expandedTools` tracks which tool rows show their full (unclamped) description. Descriptions
-// default to a 2-line CSS clamp; clicking the row's expander chevron toggles.
+// ─── Tools panel UI state ─────────────────────────────────────────────── `searchQuery` filters
+// the registry by name OR description (case- insensitive).
 const searchQuery = ref('')
 const toolsFilter = ref<'all' | 'enabled' | 'disabled'>('all')
 const expandedTools = ref(new Set<string>())
@@ -107,7 +86,6 @@ function toggleToolExpanded(name: string) {
 }
 
 // ─── System Prompt panel UI state (plan 2026-08-21-agent-system-prompt) ──
-
 // `expandedPrompts` tracks which prompt rows show their full content —
 // same expand-chevron pattern as the Knowledge panel.
 const expandedPrompts = ref(new Set<string>())
@@ -124,11 +102,9 @@ function promptPreview(content: string): string {
   return oneLine.length > 60 ? oneLine.slice(0, 60) + '…' : oneLine
 }
 
-// ─── Knowledge panel UI state ───────────────────────────────────────────
-
-// `expandedKnowledge` tracks which knowledge rows are expanded. Expanded
-// inline rows reveal their full content in a scrollable block; expanded
-// file-backed rows show the absolute path + a hint line.
+// ─── Knowledge panel UI state ─────────────────────────────────────────── `expandedKnowledge`
+// tracks which knowledge rows are expanded. Expanded inline rows reveal their full content in a
+// scrollable block; expanded file-backed rows show the absolute path + a hint line.
 const expandedKnowledge = ref(new Set<string>())
 
 function toggleKnowledgeExpanded(id: string) {

@@ -127,7 +127,7 @@ fn useCase(
     const item_path = fetchWorkspaceItemPath(allocator, db, input.item_id) catch "";
     defer if (item_path.len > 0) allocator.free(item_path);
 
-    // Migration 110 — ONE query for the whole page (per-task would be N+1).
+    // Migration 111 — ONE query for the whole page (per-task would be N+1).
     // The edges and the per-task field arrays are freed by the defers at the
     // end of the function, i.e. after the response JSON has copied them.
     const dep_edges = ai_mod.kanban_deps.listEdgesForItem(allocator, db, input.item_id) catch
@@ -162,7 +162,7 @@ fn useCase(
             break :blk branch;
         };
 
-        // Migration 110 — this task's dependencies, split into "what I wait
+        // Migration 111 — this task's dependencies, split into "what I wait
         // for" and "what is still in the way".
         const dep_fields = http_response.makeTaskDependencyFields(
             allocator,
@@ -206,7 +206,7 @@ fn useCase(
             // Kanban-task-git-branch: computed on-demand per task from the
             // task's cwd (worktree or item path).
             .git_branch = git_branch,
-            // Migration 110 — kanban task dependencies.
+            // Migration 111 — kanban task dependencies.
             .depends_on = dep_fields.depends_on,
             .blocked_by = dep_fields.blocked_by,
             .is_blocked = dep_fields.is_blocked,

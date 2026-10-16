@@ -4,7 +4,6 @@ import { createScrollLogger } from '../scrollLogger'
 // Desktop scroll-perf plan, Task 6: scrollLogger.info fires ~60x/sec during SSE streaming scrolls
 // and was prod-on. Contract after the fix: - 'debug' AND 'info' levels are silenced outside DEV -
 // 'warn' / 'error' always log (they signal real problems)
-
 function makeCtx() {
   const container = document.createElement('div')
   Object.defineProperty(container, 'scrollTop', { value: 100, writable: true })

@@ -45,7 +45,6 @@ const emit = defineEmits<{
 }>()
 
 // ─── Fetch state (discriminated union — never confuse failed with empty) ──
-
 type ListState =
   | { kind: 'loading' }
   | {
@@ -129,16 +128,11 @@ onMounted(() => {
   if (props.open) load()
 })
 
-// No `watch()` here — `local/no-watch` bans ALL new watchers,
-// including the single-source side-effect form. Reloads are driven
-// by the parent instead: it owns the tab (URL `?prs=`) and calls
-// the exposed `reload()` from the event handlers that cause the
-// change (tab click, open, route guard). Mount covers the open case
-// via the `v-if` above.
+// No `watch()` here — `local/no-watch` bans ALL new watchers, including the single-source
+// side-effect form.
 defineExpose({ reload: load })
 
 // ─── Meta line ─────────────────────────────────────────────────────────────
-
 const checkedLabel = computed(() => {
   if (state.value.kind !== 'ready') return ''
   const diffSec = Math.floor((Date.now() - state.value.checkedAtMs) / 1000)
@@ -166,7 +160,6 @@ const relTime = (iso: string): string => {
 }
 
 // ─── Board join + filter ───────────────────────────────────────────────────
-
 const taskForRow = (row: GitPrListItem): Task | null =>
   (props.tasks ?? []).find((t) => (t.git_branch ?? '') === row.head_ref && row.head_ref !== '') ??
   null
@@ -182,7 +175,6 @@ const visibleRows = computed(() => (onlyThisBoard.value ? onBoardRows.value : ro
 const hiddenCount = computed(() => rows.value.length - onBoardRows.value.length)
 
 // ─── New-CR link ───────────────────────────────────────────────────────────
-
 const repoBase = computed(() => {
   for (const r of rows.value) {
     const base = repoBaseFromPrUrl(r.url || '')
@@ -207,7 +199,6 @@ const openRowUrl = (row: GitPrListItem): void => {
 }
 
 // ─── Close flow ────────────────────────────────────────────────────────────
-
 const confirmRow = ref<GitPrListItem | null>(null)
 const showConfirm = ref(false)
 // Number of the row whose close is in flight (null when idle). While

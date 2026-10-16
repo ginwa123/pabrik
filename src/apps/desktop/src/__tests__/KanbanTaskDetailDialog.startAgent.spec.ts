@@ -1,8 +1,6 @@
-/** Tests for the "Start agent" button in KanbanTaskDetailDialog (edit mode).
- * Mount pattern: same as KanbanTaskDetailDialog.runAgent.spec.ts —
- * <Teleport to="body">, so use `attachTo: document.body` +
- * `document.querySelector` (NOT `wrapper.find`).
- * Plan: docs/superpowers/specs/2026-08-18-kanban-task-detail-start-agent.md */
+/** Tests for the "Start agent" button in KanbanTaskDetailDialog (edit mode). Mount pattern: same as
+ * KanbanTaskDetailDialog.runAgent.spec.ts — <Teleport to="body">, so use `attachTo: document.body`
+ * + `document.querySelector` (NOT `wrapper.find`). */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -31,11 +29,9 @@ describe('KanbanTaskDetailDialog — Start agent', () => {
     findAllInDom('[data-testid="kanban-task-detail-dialog"]').forEach((el) => el.remove())
   })
 
-  /** Mount the dialog with optional props and an optional `processingState`
-   * provider. The `processingState` map mirrors the one App.vue
-   * provides — a Record<sessionId, boolean> where `true` means a
-   * worker is currently running for that session. Assigns to the
-   * outer `wrapper` so the afterEach hook can unmount it. */
+  /** Mount the dialog with optional props and an optional `processingState` provider. The
+   * `processingState` map mirrors the one App.vue provides — a Record<sessionId, boolean> where
+   * `true` means a worker is currently running for that session. */
   function mountDialog(
     propsOverride: Record<string, unknown> = {},
     processingState: Record<string, boolean> | undefined = undefined,

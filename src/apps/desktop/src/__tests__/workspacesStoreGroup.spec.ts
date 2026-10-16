@@ -1,26 +1,5 @@
-/**
- * Unit tests for `workspacesStore.groupDesignElements` (the store
- * action backing Cmd+G).
- *
- * 5 tests:
- *  1. Calls `api.groupDesignElements` with the right args (URL +
- *     body shape).
- *  2. Pushes the new parent to `item.design_elements` (so the
- *     LayersPanel tree picks it up).
- *  3. Replaces each child in place (so `parent_id` updates are
- *     visible without a re-fetch).
- *  4. Returns the API result unchanged on success.
- *  5. Propagates 5xx errors so the composable can surface them via
- *     notification (does NOT mutate the array on failure).
- *
- * Plan: docs/superpowers/plans/2026-07-28-grouped-layers.md (Chunk 5)
- *
- * Mock pattern follows the project memory
- * `apiFetch-mock-must-include-text-and-pinia`: apiFetch calls
- * useNotificationStore() on every non-2xx response, which requires
- * an active Pinia; the response mock must include `text()` so
- * apiFetch can extract the body for the error toast.
- */
+/** Unit tests for `workspacesStore.groupDesignElements` (the store action backing Cmd+G). 5 tests:
+ * 1. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 

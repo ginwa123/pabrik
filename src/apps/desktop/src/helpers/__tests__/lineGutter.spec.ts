@@ -1,16 +1,6 @@
-/**
- * lineGutter — maps whole-file diff lines to per-line gutter marks for the
- * Code view (`added` / `modified` / `deleted`), plus change blocks for the
- * up/down navigator. Keys are NEW-file line numbers: the Code view renders
- * worktree content, so every mark must address a visible row.
- *
- * Pairing rule (VS Code convention): a `-` run immediately followed by a
- * `+` run is a modification — the first min(R, A) added lines are
- * `modified`, surplus added lines are `added`, surplus removed lines
- * collapse to one `deleted` tick. A lone `+` run is `added`; a lone `-`
- * run is a `deleted` tick on the new line where the deletion happened
- * (clamped to the last line when the deletion is at EOF).
- */
+/** lineGutter — maps whole-file diff lines to per-line gutter marks for the Code view (`added` /
+ * `modified` / `deleted`), plus change blocks for the up/down navigator. Keys are NEW-file line
+ * numbers: the Code view renders worktree content, so every mark must address a visible row. */
 import { describe, expect, it } from 'vitest'
 import { buildLineGutter } from '../lineGutter'
 import { parseUnifiedDiff } from '../../components/views/chat_right_sidebar/parseUnifiedDiff'

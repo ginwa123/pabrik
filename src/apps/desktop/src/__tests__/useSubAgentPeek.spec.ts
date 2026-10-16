@@ -1,20 +1,6 @@
-/**
- * Tests for the useSubAgentPeek composable (skeleton — Chunk 1).
- *
- * Mocks global.fetch to assert the initial history call shape and
- * the messages ref updates. The SSE/chunk-accumulation behavior is
- * covered by Chunk 2 tests.
- *
- * After the single-global-EventSource migration (Chunks 1-3 of the
- * `single-sse-all-sessions` plan), the composable no longer creates
- * its own SseClient and the bus no longer exposes a per-session
- * subscribe/unsubscribe API. The composable registers a listener on
- * the bus's `llm` channel and filters by `event.session_id === sid`
- * on the JS side. Tests install the bus in `beforeEach` and drive
- * `llm` events via `__dispatchSseBus`. The bus's single global
- * SseClient is replaced with a stub so no real EventSource is
- * opened in jsdom.
- */
+/** Tests for the useSubAgentPeek composable (skeleton — Chunk 1). Mocks global.fetch to assert the
+ * initial history call shape and the messages ref updates. The SSE/chunk-accumulation behavior is
+ * covered by Chunk 2 tests. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, nextTick } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
@@ -28,11 +14,8 @@ import {
 } from '../helpers/sseBus'
 import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 
-// ─── shared SSE stub ────────────────────────────────────────────────────────
-// Mirrors the helper in chatViewWorktree.spec.ts / sseBus.spec.ts. The
-// stub satisfies the SseClient interface (close / reconnect / getState /
-// onStateChange) so the bus's global client slot can be filled without
-// opening a real EventSource in jsdom.
+// ─── shared SSE stub ──────────────────────────────────────────────────────── Mirrors the helper
+// in chatViewWorktree.spec.ts / sseBus.spec.ts.
 function makeStubClient(initial: SseState): SseClient {
   const stub: {
     close: ReturnType<typeof vi.fn>
@@ -58,13 +41,8 @@ describe('useSubAgentPeek', () => {
     fetchMock.mockReset()
     global.fetch = fetchMock as unknown as typeof fetch
 
-    // Install the bus BEFORE mounting so useSubAgentPeek's
-    // `useSseBus()` call in openSse finds an installed bus (the bus
-    // throws "useSseBus called before installSseBus" if not installed).
-    // The global client is stubbed so no real EventSource is opened
-    // in jsdom — the stub satisfies the SseClient interface. The bus
-    // owns a single global SseClient carrying all 5 channels; tests
-    // drive the `llm` channel via `__dispatchSseBus`.
+    // Install the bus BEFORE mounting so useSubAgentPeek's `useSseBus()` call in openSse finds an
+    // installed bus (the bus throws "useSseBus called before installSseBus" if not installed).
     __resetSseBus()
     installSseBus({} as unknown as Parameters<typeof installSseBus>[0])
     __setSseBusGlobalClient(makeStubClient('connecting'))
@@ -257,15 +235,9 @@ describe('useSubAgentPeek', () => {
     expect(peek.totalTokens.value).toBe(0)
   })
 
-  // ── Chunk 2 — chunk accumulation tests ──────────────────────────────────
-  // After the bus migration, chunks arrive via `__dispatchSseBus('llm',
-  // ...)` rather than the old per-channel onEvent callback. The
-  // listener-side filter (`event.session_id !== sid` returns early)
-  // scopes the events to the peek's own sid.
-
-  // Stable sid for the chunk scenario tests so the dispatched events match the peek's filter.
-  // Pulled out as a constant so the `creates a new message` test (which doesn't use
-  // runChunkScenario) can also reuse it.
+  // ── Chunk 2 — chunk accumulation tests ────────────────────────────────── After the bus
+  // migration, chunks arrive via `__dispatchSseBus('llm', ...)` rather than the old per-channel
+  // onEvent callback.
   const CHUNK_PEEK_SID = 'subagent_chunk_test'
 
   /**    * Drive streaming chunks through the bus's llm channel. Returns the composable's peek so callers
@@ -399,7 +371,6 @@ describe('useSubAgentPeek', () => {
     expect(peekB.messages.value.some((m) => m.content === 'for-A')).toBe(false)
 
     // Event for SID_B must mutate peekB only.
-     
     __dispatchSseBus('llm', {
       session_id: SID_B,
       id: 'b1',

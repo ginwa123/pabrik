@@ -1,46 +1,13 @@
-/**
- * sseClient.spec.ts
- *
- * Unit tests for `helpers/sseClient.ts`. Uses a controllable mock
- * `EventSource` (no real network) and vitest fake timers for
- * deterministic backoff assertions.
- *
- * Coverage (matches the 9 tests in §8.1 of
- * `docs/sse-reconnect-plan.md`):
- *
- *   1. Backoff schedule   — 5 errors → [1000, 2000, 4000, 8000, 16000] (× 0.75)
- *   2. Jitter range       — random=0 → 0.5×exp; random=1 → 1.0×exp
- *   3. Open cancels retry — error → schedule → open → assert no fire
- *   4. First error fatal  — error before any open → state=failed, no retry
- *   5. Mid-stream retry   — open then error → state=reconnecting, retry scheduled
- *   6. Visibility pause   — error while hidden → no fire; visible → fire
- *   7. Online fast-path   — error → online → fire immediately
- *   8. Close is terminal  — close() blocks all later triggers
- *   9. State emission order — connecting → reconnecting → connecting → open
- *  10. pagehide / beforeunload — close connection on refresh
- *      (the 2026-01-15 fix for "SSE still open after refresh")
- *
- * Plus:
- *   - Listener cleanup: addEventListener/removeEventListener accounting
- *   - Non-recoverable on synchronous constructor throw
- *   - maxAttempts is honored
- *   - reconnect() resets the attempt counter
- *   - Subscriber errors do not break the connection
- *   - getState() returns the current state synchronously
- *   - closeOnUnload: false skips the unload listeners
- */
-
+/** sseClient.spec.ts Unit tests for `helpers/sseClient.ts`. Uses a controllable mock `EventSource`
+ * (no real network) and vitest fake timers for deterministic backoff assertions. Coverage (matches
+ * the 9 tests in §8.1 of `docs/sse-reconnect-plan.md`): 1. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createSseClient, type SseState } from '../helpers/sseClient'
 
-// ─── Mock EventSource ────────────────────────────────────────────────────
-// A controllable replacement for the browser-native EventSource.
-// Captures every listener registered, every close() call, and lets
-// tests fire synthetic events. Also tracks
-// addEventListener/removeEventListener so we can assert listener
-// cleanup in `close()`.
-
+// ─── Mock EventSource ──────────────────────────────────────────────────── A controllable
+// replacement for the browser-native EventSource. Captures every listener registered, every close()
+// call, and lets tests fire synthetic events.
 interface MockEventSource {
   url: string
   readyState: number
@@ -49,12 +16,8 @@ interface MockEventSource {
   addEventListener: (type: string, listener: EventListenerOrEventListenerObject) => void
   removeEventListener: (type: string, listener: EventListenerOrEventListenerObject) => void
   emit(type: 'open' | 'error' | 'message' | string, data?: string): void
-  /** Simulate the server's `connected` named event. This is what
-   * the SseClient uses as the canonical "stream is live" signal
-   * (per the backend convention in `docs/sse-reconnect-plan.md`).
-   * Native `EventSource` does not fire `connected` automatically
-   * — the SERVER sends it via `event: connected\ndata: ...`. Our
-   * mock helper stands in for that server behavior. */
+  /** Simulate the server's `connected` named event. This is what the SseClient uses as the
+   * canonical "stream is live" signal (per the backend convention in `docs/sse-reconnect-plan.md`). */
   simulateOpen(payload?: string): void
   /** All listeners, by type. */
   _listeners: Map<string, Set<EventListenerOrEventListenerObject>>
@@ -94,13 +57,9 @@ function createMockCtor(): {
         // Using `new MessageEvent` requires a real DOM env; jsdom
         // provides one, so this works.
         const ev = data !== undefined ? new MessageEvent(type, { data }) : new Event(type)
-        // Fire addEventListener-style listeners, if any. The
-        // native EventSource fires BOTH addEventListener
-        // listeners AND the `onerror` property — they are
-        // independent — so we must do the same. An early-return
-        // here (when the listener set is empty / undefined) would
-        // skip the onerror dispatch, which is exactly the path
-        // the SseClient uses for errors.
+        // Fire addEventListener-style listeners, if any. The native EventSource fires BOTH
+        // addEventListener listeners AND the `onerror` property — they are independent — so we must
+        // do the same.
         const set = this._listeners.get(type)
         if (set) {
           for (const listener of set) {
@@ -125,7 +84,6 @@ function createMockCtor(): {
 }
 
 // ─── Mock visibility / online targets ───────────────────────────────────
-
 function createMockTarget(hidden = false): {
   target: Pick<Document, 'addEventListener' | 'removeEventListener' | 'hidden'> & {
     _listeners: Map<string, Set<EventListenerOrEventListenerObject>>
@@ -233,7 +191,6 @@ function createMockUnloadTarget(): {
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-
 describe('createSseClient', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -305,12 +262,8 @@ describe('createSseClient', () => {
 
   // 2. Jitter range
   it('jitter scales delay between 0.5×exp and 1.0×exp', () => {
-    // With random=0, the actual delay is exp * 0.5.
-    // We assert by checking that the timer is scheduled with the
-    // expected delay using `vi.getTimerCount()` / next fire time.
-    // Since the timer API in vitest doesn't expose the delay
-    // directly, we use a state-listener approach: subscribe to
-    // state changes and capture `nextDelayMs`.
+    // With random=0, the actual delay is exp * 0.5. We assert by checking that the timer is
+    // scheduled with the expected delay using `vi.getTimerCount()` / next fire time.
     const seenDelays: number[] = []
 
     // ── random=0: min jitter ──
@@ -792,13 +745,8 @@ describe('createSseClient', () => {
     client.close()
   })
 
-  // 9d. additionalEventTypes registers listeners for custom named
-  // events (e.g. `queue_message`) and routes them to onEvent. This
-  // is the fix for the bug where the server sent
-  // `event: queue_message\ndata: {...}` and the JS handler never
-  // saw it — the browser's EventSource only dispatches a named
-  // event to listeners registered for THAT name, and the SseClient
-  // did not auto-register `queue_message`.
+  // 9d. additionalEventTypes registers listeners for custom named events (e.g. `queue_message`) and
+  // routes them to onEvent.
   it('routes `additionalEventTypes` named events to onEvent with the event name as the type', () => {
     const { ctor, instances } = createMockCtor()
     const { target: visTarget } = createMockTarget(false)
@@ -1082,14 +1030,8 @@ describe('createSseClient', () => {
     expect(instances[0]!._closed).toBe(true)
   })
 
-  // 10. pagehide / beforeunload cleanly tear down the connection
-  // (the 2026-01-15 fix for "SSE still open after refresh"). The
-  // browser's native EventSource eventually tears down the
-  // underlying socket on unload, but it lingers in the network
-  // panel as "open" / "pending" and the server does not know the
-  // client is gone until the server-side timeout fires. Listening
-  // for `pagehide` + `beforeunload` and calling close() makes the
-  // browser drop the stream immediately.
+  // 10. pagehide / beforeunload cleanly tear down the connection (the 2026-01-15 fix for "SSE still
+  // open after refresh").
   it('closes the connection on pagehide so it is not still "open" after refresh', () => {
     const { ctor, instances } = createMockCtor()
     const { target: visTarget } = createMockTarget(false)

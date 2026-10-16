@@ -131,11 +131,9 @@ describe('TextReplace.vue — diff fallback + filtered Arguments', () => {
     expect(wrapper.html()).toContain('Before')
   })
 
-  // Regression: the DB diffview_* columns are NULL (backend only fills them
-  // from legacy XML), so ChatView passes explicit null props. Null must fall
-  // through to the envelope data — passing it into DiffView crashes
-  // splitLines (Cannot read properties of null). Exact shape from the
-  // production crash report.
+  // Regression: the DB diffview_* columns are NULL (backend only fills them from legacy XML), so
+  // ChatView passes explicit null props. Null must fall through to the envelope data — passing it
+  // into DiffView crashes splitLines (Cannot read properties of null).
   it('explicit null diffview props fall through to envelope data (no crash)', async () => {
     const params = JSON.stringify({
       path: '/tmp/pabrik_dummy_test.txt',

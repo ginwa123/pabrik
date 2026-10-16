@@ -1,17 +1,4 @@
-/**
- * Tests for WorkerElapsedChip.vue.
- *
- * The chip is the only surface that answers "how long has this worker been
- * running, and is it still alive?", so the behaviours worth pinning are:
- *
- *  - renders nothing when the session has no worker (the common case — a
- *    sidebar mounts one chip per row)
- *  - renders the elapsed time from `startedAt`, not from mount time
- *  - turns amber once the heartbeat passes the stale threshold
- *  - the 1s ticker keeps the label counting without a server round-trip
- *  - the ticker stops on unmount (a sidebar full of idle rows must not
- *    leave a timer per row behind)
- */
+/** Tests for WorkerElapsedChip.vue. */
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref, type Ref } from 'vue'

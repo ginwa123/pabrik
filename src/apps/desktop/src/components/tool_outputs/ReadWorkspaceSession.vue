@@ -4,54 +4,9 @@ import ToolParameters from './_shared/ToolParameters.vue'
 import { extractParam } from '../../helpers/extractParam'
 import { normalizeToolContent } from './_shared/toolOutputParser'
 
-/**
- * ReadWorkspaceSession — renders the `read_workspace_session` tool result
- * (see `read_workspace_session.zig`). The tool is the LLM's window into
- * OTHER chat sessions in its own workspace — list, FTS search, per-session
- * read, and search-within — so surfacing it as a structured card matters:
- * a raw JSON dump in the chat is unreadable.
- *
- * The payload is JSON inside the standard tool envelope
- * (`{tool, parameters, success, data, error, v}`); this card renders
- * `data`, which is discriminated by `behavior`:
- *
- *   behavior="list" (workspace session discovery):
- *     { behavior, limit, count, total_count,
- *       sessions: [{ id, name, status, message_count, last_activity, preview }] }
- *
- *   behavior="search" | "search-within" (FTS results):
- *     { behavior, query, session_id, offset, limit, count, total_count,
- *       results: [{ id, session_id, session_name, role, created_at, snippet }],
- *       full_contents: [{ id, session_id, role, content, content_truncated }] | null }
- *
- *   behavior="read" (per-session message index):
- *     { behavior, order, session_id, count, total_count,
- *       message_index: [{ id, role, created_at, preview, tool_call_id,
- *                         tool_name, content, content_truncated }] }
- *
- *   denied: { denied: true, session_id, message }
- *   error:  { error: "..." }
- *
- * Two details worth knowing before editing this file:
- *
- *   * `snippet` marks its match with BARE brackets, not tags. The backend
- *     calls `snippet(messages_fts, 0, '[', ']', '...', 10)`, so a real value
- *     looks like `...a [portal] that refuses...`. `parseSnippet` also
- *     tolerates `[match]`/`[/match]` for transcripts persisted earlier.
- *
- *   * `created_at` is `YYYY-MM-DD HH:MM:SS` (the `created_iso` column), the
- *     same format the tool's own `since`/`until` parameters accept. It sorts
- *     lexicographically, which is what makes the recency grouping below
- *     correct. It was a raw nanosecond epoch until commit 1655f221.
- *
- * Search results are grouped by `session` and a role-facet footer shows
- * page-scoped counts — the backend indexes the whole JSON envelope for
- * tool rows, so a natural-language query matches tool output heavily and
- * the ratio is worth surfacing.
- */
-
+/** ReadWorkspaceSession — renders the `read_workspace_session` tool result (see
+ * `read_workspace_session.zig`). */
 // ── Shared types ──────────────────────────────────────────────────────────
-
 interface WorkspaceSession {
   id: string
   name: string
@@ -163,7 +118,6 @@ const normalized = computed(() => normalizeToolContent(props.content))
 const dataRecord = computed(() => asRecord(normalized.value.data))
 
 // ── Parse outer envelope ─────────────────────────────────────────────────
-
 type Behavior = 'list' | 'search' | 'search-within' | 'read' | 'denied' | 'error' | 'unknown'
 
 const behavior = computed((): Behavior => {
@@ -219,7 +173,6 @@ const deniedSessionId = computed((): string | null => strOrNull(dataRecord.value
 const deniedMessage = computed((): string | null => strOrNull(dataRecord.value.message))
 
 // ── Parse entries ────────────────────────────────────────────────────────
-
 const listSessions = computed((): WorkspaceSession[] => {
   const results: WorkspaceSession[] = []
   const raw = dataRecord.value.sessions
@@ -392,7 +345,6 @@ const readEntries = computed((): ReadEntry[] => {
 })
 
 // ── Header summary text ──────────────────────────────────────────────────
-
 const summaryText = computed((): string => {
   if (errorMessage.value) return errorMessage.value
   if (behavior.value === 'denied') {
@@ -446,7 +398,6 @@ const hasArgs = computed(() => {
 })
 
 // ── Actions ──────────────────────────────────────────────────────────────
-
 const toggle = () => {
   if (hasEntries.value || isError.value || isDenied.value || hasArgs.value) {
     isExpanded.value = !isExpanded.value
@@ -471,7 +422,6 @@ const toggleContent = (id: string): void => {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
-
 /** Truncate `s` to `max` chars, keeping both ends (more useful for
  *  long paths/queries than a pure tail ellipsis). */
 function truncateMiddle(s: string, max: number): string {
@@ -480,19 +430,9 @@ function truncateMiddle(s: string, max: number): string {
   return `${s.slice(0, half)}…${s.slice(s.length - half)}`
 }
 
-/**
- * Split an FTS5 snippet into (text, isMatch) segments for `<mark>` rendering.
- *
- * The backend calls `snippet(messages_fts, 0, '[', ']', '...', 10)`, so a real
- * snippet wraps matches in BARE brackets — `...a [portal] that refuses...` —
- * and contains no tags at all. `[match]` / `[/match]` is still accepted
- * because tool results persisted before this card learned the bare format
- * may carry it.
- *
- * A bracket span whose text contains a literal `[` (e.g. `[xdg-[portal]`) is
- * split at the LAST inner `[`, so the surrounding text stays visible instead
- * of being highlighted wholesale.
- */
+/** Split an FTS5 snippet into (text, isMatch) segments for `<mark>` rendering. The backend calls
+ * `snippet(messages_fts, 0, '[', ']', '...', 10)`, so a real snippet wraps matches in BARE brackets
+ * — `...a [portal] that refuses...` — and contains no tags at all. */
 function parseSnippet(snippet: string): { text: string; match: boolean }[] {
   const out: { text: string; match: boolean }[] = []
   let inMatch = false

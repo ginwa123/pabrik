@@ -17,7 +17,7 @@ const UpdateColumnBody = struct {
     /// unchanged; `""` clears it; non-empty replaces it.
     description: ?[]const u8 = null,
     position: ?i64 = null,
-    /// Migration 110 — "a card that lands in this column has finished the work
+    /// Migration 111 — "a card that lands in this column has finished the work
     /// it describes", so it stops blocking its dependents.
     is_done: ?bool = null,
 };
@@ -65,7 +65,7 @@ fn useCase(
         return error.NothingToUpdate;
     }
 
-    // Migration 110 — the "this column finishes a task" flag.
+    // Migration 111 — the "this column finishes a task" flag.
     if (parsed.is_done) |flag| {
         kanban_model.setColumnIsDone(allocator, db, input.column_id, flag) catch
             return error.UpdateFailed;

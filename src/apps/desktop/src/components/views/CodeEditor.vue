@@ -9,40 +9,7 @@ import { buildLineGutter, type GutterKind } from '@/helpers/lineGutter'
 import UiIcon from '../ui/UiIcon.vue'
 import type { UiIconName } from '../ui/icons'
 
-/**
- * Read-only code viewer for `?view=code-editor`.
- *
- * Rendering follows the git-diff-review pattern (`SidebarDiffView.vue` /
- * `GitFileViewer.vue` / `tool_outputs/_shared/DiffView.vue`): one table row
- * per line, a sticky line-number gutter, soft-wrap always on, and the
- * repo's zero-dependency tokenizer (`helpers/codeHighlight`) painting
- * `tok-*` spans with the same palette as the diff cards.
- *
- * Why not Monaco (bug: task_1790594549955_1 — "when i click code editor
- * there is no code"): the previous version lazy-loaded monaco through a
- * dynamic import marked with the `@vite-ignore` comment. That marker
- * makes Vite keep the BARE specifier in the emitted bundle
- * (``import(`monaco-editor`)``), which no browser can resolve, so
- * `onMounted` rejected with `Failed to resolve module specifier
- * "monaco-editor"` and the body rendered empty while the header still
- * painted. The jsdom specs could not see it (vitest aliases
- * `monaco-editor` to a stub and ignores unhandled errors) and the Vite
- * dev server resolves bare specifiers itself — only the built bundle
- * failed. Rendering with the shared tokenizer removes the runtime module
- * resolution entirely, so there is nothing left to resolve at runtime,
- * and the viewer matches the diff review the user already reads.
- *
- * Git annotations (gutter change bars, Code/Diff toggle, change navigator,
- * blame chips) ride on two optional props. When a prop is absent and a cwd
- * is bound, the viewer self-fetches it: the whole-file diff via
- * `getGitWholeFileDiff` (same cached reader the diff review uses) and
- * blame via `GET /api/git/blame`. Both are best-effort — a failure leaves
- * the plain code view, never an error state.
- *
- * The component is presentational: `AppLayout` owns the open-file session
- * (file / content / loading / error) and passes the text down.
- */
-
+/** Read-only code viewer for `?view=code-editor`. */
 /** One inline blame annotation: author + pre-formatted age. */
 export interface LineBlame {
   line: number
@@ -263,11 +230,9 @@ onUpdated(() => {
   scrollToTarget()
 })
 
-// Footer shows the full path. filePath from the sidebar explorer is
-// already absolute (backend listDirectory joins dir_path + name), so
-// prefixing cwd would double it:
-// /home/u/work//home/u/work/migration/README.md. The shared
-// displayPathFor helper joins only relative paths.
+// Footer shows the full path. filePath from the sidebar explorer is already absolute (backend
+// listDirectory joins dir_path + name), so prefixing cwd would double it:
+// /home/u/work//home/u/work/migration/README.md.
 const displayPath = computed(() => displayPathFor(props.cwd, props.filePath))
 
 // File icon for display

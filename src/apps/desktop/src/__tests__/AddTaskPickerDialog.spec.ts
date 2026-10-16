@@ -1,22 +1,6 @@
-/**
- * Tests for the AddTaskPickerDialog — two large cards shown when
- * the user clicks the green `+` button on a workspace item. The
- * parent (Sidebar) decides which creation flow to open based on
- * the `pick` event payload.
- *
- * Note on `attachTo: document.body` + `document.querySelector`:
- * AddTaskPickerDialog uses <Teleport to="body"> to render the
- * dialog at the document root. With `mount({ attachTo:
- * document.body })`, vue-test-utils' wrapper still references the
- * mount target as `wrapper.element` (the empty `<div data-v-app>`);
- * the teleported content lives as a sibling of that div under
- * document.body. So `wrapper.find('[data-testid=...]')` returns
- * empty. The ImagePreview spec follows the same pattern (uses
- * `document.querySelector` to inspect teleported content); we do
- * the same here. Element interactions also use the native
- * `element.click()` (the ImagePreview precedent) so the event
- * reaches the listener attached to the document-attached DOM node.
- */
+/** Tests for the AddTaskPickerDialog — two large cards shown when the user clicks the green `+`
+ * button on a workspace item. The parent (Sidebar) decides which creation flow to open based on the
+ * `pick` event payload. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 

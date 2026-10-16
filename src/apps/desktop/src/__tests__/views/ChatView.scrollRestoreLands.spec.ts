@@ -1,50 +1,5 @@
-/**
- * "resume scroll why not match with user expectation? — it's always a bit on top"
- *
- * The reader closes a chat mid-transcript, reopens the same task, and lands
- * ABOVE where they were reading. Not at the top, not at the bottom — a bit up.
- *
- * ── The mechanism ───────────────────────────────────────────────────────────
- *
- * The restore is applied one frame after mount, but at that moment
- * VirtualScroller's height model is still ALL ESTIMATES: `defaultItemHeight`
- * is 64 and the first `measureItems` pass does not run until ~100 ms later. So
- * the restore is decided against a geometry that does not exist yet:
- *
- *   1. `restore()`'s "near bottom" test compares the saved value against the
- *      ESTIMATED bottom edge, so a reader who closed mid-transcript reads as
- *      "still at the bottom" and gets `scrollToBottom` instead of their own
- *      position.
- *   2. `scrollToPosition(saved)` clamps to the ESTIMATED max, so even when the
- *      restore does fire it writes a real coordinate into an estimated model —
- *      and the first measure pass then compensates the reader by the whole
- *      estimate error above the anchor.
- *
- * Measured on the real component before the fix: saved=9000 landed at 19200
- * (the bottom), saved=500 landed at 1452, saved=5000 landed at 15608.
- *
- * ── What is asserted here ───────────────────────────────────────────────────
- *
- * The app's own answer, on the real component with the real VirtualScroller:
- * the container's `scrollTop` once the mount settles. jsdom has no layout, so
- * row heights are mocked the way the sibling virtualScroller specs do — but the
- * restore path, the clamp, the measure pass and the at-bottom classification
- * are all production code.
- *
- * The saved position is deliberately in the MIDDLE of the transcript, well
- * clear of the "near bottom" branch, so the only thing that can move it is the
- * bug.
- *
- * ⛔ WHY THIS FILE OVERRIDES `Element.prototype.scrollTo` UNCONDITIONALLY
- *
- * `src/__tests__/setup.ts` already installs a polyfill that ASSIGNS `scrollTop`
- * and nothing else. A real browser also fires the `scroll` event, and
- * ChatView's `handleVirtualScroll` is what maintains `isAtBottom` — without the
- * event the flag keeps its initial `true`, `onContentShift` re-sticks to the
- * bottom, and the test manufactures a failure the product does not have. The
- * usual `if (typeof … === 'undefined')` guard therefore never fires here, and
- * copying it from a sibling spec silently produces a lying test.
- */
+/** "resume scroll why not match with user expectation? — it's always a bit on top" The reader
+ * closes a chat mid-transcript, reopens the same task, and lands ABOVE where they were reading. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick } from 'vue'
@@ -54,11 +9,9 @@ import { Effect } from 'effect'
 import * as api from '../../api'
 import ChatView from '../../components/views/ChatView.vue'
 
-// ── The hoisted api mock ────────────────────────────────────────────────────
-// Two seams, both required, both hoisted (same reason as
-// ChatView.streamingStick.spec.ts): `chatEngineDb` binds `fetchFn =
-// getChatHistory` as a constructor default evaluated at module load, and
-// ChatView's authoritative load calls `api.fetchChatHistoryEffect` directly.
+// ── The hoisted api mock ──────────────────────────────────────────────────── Two seams, both
+// required, both hoisted (same reason as ChatView.streamingStick.spec.ts): `chatEngineDb` binds
+// `fetchFn = getChatHistory` as a constructor default evaluated at module load, and ChatView's.
 const historyRows: unknown[] = []
 const historyResponse = () => ({
   messages: historyRows,
@@ -114,17 +67,9 @@ Element.prototype.scrollTo = function scrollToPolyfill(
   el.dispatchEvent(new Event('scroll'))
 }
 
-// ── The geometry under test ─────────────────────────────────────────────────
-//
-// The whole bug is the gap between the ESTIMATE and the MEASURED height, so the
-// two must be different numbers and both must be knowable:
-//
-//   VIEWPORT   800px
-//   ROW        200px real (mocked offsetHeight)
-//   ROWS       100  →  real total 20000px, real bottom 19200px
-// ESTIMATE 64px → estimated total 6400px, estimated bottom 5600px A reader who closed at 9000px is
-// in the middle of the REAL transcript and far above the ESTIMATED bottom — so the estimate cannot
-// be the thing that decides where they land, or the restore is meaningless.
+// ── The geometry under test ───────────────────────────────────────────────── The whole bug is the
+// gap between the ESTIMATE and the MEASURED height, so the two must be different numbers and both
+// must be knowable: VIEWPORT 800px ROW 200px real (mocked offsetHeight) ROWS 100 → real total.
 const VIEWPORT = 800
 const ROW_HEIGHT = 200
 const ROW_COUNT = 100
@@ -137,13 +82,9 @@ const ESTIMATED_BOTTOM = ESTIMATED_TOTAL - VIEWPORT
 /** Where the reader closed the chat: mid-transcript, well clear of the tail. */
 const SAVED_POSITION = 9000
 
-/** jsdom has no layout, so `scrollHeight` is whatever we say. The scroller's
- * sizer is a real DOM element with a real inline `height`, and a browser
- * derives the container's scrollHeight from it — so mirror that: the container
- * reports the sizer's current height. That makes the estimate-vs-measured gap
- * REAL rather than asserted, which is the only way this test can tell
- * "restored to the saved position" apart from "clamped to whatever the model
- * currently claims". */
+/** jsdom has no layout, so `scrollHeight` is whatever we say. The scroller's sizer is a real DOM
+ * element with a real inline `height`, and a browser derives the container's scrollHeight from it —
+ * so mirror that: the container reports the sizer's current height. */
 Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
   configurable: true,
   get(): number {
@@ -316,10 +257,8 @@ describe('ChatView — reopening a chat lands where the reader left it', () => {
   })
 
   it('a reader who closed on the last message still lands on the last message', async () => {
-    // The other half of the contract: the "near bottom" branch must keep
-    // working, and it must now be judged against the MEASURED bottom. A save at
-    // the real bottom is above the estimated bottom, so the old code read it as
-    // "scrolled up" and restored a stale position instead of following the tail.
+    // The other half of the contract: the "near bottom" branch must keep working, and it must now
+    // be judged against the MEASURED bottom.
     localStorage.setItem('chat-scroll-task_tail', String(REAL_BOTTOM))
     installApiMocks()
 

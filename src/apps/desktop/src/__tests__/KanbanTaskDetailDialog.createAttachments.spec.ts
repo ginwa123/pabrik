@@ -1,30 +1,4 @@
-/**
- * Tests for the create-mode image-attach workflow (plan: 2026-08-06-
- * kanban-no-base64-in-desc).
- *
- * Bug (pre-fix): when the user opened the create dialog and pasted an
- * image into the description, KanbanDescriptionEditor fell back to
- * writing the inline `data:image/png;base64,…` payload into the
- * description text. A 4 MB image → ~5.5 MB of base64 → the counter
- * showed 487 052 / 5000 and the task couldn't be saved.
- *
- * Fix contract — three pieces wired end-to-end:
- *   1. KanbanDescriptionEditor (create mode, no taskId) stages pasted
- *      images in `previewFiles` (visual) + a new `pendingFiles` array
- *      (data). The description textarea is NEVER modified.
- *   2. KanbanTaskDetailDialog (create mode, handleSave + handleRunAgent)
- *      reads `pendingFiles` from the editor's defineExpose and includes
- *      them in the `create` / `create-and-run` emit.
- *   3. KanbanView.handleCreateTaskSave (host) reads `pendingFiles`,
- *      uploads each via `api.uploadTaskAttachment(taskId, file)`
- *      AFTER `addTask` returns the new taskId, then patches the
- *      description with appended `![name](<url>)` markdown via
- *      `updateTaskDetails`.
- *
- * These tests cover piece (2): the dialog wires pendingFiles through
- * the emit. Piece (1) is locked in by KanbanDescriptionEditor.spec.ts;
- * piece (3) by KanbanView.createAndRun.spec.ts.
- */
+/** Tests for the create-mode image-attach workflow (plan: 2026-08-06- kanban-no-base64-in-desc). */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -247,7 +221,6 @@ describe('KanbanTaskDetailDialog — create mode image attachments', () => {
     })
     await flushPromises()
     // Trigger a save (name unchanged → still dirty via description change).
-     
     setInputValue('[data-testid="kanban-task-detail-description"]', 'Edited text')
     await flushPromises()
     clickInDom('[data-testid="kanban-task-detail-save"]')

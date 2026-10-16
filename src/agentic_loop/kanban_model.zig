@@ -18,7 +18,7 @@ pub const KanbanColumn = struct {
     description: []u8,
     position: i64,
     created_at: []u8,
-    /// Migration 110 — true when a card that lands in this column has finished
+    /// Migration 111 — true when a card that lands in this column has finished
     /// the work it describes, so it stops blocking its dependents.
     is_done: bool = false,
 };
@@ -73,7 +73,7 @@ pub fn listColumns(
             .description = try allocator.dupe(u8, row.values[3]),
             .position = std.fmt.parseInt(i64, row.values[4], 10) catch 0,
             .created_at = try allocator.dupe(u8, row.values[5]),
-            // A row written before Migration 110 comes back NULL and is
+            // A row written before Migration 111 comes back NULL and is
             // COALESCEd to "0"; anything else is "not zero" = true.
             .is_done = !std.mem.eql(u8, row.values[6], "0"),
         });
@@ -205,7 +205,7 @@ pub fn updateColumn(
     }
 }
 
-/// Migration 110 — flip the "a card that lands here is finished" flag. Kept
+/// Migration 111 — flip the "a card that lands here is finished" flag. Kept
 /// separate from `updateColumn` so the rename path's signature (and its six
 /// fixtures) stay untouched.
 pub fn setColumnIsDone(
@@ -465,7 +465,7 @@ pub fn moveTask(
 }
 
 
-// ─── Dependency gate (Migration 110) ─────────────────────────────────────
+// ─── Dependency gate (Migration 111) ─────────────────────────────────────
 // Enforced HERE, not in the UI: the drag-and-drop handler and the
 // `kanban_move_task` agent tool both funnel through `moveTaskChecked`.
 
@@ -1036,8 +1036,8 @@ fn setupDbDescription() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Thr
     const migration = pabrikcore.migrations_mod.migration;
     try migration.Migration051AddKanban.up(&db, alloc);
     try migration.Migration053AddKanbanColumnDescription.up(&db, alloc);
-    // Migration 110 — `listColumns` reads `is_done`, which 110 adds.
-    try migration.Migration110AddKanbanTaskDependencies.up(&db, alloc);
+    // Migration 111 — `listColumns` reads `is_done`, which 110 adds.
+    try migration.Migration111AddKanbanTaskDependencies.up(&db, alloc);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -1241,8 +1241,8 @@ fn setupDbCopy() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded }
     try migration.Migration051AddKanban.up(&db, alloc);
     try migration.Migration053AddKanbanColumnDescription.up(&db, alloc);
     try migration.Migration072ExtractKanbanTable.up(&db, alloc);
-    // Migration 110 — `listColumns` reads `is_done`, which 110 adds.
-    try migration.Migration110AddKanbanTaskDependencies.up(&db, alloc);
+    // Migration 111 — `listColumns` reads `is_done`, which 110 adds.
+    try migration.Migration111AddKanbanTaskDependencies.up(&db, alloc);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -1410,7 +1410,7 @@ test "replaceColumnsWith with empty source empties the target" {
     try testing.expectEqual(@as(usize, 0), cols.len);
 }
 
-// ─── Dependency gate tests (Migration 110) ──────────────────────────────
+// ─── Dependency gate tests (Migration 111) ──────────────────────────────
 // A task waiting on an unfinished dependency must not change column. The board
 // is `c1 todo / c2 in progress` (not completing) and `c3 done` (completing).
 

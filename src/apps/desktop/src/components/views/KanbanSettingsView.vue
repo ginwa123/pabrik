@@ -54,7 +54,6 @@ const router = useRouter()
 const workspacesStore = useWorkspacesStore()
 
 // ─── Emits ─────────────────────────────────────────────────────────────────
-
 const emit = defineEmits<{
   close: []
   addColumn: [name: string, description: string]
@@ -64,19 +63,8 @@ const emit = defineEmits<{
   copySpec: []
 }>()
 
-// ─── State ──────────────────────────────────────────────────────────────────
-
-// Active tab is URL-backed (?section=columns|agent). `section` is used
-// instead of `tab` because `?tab=<tabId>` is owned by the browser-style
-// tab mode (helpers/tabTarget.ts, stores/tabs.ts) — sharing the key meant
-// a URL like `?tab=tab_xxx` fell through to 'columns' and clicking Agent
-// clobbered the browser tab ID, so the tab store snapped the URL back
-// and the Agent tab looked unclickable. Default to 'columns' when the
-// query is missing or unknown — keeps the URL clean (no ?section=columns
-// in the default state).
-// Legacy `?tab=agent|tools|knowledge|memories|columns` (pre tab-mode)
-// links still land correctly; any other `?tab=` value (notably the
-// `tab_<id>` browser IDs) is ignored so the browser tab stays intact.
+// ─── State ────────────────────────────────────────────────────────────────── Active tab is
+// URL-backed (?section=columns|agent).
 const settingsMode = computed<SettingsMode>({
   get: () => {
     const readSection = (v: unknown): SettingsMode | null => {
@@ -134,7 +122,6 @@ const settingsEditorTargetDescription = ref('')
 const settingsEditorTargetIsDone = ref(false)
 
 // ─── Computed ──────────────────────────────────────────────────────────────
-
 // itemId comes from route.params (path). May be empty if the URL is
 // malformed — defensive: render the "no kanban selected" hint.
 const itemId = computed<string>(() => {
@@ -170,14 +157,9 @@ const workspaceId = computed<string>(() => {
 const notFound = computed(() => !!itemId.value && !item.value)
 const emptyHint = computed(() => !itemId.value)
 
-// ─── Kanban Agent (reuses AgentView) ────────────────────────────────────────
-//
-// Kanban boards reuse the same Knowledge + Tools + System Prompt UI as
-// `item_type='agent'` — AgentView is now agnostic (accepts both
-// AgentKnowledgeRow and AgentKanbanKnowledgeRow via union). The parent
-// (this view) owns the data + API calls; AgentView is a dumb
-// presentational component that emits intents.
-
+// ─── Kanban Agent (reuses AgentView) ──────────────────────────────────────── Kanban boards reuse
+// the same Knowledge + Tools + System Prompt UI as `item_type='agent'` — AgentView is now agnostic
+// (accepts both AgentKnowledgeRow and AgentKanbanKnowledgeRow via union).
 const kanbanKnowledge = ref<api.AgentKanbanKnowledgeRow[]>([])
 const kanbanTools = ref<string[]>([])
 const kanbanSystemPrompts = ref<api.AgentKanbanSystemPromptRow[]>([])
@@ -227,7 +209,6 @@ onUpdated(() => {
 })
 
 // ─── AgentView dialog state (mirrors AppLayout's agent dialogs) ─────────────
-
 const kanbanKnowledgeDialogOpen = ref(false)
 const kanbanKnowledgeError = ref<string | null>(null)
 const kanbanKnowledgeBusy = ref(false)
@@ -467,7 +448,6 @@ async function handleKanbanToggleToolsBulk(toolNames: string[], enabled: boolean
 }
 
 // ─── Handlers (mirror KanbanSettingsDialog 1:1) ────────────────────────────
-
 const handleAddSubmit = () => {
   const trimmedName = newColumnName.value.trim()
   if (!trimmedName) return
@@ -522,7 +502,6 @@ const handleSettingsEditorDelete = () => {
 }
 
 // ─── Navigation ────────────────────────────────────────────────────────────
-
 const goBack = () => {
   // The workspaceId is derived from the store (workspaceId computed
   // above). itemId comes from route.params. If either is missing,
@@ -550,16 +529,9 @@ const goBack = () => {
   }
 }
 
-// ─── Lifecycle ─────────────────────────────────────────────────────────────
-
-// Reset settingsMode when the route changes (so navigating from one
-// kanban's settings to another's starts on the Columns tab, not the
-// Agent tab that the previous kanban had selected). The URL
-// is the source of truth, so we use `router.replace` to strip the
-// ?section= query rather than mutating the computed directly.
-// Reset the settings tab/editor when navigating between kanbans:
-// prev-id guard on update. Writing settingsMode strips ?section= from
-// the URL via its setter; the guard keeps the reset one-shot.
+// ─── Lifecycle ───────────────────────────────────────────────────────────── Reset settingsMode
+// when the route changes (so navigating from one kanban's settings to another's starts on the
+// Columns tab, not the Agent tab that the previous kanban had selected).
 const prevSettingsItemId = ref(itemId.value)
 onUpdated(() => {
   if (itemId.value !== prevSettingsItemId.value) {
@@ -571,7 +543,6 @@ onUpdated(() => {
 })
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
-
 // Sorted copy — mirrors KanbanView's sortedColumns computed so a
 // re-render during a pending reorder still looks sensible.
 function sortedColumns() {

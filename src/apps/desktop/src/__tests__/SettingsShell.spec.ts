@@ -8,13 +8,9 @@ import SettingsShell from '../components/settings/SettingsShell.vue'
 import { useWorkspacesStore } from '../stores/workspaces'
 import { makeLocalStorageStub } from './helpers'
 
-/** SettingsShell — the one chrome for user + workspace settings.
- * User scope (`/app/settings`) is Pabrik-only: the old Skills/Memories
- * sidebar entries showed the ACTIVE workspace's rows without saying so,
- * so they moved to workspace scope, bound to the route workspace.
- * The open section rides in `?section=` (repo rule: every view switch
- * syncs the browser URL); the path itself is the scope. */
-
+/** SettingsShell — the one chrome for user + workspace settings. User scope (`/app/settings`) is
+ * Pabrik-only: the old Skills/Memories sidebar entries showed the ACTIVE workspace's rows without
+ * saying so, so they moved to workspace scope, bound to the route workspace. */
 const WS_1 = { id: 'ws_1', name: 'Acme', icon: '', items: [], expanded: false }
 const WS_2 = { id: 'ws_2', name: 'Beta', icon: '', items: [], expanded: false }
 
@@ -108,10 +104,8 @@ describe('SettingsShell', () => {
   })
 
   it('lists the workspace sections in order, under their group headings', async () => {
-    // This used to be asserted against the editor's own tab strip, which is
-    // gone: the shell owns navigation now, so the ORDER lives here. Order
-    // matters - the four moved config sections come after the workspace ones,
-    // under their own heading, because they are a different kind of thing.
+    // This used to be asserted against the editor's own tab strip, which is gone: the shell owns
+    // navigation now, so the ORDER lives here.
     const router = await makeRouter('/app/ws_1/settings')
     wrapper = mountShell(router, { scope: 'workspace', workspaceId: 'ws_1' })
     await flushPromises()
@@ -162,12 +156,9 @@ describe('SettingsShell', () => {
   })
 
   it('the Workspace tab opens the workspace in scope, not the first listed row', async () => {
-    // Regression: the tab used to navigate to `workspaceOptions[0]`
-    // unconditionally, and the list API sorts by `position DESC, created_at
-    // DESC` — so it left the user's workspace for whenever they had last moved
-    // to the top. The settings URL lost the workspace id, and one workspace's
-    // Profiles list (per-workspace config overlays, Migration 105) was shown
-    // while the user was working in another.
+    // Regression: the tab used to navigate to `workspaceOptions[0]` unconditionally, and the list
+    // API sorts by `position DESC, created_at DESC` — so it left the user's workspace for whenever
+    // they had last moved to the top.
     const router = await makeRouter('/app/settings')
     const push = vi.spyOn(router, 'push')
     useWorkspacesStore().activeWorkspaceId = 'ws_2'

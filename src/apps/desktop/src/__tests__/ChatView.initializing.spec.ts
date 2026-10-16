@@ -1,28 +1,6 @@
-/**
- * Tests for ChatView's initializing ready-gate.
- *
- * While the first history fetch is outstanding (`isInitializing`), the
- * transcript shows a skeleton (not the empty state) and the composer is
- * disabled (textarea + send). Once history resolves, the skeleton goes
- * away and the composer enables. Pending drafts (`pending-*`) skip the
- * history fetch by design, so they render ready immediately.
- *
- * ⛔ WHY THIS FILE USES A `vi.mock` MODULE FACTORY, NOT `vi.spyOn`
- *
- * These tests used to drive the load with `vi.spyOn(api, 'getChatHistory')`
- * and TWO of the three were red on `main` because of it: ChatView's initial
- * load calls `api.fetchChatHistoryEffect` DIRECTLY, and `chatEngineDb` binds
- * its own `fetchFn` to `getChatHistory` ONCE at module load — so a late
- * `vi.spyOn` reached neither seam. The real `fetchChatHistoryEffect` then hit
- * the network, the retry loop held `isLoading`, the skeleton never came down,
- * and both "resolves to ready" and "renders the load error" asserted against a
- * load that never settled. The seam that works is a hoisted `vi.mock` factory
- * (see `ChatView.streamingStick.spec.ts` for the long version).
- *
- * The retry schedule is collapsed to zero here (via the same hoisted-mock
- * seam) so the exhausted-retry path is reachable in milliseconds; the real
- * schedule has its own spec in `helpers/__tests__/chatHistoryRetry.spec.ts`.
- */
+/** Tests for ChatView's initializing ready-gate. While the first history fetch is outstanding
+ * (`isInitializing`), the transcript shows a skeleton (not the empty state) and the composer is
+ * disabled (textarea + send). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'

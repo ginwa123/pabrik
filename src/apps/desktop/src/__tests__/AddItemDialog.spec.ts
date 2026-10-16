@@ -1,28 +1,13 @@
-/**
- * Tests for AddItemDialog — the modal that creates a new project from a folder.
- *
- * After the migration to FilePickerDialog, the wrapper modal's own behavior is
- * what we test here: open/close lifecycle, name input, "Choose folder" button,
- * the create event shape. The picker itself is tested in FilePickerDialog.spec.ts.
- *
- * We mock FilePickerDialog with a stub that exposes data-testids for the
- * buttons we need to drive. This follows the same pattern as
- * createWorktreeDialog.spec.ts which mocks FolderExplorer — we only need to
- * verify the dialog wires up the picker's events, not test the picker
- * itself. The picker has its own test suite (FilePickerDialog.spec.ts).
- *
- * The API is NOT mocked — the real FilePickerDialog is stubbed out
- * entirely, so listFolder/getSystemFolder are never called in these tests.
- */
+/** Tests for AddItemDialog — the modal that creates a new project from a folder. After the
+ * migration to FilePickerDialog, the wrapper modal's own behavior is what we test here: open/close
+ * lifecycle, name input, "Choose folder" button, the create event shape. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import AddItemDialog from '../components/dialogs/AddItemDialog.vue'
 
 // ─── Mocks ─────────────────────────────────────────────────────────────────
-
-// Stub the FilePickerDialog — we only care that the parent wires up the
-// picker's events. Real picker behavior is tested in FilePickerDialog.spec.ts.
-//   - title prop (displayed in stub header)
+// Stub the FilePickerDialog — we only care that the parent wires up the picker's events. Real
+// picker behavior is tested in FilePickerDialog.spec.ts.
 vi.mock('../components/FilePickerDialog.vue', () => ({
   default: {
     name: 'FilePickerDialog',
@@ -46,7 +31,6 @@ vi.mock('../components/FilePickerDialog.vue', () => ({
 }))
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
-
 function findInDom<T extends Element = Element>(selector: string): T | null {
   return document.querySelector<T>(selector)
 }
@@ -58,12 +42,9 @@ function clickInDom(selector: string) {
 }
 
 function mountDialog(initialShow = true) {
-  // Wipe the body before each mount. attachTo: document.body creates a new
-  // <div data-v-app> for each mount, and these accumulate in jsdom even after
-  // wrapper.unmount() (the divs persist as empty containers). The accumulated
-  // divs cause weird interactions with subsequent mounts — most notably, the
-  // Teleport target can become confused when there are many empty data-v-app
-  // divs already in the body. Clearing the body here ensures a clean slate.
+  // Wipe the body before each mount. attachTo: document.body creates a new <div data-v-app> for
+  // each mount, and these accumulate in jsdom even after wrapper.unmount() (the divs persist as
+  // empty containers).
   document.body.innerHTML = ''
   return mount(AddItemDialog, {
     attachTo: document.body,
@@ -72,7 +53,6 @@ function mountDialog(initialShow = true) {
 }
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
-
 describe('AddItemDialog — open/close lifecycle', () => {
   let wrapper: VueWrapper | null = null
 
@@ -251,16 +231,9 @@ describe('AddItemDialog — name input', () => {
     expect(submitBtn?.disabled).toBe(true)
   })
 
-  // ─── Empty/whitespace name → visible error message ─────────────────────
-  //
-  // The dialog now shows an inline "Name is required" error after
-  // the user has interacted with the name field (typed-then-cleared
-  // OR blurred with whitespace). The error explains why Add is
-  // disabled — without it, the disabled button looks like a renderer
-  // bug to users who can't see why nothing happens.
-  //
-  // Plan: docs/superpowers/plans/2026-07-10-empty-workspace-item-bug.md
-
+  // ─── Empty/whitespace name → visible error message ───────────────────── The dialog now shows an
+  // inline "Name is required" error after the user has interacted with the name field
+  // (typed-then-cleared OR blurred with whitespace).
   it('whitespace-only name shows visible "Name is required" error', async () => {
     wrapper = mountDialog(true)
     await flushPromises()

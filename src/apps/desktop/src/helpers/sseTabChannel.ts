@@ -1,31 +1,5 @@
-// src/apps/desktop/src/helpers/sseTabChannel.ts
-//
-// Cross-tab coordination for the global SSE connection.
-//
-// PROBLEM: browsers cap HTTP/1.1 connections per origin at ~6. Every tab of the
-// app used to open its OWN EventSource (the bus is per-window), so the 7th tab
-// could not stream at all — and each open tab also consumed one of the slots the
-// app's ordinary fetches need.
-//
-// SOLUTION: exactly ONE tab ("the leader") owns the EventSource; the others are
-// "followers" and receive every dispatched event over a `BroadcastChannel`
-// (structured-clone fan-out). One connection no matter how many tabs are open.
-//
-// Leadership rules (deterministic, no coordinator server):
-//   * rank = (visible ? 1 : 0) then (older tab wins) then (tabId, lexicographic).
-//     A visible tab always outranks a hidden one, because browsers throttle
-//     timers *and* may pause an EventSource in a hidden tab.
-//   * A tab claims leadership when it hears no leader for `leaderTimeoutMs`, when
-//     it hears the leader step down (`down`), or when it becomes visible and the
-//     current leader is hidden.
-//   * Claim-first: a joining tab may briefly open its own connection, but as soon
-//     as it hears a higher-ranked leader it steps down. Steady state is exactly
-//     one connection; the overlap window is a task tick.
-//   * A HIDDEN tab only takes over by explicit `down` (and only after a longer
-// delay), never on a heartbeat timeout — a throttled tab cannot serve the others. This module is
-// transport- and app-agnostic: it knows nothing about SSE payloads beyond "post it to the others" /
-// "deliver it locally".
-
+// src/apps/desktop/src/helpers/sseTabChannel.ts Cross-tab coordination for the global SSE
+// connection. PROBLEM: browsers cap HTTP/1.1 connections per origin at ~6.
 export interface TabChannelLike {
   postMessage(message: unknown): void
   addEventListener(type: 'message', listener: (event: { data: unknown }) => void): void
@@ -60,13 +34,9 @@ export interface TabChannelOptions {
   onRemoteState: (state: string) => void
   /** A follower asking the leader to reconnect. */
   onRemoteReconnect: () => void
-  /** A window that may have MISSED events should refresh its data:
-   *   * it just became leader (the handover gap dropped events), or
-   *   * it was hidden longer than `resyncAfterHiddenMs` and came back
-   *     (background tabs get frozen/throttled and can miss deliveries).
-   * Callers answer by re-fetching from the REST API — every tab can always do
-   * that directly, independent of who holds the SSE connection. Coalesced by
-   * `resyncMinGapMs` so switching windows does not stampede the API. */
+  /** A window that may have MISSED events should refresh its data: * it just became leader (the
+   * handover gap dropped events), or * it was hidden longer than `resyncAfterHiddenMs` and came
+   * back (background tabs get frozen/throttled and can miss deliveries). */
   onResync?: (reason: string) => void
   /** Hidden-for-longer-than-this triggers a resync on return (default 5s). */
   resyncAfterHiddenMs?: number
@@ -153,12 +123,7 @@ export function createTabChannel(opts: TabChannelOptions): TabChannel {
   let onMessage: ((event: { data: unknown }) => void) | null = null
   let onVisibility: (() => void) | null = null
 
-  /** Total ordering for leadership. A single NUMERIC rank is not enough: two tabs
-   * created in the same millisecond tie, and a tie never resolves - both keep
-   * leading and the profile ends up with two connections (caught by
-   * `sseTabChannel.spec.ts > two tabs that start simultaneously converge`). So
-   * compare the tuple instead: visible beats hidden, then the older tab wins,
-   * then tabId breaks the tie. */
+  /** Total ordering for leadership. */
   function outranksTheirs(peer: Peer): boolean {
     if (peer.visible !== isVisible()) return isVisible()
     if (peer.startedAt !== startedAt) return startedAt < peer.startedAt
@@ -184,13 +149,9 @@ export function createTabChannel(opts: TabChannelOptions): TabChannel {
     }
   }
 
-  /** Tell the app it may be missing data. Two things cause that:
-   *   * we just took over the connection — events during the handover gap were
-   *     delivered to nobody;
-   *   * we were hidden long enough for the browser to freeze/throttle us, so
-   *     deliveries (and rendering) were skipped.
-   * Routed through `onResync`, which the app answers by re-fetching from the API.
-   * Coalesced: an alt-tab every second must not become an API stampede. */
+  /** Tell the app it may be missing data. Two things cause that: * we just took over the connection
+   * — events during the handover gap were delivered to nobody; * we were hidden long enough for the
+   * browser to freeze/throttle us, so deliveries (and rendering) were skipped. */
   function maybeResync(reason: string): void {
     if (closed) return
     if (!opts.onResync) return
@@ -265,12 +226,8 @@ export function createTabChannel(opts: TabChannelOptions): TabChannel {
     }, leaderTimeoutMs)
   }
 
-  /** Claim after a jittered delay, so simultaneous candidates don't all win.
-   * `force` skips the "someone else may have claimed while we waited" re-check.
-   * That re-check is right for a contested election, but WRONG for preemption: a
-   * hidden leader keeps heartbeating every `heartbeatMs`, so the re-check always
-   * saw a fresh beat and the visible tab never took over (caught by
-   * `sseTabChannel.spec.ts > a VISIBLE tab preempts a HIDDEN leader`). */
+  /** Claim after a jittered delay, so simultaneous candidates don't all win. `force` skips the
+   * "someone else may have claimed while we waited" re-check. */
   function scheduleElection(reason: string, force = false): void {
     if (closed || leader || claimTimer !== null) return
     const jitter = Math.random() * electionJitterMs
@@ -314,10 +271,8 @@ export function createTabChannel(opts: TabChannelOptions): TabChannel {
           }
           return
         }
-        // A visible tab takes over from a hidden leader: browsers throttle hidden
-        // tabs, so leaving a stale hidden leader in charge stalls the whole
-        // profile. Without this, a visible tab that JOINS while a hidden tab leads
-        // would never claim (only the visibilitychange path did).
+        // A visible tab takes over from a hidden leader: browsers throttle hidden tabs, so leaving
+        // a stale hidden leader in charge stalls the whole profile.
         if (shouldPreemptHiddenLeader(peer)) {
           scheduleElection('visible tab preempting hidden leader', true)
           return
@@ -456,11 +411,9 @@ export function createTabChannel(opts: TabChannelOptions): TabChannel {
 
     close(): void {
       if (closed) return
-      // Announce the handover BEFORE flipping the internal `closed` flag:
-      // `post()` is a no-op once closed, so posting after the flag would silently
-      // drop the `down` message and the remaining tabs would not take over until
-      // the heartbeat timeout (caught by `sseTabChannel.spec.ts > closing the
-      // leader hands leadership to a remaining tab`).
+      // Announce the handover BEFORE flipping the internal `closed` flag: `post()` is a no-op once
+      // closed, so posting after the flag would silently drop the `down` message and the remaining
+      // tabs would not take over until the heartbeat timeout (caught by `sseTabChannel.spec.ts >.
       if (leader) post({ k: 'down', tabId })
       closed = true
       stopHeartbeat()

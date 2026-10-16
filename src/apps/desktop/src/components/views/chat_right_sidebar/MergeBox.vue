@@ -99,12 +99,9 @@ const dotGlyph = computed(() => {
 
 // ── the method, remembered per repo ───────────────────────────────────────
 const repoKey = computed(() => repoKeyFor(props.prUrl, props.cwd))
-/** The method shown and used. No watcher: a `watch` that copies the remembered
- * value into a ref is banned here (local/no-watch), and it is not needed — the
- * remembered value is a pure function of the repo key, so a `computed` reads it
- * lazily. A pick is tagged with the key it belongs to, so a different change
- * request on the same mounted box falls back to ITS repo's memory instead of
- * carrying the previous choice over. */
+/** The method shown and used. No watcher: a `watch` that copies the remembered value into a ref is
+ * banned here (local/no-watch), and it is not needed — the remembered value is a pure function of
+ * the repo key, so a `computed` reads it lazily. */
 const picked = ref<{ key: string; method: MergeMethod } | null>(null)
 const method = computed<MergeMethod>(() => {
   const key = repoKey.value
@@ -184,12 +181,9 @@ async function submit() {
   // (GitLab) or joined a merge queue (GitHub) is `pending`, and saying "Merged" for it is the one
   // failure a merge button cannot afford.
   pendingNotice.value = result.value.pending
-  // The merge moved this BRANCH's change-request state, and the sidebar's
-  // RECENT icon and the kanban card badge read the shared 60s cache — which
-  // still holds the `open` answer they fetched before this click. Drop it and
-  // call the registered badges back so they re-read now. Without this the icon
-  // stays green until the row happens to remount. (The `git_pr_state` SSE event
-  // does the same for every OTHER client.)
+  // The merge moved this BRANCH's change-request state, and the sidebar's RECENT icon and the
+  // kanban card badge read the shared 60s cache — which still holds the `open` answer they fetched
+  // before this click. Drop it and call the registered badges back so they re-read now.
   if (props.status?.head_ref) invalidatePrStatus(props.cwd, props.status.head_ref)
   emit('merged')
 }

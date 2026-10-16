@@ -196,14 +196,8 @@ const filteredSuggestions = computed<string[]>(() => {
   return filtered.filter((s) => !modelLower.has(s.toLowerCase()))
 })
 
-// The dropdown stays open as long as the input is focused AND the
-// parent has provided at least one suggestion to filter from. The
-// `filteredSuggestions` computed drives what shows inside the
-// dropdown; this `showDropdown` only controls the wrapper
-// visibility so an unmatched draft (e.g. "partial" with no
-// "partial*" suggestions) keeps the dropdown open — the user
-// can backspace to reveal matches, and Escape closes it without
-// committing the draft.
+// The dropdown stays open as long as the input is focused AND the parent has provided at least one
+// suggestion to filter from.
 const showDropdown = computed<boolean>(() => isFocused.value && props.suggestions.length > 0)
 
 function onFocus(): void {
@@ -226,14 +220,7 @@ function commitSuggestion(suggestion: string): void {
   emit('update:modelValue', [...props.modelValue, suggestion])
   draftInput.value = ''
   highlightedIndex.value = -1
-  // KEEP the dropdown open so the user can pick multiple tags without
-  // re-focusing the input. Pre-fix, this line set `isFocused.value = false`,
-  // which collapsed the dropdown after every pick — user feedback
-  // 2026-08-06: "after enter select dropdown, the dropdown not show up
-  // agai, it should show up". The suggestion's @mousedown.prevent stops
-  // the input from blurring, so isFocused stays true naturally; the
-  // suggestion's row is filtered out of `filteredSuggestions` because
-  // the new tag is now in modelValue, leaving the remaining picks visible.
+  // KEEP the dropdown open so the user can pick multiple tags without re-focusing the input.
 }
 
 function moveHighlight(direction: 1 | -1): void {
@@ -333,11 +320,8 @@ onBeforeUnmount(() => {
   detachObserver()
 })
 
-// Expose commitDraft so the host (KanbanTaskDetailDialog) can call
-// it imperatively right before reading the modelValue. Without this,
-// a draft tag typed just before Save (no Enter/comma pressed) is
-// silently dropped — `commitDraft` is only triggered by Enter/comma
-// (and `@blur` since the auto-commit addition below).
+// Expose commitDraft so the host (KanbanTaskDetailDialog) can call it imperatively right before
+// reading the modelValue.
 defineExpose({ commitDraft })
 </script>
 

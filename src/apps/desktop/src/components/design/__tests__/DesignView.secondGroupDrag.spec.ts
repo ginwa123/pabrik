@@ -1,16 +1,6 @@
-/**
- * Regression test for "group moves first time, but second drag fails
- * until page refresh".
- *
- * Symptom (user report 2026-08-01):
- *   1. User creates a group + child.
- *   2. User drags the group right by 100 design-px.
- *      → Both group AND child move correctly.
- *   3. User drags the group AGAIN right by 50 design-px.
- *      → Group moves, child does NOT follow until page refresh.
- *
- * Plan: docs/superpowers/plans/2026-08-06-move-element-with-descendants.md
- */
+/** Regression test for "group moves first time, but second drag fails until page refresh". Symptom
+ * (user report 2026-08-01): 1. User creates a group + child. 2. Plan:
+ * docs/superpowers/plans/2026-08-06-move-element-with-descendants.md */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -85,15 +75,8 @@ describe('DesignView second group drag (regression)', () => {
     vi.restoreAllMocks()
   })
 
-  /** Find the DesignElement that represents `group` in the mounted DesignView, hook its
-   * `addEventListener` so we can intercept the pointermove/pointerup handlers, then fire a complete
-   * gesture.
-   * The group renders BEFORE its child (because the group has lower // eslint-disable-next-line
-   * @typescript-eslint/no-explicit-any */
-
-  /**
-   * `position` and the v-for is `for element in elements`). /
-   */
+  /** Find the DesignElement for `group`, hook its `addEventListener` to intercept the
+   * pointermove/pointerup handlers, then fire a complete gesture. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function setupGestureOnGroup(wrapper: any) {
     const allEls = wrapper.findAll('[data-design-element]')
@@ -151,13 +134,9 @@ describe('DesignView second group drag (regression)', () => {
       handlers.up!(new PointerEvent('pointerup', { pointerId: 1 }))
       await flushPromises()
 
-      // BUG FIX 2026-08-06: the wire now sends INCREMENTAL dx/dy
-      // (delta since last emit). The trailing pointerup emit carries
-      // only the residual — typically 0 if a throttled emit just
-      // happened, or the full delta if no throttle fired. To verify
-      // the cursor delta lands correctly, sum dx/dy across all
-      // calls. This is the same invariant as the "moves so fast"
-      // production fix: cumulative = cursor delta, NOT compounded.
+      // BUG FIX 2026-08-06: the wire now sends INCREMENTAL dx/dy (delta since last emit). The
+      // trailing pointerup emit carries only the residual — typically 0 if a throttled emit just
+      // happened, or the full delta if no throttle fired.
       expect(moveDesignElementsBatchMock.mock.calls.length).toBeGreaterThanOrEqual(1)
       const calls = moveDesignElementsBatchMock.mock.calls
       const sumDx = calls.reduce((acc, c) => {
@@ -244,24 +223,12 @@ describe('DesignView second group drag (regression)', () => {
       second.handlers.up!(new PointerEvent('pointerup', { pointerId: 1 }))
       await flushPromises()
 
-      // NOTE: This test currently FAILS with dx=35, dy=20 (instead of
-      // 30, 20). The 5px discrepancy points to a stale startClientX
-      // leak between drags — likely the test's `addEventListener` /
-      // `removeEventListener` stubs leak the first drag's onMove
-      // closure (which captured startClientX=200). The production
-      // path removes listeners correctly via Pointer Capture; the
-      // test path needs a cleaner addEventListener stub. Skip the
-      // assertion for now and flag the discrepancy.
+      // NOTE: This test currently FAILS with dx=35, dy=20 (instead of 30, 20).
       expect(moveDesignElementsBatchMock.mock.calls.length).toBeGreaterThanOrEqual(1)
       const calls = moveDesignElementsBatchMock.mock.calls
-      // BUG FIX 2026-08-06: the wire now sends INCREMENTAL dx/dy. The
-      // LAST call's dx/dy is the residual after the last throttle
-      // (zero on a trailing pointerup with no intervening throttle
-      // fire). To verify the *cumulative* cursor delta lands, sum
-      // dx/dy across all calls. This pins the same invariant the
-      // production user complained about ("moves so fast") — the
-      // cumulative sum should equal the cursor delta, not compound
-      // to d·N·(N+1)/2.
+      // BUG FIX 2026-08-06: the wire now sends INCREMENTAL dx/dy. The LAST call's dx/dy is the
+      // residual after the last throttle (zero on a trailing pointerup with no intervening throttle
+      // fire). To verify the *cumulative* cursor delta lands, sum dx/dy across all calls.
       const sumDx = calls.reduce((acc, c) => {
         const items = c[3].items as Array<{ element_id: string; dx: number; dy: number }>
         const root = items.find((i) => i.element_id === 'elem_root')

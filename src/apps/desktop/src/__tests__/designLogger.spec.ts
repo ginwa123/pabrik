@@ -1,15 +1,5 @@
-/**
- * Behavioural tests for the design logger (helpers/designLogger.ts).
- *
- * The logger is a singleton with a runtime enable/disable toggle.
- * These tests verify:
- *   - When disabled (default), no console output is produced.
- *   - When enabled, info/warn/error lines are emitted in the right
- *     shape (tag, headline, full context object).
- *   - The toggle persists via localStorage.
- *   - The console escape hatch (window.__designLogger) exposes the
- *     on/off/status API in dev builds.
- */
+/** Behavioural tests for the design logger (helpers/designLogger.ts). The logger is a singleton
+ * with a runtime enable/disable toggle. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {

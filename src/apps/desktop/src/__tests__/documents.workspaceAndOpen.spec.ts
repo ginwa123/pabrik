@@ -1,57 +1,6 @@
-/**
- * Regression specs for the two Documents-feature failures a user reported
- * against Migration 095 ("Documents" sidebar section + viewer).
- *
- * BUG 1 — "No workspace selected" with a workspace plainly selected.
- *   `Sidebar.vue` bound `DocumentsList`'s `workspace-id` prop to the RAW
- *   `workspacesStore.activeWorkspaceId` ref, and `DocumentsView.vue` read
- *   the same ref for its own fetch scope. That ref is only set by the
- *   header dropdown or a `?workspaceId=` URL restore — clicking a project
- *   row under PROJECTS sets only `activeWorkspaceItemId`. Every other
- *   consumer in the tree binds `activeWorkspace?.id ?? null`, the computed
- *   carrying the documented precedence fallback (explicit → persisted →
- *   item-owning workspace → first workspace). Documents was the only
- *   section still on the raw ref.
- *
- *   Why the old specs missed it: `DocumentsList.spec.ts` mounts the
- *   component with an explicit `workspaceId: 'ws_1'` PROP, so it can only
- *   ever test the component, never the binding that feeds it. Test 1
- *   below therefore mounts the real `Sidebar`, which is the only way to
- *   exercise that binding.
- *
- * BUG 2 — clicking a document row did nothing.
- *   A two-hop loop in AppLayout, not the one-hop race the store comment
- *   describes. Verified hop by hop:
- *     hop 2 — the URL→store watcher watches `[route.path, route.query]`,
- *       so a query-only `?doc=` change re-ran the project branch and
- *       re-adopted the path's project. Its `isOverlayView` guard covered
- *       gitfile/skill/code-editor but NOT `doc`, even though
- *       `currentView` and `useCurrentMainView` both check `doc` FIRST.
- *       This watcher was the one place that didn't.
- *     hop 3 — that re-adoption re-fired the store→URL mirror, whose `sub`
- *       whitelist was pageId/sorts/detail only, so `router.replace(target)`
- *       dropped `doc`. Note the mirror's local `currentView` is a raw
- *       `route.query.view` read that shadows the computed, so on a
- *       path-based URL (no `view=` param) its guard passes and hop 3 runs.
- *   Net effect: the click's own navigation was undone a microtask later,
- *   which is exactly "nothing happens".
- *
- *   Both hops existed only because a document was a `?doc=` OVERLAY. It
- *   is now a `/app/{ws}/doc/{id}` page, so the watcher guard and the
- *   mirror's `doc` carry are both gone — the class of bug has no
- *   mechanism left. These specs now pin the page contract that replaced
- *   it, plus that a stray `?doc=` no longer opens anything.
- *
- * ── Note on how these specs are shaped ──
- * The watcher tests need `useRoute` to hand back a REACTIVE object that
- * the test mutates AFTER mount. A plain object per test (the shape
- * `sidebarSingleActive.spec.ts` uses, and `AppLayout.chatClickUrlOverwrite`
- * relies on) never re-triggers `[route.path, route.query]`, so the whole
- * hop-2 → hop-3 chain silently does not run and the specs pass against the
- * broken code. Verified: with a plain route object these two tests are
- * green on pre-fix source. `route` below is `reactive()` and the tests
- * navigate by assigning to it.
- */
+/** Regression specs for the two Documents-feature failures a user reported against Migration 095
+ * ("Documents" sidebar section + viewer). BUG 1 — "No workspace selected" with a workspace plainly
+ * selected. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, reactive, ref } from 'vue'
@@ -229,7 +178,6 @@ const flush = async () => {
 }
 
 // ─── BUG 1 ────────────────────────────────────────────────────────────────
-
 describe('Documents — a project click still counts as "a workspace is selected"', () => {
   it('the sidebar section lists documents instead of "No workspace selected"', async () => {
     seedProjectClickNavigation()
@@ -254,13 +202,8 @@ describe('Documents — a project click still counts as "a workspace is selected
   })
 
   it('the viewer resolves the workspace and fetches, instead of hanging on "Loading document…"', async () => {
-    // DocumentsView receives only `documentId` — it has to learn the
-    // workspace from the store itself. Pre-fix its `watch` bailed on a
-    // null workspace, so no fetch ever happened.
-
-    // The documents store is deliberately LEFT EMPTY: `loadDocument`
-    // short-circuits on a cache hit, so seeding it would make the spec
-    // pass on the broken code. The fetch call is the assertion.
+    // DocumentsView receives only `documentId` — it has to learn the workspace from the store
+    // itself. Pre-fix its `watch` bailed on a null workspace, so no fetch ever happened.
     seedProjectClickNavigation()
     const wrapper = mount(DocumentsView, { props: { documentId: DOC_ID } })
     await flush()
@@ -287,7 +230,6 @@ describe('Documents — a project click still counts as "a workspace is selected
 })
 
 // ─── BUG 2 ────────────────────────────────────────────────────────────────
-
 const STUB_CONFIG = {
   Sidebar: true,
   RightSidebar: true,
@@ -398,19 +340,9 @@ describe('AppLayout — a document is a PAGE, not a ?doc= overlay', () => {
   })
 
   it('a document path CLEARS the active chat, so no ChatView mounts under it', async () => {
-    // The bug this pins is subtle and survived two earlier specs. <main>
-    // does NOT have one v-if chain: the standalone `v-if` on
-    // <DesignChatDialog> splits it in two, so <DocumentsView> (early,
-    // first chain) and the standalone `<ChatView v-else-if="activeChatId…">`
-    // (late, second chain) are in DIFFERENT chains. Independent chains are
-    // not mutually exclusive, so with `activeChatId` still set the chat
-    // rendered UNDERNEATH the document page.
-    //
-    // It hid from the specs for two reasons: the kanban-path spec above has
-    // no active chat (so the ChatView branch is false for an unrelated
-    // reason), and a hard page load has no chat state either. It only shows
-    // when a CHAT is active and the user clicks a row — which is why the
-    // Playwright test drives an actual click.
+    // The bug this pins is subtle and survived two earlier specs. <main> does NOT have one v-if
+    // chain: the standalone `v-if` on <DesignChatDialog> splits it in two, so <DocumentsView>
+    // (early, first chain) and the standalone `<ChatView v-else-if="activeChatId…">` (late, second.
     const { useNavigationStore } = await import('../stores/navigation')
     navigate(DOC_PATH)
     useDocumentsStore().documents = [DOC]
@@ -440,18 +372,8 @@ describe('AppLayout — a document is a PAGE, not a ?doc= overlay', () => {
   })
 
   it('a stale ?doc= URL is NOT rewritten to the document path', async () => {
-    // No fallback by design: Migration 095 shipped the overlay shape and
-    // was replaced by the `/doc/` path before it was in wide use, so
-    // there are no links in the wild to keep working. Rendering the
-    // document here would restore the ambiguous URL that says nothing
-    // about which page owns the document.
-    //
-    // Assert the REPLACE, not the rendered view: `router` is a mock here,
-    // so a boot rewrite would not actually move the route and
-    // `documents-view` would stay absent either way. Asserting the view
-    // would be a green test that passes whether or not the rewrite
-    // exists. The absence of a `router.replace` to the doc path is the
-    // observable difference.
+    // No fallback by design: Migration 095 shipped the overlay shape and was replaced by the
+    // `/doc/` path before it was in wide use, so there are no links in the wild to keep working.
     navigate(PROJECT_PATH, { doc: DOC_ID })
     useDocumentsStore().documents = [DOC]
     useDocumentsStore().loaded = true

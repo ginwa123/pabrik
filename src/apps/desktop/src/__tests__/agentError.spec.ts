@@ -1,25 +1,5 @@
-/**
- * Tests for useAgentErrorStore — Pinia store backing the persistent
- * per-session "agent error" card slot.
- *
- * The store owns:
- *   - bySession: Record<sessionId, AgentErrorEntry | null>
- *                session_id → latest error (null = cleared/no error yet)
- *   - setError(sessionId, content, id?) — replaces bySession.value with a
- *                                         fresh object spread (NEVER mutate
- *                                         in place — Vue 3 reactivity
- *                                         requires spread-then-assign)
- *   - clearForSession(sessionId) — idempotent delete; only spreads when the
- *                                  key actually exists
- *   - errorFor(sessionId) — returns bySession.value[sessionId] ?? null
- *                           (read-only; no spurious key insert)
- *
- * Default `id` fallback: `agent-error-${Date.now()}` matching the existing
- * ChatView.vue:2104 pattern.
- *
- * No backend round-trip — this is a UI-only store, mirroring the
- * useNavigationStore / useRecentFoldersStore composition-API pattern.
- */
+/** Tests for useAgentErrorStore — Pinia store backing the persistent per-session "agent error" card
+ * slot. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useAgentErrorStore } from '../stores/agentError'

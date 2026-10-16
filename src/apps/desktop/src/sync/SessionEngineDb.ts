@@ -1,20 +1,6 @@
-/**
- * Session-list child of the generic sync engine (sidebar local-first).
- *
- * Mirrors ChatEngineDb: cache-then-revalidate over api.getChats, each row
- * keeping the full server object in `raw` so cached mounts render through
- * the single ChatsList mapper with no shape drift. The cache is
- * partitioned by workspace (`ctx` = workspace id, `'all'` when unscoped),
- * matching ChatsList's `scopedWorkspaceId` refetch boundary.
- *
- * Cursor note: the backend paginates with an opaque cursor pointing at
- * the last item's sort value (session_list.zig) — it pages *older*, so
- * it cannot serve as a "newer tail" delta cursor the way ChatEngineDb's
- * created_at_nano does. loadDelta therefore re-fetches page 1 (desc)
- * and merges by id (30 rows, cheap, always correct). Infinite-scroll
- * cursors stay component-local (chatsNextCursor); no sync cursor is
- * persisted.
- */
+/** Session-list child of the generic sync engine (sidebar local-first). Mirrors ChatEngineDb:
+ * cache-then-revalidate over api.getChats, each row keeping the full server object in `raw` so
+ * cached mounts render through the single ChatsList mapper with no shape drift. */
 import { Effect } from 'effect'
 import * as api from '../api'
 import type { Chat } from '../api'

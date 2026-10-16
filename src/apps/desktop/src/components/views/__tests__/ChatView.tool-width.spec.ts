@@ -1,17 +1,4 @@
-/**
- * Static contract: tool rows keep one stable full-column width whether
- * collapsed or expanded.
- *
- * Root cause (screenshots: use_tool / spawn_sub_agent rows jump width on
- * toggle): the tool-group wrapper is a flex child with `min-w-0 max-w-full`
- * but no `flex-1`/`w-full`, so it shrink-to-fits its intrinsic content width.
- * Collapsed (one short header line) is narrow; expanded (wide <pre> JSON) is
- * wide. Different tools = row-to-row inconsistency.
- *
- * Full ChatView mount is too heavy for a unit test (requires Pinia + Vue
- * Router scaffold), so this spec greps the template source, following the
- * repo's static-contract pattern (cf. ChatView.tool-parameters.spec.ts).
- */
+/** Static contract: tool rows keep one stable full-column width whether collapsed or expanded. */
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'

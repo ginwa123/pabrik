@@ -1,14 +1,5 @@
-/**
- * Tests for api.createKanbanTask — POST /api/workspaces/:wid/items/:iid/kanban/tasks
- * with mode='create' | mode='create_and_run' discriminator.
- *
- * Mirrors the apiTasks.spec.ts pattern: vi.fn replacing global.fetch,
- * mockFetchOnce helper, apiFetch uses useNotificationStore so we need
- * a fresh Pinia per test.
- *
- * Plan: docs/superpowers/plans/2026-08-14-kanban-task-create-endpoints.md
- *   Task 3
- */
+/** Tests for api.createKanbanTask — POST /api/workspaces/:wid/items/:iid/kanban/tasks with
+ * mode='create' | mode='create_and_run' discriminator. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -124,7 +115,6 @@ describe('api.createKanbanTask', () => {
   // =====================================================================
   // mode='create_session' (plan: 2026-08-19-kanban-create-task-inits-session)
   // =====================================================================
-
   it("POSTs with mode='create_session' + selected_profile_model + NO queue_message", async () => {
     const fakeTask = {
       id: 'task_new',

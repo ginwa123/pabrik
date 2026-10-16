@@ -1,10 +1,6 @@
-/** Sidebar `+` (Add Task) visibility per item_type (2026-09-09).
- * - kanban items: NO `+` button. Kanban tasks are created from inside
- *   the kanban view (column "+ Add" → KanbanTaskDetailDialog) — the
- *   sidebar picker would bypass the board context. The `×` (Delete
- *   Item) stays visible.
- * - agent / folder items: `+` stays visible (agent skips the picker
- *   and opens a chat directly; folder opens the picker). */
+/** Sidebar `+` (Add Task) visibility per item_type (2026-09-09). - kanban items: NO `+` button.
+ * Kanban tasks are created from inside the kanban view (column "+ Add" → KanbanTaskDetailDialog) —
+ * the sidebar picker would bypass the board context. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, type VueWrapper } from '@vue/test-utils'

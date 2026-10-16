@@ -18,11 +18,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'file-click': [file: FolderEntry]
-  // Emitted when the user clicks a directory entry. Used by the
-  // CreateWorktreeDialog to navigate the picker into the clicked
-  // folder (parent of the new worktree). Existing callers (e.g.
-  // RightSidebar) ignore this event — clicking a folder still expands
-  // or collapses its children in addition to emitting.
+  // Emitted when the user clicks a directory entry. Used by the CreateWorktreeDialog to navigate
+  // the picker into the clicked folder (parent of the new worktree).
   'folder-click': [folder: FolderEntry]
 }>()
 

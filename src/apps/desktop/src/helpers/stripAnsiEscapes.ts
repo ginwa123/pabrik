@@ -1,42 +1,4 @@
-/**
- * stripAnsiEscapes — remove terminal escape sequences from captured
- * process output before it is rendered.
- *
- * ## Why the frontend needs this at all
- *
- * The backend (`helpers/ansi.zig`, wired into `shell.result_to_json`)
- * already strips escapes for NEW output, and that is where the fix
- * belongs. This is a second, independent guard for two narrower cases:
- *
- * 1. **Live / partial payloads.** A streaming or background-process log
- *    tail can reach the UI before the final serialiser has run.
- * 2. **Any future producer** that hands raw bytes to the renderer
- *    (the terminal websocket is the obvious candidate).
- *
- * ## What it CANNOT fix — do not expect it to
- *
- * Every shell result captured before the backend fix is stored with its
- * ESC byte already flattened to U+FFFD and the printable CSI parameters
- * orphaned beside it (`<U+FFFD>[7mwarning <U+FFFD>[0m`). At that point
- * the escape is gone: `[7m` is no longer a sequence, it is literal
- * text, and nothing in this module — or any amount of cleverness — can
- * tell it apart from a user who genuinely typed `[7m`. Those rows need a
- * migration or stay as they are; guessing here would silently eat real
- * output. New output is clean; old output is what it is.
- *
- * ## Why a hand-rolled scanner and not `text.replace(/\x1b\[[0-9;]*m/g, '')`
- *
- * A regex that only knows SGR (`ESC [ … m`) leaves the cursor, erase and
- * private-mode sequences behind, and one written naively (`/[\s\S]*?/`)
- * eats real text. This mirrors the ECMA-48 state machine in
- * `src/helpers/ansi.zig` — CSI, OSC, DCS/SOS/PM/APC and two-byte escapes
- * — so the two implementations cannot drift on what counts as an escape.
- *
- * Mirrors `zig src/helpers/ansi.zig`. Tests in `stripAnsiEscapes.spec.ts`
- * assert behaviour on real byte sequences; keep the two in step.
- */
-
-/** C0 control that introduces every ECMA-48 escape sequence. */
+/** stripAnsiEscapes. */
 const ESC = 0x1b
 /** Bell — the legacy terminator for OSC / DCS payloads. */
 const BEL = 0x07

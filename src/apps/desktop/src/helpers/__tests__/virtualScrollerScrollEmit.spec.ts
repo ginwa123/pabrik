@@ -1,29 +1,4 @@
-/**
- * Regression tests for the `scroll` emit on VirtualScroller.
- *
- * Why this file exists:
- *   The original `scroll` emit signature was
- *     [scrollTop: number, direction: 'up' | 'down']
- *   ChatView's `handleVirtualScroll` then walked
- *     `virtualScrollerRef.value?.containerRef.value`
- *   to recover the actual DOM element. That ref chain races during
- *   mount / remount (chat switch, initial mount, v-if toggle), which
- *   produced a steady stream of `[scroll#N WARN] ⚠NO-CONTAINER`
- *   lines in the dev console and silently skipped the geometry
- *   reads inside `handleVirtualScroll`.
- *
- *   The fix: the `scroll` emit now includes the event target as a
- *   third argument, so the parent handler can use `e.target`
- *   directly. `e.target` is the element that dispatched the scroll
- *   event, so the browser guarantees it exists for the lifetime
- *   of the handler.
- *
- *   These tests guard the emit signature and the `e.target` →
- *   `scroll` payload plumbing. If a future change drops the
- *   target from the emit, ChatView's `handleVirtualScroll` will
- *   silently regress to "container ref is always null", which
- *   would be hard to spot without these tests.
- */
+/** Regression tests for the `scroll` emit on VirtualScroller. */
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -64,13 +39,8 @@ describe('VirtualScroller scroll emit', () => {
     dispatchScroll(wrapper, 0)
     await nextTick()
 
-    // `wrapper.emitted('scroll')` returns an array of arrays —
-    // one entry per emit, each entry being the args. We expect
-    // exactly one emit for the one scroll we dispatched. Note:
-    // vue-test-utils' types are nested-undefined under strict
-    // `noUncheckedIndexedAccess`, so the `!` non-null assertions
-    // on the inner access are intentional — the `expect(...).toBeDefined()`
-    // + `toHaveLength(1)` above already prove the outer exists.
+    // `wrapper.emitted('scroll')` returns an array of arrays — one entry per emit, each entry being
+    // the args. We expect exactly one emit for the one scroll we dispatched.
     const emits = wrapper.emitted('scroll')
     expect(emits).toBeDefined()
     expect(emits).toHaveLength(1)

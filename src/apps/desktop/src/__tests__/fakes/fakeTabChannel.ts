@@ -1,13 +1,6 @@
-// src/apps/desktop/src/__tests__/fakes/fakeTabChannel.ts
-//
-// In-process stand-in for `BroadcastChannel`, so several "tabs" can be simulated
-// inside one vitest worker:
-//   * instances created with the same name see each other's messages,
-//   * the sender never receives its own message (matches the real API),
-//   * delivery is asynchronous (matches the real API),
-//   * `hub.log` records every message for assertions,
-//   * `hub.kill(channel)` drops a participant WITHOUT announcing anything —
-//     used to simulate a tab whose process died (no `down` message).
+// src/apps/desktop/src/__tests__/fakes/fakeTabChannel.ts In-process stand-in for
+// `BroadcastChannel`, so several "tabs" can be simulated inside one vitest worker: * instances
+// created with the same name see each other's messages, * the sender never receives its own.
 import type { TabChannelLike } from '../../helpers/sseTabChannel'
 
 type MessageListener = (event: { data: unknown }) => void
@@ -114,10 +107,7 @@ export function settle(ms = 0): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-/** Wait until `pred()` holds (or the deadline passes). Preferred over a fixed
- * `settle(ms)` for anything that depends on the watchdog re-arm: the coordinator
- * re-checks `now - lastLeaderBeatAt` before claiming, so the takeover can take up
- * to two watchdog periods, and a fixed wait becomes flaky under parallel load. */
+/** Wait until `pred()` holds (or the deadline passes). */
 export async function waitFor(pred: () => boolean, timeoutMs = 600): Promise<void> {
   const start = Date.now()
   while (!pred() && Date.now() - start < timeoutMs) await settle(5)

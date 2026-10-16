@@ -1,9 +1,6 @@
-/** <WorkspaceItemTaskCard> — right-click context menu.
- * The card's hover action strip (pin / rename / details / delete) was
- * replaced by this menu. Every action the buttons performed must still
- * fire, with the SAME emitted payload, or the change silently removed
- * functionality.
- * Plan: docs/superpowers/plans/2026-09-25-kanban-card-context-menu-move-to-column.md */
+/** <WorkspaceItemTaskCard> — right-click context menu. The card's hover action strip (pin / rename
+ * / details / delete) was replaced by this menu. Every action the buttons performed must still
+ * fire, with the SAME emitted payload, or the change silently removed functionality. */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, type Ref } from 'vue'
@@ -142,11 +139,9 @@ describe('WorkspaceItemTaskCard — context menu', () => {
     wrapper.unmount()
   })
 
-  // Regression (task_1791030815108_1): the card used to mount its own
-  // ConfirmDialog, which only forwarded `deleteTask` — the click then
-  // reached Sidebar's confirm too, so one "Delete task" opened TWO
-  // stacked dialogs. The card now emits straight up and the terminal
-  // owner (Sidebar) is the only thing that asks for confirmation.
+  // Regression (task_1791030815108_1): the card used to mount its own ConfirmDialog, which only
+  // forwarded `deleteTask` — the click then reached Sidebar's confirm too, so one "Delete task"
+  // opened TWO stacked dialogs.
   it('delete emits deleteTask and mounts NO dialog of its own', async () => {
     const wrapper = mountCard({ id: 't1', name: 'Alpha' })
     await openMenu(wrapper)

@@ -1,25 +1,4 @@
-/**
- * Tests for UsedTools.vue.
- *
- * Wire contract (see `src/modules/agent/tools/used_tools.zig` + the
- * `wrapToolOutput` envelope produced by `tools_exec_used_tools.zig`):
- *   {"tool":"used_tools","parameters":{},"success":true,
- *    "data":{"count":N,"tools":[{"name":…,"description":…}, …]},
- *    "error":null,"v":1}
- *   error: …"success":false,"data":null,"error":"used_tools failed: …"
- *
- * Verifies:
- *  - header chip shows the row count (and the `mcp` tally in right-meta)
- *  - one row per tool with name + FULL description
- *  - `mcp_*` tools get the mcp chip; built-ins do not
- *  - empty listing shows the empty state, not a blank body
- *  - error envelope shows the error text
- *  - malformed content fails closed with a visible error (no crash)
- *  - rows without a name are skipped; a stale `count` never desyncs the card
- *  - the filter box narrows rows and can report "no match"
- *  - the filter resets on collapse so the next open isn't empty
- *  - collapsed by default, expands on header click
- */
+/** Tests for UsedTools.vue. */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
@@ -28,7 +7,6 @@ import UsedTools from '../UsedTools.vue'
 // ────────────────────────────────────────────────────────────────────────
 // Helpers
 // ────────────────────────────────────────────────────────────────────────
-
 const tool = (name: string, description = `${name} description.`): Record<string, unknown> => ({
   name,
   description,
@@ -73,7 +51,6 @@ async function mountExpanded(content: string) {
 // ────────────────────────────────────────────────────────────────────────
 // Tests
 // ────────────────────────────────────────────────────────────────────────
-
 describe('UsedTools.vue — populated', () => {
   it('header chip shows the tool name and the tool count', () => {
     const wrapper = mount(UsedTools, { props: { message: { content: POPULATED } } })

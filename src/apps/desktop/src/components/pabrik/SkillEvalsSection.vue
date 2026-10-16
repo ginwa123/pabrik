@@ -1,29 +1,6 @@
 <script setup lang="ts">
-/**
- * SkillEvalsSection — the `skill_evals.enabled` toggle in Pabrik settings.
- *
- * This switch is the ONLY control for the `run_skill_eval` tool. The tool
- * is gated on config in two independent places, and until now neither was
- * reachable from the UI:
- *
- *   - `workflow.zig:filterAndMergeTools` injects `run_skill_eval` into the
- *     main agent's tool list only when `config.skill_evals.enabled`.
- *   - `run_skill_eval.execRunSkillEval` re-reads the same flag and returns
- *     `{"status":"disabled"}` when it is off.
- *
- * So the per-agent tool checklist (AgentView.vue) can show `run_skill_eval`
- * checked — it IS in `UNIFIED_TOOL_REGISTRY`, so the box renders — while the
- * tool still refuses to run. This section is what makes the real switch
- * visible; it writes `skill_evals`, not the agent's tool list.
- *
- * The budget knobs (max_skills_per_run etc.) are NOT edited here. They are
- * sent back verbatim from whatever GET returned so that toggling `enabled`
- * can never clobber a value the user hand-edited in config.json.
- *
- * Single `defineModel` v-model surface so `PabrikConfigEditor.vue` hydrates via
- * `syncFromConfig` and writes back via `syncToConfig`, like every other
- * section — the save itself goes through the shared `PUT /api/config/pabrik`.
- */
+/** SkillEvalsSection — the `skill_evals.enabled` toggle in Pabrik settings. This switch is the ONLY
+ * control for the `run_skill_eval` tool. */
 import { computed } from 'vue'
 
 export interface SkillEvalsSettings {
@@ -39,11 +16,9 @@ const model = defineModel<SkillEvalsSettings>({ required: true })
 const props = defineProps<{ loaded?: boolean }>()
 const isLoaded = computed(() => props.loaded !== false)
 
-/** Assign a FRESH object rather than mutating `model.enabled` in place —
- * `defineModel` only emits `update:modelValue` on reassignment, so an
- * in-place write would leave the orchestrator's watcher (and therefore
- * the dirty pill) unaware that anything changed. Same shape as
- * PabrikGeneralSection's toggle handlers. */
+/** Assign a FRESH object rather than mutating `model.enabled` in place — `defineModel` only emits
+ * `update:modelValue` on reassignment, so an in-place write would leave the orchestrator's watcher
+ * (and therefore the dirty pill) unaware that anything changed. */
 function onToggle(event: Event) {
   model.value = { ...model.value, enabled: (event.target as HTMLInputElement).checked }
 }

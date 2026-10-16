@@ -26,9 +26,9 @@ pub const TaskSummary = struct {
     column_id: ?[]const u8,
     column_name: ?[]const u8,
     position: i64,
-    /// Migration 110 — ids of the tasks this task waits for.
+    /// Migration 111 — ids of the tasks this task waits for.
     depends_on: []const []const u8 = &.{},
-    /// Migration 110 — NAMES of the still-unfinished dependencies. Non-empty
+    /// Migration 111 — NAMES of the still-unfinished dependencies. Non-empty
     /// means `kanban_move_task` will refuse a column change (unless forced).
     blocked_by: []const []const u8 = &.{},
     is_blocked: bool = false,
@@ -338,7 +338,7 @@ pub fn executeKanbanListToJSON(
     // 8. Build task summary array (already filtered + paginated at DB level)
     const filtered: []const KanbanTaskRow = task_rows;
 
-    // Migration 110 — ONE query serves the whole page. The per-task slices
+    // Migration 111 — ONE query serves the whole page. The per-task slices
     // below borrow from `dep_edges`, which stays alive until the payload is
     // rendered.
     const dep_edges = pabrikcore.ai_mod.kanban_deps.listEdgesForItem(allocator, db, input.item_id) catch |err| {
@@ -381,7 +381,7 @@ pub fn executeKanbanListToJSON(
             break :blk if (name) |n| n else null;
         } else null;
 
-        // Migration 110 — this task's dependency edges, split into ids and
+        // Migration 111 — this task's dependency edges, split into ids and
         // the still-unfinished names. Borrowed from `dep_edges`; the two
         // scratch lists own only the array headers.
         var dep_ids = std.ArrayList([]const u8).empty;
@@ -425,9 +425,9 @@ pub const TaskJSON = struct {
     column_id: ?[]const u8,
     column_name: ?[]const u8,
     position: i64,
-    /// Migration 110 — ids of the tasks this task waits for (`[]` when none).
+    /// Migration 111 — ids of the tasks this task waits for (`[]` when none).
     depends_on: []const []const u8 = &.{},
-    /// Migration 110 — names of the dependencies that have NOT completed.
+    /// Migration 111 — names of the dependencies that have NOT completed.
     blocked_by: []const []const u8 = &.{},
     is_blocked: bool = false,
 };
@@ -502,7 +502,7 @@ pub fn toJSON(
             .column_id = t.column_id,
             .column_name = clean_col_name,
             .position = t.position,
-            // Migration 110 — borrowed passthrough (ids, and the names of the
+            // Migration 111 — borrowed passthrough (ids, and the names of the
             // dependencies the caller already owns).
             .depends_on = t.depends_on,
             .blocked_by = t.blocked_by,
@@ -772,7 +772,7 @@ fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
         \\)
     , &.{});
 
-    // Migration 110 — the dependency edges the gate reads.
+    // Migration 111 — the dependency edges the gate reads.
     try db.exec(alloc,
         \\CREATE TABLE kanban_task_dependencies (
         \\  task_id TEXT NOT NULL,
