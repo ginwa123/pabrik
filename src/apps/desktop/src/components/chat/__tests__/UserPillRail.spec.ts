@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import UserPillRail, { type UserPill } from '../UserPillRail.vue'
+
+const __dir = dirname(fileURLToPath(import.meta.url))
+const railSrc = readFileSync(resolve(__dir, '../UserPillRail.vue'), 'utf8')
 
 const pills: UserPill[] = [
   { groupIndex: 0, key: 'msg-1', preview: 'hello world' },
@@ -185,5 +191,32 @@ describe('UserPillRail — hover/focus message box', () => {
     await wrapper.setProps({ pills: pills.slice(1) })
     expect(wrapper.find('[data-testid="user-pill-message"]').exists()).toBe(false)
     wrapper.unmount()
+  })
+})
+
+describe('UserPillRail — the preview box is actually SIZED (source contract)', () => {
+  // jsdom has no layout engine, so no mount can tell a 280px box from a 33.7px one - which is
+  // how #953 shipped a 33.7px box behind a green suite. These pin the styling contract that the
+  // browser measurement in tests/functional_ui/ then proves.
+  const messageRule = (): string => {
+    const start = railSrc.indexOf('.user-pill-message {')
+    expect(start).toBeGreaterThan(-1)
+    const end = railSrc.indexOf('}', start)
+    return railSrc.slice(start, end).replace(/\/\*[\s\S]*?\*\//g, '')
+  }
+
+  it('carries an explicit width, not only a max-width', () => {
+    // `max-width: 280px` with no `width` leaves an absolutely-positioned box shrink-to-fit
+    // against its containing block — the rail's 32px padding box — where max-width never binds.
+    expect(messageRule()).toMatch(/^\s*width:\s*max-content/m)
+  })
+
+  it('is anchored once, not twice', () => {
+    // `right: 0` already anchors the box's right edge at the rail's right edge; adding
+    // `translateX(-100%)` counted the same offset twice, so the gap to the pill grew with the
+    // box (256px at full width) and the box flew away from the pill that opened it.
+    const rule = messageRule()
+    expect(rule).toMatch(/^\s*right:\s*100%/m)
+    expect(rule).not.toMatch(/translate\(-100%/)
   })
 })
