@@ -104,7 +104,7 @@ pub fn boot(
     // ─── Database ─── Same open + migration chain as the server. A headless
     // run therefore sees the same schema, and a migration that breaks the
     // server breaks headless mode too — which is the point.
-    var db_handles = server_boot.openDatabase(allocator, io, @constCast(environment)) catch |err| {
+    var db_handles = server_boot.openDatabase(allocator, io, @constCast(environment), &.{}) catch |err| {
         std.log.err("headless: failed to open the database: {s}", .{@errorName(err)});
         return error.BootFailed;
     };

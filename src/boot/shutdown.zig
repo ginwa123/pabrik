@@ -54,6 +54,24 @@ pub fn logSqliteConfig(allocator: std.mem.Allocator, db: *database.Db) void {
     var pool_buf: [128]u8 = undefined;
     const pool_line = db_config.describeReaderPool(&pool_buf) catch return;
     std.log.info("sqlite: {s}", .{pool_line});
+    // The two knobs that decide how much RAM the pool can commit to, logged
+    // from the LIVE pool rather than from `db_config.best`, so a `--db-*`
+    // override is visible in the boot log instead of only in the source.
+
+    // `cache_size_kb` is per connection and the pool is elastic, so the
+    // number that matters is the product with the concurrency reached.
+    if (!database.backend_is_postgres) {
+        const live = db.pool.cfg;
+        std.log.info(
+            "sqlite: page_cache={d}KiB/conn mmap={d}MiB/conn idle_reap={d}ms readers_now={d}",
+            .{
+                live.cache_size_kb,
+                live.mmap_size_bytes / (1024 * 1024),
+                live.max_idle_time_ms,
+                db.pool.count(),
+            },
+        );
+    }
 }
 
 test "shutdown: signal with no server only sets the requested flag" {

@@ -227,6 +227,9 @@ pub const cleanup_stale_worker = @import("schedulers/cleanup_stale_worker.zig");
 // Re-export cleanup_stale_background_process for the same reason as
 // above — see plan 2026-08-19-cleanup-stale-background-process.
 pub const cleanup_stale_background_process = @import("schedulers/cleanup_stale_background_process.zig");
+// The DB connection policy (and its `--db-*` CLI overrides). Re-exported so
+// the exe module and the schedulers share ONE definition of the defaults.
+pub const boot_db_config = @import("boot/db_config.zig");
 pub const workspace_items = @import("agentic_loop/llm_history.zig");
 pub const workspace_item_tasks = @import("agentic_loop/llm_history.zig");
 pub const http_response = @import("http_handlers/http_response.zig");
@@ -337,6 +340,9 @@ test {
     // (mirrors cleanup_stale_worker pattern). Re-imported here for the
     // same reason — see plan 2026-08-19-cleanup-stale-background-process.
     _ = @import("schedulers/cleanup_stale_background_process.zig");
+    // boot/db_config.zig holds the pragma assertions plus the `--db-*`
+    // override parser's tests.
+    _ = @import("boot/db_config.zig");
     // modules/agent/mcp/mcp/mcp_http.zig has inline tests for the SSE parser
     // + spec-compliant header builder.
     _ = @import("modules/agent/mcp/mcp/mcp_http.zig");
