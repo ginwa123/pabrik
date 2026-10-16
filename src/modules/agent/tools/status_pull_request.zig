@@ -645,23 +645,14 @@ const Fixture = struct {
         return self.inner.root;
     }
 
+    /// Write a fixture program that behaves as `payload` describes. NOT the
+    /// `renderProgram` + `writeProgramText` pair: on Windows the payloads
+    /// live in sidecar data files only THIS path writes, so a body rendered
+    /// the other way references files that do not exist and emits nothing.
     fn writeProgram(self: *Fixture, name: []const u8, payload: hf.Payload) ![]u8 {
         return self.inner.writeProgram(name, payload);
     }
-
-    /// Write a body this file rendered for the current host.
-    fn writeProgramText(self: *Fixture, name: []const u8, script: []const u8) ![]u8 {
-        return self.inner.writeProgramText(name, script);
-    }
 };
-
-fn scriptPrintingJson(allocator: std.mem.Allocator, payload: []const u8) ![]u8 {
-    return hf.renderProgram(allocator, .{ .stdout = payload });
-}
-
-fn scriptFailingWith(allocator: std.mem.Allocator, message: []const u8) ![]u8 {
-    return hf.renderProgram(allocator, .{ .stderr = message, .exit_code = 1 });
-}
 
 const FIXTURE_OPEN_PR_JSON =
     \\{"number":584,"title":"SyncEngine Phase 2","url":"https://github.com/acme/app/pull/584","state":"OPEN","mergeable":"MERGEABLE","mergeStateStatus":"UNSTABLE","headRefName":"worktree/x","baseRefName":"main","createdAt":"2026-09-21T08:51:37Z","updatedAt":"2026-09-21T08:51:37Z","mergedAt":null,"closedAt":null,"author":{"login":"ginwa123"},"additions":286,"deletions":103,"changedFiles":4}
@@ -679,9 +670,7 @@ test "execute github run path reports open status through a fixture gh" {
 
     var fx = try Fixture.init(alloc);
     defer fx.deinit();
-    const script = try scriptPrintingJson(alloc, FIXTURE_OPEN_PR_JSON);
-    defer alloc.free(script);
-    const prog = try fx.writeProgramText("gh", script);
+    const prog = try fx.writeProgram("gh", .{ .stdout = FIXTURE_OPEN_PR_JSON });
     defer alloc.free(prog);
 
     const out = try executeStatusPullRequestToJSON(alloc, io, fx.root(), "584", .github, prog);
@@ -704,9 +693,7 @@ test "execute gitlab run path reports open status through a fixture glab" {
 
     var fx = try Fixture.init(alloc);
     defer fx.deinit();
-    const script = try scriptPrintingJson(alloc, FIXTURE_OPEN_MR_JSON);
-    defer alloc.free(script);
-    const prog = try fx.writeProgramText("glab", script);
+    const prog = try fx.writeProgram("glab", .{ .stdout = FIXTURE_OPEN_MR_JSON });
     defer alloc.free(prog);
 
     const out = try executeStatusPullRequestToJSON(alloc, io, fx.root(), "https://gitlab.com/acme/sub/app/-/merge_requests/7", .gitlab, prog);
@@ -729,9 +716,10 @@ test "execute run path maps a not-found CLI stderr onto a no-pr error" {
 
     var fx = try Fixture.init(alloc);
     defer fx.deinit();
-    const script = try scriptFailingWith(alloc, "no pull requests found for branch nope");
-    defer alloc.free(script);
-    const prog = try fx.writeProgramText("gh", script);
+    const prog = try fx.writeProgram("gh", .{
+        .stderr = "no pull requests found for branch nope",
+        .exit_code = 1,
+    });
     defer alloc.free(prog);
 
     const out = try executeStatusPullRequestToJSON(alloc, io, fx.root(), "nope", .github, prog);
@@ -751,9 +739,10 @@ test "execute run path surfaces an auth-failure stderr instead of not-found" {
 
     var fx = try Fixture.init(alloc);
     defer fx.deinit();
-    const script = try scriptFailingWith(alloc, "HTTP 401: Bad credentials (https://api.github.com/...)");
-    defer alloc.free(script);
-    const prog = try fx.writeProgramText("gh", script);
+    const prog = try fx.writeProgram("gh", .{
+        .stderr = "HTTP 401: Bad credentials (https://api.github.com/...)",
+        .exit_code = 1,
+    });
     defer alloc.free(prog);
 
     const out = try executeStatusPullRequestToJSON(alloc, io, fx.root(), "42", .github, prog);
@@ -1041,4 +1030,3 @@ test "execStatusPullRequest: session binding supplies the PR when pr_url is empt
     try testing.expect(std.mem.indexOf(u8, err_text, "no pull request bound") == null);
     try testing.expect(std.mem.indexOf(u8, err_text, "generic") != null);
 }
-

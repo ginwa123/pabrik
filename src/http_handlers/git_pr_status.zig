@@ -649,24 +649,11 @@ const Fixture = struct {
         return self.inner.writeProgram(name, payload);
     }
 
-    /// `writeProgram` for a payload the caller built inline.
-    fn writeScript(self: *Fixture, name: []const u8, payload: hf.Payload) ![]u8 {
-        return self.inner.writeProgram(name, payload);
-    }
-
     /// A subdirectory of the fixture root, created on demand.
     fn subDir(self: *Fixture, name: []const u8) ![]u8 {
         return self.inner.subDir(name);
     }
 };
-
-/// A fixture program that prints `payload` (verbatim, no trailing
-/// newline) on stdout — the shape of a real `gh pr view --json`.
-fn scriptPrintingJson(allocator: std.mem.Allocator, payload: []const u8) ![]u8 {
-    // The fixture must be byte-exact or "returns gh stdout verbatim"
-    // proves nothing, so the payload is emitted with no added newline.
-    return hf.renderProgram(allocator, .{ .stdout = payload });
-}
 
 /// A realistic `glab mr view --output json` payload for an OPEN MR: GitLab's
 /// own field names (`iid`, `web_url`, `source_branch`,

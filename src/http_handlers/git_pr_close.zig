@@ -285,42 +285,52 @@ const Fixture = struct {
 /// exits with `close_code`; anything else prints `view_json`. The branch on
 /// the subcommand is what `host_fixture.Payload` cannot express.
 fn ghScript(fx: *Fixture, argv_file: []const u8, close_code: u8, close_stderr: []const u8, view_json: []const u8) ![]u8 {
-    const script = if (builtin_t.os.tag == .windows)
-        try std.fmt.allocPrint(fx.allocator,
+    const script = if (builtin_t.os.tag == .windows) blk: {
+        // Both emit statements come from `host_fixture`, so this body cannot
+        // drift onto a different — and silently wrong — Windows output
+        // primitive, the way a hand-typed `copy /b` did.
+        var out_buf: [128]u8 = undefined;
+        var out_w: std.Io.Writer = .fixed(&out_buf);
+        try hf.cmdEmitLine(&out_w, .stdout, null);
+        var err_buf: [128]u8 = undefined;
+        var err_w: std.Io.Writer = .fixed(&err_buf);
+        try hf.cmdEmitLine(&err_w, .stderr, null);
+        break :blk try std.fmt.allocPrint(fx.allocator,
+            // `%~n0` is the script's own name, the Windows analogue of the
+            // POSIX branch's `basename "$0"`: the assertion below expects
+            // argv[0] in the record. `%~n0` and %* share ONE line because the
+            // Windows record IS cmd's single command tail.
             \\@echo off
             \\if "%~2"=="close" (
-            \\  > "{s}" echo %*
-            \\  copy /b "%~dp0pabrik-fixture-err.bin" >&2
-            \\  exit /b {d}
+            \\  > "{s}" echo %~n0 %*
+            \\  {s}  exit /b {d}
             \\)
-            \\copy /b "%~dp0pabrik-fixture.bin" nul
-            \\exit /b 0
+            \\{s}exit /b 0
             \\
-        , .{ argv_file, close_code })
-    else
-        try std.fmt.allocPrint(fx.allocator,
-            \\#!/bin/sh
-            \\if [ "$2" = "close" ]; then
-            \\  echo "$(basename "$0")" > '{s}'
-            \\  for a in "$@"; do echo "$a"; done >> '{s}'
-            \\  printf '%s' '{s}' >&2
-            \\  exit {d}
-            \\fi
-            \\printf '%s' '{s}'
-            \\exit 0
-            \\
-        , .{ argv_file, argv_file, close_stderr, close_code, view_json });
+        , .{ argv_file, err_w.buffered(), close_code, out_w.buffered() });
+    } else try std.fmt.allocPrint(fx.allocator,
+        \\#!/bin/sh
+        \\if [ "$2" = "close" ]; then
+        \\  echo "$(basename "$0")" > '{s}'
+        \\  for a in "$@"; do echo "$a"; done >> '{s}'
+        \\  printf '%s' '{s}' >&2
+        \\  exit {d}
+        \\fi
+        \\printf '%s' '{s}'
+        \\exit 0
+        \\
+    , .{ argv_file, argv_file, close_stderr, close_code, view_json });
     defer fx.allocator.free(script);
     const prog = try fx.writeProgramText("gh", script);
     // The Windows branch reads its payloads from sidecar data files, because
     // `cmd.exe`'s `echo` cannot emit a byte-exact payload.
     if (builtin_t.os.tag == .windows) {
         try fx.inner.tmp.dir.writeFile(std.testing.io, .{
-            .sub_path = "pabrik-fixture.bin",
+            .sub_path = hf.sidecarFileName(.stdout),
             .data = view_json,
         });
         try fx.inner.tmp.dir.writeFile(std.testing.io, .{
-            .sub_path = "pabrik-fixture-err.bin",
+            .sub_path = hf.sidecarFileName(.stderr),
             .data = close_stderr,
         });
     }
