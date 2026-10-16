@@ -39,6 +39,27 @@ export const FRAME_NO_SCROLLBAR_STYLE =
   'html,body{overflow:hidden!important;scrollbar-width:none!important}' +
   'html::-webkit-scrollbar,body::-webkit-scrollbar{display:none!important}'
 
+/** Canvas colour for a preview frame when the app's CSS variables are unreachable (no DOM) or unset.
+ * Matches `--semantic-card-bg` in style.css. */
+export const FRAME_CANVAS_FALLBACK = '#1d1c19'
+
+/** Resolve what a preview frame's DOCUMENT canvas paints. A sandboxed srcdoc frame is a separate
+ * document, so the parent's CSS custom properties never reach it — the colour must be a literal. */
+export function resolveFrameCanvasBackground(): string {
+  if (typeof document === 'undefined') return FRAME_CANVAS_FALLBACK
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue('--semantic-card-bg')
+    .trim()
+  return raw === '' ? FRAME_CANVAS_FALLBACK : raw
+}
+
+/** `<style>` shell prepended to a fetched HTML document inside a preview frame: paints the canvas
+ * with the app surface — NEVER a hardcoded `#fff`, which shows as a bright slab in the dark theme
+ * wherever the document's own `body` box does not cover the canvas. */
+export function frameDocumentStyle(canvas: string = resolveFrameCanvasBackground()): string {
+  return `<style>html,body{margin:0;padding:0;background:${canvas};}${FRAME_NO_SCROLLBAR_STYLE}</style>`
+}
+
 /**  * Read a sender's reported height out of a `message` event. Returns `null` for anything that isn't
  * this protocol (a different `source` tag, a non-object payload, a missing/NaN height) so callers
  * can bail before touching the DOM. */
@@ -67,29 +88,35 @@ export function findSenderFrame(
 }
 
 /** Build the reporter script for a frame's srcdoc. Injected into the srcdoc document itself, so it
- * runs at parse time inside the sandbox. It reports once immediately and again on load / resize /
- * DOM mutation (so streamed-in or script-driven content keeps the frame sized). */
+ * runs at parse time inside the sandbox, reporting on load / resize / mutation / resize-observer —
+ * so the frame also SHRINKS when a scripted document collapses (a tab switch, a folded section). */
 export function autoResizeScript(source: string): string {
   return (
     `<script>(function(){
 var REPORT_SOURCE = ${JSON.stringify(source)};
+function measure(){
+  var de = document.documentElement;
+  var body = document.body;
+  var h = 0, w = 0;
+  if (body) {
+    h = Math.max(
+      body.scrollHeight,
+      body.offsetHeight,
+      Math.ceil(body.getBoundingClientRect().height)
+    );
+    w = Math.max(body.scrollWidth, body.offsetWidth);
+  }
+  if (de) {
+    if (de.scrollHeight > window.innerHeight) h = Math.max(h, de.scrollHeight);
+    w = Math.max(w, de.scrollWidth);
+  }
+  if (h <= 0) h = de ? de.offsetHeight : 0;
+  return { height: h, width: w };
+}
 function report(){
   try {
-    var de = document.documentElement;
-    var body = document.body;
-    var h = Math.max(
-      de ? de.scrollHeight : 0,
-      body ? body.scrollHeight : 0,
-      de ? de.offsetHeight : 0,
-      body ? body.offsetHeight : 0
-    );
-    var w = Math.max(
-      de ? de.scrollWidth : 0,
-      body ? body.scrollWidth : 0,
-      de ? de.offsetWidth : 0,
-      body ? body.offsetWidth : 0
-    );
-    parent.postMessage({ source: REPORT_SOURCE, height: h, width: w }, '*');
+    var box = measure();
+    parent.postMessage({ source: REPORT_SOURCE, height: box.height, width: box.width }, '*');
   } catch(e) {}
 }
 function init(){
@@ -99,6 +126,11 @@ function init(){
   if (document.body && typeof MutationObserver !== 'undefined') {
     try {
       new MutationObserver(report).observe(document.body, { childList: true, subtree: true });
+    } catch(e) {}
+  }
+  if (document.body && typeof ResizeObserver !== 'undefined') {
+    try {
+      new ResizeObserver(report).observe(document.body);
     } catch(e) {}
   }
 }

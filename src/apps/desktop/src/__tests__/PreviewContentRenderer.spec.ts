@@ -4,6 +4,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import PreviewContentRenderer from '../components/preview/PreviewContentRenderer.vue'
+import { FRAME_CANVAS_FALLBACK } from '@/helpers'
 
 describe('PreviewContentRenderer (inline + new tab)', () => {
   it('renders markdown content via marked() into an <h1>', () => {
@@ -84,6 +85,20 @@ describe('PreviewContentRenderer (inline + new tab)', () => {
     const iframe = wrapper.find('[data-testid="preview-html-iframe"]')
     expect(iframe.exists()).toBe(true)
     expect(iframe.attributes('sandbox')).toBe('allow-scripts')
+  })
+
+  it('paints the html frame canvas with the app surface, never a hardcoded white', () => {
+    const wrapper = mount(PreviewContentRenderer, {
+      props: {
+        contentType: 'html',
+        args: { content: '<h1>Hi</h1>' },
+      },
+    })
+    const srcdoc = wrapper.find('[data-testid="preview-html-iframe"]').attributes('srcdoc') ?? ''
+    expect(srcdoc).not.toMatch(/background:\s*#fff/i)
+    expect(srcdoc.toLowerCase()).toContain(`background:${FRAME_CANVAS_FALLBACK}`)
+    const container = wrapper.find('[data-testid="preview-html-container"]')
+    expect(container.classes().join(' ')).not.toContain('bg-white')
   })
 
   it('shows an "Open in new tab" button for html content', () => {

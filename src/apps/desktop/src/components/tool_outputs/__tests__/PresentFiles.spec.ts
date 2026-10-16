@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import PresentFiles from '../PresentFiles.vue'
+import { FRAME_CANVAS_FALLBACK } from '@/helpers'
 
 // The html/pdf/text branches fetch source over same-origin `fetch` —
 // stub it so no test performs a real network call and previews resolve
@@ -139,6 +140,24 @@ describe('PresentFiles', () => {
     const pdfBox = pdf.find('[data-testid="present-files-inline-pdf-0"]')
     expect(pdfBox.exists()).toBe(true)
     expect(pdfBox.classes().join(' ')).not.toContain('bg-white')
+  })
+
+  it('html preview srcdoc paints the frame canvas, never a hardcoded white', async () => {
+    const wrapper = mountCard({
+      status: 'presented',
+      count: 1,
+      files: [
+        { path: '/tmp/a.html', bytes: 10, mime: 'text/html; charset=utf-8', label: 'a.html' },
+      ],
+    })
+    await flushPromises()
+    const frame = wrapper.find('[data-testid="present-files-inline-html-0"] iframe')
+    expect(frame.exists()).toBe(true)
+    const srcdoc = frame.attributes('srcdoc') ?? ''
+    // The injected shell also styles `html`: a hardcoded #fff canvas shows through as a white slab
+    // wherever the presented document's own `body` box does not cover it.
+    expect(srcdoc).not.toMatch(/background:\s*#fff/i)
+    expect(srcdoc.toLowerCase()).toContain(`background:${FRAME_CANVAS_FALLBACK}`)
   })
 
   it('image files render a full-width inline preview (click → fullscreen)', () => {

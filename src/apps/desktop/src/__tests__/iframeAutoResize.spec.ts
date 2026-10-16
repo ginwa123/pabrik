@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   CHAT_HTML_FRAME_RESIZE_SOURCE,
+  FRAME_CANVAS_FALLBACK,
   FRAME_NO_SCROLLBAR_STYLE,
   MAX_FRAME_HEIGHT,
   MIN_FRAME_HEIGHT,
@@ -10,8 +11,10 @@ import {
   autoResizeScript,
   clampFrameHeight,
   findSenderFrame,
+  frameDocumentStyle,
   growFrameToContent,
   readAutoResizeHeight,
+  resolveFrameCanvasBackground,
 } from '@/helpers/iframeAutoResize'
 
 /** Minimal MessageEvent stand-in — the helpers only read `data`/`source`. */
@@ -127,6 +130,61 @@ describe('autoResizeScript', () => {
 
   it('pre-tags the preview HTML iframe with its own source', () => {
     expect(PREVIEW_AUTO_RESIZE_SCRIPT).toContain(JSON.stringify(PREVIEW_AUTO_RESIZE_SOURCE))
+  })
+})
+
+const computedStyleWith = (value: string): CSSStyleDeclaration =>
+  ({ getPropertyValue: () => value }) as unknown as CSSStyleDeclaration
+
+describe('frameDocumentStyle (the canvas a preview frame paints)', () => {
+  it('paints the frame document instead of a hardcoded white', () => {
+    const style = frameDocumentStyle('#123456')
+    expect(style).toContain('background:#123456')
+    expect(style).not.toContain('#fff')
+    expect(style).toContain(FRAME_NO_SCROLLBAR_STYLE)
+    expect(style.startsWith('<style>')).toBe(true)
+    expect(style.endsWith('</style>')).toBe(true)
+  })
+
+  it("uses the app's card surface when the theme variable resolves", () => {
+    const spy = vi.spyOn(window, 'getComputedStyle').mockReturnValue(computedStyleWith('#1d1c19'))
+    try {
+      expect(resolveFrameCanvasBackground()).toBe('#1d1c19')
+      expect(frameDocumentStyle()).toContain('background:#1d1c19')
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('falls back to the dark card tone when the variable is unset', () => {
+    const spy = vi.spyOn(window, 'getComputedStyle').mockReturnValue(computedStyleWith(''))
+    try {
+      expect(resolveFrameCanvasBackground()).toBe(FRAME_CANVAS_FALLBACK)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+})
+
+describe('autoResizeScript measurement (the frame must also SHRINK)', () => {
+  const reporter = () =>
+    autoResizeScript(CHAT_HTML_FRAME_RESIZE_SOURCE).slice('<script>'.length, -'</script>'.length)
+
+  it('measures the BODY box, which is the content and can shrink', () => {
+    expect(reporter()).toContain('body.scrollHeight')
+    expect(reporter()).toContain('body.offsetHeight')
+    expect(reporter()).toContain('body.getBoundingClientRect()')
+  })
+
+  it('only trusts a root extent that really overflows the viewport', () => {
+    // `documentElement.scrollHeight` is floored by the frame's own height, so an unguarded max()
+    // made every report a one-way ratchet — a grown frame could never shrink again.
+    expect(reporter()).toContain('de.scrollHeight > window.innerHeight')
+  })
+
+  it('re-reports on resize-observer ticks, not only childList mutations', () => {
+    // A tab switch flips class/style only: no childList mutation ever fires for it.
+    expect(reporter()).toContain('new ResizeObserver(report)')
   })
 })
 
