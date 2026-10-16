@@ -47,7 +47,7 @@ import { marked } from 'marked'
 import {
   PREVIEW_AUTO_RESIZE_SCRIPT,
   PREVIEW_AUTO_RESIZE_SOURCE,
-  FRAME_NO_SCROLLBAR_STYLE,
+  frameDocumentStyle,
   growFrameToContent,
   readAutoResizeHeight,
 } from '@/helpers'
@@ -151,7 +151,7 @@ const imageSrc = computed<string | null>(() => {
 const htmlSrcDoc = computed<string | null>(() => {
   if (props.contentType !== 'html') return null
   const raw = props.args.content ?? ''
-  return `${PREVIEW_AUTO_RESIZE_SCRIPT}<style>html,body{margin:0;padding:0;background:#fff;}${FRAME_NO_SCROLLBAR_STYLE}</style>${raw}`
+  return `${PREVIEW_AUTO_RESIZE_SCRIPT}${frameDocumentStyle()}${raw}`
 })
 
 // ─── Open in new tab ─────────────────────────────────────────────── HTML previews offer an "Open
@@ -221,7 +221,7 @@ function openInNewTab() {
     <div
       v-else-if="contentType === 'html' && htmlSrcDoc"
       data-testid="preview-html-container"
-      class="max-w-full rounded overflow-hidden border border-[var(--color-border)] bg-white"
+      class="max-w-full rounded overflow-hidden border border-[var(--color-border)] bg-[var(--semantic-card-bg)]"
     >
       <iframe
         ref="iframeRef"

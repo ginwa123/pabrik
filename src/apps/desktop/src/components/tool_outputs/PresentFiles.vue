@@ -63,9 +63,9 @@ import UiIcon from '../ui/UiIcon.vue'
 import {
   autoResizeScript,
   findSenderFrame,
+  frameDocumentStyle,
   growFrameToContent,
   readAutoResizeHeight,
-  FRAME_NO_SCROLLBAR_STYLE,
 } from '../../helpers/iframeAutoResize'
 import {
   normalizeToolContent,
@@ -277,10 +277,7 @@ const PRESENT_FILES_HTML_RESIZE_SOURCE = 'present-files-html-auto-resize'
 
 function htmlSrcDoc(f: ParsedPresentFile): string {
   const raw = htmlByPath.value[f.path]?.content ?? ''
-  return (
-    `${autoResizeScript(PRESENT_FILES_HTML_RESIZE_SOURCE)}` +
-    `<style>html,body{margin:0;padding:0;background:#fff;}${FRAME_NO_SCROLLBAR_STYLE}</style>${raw}`
-  )
+  return `${autoResizeScript(PRESENT_FILES_HTML_RESIZE_SOURCE)}${frameDocumentStyle()}${raw}`
 }
 
 function onPresentHtmlResize(e: MessageEvent): void {
