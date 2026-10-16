@@ -214,14 +214,15 @@ fn readPragmaInt(db: *databases.database.Db, allocator: std.mem.Allocator, sql: 
     return std.fmt.parseInt(i64, row.values[0], 10);
 }
 
-/// Close the database and its WAL siblings so a test starts from nothing.
-fn removeDbFiles(io: std.Io, path: [:0]const u8) void {
-    std.Io.Dir.deleteFileAbsolute(io, path) catch {};
-    var buf: [512]u8 = undefined;
-    const wal = std.fmt.bufPrintZ(&buf, "{s}-wal", .{path}) catch return;
-    std.Io.Dir.deleteFileAbsolute(io, wal) catch {};
-    const shm = std.fmt.bufPrintZ(&buf, "{s}-shm", .{path}) catch return;
-    std.Io.Dir.deleteFileAbsolute(io, shm) catch {};
+/// A fresh database path inside a per-test temp directory. WHY NOT `/tmp/...`: that directory does not exist on Windows, so `sqlite3_open` fails with
+/// `FileNotFound` and every test in this file goes red on the Windows runner while passing on Linux and macOS. `testing.tmpDir` is the portable equivalent
+/// and cleans itself up. The caller owns the returned slice and must free it; `dir` must outlive the database, so keep it alive until after `db.deinit()`.
+fn freshDbPath(dir: *std.testing.TmpDir, name: []const u8) ![:0]const u8 {
+    var dir_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const dir_len = try dir.dir.realPath(std.testing.io, &dir_buf);
+    const joined = try std.fs.path.join(std.testing.allocator, &.{ dir_buf[0..dir_len], name });
+    defer std.testing.allocator.free(joined);
+    return std.testing.allocator.dupeZ(u8, joined);
 }
 
 test "the policy pabrik opens with is the policy the connection reports" {
@@ -229,10 +230,10 @@ test "the policy pabrik opens with is the policy the connection reports" {
     // declared - a struct that compiles proves nothing about the pragmas.
     const allocator = std.testing.allocator;
     const io = std.testing.io;
-    const path = "/tmp/pabrik_db_config_test.db";
-
-    removeDbFiles(io, path);
-    defer removeDbFiles(io, path);
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const path = try freshDbPath(&tmp, "config.db");
+    defer allocator.free(path);
 
     var db: databases.database.Db = .{};
     defer db.deinit();
@@ -265,10 +266,10 @@ test "a pooled connection still reads and writes correctly" {
     // has to be visible to the next read, which lands on a reader.
     const allocator = std.testing.allocator;
     const io = std.testing.io;
-    const path = "/tmp/pabrik_db_config_pool_test.db";
-
-    removeDbFiles(io, path);
-    defer removeDbFiles(io, path);
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const path = try freshDbPath(&tmp, "pool.db");
+    defer allocator.free(path);
 
     var db: databases.database.Db = .{};
     defer db.deinit();
@@ -299,10 +300,10 @@ test "a committed write is visible to the next pooled read" {
     // OLD snapshot, because the live iterator holds that connection's read
     const allocator = std.testing.allocator;
     const io = std.testing.io;
-    const path = "/tmp/pabrik_db_config_visibility_test.db";
-
-    removeDbFiles(io, path);
-    defer removeDbFiles(io, path);
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const path = try freshDbPath(&tmp, "visibility.db");
+    defer allocator.free(path);
 
     var db: databases.database.Db = .{};
     defer db.deinit();
@@ -475,10 +476,10 @@ test "an override is applied to a live connection, not just to the struct" {
     // the server will actually run with is the one the flag asked for.
     const allocator = std.testing.allocator;
     const io = std.testing.io;
-    const path = "/tmp/pabrik_db_config_override_test.db";
-
-    removeDbFiles(io, path);
-    defer removeDbFiles(io, path);
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const path = try freshDbPath(&tmp, "override.db");
+    defer allocator.free(path);
 
     const cfg = resolve(&.{.{ .knob = .cache_size_kb, .raw = "128", .value = 128 }});
     var db: databases.database.Db = .{};

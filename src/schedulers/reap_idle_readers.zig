@@ -71,21 +71,15 @@ pub fn resetForTest() void {
 
 // ─── Test helpers ────────────────────────────────────────────────────────
 
-/// A database path unique to one test, so tests never share a file.
-fn testPath(comptime name: []const u8) [:0]const u8 {
-    return "/tmp/pabrik_reap_" ++ name ++ ".db";
-}
-
-/// Delete a database and its WAL siblings so a test starts from nothing.
-fn removeDb(io: std.Io, path: [:0]const u8) void {
-    var buf: [512]u8 = undefined;
-    std.Io.Dir.deleteFileAbsolute(io, path) catch {};
-    const wal = std.fmt.bufPrintZ(&buf, "{s}-wal", .{path}) catch
-        @panic("wal path did not fit the buffer");
-    std.Io.Dir.deleteFileAbsolute(io, wal) catch {};
-    const shm = std.fmt.bufPrintZ(&buf, "{s}-shm", .{path}) catch
-        @panic("shm path did not fit the buffer");
-    std.Io.Dir.deleteFileAbsolute(io, shm) catch {};
+/// A fresh database path inside a per-test temp directory. WHY NOT `/tmp/...`: that directory does not exist on
+/// Windows, so `sqlite3_open` fails with `FileNotFound` and these tests go red on the Windows runner while passing
+/// on Linux and macOS. `testing.tmpDir` is the portable equivalent and cleans itself up.
+fn freshDbPath(dir: *testing.TmpDir, name: []const u8) ![:0]const u8 {
+    var dir_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const dir_len = try dir.dir.realPath(testing.io, &dir_buf);
+    const joined = try std.fs.path.join(testing.allocator, &.{ dir_buf[0..dir_len], name });
+    defer testing.allocator.free(joined);
+    return testing.allocator.dupeZ(u8, joined);
 }
 
 /// Open a fresh database at `path` with `read_conns` warm readers and a
@@ -123,9 +117,10 @@ test "reaping closes readers the pool opened for a burst" {
     // tick has to bring it back down to the warm floor afterwards.
     resetForTest();
     const io = testing.io;
-    const path = testPath("burst");
-    removeDb(io, path);
-    defer removeDb(io, path);
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const path = try freshDbPath(&tmp, "burst.db");
+    defer testing.allocator.free(path);
 
     var db = try openTestDb(io, path, 1);
     defer db.deinit();
@@ -166,9 +161,10 @@ test "reaping leaves the warm floor open" {
     // `read_conns` readers exist so the first burst does not pay to open them.
     resetForTest();
     const io = testing.io;
-    const path = testPath("floor");
-    removeDb(io, path);
-    defer removeDb(io, path);
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const path = try freshDbPath(&tmp, "floor.db");
+    defer testing.allocator.free(path);
 
     var db = try openTestDb(io, path, 2);
     defer db.deinit();
@@ -188,9 +184,10 @@ test "a read still works after the pool has been reaped" {
     // connection or crash. Prove the pool is still usable.
     resetForTest();
     const io = testing.io;
-    const path = testPath("reuse");
-    removeDb(io, path);
-    defer removeDb(io, path);
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const path = try freshDbPath(&tmp, "reuse.db");
+    defer testing.allocator.free(path);
 
     var db = try openTestDb(io, path, 1);
     defer db.deinit();
