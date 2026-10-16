@@ -149,9 +149,8 @@ const pathDraft = ref('')
 let previouslyFocused: HTMLElement | null = null
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
-// ── Cross-platform path helpers (Windows fix, 2026-09-05) ──────────────
-// See the file header for the full rationale. POSIX inputs produce
-// byte-identical results to the old POSIX-only implementations.
+// ── Cross-platform path helpers (Windows fix, 2026-09-05) ────────────── POSIX inputs produce
+// byte-identical results to the old POSIX-only implementations; see the file header for the rest.
 function isWindowsAbs(path: string): boolean {
   if (!path) return false
   if (/^[A-Za-z]:[\\/]/.test(path)) return true

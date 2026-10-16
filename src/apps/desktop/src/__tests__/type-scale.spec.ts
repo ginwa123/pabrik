@@ -1,7 +1,6 @@
 /** The app-wide type contract. The complaint that produced this file: font sizes had drifted into
- * nine hand-rolled arbitrary values (0.6rem, 0.65rem, 9px, 10px, 0.7rem, 0.72rem, 11px, 0.8rem,
- * 13px) plus Tailwind's own numeric ladder, with the same visual size spelled four different
- * ways. */
+ * nine hand-rolled arbitrary values plus Tailwind's own ladder, with one visual size spelled four
+ * different ways. */
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'

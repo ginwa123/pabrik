@@ -1,22 +1,6 @@
-/**
- * Regression test for the boolean wire format of `is_input` / `is_output`.
- *
- * Background: the backend emits these fields as JSON booleans
- * (`"is_input": true`, `"is_output": false`), not as strings (`"1"` / `"0"`)
- * and not as numbers (`1` / `0`). The TypeScript types must match (boolean),
- * and the runtime comparison in `ChatView.vue` must use `=== true`
- * (boolean), not `=== '1'` (string). Before this refactor, the frontend
- * declared the fields as `string` and compared with `=== '1'`, which would
- * silently fail against the new boolean wire format.
- *
- * This test guards against:
- *   1. `is_input` / `is_output` reverting to `string` in the TS interface
- *      (compile-time check via `@ts-expect-error`)
- *   2. The runtime value shape drifting back to strings
- *   3. `ChatView.vue` regressing to a `=== '1'` string compare
- *
- * Plan: docs/plans/2026-07-01-is-input-output-bool-consistency.md (Chunk 4)
- */
+/** Regression test for the boolean wire format of `is_input` / `is_output`. The backend emits these as
+ * JSON booleans, not strings or numbers; the TS types must match and `ChatView.vue` must compare with
+ * `=== true`. Guards against the types reverting to `string` and against a `=== '1'` compare. */
 import { describe, it, expect } from 'vitest'
 import type { SseEvent } from '../api'
 
@@ -27,10 +11,9 @@ const _typeCheck: Pick<SseEvent, 'is_input' | 'is_output'> = {
 }
 void _typeCheck
 
-// Invalid: assign strings. Each offending line gets its own directive (vue-tsc matches
-// @ts-expect-error to the IMMEDIATELY-preceding source line, so a single directive on the const
-// line wouldn't cover all the field-level assignment errors below). @ts-expect-error -- string is
-// NOT a valid is_input; must be boolean.
+// Invalid: assign strings. Each offending line gets its own directive, because vue-tsc matches a
+// suppression to the IMMEDIATELY-preceding line — one directive cannot cover both fields below.
+// @ts-expect-error -- string is NOT a valid is_input; must be boolean.
 const _typeCheckBadString1: Pick<SseEvent, 'is_input'> = { is_input: '1' }
 // @ts-expect-error -- string is NOT a valid is_output; must be boolean.
 const _typeCheckBadString2: Pick<SseEvent, 'is_output'> = { is_output: '0' }

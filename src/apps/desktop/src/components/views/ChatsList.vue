@@ -435,9 +435,7 @@ const chatsResizeStartY = ref(0)
 const chatsResizeStartPx = ref(0)
 
 // ChatsList maintains its OWN navItems mirror of workspacesStore state, populated by loadChats().
-// See `docs/superpowers/plans/2026-06-30-unify-sse-endpoints.md` Chunk 5 / Task 5.3 for the
-// migration context.
-const virtualScrollerRef = ref<any>(null)
+const virtualScrollerRef = ref<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.
 
 // Get computed chats height in pixels from percentage
 const getChatsHeightPx = (): number => {
@@ -526,9 +524,8 @@ const fireSessionTouched = (id: string) => {
 // cached rows, `'all'` when unscoped (back-compat).
 const sessionCacheKey = (): string => scopedWorkspaceId.value ?? 'all'
 
-// Single mapper for server session → row view model, shared by the
-// cache paint and the network paint so both shapes stay identical
-// (same "no shape drift" rule as ChatView's toChatMessages).
+// Single mapper for server session → row view model, shared by the cache paint and the network paint
+// so both shapes stay identical (same "no shape drift" rule as ChatView's toChatMessages).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.
 const toNavItem = (session: any) => ({
   id: session.session_id,
@@ -626,6 +623,7 @@ const togglePinFromMenu = async () => {
 }
 
 // Minimal Chat shape for the cache write-through above.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mapNavItemToChat = (r: any): any => ({
   session_id: r.id,
   session_name: r.name,

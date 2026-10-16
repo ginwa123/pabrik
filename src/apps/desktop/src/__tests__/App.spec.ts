@@ -22,6 +22,7 @@ import { makeLocalStorageStub } from './helpers'
  * to avoid coupling between the two spec files). */
 function makeStubClient(initial: SseState): SseClient {
    
+  //
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const stub: any = {
     close: vi.fn(),
@@ -42,6 +43,7 @@ function makeStubClient(initial: SseState): SseClient {
 
  
 function emitStubState(c: SseClient, s: SseState): void {
+  //
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const listeners = (c as any).__stateListeners as
     | Array<(s: SseState, info: SseStateInfo) => void>
@@ -134,6 +136,8 @@ describe('App', () => {
   it("App.vue subscribes to bus.on('worker'); handleWorkerEvent fires when the bus dispatches", async () => {
     const wrapper = mount(App)
     // Read the provided `processingState` ref.
+    //
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const provides = (wrapper.vm as any).$.provides as Record<string, unknown>
     const processingState = provides['processingState'] as {
       value: Record<string, boolean>
@@ -280,8 +284,8 @@ describe('App workerActivity', () => {
   /** Read a provided ref off a root-mounted App instance. */
   const readProvide = (wrapper: ReturnType<typeof mount>, key: string) => {
     // With `mount(App)` (root mount, no outer app) provides land on `vm.$.provides`, NOT
-    // `vm.$.appContext.provides` — that is only for nested-app ancestors. eslint-disable-next-line
-    // @typescript-eslint/no-explicit-any -- test-only reach into Vue internals.
+    // `vm.$.appContext.provides` — that is only for nested-app ancestors.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only reach into Vue internals.
     const provides = (wrapper.vm as any).$.provides as Record<string, unknown>
     return provides[key] as { value: unknown } | undefined
   }

@@ -203,8 +203,8 @@ describe('ChatView — Stop button (cancel running agent)', () => {
     expect(wrapper!.find('[data-testid="stop-session-button"]').exists()).toBe(true)
 
     // Simulate the backend cancelling + deleting the worker by dispatching the SSE `worker deleted`
-    // event the workflow emits after the loop break. In production this is what App.vue's
-    // `handleWorkerEvent` listens for and translates into a removal from `processingState`.
+    // event the workflow emits after the loop break — what App.vue's `handleWorkerEvent` listens for.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const provides = (wrapper!.vm as any).$.provides as Record<string, unknown>
     const ps = provides['processingState'] as Ref<Record<string, boolean>>
      

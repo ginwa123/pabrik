@@ -62,9 +62,8 @@ describe('KanbanView.handleCreateTaskSave — create_and_run', () => {
       },
     })
     await flushPromises()
-    // The host guards handleCreateTaskSave on `activeCreateColumnId`
-    // (set when the user clicks + on a column). Set it directly via
-    // the vm so we don't have to drive the @add-task emit path.
+    // The host guards handleCreateTaskSave on `activeCreateColumnId` (set when the user clicks + on a
+    // column). Set it directly via the vm so we don't have to drive the @add-task emit path.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(wrapper!.vm as any).activeCreateColumnId = 'col_todo'
     return wrapper!
@@ -344,8 +343,9 @@ describe('KanbanView.handleCreateTaskSave — create_session (plain Create task 
   }
 
   it("plain Create task → mode='create_session' is dispatched to addKanbanTask (no queue_message)", async () => {
-    // The plain "Create task" button in the dialog emits `create` and KanbanView's @create listener
-    // forwards it as `mode: 'create_session'` (see template line ~1250 of KanbanView.vue).
+    // The plain "Create task" button emits `create` and KanbanView's @create listener forwards it as
+    // `mode: 'create_session'` (see template line ~1250 of KanbanView.vue).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fakeTask = { id: 'task_new', name: 'My task', task_type: 'standard' } as any
     const fakeSession = { id: 'task_new', name: 'My task', status: 'idle' }
     const store = useWorkspacesStore()

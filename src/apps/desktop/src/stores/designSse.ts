@@ -25,10 +25,8 @@ export const useDesignSseStore = defineStore('designSse', () => {
   // we're no longer owning the EventSource.
   let stopOpenSub: (() => void) | null = null
 
-  /** Subscribe the design store to the bus's `design` channel. The function signature stays `async`
-   * + `Promise<void>` to preserve the cooperative-init semantic contract with AppLayout's
-   * `initSseStores(activeWorkspaceId)` awaiting designSseStore.initDesignSse(newId) })` (Chunk
-   * 8). */
+  /** Subscribe the design store to the bus's `design` channel. The signature stays `async` +
+   * `Promise<void>` to preserve the cooperative-init contract with AppLayout's `initSseStores`. */
   async function initDesignSse(workspaceId: string): Promise<void> {
     // Set the filter first — if we're called for the first time, the listener (registered below)
     // will read this value on its first event. If we're called for a re-init with a new

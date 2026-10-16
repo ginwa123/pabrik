@@ -1094,9 +1094,9 @@ export function fetchChatHistoryEffect(
   if (cursor) {
     params.set('cursor', cursor)
   }
-  // silent: true — the failure is the caller's to handle (the chatview's retry loop + inline error
-  // UI for the transcript; a console.log for the best-effort metadata callers), so a toast on
-  // 404/5xx would be noise.
+  // silent: true — the failure is the caller's to handle (the chatview's retry loop + inline error UI
+  // for the transcript; a console.log for the metadata callers), so a toast on 404/5xx would be noise.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.
   const toResponse = (data: any): ChatHistoryResponse => ({
     messages: data.messages.map(
       (msg: {

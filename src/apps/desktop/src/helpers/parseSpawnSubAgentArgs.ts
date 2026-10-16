@@ -54,6 +54,7 @@ export function parseSpawnSubAgentArgs(
   if (!args || !Array.isArray(args.sub_agents)) return null
 
   // Defensive copy: only include known fields, don't trust the LLM's shape.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.
   return args.sub_agents.map((sa: any) => {
     if (
       !sa ||

@@ -126,10 +126,8 @@ describe('workspacesStore.fetchDesignElements (in-place mutation)', () => {
 
     await store.fetchDesignElements('ws_1', 'item_1', 'page_1')
 
-    // CRITICAL: the array reference must be the same (Vue 3
-    // reactivity depends on per-index writes to the same
-    // reactive array — a new array reference would orphan any
-    // in-flight mirror writes that captured the old reference).
+    // CRITICAL: the array reference must be the same — Vue 3 reactivity depends on per-index writes to
+    // the same reactive array, and a new reference would orphan in-flight mirror writes.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const afterRef = (store.workspaces[0] as any).items[0].design_elements
     expect(afterRef).toBe(beforeRef)

@@ -101,10 +101,9 @@ describe('local/no-floating-comments', () => {
   })
 
   it('reports two comment runs separated by one blank line inside a block', () => {
-    // The same split shape as at top level — nesting does not make it legal.
-    // An author's paragraph break inside one logical comment is exactly the
-    // shape the rule looks for, because a reader cannot tell it apart from a
-    // comment that was cut up to dodge the three-line ceiling.
+    // The same split shape as at top level — nesting does not make it legal. An author's paragraph
+    // break inside one logical comment is exactly the shape the rule looks for, because a reader
+    // cannot tell it apart from a comment cut up to dodge the ceiling.
     const code = [
       'function f() {',
       '  // first paragraph',

@@ -107,10 +107,8 @@ export interface ScrollContext {
    * what each field tells you. Without this, a `scrollHeight: 0` reading is just a useless zero;
    * with it, you can see *which* check failed. */
   containerInfo: ContainerInfo
-  /** Which function in ChatView produced this log line, e.g. `'loadChatHistory'`,
-   * `'updateStreamingMessage'`, `'watcher:messages-length'`, `'onSpacersResized'`. Set by the call
-   * site (the logger can't infer it without a stack trace on every call, which is too
-   * expensive). */
+  /** Which function in ChatView produced this log line, e.g. `'loadChatHistory'`. Set by the call
+   * site — the logger cannot infer it without a stack trace on every call, which is too expensive. */
   caller?: string
   /** Diagnostic snapshot of the VirtualScroller **component** (see `ScrollerState` doc). */
   scrollerState?: ScrollerState

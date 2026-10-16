@@ -15,8 +15,8 @@ import {
 import * as api from '../api'
 
 // Local SseClient stub — mirrors the pattern in sidebarActiveState.spec.ts. The real SseClient type
-// isn't exported from sseBus, so we type the stub as `any` to match the `__setSseBusGlobalClient`
-// signature.
+// isn't exported from sseBus, so the stub is typed `any` to match `__setSseBusGlobalClient`.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function makeStubClient(initial: 'connecting'): any {
   const stub = {
     state: initial,
@@ -139,12 +139,14 @@ describe('Sidebar.handleSelectItem — kanban default-URL emits sortsParam (2026
         items: [makeFolderItem()],
        
       },
+    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ] as any
 
  
 
     const wrapper = mountSidebar()
+    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const layout = wrapper.vm as any
 
@@ -173,10 +175,12 @@ describe('Sidebar.handleSelectItem — kanban default-URL emits sortsParam (2026
         items: [makeDesignItem()],
       },
      
+    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ] as any
 
     const wrapper = mountSidebar()
+    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const layout = wrapper.vm as any
 

@@ -550,9 +550,8 @@ const readStoredDiffMode = (): 'unified' | 'split' => {
 }
 
 /** Read `?diffmode=` at SETUP time, unlike `syncDiffParam` (a click handler). That makes the read
- * optional-router-safe: ~30 ChatView specs mount the component with no router installed, where
- * `useRoute()` is undefined and a bare `route.query` throws inside setup, failing the whole
- * mount. */
+ * optional-router-safe: ~30 specs mount with no router, where a bare `route.query` would throw
+ * inside setup and fail the whole mount. */
 const readDiffModeParam = (): 'unified' | 'split' | null => {
   const v = route?.query?.diffmode
   return v === 'unified' || v === 'split' ? v : null
@@ -1617,9 +1616,8 @@ const groupToolNames = computed((): (string | null)[] => {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.
             const names = parsed.map((tc: any) => tc.function?.name || tc.name || 'unknown')
 
-            // If EVERY tool call in this group already has a rendered
-            // tool row somewhere in the transcript, the structured cards
-            // are the source of truth — suppress the pill entirely.
+            // If EVERY tool call in this group already has a rendered tool row somewhere in the
+            // transcript, the structured cards are the source of truth — suppress the pill entirely.
             // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; tool_calls_json shape is intentionally opaque.
             const allRendered = parsed.every((tc: any) => {
               const id = tc?.id

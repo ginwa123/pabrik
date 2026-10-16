@@ -77,9 +77,8 @@ export abstract class BaseSyncEngine<T extends Syncable, C = string> {
   /** Cache-then-delta: return cached rows immediately when present, then fetch the network delta,
    * merge (dedupe by id), persist, and advance the cursor. */
   syncOnMount(ctx: C, limit: number): Effect.Effect<SyncMountResult<T>> {
-    // `Effect.gen` takes a generator function, and a generator's `this` is its own — so `this` has
-    // to be captured outside. It cannot be destructured instead: the engine API lives on the
-    // prototype, and an unbound destructured method would run with `this === undefined`.
+    // `Effect.gen` takes a generator function whose `this` is its own, so `this` is captured outside.
+    // It cannot be destructured: the engine API lives on the prototype.
     // oxlint-disable-next-line typescript-eslint/no-this-alias -- see above
     const engine = this
     return Effect.gen(function* () {

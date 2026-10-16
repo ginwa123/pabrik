@@ -218,10 +218,9 @@ function parseData(data: Record<string, unknown>): ParsedEnvelope {
   }
 }
 
-// --------------------------------------------------------------------------- Local interaction
-// state --------------------------------------------------------------------------- Expanded by
-// default in every state: the question, options, and outcome stay visible without an extra click.
-// A user who collapses the card keeps it collapsed — this is only the initial value.
+// ─── Local interaction state ──────────────────────────────────────────────────────── Expanded by
+// default: the question, options and outcome stay visible without an extra click. Collapsing is
+// remembered per mount — this is only the initial value.
 const isExpanded = ref<boolean>(true)
 const submitting = ref(false)
 const sendFailed = ref(false)
@@ -387,10 +386,8 @@ function onKeydown(event: KeyboardEvent): void {
 // ---------------------------------------------------------------------------
 const waiting = computed(() => state.value === 'pending')
 
-/** The question is model-authored MARKDOWN — `ask_user.zig`'s schema says "Markdown allowed" — so
- * it renders as markdown, not as `{{ text }}`. Before this, a question like **Option 1 — Full 1:1
- * (recommended)** … `linux/window.zig` … reached the card as one wall of asterisks and
- * backticks. */
+/** The question is model-authored MARKDOWN — `ask_user.zig`'s schema says "Markdown allowed" — so it
+ * renders as markdown, not as `{{ text }}`. */
 /** Scoped CSS below keeps the global `.markdown-content` typography at card scale. */
 const questionHtml = computed(() => renderMarkdownHtml(parsed.value.question))
 

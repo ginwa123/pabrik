@@ -1,7 +1,5 @@
-/** Tests for workspacesStore.runAgentOnNewTask — the imageUrls path (plan:
- * 2026-08-06-kanban-image-base64-in-chatview, replaces the earlier upload-then-URL plan
- * 2026-08-06-kanban-image-attach-in- chatview after the user directed to switch to direct
- * base64). */
+/** Tests for workspacesStore.runAgentOnNewTask — the imageUrls path, which sends direct base64
+ * rather than upload-then-URL. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

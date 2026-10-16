@@ -6,9 +6,8 @@ import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import AddItemDialog from '../components/dialogs/AddItemDialog.vue'
 
 // ─── Mocks ─────────────────────────────────────────────────────────────────
-// Stub the FilePickerDialog — we only care that the parent wires up the
-// picker's events. Real picker behavior is tested in FilePickerDialog.spec.ts.
-//   - title prop (displayed in stub header)
+// Stub the FilePickerDialog — we only care that the parent wires up the picker's events. Real
+// picker behavior is tested in FilePickerDialog.spec.ts.
 vi.mock('../components/FilePickerDialog.vue', () => ({
   default: {
     name: 'FilePickerDialog',

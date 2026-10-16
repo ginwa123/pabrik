@@ -1,7 +1,5 @@
-/** Behavioural tests for the kanban `?sorts=` URL round-trip (plan 2026-08-06-kanban-sort-by.md +
- * the 2026-08-06 follow-up to kanban-per-column-pagination.md). **Bug fixed (2026-08-06):** "when
- * click chatview, my sort url is gone" — opening a task from the kanban drops the `?sorts=`
- * param. */
+/** Behavioural tests for the kanban `?sorts=` URL round-trip. **Bug fixed (2026-08-06):** "when
+ * click chatview, my sort url is gone" — opening a task from the kanban drops the `?sorts=` param. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, createApp } from 'vue'

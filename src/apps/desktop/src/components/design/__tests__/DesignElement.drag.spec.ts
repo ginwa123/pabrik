@@ -243,10 +243,8 @@ describe('DesignElement drag', () => {
     // handle's addEventListener is what hid the bug in the existing test.)
     nwEl.dispatchEvent(new PointerEvent('pointerdown', { button: 0, pointerId: 1, clientX: 100, clientY: 100, bubbles: true }))
 
-    // Pre-fix: 'select' emitted TWICE (handle + wrapper).
-    // Post-fix: 'select' emitted ONCE (handle only — wrapper's
-    // @pointerdown never fired because the handle called
-    // event.stopPropagation()).
+    // Pre-fix: 'select' emitted TWICE (handle + wrapper). Post-fix: ONCE — the wrapper's
+    // @pointerdown never fired because the handle called `event.stopPropagation()`.
     const selects = wrapper.emitted('select') ?? []
     expect(selects).toHaveLength(1)
     // Also assert 'dragStart' is emitted once (same duplicate-handler
@@ -374,9 +372,8 @@ describe('DesignElement drag', () => {
 
     const translates = wrapper.emitted('translate') ?? []
 
-    // (1) Sum across all emits equals cursor delta — server will
-    // apply each emit with `x = x + dx`, so the cumulative effect
-    // must equal the cursor movement (not compound to 30·4/2 = 60).
+    // (1) Sum across all emits equals cursor delta — the server applies each emit with `x = x + dx`,
+    // so the cumulative effect must equal the cursor movement, not compound to 30·4/2 = 60.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sumDx = translates.reduce((acc, t) => acc + (t[0] as any).dx, 0)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

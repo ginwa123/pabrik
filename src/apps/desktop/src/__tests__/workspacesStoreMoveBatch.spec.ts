@@ -252,9 +252,8 @@ describe('workspacesStore.moveDesignElementsBatch', () => {
       { element_id: 'elem_root', dx: 100, dy: 50 },
     ])
 
-    // CRITICAL: the design_elements array must be the SAME reference
-    // after the mirror (Vue 3 reactivity depends on per-index writes
-    // to the same reactive array).
+    // CRITICAL: the design_elements array must be the SAME reference after the mirror — Vue 3
+    // reactivity depends on per-index writes to the same reactive array.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const after = (store.workspaces[0] as any).items[0].design_elements
     expect(after).toBe(baseline)

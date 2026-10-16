@@ -897,8 +897,8 @@ const handleAddPage = async (): Promise<string | undefined> => {
 const addPageInFlight = ref<boolean>(false)
 
 // Exposed via `wrapper.vm.handleSelectPage` in DesignView.pageSync.spec.ts. Vue 3's `<script
-// setup>` auto-surfaces top-level bindings but eslint can't see the `vm.X` reflection path, so the
-// rule fires.
+// `<script setup>` auto-surfaces top-level bindings but eslint can't see the `vm.X` reflection path.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const handleSelectPage = (pageId: string): void => {
   // Mirror to the store first so AppLayout's design handlers (handleDesignUpdateElement /
   // handleDesignDeleteElement) always see the latest selection, even if the page-change
@@ -909,8 +909,9 @@ const handleSelectPage = (pageId: string): void => {
   emit('selectPage', pageId)
 }
 
-// Delete a design page. NEW (design-pages-in-workspace-tree plan, 2026-08-06): routes through the
-// store so the cache + `activeDesignPageId` fallback happen in one place.
+// Delete a design page. Routes through the store so the cache + `activeDesignPageId` fallback happen
+// in one place.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for diff readability.
 const _handleDeletePage = async (pageId: string): Promise<void> => {
   if (!props.workspaceId || !effectiveItemId.value) return
   if (deletePageInFlight.value) return
@@ -954,10 +955,8 @@ const handleElementToggle = (elementId: string, additive: boolean): void => {
   emit('selectElement', elementId)
 }
 
-// Keep the legacy handler name around as an alias so LayersPanel's `@select="_handleElementSelect"`
-// (which emits a plain elementId with no additive flag) still works — LayersPanel gets the additive
-// flag from the Shift state on the row click and emits a structured
-// payload instead.
+// Keep the legacy handler name as an alias so LayersPanel's `@select="_handleElementSelect"` (a plain
+// elementId with no additive flag) still works; LayersPanel reads Shift from the row click instead.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for diff readability.
 const _handleElementSelect = (elementId: string): void => {
   handleElementToggle(elementId, false)
@@ -1094,9 +1093,9 @@ const handleDesignGroupFromContextMenu = (targetIds: string[]): void => {
   void designHandlers.groupSelection()
 }
 
-// Expand a selection to include the transitive children of any group / frame in the selection. When
-// a user selects just the group (not its children), this lets them drag the group AND every
-// descendant in one motion — matching Figma's behaviour.
+// Expand a selection to include the transitive children of any group / frame in the selection, so
+// dragging a group drags every descendant in one motion — matching Figma's behaviour.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for diff readability.
 function _expandSelectionWithDescendants(
   ids: ReadonlySet<string>,
   all: ReadonlyArray<DesignElementApi>,

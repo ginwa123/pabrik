@@ -57,10 +57,8 @@ describe('sendChatMessage', () => {
   })
 })
 
-/** The attachment wire format. `image_urls` / `video_urls` ride as ONE string. The backend joins
- * them with `||` (`insert_llm_histories.zig`, `image_urls_validation.zig`, and the wire docs on
- * `http_response.zig`), and the three kanban task endpoints in this same module already sent
- * `||`. */
+/** The attachment wire format. `image_urls` / `video_urls` ride as ONE string joined with `||` — the
+ * same separator the three kanban task endpoints in this module already sent. */
 describe('sendChatMessage — attachment wire format', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
