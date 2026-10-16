@@ -169,29 +169,34 @@ const pillCentreTop = computed((): string => {
 }
 
 /* ─── Hover/focus message box ─────────────────────────────────────────────
-   Anchored to the rail's right edge and grown leftwards (`right: 0` +
-   `translateX(-100%)`), so it opens over the transcript and never off the
-   right side of the window. Vertically centred on the rail, which is
-   itself centred on the visible transcript — so the box appears level
-   with the pill that opened it.
+   Opens on hover or keyboard focus, over the transcript, level with the pill
+   that summoned it: `top` is bound per-pill (see `pillCentreTop`) and the
+   `-50%` on Y centres the box on that point. */
 
-   `pointer-events: none` is load-bearing: the box overlaps real message
-   text, and without it the first click on a message under an open box
-   would hit the box instead. It also means the box needs no mouseleave
-   handling of its own — the pill's own leave closes it.
+/* Anchored with `right: 100%` — 100% of the rail's OWN 32px width — so the
+   box's right edge lands `margin-right` left of the pills. `right: 0` plus
+   `translateX(-100%)` counted that offset twice, so the gap was `width − 24px`:
+   9.7px while the box was a collapsed sliver, 256px once it had a real width. */
 
-   Capped at 3 lines with an ellipsis: a pill preview is 60 chars, but a
-   pasted wall of text can still be long, and an unbounded box would cover
-   half the transcript. */
+/* An explicit width, and this was the whole bug: with `left: auto` an
+   absolutely-positioned box is shrink-to-fit and takes its available width from
+   its containing block — the rail's 32px padding box — so `max-width` never
+   bound and the box rendered 33.7px wide with 2 characters per line. */
+
+/* `pointer-events: none` is load-bearing: the box overlaps real message text,
+   and without it the first click on a message under an open box would hit the
+   box instead. */
+
+/* Capped at 3 lines with an ellipsis: a pill preview is 60 chars, but a pasted
+   wall of text can still be long, and an unbounded box would cover half the
+   transcript. */
 .user-pill-message {
   position: absolute;
-  right: 0;
-  /* `top` is bound per-pill (see `pillCentreTop`) so the box opens level
-     with the pill that summoned it instead of always at the rail's
-     middle. The `-50%` on Y then centres the box on that point. */
-  transform: translate(-100%, -50%);
-  max-width: 280px;
+  right: 100%;
+  transform: translateY(-50%);
   margin-right: 8px;
+  width: max-content;
+  max-width: 280px;
   padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid var(--color-border, #282727);
