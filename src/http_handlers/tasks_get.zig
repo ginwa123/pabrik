@@ -55,6 +55,14 @@ fn useCase(
         break :blk branch;
     };
 
+    // Migration 111 — this task's dependencies, each resolved against its
+    // current column. Freed by the `defer` at the end of the function, i.e.
+    // AFTER the response JSON has copied the borrowed slices.
+    const dep_edges = ai_mod.kanban_deps.listEdgesForTask(allocator, db, task_id) catch
+        return error.QueryFailed;
+    defer ai_mod.kanban_deps.freeEdges(allocator, dep_edges);
+    const dep_fields = try http_response.makeTaskDependencyFields(allocator, dep_edges, task_id);
+
     const resp = http_response.WorkspaceItemTaskResponse{
         .id = task.id,
         .name = task.name,
@@ -75,6 +83,9 @@ fn useCase(
         .is_have_image = task.is_have_image,
         .is_have_video = task.is_have_video,
         .git_branch = git_branch,
+        .depends_on = dep_fields.depends_on,
+        .blocked_by = dep_fields.blocked_by,
+        .is_blocked = dep_fields.is_blocked,
     };
 
     // Wrap in `{ "task": {...} }` — the frontend's getTask() reads

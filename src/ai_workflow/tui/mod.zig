@@ -24,6 +24,7 @@ pub const background_process_events = @import("../../agentic_loop/background_pro
 pub const routines = @import("routines/mod.zig");
 pub const startup = @import("../../agentic_loop/startup.zig");
 pub const kanban_model = @import("../../agentic_loop/kanban_model.zig");
+pub const kanban_deps = @import("../../agentic_loop/kanban_deps.zig");
 pub const design_io = @import("../../agentic_loop/design_io.zig");
 pub const design_model = @import("../../agentic_loop/design_model.zig");
 pub const inherited_context = @import("../../agentic_loop/inherited_context.zig");

@@ -7,6 +7,7 @@ const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
 const ai_mod = pabrikcore.ai_mod;
 const memories_mod = pabrikcore.memories;
+const kanban_deps = pabrikcore.ai_mod.kanban_deps;
 
 // =====================================================================
 // Domain types
@@ -74,6 +75,13 @@ pub fn deleteTaskUseCase(
     //    didn't exist (idempotent DELETE).
     ai_mod.workspace_item_tasks.deleteWorkspaceItemTask(allocator, db, task_id) catch {
         return error.TaskDeleteFailed;
+    };
+
+    // Migration 111 — drop this task's dependency edges (both directions): a
+    // dangling edge would freeze the card that waits on it forever. Best-effort,
+    // since the task row is gone either way.
+    kanban_deps.deleteForTask(allocator, db, task_id) catch |err| {
+        std.log.warn("task_delete: dependency cleanup failed (non-fatal): {s}", .{@errorName(err)});
     };
 
     return .deleted;

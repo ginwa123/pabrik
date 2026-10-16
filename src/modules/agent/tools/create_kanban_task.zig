@@ -38,6 +38,9 @@ pub const CreateKanbanTaskInput = struct {
     /// `data:image/<mime>;base64,<payload>` URLs (10 MB cap, enforced by
     /// `image_urls_validation.validateImageUrls`).
     image_urls: ?[]const u8 = null,
+    /// Migration 111 — optional array of task ids on the SAME board that must
+    /// finish before this new card may change column.
+    depends_on: ?[]const []const u8 = null,
     /// Optional unattended-mode flag. `"1"` enables the agent to retry past
     /// the 10-error TooManyRetries bail (overnight runs); any other value
     /// normalizes to `"0"`.
@@ -112,6 +115,11 @@ pub const create_kanban_task_tool = AgentTool{
                     .name = "image_urls",
                     .type = "string",
                     .description = "`||`-delimited `data:image/<mime>;base64,<payload>` URLs (10 MB cap). Null or empty = no images.",
+                },
+                .{
+                    .name = "depends_on",
+                    .type = "array",
+                    .description = "Array of task-id strings on the SAME board that must finish before this card may change column (max 32). Discover ids with kanban_list. A self-reference, a cycle, or an id from another board is rejected.",
                 },
                 .{
                     .name = "is_auto_retry_until_stop",
@@ -519,6 +527,25 @@ pub fn executeKanbanTaskToJSON(
         std.log.warn("create_kanban_task: kanban auto-assign failed (non-fatal): {s}", .{@errorName(err)});
     };
 
+    // 9a. Migration 111 — dependencies, validated against the same board. The
+    //     card row exists by now, so the message names the offending rule and
+    //     the task id to fix instead of forcing a recreate.
+    if (input.depends_on) |raw_ids| {
+        pabrikcore.ai_mod.kanban_deps.validateAndReplace(
+            allocator,
+            db,
+            input.item_id,
+            task_id,
+            raw_ids,
+        ) catch |err| {
+            return errorJSONOwned(allocator, try std.fmt.allocPrint(
+                allocator,
+                "depends_on rejected ({s}): a dependency must be a task of THIS board, must not be this task itself, must not close a cycle, and there are at most 32 per card. The card was created; set dependencies with the task detail dialog or PUT /api/workspaces/tasks/{s}.",
+                .{ @errorName(err), task_id },
+            ));
+        };
+    }
+
     // 10. Stamp last_human_touched_at (Migration 065) — mirrors
     // `task_create.zig:467-469`. Fire-and-forget; without it the new card
     // would show "awaiting review" until the user manually interacts with it.
@@ -687,6 +714,7 @@ fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
         \\  name TEXT,
         \\  description TEXT NOT NULL DEFAULT '',
         \\  position INTEGER,
+        \\  is_done INTEGER NOT NULL DEFAULT 0,
         \\  created_at TEXT NOT NULL DEFAULT ''
         \\)
     , &[_][]const u8{});

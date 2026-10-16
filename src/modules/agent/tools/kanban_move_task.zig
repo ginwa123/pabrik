@@ -42,6 +42,10 @@ pub const KanbanMoveTaskInput = struct {
     /// task is appended to the end (server picks a high position
     /// that the renumber will compact to last).
     position: ?i64 = null,
+    /// Migration 111 — skip the dependency gate. Only for a blocker the agent
+    /// can justify out loud in its reply; the default (false) refuses the move
+    /// and names the unfinished tasks instead.
+    force: bool = false,
 };
 
 /// Top-level tool definition for the LLM.
@@ -99,6 +103,11 @@ pub const kanban_move_task_tool = AgentTool{
                     .name = "position",
                     .type = "integer",
                     .description = "0-based position within the target column; omitted/null appends to the end of the column.",
+                },
+                .{
+                    .name = "force",
+                    .type = "boolean",
+                    .description = "Skip the dependency gate. Default false: while one of the task's dependencies is unfinished the move is REFUSED and the response names the blocking tasks. Use true only when the blocker is genuinely obsolete — and say why in your reply.",
                 },
             },
             .required = &.{ "workspace_id", "item_id", "task_id" },
@@ -268,17 +277,19 @@ pub fn executeKanbanMoveTaskToJSON(
     const position_str = try std.fmt.allocPrint(allocator, "{d}", .{position});
     defer allocator.free(position_str);
 
-    // 3. Call kanban_model.moveTask — this handles the sibling
-    //    renumber atomically.
-    pabrikcore.ai_mod.kanban_model.moveTask(
+    // 3. Call kanban_model.moveTaskChecked — this applies the Migration 111
+    //    dependency gate, then handles the sibling renumber atomically.
+    pabrikcore.ai_mod.kanban_model.moveTaskChecked(
         allocator,
         db,
         input.item_id,
         input.task_id,
         target_column_id,
         position,
-    ) catch |err| {
-        return errorJSONOwned(allocator, try std.fmt.allocPrint(allocator, "DB: moveTask failed: {s}", .{@errorName(err)}));
+        input.force,
+    ) catch |err| switch (err) {
+        error.BlockedByDependencies => return blockedJSON(allocator, db, input.task_id),
+        else => return errorJSONOwned(allocator, try std.fmt.allocPrint(allocator, "DB: moveTask failed: {s}", .{@errorName(err)})),
     };
 
     // 3a. Emit the `kanban_task` SSE event so connected KanbanView clients
@@ -365,6 +376,81 @@ pub fn errorJSON(allocator: std.mem.Allocator, error_msg: []const u8) ![]u8 {
 pub fn errorJSONOwned(allocator: std.mem.Allocator, error_msg: []u8) ![]u8 {
     defer allocator.free(error_msg);
     return errorJSON(allocator, error_msg);
+}
+
+/// One unfinished dependency named in a `kanban_move_task` refusal.
+pub const BlockedDependency = struct {
+    task_id: []const u8,
+    name: []const u8,
+    column_name: []const u8,
+};
+
+/// Payload for a move the dependency gate refused (Migration 111).
+pub const KanbanMoveBlocked = struct {
+    success: bool = false,
+    blocked: bool = true,
+    task_id: []const u8,
+    @"error": []const u8,
+    /// The tasks that must finish first. Finish THESE — retrying the move (or
+    /// passing `force`) is not progress.
+    blocked_by: []const BlockedDependency,
+};
+
+/// Explain a refused move: WHICH tasks are unfinished, in which column, and
+/// that the way forward is to finish them.
+fn blockedJSON(
+    allocator: std.mem.Allocator,
+    db: *sqlite.SqliteBackend,
+    task_id: []const u8,
+) ![]u8 {
+    const blocked = pabrikcore.ai_mod.kanban_model.incompleteDependencies(
+        allocator,
+        db,
+        task_id,
+    ) catch |err| {
+        return errorJSONOwned(allocator, try std.fmt.allocPrint(
+            allocator,
+            "BlockedByDependencies: this task waits for an unfinished dependency (listing the blockers failed: {s})",
+            .{@errorName(err)},
+        ));
+    };
+    // Freed through `kanban_model.deps` — the same module copy that produced
+    // the slice.
+    defer pabrikcore.ai_mod.kanban_model.deps.freeEdges(allocator, blocked);
+
+    const names = try allocator.alloc(BlockedDependency, blocked.len);
+    defer allocator.free(names);
+    var summary: std.ArrayList(u8) = .empty;
+    defer summary.deinit(allocator);
+
+    for (blocked, 0..) |edge, i| {
+        names[i] = .{
+            .task_id = edge.depends_on_task_id,
+            .name = edge.name,
+            // Unassigned dependency: name the state instead of an empty label.
+            .column_name = if (edge.column_name.len > 0) edge.column_name else "(no column)",
+        };
+        if (i > 0) try summary.appendSlice(allocator, ", ");
+        try summary.appendSlice(allocator, edge.name);
+        if (edge.column_name.len > 0) {
+            try summary.appendSlice(allocator, " (in ");
+            try summary.appendSlice(allocator, edge.column_name);
+            try summary.appendSlice(allocator, ")");
+        }
+    }
+
+    const message = try std.fmt.allocPrint(
+        allocator,
+        "BlockedByDependencies: this task waits for {d} unfinished dependency task(s): {s}. Finish them (move each one into a column marked as completing) before moving this card; pass force=true only if the blocker is genuinely obsolete.",
+        .{ blocked.len, summary.items },
+    );
+    defer allocator.free(message);
+
+    return std.json.Stringify.valueAlloc(allocator, KanbanMoveBlocked{
+        .task_id = task_id,
+        .@"error" = message,
+        .blocked_by = names,
+    }, .{});
 }
 
 /// Parsed shape of `executeKanbanMoveTaskToJSON` output, for tests.
@@ -469,6 +555,7 @@ fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
         \\  name TEXT,
         \\  description TEXT NOT NULL DEFAULT '',
         \\  position INTEGER,
+        \\  is_done INTEGER NOT NULL DEFAULT 0,
         \\  created_at TEXT NOT NULL DEFAULT ''
         \\)
     , &.{});
@@ -487,6 +574,16 @@ fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
         \\  workspace_item_task_id TEXT PRIMARY KEY,
         \\  kanban_column_id TEXT NOT NULL,
         \\  kanban_position INTEGER NOT NULL DEFAULT 0
+        \\)
+    , &.{});
+
+    // Migration 111 — the dependency edges the gate reads.
+    try db.exec(alloc,
+        \\CREATE TABLE kanban_task_dependencies (
+        \\  task_id TEXT NOT NULL,
+        \\  depends_on_task_id TEXT NOT NULL,
+        \\  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\  PRIMARY KEY (task_id, depends_on_task_id)
         \\)
     , &.{});
 

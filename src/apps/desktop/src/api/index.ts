@@ -173,6 +173,9 @@ export interface KanbanColumn {
   description?: string | null
   position: number
   created_at: string
+  // NEW (kanban task dependencies). `is_done` marks a column as
+  // completing: cards here no longer block their dependents.
+  is_done?: boolean
 }
 
 /**  * Wire shape for `GET .../design/pages` (list envelope) and `POST .../design/pages` (single page).
@@ -327,6 +330,71 @@ export interface Task {
   // cwd — worktree cwd if bound, else the parent item's `path`. `null` when the
   // cwd is not a git repo or HEAD is detached; the UI omits the badge.
   git_branch?: string | null
+  // NEW (kanban task dependencies). `depends_on` lists ids this task waits for; `blocked_by` is
+  // the incomplete subset (names for tooltips); `is_blocked` mirrors `blocked_by.length > 0`.
+  depends_on?: string[]
+  blocked_by?: TaskDependencyBlocker[]
+  is_blocked?: boolean
+}
+
+/**
+ * One incomplete dependency blocking a task's move — the 409 `blockers` entries.
+ */
+export interface TaskDependencyBlocker {
+  task_id: string
+  name: string
+  column_id: string | null
+  column_name: string | null
+}
+
+/**
+ * Normalize `depends_on` in place; a malformed wire value becomes `[]` instead of throwing.
+ */
+export function normalizeTaskDependsOn<T extends { depends_on?: unknown }>(task: T): void {
+  const v: unknown = task.depends_on
+  if (v === undefined) return
+  if (Array.isArray(v)) {
+    task.depends_on = v.filter((e): e is string => typeof e === 'string')
+    return
+  }
+  if (typeof v === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(v)
+      task.depends_on = Array.isArray(parsed)
+        ? parsed.filter((e): e is string => typeof e === 'string')
+        : []
+    }
+    // eslint-disable-next-line local/no-try-catch -- defensive wire coercion: JSON.parse has no Effect-TS spelling here, and the fallback below documents the failure mode
+    catch {
+      // Unparseable wire string means "no readable edges" — [] keeps
+      // the card rendering (unblocked) instead of crashing on it.
+      console.warn('[api] ignoring malformed depends_on wire value')
+      task.depends_on = []
+    }
+    return
+  }
+  task.depends_on = []
+}
+
+/**
+ * Read the 409 move-gate `blockers` off a thrown error, or null when it is another failure.
+ */
+export function parseMoveBlockers(err: unknown): TaskDependencyBlocker[] | null {
+  if (!(err instanceof ApiError) || err.status !== 409) return null
+  try {
+    const parsed: unknown = JSON.parse(err.body)
+    if (parsed && typeof parsed === 'object' && Array.isArray((parsed as { blockers?: unknown }).blockers)) {
+      return (parsed as { blockers: TaskDependencyBlocker[] }).blockers
+    }
+    return null
+  }
+  // eslint-disable-next-line local/no-try-catch -- defensive body probe: a non-JSON 409 body simply is not the move-gate shape, and null below documents that
+  catch {
+    // Non-JSON body cannot carry `blockers` — null tells the
+    // caller this error is not a move-gate refusal.
+    console.warn('[api] move-gate probe hit a non-JSON 409 body')
+    return null
+  }
 }
 
 /**  * Split a mixed array of base64 data URLs into images vs videos (Migration 090). `data:video/...`
@@ -822,6 +890,10 @@ export async function updateTaskSimple(
     // undefined: leave unchanged (no-op). - '': clear per-task cwd (falls back to kanban-level path
     // + sandbox). - '/home/me/repo-A': set per-task cwd to this path.
     cwd?: string
+    // NEW (kanban task dependencies). Replace-all dependency edit:
+    // forwarded ONLY when provided (omitted = untouched, `[]` =
+    // clear all). Sent as a real JSON array (unlike tags).
+    depends_on?: string[]
   },
 ): Promise<{ success: boolean }> {
   const body: Record<string, unknown> = { ...data }
@@ -1826,7 +1898,7 @@ export async function updateKanbanColumn(
   workspaceId: string,
   itemId: string,
   columnId: string,
-  patch: { name?: string; description?: string; position?: number },
+  patch: { name?: string; description?: string; position?: number; is_done?: boolean },
 ): Promise<{ columns: KanbanColumn[]; count: number }> {
   return await apiFetch<{ columns: KanbanColumn[]; count: number }>(
     `/workspaces/${workspaceId}/items/${itemId}/kanban/columns/${columnId}`,
@@ -1859,10 +1931,15 @@ export async function moveTask(
   taskId: string,
   columnId: string,
   position: number,
+  force?: boolean,
 ): Promise<Task> {
+  // `force` rides the body only when truthy — the backend
+  // defaults it to false, so omitting keeps old payloads intact.
+  const body: Record<string, unknown> = { column_id: columnId, position }
+  if (force) body.force = true
   return await apiFetch<Task>(`/workspaces/${workspaceId}/items/${itemId}/tasks/${taskId}/move`, {
     method: 'PATCH',
-    body: { column_id: columnId, position },
+    body,
   })
 }
 

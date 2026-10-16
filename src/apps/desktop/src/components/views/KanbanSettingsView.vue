@@ -57,7 +57,7 @@ const workspacesStore = useWorkspacesStore()
 const emit = defineEmits<{
   close: []
   addColumn: [name: string, description: string]
-  editColumn: [payload: { columnId: string; name: string; description: string }]
+  editColumn: [payload: { columnId: string; name: string; description: string; is_done: boolean }]
   deleteColumn: [columnId: string]
   renameItem: [name: string]
   copySpec: []
@@ -119,6 +119,7 @@ const settingsEditorMode = ref<SettingsEditorMode>('rename')
 const settingsEditorTargetId = ref<string | null>(null)
 const settingsEditorTargetName = ref('')
 const settingsEditorTargetDescription = ref('')
+const settingsEditorTargetIsDone = ref(false)
 
 // ─── Computed ──────────────────────────────────────────────────────────────
 // itemId comes from route.params (path). May be empty if the URL is
@@ -462,6 +463,7 @@ const handleEditColumn = (columnId: string) => {
   settingsEditorTargetId.value = columnId
   settingsEditorTargetName.value = col.name
   settingsEditorTargetDescription.value = col.description ?? ''
+  settingsEditorTargetIsDone.value = col.is_done ?? false
   showSettingsEditor.value = true
 }
 
@@ -480,12 +482,13 @@ const handleSettingsEditorClose = () => {
   settingsEditorTargetId.value = null
 }
 
-const handleSettingsEditorRename = (name: string, description: string) => {
+const handleSettingsEditorRename = (name: string, description: string, isDone: boolean) => {
   if (!settingsEditorTargetId.value) return
   emit('editColumn', {
     columnId: settingsEditorTargetId.value,
     name,
     description,
+    is_done: isDone,
   })
   showSettingsEditor.value = false
   settingsEditorTargetId.value = null
@@ -892,6 +895,7 @@ function sortedColumns() {
       :mode="settingsEditorMode"
       :initial-name="settingsEditorTargetName"
       :initial-description="settingsEditorTargetDescription"
+      :initial-is-done="settingsEditorTargetIsDone"
       @close="handleSettingsEditorClose"
       @rename="handleSettingsEditorRename"
       @delete="handleSettingsEditorDelete"

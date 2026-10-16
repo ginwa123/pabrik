@@ -17,6 +17,9 @@ const UpdateColumnBody = struct {
     /// unchanged; `""` clears it; non-empty replaces it.
     description: ?[]const u8 = null,
     position: ?i64 = null,
+    /// Migration 111 — "a card that lands in this column has finished the work
+    /// it describes", so it stops blocking its dependents.
+    is_done: ?bool = null,
 };
 
 pub const KanbanColumnUpdateError = error{
@@ -58,8 +61,14 @@ fn useCase(
     // Body-shape validation is also handler-layer (parses JSON). Here
     // we just enforce "at least one field present".
     const parsed = input.body;
-    if (parsed.name == null and parsed.description == null and parsed.position == null) {
+    if (parsed.name == null and parsed.description == null and parsed.position == null and parsed.is_done == null) {
         return error.NothingToUpdate;
+    }
+
+    // Migration 111 — the "this column finishes a task" flag.
+    if (parsed.is_done) |flag| {
+        kanban_model.setColumnIsDone(allocator, db, input.column_id, flag) catch
+            return error.UpdateFailed;
     }
 
     // Update name + description (if either is set).

@@ -25,6 +25,8 @@ pub const KanbanTaskCreateBody = struct {
     /// Skill name for this task (Migration 110). Empty = no skill.
     /// Also baked into the create_and_run queue_message as #Skill <name>.
     skill_name: ?[]const u8 = null,
+    /// Migration 111 — tasks this new card waits for (ids on the same board).
+    depends_on: ?[]const []const u8 = null,
 };
 
 /// Thin orchestrator over `task_create.zig::useCase` + the create_and_run
@@ -137,6 +139,7 @@ pub fn kanbanTasksCreateHandler(
         .video_urls = parsed.video_urls,
         .cwd = parsed.cwd,
         .skill_name = parsed.skill_name,
+        .depends_on = parsed.depends_on,
     };
 
     const tc_handler = @import("task_create.zig");
@@ -157,6 +160,10 @@ pub fn kanbanTasksCreateHandler(
             error.InvalidVideoUrls => 400,
             error.VideoUrlsTooLarge => 413,
             error.CwdTooLong, error.CwdNotAbsolute, error.CwdContainsControlChar => 400,
+            error.DependencySelfReference,
+            error.DependencyNotInItem,
+            error.DependencyCycle,
+            error.DependencyCountExceeded => 400,
             error.StandardTaskCreateFailed => 500,
             error.OutOfMemory, error.Canceled => 500,
             else => 500, // catch-all for the memory variants that shouldn't fire here
