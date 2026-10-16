@@ -290,10 +290,10 @@ fn ghScript(fx: *Fixture, argv_file: []const u8, close_code: u8, close_stderr: [
             \\@echo off
             \\if "%~2"=="close" (
             \\  > "{s}" echo %*
-            \\  copy /b "pabrik-fixture-err.bin" >&2
+            \\  copy /b "%~dp0pabrik-fixture-err.bin" >&2
             \\  exit /b {d}
             \\)
-            \\copy /b "pabrik-fixture.bin" nul
+            \\copy /b "%~dp0pabrik-fixture.bin" nul
             \\exit /b 0
             \\
         , .{ argv_file, close_code })

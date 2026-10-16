@@ -207,16 +207,16 @@ fn renderCmd(allocator: std.mem.Allocator, payload: Payload) ![]u8 {
     // NUL. The payload therefore lives in a sidecar data file the TEST
     // writes, copied to the stream with `copy /b`, which is byte-exact.
     if (payload.stdout.len > 0) {
-        try w.print("copy /b \"{s}\" nul\n", .{dataFileName(payload, .stdout)});
+        try w.print("copy /b \"%~dp0{s}\" nul\n", .{dataFileName(payload, .stdout)});
     }
     if (payload.stderr.len > 0) {
-        try w.print("copy /b \"{s}\" >&2\n", .{dataFileName(payload, .stderr)});
+        try w.print("copy /b \"%~dp0{s}\" >&2\n", .{dataFileName(payload, .stderr)});
     }
     if (payload.repeat) |n| {
-        try w.print("for /L %%i in (1,1,{d}) do copy /b \"{s}\" nul\n", .{ n, dataFileName(payload, .stdout) });
+        try w.print("for /L %%i in (1,1,{d}) do copy /b \"%~dp0{s}\" nul\n", .{ n, dataFileName(payload, .stdout) });
     }
     if (payload.repeat_stderr) |n| {
-        try w.print("for /L %%i in (1,1,{d}) do copy /b \"{s}\" >&2\n", .{ n, dataFileName(payload, .stderr) });
+        try w.print("for /L %%i in (1,1,{d}) do copy /b \"%~dp0{s}\" >&2\n", .{ n, dataFileName(payload, .stderr) });
     }
     if (payload.argv_file) |path| {
         if (payload.argv_file_body) |body| {
@@ -332,7 +332,10 @@ test "renderProgram: a POSIX payload is a shell script, a Windows one a batch fi
     defer a.free(script);
     if (builtin.os.tag == .windows) {
         try testing.expect(std.mem.startsWith(u8, script, "@echo off"));
-        try testing.expect(std.mem.indexOf(u8, script, "echo hello") != null);
+        // The payload is NOT in the script on Windows: it lives in a sidecar
+        // data file the batch file copies to the stream, because `echo`
+        // cannot emit a byte-exact payload.
+        try testing.expect(std.mem.indexOf(u8, script, "copy /b") != null);
     } else {
         try testing.expect(std.mem.startsWith(u8, script, "#!/bin/sh"));
         try testing.expect(std.mem.indexOf(u8, script, "printf '%b' 'hello'") != null);
@@ -359,11 +362,17 @@ test "renderProgram: every payload field has a line in both dialects" {
     const want_exit = if (builtin.os.tag == .windows) "exit /b 3" else "exit 3";
     try testing.expect(std.mem.endsWith(u8, std.mem.trimEnd(u8, script, "\n"), want_exit));
     // Each optional field must have produced SOMETHING, or a caller that
-    // sets it would silently get a no-op fixture on this host.
+    // sets it would silently get a no-op fixture on this host. On Windows
+    // the payloads are sidecar files, so the script names them.
     try testing.expect(std.mem.indexOf(u8, script, "/tmp/argv") != null);
     try testing.expect(std.mem.indexOf(u8, script, "/tmp/sentinel") != null);
-    try testing.expect(std.mem.indexOf(u8, script, "OUT") != null);
-    try testing.expect(std.mem.indexOf(u8, script, "ERR") != null);
+    if (builtin.os.tag == .windows) {
+        try testing.expect(std.mem.indexOf(u8, script, dataFileName(full, .stdout)) != null);
+        try testing.expect(std.mem.indexOf(u8, script, dataFileName(full, .stderr)) != null);
+    } else {
+        try testing.expect(std.mem.indexOf(u8, script, "OUT") != null);
+        try testing.expect(std.mem.indexOf(u8, script, "ERR") != null);
+    }
 }
 
 test "writeProgram: the file it writes is executable on this host" {
