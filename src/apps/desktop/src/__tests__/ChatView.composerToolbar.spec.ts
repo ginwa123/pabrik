@@ -30,6 +30,7 @@ describe('ChatView composer toolbar (V1 single-card)', () => {
     for (const hook of [
       'profile-picker-button',
       'profile-picker-default',
+      'profile-picker-menu',
       'profile-picker-active-badge',
       'worktree-status-button',
       'tokens-status',
