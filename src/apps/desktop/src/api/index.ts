@@ -749,10 +749,10 @@ export interface KanbanCreateTaskPayload {
   // Migration 063 — only meaningful for create_and_run; for plain create,
   // the backend atomically inserts the sessions row when this is '1'.
   isAutoRetryUntilStop?: string
-  // Migration 110 — the skill this task asks the agent to use. The exact
-  // `skills.name` from the New-task dialog's picker. Persisted on the task
-  // row; empty/undefined = no skill.
-  skillName?: string
+  // Migration 112 — the skills this task asks the agent to use, in pick
+  // order. The exact `skills.name` values from the New-task dialog's picker.
+  // Persisted on the task row; empty/undefined = no skill.
+  skillNames?: string[]
 }
 
 export interface KanbanCreateAndRunPayload {
@@ -768,7 +768,8 @@ export interface KanbanCreateAndRunPayload {
   isAutoRetryUntilStop?: string
   /** Backend persists onto the sessions row. Empty/undefined = backend default. */
   selected_profile_model?: string
-  skill_name?: string
+  /** Migration 112 — the skills this task asks the agent to use, in pick order. */
+  skill_names?: string[]
 }
 
 /** New mode (`create_session`) — inserts the sessions row keyed by task.id + persists
@@ -787,8 +788,8 @@ export interface KanbanCreateSessionOnlyPayload {
   isAutoRetryUntilStop?: string
   /** Persists on the sessions row. Empty/undefined = backend default. */
   selected_profile_model?: string
-  /** Migration 110 — the skill this task asks the agent to use. */
-  skill_name?: string
+  /** Migration 112 — the skills this task asks the agent to use, in pick order. */
+  skill_names?: string[]
 }
 
 export interface KanbanSessionInfo {
@@ -826,12 +827,12 @@ export async function createKanbanTask(
   if (payload.isAutoRetryUntilStop !== undefined) {
     body.is_auto_retry_until_stop = payload.isAutoRetryUntilStop
   }
-  const skill_name: string | undefined =
+  const skill_names: string[] | undefined =
     payload.mode === 'create'
-      ? payload.skillName
-      : (payload as { skill_name?: string }).skill_name
-  if (skill_name !== undefined) {
-    body.skill_name = skill_name
+      ? payload.skillNames
+      : (payload as { skill_names?: string[] }).skill_names
+  if (skill_names !== undefined) {
+    body.skill_names = skill_names
   }
   if (payload.mode === 'create_and_run') {
     body.queue_message = payload.queue_message

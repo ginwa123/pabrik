@@ -499,7 +499,7 @@ pub fn executeKanbanTaskToJSON(
         // Migration 090 — video_urls. Tool input is image-only;
         // null omits the column (DEFAULT '' applies).
         null,
-        // Migration 110 — skill name. The agent tool has no skill
+        // Migration 112 — skill names. The agent tool has no skill
         // input (the agent loads skills itself with `use_skill`), so
         // null omits the column (DEFAULT '' applies).
         null,

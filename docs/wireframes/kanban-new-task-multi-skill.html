@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wireframe: more than one skill per kanban task</title>
+<style>
+  :root {
+    --bg: #181616; --bg-m1: #1D1C19; --bg-m2: #12120f;
+    --bg-p1: #282727; --bg-p2: #393836;
+    --border: #282727; --border-light: #393836;
+    --text: #c5c9c5; --text-muted: #a6a69c; --text-dim: #8a908a;
+    --violet: #8992a7; --aqua: #8ea4a2; --yellow: #c4b28a; --blue: #8ba4b0;
+    --green: #87a987; --pink: #a292a3; --orange: #b6927b; --red: #c4746e;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px; line-height: 1.55; padding: 34px 30px 60px;
+  }
+  .page { max-width: 1320px; margin: 0 auto; }
+  h1 { font-size: 34px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; margin-bottom: 8px; }
+  .sub { color: var(--text-muted); font-size: 16px; max-width: 68ch; margin-bottom: 14px; }
+  .sub b { color: var(--text); font-weight: 600; }
+  .flow { display: flex; align-items: center; gap: 6px; font-size: 16px; color: var(--text-muted);
+          margin-bottom: 26px; flex-wrap: wrap; }
+  .flow .step { background: var(--bg-m1); border-radius: 5px; padding: 4px 11px; }
+  .flow .step.now { background: var(--bg-p1); color: var(--text); }
+  .flow .arrow { color: var(--text-dim); }
+
+  h2 { font-size: 19px; font-weight: 600; margin: 34px 0 6px; }
+  h2 .n { color: var(--violet); font-weight: 500; margin-right: 8px; }
+  h3 { font-size: 16px; font-weight: 600; margin: 20px 0 6px; }
+  p.lead { color: var(--text-muted); font-size: 16px; max-width: 68ch; margin-bottom: 12px; }
+  code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 16px;
+         background: var(--bg-m2); border-radius: 4px; padding: 1px 5px;
+         overflow-wrap: anywhere; }
+  .card { background: var(--bg-m1); border-radius: 8px; padding: 16px 18px; margin: 12px 0 20px; }
+  .card.flag { background: #241d1c; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 16px; }
+  table.fixed { table-layout: fixed; }
+  th { text-align: left; font-weight: 600; color: var(--text-muted); font-size: 16px;
+       padding: 7px 8px; border-bottom: 1px solid var(--border); } /* taste-skill-ignore: real table rows */
+  td { padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; overflow-wrap: anywhere; } /* taste-skill-ignore: real table rows */
+  tr:last-child td { border-bottom: none; }
+  .dim { color: var(--text-dim); }
+  .muted { color: var(--text-muted); }
+  .ok-c { color: var(--green); }
+  .bad-c { color: var(--red); }
+
+  /* ---------- mock app window: a cropped interface fragment ---------- */
+  [data-ui].win { background: var(--bg-m2); border-radius: 8px; margin-bottom: 20px;
+         box-shadow: 0 8px 32px rgba(0,0,0,.5); }
+  [data-ui] .win-bar { display: flex; align-items: center; gap: 8px; padding: 7px 11px;
+             background: var(--bg-m1); border-radius: 8px 8px 0 0;
+             border-bottom: 1px solid var(--border); }
+  .win-bar .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bg-p2); }
+  .win-bar .win-title { font-size: 16px; color: var(--text-muted); margin-left: 6px; }
+  .win-bar .win-right { margin-left: auto; font-size: 16px; color: var(--text-dim); }
+  .pane-body { display: flex; gap: 0; align-items: stretch; }
+  .side-dialog { flex: 1 1 auto; min-width: 0; padding: 16px 18px 18px; }
+  [data-ui] .side-note { width: 400px; flex-shrink: 0; border-left: 1px solid var(--border);
+                         padding: 16px 18px 18px; background: rgba(0,0,0,.16); }
+  @media (max-width: 1120px) {
+    [data-ui] .pane-body { flex-direction: column; }
+    [data-ui] .side-note { width: 100%; border-left: none; border-top: 1px solid var(--border); }
+  }
+
+  /* ---------- dialog chrome (mirrors KanbanTaskDetail.vue) ---------- */
+  .dlg-head { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
+  .dlg-head .back { color: var(--text-muted); font-size: 16px; }
+  .dlg-head .ttl { font-size: 16px; font-weight: 600; }
+  .dlg-head .x { margin-left: auto; color: var(--text-dim); font-size: 14px; }
+  .dlg-sub { font-size: 16px; color: var(--text-muted); margin-bottom: 14px; }
+  [data-ui] .mocktextarea { border: 1px solid var(--border-light); border-radius: 6px; background: var(--bg-m1);
+                  min-height: 60px; padding: 9px 11px; font-size: 16px; color: var(--text-muted); }
+  .cline { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  .cline .r { margin-left: auto; font-size: 14px; color: var(--text-dim); }
+  .field-label { font-size: 16px; font-weight: 600; color: var(--text-muted); margin: 14px 0 3px; }
+  .field-help { font-size: 14px; color: var(--text-muted); margin-bottom: 7px; }
+  [data-ui] .mockinput { border: 1px solid var(--border-light); border-radius: 6px; background: var(--bg-m1);
+               padding: 8px 11px; font-size: 16px; color: var(--text-dim); }
+  [data-ui] .sec-title { font-size: 16px; font-weight: 600; color: var(--text-muted); margin: 18px 0 11px;
+               border-top: 1px solid var(--border); padding-top: 15px; }
+
+  /* ---------- picker pills + dropdowns ---------- */
+  .pillrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; position: relative; }
+  [data-ui] .pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 6px;
+          font-size: 16px; background: var(--bg-m1); border: 1px solid var(--border);
+          color: var(--text); white-space: nowrap; font-family: inherit; cursor: pointer; }
+  .pill .lbl { font-weight: 500; }
+  .pill .val { color: var(--text-muted); }
+  .pill .val.on { color: var(--text); }
+  .pill .cnt { background: rgba(137,146,167,.24); color: var(--text); border-radius: 20px;
+               padding: 0 6px; font-size: 14px; font-weight: 600; }
+  .pill .car { color: var(--text-dim); font-size: 14px; }
+  .pillrow .ico { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.75;
+                  stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+  .pillwrap { position: relative; }
+  [data-ui] .dropdown { position: absolute; top: calc(100% + 5px); left: 0; z-index: 20; min-width: 320px;
+              max-width: 380px; border-radius: 8px; overflow: hidden; background: var(--bg-m1);
+              border: 1px solid var(--border); box-shadow: 0 10px 30px rgba(0,0,0,.55); }
+  [data-ui] .dsearch { padding: 7px 11px; border-bottom: 1px solid var(--border); }
+  [data-ui] .dsearch input { width: 100%; background: transparent; border: none; outline: none;
+                             font-size: 16px; color: var(--text); font-family: inherit; }
+  [data-ui] .dsearch input::placeholder { color: var(--text-dim); }
+  [data-ui] .dhead { display: flex; align-items: center; gap: 8px; padding: 7px 11px;           border-bottom: 1px solid var(--border); font-size: 14px; color: var(--text-muted); }
+  .dhead .dact { margin-left: auto; color: var(--blue); font-size: 14px; cursor: pointer;
+                 background: none; border: none; font-family: inherit; }
+  [data-ui] .drow { display: flex; align-items: flex-start; gap: 9px; width: 100%; text-align: left;
+          padding: 8px 11px; font-size: 16px; color: var(--text); background: none; border: none;
+          border-top: 1px solid var(--border); font-family: inherit; cursor: pointer; }
+  .drow.first { border-top: none; }
+  .drow:hover { background: rgba(137,146,167,.09); }
+  .drow .nm { font-weight: 500; }
+  .drow .ds { font-size: 14px; color: var(--text-muted); margin-top: 2px;
+              display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .drow .tick { margin-left: auto; flex-shrink: 0; width: 14px; height: 14px; color: var(--text); }
+  .drow .tick.off { visibility: hidden; }
+  .cb { width: 14px; height: 14px; margin-top: 2px; flex-shrink: 0; accent-color: #8992a7; }
+  .dempty { padding: 9px 11px; font-size: 16px; color: var(--text-muted); }
+
+  /* ---------- selected-skill chips ---------- */
+  .chipsrow { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 10px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500;
+          padding: 3px 7px; border-radius: 4px; background: rgba(137,146,167,.16); color: var(--text); }
+  .chip .rm { display: inline-flex; align-items: center; justify-content: center; width: 13px; height: 13px;
+              border-radius: 50%; background: none; border: none; color: var(--text-muted);
+              cursor: pointer; padding: 0; }
+  .chip .rm:hover { background: rgba(0,0,0,.3); color: var(--text); }
+  .chip .rm svg { width: 9px; height: 9px; }
+  .chipsrow .hint { font-size: 16px; color: var(--text-muted); }
+
+  /* ---------- filter input (V2) ---------- */
+  [data-ui] .chipbox { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; padding: 6px 9px;
+             border-radius: 8px; background: var(--bg-m1); border: 1px solid var(--border-light); }
+  .chipbox input { flex: 1 1 150px; min-width: 130px; background: transparent; border: none;
+                   outline: none; font-size: 16px; color: var(--text); font-family: inherit; }
+  .chipbox input::placeholder { color: var(--text-dim); }
+
+  /* Narrow widths: anchor the dropdown to the pill ROW, not the pill, so it never
+     runs past the viewport edge. The real component needs the same care. */
+  @media (max-width: 900px) {
+    [data-ui] .pillwrap { position: static; }
+    [data-ui] .dropdown { min-width: 0; }
+  }
+
+  /* ---------- the agent's note ---------- */
+  .note-h { font-size: 16px; color: var(--text-muted); margin-bottom: 7px; }
+  [data-ui] pre.note { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 16px;
+             line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+             background: var(--bg-m2); border-radius: 6px; border: 1px solid var(--border);
+             padding: 10px 12px; color: var(--text-muted); }
+  pre.note .dir { color: var(--yellow); }
+  pre.note .dup { color: var(--red); }
+  .note-meta { margin-top: 10px; font-size: 14px; color: var(--text-muted); }
+  .note-meta b { color: var(--text); font-weight: 600; }
+
+  /* ---------- annotations ---------- */
+  .ann { display: flex; gap: 9px; font-size: 14px; margin: 8px 0; color: var(--text-muted); }
+  .ann .num { color: var(--violet); font-weight: 600; flex-shrink: 0; }
+  .ann b { color: var(--text); font-weight: 600; }
+  .legend { margin-top: 12px; }
+
+  /* ---------- pick-one list (unboxed: separated by tone and space) ---------- */
+  .opt { display: flex; gap: 11px; align-items: flex-start; padding: 11px 13px; border-radius: 7px;
+         margin-bottom: 6px; }
+  .opt.rec { background: var(--bg-p1); }
+  .opt .box { width: 15px; height: 15px; border-radius: 3px;
+              flex-shrink: 0; margin-top: 3px; background: var(--bg-p2); }
+  .opt.rec .box { background: var(--violet); }
+  .opt .ot { font-size: 15px; font-weight: 600; }
+  .opt .od { font-size: 15px; color: var(--text-muted); margin-top: 3px; max-width: 78ch; }
+  .foot { margin-top: 38px; font-size: 16px; color: var(--text-dim); max-width: 100ch; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>Pick several skills for one task</h1>
+  <p class="sub">
+    This is the design record for <b>PR #966</b>. The card asked to let a task carry <b>several</b>
+    skills (today it carries one, PR #958) and to see the wireframe first. Round 1 was this wireframe;
+    you then chose <b>V1 with a search field</b>, and the implementation landed on the same branch:
+    DB, backend, dialog, tests. The panes below are live, and section 8 records the decisions.
+  </p>
+  <div class="flow">
+    <span class="step">wireframe (this file)</span>
+    <span class="arrow">&#8594;</span>
+    <span class="step now">V1 + search, chosen</span>
+    <span class="arrow">&#8594;</span>
+    <span class="step">Migration 112 + backend</span>
+    <span class="arrow">&#8594;</span>
+    <span class="step">dialog picker</span>
+    <span class="arrow">&#8594;</span>
+    <span class="step">tests + PR</span>
+  </div>
+
+  <h2><span class="n">0</span>What ships today, measured at <code>main</code> = <code>7716508ce</code></h2>
+  <p class="lead">
+    Everything below was read from the tree rather than recalled. Two of the facts shape the design,
+    and one of them is a defect this change should absorb.
+  </p>
+  <div class="card">
+    <table class="fixed">
+      <colgroup><col style="width:22%"><col style="width:46%"><col style="width:32%"></colgroup>
+      <thead><tr><th>Piece</th><th>What is true today (single skill)</th><th>Where</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Picker</td>
+          <td>One pill in the dialog's <code>Settings</code> row. Its dropdown holds a <b>single</b>
+              tick and picking a row closes it.</td>
+          <td><code>KanbanTaskDetail.vue:321-331</code> (state), <code>889-896</code> (select),
+              <code>1503-1580</code> (markup)</td>
+        </tr>
+        <tr>
+          <td>DB column</td>
+          <td><code>workspace_item_tasks.skill_name TEXT NOT NULL DEFAULT ''</code>. A skill
+              <b>name</b>, deliberately no FK to <code>skills</code>, so a task row survives a skill
+              deletion.</td>
+          <td><code>migration_110.zig</code> (Migration 110)</td>
+        </tr>
+        <tr>
+          <td>Wire</td>
+          <td><code>skill_name: string</code> on all three modes (<code>create</code>,
+              <code>create_session</code>, <code>create_and_run</code>), validated as ONE name:
+              length, control characters, <code>isValidSkillName</code></td>
+          <td><code>http_response.zig:136</code>, <code>api/index.ts:755/771/791/829</code>,
+              <code>task_create.zig:331-339</code></td>
+        </tr>
+        <tr>
+          <td>Note to the agent</td>
+          <td>A <code>#Skill &lt;name&gt;</code> line is appended to the <code>create_and_run</code>
+              <code>queue_message</code>. That is the only first-turn channel a skill can ride.</td>
+          <td><code>kanban_tasks_create.zig:217-229</code></td>
+        </tr>
+        <tr>
+          <td>Read side</td>
+          <td>The two kanban task listers <b>do</b> select it: <code>llm_history.zig</code> reads
+              <code>COALESCE(t.skill_name, '')</code> at index 19 and the list response carries the
+              field. But <b>no surface renders it</b>: the frontend's <code>Task</code> type declares
+              it and no component reads it, so a picked skill is invisible again the moment the task
+              exists.</td>
+          <td><code>llm_history.zig</code>, <code>stores/workspaces.ts</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card flag">
+    <h3 style="margin-top:0">The defect to absorb: the directive is baked twice</h3>
+    <p class="lead">
+      The frontend and the backend both append <code>#Skill &lt;name&gt;</code> to the same message on
+      <code>create_and_run</code>, so the agent receives it twice. This card's own note is the live
+      specimen: it ends with the same line repeated.
+    </p>
+    <table class="fixed">
+      <colgroup><col style="width:50%"><col style="width:50%"></colgroup>
+      <tbody>
+        <tr>
+          <td><b>Frontend bake</b><br><code>buildTaskCreateMessage.ts:26-29</code>
+              <pre class="note" style="margin-top:8px">lines.push('', `#Skill ${skill}`)</pre></td>
+          <td><b>Backend bake</b><br><code>kanban_tasks_create.zig:225-227</code>
+              <pre class="note" style="margin-top:8px">"{s}\n\n#Skill {s}", .{ base, skill }</pre></td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="lead" style="margin:12px 0 0">
+      Both run for <code>create_and_run</code>, so the message reads
+      <code>...\n\n#Skill x\n\n#Skill x</code>. With <b>N</b> skills and no fix, N becomes <b>2N</b>.
+      The proposal below gives the note exactly one owner, the backend, because that is the
+      API-level guarantee, and one line per skill.
+    </p>
+  </div>
+
+  <h2><span class="n">1</span>Today: one skill, and the note says it twice</h2>
+  <p class="lead">Both panes are live. Click a row. Left is the dialog, right is the agent's first user message.</p>
+
+  <div class="win" data-testid="paneA" data-ui>
+    <div class="win-bar">
+      <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+      <span class="win-title">pane A: shipped in #958, single skill</span>
+      <span class="win-right">KanbanTaskDetailDialog.vue &#8594; KanbanView.handleCreateTaskSave</span>
+    </div>
+    <div class="pane-body">
+      <div class="side-dialog">
+        <div class="dlg-head">
+          <span class="back">&#8249; Back</span><span class="ttl">+ New task</span><span class="x"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+        </div>
+        <div class="dlg-sub">Create a new task, or start an agent on it right away.</div>
+        <div class="mocktextarea">My task</div>
+        <div class="cline"><span class="r">7 chars</span></div>
+
+        <div class="field-label">Tags</div>
+        <div class="field-help">Optional. Press Enter or comma to add. Letters, digits, underscores, hyphens.</div>
+        <div class="mockinput">Add tags (letters, digits, hyphens)&#8230;</div>
+
+        <div class="sec-title">Settings</div>
+        <div class="pillrow">
+          <span class="pill"><svg class="ico" viewBox="0 0 20 20" fill="currentColor"><path d="M2 5a2 2 0 012-2h4.586a1 1 0 01.707.293L11 5h5a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V5z"/></svg><span class="lbl">Project root</span><span class="val">/home/ginwa/pabrik</span><span class="car">&#9662;</span></span>
+          <span class="pill"><span class="lbl">Profile</span><span class="val">Default</span><span class="car">&#9662;</span></span>
+          <span class="pillwrap">
+            <button type="button" class="pill" data-testid="paneA-pill">
+              <svg class="ico" viewBox="0 0 24 24"><path d="M9 4h9a2 2 0 012 2v12a2 2 0 01-2 2H9M15 12H3m0 0l3-3m-3 3l3 3"/></svg>
+              <span class="lbl">Skill</span>
+              <span class="val on" data-testid="paneA-label">behavior-unit-tests</span>
+              <span class="car">&#9662;</span>
+            </button>
+            <div class="dropdown" data-testid="paneA-dropdown">
+              <div class="dhead">One skill only<span class="dact">the agent decides otherwise</span></div>
+              <button type="button" class="drow first" data-testid="paneA-row-none">
+                <span class="nm">None (agent decides)</span>
+                <svg class="tick off" data-testid="paneA-tick-none" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.6l3.3 3.3L13 4.9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <button type="button" class="drow" data-testid="paneA-row-behavior-unit-tests">
+                <span><span class="nm">behavior-unit-tests</span>
+                <span class="ds">Use whenever asked to write, add, improve, review, refactor, or fix unit tests, test coverage, flaky tests, or mocks&#8230;</span></span>
+                <svg class="tick" data-testid="paneA-tick-behavior-unit-tests" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.6l3.3 3.3L13 4.9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <button type="button" class="drow" data-testid="paneA-row-before-after-screenshots-from-two-checkouts">
+                <span><span class="nm">before-after-screenshots-from-two-checkouts</span>
+                <span class="ds">Use when a PR or review needs before/after screenshots of a frontend change and booting the whole app is too expensive&#8230;</span></span>
+                <svg class="tick off" data-testid="paneA-tick-before-after-screenshots-from-two-checkouts" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.6l3.3 3.3L13 4.9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <button type="button" class="drow" data-testid="paneA-row-chatview-absolute-overlay-gutter-and-hover-preview">
+                <span><span class="nm">chatview-absolute-overlay-gutter-and-hover-pre&#8230;</span>
+                <span class="ds">Use when an absolutely-positioned overlay (pill rail, scroll slider, floating chrome) paints on top of chat transcript&#8230;</span></span>
+                <svg class="tick off" data-testid="paneA-tick-chatview-absolute-overlay-gutter-and-hover-preview" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.6l3.3 3.3L13 4.9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <button type="button" class="drow" data-testid="paneA-row-chatview-scroll-jump-diagnosis-with-inpage-probe">
+                <span><span class="nm">chatview-scroll-jump-diagnosis-with-inpage-pro&#8230;</span>
+                <span class="ds">Use when the pabrik chat transcript jumps, bounces or teleports while scrolling, especially during SSE streaming&#8230;</span></span>
+                <svg class="tick off" data-testid="paneA-tick-chatview-scroll-jump-diagnosis-with-inpage-probe" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.6l3.3 3.3L13 4.9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <button type="button" class="drow" data-testid="paneA-row-verify-html-wireframe-with-agent-browser">
+                <span><span class="nm">verify-html-wireframe-with-agent-browser</span>
+                <span class="ds">Use after authoring any standalone HTML wireframe or preview in this repo: assert DOM geometry and interactions with agent-browser&#8230;</span></span>
+                <svg class="tick off" data-testid="paneA-tick-verify-html-wireframe-with-agent-browser" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.6l3.3 3.3L13 4.9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </div>
+          </span>
+        </div>
+      </div>
+      <div class="side-note">
+        <div class="note-h">The agent's first user message (queue_message)</div>
+        <pre class="note" data-testid="paneA-note">Task : My task
+
+#Notes UseGitWorktree
+Path: /home/ginwa/.config/pabrik/.worktrees/my-task
+
+<span class="dir">#Skill behavior-unit-tests</span>
+
+<span class="dup">#Skill behavior-unit-tests</span></pre>
+        <div class="note-meta">
+          <b data-testid="paneA-skill-line-count">2</b> <code>#Skill</code> lines for
+          <b data-testid="paneA-picked-count">1</b> picked skill: the duplicated bake.
+          <span class="bad-c">Red</span> is the frontend's copy.
+        </div>
+        <div class="legend">
+          <div class="ann"><span class="num">&#9312;</span><span>Picking a row <b>closes</b> the
+            dropdown, because <code>selectSkill()</code> sets the name and closes it, so a second
+            pick needs a reopen.</span></div>
+          <div class="ann"><span class="num">&#9313;</span><span>The pill can show exactly one name,
+            and nothing shows it again afterwards. The column is write-only.</span></div>
+          <div class="ann"><span class="num">&#9314;</span><span>Two producers of the same directive,
+            so the agent reads it twice.</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="n">2</span>V1: multi-select dropdown, chips and a search field (chosen)</h2>
+  <p class="lead">
+    The pill keeps its place in the row, but the dropdown becomes a <b>checkbox list that stays
+    open</b>, so many skills are picked in one pass and the dropdown closes when you click away. A
+    <b>search field</b> narrows the rows as you type, matching the name or the description, because
+    this machine carries 25 skills. The picked skills are echoed as <b>removable chips</b> in a strip
+    under the row, so the choice stays visible after the dropdown closes. This is the variant you
+    picked, and the one that shipped.
+  </p>
+
+  <div class="win" data-testid="paneB" data-ui>
+    <div class="win-bar">
+      <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+      <span class="win-title">pane B: V1 multi-select (live: open it, tick rows, remove chips)</span>
+      <span class="win-right">Skills (2), dropdown stays open, chips strip</span>
+    </div>
+    <div class="pane-body">
+      <div class="side-dialog">
+        <div class="dlg-head">
+          <span class="back">&#8249; Back</span><span class="ttl">+ New task</span><span class="x"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+        </div>
+        <div class="dlg-sub">Create a new task, or start an agent on it right away.</div>
+        <div class="mocktextarea">My task</div>
+        <div class="cline"><span class="r">7 chars</span></div>
+
+        <div class="field-label">Tags</div>
+        <div class="field-help">Optional. Press Enter or comma to add. Letters, digits, underscores, hyphens.</div>
+        <div class="mockinput">Add tags (letters, digits, hyphens)&#8230;</div>
+
+        <div class="sec-title">Settings</div>
+        <div class="pillrow">
+          <span class="pill"><svg class="ico" viewBox="0 0 20 20" fill="currentColor"><path d="M2 5a2 2 0 012-2h4.586a1 1 0 01.707.293L11 5h5a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V5z"/></svg><span class="lbl">Project root</span><span class="val">/home/ginwa/pabrik</span><span class="car">&#9662;</span></span>
+          <span class="pill"><span class="lbl">Profile</span><span class="val">Default</span><span class="car">&#9662;</span></span>
+          <span class="pillwrap">
+            <button type="button" class="pill" data-testid="paneB-pill" title="2 skills">
+              <svg class="ico" viewBox="0 0 24 24"><path d="M9 4h9a2 2 0 012 2v12a2 2 0 01-2 2H9M15 12H3m0 0l3-3m-3 3l3 3"/></svg>
+              <span class="lbl">Skills</span>
+              <span class="val on" data-testid="paneB-label">behavior-unit-tests +1</span>
+              <span class="cnt" data-testid="paneB-count">2</span>
+              <span class="car">&#9662;</span>
+            </button>
+            <div class="dropdown" data-testid="paneB-dropdown" style="display:none">
+              <div class="dhead">
+                <span data-testid="paneB-head-count">2 of 6 skills selected</span>
+                <button type="button" class="dact" data-testid="paneB-clear">Clear all</button>
+              </div>
+              <div class="dsearch">
+                <input type="text" data-testid="paneB-search" placeholder="Search skills..." aria-label="Search skills">
+              </div>
+              <button type="button" class="drow first" data-testid="paneB-row-none">
+                <input type="checkbox" class="cb" data-testid="paneB-check-none" tabindex="-1" aria-hidden="true">
+                <span><span class="nm">None, let the agent decide</span>
+                <span class="ds">Clears every skill. The agent then finds one itself if the task needs it.</span></span>
+              </button>
+              <button type="button" class="drow" data-testid="paneB-row-behavior-unit-tests">
+                <input type="checkbox" class="cb" data-testid="paneB-check-behavior-unit-tests" checked tabindex="-1" aria-hidden="true">
+                <span><span class="nm">behavior-unit-tests</span>
+                <span class="ds">Use whenever asked to write, add, improve, review, refactor, or fix unit tests, test coverage, flaky tests, or mocks&#8230;</span></span>
+              </button>
+              <button type="button" class="drow" data-testid="paneB-row-before-after-screenshots-from-two-checkouts">
+                <input type="checkbox" class="cb" data-testid="paneB-check-before-after-screenshots-from-two-checkouts" tabindex="-1" aria-hidden="true">
+                <span><span class="nm">before-after-screenshots-from-two-checkouts</span>
+                <span class="ds">Use when a PR or review needs before/after screenshots of a frontend change and booting the whole app is too expensive&#8230;</span></span>
+              </button>
+              <button type="button" class="drow" data-testid="paneB-row-chatview-absolute-overlay-gutter-and-hover-preview">
+                <input type="checkbox" class="cb" data-testid="paneB-check-chatview-absolute-overlay-gutter-and-hover-preview" tabindex="-1" aria-hidden="true">
+                <span><span class="nm">chatview-absolute-overlay-gutter-and-hover-pre&#8230;</span>
+                <span class="ds">Use when an absolutely-positioned overlay (pill rail, scroll slider, floating chrome) paints on top of chat transcript&#8230;</span></span>
+              </button>
+              <button type="button" class="drow" data-testid="paneB-row-chatview-scroll-jump-diagnosis-with-inpage-probe">
+                <input type="checkbox" class="cb" data-testid="paneB-check-chatview-scroll-jump-diagnosis-with-inpage-probe" tabindex="-1" aria-hidden="true">
+                <span><span class="nm">chatview-scroll-jump-diagnosis-with-inpage-pro&#8230;</span>
+                <span class="ds">Use when the pabrik chat transcript jumps, bounces or teleports while scrolling, especially during SSE streaming&#8230;</span></span>
+              </button>
+              <button type="button" class="drow" data-testid="paneB-row-verify-html-wireframe-with-agent-browser">
+                <input type="checkbox" class="cb" data-testid="paneB-check-verify-html-wireframe-with-agent-browser" checked tabindex="-1" aria-hidden="true">
+                <span><span class="nm">verify-html-wireframe-with-agent-browser</span>
+                <span class="ds">Use after authoring any standalone HTML wireframe or preview in this repo: assert DOM geometry and interactions with agent-browser&#8230;</span></span>
+              </button>
+              <div class="dempty" data-testid="paneB-nomatch" style="display:none">No skill matches that search.</div>
+            </div>
+          </span>
+        </div>
+        <div class="chipsrow" data-testid="paneB-chips">
+          <span class="chip" data-testid="paneB-chip-behavior-unit-tests">behavior-unit-tests
+            <button type="button" class="rm" data-testid="paneB-remove-behavior-unit-tests" aria-label="Remove skill behavior-unit-tests"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+          </span>
+          <span class="chip" data-testid="paneB-chip-verify-html-wireframe-with-agent-browser">verify-html-wireframe-with-agent-browser
+            <button type="button" class="rm" data-testid="paneB-remove-verify-html-wireframe-with-agent-browser" aria-label="Remove skill verify-html-wireframe-with-agent-browser"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+          </span>
+        </div>
+      </div>
+      <div class="side-note">
+        <div class="note-h">The agent's first user message (queue_message)</div>
+        <pre class="note" data-testid="paneB-note">Task : My task
+
+#Notes UseGitWorktree
+Path: /home/ginwa/.config/pabrik/.worktrees/my-task
+
+<span class="dir">#Skill behavior-unit-tests
+#Skill verify-html-wireframe-with-agent-browser</span></pre>
+        <div class="note-meta">
+          <b data-testid="paneB-skill-line-count">2</b> <code>#Skill</code> lines for
+          <b data-testid="paneB-picked-count">2</b> picked skill(s): one line per skill, baked by the
+          <b>backend only</b>.
+        </div>
+        <div class="legend">
+          <div class="ann"><span class="num">&#9315;</span><span>Rows are <b>checkboxes</b>. Clicking
+            one toggles it and <b>keeps the dropdown open</b>, so many skills are picked in one
+            pass.</span></div>
+          <div class="ann"><span class="num">&#9316;</span><span>The pill label shows one name or
+            <code>first +N</code>, and the count badge carries the total.</span></div>
+          <div class="ann"><span class="num">&#9317;</span><span>Chips under the row echo the set:
+            each remove button drops one.</span></div>
+          <div class="ann"><span class="num">&#9318;</span><span><b>Clear all</b> in the dropdown
+            header. The "None" row stays for discoverability.</span></div>
+          <div class="ann"><span class="num">&#9319;</span><span>The note gets exactly one
+            <code>#Skill</code> line per skill, because the frontend bake is dropped.</span></div>
+          <div class="ann"><span class="num">&#9323;</span><span>The <b>search box</b> narrows the
+            rows on the name or the description; a picked skill stays checked while hidden, so
+            clearing the query brings it back.</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="n">3</span>V2: chips input with a filter (matches <code>KanbanDependsInput</code>)</h2>
+  <p class="lead">
+    The other multi-select in this dialog family is the dependency picker: chips, a filter field, a
+    dropdown, Enter and arrows, Backspace removes the last chip
+    (<code>KanbanDependsInput.vue</code>). This variant reuses that language, and it scales best: 25
+    skills exist on this machine, so typing to filter beats scrolling a long list. The cost is that
+    the pill row loses its uniform look, because the chip box is taller than the other two pills.
+  </p>
+  <div class="win" data-ui>
+    <div class="win-bar">
+      <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+      <span class="win-title">pane C: V2 chips plus filter (static mock)</span>
+      <span class="win-right">KanbanDependsInput pattern</span>
+    </div>
+    <div class="pane-body">
+      <div class="side-dialog">
+        <div class="sec-title" style="margin-top:0; border-top:none; padding-top:0">Settings</div>
+        <div class="chipbox" style="margin-bottom:9px">
+          <span class="chip">behavior-unit-tests <button type="button" class="rm"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></span>
+          <span class="chip">verify-html-wireframe-with-agent-browser <button type="button" class="rm"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></span>
+          <input placeholder="Search skills&#8230;" readonly>
+        </div>
+        <div class="dropdown" style="position:static; display:block; max-width:none; min-width:0">
+          <div class="dhead">type to filter, arrow keys, Enter to pick, Backspace removes the last chip</div>
+          <div class="drow first"><span><span class="nm">before-after-screenshots-from-two-checkouts</span>
+            <span class="ds">Use when a PR or review needs before/after screenshots&#8230;</span></span></div>
+          <div class="drow"><span><span class="nm">chatview-scroll-jump-diagnosis-with-inpage-pro&#8230;</span>
+            <span class="ds">Use when the pabrik chat transcript jumps, bounces or teleports&#8230;</span></span></div>
+          <div class="drow"><span><span class="nm">chatview-route-mount-landmine-and-red-suite&#8230;</span>
+            <span class="ds">Use when changing ChatView.vue's route reads&#8230;</span></span></div>
+        </div>
+        <div class="legend">
+          <div class="ann"><span class="num">&#9320;</span><span>Already-picked skills are hidden from
+            the dropdown, exactly as the dependency picker does it, so nothing is added twice.</span></div>
+          <div class="ann"><span class="num">&#9321;</span><span>A skill name is a directory-safe
+            token (letters, digits, dot, dash, underscore), so <code>||</code> stays an unambiguous
+            join separator in the column described in section 6.</span></div>
+        </div>
+      </div>
+      <div class="side-note">
+        <div class="note-h">The agent's first user message (queue_message)</div>
+        <pre class="note" data-testid="paneC-note">Task : My task
+
+#Notes UseGitWorktree
+Path: /home/ginwa/.config/pabrik/.worktrees/my-task
+
+<span class="dir">#Skill behavior-unit-tests
+#Skill verify-html-wireframe-with-agent-browser</span></pre>
+        <div class="note-meta">Identical to V1. The message format does not depend on the picker.</div>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="n">4</span>V3: multi-select with no chips strip (most compact)</h2>
+  <p class="lead">
+    The same checkbox dropdown as V1, with nothing echoed under the row: the pill shows
+    <code>Skills 2</code> and the dropdown is the only place to see or change the set. Smallest diff
+    and no layout risk, but a user who forgets to reopen the dropdown cannot tell which two skills are
+    on.
+  </p>
+  <div class="win" data-ui>
+    <div class="win-bar">
+      <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+      <span class="win-title">pane D: V3 count-only pill (static mock)</span>
+      <span class="win-right">no chips, no per-name echo</span>
+    </div>
+    <div class="pane-body">
+      <div class="side-dialog">
+        <div class="sec-title" style="margin-top:0; border-top:none; padding-top:0">Settings</div>
+        <div class="pillrow">
+          <span class="pill"><span class="lbl">Project root</span><span class="val">/home/ginwa/pabrik</span><span class="car">&#9662;</span></span>
+          <span class="pill"><span class="lbl">Profile</span><span class="val">Default</span><span class="car">&#9662;</span></span>
+          <span class="pill"><span class="lbl">Skills</span><span class="cnt" data-testid="paneD-count">2</span><span class="car">&#9662;</span></span>
+        </div>
+        <div class="legend">
+          <div class="ann"><span class="num">&#9322;</span><span>Cheapest to build and the least
+            transparent: the set is only visible while the dropdown is open.</span></div>
+        </div>
+      </div>
+      <div class="side-note">
+        <div class="note-h">The agent's first user message (queue_message)</div>
+        <pre class="note" data-testid="paneD-note">Task : My task
+
+#Notes UseGitWorktree
+Path: /home/ginwa/.config/pabrik/.worktrees/my-task
+
+<span class="dir">#Skill behavior-unit-tests
+#Skill verify-html-wireframe-with-agent-browser</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="n">5</span>State matrix: the behaviour every variant must show</h2>
+  <p class="lead">These are the cases the implementation and its tests must cover.</p>
+  <div class="card">
+    <table class="fixed">
+      <colgroup><col style="width:29%"><col style="width:43%"><col style="width:28%"></colgroup>
+      <thead><tr><th>Situation</th><th>Expected behaviour</th><th>Stored value</th></tr></thead>
+      <tbody>
+        <tr><td>Nothing picked (default)</td><td>Pill reads <code>Skills, None</code>, no chips, and no
+          <code>#Skill</code> line at all. The canonical sentinel stays the empty list.</td>
+          <td><code>skill_names = []</code></td></tr>
+        <tr><td>One skill</td><td>Identical to today's single pick: same one line, same column
+          value.</td><td><code>"pdf"</code></td></tr>
+        <tr><td>N skills</td><td>Pill shows <code>first +N-1</code> plus the count, N chips, and N
+          <code>#Skill</code> lines in pick order.</td><td><code>"pdf||zig-trap"</code></td></tr>
+        <tr><td>Every skill picked</td><td>Still one line each, with no truncation of the note.</td>
+          <td><code>same</code></td></tr>
+        <tr><td>The same name twice, sent by an API client</td><td>Deduplicated with the order of
+          first appearance kept. The picker cannot produce this, a curl call can.</td>
+          <td><code>"a||b"</code></td></tr>
+        <tr><td>A legacy client sends <code>skill_name</code></td><td>Accepted as a one-element list,
+          so curl scripts, older desktop builds and the Android app keep working.</td>
+          <td><code>"pdf"</code></td></tr>
+        <tr><td>A skill is deleted after the task was created</td><td>The task row keeps the name and
+          nothing breaks. There is no FK, for the same reason #958 chose a name over an id.</td>
+          <td><code>unchanged</code></td></tr>
+        <tr><td><code>GET .../skills</code> fails</td><td>The picker renders its empty state and the
+          dialog still creates the task.</td><td class="dim">not applicable</td></tr>
+        <tr><td>The dialog is reopened in create mode</td><td>The selection resets to none, which is
+          today's rule.</td><td class="dim">not applicable</td></tr>
+        <tr><td>Edit mode, an existing card</td><td>The picker is not rendered at all, which is
+          today's rule. See open question 4.</td><td class="dim">not applicable</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2><span class="n">6</span>Wire and DB shape (the method, layer by layer)</h2>
+  <p class="lead">
+    The set is stored the way this repo already stores its other per-task lists, and the column is
+    <b>renamed</b> rather than duplicated: one source of truth, no backfill step, no data loss.
+  </p>
+  <div class="card">
+    <table class="fixed">
+      <colgroup><col style="width:15%"><col style="width:38%"><col style="width:47%"></colgroup>
+      <thead><tr><th>Layer</th><th>Today</th><th>Proposed</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>DB</td>
+          <td><code>workspace_item_tasks.skill_name TEXT NOT NULL DEFAULT ''</code></td>
+          <td><code>workspace_item_tasks.skill_names</code>, same type and default, holding
+            <code>||</code>-joined names. <b>Migration 112</b> is
+            <code>ALTER TABLE ... RENAME COLUMN skill_name TO skill_names</code>. A single name
+            <em>is</em> a one-element list, so existing rows are already correct, and the column keeps
+            its position, which matters because the listers map <code>row.values[N]</code>.</td>
+        </tr>
+        <tr>
+          <td>Wire</td>
+          <td><code>skill_name: string</code></td>
+          <td><code>skill_names: string[]</code>, a real JSON array like Migration 111's
+            <code>depends_on</code> ("a real JSON array, unlike tags"). The legacy
+            <code>skill_name: string</code> is still <b>accepted</b> as a one-element list.</td>
+        </tr>
+        <tr>
+          <td>Why not a join table</td>
+          <td colspan="2">Migration 111 gave dependencies the edge table
+            <code>kanban_task_dependencies</code> because the board <em>queries</em> them: what blocks
+            this card, and the move gate. Nothing queries by skill, and
+            <code>image_urls</code> and <code>video_urls</code> already set the precedent for a
+            <code>||</code>-joined list column. I will switch to the join table for symmetry with
+            dependencies if you prefer, and the change stays in one place.</td>
+        </tr>
+        <tr>
+          <td>Note</td>
+          <td>The frontend bakes it and the backend bakes it, so 1 skill produces 2 lines.</td>
+          <td><b>Backend only</b>, one <code>#Skill &lt;name&gt;</code> line per skill in pick order,
+            appended after the existing body. The frontend stops baking, which is what turns today's
+            duplicate into a single complete directive list.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2><span class="n">7</span>Implementation scope (all of it shipped in this PR)</h2>
+  <div class="card">
+    <table class="fixed">
+      <colgroup><col style="width:42%"><col style="width:58%"></colgroup>
+      <thead><tr><th>File</th><th>Change</th></tr></thead>
+      <tbody>
+        <tr><td><code>src/migrations/migration_112.zig</code> (new)</td>
+            <td>Rename <code>skill_name</code> to <code>skill_names</code> with
+              <code>renameColumnIfExists</code>, idempotent, plus its registration in
+              <code>migration.zig</code> and the re-export block</td></tr>
+        <tr><td><code>src/http_handlers/kanban_tasks_create.zig</code></td>
+            <td>Body field <code>skill_names: ?[]const []const u8</code>, with the legacy
+              <code>skill_name</code> kept as a one-element fallback, and one
+              <code>#Skill</code> line baked per name</td></tr>
+        <tr><td><code>src/http_handlers/http_response.zig</code></td>
+            <td><code>TaskCreateRequest.skill_names</code> as an array, plus the legacy field</td></tr>
+        <tr><td><code>src/http_handlers/task_create.zig</code></td>
+            <td>Per-name validation (length, control characters, <code>isValidSkillName</code>),
+              order-preserving dedupe, a count cap, the <code>||</code> join, then the store call</td></tr>
+        <tr><td><code>src/agentic_loop/llm_history.zig</code></td>
+            <td>The <code>createWorkspaceItemTask</code> parameter renamed to
+              <code>skill_names</code>, the dynamic INSERT's column, and the
+              <code>WorkspaceItemTaskInfo</code> field</td></tr>
+        <tr><td><code>KanbanTaskDetail.vue</code></td>
+            <td>The picker becomes multi-select per the chosen variant, the state becomes
+              <code>selectedSkills: string[]</code>, and both emits carry
+              <code>skillNames: string[]</code></td></tr>
+        <tr><td><code>buildTaskCreateMessage.ts</code></td>
+            <td>Drop the <code>skillName</code> parameter and the <code>#Skill</code> line, which the
+              backend now owns</td></tr>
+        <tr><td><code>api/index.ts</code>, <code>stores/workspaces.ts</code>, <code>KanbanView.vue</code></td>
+            <td>Payload types and the wire name <code>skill_names</code>; the array flows dialog,
+              store, <code>createKanbanTask</code></td></tr>
+        <tr><td>Zig tests</td>
+            <td>Migration 112 (rename, replay safe, a legacy row keeps its name), the
+              <code>task_create</code> validation (dedupe, cap, legacy alias, control characters), the
+              bake for 0, 1 and N skills, and the <code>createWorkspaceItemTask</code> round trip</td></tr>
+        <tr><td>vitest</td>
+            <td>Picker: a toggle keeps the dropdown open, chips add and remove, the count, Clear all,
+              reopen resets, fetch failure. <code>buildTaskCreateMessage</code>: no
+              <code>#Skill</code> line any more. api: the body carries <code>skill_names</code></td></tr>
+      </tbody>
+    </table>
+    <p class="lead" style="margin:12px 0 0">
+      Gates before the PR: <code>vue-tsc --build --force</code> (the exact CI type check, because
+      <code>--noEmit -p tsconfig.app.json</code> hides spec-file errors), eslint and oxlint, targeted
+      vitest, and the Zig shards for migrations, task_create and kanban, each diffed against a
+      clean-HEAD baseline.
+    </p>
+  </div>
+
+  <h2><span class="n">8</span>Decisions</h2>
+  <div class="card">
+    <div class="opt rec">
+      <span class="box"></span>
+      <span><span class="ot">Q1. Picker: V1 with a search field, chosen</span>
+      <span class="od">A checkbox dropdown that stays open, a search box that narrows the rows by name
+      or by description, and removable chips under the row. Shipped in this PR.</span></span>
+    </div>
+    <div class="opt">
+      <span class="box"></span>
+      <span><span class="ot">Q2. Cap: 20 skills per task, accepted</span>
+      <span class="od">A 21st skill is a 400 with "skill_names: at most 20 skills per task", so
+      neither the row nor the agent's first message can grow without bound.</span></span>
+    </div>
+    <div class="opt">
+      <span class="box"></span>
+      <span><span class="ot">Q3. The legacy single <code>skill_name</code> field, kept</span>
+      <span class="od">Accepted as a one-element list whenever no array is sent, so curl scripts,
+      older desktop builds and any other client keep working.</span></span>
+    </div>
+    <div class="opt">
+      <span class="box"></span>
+      <span><span class="ot">Q4. Storage: the <code>skill_names</code> list column, accepted</span>
+      <span class="od">Migration 112 renames the column. Surfacing a task's skills on the card or in
+      the detail view stays out of scope: the wire already carries them and no component draws them,
+      which is worth its own card.</span></span>
+    </div>
+  </div>
+
+  <h2><span class="n">9</span>Design pass, and what the meter said</h2>
+  <p class="lead">
+    The skills in play here are the repo's wireframe-measurement skill (assert DOM geometry in
+    agent-browser, never trust a screenshot) and <code>design-taste-frontend</code>. The taste skill's
+    own scope note excludes app surfaces, so I used its <b>component</b> case, which is exactly this
+    document: skip the direction draw, match the surrounding design, apply the house rules and the
+    laws, then run the gate.
+  </p>
+  <div class="card">
+    <table class="fixed">
+      <colgroup><col style="width:32%"><col style="width:68%"></colgroup>
+      <thead><tr><th>House rule</th><th>How the picker proposal answers it</th></tr></thead>
+      <tbody>
+        <tr><td>Two or three sizes do the work</td>
+            <td>The picker uses two: the 13px pill label and the 12px chip and count. No third size,
+              no in-between.</td></tr>
+        <tr><td>One ground, one ink, one accent</td>
+            <td>The accent is the violet tint, used for the selected checkbox, the count badge and the
+              chips. The "Clear all" action is the one blue link in the dropdown.</td></tr>
+        <tr><td>Flat controls, no gradients, no glow</td>
+            <td>Pills, rows and chips are flat fills. No gradient inside the picker, and nothing
+              inside it lifts off the page. The mock windows and their dropdowns are the only two
+              surfaces in this document that do, which is the place the rule allows it.</td></tr>
+        <tr><td>Surfaces separated by a tone step, not a line</td>
+            <td>Proposed rows separate by a tone step and space. The tick is drawn as an SVG in the
+              proposed panes rather than the literal text glyph the shipped component uses, since a
+              glyph tick is the device the house rules replace. Pane A keeps the shipped look and says
+              so.</td></tr>
+        <tr><td>Statements are paragraphs</td>
+            <td>Every explanation here is running text at 16px with a measure capped near 68
+              characters. Nothing is set large to look like a headline.</td></tr>
+        <tr><td>Where the surrounding design wins</td>
+            <td>The pills keep a 1px border and the tables keep their row lines, because the pabrik
+              dialog and the repo's wireframe tables already look like that, and this component is not
+              a page that gets to re-decide the app's language. The mock windows and their dropdowns
+              carry <code>data-ui</code>, which is the skill's own marker for a cropped interface
+              fragment that keeps its true sizes and its own lines.</td></tr>
+      </tbody>
+    </table>
+    <h3>The gate reading</h3>
+    <p class="lead">
+      <code>lint.mjs</code> and <code>inspect.mjs</code> both ran against this file. The first pass
+      found 26 lint FAILs and 11 inspector FAILs, and the fixes are in this revision: body copy moved
+      from 12px to 16px (187 text blocks were under 13px), the 17 uppercase letter-spaced labels
+      became sentence case, the em-dash habit is down to one, tracked text glyphs became SVG, the
+      document's own borders became tone steps, and paragraph measures were capped. The measurements
+      that remain are the mock interface fragments, which the skill exempts on purpose.
+    </p>
+    <p class="lead" style="margin-bottom:0">
+      Two readings I will not fake, and you should know about both. <b>No motion layer</b>: the
+      inspector fails a page with fewer than eight moving elements, and this is a spec document, so
+      adding entrance animations to satisfy the meter would fake the very thing the document is about.
+      <b>No photographs</b>: the imagery floor is for a public page. Here the pictures are the four
+      interface fragments, which the skill counts for software. Everything the inspector measures
+      about the picker itself is real and measured.
+    </p>
+  </div>
+
+  <p class="foot">
+    Design record for PR #966 on branch
+    <code>worktree/enhance-kanban-task-add-to-add-more-skills-1792163303599</code>. The panes are live
+    and were verified by asserting DOM geometry and interactions in agent-browser rather than by
+    looking at a screenshot; the numbers are quoted in the session reply and in the PR body.
+  </p>
+</div>
+
+<!-- JS-off: the markup above already renders the default state (pane A's dropdown open, pane B's
+     closed with 2 chips, the notes as written). The script only re-asserts it and wires the clicks. -->
+<script>
+(function () {
+  var SKILLS = [
+    'behavior-unit-tests',
+    'before-after-screenshots-from-two-checkouts',
+    'chatview-absolute-overlay-gutter-and-hover-preview',
+    'chatview-scroll-jump-diagnosis-with-inpage-probe',
+    'verify-html-wireframe-with-agent-browser'
+  ];
+  var HEAD = 'Task : My task\n\n#Notes UseGitWorktree\nPath: /home/ginwa/.config/pabrik/.worktrees/my-task\n\n';
+
+  function q(sel) { return document.querySelector(sel); }
+  function qa(sel) { return Array.prototype.slice.call(document.querySelectorAll(sel)); }
+
+  function noteFor(names, doubled) {
+    var lines = [];
+    for (var i = 0; i < names.length; i++) lines.push('#Skill ' + names[i]);
+    var body = lines.join('\n');
+    if (doubled && body !== '') body = body + '\n\n' + body;
+    return HEAD + body;
+  }
+
+  function renderNote(el, names, doubled) {
+    el.textContent = noteFor(names, doubled);
+  }
+
+  /* ---------- pane A: today, a single select and a doubled directive ---------- */
+  var aSel = 'behavior-unit-tests';
+  var aOpen = true;
+
+  function renderA() {
+    qa('[data-testid^="paneA-tick-"]').forEach(function (t) {
+      var name = t.getAttribute('data-testid').replace('paneA-tick-', '');
+      var on = (name === 'none' && aSel === '') || name === aSel;
+      t.classList.toggle('off', !on);
+    });
+    q('[data-testid="paneA-label"]').textContent = aSel === '' ? 'None' : aSel;
+    q('[data-testid="paneA-dropdown"]').style.display = aOpen ? 'block' : 'none';
+    var names = aSel === '' ? [] : [aSel];
+    renderNote(q('[data-testid="paneA-note"]'), names, true);
+    q('[data-testid="paneA-skill-line-count"]').textContent = String(names.length === 0 ? 0 : 2);
+    q('[data-testid="paneA-picked-count"]').textContent = String(names.length);
+  }
+
+  q('[data-testid="paneA-pill"]').addEventListener('click', function () {
+    aOpen = !aOpen;
+    renderA();
+  });
+  SKILLS.concat(['']).forEach(function (name) {
+    var id = name === '' ? 'none' : name;
+    var row = q('[data-testid="paneA-row-' + id + '"]');
+    if (!row) return;
+    row.addEventListener('click', function () {
+      aSel = name;      // single select
+      aOpen = false;    // and it closes, annotation 1
+      renderA();
+    });
+  });
+
+  /* ---------- pane B: V1, a checkbox multi-select plus chips ---------- */
+  var bSel = ['behavior-unit-tests', 'verify-html-wireframe-with-agent-browser'];
+  var bOpen = false;
+  var bQuery = '';
+
+  var CROSS = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
+
+  function chipHtml(name) {
+    return '<span class="chip" data-testid="paneB-chip-' + name + '">' + name +
+      ' <button type="button" class="rm" data-testid="paneB-remove-' + name +
+      '" aria-label="Remove skill ' + name + '">' + CROSS + '</button></span>';
+  }
+
+  function renderB() {
+    var i;
+    for (i = 0; i < SKILLS.length; i++) {
+      var name = SKILLS[i];
+      var cb = q('[data-testid="paneB-check-' + name + '"]');
+      if (cb) cb.checked = bSel.indexOf(name) !== -1;
+    }
+    var none = q('[data-testid="paneB-check-none"]');
+    if (none) none.checked = bSel.length === 0;
+
+    // The search box narrows the rows; a picked skill stays checked while
+    // hidden, so clearing the query brings it back.
+    var shown = 0;
+    SKILLS.forEach(function (name) {
+      var row = q('[data-testid="paneB-row-' + name + '"]');
+      if (!row) return;
+      var match = bQuery === '' || row.textContent.toLowerCase().indexOf(bQuery) !== -1;
+      row.style.display = match ? 'flex' : 'none';
+      if (match) shown += 1;
+    });
+    var noneRow = q('[data-testid="paneB-row-none"]');
+    if (noneRow) noneRow.style.display = bQuery === '' ? 'flex' : 'none';
+    var noMatch = q('[data-testid="paneB-nomatch"]');
+    if (noMatch) noMatch.style.display = shown === 0 ? 'block' : 'none';
+
+    q('[data-testid="paneB-count"]').textContent = String(bSel.length);
+    q('[data-testid="paneB-label"]').textContent =
+      bSel.length === 0 ? 'None'
+        : bSel.length === 1 ? bSel[0]
+          : bSel[0] + ' +' + (bSel.length - 1);
+    q('[data-testid="paneB-head-count"]').textContent =
+      bSel.length + ' of ' + (SKILLS.length + 1) + ' skills selected';
+    q('[data-testid="paneB-dropdown"]').style.display = bOpen ? 'block' : 'none';
+
+    var chips = q('[data-testid="paneB-chips"]');
+    chips.innerHTML = bSel.map(chipHtml).join('') +
+      (bSel.length === 0 ? '<span class="hint">No skills picked, so the agent decides.</span>' : '');
+    bSel.forEach(function (name) {
+      var btn = q('[data-testid="paneB-remove-' + name + '"]');
+      if (btn) btn.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        bSel = bSel.filter(function (n) { return n !== name; });
+        renderB();
+      });
+    });
+
+    renderNote(q('[data-testid="paneB-note"]'), bSel, false);
+    q('[data-testid="paneB-skill-line-count"]').textContent = String(bSel.length);
+    q('[data-testid="paneB-picked-count"]').textContent = String(bSel.length);
+    renderNote(q('[data-testid="paneC-note"]'), bSel, false);
+    renderNote(q('[data-testid="paneD-note"]'), bSel, false);
+  }
+
+  q('[data-testid="paneB-pill"]').addEventListener('click', function () {
+    bOpen = !bOpen;   // and it stays open across row clicks
+    renderB();
+  });
+  q('[data-testid="paneB-clear"]').addEventListener('click', function () {
+    bSel = [];
+    renderB();
+  });
+  q('[data-testid="paneB-search"]').addEventListener('input', function (ev) {
+    bQuery = ev.target.value.trim().toLowerCase();
+    renderB();
+  });
+  function toggleRow(name) {
+    return function (ev) {
+      ev.stopPropagation();
+      if (name === '') { bSel = []; }
+      else if (bSel.indexOf(name) === -1) { bSel = bSel.concat([name]); }
+      else { bSel = bSel.filter(function (n) { return n !== name; }); }
+      renderB();      // bOpen untouched, so the dropdown stays open, annotation 4
+    };
+  }
+  q('[data-testid="paneB-row-none"]').addEventListener('click', toggleRow(''));
+  SKILLS.forEach(function (name) {
+    var row = q('[data-testid="paneB-row-' + name + '"]');
+    if (row) row.addEventListener('click', toggleRow(name));
+  });
+
+  renderA();
+  renderB();
+})();
+</script>
+</body>
+</html>

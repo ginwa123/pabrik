@@ -159,7 +159,7 @@ export interface Task {
   depends_on?: string[]
   blocked_by?: TaskDependencyBlocker[]
   is_blocked?: boolean
-  skill_name?: string}
+  skill_names?: string}
 
 // localStorage keys for state persistence
 const STORAGE_KEY_WORKSPACE_EXPANDED = 'pabrik-workspace-expanded'
@@ -2584,7 +2584,8 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
       cwd?: string
       isAutoRetryUntilStop?: string
       selected_profile_model?: string
-      skillName?: string
+      /** Migration 112 — the skills this task asks the agent to use, in pick order. */
+      skillNames?: string[]
     },
   ): Promise<api.KanbanCreateResponse> {
     const wirePayload:
@@ -2603,7 +2604,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
             cwd: params.cwd,
             isAutoRetryUntilStop: params.isAutoRetryUntilStop,
             selected_profile_model: params.selected_profile_model,
-            skill_name: params.skillName,
+            skill_names: params.skillNames,
           }
         : mode === 'create_session'
           ? {
@@ -2618,7 +2619,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
               // Persists on the new sessions row (see Task 2's
               // KanbanCreateSessionOnlyPayload comment in api/index.ts).
               selected_profile_model: params.selected_profile_model,
-              skill_name: params.skillName,
+              skill_names: params.skillNames,
             }
           : {
               mode: 'create',
@@ -2629,7 +2630,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
               videoUrls: params.videoUrls,
               cwd: params.cwd,
               isAutoRetryUntilStop: params.isAutoRetryUntilStop,
-              skillName: params.skillName,
+              skillNames: params.skillNames,
             }
 
     try {

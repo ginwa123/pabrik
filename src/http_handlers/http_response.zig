@@ -133,6 +133,13 @@ pub const TaskCreateRequest = struct {
     /// Per-task cwd override (Migration 070 — kanban-cwd-session- optional
     /// plan, 2026-08-06).
     cwd: ?[]const u8 = null,
+    /// Migration 112 — the skills this task asks its agent to use, a real
+    /// JSON array of names (like `depends_on`, unlike `tags`). Absent or
+    /// empty means none.
+    skill_names: ?[]const []const u8 = null,
+    /// Migration 110's single-name field, still accepted so a client that
+    /// never learned about the array keeps working. Read only when
+    /// `skill_names` is absent.
     skill_name: ?[]const u8 = null,
     /// Migration 111 — the tasks this NEW task waits for. Optional; a real
     /// JSON array of task ids belonging to the same kanban.

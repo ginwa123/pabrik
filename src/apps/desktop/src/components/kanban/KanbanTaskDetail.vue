@@ -200,7 +200,7 @@ const emit = defineEmits<{
       // NEW (Migration 070 — kanban-cwd-session-optional plan). Per-task cwd override. Absolute
       // path on disk or '' for cwd-less. Plan:
       // docs/superpowers/plans/2026-08-06-kanban-cwd-session-optional.md
-      skillName: string
+      skillNames: string[]
       cwdSession?: string
     },
   ]
@@ -233,7 +233,7 @@ const emit = defineEmits<{
       pendingFiles: PreviewFile[]
       // NEW (Migration 070 — kanban-cwd-session-optional plan). Mirror of the `cwdSession` field on
       // the `create` emit above.
-      skillName: string
+      skillNames: string[]
       cwdSession?: string
     },
   ]
@@ -318,13 +318,15 @@ const profilePickerRef = ref<HTMLElement | null>(null)
 const availableProfiles = ref<ProfileEntry[]>([])
 const profilesLoading = ref(false)
 
-// Skill picker (create only). '' = no skill. Source is api.getSkills - the same rows search_skills reads,
-// so a picked name always resolves in use_skill({ name }).
+// Skills picker (create only, Migration 112). Source is api.getSkills — the
+// same rows search_skills reads, so a picked name always resolves in
+// use_skill({ name }).
 interface SkillEntry {
   name: string
   description: string
 }
-const selectedSkill = ref('')
+const selectedSkills = ref<string[]>([])
+const skillSearch = ref('')
 const isSkillPickerOpen = ref(false)
 const skillPickerRef = ref<HTMLElement | null>(null)
 const availableSkills = ref<SkillEntry[]>([])
@@ -462,7 +464,8 @@ const openDialog = async (): Promise<void> => {
     worktreeBaseBranch.value = ''
     tags.value = [] // NEW: start with empty tags in create mode
     selectedProfile.value = '' // NEW: profile selector defaults to backend default
-    selectedSkill.value = ''
+    selectedSkills.value = []
+    skillSearch.value = ''
     isSkillPickerOpen.value = false
     // NEW (plan: 2026-08-14-kanban-task-detail-edit-cwd). Sync cwdSession from the parent kanban's
     // path on dialog open so the picker shows the kanban-level fallback by default. The legacy code
@@ -706,7 +709,7 @@ const handleSave = () => {
       // folder picker populates `cwdSession` (defaults to the parent kanban's path when set; empty
       // when the kanban is cwd-less or the user skipped the picker).
       cwdSession: cwdSession.value,
-      skillName: selectedSkill.value,
+      skillNames: [...selectedSkills.value],
     })
   } else {
     // Dependencies ride the same save only when changed: omitted
@@ -768,7 +771,7 @@ const handleRunAgent = () => {
     // Mirror of handleSave's cwdSession — see that handler for the
     // 3-level fallback chain contract.
     cwdSession: cwdSession.value,
-    skillName: selectedSkill.value,
+    skillNames: [...selectedSkills.value],
   })
 }
 
@@ -888,11 +891,39 @@ const loadSkills = async () => {
 
 const toggleSkillPicker = () => {
   isSkillPickerOpen.value = !isSkillPickerOpen.value
+  if (!isSkillPickerOpen.value) skillSearch.value = ''
 }
 
-const selectSkill = (name: string) => {
-  selectedSkill.value = name
-  isSkillPickerOpen.value = false
+// One line wide however many skills are on: the first pick, then a count.
+const skillLabel = computed<string>(() => {
+  const picked = selectedSkills.value
+  const first = picked[0]
+  if (first === undefined) return 'None'
+  return picked.length === 1 ? first : `${first} +${picked.length - 1}`
+})
+
+const selectedSkillCount = computed<number>(() => selectedSkills.value.length)
+
+// The dropdown rows: a case-insensitive match on the name or the description.
+// Picked skills stay listed (checked) so an untick is one click away.
+const filteredSkills = computed<SkillEntry[]>(() => {
+  const q = skillSearch.value.trim().toLowerCase()
+  if (q === '') return availableSkills.value
+  return availableSkills.value.filter(
+    (sk) => sk.name.toLowerCase().includes(q) || sk.description.toLowerCase().includes(q),
+  )
+})
+
+// Add or drop one skill. The dropdown deliberately stays open: picking
+// several in one pass is the whole point of the multi-select.
+const toggleSkill = (name: string) => {
+  selectedSkills.value = selectedSkills.value.includes(name)
+    ? selectedSkills.value.filter((n) => n !== name)
+    : [...selectedSkills.value, name]
+}
+
+const clearSkills = () => {
+  selectedSkills.value = []
 }
 
 // ─── Metadata helpers ───────────────────────────────────────────────────
@@ -1511,22 +1542,27 @@ const isMediaLoading = computed<boolean>(() => {
                 color: var(--semantic-text);
               "
               :title="
-                selectedSkill
-                  ? `Agent will use skill: ${selectedSkill}`
+                selectedSkillCount > 0
+                  ? `Agent will use: ${selectedSkills.join(', ')}`
                   : 'No skill - the agent discovers one itself if needed'
               "
               data-testid="kanban-task-detail-skill-picker"
             >
               <UiIcon name="clipboard" />
-              <span class="font-medium">Skill</span>
-              <span style="color: var(--semantic-text-muted)">{{
-                selectedSkill || 'None'
-              }}</span>
+              <span class="font-medium">Skills</span>
+              <span style="color: var(--semantic-text-muted)">{{ skillLabel }}</span>
+              <span
+                v-if="selectedSkillCount > 0"
+                class="shrink-0 text-micro px-1.5 rounded-full"
+                style="background-color: rgba(137, 146, 167, 0.24)"
+                data-testid="kanban-task-detail-skill-picker-count"
+                >{{ selectedSkillCount }}</span
+              >
               <span class="text-micro shrink-0" style="color: var(--semantic-text-dim)">&#9662;</span>
             </button>
             <div
               v-if="isSkillPickerOpen"
-              class="absolute top-full mt-1 left-0 min-w-[260px] max-w-[320px] rounded-lg shadow-lg z-20 overflow-hidden"
+              class="absolute top-full mt-1 left-0 min-w-[280px] max-w-[340px] rounded-lg shadow-lg z-20 overflow-hidden"
               style="
                 background-color: var(--semantic-card-bg);
                 border: 1px solid var(--color-border);
@@ -1534,46 +1570,109 @@ const isMediaLoading = computed<boolean>(() => {
               data-testid="kanban-task-detail-skill-picker-dropdown"
               @click.stop
             >
-              <button
-                type="button"
-                @click="selectSkill('')"
-                class="w-full text-left px-3 py-2 text-dense hover:opacity-80 flex items-center justify-between"
-                style="color: var(--semantic-text)"
-                data-testid="kanban-task-detail-skill-picker-item"
+              <div
+                class="flex items-center gap-2 px-3 py-2"
+                style="border-bottom: 1px solid var(--color-border)"
               >
-                <span class="font-medium">None (agent decides)</span>
-                <span v-if="selectedSkill === ''">&#10003;</span>
-              </button>
-              <button
-                v-for="sk in availableSkills"
-                :key="sk.name"
-                type="button"
-                @click="selectSkill(sk.name)"
-                class="w-full text-left px-3 py-2 text-dense hover:opacity-80"
-                style="color: var(--semantic-text); border-top: 1px solid var(--color-border)"
-                data-testid="kanban-task-detail-skill-picker-item"
-              >
-                <div class="flex items-center justify-between gap-2">
-                  <span class="font-medium truncate">{{ sk.name }}</span>
-                  <span v-if="selectedSkill === sk.name" class="shrink-0">&#10003;</span>
+                <input
+                  v-model="skillSearch"
+                  type="text"
+                  placeholder="Search skills..."
+                  class="flex-1 min-w-0 bg-transparent outline-none text-dense"
+                  style="color: var(--semantic-text)"
+                  data-testid="kanban-task-detail-skill-picker-search"
+                />
+                <button
+                  type="button"
+                  @click="clearSkills"
+                  class="text-micro shrink-0 hover:opacity-80"
+                  style="color: var(--semantic-link)"
+                  data-testid="kanban-task-detail-skill-picker-clear"
+                >
+                  Clear all
+                </button>
+              </div>
+              <div class="max-h-[300px] overflow-y-auto">
+                <button
+                  v-for="sk in filteredSkills"
+                  :key="sk.name"
+                  type="button"
+                  @click="toggleSkill(sk.name)"
+                  class="w-full text-left px-3 py-2 text-dense hover:opacity-80 flex items-start gap-2"
+                  style="color: var(--semantic-text); border-top: 1px solid var(--color-border)"
+                  data-testid="kanban-task-detail-skill-picker-item"
+                >
+                  <input
+                    type="checkbox"
+                    class="mt-0.5 shrink-0"
+                    :checked="selectedSkills.includes(sk.name)"
+                    tabindex="-1"
+                    aria-hidden="true"
+                    data-testid="kanban-task-detail-skill-picker-check"
+                  />
+                  <span class="min-w-0">
+                    <span class="font-medium block truncate">{{ sk.name }}</span>
+                    <span
+                      v-if="sk.description"
+                      class="text-micro block line-clamp-2"
+                      style="color: var(--semantic-text-muted)"
+                    >
+                      {{ sk.description }}
+                    </span>
+                  </span>
+                </button>
+                <div
+                  v-if="!skillsLoading && availableSkills.length === 0"
+                  class="px-3 py-2 text-dense"
+                  style="color: var(--semantic-text-muted)"
+                  data-testid="kanban-task-detail-skill-picker-empty"
+                >
+                  No skills installed. Add one in Settings.
                 </div>
                 <div
-                  v-if="sk.description"
-                  class="text-micro mt-0.5 line-clamp-2"
+                  v-else-if="filteredSkills.length === 0"
+                  class="px-3 py-2 text-dense"
                   style="color: var(--semantic-text-muted)"
+                  data-testid="kanban-task-detail-skill-picker-no-match"
                 >
-                  {{ sk.description }}
+                  No skill matches "{{ skillSearch }}".
                 </div>
-              </button>
-              <div
-                v-if="!skillsLoading && availableSkills.length === 0"
-                class="px-3 py-2 text-dense"
-                style="color: var(--semantic-text-muted)"
-                data-testid="kanban-task-detail-skill-picker-empty"
-              >
-                No skills installed. Add one in Settings.
               </div>
             </div>
+          </div>
+
+          <!-- The picked skills as removable chips, so the set stays visible
+               after the dropdown closes. -->
+          <div
+            v-if="isCreateMode && selectedSkillCount > 0"
+            class="w-full flex flex-wrap items-center gap-1.5 mt-1"
+            data-testid="kanban-task-detail-skill-chips"
+          >
+            <span
+              v-for="name in selectedSkills"
+              :key="name"
+              class="inline-flex items-center gap-1 text-meta px-1.5 py-0.5 rounded font-medium"
+              style="background-color: rgba(137, 146, 167, 0.16); color: var(--semantic-text)"
+              :data-testid="`kanban-task-detail-skill-chip-${name}`"
+            >
+              {{ name }}
+              <button
+                type="button"
+                @click="toggleSkill(name)"
+                class="inline-flex items-center justify-center w-3 h-3 rounded-full hover:bg-black/20"
+                :aria-label="`Remove skill ${name}`"
+                :data-testid="`kanban-task-detail-skill-chip-remove-${name}`"
+              >
+                <svg class="w-2 h-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="3"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </span>
           </div>
 
         <!-- Row 2: Unattended mode toggle (always shown).

@@ -785,9 +785,9 @@ describe('KanbanTaskDetailDialog — create mode', () => {
         // (falls back to kanban path + sandbox). The dialog's cwd picker was added in create mode;
         // this test doesn't drive the picker so the field carries the default '' value.
         cwdSession: '',
-        // NEW (Migration 110 — kanban task skill selector).
-        // Empty string = no skill (the canonical sentinel).
-        skillName: '',
+        // NEW (Migration 112 — kanban task skills selector).
+        // Empty array = no skill (the canonical sentinel).
+        skillNames: [],
       },
     ])
   })
@@ -829,9 +829,9 @@ describe('KanbanTaskDetailDialog — create mode', () => {
         // Empty string = no per-task cwd. See comment on the
         // earlier "emits create" test for the full rationale.
         cwdSession: '',
-        // NEW (Migration 110 — kanban task skill selector).
-        // Empty string = no skill (the canonical sentinel).
-        skillName: '',
+        // NEW (Migration 112 — kanban task skills selector).
+        // Empty array = no skill (the canonical sentinel).
+        skillNames: [],
       },
     ])
   })

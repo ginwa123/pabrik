@@ -12,8 +12,8 @@ const memories_mod = pabrikcore.memories;
 const tags_validation = @import("tags_validation.zig");
 const image_urls_validation = @import("image_urls_validation.zig");
 const video_urls_validation = @import("video_urls_validation.zig");
-const skills_store = pabrikcore.skills_store;
 const kanban_deps = pabrikcore.ai_mod.kanban_deps;
+const task_skills = @import("task_skills.zig");
 
 /// Process-local monotonic counter for task_id generation.
 var task_id_counter: std.atomic.Value(u64) = .init(0);
@@ -59,9 +59,10 @@ pub const TaskCreateError = error{
     CwdTooLong,
     CwdNotAbsolute,
     CwdContainsControlChar,
-    // 400 — per-task skill name validation (Migration 110).
+    // 400 — per-task skill validation (Migration 110, array form 112).
     SkillNameTooLong,
     SkillNameContainsControlChar,
+    TooManySkills,
     // 400 — `depends_on` validation (Migration 111): a task cannot depend on
     // itself, on a task from another kanban, on a set that would close a
     // cycle, or on more than 32 tasks.
@@ -328,15 +329,18 @@ fn createStandardTask(
         break :blk raw;
     };
 
-    const validated_skill_name = blk: {
-        const raw = input.body.skill_name orelse "";
-        if (raw.len == 0) break :blk raw;
-        if (raw.len > skills_store.MAX_NAME_BYTES) return error.SkillNameTooLong;
-        for (raw) |c| {
-            if (c < 0x20 or c == 0x7f) return error.SkillNameContainsControlChar;
-        }
-        if (!skills_store.isValidSkillName(raw)) return error.SkillNameContainsControlChar;
-        break :blk raw;
+    // Migration 112 — the skills this task asks its agent to use, validated,
+    // deduplicated and joined into the `||` form the column stores. The
+    // pre-112 single name still works for a client that never sent the array.
+    const validated_skill_names = task_skills.normalize(
+        allocator,
+        input.body.skill_names,
+        input.body.skill_name,
+    ) catch |err| return switch (err) {
+        error.SkillNameTooLong => error.SkillNameTooLong,
+        error.SkillNameContainsControlChar => error.SkillNameContainsControlChar,
+        error.TooManySkills => error.TooManySkills,
+        error.OutOfMemory => error.OutOfMemory,
     };
 
     const task = ai_mod.workspace_item_tasks.createWorkspaceItemTask(
@@ -356,7 +360,7 @@ fn createStandardTask(
         validated_cwd,
         // Migration 090 — video_urls (trailing param). Same contract.
         validated_video_urls,
-        validated_skill_name,
+        validated_skill_names,
     ) catch return error.StandardTaskCreateFailed;
 
     // Chunk 5 of kanban-task-notification-icon: creating a card is a human
@@ -593,7 +597,8 @@ pub fn tasksCreateHandler(
             error.CwdNotAbsolute,
             error.CwdContainsControlChar => 400,
             error.SkillNameTooLong,
-            error.SkillNameContainsControlChar => 400,
+            error.SkillNameContainsControlChar,
+            error.TooManySkills => 400,
             error.DependencySelfReference,
             error.DependencyNotInItem,
             error.DependencyCycle,
@@ -621,6 +626,7 @@ pub fn tasksCreateHandler(
             error.CwdContainsControlChar => "cwd contains a control character",
             error.SkillNameTooLong => "skill name too long",
             error.SkillNameContainsControlChar => "skill name must be a directory-safe token (letters, digits, dot, dash, underscore)",
+            error.TooManySkills => "skill_names: at most 20 skills per task",
             error.DependencySelfReference => "depends_on: a task cannot depend on itself",
             error.DependencyNotInItem => "depends_on: every id must be a task of the same kanban item",
             error.DependencyCycle => "depends_on: that would create a dependency cycle",

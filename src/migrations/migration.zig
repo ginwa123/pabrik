@@ -122,6 +122,7 @@ const migration_108 = @import("migration_108.zig");
 const migration_109 = @import("migration_109.zig");
 const migration_110 = @import("migration_110.zig");
 const migration_111 = @import("migration_111.zig");
+const migration_112 = @import("migration_112.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -235,6 +236,7 @@ pub const Migration108AddBackgroundProcessReadOffset = migration_108.Migration10
 pub const Migration109AddSkillCanAutoImprove = migration_109.Migration109AddSkillCanAutoImprove;
 pub const Migration110AddTaskSkillName = migration_110.Migration110AddTaskSkillName;
 pub const Migration111AddKanbanTaskDependencies = migration_111.Migration111AddKanbanTaskDependencies;
+pub const Migration112RenameTaskSkillNames = migration_112.Migration112RenameTaskSkillNames;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -442,6 +444,10 @@ pub const allMigrations: []const Migration = &.{
     // Migration 111 — kanban task dependencies: the `kanban_task_dependencies`
     // edge table plus `kanban_columns.is_done`, with a name-based backfill.
     .{ .version = Migration111AddKanbanTaskDependencies.version, .name = Migration111AddKanbanTaskDependencies.name, .up = Migration111AddKanbanTaskDependencies.up },
+    // Migration 112 — one task may ask for several skills: `skill_name`
+    // becomes `skill_names` (`||`-joined). A rename, so existing rows and
+    // the column's position both survive.
+    .{ .version = Migration112RenameTaskSkillNames.version, .name = Migration112RenameTaskSkillNames.name, .up = Migration112RenameTaskSkillNames.up },
 };
 
 /// Register all migrations with a MigrationManager
@@ -10204,7 +10210,7 @@ test "Migration110 is registered in allMigrations" {
     return error.Migration110NotRegistered;
 }
 
-test "createWorkspaceItemTask: skill_name round-trips through the INSERT" {
+test "createWorkspaceItemTask: skill_names round-trips through the INSERT" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -10212,6 +10218,7 @@ test "createWorkspaceItemTask: skill_name round-trips through the INSERT" {
 
     try createLegacyTasksTable110(&ctx);
     try Migration110AddTaskSkillName.up(&ctx.db, alloc);
+    try Migration112RenameTaskSkillNames.up(&ctx.db, alloc);
 
     const task = try createWorkspaceItemTask(
         alloc,
@@ -10225,20 +10232,20 @@ test "createWorkspaceItemTask: skill_name round-trips through the INSERT" {
         null, // image_urls
         null, // cwd
         null, // video_urls
-        "pdf", // skill_name (Migration 110)
+        "pdf", // skill_names (Migration 112)
     );
     defer task.deinit(alloc);
 
     // The returned struct mirrors what was INSERTed, so the caller's view
     // of the new task matches the DB without a round-trip SELECT.
-    try testing.expectEqualStrings("pdf", task.skill_name);
+    try testing.expectEqualStrings("pdf", task.skill_names);
 
-    const stored = try skillNameOf110(&ctx, "t_skill");
+    const stored = try skillNamesOf112(&ctx, "t_skill");
     defer alloc.free(stored);
     try testing.expectEqualStrings("pdf", stored);
 }
 
-test "createWorkspaceItemTask: skill_name = null stores the empty sentinel" {
+test "createWorkspaceItemTask: several names reach the row as one ||-joined list" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -10246,6 +10253,40 @@ test "createWorkspaceItemTask: skill_name = null stores the empty sentinel" {
 
     try createLegacyTasksTable110(&ctx);
     try Migration110AddTaskSkillName.up(&ctx.db, alloc);
+    try Migration112RenameTaskSkillNames.up(&ctx.db, alloc);
+
+    const task = try createWorkspaceItemTask(
+        alloc,
+        &ctx.db,
+        "t_many_skills",
+        "Task with several skills",
+        "item_1",
+        "standard",
+        null, // description
+        null, // tags
+        null, // image_urls
+        null, // cwd
+        null, // video_urls
+        "pdf||zig-trap", // skill_names — the picker's order, preserved
+    );
+    defer task.deinit(alloc);
+
+    try testing.expectEqualStrings("pdf||zig-trap", task.skill_names);
+
+    const stored = try skillNamesOf112(&ctx, "t_many_skills");
+    defer alloc.free(stored);
+    try testing.expectEqualStrings("pdf||zig-trap", stored);
+}
+
+test "createWorkspaceItemTask: skill_names = null stores the empty sentinel" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try createLegacyTasksTable110(&ctx);
+    try Migration110AddTaskSkillName.up(&ctx.db, alloc);
+    try Migration112RenameTaskSkillNames.up(&ctx.db, alloc);
 
     const task = try createWorkspaceItemTask(
         alloc,
@@ -10259,18 +10300,18 @@ test "createWorkspaceItemTask: skill_name = null stores the empty sentinel" {
         null, // image_urls
         null, // cwd
         null, // video_urls
-        null, // skill_name — the omitted-body-field case
+        null, // skill_names — the omitted-body-field case
     );
     defer task.deinit(alloc);
 
-    try testing.expectEqualStrings("", task.skill_name);
+    try testing.expectEqualStrings("", task.skill_names);
 
-    const stored = try skillNameOf110(&ctx, "t_no_skill");
+    const stored = try skillNamesOf112(&ctx, "t_no_skill");
     defer alloc.free(stored);
     try testing.expectEqualStrings("", stored);
 }
 
-test "createWorkspaceItemTask: skill_name = '' stores '' (not NULL)" {
+test "createWorkspaceItemTask: skill_names = '' stores '' (not NULL)" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -10278,6 +10319,7 @@ test "createWorkspaceItemTask: skill_name = '' stores '' (not NULL)" {
 
     try createLegacyTasksTable110(&ctx);
     try Migration110AddTaskSkillName.up(&ctx.db, alloc);
+    try Migration112RenameTaskSkillNames.up(&ctx.db, alloc);
 
     // The empty-slice-binds-as-NULL trap: `SqliteBackend.exec` binds "" as
     // NULL, so the dynamic-SQL builder MUST emit a `''` literal here or the
@@ -10294,16 +10336,105 @@ test "createWorkspaceItemTask: skill_name = '' stores '' (not NULL)" {
         null, // image_urls
         null, // cwd
         null, // video_urls
-        "", // skill_name — the frontend's canonical "no skill" sentinel
+        "", // skill_names — the frontend's canonical "no skill" sentinel
     );
     defer task.deinit(alloc);
 
-    try testing.expectEqualStrings("", task.skill_name);
+    try testing.expectEqualStrings("", task.skill_names);
 
-    const stored = try skillNameOf110(&ctx, "t_empty_skill");
+    const stored = try skillNamesOf112(&ctx, "t_empty_skill");
     defer alloc.free(stored);
     try testing.expectEqualStrings("", stored);
 }
+
+
+// ============================================================================
+// Migration 112 tests — one task, several skills (`skill_name` -> `skill_names`)
+// ============================================================================
+
+/// Read the renamed column back, so a test can prove the RENAME kept the value
+/// instead of dropping it.
+fn skillNamesOf112(ctx: *TestCtx, id: []const u8) ![]const u8 {
+    const alloc = testing.allocator;
+    var q = try ctx.db.query(
+        alloc,
+        "SELECT COALESCE(skill_names, '') FROM workspace_item_tasks WHERE id = ?",
+        &[_][]const u8{id},
+    );
+    defer q.deinit();
+    const row = (try q.next()) orelse return error.NoRows;
+    defer row.deinit(alloc);
+    return alloc.dupe(u8, row.values[0]);
+}
+
+test "Migration112 renames skill_name and keeps the row's stored names" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try createLegacyTasksTable110(&ctx);
+    try Migration110AddTaskSkillName.up(&ctx.db, alloc);
+    try ctx.db.exec(alloc,
+        \\INSERT INTO workspace_item_tasks (id, name, workspace_item_id, skill_name)
+        \\VALUES ('t_picked', 'Task with a skill', 'item_1', 'pdf')
+    , &.{});
+
+    try Migration112RenameTaskSkillNames.up(&ctx.db, alloc);
+
+    const cols = try columnsOf(&ctx, "workspace_item_tasks");
+    defer {
+        for (cols) |c| alloc.free(c);
+        alloc.free(cols);
+    }
+    // Same position as the column 110 appended: the listers map
+    // `row.values[N]`, so a rename that moved it would break them.
+    try expectColumnsEqual(cols, &[_][]const u8{
+        "id",           "name",     "workspace_item_id", "description", "created_at",
+        "updated_at",   "task_type", "tags",             "image_urls",  "video_urls",
+        "cwd",          "skill_names",
+    });
+
+    const names = try skillNamesOf112(&ctx, "t_picked");
+    defer alloc.free(names);
+    try testing.expectEqualStrings("pdf", names);
+}
+
+test "Migration112 replaying is a no-op: one skill_names, no skill_name" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try createLegacyTasksTable110(&ctx);
+    try Migration110AddTaskSkillName.up(&ctx.db, alloc);
+    // Every boot after the first re-runs it: a second RENAME on a table that
+    // already has the new name must not throw.
+    try Migration112RenameTaskSkillNames.up(&ctx.db, alloc);
+    try Migration112RenameTaskSkillNames.up(&ctx.db, alloc);
+
+    const cols = try columnsOf(&ctx, "workspace_item_tasks");
+    defer {
+        for (cols) |c| alloc.free(c);
+        alloc.free(cols);
+    }
+    var renamed: usize = 0;
+    var original: usize = 0;
+    for (cols) |c| {
+        if (std.mem.eql(u8, c, "skill_names")) renamed += 1;
+        if (std.mem.eql(u8, c, "skill_name")) original += 1;
+    }
+    try testing.expectEqual(@as(usize, 1), renamed);
+    try testing.expectEqual(@as(usize, 0), original);
+}
+
+test "Migration112 is registered in allMigrations" {
+    for (allMigrations) |m| {
+        if (m.version == Migration112RenameTaskSkillNames.version) return;
+    }
+    return error.Migration112NotRegistered;
+}
+
 
 
 // ============================================================================

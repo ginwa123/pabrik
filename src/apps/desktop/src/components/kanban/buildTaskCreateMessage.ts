@@ -5,7 +5,6 @@ export function buildTaskCreateMessage(
   useGitWorktree: boolean,
   worktreePath?: string,
   baseBranch?: string,
-  skillName?: string,
 ): string {
   const lines: string[] = [`Task : ${name}`]
   const desc = description.trim()
@@ -23,9 +22,7 @@ export function buildTaskCreateMessage(
       lines.push(`Base: ${base}`)
     }
   }
-  const skill = (skillName ?? '').trim()
-  if (skill !== '') {
-    lines.push('', `#Skill ${skill}`)
-  }
+  // No `#Skill` line here: the backend appends one per skill from the task's
+  // skill_names, so the agent receives each directive exactly once.
   return lines.join('\n')
 }
