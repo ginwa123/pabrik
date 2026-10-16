@@ -33,12 +33,14 @@ const props = defineProps<{
   /** Pre-fill the description field. Only used in 'add' (rarely)
    * and 'rename' modes. Empty string when absent. */
   initialDescription?: string
+  /** Pre-fill the completing-column flag (rename mode only). */
+  initialIsDone?: boolean
 }>()
 
 const emit = defineEmits<{
   close: []
   add: [name: string, description: string]
-  rename: [name: string, description: string]
+  rename: [name: string, description: string, isDone: boolean]
   delete: []
 }>()
 
@@ -47,6 +49,9 @@ const name = ref('')
 const nameInput = ref<HTMLInputElement | null>(null)
 const description = ref('')
 const descriptionInput = ref<HTMLTextAreaElement | null>(null)
+// Completing-column flag (rename mode only). Tasks in an
+// `is_done` column no longer block their dependents.
+const isDone = ref(false)
 
 // 500-char cap matches the project's convention for short text fields. The textarea enforces it via
 // `maxlength`; the backend does NOT re-validate the cap (Zig error sets grow with every constraint;
@@ -110,7 +115,7 @@ const handleSubmit = () => {
     // For rename, we still emit even if the name equals the initial
     // — the parent can choose to no-op. We deliberately do NOT skip
     // the emit because the user explicitly clicked Save.
-    emit('rename', trimmed, trimmedDescription)
+    emit('rename', trimmed, trimmedDescription, isDone.value)
   }
   handleClose()
 }
@@ -129,9 +134,11 @@ const handleKeydown = (event: KeyboardEvent) => {
 // on first render (so a rename modal opened with show=true at mount time has the column's name
 // pre-filled, not an empty string), and reset + refocus on every subsequent open via the open-sync.
 name.value = props.initialName ?? ''
+isDone.value = props.initialIsDone ?? false
 const handleOpen = async () => {
   name.value = props.initialName ?? ''
   description.value = props.initialDescription ?? ''
+  isDone.value = props.initialIsDone ?? false
   await nextTick()
   // Focus the name input when it exists; in delete mode there is
   // no input to focus, but focusing the dialog itself is harmless.
@@ -262,6 +269,22 @@ onUpdated(() => {
             >
               {{ description.length }} / {{ DESCRIPTION_MAX }}
             </div>
+            <!-- Completing-column flag (rename mode only). Tasks in
+                 an `is_done` column no longer block dependents. -->
+            <label
+              v-if="mode === 'rename'"
+              class="mt-3 flex items-center gap-2 cursor-pointer text-body"
+              style="color: var(--semantic-text);"
+              :data-testid="`kanban-column-editor-${mode}-is-done-row`"
+            >
+              <input
+                v-model="isDone"
+                type="checkbox"
+                :data-testid="`kanban-column-editor-${mode}-is-done`"
+                class="w-4 h-4 accent-violet-500"
+              />
+              <span>Completes tasks (unblocks dependents)</span>
+            </label>
           </div>
           <div v-else class="px-5 pb-4">
             <!-- Delete-mode confirmation: surface the column name so the

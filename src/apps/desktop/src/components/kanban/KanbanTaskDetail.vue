@@ -99,6 +99,7 @@ import { useKanbanTagSuggestions } from '../../composables/useKanbanTagSuggestio
 import KanbanDescriptionEditor from './KanbanDescriptionEditor.vue'
 import type { PreviewFile } from '../file/FilePreview.vue'
 import KanbanTagsInput from './KanbanTagsInput.vue'
+import KanbanDependsInput from './KanbanDependsInput.vue'
 import FilePreviewModal from './FilePreviewModal.vue'
 import * as api from '../../api'
 import { getSystemFolder, listFolder, type FolderEntry } from '../../api'
@@ -126,6 +127,9 @@ const props = withDefaults(
     // create-mode column dropdown. Empty array = no dropdown rendered (legacy callers, edit mode,
     // or kanbans that haven't loaded columns yet). Edit mode passes empty.
     availableColumns?: KanbanColumn[]
+    // NEW (kanban task dependencies). Candidate tasks for the
+    // dependency picker (same board). Empty = picker hidden.
+    tasks?: Task[]
     // NEW (plan: 2026-08-24-kanban-create-run-disable-double-click).
     // Edit mode ignores it (the host only binds it on the
     // create-mode mount).
@@ -138,6 +142,7 @@ const props = withDefaults(
     cwd: '',
     workspaceId: '',
     availableColumns: (): KanbanColumn[] => [],
+    tasks: (): Task[] => [],
     creating: false,
   },
 )
@@ -158,7 +163,7 @@ const emit = defineEmits<{
   // their own ref. Kept for backward compatibility with the existing test suite and for the
   // KanbanSettingsDialog-style pattern.
   close: []
-  save: [payload: { mode: 'edit'; name: string; description: string; tags: string[] }]
+  save: [payload: { mode: 'edit'; name: string; description: string; tags: string[]; depends_on?: string[] }]
   // Create-mode counterpart. Host wires this to workspacesStore.addTask
   // + moveTaskToColumn. Same payload shape as `save` but with
   // mode='create' so the parent handler can switch on it.
@@ -288,6 +293,9 @@ const slugifyWorktreeName = (raw: string): string => {
   return slug || 'task'
 }
 const tags = ref<string[]>([])
+// NEW (kanban task dependencies). Chosen dependency ids, edited via KanbanDependsInput and
+// persisted through the same save path as tags (no second save mechanism).
+const dependsOn = ref<string[]>([])
 // Template ref for the chip input — handleSave calls commitDraft() imperatively before reading
 // `tags.value` so a draft tag typed but not yet committed (Enter/comma not pressed) isn't dropped
 // on Save.
@@ -467,9 +475,11 @@ const openDialog = async (): Promise<void> => {
     // Migration 067 — prefill tags from the loaded task. tags?
     // is optional (legacy tasks may lack it); fallback to [].
     tags.value = props.task.tags ?? []
+    // Dependencies prefill (same optional + fallback pattern).
+    dependsOn.value = props.task.depends_on ? [...props.task.depends_on] : []
     // NEW (plan: 2026-08-14-kanban-task-detail-edit-cwd). Sync the per-task cwd picker with the
     // task's persisted cwd in edit mode. Equivalent to the create-mode `cwdSession.value =
-    // props.cwd ?? ''` for create, but reads the task row. `task?.cwd ??
+    // props.cwd ?? ''` for create, but reads the task row.
     cwdSession.value = props.task.cwd ?? ''
     // Media-flags change — list/get carry only `is_have_image` / `is_have_video` flags.
     if (props.task?.id) {
@@ -567,7 +577,12 @@ const isDirty = computed<boolean>(() => {
   const tagsEqual =
     tagsBefore.length === tagsAfter.length && tagsBefore.every((t, i) => t === tagsAfter[i])
   const tagsChanged = !tagsEqual
-  return nameChanged || descChanged || tagsChanged
+  // Dependencies dirty check (same order-sensitive compare).
+  const depsBefore = props.task.depends_on ?? []
+  const depsAfter = dependsOn.value
+  const depsChanged =
+    depsBefore.length !== depsAfter.length || depsBefore.some((d, i) => d !== depsAfter[i])
+  return nameChanged || descChanged || tagsChanged || depsChanged
 })
 
 const isValid = computed<boolean>(() => name.value.trim().length > 0)
@@ -694,12 +709,20 @@ const handleSave = () => {
       skillName: selectedSkill.value,
     })
   } else {
+    // Dependencies ride the same save only when changed: omitted
+    // means "leave untouched" on the wire (`[]` clears, so only
+    // send it when the picker actually moved).
+    const depsBefore = props.task?.depends_on ?? []
+    const depsAfter = dependsOn.value
+    const depsChanged =
+      depsBefore.length !== depsAfter.length || depsBefore.some((d, i) => d !== depsAfter[i])
     emit('save', {
       mode: 'edit',
       name: name.value.trim(),
       description: description.value,
       // NEW (Migration 067): forward tags.
       tags: tags.value,
+      ...(depsChanged ? { depends_on: [...depsAfter] } : {}),
     })
   }
 }
@@ -892,6 +915,13 @@ const filteredTagSuggestions = computed<string[]>(() => {
     .map((s) => s.name)
     .filter((n) => !excludeLower.has(n.toLowerCase()))
 })
+
+// NEW (kanban task dependencies). Picker candidates: same-board tasks as {id, name} pairs (the
+// picker filters out self via selfTaskId). Incomplete dep ids mark blocked chips distinctly.
+const dependsCandidates = computed<Array<{ id: string; name: string }>>(() =>
+  (props.tasks ?? []).map((t) => ({ id: t.id, name: t.name })),
+)
+const blockedDepIds = computed<string[]>(() => (props.task?.blocked_by ?? []).map((b) => b.task_id))
 
 // NEW (Migration 069 — kanban image urls column). The dialog's image gallery reads from the task
 // row's `imageUrls` array. In edit mode this is the persisted column (loaded via the store's
@@ -1275,6 +1305,31 @@ const isMediaLoading = computed<boolean>(() => {
           :loading-more="tagSuggestions.loading.value"
           :on-load-more="tagSuggestions.loadNextPage"
           :test-id="isCreateMode ? 'kanban-task-detail-create-tags' : 'kanban-task-detail-tags'"
+        />
+      </div>
+
+      <!-- Dependencies (kanban task dependencies feature). Edit mode
+             only: a new task has no id yet, so there is nothing to
+             point an edge at until it is created. Same save path as
+             tags — the picker v-models `dependsOn`, handleSave
+             forwards it only when changed. -->
+      <div v-if="!isCreateMode && dependsCandidates.length > 0" class="mt-4">
+        <label
+          for="kanban-task-detail-depends"
+          class="block text-dense font-medium mb-1"
+          style="color: var(--semantic-text-dim)"
+        >
+          Depends on
+        </label>
+        <p class="text-meta mb-2" style="color: var(--semantic-text-dim)">
+          Blocked until every dependency reaches a completing column. Orange dot = not completed yet.
+        </p>
+        <KanbanDependsInput
+          v-model="dependsOn"
+          :tasks="dependsCandidates"
+          :self-task-id="props.task?.id ?? ''"
+          :blocked-ids="blockedDepIds"
+          test-id="kanban-task-detail-depends"
         />
       </div>
 

@@ -52,6 +52,7 @@ test {
     _ = @import("../modules/agent/tools/memory.zig"); // merged save/load/delete exec wrappers + inlined 2 delete tests
     _ = @import("../modules/agent/tools/add_mcp_server.zig"); // 2026-08-28-add-mcp-server-agent-tool — Step 3 (exec wrapper)
     _ = @import("kanban_model.zig"); // Phase 4 — inlined tests from 3 kanban_model_*_test.zig files
+    _ = @import("kanban_deps.zig"); // kanban task dependencies — id/graph validation + the edge store (in-memory DB tests)
     _ = @import("design_io.zig"); // Phase 4 — inlined tests from design_io_test.zig
     _ = @import("design_model.zig"); // Phase 6 — inline updateElementsBatch + indexOf tests
     _ = @import("workflow_compact_message.zig"); // merged 2026-09-10 (ex-workflow_commpact_message.zig typo): url_style regression + envelope + prompt/envelope helpers

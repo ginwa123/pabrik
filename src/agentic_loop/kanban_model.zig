@@ -5,6 +5,9 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+/// Re-exported so a caller holding a slice returned by `incompleteDependencies`
+/// frees it through the SAME module copy it was built with.
+pub const deps = @import("kanban_deps.zig");
 
 /// One kanban column row, fully duplicated into heap memory.
 /// Free with `freeColumns(allocator, slice)`.
@@ -15,6 +18,9 @@ pub const KanbanColumn = struct {
     description: []u8,
     position: i64,
     created_at: []u8,
+    /// Migration 111 — true when a card that lands in this column has finished
+    /// the work it describes, so it stops blocking its dependents.
+    is_done: bool = false,
 };
 
 /// Free the per-column strings and the backing slice in one call.
@@ -38,7 +44,8 @@ pub fn listColumns(
     workspace_item_id: []const u8,
 ) ![]KanbanColumn {
     var q = try db.query(allocator,
-        \\SELECT kc.id, kc.workspace_item_id, kc.name, kc.description, kc.position, COALESCE(kc.created_at, '')
+        \\SELECT kc.id, kc.workspace_item_id, kc.name, kc.description, kc.position,
+        \\       COALESCE(kc.created_at, ''), COALESCE(kc.is_done, 0)
         \\FROM kanban_columns kc
         \\WHERE kc.workspace_item_id = ?
         \\ORDER BY kc.position ASC
@@ -66,6 +73,9 @@ pub fn listColumns(
             .description = try allocator.dupe(u8, row.values[3]),
             .position = std.fmt.parseInt(i64, row.values[4], 10) catch 0,
             .created_at = try allocator.dupe(u8, row.values[5]),
+            // A row written before Migration 111 comes back NULL and is
+            // COALESCEd to "0"; anything else is "not zero" = true.
+            .is_done = !std.mem.eql(u8, row.values[6], "0"),
         });
     }
     return rows.toOwnedSlice(allocator);
@@ -193,6 +203,22 @@ pub fn updateColumn(
                 &.{column_id});
         }
     }
+}
+
+/// Migration 111 — flip the "a card that lands here is finished" flag. Kept
+/// separate from `updateColumn` so the rename path's signature (and its six
+/// fixtures) stay untouched.
+pub fn setColumnIsDone(
+    allocator: std.mem.Allocator,
+    db: *sqlite.SqliteBackend,
+    column_id: []const u8,
+    is_done: bool,
+) !void {
+    try db.exec(allocator,
+        "UPDATE kanban_columns SET is_done = ? WHERE id = ?",
+        // Bind the literal "1"/"0" string, never "" — the backend binds an
+        // empty slice as SQL NULL.
+        &.{ if (is_done) "1" else "0", column_id });
 }
 
 /// Delete a column.
@@ -439,6 +465,91 @@ pub fn moveTask(
 }
 
 
+// ─── Dependency gate (Migration 111) ─────────────────────────────────────
+// Enforced HERE, not in the UI: the drag-and-drop handler and the
+// `kanban_move_task` agent tool both funnel through `moveTaskChecked`.
+
+/// The column the task is currently in ('' when it is unassigned).
+fn currentColumnId(
+    allocator: std.mem.Allocator,
+    db: *sqlite.SqliteBackend,
+    task_id: []const u8,
+) ![]u8 {
+    var q = try db.query(allocator,
+        "SELECT COALESCE(kanban_column_id, '') FROM kanban WHERE workspace_item_task_id = ?",
+        &.{task_id});
+    defer q.deinit();
+
+    const row = (try q.next()) orelse return allocator.dupe(u8, "");
+    defer row.deinit(allocator);
+    return allocator.dupe(u8, row.values[0]);
+}
+
+/// The task's dependencies that have NOT completed — the blockers a 409 body
+/// reports. Caller frees with `kanban_deps.freeEdges`.
+pub fn incompleteDependencies(
+    allocator: std.mem.Allocator,
+    db: *sqlite.SqliteBackend,
+    task_id: []const u8,
+) ![]deps.Edge {
+    const all = try deps.listEdgesForTask(allocator, db, task_id);
+    var blocked: std.ArrayList(deps.Edge) = .empty;
+    errdefer blocked.deinit(allocator);
+
+    for (all) |edge| {
+        if (edge.is_done) {
+            // A resolved dependency owns its strings just as much as a
+            // blocking one — free it here or it leaks.
+            allocator.free(edge.task_id);
+            allocator.free(edge.depends_on_task_id);
+            allocator.free(edge.name);
+            allocator.free(edge.column_id);
+            allocator.free(edge.column_name);
+            continue;
+        }
+        try blocked.append(allocator, edge);
+    }
+    allocator.free(all);
+    return blocked.toOwnedSlice(allocator);
+}
+
+pub const MoveGateError = error{BlockedByDependencies};
+
+/// Refuse a column CHANGE while a dependency is unfinished. Reordering inside
+/// the current column and assigning an unassigned card are not column changes,
+/// so both stay allowed.
+pub fn assertMoveAllowed(
+    allocator: std.mem.Allocator,
+    db: *sqlite.SqliteBackend,
+    task_id: []const u8,
+    target_column_id: []const u8,
+) !void {
+    const current = try currentColumnId(allocator, db, task_id);
+    defer allocator.free(current);
+    if (current.len == 0 or std.mem.eql(u8, current, target_column_id)) return;
+
+    const blocked = try incompleteDependencies(allocator, db, task_id);
+    defer deps.freeEdges(allocator, blocked);
+    if (blocked.len > 0) return error.BlockedByDependencies;
+}
+
+/// The move every real caller uses: the gate, then the move. `force` is the
+/// explicit human escape hatch ("Move anyway") — it skips the gate but never
+/// the move itself.
+pub fn moveTaskChecked(
+    allocator: std.mem.Allocator,
+    db: *sqlite.SqliteBackend,
+    workspace_item_id: []const u8,
+    task_id: []const u8,
+    target_column_id: []const u8,
+    target_position: i64,
+    force: bool,
+) !void {
+    if (!force) try assertMoveAllowed(allocator, db, task_id, target_column_id);
+    try moveTask(allocator, db, workspace_item_id, task_id, target_column_id, target_position);
+}
+
+
 // ─── Inline tests (formerly kanban_model_test.zig) ───────────────────────
 // Unit tests for the kanban column CRUD data layer. Inlined here per
 // the agentic_loop/ convention.
@@ -475,7 +586,7 @@ test "listColumns returns columns ordered by position" {
     try s.db.exec(alloc,
         \\CREATE TABLE kanban_columns (
         \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT, description TEXT NOT NULL DEFAULT '',
-        \\    position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+        \\    position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
     , &.{});
     try s.db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('item_1', 'ws_1', 'kanban')", &.{});
@@ -509,7 +620,7 @@ test "addColumn inserts at end of position sequence" {
     try s.db.exec(alloc,
         \\CREATE TABLE kanban_columns (
         \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT, description TEXT NOT NULL DEFAULT '',
-        \\    position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+        \\    position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
     , &.{});
     try s.db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('item_1', 'ws_1', 'kanban')", &.{});
@@ -542,7 +653,7 @@ test "seedDefaultColumns creates todo, in progress, done" {
     try s.db.exec(alloc,
         \\CREATE TABLE kanban_columns (
         \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT, description TEXT NOT NULL DEFAULT '',
-        \\    position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+        \\    position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
     , &.{});
     try s.db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('item_1', 'ws_1', 'kanban')", &.{});
@@ -571,7 +682,7 @@ test "renameColumn updates name" {
     try s.db.exec(alloc,
         \\CREATE TABLE kanban_columns (
         \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT, description TEXT NOT NULL DEFAULT '',
-        \\    position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+        \\    position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
     , &.{});
     try s.db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('item_1', 'ws_1', 'kanban')", &.{});
@@ -599,7 +710,7 @@ test "deleteColumn nulls out the kanban row's kanban_column_id" {
     try s.db.exec(alloc,
         \\CREATE TABLE kanban_columns (
         \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT, description TEXT NOT NULL DEFAULT '',
-        \\    position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+        \\    position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
     , &.{});
     // Mirror the post-Migration-072 schema: workspace_item_tasks has
     // no kanban_column_id/kanban_position columns; the kanban table
@@ -744,7 +855,7 @@ test "moveTask changes column and renumbers positions" {
     try s.db.exec(alloc,
         \\CREATE TABLE kanban_columns (
         \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT, description TEXT NOT NULL DEFAULT '',
-        \\    position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+        \\    position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
     , &.{});
     // Post-Migration-072 schema
     try s.db.exec(alloc,
@@ -817,7 +928,7 @@ test "reorderColumn shifts siblings to a dense sequence matching the user's inte
     try s.db.exec(alloc,
         \\CREATE TABLE kanban_columns (
         \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT, description TEXT NOT NULL DEFAULT '',
-        \\    position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+        \\    position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
     , &.{});
     try s.db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('item_1', 'ws_1', 'kanban')", &.{});
@@ -925,6 +1036,8 @@ fn setupDbDescription() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Thr
     const migration = pabrikcore.migrations_mod.migration;
     try migration.Migration051AddKanban.up(&db, alloc);
     try migration.Migration053AddKanbanColumnDescription.up(&db, alloc);
+    // Migration 111 — `listColumns` reads `is_done`, which 110 adds.
+    try migration.Migration111AddKanbanTaskDependencies.up(&db, alloc);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -1128,6 +1241,8 @@ fn setupDbCopy() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded }
     try migration.Migration051AddKanban.up(&db, alloc);
     try migration.Migration053AddKanbanColumnDescription.up(&db, alloc);
     try migration.Migration072ExtractKanbanTable.up(&db, alloc);
+    // Migration 111 — `listColumns` reads `is_done`, which 110 adds.
+    try migration.Migration111AddKanbanTaskDependencies.up(&db, alloc);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -1293,4 +1408,208 @@ test "replaceColumnsWith with empty source empties the target" {
     const cols = try listColumns(alloc, &ctx.db, "wi_tgt");
     defer freeColumns(alloc, cols);
     try testing.expectEqual(@as(usize, 0), cols.len);
+}
+
+// ─── Dependency gate tests (Migration 111) ──────────────────────────────
+// A task waiting on an unfinished dependency must not change column. The board
+// is `c1 todo / c2 in progress` (not completing) and `c3 done` (completing).
+
+const GateDb = struct {
+    db: sqlite.SqliteBackend,
+    threaded: std.Io.Threaded,
+
+    fn deinit(self: *GateDb) void {
+        self.db.deinit();
+        self.threaded.deinit();
+    }
+};
+
+fn setupGateDb() !GateDb {
+    const alloc = testing.allocator;
+    var threaded = std.Io.Threaded.init(alloc, .{});
+    errdefer threaded.deinit();
+
+    var db: sqlite.SqliteBackend = .{};
+    errdefer db.deinit();
+    try db.init(threaded.io(), ":memory:");
+
+    try db.exec(alloc,
+        \\CREATE TABLE kanban_columns (
+        \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT,
+        \\    description TEXT NOT NULL DEFAULT '', position INTEGER,
+        \\    is_done INTEGER NOT NULL DEFAULT 0,
+        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+    , &.{});
+    try db.exec(alloc,
+        \\CREATE TABLE workspace_item_tasks (
+        \\    id TEXT PRIMARY KEY, name TEXT, workspace_item_id TEXT)
+    , &.{});
+    try db.exec(alloc,
+        \\CREATE TABLE kanban (
+        \\    workspace_item_task_id TEXT PRIMARY KEY, kanban_column_id TEXT NOT NULL,
+        \\    kanban_position INTEGER NOT NULL DEFAULT 0)
+    , &.{});
+    try db.exec(alloc,
+        \\CREATE TABLE kanban_task_dependencies (
+        \\    task_id TEXT NOT NULL, depends_on_task_id TEXT NOT NULL,
+        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\    PRIMARY KEY (task_id, depends_on_task_id))
+    , &.{});
+
+    try db.exec(alloc,
+        "INSERT INTO kanban_columns (id, workspace_item_id, name, position, is_done) VALUES ('c1', 'item_1', 'todo', 0, 0)", &.{});
+    try db.exec(alloc,
+        "INSERT INTO kanban_columns (id, workspace_item_id, name, position, is_done) VALUES ('c2', 'item_1', 'in progress', 1, 0)", &.{});
+    try db.exec(alloc,
+        "INSERT INTO kanban_columns (id, workspace_item_id, name, position, is_done) VALUES ('c3', 'item_1', 'done', 2, 1)", &.{});
+    try db.exec(alloc,
+        "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) VALUES ('t1', 'Ship it', 'item_1')", &.{});
+    try db.exec(alloc,
+        "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) VALUES ('t2', 'Fix login', 'item_1')", &.{});
+    try db.exec(alloc,
+        "INSERT INTO kanban (workspace_item_task_id, kanban_column_id, kanban_position) VALUES ('t1', 'c2', 0)", &.{});
+    try db.exec(alloc,
+        "INSERT INTO kanban (workspace_item_task_id, kanban_column_id, kanban_position) VALUES ('t2', 'c1', 0)", &.{});
+    try db.exec(alloc,
+        "INSERT INTO kanban_task_dependencies (task_id, depends_on_task_id) VALUES ('t1', 't2')", &.{});
+
+    return .{ .db = db, .threaded = threaded };
+}
+
+fn columnOfTask(db: *sqlite.SqliteBackend, task_id: []const u8) ![]u8 {
+    const alloc = testing.allocator;
+    var q = try db.query(alloc,
+        "SELECT kanban_column_id FROM kanban WHERE workspace_item_task_id = ?", &.{task_id});
+    defer q.deinit();
+    const row = (try q.next()) orelse return error.NoAssignment;
+    defer row.deinit(alloc);
+    return alloc.dupe(u8, row.values[0]);
+}
+
+test "kanban move gate: reordering inside the current column is always allowed" {
+    const alloc = testing.allocator;
+    var s = try setupGateDb();
+    defer s.deinit();
+
+    // t1 is blocked by t2, but staying in `c2` is not a move.
+    try assertMoveAllowed(alloc, &s.db, "t1", "c2");
+}
+
+test "kanban move gate: a blocked task cannot change column" {
+    const alloc = testing.allocator;
+    var s = try setupGateDb();
+    defer s.deinit();
+
+    try testing.expectError(
+        error.BlockedByDependencies,
+        assertMoveAllowed(alloc, &s.db, "t1", "c1"),
+    );
+    try testing.expectError(
+        error.BlockedByDependencies,
+        assertMoveAllowed(alloc, &s.db, "t1", "c3"),
+    );
+}
+
+test "kanban move gate: an unassigned task can still be placed on a column" {
+    const alloc = testing.allocator;
+    var s = try setupGateDb();
+    defer s.deinit();
+
+    // No `kanban` row: there is no column to leave, so assigning it is not a
+    // move away from anything.
+    try s.db.exec(alloc, "DELETE FROM kanban WHERE workspace_item_task_id = 't1'", &.{});
+    try assertMoveAllowed(alloc, &s.db, "t1", "c1");
+}
+
+test "kanban move gate: the dependency completing unblocks the blocked task" {
+    const alloc = testing.allocator;
+    var s = try setupGateDb();
+    defer s.deinit();
+
+    try testing.expectError(
+        error.BlockedByDependencies,
+        assertMoveAllowed(alloc, &s.db, "t1", "c3"),
+    );
+
+    // t2 reaches the column flagged `is_done`.
+    try moveTask(alloc, &s.db, "item_1", "t2", "c3", 0);
+
+    try assertMoveAllowed(alloc, &s.db, "t1", "c3");
+}
+
+test "kanban move gate: an is_done column that is NOT last still completes a task" {
+    const alloc = testing.allocator;
+    var s = try setupGateDb();
+    defer s.deinit();
+
+    // `c3` is flagged done and `c1`/`c2` are not — the gate must read the FLAG,
+    // not the position (on the real board the last column is `drop`).
+    try moveTask(alloc, &s.db, "item_1", "t2", "c3", 0);
+    try assertMoveAllowed(alloc, &s.db, "t1", "c1");
+}
+
+test "kanban move gate: moveTaskChecked enforces the gate and force bypasses it" {
+    const alloc = testing.allocator;
+    var s = try setupGateDb();
+    defer s.deinit();
+
+    try testing.expectError(
+        error.BlockedByDependencies,
+        moveTaskChecked(alloc, &s.db, "item_1", "t1", "c3", 0, false),
+    );
+    {
+        const col = try columnOfTask(&s.db, "t1");
+        defer alloc.free(col);
+        try testing.expectEqualStrings("c2", col);
+    }
+
+    // The human's "Move anyway".
+    try moveTaskChecked(alloc, &s.db, "item_1", "t1", "c3", 0, true);
+    {
+        const col = try columnOfTask(&s.db, "t1");
+        defer alloc.free(col);
+        try testing.expectEqualStrings("c3", col);
+    }
+}
+
+test "kanban move gate: incompleteDependencies reports the blockers and their columns" {
+    const alloc = testing.allocator;
+    var s = try setupGateDb();
+    defer s.deinit();
+
+    {
+        const blocked = try incompleteDependencies(alloc, &s.db, "t1");
+        defer deps.freeEdges(alloc, blocked);
+        try testing.expectEqual(@as(usize, 1), blocked.len);
+        try testing.expectEqualStrings("t2", blocked[0].depends_on_task_id);
+        try testing.expectEqualStrings("Fix login", blocked[0].name);
+        try testing.expectEqualStrings("c1", blocked[0].column_id);
+        try testing.expectEqualStrings("todo", blocked[0].column_name);
+    }
+
+    // Resolved -> no blockers.
+    try moveTask(alloc, &s.db, "item_1", "t2", "c3", 0);
+    const blocked = try incompleteDependencies(alloc, &s.db, "t1");
+    defer deps.freeEdges(alloc, blocked);
+    try testing.expectEqual(@as(usize, 0), blocked.len);
+}
+
+test "kanban move gate: listColumns reports the is_done flag" {
+    const alloc = testing.allocator;
+    var s = try setupGateDb();
+    defer s.deinit();
+
+    const cols = try listColumns(alloc, &s.db, "item_1");
+    defer freeColumns(alloc, cols);
+
+    try testing.expectEqual(@as(usize, 3), cols.len);
+    try testing.expect(!cols[0].is_done);
+    try testing.expect(!cols[1].is_done);
+    try testing.expect(cols[2].is_done);
+
+    // And the flag round-trips through setColumnIsDone.
+    try setColumnIsDone(alloc, &s.db, "c1", true);
+    const after = try listColumns(alloc, &s.db, "item_1");
+    defer freeColumns(alloc, after);
+    try testing.expect(after[0].is_done);
 }

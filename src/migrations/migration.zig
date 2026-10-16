@@ -121,6 +121,7 @@ const migration_107 = @import("migration_107.zig");
 const migration_108 = @import("migration_108.zig");
 const migration_109 = @import("migration_109.zig");
 const migration_110 = @import("migration_110.zig");
+const migration_111 = @import("migration_111.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -233,6 +234,7 @@ pub const Migration107AddBackgroundProcessKind = migration_107.Migration107AddBa
 pub const Migration108AddBackgroundProcessReadOffset = migration_108.Migration108AddBackgroundProcessReadOffset;
 pub const Migration109AddSkillCanAutoImprove = migration_109.Migration109AddSkillCanAutoImprove;
 pub const Migration110AddTaskSkillName = migration_110.Migration110AddTaskSkillName;
+pub const Migration111AddKanbanTaskDependencies = migration_111.Migration111AddKanbanTaskDependencies;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -437,6 +439,9 @@ pub const allMigrations: []const Migration = &.{
     .{ .version = Migration109AddSkillCanAutoImprove.version, .name = Migration109AddSkillCanAutoImprove.name, .up = Migration109AddSkillCanAutoImprove.up },
     // Migration 110 — the skill a kanban task asks the agent to use.
     .{ .version = Migration110AddTaskSkillName.version, .name = Migration110AddTaskSkillName.name, .up = Migration110AddTaskSkillName.up },
+    // Migration 111 — kanban task dependencies: the `kanban_task_dependencies`
+    // edge table plus `kanban_columns.is_done`, with a name-based backfill.
+    .{ .version = Migration111AddKanbanTaskDependencies.version, .name = Migration111AddKanbanTaskDependencies.name, .up = Migration111AddKanbanTaskDependencies.up },
 };
 
 /// Register all migrations with a MigrationManager
@@ -10076,7 +10081,7 @@ test "Migration105 is registered in allMigrations" {
 // Migration 110 — `workspace_item_tasks.skill_name`
 // =============================================================================
 
-/// Minimal `workspace_item_tasks` as it existed BEFORE Migration 110: the
+/// Minimal `workspace_item_tasks` as it existed BEFORE Migration 111: the
 /// columns the earlier migrations added, minus `skill_name`. A legacy row
 /// inserted here is what the migration has to survive.
 fn createLegacyTasksTable110(ctx: *TestCtx) !void {
@@ -10298,4 +10303,164 @@ test "createWorkspaceItemTask: skill_name = '' stores '' (not NULL)" {
     const stored = try skillNameOf110(&ctx, "t_empty_skill");
     defer alloc.free(stored);
     try testing.expectEqualStrings("", stored);
+}
+
+
+// ============================================================================
+// Migration 111 tests — kanban task dependencies + `kanban_columns.is_done`
+// ============================================================================
+
+/// The kanban_columns shape Migration 051 created, WITHOUT `is_done` — what a
+/// real pre-111 database looks like.
+fn createLegacyKanbanColumns(ctx: *TestCtx) !void {
+    const alloc = testing.allocator;
+    try ctx.db.exec(alloc,
+        \\CREATE TABLE kanban_columns (
+        \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT NOT NULL,
+        \\    description TEXT NOT NULL DEFAULT '', position INTEGER,
+        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+    , &.{});
+}
+
+fn isDoneOf(ctx: *TestCtx, column_id: []const u8) !bool {
+    const alloc = testing.allocator;
+    var q = try ctx.db.query(alloc,
+        "SELECT is_done FROM kanban_columns WHERE id = ?", &.{column_id});
+    defer q.deinit();
+    const row = (try q.next()) orelse return error.ColumnMissing;
+    defer row.deinit(alloc);
+    return !std.mem.eql(u8, row.values[0], "0");
+}
+
+test "Migration111 creates the dependency table with a composite primary key" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try createLegacyKanbanColumns(&ctx);
+    try Migration111AddKanbanTaskDependencies.up(&ctx.db, alloc);
+
+    const cols = try columnsOf(&ctx, "kanban_task_dependencies");
+    defer {
+        for (cols) |c| alloc.free(c);
+        alloc.free(cols);
+    }
+    try expectColumnsEqual(cols, &[_][]const u8{
+        "task_id", "depends_on_task_id", "created_at",
+    });
+
+    // The composite key is what makes a duplicate edge impossible — a
+    // duplicate would double-count a dependency in every blocker list.
+    try ctx.db.exec(alloc,
+        "INSERT INTO kanban_task_dependencies (task_id, depends_on_task_id) VALUES ('t1', 't2')", &.{});
+    try testing.expectError(error.ExecuteFailed, ctx.db.exec(alloc,
+        "INSERT INTO kanban_task_dependencies (task_id, depends_on_task_id) VALUES ('t1', 't2')", &.{}));
+}
+
+test "Migration111 adds is_done and backfills the columns that complete a task" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try createLegacyKanbanColumns(&ctx);
+    // The board this feature was filed on: the LAST column is `drop`, which is
+    // exactly why "the last column is done" cannot be the rule.
+    try ctx.db.exec(alloc,
+        \\INSERT INTO kanban_columns (id, workspace_item_id, name, position) VALUES
+        \\ ('c1', 'item_1', 'todo', 0), ('c2', 'item_1', 'in progress', 1),
+        \\ ('c3', 'item_1', 'merged', 2), ('c4', 'item_1', 'on_hold', 3),
+        \\ ('c5', 'item_1', 'drop', 4)
+    , &.{});
+
+    try Migration111AddKanbanTaskDependencies.up(&ctx.db, alloc);
+
+    try testing.expect(!try isDoneOf(&ctx, "c1"));
+    try testing.expect(!try isDoneOf(&ctx, "c2"));
+    try testing.expect(try isDoneOf(&ctx, "c3"));
+    try testing.expect(!try isDoneOf(&ctx, "c4"));
+    try testing.expect(try isDoneOf(&ctx, "c5"));
+}
+
+test "Migration111 falls back to the last column when no name matches" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try createLegacyKanbanColumns(&ctx);
+    // Neither board names a completing column. Without the fallback every
+    // dependency on these boards would block forever.
+    try ctx.db.exec(alloc,
+        \\INSERT INTO kanban_columns (id, workspace_item_id, name, position) VALUES
+        \\ ('a1', 'item_a', 'antrian', 0), ('a2', 'item_a', 'dikerjakan', 1),
+        \\ ('b1', 'item_b', 'backlog', 0), ('b2', 'item_b', 'review', 1),
+        \\ ('b3', 'item_b', 'shipped', 2)
+    , &.{});
+
+    try Migration111AddKanbanTaskDependencies.up(&ctx.db, alloc);
+
+    // item_a: nothing matched, so its LAST column is the fallback.
+    try testing.expect(!try isDoneOf(&ctx, "a1"));
+    try testing.expect(try isDoneOf(&ctx, "a2"));
+    // item_b already matched on `shipped`, so the fallback must NOT also flag
+    // `review` — a board has exactly one completing column here.
+    try testing.expect(!try isDoneOf(&ctx, "b1"));
+    try testing.expect(!try isDoneOf(&ctx, "b2"));
+    try testing.expect(try isDoneOf(&ctx, "b3"));
+}
+
+test "Migration111 replaying does not re-flag a column the user switched off" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try createLegacyKanbanColumns(&ctx);
+    try ctx.db.exec(alloc,
+        "INSERT INTO kanban_columns (id, workspace_item_id, name, position) VALUES ('c1', 'item_1', 'done', 0)", &.{});
+
+    try Migration111AddKanbanTaskDependencies.up(&ctx.db, alloc);
+    try testing.expect(try isDoneOf(&ctx, "c1"));
+
+    // The user decides `done` is NOT where work finishes.
+    try ctx.db.exec(alloc, "UPDATE kanban_columns SET is_done = 0 WHERE id = 'c1'", &.{});
+
+    try Migration111AddKanbanTaskDependencies.up(&ctx.db, alloc);
+    try Migration111AddKanbanTaskDependencies.up(&ctx.db, alloc);
+
+    try testing.expect(!try isDoneOf(&ctx, "c1"));
+}
+
+test "Migration111 is a no-op on a table that already has is_done" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    // Fresh-install shape: `is_done` is already there (Migration 051's
+    // CREATE TABLE plus every fixture), and there is nothing to backfill.
+    try ctx.db.exec(alloc,
+        \\CREATE TABLE kanban_columns (
+        \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT NOT NULL,
+        \\    description TEXT NOT NULL DEFAULT '', position INTEGER,
+        \\    is_done INTEGER NOT NULL DEFAULT 0,
+        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+    , &.{});
+    try ctx.db.exec(alloc,
+        "INSERT INTO kanban_columns (id, workspace_item_id, name, position, is_done) VALUES ('c1', 'item_1', 'Todo', 0, 0)", &.{});
+
+    try Migration111AddKanbanTaskDependencies.up(&ctx.db, alloc);
+
+    // `Todo` is not a completing name, and the column existed before this
+    // migration, so the backfill never ran.
+    try testing.expect(!try isDoneOf(&ctx, "c1"));
+}
+
+test "Migration111 is registered in allMigrations" {
+    for (allMigrations) |m| {
+        if (m.version == Migration111AddKanbanTaskDependencies.version) return;
+    }
+    return error.Migration111NotRegistered;
 }

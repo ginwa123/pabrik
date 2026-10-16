@@ -150,7 +150,7 @@ describe('KanbanColumnEditor', () => {
       nameInput.dispatchEvent(new Event('input', { bubbles: true }))
       await flushPromises()
       clickInDom('[data-testid="kanban-column-editor-rename-submit"]')
-      expect(wrapper.emitted('rename')?.[0]).toEqual(['Backlog', ''])
+      expect(wrapper.emitted('rename')?.[0]).toEqual(['Backlog', '', false])
       expect(wrapper.emitted('close')).toBeTruthy()
     })
 
@@ -301,7 +301,7 @@ describe('KanbanColumnEditor description field', () => {
     clickInDom('[data-testid="kanban-column-editor-rename-submit"]')
     const emitted = wrapper.emitted('rename')
     expect(emitted).toBeTruthy()
-    expect(emitted![0]).toEqual(['backlog', 'Newly triaged items'])
+    expect(emitted![0]).toEqual(['backlog', 'Newly triaged items', false])
     wrapper.unmount()
   })
 
@@ -322,6 +322,50 @@ describe('KanbanColumnEditor description field', () => {
       '[data-testid="kanban-column-editor-rename-description"]',
     )
     expect(descInput?.value).toBe('Pre-existing meaning')
+    wrapper.unmount()
+  })
+
+  it('rename mode shows the is-done checkbox, pre-filled from initialIsDone', async () => {
+    document.body.innerHTML = ''
+    const wrapper = mount(KanbanColumnEditor, {
+      attachTo: document.body,
+      props: { show: true, mode: 'rename', initialName: 'done', initialIsDone: true },
+    })
+    await flushPromises()
+    const box = findInDom<HTMLInputElement>(
+      '[data-testid="kanban-column-editor-rename-is-done"]',
+    )
+    expect(box).not.toBeNull()
+    expect(box?.checked).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('rename mode forwards the checkbox state as the third rename arg', async () => {
+    document.body.innerHTML = ''
+    const wrapper = mount(KanbanColumnEditor, {
+      attachTo: document.body,
+      props: { show: true, mode: 'rename', initialName: 'done' },
+    })
+    await flushPromises()
+    const box = findInDom<HTMLInputElement>(
+      '[data-testid="kanban-column-editor-rename-is-done"]',
+    )!
+    box.checked = true
+    box.dispatchEvent(new Event('change', { bubbles: true }))
+    await flushPromises()
+    clickInDom('[data-testid="kanban-column-editor-rename-submit"]')
+    expect(wrapper.emitted('rename')?.[0]).toEqual(['done', '', true])
+    wrapper.unmount()
+  })
+
+  it('add mode does NOT render the is-done checkbox', async () => {
+    document.body.innerHTML = ''
+    const wrapper = mount(KanbanColumnEditor, {
+      attachTo: document.body,
+      props: { show: true, mode: 'add' },
+    })
+    await flushPromises()
+    expect(findInDom('[data-testid="kanban-column-editor-add-is-done"]')).toBeNull()
     wrapper.unmount()
   })
 })

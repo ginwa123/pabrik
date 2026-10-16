@@ -333,6 +333,15 @@ const lastUpdated = computed<Date | string | null>(() => {
 // when no timestamp is present.
 const lastUpdatedLabel = computed<string>(() => formatRelativeTime(lastUpdated.value))
 
+// Blocked badge (kanban task dependencies): count + tooltip for the "blocked by N" chip.
+// Names come from `blocked_by` (the incomplete subset); falls back to the count alone when the
+// backend sent none.
+const blockedCount = computed<number>(() => props.task.blocked_by?.length ?? 0)
+const blockedTitle = computed<string>(() => {
+  const names = (props.task.blocked_by ?? []).map((b) => b.name).filter((n) => n.length > 0)
+  const head = `Blocked by ${blockedCount.value} task${blockedCount.value === 1 ? '' : 's'}`
+  return names.length > 0 ? `${head}: ${names.join(', ')}` : head
+})
 // Visible tags for the chip row (Migration 067). Caps at 3 to keep the card compact; the "+N more"
 // affordance covers the rest. `task.tags` is `[]` for tasks without tags — the v-if on the tags row
 // in the template handles the "no tags" case.
@@ -738,6 +747,23 @@ onUpdated(() => {
       >
         +{{ extraTagsCount }} more
       </button>
+    </div>
+    <!-- Blocked badge (kanban task dependencies). Presentational
+         only — no click/drag semantics change. Tooltip names the
+         incomplete dependencies. -->
+    <div
+      v-if="task.is_blocked"
+      class="flex items-center gap-1 self-start mt-1"
+      data-testid="task-blocked-badge"
+      :title="blockedTitle"
+    >
+      <span
+        class="inline-flex items-center gap-1 text-micro px-1.5 py-0.5 rounded font-medium"
+        style="background: rgba(249, 115, 22, 0.15); color: #fb923c"
+      >
+        <span aria-hidden="true">⛔</span>
+        <span>blocked by {{ blockedCount }}</span>
+      </span>
     </div>
     <!-- Meta row. Just the last-updated time + a single subtle type
          label when relevant. The row gets a hairline top border with

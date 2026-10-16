@@ -23,6 +23,7 @@ import AgentKnowledgeDialog from './dialogs/AgentKnowledgeDialog.vue'
 import AgentSystemPromptDialog from './dialogs/AgentSystemPromptDialog.vue'
 import AgentKnowledgeDetailDialog from './dialogs/AgentKnowledgeDetailDialog.vue'
 import KanbanColumnEditor from './kanban/KanbanColumnEditor.vue'
+import ConfirmDialog from './dialogs/ConfirmDialog.vue'
 import KanbanSettingsView from './views/KanbanSettingsView.vue'
 import CopyKanbanSpecDialog from './dialogs/CopyKanbanSpecDialog.vue'
 import DesignView from './design/DesignView.vue'
@@ -1441,6 +1442,7 @@ const kanbanColumnEditorMode = ref<KanbanEditorMode>('add')
 const kanbanColumnEditorTargetId = ref<string | null>(null)
 const kanbanColumnEditorInitialName = ref<string>('')
 const kanbanColumnEditorInitialDescription = ref<string>('')
+const kanbanColumnEditorInitialIsDone = ref<boolean>(false)
 
 // Look up the column by id in the active kanban item. Returns
 // undefined if the active item is missing or has no columns — the
@@ -1466,6 +1468,7 @@ const handleKanbanRequestRenameColumn = (columnId: string) => {
   kanbanColumnEditorTargetId.value = columnId
   kanbanColumnEditorInitialName.value = col.name
   kanbanColumnEditorInitialDescription.value = col.description ?? ''
+  kanbanColumnEditorInitialIsDone.value = col.is_done ?? false
   showKanbanColumnEditor.value = true
 }
 
@@ -1503,7 +1506,7 @@ const handleKanbanColumnEditorAdd = (name: string, description: string) => {
   showKanbanColumnEditor.value = false
 }
 
-const handleKanbanColumnEditorRename = (name: string, description: string) => {
+const handleKanbanColumnEditorRename = (name: string, description: string, isDone: boolean) => {
   if (!activeWorkspaceItem.value || !kanbanColumnEditorTargetId.value) return
   const ws = activeWorkspace.value
   if (!ws) return
@@ -1511,7 +1514,7 @@ const handleKanbanColumnEditorRename = (name: string, description: string) => {
     ws.id,
     activeWorkspaceItem.value.id,
     kanbanColumnEditorTargetId.value,
-    { name, description },
+    { name, description, is_done: isDone },
   )
   showKanbanColumnEditor.value = false
 }
@@ -1552,6 +1555,7 @@ const handleKanbanSettingsEditColumn = (payload: {
   columnId: string
   name: string
   description: string
+  is_done?: boolean
 }) => {
   if (!activeWorkspaceItem.value) return
   const ws = activeWorkspace.value
@@ -1559,6 +1563,7 @@ const handleKanbanSettingsEditColumn = (payload: {
   void workspacesStore.updateKanbanColumn(ws.id, activeWorkspaceItem.value.id, payload.columnId, {
     name: payload.name,
     description: payload.description,
+    ...(payload.is_done !== undefined ? { is_done: payload.is_done } : {}),
   })
 }
 
@@ -1593,17 +1598,74 @@ const handleCopyKanbanSpec = (sourceItemId: string, mode: 'replace' | 'append') 
 // + Add on a column: handled LOCALLY by KanbanView (no longer bubbles up here). KanbanView opens
 // the KanbanTaskDetailDialog in create mode, then calls workspacesStore.addTask + moveTaskToColumn
 // on submit.
-const handleKanbanMoveTask = (payload: { taskId: string; columnId: string; position: number }) => {
+
+
+// Drag-and-drop task move. A 409 opens the "Move anyway" confirm (retry with force=true); any
+// other failure is logged (apiFetch already toasted it). The store mutates only after the API
+// succeeds, so a refused move needs nothing here.
+const showMoveBlockedConfirm = ref(false)
+const moveBlockedMessage = ref('')
+const pendingBlockedMove = ref<{ taskId: string; columnId: string; position: number } | null>(null)
+
+const handleKanbanMoveTask = async (payload: {
+  taskId: string
+  columnId: string
+  position: number
+}) => {
   if (!activeWorkspaceItem.value) return
   const ws = activeWorkspace.value
   if (!ws) return
-  void workspacesStore.moveTaskToColumn(
-    ws.id,
-    activeWorkspaceItem.value.id,
-    payload.taskId,
-    payload.columnId,
-    payload.position,
-  )
+  try {
+    await workspacesStore.moveTaskToColumn(
+      ws.id,
+      activeWorkspaceItem.value.id,
+      payload.taskId,
+      payload.columnId,
+      payload.position,
+    )
+  }
+  // eslint-disable-next-line local/no-try-catch -- UI event handler forking on a typed 409 (parseMoveBlockers narrows the unknown into the confirm-dialog path); the non-gate branch logs via console.error
+  catch (err) {
+    const blockers = api.parseMoveBlockers(err)
+    if (blockers) {
+      const names = blockers.map((b) => b.name).filter((n) => n.length > 0)
+      moveBlockedMessage.value =
+        names.length > 0
+          ? `This task is blocked by: ${names.join(', ')}. Move anyway?`
+          : 'This task is blocked by incomplete dependencies. Move anyway?'
+      pendingBlockedMove.value = { ...payload }
+      showMoveBlockedConfirm.value = true
+      return
+    }
+    console.error('[AppLayout] Failed to move kanban task:', err)
+  }
+}
+
+// "Move anyway" confirm: retry the pending move with force=true.
+// Cancel just closes — the store never mutated, so the card
+// already sits in its original column.
+const handleMoveBlockedConfirm = () => {
+  const pending = pendingBlockedMove.value
+  showMoveBlockedConfirm.value = false
+  pendingBlockedMove.value = null
+  if (!pending || !activeWorkspaceItem.value || !activeWorkspace.value) return
+  void workspacesStore
+    .moveTaskToColumn(
+      activeWorkspace.value.id,
+      activeWorkspaceItem.value.id,
+      pending.taskId,
+      pending.columnId,
+      pending.position,
+      true,
+    )
+    .catch((err: unknown) => {
+      console.error('[AppLayout] Failed to force-move kanban task:', err)
+    })
+}
+
+const handleMoveBlockedClose = () => {
+  showMoveBlockedConfirm.value = false
+  pendingBlockedMove.value = null
 }
 
 // "Rename column" emitted from the inline rename input inside <KanbanColumn>. The column lets the
@@ -2819,6 +2881,7 @@ defineExpose({
       :mode="kanbanColumnEditorMode"
       :initial-name="kanbanColumnEditorInitialName"
       :initial-description="kanbanColumnEditorInitialDescription"
+      :initial-is-done="kanbanColumnEditorInitialIsDone"
       @close="handleKanbanColumnEditorClose"
       @add="handleKanbanColumnEditorAdd"
       @rename="handleKanbanColumnEditorRename"
@@ -2841,6 +2904,17 @@ defineExpose({
       :target-item-id="activeWorkspaceItem?.id ?? ''"
       @close="handleCloseCopyKanbanSpec"
       @copy="handleCopyKanbanSpec"
+    />
+
+    <!-- Move-gate confirm (kanban task dependencies). Offered when
+         the backend refuses a column move with 409 + blockers. -->
+    <ConfirmDialog
+      :show="showMoveBlockedConfirm"
+      title="Task is blocked"
+      :message="moveBlockedMessage"
+      confirm-text="Move anyway"
+      @close="handleMoveBlockedClose"
+      @confirm="handleMoveBlockedConfirm"
     />
   </div>
 </template>
