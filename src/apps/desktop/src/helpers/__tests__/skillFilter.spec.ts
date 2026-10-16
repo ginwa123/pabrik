@@ -16,33 +16,32 @@ import {
   type SkillRow,
 } from '../skillFilter'
 
-const ROWS: SkillRow[] = [
-  {
-    name: 'behavior-unit-tests',
-    description: 'Write deterministic unit tests',
-    is_can_auto_improve: false,
-  },
-  {
-    name: 'zig-build-test-sharding',
-    description: 'Split a slow zig build test',
-    is_can_auto_improve: true,
-  },
-  {
-    name: 'zig-test-runner-fails',
-    description: 'A runner that logs errors',
-    is_can_auto_improve: true,
-  },
-  {
-    name: 'verify-html-wireframe',
-    description: 'Assert DOM geometry in a browser',
-    is_can_auto_improve: true,
-  },
-  {
-    name: 'design-taste-frontend',
-    description: 'Art direction for websites',
-    is_can_auto_improve: false,
-  },
-]
+const UNIT_TESTS: SkillRow = {
+  name: 'behavior-unit-tests',
+  description: 'Write deterministic unit tests',
+  is_can_auto_improve: false,
+}
+const SHARDING: SkillRow = {
+  name: 'zig-build-test-sharding',
+  description: 'Split a slow zig build test',
+  is_can_auto_improve: true,
+}
+const RUNNER: SkillRow = {
+  name: 'zig-test-runner-fails',
+  description: 'A runner that logs errors',
+  is_can_auto_improve: true,
+}
+const WIREFRAME: SkillRow = {
+  name: 'verify-html-wireframe',
+  description: 'Assert DOM geometry in a browser',
+  is_can_auto_improve: true,
+}
+const TASTE: SkillRow = {
+  name: 'design-taste-frontend',
+  description: 'Art direction for websites',
+  is_can_auto_improve: false,
+}
+const ROWS: SkillRow[] = [UNIT_TESTS, SHARDING, RUNNER, WIREFRAME, TASTE]
 
 const state = (over: Partial<SkillFilterState> = {}): SkillFilterState => ({
   ...EMPTY_FILTER_STATE,
@@ -51,17 +50,17 @@ const state = (over: Partial<SkillFilterState> = {}): SkillFilterState => ({
 
 describe('matching a query', () => {
   it('matches the name case-insensitively', () => {
-    expect(matchesQuery(ROWS[0], 'BEHAVIOR')).toBe(true)
-    expect(matchesQuery(ROWS[0], 'behavior')).toBe(true)
+    expect(matchesQuery(UNIT_TESTS, 'BEHAVIOR')).toBe(true)
+    expect(matchesQuery(UNIT_TESTS, 'behavior')).toBe(true)
   })
 
   it('matches the description, not only the name', () => {
-    expect(matchesQuery(ROWS[3], 'geometry')).toBe(true)
+    expect(matchesQuery(WIREFRAME, 'geometry')).toBe(true)
   })
 
   it('returns every row for an empty or whitespace query', () => {
-    expect(matchesQuery(ROWS[0], '')).toBe(true)
-    expect(matchesQuery(ROWS[0], '   ')).toBe(true)
+    expect(matchesQuery(UNIT_TESTS, '')).toBe(true)
+    expect(matchesQuery(UNIT_TESTS, '   ')).toBe(true)
   })
 
   it('requires every term to match somewhere, so two words narrow', () => {
@@ -71,11 +70,11 @@ describe('matching a query', () => {
   })
 
   it('lets one term match the name and another the description', () => {
-    expect(matchesQuery(ROWS[1], 'zig slow')).toBe(true)
+    expect(matchesQuery(SHARDING, 'zig slow')).toBe(true)
   })
 
   it('does not match a term that appears in neither field', () => {
-    expect(matchesQuery(ROWS[0], 'kubernetes')).toBe(false)
+    expect(matchesQuery(UNIT_TESTS, 'kubernetes')).toBe(false)
   })
 })
 

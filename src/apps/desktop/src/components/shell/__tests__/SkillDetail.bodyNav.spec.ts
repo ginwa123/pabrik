@@ -105,7 +105,7 @@ describe('SkillDetail — the outline', () => {
     // A jump needs somewhere to land, so every line carries its number.
     const lines = wrapper.findAll('[data-body-line]')
     expect(lines.length).toBe(BODY.split('\n').length)
-    expect(lines[4].attributes('data-body-line')).toBe('5')
+    expect(lines[4]!.attributes('data-body-line')).toBe('5')
   })
 
   it('shows no outline for a body with no headings', async () => {
@@ -148,7 +148,7 @@ describe('SkillDetail — finding text in the body', () => {
 
     const highlighted = wrapper.findAll('.body-line-hit')
     expect(highlighted.length).toBe(1)
-    expect(highlighted[0].text()).toContain('A flaky test is a hidden input.')
+    expect(highlighted[0]!.text()).toContain('A flaky test is a hidden input.')
   })
 
   it('says nothing matched, rather than showing an empty list', async () => {

@@ -41,7 +41,7 @@ describe('the outline', () => {
   it('reports 1-based line numbers, so a jump can target them', () => {
     const sections = extractSections(BODY)
     // Line 5 of the body is the "## When to Use" line.
-    expect(BODY.split('\n')[sections[0].line - 1]).toBe('## When to Use')
+    expect(BODY.split('\n')[sections[0]!.line - 1]).toBe('## When to Use')
   })
 
   it('ignores a heading inside a fenced code block', () => {
@@ -50,7 +50,7 @@ describe('the outline', () => {
   })
 
   it('strips the closing hashes from a closed ATX heading', () => {
-    expect(extractSections('## Procedure ##')[0].title).toBe('Procedure')
+    expect(extractSections('## Procedure ##')[0]!.title).toBe('Procedure')
   })
 
   it('ignores a level-1 heading, which is the frontmatter title', () => {
@@ -79,7 +79,7 @@ describe('finding text in the body', () => {
 
   it('trims the line it reports', () => {
     const hits = findInBody(BODY, 'flaky')
-    expect(hits[0].text).toBe('A flaky test is a hidden input.')
+    expect(hits[0]!.text).toBe('A flaky test is a hidden input.')
   })
 
   it('matches nothing for an empty term, rather than everything', () => {
@@ -94,7 +94,7 @@ describe('finding text in the body', () => {
   it('reports the line a hit is on, so the pane can scroll to it', () => {
     const hits = findInBody(BODY, 'zig build test')
     expect(hits).toHaveLength(1)
-    expect(BODY.split('\n')[hits[0].line - 1]).toContain('zig build test')
+    expect(BODY.split('\n')[hits[0]!.line - 1]).toContain('zig build test')
   })
 })
 
