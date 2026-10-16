@@ -1,6 +1,6 @@
-/** SkillList.vue — the per-row agent lock. The list is the only surface that shows every skill at
- * once, so it is where "which of these may the agent touch?" is answerable. Two things have to
- * hold: 1. */
+/** SkillList.vue — the per-row agent lock. The list is the only surface that
+ * shows every skill at once, so it is where "which of these may the agent
+ * touch?" is answerable. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
@@ -41,6 +41,12 @@ beforeEach(() => {
 const toggles = (wrapper: ReturnType<typeof mount>) =>
   wrapper.findAll('[data-testid="skill-auto-improve-toggle"]')
 
+/** Point at a row, which is what reveals its checkbox. */
+const hover = async (wrapper: ReturnType<typeof mount>, skillName: string) => {
+  await wrapper.find(`[data-skill-name="${skillName}"]`).trigger('mouseenter')
+  await flushPromises()
+}
+
 const toggleFor = (wrapper: ReturnType<typeof mount>, skillName: string) =>
   wrapper.find(`[data-skill-name="${skillName}"] [data-testid="skill-auto-improve-toggle"]`)
 
@@ -48,15 +54,31 @@ const checkedFor = (wrapper: ReturnType<typeof mount>, skillName: string) =>
   (toggleFor(wrapper, skillName).element as HTMLInputElement).checked
 
 describe('SkillList — the auto-improve lock', () => {
-  it('renders one checkbox per row, each showing its own lock state', async () => {
+  it('shows the flag on the row being pointed at, not on all of them', async () => {
     seedWorkspace()
     const wrapper = mount(SkillList, {
       props: { selectedSkillName: null, workspaceId: WS_ID },
     })
     await flushPromises()
 
-    expect(toggles(wrapper)).toHaveLength(2)
+    // One checkbox for the whole list, not one per row.
+    expect(toggles(wrapper)).toHaveLength(0)
+
+    await hover(wrapper, 'alpha')
+    expect(toggles(wrapper)).toHaveLength(1)
+  })
+
+  it('shows each row its own flag, so a pinned skill is never claimed editable', async () => {
+    seedWorkspace()
+    const wrapper = mount(SkillList, {
+      props: { selectedSkillName: null, workspaceId: WS_ID },
+    })
+    await flushPromises()
+
+    await hover(wrapper, 'alpha')
     expect(checkedFor(wrapper, 'alpha')).toBe(true)
+
+    await hover(wrapper, 'beta')
     expect(checkedFor(wrapper, 'beta')).toBe(false)
   })
 
@@ -78,6 +100,7 @@ describe('SkillList — the auto-improve lock', () => {
     await flushPromises()
     const callsAfterLoad = getSkillsMock.mock.calls.length
 
+    await hover(wrapper, 'alpha')
     await toggleFor(wrapper, 'alpha').setValue(false)
     await flushPromises()
 
@@ -97,6 +120,7 @@ describe('SkillList — the auto-improve lock', () => {
     })
     await flushPromises()
 
+    await hover(wrapper, 'alpha')
     await toggleFor(wrapper, 'alpha').setValue(false)
     await flushPromises()
 
