@@ -1,28 +1,13 @@
-/**
- * Behavioural tests for DesignPageRow.vue.
- *
- * Plan: docs/superpowers/plans/2026-08-06-design-pages-in-workspace-tree.md
- *
- * 6 tests covering the row's behavioral contract:
- *  1. Renders the page name.
- *  2. Click emits `selectPage` with the page object.
- *  3. × button emits `deletePage` with the page object.
- *  4. × button click does NOT also emit `selectPage` (stopPropagation).
- *  5. Active page gets the violet active style; inactive doesn't.
- *  6. data-testid `design-page-row-${pageId}` is present.
- *
- * Active styling is driven by URL (?view=workspace&pageId=X) via the
- * `useCurrentMainView` composable (see sidebar-single-active-state plan).
- * Tests stub vue-router so the URL is controllable per test.
- */
+/** Behavioural tests for DesignPageRow.vue. Plan:
+ * docs/superpowers/plans/2026-08-06-design-pages-in-workspace-tree.md 6 tests covering the row's
+ * behavioral contract: 1. Renders the page name. 2. */
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import DesignPageRow from '../components/workspace/DesignPageRow.vue'
 import type { DesignPage } from '../api'
 
-// Stub vue-router — DesignPageRow reads useRoute() via useCurrentMainView()
-// to drive its active state. Mirrors the pattern at
-// sidebarHandleSelectTaskUrl.spec.ts:57-77. Default = empty route (no
+// Stub vue-router — DesignPageRow reads useRoute() via useCurrentMainView() to drive its active
+// state. Mirrors the pattern at sidebarHandleSelectTaskUrl.spec.ts:57-77. Default = empty route (no
 // active state); tests that need the active styling override per-test.
 const { useRouteMock } = vi.hoisted(() => ({
   useRouteMock: vi.fn(() => ({
@@ -151,13 +136,9 @@ describe('DesignPageRow.vue', () => {
     expect(wrapper.find('[data-testid="design-page-row-page_xxx"]').exists()).toBe(true)
   })
 
-  // ─── ⋮ menu (rename-design-pages, 2026-08-06) ──────────────────────────
-  //
-  // Verifies the three-dot menu mounted alongside the existing × delete
-  // button. The menu is the canonical surface for page-level actions
-  // (Rename + Delete); future actions (duplicate, lock, etc.) slot in
-  // here.
-
+  // ─── ⋮ menu (rename-design-pages, 2026-08-06) ────────────────────────── Verifies the three-dot
+  // menu mounted alongside the existing × delete button. The menu is the canonical surface for
+  // page-level actions (Rename + Delete); future actions (duplicate, lock, etc.) slot in here.
   it('renders a ⋮ menu trigger button on the row', () => {
     const wrapper = mountRow({
       page: makePage({ id: 'page_menu' }),
@@ -187,10 +168,9 @@ describe('DesignPageRow.vue', () => {
   })
 
   it('clicking the ⋮ trigger does NOT emit selectPage (stopPropagation)', async () => {
-    // Regression: without @click.stop on the menu trigger, the outer
-    // row's click handler would also fire when the menu is opened,
-    // causing the user to navigate to the page right before the
-    // menu appears.
+    // Regression: without @click.stop on the menu trigger, the outer row's click handler would also
+    // fire when the menu is opened, causing the user to navigate to the page right before the menu
+    // appears.
     const wrapper = mountRow({
       page: makePage({ id: 'page_noop' }),
       isActivePage: false,

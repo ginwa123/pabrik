@@ -1,13 +1,6 @@
-/*
- * skillFilter.ts — the behaviour behind the Skills settings search box,
- * facet chips and sort menu.
- *
- * These are pure functions, so every case below is a real behaviour with
- * no seam needed: no clock, no network, no randomness. The rows are
- * literals shaped like the list wire (`Skill`), and the assertions read
- * the outcome — which rows survive, in what order — never how the
- * function got there.
- */
+/** skillFilter.ts — the behaviour behind the Skills
+ * settings search box, facet chips and sort
+ * menu. Pure functions, so nothing needs injecting. */
 import { describe, expect, it } from 'vitest'
 import {
   countVisible,

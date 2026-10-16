@@ -18,11 +18,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'file-click': [file: FolderEntry]
-  // Emitted when the user clicks a directory entry. Used by the
-  // CreateWorktreeDialog to navigate the picker into the clicked
-  // folder (parent of the new worktree). Existing callers (e.g.
-  // RightSidebar) ignore this event — clicking a folder still expands
-  // or collapses its children in addition to emitting.
+  // Emitted when the user clicks a directory entry. Used by the CreateWorktreeDialog to navigate
+  // the picker into the clicked folder (parent of the new worktree).
   'folder-click': [folder: FolderEntry]
 }>()
 
@@ -282,9 +279,8 @@ const footerText = computed(() => {
 const handleFileClick = (entry: FolderEntry) => {
   if (entry.is_directory) {
     toggleFolder(entry)
-    // Also emit so parents (e.g. CreateWorktreeDialog's picker) can
-    // navigate into the clicked folder. toggleFolder above still
-    // runs so existing consumers (RightSidebar) keep their expand/
+    // Also emit so parents (e.g. CreateWorktreeDialog's picker) can navigate into the clicked
+    // folder. toggleFolder above still runs so existing consumers (RightSidebar) keep their expand/
     // collapse behavior unchanged.
     emit('folder-click', entry)
   } else {

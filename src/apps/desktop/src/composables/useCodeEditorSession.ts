@@ -2,32 +2,9 @@ import { ref } from 'vue'
 import type { FolderEntry } from '../api'
 import type { OpenInCodeEditorOptions } from './useCodeEditor'
 
-// Single source of truth for the in-app code editor's open-file
-// session. Previously this state lived as five loosely-coupled refs
-// in AppLayout (file / content / loading / error / requestedLine)
-// plus ad-hoc `btoa`/`atob` calls at the open and restore sites.
-// That split caused three user-visible bugs:
-//
-//   1. The footer joined `cwd + '/' + filePath` even when filePath
-//      was already absolute (doubled path in the footer).
-//   2. Raw `btoa` output (`+/=`) was stuffed into the URL query —
-//      not URL-safe, breaks on copy/paste through clients that
-//      decode `+` as space.
-//   3. Silent blanks: a missing cwd early-returned with no error,
-//      and a bad base64 link nulled the file with no error, so the
-//      editor mounted (or unmounted) with an empty view.
-//
-// This composable owns the whole open → fetch → URL-sync → restore
-// cycle. AppLayout instantiates it once and binds its template to the
-// exposed refs; all openers (sidebar explorer, diff views, tool-output
-// cards) keep calling the injected `openInCodeEditor` which now
-// delegates here. The viewer is read-only, so there is no save step:
-// the backend registers no write route (only `GET /api/system/folder`).
-
-// An absolute path is shown as-is; only relative paths are joined
-// with the cwd. Mirrors the backend `is_abs` check in
-// src/http_handlers/system_folder.zig (POSIX `/`, Windows drive
-// `C:`, UNC `\\`).
+// Single source of truth for the in-app code editor's open-file session. Previously this state
+// lived as five loosely-coupled refs in AppLayout (file / content / loading / error /
+// requestedLine) plus ad-hoc `btoa`/`atob` calls at the open and restore sites.
 export function isAbsolutePath(p: string): boolean {
   if (!p) return false
   if (p.startsWith('/')) return true
@@ -53,9 +30,8 @@ export function parseRequestedLine(param: unknown): number | null {
   return Number.isFinite(n) && (n as number) > 0 ? (n as number) : null
 }
 
-// URL-safe file-path encoding: UTF-8 bytes → base64url (no padding).
-// UTF-8 matters because raw `btoa` throws on non-latin1 paths
-// (e.g. Cyrillic filenames); base64url matters because `+/=` are
+// URL-safe file-path encoding: UTF-8 bytes → base64url (no padding). UTF-8 matters because raw
+// `btoa` throws on non-latin1 paths (e.g. Cyrillic filenames); base64url matters because `+/=` are
 // reserved in query strings.
 export function encodeFilePath(path: string): string {
   const bytes = new TextEncoder().encode(path)
@@ -91,15 +67,8 @@ export function decodeFilePath(encoded: string): string {
   }
 }
 
-// New editor links carry the plain path (`?file=src/foo.ts`) so URLs
-// stay readable and hand-editable. Links written before the readable
-// migration carry base64/base64url instead. The two are told apart by
-// a strict round-trip check: a legacy value decodes and re-encodes to
-// itself, while a plain path either contains characters outside the
-// base64 alphabet (`.` never appears in base64 output) or fails the
-// re-encode comparison. A bare name like `TWFu` that happens to
-// round-trip is misread as legacy — vanishingly rare, and the failure
-// surfaces as an explicit read error, never a silent blank.
+// New editor links carry the plain path (`?file=src/foo.ts`) so URLs stay readable and
+// hand-editable. Links written before the readable migration carry base64/base64url instead.
 function isLegacyFileLink(value: string): boolean {
   if (!/^[A-Za-z0-9+/_-]+={0,2}$/.test(value)) return false
   let decoded: string

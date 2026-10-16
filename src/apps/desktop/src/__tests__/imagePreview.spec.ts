@@ -1,15 +1,4 @@
-/**
- * Component tests for the <ImagePreview> overlay extracted from ChatView.vue.
- *
- * The preview renders nothing when `src` is an empty string (the consumer
- * passes an empty string when the chat is not previewing an image, so the
- * overlay must stay closed) and renders a backdrop + image + close button
- * when `src` is set. Clicking the backdrop or the close button emits
- * `close`; clicking inside the content (or the image) does NOT bubble to
- * the backdrop. Pressing Escape while the overlay is open also emits
- * `close`. While open, the component locks body scroll; on close (or
- * unmount) it restores the prior overflow value.
- */
+/** Component tests for the <ImagePreview> overlay extracted from ChatView.vue. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'

@@ -1,21 +1,6 @@
-/**
- * Unit tests for workspacesStore.deleteDesignPage.
- *
- * 4 tests:
- *  1. Calls api.deleteDesignPage with the same workspaceId/itemId/pageId.
- *  2. Clears activeDesignPageId when the deleted page was the active one.
- *  3. Leaves activeDesignPageId alone when a DIFFERENT page was active.
- *  4. Surfaces API errors via the notification store on failure.
- *
- * The mock pattern follows the project memory
- * `apiFetch-mock-must-include-text-and-pinia`: apiFetch calls
- * useNotificationStore() on every non-2xx response, which requires
- * an active Pinia; the response mock must include `text()` so
- * apiFetch can extract the body for the error toast.
- *
- * Plan: docs/superpowers/plans/2026-07-25-design-page-delete-button.md
- *   (Chunk 4)
- */
+/** Unit tests for workspacesStore.deleteDesignPage. 4 tests: 1. Calls api.deleteDesignPage with the
+ * same workspaceId/itemId/pageId. 2. Clears activeDesignPageId when the deleted page was the active
+ * one. 3. Plan: docs/superpowers/plans/2026-07-25-design-page-delete-button.md (Chunk 4) */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 

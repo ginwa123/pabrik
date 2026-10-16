@@ -1,18 +1,6 @@
-/**
- * Conflict-only PR UI for SidebarDiffPanel (quiet-when-clean).
- *
- * Contract: CONFLICTING/DIRTY shows the red "Merge conflicts" badge plus
- * the "This branch has conflicts that must be resolved" banner with a
- * Resolve link to <pr-url>/conflicts. MERGEABLE/CLEAN, UNKNOWN, and empty
- * mergeable render exactly as before (no badge, no banner).
- *
- * Second contract — WHICH files conflict. `mergeable: CONFLICTING` says a
- * PR cannot merge but never what blocks it (no forge API exposes it), so the
- * panel calls /git/pr/conflicts, which runs `git merge-tree` locally. The
- * list must appear under the badge, the badge must carry the count, the
- * "conflicts only" filter must round-trip through ?conflicts=1, and — the
- * load-bearing negative — a clean PR must never trigger the fetch at all.
- */
+/** Conflict-only PR UI for SidebarDiffPanel (quiet-when-clean). Contract: CONFLICTING/DIRTY shows
+ * the red "Merge conflicts" badge plus the "This branch has conflicts that must be resolved" banner
+ * with a Resolve link to <pr-url>/conflicts. */
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import SidebarDiffPanel from '../chat_right_sidebar/SidebarDiffPanel.vue'

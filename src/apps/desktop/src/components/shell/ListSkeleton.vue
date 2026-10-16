@@ -1,17 +1,5 @@
 <script setup lang="ts">
-// Shared placeholder for list-shaped panels in the chat right sidebar
-// and the git surfaces.
-//
-// Why a shared component: SidebarDiffPanel (PR + Files tabs),
-// GitCommits, PrChecksPanel and SkillEvalsPanel each hand-rolled their
-// own loading story — a centered spinner, or plain "Loading…" text.
-// A spinner in a `flex-1` container collapses the panel's scroll
-// height to ~40px and then jumps to full height when data lands; the
-// skeleton holds the layout instead.
-//
-// Shape mirrors a generic list row: full-width bar at `rowHeight` with
-// the same animate-pulse + --semantic-active-bg treatment as
-// SidebarSkeleton.vue.
+// Shared placeholder for list-shaped panels in the chat right sidebar and the git surfaces.
 withDefaults(
   defineProps<{
     /** How many placeholder rows to render. */

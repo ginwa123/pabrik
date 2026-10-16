@@ -1,12 +1,6 @@
-/**
- * Tests for the "Start agent" button in KanbanTaskDetailDialog (edit mode).
- *
- * Mount pattern: same as KanbanTaskDetailDialog.runAgent.spec.ts —
- * <Teleport to="body">, so use `attachTo: document.body` +
- * `document.querySelector` (NOT `wrapper.find`).
- *
- * Plan: docs/superpowers/specs/2026-08-18-kanban-task-detail-start-agent.md
- */
+/** Tests for the "Start agent" button in KanbanTaskDetailDialog (edit mode). Mount pattern: same as
+ * KanbanTaskDetailDialog.runAgent.spec.ts — <Teleport to="body">, so use `attachTo: document.body`
+ * + `document.querySelector` (NOT `wrapper.find`). */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -35,13 +29,9 @@ describe('KanbanTaskDetailDialog — Start agent', () => {
     findAllInDom('[data-testid="kanban-task-detail-dialog"]').forEach((el) => el.remove())
   })
 
-  /**
-   * Mount the dialog with optional props and an optional `processingState`
-   * provider. The `processingState` map mirrors the one App.vue
-   * provides — a Record<sessionId, boolean> where `true` means a
-   * worker is currently running for that session. Assigns to the
-   * outer `wrapper` so the afterEach hook can unmount it.
-   */
+  /** Mount the dialog with optional props and an optional `processingState` provider. The
+   * `processingState` map mirrors the one App.vue provides — a Record<sessionId, boolean> where
+   * `true` means a worker is currently running for that session. */
   function mountDialog(
     propsOverride: Record<string, unknown> = {},
     processingState: Record<string, boolean> | undefined = undefined,
@@ -51,10 +41,9 @@ describe('KanbanTaskDetailDialog — Start agent', () => {
       attachTo: document.body,
       props: { show: true, task: null, mode: 'edit', ...propsOverride },
       global: {
-        // Only include processingState when the test passes one —
-        // the dialog's `inject('processingState', undefined)` falls
-        // back to undefined when absent, so the "no provider"
-        // branch is also exercised by omitting this key.
+        // Only include processingState when the test passes one — the dialog's
+        // `inject('processingState', undefined)` falls back to undefined when absent, so the "no
+        // provider" branch is also exercised by omitting this key.
         provide: processingState !== undefined ? { processingState } : {},
       },
     })
@@ -116,11 +105,9 @@ describe('KanbanTaskDetailDialog — Start agent', () => {
   })
 
   it('enables the start-agent button when no processingState is provided at all', async () => {
-    // Defensive: the dialog's `inject('processingState', undefined)`
-    // defaults to undefined when the provider is missing (e.g. tests
-    // that mount the dialog in isolation). The button must still be
-    // enabled — we don't want to break the dialog if a future refactor
-    // forgets to provide the map.
+    // Defensive: the dialog's `inject('processingState', undefined)` defaults to undefined when the
+    // provider is missing (e.g. tests that mount the dialog in isolation). The button must still be
+    // enabled — we don't want to break the dialog if a future refactor forgets to provide the map.
     mountDialog(
       { task: { id: 'task_no_provider', name: 'NoProvider', task_type: 'standard' } as Task },
       undefined,

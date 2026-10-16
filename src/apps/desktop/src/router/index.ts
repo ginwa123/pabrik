@@ -42,20 +42,14 @@ const router = createRouter({
     },
     // Kanban settings page (plan: 2026-09-02-kanban-settings-as-page).
     // Resolves to AppLayout which dispatches via the `currentView`
-    // computed (path-based regex match at AppLayout.vue). The `name`
-    // is informational — we navigate by path from
     // AppLayout.handleOpenKanbanSettings via `router.push`.
     {
       path: '/app/kanban/:itemId/settings',
       name: 'kanban-settings',
       component: AppLayout,
     },
-    // Path-based URL contract (plan: 2026-09-22-revamp-ui-chats).
-    // Most-specific first — vue-router matches in registration order.
-    // These come AFTER the reserved single-segment routes above
-    // (`settings`, legacy `chat`/`task`) and the kanban-settings path,
-    // otherwise `/app/chat/X` would match with workspaceId='chat'.
-    // See `helpers/appUrl.ts` (single builder / parser) and
+    // Path-based URL contract (plan: 2026-09-22-revamp-ui-chats). Most-specific first — vue-router
+    // matches in registration order. See `helpers/appUrl.ts` (single builder / parser) and
     // `parseAppPath`'s RESERVED_FIRST_SEGMENTS guard.
     {
       path: '/app/:workspaceId/projects/:projectId/chat/:taskId',
@@ -72,23 +66,16 @@ const router = createRouter({
       name: 'workspace-chat',
       component: AppLayout,
     },
-    // Document page (Migration 095). A PAGE shape, not a `?doc=` overlay:
-    // the document replaces the main view, so it must own its own path
-    // instead of borrowing whichever one happened to be open underneath.
-    // Must stay BEFORE `/app/:workspaceId` — Vue matches in order, and
-    // that route's catch would otherwise never see the `/doc` segment.
+    // Document page (Migration 095). A PAGE shape, not a `?doc=` overlay: the document replaces the
+    // main view, so it must own its own path instead of borrowing whichever one happened to be open
+    // underneath.
     {
       path: '/app/:workspaceId/doc/:documentId',
       name: 'workspace-doc',
       component: AppLayout,
     },
-    // Workspace settings page. Which settings SECTION is open is a query
-    // param (`?section=`), not a second path segment — `?tab=` belongs to
-    // browser tab-mode. Must stay BEFORE `/app/:workspaceId`: Vue matches
-    // in registration order and that route's catch would otherwise swallow
-    // `/app/ws_1/settings` as `workspaceId='ws_1'` and drop the `/settings`
-    // segment entirely. Same trap as `/app/:workspaceId/chat/:sessionId`
-    // and `/app/:workspaceId/doc/:documentId` above.
+    // Workspace settings page. Which settings SECTION is open is a query param (`?section=`), not a
+    // second path segment — `?tab=` belongs to browser tab-mode.
     {
       path: '/app/:workspaceId/settings',
       name: 'workspace-settings',
@@ -99,9 +86,8 @@ const router = createRouter({
       name: 'workspace',
       component: AppLayout,
     },
-    // Global catch-all: any path the backend's SPA fallback serves
-    // index.html for but no route above matches (stale deep link,
-    // refresh at a removed URL) lands on /app instead of rendering
+    // Global catch-all: any path the backend's SPA fallback serves index.html for but no route
+    // above matches (stale deep link, refresh at a removed URL) lands on /app instead of rendering
     // an empty router-view. Must stay LAST — Vue matches in order.
     {
       path: '/:pathMatch(.*)*',
@@ -110,19 +96,9 @@ const router = createRouter({
   ],
 })
 
-// Auth guard: when the backend runs with `--auth`, every `/app*`
-// view requires a valid `pabrik_session` cookie. Anonymous visits
-// redirect to `/login?redirect=<target>` (router.replace, so Back
-// skips the bounce); authed visits to `/login` bounce back to the
-// target. Public when auth is off (`/api/auth/me` 200 +
-// auth_enabled=false) — no redirect. Every view switch stays in the
-// URL (repo rule), so refresh/Back/shared links keep working.
-//
-// The top loading bar is driven here: start on beforeEach (covers the
-// async auth check, which is the slowest part of a redirect), finish
-// on afterEach/onError. Lazily resolved inside the guard so the router
-// module never hard-depends on an installed pinia (specs import the
-// router without one).
+// Auth guard: when the backend runs with `--auth`, every `/app*` view requires a valid
+// `pabrik_session` cookie. Anonymous visits redirect to `/login?redirect=<target>` (router.replace,
+// so Back skips the bounce); authed visits to `/login` bounce back to the target.
 function loadingStore() {
   try {
     return useLoadingStore()
@@ -131,21 +107,7 @@ function loadingStore() {
   }
 }
 
-/**
- * Apply the identity reported by `/api/auth/me` to the storage scope
- * (plan 2026-09-25, W5).
- *
- * Called from the guard on EVERY navigation, before any view renders, so:
- *  - the first paint after a reload happens with the correct scope (a
- *    data-bearing key read during mount resolves to this user's slot, never
- *    the previous user's);
- *  - an identity CHANGE (A logs out, B logs in — or a sibling tab switched
- *    users) purges the previous user's scoped keys before B's first paint.
- *
- * `auth_enabled === false` (or an unauthenticated response) means there is no
- * identity: the scope is cleared and keys stay unscoped, which is the
- * auth-off behaviour.
- */
+/** Apply the identity reported by `/api/auth/me` to the storage scope (plan 2026-09-25, W5). */
 function applyIdentity(
   data: { auth_enabled?: boolean; authenticated?: boolean; user?: { id?: string } } | null,
 ): void {

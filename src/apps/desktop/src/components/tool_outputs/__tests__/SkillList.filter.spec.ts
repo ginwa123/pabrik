@@ -1,14 +1,5 @@
-/*
- * SkillList.vue — search, facets, sort, count and keyboard navigation.
- *
- * The list used to render every skill as an identical card, so finding
- * one meant reading 41 descriptions. These specs pin the behaviour that
- * replaces that: what the search box narrows to, what the chips do, what
- * the count says, and how the list is reached without a mouse.
- *
- * The API is mocked at the boundary (`getSkills`) and the assertions read
- * the rendered rows — never how the component got there.
- */
+/** SkillList.vue — search, facets, sort, count and keyboard navigation. The
+ * API is mocked at the boundary; the assertions read the rendered rows. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'

@@ -1,25 +1,5 @@
-/**
- * Regression tests for the 2026-08-23 "auto-collapse on SSE" bug.
- *
- * Background: the chatview used positional expand keys
- * (`${groupIndex}-${idx}`) into the `messageGroups` computed. Every
- * SSE event mutated `messages`, `messageGroups` recomputed, group /
- * message indices shifted, and every stored expand key silently
- * started pointing at a DIFFERENT card. The user's manually-expanded
- * tool card lost its key and collapsed itself; unrelated cards could
- * also pop open by accident.
- *
- * The fix keys expansion by STABLE per-message id (`msg.id` → falls
- * back to `tool_call_id` → falls back to positional last-resort).
- *
- * Runtime paths are wired through Vue reactivity inside a 3500-line
- * SFC — the helpers (`toolExpandKey`, `toggleToolExpanded`,
- * `expandedToolIds`) live in ChatView.vue and aren't easily mount-
- * testable in isolation. These tests lock the SOURCE-LEVEL invariants
- * so any refactor that reintroduces positional keys is caught
- * immediately, following the project's source-grep convention
- * (sseIsInputOutput.spec.ts, ChatView.hiddenMessages.spec.ts).
- */
+/** Regression tests for the 2026-08-23 "auto-collapse on SSE" bug. Background: the chatview used
+ * positional expand keys (`${groupIndex}-${idx}`) into the `messageGroups` computed. */
 import { describe, it, expect } from 'vitest'
 
 const readChatViewSource = async (): Promise<string> => {
@@ -65,11 +45,9 @@ describe('expandedToolIds — stable per-message keys (source contract)', () => 
 
   it('all template usages of expandedToolIds route through toolExpandKey', async () => {
     const source = await readChatViewSource()
-    // Find every line that reads `expandedToolIds.has(...)`. None of them
-    // may use the old positional `${groupIndex}-${idx}` template literal —
-    // every read must route through the helper. This is the invariant that
-    // actually prevents the auto-collapse: even one leftover positional
-    // read would re-introduce the bug.
+    // Find every line that reads `expandedToolIds.has(...)`. None of them may use the old
+    // positional `${groupIndex}-${idx}` template literal — every read must route through the
+    // helper.
     const hasUsages = source.match(/expandedToolIds\.has\([^)]*\)/g) ?? []
     expect(hasUsages.length).toBeGreaterThan(0)
     for (const usage of hasUsages) {

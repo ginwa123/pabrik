@@ -1,25 +1,5 @@
-/**
- * KanbanColumn — per-column vertical scroll survives an unmount/remount.
- *
- * The user-visible bug this pins:
- *   Clicking a kanban task card opens the chat (its own tab). The board
- *   unmounts behind it, so coming back to the board tab rebuilt every column
- *   at `scrollTop = 0` — the user lost their place in a 50-card column. The
- *   same unmount happens with tab mode off, where the chat replaces the board
- *   in the single view.
- *
- * Why stub <VirtualScroller>:
- *   <KanbanColumn> persists the position of the scroller's OWN container
- *   (`containerRef`), which keeps the save/restore logic in the component that
- *   owns it. jsdom has no layout, so a real VirtualScroller reports
- *   scrollHeight = clientHeight = 0 and the clamp would skip every restore.
- *   The stub exposes a plain div as `containerRef` so the test can give that
- *   element real geometry and assert the real wiring: the key, the ref
- *   plumbing, and the round trip.
- *
- * The composable itself is covered in
- * src/composables/__tests__/useKanbanColumnScrollRestore.spec.ts.
- */
+/** KanbanColumn — per-column vertical scroll survives an unmount/remount. The user-visible bug this
+ * pins: Clicking a kanban task card opens the chat (its own tab). */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, ref, type Ref } from 'vue'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
@@ -65,12 +45,9 @@ beforeAll(() => {
   }
 })
 
-/**
- * Stand-in for <VirtualScroller> that exposes a real, geometry-controllable
- * `containerRef`. It deliberately does NOT render the default slot: the cards
- * are irrelevant here and rendering them would drag in KanbanCard's whole prop
- * surface for no benefit.
- */
+/**  * Stand-in for <VirtualScroller> that exposes a real, geometry-controllable `containerRef`. It
+ * deliberately does NOT render the default slot: the cards are irrelevant here and rendering them
+ * would drag in KanbanCard's whole prop surface for no benefit. */
 const ScrollerStub = defineComponent({
   name: 'VirtualScroller',
   setup(_props, { expose }) {

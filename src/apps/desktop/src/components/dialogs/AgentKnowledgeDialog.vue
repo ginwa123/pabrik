@@ -98,10 +98,9 @@ const handleKeydown = (event: KeyboardEvent) => {
 }
 
 const loadItemsForPicker = async (path: string): Promise<FolderEntry[]> => {
-  // FilePickerDialog calls this with `''` on first open (to list the
-  // system root) and with a folder path when the user navigates.
-  // Empty path → use `getSystemFolder` (same pattern as AddAgentDialog)
-  // because the backend rejects `path=''` in /system/folder.
+  // FilePickerDialog calls this with `''` on first open (to list the system root) and with a folder
+  // path when the user navigates. Empty path → use `getSystemFolder` (same pattern as
+  // AddAgentDialog) because the backend rejects `path=''` in /system/folder.
   const data = path ? await listFolder(path) : await getSystemFolder()
   return (data.entries || []) as FolderEntry[]
 }
@@ -132,10 +131,9 @@ const handleOpen = async () => {
   pathInput.value?.focus()
 }
 
-// Open-reset without watch(): seed on mount (initial show=true) and on
-// closed->open updates. A Transition before-enter hook cannot do this — it
-// never fires on initial mount (no `appear`) and VTU stubs Transition, so
-// specs that mount then setProps(show=true) would see empty fields.
+// Open-reset without watch(): seed on mount (initial show=true) and on closed->open updates. A
+// Transition before-enter hook cannot do this — it never fires on initial mount (no `appear`) and
+// VTU stubs Transition, so specs that mount then setProps(show=true) would see empty fields.
 const wasShown = ref(props.show)
 onMounted(() => {
   if (props.show) void handleOpen()

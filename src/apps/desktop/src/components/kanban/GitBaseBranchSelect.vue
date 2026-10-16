@@ -1,22 +1,7 @@
 <script setup lang="ts">
-/**
- * GitBaseBranchSelect — searchable ref picker for the kanban "New task"
- * dialog's git-worktree block.
- *
- * Why a dedicated component: a real repo has hundreds of refs (this one
- * has ~770), so a plain <select> is unusable. The dropdown filters
- * client-side as you type and supports ↑ / ↓ / Enter / Escape.
- *
- * Value contract: `modelValue` is the SHORT ref name (`origin/main`,
- * `main`, …). It ends up on the `Base:` line of the create-task message
- * and from there as the `set_git_worktree` tool's `base` argument. Empty
- * string means "no Base line" — the agent then branches the worktree
- * from the repo's current HEAD, which is the pre-existing behavior.
- *
- * Loading is lazy (first open) and must never block the form: a backend
- * error yields an empty list and the widget degrades to a free-text
- * search box, so the user can still type a ref by hand.
- */
+/** GitBaseBranchSelect — searchable ref picker for the kanban "New task" dialog's git-worktree
+ * block. Why a dedicated component: a real repo has hundreds of refs (this one has ~770), so a
+ * plain <select> is unusable. */
 import { computed, nextTick, onBeforeUnmount, onMounted, onUpdated, ref } from 'vue'
 
 import { listGitBranches, type GitBranchEntry } from '@/api'
@@ -25,9 +10,8 @@ import UiIcon from '../ui/UiIcon.vue'
 const props = withDefaults(
   defineProps<{
     modelValue: string
-    /** Absolute path of the repo whose refs are listed. Empty = the
-     *  dialog could not resolve a project root; the picker then shows an
-     *  empty list and relies on hand-typed input. */
+    /**      * Absolute path of the repo whose refs are listed. Empty = the dialog could not resolve a
+     * project root; the picker then shows an empty list and relies on hand-typed input. */
     repoPath?: string
     disabled?: boolean
   }>(),
@@ -40,9 +24,8 @@ const open = ref(false)
 const search = ref('')
 const loading = ref(false)
 const branches = ref<GitBranchEntry[]>([])
-/** Cache key: the repo path the current `branches` were loaded for, so
- *  re-opening the same dropdown does not refetch but switching project
- *  roots does. */
+/**  * Cache key: the repo path the current `branches` were loaded for, so re-opening the same dropdown
+ * does not refetch but switching project roots does. */
 const loadedFor = ref<string | null>(null)
 /** True once a load has completed (successfully or not) for `loadedFor`.
  *  Drives the "no branches found" message so it is not shown mid-load. */
@@ -58,11 +41,8 @@ const filtered = computed<GitBranchEntry[]>(() => {
   return branches.value.filter((b) => b.name.toLowerCase().includes(q))
 })
 
-/** Typed ref that is not (yet) in the listed branches. Offering it lets
- *  the user name a ref the picker cannot see — e.g. an `origin/<branch>`
- *  that has not been fetched, or a tag. The agent validates it for real
- *  (`set_git_worktree` → `validateBaseRef`), so accepting it here is
- *  safe: a bogus ref surfaces as a git error with recovery advice. */
+/** Typed ref that is not (yet) in the listed branches. Offering it lets the user name a ref the
+ * picker cannot see — e.g. an `origin/<branch>` that has not been fetched, or a tag. */
 const customRef = computed(() => {
   const q = search.value.trim()
   if (q === '') return ''

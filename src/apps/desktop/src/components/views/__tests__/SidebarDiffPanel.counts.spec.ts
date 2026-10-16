@@ -1,16 +1,6 @@
-/**
- * Per-file `+added / -removed` on the sidebar's file rows.
- *
- * The counts are derived from diff text the panel ALREADY holds — the PR
- * diff it parsed, and the folder-mode batch payload it fetched for the
- * center column. So the contract worth pinning is not "the numbers are
- * right" (parseUnifiedDiff.spec.ts owns that) but:
- *
- *   1. every row kind shows them (PR, staged, unstaged, untracked),
- *   2. they cost ZERO extra requests,
- *   3. UNKNOWN renders nothing — never `+0 -0`, which would read as
- *      "this file is unchanged" for a file whose diff we never got.
- */
+/** Per-file `+added / -removed` on the sidebar's file rows. The counts are derived from diff text
+ * the panel ALREADY holds — the PR diff it parsed, and the folder-mode batch payload it fetched for
+ * the center column. */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'

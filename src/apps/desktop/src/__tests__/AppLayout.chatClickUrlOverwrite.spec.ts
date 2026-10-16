@@ -1,50 +1,6 @@
-/**
- * Tests for AppLayout's URL sync watcher behavior when Sidebar.handleChatsNavigate
- * fires (navigating AWAY from a workspace item to a chat session).
- *
- * Bug (user report, task_1787844892180_2, 2026-08-27):
- *   Steps to reproduce:
- *     1. Create a kanban workspace item.
- *     2. Create a task on that kanban.
- *     3. Click the task — the chat opens (its own tab), URL becomes
- *        `?view=workspace&workspaceId=X&itemId=Y/chat/task_Z`.
- *     4. Close the chat — URL becomes
- *        `?view=workspace&workspaceId=X&itemId=Y` with
- *        activeWorkspaceItemId = Y and activeTask = null.
- *     5. Click any chat session in the sidebar.
- *   Expected URL: `?view=chat&session=S`.
- *   Actual URL: `?view=workspace` (clobbered by the mirror watcher).
- *
- * Root cause: this is the inverse of task_1785959660154 (task-click URL
- * race, fixed by commit e0ac21392604). When Sidebar.handleChatsNavigate
- * fires it synchronously calls:
- *     setActiveWorkspaceItem(null)
- *     setActiveTask(null)
- *     router.replace({ path: '/app', query: { view: 'chat', session: S } })
- * The mirror watcher at AppLayout.vue:298 fires on the next microtask
- * AFTER the store mutations — but BEFORE Vue Router's URL change has
- * propagated to route.query.view. So:
- *   1. setActiveWorkspaceItem(null) → itemId becomes null.
- *   2. Watcher fires → route.query.view is still 'workspace' (from
- *      step 4 above). The guard
- *      `if (currentView !== 'workspace' && currentView !== undefined) return`
- *      does NOT return early → watcher calls router.replace with
- *      `view: 'workspace'`.
- *   3. Sidebar.handleChatsNavigate's `router.replace({view: 'chat', ...})`
- *      is queued AFTER step 2's replace — the replace wins.
- *
- * The user clicks the chat → URL stays at view=workspace → main content
- * area shows the workspace view (kanban/folder) instead of the chat.
- *
- * Two-test spec mirroring the structure of
- * AppLayout.taskClickUrlOverwrite.spec.ts:
- *   Test 1 (regression): reproduces the bug; fails before the fix.
- *   Test 2 (regression-guard): proves the mirror still works for the
- *   legitimate null → truthy transition (future keyboard shortcut /
- *   deep link path); guards against an over-broad early-return.
- *
- * Plan: docs/superpowers/plans/2026-08-27-fix-chat-click-url-overwrite.md
- */
+/** Tests for AppLayout's URL sync watcher behavior when Sidebar.handleChatsNavigate fires
+ * (navigating AWAY from a workspace item to a chat session). Plan:
+ * docs/superpowers/plans/2026-08-27-fix-chat-click-url-overwrite.md */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick } from 'vue'
@@ -226,13 +182,9 @@ describe("AppLayout — Sidebar chat click does NOT get its URL overwritten by t
     replaceMock.mockClear()
     pushMock.mockClear()
 
-    // Step 5: simulate Sidebar.handleChatsNavigate's synchronous
-    // block. It calls setActiveWorkspaceItem(null) + setActiveTask(null)
-    // + router.replace({ view: 'chat', session }) in that order. The
-    // router mock is a plain vi.fn() — it does not propagate to
-    // route.query.view. So when the watcher fires on the next microtask,
-    // route.query.view is STILL 'workspace' (from the initial mock
-    // return set on line ~130), which is the exact production race.
+    // Step 5: simulate Sidebar.handleChatsNavigate's synchronous block. It calls
+    // setActiveWorkspaceItem(null) + setActiveTask(null) + router.replace({ view: 'chat', session
+    // }) in that order.
     ws.setActiveWorkspaceItem(null)
     ws.setActiveTask(null)
     replaceMock({
@@ -242,10 +194,9 @@ describe("AppLayout — Sidebar chat click does NOT get its URL overwritten by t
     await nextTick()
     await nextTick()
 
-    // Assert: the mirror watcher must NOT have called
-    // router.replace with a `?view=workspace` query (the bug). The
-    // destination's own router.replace({view: 'chat', session: S}) is
-    // the authoritative URL update and must not be clobbered.
+    // Assert: the mirror watcher must NOT have called router.replace with a `?view=workspace` query
+    // (the bug). The destination's own router.replace({view: 'chat', session: S}) is the
+    // authoritative URL update and must not be clobbered.
     const clobberCalls = replaceMock.mock.calls.filter(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (call: any[]) => {
@@ -265,9 +216,8 @@ describe("AppLayout — Sidebar chat click does NOT get its URL overwritten by t
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     useRouterMock.mockReturnValue({ replace: replaceMock, push: pushMock } as any)
 
-    // Start with NO active workspace item and an empty URL — this
-    // simulates a future code path (keyboard shortcut, deep link,
-    // localStorage restoration) that programmatically sets an
+    // Start with NO active workspace item and an empty URL — this simulates a future code path
+    // (keyboard shortcut, deep link, localStorage restoration) that programmatically sets an
     // activeWorkspaceItem. The watcher MUST mirror that to the URL.
     useRouteMock.mockReturnValue({
       query: {},

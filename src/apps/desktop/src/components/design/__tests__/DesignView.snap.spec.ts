@@ -34,9 +34,6 @@ describe('computeSnapDelta', () => {
   it('does NOT snap to canvas center when no other element is nearby (canvas background removed)', () => {
     // The canvas-background feature was removed (plan
     // docs/superpowers/plans/2026-07-29-remove-canvas-background.md).
-    // A lone element being dragged with no alignment partners now
-    // has no snap target — the function returns the raw delta with
-    // no correction and no guides.
     const elementsNoNearby = [
       { id: 'a', x: 100, y: 100, width: 200, height: 100 },
     ]

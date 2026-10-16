@@ -1,21 +1,4 @@
-/**
- * GitLab (merge request) behaviour for the PR surface.
- *
- * Every assertion here is about a thing that was previously GitHub-only
- * and either silently wrong on GitLab or absent entirely:
- *
- *  - `repoBaseFromPrUrl` only understood `/pull/`, so it returned `''`
- *    for every MR URL — which DISABLED the "open branch in new tab" menu
- *    item for the whole GitLab user base instead of showing an error.
- *  - `branchUrlFromPrUrl` built `<repo>/tree/<branch>`. GitLab inserts a
- *    `/-/` discriminator, so that link is a 404.
- *  - `<mr-url>/conflicts` is a GitHub-only route; GitLab has none.
- *  - `getPrStatus` was called with NO provider, so the backend always
- *    spoke `gh` no matter which forge the repo lived on.
- *  - conflict detection only knew CONFLICTING / DIRTY, so a GitLab MR
- *    reporting `detailed_merge_status: "conflicted"` rendered as
- *    mergeable — the worst direction to be wrong in.
- */
+/** GitLab (merge request) behaviour for the PR surface. */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import {
   branchUrlFromPrUrl,

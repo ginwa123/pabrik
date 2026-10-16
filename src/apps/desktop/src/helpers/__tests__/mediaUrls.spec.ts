@@ -1,19 +1,4 @@
-/**
- * `helpers/mediaUrls` — the `||`-joined media-URL wire format.
- *
- * The fixtures below are the shapes the REAL backend produces, not invented
- * ones:
- *   - `||` is written by `insert_llm_histories` ("Join multiple image URLs
- *     with || delimiter") and documented on `http_response.zig`.
- *   - A single `|` is still what `session_queue_messages.image_url` holds for
- *     anything queued by an older client, and what `queue_queued` re-emits.
- *   - A trailing `||` is accepted by `image_urls_validation.zig`
- *     ("tolerate empty segments between consecutive ||").
- *
- * The regression this file exists for: splitting a `||` string on a single
- * `|` yields an empty element per gap, which the transcript renderer binds to
- * `<img src="">` — a broken-image icon in the middle of the user's images.
- */
+/** `helpers/mediaUrls` — the `||`-joined media-URL wire format. */
 import { describe, it, expect } from 'vitest'
 import {
   joinMediaUrlsWire,
@@ -104,10 +89,9 @@ describe('splitMediaUrlsWire', () => {
 
 describe('renderableMediaUrls', () => {
   it('drops blanks from an array that did not come from splitMediaUrlsWire', () => {
-    // The renderer guard. A message can reach the template from a path this
-    // module does not own (a persisted SSE row replayed from the local chat
-    // cache, a future wire field), and `v-for` over a blank entry binds
-    // :src="".
+    // The renderer guard. A message can reach the template from a path this module does not own (a
+    // persisted SSE row replayed from the local chat cache, a future wire field), and `v-for` over
+    // a blank entry binds :src="".
     expect(renderableMediaUrls([PNG_A, '', PNG_B])).toEqual([PNG_A, PNG_B])
     expect(renderableMediaUrls(['   ', PNG_A])).toEqual([PNG_A])
   })

@@ -32,11 +32,9 @@ import { runSyncResult } from '../../sync/runtime'
 
 const props = defineProps<{
   skillName: string | null
-  /**
-   * Explicit workspace binding. When set, detail reads/deletes in this
+  /** Explicit workspace binding. When set, detail reads/deletes in this
    * workspace instead of the active one — the workspace settings page binds
-   * the route workspace. Absent = previous behaviour (active workspace).
-   */
+   * the route workspace. Absent = previous behaviour (active workspace). */
   workspaceId?: string | null
 }>()
 
@@ -144,11 +142,8 @@ const assetCount = computed(() => {
 })
 
 // ─── Body navigation ───────────────────────────────────────────────────
-//
-// The body was one `<pre>`, so a 500-line skill had no way in but
-// scrolling. The outline jumps to a `##` section; the find box lists every
-// line containing a term. Both are read-only views of the same text, so
-// they are hidden in edit mode where the textarea owns the pane.
+// The body was one `<pre>`, so a long skill had no way in but scrolling.
+// The outline jumps to a `##` section; the find box lists matching lines.
 const bodyQuery = ref('')
 const bodyRef = ref<HTMLElement | null>(null)
 
@@ -200,11 +195,9 @@ const cancelEdit = () => {
   saveError.value = null
 }
 
-/**
- * A save with nothing changed is refused by the server (409), so the
+/** A save with nothing changed is refused by the server (409), so the
  * button is disabled rather than letting the user discover that from a
- * toast. Both fields are compared, because either one alone is a change.
- */
+ * toast. Both fields are compared, because either one alone is a change. */
 const canSave = computed(() => {
   const detail = skillDetail.value
   if (!detail) return false

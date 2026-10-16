@@ -1,21 +1,4 @@
-/**
- * Behavioural tests for `useDesignHistoryStore` (Pinia).
- *
- * Tests the store's data-layer surface:
- *   - getStack auto-creates an empty stack for unknown pages
- *   - push creates a stack on a fresh page
- *   - clearPage removes both past and future
- *   - localStorage round-trip (key format + JSON shape)
- *   - schema version mismatch is silently discarded
- *
- * 6 behavioural tests. The project convention is behavioural only —
- * see ~/.config/pabrik/memories/static-contract-test-when-to-prefer-behavioural.md.
- *
- * Note: vitest's experimental jsdom does not auto-provide a working
- * `localStorage` (the `--localstorage-file` flag is not enabled in
- * this project). We stub a minimal in-memory `localStorage` before
- * each test via `vi.stubGlobal`.
- */
+/** Behavioural tests for `useDesignHistoryStore` (Pinia). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useDesignHistoryStore } from '../stores/designHistory'

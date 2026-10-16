@@ -1,14 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, unmount } from '../fpsOverlay'
 
-// The overlay is a dev-only measurement tool (desktop scroll-perf plan,
-// Task 5). Contract:
-//   - mount() starts a rAF loop and injects a fixed-position chip into
-//     document.body showing rolling FPS.
-//   - unmount() stops the loop and removes the chip.
-//   - In production builds (import.meta.env.DEV === false) both calls
-//     are no-ops — zero cost in shipped binaries.
-
+// The overlay is a dev-only measurement tool (desktop scroll-perf plan, Task 5).
 describe('fpsOverlay', () => {
   let rafCallbacks: Array<(t: number) => void>
 

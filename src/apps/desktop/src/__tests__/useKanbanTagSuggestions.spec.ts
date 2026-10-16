@@ -143,7 +143,6 @@ describe('useKanbanTagSuggestions', () => {
     expect(c.tags.value).toEqual([])
     expect(c.hasMore.value).toBe(false)
     // loaded stays false so the next ensureLoaded() retries when args change.
-
     const c2 = useKanbanTagSuggestions('ws_x', '')
     await c2.ensureLoaded()
     expect(spy).not.toHaveBeenCalled()

@@ -1,22 +1,4 @@
-/**
- * Tests for PresentFiles.vue — the tool-output card component for the
- * `present_files` agent tool.
- *
- * Verifies (behavioural — mount + query, no static-contract):
- *  - renders the card with a data-testid
- *  - success path: header shows file count + ✓; expanded rows show
- *    label, size, mime; download anchors point at
- *    /api/files/download with disposition=attachment
- *  - image files render a thumbnail <img> with disposition=inline plus a
- *    full-width inline preview; html renders fetched source into a
- *    sandboxed srcdoc iframe (never a direct src navigation — the
- *    download endpoint's framing headers refuse it); pdf renders a
- *    fetched Blob object URL; video/audio render native players;
- *    text-like files fetch source and render via PreviewContentRenderer;
- *    anything else renders a 📄 row with no inline preview
- *  - error path: red border + ✗ + error message inline
- *  - expand/collapse: rows hidden until the header is toggled
- */
+/** Tests for PresentFiles.vue — the tool-output card component for the `present_files` agent tool. */
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -51,7 +33,6 @@ afterEach(() => {
 })
 
 // ─── Test helpers ──────────────────────────────────────────────────────────
-
 const makeSuccessContent = () => ({
   status: 'presented',
   count: 2,
@@ -69,7 +50,6 @@ const mountCard = (content: unknown, sessionId = 'sess_123', expanded = true) =>
   mount(PresentFiles, { props: { content, sessionId, expanded } as never })
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
-
 describe('PresentFiles', () => {
   it('renders the card with a data-testid', () => {
     const wrapper = mountCard(makeSuccessContent())
@@ -297,16 +277,9 @@ describe('PresentFiles', () => {
   })
 })
 
-/**
- * Loading-space reserves (scroll pop-in fix).
- *
- * Text/html/pdf/image previews resolve asynchronously AFTER the card
- * mounts. Without reserved space the card mounts small and pops taller
- * when the fetch/decode lands — mid-scroll, that reads as "content
- * suddenly shows up". Each loading state therefore reserves
- * approximately its ready size so the pop-in becomes a same-size
- * content swap instead of a layout jump.
- */
+/** Loading-space reserves (scroll pop-in fix). Text/html/pdf/image previews resolve asynchronously
+ * AFTER the card mounts. Without reserved space the card mounts small and pops taller when the
+ * fetch/decode lands — mid-scroll, that reads as "content suddenly shows up". */
 describe('PresentFiles loading reserves', () => {
   const pendingFetch = () => new Promise<Response>(() => {})
 

@@ -1,11 +1,4 @@
-/**
- * Behavioural tests for the local task-media cache (stale-while-revalidate).
- *
- * Contract: flagged cards paint the last-known thumbnail instantly (no
- * TTL — a stale thumb beats the badge), the background GET revalidates
- * behind it, corrupt entries never paint, oversized payloads are skipped,
- * and storage failures degrade to a miss without throwing.
- */
+/** Behavioural tests for the local task-media cache (stale-while-revalidate). */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {

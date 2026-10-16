@@ -1,12 +1,6 @@
-/**
- * Per-user browser-storage namespacing (plan 2026-09-25, W5).
- *
- * The bug these specs pin: every localStorage key is origin-global, so two
- * users on the same browser profile share one key space and B inherits A's
- * cached workspace list / active chat / open tabs. `userScopedKey` is the
- * single mapping from a logical key to a per-user physical key, and
- * `purgeForeignScopedKeys` is the cleanup that runs on an identity change.
- */
+/** Per-user browser-storage namespacing (plan 2026-09-25, W5). The bug these specs pin: every
+ * localStorage key is origin-global, so two users on the same browser profile share one key space
+ * and B inherits A's cached workspace list / active chat / open tabs. */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { makeLocalStorageStub } from './helpers'
 import {

@@ -1,16 +1,6 @@
-/**
- * The centre-diff TOOLBAR, asserted through a real ChatView mount: the two
- * global controls that the whole feature hangs off.
- *
- *   - `Unified | Split` — the LAYOUT axis, every section at once
- *   - `Expand all / Collapse all` — one state-aware button
- *   - the count line, which is the only place "3 collapsed" is stated
- *
- * ChatView mounts without a router here (the ~30 existing ChatView specs do
- * the same), so this also pins that the setup-time `?diffmode=` read is
- * router-optional: a bare `route.query` in setup fails the mount, not the
- * assertion.
- */
+/** The centre-diff TOOLBAR, asserted through a real ChatView mount: the two global controls that
+ * the whole feature hangs off. - `Unified | Split` — the LAYOUT axis, every section at once -
+ * `Expand all / Collapse all` — one state-aware button. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'

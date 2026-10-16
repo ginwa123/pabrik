@@ -1,21 +1,7 @@
 <script setup lang="ts">
-// The "Documents" sidebar section (Migration 095) — a collapsible list
-// rendered directly BELOW the Projects section, not inside it.
-//
-// Three deliberate choices, each for a reason that is easy to get wrong:
-//
-// 1. Header markup is copied from `ProjectsList.vue`, not re-invented.
-//    `Sidebar.spacing.spec.ts` asserts both headers share `px-[var(--sb-gutter)] h-7`
-//    and `border-b border-[--color-border]/40`; a "close enough" header
-//    fails that spec and looks wrong next to Projects.
-//
-// 2. The active row is derived from the URL (`/app/{ws}/doc/<id>` via
-//    `useCurrentMainView`), never from a local flag. A local flag goes
-//    stale after a refresh, a Back/Forward, or a shared link — the exact
-//    bug `ChatsList.isCurrentChat` documents.
-//
-// 3. `router.replace`, not `push`, for a row click. Clicking through five
-//    documents should not bury the previous four under Back.
+// The "Documents" sidebar section (Migration 095) — a collapsible list rendered directly BELOW the
+// Projects section, not inside it. Three deliberate choices, each for a reason that is easy to get
+// wrong: 1. Header markup is copied from `ProjectsList.vue`, not re-invented.
 import { computed, onMounted, onUpdated } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSidebarStore } from '../../stores/sidebar'
@@ -66,24 +52,15 @@ const selectDocument = (id: string) => {
     // a stale list surviving a workspace switch, not a normal path.
     return
   }
-  // `replace`, not `push`: clicking through five documents should not
-  // bury the previous four under Back. The document is a PAGE, so this
-  // replaces whatever main view was open — the chat is unmounted and the
-  // URL says plainly which document this is.
+  // `replace`, not `push`: clicking through five documents should not bury the previous four under
+  // Back. The document is a PAGE, so this replaces whatever main view was open — the chat is
+  // unmounted and the URL says plainly which document this is.
   router.replace(buildAppUrl({ workspaceId: wsId, documentId: id })).catch(() => {
     // A duplicate navigation (clicking the already-open row) rejects.
     // Nothing to recover: the URL already says what the user asked for.
   })
-  // The document is the chat-equivalent of an open view, so the chat and
-  // project selections must clear — two "active" rows is the visual bug
-  // the single-active-state spec exists to prevent.
-  //
-  // `activeChatId` matters as much as the other two, and NOT just for the
-  // sidebar highlight. <main> does not have one v-if chain (the standalone
-  // `v-if` on <DesignChatDialog> splits it in two), so <DocumentsView> and
-  // the standalone `<ChatView v-else-if="activeChatId…">` are in different
-  // chains and are therefore NOT mutually exclusive. Leaving `activeChatId`
-  // set mounts the chat underneath the document page.
+  // The document is the chat-equivalent of an open view, so the chat and project selections must
+  // clear — two "active" rows is the visual bug the single-active-state spec exists to prevent.
   workspacesStore.setActiveWorkspaceItem(null)
   workspacesStore.setActiveTask(null)
   navigationStore.clearActiveChat()
@@ -99,10 +76,9 @@ const createDocument = () => {
   })
 }
 
-// Refetch on workspace switch so a stale list is never shown under a new
-// header. `reset()` on the way out is what makes the refetch necessary
-// rather than a stale-merge hazard. Prev-value guard on update — same
-// reset+fetch the watcher did; mount runs the same initial fetch.
+// Refetch on workspace switch so a stale list is never shown under a new header. `reset()` on the
+// way out is what makes the refetch necessary rather than a stale-merge hazard. Prev-value guard on
+// update — same reset+fetch the watcher did; mount runs the same initial fetch.
 function syncWorkspaceDocuments(next: string | null, prev: string | null | undefined) {
   if (prev && prev !== next) documentsStore.reset()
   if (next && sidebarStore.documentsExpanded) {

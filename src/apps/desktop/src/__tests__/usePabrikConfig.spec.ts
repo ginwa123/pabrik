@@ -1,9 +1,6 @@
-/**
- * Unit tests for the `usePabrikConfig` composable. Mocks the
- * `getPabrikConfig` and `savePabrikConfig` API functions (NOT
- * `global.fetch`) so we can assert the composable's load / save /
- * reset / dirty behavior in isolation.
- */
+/**  * Unit tests for the `usePabrikConfig` composable. Mocks the `getPabrikConfig` and
+ * `savePabrikConfig` API functions (NOT `global.fetch`) so we can assert the composable's load /
+ * save / reset / dirty behavior in isolation. */
 import { nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 

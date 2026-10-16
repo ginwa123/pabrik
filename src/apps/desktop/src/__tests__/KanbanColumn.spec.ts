@@ -1,16 +1,6 @@
-/**
- * Tests for KanbanColumn — a single column with header (inline rename
- * + count badge + ⋮ menu), cards list, footer "+ Add" button, and
- * drop zone.
- *
- * Mounts with provide: { processingState } (KanbanCard → WorkspaceItemTask
- * injects it). The dragstart/drop handlers are exercised in KanbanView
- * tests; here we focus on the column-level UX: header rendering,
- * inline rename, menu open/close, footer add, card filtering.
- *
- * Plan: docs/superpowers/plans/2026-06-21-workspace-item-kanban.md
- *   Chunk 6 / Task 6.4
- */
+/** Tests for KanbanColumn — a single column with header (inline rename + count badge + ⋮ menu),
+ * cards list, footer "+ Add" button, and drop zone. Plan:
+ * docs/superpowers/plans/2026-06-21-workspace-item-kanban.md Chunk 6 / Task 6.4 */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, type VueWrapper } from '@vue/test-utils'
@@ -97,11 +87,9 @@ describe('KanbanColumn — header rendering', () => {
   })
 
   it('renders cards in input order (backend applies the sort per-column via fetchKanbanTasks)', () => {
-    // The client-side sort was removed in 2026-08-06 (kanban-
-    // sort-independence, take 2). The backend's per-column fetch
-    // returns tasks in the column's own sort order — `cardsInColumn`
-    // here is a thin filter, no comparator. The wire order is what
-    // the user sees.
+    // The client-side sort was removed in 2026-08-06 (kanban- sort-independence, take 2). The
+    // backend's per-column fetch returns tasks in the column's own sort order — `cardsInColumn`
+    // here is a thin filter, no comparator. The wire order is what the user sees.
     wrapper = mountColumn(makeColumn(), [
       makeTask({ id: 't1', kanban_column_id: COL_TODO, kanban_position: 2 }),
       makeTask({ id: 't2', kanban_column_id: COL_TODO, kanban_position: 0 }),
@@ -310,16 +298,8 @@ describe('KanbanColumn — column header drag-and-drop reorder', () => {
     expect(wrapper.emitted('reorderColumn')).toBeUndefined()
   })
 })
-/**
- * Sort modal — the coverage gap.
- *
- * `KanbanColumn` wires the modal as `@click` on <KanbanSortMenu>, which
- * declares no `click` emit, so it is a NATIVE listener on the menu's root
- * <div>. These tests pin the resulting contract: the modal opens without
- * emitting, a pick emits exactly once with the NEW value, and the backdrop
- * closes without emitting. Without them a refactor of that fallthrough
- * would be unguarded.
- */
+/** Sort modal — the coverage gap. `KanbanColumn` wires the modal as `@click` on <KanbanSortMenu>,
+ * which declares no `click` emit, so it is a NATIVE listener on the menu's root <div>. */
 describe('KanbanColumn — sort modal', () => {
   let wrapper: VueWrapper | null = null
 

@@ -1,22 +1,5 @@
-/**
- * Tests for the update_plan + get_plan tool dispatcher in ChatView.vue.
- *
- * The component imports UpdatePlan.vue + GetPlan.vue which must be
- * stubbed via vi.mock(...) following the SubAgentPeekPanel.spec.ts
- * pattern. The stubs emit a recognisable DOM marker (data-tool-name +
- * a class hook) so we can assert which tool renderer was selected for
- * each message.
- *
- * Behavioural contract:
- *   - A `role: 'tool'` message with `tool_name === 'update_plan'`
- *     dispatches to <UpdatePlan :message="msg" />.
- *   - A `role: 'tool'` message with `tool_name === 'get_plan'`
- *     dispatches to <GetPlan :message="msg" />.
- *   - Other tool names do NOT route to either component.
- *
- * Plan: docs/superpowers/plans/2026-08-19-session-plan-agent-tool.md
- *   Task 8
- */
+/** Tests for the update_plan + get_plan tool dispatcher in ChatView.vue. Plan:
+ * docs/superpowers/plans/2026-08-19-session-plan-agent-tool.md Task 8 */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, ref } from 'vue'
@@ -30,22 +13,14 @@ import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 import { makeLocalStorageStub } from './helpers'
 import type { Message } from '../api'
 
-// ────────────────────────────────────────────────────────────────────────
-// Stub the new tool-output components. We don't need to assert their
-// internal rendering here (that lives in UpdatePlan.spec.ts /
-// GetPlan.spec.ts if we ever write them) — we only need to know that
-// the ChatView dispatcher routes the right tool_name to the right
-// component. The stubs expose `data-tool-name` so we can verify the
-// vnode was emitted with the expected `msg.tool_name` prop.
-// ────────────────────────────────────────────────────────────────────────
-
+// ──────────────────────────────────────────────────────────────────────── Stub the new tool-output
+// components.
 vi.mock('../components/tool_outputs/UpdatePlan.vue', () => ({
   default: {
     name: 'UpdatePlan',
-    // No `parameters` prop — the component parses the plan body
-    // directly from the inner <plan><![CDATA[...]]></plan> block of
-    // the <tool> envelope (mirrors get_plan's wire shape). The
-    // dispatcher doesn't thread anything extra.
+    // No `parameters` prop — the component parses the plan body directly from the inner
+    // <plan><![CDATA[...]]></plan> block of the <tool> envelope (mirrors get_plan's wire shape).
+    // The dispatcher doesn't thread anything extra.
     props: ['message'],
     template:
       '<div class="update-plan-stub" :data-tool-name="message.tool_name" :data-msg-id="message.id"></div>',
@@ -90,7 +65,6 @@ function makeStubClient(initial: SseState): SseClient {
 // ────────────────────────────────────────────────────────────────────────
 // Wire envelope helpers (mirrors the backend's JSON `wrapToolOutput` shape)
 // ────────────────────────────────────────────────────────────────────────
-
 const wireToolEnvelope = (inner: unknown, paramsJson: string): string =>
   JSON.stringify({
     tool: 'tool',
@@ -110,11 +84,9 @@ const getPlanPresentEnvelope = (markdown: string): unknown => ({ plan: markdown 
 
 const getPlanEmptyEnvelope = (): unknown => ({ empty: true })
 
-// ────────────────────────────────────────────────────────────────────────
-// Test helpers — mock the api module + SSE bus + localStorage so the
-// mount is fast and stable (parity with profileCascade.spec.ts).
-// ────────────────────────────────────────────────────────────────────────
-
+// ──────────────────────────────────────────────────────────────────────── Test helpers — mock the
+// api module + SSE bus + localStorage so the mount is fast and stable (parity with
+// profileCascade.spec.ts). ────────────────────────────────────────────────────────────────────────
 function installChatViewMocks(opts: { messages: Message[]; sessionId: string }) {
   vi.spyOn(api, 'getChatHistory').mockResolvedValue({
     messages: opts.messages,
@@ -147,11 +119,9 @@ function installChatViewMocks(opts: { messages: Message[]; sessionId: string }) 
   vi.spyOn(api, 'getPabrikConfig').mockResolvedValue({ profiles: {} })
 }
 
-/**
- * ChatView reads `route.query` and calls `router.replace` (diff deep-linking),
- * so the mount needs a real router — without one `useRoute()` returns
- * undefined and the render throws. Catch-all route keeps the path opaque.
- */
+/**  * ChatView reads `route.query` and calls `router.replace` (diff deep-linking), so the mount needs a
+ * real router — without one `useRoute()` returns undefined and the render throws. Catch-all route
+ * keeps the path opaque. */
 async function makeRouter(): Promise<Router> {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -164,12 +134,9 @@ async function makeRouter(): Promise<Router> {
 
 let mountSeq = 0
 
-/**
- * Each call mounts a FRESH session id on purpose: ChatView primes its
- * messages from the IndexedDB-backed `chatEngineDb` cache keyed by session
- * id, so reusing one id made test N+1 paint test N's rows instead of the
- * freshly-mocked `getChatHistory` response.
- */
+/**  * Each call mounts a FRESH session id on purpose: ChatView primes its messages from the
+ * IndexedDB-backed `chatEngineDb` cache keyed by session id, so reusing one id made test N+1 paint
+ * test N's rows instead of the freshly-mocked `getChatHistory` response. */
 async function mountChatViewWithMessages(messages: Message[]) {
   const chatId = `s_plan_${++mountSeq}`
   installChatViewMocks({ messages, sessionId: chatId })
@@ -234,7 +201,6 @@ afterEach(() => {
 // ────────────────────────────────────────────────────────────────────────
 // Tests
 // ────────────────────────────────────────────────────────────────────────
-
 describe('ChatView tool dispatcher — update_plan + get_plan', () => {
   it('routes an update_plan tool result to the <UpdatePlan> component', async () => {
     await mountChatViewWithMessages([

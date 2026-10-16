@@ -1,14 +1,5 @@
-/**
- * Sidebar local-first + delete-X removal pins.
- * - No per-row `×` delete button is rendered (the X is gone; deletion no
- *   longer has a sidebar entry point).
- * - Mount paints IndexedDB-cached rows instantly while the network delta
- *   is still in flight, then swaps to the fresh rows (ChatView parity).
- *
- * NOTE: SessionEngineDb binds `getChats` at import time, so `spyOn(api)`
- * cannot intercept the engine's fetch — this file mocks the `../api`
- * module instead (the engine and the component both resolve through it).
- */
+/** Sidebar local-first + delete-X removal pins. - No per-row `×` delete button is rendered (the X
+ * is gone; deletion no longer has a sidebar entry point). */
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp, nextTick, ref } from 'vue'

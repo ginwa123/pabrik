@@ -1,18 +1,6 @@
-/**
- * Tests for ChatView's llm_chunk streaming-append behavior.
- *
- * 2026-08-23 llm-chunk-streaming — the backend sends RAW DELTAS
- * (choices[0].delta.content per provider SSE), so the chunk handler
- * must APPEND to streamingContent (the old `=` replace left only the
- * last fragment visible). A following `full` event replaces the
- * streaming-* row with the canonical DB row and clears the buffer.
- * The new `chunk_final` branch updates maxTotalTokens without pushing
- * a message.
- *
- * Like ChatView.subagent-progress.spec.ts, this mounts a tiny harness
- * that mirrors ChatView's bus.on('llm') glue in isolation (no Pinia +
- * Vue Router scaffold needed).
- */
+/** Tests for ChatView's llm_chunk streaming-append behavior. 2026-08-23 llm-chunk-streaming — the
+ * backend sends RAW DELTAS (choices[0].delta.content per provider SSE), so the chunk handler must
+ * APPEND to streamingContent (the old `=` replace left only the last fragment visible). */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 

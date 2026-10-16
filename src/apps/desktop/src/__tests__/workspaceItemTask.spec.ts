@@ -1,25 +1,4 @@
-/**
- * Component tests for the per-task row in the workspace-item panel.
- *
- * History:
- *   - 2026-06-10: <WorkspaceItemTask> was extracted from
- *     WorkspaceItem.vue to narrow re-render scope and isolate the
- *     per-task DOM (spinner, bullet, hover buttons, click handlers)
- *     from the parent item row.
- *   - 2026-07-02: <WorkspaceItemTask> split into two thin
- *     presentation components — <WorkspaceItemTaskRow> (sidebar list)
- *     and <WorkspaceItemTaskCard> (kanban). The shared logic moved
- *     to composables/useTaskActions.ts. These tests target the Row
- *     component (sidebar consumers' view of the per-task row).
- *
- * These tests mount <WorkspaceItemTaskRow> directly so they do NOT
- * depend on WorkspaceItem's expansion state, the item-row spinner, or
- * the parent-child event wiring. The integration of
- * <WorkspaceItemTaskRow> into <WorkspaceItem> is covered by the
- * existing workspaceItemTaskRename.spec.ts and
- * workspaceItemTaskSpinner.spec.ts files (which mount <WorkspaceItem>
- * and assert through the parent).
- */
+/** Component tests for the per-task row in the workspace-item panel. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, type Ref } from 'vue'
@@ -29,11 +8,9 @@ import WorkspaceItemTaskRow from '../components/workspace/WorkspaceItemTaskRow.v
 import type { WorkerActivity } from '../components/WorkerElapsedChip.vue'
 import { makeLocalStorageStub } from './helpers'
 
-// Stub vue-router — WorkspaceItemTaskRow reads useRoute() via
-// useCurrentMainView() to drive its active state. We mock useRoute
-// to return a per-test controlled query so the row's active styling
-// can be exercised against any URL. Mirrors the pattern at
-// sidebarHandleSelectTaskUrl.spec.ts:57-77.
+// Stub vue-router — WorkspaceItemTaskRow reads useRoute() via useCurrentMainView() to drive its
+// active state. We mock useRoute to return a per-test controlled query so the row's active styling
+// can be exercised against any URL.
 const { useRouteMock } = vi.hoisted(() => ({
   useRouteMock: vi.fn(() => ({
     query: {} as Record<string, string>,
@@ -103,12 +80,8 @@ describe('WorkspaceItemTaskRow per-task row', () => {
     // marker. Idle rows render neither.
     expect(wrapper.findAll('[data-testid="task-spinner"]')).toHaveLength(0)
     expect(wrapper.find('[data-testid="task-elapsed-chip"]').exists()).toBe(false)
-    // Lock in the row-variant contract (post-2026-07-02 split):
-    // the Row component always carries data-task-row and never
-    // data-task-card. A future refactor that re-introduces a
-    // 'variant' prop or accidentally adds a data-task-card attribute
-    // would break the consumer's selection logic in KanbanColumn /
-    // drag-and-drop handlers.
+    // Lock in the row-variant contract (post-2026-07-02 split): the Row component always carries
+    // data-task-row and never data-task-card.
     expect(wrapper.find('[data-task-row]').exists()).toBe(true)
     expect(wrapper.find('[data-task-card]').exists()).toBe(false)
     // Bullet is a span.w-1.h-1.rounded-full — at least one exists.
@@ -121,9 +94,8 @@ describe('WorkspaceItemTaskRow per-task row', () => {
     // The circle spinner was removed — the time pill is the only marker.
     expect(wrapper.findAll('[data-testid="task-spinner"]')).toHaveLength(0)
     expect(wrapper.find('[data-testid="task-elapsed-chip"]').exists()).toBe(true)
-    // Bullet must NOT render while the worker runs (single
-    // visual marker per row). The bullet selector is w-1.5.h-1.5; the
-    // slider track sits below the row, so the w-1.5 selector catches
+    // Bullet must NOT render while the worker runs (single visual marker per row). The bullet
+    // selector is w-1.5.h-1.5; the slider track sits below the row, so the w-1.5 selector catches
     // only the bullet.
     expect(wrapper.findAll('span.w-1.h-1.rounded-full')).toHaveLength(0)
   })
@@ -150,11 +122,9 @@ describe('WorkspaceItemTaskRow per-task row', () => {
   })
 
   it('applies active styling (aqua bullet + active background) when URL is ?view=workspace&itemId=Y/chat/task_X', async () => {
-    // SIMPLIFY-URL-BROWSER (2026-08-15): the URL is now
-    // ?view=workspace&itemId=Y/chat/task_X. useCurrentMainView
-    // parses the /chat/ suffix and exposes chatTaskId on the
-    // workspace view variant. The task row's active highlight
-    // reads kind='workspace' + chatTaskId.
+    // SIMPLIFY-URL-BROWSER (2026-08-15): the URL is now ?view=workspace&itemId=Y/chat/task_X.
+    // useCurrentMainView parses the /chat/ suffix and exposes chatTaskId on the workspace view
+    // variant. The task row's active highlight reads kind='workspace' + chatTaskId.
     const ITEM_ID = 'item_test'
     useRouteMock.mockReturnValue({
       query: {
@@ -205,19 +175,9 @@ describe('WorkspaceItemTaskRow per-task row', () => {
     expect(wrapper.emitted('selectTask')).toBeUndefined()
   })
 
-  // ─── Right-click action menu ────────────────────────────────────────────
-  //
-  // The row's three hover buttons (pin / rename / delete) were migrated
-  // into <OpenInNewTabMenu>. Every action must still fire with the SAME
-  // emitted payload, or the change silently removed functionality.
-  //
-  // The menu is Teleported to `body`, so its rows are queried from the
-  // document rather than through the wrapper — and because it never
-  // traverses the row, picking a row cannot also fire the row's @click.
-  // That is what the old stopPropagation guards protected against, so
-  // the "does NOT emit selectTask" assertions below are the behaviour
-  // those guards used to provide, now asserted on the outcome.
-
+  // ─── Right-click action menu ──────────────────────────────────────────── The row's three hover
+  // buttons (pin / rename / delete) were migrated into <OpenInNewTabMenu>. Every action must still
+  // fire with the SAME emitted payload, or the change silently removed functionality.
   const openRowMenu = async (wrapper: ReturnType<typeof mountTask>['wrapper']) => {
     await wrapper.find('[data-task-row]').trigger('contextmenu', { clientX: 40, clientY: 80 })
     await nextTick()
@@ -276,10 +236,9 @@ describe('WorkspaceItemTaskRow per-task row', () => {
   })
 
   it('does NOT emit selectTask when a menu row is picked', async () => {
-    // The old inline buttons needed event.stopPropagation so the click
-    // did not bubble to the row's @click. The teleported menu never
-    // traverses the row, so this asserts the outcome survived rather
-    // than relying on a guard that no longer has anything to guard.
+    // The old inline buttons needed event.stopPropagation so the click did not bubble to the row's
+    // @click. The teleported menu never traverses the row, so this asserts the outcome survived
+    // rather than relying on a guard that no longer has anything to guard.
     const { wrapper } = mountTask()
     // Each pick closes the menu, so reopen between the two.
     await openRowMenu(wrapper)
@@ -316,12 +275,8 @@ describe('WorkspaceItemTaskRow per-task row', () => {
   })
 
   it('emits the four renameTask args in the documented order', async () => {
-    // Belt-and-braces check for the event payload shape, in case a
-    // future refactor re-orders the arguments. We index into the
-    // emitted tuple by position — the cast satisfies Vue's
-    // `unknown[]` element type, and the `!` is required because
-    // tsconfig has noUncheckedIndexedAccess turned on (Vue's
-    // `emitted()` returns `unknown[][] | undefined`).
+    // Belt-and-braces check for the event payload shape, in case a future refactor re-orders the
+    // arguments.
     const { wrapper } = mountTask({
       workspaceId: 'ws_order',
       itemId: 'item_order',

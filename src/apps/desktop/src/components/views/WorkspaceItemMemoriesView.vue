@@ -69,10 +69,9 @@ const formatSize = (bytes: number): string => {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-// Re-fetch when cwd changes (user clicks a different workspace item).
-// This is the "auto-refresh on focus" decision (#4 in Defaults).
-// Prev-value guard on update — same reset+load the watcher did; the mount
-// call covers the initial fetch (the old `immediate: true`).
+// Re-fetch when cwd changes (user clicks a different workspace item). This is the "auto-refresh on
+// focus" decision (#4 in Defaults). Prev-value guard on update — same reset+load the watcher did;
+// the mount call covers the initial fetch (the old `immediate: true`).
 function syncCwdMemories() {
   selectedMemoryName.value = null
   isCreating.value = false

@@ -1,54 +1,6 @@
-/**
- * Tests for useChatScrollRestore — verifies the save-on-scroll +
- * restore-on-mount contract for ChatView's VirtualScroller.
- *
- * Why these tests exist:
- *   When a user opens a task from the kanban sidebar, ChatView
- *   mounts with `:key="task-<id>"`. Closing + reopening a different
- *   task remounts ChatView (fresh state, scrollTop = 0). Reopening
- *   the same task ALSO remounts ChatView because the parent's
- *   `:key` change in the surrounding `v-if/v-else-if` chain drops the
- *   previous instance. Without this composable, the user loses
- *   their scroll position every time they close + reopen a chat.
- *
- *   The composable persists `scrollTop` to localStorage keyed by
- *   `chat-scroll-<task_id>` (per the project's `task.id ==
- *   session.id` convention from migration 052). On reopen, the
- *   composable exposes a `restore()` function that the ChatView
- *   calls to get the saved value — if non-null and not "near
- *   bottom", ChatView calls `scrollToPosition(saved)` instead of
- *   `scrollToBottom`. The "near bottom" branch covers the common
- *   case where the user closed while at the bottom and should
- *   land at the (possibly slightly grown) genuine bottom.
- *
- * Coverage:
- *   - restores saved scrollTop on mount (after scrollHeight is known)
- *   - clamps restored value to scrollHeight - clientHeight
- *   - restore() returns null when no saved value
- *   - restore() returns null when saved value is 0
- *   - restore() returns null when container is not scrollable
- *   - restore() returns null when saved position is "near bottom"
- *     (within BOTTOM_THRESHOLD_PX of the max)
- *   - restorePosition(value) clamps + applies a given value
- *   - persists scrollTop on scrollend immediately
- *   - persists scrollTop on scroll after 250 ms debounce
- *   - flushes the pending debounced write on unmount
- *   - handles localStorage.setItem throw gracefully
- *
- * jsdom setup notes:
- *   - localStorage must be stubbed (jsdom 29 dropped it from
- *     default globals — same trick as useCodeEditor.spec.ts:26-43).
- *   - scrollHeight / clientHeight are not laid out in jsdom; we
- *     override them with `Object.defineProperty` so the clamp
- *     math has real numbers.
- *   - `requestAnimationFrame` polyfill mirrors
- *     useKanbanScrollRestore.spec.ts:70-82.
- *   - The composable waits for `scrollHeight > clientHeight` OR
- *     a 500ms safety net before reading (chat items are async-
- *     measured, unlike the kanban's static columns), so we
- *     configure scrollHeight BEFORE mounting the harness rather
- *     than waiting for items to render.
- */
+/** Tests for useChatScrollRestore — verifies the save-on-scroll + restore-on-mount contract for
+ * ChatView's VirtualScroller. Why these tests exist: When a user opens a task from the kanban
+ * sidebar, ChatView mounts with `:key="task-<id>"`. */
 import {
   afterEach,
   beforeAll,
@@ -92,13 +44,7 @@ beforeAll(() => {
   }
 })
 
-/**
- * The composable returns { restore, restorePosition }. The harness
- * captures the return value via a module-scope slot so the test
- * can assert on the saved value (mirrors the `restore`-time
- * contract: the parent reads `restore()` AFTER its own
- * `await rAF × 2` so the saved value is computed by then).
- */
+/** The composable returns { restore, restorePosition }. */
 const capturedRestore: { current: (() => number | null) | null } = { current: null }
 const capturedRestorePosition: { current: ((value: number) => void) | null } = {
   current: null,
@@ -154,19 +100,9 @@ function setScrollGeometry(
   })
 }
 
-/**
- * Wait for the composable's onMounted handler to:
- *   1. read the saved scrollTop from localStorage
- *   2. wait for scrollHeight > clientHeight (or 500ms safety net)
- *   3. attach scroll + scrollend listeners
- *
- * The scrollHeight poll happens inside `await` loops that check
- * `Date.now() - start < 500` against setTimeout(16). With real
- * timers (default in beforeEach), one iteration of the poll is
- * 16ms; the poll succeeds immediately because the harness sets
- * scrollHeight > clientHeight BEFORE mountHarness returns. A 100ms
- * real wait is plenty.
- */
+/** Wait for the composable's onMounted handler to: 1. read the saved scrollTop from localStorage 2.
+ * wait for scrollHeight > clientHeight (or 500ms safety net) 3. attach scroll + scrollend listeners
+ * The scrollHeight poll happens inside `await` loops that check `Date.now(). */
 async function waitForRestore(): Promise<void> {
   await flushPromises()
   await new Promise<void>((r) => setTimeout(r, 100))

@@ -1,11 +1,6 @@
-/**
- * Inline comment threads on the sidebar diff.
- * - Saved comments render as thread rows docked after their lines,
- *   survive remount via localStorage, support Edit (reopen box at the
- *   exact range) and Delete, and escape message HTML.
- * - Clicking a diff row opens the box; saving closes the popup and
- *   renders the thread without a remount.
- */
+/** Inline comment threads on the sidebar diff. - Saved comments render as thread rows docked after
+ * their lines, survive remount via localStorage, support Edit (reopen box at the exact range) and
+ * Delete, and escape message HTML. - Clicking a diff row opens the box. */
 import { describe, expect, it, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import SidebarDiffView from '../chat_right_sidebar/SidebarDiffView.vue'

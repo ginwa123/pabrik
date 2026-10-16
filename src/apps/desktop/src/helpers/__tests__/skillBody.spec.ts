@@ -1,9 +1,5 @@
-/*
- * skillBody.ts — the outline and the find box over one skill's body.
- *
- * Both are pure functions over the raw markdown, so every case below is a
- * real behaviour with nothing to inject: no clock, no network, no DOM.
- */
+/** skillBody.ts — the outline and the find box over one skill's body, as
+ * pure functions over the raw markdown the detail pane already holds. */
 import { describe, expect, it } from 'vitest'
 import { countBodyMatches, extractSections, findInBody } from '../skillBody'
 

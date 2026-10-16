@@ -1,28 +1,5 @@
-/**
- * Migration 082 - ChatsList time pill + stale-dot display tests.
- *
- * The sidebar's time pill is sourced from `formatRelativeTime(
- * last_human_touched_at ?? updated_at)` (the user-facing human time
- * falls back to the AI-tainted updated_at for legacy rows). The
- * amber `chat-stale-dot` appears when `updated_at > last_human_touched_at`
- * (i.e. the AI has touched since the human's last touch).
- *
- * Six cases (per spec §4):
- *   1. populated `last_human_touched_at` - renders that time
- *   2. null/empty - falls back to `updated_at`
- *   3. populated < updated - renders human time + stale dot
- *   4. populated == updated - no stale dot (in sync)
- *   5. populated > updated (defensive, clock skew) - no stale dot
- *   6. both null/empty - renders "now" + no stale dot
- *
- * Mock pattern: use `vi.mock` with `importActual` to mock the api
- * module's `getChats` function only (matches the established
- * `apiGetChats.spec.ts` pattern - which works reliably under the
- * project's vue-test-utils + vitest setup).
- *
- * Plan: docs/superpowers/plans/2026-08-29-chat-sidebar-last-human-touched.md
- * Task 8.
- */
+/** Migration 082 - ChatsList time pill + stale-dot display tests. Plan:
+ * docs/superpowers/plans/2026-08-29-chat-sidebar-last-human-touched.md Task 8. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp, nextTick, ref, type Ref } from 'vue'
@@ -59,8 +36,6 @@ vi.mock('vue-router', async () => {
 
 // Mock the api module: keep everything from the real api module, only
 // override getChats so each test can drive the wire payload directly.
-// This pattern matches `apiKanbanTagSuggestions.spec.ts` /
-// `apiGetChats.spec.ts` and avoids the spy-reset edge cases that
 // `vi.spyOn(api, 'getChats')` hits under the project's vitest setup.
 vi.mock('../api/index', async () => {
   const actual = await vi.importActual<typeof import('../api/index')>('../api/index')
@@ -72,7 +47,6 @@ vi.mock('../api/index', async () => {
 })
 
 // Import the mocked module AFTER vi.mock so the spy binding is in place.
-
 function makeSession(overrides: Partial<Chat> = {}): Chat {
   return {
     session_id: 'sess_default',
@@ -98,11 +72,8 @@ function makeStubClient(state: 'connecting' | { next: 'open'; attempt: number })
   return stub as SseClient
 }
 
-// formatRelativeTime (src/apps/desktop/src/helpers/relativeTime.ts) accepts
-// SQLite datetime UTC strings ('YYYY-MM-DD HH:MM:SS') - which is what the
-// backend's SELECT layer emits via strftime() for last_human_touched_at
-// (Migration 082). unix-ms would be unparseable here, so we generate
-// the wire shape the backend actually produces.
+// formatRelativeTime (src/apps/desktop/src/helpers/relativeTime.ts) accepts SQLite datetime UTC
+// strings ('YYYY-MM-DD HH:MM:SS').
 function dateToSqliteUtc(agoMs: number): string {
   const date = new Date(Date.now() - agoMs)
   return date.toISOString().replace('T', ' ').slice(0, 19)

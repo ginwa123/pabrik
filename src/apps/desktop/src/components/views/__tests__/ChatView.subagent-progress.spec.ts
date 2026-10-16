@@ -1,15 +1,5 @@
-/**
- * Tests for ChatView's SSE routing of `role="subagent_progress"`
- * events into the per-tool_call_id progress map.
- *
- * 2026-08-23 spawn-subagent-live-progress — the bus handler at
- * ChatView.vue:2033 must early-branch on role='subagent_progress'
- * BEFORE the regular full/chunk handling so progress events don't
- * accidentally push into messages.value. This file mounts a tiny
- * harness that mimics ChatView's bus.on('llm') glue without dragging
- * in the full chatview (which would require a Pinia + Vue Router
- * scaffold).
- */
+/** Tests for ChatView's SSE routing of `role="subagent_progress"` events into the per-tool_call_id
+ * progress map. 2026-08-23 spawn-subagent-live-progress. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ref, nextTick } from 'vue'
 
@@ -20,9 +10,8 @@ import {
   type SubAgentProgressMap,
 } from '../../../helpers/subagentProgress'
 
-// Inline the ChatView-style bus handler so we can test the routing
-// logic in isolation. This mirrors the real ChatView.vue:2033 early
-// branch: progress events go into the map; everything else falls
+// Inline the ChatView-style bus handler so we can test the routing logic in isolation. This mirrors
+// the real ChatView.vue:2033 early branch: progress events go into the map; everything else falls
 // through (in this test, we just count "ignored").
 type RegularEvent = { type: 'full' | 'chunk'; role?: string; session_id?: string; content?: string }
 

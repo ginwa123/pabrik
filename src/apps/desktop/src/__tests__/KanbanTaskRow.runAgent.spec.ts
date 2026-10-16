@@ -1,12 +1,6 @@
-/**
- * <KanbanTaskRow> — right-click "Run agent".
- *
- * Row mode is the third entry point for starting an agent on an
- * existing task (the card's context menu and the detail dialog's caret
- * menu are the other two). The row only reports intent — it emits
- * `runAgent` with the task id and <KanbanView> makes the API call —
- * so these tests pin the emit shape and the running-state guard.
- */
+/** <KanbanTaskRow> — right-click "Run agent". Row mode is the third entry point for starting an
+ * agent on an existing task (the card's context menu and the detail dialog's caret menu are the
+ * other two). */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref } from 'vue'

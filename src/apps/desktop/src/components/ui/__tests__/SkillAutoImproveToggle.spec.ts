@@ -1,17 +1,6 @@
-/*
- * SkillAutoImproveToggle.vue — the lock checkbox.
- *
- * Three behaviours only this component can get wrong:
- *
- *   1. It must send the FLAG ALONE. The panel's other saves carry
- *      description + content, and a toggle that posted those would race an
- *      in-flight edit.
- *   2. A successful toggle must tell the parent, because the parent owns
- *      the row that renders the checkbox.
- *   3. A refused toggle must put the checkbox BACK. The input is bound to
- *      the prop, so a user click moves the DOM without moving the prop —
- *      and a failure that left it flipped would claim the server agreed.
- */
+/** SkillAutoImproveToggle.vue — the lock checkbox. Three behaviours only this component can get
+ * wrong: 1. It must send the FLAG ALONE. The panel's other saves carry description + content, and a
+ * toggle that posted those would race an in-flight edit. 2. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SkillAutoImproveToggle from '../SkillAutoImproveToggle.vue'

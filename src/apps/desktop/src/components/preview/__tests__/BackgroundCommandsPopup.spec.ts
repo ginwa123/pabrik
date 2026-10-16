@@ -1,22 +1,5 @@
-/**
- * Tests for BackgroundCommandsPopup.vue — the background-command pill +
- * running-command dialog mounted beside the Skills pill in ChatView's
- * composer footer.
- *
- * Backend contract (commit b69111f7, code against exactly this):
- * - GET /api/llm/session/:sid/background_processes
- *   -> `{ processes: [{ pid, command, log_path, started_at, status,
- *      running }], count }` (`running` is live).
- * - GET /api/llm/session/:sid/background_processes/:pid/log?max_bytes=N
- *   -> `{ pid, log_path, total_bytes, truncated, content }` (TAIL);
- *   missing log -> 200 marker content; unknown pid -> 404.
- *
- * The dialog uses `<Teleport to="body">` (like SkillsPopup), so teleported
- * assertions go through `document.querySelector` with
- * `attachTo: document.body` — NOT `wrapper.find` (see the
- * vue-teleport-vitest-document-queryselector skill). The pill itself lives
- * in the component root, so `wrapper.find` works for it.
- */
+/** Tests for BackgroundCommandsPopup.vue — the background-command pill + running-command dialog
+ * mounted beside the Skills pill in ChatView's composer footer. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'

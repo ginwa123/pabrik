@@ -1,26 +1,5 @@
-/**
- * The `git_pr_state` channel — both halves of its registration.
- *
- * The bug this exists for: merging from the PR tab (MergeBox) recoloured the
- * PR tab's own badge and nothing else. The sidebar's RECENT branch icon and the
- * kanban card badge read the shared `prStatusCache` (60 s TTL), so they kept the
- * pre-merge `open` green. `git_pr_state` is the backend's signal that a branch's
- * change request moved (see src/agentic_loop/git_pr_state_events.zig), and it
- * has to survive TWO layers to work:
- *
- *   1. the API layer — a named SSE event missing from `additionalEventTypes` is
- *      dropped by the browser's `EventSource` before `onEvent` ever fires (the
- *      PR #215 / `session_unknown` class), and a name with no `onEvent` dispatch
- *      branch falls through to the default-message JSON buffer (this spec calls
- *      the real `onEvent` the factory hands the SseClient, exactly as the
- *      browser would);
- *   2. the bus + bridge — `sseBus` must route both granular names onto the
- *      single `gitPrState` channel, and the bridge must turn it into the cache
- *      invalidation the mounted badges watch.
- *
- * Layer 2's assertion is the product: after the event, the cache answers have to
- * be GONE, because that is what makes the icon change colour.
- */
+/** The `git_pr_state` channel — both halves of its registration. The bug this exists for: merging
+ * from the PR tab (MergeBox) recoloured the PR tab's own badge and nothing else. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp } from 'vue'
 

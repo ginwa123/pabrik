@@ -1,19 +1,5 @@
-/**
- * Regression guard for the banned-code rules.
- *
- * A lint rule that silently stops matching is worse than no rule — it looks
- * enforced and enforces nothing. So this spec pins BOTH directions:
- *
- *   - `forbids` — each ban actually fires on code shaped like the bug.
- *   - `allows`  — each ban stays silent on the legitimate forms that are
- *     common in this repo. This half is the one that matters most: a rule
- *     with false positives gets deleted, and deleting it takes the ban with
- *     it. Every `allows` case below is a shape that really exists in
- *     `src/` — the side-effect `watch(() => props.x, () => load())` idiom
- *     alone is ~46 of the 103 real call sites.
- *
- * Run with the repo's normal suite: `pnpm run test`.
- */
+/** Regression guard for the banned-code rules. A lint rule that silently stops matching is worse
+ * than no rule — it looks enforced and enforces nothing. */
 import { describe, expect, it } from 'vitest'
 import { Linter } from 'eslint'
 import tsParser from '@typescript-eslint/parser'
@@ -40,16 +26,8 @@ const ALL_RULES: RuleName[] = [
   'local/no-try-catch',
 ]
 
-/**
- * Lint `code` with ONLY `rules` enabled and return the rule ids that fired.
- *
- * Isolation matters here: the rules legitimately OVERLAP. A watcher that
- * writes back into the value it watches is often ALSO pure derived state, so
- * `watch(items, v => { items.value = [...v, next] })` trips two bans at once.
- * Running every rule on every fixture would make each test assert about the
- * others' behaviour, and a test that fails for an unrelated reason is a test
- * people delete. Each describe block opts into just its own rule.
- */
+/** Lint `code` with ONLY `rules` enabled and return the rule ids that fired. Isolation matters
+ * here: the rules legitimately OVERLAP. */
 function lint(code: string, rules: RuleName[] = ALL_RULES): string[] {
   const messages = linter.verify(
     code,
@@ -64,10 +42,8 @@ function lint(code: string, rules: RuleName[] = ALL_RULES): string[] {
       plugins: { local: plugin as never },
       rules: Object.fromEntries(rules.map((r) => [r, 'error'])),
     },
-    // The filename is REQUIRED: a flat config's `files` array is a matching
-    // filter, so without a path to match against the block is silently
-    // skipped and every rule reports nothing. That failure mode is invisible
-    // — the linter returns [] and the assertions below would pass vacuously.
+    // The filename is REQUIRED: a flat config's `files` array is a matching filter, so without a
+    // path to match against the block is silently skipped and every rule reports nothing.
     'probe.ts',
   )
   return messages.map((m) => m.ruleId as string)
@@ -124,10 +100,9 @@ describe('local/no-derived-state-watch', () => {
   })
 
   it('allows an accumulator mixed with a real side effect', () => {
-    // SseStatusBadge.vue:54 does `attempt.value += 1` alongside a diagnostic.
-    // `+=` is not expressible as computed(), and the body touches the
-    // outside world, so neither half of the rule applies. Flagging it would
-    // be a false positive against the rule's own contract.
+    // SseStatusBadge.vue:54 does `attempt.value += 1` alongside a diagnostic. `+=` is not
+    // expressible as computed(), and the body touches the outside world, so neither half of the
+    // rule applies. Flagging it would be a false positive against the rule's own contract.
     expect(
       lint(
         `watch(bus.state, (s) => { if (s === 'up') { attempt.value += 1 }
@@ -143,10 +118,9 @@ describe('local/no-derived-state-watch', () => {
   })
 
   it('flags a body that assigns only inside an if-guard with no else', () => {
-    // Regression: treating the absent `alternate` as a failure dropped 11 of
-    // the 26 real sites — including this exact shape, FileInput.vue:230
-    // (`if (newVal) { inputText.value = newVal }`). The rule still looked
-    // configured and simply stopped matching.
+    // Regression: treating the absent `alternate` as a failure dropped 11 of the 26 real sites —
+    // including this exact shape, FileInput.vue:230 (`if (newVal) { inputText.value = newVal }`).
+    // The rule still looked configured and simply stopped matching.
     expect(
       lint(
         `watch(() => props.initialMessage, (newVal) => { if (newVal) { inputText.value = newVal } })`,
@@ -162,11 +136,7 @@ describe('local/no-derived-state-watch', () => {
   })
 
   it('allows a body that resets state and never reads the new value', () => {
-    // SseStatusBadge counts SSE reconnects. `attempt.value = 0` and
-    // `attempt.value += 1` depend on the counter's own history, not on the
-    // watched value, so `computed()` cannot express them and the "use
-    // computed" advice would be nonsense — the bus reconnects on its own and
-    // there is no local handler to move this into.
+    // SseStatusBadge counts SSE reconnects.
     expect(
       lint(
         `watch(bus.state, (s) => { if (s === 'up') { attempt.value += 1 } else { attempt.value = 0 } })`,
@@ -176,10 +146,9 @@ describe('local/no-derived-state-watch', () => {
   })
 
   it('allows a mirror into a ref the code also writes elsewhere', () => {
-    // The defining property of derived state is that you CANNOT write it
-    // yourself. `draft` is bound with v-model, so it is real state and
-    // replacing the watcher with `computed()` would make the input
-    // read-only. 15 of the original 26 sites are this shape.
+    // The defining property of derived state is that you CANNOT write it yourself. `draft` is bound
+    // with v-model, so it is real state and replacing the watcher with `computed()` would make the
+    // input read-only. 15 of the original 26 sites are this shape.
     expect(
       lint(
         `const draft = ref('')\nwatch(() => props.x, (v) => { draft.value = v ?? '' })\ndraft.value = 'typed'`,
@@ -240,10 +209,9 @@ describe('local/no-watch-feedback-loop', () => {
   })
 
   it('allows a prop mirrored into a SEPARATE local ref', () => {
-    // Regression: an early version treated the property name as a dependency,
-    // so `() => props.isStopping` "watched" `isStopping` and every prop-mirror
-    // (FileInput.vue:159, TextReplace.vue:34, McpServerModal.vue:63) was
-    // reported as a loop. `props` is the dependency, not `isStopping`.
+    // Regression: an early version treated the property name as a dependency, so `() =>
+    // props.isStopping` "watched" `isStopping` and every prop-mirror (FileInput.vue:159,
+    // TextReplace.vue:34, McpServerModal.vue:63) was reported as a loop.
     expect(
       lint(`watch(() => props.isStopping, (v) => { isStopping.value = v ?? false })`, ONLY_LOOP),
     ).toEqual([])
@@ -332,10 +300,9 @@ describe('local/no-watch-array-source', () => {
   })
 
   it('allows a getter that builds an array (out of scope)', () => {
-    // `watch(() => [a.value, b.value], fn)` is a single reactive source as
-    // far as this rule resolves — reporting it would require resolving the
-    // getter body. Documented boundary, not a dodge endorsement: prefer two
-    // single-source watchers sharing a handler.
+    // `watch(() => [a.value, b.value], fn)` is a single reactive source as far as this rule
+    // resolves — reporting it would require resolving the getter body. Documented boundary, not a
+    // dodge endorsement: prefer two single-source watchers sharing a handler.
     expect(
       lint(`watch(() => [a.value, b.value], () => { void load() })`, ONLY_ARRAY_SOURCE),
     ).toEqual([])
@@ -442,13 +409,8 @@ describe('local/no-silent-fallback-catch', () => {
 
 describe('the rules compose without false positives on real shapes', () => {
   it('a realistic component using computed + side-effect watch + logged catch trips ONLY the blanket bans', () => {
-    // Under the blanket bans this previously-clean shape reports exactly two
-    // hits — `local/no-watch` and `local/no-try-catch` — and nothing else.
-    // That pins the policy change: the targeted rules still see no derived
-    // state, no loop, no silent catch here; only the backstops fire. The
-    // `catch` logs AND writes a rendered error ref, so
-    // `no-silent-fallback-catch` correctly stays quiet — the construct ban
-    // is what catches it.
+    // Under the blanket bans this previously-clean shape reports exactly two hits —
+    // `local/no-watch` and `local/no-try-catch` — and nothing else.
     const code = `
       import { ref, watch, computed } from 'vue'
       export function useRows(props) {
@@ -534,10 +496,9 @@ describe('local/no-try-catch', () => {
   })
 
   it('allows promise.catch(fn)', () => {
-    // Deliberately out of scope: 10 of the 30 sites are fire-and-forget
-    // `router.replace(...)` navigations and 3 are best-effort `res.text()`
-    // reads, where the failure genuinely cannot reach the user. The
-    // dangerous subset is `local/no-silent-fallback-catch`'s job.
+    // Deliberately out of scope: 10 of the 30 sites are fire-and-forget `router.replace(...)`
+    // navigations and 3 are best-effort `res.text()` reads, where the failure genuinely cannot
+    // reach the user. The dangerous subset is `local/no-silent-fallback-catch`'s job.
     expect(
       lint(`router.replace({ path }).catch(() => {})`, ONLY_TRY_CATCH),
     ).toEqual([])

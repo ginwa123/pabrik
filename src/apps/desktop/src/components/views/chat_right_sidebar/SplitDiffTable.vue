@@ -3,18 +3,8 @@ import { computed } from 'vue'
 import { highlightLinesForFile, type Token } from '@/helpers/codeHighlight'
 import type { SplitRow } from './pairSplitRows'
 
-/**
- * The side-by-side (split) render of a parsed unified diff.
- *
- * Five columns: `old# · old code │ new# · new code`. A row that exists on
- * only one side (`oldText === null` or `newText === null`) renders the other
- * side as a striped FILLER cell — an empty box, never a duplicated line, so a
- * pure insertion cannot be mistaken for an unchanged line.
- *
- * Presentational: rows in, clicks out. The review-thread rows are NOT owned
- * here — the parent renders them through the `threads` scoped slot so the
- * thread markup (mini-chat, edit/delete) has exactly one home.
- */
+/** The side-by-side (split) render of a parsed unified diff. Five columns: `old# · old code │ new#
+ * · new code`. */
 const props = defineProps<{
   rows: SplitRow[]
   /** Path of the file under review — drives the token language. */
@@ -154,12 +144,9 @@ const onRowClick = (event: MouseEvent, row: SplitRow) => {
 </template>
 
 <style scoped>
-/*
- * `table-layout: fixed` + an explicit <colgroup> is deliberate. A first row
- * with `colspan="5"` (the hunk header) otherwise defines the column widths
- * under `table-layout: fixed`, and every column — including the two 42px
- * gutters — ends up 1/5 of the table. The colgroup wins over the first row.
- */
+/** `table-layout: fixed` + an explicit <colgroup> is deliberate. A first row with `colspan="5"`
+ * (the hunk header) otherwise defines the column widths under `table-layout: fixed`, and every
+ * column — including the two 42px gutters — ends up 1/5 of the table. */
 .split-table {
   width: 100%;
   border-collapse: collapse;

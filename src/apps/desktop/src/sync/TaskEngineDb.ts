@@ -1,11 +1,5 @@
-/**
- * Task-list child of the generic sync engine.
- *
- * The cache is local-only. Each context stores the complete first-page
- * response keyed by the same request shape used by the store. Revalidation
- * calls the existing task-list endpoint again; it does not send a new
- * backend cursor or introduce a backend delta-query contract.
- */
+/** Task-list child of the generic sync engine. The cache is local-only. Each context stores the
+ * complete first-page response keyed by the same request shape used by the store. */
 import { Effect } from 'effect'
 import * as api from '../api'
 import type { Task } from '../api'
@@ -141,11 +135,8 @@ export class TaskEngineDb extends BaseSyncEngine<TaskRow, TaskCtx> {
     )
   }
 
-  /**
-   * Revalidate the same first page used to build this cache context and
-   * write the returned rows through. Older-page pagination is handled by
-   * the store and also writes through with putLocal.
-   */
+  /**    * Revalidate the same first page used to build this cache context and write the returned rows
+   * through. Older-page pagination is handled by the store and also writes through with putLocal. */
   loadDelta(ctx: TaskCtx, limit: number): Effect.Effect<TaskDelta, SyncError> {
     // A generator's `this` is its own, so capture the engine outside.
     // oxlint-disable-next-line typescript-eslint/no-this-alias -- see SyncEngine.syncOnMount

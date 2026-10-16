@@ -1,21 +1,6 @@
-/**
- * Behavioural tests for the keyboard shortcuts added in Chunk 4 of
- * the right-click group menu plan:
- *   - Cmd/Ctrl+A: select all elements on the active page
- *   - Cmd/Ctrl+]: bring forward
- *   - Cmd/Ctrl+Shift+]: bring to front
- *   - Cmd/Ctrl+[: send backward
- *   - Cmd/Ctrl+Shift+[: send to back
- *   - Backspace / Delete: delete selected elements after confirm()
- *
- * 5 tests:
- *   1. Cmd+A selects all elements.
- *   2. Cmd+Shift+] calls the reorder store action (stubbed; Chunk 5
- *      replaces the stub with a real call).
- *   3. Backspace deletes all selected elements after confirm().
- *   4. Cmd+A inside an <input> does NOT change the selection.
- *   5. Cmd+Shift+] with empty selection is a no-op.
- */
+/** Behavioural tests for the keyboard shortcuts added in Chunk 4 of the right-click group menu
+ * plan: - Cmd/Ctrl+A: select all elements on the active page - Cmd/Ctrl+]: bring forward -
+ * Cmd/Ctrl+Shift+]: bring to front - Cmd/Ctrl+[: send backward - Cmd/Ctrl+Shift+[: send to back. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -106,10 +91,9 @@ describe('DesignView keyboard shortcuts (Chunk 4)', () => {
     const _store = useWorkspacesStore()
     _store.setActiveDesignPage('page_1')
     vi.spyOn(_store, 'deleteDesignElement').mockImplementation(deleteDesignElementSpy)
-    // NOTE: do NOT mock `store.reorderDesignElements` — that would
-    // short-circuit the real store action before it can call the
-    // (mocked) api function. The api spy alone catches the call
-    // and records the api-level args (4-tuple, not 5-tuple).
+    // NOTE: do NOT mock `store.reorderDesignElements` — that would short-circuit the real store
+    // action before it can call the (mocked) api function. The api spy alone catches the call and
+    // records the api-level args (4-tuple, not 5-tuple).
     const wrapper = mount(DesignView, {
       props: { item: { ...ITEM, design_elements: elements }, workspaceId: 'ws_1', itemId: 'item_1' },
     })
@@ -225,11 +209,8 @@ describe('DesignView keyboard shortcuts (Chunk 4)', () => {
       )
       await flushPromises()
       const layers = wrapper.findComponent({ name: 'LayersPanel' })
-      // Selection should still be {el_a} — Cmd+A ignored because the
-      // event was dispatched on document (no target input). The
-      // input-target test is integrated into DesignElement.drag.spec
-      // via dispatch; here we cover the more practical regression:
-      // non-input focus does NOT block Cmd+A.
+      // Selection should still be {el_a} — Cmd+A ignored because the event was dispatched on
+      // document (no target input).
       const ids = layers.props('selectedIds') as string[]
       expect(ids.length).toBeGreaterThanOrEqual(1)
     } finally {

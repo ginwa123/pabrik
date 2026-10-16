@@ -120,6 +120,7 @@ const migration_106 = @import("migration_106.zig");
 const migration_107 = @import("migration_107.zig");
 const migration_108 = @import("migration_108.zig");
 const migration_109 = @import("migration_109.zig");
+const migration_110 = @import("migration_110.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -231,6 +232,7 @@ pub const Migration106CreateModelCatalog = migration_106.Migration106CreateModel
 pub const Migration107AddBackgroundProcessKind = migration_107.Migration107AddBackgroundProcessKind;
 pub const Migration108AddBackgroundProcessReadOffset = migration_108.Migration108AddBackgroundProcessReadOffset;
 pub const Migration109AddSkillCanAutoImprove = migration_109.Migration109AddSkillCanAutoImprove;
+pub const Migration110AddTaskSkillName = migration_110.Migration110AddTaskSkillName;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -433,6 +435,8 @@ pub const allMigrations: []const Migration = &.{
     // what is new. See migration_108.zig.
     .{ .version = Migration108AddBackgroundProcessReadOffset.version, .name = Migration108AddBackgroundProcessReadOffset.name, .up = Migration108AddBackgroundProcessReadOffset.up },
     .{ .version = Migration109AddSkillCanAutoImprove.version, .name = Migration109AddSkillCanAutoImprove.name, .up = Migration109AddSkillCanAutoImprove.up },
+    // Migration 110 — the skill a kanban task asks the agent to use.
+    .{ .version = Migration110AddTaskSkillName.version, .name = Migration110AddTaskSkillName.name, .up = Migration110AddTaskSkillName.up },
 };
 
 /// Register all migrations with a MigrationManager
@@ -4731,6 +4735,8 @@ test "createWorkspaceItemTask: description = null succeeds and stores ''" {
         // the description path only; cwd is fully covered in
         null,
         // video_urls (Migration 090) — null. Covered in video_urls_validation tests.
+        null,
+        // skill_name (Migration 110) — null. Covered in migration_110_test.
         null);
     defer task.deinit(alloc);
 
@@ -4759,6 +4765,7 @@ test "createWorkspaceItemTask: description = '' (empty string) succeeds and stor
         // cwd (Migration 070) — null. See comment above.
         null,
         // video_urls (Migration 090) — null. See comment above.
+        null,
         null);
     defer task.deinit(alloc);
 
@@ -4785,6 +4792,7 @@ test "createWorkspaceItemTask: description = 'hello world' succeeds and stores t
         // cwd (Migration 070) — null. See comment above.
         null,
         // video_urls (Migration 090) — null. See comment above.
+        null,
         null);
     defer task.deinit(alloc);
 
@@ -6830,6 +6838,7 @@ test "createWorkspaceItemTask: cwd = '/home/me/proj-A' round-trips verbatim" {
         null, // image_urls
         "/home/me/proj-A", // cwd (Migration 071 10th arg)
         null, // video_urls (Migration 090)
+        null,
     );
     defer task.deinit(alloc);
 
@@ -6868,6 +6877,7 @@ test "createWorkspaceItemTask: cwd = '' stores '' (SQL '' literal, NOT NULL DEFA
         null,
         "", // cwd
         null, // video_urls (Migration 090)
+        null,
     );
     defer task.deinit(alloc);
 
@@ -6904,6 +6914,7 @@ test "createWorkspaceItemTask: cwd = null omits column (DEFAULT '' applies)" {
         null,
         null, // cwd — omitted, DEFAULT '' fills in
         null, // video_urls (Migration 090)
+        null,
     );
     defer task.deinit(alloc);
 
@@ -10059,4 +10070,232 @@ test "Migration105 is registered in allMigrations" {
         if (m.version == Migration105CreateWorkspaceSettings.version) return;
     }
     return error.Migration105NotRegistered;
+}
+
+// =============================================================================
+// Migration 110 — `workspace_item_tasks.skill_name`
+// =============================================================================
+
+/// Minimal `workspace_item_tasks` as it existed BEFORE Migration 110: the
+/// columns the earlier migrations added, minus `skill_name`. A legacy row
+/// inserted here is what the migration has to survive.
+fn createLegacyTasksTable110(ctx: *TestCtx) !void {
+    const alloc = testing.allocator;
+    try ctx.db.exec(alloc,
+        \\CREATE TABLE IF NOT EXISTS workspace_item_tasks (
+        \\  id TEXT PRIMARY KEY,
+        \\  name TEXT NOT NULL,
+        \\  workspace_item_id TEXT NOT NULL,
+        \\  description TEXT NOT NULL DEFAULT '',
+        \\  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\  task_type TEXT NOT NULL DEFAULT 'standard',
+        \\  tags TEXT NOT NULL DEFAULT '',
+        \\  image_urls TEXT NOT NULL DEFAULT '',
+        \\  video_urls TEXT NOT NULL DEFAULT '',
+        \\  cwd TEXT NOT NULL DEFAULT ''
+        \\)
+    , &.{});
+}
+
+fn skillNameOf110(ctx: *TestCtx, id: []const u8) ![]const u8 {
+    const alloc = testing.allocator;
+    var q = try ctx.db.query(
+        alloc,
+        "SELECT COALESCE(skill_name, '') FROM workspace_item_tasks WHERE id = ?",
+        &[_][]const u8{id},
+    );
+    defer q.deinit();
+    const row = (try q.next()) orelse return error.NoRows;
+    defer row.deinit(alloc);
+    return alloc.dupe(u8, row.values[0]);
+}
+
+test "Migration110 adds skill_name to a legacy tasks table, defaulting to ''" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try createLegacyTasksTable110(&ctx);
+    try ctx.db.exec(alloc,
+        \\INSERT INTO workspace_item_tasks (id, name, workspace_item_id)
+        \\VALUES ('t_legacy', 'Old task', 'item_1')
+    , &.{});
+
+    try Migration110AddTaskSkillName.up(&ctx.db, alloc);
+
+    const cols = try columnsOf(&ctx, "workspace_item_tasks");
+    defer {
+        for (cols) |c| alloc.free(c);
+        alloc.free(cols);
+    }
+    // Appended last, so every pre-existing column keeps its index — the
+    // listers' `row.values[N]` mapping depends on that.
+    try expectColumnsEqual(cols, &[_][]const u8{
+        "id",         "name",     "workspace_item_id", "description", "created_at",
+        "updated_at", "task_type", "tags",             "image_urls",  "video_urls",
+        "cwd",        "skill_name",
+    });
+
+    // A task created before the column existed has no skill: the default
+    // must be the empty sentinel, not NULL (the listers COALESCE, but a
+    // NOT NULL column is what makes the empty string the only "no skill").
+    const name = try skillNameOf110(&ctx, "t_legacy");
+    defer alloc.free(name);
+    try testing.expectEqualStrings("", name);
+}
+
+test "Migration110 replaying does not clobber a stored skill name" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try createLegacyTasksTable110(&ctx);
+    try Migration110AddTaskSkillName.up(&ctx.db, alloc);
+    try ctx.db.exec(alloc,
+        \\INSERT INTO workspace_item_tasks (id, name, workspace_item_id, skill_name)
+        \\VALUES ('t_picked', 'New task', 'item_1', 'pdf')
+    , &.{});
+
+    // `addColumnIfMissing` must not re-declare the column: a second
+    // ADD COLUMN is how a human's pick would be thrown away on every boot.
+    try Migration110AddTaskSkillName.up(&ctx.db, alloc);
+
+    const name = try skillNameOf110(&ctx, "t_picked");
+    defer alloc.free(name);
+    try testing.expectEqualStrings("pdf", name);
+}
+
+test "Migration110 is a no-op on a table that already has the column" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try createLegacyTasksTable110(&ctx);
+    try Migration110AddTaskSkillName.up(&ctx.db, alloc);
+    try Migration110AddTaskSkillName.up(&ctx.db, alloc);
+
+    const cols = try columnsOf(&ctx, "workspace_item_tasks");
+    defer {
+        for (cols) |c| alloc.free(c);
+        alloc.free(cols);
+    }
+    // Exactly one `skill_name` — a duplicate column is a hard SQLite error,
+    // so a re-run that throws would break every boot after the first.
+    var seen: usize = 0;
+    for (cols) |c| {
+        if (std.mem.eql(u8, c, "skill_name")) seen += 1;
+    }
+    try testing.expectEqual(@as(usize, 1), seen);
+}
+
+test "Migration110 is registered in allMigrations" {
+    for (allMigrations) |m| {
+        if (m.version == Migration110AddTaskSkillName.version) return;
+    }
+    return error.Migration110NotRegistered;
+}
+
+test "createWorkspaceItemTask: skill_name round-trips through the INSERT" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try createLegacyTasksTable110(&ctx);
+    try Migration110AddTaskSkillName.up(&ctx.db, alloc);
+
+    const task = try createWorkspaceItemTask(
+        alloc,
+        &ctx.db,
+        "t_skill",
+        "Task with a skill",
+        "item_1",
+        "standard",
+        null, // description
+        null, // tags
+        null, // image_urls
+        null, // cwd
+        null, // video_urls
+        "pdf", // skill_name (Migration 110)
+    );
+    defer task.deinit(alloc);
+
+    // The returned struct mirrors what was INSERTed, so the caller's view
+    // of the new task matches the DB without a round-trip SELECT.
+    try testing.expectEqualStrings("pdf", task.skill_name);
+
+    const stored = try skillNameOf110(&ctx, "t_skill");
+    defer alloc.free(stored);
+    try testing.expectEqualStrings("pdf", stored);
+}
+
+test "createWorkspaceItemTask: skill_name = null stores the empty sentinel" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try createLegacyTasksTable110(&ctx);
+    try Migration110AddTaskSkillName.up(&ctx.db, alloc);
+
+    const task = try createWorkspaceItemTask(
+        alloc,
+        &ctx.db,
+        "t_no_skill",
+        "Task without a skill",
+        "item_1",
+        "standard",
+        null, // description
+        null, // tags
+        null, // image_urls
+        null, // cwd
+        null, // video_urls
+        null, // skill_name — the omitted-body-field case
+    );
+    defer task.deinit(alloc);
+
+    try testing.expectEqualStrings("", task.skill_name);
+
+    const stored = try skillNameOf110(&ctx, "t_no_skill");
+    defer alloc.free(stored);
+    try testing.expectEqualStrings("", stored);
+}
+
+test "createWorkspaceItemTask: skill_name = '' stores '' (not NULL)" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try createLegacyTasksTable110(&ctx);
+    try Migration110AddTaskSkillName.up(&ctx.db, alloc);
+
+    // The empty-slice-binds-as-NULL trap: `SqliteBackend.exec` binds "" as
+    // NULL, so the dynamic-SQL builder MUST emit a `''` literal here or the
+    // INSERT violates the NOT NULL constraint.
+    const task = try createWorkspaceItemTask(
+        alloc,
+        &ctx.db,
+        "t_empty_skill",
+        "Task with an explicit empty skill",
+        "item_1",
+        "standard",
+        null, // description
+        null, // tags
+        null, // image_urls
+        null, // cwd
+        null, // video_urls
+        "", // skill_name — the frontend's canonical "no skill" sentinel
+    );
+    defer task.deinit(alloc);
+
+    try testing.expectEqualStrings("", task.skill_name);
+
+    const stored = try skillNameOf110(&ctx, "t_empty_skill");
+    defer alloc.free(stored);
+    try testing.expectEqualStrings("", stored);
 }

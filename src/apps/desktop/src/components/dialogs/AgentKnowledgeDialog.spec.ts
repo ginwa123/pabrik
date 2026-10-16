@@ -1,5 +1,4 @@
 // Behavioural tests for AgentKnowledgeDialog.
-
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'

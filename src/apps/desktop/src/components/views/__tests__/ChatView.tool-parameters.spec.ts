@@ -1,30 +1,14 @@
-/**
- * Static contract: every tool-card branch in ChatView's tool dispatcher
- * (the v-if/v-else-if chain on msg.tool_name) must thread
- * `:parameters="getParametersForMessage(msg)"` — except UpdatePlan/GetPlan,
- * which use the `:message` idiom (self-contained envelope parsing, no
- * `parameters` prop needed).
- *
- * Full ChatView mount is too heavy for a unit test (requires a Pinia +
- * Vue Router scaffold — see ChatView.subagent-progress.spec.ts which
- * deliberately avoids it), so this spec greps the template source,
- * following the repo's static-contract pattern (cf. Glob.spec.ts
- * "source has no leftover bubble-frame CSS").
- */
+/** Static contract: every tool-card branch in ChatView's tool dispatcher (the v-if/v-else-if chain
+ * on msg.tool_name) must thread `:parameters="getParametersForMessage(msg)"`. */
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const src = readFileSync(resolve(__dirname, '../ChatView.vue'), 'utf8')
 
-/**
- * Slice the template window for one dispatcher branch: the `<Tag`
- * occurrence whose tag body carries the branch content
- * (`:content="innerToolData(msg)"`, or `:message="msg"` for the
- * plan cards) — NOT a `<script>`-section comment that merely names
- * the component (e.g. the `<TextReplace>` comment). Window ends at
- * the branch's self-closing `/>`.
- */
+/** Slice the template window for one dispatcher branch: the `<Tag` occurrence whose tag body
+ * carries the branch content (`:content="innerToolData(msg)"`, or `:message="msg"` for the plan
+ * cards). */
 function branchWindow(marker: string): string {
   let from = 0
   for (;;) {

@@ -126,6 +126,7 @@ pub const TaskCreateRequest = struct {
     /// Per-task cwd override (Migration 070 — kanban-cwd-session- optional
     /// plan, 2026-08-06).
     cwd: ?[]const u8 = null,
+    skill_name: ?[]const u8 = null,
 };
 
 pub const TaskUpdateRequest = struct {

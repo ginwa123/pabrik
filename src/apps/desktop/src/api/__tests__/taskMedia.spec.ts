@@ -1,16 +1,6 @@
-/**
- * Tests for the lazy task-media endpoint client (media-flags change).
- *
- * List/get return only `is_have_image` / `is_have_video` flags so board
- * fetches stay small; `getTaskMedia` fetches the full `||`-delimited
- * base64 TEXT columns on demand (called only when a flag is true).
- *
- * Contract:
- *   1. Hits `GET /api/workspaces/:ws/items/:item/tasks/:task_id/media`
- *      with encoded path segments.
- *   2. Splits the raw `||`-delimited strings into arrays (empty → []).
- *   3. 404 resolves null (task deleted / wrong item) — same as getTask.
- */
+/** Tests for the lazy task-media endpoint client (media-flags change). List/get return only
+ * `is_have_image` / `is_have_video` flags so board fetches stay small; `getTaskMedia` fetches the
+ * full `||`-delimited base64 TEXT columns on demand (called only when a flag is true). */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { getTaskMedia, getTasksMedia } from '@/api/index'

@@ -1,23 +1,6 @@
-/**
- * Zero-dependency code highlighter for read-only diff output.
- *
- * `detectLanguage` is the repo's single extension→language table (moved
- * verbatim from `CodeEditor.vue` so the diff card and the full editor
- * agree on language). `highlightLine` is a small per-line regex scanner
- * that splits a line into typed tokens; callers render each token as a
- * `<span class="tok-*">` and keep the row red/green background as the
- * source of truth for removed/added.
- *
- * Token palette mirrors the `pabrik-dark` monaco theme in CodeEditor.vue:
- * comment #7a8382 italic, keyword #8992a7, string #87a987,
- * number #c4b28a, type #8ba4b0, function #8ea4a2, plain inherits.
- *
- * Safety: this module only *splits* text — it never builds HTML strings.
- * Render tokens as Vue text nodes (`h('span', {class}, token.text)`) so
- * escaping stays with the framework. Unknown / plaintext language returns
- * a single `plain` token (callers render exactly as before).
- */
-
+/** Zero-dependency code highlighter for read-only diff output. `detectLanguage` is the repo's
+ * single extension→language table (moved verbatim from `CodeEditor.vue` so the diff card and the
+ * full editor agree on language). */
 export type TokenType = 'keyword' | 'string' | 'comment' | 'number' | 'function' | 'type' | 'plain'
 
 export interface Token {
@@ -197,10 +180,8 @@ const NUMBER_RE =
   /^(?:0x[0-9a-fA-F_]+|0b[01_]+|0o[0-7_]+|\d[\d_]*(?:\.\d[\d_]*)?(?:[eE][+-]?\d[\d_]*)?)/
 const IDENT_RE = /^[A-Za-z_$][A-Za-z0-9_$]*/
 
-/**
- * Split one line into typed tokens. Pure function — no DOM, no HTML.
- * `language` is a monaco language id (see `detectLanguage`).
- */
+/** Split one line into typed tokens. Pure function — no DOM, no HTML.
+ * `language` is a monaco language id (see `detectLanguage`). */
 export function highlightLine(line: string, language: string): Token[] {
   if (!line || PASSTHROUGH.has(language)) return [{ text: line, type: 'plain' }]
 
@@ -328,34 +309,15 @@ export function highlightLine(line: string, language: string): Token[] {
   return tokens.length > 0 ? tokens : [{ text: line, type: 'plain' }]
 }
 
-/**
- * Tokenize every line against an ALREADY-RESOLVED monaco language id.
- *
- * For a caller that resolved the language itself — an explicit override, or
- * a `detectLanguage` result it wants to reuse. Use `highlightLinesForFile`
- * when all you have is a path: this function cannot tell a language id from
- * a filename, and `highlightLines(lines, 'typescript')` /
- * `highlightLinesForFile(lines, 'typescript')` are NOT interchangeable (the
- * latter reads it as a path with no extension → plaintext).
- *
- * The result is parallel to `lines`: index it with the same row index the
- * caller renders.
- */
+/** Tokenize every line against an ALREADY-RESOLVED monaco language id. For a caller that resolved
+ * the language itself — an explicit override, or a `detectLanguage` result it wants to reuse. */
 export function highlightLines(lines: readonly string[], language: string): Token[][] {
   return lines.map((line) => highlightLine(line, language))
 }
 
-/**
- * Tokenize every line of one file for a render site that only knows the
- * path — the diff reviews, the git viewers. Pairing `detectLanguage` with
- * `highlightLine` happens exactly once, here, so a new code surface cannot
- * drift from the others.
- *
- * The result is parallel to `lines`: index it with the same row index the
- * caller renders. A `null`/unknown path yields `plaintext`, whose tokens
- * are a single `plain` entry — byte-identical to the un-highlighted
- * rendering this replaced.
- */
+/** Tokenize every line of one file for a render site that only knows the path — the diff reviews,
+ * the git viewers. Pairing `detectLanguage` with `highlightLine` happens exactly once, here, so a
+ * new code surface cannot drift from the others. */
 export function highlightLinesForFile(
   lines: readonly string[],
   filePath: string | null | undefined,

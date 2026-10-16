@@ -76,12 +76,8 @@ const emit = defineEmits<{
   openInNewTab: []
 }>()
 
-// ─── Keyboard navigation ──────────────────────────────────────────────────
-// The row is a <button>, so it is already in the tab order; the menu has
-// to be arrow-navigable too. Rows are queried from the DOM rather than
-// collected through function refs because "Stop agent" is v-if'd — a
-// ref array would hold a detached element when that row appears or
-// disappears, and the arrows would walk into a row no longer on screen.
+// ─── Keyboard navigation ────────────────────────────────────────────────── The row is a <button>,
+// so it is already in the tab order; the menu has to be arrow-navigable too.
 const rootRef = ref<HTMLElement | null>(null)
 
 const navRows = (): HTMLElement[] =>

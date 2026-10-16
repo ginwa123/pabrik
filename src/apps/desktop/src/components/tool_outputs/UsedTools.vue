@@ -37,10 +37,9 @@ import { computed, ref } from 'vue'
 import ToolCardHeader from './_shared/ToolCardHeader.vue'
 import { tryUnwrapToolOutput } from '../../helpers/unwrapToolOutput'
 
-// Minimal shape we need from the parent. ChatView.vue defines a LOCAL
-// `Message` interface (different from `api.Message`) so we declare just the
-// fields we read — this keeps the component decoupled from whichever Message
-// type the parent uses.
+// Minimal shape we need from the parent. ChatView.vue defines a LOCAL `Message` interface
+// (different from `api.Message`) so we declare just the fields we read — this keeps the component
+// decoupled from whichever Message type the parent uses.
 interface ToolMessageLike {
   id?: string
   role?: string
@@ -96,12 +95,9 @@ function strOrNull(v: unknown): string | null {
   return null
 }
 
-/**
- * Unwrap the message content to the inner payload record. Accepts the full JSON
- * envelope string (the real wire shape) or a bare payload JSON string
- * (defensive fallback for direct callers). Returns null when the content is
- * not parseable JSON at all.
- */
+/**  * Unwrap the message content to the inner payload record. Accepts the full JSON envelope string
+ * (the real wire shape) or a bare payload JSON string (defensive fallback for direct callers).
+ * Returns null when the content is not parseable JSON at all. */
 function payloadOf(
   content: string,
 ): { data: Record<string, unknown>; error: string | null } | null {

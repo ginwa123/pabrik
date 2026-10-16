@@ -1,19 +1,6 @@
-/**
- * `SyncStore` — the local-cache boundary of the sync engine.
- *
- * This used to be a plain interface with exactly one production
- * implementation (`IndexedDbStore`) plus a hand-rolled in-memory fallback
- * inside the engine. That is a Layer written by hand and never labelled as
- * one, so we now say it out loud: the tag is the service, the IndexedDB
- * adapter is `IndexedDbStoreLive`, and `makeMemorySyncStore` is the fake
- * every spec substitutes via `Layer.succeed`.
- *
- * Rows are carried through the generic parameter rather than through a
- * per-store interface, and the object-store name is an explicit argument.
- * That is what lets a single service — and a single database connection —
- * back the `messages`, `sessions` and `tasks` stores, instead of each engine
- * opening its own handle to the same file.
- */
+/** `SyncStore` — the local-cache boundary of the sync engine. This used to be a plain interface
+ * with exactly one production implementation (`IndexedDbStore`) plus a hand-rolled in-memory
+ * fallback inside the engine. */
 import { Context, Effect, Layer } from 'effect'
 import { SyncStorageError } from './SyncError'
 import type { Syncable } from './SyncTypes'
@@ -67,11 +54,9 @@ export function sortNewestFirst<T extends Syncable>(rows: ReadonlyArray<T>): T[]
 
 const cell = (store: string, key: string): string => `${store} ${key}`
 
-/**
- * In-memory `SyncStore`: the no-IndexedDB fallback (SSR, tests, private
- * browsing) and the test double. It cannot fail, so its error channel is
- * `never` — which is precisely why substituting it needs no stubbing.
- */
+/**  * In-memory `SyncStore`: the no-IndexedDB fallback (SSR, tests, private browsing) and the test
+ * double. It cannot fail, so its error channel is `never` — which is precisely why substituting it
+ * needs no stubbing. */
 export function makeMemorySyncStore(): SyncStoreShape {
   const rows = new Map<string, Syncable[]>()
   const cursors = new Map<string, string | null>()

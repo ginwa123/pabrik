@@ -1,14 +1,6 @@
-/**
- * Unit tests for the workspaces store's reorderWorkspaces action.
- *
- * reorderWorkspaces is the optimistic-update action for workspace-level
- * ordering (the 2026-09-22 revamp removed the sidebar UI; store + API
- * remain). It reorders the local
- * workspaces.value array immediately (so the UI snaps on drop),
- * then POSTs the new order to the backend, rolling back on error.
- *
- * Plan: docs/plans/2026-06-12-workspace-drag-and-drop.md
- */
+/** Unit tests for the workspaces store's reorderWorkspaces action. reorderWorkspaces is the
+ * optimistic-update action for workspace-level ordering (the 2026-09-22 revamp removed the sidebar
+ * UI; store + API remain). Plan: docs/plans/2026-06-12-workspace-drag-and-drop.md */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

@@ -44,10 +44,9 @@ import { useDesignContextMenu } from '../../composables/useDesignContextMenu'
 import { useLayerDragDrop, TOP_LEVEL_SENTINEL } from '../../composables/useLayerDragDrop'
 import { useWorkspacesStore } from '../../stores/workspaces'
 
-// Read the active workspace + item + page at call time. Mirrors the
-// pattern in `useDesignHandlers.updateElement` — no need to plumb
-// ids through props when the store already knows them. Undo/redo
-// plan Chunk 1 (wire-up of silent-drop emits).
+// Read the active workspace + item + page at call time. Mirrors the pattern in
+// `useDesignHandlers.updateElement` — no need to plumb ids through props when the store already
+// knows them. Undo/redo plan Chunk 1 (wire-up of silent-drop emits).
 const workspacesStore = useWorkspacesStore()
 const activeWorkspaceId = computed(() => workspacesStore.activeWorkspace?.id ?? null)
 const activeWorkspaceItemId = computed(() => workspacesStore.activeWorkspaceItemId)
@@ -87,23 +86,19 @@ const emit = defineEmits<{
   // appropriate handlers (useDesignHandlers, store actions).
   group: [targetIds: string[]]
   ungroup: [elementId: string]
-  // NEW (2026-08-06, design-leave-group plan): pull the SINGLE
-  // selected element out of its current parent group/frame to
-  // top-level. Wired through DesignView → useDesignHandlers →
-  // workspacesStore.reparentDesignElementsBatch. Independent of the
-  // Ungroup action (which dissolves the selected group itself).
+  // NEW (2026-08-06, design-leave-group plan): pull the SINGLE selected element out of its current
+  // parent group/frame to top-level. Wired through DesignView → useDesignHandlers →
+  // workspacesStore.reparentDesignElementsBatch.
   leaveGroup: [elementId: string]
-  // NEW (Chunk 7, design-move-to-page plan, 2026-08-06): bubble the
-  // "Move to page..." selection up to the host so it can open the
-  // MoveToPageDialog with the right element id. The dialog handles
+  // NEW (Chunk 7, design-move-to-page plan, 2026-08-06): bubble the "Move to page..." selection up
+  // to the host so it can open the MoveToPageDialog with the right element id. The dialog handles
   // the actual API call after the user picks a target page.
   moveToPage: [elementId: string]
   selectAll: []
   bringToFront: [targetIds: string[]]
   bringForward: [targetIds: string[]]
-  // NEW (Chunk 4 Task 4.2 of drag-to-reparent plan): payload from a
-  // drop event. `elementIds` is the FULL selection when the dragged
-  // row is in the selection (multi-drag). `newParentId` is the
+  // NEW (Chunk 4 Task 4.2 of drag-to-reparent plan): payload from a drop event. `elementIds` is the
+  // FULL selection when the dragged row is in the selection (multi-drag). `newParentId` is the
   // group/frame id to reparent under, or null for "leave group".
   reparent: [payload: { elementIds: string[]; newParentId: string | null }]
   sendBackward: [targetIds: string[]]
@@ -119,36 +114,18 @@ function handleLayerContextMenu(payload: { event: MouseEvent; targetIds: string[
   contextMenu.open(payload.event, payload.targetIds)
 }
 
-/**
- * Build a tree of nested `LayerTreeNode`s from a flat `DesignElement[]`.
- *
- * Algorithm:
- *   1. Walk all elements; create a `LayerTreeNode` for each.
- *   2. Bucket them by `parent_id` (or `null` for top-level).
- *   3. For each node, look up its children by its own id and assign.
- *   4. Sort each bucket by z_index DESC then position ASC (matches
- *      the legacy flat sort).
- *   5. Return the top-level bucket (parent_id === null).
- *
- * Why a fresh Map<string, LayerTreeNode> for each pass instead of
- * mutating `elements` directly: each `LayerTreeNode.children` must
- * reference the SAME `LayerTreeNode` instance that the loop just
- * created (not a fresh one), otherwise the tree would lose the
- * upward link to the parent.
- */
+/** Build a tree of nested `LayerTreeNode`s from a flat `DesignElement[]`. Algorithm: 1. Walk all
+ * elements; create a `LayerTreeNode` for each. 2. Bucket them by `parent_id` (or `null` for
+ * top-level). 3. For each node, look up its children by its own id and assign. 4. */
 const layerTree = computed<LayerTreeNode[]>(() => {
   const byParent = new Map<string | null, LayerTreeNode[]>()
   const nodes = new Map<string, LayerTreeNode>()
   for (const e of props.elements) {
     const node: LayerTreeNode = { element: e, children: [] }
     nodes.set(e.id, node)
-    // The backend's `listElements` returns `COALESCE(de.parent_id, '')`
-    // — so a top-level element (parent_id IS NULL) arrives as
-    // `parent_id === ""` (empty string), NOT null/undefined. Treat
-    // empty string the same as nullish so top-level rows land in the
-    // `null` bucket instead of a separate `""` bucket that the final
-    // `byParent.get(null) ?? []` returns empty. See the regression
-    // test in LayersPanel.spec.ts for the wire shape.
+    // The backend's `listElements` returns `COALESCE(de.parent_id, '')` — so a top-level element
+    // (parent_id IS NULL) arrives as `parent_id === ""` (empty string), NOT null/undefined. See the
+    // regression test in LayersPanel.spec.ts for the wire shape.
     const pid = e.parent_id || null
     if (!byParent.has(pid)) byParent.set(pid, [])
     byParent.get(pid)!.push(node)
@@ -167,12 +144,9 @@ const layerTree = computed<LayerTreeNode[]>(() => {
   return byParent.get(null) ?? []
 })
 
-/**
- * Per-element collapse state. A `Set` because collapse is binary
- * per-id. Held as `ref(new Set)` so a replacement (not a mutation)
- * triggers Vue 3 reactivity. The Set is passed DOWN to `<LayerRow>`
- * by reference (read-only in the child).
- */
+/**  * Per-element collapse state. A `Set` because collapse is binary per-id. Held as `ref(new Set)` so
+ * a replacement (not a mutation) triggers Vue 3 reactivity. The Set is passed DOWN to `<LayerRow>`
+ * by reference (read-only in the child). */
 const collapsedIds = ref<Set<string>>(new Set())
 
 const toggleCollapse = (elementId: string): void => {
@@ -185,16 +159,9 @@ const toggleCollapse = (elementId: string): void => {
   collapsedIds.value = next
 }
 
-/**
- * Walk the tree to find a node by id. Returns the node + its
- * sibling array (the parent's children) + the node's index within
- * that array. Used by `handleMoveUp` / `handleMoveDown` to swap
- * with the previous / next sibling.
- *
- * For a top-level element, `siblings` is `layerTree` (the top-level
- * array) and `parent` is `null`. For a nested element, `siblings`
- * is the parent's `children` array.
- */
+/** Walk the tree to find a node by id. Returns the node + its sibling array (the parent's children)
+ * + the node's index within that array. Used by `handleMoveUp` / `handleMoveDown` to swap with the
+ * previous / next sibling. */
 function findNode(
   nodes: LayerTreeNode[],
   elementId: string,
@@ -209,28 +176,9 @@ function findNode(
   return null
 }
 
-/**
- * Deep-clone the tree so we can swap siblings without mutating the
- * `layerTree` computed (which is owned by Vue's reactivity and
- * should be treated as immutable). The clone preserves `element`
- * references (no need to copy those — only the tree structure
- * mutates).
- */
-// ─── Drag-and-drop state (Chunk 4 Task 4.2) ────────────────────────────
-//
-// LayersPanel owns the drag state machine via `useLayerDragDrop`.
-// The composable returns the drag handlers + per-row visual state
-// predicates; we pass those down to each <LayerRow>.
-//
-// Top-level drop zones (above the first top-level row, between each
-// pair, below the last) use the TOP_LEVEL_SENTINEL id — the same
-// sentinel the composable treats as "leave any group".
-//
-// Multi-drag: when the dragged row is in `selectedIds` AND the
-// selection has > 1 element, the composable sets draggedIds to the
-// FULL set. The LayerRow's per-row visual flags (`isBeingDragged`)
-// reflect that — every selected row gets the dragging class.
-
+/** Deep-clone the tree so we can swap siblings without mutating the `layerTree` computed (which is
+ * owned by Vue's reactivity and should be treated as immutable). The clone preserves `element`
+ * references (no need to copy those — only the tree structure mutates). */
 const dragDrop = useLayerDragDrop({
   elements: () => props.elements,
   selectedIds: () => new Set(props.selectedIds),
@@ -253,14 +201,9 @@ function cloneTree(nodes: LayerTreeNode[]): LayerTreeNode[] {
   }))
 }
 
-/**
- * Move the element at `elementId` up by one (toward the top of the
- * panel). In a tree, "up" means swapping with the previous SIBLING
- * within the same parent's children array. For top-level elements,
- * the parent is the panel itself (the top-level `layerTree`).
- *
- * Emits `reorder` with the new top-to-bottom depth-first id list.
- */
+/** Move the element at `elementId` up by one (toward the top of the panel). In a tree, "up" means
+ * swapping with the previous SIBLING within the same parent's children array. For top-level
+ * elements, the parent is the panel itself (the top-level `layerTree`). */
 const handleMoveUp = (elementId: string): void => {
   if (props.readonly) return
   const found = findNode(layerTree.value, elementId)
@@ -275,14 +218,9 @@ const handleMoveUp = (elementId: string): void => {
   const current = siblings[idx]!
   siblings[idx - 1] = current
   siblings[idx] = above
-  // Wire-up (undo/redo plan Chunk 1): was `emit('reorder',
-  // flattenTopDown(cloned))` which went up to DesignView → re-emitted
-  // upward → AppLayout had no listener → silent drop. Now we call
-  // the store action directly with `mode: 'bring_forward'`. The
-  // store action mirrors the response into the local design_elements
-  // array; the layers panel re-renders from that array on the next
-  // tick. Selecting just `[elementId]` (not the full order) matches
-  // the keyboard shortcut's behavior (Cmd+] / Cmd+[).
+  // Wire-up (undo/redo plan Chunk 1): was `emit('reorder', flattenTopDown(cloned))` which went up
+  // to DesignView → re-emitted upward → AppLayout had no listener → silent drop. Now we call the
+  // store action directly with `mode: 'bring_forward'`.
   void workspacesStore.reorderDesignElements(
     activeWorkspaceId.value!,
     activeWorkspaceItemId.value!,

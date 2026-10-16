@@ -15,9 +15,8 @@ import {
 
 const props = defineProps<{
   cwd: string
-  /** Per-chat persistence key. With it, session ids survive tab/chat
-   * switches via localStorage and re-attach on return; without it
-   * sessions are deleted on unmount. */
+  /**    * Per-chat persistence key. With it, session ids survive tab/chat switches via localStorage and
+   * re-attach on return; without it sessions are deleted on unmount. */
   sessionKey?: string
 }>()
 
@@ -34,10 +33,9 @@ interface TermSession {
 const container = ref<HTMLElement | null>(null)
 const sessions = ref<TermSession[]>([])
 const activeId = ref<string | null>(null)
-// True while `restoreSessions` validates the stored ids against the
-// server. Without it the panel renders its "No terminal yet" empty
-// state during that window — a lie for a user who had three terminals
-// open before a reload.
+// True while `restoreSessions` validates the stored ids against the server. Without it the panel
+// renders its "No terminal yet" empty state during that window — a lie for a user who had three
+// terminals open before a reload.
 const isRestoring = ref(false)
 // Idle until the user explicitly starts a terminal — mounting the tab
 // (ChatRightSidebar keeps it mounted via v-show) must not spawn a PTY.
@@ -56,12 +54,8 @@ let wsAttempt = 0
 let wsRetryTimer: ReturnType<typeof setTimeout> | null = null
 let sessionCounter = 0
 const mountedAt = Date.now()
-// Mount-time cwd resolution grace: with a git worktree the value
-// resolves as '' -> session dir -> worktree dir on every mount. Flips
-// inside this window are resolution, not scope changes — dropping
-// sessions here is what wiped restored terms on every chat return
-// ("always a new term" with worktrees).
-
+// Mount-time cwd resolution grace: with a git worktree the value resolves as '' -> session dir ->
+// worktree dir on every mount.
 const hasSessionKey = () => (props.sessionKey ?? '').length > 0
 const storageKey = () => `pabrik-terminal-sessions:${props.sessionKey}`
 
@@ -361,10 +355,9 @@ const newSession = async () => {
   status.value = 'connecting…'
   try {
     fit?.fit()
-    // effectiveCwd resolves shortly after mount (session load); wait
-    // briefly so a fresh shell spawns in the chat dir instead of the
-    // server-cwd fallback. Restored sessions skip this (re-attach by
-    // id needs no cwd).
+    // effectiveCwd resolves shortly after mount (session load); wait briefly so a fresh shell
+    // spawns in the chat dir instead of the server-cwd fallback. Restored sessions skip this
+    // (re-attach by id needs no cwd).
     const cwd = await awaitCwd()
     // The wait above can outlive the tab (unmount during the stability
     // window): never spawn into a dead component — leaked creates
@@ -499,10 +492,9 @@ onMounted(() => {
   })
   fit = new FitAddon()
   term.loadAddon(fit)
-  // Test hook (dev only): functional_ui tests drive a real browser and
-  // assert on the terminal buffer, which xterm renders to <canvas> (no
-  // DOM text to query). Exposes the live Terminal for buffer reads;
-  // never set in production builds.
+  // Test hook (dev only): functional_ui tests drive a real browser and assert on the terminal
+  // buffer, which xterm renders to <canvas> (no DOM text to query). Exposes the live Terminal for
+  // buffer reads; never set in production builds.
   if (import.meta.env.DEV) {
     ;(window as unknown as { __pabrikTerm?: Terminal }).__pabrikTerm = term
   }
@@ -521,11 +513,9 @@ onMounted(() => {
 // had; no immediate run, matching the old watcher).
 async function syncCwdScope(next: string, prev: string) {
   if (next === prev || disposed) return
-  // Initial '' → dir resolution is NOT a scope change: fresh mounts
-  // already waited for cwd in newSession, and restored sessions
-  // re-attach by id (cwd-independent). Dropping here is what wiped
-  // restored sessions on every chat return ("always a new term").
-  // Only a real scope change (dir → different dir) restarts shells.
+  // Initial '' → dir resolution is NOT a scope change: fresh mounts already waited for cwd in
+  // newSession, and restored sessions re-attach by id (cwd-independent). Dropping here is what
+  // wiped restored sessions on every chat return ("always a new term").
   if (!prev) return
   // Mount-time resolution grace (git worktree '' → session → worktree
   // flips): ignore dir → dir changes inside the grace window, only a

@@ -1,23 +1,6 @@
-/**
- * Unit tests for the bus-backed kanbanSse Pinia store (Chunk 10 of
- * docs/superpowers/plans/2026-06-30-unify-frontend-sse.md).
- *
- * The store no longer opens its own EventSource — it subscribes via
- * `useSseBus().on('kanban', ...)`. Tests:
- *   - install the bus via `installSseBus` + swap in a stub global
- *     client (so we never touch the network in tests)
- *   - drive kanban events via `__dispatchSseBus('kanban', event)` —
- *     the bus test injection point routes the event through the
- *     same `dispatch()` function production uses
- *   - assert the workspace-id filter drops events for other workspaces
- *   - assert the kanban_column / kanban_task dispatch logic calls
- *     `workspacesStore.fetchKanbanColumns` / `fetchKanbanTasks`
- *   - assert `closeKanbanSse` detaches the listener so events after
- *     close are NOT delivered
- *   - assert `setActiveWorkspaceId` updates the filter (without
- *     re-subscribing) — a 2nd call with a different workspaceId
- *     changes the filter on subsequent events
- */
+/** Unit tests for the bus-backed kanbanSse Pinia store (Chunk 10 of
+ * docs/superpowers/plans/2026-06-30-unify-frontend-sse.md). The store no longer opens its own
+ * EventSource — it subscribes via `useSseBus().on('kanban', ...)`. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'
@@ -39,11 +22,8 @@ import {
 } from '../stores/workspaces'
 import { makeLocalStorageStub } from './helpers'
 
-/**
- * Test-only stub SseClient. Tracks state-listener callbacks so tests
- * can drive the bus's `state` ShallowRef transitions to exercise
- * the `onConnected → fetchInitialKanban` watcher.
- */
+/**  * Test-only stub SseClient. Tracks state-listener callbacks so tests can drive the bus's `state`
+ * ShallowRef transitions to exercise the `onConnected → fetchInitialKanban` watcher. */
 function makeStubClient(initial: SseState): SseClient {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const stub: any = {
@@ -85,10 +65,9 @@ describe('useKanbanSseStore (bus-backed)', () => {
       configurable: true,
     })
 
-    // Install the bus BEFORE initKanbanSse runs — kanbanSseStore calls
-    // `useSseBus()` inside initKanbanSse, which throws if the bus
-    // hasn't been installed. Replace the underlying SseClient with a
-    // stub so we never open a network EventSource in tests.
+    // Install the bus BEFORE initKanbanSse runs — kanbanSseStore calls `useSseBus()` inside
+    // initKanbanSse, which throws if the bus hasn't been installed. Replace the underlying
+    // SseClient with a stub so we never open a network EventSource in tests.
     __resetSseBus()
     app = createApp({})
     installSseBus(app)
@@ -97,10 +76,9 @@ describe('useKanbanSseStore (bus-backed)', () => {
   })
 
   afterEach(() => {
-    // Detach the bus listener so events don't fire into a store whose
-    // Pinia is gone — `__resetSseBus` closes the global client which
-    // also tears down internal state, but explicit closeKanbanSse
-    // covers the case where a test crashed before reaching close.
+    // Detach the bus listener so events don't fire into a store whose Pinia is gone —
+    // `__resetSseBus` closes the global client which also tears down internal state, but explicit
+    // closeKanbanSse covers the case where a test crashed before reaching close.
     try {
       useKanbanSseStore().closeKanbanSse()
     } catch {
@@ -115,9 +93,8 @@ describe('useKanbanSseStore (bus-backed)', () => {
   }
 
   it('initKanbanSse subscribes to bus.on(kanban) without opening its own EventSource', async () => {
-    // Spy on the global SseClient's close call so we can assert no
-    // NEW EventSource was opened by the kanbanSse store. The bus
-    // already opened one (in installSseBus, replaced by the stub in
+    // Spy on the global SseClient's close call so we can assert no NEW EventSource was opened by
+    // the kanbanSse store. The bus already opened one (in installSseBus, replaced by the stub in
     // beforeEach) — we just verify the store didn't open another.
     const stubCloseSpy = vi.spyOn(stubClient, 'close')
 
@@ -219,10 +196,9 @@ describe('useKanbanSseStore (bus-backed)', () => {
     }
     dispatch(event)
 
-    // Task events refresh TASKS, not columns. fetchKanbanColumns must
-    // NOT be called — that would be wasted HTTP traffic (and would mask
-    // a future bug where the column handler accidentally picks up task
-    // events).
+    // Task events refresh TASKS, not columns. fetchKanbanColumns must NOT be called — that would be
+    // wasted HTTP traffic (and would mask a future bug where the column handler accidentally picks
+    // up task events).
     expect(fetchColumnsSpy).not.toHaveBeenCalled()
     expect(fetchTasksSpy).toHaveBeenCalledWith(
       'ws_1',
@@ -237,11 +213,9 @@ describe('useKanbanSseStore (bus-backed)', () => {
   })
 
   it('skips fetchKanbanTasks on self-echo moved events (local-mutation dedupe)', async () => {
-    // Drag-and-drop via moveTaskToColumn registers the task id in
-    // recentLocalMutations; when the backend fans the `moved` SSE
-    // event back to the mover, the handler mirrors + returns WITHOUT
-    // the tasks?limit=100 refetch. Remote moves (no registration)
-    // still refetch (see the moved test above).
+    // Drag-and-drop via moveTaskToColumn registers the task id in recentLocalMutations; when the
+    // backend fans the `moved` SSE event back to the mover, the handler mirrors + returns WITHOUT
+    // the tasks?limit=100 refetch.
     _clearRecentLocalMutationsForTests()
     try {
       const ws = useWorkspacesStore()
@@ -270,9 +244,8 @@ describe('useKanbanSseStore (bus-backed)', () => {
   })
 
   it('uses refreshTask (1 row) for remote moved events when the task is cached', async () => {
-    // Fast path: the task is already in the local store and the board
-    // is on the default view (no search, no custom sort), so the
-    // mirror + in-array slot carry the move and one GET confirms
+    // Fast path: the task is already in the local store and the board is on the default view (no
+    // search, no custom sort), so the mirror + in-array slot carry the move and one GET confirms
     // server truth — no blind tasks?limit=100 column fetch.
     const ws = useWorkspacesStore()
     ws.workspaces = [
@@ -500,13 +473,8 @@ describe('useKanbanSseStore (bus-backed)', () => {
   })
 
   it('triggers fetchKanbanTasksForAllColumns on unassigned (no new_column_id)', async () => {
-    // Per-column pagination (Option B, 2026-08-06): unassign events
-    // have `new_column_id: null` (the task is being detached from any
-    // column). We don't know which column it WAS in (the SSE payload
-    // doesn't carry the source column id), so conservatively refetch
-    // ALL columns via fetchKanbanTasksForAllColumns. For move/assign
-    // events with a non-null new_column_id, the single-column
-    // fetchKanbanTasks fires (see the moved/assigned tests above).
+    // Per-column pagination (Option B, 2026-08-06): unassign events have `new_column_id: null` (the
+    // task is being detached from any column).
     const ws = useWorkspacesStore()
     const fetchAllColumnsSpy = vi.spyOn(ws, 'fetchKanbanTasksForAllColumns').mockResolvedValue()
     const fetchTasksSpy = vi.spyOn(ws, 'fetchKanbanTasks').mockResolvedValue()
@@ -536,14 +504,8 @@ describe('useKanbanSseStore (bus-backed)', () => {
   })
 
   it('human_touched: NO refetch — patches needs_human_review in place (chatview-open api-spam fix)', async () => {
-    // REGRESSION (2026-08-24): opening a task's chatview fires
-    // PUT .../tasks/:id/touched → backend emits kanban_task SSE
-    // action=human_touched with new_column_id=null. Pre-fix, that
-    // fell into the unassign branch and fired fetchKanbanTasksForAllColumns
-    // → one tasks?limit=100 per column (7 calls, ~5 MB on a 270-task
-    // board) EVERY time the user opened a chat. The wire payload
-    // already carries the after-state (needs_human_review: false),
-    // so the handler must patch locally and fetch NOTHING.
+    // REGRESSION (2026-08-24): opening a task's chatview fires PUT .../tasks/:id/touched → backend
+    // emits kanban_task SSE action=human_touched with new_column_id=null.
     const ws = useWorkspacesStore()
     const fetchAllColumnsSpy = vi.spyOn(ws, 'fetchKanbanTasksForAllColumns').mockResolvedValue()
     const fetchTasksSpy = vi.spyOn(ws, 'fetchKanbanTasks').mockResolvedValue()
@@ -571,12 +533,9 @@ describe('useKanbanSseStore (bus-backed)', () => {
   })
 
   it('forwards the active q to fetchKanbanTasks on kanban_task events (Chunk 7)', async () => {
-    // CONTRACT (kanban task search, plan
-    // docs/superpowers/plans/2026-07-30-kanban-task-search.md Chunk 7):
-    // When the SSE handler triggers a task refetch, it MUST forward
-    // the active q from activeSearchQueries so a remote move/edit
-    // during a search doesn't reset the user's narrowed view to the
-    // unfiltered list.
+    // CONTRACT (kanban task search, plan docs/superpowers/plans/2026-07-30-kanban-task-search.md
+    // Chunk 7): When the SSE handler triggers a task refetch, it MUST forward the active q from
+    // activeSearchQueries so a remote move/edit during a search doesn't reset the user's narrowed.
     const ws = useWorkspacesStore()
     // Seed the activeSearchQueries for item_1.
     ws.activeSearchQueries.set('item_1', 'design')
@@ -608,14 +567,8 @@ describe('useKanbanSseStore (bus-backed)', () => {
     )
   })
 
-  // ─── Active sort forwarding (kanban-sort-by plan Chunk 3) ───
-  // The SSE handler refetches tasks on kanban_task events. When the
-  // user has picked a sort (e.g. name desc), the refetch MUST use
-  // the same sort — otherwise the user's view silently reverts to
-  // updated_at desc and the just-received event lands in the wrong
-  // visual order. The handler reads activeSortBy +
-  // activeSortDirection (written by fetchKanbanTasks on the most
-  // recent user-initiated fetch) and forwards them.
+  // ─── Active sort forwarding (kanban-sort-by plan Chunk 3) ─── The SSE handler refetches tasks on
+  // kanban_task events.
   it('forwards the active sort to fetchKanbanTasks on kanban_task events', async () => {
     const ws = useWorkspacesStore()
     // Seed both maps for the matching item id. activeSortDirection is
@@ -653,10 +606,9 @@ describe('useKanbanSseStore (bus-backed)', () => {
   })
 
   it('forwards sortBy=undefined / direction=undefined when no active sort is recorded', async () => {
-    // The default case (no user-picked sort) — loadMoreTasks + SSE
-    // refetches both default to undefined so the api layer applies
-    // its back-compat 'updated_at' / 'desc' default. This keeps the
-    // existing pre-fix behaviour intact.
+    // The default case (no user-picked sort) — loadMoreTasks + SSE refetches both default to
+    // undefined so the api layer applies its back-compat 'updated_at' / 'desc' default. This keeps
+    // the existing pre-fix behaviour intact.
     const ws = useWorkspacesStore()
     // Don't seed the maps.
     const fetchTasksSpy = vi.spyOn(ws, 'fetchKanbanTasks').mockResolvedValue()
@@ -732,11 +684,8 @@ describe('useKanbanSseStore (bus-backed)', () => {
     const store = useKanbanSseStore()
     await store.initKanbanSse('ws_1')
 
-    // Event for a DIFFERENT workspace — the store's filter drops it
-    // before reaching the workspacesStore fetch call. The bus's
-    // kanban channel is global (the backend fans out kanban events
-    // to every connected client), so the client-side filter is what
-    // keeps each workspace's kanban state scoped.
+    // Event for a DIFFERENT workspace — the store's filter drops it before reaching the
+    // workspacesStore fetch call.
     const event: KanbanColumnEvent = {
       action: 'updated',
       workspace_id: 'ws_OTHER',
@@ -780,11 +729,9 @@ describe('useKanbanSseStore (bus-backed)', () => {
   })
 
   it('fetches initial kanban columns on bus state transition to "open"', async () => {
-    // The bus's global stub is in 'connecting' state at the start of
-    // the test (set in beforeEach). initKanbanSse watches bus state
-    // and triggers fetchInitialKanban on 'open' (with immediate: true
-    // covering the fast path where the bus is already 'open' at
-    // registration time).
+    // The bus's global stub is in 'connecting' state at the start of the test (set in beforeEach).
+    // initKanbanSse watches bus state and triggers fetchInitialKanban on 'open' (with immediate:
+    // true covering the fast path where the bus is already 'open' at registration time).
     const ws = useWorkspacesStore()
     const fetchSpy = vi.spyOn(ws, 'fetchKanbanColumns').mockResolvedValue()
 

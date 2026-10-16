@@ -8,26 +8,9 @@ import {
   type ModelResolve,
 } from '../../api'
 
-/**
- * The profile form.
- *
- * THE SHAPE OF THIS FORM IS THE FEATURE. It shows THREE things — the model, one
- * line of facts, the API key — and every other knob lives behind `Advanced` with
- * a placeholder that states its own default (`inherit — openai`).
- *
- * Why: the face of this dialog used to expose 12 controls, and two of them
- * (`max_capacity_tokens`, `compaction_threshold_percent`) decided when a chat
- * throws its history away. Nobody could tell what the numbers were, because the
- * app did not know either — `LLMModels.getModelTokenCount` returned a built-in
- * 200_000 for every model that was not MiniMax. models.dev knows, the backend
- * now stores it, and this form shows the two numbers that actually matter:
- * the context window, and where compaction fires.
- *
- * The fact line is read-only on purpose. It is not a control; it is the answer
- * to "what will this profile do", including WHERE the answer came from
- * (`models.dev` vs `built-in`).
- */
-
+/** The profile form. THE SHAPE OF THIS FORM IS THE FEATURE. It shows THREE things — the model, one
+ * line of facts, the API key — and every other knob lives behind `Advanced` with a placeholder that
+ * states its own default (`inherit — openai`). */
 export interface LlmConfig {
   model: string
   base_url: string
@@ -35,19 +18,13 @@ export interface LlmConfig {
   temperature: string
   url_style: string
   api_key: string
-  /** Which TRANSPORT runs this profile's calls: `"http"` (default),
-   * `"claude-code"` (the local `claude` CLI, subscription auth via
-   * `claude login`), or `"opencode"` (the local `opencode` CLI, auth via
-   * `opencode login`). Orthogonal to `url_style`, which keeps describing
-   * the HTTP body shape only.
-   *
-   * Optional on purpose: an absent key IS the documented `"http"` default,
-   * so a profile that predates this field needs no change. */
+  /** Which TRANSPORT runs this profile's calls: `"http"` (default), `"claude-code"` (the local
+   * `claude` CLI, subscription auth via `claude login`), or `"opencode"` (the local `opencode` CLI,
+   * auth via `opencode login`). */
   backend?: string
-  /** Claude Code only: `CLAUDE_CONFIG_DIR`. Two profiles pointing at two
-   * directories are two different `claude login` sessions — the way
-   * per-profile identity works when there is no API key.
-   * `null` = the CLI default (`~/.claude`). */
+  /**    * Claude Code only: `CLAUDE_CONFIG_DIR`. Two profiles pointing at two directories are two
+   * different `claude login` sessions — the way per-profile identity works when there is no API
+   * key. `null` = the CLI default (`~/.claude`). */
   config_dir?: string | null
   /** Claude Code only: agentic turn ceiling (`--max-turns`).
    * `null` = the CLI's own default. */
@@ -64,9 +41,8 @@ export interface LlmConfig {
   /** Optional per-profile compaction threshold as a percentage (0-100).
    * `null` = the global default (built-in 80). */
   compaction_threshold_percent: number | null
-  /** Anthropic-only override for `thinking.budget_tokens`. Range
-   * (0, 2_000_000]. `null` = the 50%-of-max heuristic, or Anthropic's
-   * `type: "adaptive"` when `thinking === "auto"`. */
+  /**    * Anthropic-only override for `thinking.budget_tokens`. Range (0, 2_000_000]. `null` = the
+   * 50%-of-max heuristic, or Anthropic's `type: "adaptive"` when `thinking === "auto"`. */
   thinking_budget_tokens: number | null
   /** OpenAI-style reasoning effort. `null` = omit from the request body
    * (model-default reasoning). Anthropic-style URLs ignore it. */
@@ -105,7 +81,6 @@ const errorStyle = { color: 'var(--color-red)' }
 // === The one call this dialog makes =====================================
 // Resolve (model, provider) into facts. Runs on mount, on a debounced input,
 // and immediately when a picker row is chosen.
-
 const resolved = ref<ModelResolve | null>(null)
 const resolveError = ref<string | null>(null)
 const resolving = ref(false)
@@ -140,7 +115,6 @@ function scheduleResolve(): void {
 onMounted(() => void runResolve())
 
 // === Model picker =======================================================
-
 const pickerOpen = ref(false)
 const pickerResults = ref<ModelCatalogEntry[]>([])
 const pickerTotal = ref(0)
@@ -156,10 +130,9 @@ async function runPickerSearch(): Promise<void> {
     catalogState.value = res.catalog
     pickerError.value = null
   } catch (err) {
-    // A picker that cannot reach the catalog must not break typing — the field
-    // stays free text. But the reason is KEPT and rendered below, because
-    // "this model has no matches" and "we could not search" are different
-    // answers and must not look the same.
+    // A picker that cannot reach the catalog must not break typing — the field stays free text. But
+    // the reason is KEPT and rendered below, because "this model has no matches" and "we could not
+    // search" are different answers and must not look the same.
     pickerError.value = err instanceof Error ? err.message : String(err)
     pickerResults.value = []
     pickerTotal.value = 0
@@ -192,7 +165,6 @@ function chooseModel(entry: ModelCatalogEntry): void {
 }
 
 // === The fact line ======================================================
-
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`
   if (n >= 1_000) return `${Math.round(n / 1_000)}k`
@@ -236,12 +208,9 @@ const factWarning = computed<string | null>(() => {
   return null
 })
 
-// === Transport gating (`backend`, orthogonal to `url_style`) =============
-// A CLI profile (claude-code, opencode) runs a local binary: no base URL, no
-// API key, no HTTP body shape, and no request-body knobs. Those controls are
-// HIDDEN rather than shown-but-ignored, and the CLI's own knobs appear
-// instead. Hidden fields keep their values (never nulled) so flipping
-// backends back and forth does not discard what the user typed.
+// === Transport gating (`backend`, orthogonal to `url_style`) ============= A CLI profile
+// (claude-code, opencode) runs a local binary: no base URL, no API key, no HTTP body shape, and no
+// request-body knobs.
 const isClaudeCodeBackend = computed<boolean>(() => props.modelValue.backend === 'claude-code')
 const isOpencodeBackend = computed<boolean>(() => props.modelValue.backend === 'opencode')
 /** True for any local-CLI backend — the set that hides every HTTP control. */
@@ -249,7 +218,6 @@ const isCliBackend = computed<boolean>(() => isClaudeCodeBackend.value || isOpen
 const isHttpBackend = computed<boolean>(() => !isCliBackend.value)
 
 // === Temperature (free text: "auto" or 0–1) =============================
-
 const temperatureDraft = ref(props.modelValue.temperature)
 
 const temperatureError = computed<string | null>(() => {
@@ -272,19 +240,11 @@ function onTemperatureInput(raw: string): void {
 // === Capability gating comes from the MODEL, not the wire shape =========
 // The old form showed a Reasoning-effort dropdown for every OpenAI-shaped
 // profile, including models that ignore the field entirely.
-
-/** True only when the catalog actually answered for this model. */
 const hasFacts = computed<boolean>(() => resolved.value?.source === 'catalog')
 
-/**
- * Does the model support extended reasoning at all?
- *
- * With facts: its own `reasoning_options`. WITHOUT facts — catalog unreachable,
- * unknown model, first run — it degrades to the OLD `url_style`-based gate
- * rather than hiding a control because a request failed. The user cannot tell
- * "this model has no effort control" from "we could not ask", so we do not
- * pretend to.
- */
+/** Does the model support extended reasoning at all? With facts: its own `reasoning_options`.
+ * WITHOUT facts — catalog unreachable, unknown model, first run — it degrades to the OLD
+ * `url_style`-based gate rather than hiding a control because a request failed. */
 const modelSupportsReasoning = computed<boolean>(() => {
   if (!hasFacts.value) return true
   return resolved.value?.reasoning !== 'none'
@@ -303,11 +263,8 @@ const showsEffort = computed<boolean>(
   () => reasoningGate.value && !isAnthropicShape.value && modelSupportsReasoning.value,
 )
 
-// === Overrides ==========================================================
-// Every numeric override is `null` until the user types. An empty field is the
-// ONLY spelling of "inherit" — there is no checkbox, and a cleared field emits
-// `null`, never `""` (an empty slice binds as SQL NULL server-side).
-
+// === Overrides ========================================================== Every numeric override
+// is `null` until the user types.
 const advancedOpen = ref(false)
 const showKey = ref(false)
 

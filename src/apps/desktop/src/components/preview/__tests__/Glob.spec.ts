@@ -1,16 +1,4 @@
-/**
- * Tests for Glob.vue — the chatview tool card for the `glob` agent tool.
- *
- * Locks in the 2026-08-23 de-bubble migration (task_1787481940400_1):
- *  - The root element MUST carry the shared `.chat-tool-card` class
- *    (defined :deep in ChatView.vue + SubAgentPeekPanel.vue) so glob
- *    renders like every other de-bubbled tool card (bash, search, …)
- *    instead of the old boxed bubble frame.
- *  - The old scoped bubble frame (.gl: border-radius 6px, box border,
- *    card background) MUST be gone.
- *  - Warning data (warning field) still render the warning
- *    text and bind the orange left-rule variant.
- */
+/** Tests for Glob.vue — the chatview tool card for the `glob` agent tool. */
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -20,12 +8,7 @@ import { defineComponent, h, provide } from 'vue'
 import Glob from '../Glob.vue'
 import { OPEN_IN_CODE_EDITOR_KEY, type OpenInCodeEditorFn } from '@/composables/useCodeEditor'
 
-// ────────────────────────────────────────────────────────────────────────
-// Test fixtures — match the JSON shape emitted by the glob tool
-// (GlobJSON: {pattern,total,returned,offset,truncated,
-// truncated_by_size,files[],warning}).
-// ────────────────────────────────────────────────────────────────────────
-
+// ──────────────────────────────────────────────────────────────────────── Test fixtures.
 const matchData = (pattern = '**/*.zig', total = 3) => ({
   pattern,
   total,
@@ -72,7 +55,6 @@ afterEach(() => {
 // ────────────────────────────────────────────────────────────────────────
 // De-bubble contract — the whole point of this migration
 // ────────────────────────────────────────────────────────────────────────
-
 describe('Glob.vue — de-bubble contract (renders like bash/ShellTool)', () => {
   it('root element carries the shared .chat-tool-card class', () => {
     const wrapper = makeWrapper({ content: matchData() })
@@ -115,7 +97,6 @@ describe('Glob.vue — de-bubble contract (renders like bash/ShellTool)', () => 
 // ────────────────────────────────────────────────────────────────────────
 // Behaviour preserved from pre-migration
 // ────────────────────────────────────────────────────────────────────────
-
 describe('Glob.vue — behaviour preserved', () => {
   it('shows file count summary for match results', () => {
     const wrapper = makeWrapper({ content: matchData() })
@@ -162,14 +143,8 @@ describe('Glob.vue — behaviour preserved', () => {
   })
 })
 
-// ────────────────────────────────────────────────────────────────────────
-// Empty/no-match results — Arguments must still be reachable.
-//
-// Bug: the expanded body was `v-if="isExpanded && filePaths.length > 0"`
-// and toggle() refused to expand on a warning/empty envelope, so a no-match
-// glob (warning envelope) could never show its Arguments block.
-// ────────────────────────────────────────────────────────────────────────
-
+// ──────────────────────────────────────────────────────────────────────── Empty/no-match results —
+// Arguments must still be reachable.
 describe('Glob.vue — warning data still shows Arguments (empty/no-match)', () => {
   const warningContent = {
     pattern: 'foo',
@@ -203,13 +178,9 @@ describe('Glob.vue — warning data still shows Arguments (empty/no-match)', () 
   })
 })
 
-// ────────────────────────────────────────────────────────────────────────
-// Error/empty states — the "not showing output" fix.
-//
-// - Envelope failures render a red error block instead of a bare "0 files".
-// - Expanded empty results show the warning/empty state, not just Arguments.
-// ────────────────────────────────────────────────────────────────────────
-
+// ──────────────────────────────────────────────────────────────────────── Error/empty states — the
+// "not showing output" fix. - Envelope failures render a red error block instead of a bare "0
+// files".
 describe('Glob.vue — error/empty states', () => {
   it('shows a red error block for envelope failures', async () => {
     const envelope = {

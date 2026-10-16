@@ -1,15 +1,4 @@
-/**
- * The wiring that makes the moved sections reachable at all.
- *
- * `PabrikConfigEditor` is proven to work in the workspace scope in
- * `PabrikConfigEditor.modes.spec.ts`; what this file pins is the VIEW's half:
- * that `/app/:ws/settings?section=profiles` actually mounts that editor,
- * pointed at that workspace, and that a section outside the four renders
- * something else instead.
- *
- * The three pre-existing sections are stubbed - they have their own specs and
- * their stores would otherwise fire real requests into the mock.
- */
+/** The wiring that makes the moved sections reachable at all. */
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'

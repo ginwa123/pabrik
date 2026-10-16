@@ -1,23 +1,6 @@
-/*
- * SkillList.vue — the per-row agent lock.
- *
- * The list is the only surface that shows every skill at once, so it is
- * where "which of these may the agent touch?" is answerable.
- *
- * The checkbox used to be on EVERY row — 41 of them on a real workspace,
- * each a PATCH on click, and the loudest thing on screen. It now appears
- * on the row the pointer is on, and always in the detail pane. What must
- * still hold:
- *
- *   1. The row's flag is THAT row's flag — a list that rendered one shared
- *      value would claim a pinned skill is editable.
- *   2. Toggling patches only that skill and re-reads the list.
- *   3. A failed toggle reports the reason instead of silently keeping the
- *      new state.
- *   4. The checkbox never selects the skill: it sits inside the row's
- *      click target, so without stop-propagation a toggle would throw the
- *      user into the detail pane.
- */
+/** SkillList.vue — the per-row agent lock. The list is the only surface that
+ * shows every skill at once, so it is where "which of these may the agent
+ * touch?" is answerable. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'

@@ -1,26 +1,4 @@
-/**
- * Tests for SaveMemory.vue.
- *
- * Card layout (the whole point of the component):
- *   collapsed: `save_memory  <id>  ·  <tag> <tag> <tag> +N  ✓  +`
- *   expanded:  the same header (it stays visible) + the stored note
- *   The id and the tags live ONLY in the header — the expanded body must
- *   not repeat them, because the header is right above it.
- *
- * Verifies:
- *  - parses the success envelope (id + created_at + updated_at)
- *  - parses the error envelope (<error> tag → red border, no body)
- *  - header shows the id + tag chips inline in BOTH states; no body preview
- *  - the hover title carries the full id, every tag, the note and the
- *    saved timestamp (the created/updated pair is not rendered as rows)
- *  - renders the SAVED BODY from the tool-call args (`parameters`),
- *    because `executeSaveMemory` never echoes the note back
- *  - hides `content` from the Arguments block; copy button yields the full
- *    (unclipped) body
- *  - copy-id button is wired to clipboard (jsdom stub) and only present on success
- *  - a result with no body renders an empty-state hint
- *  - click on header toggles expanded state
- */
+/** Tests for SaveMemory.vue. */
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -29,7 +7,6 @@ import SaveMemory from '../SaveMemory.vue'
 // ────────────────────────────────────────────────────────────────────────
 // jsdom clipboard stub (matches ReadWorkspaceSession.spec.ts pattern)
 // ────────────────────────────────────────────────────────────────────────
-
 let clipboardWrites: string[] = []
 
 beforeEach(() => {
@@ -51,7 +28,6 @@ afterEach(() => {
 // ────────────────────────────────────────────────────────────────────────
 // Helpers
 // ────────────────────────────────────────────────────────────────────────
-
 const makeSuccessContent = (
   opts: {
     id?: string
@@ -81,7 +57,6 @@ const makeParams = (content: string, tags: string | null = TAGS) =>
 // ────────────────────────────────────────────────────────────────────────
 // Tests
 // ────────────────────────────────────────────────────────────────────────
-
 describe('SaveMemory.vue — happy path', () => {
   it('renders the tool name pill + the id in the header on success', () => {
     const wrapper = mount(SaveMemory, {
@@ -237,7 +212,6 @@ describe('SaveMemory.vue — empty envelope edge case', () => {
 // ────────────────────────────────────────────────────────────────────────
 // The saved body.
 // ────────────────────────────────────────────────────────────────────────
-
 describe('SaveMemory.vue — saved body', () => {
   it('renders the note body from the tool-call args when expanded', () => {
     const wrapper = mount(SaveMemory, {
@@ -350,7 +324,6 @@ describe('SaveMemory.vue — saved body', () => {
 // ────────────────────────────────────────────────────────────────────────
 // Id + tags: header only, in both states.
 // ────────────────────────────────────────────────────────────────────────
-
 describe('SaveMemory.vue — id + tags live in the header', () => {
   it('shows the id and the tags on ONE header line, in the collapsed state', () => {
     const wrapper = mount(SaveMemory, {

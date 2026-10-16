@@ -5,14 +5,9 @@ import ProfilesSection from '../components/pabrik/ProfilesSection.vue'
 import type { ProfileRow } from '../components/pabrik/ProfilesSection.vue'
 import type { SubAgent } from '../api'
 
-/**
- * Mount and open `Advanced`.
- *
- * Advanced is collapsed by default — that is the whole point of the redesign —
- * so a spec that wants to touch a field behind it has to open it first. The
- * helper is tolerant so it can be used for components that have no Advanced
- * section at all.
- */
+/**  * Mount and open `Advanced`. Advanced is collapsed by default — that is the whole point of the
+ * redesign — so a spec that wants to touch a field behind it has to open it first. The helper is
+ * tolerant so it can be used for components that have no Advanced section at all. */
 async function mountOpen(component: unknown, opts?: unknown) {
   // `as never` keeps `mount`'s overload resolution from narrowing the SECOND
   // argument to a VNode-props shape at every call site.
@@ -221,13 +216,9 @@ describe('ProfilesSection', () => {
     expect(wrapper.emitted('deleteSubAgent')?.[0]).toEqual(['work', 'coder'])
   })
 
-  // ─── Clear active profile ───────────────────────────────────────────
-  // Plan 2026-08-06-reset-active-profile: when a profile is marked
-  // active, the header shows a "Reset" button next to the pill. Clicking
-  // it emits `clearActive` so the parent (PabrikConfigEditor) can save
-  // `active_profile: null` to config.json. After the save, the cascade
-  // in `workflow.zig::resolveProfileField` falls through to the top-level
-  // config and every chat session / task uses the bare defaults.
+  // ─── Clear active profile ─────────────────────────────────────────── Plan
+  // 2026-08-06-reset-active-profile: when a profile is marked active, the header shows a "Reset"
+  // button next to the pill.
   it('shows a Reset button next to the active pill when an active profile is set', async () => {
     const wrapper = await mountOpen(ProfilesSection, {
       props: { modelValue: [baseProfile], activeProfile: 'work' },

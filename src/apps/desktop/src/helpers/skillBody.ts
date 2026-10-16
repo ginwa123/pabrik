@@ -1,16 +1,6 @@
-/*
- * Navigating one skill's body.
- *
- * The body was a single `<pre>`: a 500-line skill is one undifferentiated
- * block, and the only way to reach `## Procedure` was to scroll and read.
- * These two pure functions are the behaviour behind the outline and the
- * find box that replaced that.
- *
- * Both work on the raw markdown text, because that is what the detail
- * pane holds — no parsing library, no HTML round trip.
- */
-
-/** One `##`/`###` heading in the body, with the line it starts on. */
+/** Navigating one skill's body: the outline and the find box, as pure
+ * functions over the raw markdown the detail pane already holds. A
+ * section is one `##`/`###` heading, with the line it starts on. */
 export interface SkillSection {
   /** The heading text, `#` marks and trailing `#`s stripped. */
   title: string
@@ -20,13 +10,8 @@ export interface SkillSection {
   depth: 2 | 3
 }
 
-/**
- * The `##`/`###` headings, in document order.
- *
- * Fenced code blocks are skipped: a `## Example` inside a ``` fence is
- * sample text, not a section, and outlining it would jump the reader into
- * the middle of a code sample.
- */
+/** The `##`/`###` headings, in document order. Fenced blocks are skipped:
+ * a `## Example` inside a fence is sample text, not a section. */
 export function extractSections(body: string): SkillSection[] {
   const out: SkillSection[] = []
   let inFence = false
@@ -54,13 +39,8 @@ export interface SkillBodyHit {
   text: string
 }
 
-/**
- * Every line containing `term`, case-insensitively.
- *
- * An empty term matches nothing rather than everything: the find box is
- * for "where does this body mention X", and an empty box answering "all
- * 500 lines" is noise.
- */
+/** Every line containing `term`, case-insensitively. An empty term matches
+ * nothing: an empty box answering "all 500 lines" is noise. */
 export function findInBody(body: string, term: string): SkillBodyHit[] {
   const needle = term.trim().toLowerCase()
   if (needle.length === 0) return []
@@ -74,11 +54,8 @@ export function findInBody(body: string, term: string): SkillBodyHit[] {
   return out
 }
 
-/**
- * How many times `term` occurs in the body, for the "N matches" label.
- * Counts overlapping-free occurrences per line, so a term appearing twice
- * on one line counts twice.
- */
+/** How many times `term` occurs in the body, for the "N matches" label. A
+ * term appearing twice on one line counts twice. */
 export function countBodyMatches(body: string, term: string): number {
   const needle = term.trim().toLowerCase()
   if (needle.length === 0) return 0

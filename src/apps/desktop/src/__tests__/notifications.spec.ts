@@ -1,10 +1,5 @@
-/**
- * notifications.spec.ts
- *
- * Unit tests for the `useNotificationStore` Pinia store.
- * Covers: notifyError (push + auto-dismiss), dismiss (by id),
- * dismissAll, and the auto-dismiss timer.
- */
+/**  * notifications.spec.ts Unit tests for the `useNotificationStore` Pinia store. Covers: notifyError
+ * (push + auto-dismiss), dismiss (by id), dismissAll, and the auto-dismiss timer. */
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useNotificationStore } from '../stores/notifications'

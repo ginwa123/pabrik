@@ -1,31 +1,6 @@
 <script setup lang="ts">
-/**
- * AgentErrorCard — dedicated renderer for agentic-loop error/retry
- * diagnostics (task_1787663566535_2).
- *
- * The backend emits these over the SAME llm_full SSE event as normal
- * messages, but marks them with is_error=true (workflow.zig's 3
- * diagnostic sites: retry-catch, unexpected finish_reason, and the
- * soft/hard TooManyRetries bails). ChatView routes them here instead of
- * the message list.
- *
- * Message shape (from saveRetryAttemptMessage / bail diagnostics):
- *   [Retry {attempt}/{max}] {error_name} ({source}). Retrying in {delay_ms}ms.
- *   Server said: {server_detail}
- * or the bail variant:
- *   [Agent Pabrik System error] workflow halted after {n} consecutive retries.
- *   Reason for last retry: {error} (source: {source}).
- *   Server said: {detail}
- *
- * Purely presentational — parses props.content, no store/API access.
- *
- * 2026-08-29 (task_1787985074550_0): the `[Retry N/M]` prefix parse
- * and the headline regex were extracted to
- * `helpers/parseAgentErrorHeadline.ts` so the kanban card's hover
- * tooltip and this card parse the same string identically. The
- * retry-delay and server-detail regexes are still local to this
- * component — they're only used here, no need to share.
- */
+/** AgentErrorCard — dedicated renderer for agentic-loop error/retry diagnostics
+ * (task_1787663566535_2). */
 import { computed } from 'vue'
 import { parseAgentErrorHeadline } from '../../helpers/parseAgentErrorHeadline'
 

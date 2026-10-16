@@ -1,30 +1,4 @@
-/**
- * workspacesStore — wire→in-memory image_urls normalization for tasks.
- *
- * Bug (2026-08-24, "theres a image urls but the image attachment not
- * showup"): the backend's `GET .../tasks` + `GET .../tasks/:id` return
- * `image_urls` as a snake_case `||`-delimited base64 data URL string
- * (visible in the browser Network tab). The frontend `Task` interface
- * declares camelCase `imageUrls?: string[]`, and
- * `normalizeTaskImageUrlsInPlace` only read the camelCase field — so on
- * every freshly-fetched task the camelCase field was `undefined`, the
- * normalizer early-returned, and the wire string leaked through
- * unsplit. Result: the Task details dialog gallery
- * (`kanban-task-detail-image-gallery`) and the board card thumbnail
- * strip (`WorkspaceItemTaskCard`) never rendered any images.
- *
- * Fix: bridge the snake_case wire field inside
- * `normalizeTaskImageUrlsInPlace` (same pattern as
- * `normalizeTaskDatesInPlace`, which reads `updated_at`/`created_at`
- * wire fields). Tags don't need a bridge because the name is identical
- * on both sides of the wire.
- *
- * Test strategy: `normalizeTaskTags` is module-private, so we exercise
- * it through the store's public `fetchKanbanTasks` action with a
- * mocked `api.getTasks` returning wire-shaped payloads (same pattern
- * as workspacesStoreNormalizeTaskDates.spec.ts).
- */
-
+/** workspacesStore — wire→in-memory image_urls normalization for tasks. */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import * as api from '../api'

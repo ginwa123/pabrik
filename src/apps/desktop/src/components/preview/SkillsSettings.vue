@@ -25,10 +25,9 @@ const scopeCaption = computed(() =>
     : 'Available AI capabilities and workflows.',
 )
 
-// The selected skill lives in the URL (`?skill=`), not in a ref. A ref
-// loses the selection on refresh, on Back, and on a shared link — and a
-// skill is exactly the kind of thing you paste into a chat ("look at how
-// this one is written"). Same rule as the kanban board's `?detail=`.
+// The selected skill lives in the URL (`?skill=`), not in a ref: a ref
+// loses it on refresh, on Back and on a shared link. Same rule as the
+// kanban board's `?detail=`.
 const route = useRoute()
 const router = useRouter()
 
@@ -67,10 +66,9 @@ function writeSkillParam(name: string | null): void {
   router?.replace({ path: route?.path ?? '', query })
 }
 
-// The create form. A skill is a row, so "new" is three fields and no
-// directory: the name is the natural key inside the workspace, and the
-// body is stored verbatim — frontmatter included, because `skill_eval`
-// identities are sha256(body) and trimming it would stale every verdict.
+// The create form. A skill is a row, so "new" is three fields and no directory: the name is the
+// natural key inside the workspace, and the body is stored verbatim — frontmatter included, because
+// `skill_eval` identities are sha256(body) and trimming it would stale every verdict.
 const isCreating = ref(false)
 const newName = ref('')
 const newDescription = ref('')

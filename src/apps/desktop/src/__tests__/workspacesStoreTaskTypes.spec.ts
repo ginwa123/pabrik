@@ -1,11 +1,6 @@
-/**
- * Tests for the Task type + `addTask` params signature (post-Migration
- * 084): `task_type` is 'standard' | 'memory' (the per-task 'routine'
- * value was deleted — routines are first-class workspace items now),
- * plus the `runRoutineItem` + `addRoutineItem` store actions.
- *
- * Plan: docs/superpowers/plans/2026-09-10-workspace-items-routines.md
- */
+/** Tests for the Task type + `addTask` params signature (post-Migration 084): `task_type` is
+ * 'standard' | 'memory' (the per-task 'routine' value was deleted — routines are first-class
+ * workspace items now), plus the `runRoutineItem` + `addRoutineItem` store actions. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

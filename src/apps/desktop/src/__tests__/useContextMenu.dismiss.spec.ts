@@ -3,24 +3,9 @@ import { mount } from '@vue/test-utils'
 import { defineComponent, nextTick } from 'vue'
 import { useContextMenu } from '../composables/useContextMenu'
 
-/**
- * Root-cause reproduction for "the right-click context menu sometimes
- * suddenly closes".
- *
- * `useContextMenu` used to attach a capture-phase `wheel` listener and a
- * capture-phase `scroll` listener that BOTH called `close()`
- * unconditionally. Neither checked whether the event came from the user,
- * from the menu's own subtree, or from a programmatic scroll the app
- * performs on its own.
- *
- * The consequence: any scroll anywhere in the document — including one the
- * app itself performs — dismissed an open menu with no user intent.
- *
- * The fix scopes the scroll dismiss to the anchor the menu was opened
- * from, and drops the `wheel` dismiss entirely. These tests pin both the
- * bug (as a regression guard) and the fix.
- */
-
+/** Root-cause reproduction for "the right-click context menu sometimes suddenly closes".
+ * `useContextMenu` used to attach a capture-phase `wheel` listener and a capture-phase `scroll`
+ * listener that BOTH called `close()` unconditionally. */
 const Host = defineComponent({
   setup() {
     const { menuPos, openAt, openAtPoint, close } = useContextMenu()
@@ -33,11 +18,8 @@ function mountHost() {
   return mount(Host, { attachTo: document.body })
 }
 
-/**
- * Open the menu the way a real `@contextmenu.prevent` handler does: the
- * event's `currentTarget` is the row the handler is bound to, and that is
- * what the scoped scroll dismiss keys off.
- */
+/**  * Open the menu the way a real `@contextmenu.prevent` handler does: the event's `currentTarget` is
+ * the row the handler is bound to, and that is what the scoped scroll dismiss keys off. */
 function openMenuFrom(wrapper: ReturnType<typeof mountHost>, anchor: HTMLElement) {
   const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
   Object.defineProperty(event, 'currentTarget', { value: anchor, configurable: true })
@@ -50,7 +32,6 @@ describe('useContextMenu — dismiss paths', () => {
   })
 
   // ─── The bug, pinned as a regression guard ───────────────────────────
-
   it('REGRESSION: a wheel event anywhere in the document no longer closes the menu', async () => {
     const wrapper = mountHost()
     const anchor = document.createElement('div')
@@ -132,7 +113,6 @@ describe('useContextMenu — dismiss paths', () => {
   })
 
   // ─── The dismissals that must survive ────────────────────────────────
-
   it('a scroll of the anchor itself closes the menu', async () => {
     const wrapper = mountHost()
     const anchor = document.createElement('div')
@@ -236,7 +216,6 @@ describe('useContextMenu — dismiss paths', () => {
   })
 
   // ─── The keyboard path ───────────────────────────────────────────────
-
   it('openAtPoint attaches the same dismiss wiring as openAt', async () => {
     const wrapper = mountHost()
     const anchor = document.createElement('div')

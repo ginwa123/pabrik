@@ -1,35 +1,6 @@
-/**
- * End-to-end test for the "single active row in the sidebar" contract
- * (plan 2026-08-06-sidebar-single-active-state.md, Task 7).
- *
- * The sidebar derives its `active` styling from the URL (via
- * `useCurrentMainView`), not from store flags. Per the spec, the
- * documented mental model is:
- *
- *   URL ?view=workspace&itemId=X&pageId=Z
- *     → the workspace item + the design page row whose id === Z.
- *       BOTH rows get the active bg + accent bar — this forms a
- *       meaningful hierarchy breadcrumb (the user sees both "I'm in
- *       design" and "I'm on this page"). The expanded workspace
- *       header is NOT active (Task 6 dropped that). Net: 2 active
- *       rows in the sidebar.
- *
- *   URL ?view=chat&session=X
- *     → no workspace item or page is active. The chat row's
- *       highlight lives inside <ChatsList> and isn't a sidebar-row
- *       count in this contract. Net: 0 active rows in the sidebar's
- *       workspace tree.
- *
- *   URL ?view=workspace&itemId=Y (no pageId)
- *     → just the workspace item row (no page active). 1 active row.
- *
- * Pre-fix the sidebar would show 3 active rows simultaneously
- * (expanded workspace + active item + active page) — the user's
- * reported "sidebar active is confusing" symptom.
- *
- * Spec: docs/superpowers/specs/2026-08-06-sidebar-single-active-state-design.md
- * Plan: docs/superpowers/plans/2026-08-06-sidebar-single-active-state.md
- */
+/** End-to-end test for the "single active row in the sidebar" contract (plan
+ * 2026-08-06-sidebar-single-active-state.md, Task 7). The sidebar derives its `active` styling from
+ * the URL (via `useCurrentMainView`), not from store flags. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, createApp } from 'vue'
@@ -46,9 +17,8 @@ import {
 } from '../helpers/sseBus'
 import type { SseClient } from '../helpers/sseClient'
 
-// Stub vue-router per the canonical pattern (mirrors
-// sidebarHandleSelectTaskUrl.spec.ts). `useRoute` returns a `reactive`
-// shape so the composable's computed re-runs when we mutate the
+// Stub vue-router per the canonical pattern (mirrors sidebarHandleSelectTaskUrl.spec.ts).
+// `useRoute` returns a `reactive` shape so the composable's computed re-runs when we mutate the
 // query mid-test.
 const { useRouteMock, useRouterMock } = vi.hoisted(() => ({
   useRouteMock: vi.fn(),
@@ -137,13 +107,9 @@ function mountSidebar() {
   })
 }
 
-// Count the rendered sidebar's active rows. The "active row" signal is
-// the inline `style` attribute containing `--semantic-active-bg` —
-// both the workspace item row and the design page row inject that
-// CSS variable into the inline `style` when they are the URL-driven
-// active row. Hover styles live in `class="hover:bg-[--semantic-active-bg]"`
-// (Tailwind arbitrary value), NOT in the inline style, so we scope the
-// regex to `style="..."` to avoid false positives.
+// Count the rendered sidebar's active rows. The "active row" signal is the inline `style` attribute
+// containing `--semantic-active-bg` — both the workspace item row and the design page row inject
+// that CSS variable into the inline `style` when they are the URL-driven active row.
 function countActiveRows(html: string): number {
   const matches = html.match(/style="[^"]*--semantic-active-bg[^"]*"/g)
   return matches?.length ?? 0
@@ -177,13 +143,9 @@ describe('Sidebar — URL-driven single-active contract', () => {
     vi.restoreAllMocks()
   })
 
-  /**
-   * Helper: pre-populate the workspaces store with the design-workspace
-   * fixture (1 design item with 2 design pages). The store's
-   * `expandedItemIds` and `designPagesByItemId` caches must be set so
-   * the design pages render (otherwise the `<DesignPageRow>` for
-   * `page_42` never mounts).
-   */
+  /**    * Helper: pre-populate the workspaces store with the design-workspace fixture (1 design item with
+   * 2 design pages). The store's `expandedItemIds` and `designPagesByItemId` caches must be set so
+   * the design pages render (otherwise the `<DesignPageRow>` for `page_42` never mounts). */
   function seedWorkspaceFixture() {
     const ws = useWorkspacesStore()
      
@@ -195,9 +157,8 @@ describe('Sidebar — URL-driven single-active contract', () => {
   }
 
   it('design page URL → 2 active rows (item + page), workspace header NOT active', async () => {
-    // URL: viewing a design page. Both the item row AND the page row
-    // get the active bg + accent bar (per the spec's documented
-    // mental model — meaningful hierarchy breadcrumb). The expanded
+    // URL: viewing a design page. Both the item row AND the page row get the active bg + accent bar
+    // (per the spec's documented mental model — meaningful hierarchy breadcrumb). The expanded
     // workspace header does NOT get the active bg.
     useRouteMock.mockReturnValue({
       query: {
@@ -248,9 +209,8 @@ describe('Sidebar — URL-driven single-active contract', () => {
   })
 
   it('chat URL → 0 active rows in the sidebar tree', async () => {
-    // URL: viewing a chat. No workspace item or page is the URL-driven
-    // active row. The chat row's highlight lives inside <ChatsList>
-    // (separate from this count). Pre-fix the expanded workspace
+    // URL: viewing a chat. No workspace item or page is the URL-driven active row. The chat row's
+    // highlight lives inside <ChatsList> (separate from this count). Pre-fix the expanded workspace
     // header would still be active — this asserts it isn't.
     useRouteMock.mockReturnValue({
        

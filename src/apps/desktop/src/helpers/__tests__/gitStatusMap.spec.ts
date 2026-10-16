@@ -1,12 +1,5 @@
-/**
- * gitStatusMap — pure join logic between `GET /api/git/changes` and the
- * explorer tree. No DOM, no fetch: takes the wire response, returns data.
- *
- * Wire-format note: the backend sends SINGLE-char statuses (`"?"`, not
- * `"??"` — see `parseGitStatus` in `src/http_handlers/git_changes.zig`,
- * which slices `line[0..1]`). The helper accepts both spellings so the
- * badges stay correct regardless of which side pads the char.
- */
+/** gitStatusMap — pure join logic between `GET /api/git/changes` and the explorer tree. No DOM, no
+ * fetch: takes the wire response, returns data. */
 import { describe, expect, it } from 'vitest'
 import {
   buildGitStatusMap,

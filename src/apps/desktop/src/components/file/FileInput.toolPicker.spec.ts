@@ -1,28 +1,4 @@
-/**
- * FileInput `/tool-` picker — trigger, fetch-once, filter, insert, error.
- *
- * Contract under test:
- *   - Typing `/tool-` opens the picker and calls
- *     `api.getAgentToolsRegistry()` ONCE per mount (client-side substring
- *     filter after that — no refetch while typing past the dash).
- *   - Enter inserts the canonical `/tool-<name>` token, Esc closes
- *     without inserting.
- *   - A registry rejection renders the error block, never an empty list.
- *   - The trigger is the literal `/tool-` prefix at message start or
- *     after whitespace. A bare `/`, a path like `/home/ginwa/pabrik`,
- *     `http://` and `a/b` never open it.
- *   - Unlike `/skill-`, the registry is NOT workspace-scoped, so the
- *     picker opens with no active workspace too.
- *
- * And the `/tool-` completion hint that precedes it:
- *   - A proper prefix of the command (`/t`, `/to`, `/too`, `/tool`)
- *     renders ONE suggestion row reading `/tool-`.
- *   - Enter or Tab rewrites the token to `/tool-` and the picker opens.
- *   - The hint never fetches the registry and never renders the list.
- *
- * Mirrors `FileInput.skillPicker.spec.ts` one-for-one; the differences
- * are the marker, the data source and the absence of a workspace gate.
- */
+/** FileInput `/tool-` picker — trigger, fetch-once, filter, insert, error. */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -69,11 +45,8 @@ async function mountInput(propsOverride: Record<string, unknown> = {}) {
   return wrapper
 }
 
-/**
- * Set the textarea value, park the cursor at the end, dispatch `input`
- * so `autoResize` updates `cursorPos`, then wait out the 150ms
- * detect debounce plus promise flushes.
- */
+/**  * Set the textarea value, park the cursor at the end, dispatch `input` so `autoResize` updates
+ * `cursorPos`, then wait out the 150ms detect debounce plus promise flushes. */
 async function typeInTextarea(
   textareaWrapper: ReturnType<VueWrapper['find']>,
   value: string,
@@ -345,12 +318,8 @@ describe('FileInput — /tool picker', () => {
     })
   })
 
-  // The discoverability step that precedes the picker: the user has typed
-  // enough to be heading for the tool command but not the dash yet, so
-  // the composer offers the one completion that exists. These specs pin
-  // the hint as its OWN surface (`tool-command-suggestion`) rather than
-  // reusing `tool-picker-list`, so the "a partial `/to` does not open
-  // the picker" specs above keep meaning what they say.
+  // The discoverability step that precedes the picker: the user has typed enough to be heading for
+  // the tool command but not the dash yet, so the composer offers the one completion that exists.
   describe('the /tool- completion hint', () => {
     const HINT = '[data-testid="tool-command-suggestion"]'
     const PICKER = '[data-testid="tool-picker-list"]'

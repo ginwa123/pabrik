@@ -18,16 +18,11 @@ import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 import { useTabsStore } from '../stores/tabs'
 import { makeLocalStorageStub } from './helpers'
 
-/**
- * Test-only stub SseClient. Mirrors the helper in `sseBus.spec.ts`
- * (kept inline rather than shared to avoid coupling between the two
- * spec files). Tracks state-listener callbacks on a non-public
- * `__stateListeners` array so `emitStubState` can fan out a
- * transition to all subscribers — the production `SseClient` keeps
- * the listener list in a closure; tests reach it via `as any`.
- */
+/** Test-only stub SseClient. Mirrors the helper in `sseBus.spec.ts` (kept inline rather than shared
+ * to avoid coupling between the two spec files). */
 function makeStubClient(initial: SseState): SseClient {
    
+  //
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const stub: any = {
     close: vi.fn(),
@@ -48,6 +43,7 @@ function makeStubClient(initial: SseState): SseClient {
 
  
 function emitStubState(c: SseClient, s: SseState): void {
+  //
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const listeners = (c as any).__stateListeners as
     | Array<(s: SseState, info: SseStateInfo) => void>
@@ -63,18 +59,13 @@ describe('App', () => {
 
   beforeEach(() => {
     __resetSseBus()
-    // App.vue's onMounted calls `useNavigationStore()` (to wire the
-    // frontend-log-client context). Without an active Pinia the call
-    // throws (`getActivePinia()` was called but there was no active
-    // Pinia). The existing AppLayout.* tests already use this
-    // `setActivePinia(createPinia())` pattern (see AppLayout.chatview
-    // .spec.ts:112). One fresh Pinia per test keeps stores isolated.
+    // App.vue's onMounted calls `useNavigationStore()` (to wire the frontend-log-client context).
+    // Without an active Pinia the call throws (`getActivePinia()` was called but there was no
+    // active Pinia).
     setActivePinia(createPinia())
-    // jsdom 29 dropped localStorage from its default globals; the
-    // navigation store reads from localStorage during setup
-    // (`loadSidebarCollapsed()`). Install a Map-backed stub for the
-    // duration of each test. Same pattern as AppLayout.chatview.spec
-    // .ts:114.
+    // jsdom 29 dropped localStorage from its default globals; the navigation store reads from
+    // localStorage during setup (`loadSidebarCollapsed()`). Install a Map-backed stub for the
+    // duration of each test. Same pattern as AppLayout.chatview.spec .ts:114.
     Object.defineProperty(globalThis, 'localStorage', {
       value: makeLocalStorageStub(),
       writable: true,
@@ -85,9 +76,8 @@ describe('App', () => {
     // when App.vue's `useSseBus().close()` runs in onUnmounted. Plan's
     // gotcha #6: `useSseBus` throws if not installed.
     installSseBus(app)
-    // Replace the underlying global SseClient (otherwise it would call
-    // `new EventSource(...)` and silently idle in jsdom) with a
-    // deterministic fake we drive through 'open' in the
+    // Replace the underlying global SseClient (otherwise it would call `new EventSource(...)` and
+    // silently idle in jsdom) with a deterministic fake we drive through 'open' in the
     // reconnect-resync test.
     stub = makeStubClient('connecting')
     __setSseBusGlobalClient(stub)
@@ -101,20 +91,17 @@ describe('App', () => {
   })
 
   it('mounts without throwing', () => {
-    // Smoke test: App.vue should mount cleanly. EventSource is
-    // polyfilled in src/__tests__/setup.ts so the SSE connection opened
-    // in onMounted does not crash. The template is a <router-view />,
-    // so we only assert that the component instance exists — no router
-    // is provided here.
+    // Smoke test: App.vue should mount cleanly. EventSource is polyfilled in src/__tests__/setup.ts
+    // so the SSE connection opened in onMounted does not crash. The template is a <router-view />,
+    // so we only assert that the component instance exists — no router is provided here.
     const wrapper = mount(App)
     expect(wrapper.exists()).toBe(true)
   })
 
   it("App.vue wires the tab title feed: a session rename lands on the tab", async () => {
-    // Regression: the feed used to be subscribed from AppLayout's onMounted,
-    // which runs BEFORE App.vue's (children mount first) — so `useSseBus()` threw
-    // and the subscription silently never happened, leaving chat tabs labelled
-    // with the generic "Chat" after every auto-rename.
+    // Regression: the feed used to be subscribed from AppLayout's onMounted, which runs BEFORE
+    // App.vue's (children mount first) — so `useSseBus()` threw and the subscription silently never
+    // happened, leaving chat tabs labelled with the generic "Chat" after every auto-rename.
     const tabs = useTabsStore()
     const tab = tabs.open({ query: { view: 'chat', session: 'sess_w1' } })
     expect(tab.title).toBe('Chat')
@@ -148,11 +135,8 @@ describe('App', () => {
 
   it("App.vue subscribes to bus.on('worker'); handleWorkerEvent fires when the bus dispatches", async () => {
     const wrapper = mount(App)
-    // Read the provided `processingState` ref. When `mount(App)` is
-    // used (root mount with no outer app), provides go to the root
-     
-    // component instance under `vm.$.provides` (NOT `vm.$.appContext
-    // .provides` — that's only for nested-app ancestors).
+    // Read the provided `processingState` ref.
+    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const provides = (wrapper.vm as any).$.provides as Record<string, unknown>
     const processingState = provides['processingState'] as {
@@ -189,10 +173,9 @@ describe('App', () => {
 
   it("App.vue calls fetchInitialWorkers when bus.state transitions to 'open' (reconnect-resync)", async () => {
     mount(App)
-    // Clear any calls that may have happened during mount. The
-    // { immediate: true } watcher fires synchronously during setup
-    // but the stub was 'connecting' at that point, so getWorkers
-    // should not have been called yet — mockClear() is defensive.
+    // Clear any calls that may have happened during mount. The { immediate: true } watcher fires
+    // synchronously during setup but the stub was 'connecting' at that point, so getWorkers should
+    // not have been called yet — mockClear() is defensive.
     const getWorkersSpy = vi.mocked(api.getWorkers).mockClear()
     expect(getWorkersSpy).not.toHaveBeenCalled()
 
@@ -206,14 +189,8 @@ describe('App', () => {
 
   it('unmounting App.vue calls bus.close() on the bus singleton', () => {
     const wrapper = mount(App)
-    // `bus.close()` should clear the singleton — verify by checking
-    // that a subsequent `useSseBus()` throws. We don't spy on any
-    // specific SseClient's close() because App.vue's onUnmounted
-    // delegates to `useSseBus().close()`, which delegates to the
-    // bus's internal global client (the closure-scoped one from
-    // installSseBus). Spying on it would couple the test to bus
-    // internals; checking the singleton-cleared invariant is a
-    // stronger behavioral contract anyway.
+    // `bus.close()` should clear the singleton — verify by checking that a subsequent `useSseBus()`
+    // throws.
     expect(() => useSseBus()).not.toThrow()
 
     wrapper.unmount()
@@ -225,23 +202,9 @@ describe('App', () => {
   })
 
   describe('no app-level zoom suppression (desktop-app only)', () => {
-    // The desktop app uses the host webview's native page-zoom
-    // (Ctrl+wheel / multi-finger pinch). The previous global
-    // wheel-zoom suppressor in App.vue was removed — letting the
-    // native behaviour run. The design canvas has its own
-    // `@wheel="handleCanvasWheel"` handler in `DesignView.vue` that
-    // calls `preventDefault()` and performs cursor-anchored zoom on
-    // the canvas only.
-    //
-    // These tests lock in the NEW contract: App.vue must NOT
-    // install any capture-phase wheel listener that calls
-    // `preventDefault()`. The host webview is now free to apply
-    // its native page-zoom on Ctrl+wheel / metaKey+wheel /
-    // double-tap / pinch anywhere in the desktop app shell.
-
-    // Shared wrapper — every test in this block mounts via this
-    // and unmounts in afterEach so listeners from previous tests
-    // don't bleed into later ones.
+    // The desktop app uses the host webview's native page-zoom (Ctrl+wheel / multi-finger pinch).
+    // The previous global wheel-zoom suppressor in App.vue was removed — letting the native
+    // behaviour run.
     let wrapper: ReturnType<typeof mount> | null = null
 
     afterEach(() => {
@@ -301,10 +264,9 @@ describe('App', () => {
           (opts as AddEventListenerOptions).capture === true
         )
       })
-      // App.vue's onMounted must NOT have installed a capture-phase
-      // wheel listener. (Other listeners in the same test e.g. the
-      // SSE bus may register unrelated events — we only assert on
-      // the capture-phase wheel case.)
+      // App.vue's onMounted must NOT have installed a capture-phase wheel listener. (Other
+      // listeners in the same test e.g. the SSE bus may register unrelated events — we only assert
+      // on the capture-phase wheel case.)
       expect(captureWheelAdditions.length).toBe(0)
 
       addSpy.mockRestore()
@@ -315,16 +277,14 @@ describe('App', () => {
 // ────────────────────────────────────────────────────────────────────────
 // workerActivity — the additive second provide key
 // ────────────────────────────────────────────────────────────────────────
-
 describe('App workerActivity', () => {
   let app: VueApp
   let stub: SseClient
 
   /** Read a provided ref off a root-mounted App instance. */
   const readProvide = (wrapper: ReturnType<typeof mount>, key: string) => {
-    // With `mount(App)` (root mount, no outer app) provides land on
-    // `vm.$.provides`, NOT `vm.$.appContext.provides` — that is only for
-    // nested-app ancestors.
+    // With `mount(App)` (root mount, no outer app) provides land on `vm.$.provides`, NOT
+    // `vm.$.appContext.provides` — that is only for nested-app ancestors.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only reach into Vue internals.
     const provides = (wrapper.vm as any).$.provides as Record<string, unknown>
     return provides[key] as { value: unknown } | undefined

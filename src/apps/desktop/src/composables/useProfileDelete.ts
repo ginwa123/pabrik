@@ -1,19 +1,6 @@
-/**
- * useProfileDelete — optimistic-update + rollback for LLM profile
- * deletion.
- *
- * On `deleteProfile(name)`:
- *   1. Snapshot the current `profiles` and `activeProfile` so we can
- *      roll back if the API call fails.
- *   2. Remove the profile from local state immediately (UI feels
- *      instant).
- *   3. Call the backend. On success, fire `onSuccess`. On failure,
- *      restore the snapshot and fire `onError`.
- *
- * A `isDeleting` flag is exposed for the UI to disable the delete
- * button while the request is in flight, and to prevent concurrent
- * deletes from racing.
- */
+/** useProfileDelete — optimistic-update + rollback for LLM profile deletion. On
+ * `deleteProfile(name)`: 1. Snapshot the current `profiles` and `activeProfile` so we can roll back
+ * if the API call fails. 2. */
 import { ref, type Ref } from 'vue'
 
 import { deleteProfile as apiDeleteProfile, type ProfileDeleteResponse } from '../api'
@@ -72,10 +59,9 @@ function formatErrorMessage(name: string, err: unknown): string {
   if (!(err instanceof Error)) {
     return `Failed to delete profile "${name}"`
   }
-  // 404 gets a friendlier message because it's a common case (profile
-  // already deleted in another tab, race with another user's delete).
-  // All other errors fall through to the generic format which includes
-  // the original error message for debuggability.
+  // 404 gets a friendlier message because it's a common case (profile already deleted in another
+  // tab, race with another user's delete). All other errors fall through to the generic format
+  // which includes the original error message for debuggability.
   if (err.message.includes('HTTP 404')) {
     return `Profile "${name}" not found on server (it may have been already deleted)`
   }

@@ -74,7 +74,6 @@ function toggle(name: string) {
 }
 
 // ─── presentation ───────────────────────────────────────────────────────
-
 const summary = computed(() => data.value?.summary ?? null)
 
 const providerNoun = computed(() =>
@@ -112,7 +111,6 @@ const orderedChecks = computed<GitPrCheck[]>(() => {
 })
 
 // ─── lifecycle ──────────────────────────────────────────────────────────
-
 let poll: number | undefined
 
 onMounted(() => {

@@ -1,22 +1,7 @@
 <script setup lang="ts">
 import UiIcon from '../ui/UiIcon.vue'
-/**
- * Shared right-click menu for kanban task cards.
- * Teleported to body so overflow ancestors (virtual scrollers,
- * kanban columns) never clip it. Hosts own the payload and wire
- * `@open` (chat) + `@open-details` (task detail) to their
- * window.open calls; visibility is `v-if` on the host's menu state.
- *
- * The details item is opt-in via `showDetails` so sidebar rows
- * (WorkspaceItemTaskRow) keep the single chat item while kanban
- * cards (WorkspaceItemTaskCard) offer both.
- *
- * `showRename` / `showDelete` are the same opt-in pattern for the
- * sidebar task row, whose pin / rename / delete hover buttons were
- * migrated here. Every row is opt-in so the file / workspace-item /
- * workspace-switcher hosts that share this menu never grow a row
- * they cannot act on.
- */
+/** Shared right-click menu for kanban task cards. Teleported to body so overflow ancestors (virtual
+ * scrollers, kanban columns) never clip it. */
 withDefaults(
   defineProps<{
     x: number
@@ -35,41 +20,25 @@ withDefaults(
     showPin?: boolean
     /** Current pinned state — flips the pin row label. */
     isPinned?: boolean
-    /**
-     * Show the "Run agent" row for task-row hosts. Starts a worker on
-     * the task's existing session without queueing a new user message.
-     * Opt-in like `showPin` — the file / workspace-item hosts that
-     * share this menu have no agent to run.
-     */
+    /**      * Show the "Run agent" row for task-row hosts. Starts a worker on the task's existing session
+     * without queueing a new user message. Opt-in like `showPin` — the file / workspace-item hosts
+     * that share this menu have no agent to run. */
     showRunAgent?: boolean
-    /**
-     * A worker is already running on this task. Hides the "Run agent"
-     * row (the backend answers 409 in that state) and reveals
-     * "Stop agent" instead — the two are inverses and never coexist.
-     */
+    /**      * A worker is already running on this task. Hides the "Run agent" row (the backend answers 409
+     * in that state) and reveals "Stop agent" instead — the two are inverses and never coexist. */
     isAgentRunning?: boolean
-    /**
-     * Show "Add task" for a workspace-item row. The row's `+` is
-     * hover-reveal only, so the menu is the always-available path to the
-     * same action — hover is undiscoverable and does nothing on touch.
-     */
+    /**      * Show "Add task" for a workspace-item row. The row's `+` is hover-reveal only, so the menu is
+     * the always-available path to the same action — hover is undiscoverable and does nothing on
+     * touch. */
     showAddTask?: boolean
-    /**
-     * Show "Delete project" for a workspace-item row. Same reason as
-     * `showAddTask`: the row's `×` is hover-reveal only.
-     */
+    /** Show "Delete project" for a workspace-item row. Same reason as
+     * `showAddTask`: the row's `×` is hover-reveal only. */
     showDeleteItem?: boolean
-    /**
-     * Show "Rename task" for a sidebar task row. The row's pencil was
-     * one of three hover buttons migrated into this menu, so the menu
-     * is now the only route to the action.
-     */
+    /**      * Show "Rename task" for a sidebar task row. The row's pencil was one of three hover buttons
+     * migrated into this menu, so the menu is now the only route to the action. */
     showRename?: boolean
-    /**
-     * Show "Delete task" for a sidebar task row. Same migration as
-     * `showRename`; the host emits straight up and the confirmation
-     * stays owned by whoever performs the delete (Sidebar).
-     */
+    /**      * Show "Delete task" for a sidebar task row. Same migration as `showRename`; the host emits
+     * straight up and the confirmation stays owned by whoever performs the delete (Sidebar). */
     showDelete?: boolean
   }>(),
   { showChat: true, showRunAgent: false, isAgentRunning: false },

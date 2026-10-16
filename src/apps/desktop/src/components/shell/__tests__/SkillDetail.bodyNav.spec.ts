@@ -1,11 +1,5 @@
-/*
- * SkillDetail.vue — the body's outline and find box.
- *
- * The body was one `<pre>`, so a 500-line skill had no way in but
- * scrolling. These specs pin what replaced it: the outline lists the
- * `##` sections, the find box lists the matching lines, and both are gone
- * in edit mode where the textarea owns the pane.
- */
+/** SkillDetail.vue — the body's outline and find box, and their absence in
+ * edit mode where the textarea owns the pane. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'

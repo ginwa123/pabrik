@@ -1,19 +1,6 @@
-/**
- * The sync engine's error channel.
- *
- * Before Effect, every failure in this subsystem was funnelled into a bare
- * `catch {}` that returned a fallback value, so a backend outage, a corrupt
- * IndexedDB database and a legitimately empty result all reached the UI as
- * the same value. The engine's callers could not tell "there is nothing new"
- * from "we could not check".
- *
- * Effect lets the failure travel in the type: every fallible operation below
- * returns `Effect<A, SyncError>`, and the caller decides whether to degrade
- * silently (current behaviour) or surface the reason. The two tags are
- * deliberately coarse because that is the distinction the UI actually acts
- * on — a local-cache problem is retried differently from a network problem,
- * and neither is a "no rows" answer.
- */
+/** The sync engine's error channel. Before Effect, every failure in this subsystem was funnelled
+ * into a bare `catch {}` that returned a fallback value, so a backend outage, a corrupt IndexedDB
+ * database and a legitimately empty result all reached the UI as the same value. */
 import { Data } from 'effect'
 
 /** The local cache (IndexedDB or its in-memory fallback) failed. */

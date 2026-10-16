@@ -8,7 +8,6 @@ import { makeLocalStorageStub } from './helpers'
 // ─── xterm fakes (jsdom has no layout/canvas for the real renderer) ─────────
 // vi.mock factories hoist above class declarations, so the fakes live
 // in vi.hoisted (otherwise "Cannot access before initialization").
-
 const { FakeTerminal, FakeFitAddon, FakeApiError } = vi.hoisted(() => {
   class FakeTerminal {
     static instances: FakeTerminal[] = []
@@ -62,7 +61,6 @@ vi.mock('@xterm/xterm', () => ({ Terminal: FakeTerminal }))
 vi.mock('@xterm/addon-fit', () => ({ FitAddon: FakeFitAddon }))
 
 // ─── WebSocket fake ─────────────────────────────────────────────────────────
-
 const { FakeWebSocket } = vi.hoisted(() => {
   type Handler = ((event: never) => void) | null
   class FakeWebSocket {
@@ -116,7 +114,6 @@ const { FakeWebSocket } = vi.hoisted(() => {
 vi.stubGlobal('WebSocket', FakeWebSocket)
 
 // ─── API fakes (incrementing session ids for multi-session tests) ──────────
-
 const apiState = {
   nextId: 0,
   output404For: null as string | null,

@@ -1,20 +1,6 @@
-/**
- * Session-list child of the generic sync engine (sidebar local-first).
- *
- * Mirrors ChatEngineDb: cache-then-revalidate over api.getChats, each row
- * keeping the full server object in `raw` so cached mounts render through
- * the single ChatsList mapper with no shape drift. The cache is
- * partitioned by workspace (`ctx` = workspace id, `'all'` when unscoped),
- * matching ChatsList's `scopedWorkspaceId` refetch boundary.
- *
- * Cursor note: the backend paginates with an opaque cursor pointing at
- * the last item's sort value (session_list.zig) — it pages *older*, so
- * it cannot serve as a "newer tail" delta cursor the way ChatEngineDb's
- * created_at_nano does. loadDelta therefore re-fetches page 1 (desc)
- * and merges by id (30 rows, cheap, always correct). Infinite-scroll
- * cursors stay component-local (chatsNextCursor); no sync cursor is
- * persisted.
- */
+/** Session-list child of the generic sync engine (sidebar local-first). Mirrors ChatEngineDb:
+ * cache-then-revalidate over api.getChats, each row keeping the full server object in `raw` so
+ * cached mounts render through the single ChatsList mapper with no shape drift. */
 import { Effect } from 'effect'
 import * as api from '../api'
 import type { Chat } from '../api'
@@ -84,12 +70,9 @@ export class SessionEngineDb extends BaseSyncEngine<SessionRow, SessionCtx> {
     return this.fetchDeltaPage(cursor, limit, ctx)
   }
 
-  /**
-   * Page-1 revalidate: the backend cursor only pages older, so a stored
-   * cursor is useless for "what's new" — always fetch the head of the
-   * list desc and let the caller merge by id. `_cursor` is accepted for
-   * the base-class contract and ignored.
-   */
+  /**    * Page-1 revalidate: the backend cursor only pages older, so a stored cursor is useless for
+   * "what's new" — always fetch the head of the list desc and let the caller merge by id. `_cursor`
+   * is accepted for the base-class contract and ignored. */
   fetchDeltaPage(
     _cursor: string | null,
     limit: number,
@@ -117,13 +100,9 @@ export class SessionEngineDb extends BaseSyncEngine<SessionRow, SessionCtx> {
     )
   }
 
-  /**
-   * Background refresh for a cached mount: fetch page 1, persist it.
-   *
-   * Now honest about failure — a rejected fetch surfaces as
-   * `SyncRemoteError` instead of the old `catch { return null }`, so a
-   * caller can tell "no new sessions" from "the sidebar could not refresh".
-   */
+  /**    * Background refresh for a cached mount: fetch page 1, persist it. Now honest about failure — a
+   * rejected fetch surfaces as `SyncRemoteError` instead of the old `catch { return null }`, so a
+   * caller can tell "no new sessions" from "the sidebar could not refresh". */
   loadDelta(ctx: SessionCtx, limit: number): Effect.Effect<SessionDelta, SyncError> {
     // A generator's `this` is its own, so capture the engine outside.
     // oxlint-disable-next-line typescript-eslint/no-this-alias -- see SyncEngine.syncOnMount

@@ -1,21 +1,4 @@
-/**
- * `useRecentFoldersStore` — Pinia store backing the FilePickerDialog's
- * Recent tab.
- *
- * Owns the persistent list of folders the user has picked via the
- * `FilePickerDialog` modal. The list is deduped by path, capped at 12
- * entries (pinned entries are exempt from the cap), and sorted by
- * `pinned desc, lastUsedAt desc`.
- *
- * Persistence: localStorage key `pabrik-folder-picker-recent:v1`. The `:v1`
- * suffix lets us bump the schema later without nuking user data. Writes
- * are debounced 200ms (matches the pattern in `useDesignHistory.ts`'s
- * `useDebounceFn`).
- *
- * No backend round-trip — the list is desktop-only. Mirrors the
- * `useDesignHistory` / `useSettings` pattern of "app-local state with
- * a localStorage shadow".
- */
+/** `useRecentFoldersStore` — Pinia store backing the FilePickerDialog's Recent tab. */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 

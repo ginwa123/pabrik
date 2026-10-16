@@ -3,29 +3,17 @@ import { mount } from '@vue/test-utils'
 import UiIcon from '../components/ui/UiIcon.vue'
 import { ICON_PATHS, type UiIconName } from '../components/ui/icons'
 
-/**
- * `UiIcon` is the replacement for every emoji that used to stand in for
- * an icon, so these tests answer three questions the app depends on:
- *
- *  1. Does every name in the registry actually render geometry? A key
- *     with an empty path array renders a silent 0x0 hole where an icon
- *     should be, and nothing else in the suite would notice.
- *  2. Is the glyph identifiable after the fact? `data-icon` is the
- *     reason an icon-only control is assertable at all; the old emoji
- *     had nothing to pin a spec to.
- *  3. Does it stay decorative by default? An `aria-hidden` icon next
- *     to a visible label is correct; the same icon announced as
- *     "Trash" after "Delete" is the bug.
- */
+/** `UiIcon` is the replacement for every emoji that used to stand in for an icon, so these tests
+ * answer three questions the app depends on: 1. Does every name in the registry actually render
+ * geometry? */
 describe('UiIcon', () => {
   const names = Object.keys(ICON_PATHS) as UiIconName[]
 
   it('has a non-empty path list for every name in the registry', () => {
     expect(names.length).toBeGreaterThan(0)
-    // `ICON_PATHS` is `as const`, so TS knows each entry's exact length and
-    // flags a `=== 0` comparison as impossible. That is the point: this test
-    // is the runtime witness that the registry still holds geometry, and a
-    // widened view is what lets it say so out loud.
+    // `ICON_PATHS` is `as const`, so TS knows each entry's exact length and flags a `=== 0`
+    // comparison as impossible. That is the point: this test is the runtime witness that the
+    // registry still holds geometry, and a widened view is what lets it say so out loud.
     const pathsOf = (name: UiIconName): readonly string[] => ICON_PATHS[name]
     expect(names.filter((n) => pathsOf(n).length === 0)).toEqual([])
     // Every `d` must actually look like geometry, not an empty attribute.

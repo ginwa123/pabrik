@@ -100,11 +100,8 @@ const reportError = (message: string) => {
   emit('error', message)
 }
 
-// Reload when the resolved workspace changes: mount covers the initial
-// load, prev-id guard on update covers workspace switches. The
-// data-workspace binding below keeps this component's own render effect
-// subscribed to the store workspace (row content alone would not
-// re-render us on a switch) — that render is what fires the guard.
+// Reload when the resolved workspace changes: mount covers the initial load, prev-id guard on
+// update covers workspace switches.
 const prevWorkspaceId = ref<string | null>(workspaceId.value)
 onMounted(() => {
   prevWorkspaceId.value = workspaceId.value
@@ -117,11 +114,9 @@ onUpdated(() => {
   }
 })
 
-// ─── Filter, sort, count ────────────────────────────────────────────────
-//
-// The state is seeded from the URL and written back on every change, so a
-// filtered view is a link. `router.replace`, not `push`: typing in the
-// search box must not bury the previous five keystrokes under Back.
+// ─── Filter, sort, count ───────────────────────────────────────────────
+// Seeded from the URL and written back on every change, so a filtered view
+// is a link. `replace`, not `push`: typing must not bury earlier keystrokes.
 const route = useRoute()
 const router = useRouter()
 
@@ -163,10 +158,8 @@ const visibleCount = computed(() => countVisible(skills.value, filterState.value
 const filterActive = computed(() => isFilterActive(filterState.value))
 
 // ─── Keyboard navigation ───────────────────────────────────────────────
-//
-// The rows were plain click targets, so the list was unreachable without
-// a mouse. Arrow keys move a cursor, Enter opens it, and `/` focuses the
-// search box from anywhere on the page.
+// The rows were plain click targets, so the list needed a mouse. Arrows
+// move a cursor, Enter opens it, Home/End jump to either end.
 const cursorIndex = ref(-1)
 const searchInputRef = ref<HTMLInputElement | null>(null)
 

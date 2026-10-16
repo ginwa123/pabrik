@@ -1,20 +1,5 @@
-/**
- * Tests for FileInput — chat input's @-triggered file/folder autocomplete.
- *
- * The component lets a user attach a folder to their message by typing
- * `@` in the textarea; the picker shows matching files/folders and the
- * user can select one (Enter or click). On selection, the matched
- * `@query` token is replaced by the picked path.
- *
- * Regression test for "keep the @ symbol on select":
- *   - When the user types `@d` and selects `/docs/superpowers`, the
- *     `@` trigger must be preserved in the input — the post-selection
- *     text should be `@/docs/superpowers`, not `/docs/superpowers`.
- *   - The pre-fix code sliced off `atMatch[0].length` (which INCLUDES
- *     the `@`) and replaced with `file.path`, losing the `@`.
- *
- * Plan: docs/plans/2026-06-26-keep-at-on-select.md
- */
+/** Tests for FileInput — chat input's @-triggered file/folder autocomplete. Plan:
+ * docs/plans/2026-06-26-keep-at-on-select.md */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -31,11 +16,9 @@ vi.mock('@/api', async (importOriginal) => {
 
 const searchFilesMock = api.searchFiles as unknown as ReturnType<typeof vi.fn>
 
-/**
- * Mock `api.searchFiles` with pre-ranked server rows (Task 2: the server
- * owns ranking now — the old N-sequential-fetch full-tree walk via raw
- * `fetch` is deleted). Each test sets the rows its query should return.
- */
+/**  * Mock `api.searchFiles` with pre-ranked server rows (Task 2: the server owns ranking now — the old
+ * N-sequential-fetch full-tree walk via raw `fetch` is deleted). Each test sets the rows its query
+ * should return. */
 function mockSearchResults(
   entries: Array<{ name: string; path: string; is_directory: boolean }>,
 ) {
@@ -44,12 +27,9 @@ function mockSearchResults(
   })
 }
 
-/**
- * Set the textarea's value and explicitly position the cursor at the
- * end, then dispatch `input` so the component's `autoResize` handler
- * runs and updates `cursorPos`. jsdom does not always move
- * `selectionStart` to the end of a programmatically-set `.value`.
- */
+/**  * Set the textarea's value and explicitly position the cursor at the end, then dispatch `input` so
+ * the component's `autoResize` handler runs and updates `cursorPos`. jsdom does not always move
+ * `selectionStart` to the end of a programmatically-set `.value`. */
 async function typeInTextarea(
   textareaWrapper: ReturnType<VueWrapper['find']>,
   value: string,
@@ -195,26 +175,8 @@ describe('FileInput — @ autocomplete on select keeps the @ symbol', () => {
   })
 })
 
-/**
- * Paste-image regression tests (WebKitGTK + pabrik-desktop bug).
- *
- * Bug: in pabrik-desktop (WebKitGTK 4.1 on Linux), the `<textarea>` paste event
- * delivers a `clipboardData` object but `clipboardData.items` is empty even
- * when the system clipboard contains an image. The previous behavior was
- * to silently no-op in this case, so screenshots pasted into the chat
- * vanished. Chrome / Firefox work fine (their `items` include file entries).
- *
- * Fix: the handler now also tries `navigator.clipboard.read()` as a fallback,
- * which reads the actual system clipboard bypassing the `<textarea>` filter.
- *
- * These tests assert the contract of the new handler (both sync and async
- * paths), the scope check (only OUR textarea is intercepted), and the
- * cleanup on unmount. They do NOT need a real WebKitGTK runtime — jsdom
- * + a mocked `navigator.clipboard.read()` is enough to exercise the
- * branching logic.
- *
- * Plan: docs/plans/2026-07-04-fix-desktop-paste-image.md
- */
+/** Paste-image regression tests (WebKitGTK + pabrik-desktop bug). Plan:
+ * docs/plans/2026-07-04-fix-desktop-paste-image.md */
 describe('FileInput — paste image (Ctrl+V) attaches to preview', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -230,12 +192,9 @@ describe('FileInput — paste image (Ctrl+V) attaches to preview', () => {
     delete (navigator as unknown as { clipboard?: unknown }).clipboard
   })
 
-  /**
-   * Build a minimal DataTransferItem-like object. jsdom doesn't expose
-   * DataTransferItem constructor in the test env, so we use the closest
-   * shape and rely on the handler's duck-typing checks (kind, type,
-   * getAsFile()).
-   */
+  /**    * Build a minimal DataTransferItem-like object. jsdom doesn't expose DataTransferItem constructor
+   * in the test env, so we use the closest shape and rely on the handler's duck-typing checks
+   * (kind, type, getAsFile()). */
   function fakeImageItem(
     type = 'image/png',
     withName = '',
@@ -268,10 +227,9 @@ describe('FileInput — paste image (Ctrl+V) attaches to preview', () => {
       files: [] as File[],
       types: items.map((i) => i.type),
     } as unknown as DataTransfer
-    // jsdom doesn't expose a ClipboardEvent constructor (DOM v0.x), so we
-    // build a synthetic event with the clipboardData property attached.
-    // The DOM-level event dispatch (Element.dispatchEvent) only requires
-    // a non-null Event with bubbles=true.
+    // jsdom doesn't expose a ClipboardEvent constructor (DOM v0.x), so we build a synthetic event
+    // with the clipboardData property attached. The DOM-level event dispatch
+    // (Element.dispatchEvent) only requires a non-null Event with bubbles=true.
     const ev = new Event('paste', { bubbles: true, cancelable: true }) as unknown as ClipboardEvent
     Object.defineProperty(ev, 'clipboardData', { value: dataTransfer })
     return ev
@@ -441,12 +399,8 @@ describe('FileInput — paste image (Ctrl+V) attaches to preview', () => {
     await flushPromises()
     await new Promise((r) => setTimeout(r, 10))
 
-    // After unmount, the unmounted instance's listener shouldn't add another
-    // preview to the (now-unmounted) FileInput's DOM. We assert via the
-    // readonly `clipboardReadMock` — it should not have been called for the
-    // post-unmount event (scope check fails because the textarea ref is
-    // gone from the document, but the assertion is stronger: we expect the
-    // listener to be entirely gone).
+    // After unmount, the unmounted instance's listener shouldn't add another preview to the
+    // (now-unmounted) FileInput's DOM.
     expect(clipboardReadMock).not.toHaveBeenCalled()
     expect(previewsBefore).toBe(1)
   })

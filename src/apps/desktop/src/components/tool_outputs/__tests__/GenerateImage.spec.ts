@@ -1,31 +1,11 @@
-/**
- * Tests for GenerateImage.vue — the tool-output card component for the
- * `generate_image` agent tool.
- *
- * Verifies:
- *  - renders the data-testid matching the message id (for E2E selectors)
- *  - success path: tool name + parameter prompt as primary + right-meta
- *    (model + size + count) + ✓ status badge
- *  - error path: red border + ✗ badge + error message inline
- *  - expand/collapse: clicking the header toggles the body; per-image
- *    rows show path / bytes / mime; revised_prompt shown when present
- *  - copy button: clicks the per-image copy button without bubbling
- *    to the parent (no expand-toggle side effect)
- *  - parameters prop (JSON-stringified tool args) is parsed and the
- *    prompt is rendered when present; falls back to envelope values
- *    when parameters is malformed JSON or missing
- *
- * Per the project rule of behavioural tests (no static-contract), these
- * tests interact with the component as the user would — mounting,
- * querying via `data-testid`, clicking buttons.
- */
+/** Tests for GenerateImage.vue — the tool-output card component for the `generate_image` agent
+ * tool. */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
 import GenerateImage from '../GenerateImage.vue'
 
 // ─── Test helpers ──────────────────────────────────────────────────────────
-
 const makeSuccessContent = (opts: {
   model?: string
   size?: string
@@ -65,7 +45,6 @@ const makeParameters = (prompt: string) =>
   JSON.stringify({ prompt, model: 'dall-e-3', size: '1024x1024', n: 1 })
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
-
 describe('GenerateImage', () => {
   it('renders the card with a data-testid', () => {
     const wrapper = mount(GenerateImage, {

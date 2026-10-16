@@ -75,7 +75,6 @@ const parsed = computed(() => {
 })
 
 // ---- Derived display values ------------------------------------------------
-
 const contentPath = computed((): string | null => {
   const v = parsed.value.path
   return v && v.trim() !== '' ? v : null
@@ -97,9 +96,8 @@ const count = computed(() => parsed.value.count)
 const entries = computed(() => parsed.value.entries)
 const errorMessage = computed(() => parsed.value.error)
 
-// Singular vs plural: "1 entry" / "0 entries" / "N entries". The
-// backend's `count` attribute is the source of truth — if a stale
-// envelope ever has `<count>` but no entries (or vice versa), we still
+// Singular vs plural: "1 entry" / "0 entries" / "N entries". The backend's `count` attribute is the
+// source of truth — if a stale envelope ever has `<count>` but no entries (or vice versa), we still
 // pick the grammar based on `count`.
 const countLabel = computed(() => {
   const n = count.value
@@ -123,7 +121,6 @@ const headerTitle = computed(() => {
 })
 
 // ─── Interactions ──────────────────────────────────────────────────────────
-
 const toggle = () => {
   isExpanded.value = !isExpanded.value
 }
@@ -143,10 +140,9 @@ const openInEditorClick = (e: Event, fullPath: string) => {
   openInEditor({ filePath: fullPath, cwd: props.cwd })
 }
 
-// Per-row icon: `folder` for directories, `file` for files. The symlink
-// marker is a separate `→` in the template — it is typographic text,
-// not an icon, and stays outside the registry. Matches the visual
-// conventions of `ls -F` / `eza`.
+// Per-row icon: `folder` for directories, `file` for files. The symlink marker is a separate `→` in
+// the template — it is typographic text, not an icon, and stays outside the registry. Matches the
+// visual conventions of `ls -F` / `eza`.
 const rowIcon = (entry: { isDirectory: boolean }): UiIconName =>
   entry.isDirectory ? 'folder' : 'file'
 

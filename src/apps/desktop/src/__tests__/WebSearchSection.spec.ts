@@ -11,12 +11,9 @@ import {
   type WebSearchProviderRow,
 } from '../components/pabrik/webSearchProviders'
 
-/**
- * `key` may arrive from the API as a MASK rather than as the secret.
- * `MASKED` stands in for the shape of such a value (leading chars, dots,
- * trailing chars) — the point is that the frontend cannot tell it apart
- * from a real credential, and therefore must never rewrite it.
- */
+/**  * `key` may arrive from the API as a MASK rather than as the secret. `MASKED` stands in for the
+ * shape of such a value (leading chars, dots, trailing chars) — the point is that the frontend
+ * cannot tell it apart from a real credential, and therefore must never rewrite it. */
 const MASKED = 'sk••••••7f2'
 
 const TINYFISH: PabrikWebSearchProvider = {
@@ -99,12 +96,10 @@ describe('WebSearchSection', () => {
   })
 
   // ─── The regressions this section exists to prevent ──────────────────────
-
   it('submitting the MASKED key does not blank the stored key', async () => {
-    // The user opens Settings and hits Save without touching the key.
-    // The field still holds the backend's mask, and that mask is what
-    // goes back — never `""`, which would destroy the stored credential
-    // while looking exactly like "the user cleared the field".
+    // The user opens Settings and hits Save without touching the key. The field still holds the
+    // backend's mask, and that mask is what goes back — never `""`, which would destroy the stored
+    // credential while looking exactly like "the user cleared the field".
     const parsed = rows({ tinyfish: TINYFISH })
     const wrapper = mount(WebSearchSection, { props: { modelValue: parsed } })
     expect(fieldValue(wrapper, 'tinyfish', 'key-input')).toBe(MASKED)
@@ -123,10 +118,9 @@ describe('WebSearchSection', () => {
   })
 
   it('an EMPTY key is OMITTED from the payload, not sent as an empty string', () => {
-    // A self-hosted provider has no credential. `{"key": ""}` is a
-    // DIFFERENT thing to the backend than an absent key — an empty
-    // slice binds as SQL NULL and `isUsable` reads it as a declared but
-    // unusable credential — so the field must not be materialised.
+    // A self-hosted provider has no credential. `{"key": ""}` is a DIFFERENT thing to the backend
+    // than an absent key — an empty slice binds as SQL NULL and `isUsable` reads it as a declared
+    // but unusable credential — so the field must not be materialised.
     const saved = serializeWebSearchProviders(rows({ selfhosted: SELFHOSTED }))
     expect(savedProvider(saved, 'selfhosted')).not.toHaveProperty('key')
     expect(Object.keys(savedProvider(saved, 'selfhosted'))).not.toContain('key')
@@ -162,7 +156,6 @@ describe('WebSearchSection', () => {
   })
 
   // ─── Round-trip ──────────────────────────────────────────────────────────
-
   it('a provider round-trips through parse then serialize unchanged', () => {
     const saved = serializeWebSearchProviders(rows({ tinyfish: TINYFISH }))
     expect(saved).toEqual({ tinyfish: TINYFISH })
@@ -202,7 +195,6 @@ describe('WebSearchSection', () => {
   })
 
   // ─── Row editing ─────────────────────────────────────────────────────────
-
   it('edits a field in place without disturbing the others', async () => {
     const parsed = rows({ tinyfish: TINYFISH })
     const wrapper = mount(WebSearchSection, { props: { modelValue: parsed } })
@@ -227,7 +219,6 @@ describe('WebSearchSection', () => {
   })
 
   // ─── Host pin + {key} rules, checked before the row reaches the backend ─
-
   it('flags a pinned URL the backend would refuse', () => {
     // The same matrix `isNonPublicHost` refuses in
     // `web_search_curl.zig`, plus the scheme rule.

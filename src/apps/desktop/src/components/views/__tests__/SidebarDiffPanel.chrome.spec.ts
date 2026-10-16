@@ -4,18 +4,8 @@ import { createRouter, createMemoryHistory } from 'vue-router'
 import SidebarDiffPanel from '../chat_right_sidebar/SidebarDiffPanel.vue'
 import { clearFolderDiffCache } from '../../../helpers/folderDiffCache'
 
-/**
- * The chrome redesign (docs/plans/2026-10-04-right-sidebar-redesign.md).
- *
- * These lock the NEW behaviour the redesign introduced. Everything the old
- * panel already guaranteed stays guaranteed by the existing specs —
- * `SidebarDiffPanel.tabs.spec.ts` owns the tab style contract,
- * `pr.spec.ts` / `prConflict.spec.ts` own the exact PR strings, and
- * `ChatView.worktreeSidebar.spec.ts` owns the source greps. This file only
- * covers what did not exist before: the letter chip, the dim/bright path
- * split, the filter, and the one-word tab labels.
- */
-
+/** The chrome redesign (docs/plans/2026-10-04-right-sidebar-redesign.md). These lock the NEW
+ * behaviour the redesign introduced. */
 const { getGitChangesMock, getGitFolderDiffsMock, getPrDiffMock, getPrStatusMock, getGitCommitsMock } =
   vi.hoisted(() => ({
     getGitChangesMock: vi.fn(),
@@ -111,10 +101,9 @@ describe('SidebarDiffPanel chrome — status letter chips', () => {
   })
 
   it('splits a path into a dim directory and a bright filename', async () => {
-    // The whole point of the redesign: across 40 rows the shared
-    // `src/a/b/` prefix becomes skippable and the name is what the eye
-    // lands on. Both halves stay in the DOM so `.text()` still carries the
-    // full path.
+    // The whole point of the redesign: across 40 rows the shared `src/a/b/` prefix becomes
+    // skippable and the name is what the eye lands on. Both halves stay in the DOM so `.text()`
+    // still carries the full path.
     const { wrapper } = await mountPanel()
     const row = wrapper.get('[data-testid="sidebar-diff-file-unstaged-src/a/b/modified.vue"]')
     // The two halves of the path are the only coloured spans in the row;

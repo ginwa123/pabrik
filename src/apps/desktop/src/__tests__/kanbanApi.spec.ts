@@ -1,16 +1,6 @@
-/**
- * Unit tests for the kanban API client (createKanban, listKanbanColumns,
- * addKanbanColumn, updateKanbanColumn, deleteKanbanColumn, moveTask).
- * Mocks global.fetch to assert URL, method, body shape, and error
- * handling without hitting the network. Mirrors the apiMemories.spec.ts
- * style: same mockFetchOnce helper (with `text()` so apiFetch's
- * non-OK path can extract the body for the error toast) and
- * `setActivePinia(createPinia())` in `beforeEach` (apiFetch calls
- * `useNotificationStore()` on every non-2xx).
- *
- * Plan: docs/superpowers/plans/2026-06-21-workspace-item-kanban.md
- *   Chunk 4 / Task 4.2
- */
+/** Unit tests for the kanban API client (createKanban, listKanbanColumns, addKanbanColumn,
+ * updateKanbanColumn, deleteKanbanColumn, moveTask). Mocks global.fetch to assert URL, method, body
+ * shape, and error handling without hitting the network. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -28,11 +18,9 @@ describe('api.kanban', () => {
   const fetchMock = vi.fn()
 
   beforeEach(() => {
-    // apiFetch calls useNotificationStore() on every non-2xx response
-    // to fire an error toast. Without an active Pinia the call
-    // throws. setActivePinia(createPinia()) mounts a fresh store for
-    // each test so the toast path can run without crashing.
-    // (See project memory apiFetch-mock-must-include-text-and-pinia.)
+    // apiFetch calls useNotificationStore() on every non-2xx response to fire an error toast.
+    // Without an active Pinia the call throws. setActivePinia(createPinia()) mounts a fresh store
+    // for each test so the toast path can run without crashing.
     setActivePinia(createPinia())
   })
 
@@ -76,10 +64,9 @@ describe('api.kanban', () => {
       expect(url).toContain('/api/workspaces/ws_1/items/kanban')
       expect(init.method).toBe('POST')
       const body = JSON.parse(init.body as string)
-      // path defaults to '' when omitted (matches the API: NULLIF(?, '')
-      // turns '' into NULL on the backend). The frontend always passes
-      // a non-empty path via the AddKanbanDialog picker; the ''
-      // fallback is just for direct API callers / tests.
+      // path defaults to '' when omitted (matches the API: NULLIF(?, '') turns '' into NULL on the
+      // backend). The frontend always passes a non-empty path via the AddKanbanDialog picker; the
+      // '' fallback is just for direct API callers / tests.
       expect(body).toEqual({ name: 'My Sprint', path: '' })
       expect(result.item.id).toBe('kanban_1')
       expect(result.item.name).toBe('My Sprint')
@@ -192,26 +179,18 @@ describe('api.kanban', () => {
 
       const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
       const body = JSON.parse(init.body as string)
-      // apiFetch wraps via JSON.stringify(body), and JSON.stringify
-      // strips `undefined` values from objects — so the optional
-      // `position` is omitted from the wire payload when the caller
-      // didn't supply it. `description` defaults to the empty
-      // string ("no description" sentinel) so the backend's
-      // parseFromSliceLeaky sees a string (not null) for the
-      // NOT NULL DEFAULT '' column. The backend's parseFromSliceLeaky
-      // treats the absent field as `null` for `?i64` / `?[]const u8`
-      // types (matches how addColumn / addTask do it elsewhere).
+      // apiFetch wraps via JSON.stringify(body), and JSON.stringify strips `undefined` values from
+      // objects — so the optional `position` is omitted from the wire payload when the caller
+      // didn't supply it.
       expect(body).toEqual({ name: 'review', description: '' })
     })
   })
 
   describe('updateKanbanColumn', () => {
     it('PATCHes the column with the patch and returns the full updated board', async () => {
-      // The backend's PATCH handler returns the full kanban board
-      // (same {columns, count} envelope as listKanbanColumns) on
-      // success so the frontend can mirror sibling renumbering in a
-      // single round-trip. Assert the wire shape here so any future
-      // drift is caught at the API boundary.
+      // The backend's PATCH handler returns the full kanban board (same {columns, count} envelope
+      // as listKanbanColumns) on success so the frontend can mirror sibling renumbering in a single
+      // round-trip. Assert the wire shape here so any future drift is caught at the API boundary.
       mockFetchOnce(200, {
         columns: [
           {

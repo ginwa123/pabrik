@@ -1,14 +1,5 @@
-/*
- * SkillsSettings.vue — the selected skill in the URL.
- *
- * The selection used to be a component-local ref, so a refresh lost it, a
- * shared link could not point at a skill, and Back did nothing. These
- * specs pin the URL contract that replaced it: `?skill=` is written on
- * select, cleared on delete, and read on mount.
- *
- * The router is mocked at the boundary and the assertions read the
- * navigation calls and the rendered detail pane — never the ref.
- */
+/** SkillsSettings.vue — the selected skill in the URL. The router is mocked
+ * at the boundary; the assertions read the navigation calls. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'

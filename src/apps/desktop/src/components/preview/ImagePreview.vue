@@ -1,17 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, onUpdated } from 'vue'
 
-/**
- * Full-screen image preview overlay.
- *
- * Renders nothing when `src` is an empty string; otherwise teleports a
- * dimmed backdrop + image + close button to <body>. Clicking the
- * backdrop or pressing Escape emits `close`. The body scroll is locked
- * while the preview is open so the chat behind it cannot be scrolled.
- *
- * Usage:
- *   <ImagePreview :src="previewImageUrl" @close="previewImageUrl = null" />
- */
+/** Full-screen image preview overlay. Renders nothing when `src` is an empty string; otherwise
+ * teleports a dimmed backdrop + image + close button to <body>. Clicking the backdrop or pressing
+ * Escape emits `close`. */
 const props = defineProps<{
   src: string
 }>()
@@ -47,11 +39,7 @@ const handleKeydown = (event: KeyboardEvent) => {
   }
 }
 
-// Body scroll lock + Escape listener follow the open state. The open/close
-// transitions originate in the parent (`src` set / `close` emitted), so
-// they are picked up here with a prev-value guard on update — same
-// lock/unlock the watcher did; the mount call covers the initial state,
-// and onBeforeUnmount below always releases.
+// Body scroll lock + Escape listener follow the open state.
 function syncOpenLock(open: boolean) {
   if (open) {
     lockBodyScroll()

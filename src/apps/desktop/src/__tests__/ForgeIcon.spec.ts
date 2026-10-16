@@ -3,15 +3,9 @@ import { describe, expect, it } from 'vitest'
 
 import ForgeIcon from '../components/git/ForgeIcon.vue'
 
-/**
- * The brand marks are locked by path, the same way
- * `WorkspaceItemTaskCard.gitBranch.spec.ts` locks the fork/branch SVG.
- *
- * The reason is in AGENTS.md ("No Emoji as Icons"): the panel used to say
- * 🔀 for both forges, so a GitLab merge request rendered identically to a
- * GitHub pull request. A spec that only checked "an svg is present" would
- * pass again the day someone swaps GitLab's path for GitHub's.
- */
+/** The brand marks are locked by path, the same way `WorkspaceItemTaskCard.gitBranch.spec.ts` locks
+ * the fork/branch SVG. The reason is in AGENTS.md ("No Emoji as Icons"): the panel used to say 🔀
+ * for both forges, so a GitLab merge request rendered identically to a GitHub pull request. */
 const GITHUB_PATH_FRAGMENT = 'M12 .297c-6.63 0-12 5.373-12 12'
 const GITLAB_PATH_FRAGMENT = 'm23.6004 9.5927'
 

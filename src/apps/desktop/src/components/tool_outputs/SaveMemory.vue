@@ -58,17 +58,16 @@ import { normalizeToolContent } from './_shared/toolOutputParser'
 const props = defineProps<{
   content: unknown
   expanded?: boolean
-  /** Tool-call args (XML from jsonArgsToXml, or JSON). Used as a fallback
-   *  so a still-running tool (empty content) shows its target id, and as
-   *  the primary source of the saved body (the result does not echo it). */
+  /**    * Tool-call args (XML from jsonArgsToXml, or JSON). Used as a fallback so a still-running tool
+   * (empty content) shows its target id, and as the primary source of the saved body (the result
+   * does not echo it). */
   parameters?: string
 }>()
 
 const isExpanded = ref(props.expanded ?? false)
 
-/** Body longer than this is clipped in the card. A memory can be up to
- *  1 MiB; a chat card has no business rendering all of it. The copy
- *  button still yields the full body. */
+/**  * Body longer than this is clipped in the card. A memory can be up to 1 MiB; a chat card has no
+ * business rendering all of it. The copy button still yields the full body. */
 const MAX_DISPLAY_CHARS = 20000
 
 /** How much of the body the header's hover tooltip reveals. */
@@ -80,7 +79,6 @@ const MAX_TOOLTIP_CHARS = 500
 const ARGS_EXCLUDE = ['content']
 
 // ---- Parsers ---------------------------------------------------------------
-
 function asRecord(v: unknown): Record<string, unknown> {
   if (typeof v === 'string') {
     try {
@@ -142,12 +140,9 @@ const createdAt = computed(() => strOrNull(dataRecord.value.created_at))
 
 const updatedAt = computed(() => strOrNull(dataRecord.value.updated_at))
 
-// ---- The saved body + tags -------------------------------------------------
-//
-// Precedence: result `data` first (a future backend may echo the stored
-// row), then the tool-call args. `content` is the memory body; it can be
-// an empty string only for a rejected call, which never reaches success.
-
+// ---- The saved body + tags ------------------------------------------------- Precedence: result
+// `data` first (a future backend may echo the stored row), then the tool-call args. `content` is
+// the memory body; it can be an empty string only for a rejected call, which never reaches success.
 const savedContent = computed((): string | null => {
   const fromData = strOrNull(dataRecord.value.content)
   if (fromData !== null) return fromData
@@ -161,9 +156,8 @@ const savedContent = computed((): string | null => {
   return extractParam(props.parameters, 'content')
 })
 
-/** Tags as individual chips. `splitTagsString` in
- *  `src/modules/agent/tools/memory.zig` accepts `||`, `|`, `,` and
- *  space; mirror that order so the chips match what was stored. */
+/**  * Tags as individual chips. `splitTagsString` in `src/modules/agent/tools/memory.zig` accepts `||`,
+ * `|`, `,` and space; mirror that order so the chips match what was stored. */
 const savedTags = computed((): string[] => {
   let raw: string | null = null
   const fromData = dataRecord.value.tags
@@ -180,7 +174,6 @@ const savedTags = computed((): string[] => {
 })
 
 // ---- Derived display values ------------------------------------------------
-
 const isSuccess = computed(() => errorMessage.value === null)
 
 const statusIndicator = computed(() => (isRunning.value ? '…' : isSuccess.value ? '✓' : '✗'))
@@ -189,20 +182,15 @@ const statusIndicator = computed(() => (isRunning.value ? '…' : isSuccess.valu
  *  collapsed so a multi-line note still fits one tooltip line. */
 const contentOneLine = computed(() => (savedContent.value ?? '').replace(/\s+/g, ' ').trim())
 
-/** Chips shown in the header. The header is a single line, so a memory
- *  carrying a dozen tags would otherwise blow the row out; the tail
- *  collapses into a `+N` chip. Nothing is lost — the hover title and the
- *  Arguments block both carry the full list. */
+/**  * Chips shown in the header. The header is a single line, so a memory carrying a dozen tags would
+ * otherwise blow the row out; the tail collapses into a `+N` chip. Nothing is lost — the hover
+ * title and the Arguments block both carry the full list. */
 const HEADER_MAX_TAGS = 3
 const headerTags = computed(() => savedTags.value.slice(0, HEADER_MAX_TAGS))
 const hiddenTagCount = computed(() => Math.max(0, savedTags.value.length - HEADER_MAX_TAGS))
 
-/** Hover title: the full id, every tag, the body capped at
- *  MAX_TOOLTIP_CHARS, and the saved timestamp. The `created_at` /
- *  `updated_at` pair moved here when the expanded body was cut down to
- *  the body alone — they stay reachable without spending a row on two
- *  `CURRENT_TIMESTAMP` values that are always equal. On error, the full
- *  error text. */
+/** Hover title: the full id, every tag, the body capped at MAX_TOOLTIP_CHARS, and the saved
+ * timestamp. */
 const headerTitle = computed(() => {
   if (!isSuccess.value) return errorMessage.value ?? ''
   const parts: string[] = []
@@ -215,7 +203,6 @@ const headerTitle = computed(() => {
 })
 
 // ---- Body rendering --------------------------------------------------------
-
 /** What the card actually renders — clipped for display only. */
 const displayContent = computed(() => clip(savedContent.value ?? '', MAX_DISPLAY_CHARS))
 
@@ -242,12 +229,10 @@ const hasBody = computed(() => {
 })
 
 // ---- Actions ---------------------------------------------------------------
-
 const toggle = () => {
-  // Always expandable on success (id + tags + the body) or error (1 row).
-  // On empty/missing envelopes (no id + no error) we still allow
-  // expansion so the user sees "what's in here" — but it's a no-op
-  // visually when there are no fields.
+  // Always expandable on success (id + tags + the body) or error (1 row). On empty/missing
+  // envelopes (no id + no error) we still allow expansion so the user sees "what's in here" — but
+  // it's a no-op visually when there are no fields.
   isExpanded.value = !isExpanded.value
 }
 
@@ -267,14 +252,12 @@ const copyContent = async () => {
 }
 
 // ---- Helpers ---------------------------------------------------------------
-
 function clip(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) : s
 }
 
-/** UTF-8 byte length without allocating a copy of the (up to 1 MiB)
- *  body — `TextEncoder.encode` would materialise the whole byte array
- *  just to read its length. */
+/**  * UTF-8 byte length without allocating a copy of the (up to 1 MiB) body — `TextEncoder.encode`
+ * would materialise the whole byte array just to read its length. */
 function utf8Len(s: string): number {
   let n = 0
   for (let i = 0; i < s.length; i++) {

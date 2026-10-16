@@ -1,18 +1,5 @@
-/**
- * Tests for the workspaces store's session-events handling.
- *
- * The backend cascade for task rename emits a `session.updated`
- * event on /api/sessions/stream. After the unify-frontend-sse
- * migration (Chunk 6), the workspaces store receives session
- * events through the global sseBus (opened once by App.vue)
- * rather than opening its own EventSource. We use the bus's
- * test injection point (`__dispatchSseBus`) to drive events
- * deterministically.
- *
- * task.id == session_id (per AppLayout.vue:651
- * `:chat-id="activeTask.id"`), so the lookup is a straight
- * equality match on task.id.
- */
+/** Tests for the workspaces store's session-events handling. The backend cascade for task rename
+ * emits a `session.updated` event on /api/sessions/stream. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp } from 'vue'
@@ -30,12 +17,9 @@ import {
 import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 import type { SessionEvent } from '../api'
 
-/**
- * Test-only stub SseClient. We don't drive state transitions
- * from these tests (the bus's `state` ShallowRef is not asserted
- * here), but the install path requires a real-looking client —
- * see sseBus.spec.ts / App.spec.ts for the same helper.
- */
+/**  * Test-only stub SseClient. We don't drive state transitions from these tests (the bus's `state`
+ * ShallowRef is not asserted here), but the install path requires a real-looking client — see
+ * sseBus.spec.ts / App.spec.ts for the same helper. */
 function makeStubClient(initial: SseState): SseClient {
    
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -62,10 +46,9 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
       configurable: true,
     })
 
-    // Install the bus BEFORE the store's `init()` is called —
-    // `installSessionEventHandlers` invokes `useSseBus()` which
-    // throws if the bus hasn't been installed yet. Replace the
-    // underlying SseClient so we never touch the network in tests.
+    // Install the bus BEFORE the store's `init()` is called — `installSessionEventHandlers` invokes
+    // `useSseBus()` which throws if the bus hasn't been installed yet. Replace the underlying
+    // SseClient so we never touch the network in tests.
     __resetSseBus()
     app = createApp({})
     installSseBus(app)
@@ -83,12 +66,9 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
     vi.restoreAllMocks()
   })
 
-  /**
-   * Install the bus-backed handlers AND seed the store. Order
-   * matters: `init()` resets `workspaces.value` to `[]` on
-   * completion (or to the fetched list), so we seed AFTER the
-   * install call returns.
-   */
+  /**    * Install the bus-backed handlers AND seed the store. Order matters: `init()` resets
+   * `workspaces.value` to `[]` on completion (or to the fetched list), so we seed AFTER the install
+   * call returns. */
   async function setupHandlersAndSeed() {
     const ws = useWorkspacesStore()
     await ws.init()
@@ -121,10 +101,8 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
     const ws = useWorkspacesStore()
     // First init — installs the handler, resets workspaces.value to [].
     await ws.init()
-    // Second init — must NOT double-register the handler. The
-    // install flag is closure-scoped inside the store, so a second
-    // init() in the same store IS the no-op path (the flag is
-    // already true).
+    // Second init — must NOT double-register the handler. The install flag is closure-scoped inside
+    // the store, so a second init() in the same store IS the no-op path (the flag is already true).
     await ws.init()
     // Seed after the second init so the handler has data to mutate.
     ws.workspaces = [
@@ -189,11 +167,7 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
     const nav = useNavigationStore()
     const ws = await setupHandlersAndSeed()
     ws.setActiveTask('other_task')
-    // Re-apply the header AFTER setActiveTask — as of 2026-07-14,
-    // workspacesStore.setActiveTask calls clearActiveChat on the
-    // navigation store (see the regression test below for the
-    // rationale), so we need to set the header explicitly here to
-    // isolate the "SSE event handler ignores non-active task" contract.
+    // Re-apply the header AFTER setActiveTask.
     nav.setActiveChatName('Other Task Header')
 
     dispatch({
@@ -258,22 +232,13 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
     expect(ws.activeTaskId).toBeNull()
   })
 
-  // Regression: switching from a chat to a task used to leave the
-  // navigation store's `activeChatId` populated with the prior chat's
-  // id. The next SSE session_created event (broadcast on every
-  // /api/llm/session POST — session_create.zig:230-240) drives
-  // ChatsList.loadChats, which finds the orphan activeChatId in
-  // navigation.sessionId, emits a `navigate chat-<old_id>`, and the
-  // AppLayout drops the user out of the task they were just typing
-  // into and back into the prior chat. Mirrors the navigation
-  // store's own setActiveTask (navigation.ts:123-132), which has
-  // always cleared activeChatId on every set.
+  // Regression: switching from a chat to a task used to leave the navigation store's `activeChatId`
+  // populated with the prior chat's id.
   it('setActiveTask clears navigationStore.activeChatId on non-null taskId', async () => {
     const ws = await setupHandlersAndSeed()
     const nav = useNavigationStore()
-    // Simulate "user was viewing a chat, then clicks a task".
-    // navigationStore.setActiveChat prepends `chat-` to the session
-    // id passed in, so passing 'old_session' yields activeChatId
+    // Simulate "user was viewing a chat, then clicks a task". navigationStore.setActiveChat
+    // prepends `chat-` to the session id passed in, so passing 'old_session' yields activeChatId
     // === 'chat-old_session'.
     nav.setActiveChat('old_session', 'Old Chat')
     expect(nav.activeChatId).toBe('chat-old_session')
@@ -286,18 +251,9 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
   })
 
   it('setActiveTask(null) does NOT clear navigationStore.activeChatId', async () => {
-    // REGRESSION (2026-07-16, `view=chat&session=X` showed welcome page
-    // instead of <ChatView>): the unconditional `clearActiveChat()`
-    // in `setActiveTask` was breaking the chat-nav paths in
-    // Sidebar.vue:316-322 and ChatsList.vue:220-232, where
-    // `setActiveChat(...)` is called immediately BEFORE
-    // `setActiveTask(null)`. The clear undid the just-set chat and
-    // left `activeChatId === ''`, so the v-else-if chain at
-    // AppLayout.vue:1611 (`activeChatId.startsWith('chat-')`) failed
-    // and fell through to <Chats/> (welcome). Now: clearing the
-    // task must NOT clear the chat — callers that need both cleared
-    // (e.g. handleCloseTaskView in AppLayout.vue:528) explicitly
-    // call `navigationStore.clearActiveChat()` themselves.
+    // REGRESSION (2026-07-16, `view=chat&session=X` showed welcome page instead of <ChatView>): the
+    // unconditional `clearActiveChat()` in `setActiveTask` was breaking the chat-nav paths in
+    // Sidebar.vue:316-322 and ChatsList.vue:220-232, where `setActiveChat(...)` is called.
     const ws = await setupHandlersAndSeed()
     const nav = useNavigationStore()
     ws.setActiveTask('task_1')
@@ -311,17 +267,9 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
   })
 
   it('setActiveTask(taskId) DOES clear navigationStore.activeChatId', async () => {
-    // The opposite-direction invariant: ACTIVATING a task must clear
-    // any active chat, otherwise the v-else-if chain at
-    // AppLayout.vue:1459 (`currentView === 'task' && activeTask`)
-    // and the v-else-if at AppLayout.vue:1611
-    // (`activeChatId.startsWith('chat-')`) would BOTH be true,
-    // picking whichever renders first (whichever v-else-if chain
-    // wins) and leaving the other branch out of sync. The previous
-    // unconditional `clearActiveChat()` happened to satisfy this
-    // requirement as a side effect of also clearing on null — the
-    // new conditional version preserves the "activate a task → no
-    // chat left over" contract.
+    // The opposite-direction invariant: ACTIVATING a task must clear any active chat, otherwise the
+    // v-else-if chain at AppLayout.vue:1459 (`currentView === 'task' && activeTask`) and the
+    // v-else-if at AppLayout.vue:1611 (`activeChatId.startsWith('chat-')`) would BOTH be true.
     const ws = await setupHandlersAndSeed()
     const nav = useNavigationStore()
     nav.setActiveChat('pre_task', 'Pre-Task Chat')
@@ -334,14 +282,8 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
     expect(ws.activeTaskId).toBe('task_1')
   })
 
-  // ─── onSessionEvent fan-out (ChatsList regression fix) ───────────────────
-  //
-  // The internal handler mutates workspace tree state. External
-  // components (ChatsList.vue's `navItems` mirror) need to be
-  // notified too — they have their own shape (relativeTime,
-  // processing flag, etc.) that's not derived from the workspace
-  // tree. The fan-out fires after the internal handler so
-  // subscribers can safely re-fetch from the API.
+  // ─── onSessionEvent fan-out (ChatsList regression fix) ─────────────────── The internal handler
+  // mutates workspace tree state.
   it('fan-outs session.updated events to onSessionEvent subscribers', async () => {
     const ws = await setupHandlersAndSeed()
 
@@ -387,10 +329,9 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
   })
 
   it('fan-outs session.created events to onSessionEvent subscribers', async () => {
-    // The internal handler deliberately ignores 'created' (tasks
-    // are created via POST /tasks, not via session.created) — but
-    // external subscribers like ChatsList still need to see the
-    // event so the new session appears in their list.
+    // The internal handler deliberately ignores 'created' (tasks are created via POST /tasks, not
+    // via session.created) — but external subscribers like ChatsList still need to see the event so
+    // the new session appears in their list.
     const ws = await setupHandlersAndSeed()
 
     const cb = vi.fn()

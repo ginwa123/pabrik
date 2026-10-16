@@ -1,13 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { forgeWording } from '../../helpers/forgeWording'
-/**
- * Right-click menu for git-branch badges (sidebar chat rows + kanban
- * cards). Teleported to body so overflow ancestors never clip it.
- * Hosts resolve the URLs (PR URL via fetchPrInfoCached, branch URL
- * derived from the PR repo base) and wire @open-branch / @open-pr to
- * their window.open calls. Items with an empty URL render disabled.
- */
+/** Right-click menu for git-branch badges (sidebar chat rows + kanban cards). Teleported to body so
+ * overflow ancestors never clip it; hosts resolve the URLs and wire @open-branch / @open-pr. */
 const props = withDefaults(
   defineProps<{
     x: number
