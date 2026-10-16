@@ -4665,7 +4665,8 @@ const compactSession = async () => {
                     </button>
                     <div
                       v-if="showProfilePicker"
-                      class="absolute bottom-full mb-2 left-0 min-w-[240px] rounded-lg shadow-lg z-20 overflow-hidden"
+                      class="profile-picker-menu absolute bottom-full mb-2 left-0 min-w-[240px] rounded-lg shadow-lg z-20"
+                      data-testid="profile-picker-menu"
                       style="
                         background-color: var(--semantic-card-bg);
                         border: 1px solid var(--color-border);
@@ -5599,6 +5600,15 @@ const compactSession = async () => {
 .composer-tool-btn:disabled:hover {
   background: transparent;
   color: var(--semantic-text-dim);
+}
+
+/* The profile list is capped by the space above the composer
+   (`--chat-composer-inset` = the dock's published height) and scrolls: an
+   uncapped list ran off the top of the window, with no way to reach it. */
+.profile-picker-menu {
+  max-height: min(60vh, calc(100vh - var(--chat-composer-inset, 0px) - 2rem));
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .composer-toolbar-divider {

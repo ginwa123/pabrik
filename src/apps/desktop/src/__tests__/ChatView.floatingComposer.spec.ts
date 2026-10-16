@@ -310,4 +310,22 @@ describe('ChatView floating composer — source contract', () => {
   it("ChatScrollSlider's track reads the same inset so it stays reachable", () => {
     expect(sliderSrc).toContain('bottom: calc(var(--chat-composer-inset, 0px) + 8px);')
   })
+
+  it('bounds the profile picker menu by that inset and lets it scroll', () => {
+    // `bottom-full` pins the menu's BOTTOM to the composer chip, so an uncapped
+    // list grows off the TOP of the window and `overflow-hidden` leaves nothing
+    // to scroll. The cap is the space above the chip: viewport minus the dock.
+    const rule = chatViewSrc.match(/\.profile-picker-menu\s*\{[^}]*\}/)
+    expect(rule).not.toBeNull()
+    expect(rule![0]).toMatch(
+      /max-height:\s*min\(60vh,\s*calc\(100vh\s*-\s*var\(--chat-composer-inset, 0px\)\s*-\s*2rem\)\);/,
+    )
+    expect(rule![0]).toMatch(/overflow-y:\s*auto;/)
+    // The menu must not clip the overflow instead of scrolling it.
+    const menuIdx = chatViewSrc.indexOf('profile-picker-menu')
+    expect(menuIdx).toBeGreaterThan(-1)
+    const menuTag = chatViewSrc.slice(menuIdx, menuIdx + 200)
+    expect(menuTag).toContain('bottom-full')
+    expect(menuTag).not.toContain('overflow-hidden')
+  })
 })
