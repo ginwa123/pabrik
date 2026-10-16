@@ -378,10 +378,11 @@ pub const pabrikConfigPutHandler = @import("pabrik_config_put.zig").pabrikConfig
 // Per-workspace config overlay (Migration 105).
 pub const workspaceConfigGetHandler = @import("workspace_config.zig").workspaceConfigGetHandler;
 pub const workspaceConfigPutHandler = @import("workspace_config.zig").workspaceConfigPutHandler;
+pub const workspaceConfigProfileDeleteHandler = @import("workspace_config.zig").workspaceConfigProfileDeleteHandler;
 pub const pabrikConfigProfileDeleteHandler = @import("pabrik_config_profile_delete.zig").pabrikConfigProfileDeleteHandler;
 // Use-case + domain types live in the same file as the handler.
-pub const removeProfileFromConfig = @import("pabrik_config_profile_delete.zig").removeProfileFromConfig;
-pub const PabrikConfigJsonForDelete = @import("pabrik_config_profile_delete.zig").PabrikConfigJsonForDelete;
+pub const removeProfileFromDocument = @import("pabrik_config_profile_delete.zig").removeProfileFromDocument;
+pub const removeProfileFromUserConfig = @import("pabrik_config_profile_delete.zig").removeProfileFromUserConfig;
 // `ConfigInput` is the wire format for `PUT /api/config/pabrik`.
 pub const ConfigInput = @import("pabrik_config_put.zig").ConfigInput;
 pub const parseConfigInput = @import("pabrik_config_put.zig").parseConfigInput;
@@ -866,7 +867,6 @@ fn llmTestProbeOpencode(
         opencode.describeVersionProbe,
     );
 }
-
 
 /// Probe the candidate, retrying once with a bigger output budget when the
 /// provider reports the first attempt was cut off mid-reasoning.

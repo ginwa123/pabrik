@@ -259,6 +259,103 @@ test "delete_profile_removes_it_from_list" {
 }
 
 // ============================================================================
+// Test 5b: deleting one profile keeps every OTHER key of the config
+// ============================================================================
+
+// DELETE /api/config/pabrik/profiles/<name> rewrites config.json. It must take
+// the profile and nothing else: the other profiles, the MCP servers, the tool
+// checklist, the web-search provider and the General settings all stay.
+test "delete_profile_keeps_the_rest_of_the_config" {
+    try harness.requirePabrikBin(io, gpa);
+
+    var h = try bootConfig();
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    };
+
+    const put_body =
+        \\{
+        \\  "profiles": {
+        \\    "todelete": {"model": "model-a", "base_url": "https://a.example.com", "api_key": "k-a"},
+        \\    "keeper": {"model": "model-b", "base_url": "https://b.example.com", "api_key": "k-b"}
+        \\  },
+        \\  "active_profile": "todelete",
+        \\  "mcp_servers": {"graphify": {"command": "/usr/bin/python3", "args": ["-m", "graphify.serve"]}},
+        \\  "tools": ["glob", "search"],
+        \\  "skill_evals": {"enabled": true, "max_skills_per_run": 5},
+        \\  "web_search": {"brave": {"url": "https://api.search.brave.com", "key": "SENTINEL_SEARCH_KEY",
+        \\   "curl": "https://api.search.brave.com/res/v1/web/search?q=PLACEHOLDER -H \"X-Subscription-Token: {key}\""}},
+        \\  "notify_on_complete": true,
+        \\  "retry_delay_ms": 4242
+        \\}
+    ;
+    {
+        var r = try putConfig(&h, put_body, &.{200});
+        defer r.deinit();
+    }
+
+    {
+        var r = try deleteProfile(&h, "todelete", &.{200});
+        defer r.deinit();
+        var doc = try r.json();
+        defer doc.deinit();
+        try testing.expectEqual(true, doc.boolean("success") orelse {
+            std.debug.print("DELETE response has no bool `success`: {s}\n", .{r.body});
+            return error.TestUnexpectedResult;
+        });
+        try testing.expectEqual(true, doc.boolean("active_profile_was_cleared") orelse {
+            std.debug.print("`todelete` was the active profile but the flag is wrong: {s}\n", .{r.body});
+            return error.TestUnexpectedResult;
+        });
+    }
+
+    var doc = try getConfig(&h);
+    defer doc.deinit();
+
+    const profiles = try profilesMap(&doc);
+    if (profiles.contains("todelete")) {
+        std.debug.print("deleted profile 'todelete' is still in profiles\n", .{});
+        return error.TestUnexpectedResult;
+    }
+    const keeper = try profile(profiles, "keeper");
+    try testing.expectEqualStrings("model-b", try strField(keeper, "model"));
+    try testing.expectEqualStrings("k-b", try strField(keeper, "api_key"));
+
+    if (doc.get("mcp_servers") == null) {
+        std.debug.print("the delete dropped mcp_servers\n", .{});
+        return error.TestUnexpectedResult;
+    }
+    const tools = doc.array("tools") orelse {
+        std.debug.print("the delete dropped the tool checklist\n", .{});
+        return error.TestUnexpectedResult;
+    };
+    try testing.expectEqual(@as(usize, 2), tools.items.len);
+    const evals = doc.object("skill_evals") orelse {
+        std.debug.print("the delete dropped skill_evals\n", .{});
+        return error.TestUnexpectedResult;
+    };
+    try testing.expectEqual(true, evals.get("enabled").?.bool);
+    // The provider block still ships (its `key` is masked on the wire, so the
+    // section's presence is the strongest available assertion here).
+    if (doc.get("web_search") == null) {
+        std.debug.print("the delete dropped web_search\n", .{});
+        return error.TestUnexpectedResult;
+    }
+    try testing.expectEqual(true, doc.boolean("notify_on_complete") orelse {
+        std.debug.print("the delete dropped notify_on_complete\n", .{});
+        return error.TestUnexpectedResult;
+    });
+    try testing.expectEqual(@as(i64, 4242), doc.int("retry_delay_ms") orelse {
+        std.debug.print("the delete dropped retry_delay_ms\n", .{});
+        return error.TestUnexpectedResult;
+    });
+    if (!activeProfileIsAbsent(&doc)) {
+        std.debug.print("active_profile should be null after deleting it\n", .{});
+        return error.TestUnexpectedResult;
+    }
+}
+
+// ============================================================================
 // Test 6: DELETE of an unknown profile is a 404 with a message
 // ============================================================================
 

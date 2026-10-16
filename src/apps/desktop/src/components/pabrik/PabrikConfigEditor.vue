@@ -278,6 +278,9 @@ onMounted(async () => {
 // ─── Per-section view state ──────────────────────────────────────────────
 const profilesList = ref<ProfileRow[]>([])
 const activeProfile = ref<string | null>(null)
+/**  * Has the profile list been edited this session? An emptied list must still be written through —
+ * otherwise deleting the LAST profile would save the pre-delete map back and resurrect it. */
+const profilesTouched = ref(false)
 // Plan 2026-09-04-subagents-per-profile: no global list — per-profile
 // `profilesList[].sub_agents` is the only editor.
 const mcpServersList = ref<McpServer[]>([])
@@ -338,6 +341,7 @@ function syncFromConfig() {
     reasoning_effort: p.reasoning_effort ?? null,
   }))
   activeProfile.value = c.active_profile ?? null
+  profilesTouched.value = false
   // Plan 2026-09-04-subagents-per-profile: top-level `sub_agents` is
   // always null from the backend — intentionally NOT hydrated anywhere.
   mcpServersList.value = parseMcpServers(c.mcp_servers)
@@ -484,7 +488,7 @@ function syncToConfig() {
     max_capacity_token_model: c.max_capacity_token_model,
     compaction_threshold_percent: c.compaction_threshold_percent,
     // Per-profile compaction overrides still live on `profiles` below.
-    ...(Object.keys(profiles).length > 0 ? { profiles } : {}),
+    ...(profilesTouched.value || Object.keys(profiles).length > 0 ? { profiles } : {}),
     ...(activeProfile.value ? { active_profile: activeProfile.value } : {}),
     // Plan 2026-09-04-subagents-per-profile: never send top-level
     // `sub_agents` — per-profile lists ride inside `profiles` above.
@@ -601,6 +605,7 @@ function saveProfile() {
     profileErrors.value = { model: 'Model is required' }
     return
   }
+  profilesTouched.value = true
   if (profileModal.value.mode === 'add') {
     profilesList.value = [...profilesList.value, { name, ...v.config, sub_agents: [] }]
   } else {
@@ -615,6 +620,7 @@ function deleteProfile(name: string) {
   // Optimistic local removal; the API call is best-effort.
   const previous = profilesList.value
   const previousActive = activeProfile.value
+  profilesTouched.value = true
   profilesList.value = profilesList.value.filter((p) => p.name !== name)
   if (activeProfile.value === name) activeProfile.value = null
   syncToConfig()
@@ -701,6 +707,7 @@ function saveSubAgent() {
     return
   }
   const next: SubAgent = { name, ...v.config, system_prompt: v.system_prompt }
+  profilesTouched.value = true
   // Plan 2026-09-04-subagents-per-profile: profile scope only — the
   // top-level branch is gone with the Sub-agents tab.
   const profileName = subAgentModal.value.scope.profileName
@@ -721,6 +728,7 @@ function saveSubAgent() {
   closeSubAgentModal()
 }
 function deleteSubAgentInProfile(profileName: string, subAgentName: string) {
+  profilesTouched.value = true
   profilesList.value = profilesList.value.map((p) => {
     if (p.name !== profileName) return p
     return { ...p, sub_agents: (p.sub_agents ?? []).filter((s) => s.name !== subAgentName) }

@@ -55,6 +55,33 @@ fn wsPath(allocator: std.mem.Allocator, workspace_id: []const u8, suffix: []cons
     return std.fmt.allocPrint(allocator, "/api/workspaces/{s}/config{s}", .{ workspace_id, suffix });
 }
 
+/// `DELETE /api/workspaces/<ws>/config/profiles/<name>`. Caller `deinit`s.
+fn deleteWorkspaceProfile(
+    h: *Harness,
+    workspace_id: []const u8,
+    name: []const u8,
+    expect: []const u16,
+) !harness.Response {
+    const suffix = try std.fmt.allocPrint(gpa, "/profiles/{s}", .{name});
+    defer gpa.free(suffix);
+    const path = try wsPath(gpa, workspace_id, suffix);
+    defer gpa.free(path);
+    return h.http(io, .DELETE, path, .{ .expect = expect });
+}
+
+/// The user-level `config.json` as stored (file mode: `--auth` off). The GET
+/// response masks the web_search key, so only the file proves it survived.
+fn readUserConfigFile(h: *Harness) ![]u8 {
+    const parts = [_][]const u8{ h.temp_dir, ".config", "pabrik", "config.json" };
+    const path = try std.fs.path.join(gpa, &parts);
+    defer gpa.free(path);
+    const file = try std.Io.Dir.openFileAbsolute(io, path, .{});
+    defer file.close(io);
+    var read_buffer: [4096]u8 = undefined;
+    var reader = file.reader(io, &read_buffer);
+    return try reader.interface.allocRemaining(gpa, .limited(1024 * 1024));
+}
+
 /// GET a workspace's effective config. `profiles` being PRESENT is also the
 /// route-order probe: a request captured by another `/api/workspaces/:id/...`
 /// route would not answer with the config shape at all.
@@ -410,5 +437,165 @@ test "a profile added to a workspace overlay is absent from the user-scope confi
         try testing.expect(profiles.get("stub") != null);
         try testing.expect(profiles.get("extra") != null);
         try testing.expect(profiles.get("kilo") == null);
+    }
+}
+
+// ============================================================================
+// DELETE /api/workspaces/:id/config/profiles/:name
+// ============================================================================
+
+test "workspace_profile_delete_removes_it_everywhere_and_keeps_the_rest_of_the_config" {
+    var h = try boot();
+    defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    try putUserConfig(&h);
+
+    const id = try createWorkspace(&h, "DeleteProfile");
+    defer gpa.free(id);
+
+    // The workspace's own copy of both profiles - the state every seeded
+    // workspace is in, and the copy the old flow left behind.
+    const overlay_body =
+        \\{"profiles":{"stub":{"model":"stub-model","base_url":"http://127.0.0.1:1","api_key":"stub-key-not-real"},
+        \\ "extra":{"model":"extra-model","base_url":"http://127.0.0.1:1","api_key":"extra-key-not-real"}},
+        \\ "tools":["command"]}
+    ;
+    {
+        const path = try wsPath(gpa, id, "");
+        defer gpa.free(path);
+        var r = try h.http(io, .PUT, path, .{ .json_body = overlay_body, .expect = &.{200} });
+        defer r.deinit();
+    }
+
+    {
+        var r = try deleteWorkspaceProfile(&h, id, "extra", &.{200});
+        defer r.deinit();
+        var doc = try r.json();
+        defer doc.deinit();
+        try testing.expectEqual(true, doc.boolean("success") orelse return error.NoSuccess);
+        try testing.expectEqualStrings("extra", doc.str("profile_name") orelse return error.NoName);
+    }
+
+    // The workspace's list: the deleted profile is gone, the other stays.
+    {
+        var got = try getWorkspaceConfig(&h, id);
+        defer got.doc.deinit();
+        defer got.r.deinit();
+        const profiles = got.doc.object("profiles") orelse return error.NoProfiles;
+        try testing.expect(profiles.get("extra") == null);
+        try testing.expect(profiles.get("stub") != null);
+    }
+
+    // The user config it inherits from: gone here too, or the merge would
+    // hand the profile straight back to the workspace above.
+    var r = try h.http(io, .GET, "/api/config/pabrik", .{ .expect = &.{200} });
+    defer r.deinit();
+    var doc = try r.json();
+    defer doc.deinit();
+    {
+        const profiles = doc.object("profiles") orelse return error.NoProfiles;
+        try testing.expect(profiles.get("extra") == null);
+        try testing.expect(profiles.get("stub") != null);
+        // Every other key of the document survived the delete.
+        const tools = try toolNames(&doc);
+        defer gpa.free(tools);
+        try testing.expectEqual(@as(usize, 2), tools.len);
+        try testing.expectEqualStrings("command", tools[0]);
+        try testing.expectEqualStrings("glob", tools[1]);
+        try testing.expectEqual(true, doc.boolean("notify_on_complete") orelse return error.NoNotify);
+        try testing.expectEqual(@as(i64, 1234), doc.int("retry_delay_ms") orelse return error.NoRetry);
+        try testing.expect(std.mem.indexOf(u8, r.body, "\"web_search\":{") != null);
+    }
+
+    // The stored document - the GET above masks the search key, so only the
+    // file can show that the delete did not take the credential with it.
+    const stored = try readUserConfigFile(&h);
+    defer gpa.free(stored);
+    try testing.expect(std.mem.indexOf(u8, stored, SENTINEL) != null);
+    try testing.expect(std.mem.indexOf(u8, stored, "retry_delay_ms") != null);
+    try testing.expect(std.mem.indexOf(u8, stored, "extra-key-not-real") == null);
+    try testing.expect(std.mem.indexOf(u8, stored, "stub-key-not-real") != null);
+}
+
+test "workspace_profile_delete_is_404_for_a_name_that_is_nowhere" {
+    var h = try boot();
+    defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    try putUserConfig(&h);
+
+    const id = try createWorkspace(&h, "DeleteGhost");
+    defer gpa.free(id);
+
+    {
+        var r = try deleteWorkspaceProfile(&h, id, "ghost", &.{404});
+        defer r.deinit();
+        var doc = try r.json();
+        defer doc.deinit();
+        try testing.expectEqual(false, doc.boolean("success") orelse return error.NoSuccess);
+        try testing.expectEqualStrings("ghost", doc.str("profile_name") orelse return error.NoName);
+    }
+
+    // Nothing moved: both profiles are still there, on both surfaces.
+    var got = try getWorkspaceConfig(&h, id);
+    defer got.doc.deinit();
+    defer got.r.deinit();
+    const profiles = got.doc.object("profiles") orelse return error.NoProfiles;
+    try testing.expect(profiles.get("stub") != null);
+    try testing.expect(profiles.get("extra") != null);
+}
+
+test "workspace_profile_delete_clears_the_active_profile_it_named" {
+    var h = try boot();
+    defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    try putUserConfig(&h);
+
+    const id = try createWorkspace(&h, "DeleteActive");
+    defer gpa.free(id);
+
+    {
+        var r = try deleteWorkspaceProfile(&h, id, "extra", &.{200});
+        defer r.deinit();
+        var doc = try r.json();
+        defer doc.deinit();
+        // `extra` IS the user config's active profile.
+        try testing.expectEqual(true, doc.boolean("active_profile_was_cleared") orelse return error.NoFlag);
+    }
+
+    var got = try getWorkspaceConfig(&h, id);
+    defer got.doc.deinit();
+    defer got.r.deinit();
+    const active = got.doc.get("active_profile") orelse return error.NoActiveField;
+    try testing.expect(active == .null);
+}
+
+test "workspace_profile_delete_leaves_another_workspaces_own_profile_alone" {
+    var h = try boot();
+    defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    try putUserConfig(&h);
+
+    const ws_a = try createWorkspace(&h, "DeleteAlpha");
+    defer gpa.free(ws_a);
+    const ws_b = try createWorkspace(&h, "DeleteBeta");
+    defer gpa.free(ws_b);
+
+    const body =
+        \\{"profiles":{"mine":{"model":"mine-model","base_url":"http://127.0.0.1:1","api_key":"k"}}}
+    ;
+    for ([_][]const u8{ ws_a, ws_b }) |ws| {
+        const path = try wsPath(gpa, ws, "");
+        defer gpa.free(path);
+        var r = try h.http(io, .PUT, path, .{ .json_body = body, .expect = &.{200} });
+        defer r.deinit();
+    }
+
+    {
+        var r = try deleteWorkspaceProfile(&h, ws_a, "mine", &.{200});
+        defer r.deinit();
+    }
+
+    {
+        var b = try getWorkspaceConfig(&h, ws_b);
+        defer b.doc.deinit();
+        defer b.r.deinit();
+        const profiles = b.doc.object("profiles") orelse return error.NoProfiles;
+        try testing.expect(profiles.get("mine") != null);
     }
 }

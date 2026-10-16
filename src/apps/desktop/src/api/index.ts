@@ -3841,6 +3841,19 @@ export async function deleteProfile(name: string): Promise<ProfileDeleteResponse
   )
 }
 
+/**  * `DELETE /api/workspaces/:workspace_id/config/profiles/:name` Removes the profile from this
+ * workspace's overlay AND from the user config it inherits from, so deleting it from the workspace
+ * Profiles list actually removes it (dropping it from the overlay alone would inherit it back). */
+export async function deleteWorkspaceProfile(
+  workspaceId: string,
+  name: string,
+): Promise<ProfileDeleteResponse> {
+  return await apiFetch<ProfileDeleteResponse>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/config/profiles/${encodeURIComponent(name)}`,
+    { method: 'DELETE' },
+  )
+}
+
 // ─── MCP server test probe ────────────────────────────────────────────────── Wire shape mirrors
 // the backend `POST /api/mcp/test` handler in src/ai_workflow/tui/http_handlers/mcp_test.zig.
 export interface McpToolPreview {
