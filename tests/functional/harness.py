@@ -499,6 +499,12 @@ class FunctionalHarness:
             env["USERPROFILE"] = str(temp_dir)
             env["APPDATA"] = str(temp_dir / "AppData" / "Roaming")
             env["LOCALAPPDATA"] = str(temp_dir / "AppData" / "Local")
+        # The model catalog syncs models.dev in the background, and a test child
+        # boots with NO cached snapshot — so pabrik primes that fetch at boot
+        # and every spawned server would download 5.7 MB and commit ~9k rows
+        # into its tmpdir DB. A suite must not depend on the internet, and that
+        # write has no business racing the test's own first request.
+        env["PABRIK_MODEL_CATALOG_FETCH"] = "0"
         log_file = log_path.open("wb")
         # `start_new_session=True` is a keyword arg accepted on
         # Python 3.2+ for both POSIX (setsid) and Windows
