@@ -3601,6 +3601,24 @@ pub fn updateSessionSubAgentInfo(
     }
 }
 
+/// Read `sessions.git_worktree_cwd` for `session_id`. Empty string when the
+/// session has no binding or no row — the caller then works in `cwd`.
+pub fn getSessionGitWorktreeCwd(
+    allocator: std.mem.Allocator,
+    db: *sqlite.SqliteBackend,
+    session_id: []const u8,
+) ![]u8 {
+    var rows = try db.query(
+        allocator,
+        "SELECT COALESCE(git_worktree_cwd, '') FROM sessions WHERE id = ?",
+        &.{session_id},
+    );
+    defer rows.deinit();
+    const row = (try rows.next()) orelse return allocator.dupe(u8, "");
+    defer row.deinit(allocator);
+    return allocator.dupe(u8, row.values[0]);
+}
+
 /// Update session git_worktree_cwd. Pass empty string or null to clear.
 /// When the value changes, broadcast a session.updated SSE event so the
 /// ChatsList sidebar updates its 🌳 badge in real time.

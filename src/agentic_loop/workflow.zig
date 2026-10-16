@@ -87,7 +87,7 @@ pub const buildCompactMessagePrompt = compact_message_mod.buildCompactMessagePro
 pub const fetchUserChatHistory = compact_message_mod.fetchUserChatHistory;
 pub const fetchReadFilePaths = compact_message_mod.fetchReadFilePaths;
 pub const fetchRecentActivities = compact_message_mod.fetchRecentActivities;
-pub const enrichCompactionXml = compact_message_mod.enrichCompactionXml;
+pub const compaction_envelope = @import("compaction_envelope.zig");
 pub const parseReadFilePath = compact_message_mod.parseReadFilePath;
 pub const UserTurn = compact_message_mod.UserTurn;
 pub const ReadFileTurn = compact_message_mod.ReadFileTurn;
@@ -2200,7 +2200,7 @@ test "end-to-end: compaction envelope is queryable via getCompactedMessages" {
     const new_messages = try compactMessageInMemoryNew(
         alloc,
         messages,
-        "GOAL: ship the fix\nNEXT: deploy",
+        "{\"compact_messages\":{\"format_version\":2},\"summary\":null}",
         session_id,
         "gpt-4o",
         "/tmp",
