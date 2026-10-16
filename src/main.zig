@@ -27,7 +27,6 @@ const server_boot = pabrikcore.boot_server_boot;
 // The DB policy and its `--db-*` overrides, plus the reader-pool reaper that
 // keeps the elastic pool from holding a burst's readers forever.
 const db_config = pabrikcore.boot_db_config;
-const reap_idle_readers = pabrikcore.reap_idle_readers;
 const static_serve = pabrikcore.http_static_serve;
 
 pub fn main(init: std.process.Init) !void {
@@ -353,19 +352,6 @@ pub fn main(init: std.process.Init) !void {
     ) catch |err| {
         std.debug.print("Failed to register cleanup_stale_background_process cron: {s}\n", .{@errorName(err)});
     };
-    // The reader pool is elastic and uncapped, so a burst leaves readers
-    // open; the pool only reaps inline on `release`, which never happens
-    // when traffic stops. This tick is what actually gives the memory back.
-    _ = gs.cronjob_manager.register(
-        "* * * * *",
-        "reap_idle_readers",
-        reap_idle_readers.handle,
-        null,
-        boot_unix,
-    ) catch |err| {
-        std.debug.print("Failed to register reap_idle_readers cron: {s}\n", .{@errorName(err)});
-    };
-
     try gs.listenEventLoop(.{ .dispatch_mode = .worker_pool });
 
     // Post-listen shutdown. The signal path only sets the flag (handlers

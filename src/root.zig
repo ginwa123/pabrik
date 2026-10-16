@@ -227,10 +227,6 @@ pub const cleanup_stale_worker = @import("schedulers/cleanup_stale_worker.zig");
 // Re-export cleanup_stale_background_process for the same reason as
 // above — see plan 2026-08-19-cleanup-stale-background-process.
 pub const cleanup_stale_background_process = @import("schedulers/cleanup_stale_background_process.zig");
-// The SQLite reader-pool reaper. Re-exported for the same dual-module reason
-// as the two schedulers above: main.zig registers `handle` on the cron and
-// must not @import the file directly.
-pub const reap_idle_readers = @import("schedulers/reap_idle_readers.zig");
 // The DB connection policy (and its `--db-*` CLI overrides). Re-exported so
 // the exe module and the schedulers share ONE definition of the defaults.
 pub const boot_db_config = @import("boot/db_config.zig");
@@ -344,9 +340,6 @@ test {
     // (mirrors cleanup_stale_worker pattern). Re-imported here for the
     // same reason — see plan 2026-08-19-cleanup-stale-background-process.
     _ = @import("schedulers/cleanup_stale_background_process.zig");
-    // schedulers/reap_idle_readers.zig is the cron callback for the pool
-    // reaper (same lazy-compilation workaround as the schedulers above).
-    _ = @import("schedulers/reap_idle_readers.zig");
     // boot/db_config.zig holds the pragma assertions plus the `--db-*`
     // override parser's tests.
     _ = @import("boot/db_config.zig");
