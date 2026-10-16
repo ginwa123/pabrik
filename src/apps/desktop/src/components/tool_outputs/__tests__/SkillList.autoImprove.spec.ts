@@ -2,14 +2,21 @@
  * SkillList.vue — the per-row agent lock.
  *
  * The list is the only surface that shows every skill at once, so it is
- * where "which of these may the agent touch?" is answerable. Two things
- * have to hold:
+ * where "which of these may the agent touch?" is answerable.
  *
- *   1. Each row's checkbox shows THAT row's flag — a list that rendered
- *      one shared value would claim a pinned skill is editable.
- *   2. Toggling a row re-reads the list (the server normalises nothing
- *      here, but the row is the authority) and does NOT select the skill:
- *      the checkbox sits inside the row's click target.
+ * The checkbox used to be on EVERY row — 41 of them on a real workspace,
+ * each a PATCH on click, and the loudest thing on screen. It now appears
+ * on the row the pointer is on, and always in the detail pane. What must
+ * still hold:
+ *
+ *   1. The row's flag is THAT row's flag — a list that rendered one shared
+ *      value would claim a pinned skill is editable.
+ *   2. Toggling patches only that skill and re-reads the list.
+ *   3. A failed toggle reports the reason instead of silently keeping the
+ *      new state.
+ *   4. The checkbox never selects the skill: it sits inside the row's
+ *      click target, so without stop-propagation a toggle would throw the
+ *      user into the detail pane.
  */
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -51,6 +58,12 @@ beforeEach(() => {
 const toggles = (wrapper: ReturnType<typeof mount>) =>
   wrapper.findAll('[data-testid="skill-auto-improve-toggle"]')
 
+/** Point at a row, which is what reveals its checkbox. */
+const hover = async (wrapper: ReturnType<typeof mount>, skillName: string) => {
+  await wrapper.find(`[data-skill-name="${skillName}"]`).trigger('mouseenter')
+  await flushPromises()
+}
+
 const toggleFor = (wrapper: ReturnType<typeof mount>, skillName: string) =>
   wrapper.find(`[data-skill-name="${skillName}"] [data-testid="skill-auto-improve-toggle"]`)
 
@@ -58,15 +71,31 @@ const checkedFor = (wrapper: ReturnType<typeof mount>, skillName: string) =>
   (toggleFor(wrapper, skillName).element as HTMLInputElement).checked
 
 describe('SkillList — the auto-improve lock', () => {
-  it('renders one checkbox per row, each showing its own lock state', async () => {
+  it('shows the flag on the row being pointed at, not on all of them', async () => {
     seedWorkspace()
     const wrapper = mount(SkillList, {
       props: { selectedSkillName: null, workspaceId: WS_ID },
     })
     await flushPromises()
 
-    expect(toggles(wrapper)).toHaveLength(2)
+    // One checkbox for the whole list, not one per row.
+    expect(toggles(wrapper)).toHaveLength(0)
+
+    await hover(wrapper, 'alpha')
+    expect(toggles(wrapper)).toHaveLength(1)
+  })
+
+  it('shows each row its own flag, so a pinned skill is never claimed editable', async () => {
+    seedWorkspace()
+    const wrapper = mount(SkillList, {
+      props: { selectedSkillName: null, workspaceId: WS_ID },
+    })
+    await flushPromises()
+
+    await hover(wrapper, 'alpha')
     expect(checkedFor(wrapper, 'alpha')).toBe(true)
+
+    await hover(wrapper, 'beta')
     expect(checkedFor(wrapper, 'beta')).toBe(false)
   })
 
@@ -88,6 +117,7 @@ describe('SkillList — the auto-improve lock', () => {
     await flushPromises()
     const callsAfterLoad = getSkillsMock.mock.calls.length
 
+    await hover(wrapper, 'alpha')
     await toggleFor(wrapper, 'alpha').setValue(false)
     await flushPromises()
 
@@ -107,6 +137,7 @@ describe('SkillList — the auto-improve lock', () => {
     })
     await flushPromises()
 
+    await hover(wrapper, 'alpha')
     await toggleFor(wrapper, 'alpha').setValue(false)
     await flushPromises()
 

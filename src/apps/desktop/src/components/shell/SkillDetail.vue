@@ -25,6 +25,7 @@ import { Effect } from 'effect'
 import UiIcon from '../ui/UiIcon.vue'
 import SkillAutoImproveToggle from '../ui/SkillAutoImproveToggle.vue'
 import { getSkillDetail, deleteSkill, updateSkill, type SkillDetail } from '../../api'
+import { countBodyMatches, extractSections, findInBody } from '../../helpers/skillBody'
 import { useWorkspacesStore } from '../../stores/workspaces'
 import { SyncRemoteError } from '../../sync/SyncError'
 import { runSyncResult } from '../../sync/runtime'
@@ -141,6 +142,40 @@ const assetCount = computed(() => {
   const n = typeof raw === 'number' ? raw : Number(raw ?? 0)
   return Number.isFinite(n) && n > 0 ? n : 0
 })
+
+// ─── Body navigation ───────────────────────────────────────────────────
+//
+// The body was one `<pre>`, so a 500-line skill had no way in but
+// scrolling. The outline jumps to a `##` section; the find box lists every
+// line containing a term. Both are read-only views of the same text, so
+// they are hidden in edit mode where the textarea owns the pane.
+const bodyQuery = ref('')
+const bodyRef = ref<HTMLElement | null>(null)
+
+const sections = computed(() => extractSections(skillDetail.value?.content ?? ''))
+const bodyHits = computed(() => findInBody(skillDetail.value?.content ?? '', bodyQuery.value))
+const bodyMatchCount = computed(() =>
+  countBodyMatches(skillDetail.value?.content ?? '', bodyQuery.value),
+)
+
+/** Scroll the body so `line` is at the top, then flash it. */
+function jumpToLine(line: number): void {
+  const host = bodyRef.value
+  if (!host) return
+  const target = host.querySelector(`[data-body-line="${line}"]`)
+  if (!(target instanceof HTMLElement)) return
+  host.scrollTop = Math.max(0, target.offsetTop - host.offsetTop - 8)
+  target.classList.add('body-line-flash')
+  window.setTimeout(() => target.classList.remove('body-line-flash'), 1200)
+}
+
+const onBodyQueryInput = (event: Event) => {
+  bodyQuery.value = (event.target as HTMLInputElement).value
+}
+
+const clearBodyQuery = () => {
+  bodyQuery.value = ''
+}
 
 const confirmDelete = () => {
   showDeleteConfirm.value = true
@@ -420,27 +455,124 @@ const handleDelete = async () => {
       </div>
 
       <!-- Content -->
-      <div class="flex-1 overflow-y-auto p-4">
-        <h4 class="text-body font-medium mb-2 shrink-0" style="color: var(--semantic-text)">
-          Content
-        </h4>
-        <textarea
-          v-if="isEditing"
-          v-model="draftContent"
-          data-testid="skill-edit-content"
-          spellcheck="false"
-          class="w-full h-full min-h-[16rem] p-4 rounded text-dense font-mono resize-y"
-          style="
-            background-color: var(--semantic-content-bg);
-            color: var(--semantic-text-muted);
-            border: 1px solid var(--color-border);
-          "
-        ></textarea>
-        <pre
+      <div class="flex-1 overflow-hidden flex flex-col">
+        <div class="flex items-center gap-2 px-4 pt-4 pb-2 shrink-0">
+          <h4 class="text-body font-medium" style="color: var(--semantic-text)">Content</h4>
+          <!-- Find in body. Only in read mode: in edit mode the textarea
+               owns the pane and the browser's own find does the job. -->
+          <div v-if="!isEditing" class="relative flex items-center ml-auto">
+            <input
+              :value="bodyQuery"
+              @input="onBodyQueryInput"
+              @keydown.escape="clearBodyQuery"
+              type="text"
+              placeholder="Find in body…"
+              aria-label="Find text in the skill body"
+              class="w-44 pl-2 pr-6 py-1 rounded text-dense outline-none focus:ring-1"
+              style="
+                background-color: var(--semantic-content-bg);
+                border: 1px solid var(--color-border);
+                color: var(--semantic-text);
+              "
+              data-testid="skill-body-find"
+            />
+            <button
+              v-if="bodyQuery"
+              type="button"
+              @click="clearBodyQuery"
+              class="absolute right-1 w-4 h-4 flex items-center justify-center rounded hover:opacity-80"
+              style="color: var(--semantic-text-dim)"
+              aria-label="Clear find"
+            >
+              <span aria-hidden="true">✕</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Outline + hits. A long skill is a document, and a document
+             needs a table of contents more than it needs a scrollbar. -->
+        <div
+          v-if="!isEditing && (sections.length > 0 || bodyHits.length > 0)"
+          class="px-4 pb-2 shrink-0 flex flex-wrap gap-1"
+          data-testid="skill-body-nav"
+        >
+          <button
+            v-for="section in sections"
+            :key="section.line"
+            type="button"
+            class="px-2 py-0.5 rounded text-dense hover:opacity-80"
+            :style="
+              section.depth === 3
+                ? 'color: var(--semantic-text-dim); margin-left: 10px;'
+                : 'color: var(--semantic-text-muted);'
+            "
+            @click="jumpToLine(section.line)"
+            :data-testid="`skill-body-section-${section.line}`"
+          >
+            {{ section.title }}
+          </button>
+        </div>
+
+        <div
+          v-if="!isEditing && bodyQuery && bodyHits.length > 0"
+          class="px-4 pb-2 shrink-0"
+          data-testid="skill-body-hits"
+        >
+          <p class="text-dense mb-1" style="color: var(--semantic-text-dim)">
+            {{ bodyMatchCount }} match{{ bodyMatchCount === 1 ? '' : 'es' }}
+          </p>
+          <div class="max-h-24 overflow-y-auto space-y-0.5">
+            <button
+              v-for="hit in bodyHits"
+              :key="hit.line"
+              type="button"
+              class="block w-full text-left px-2 py-0.5 rounded text-dense truncate hover:opacity-80"
+              style="color: var(--semantic-text-muted); background-color: var(--semantic-content-bg)"
+              @click="jumpToLine(hit.line)"
+              :data-testid="`skill-body-hit-${hit.line}`"
+            >
+              <span class="mono" style="color: var(--semantic-text-dim)">{{ hit.line }}</span>
+              {{ hit.text }}
+            </button>
+          </div>
+        </div>
+
+        <div v-if="isEditing" class="flex-1 overflow-y-auto p-4">
+          <textarea
+            v-model="draftContent"
+            data-testid="skill-edit-content"
+            spellcheck="false"
+            class="w-full h-full min-h-[16rem] p-4 rounded text-dense font-mono resize-y"
+            style="
+              background-color: var(--semantic-content-bg);
+              color: var(--semantic-text-muted);
+              border: 1px solid var(--color-border);
+            "
+          ></textarea>
+        </div>
+
+        <!-- The body, one row per line, so a jump has somewhere to land
+             and a line can be named in a review comment. -->
+        <div
           v-else
-          class="text-dense p-4 rounded whitespace-pre-wrap"
-          style="background-color: var(--semantic-content-bg); color: var(--semantic-text-muted)"
-          >{{ skillDetail.content }}</pre>
+          ref="bodyRef"
+          class="flex-1 overflow-y-auto px-4 pb-4"
+          data-testid="skill-body"
+        >
+          <pre
+            class="text-dense rounded whitespace-pre-wrap break-words"
+            style="background-color: var(--semantic-content-bg); color: var(--semantic-text-muted)"
+          ><template
+            v-for="(line, index) in (skillDetail.content ?? '').split('\n')"
+            :key="index"
+            ><span
+              :data-body-line="index + 1"
+              :class="{ 'body-line-hit': bodyQuery && line.toLowerCase().includes(bodyQuery.trim().toLowerCase()) }"
+              >{{ line }}
+</span
+            ></template
+          ></pre>
+        </div>
       </div>
 
       <!-- Save bar. Only in edit mode, and only once something actually
@@ -532,3 +664,16 @@ const handleDelete = async () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* A line the find box matched. A tone step, not a colour: the body is
+   read as prose, and a saturated highlight fights the text. */
+.body-line-hit {
+  background-color: var(--semantic-active-bg);
+}
+
+/* The line a jump landed on, so the reader sees where they arrived. */
+.body-line-flash {
+  background-color: var(--color-blue-1);
+}
+</style>
