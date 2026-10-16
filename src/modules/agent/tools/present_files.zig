@@ -9,6 +9,7 @@ const invalidPathReason = path_validate.invalidPathReason;
 const AgentTool = schemas.AgentTool;
 // The one containment rule shared with GET /api/files/download.
 const file_sandbox = @import("file_sandbox.zig");
+const host_fixture = @import("helpers").host_fixture;
 
 /// Maximum number of files per call. Keeps the card scannable and the
 /// envelope small; the LLM can split larger sets across calls.
@@ -724,41 +725,45 @@ test "present_files: an empty sandbox root is treated as no root, not as the fil
     try testing.expectEqualStrings("presented", parsed.value.object.get("status").?.string);
 }
 
-test "present_files: a symlink inside the working directory pointing outside is rejected" {
-    if (builtin.os.tag == .windows) return error.SkipZigTest; // symlinks need a privilege
+test "present_files: a directory link inside the working directory pointing outside is rejected" {
     const alloc = testing.allocator;
     var f = try setupFixture();
     defer f.deinit(alloc);
     const secret = try makeOutsideFile(alloc, &f, "secret.txt", "s3cret");
     defer alloc.free(secret);
-    const link = try std.fs.path.join(alloc, &.{ f.inside_abs, "link.txt" });
+    const link = try std.fs.path.join(alloc, &.{ f.inside_abs, "link-out" });
     defer alloc.free(link);
-    try std.Io.Dir.symLinkAbsolute(f.io, secret, link, .{});
+    try host_fixture.dirLink(alloc, f.io, f.outside_abs, link);
+    const through = try std.fs.path.join(alloc, &.{ link, "secret.txt" });
+    defer alloc.free(through);
 
-    var refs = [_]PresentFileRef{.{ .path = link }};
+    var refs = [_]PresentFileRef{.{ .path = through }};
     const msg = try failureMessage(alloc, &f, &refs, f.inside_abs);
     defer alloc.free(msg);
+    // The refusal is OutsideRoot, NOT "not found": the link resolved to the
+    // real file outside the root, which is the rule under test.
     try testing.expect(contains(msg, "outside the session working directory"));
+    try testing.expect(!contains(msg, "not found"));
 }
 
-test "present_files: a symlink that stays inside the working directory is presented" {
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
+test "present_files: a directory link that stays inside the working directory is presented" {
     const alloc = testing.allocator;
     var f = try setupFixture();
     defer f.deinit(alloc);
-    const real = try makeInsideFile(alloc, &f, "real.txt", "ok");
+    const real = try makeInsideFile(alloc, &f, "real/report.html", "<h1>hi</h1>");
     defer alloc.free(real);
-    const link = try std.fs.path.join(alloc, &.{ f.inside_abs, "link.txt" });
+    const real_dir = try std.fs.path.join(alloc, &.{ f.inside_abs, "real" });
+    defer alloc.free(real_dir);
+    const link = try std.fs.path.join(alloc, &.{ f.inside_abs, "link-in" });
     defer alloc.free(link);
-    try std.Io.Dir.symLinkAbsolute(f.io, real, link, .{});
+    try host_fixture.dirLink(alloc, f.io, real_dir, link);
+    const through = try std.fs.path.join(alloc, &.{ link, "report.html" });
+    defer alloc.free(through);
 
-    var refs = [_]PresentFileRef{.{ .path = link }};
-    const payload = try callTool(alloc, &f, &refs, f.inside_abs);
-    defer alloc.free(payload);
-
-    const parsed = try std.json.parseFromSlice(std.json.Value, alloc, payload, .{});
-    defer parsed.deinit();
-    try testing.expectEqualStrings("presented", parsed.value.object.get("status").?.string);
+    var refs = [_]PresentFileRef{.{ .path = through }};
+    const label = try firstLabel(alloc, &f, &refs, f.inside_abs);
+    defer alloc.free(label);
+    try testing.expectEqualStrings("report.html", label);
 }
 
 test "present_files: a parent-segment path is rejected before the sandbox check" {
@@ -840,18 +845,25 @@ test "present_files: an empty path is reported before the sandbox rule" {
     try testing.expect(contains(msg, "empty"));
 }
 
-test "present_files: a Windows drive path is rejected as not-absolute on a posix host" {
-    // `C:\Users\…` is not a path on Linux, and handing it to realPath aborts
-    // the process (its isAbsolute assert), so the guard comes first.
+test "present_files: a Windows drive path's absoluteness is judged by THIS host" {
+    // One body, both hosts, same reference path: POSIX refuses it as "not
+    // absolute" (realPath's isAbsolute assert would abort the process),
+    // Windows accepts it as absolute and refuses it on containment instead.
     const alloc = testing.allocator;
     var f = try setupFixture();
     defer f.deinit(alloc);
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
+    const reference = "C:\\Users\\gilang\\Downloads\\report.html";
+    const expected: struct { absolute: bool, refusal: []const u8 } = switch (builtin.os.tag) {
+        .windows => .{ .absolute = true, .refusal = "not found" },
+        .linux, .macos => .{ .absolute = false, .refusal = "not absolute" },
+        else => .{ .absolute = false, .refusal = "unhandled host: name its expected refusal" },
+    };
+    try testing.expectEqual(expected.absolute, std.fs.path.isAbsolute(reference));
 
-    var refs = [_]PresentFileRef{.{ .path = "C:\\Users\\gilang\\Downloads\\report.html" }};
+    var refs = [_]PresentFileRef{.{ .path = reference }};
     const msg = try failureMessage(alloc, &f, &refs, f.inside_abs);
     defer alloc.free(msg);
-    try testing.expect(contains(msg, "not absolute"));
+    try testing.expect(contains(msg, expected.refusal));
 }
 
 test "present_files: a file whose name contains spaces is presented" {
@@ -1278,4 +1290,3 @@ test "execPresentFiles: an unknown session keeps the un-sandboxed legacy path" {
     defer parsed.deinit();
     try exec_testing.expect(parsed.value.object.get("success").?.bool);
 }
-

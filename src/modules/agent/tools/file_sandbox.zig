@@ -6,6 +6,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const host_fixture = @import("helpers").host_fixture;
 
 const testing = std.testing;
 
@@ -476,36 +477,37 @@ test "resolveInsideRoot: a relative root is rejected" {
     try testing.expectError(error.RootNotAbsolute, resolveInsideRoot(sb.io, alloc, "relative/root", path, native));
 }
 
-test "resolveInsideRoot: a symlink pointing outside the root is rejected" {
-    if (builtin.os.tag == .windows) return error.SkipZigTest; // symlinks need a privilege
+test "resolveInsideRoot: a directory link pointing outside the root is rejected" {
     const alloc = testing.allocator;
     var sb = try setupSandbox(alloc);
     defer sb.deinit(alloc);
     try writeFileAt(sb.outside.dir, sb.io, "secret.txt", "s3cret");
-    const secret = try sb.outPath(alloc, "secret.txt");
-    defer alloc.free(secret);
-    const link = try sb.inPath(alloc, "link.txt");
+    const link = try sb.inPath(alloc, "link-out");
     defer alloc.free(link);
-    try std.Io.Dir.symLinkAbsolute(sb.io, secret, link, .{});
+    try host_fixture.dirLink(alloc, sb.io, sb.outside_abs, link);
+    const through = try std.fs.path.join(alloc, &.{ link, "secret.txt" });
+    defer alloc.free(through);
 
-    try testing.expectError(error.OutsideRoot, resolveInsideRoot(sb.io, alloc, sb.inside_abs, link, native));
+    try testing.expectError(error.OutsideRoot, resolveInsideRoot(sb.io, alloc, sb.inside_abs, through, native));
 }
 
-test "resolveInsideRoot: a symlink that stays inside the root is allowed" {
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
+test "resolveInsideRoot: a directory link that stays inside the root is allowed" {
     const alloc = testing.allocator;
     var sb = try setupSandbox(alloc);
     defer sb.deinit(alloc);
-    try writeFileAt(sb.inside.dir, sb.io, "real.txt", "ok");
-    const real = try sb.inPath(alloc, "real.txt");
-    defer alloc.free(real);
-    const link = try sb.inPath(alloc, "link.txt");
+    try writeFileAt(sb.inside.dir, sb.io, "sub/real.txt", "ok");
+    const sub = try sb.inPath(alloc, "sub");
+    defer alloc.free(sub);
+    const link = try sb.inPath(alloc, "link-in");
     defer alloc.free(link);
-    try std.Io.Dir.symLinkAbsolute(sb.io, real, link, .{});
+    try host_fixture.dirLink(alloc, sb.io, sub, link);
+    const through = try std.fs.path.join(alloc, &.{ link, "real.txt" });
+    defer alloc.free(through);
 
-    const canon = try resolveInsideRoot(sb.io, alloc, sb.inside_abs, link, native);
+    const canon = try resolveInsideRoot(sb.io, alloc, sb.inside_abs, through, native);
     defer alloc.free(canon);
     try testing.expect(std.mem.endsWith(u8, canon, "real.txt"));
+    try testing.expect(isInsideRoot(sb.inside_abs, canon, native));
 }
 
 // ── resolveSessionRoot (in-memory sqlite) ──────────────────────────────
