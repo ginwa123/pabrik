@@ -331,7 +331,8 @@ def test_prefetch_request_is_issued_before_the_scroll_reaches_the_top(ui_harness
     assert before["requests"], "the initial history page was never requested"
     assert _cursored(before["requests"]) == [], (
         "a scroll-back page was fetched on open (before any scroll): "
-        f"{_cursored(before['requests'])}"
+        f"{_cursored(before['requests'])}; prefetch log: "
+        f"{[l for l in console_lines if 'load-more-prefetch' in l]}"
     )
 
     band = _commit_band_px(_client_height(page))
