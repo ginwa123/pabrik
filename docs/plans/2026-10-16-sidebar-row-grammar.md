@@ -107,7 +107,14 @@ change.
     by the header it sits under. See the wireframe's first decision for why flattening beats indenting,
     and for the cost.
 
-14. **The left rail is four edges.** Measured: the section chevron's ink at 10.5, a chat label at 12, the
+14. **The projects list draws a 1px rule down its left edge**, from the first project to the last, and a
+    project's task list draws the same rule again. It is the hairline divider the app's own house style
+    bans, and together with the indent it is what makes the left of the tree read as a second column.
+    `ProjectsList.vue:449`, `DocumentsList.vue:194`, `WorkspaceItem.vue:613` and `:725`.
+    *Fix:* delete every one of them. Nesting is carried by the label column and the row order, not by a
+    rule. Nothing in the panel draws a vertical line.
+
+15. **The left rail is four edges.** Measured: the section chevron's ink at 10.5, a chat label at 12, the
     New Chat glyph centred in a 24px hit box with its ink at 19.4 and its label at 44, a project name at
     41.5. `Sidebar.vue:1155`.
     *Fix:* two columns for the whole panel. The mark column is 16px at the gutter (12 to 28) and holds at
@@ -137,10 +144,11 @@ label except the label.
 The header itself is not a button and contains no button.
 
 **Columns.** Two, for the whole panel: the mark column at `--sb-gutter` (12) and the label column at
-28. Every row uses both whether or not it has a mark. A third level, a task under an expanded project,
-takes one step of `--sb-indent` (raised from 12 to 16) applied to the row itself, so its mark column sits
-at 28 and its label at 44, with the rail drawn at 28 under the project's own mark column. No other row
-indents, so the panel never opens an empty strip beside the gutter.
+28. Every row uses both whether or not it has a mark, so no row starts further right than another and the
+panel never opens an empty strip. A third level, a task under an expanded project, takes one step of
+`--sb-indent` (raised from 12 to 16) applied to the row itself, so its mark column sits at 28 and its
+label at 44. No vertical rule is drawn anywhere; the step is the whole nesting cue, and the indented row's
+own mark column makes it read as a step rather than as a gap.
 
 **Selected.** `--semantic-active-bg` on `--semantic-active-text` plus `inset 2px 0 0 0 var(--color-violet)`,
 for every row kind.
@@ -159,7 +167,8 @@ for every row kind.
 7. `WorkspaceItem.vue`: token pair for the selected row; drop the list's margin and rail so a project row
    shares the panel's two columns. `WorkspaceItemTaskRow.vue`: the yellow token, and the one indent step
    plus the rail at 28 for the third level.
-8. `DocumentsList.vue`: same row grammar and the same indent treatment.
+8. `DocumentsList.vue`: same row grammar, and drop the list's rule so no document list carries one
+   either.
 9. `Sidebar.vue`: New Chat's glyph and label onto the shared columns.
 
 Steps 2 and 3 are separable from the visual work and can land first, on their own, with no pixel change:
@@ -167,7 +176,7 @@ that is the safest way to review this.
 
 ## Tests
 
-`Sidebar.spacing.spec.ts` stays for the token values, but it cannot see any of the fourteen findings, so
+`Sidebar.spacing.spec.ts` stays for the token values, but it cannot see any of the fifteen findings, so
 the fix needs a rendered guard. One file, `__tests__/Sidebar.rowGrammar.spec.ts`, mounting the sidebar
 against a fixture with one pinned chat, one running chat, one chat with a branch and an open PR, one
 project with a task, one document, and one selected chat. Behaviours, one per test:
@@ -188,9 +197,9 @@ to prove the label-offset test is not vacuous.
 
 ## Risks
 
-- Flattening the projects list moves a project row left by 13px and every chat and document label right by
-  16px. Anything asserting an absolute x, in a spec or a functional UI test, needs the new number. Grep for
-  `41.5`, for `sb-indent` and for the 12px label offset before starting.
+- Flattening the projects list moves a project row's mark left by 13px and every chat and document label
+  right by 16px. Anything asserting an absolute x, in a spec or a functional UI test, needs the new
+  number. Grep for `41.5`, for `sb-indent`, for `border-l` and for the 12px label offset before starting.
 - Moving the branch badge changes a right-click target's position. The context menu and its test ids stay;
   only the anchor moves, and it is now always the row's mark column, so its x is constant across rows.
 - `WorkerElapsedChip`'s `--text` variant change touches `KanbanTaskRow.vue:318`. Verify that row's slot
