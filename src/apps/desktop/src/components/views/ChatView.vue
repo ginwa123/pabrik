@@ -130,6 +130,8 @@ import type { LocationQueryRaw } from 'vue-router'
 import { useWorkspacesStore } from '../../stores/workspaces'
 import { buildAppUrl, isChatRouteStaleForSession } from '../../helpers/appUrl'
 import CompactionCard from '../preview/CompactionCard.vue'
+import SkillInvocationCard from '../preview/SkillInvocationCard.vue'
+import { hasSkillEnvelope, splitSkillEnvelope } from '../../helpers/skillEnvelope'
 // 2026-08-25 agent-error-card (task_1787663566535_2): dedicated renderer
 // for agentic-loop error/retry diagnostics (is_error=true SSE events).
 import AgentErrorCard from '../chat/AgentErrorCard.vue'
@@ -1484,11 +1486,17 @@ const userPills = computed((): UserPill[] => {
     // artifacts — neither gets a pill (see isPillGroup).
     const first = g.messages[0]
     if (!isPillGroup(g.role, isBgOnlyGroup(g), !!first && isCompactionMessage(first))) return
-    const text = g.messages
-      .map((m) => m.content || '')
-      .join('\n')
-      .trim()
-    const preview = text.slice(0, 60) || 'Image'
+    // Per message, not on the join: a `/skill-` turn carries the loaded bodies
+    // as a trailing envelope, and the preview is for the human's sentence.
+    let text = ''
+    let skills = 0
+    for (const m of g.messages) {
+      const parts = splitSkillEnvelope(m.content || '')
+      text += (text === '' ? '' : '\n') + parts.text
+      skills += parts.skills.length
+    }
+    const label = text.trim().slice(0, 60) || 'Image'
+    const preview = skills > 0 ? `${label} +${skills} skill${skills === 1 ? '' : 's'}` : label
     pills.push({ groupIndex: i, key: groupKey(g), preview })
   })
   return pills
@@ -4022,7 +4030,12 @@ const compactSession = async () => {
                               :content="bgShellContent(userMsg)"
                               :parameters="'{}'" /></template
                           ><template v-else
-                            ><span v-if="userMsg.content">{{ userMsg.content }}</span></template
+                            ><SkillInvocationCard
+                              v-if="hasSkillEnvelope(userMsg.content)"
+                              :content="userMsg.content || ''"
+                            /><span v-else-if="userMsg.content">{{
+                              userMsg.content
+                            }}</span></template
                           >
                         </template>
                       </template>
