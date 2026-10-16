@@ -1,14 +1,5 @@
-/**
- * Per-user browser-storage isolation, end to end (plan 2026-09-25, W5).
- *
- * The bug: every localStorage key is origin-global, so two users on the same
- * browser profile share one key space. B inherits A's cached workspace list,
- * active chat, open tabs and task media — and logout cleared none of it.
- *
- * These specs drive the real helpers (not a mock of them) through the exact
- * sequence the app performs: A caches data -> identity flips to B -> the
- * purge runs -> B's first paint reads only B's slot.
- */
+/** Per-user browser-storage isolation, end to end (plan 2026-09-25, W5). The bug: every
+ * localStorage key is origin-global, so two users on the same browser profile share one key space. */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { makeLocalStorageStub } from './helpers'
 import {

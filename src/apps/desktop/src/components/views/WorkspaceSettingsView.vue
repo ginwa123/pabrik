@@ -70,13 +70,8 @@ const itemCount = computed<number>(() => {
   return ws.items?.length ?? 0
 })
 
-// Fetch per workspace, and only when there IS one. `reset()` on every id
-// change is what stops one workspace's secrets (or its failure banner) from
-// being painted under another workspace's header.
-
-// A navigation guard, not a `watch()`: new watchers are banned
-// (local/no-watch) — reacting must live in the event handler that caused
-// the change, and a workspace switch IS a navigation.
+// Fetch per workspace, and only when there IS one. `reset()` on every id change is what stops one
+// workspace's secrets (or its failure banner) from being painted under another workspace's header.
 function loadSecretsFor(id: string): void {
   secretsStore.reset()
   if (id) void secretsStore.fetchSecrets(id)

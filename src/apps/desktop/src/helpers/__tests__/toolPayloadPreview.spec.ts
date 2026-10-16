@@ -1,10 +1,5 @@
-/** `toolPayloadPreview` — what the EXPANDED body of ChatView's generic tool
- * fallback shows for a tool with no registered output card.
- * It is the other half of the fix whose collapsed half is
- * `renderResponse`'s unregistered-tool pill: the payload moved out of the
- * one-line summary and into a collapsed-by-default body, so it has to be
- * readable there (pretty-printed) and bounded (an `add_element` row in the
- * live DB is 52 KB). */
+/** `toolPayloadPreview` — what the EXPANDED body of ChatView's generic tool fallback shows for a
+ * tool with no registered output card. */
 import { describe, expect, it } from 'vitest'
 
 import { toolPayloadPreview, TOOL_PAYLOAD_PREVIEW_MAX } from '../toolPayloadPreview'

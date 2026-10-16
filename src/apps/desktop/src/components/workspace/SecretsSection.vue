@@ -1,18 +1,6 @@
 <script setup lang="ts">
-// Workspace secrets — the body of the Settings → Secrets tab.
-//
-// THE ONE RULE THIS COMPONENT EXISTS TO KEEP: a secret value is write-only.
-// The server never returns one (`Secret` is `{ id, name, created_at,
-// updated_at }`), so there is nothing to display, mask, hint or reveal —
-// and a reveal button would be a lie about data that does not exist in this
-// process. The inputs that take a value are `type="password"` with no eye
-// toggle, and every one of them is cleared the moment it is submitted.
-//
-// Do not copy `components/pabrik/McpServersSection.vue`: it renders
-// `maskValue(h.value)` as the row body while putting the RAW value into the
-// row's `:title=`, so a hover over the masked text hands over the secret.
-// That is a live leak shape in this repo, and it is the reason this file
-// has no `title=` on a value-bearing element and no masking helper at all.
+// Workspace secrets — the body of the Settings → Secrets tab. THE ONE RULE THIS COMPONENT EXISTS TO
+// KEEP: a secret value is write-only.
 import { computed, ref } from 'vue'
 import type { Secret } from '../../api'
 import EmptyState from '../pabrik/EmptyState.vue'

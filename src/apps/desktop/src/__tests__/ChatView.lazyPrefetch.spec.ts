@@ -1,18 +1,5 @@
-/**
- * Source-contract tests for the older-history PREFETCH work
- * (task_1789505423062_0) — the "auto fetch before the scroll reaches the top"
- * fix.
- *
- * Why source-level: ChatView is a ~5.4k-line SFC and the existing mount-based
- * ChatView specs (`ChatView.scrollRestore.spec.ts`, `chatViewWorktree.spec.ts`)
- * fail on a clean `main` in this environment (`.virtual-scroller` never
- * renders), so a NEW mount spec here would be born red. The load-bearing
- * invariants of the prefetch are structural, so they are pinned textually the
- * same way `ChatView.userPillRail.spec.ts` pins the cursor-pagination fixes.
- *
- * The wire-level proof (request issued BEFORE the container reaches the top)
- * lives in `tests/functional_ui/chatview_lazy_prefetch_ui_test.py`.
- */
+/** Source-contract tests for the older-history PREFETCH work (task_1789505423062_0) — the "auto
+ * fetch before the scroll reaches the top" fix. */
 import { describe, it, expect } from 'vitest'
 
 const readChatViewSource = async (): Promise<string> => {
@@ -217,14 +204,9 @@ describe('older-history prefetch — invalidation', () => {
   it('writes messageCursor exactly five times: reset, cached restore, cached delta, initial page, commit', async () => {
     const source = await readChatViewSource()
     const writes = source.match(/messageCursor\.value = /g) ?? []
-    // 1. `= null` — reset before an initial load
-    // 2. `= storedCursor` — cached mount restores the sync cursor for paint
-    // 3. `= delta.nextCursor` — cached mount advances past the tail
-    // 4. `= data.next_cursor` — the initial page's cursor
-    // 5. `= page.nextCursor` — every prepend commit advances it
-    // (A prefetch ARM must never be one of these — asserted separately.
-    // The tab-switch resync path must not write it either: it merges the
-    // tail without touching scroll-back state.)
+    // 1. `= null` — reset before an initial load 2. `= storedCursor` — cached mount restores the
+    // sync cursor for paint 3. `= delta.nextCursor` — cached mount advances past the tail 4. `=
+    // data.next_cursor` — the initial page's cursor 5.
     expect(writes).toHaveLength(5)
     const resyncBody = fnBody(source, 'bus.onResync?.(() => {', '}) ?? null')
     expect(resyncBody).not.toMatch(/messageCursor\.value = /)

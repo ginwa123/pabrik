@@ -1,15 +1,6 @@
-/**
- * Tests for FileInput's Stop button — visible only when
- * `isLLMProcessing` is true.
- *
- * The button emits a `stop-session` event for the parent (ChatView)
- * to translate into a `POST /api/llm/session/:session/stop` call.
- * We deliberately don't call the API directly from FileInput — the
- * component is shared across multiple chat views and the stop
- * semantics are tied to the chat's sessionId, not the input box.
- *
- * Plan: docs/superpowers/plans/2026-08-06-chatview-stop-button.md
- */
+/** Tests for FileInput's Stop button — visible only when `isLLMProcessing` is true. The button
+ * emits a `stop-session` event for the parent (ChatView) to translate into a `POST
+ * /api/llm/session/:session/stop` call. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -101,12 +92,8 @@ describe("FileInput — Stop button (visible only when isLLMProcessing)", () => 
   })
 
   it('H: when isLLMProcessing flips from true to false while isStopping=true, the watch resets isStopping to false', async () => {
-    // We start with both isLLMProcessing=true and isStopping=true (parent
-    // has been waiting for SSE). When the SSE worker-deleted event lands
-    // and processingState flips, isLLMProcessing goes false → FileInput's
-    // internal watch should reset isStopping to false so the next time
-    // the agent runs and the user clicks Stop, the spinner doesn't get
-    // stuck on.
+    // We start with both isLLMProcessing=true and isStopping=true (parent has been waiting for
+    // SSE).
     const wrapper = await mountInput({
       isLLMProcessing: true,
       isStopping: true,

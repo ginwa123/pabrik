@@ -8,12 +8,9 @@ import DiffCommentBox, {
   type SavedComment,
 } from './DiffCommentBox.vue'
 
-/** The saved review threads for one diff row.
- * Extracted so the unified table and the split table render the SAME block —
- * a thread the user left in one render must keep its wording, its edit
- * affordance and its Copy output in the other. Owns only its own transient
- * UI state (which thread is being edited / was just copied); the saved list
- * itself is props, and a delete is reported up so the owner re-reads it. */
+/** The saved review threads for one diff row. Extracted so the unified table and the split table
+ * render the SAME block — a thread the user left in one render must keep its wording, its edit
+ * affordance and its Copy output in the other. */
 const props = defineProps<{
   threads: SavedComment[]
   path: string

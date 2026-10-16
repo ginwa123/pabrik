@@ -1,30 +1,4 @@
-/**
- * Idle content-size observer specs for VirtualScroller.vue.
- *
- * Symptom: "small scroll suddenly shows content / jumps". measureItems
- * runs on scroll, remeasure(), and rendered-range change — but NOT when
- * an already-rendered item grows on its own (async image decode, a
- * PresentFiles source fetch resolving, progress filling in). The model
- * lags reality until the NEXT scroll, which applies all pending
- * corrections at once.
- *
- * Fix pinned here: a ResizeObserver on the CONTENT box schedules a
- * debounced measure (~150ms) whenever the real content box grows while
- * idle, so corrections land promptly instead of accumulating.
- *
- * Loop safety (a naive container observer once froze the browser):
- * only the content div's own box is observed — nothing in the measure
- * path alters that box (transforms move position, not size; the sizer
- * is a sibling). Sub-2px noise is ignored, preserve/pre-paint windows
- * are skipped, and the observer stays quiet shortly after a scroll
- * (the scroll path already measures).
- *
- * Timer hygiene note: the scroller's debounce chains (measure →
- * height-rebuild → range watcher → trailing measure) cascade across
- * fake-timer advances, so every phase below ends with drain() — several
- * advance+flush rounds that leave NO path pending. Each phase then
- * proves exactly one measurement path.
- */
+/** Idle content-size observer specs for VirtualScroller.vue. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -147,12 +121,8 @@ describe('VirtualScroller idle content-size observer', () => {
     await drain()
     expect(modelTotalOf(wrapper)).toBe(2000)
 
-    // A scroll just happened (Date.now is fake-timer controlled, so the
-    // observer sees it as recent) and growth lands on top of it. The
-    // scroll debounce (50ms) owns this measurement: advancing just past
-    // it — but before the RO debounce (150ms) could fire — must already
-    // show the converged model. The RO may still fire later, but only
-    // as a harmless no-op (model already exact).
+    // A scroll just happened (Date.now is fake-timer controlled, so the observer sees it as recent)
+    // and growth lands on top of it.
     el.dispatchEvent(new Event('scroll'))
     mockAllChildren(el, 200)
     mockContentH(el, 4000)
@@ -183,12 +153,9 @@ describe('VirtualScroller idle content-size observer', () => {
     await drain()
     expect(modelTotalOf(wrapper)).toBe(2000)
 
-    // 1px of box noise: no measure may be scheduled. (Children are
-    // deliberately moved to 130 — a 30px growth the observer must NOT
-    // pick up from a 1px box delta. In a real browser the box always
-    // reflects child growth, so this only exercises the noise gate.
-    // The pre-phase drain guarantees no other path is pending, so a
-    // 2600 here can only come from a broken gate.)
+    // 1px of box noise: no measure may be scheduled. (Children are deliberately moved to 130 — a
+    // 30px growth the observer must NOT pick up from a 1px box delta. In a real browser the box
+    // always reflects child growth, so this only exercises the noise gate.
     mockAllChildren(el, 130)
     mockContentH(el, 2001)
     fireContentRO()

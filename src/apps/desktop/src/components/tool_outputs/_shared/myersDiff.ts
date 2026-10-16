@@ -1,19 +1,6 @@
-/**
- * Diff algorithm + diff-row renderers for the DiffView component.
- *
- * Implementation note: we use a classic LCS (Longest Common Subsequence) DP
- * to compute the shortest edit script. O(N*M) time and space, simple to
- * verify correct. For typical `text_replace` edits (< 100 lines diff against
- * files < 5,000 lines), this returns in < 10 ms in jsdom.
- *
- * A hand-rolled Myers O(ND) variant would be asymptotically faster, but is
- * significantly harder to get right and not worth the complexity at this scale.
- *
- * For the specific case where N=0 or M=0 (pure insert or pure delete) we skip
- * the DP entirely.
- */
-
-/** A single op in the shortest edit script (SES). */
+/** Diff algorithm + diff-row renderers for the DiffView component. Implementation note: we use a
+ * classic LCS (Longest Common Subsequence) DP to compute the shortest edit script. O(N*M) time and
+ * space, simple to verify correct. */
 export interface DiffOp {
   type: 'equal' | 'insert' | 'delete'
   /** 1-indexed; null for inserts (no corresponding before line). */
@@ -206,11 +193,8 @@ export function computeInlineWordChanges(before: string, after: string): InlineC
   return out
 }
 
-/** Convert a SES into a row-based split view (left = before, right = after).
- * Equal lines produce matched rows; insert ops leave the before cell empty;
- * delete ops leave the after cell empty.
- * Adjacent delete+insert pairs are paired into single rows so the change
- * appears as one logical row pair (visually like a real diff). */
+/** Convert a SES into a row-based split view (left = before, right = after). Equal lines produce
+ * matched rows; insert ops leave the before cell empty; delete ops leave the after cell empty. */
 export function computeSplitView(before: string[], after: string[]): SplitRow[] {
   const ops = myersDiff(before, after)
   const rows: SplitRow[] = []

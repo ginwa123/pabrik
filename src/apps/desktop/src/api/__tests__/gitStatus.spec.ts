@@ -1,14 +1,5 @@
-/**
- * Tests for getGitStatus's cache-first contract.
- *
- * Contract:
- *   1. A successful fetch writes the response to the per-cwd cache
- *      (so the NEXT init can paint it before the network round-trip).
- *   2. A failed fetch falls back to the cached status — the chip keeps
- *      showing the last-known branch instead of blanking.
- *   3. A failed fetch with no cache returns the empty non-repo
- *      `status: 'error'` fallback (pre-existing behaviour).
- */
+/** Tests for getGitStatus's cache-first contract. Contract: 1. A successful fetch writes the
+ * response to the per-cwd cache (so the NEXT init can paint it before the network round-trip). 2. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { getGitStatus, type GitStatus } from '@/api/index'

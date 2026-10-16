@@ -2,19 +2,8 @@
 import CodeEditor from './CodeEditor.vue'
 import type { FolderEntry } from '../../api'
 
-/**
- * The code viewer's three states — loading spinner, error, file — in one
- * place, so both hosts render the identical surface:
- *
- *   - `ChatView`'s center column (beside the chat-owned right sidebar);
- *   - `AppLayout`'s full-surface overlay, for contexts with no chat on
- *     screen (kanban board, design canvas, settings, chats list).
- *
- * Presentational: the open-file session lives in `useCodeEditorSession`
- * (owned by `AppLayout`) and is handed down as props. `content` is only
- * read once loading has finished and no error is set, so a late response
- * can never paint over an error message.
- */
+/** The code viewer's three states — loading spinner, error, file — in one place, so both hosts
+ * render the identical surface: - `ChatView`'s center column (beside the chat-owned right sidebar). */
 defineProps<{
   file: FolderEntry
   content: string

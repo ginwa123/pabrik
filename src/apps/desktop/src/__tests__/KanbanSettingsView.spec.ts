@@ -1,23 +1,6 @@
-/**
- * Tests for KanbanSettingsView — the dedicated full-page route for
- * per-board kanban settings. Replaces KanbanSettingsDialog (the
- * centered modal that used to pop up when the user clicked ⚙ on a
- * kanban board header).
- *
- * URL: /app/kanban/:itemId/settings (path-based vue-router route).
- * The page reads itemId from route.params and derives workspaceId
- * from the store by walking workspaces.
- *
- * Mount pattern: same as KanbanSettingsDialog.spec.ts. The
- * KanbanColumnEditor child uses <Teleport to="body">, so the rendered
- * DOM lives outside wrapper.element when the rename/delete editor is
- * open. We use `attachTo: document.body` and query the teleported
- * content via `document.querySelector` / `document.querySelectorAll`
- * (NOT `wrapper.find`). `wrapper.emitted` still works because it
- * tracks the vm, not the DOM tree.
- *
- * Plan: docs/superpowers/plans/2026-09-02-kanban-settings-as-page.md
- */
+/** Tests for KanbanSettingsView — the dedicated full-page route for per-board kanban settings.
+ * Replaces KanbanSettingsDialog (the centered modal that used to pop up when the user clicked ⚙ on
+ * a kanban board header). URL: /app/kanban/:itemId/settings (path-based vue-router route). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -167,12 +150,8 @@ describe('KanbanSettingsView', () => {
               '<div data-testid="kanban-settings-page-agent-panel-stub"><slot name="right-extra" /></div>',
             props: ['item', 'workspaceId', 'itemId', 'knowledge', 'tools', 'systemPrompts'],
           },
-          // Stub KanbanColumnEditor to avoid the Teleport + nested
-          // dialog complexity in the rename/delete tests. Mirrors the
-          // real editor's `kanban-column-editor-<mode>-submit`
-          // data-testid so the 2-step delete test can confirm via
-          // the submit button (same shape as the original
-          // KanbanSettingsDialog test at line 180).
+          // Stub KanbanColumnEditor to avoid the Teleport + nested dialog complexity in the
+          // rename/delete tests.
           KanbanColumnEditor: {
             template:
               '<div v-if="show" :data-testid="`kanban-column-editor-${mode}`">' +
@@ -333,7 +312,6 @@ describe('KanbanSettingsView', () => {
   })
 
   // ─── Agent tab (reuses AgentView — unified Knowledge + Tools + System Prompt) ───
-
   it('renders the Agent tab button (visible regardless of item.path)', async () => {
     seedWorkspaces({ ...baseItem, path: null })
     mountView()
@@ -461,7 +439,6 @@ describe('KanbanSettingsView', () => {
   })
 
   // ─── Agent tab — embedded Local Memories section ───
-
   it('renders Local Memories inside Agent tab when kanban has a path', async () => {
     seedWorkspaces({ ...baseItem, path: '/tmp/some-folder' })
     setupRoute({ section: 'agent' })

@@ -31,17 +31,11 @@ const emit = defineEmits<{
 }>()
 
 // ─── State ─────────────────────────────────────────────────────────────────
-
 const name = ref('')
 const selectedPath = ref('')
 const showPicker = ref(false)
 const nameInput = ref<HTMLInputElement | null>(null)
-// `true` after the user has interacted with the name field (typed
-// anything OR blurred the field). Used to gate the visible
-// "Name is required" error — we don't show the error on first
-// open (the field is already empty by design; the user hasn't done
-// anything wrong yet). Once they've typed then cleared, OR blurred
-// without typing, the error appears to explain why Add is disabled.
+// `true` after the user has interacted with the name field (typed anything OR blurred the field).
 // Plan: docs/superpowers/plans/2026-07-10-empty-workspace-item-bug.md.
 const nameTouched = ref(false)
 // Computed error string. `null` when no error should be shown.
@@ -52,18 +46,15 @@ const nameError = computed<string | null>(() => {
   return null
 })
 
-// ─── Picker data source ────────────────────────────────────────────────────
-
-// Adapts the existing listFolder/getSystemFolder API to the picker's
-// agnostic (path: string) => Promise<T[]> contract. When path is empty
-// we return the system folder root entries.
+// ─── Picker data source ──────────────────────────────────────────────────── Adapts the existing
+// listFolder/getSystemFolder API to the picker's agnostic (path: string) => Promise<T[]> contract.
+// When path is empty we return the system folder root entries.
 const loadItemsForPicker = async (path: string): Promise<FolderEntry[]> => {
   const data = path ? await listFolder(path) : await getSystemFolder()
   return (data.entries || []) as FolderEntry[]
 }
 
 // ─── Handlers ──────────────────────────────────────────────────────────────
-
 const handleFolderSelected = (path: string) => {
   selectedPath.value = path
   // Close the picker on selection — matches the expected UX (the picker dismisses and the user is
@@ -90,11 +81,9 @@ const handleKeydown = (event: KeyboardEvent) => {
   }
 }
 
-// ─── Lifecycle ─────────────────────────────────────────────────────────────
-
-// Reset state when the dialog opens. We deliberately do NOT preserve
-// selectedPath across open/close — matches the pre-migration behavior
-// and keeps the dialog predictable for users.
+// ─── Lifecycle ───────────────────────────────────────────────────────────── Reset state when the
+// dialog opens. We deliberately do NOT preserve selectedPath across open/close — matches the
+// pre-migration behavior and keeps the dialog predictable for users.
 const handleOpen = async () => {
   name.value = ''
   selectedPath.value = ''

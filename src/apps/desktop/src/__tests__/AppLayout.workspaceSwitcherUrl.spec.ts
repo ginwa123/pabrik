@@ -1,18 +1,6 @@
-/**
- * URL contract pair for the header workspace switcher
- * (plan: docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md):
- *
- *   1. click-writes: Sidebar emits select-workspace →
- *      AppLayout.handleSelectWorkspace PUSHES
- *      `?view=workspace&workspaceId=X` — push, NOT replace, per the
- *      user decision log (Back/Forward must cross workspace switches).
- *   2. mount-restores: `?view=workspace&workspaceId=X` with NO itemId
- *      restores the store selection on load (standalone selection).
- *
- * Harness mirrors AppLayout.urlPersist.spec.ts (route/router mocks,
- * pinia, localStorage stub, SSE bus, api mocks) with the Sidebar
- * stubbed so the event can be driven from outside.
- */
+/** URL contract pair for the header workspace switcher (plan:
+ * docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md): 1. click-writes: Sidebar emits
+ * select-workspace → AppLayout.handleSelectWorkspace PUSHES `?view=workspace&workspaceId=X`. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick } from 'vue'

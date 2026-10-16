@@ -1,29 +1,6 @@
-/**
- * workspacesStore — wire→in-memory date normalization for tasks.
- *
- * Bug: the backend's `GET .../tasks` returns `updated_at` and `created_at`
- * as snake_case UTC strings (e.g. "2026-08-05 04:24:56"). The frontend
- * `Task` interface declares `updatedAt?: Date` and `createdAt?: Date`
- * (camelCase, Date object). Without mapping, the kanban card's meta-row
- * time pill (`lastUpdatedLabel` in WorkspaceItemTaskCard.vue) is always
- * empty — `props.task.updatedAt` is undefined for every wire task.
- *
- * Fix: extend `normalizeTaskTags` in `workspaces.ts` (already runs at
- * every fetch site + addTask optimistic write) to:
- *   1. parse `updated_at` string → `updatedAt` Date (only when missing)
- *   2. parse `created_at` string → `createdAt` Date (only when missing)
- *
- * The "only when missing" guard preserves the optimistic-write path:
- * `addTask` (workspaces.ts:1147) sets `updatedAt: new Date()` directly.
- * A re-fetch shouldn't overwrite a fresh Date with a stale parsed string.
- *
- * Wire format: `"YYYY-MM-DD HH:MM:SS"` in UTC. Backend emits this from
- * SQLite's DATETIME columns (TEXT, UTC). The frontend's
- * `formatRelativeTime` already tolerates this format (with explicit `Z`
- * injection for the Date ctor), so the parse helper centralises the
- * same convention.
- */
-
+/** workspacesStore — wire→in-memory date normalization for tasks. Bug: the backend's `GET
+ * .../tasks` returns `updated_at` and `created_at` as snake_case UTC strings (e.g. "2026-08-05
+ * 04:24:56"). */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import * as api from '../api'
@@ -37,17 +14,9 @@ vi.mock('../api', async (importOriginal) => {
   }
 })
 
-/**
- * The actual fixtures need to round-trip through the store. We use a
- * minimal stub of `useWorkspacesStore.normalizeTaskTags` — but the
- * helper is module-private. So we test it indirectly via the store's
- * public action surface (`fetchKanbanTasks` + `init`) which calls it.
- *
- * The pattern: mock `api.getTasks` to return a wire-shaped payload,
- * call the store action, then read the resulting tasks out of the
- * store and assert their `updatedAt` / `createdAt` are real Date
- * instances derived from the wire strings.
- */
+/** The actual fixtures need to round-trip through the store. We use a minimal stub of
+ * `useWorkspacesStore.normalizeTaskTags` — but the helper is module-private. So we test it
+ * indirectly via the store's public action surface (`fetchKanbanTasks` + `init`) which calls it. */
 describe('normalizeTaskTags — wire→in-memory date mapping', () => {
   beforeEach(() => {
     setActivePinia(createPinia())

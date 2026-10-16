@@ -1,28 +1,6 @@
-/**
- * Regression test for the `?view=chat&session=X` welcome-page bug
- * (2026-07-16): when the URL pointed at a chat session, AppLayout
- * rendered <Chats/> (the static welcome page) instead of
- * <ChatView/>, even though the navigation store's `activeChatId`
- * was set correctly to `'chat-<session>'` during onMounted.
- *
- * Root cause: `workspacesStore.setActiveTask(null)` was called by
- * the chat-nav paths in Sidebar.vue:321 and ChatsList.vue:227 to
- * "clear any active task before activating the chat". The
- * unconditional `useNavigationStore().clearActiveChat()` inside
- * `setActiveTask` (added 2026-07-14 to fix a separate SSE race
- * condition) was ALSO firing on the null taskId path, undoing the
- * just-set `setActiveChat(...)` two lines earlier. The
- * v-else-if chain at AppLayout.vue:1611 then failed
- * (`activeChatId.startsWith('chat-')` was false on the empty
- * string) and fell through to <Chats/>.
- *
- * Fix: gate the `clearActiveChat()` inside both navigationStore.setActiveTask
- * and workspacesStore.setActiveTask on `taskId !== null` (task
- * ACTIVATION clears the chat, task CLEARING does not).
- * AppLayout.handleCloseTaskView now explicitly calls
- * `navigationStore.clearActiveChat()` since that's the one path
- * that needs both clear.
- */
+/** Regression test for the `?view=chat&session=X` welcome-page bug (2026-07-16): when the URL
+ * pointed at a chat session, AppLayout rendered <Chats/> (the static welcome page) instead of
+ * <ChatView/>, even though the navigation store's `activeChatId` was set correctly to. */
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount } from '@vue/test-utils'
@@ -133,16 +111,9 @@ describe('AppLayout — ?view=chat&session=X renders <ChatView>, not <Chats/> (r
       absolute: '/',
       home: '/',
     })
-    // fetchChatSessionCwd (AppLayout.vue) fires from onMounted
-    // when the URL has a `session` query param. Stub the session
-    // detail read (getSession) plus getChatHistory (used by other
-    // mount paths). Without these, jsdom's fetch throws an
-    // ERR_INVALID_URL on every test (no test server) — the error
-    // is caught by AppLayout's own try/catch so the test still
-
-    // passes, but it floods the output. Boot rewrite for ?view=chat resolves the owning workspace
-    // via the session-detail endpoint. Mock it so the async rewrite completes within the test's
-    // ticks (a real fetch would stall).
+    // fetchChatSessionCwd (AppLayout.vue) fires from onMounted when the URL has a `session` query
+    // param. Stub the session detail read (getSession) plus getChatHistory (used by other mount
+    // paths).
     vi.spyOn(api, 'getSessionWorkspaceId').mockResolvedValue('ws_chatview')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vi.spyOn(api, 'getSession').mockResolvedValue({ cwd: '' } as any)
@@ -176,15 +147,9 @@ describe('AppLayout — ?view=chat&session=X renders <ChatView>, not <Chats/> (r
   })
 
   it('renders <ChatView/> (not <Chats/>) when URL is ?view=chat&session=X', async () => {
-    // This is the core regression: before the fix, the v-else-if
-    // chain at AppLayout.vue:1611 evaluated
-    // `activeChatId.startsWith('chat-')` to false (because the
-    // unconditional clearActiveChat() in setActiveTask had
-    // re-cleared the activeChatId that onMounted had just set),
-    // and the chain fell through to <Chats/> (the static welcome
-    // page). The user-visible symptom: navigating to
-    // `?view=chat&session=task_X` showed "Hello! I am your AI
-    // coding assistant" instead of the actual chat history.
+    // This is the core regression: before the fix, the v-else-if chain at AppLayout.vue:1611
+    // evaluated `activeChatId.startsWith('chat-')` to false (because the unconditional
+    // clearActiveChat() in setActiveTask had re-cleared the activeChatId that onMounted had just.
     const wrapper = mountAppLayoutForChatTest()
     // Two ticks: the async boot rewrite sets the chat on the first,
     // Vue re-renders the ChatView branch on the second.
@@ -196,17 +161,9 @@ describe('AppLayout — ?view=chat&session=X renders <ChatView>, not <Chats/> (r
   })
 
   it('regression: explicitly invoking the chat-nav sequence (setActiveChat + setActiveTask(null)) does NOT clear activeChatId', async () => {
-    // Simulates the exact sequence that Sidebar.vue:316-322 and
-    // ChatsList.vue:220-232 perform when the user clicks a chat:
-    //
-    //   navigationStore.setActiveChat(sessionId, name)
-    //   workspacesStore.setActiveWorkspaceItem(null)
-    //   workspacesStore.setActiveTask(null)        // ← used to clear chat
-    //   router.replace({ ..., view: 'chat', session: sessionId })
-    //
-    // Pre-fix: setActiveTask(null) inside the workspacesStore
-    // called clearActiveChat() unconditionally, so
-    // nav.activeChatId ended up '' instead of `chat-<session>`.
+    // Simulates the exact sequence that Sidebar.vue:316-322 and ChatsList.vue:220-232 perform when
+    // the user clicks a chat: navigationStore.setActiveChat(sessionId, name)
+    // workspacesStore.setActiveWorkspaceItem(null) workspacesStore.setActiveTask(null) // ← used.
     const ws = useWorkspacesStore()
     const nav = useNavigationStore()
 
@@ -221,12 +178,9 @@ describe('AppLayout — ?view=chat&session=X renders <ChatView>, not <Chats/> (r
   })
 
   it('regression: activating a task STILL clears the chat (the opposite-direction invariant)', async () => {
-    // The 2026-07-14 original fix wanted this property: when the
-    // user clicks a task, any active chat should be cleared so
-    // subsequent SSE session_created events can't navigate back
-    // into the previous chat. Gating the clear on `taskId !== null`
-    // preserves this property for the activation path while
-    // fixing the null path.
+    // The 2026-07-14 original fix wanted this property: when the user clicks a task, any active
+    // chat should be cleared so subsequent SSE session_created events can't navigate back into the
+    // previous chat.
     const ws = useWorkspacesStore()
     const nav = useNavigationStore()
 

@@ -1,29 +1,6 @@
-/**
- * Pure-logic composable that backs the LayersPanel drag-and-drop
- * affordance. Owns the drag state machine + per-element visual
- * class predicates.
- *
- * Multi-drag semantics (per D4 of the plan):
- *   - When the dragged row is in `selectedIds` AND the selection
- *     has > 1 element, the WHOLE selection is dragged together.
- *   - Otherwise, the single dragged row is dragged.
- *
- * Cycle preflight (per D5 of the plan):
- *   - A target row is invalid if it's the target itself OR any
- *     dragged element is a descendant of the target (would close a
- *     cycle on reparent).
- *   - Leaf types (rectangle/ellipse/text/image) are always invalid
- *     drop targets — only group/frame can accept children.
- *   - The TOP_LEVEL_SENTINEL id is always valid (leaving a group
- *     never creates a cycle).
- *
- * Top-level drop zones (3 per page: above the first top-level row,
- * between each pair, below the last) use the TOP_LEVEL_SENTINEL as
- * their target id — the LayersPanel renders them.
- *
- * Plan: docs/superpowers/plans/2026-07-30-design-layer-drag-join-or-leave-group.md
- * (Chunk 3 Task 3.1)
- */
+/** Pure-logic composable that backs the LayersPanel drag-and-drop affordance. Owns the drag state
+ * machine + per-element visual class predicates. Plan:
+ * docs/superpowers/plans/2026-07-30-design-layer-drag-join-or-leave-group.md (Chunk 3 Task 3.1) */
 import { computed, ref, type Ref } from 'vue'
 
 import type { DesignElement } from '../api'

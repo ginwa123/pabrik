@@ -1,14 +1,5 @@
-/**
- * Tests for KanbanView.handleStopAllAgents — the column "Stop all agents"
- * host handler, mirroring KanbanView.runAllAgents.spec.ts.
- *
- * `@request-stop-all-agents` from KanbanColumn / KanbanRowView routes to
- * `handleStopAllAgents(columnId)` with a per-column re-entrancy guard
- * (mirrors `runAllBusyByColumn`). The handler shows a `confirm()` gate,
- * delegates to `workspacesStore.stopAllAgentsInColumn`, and surfaces
- * the `{stopped, skipped, failed}` summary in the shared banner.
- * Run-state visuals stay with the existing `processingState`/SSE flow.
- */
+/** Tests for KanbanView.handleStopAllAgents — the column "Stop all agents" host handler, mirroring
+ * KanbanView.runAllAgents.spec.ts. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

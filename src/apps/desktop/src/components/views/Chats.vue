@@ -1,20 +1,6 @@
 <!-- eslint-disable vue/multi-word-component-names -->
 <script setup lang="ts">
-/**
- * The app's landing page: what Pabrik is, and how to start.
- *
- * The ONE control is the Create-workspace form — `/app` is the entry
- * point and a workspace is the prerequisite for everything else;
- * workspace items (projects, kanban tasks, design pages) are the
- * starting points once inside. Deliberately NO composer, NO assistant
- * messages, NO chat list: the previous version faked a single
- * assistant turn with a live timestamp, which read as a real reply
- * that could not be answered, and the scope guards in
- * `ChatsLanding.spec.ts` keep that message and any chat UI out while
- * asserting the create form.
- *
- * Spec: docs/superpowers/specs/2026-09-13-home-landing-design.md
- */
+/** The app's landing page: what Pabrik is, and how to start. */
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useWorkspacesStore } from '../../stores/workspaces'

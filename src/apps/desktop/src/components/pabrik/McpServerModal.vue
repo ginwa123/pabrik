@@ -4,22 +4,9 @@ import { computed, onUpdated, ref } from 'vue'
 import { testMcpServer, type McpTestResult } from '../../api'
 import McpHeadersEditor, { type McpHeader } from './McpHeadersEditor.vue'
 
-/**
- * MCP server modal value — discriminated by `transport`:
- * - 'http'   → uses `url` + `headers`
- * - 'stdio'  → uses `command` + `args` + `env` + `cwd`
- *
- * The UI shows both branches under a transport toggle at the top of
- * the form. The wire shape sent to the backend is the union shape
- * declared in `McpServer` (api/index.ts).
- *
- * NOTE: the HTTP branch is a bespoke dialog (Name + URL + Headers
- * only). It deliberately does NOT reuse LlmConfigModal/LlmConfigForm —
- * those render LLM profile fields (Model, Thinking, Temperature, URL
- * style, API key, compaction overrides) which are meaningless for an
- * MCP server entry and confused users (screenshot: Add MCP server
- * showing "MiniMax-M2.7 / https://api.minimax.io/v1 / Thinking…").
- */
+/** MCP server modal value — discriminated by `transport`: - 'http'   → uses `url` + `headers` -
+ * 'stdio'  → uses `command` + `args` + `env` + `cwd` The UI shows both branches under a transport
+ * toggle at the top of the form. */
 export interface McpServerModalValue {
   name: string
   transport: 'http' | 'stdio'

@@ -47,12 +47,9 @@ const bus = useSseBus()
 const state = toRef(bus.state)
 const attempt = ref(0)
 
-// The remaining job is NOT derivation: it counts transitions of an EXTERNAL
-// signal. `attempt` depends on its own history, so `computed()` cannot express
-// it, and the bus exposes no state-subscribe — only the `state` ShallowRef.
-// The template reads `state`, so every transition re-renders this badge:
-// onMounted seeds the initial state (the old `immediate: true`), and the
-// prev-value guard below counts each transition exactly once.
+// The remaining job is NOT derivation: it counts transitions of an EXTERNAL signal. `attempt`
+// depends on its own history, so `computed()` cannot express it, and the bus exposes no
+// state-subscribe — only the `state` ShallowRef.
 const countStateTransition = (s: typeof bus.state.value) => {
   // Tracked locally because the bus's state ShallowRef does NOT expose the
   // underlying `SseClient`'s `info.attempt` — only the state name.

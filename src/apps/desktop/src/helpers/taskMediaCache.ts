@@ -1,32 +1,4 @@
-/**
- * Persistent local cache for kanban task media (`GET .../tasks/:id/media`).
- *
- * Stale-while-revalidate: after the flag-only task list lands, cards paint
- * the last-known thumbnails synchronously (no network wait), then the
- * store revalidates in the background via the media endpoint and
- * write-throughs the fresh payload here. There is deliberately NO TTL —
- * a stale thumb beats the `has media` badge for the second the fetch is
- * in flight, and every list load is followed by a real revalidate anyway.
- *
- * localStorage (not module memory alone): the point is surviving a full
- * page reload — the cold-boot case where every card would otherwise show
- * the badge until N media round-trips land. Unlike the tiny workspace
- * rows, entries are base64 `data:` URLs that can reach MBs, so this
- * helper carries two guards `workspacesCache` doesn't need:
- *   - per-entry size cap (`MAX_ENTRY_CHARS`) — oversized payloads are
- *     never persisted (the live fetch still works, only the next
- *     cold boot's instant paint for that task is lost);
- *   - entry cap with oldest-eviction (`MAX_ENTRIES`) + quota failure
- *     recovery (drop the namespace, retry once, then give up silent).
- *
- * A module-memory memo sits in front of storage: parsing a multi-MB
- * JSON blob once per page load instead of once per card keeps mount
- * cheap. Writes go to both layers (write-through).
- *
- * Fail-silent: every storage access is wrapped, so private mode,
- * quota errors, or a missing `localStorage` (vitest/jsdom setups that
- * don't provide one) degrade to a plain cache miss.
- */
+/** Persistent local cache for kanban task media (`GET .../tasks/:id/media`). */
 export interface CachedTaskMedia {
   imageUrls: string[]
   videoUrls: string[]

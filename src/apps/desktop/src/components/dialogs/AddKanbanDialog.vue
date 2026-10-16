@@ -44,7 +44,6 @@ const emit = defineEmits<{
 }>()
 
 // ─── State ─────────────────────────────────────────────────────────────────
-
 const name = ref('')
 const selectedPath = ref('')
 const showPicker = ref(false)
@@ -59,18 +58,14 @@ const nameError = computed<string | null>(() => {
   return null
 })
 
-// ─── Picker data source ────────────────────────────────────────────────────
-
-// Adapts the existing listFolder/getSystemFolder API to the picker's agnostic (path: string) =>
-// Promise<T[]> contract. Same helper as AddItemDialog — duplicated here (not extracted) to keep the
-// two dialogs independently editable.
+// ─── Picker data source ──────────────────────────────────────────────────── Adapts the existing
+// listFolder/getSystemFolder API to the picker's agnostic (path: string) => Promise<T[]> contract.
 const loadItemsForPicker = async (path: string): Promise<FolderEntry[]> => {
   const data = path ? await listFolder(path) : await getSystemFolder()
   return (data.entries || []) as FolderEntry[]
 }
 
 // ─── Handlers ──────────────────────────────────────────────────────────────
-
 const handleFolderSelected = (path: string) => {
   selectedPath.value = path
   showPicker.value = false
@@ -78,13 +73,9 @@ const handleFolderSelected = (path: string) => {
 
 const handleCreate = () => {
   const trimmedName = name.value.trim()
-  // Path is OPTIONAL (since 2026-08-06) — only `name` is required.
-  // Empty string is forwarded when the user skipped the picker;
-  // the backend's `NULLIF(?, '')` writes `NULL` for empty paths,
-  // creating a cwd-less kanban. The session_create handler then
-  // creates a sandbox directory per chat session when the
-  // session's `cwd_session` field is empty (matches the
-  // pre-fix code path for older cwd-less kanbans).
+  // Path is OPTIONAL (since 2026-08-06) — only `name` is required. Empty string is forwarded when
+  // the user skipped the picker; the backend's `NULLIF(?, '')` writes `NULL` for empty paths,
+  // creating a cwd-less kanban.
   if (trimmedName) {
     emit('create', trimmedName, selectedPath.value)
     handleClose()
@@ -101,11 +92,9 @@ const handleKeydown = (event: KeyboardEvent) => {
   }
 }
 
-// ─── Lifecycle ─────────────────────────────────────────────────────────────
-
-// Reset state when the dialog opens. We deliberately do NOT preserve
-// either the name or the selected path across open/close so the
-// dialog is predictable for users.
+// ─── Lifecycle ───────────────────────────────────────────────────────────── Reset state when the
+// dialog opens. We deliberately do NOT preserve either the name or the selected path across
+// open/close so the dialog is predictable for users.
 const handleOpen = async () => {
   name.value = ''
   selectedPath.value = ''

@@ -43,11 +43,9 @@ const props = withDefaults(
     // need the full item context — currently unused, but accepted for forward compatibility if a
     // future routine-task action needs the item.path).
     item?: WorkspaceItem
-    // Absolute path used as the root for `@`-trigger file pickers in
-    // the descendant <WorkspaceItemTaskCard>'s description preview +
-    // any future editor embedded directly on the card. Optional —
-    // falls back to '' (no @path resolution) when the kanban has no
-    // path set (legacy kanbans).
+    // Absolute path used as the root for `@`-trigger file pickers in the descendant
+    // <WorkspaceItemTaskCard>'s description preview + any future editor embedded directly on the
+    // card.
     cwd?: string
     // The board's columns + the card's own column, threaded down to the card's context menu for the
     // "Move to column" submenu. The menu emits the destination only; the append position is

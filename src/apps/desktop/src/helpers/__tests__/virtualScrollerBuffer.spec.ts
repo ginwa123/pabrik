@@ -1,20 +1,6 @@
-/**
- * Regression tests for the `buffer` prop semantics in VirtualScroller.
- *
- * Why this file exists:
- *   The user reported "I set `buffer=20` in props but the DOM has more
- *   than 20 items." Two issues were causing this:
- *
- *     1. A hardcoded `+ 200` pixel lookahead in `visibleRange` added
- *        items beyond what `buffer` controlled.
- *     2. `buffer` is per-side (20 above + 20 below), not total, and
- *        this was not visible from the parent.
- *
- *   These tests pin down the contract: the rendered count is exactly
- *   `2 * buffer + visibleCount` (or fewer at the edges of the list).
- *   If a future change adds another hidden overscan, the
- *   "renderedCount matches exactly 2*buffer + visible" test fails.
- */
+/** Regression tests for the `buffer` prop semantics in VirtualScroller. Why this file exists: The
+ * user reported "I set `buffer=20` in props but the DOM has more than 20 items." Two issues were
+ * causing this: 1. */
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -26,11 +12,9 @@ function makeItems(n: number): Array<{ id: number }> {
   return Array.from({ length: n }, (_, i) => ({ id: i }))
 }
 
-/** Mount a VirtualScroller with the given items and a known
- * container geometry. jsdom does not lay out, so we set
- * `clientHeight` / `scrollHeight` directly to make `onScroll`'s
- * geometry reads return realistic values. The default item height
- * of 200px matches ChatView's setting, which is the primary caller. */
+/** Mount a VirtualScroller with the given items and a known container geometry. jsdom does not lay
+ * out, so we set `clientHeight` / `scrollHeight` directly to make `onScroll`'s geometry reads
+ * return realistic values. */
 function mountScroller(props: {
   items: Array<{ id: number }>
   buffer?: number

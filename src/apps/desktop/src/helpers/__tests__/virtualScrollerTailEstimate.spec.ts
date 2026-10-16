@@ -1,20 +1,6 @@
-/**
- * Tail-estimation contract (2026-09-06, task_1788648119245_5).
- *
- * History: this file once pinned the "tail at static 64px" contract
- * (gap-below-last-message fix) — the median was blamed for extending
- * the sizer past a fresh streaming bubble. That contract became the
- * shrink bug: with 100+ messages the model total collapsed to less
- * than half the real height (unmeasured tail at 64 vs ~400 real),
- * shrinking scrollHeight and bouncing scrollTop.
- *
- * New contract: ALL unmeasured items estimate at the clamped adaptive
- * median (32..1600px). The old gap concern is handled structurally
- * instead — the sizer is a pure function of the model (scroll changes
- * can no longer resize it, so overshoot cannot bounce) and
- * scrollToBottom targets the real DOM bottom at the tail (so an
- * over-estimated sizer never parks the viewport in empty space).
- */
+/** Tail-estimation contract (2026-09-06, task_1788648119245_5). History: this file once pinned the
+ * "tail at static 64px" contract (gap-below-last-message fix) — the median was blamed for extending
+ * the sizer past a fresh streaming bubble. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -74,15 +60,8 @@ describe('VirtualScroller tail estimation (no gap below last message)', () => {
   })
 
   it('estimates unmeasured history AND tail at the learned median', async () => {
-    // The P1 win must survive: unmeasured history items BEFORE the last
-    // measured index estimate at the median, while only the TAIL (after
-    // the last measured index) falls back to the prop.
-    //
-    // Geometry: 200 items, scroll to index ~90, measure the rendered
-    // window (indices 85..107) at 300px. maxMeasuredIndex=107.
-    // Median-300 backs every unmeasured item: 23 measured at 300 plus
-    // 177 unmeasured at median 300 = 200*300 = 60000. The old
-    // 23*300+177*64=18228 collapsed the sizer (the shrink symptom).
+    // The P1 win must survive: unmeasured history items BEFORE the last measured index estimate at
+    // the median, while only the TAIL (after the last measured index) falls back to the prop.
     const { wrapper, el } = mountScroller(200)
     await nextTick()
 

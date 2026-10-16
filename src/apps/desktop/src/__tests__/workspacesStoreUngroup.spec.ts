@@ -1,24 +1,5 @@
-/**
- * Unit tests for `workspacesStore.ungroupDesignElements` (the store
- * action backing Cmd+Shift+G / right-click Ungroup).
- *
- * 5 tests:
- *  1. Calls `api.ungroupDesignElements` with the right URL + method.
- *  2. Removes the dissolved group row from `item.design_elements`.
- *  3. Replaces each orphaned child in place (so `parent_id` updates
- *     are visible without a re-fetch).
- *  4. Returns the API result unchanged on success.
- *  5. Propagates errors (does NOT mutate the array on failure).
- *
- * Plan: docs/superpowers/specs/2026-07-29-design-right-click-group-menu.md
- * (Chunk 9 — Cmd+Shift+G Ungroup).
- *
- * Mock pattern follows the project memory
- * `apiFetch-mock-must-include-text-and-pinia`: apiFetch calls
- * useNotificationStore() on every non-2xx response, which requires
- * an active Pinia; the response mock must include `text()` so
- * apiFetch can extract the body for the error toast.
- */
+/** Unit tests for `workspacesStore.ungroupDesignElements` (the store action backing Cmd+Shift+G /
+ * right-click Ungroup). 5 tests: 1. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 

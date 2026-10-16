@@ -1,38 +1,12 @@
-/**
- * Tests for the CreateWorktreeDialog component. The dialog combines a
- * FilePickerDialog (for picking the parent directory) + a basename input
- * + a Create/Cancel button pair. It composes the final absolute path as
- * `${parentDir}/${basename}` and emits `create(path)` on submit.
- *
- * The FilePickerDialog is stubbed via `vi.mock` because it has a complex
- * data source (loadItems → listFolder API), two-pane layout, search,
- * keyboard nav, etc. — all of that is tested in
- * FilePickerDialog.spec.ts. We only need to verify that this dialog:
- *   1. Wires the picker's @select to update parentDir
- *   2. Wires the picker's v-model to open/close
- *   3. Composes parent + basename and emits `create(path)` on submit
- *   4. Trims the basename and handles edge cases (root, trailing slash)
- *   5. Resets state, focuses input, handles Escape
- *
- * Note: the dialog renders inside a <Teleport to="body">, so the actual
- * DOM is detached from the wrapper. We use `document.querySelector` /
- * `findInDom` (instead of `wrapper.find`) and dispatch events manually
- * to interact with the rendered DOM. This matches the pattern used in
- * AddItemDialog.spec.ts.
- */
+/** Tests for the CreateWorktreeDialog component. The dialog combines a FilePickerDialog (for
+ * picking the parent directory) + a basename input + a Create/Cancel button pair. It composes the
+ * final absolute path as `${parentDir}/${basename}` and emits `create(path)` on submit. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 
-// ─── Mocks ─────────────────────────────────────────────────────────────────
-
-// Stub the FilePickerDialog — we only care that the parent wires up
-// the picker's events. Real picker behavior is tested in
-// FilePickerDialog.spec.ts.
-//
-// IMPORTANT: the mock must use `modelValue` (not `show`) because the
-// parent uses `v-model="showPicker"` (no argument), which compiles to
-//   :modelValue="showPicker" @update:modelValue="showPicker = $event".
-// A prop named `show` would not be wired to v-model.
+// ─── Mocks ───────────────────────────────────────────────────────────────── Stub the
+// FilePickerDialog — we only care that the parent wires up the picker's events. Real picker
+// behavior is tested in FilePickerDialog.spec.ts.
 vi.mock('../components/FilePickerDialog.vue', () => ({
   default: {
     name: 'FilePickerDialog',
@@ -76,11 +50,9 @@ vi.mock('../components/FilePickerDialog.vue', () => ({
 }))
 
 // ─── Imports ───────────────────────────────────────────────────────────────
-
 import CreateWorktreeDialog from '../components/dialogs/CreateWorktreeDialog.vue'
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
-
 function findInDom<T extends Element = Element>(selector: string): T | null {
   return document.querySelector<T>(selector)
 }
@@ -101,11 +73,8 @@ function setBasename(value: string) {
 }
 
 function mountDialog(initialCwd?: string) {
-  // Wipe the body before each mount. attachTo: document.body creates a
-  // new <div data-v-app> for each mount, and these accumulate in jsdom
-  // even after wrapper.unmount(). Clearing the body here ensures a
-  // clean slate for each test (otherwise Teleport + body event
-  // listeners from the previous test can interfere with the new one).
+  // Wipe the body before each mount. attachTo: document.body creates a new <div data-v-app> for
+  // each mount, and these accumulate in jsdom even after wrapper.unmount().
   document.body.innerHTML = ''
   return mount(CreateWorktreeDialog, {
     attachTo: document.body,
@@ -114,7 +83,6 @@ function mountDialog(initialCwd?: string) {
 }
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
-
 describe('CreateWorktreeDialog — initial state', () => {
   let wrapper: VueWrapper | null = null
 

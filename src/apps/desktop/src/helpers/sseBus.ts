@@ -19,53 +19,34 @@ import type {
   GitPrStateEvent,
 } from '../api'
 
-// NOTE: Plan's Chunk 1 spec imports `KanbanEvent` and `LlmChunkEvent`
-// from `../api`, but those names don't exist in `api/index.ts` — the
-// actual exports are `KanbanColumnEvent` / `KanbanTaskEvent` and
-// `SseEvent`. We use the real names here; the `SseEventMap` shape
-// (worker / session / kanban / design / llm / queue) is unchanged.
+// NOTE: Plan's Chunk 1 spec imports `KanbanEvent` and `LlmChunkEvent` from `../api`, but those
+// names don't exist in `api/index.ts` — the actual exports are `KanbanColumnEvent` /
+// `KanbanTaskEvent` and `SseEvent`.
 type SseEventMap = {
   worker: WorkerEvent
   session: SessionEvent
   kanban: KanbanColumnEvent | KanbanTaskEvent
-  // Design-mode element mutations. The backend emits three granular
-  // event names (`design_element_created` / `_updated` / `_deleted`)
-  // that all share the same `DesignElementEvent` payload — see
-  // src/ai_workflow/tui/on_event_sent_design.zig. The bus routes all
-  // three to this single `design` channel; the consumer can switch
-  // on `event.action` to distinguish them if needed. The
-  // `designSse.ts` Pinia store treats all three uniformly
-  // (re-fetch the page's element list).
+  // Design-mode element mutations. The backend emits three granular event names
+  // (`design_element_created` / `_updated` / `_deleted`) that all share the same
+  // `DesignElementEvent` payload — see src/ai_workflow/tui/on_event_sent_design.zig.
   design: DesignElementEvent
   llm: SseEvent
   queue: QueueMessageEvent
   // Background-process lifecycle. The backend emits two granular names
-  // (`background_process_created` / `background_process_completed`) that
-  // share the `BackgroundProcessEvent` payload — see
-  // src/agentic_loop/background_process_events.zig. The bus routes both
-  // to this single channel; the consumer filters by `session_id`.
+  // (`background_process_created` / `background_process_completed`) that share the
+  // `BackgroundProcessEvent` payload — see src/agentic_loop/background_process_events.zig.
   backgroundProcess: BackgroundProcessEvent
-  // Skill-eval lifecycle. The backend emits three granular names
-  // (`skill_evals_run_started` / `_run_finished` / `_result_applied`)
-  // that share the `SkillEvalEvent` payload — see
-  // src/agentic_loop/skill_eval_events.zig. The bus routes all three to
-  // this single channel; the consumer filters by `session_id` and
-  // re-fetches the eval list for the Evals tab.
+  // Skill-eval lifecycle. The backend emits three granular names (`skill_evals_run_started` /
+  // `_run_finished` / `_result_applied`) that share the `SkillEvalEvent` payload — see
+  // src/agentic_loop/skill_eval_events.zig.
   skillEvals: SkillEvalEvent
-  // File stage/unstage. The backend emits two granular names
-  // (`git_file_staged` / `git_file_unstaged`) that share the
-  // `GitFileStageEvent` payload — see
-  // src/agentic_loop/git_file_stage_events.zig. The bus routes both to
-  // this single channel; the consumer filters by `cwd` and moves ONE row
-  // between Staged / Changes / Untracked instead of re-fetching the whole
-  // git-status list.
+  // File stage/unstage. The backend emits two granular names (`git_file_staged` /
+  // `git_file_unstaged`) that share the `GitFileStageEvent` payload — see
+  // src/agentic_loop/git_file_stage_events.zig.
   gitFileStage: GitFileStageEvent
-  // Change-request state. The backend emits two granular names
-  // (`git_pr_state_merged` / `git_pr_state_closed`) that share the
-  // `GitPrStateEvent` payload — see src/agentic_loop/git_pr_state_events.zig.
-  // The bus routes both to this single channel; the consumer filters by `cwd`
-  // and invalidates the shared PR-status cache entry for `branch`, so the
-  // sidebar branch icon and the kanban card badge re-read after a merge.
+  // Change-request state. The backend emits two granular names (`git_pr_state_merged` /
+  // `git_pr_state_closed`) that share the `GitPrStateEvent` payload — see
+  // src/agentic_loop/git_pr_state_events.zig.
   gitPrState: GitPrStateEvent
 }
 
@@ -90,55 +71,24 @@ export interface SseBus {
   /**    * Close the bus. Terminal — stops all streams, clears retry timers, leaves the bus uninstalled (a
    * subsequent `installSseBus` rebuilds it). Safe to call multiple times. */
   close(): void
-  /** Which role THIS window plays when cross-tab sharing is active:
-   * `leader` owns the single EventSource, `follower` receives events
-   * over the BroadcastChannel. `off` = sharing disabled (every window
-   * opens its own connection, the pre-tab-sharing behaviour).
-   * Optional so existing test doubles typed as `SseBus` stay valid. */
+  /** Which role THIS window plays when cross-tab sharing is active: `leader` owns the single
+   * EventSource, `follower` receives events over the BroadcastChannel. `off` = sharing disabled
+   * (every window opens its own connection, the pre-tab-sharing behaviour). */
   readonly tabRole?: ShallowRef<TabSharingRole>
-  /** Subscribe to "your view may be stale, refresh from the API" signals.
-   * Fires when this window takes over the shared connection (events emitted
-   * during the handover gap reached nobody) and when it returns from being
-   * hidden long enough to have been frozen/throttled. Coalesced.
-   * Returns an unsubscribe function. No-op when tab sharing is off, because
-   * a window that holds its own connection never misses a delivery. */
+  /** Subscribe to "your view may be stale, refresh from the API" signals. Fires when this window
+   * takes over the shared connection (events emitted during the handover gap reached nobody) and
+   * when it returns from being hidden long enough to have been frozen/throttled. Coalesced. */
   readonly onResync?: (cb: (reason: string) => void) => () => void
-  /**
-   * Subscribe to SSE connection-state transitions
-   * (`connecting | open | reconnecting | closed | failed`).
-   *
-   * Prefer this over reaching for `__getSseBusGlobalClient()`: with
-   * cross-tab sharing the underlying `SseClient` is created INSIDE the
-   * `onBecomeLeader` callback, so it does not exist yet when a
-   * component's `onMounted` runs. A subscriber registered on the client
-   * at that moment is silently dropped (`?.` short-circuits on null)
-   * and never sees the first `open` - which is exactly how `App.vue`'s
-   * `fetchInitialWorkers` stopped firing and the sidebar lost its
-   * processing spinners.
-   *
-   * Bus-level subscribers are held for the bus's lifetime and replayed
-   * onto every client the bus opens, so they survive leader handover
-   * and reconnects. Returns an unsubscribe function.
-   */
+  /** Subscribe to SSE connection-state transitions (`connecting | open | reconnecting | closed |
+   * failed`). */
   readonly onStateChange?: (cb: (s: SseState) => void) => () => void
 }
 
 export type TabSharingRole = 'off' | 'leader' | 'follower'
 
-/**
- * Install options — all optional; the defaults are what production uses.
- *
- * `tabSharing` (default `'auto'`): open ONE EventSource for the whole
- * browser profile and fan events out to the other tabs over a
- * `BroadcastChannel`. Browsers cap HTTP/1.1 connections per origin at ~6, so
- * before this every open tab consumed a slot and the 7th tab could not stream
- * at all.
- *
- * `'auto'` resolves to OFF under vitest (`import.meta.env.MODE === 'test'`)
- * because the jsdom environment leaks Node's `BroadcastChannel`, which would
- * otherwise push every existing SSE suite onto the asynchronous election path.
- * Tests that exercise sharing pass `'on'` explicitly.
- */
+/** Install options — all optional; the defaults are what production uses. `tabSharing` (default
+ * `'auto'`): open ONE EventSource for the whole browser profile and fan events out to the other
+ * tabs over a `BroadcastChannel`. */
 export interface SseBusInstallOptions {
   tabSharing?: 'auto' | 'on' | 'off'
   /** Test seam: how to open the cross-tab channel. */
@@ -168,41 +118,24 @@ function resolveTabSharing(mode: 'auto' | 'on' | 'off'): boolean {
 
 let _instance: SseBus | null = null
 
-// Module-level handle to the current `dispatch` function. Populated
-// by `installSseBus` (which owns the listener Maps in its closure)
-// and read by `__dispatchSseBus` (the test injection point). Setting
-// this to null in `__resetSseBus` / `close()` ensures the test
-// escape hatch becomes a no-op once the bus is torn down.
+// Module-level handle to the current `dispatch` function. Populated by `installSseBus` (which owns
+// the listener Maps in its closure) and read by `__dispatchSseBus` (the test injection point).
 type DispatchFn = <K extends keyof SseEventMap>(type: K, event: SseEventMap[K]) => void
 let _dispatch: DispatchFn | null = null
 
-// Module-level handle to the currently-installed global SseClient.
-// Populated by `installSseBus` (and by `__setSseBusGlobalClient` when
-// tests swap the client). Read by `__getSseBusGlobalClient` so tests
-// can assert which client is wired in. Cleared in `close()` and
-// `__resetSseBus` so a fresh test starts with `null`.
+// Module-level handle to the currently-installed global SseClient. Populated by `installSseBus`
+// (and by `__setSseBusGlobalClient` when tests swap the client). Read by `__getSseBusGlobalClient`
+// so tests can assert which client is wired in.
 let _globalClient: SseClient | null = null
 
-// Module-level unsubscribe for the `onStateChange` listener that
-// mirrors the global SseClient's state into the bus's public
-// `state` ShallowRef. Stashed here so `__setSseBusGlobalClient`
-// can detach the OLD client's listener before swapping — without
-// this handle, replacing the client would leak the old listener
-// (each `onStateChange` call adds to the array without bound).
+// Module-level unsubscribe for the `onStateChange` listener that mirrors the global SseClient's
+// state into the bus's public `state` ShallowRef.
 let _stateUnsub: (() => void) | null = null
 
-// Bus-level connection-state subscribers. Held for the bus's LIFETIME
-// (not per client) and replayed onto every client `openClient` creates,
-// so a component that subscribes in `onMounted` still sees the first
-// `open` even though the client does not exist yet when tab sharing
-// defers its creation to the `onBecomeLeader` callback.
+// Bus-level connection-state subscribers.
 const _stateSubs = new Set<(s: SseState) => void>()
 
 // Fan a connection-state transition out to every bus-level subscriber.
-// Module-scoped (not inside `installSseBus`) because both the
-// `openClient` closure AND the module-level `__setSseBusGlobalClient`
-// wire client listeners — a closure-local helper would be invisible to
-// the latter, which is the leader-handover path.
 function notifyStateSubs(s: SseState): void {
   for (const cb of _stateSubs) {
     try {
@@ -264,16 +197,9 @@ export function installSseBus(_app?: App, options?: SseBusInstallOptions): SseBu
     state.value = 'connecting'
   }
 
-  // Build the single global EventSource carrying ALL channels. The bus does
-  // NOT open a second EventSource per chat (the v1 refcount design was
-  // reverted; see docs/plans/2026-06-30-single-sse-all-sessions-design.md).
-  // Listeners for 'llm', 'queue', and 'backgroundProcess' filter by
-  // event.session_id on the JS side — defense-in-depth against any backend
-  // routing regression. Design listeners filter by `event.workspace_id`
-  // in the `designSse.ts` store.
-  //
-  // With tab sharing on (see `sseTabChannel.ts`) this runs ONLY in the leader
-  // tab; followers get the same events forwarded over the BroadcastChannel.
+  // Build the single global EventSource carrying ALL channels. The bus does NOT open a second
+  // EventSource per chat (the v1 refcount design was reverted; see
+  // docs/plans/2026-06-30-single-sse-all-sessions-design.md).
   function openClient(): void {
     if (_globalClient) return
     const client: SseClient = createUnifiedSseConnection({
@@ -315,13 +241,9 @@ export function installSseBus(_app?: App, options?: SseBusInstallOptions): SseBu
       },
     })
 
-    // Mirror SseClient state into our ShallowRef so the badge can
-    // read it. `getState()` returns the initial value
-    // ('connecting', set by createSseClient); subsequent transitions
-    // arrive via `onStateChange`. The unsub is stashed in a
-    // module-level handle so `__setSseBusGlobalClient` can detach
-    // it before swapping the client (otherwise the OLD client's
-    // listener would keep firing into the NEW client's ShallowRef).
+    // Mirror SseClient state into our ShallowRef so the badge can read it. `getState()` returns the
+    // initial value ('connecting', set by createSseClient); subsequent transitions arrive via
+    // `onStateChange`.
     state.value = client.getState()
     _stateUnsub = client.onStateChange((s, _info: SseStateInfo) => {
       state.value = s
@@ -449,17 +371,8 @@ export function installSseBus(_app?: App, options?: SseBusInstallOptions): SseBu
         _tabChannel.requestReconnect()
         return
       }
-      // Read through the module-level `_globalClient` handle at call
-      // time (not the closure-scoped client from install time)
-      // so a swap via `__setSseBusGlobalClient` takes effect here.
-      // The optional chain is defensive — `_globalClient` could be
-      // null after a `close()` followed by `reconnectGlobal()` on a
-      // torn-down bus (which `SseBus.close()` already protects
-      // against by nulling `_instance`, but tests sometimes poke this).
-      // NEW (sse-disconnect-diagnosis): pass a human-readable
-      // reason so the next DISCONNECT DIAGNOSIS log attributes the
-      // reconnect to "user clicked Retry" instead of an unknown
-      // caller.
+      // Read through the module-level `_globalClient` handle at call time (not the closure-scoped
+      // client from install time) so a swap via `__setSseBusGlobalClient` takes effect here.
       _globalClient?.reconnect('user-clicked-retry-or-bus-reconnect')
     },
     close(): void {
@@ -469,13 +382,8 @@ export function installSseBus(_app?: App, options?: SseBusInstallOptions): SseBu
       const ch = _tabChannel
       _tabChannel = null
       if (ch) ch.close()
-      // Read through the module-level `_globalClient` handle at call
-      // time (not the closure-scoped client from install time)
-      // so a swap via `__setSseBusGlobalClient` takes effect here.
-      // The `_globalClient ?? createdClient` fallback is defensive —
-      // in production the two point to the same object, but a test
-      // that nulled `_globalClient` via `__resetSseBus` between
-      // install and close still gets the original closed.
+      // Read through the module-level `_globalClient` handle at call time (not the closure-scoped
+      // client from install time) so a swap via `__setSseBusGlobalClient` takes effect here.
       const gc = _globalClient ?? createdClient
       // NEW (sse-disconnect-diagnosis): pass a reason so the subsequent state log knows "bus was
       // torn down" — useful when correlating SSE disconnects with App.vue unmount or HMR re-mounts.
@@ -538,19 +446,9 @@ export function __dispatchSseBus<K extends keyof SseEventMap>(
   _dispatch?.(type, event)
 }
 
-/**
- * Test-only: replaces the global SseClient and re-wires the state
- * mirror. Closes the previous global client (if any) and detaches
- * the old `onStateChange` listener before subscribing the new
- * client's listener. Updates the bus's public `state` ShallowRef
- * to the new client's initial state so observers see the swap
- * immediately. No-op if the bus is not installed.
- *
- * Used by the migration test files (Chunks 5-7) to drive the
- * SSE state badge behavior — the production code paths under test
- * react to `bus.state.value` transitions, not to the underlying
- * `EventSource` lifecycle.
- */
+/** Test-only: replaces the global SseClient and re-wires the state mirror. Closes the previous
+ * global client (if any) and detaches the old `onStateChange` listener before subscribing the new
+ * client's listener. */
 export function __setSseBusGlobalClient(client: SseClient): void {
   if (!_instance) return
   // Detach the OLD client's state listener first so it doesn't keep

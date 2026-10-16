@@ -1,25 +1,6 @@
-/**
- * Behavioural tests for the SINGLE-element drag wire.
- *
- * Plan: docs/superpowers/plans/2026-08-06-split-move-resize.md
- *
- * The wire is:
- *   1. User pointerdown on a single (non-group) element body.
- *   2. DesignElement.vue fires `translate` with the (dx, dy) cursor delta.
- *   3. DesignView.vue's `@translate="handleElementTranslate"` handler
- *      receives the delta and emits `translateElement(id, dx, dy)` upward.
- *   4. AppLayout.vue's `@translate-element="handleDesignTranslateElement"`
- *      calls `useDesignHandlers.translateElement` which calls
- *      `workspacesStore.translateDesignElement` which POSTs
- *      `/api/workspaces/.../elements/:id/translate`.
- *
- * This test exercises steps 1-3 by mounting DesignView, dispatching
- * pointerdown + pointermove + pointerup, and asserting the
- * `translateElement` emit carries the right (id, dx, dy).
- *
- * Companion spec `workspacesStoreTranslateResize.spec.ts` covers
- * step 4 at the store layer.
- */
+/** Behavioural tests for the SINGLE-element drag wire. Plan:
+ * docs/superpowers/plans/2026-08-06-split-move-resize.md The wire is: 1. User pointerdown on a
+ * single (non-group) element body. 2. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -98,7 +79,6 @@ describe('DesignView single-element drag → translate emit', () => {
 
       // 2. simulate the pointermove + pointerup that DesignElement's
       // `startDrag` registers on the element's addEventListener.
-       
       let moveHandler: ((e: PointerEvent) => void) | null = null
       let upHandler: ((e: PointerEvent) => void) | null = null
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -136,20 +116,9 @@ describe('DesignView single-element drag → translate emit', () => {
     }
   })
 
-  /**
-   * REGRESSION (2026-08-06, design-mode-cannot-move bug): the
-   * single-element drag wire previously bailed with
-   * `selectedIds.value.size !== 1` — if the user had a stale multi-
-   * select from earlier (e.g. multi-clicked to deselect, or never
-   * reset), the drag silently no-op'd. The wire was rewired to trust
-   * the `elementId` carried in the `translate` event instead of
-   * fishing it out of `selectedIds`. This test pins the new contract.
-   *
-   * Scenario: element is dragged after `selectedIds` was wiped (size
-   * 0). The drag still fires the `translateElement` emit because the
-   * source emits `translate` with `{ elementId, dx, dy }` (the
-   * post-#162 fix).
-   */
+  /** REGRESSION (2026-08-06, design-mode-cannot-move bug): the single-element drag wire previously
+   * bailed with `selectedIds.value.size !== 1` — if the user had a stale multi- select from earlier
+   * (e.g. multi-clicked to deselect, or never reset), the drag silently no-op'd. */
   it('sends translate emit even when selectedIds is empty (drag source carries elementId)', async () => {
     const _store = useWorkspacesStore()
     _store.setActiveDesignPage('page_1')
@@ -224,12 +193,7 @@ describe('DesignView single-element drag → translate emit', () => {
 
   /** Regression: the OLD wire bailed when selectedIds had 2+ elements (the old assumption was
    * "single-element drag ⇒ exactly one selected"); the NEW wire still fires because the `translate`
-   * event carries the elementId directly. The drag SOURCE is the // eslint-disable-next-line
-   * @typescript-eslint/no-explicit-any */
-
-  /**
-   * drag source — not the selection set. /
-   */
+   * event carries the elementId directly. */
   it('still fires translate when selectedIds has multiple ids (drag source carries elementId)', async () => {
     const _store = useWorkspacesStore()
     _store.setActiveDesignPage('page_1')

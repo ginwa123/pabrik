@@ -1,21 +1,4 @@
-/**
- * Behavioural tests for the top-left "New Chat" action (task_1790528102260_4).
- *
- * Requirement: one click in the top-left of the sidebar creates a chat
- * session inside the active workspace's DEFAULT project — an agent-mode
- * workspace item whose `path` is the server user's home directory
- * (Migration 094) — and navigates to it. No project is ever asked for,
- * because a workspace always has a default and a miss creates one.
- *
- * The cases below cover the three things that can silently go wrong:
- *   1. it creates the chat in the DEFAULT project, not the selected one;
- *   2. the fast path costs no network round trip (D12), and the cold path
- *      (list predating the migration) does make one;
- *   3. the guards: no workspace, double click, and a failed ensure.
- *
- * Modelled on `Sidebar.agentDirectChat.spec.ts`, which covers the same
- * `createAndOpenStandardChat` helper from the per-project `+` button.
- */
+/** Behavioural tests for the top-left "New Chat" action (task_1790528102260_4). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, createApp } from 'vue'

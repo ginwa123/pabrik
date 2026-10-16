@@ -1,22 +1,4 @@
-/**
- * Regression tests for the WorktreeMenu dropdown component.
- *
- * The menu shows different actions based on the `hasWorktree` prop:
- *
- * - `hasWorktree=true`  → "Create a PR", "View in folder", "Clear worktree"
- *   (all three currently DISABLED via frontend-only)
- * - `hasWorktree=false` → "Open in folder" (disabled), "Refresh status"
- *
- * Disabled items stay in the DOM with the `disabled` attribute so the
- * layout is preserved, but they must NOT emit their action event.
- *
- * Guards:
- *   - All worktree-bound menu items render with the correct `data-testid`s
- *   - All no-worktree menu items render with the correct `data-testid`s
- *   - Disabled items carry the `disabled` attribute and emit nothing on click
- *   - Clicking outside the menu (anywhere not inside `menuRef`)
- *     emits `close` so the parent can collapse the dropdown
- */
+/** Regression tests for the WorktreeMenu dropdown component. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 

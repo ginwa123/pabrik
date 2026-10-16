@@ -1,25 +1,5 @@
-/**
- * P1 performance wiring tests for VirtualScroller.vue
- * (task_1787551495337_9, "make virtual scroller more smooth").
- *
- * What P1 changes, and what each test pins:
- *
- *   1. Scroll pipeline — a burst of scroll events collapses to ONE range
- *      recompute per scheduler flush (Vue's async render queue), and the
- *      @scroll emit stays synchronous per event.
- *
- *   2. Batched height writes — measureItems() must collect all height
- *      writes and apply them with ONE accumulatedHeights rebuild per
- *      pass (not one rebuild per item). Test: N children change height,
- *      assert the end state settles correctly after the batch flushes.
- *
- *   3. Adaptive defaultItemHeight — unmeasured items are estimated from
- *      the running median of measured heights instead of the static
- *      `defaultItemHeight` prop. Test: mount with defaultItemHeight=64,
- *      let tall items (~300px) get measured, then verify an UNMEASURED
- *      far-away item is estimated at ~300px (visible via spacer math),
- *      not 64px.
- */
+/** P1 performance wiring tests for VirtualScroller.vue (task_1787551495337_9, "make virtual
+ * scroller more smooth"). What P1 changes, and what each test pins: 1. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -70,7 +50,6 @@ function getVm(wrapper: ReturnType<typeof mount>) {
 }
 
 // ─── 1. Scroll pipeline coalescing ───────────────────────────────────────────
-
 describe('VirtualScroller scroll pipeline', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -80,11 +59,9 @@ describe('VirtualScroller scroll pipeline', () => {
   })
 
   it('collapses a burst of scroll events into ONE range recompute per flush', async () => {
-    // Vue's async render queue is the coalescer: N scroll events between
-    // two scheduler flushes mutate scrollTop.value N times (cheap ref
-    // writes with equality checks) but trigger exactly ONE component
-    // re-render and ONE visibleRange evaluation. This test pins the
-    // end state after the burst settles.
+    // Vue's async render queue is the coalescer: N scroll events between two scheduler flushes
+    // mutate scrollTop.value N times (cheap ref writes with equality checks) but trigger exactly
+    // ONE component re-render and ONE visibleRange evaluation.
     const { wrapper, el } = mountScroller({ items: makeItems(100), buffer: 5 })
     await nextTick()
 
@@ -117,7 +94,6 @@ describe('VirtualScroller scroll pipeline', () => {
 })
 
 // ─── 2. Batched height writes ────────────────────────────────────────────────
-
 describe('VirtualScroller batched height measurement', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -145,11 +121,9 @@ describe('VirtualScroller batched height measurement', () => {
       Object.defineProperty(child, 'offsetHeight', { value: 300, configurable: true })
     }
 
-    // Spy on the internal rebuild by watching the exposed scrollInfo
-    // totalItems stability — instead, count rebuilds indirectly: the
-    // deep watch on itemHeights debounces 50ms; a batched write means
-    // ONE debounce timer covers the whole batch and ONE rebuild runs.
-    // We detect "rebuild ran" via renderedCount settling.
+    // Spy on the internal rebuild by watching the exposed scrollInfo totalItems stability —
+    // instead, count rebuilds indirectly: the deep watch on itemHeights debounces 50ms; a batched
+    // write means ONE debounce timer covers the whole batch and ONE rebuild runs.
     el.scrollTop = 0
     el.dispatchEvent(new Event('scroll'))
 
@@ -159,11 +133,7 @@ describe('VirtualScroller batched height measurement', () => {
     await vi.advanceTimersByTimeAsync(120)
     await nextTick()
 
-    // All measured heights landed: renderedCount stays consistent and
-    // no errors were thrown. The batching contract itself (one Map
-    // mutation batch → one rebuild) is enforced structurally by the
-    // implementation using a pending-batch array; this test pins that
-    // the end state is correct after a multi-item measurement burst.
+    // All measured heights landed: renderedCount stays consistent and no errors were thrown.
     const vm = getVm(wrapper)
     expect(vm.renderedCount).toBeGreaterThan(0)
 
@@ -177,7 +147,6 @@ describe('VirtualScroller batched height measurement', () => {
 })
 
 // ─── 3. Adaptive defaultItemHeight ───────────────────────────────────────────
-
 describe('VirtualScroller adaptive item-height estimation', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -187,12 +156,8 @@ describe('VirtualScroller adaptive item-height estimation', () => {
   })
 
   it('estimates unmeasured items from the running median of measured heights', async () => {
-    // 200 items at defaultItemHeight=64. Scroll to the middle so items
-    // around index ~90-110 render, mock them all to 300px real height,
-    // flush measurement. Then check the BOTTOM spacer: with adaptive
-    // estimation, unmeasured items below estimate at ~300px (median),
-    // NOT 64px — so bottomSpacer must be much larger than the static
-    // 64px-based estimate would give.
+    // 200 items at defaultItemHeight=64. Scroll to the middle so items around index ~90-110 render,
+    // mock them all to 300px real height, flush measurement.
     const items = makeItems(200)
     const { wrapper, el } = mountScroller({
       items,
@@ -227,15 +192,9 @@ describe('VirtualScroller adaptive item-height estimation', () => {
     expect(events).toBeTruthy()
     const last = events![events!.length - 1]![0]
 
-    // 2026-09-06 (task_1788648119245_5): ALL unmeasured items estimate
-    // at the adaptive median (~300px, clamped to [32,1600]), NOT the
-    // static 64px prop — the 64px fallback collapsed the model total to
-    // less than half the real height with 100+ messages (audit T2).
-    // Median overshoot is safe now: stick-to-bottom targets the real DOM
-    // bottom (not scrollHeight) and the sizer is scroll-independent, so
-    // it cannot feed a bounce. Static-64 would give at most 200*64 =
-    // 12800; median-300 gives ~50700 here ((200-31)*300 after the window
-    // re-settles on taller estimates).
+    // 2026-09-06 (task_1788648119245_5): ALL unmeasured items estimate at the adaptive median
+    // (~300px, clamped to [32,1600]), NOT the static 64px prop — the 64px fallback collapsed the
+    // model total to less than half the real height with 100+ messages (audit T2).
     expect(last.bottomSpacer).toBeGreaterThan(30000)
     expect(last.bottomSpacer).toBeLessThan(60000)
     wrapper.unmount()
@@ -250,11 +209,8 @@ describe('VirtualScroller adaptive item-height estimation', () => {
     })
     await nextTick()
 
-    // No measurements have run (no scroll, jsdom offsetHeight=0 filtered).
-    // Bottom spacer must reflect the raw prop. Geometry: containerHeight
-    // is 0 until the first scroll event syncs it (jsdom has no layout),
-    // so visibleRange sees viewBottom=scrollTop+0 → only buffer items
-    // render: start=0, end=2 → bottom=(50-2)*64=3072.
+    // No measurements have run (no scroll, jsdom offsetHeight=0 filtered). Bottom spacer must
+    // reflect the raw prop.
     const events = wrapper.emitted<[shift: { topSpacer: number; bottomSpacer: number; total: number }]>(
       'contentShift',
     )

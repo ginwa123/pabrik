@@ -1,15 +1,5 @@
-/**
- * ChatView V1 composer toolbar — static contract (mirrors the
- * DiffCommentBox.spec.ts source-reading pattern; mounting the full
- * ChatView needs the profileCascade harness).
- *
- * Guards the restyle invariants:
- * - the status row is projected into FileInput's `#toolbar` slot (single
- *   card — no more detached `mt-3` status row),
- * - all interactive hooks survive (`data-testid`s, titles, dropdowns),
- * - the branch label truncates, tokens are display-only muted status,
- * - no emoji icons remain in the toolbar (SVG / text only).
- */
+/** ChatView V1 composer toolbar — static contract (mirrors the DiffCommentBox.spec.ts
+ * source-reading pattern; mounting the full ChatView needs the profileCascade harness). */
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'

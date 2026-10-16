@@ -1,17 +1,5 @@
-/**
- * Code color in the diff review.
- *
- * `SidebarDiffView` used to render every code line through
- * `v-html="escapeDiffHtml(line.content)"` — escaped, but monochrome. These
- * tests assert the behaviour that replaced it: every rendered line is
- * split into `tok-*` spans by the shared highlighter, in BOTH the unified
- * and the split render, while the row background stays the source of truth
- * for added/removed.
- *
- * The plaintext case is asserted too, because that is the contract that
- * makes this change safe: an unknown extension must render exactly as it
- * did before (one `tok-plain` span per line, no color).
- */
+/** Code color in the diff review. `SidebarDiffView` used to render every code line through
+ * `v-html="escapeDiffHtml(line.content)"` — escaped, but monochrome. */
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import SidebarDiffView from '../chat_right_sidebar/SidebarDiffView.vue'
@@ -67,10 +55,9 @@ describe('SidebarDiffView — code color (unified)', () => {
 
   it('keeps the +/− change sign glued to the code it marks', () => {
     const wrapper = mountView()
-    // The sign is its own span and the code is now one span per token, so
-    // this also pins the whitespace contract: a newline/indent between the
-    // two inline spans must NOT reach the rendered line (Vue's condensed
-    // whitespace drops it), or every diff row would gain a stray space.
+    // The sign is its own span and the code is now one span per token, so this also pins the
+    // whitespace contract: a newline/indent between the two inline spans must NOT reach the
+    // rendered line (Vue's condensed whitespace drops it), or every diff row would gain a stray.
     expect(wrapper.text()).toContain('+const added = 3')
     expect(wrapper.text()).toContain('−const gone = 2')
   })

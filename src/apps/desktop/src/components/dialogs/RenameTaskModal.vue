@@ -5,12 +5,9 @@ const props = withDefaults(
   defineProps<{
     show: boolean
     currentName: string
-    /** Dialog heading / field label / input placeholder. The defaults say
-     * "Task" because the kanban card was the first caller, but the same
-     * modal is reused by the sidebar chat-row context menu, where "Rename
-     * Task" would name a concept the user is not looking at. Overridable
-     * rather than forked so the confirm/cancel/keyboard behaviour stays
-     * in one place. */
+    /** Dialog heading / field label / input placeholder. The defaults say "Task" because the kanban
+     * card was the first caller, but the same modal is reused by the sidebar chat-row context menu,
+     * where "Rename Task" would name a concept the user is not looking at. */
     heading?: string
     label?: string
     placeholder?: string

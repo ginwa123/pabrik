@@ -1,39 +1,5 @@
-/**
- * Tests for AppLayout's URL sync watcher behavior when handleSelectTask
- * is invoked from Sidebar.vue.
- *
- * Bug (user report, task_1785959660154): "select task not show up"
- * Symptom: clicking a task in the sidebar doesn't navigate to the
- * task view. URL stays at `?view=workspace&workspaceId=X&itemId=Y`
- * instead of becoming `?view=task&task=Z&workspaceId=X&itemId=Y`.
- *
- * Root cause: setActiveTask(taskId) mutates activeWorkspaceItemId
- * (it auto-discovers the parent item of the task). The URL sync
- * watcher at AppLayout.vue:241 watches
- * `[activeWorkspaceItemId, activeDesignPageId]` and calls
- * `router.replace({ view: 'workspace', ... })` to keep the URL in
- * sync with the store. The watcher fires on the next microtask
- * AFTER setActiveTask synchronously mutates the store — but
- * BEFORE `router.push({ view: 'task', ... })` from
- * handleSelectTask has applied the URL change. So:
- *   1. setActiveTask mutates activeWorkspaceItemId (different value).
- *   2. Watcher fires → reads stale `route.query.view === 'workspace'`
- *      → guard `if (currentView !== 'workspace' && currentView !== undefined) return`
- *      does NOT return early → watcher calls router.replace with
- *      view=workspace.
- *   3. handleSelectTask's `router.push({ view: 'task', ... })`
- *      is queued AFTER step 2's replace — the replace wins.
- *
- * The user clicks the task → URL stays at view=workspace → main
- * content area shows the workspace view (folder/kanban) instead of
- * the task view. Task never shows up.
- *
- * This test reproduces the bug by mounting AppLayout, then calling
- * setActiveTask + simulating the router.push, and asserting that
- * the URL sync watcher did NOT clobber the URL.
- *
- * Plan: docs/superpowers/plans/2026-08-06-fix-task-url-overwrite.md
- */
+/** Tests for AppLayout's URL sync watcher behavior when handleSelectTask is invoked from
+ * Sidebar.vue. Plan: docs/superpowers/plans/2026-08-06-fix-task-url-overwrite.md */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick } from 'vue'
@@ -184,13 +150,8 @@ describe('AppLayout — handleSelectTask does not get its URL overwritten by the
       has_more: false,
       next_cursor: null,
     })
-    // Mock getSystemFolder so AppLayout's initializeFromSystemFolder
-    // path (which runs on mount) doesn't hit the stubbed 404 fetch
-    // and surface as an unhandled rejection. Without this mock,
-    // `api.getSystemFolder()` throws `ApiError: HTTP 404` from the
-    // global fetch stub (see setup.ts) because no other code path
-    // catches the rejection. The test doesn't exercise the folder
-    // picker, so a minimal empty response is sufficient.
+    // Mock getSystemFolder so AppLayout's initializeFromSystemFolder path (which runs on mount)
+    // doesn't hit the stubbed 404 fetch and surface as an unhandled rejection.
     vi.spyOn(api, 'getSystemFolder').mockResolvedValue({
       path: '/',
       absolute: '/',
@@ -234,12 +195,8 @@ describe('AppLayout — handleSelectTask does not get its URL overwritten by the
     replaceMock.mockClear()
     pushMock.mockClear()
 
-    // Simulate handleSelectTask: setActiveTask(taskId) + router.push.
-    // setActiveTask auto-discovers the parent item (folder) and sets
-    // activeWorkspaceItemId = folder.id. In this case the value is
-    // the SAME as the existing value, so the ref should not trigger
-    // and the watcher should NOT fire. This is the regression-free
-    // path.
+    // Simulate handleSelectTask: setActiveTask(taskId) + router.push. setActiveTask auto-discovers
+    // the parent item (folder) and sets activeWorkspaceItemId = folder.id.
     ws.setActiveTask(TASK_ID)
     // Simulate handleSelectTask's router.push (the URL it would push
     // is built by buildTaskUrlQuery; here we mimic the new wire
@@ -255,10 +212,8 @@ describe('AppLayout — handleSelectTask does not get its URL overwritten by the
     await nextTick()
     await nextTick()
 
-    // The URL sync watcher must NOT have called replace that would
-     
-    // clobber the chat suffix. (view=workspace writes are still
-    // expected — the watcher's chat-suffix guard ensures itemId
+    // The URL sync watcher must NOT have called replace that would clobber the chat suffix.
+    // (view=workspace writes are still expected — the watcher's chat-suffix guard ensures itemId
     // stays in the /chat/<taskId> form.)
     const replaceCallsWithBareItemId = replaceMock.mock.calls.filter(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -279,13 +234,8 @@ describe('AppLayout — handleSelectTask does not get its URL overwritten by the
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     useRouterMock.mockReturnValue({ replace: replaceMock, push: pushMock } as any)
 
-    // Start on view=workspace showing a DIFFERENT workspace item
-    // (item A). The folder (item B) is expanded in the sidebar but
-    // NOT yet the active item. The user clicks the task under the
-    // folder. setActiveTask will set activeWorkspaceItemId from A
-    // to B — THIS IS the change that triggers the URL sync
-     
-    // watcher.
+    // Start on view=workspace showing a DIFFERENT workspace item (item A). The folder (item B) is
+    // expanded in the sidebar but NOT yet the active item.
     const OTHER_ID = 'item_other'
     useRouteMock.mockReturnValue({
       query: { view: 'workspace', workspaceId: WS_ID, itemId: OTHER_ID },
@@ -354,13 +304,8 @@ describe('AppLayout — handleSelectTask does not get its URL overwritten by the
     replaceMock.mockClear()
     pushMock.mockClear()
 
-    // User clicks `llls` under the folder. setActiveTask will
-    // mutate activeWorkspaceItemId from OTHER_ID to FOLDER_ID —
-    // a real change. Mimic Sidebar's flag flip in
-    // handleSelectTask (task-url-overwrite fix, 2026-08-06): the
-    // navigation flag is set BEFORE setActiveTask and cleared
-    // AFTER router.push. The AppLayout URL sync watcher returns
-    // early while the flag is true.
+    // User clicks `llls` under the folder. setActiveTask will mutate activeWorkspaceItemId from
+    // OTHER_ID to FOLDER_ID — a real change.
     ws.isNavigatingToTask = true
     ws.setActiveTask(TASK_ID)
     pushMock({

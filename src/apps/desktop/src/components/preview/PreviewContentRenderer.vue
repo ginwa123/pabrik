@@ -98,14 +98,9 @@ onUnmounted(() => {
   }
 })
 
-// ─── Auto-resize script (prepended to the iframe srcdoc) ────────────
-//
-// The reporter script and its postMessage parser live in
-// helpers/iframeAutoResize.ts — shared with ChatView.vue's `<html>`
-// frames. Same security contract as before: the sandboxed (NULL-origin)
-// frame only reports its own scrollHeight/scrollWidth; the parent only
-// writes a clamped iframe.style.height.
-
+// ─── Auto-resize script (prepended to the iframe srcdoc) ──────────── The reporter script and its
+// postMessage parser live in helpers/iframeAutoResize.ts — shared with ChatView.vue's `<html>`
+// frames.
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
@@ -151,24 +146,8 @@ const imageSrc = computed<string | null>(() => {
   return null
 })
 
-/**
- * Build the iframe's `srcdoc` value from the user HTML.
- *
- * CRITICAL: do NOT manually escape `<`, `>`, `&`, `"` here. The browser's
- * `setAttribute('srcdoc', value)` path automatically encodes those four
- * characters for the attribute value, then the iframe's own parser
- * decodes them back when loading the document. Manually escaping here
- * produces DOUBLE-escaped HTML.
- *
- * Vue's reactive `:srcdoc` binding calls setAttribute for us.
- *
- * Also wraps the HTML in:
- *   1. A tiny `<style>` reset so the preview doesn't get a default-
- *      margin surprise from the browser body.
- *   2. The AUTO_RESIZE_SCRIPT (prepended BEFORE the user's HTML) which
- *      sets up the postMessage protocol that makes the iframe auto-size
- *      to fit its content height. Follows the sandboxed-iframe pattern.
- */
+/** Build the iframe's `srcdoc` value from the user HTML. CRITICAL: do NOT manually escape `<`, `>`,
+ * `&`, `"` here. */
 const htmlSrcDoc = computed<string | null>(() => {
   if (props.contentType !== 'html') return null
   const raw = props.args.content ?? ''

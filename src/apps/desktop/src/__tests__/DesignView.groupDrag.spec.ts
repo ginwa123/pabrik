@@ -1,9 +1,4 @@
-/** Behavioural tests for the group-drag move-batch wire.
- * Plan: docs/superpowers/plans/2026-08-06-move-element-with-descendants.md
- * (Chunk 4, Task 4.3)
- * The drag path now uses `moveDesignElementsBatch` (server-side
- * cascade) instead of `updateDesignElementsGeometryBatch` (frontend
- * expansion + N x/y pairs). The tests below exercise the new wire. */
+/** Behavioural tests for the group-drag move-batch wire. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -46,11 +41,13 @@ const ITEM = {
   design_elements: [],
   workspace_id: 'ws_1',
  
+//
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 } as any
 
  
 
+//
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function makeEl(overrides: Record<string, unknown> = {}): any {
   return {
@@ -84,6 +81,7 @@ function makeEl(overrides: Record<string, unknown> = {}): any {
  
 
 describe('DesignView group drag — move-batch (server-side cascade)', () => {
+  //
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let moveSpy: any
 
@@ -122,9 +120,11 @@ describe('DesignView group drag — move-batch (server-side cascade)', () => {
 
      
     // Simulate a 5-element multi-selection by setting selectedIds on the VM.
+    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(wrapper.vm as any).selectedIds = new Set(['el_1', 'el_2', 'el_3', 'el_4', 'el_5'])
 
+    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(wrapper.vm as any).handleGroupDrag({ dx: 10, dy: 20 })
     await flushPromises()
@@ -153,9 +153,11 @@ describe('DesignView group drag — move-batch (server-side cascade)', () => {
       props: { item: { ...ITEM, design_elements: elements }, workspaceId: 'ws_1', itemId: 'item_1' },
     })
     await flushPromises()
+    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(wrapper.vm as any).selectedIds = new Set(['el_1', 'el_2', 'el_3'])
 
+    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(wrapper.vm as any).handleGroupDrag({ dx: 10, dy: 20 })
     await flushPromises()
@@ -166,8 +168,8 @@ describe('DesignView group drag — move-batch (server-side cascade)', () => {
     expect(singleSpy).not.toHaveBeenCalled()
 
     // Wire shape: ONE item per selected element, each carrying the cursor delta (rounded). Backend
-    // cascades the delta to descendants via the recursive CTE. eslint-disable-next-line
-    // @typescript-eslint/no-explicit-any
+    // cascades the delta to descendants via the recursive CTE.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const callArgs = moveSpy.mock.calls[0] as any[]
     const items = callArgs[3] as Array<{ element_id: string; dx: number; dy: number }>
     expect(items.length).toBe(3)
@@ -192,14 +194,17 @@ describe('DesignView group drag — move-batch (server-side cascade)', () => {
      
     })
     await flushPromises()
+    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(wrapper.vm as any).selectedIds = new Set(['el_1'])
 
+    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(wrapper.vm as any).handleGroupDrag({ dx: 5, dy: 0 })
     await flushPromises()
 
     expect(moveSpy).toHaveBeenCalledTimes(1)
+    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const items = (moveSpy.mock.calls[0] as any)[3] as Array<{ element_id: string; dx: number; dy: number }>
     expect(items.length).toBe(1)

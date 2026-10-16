@@ -1,5 +1,4 @@
 /** Pure scrollbar math for ChatScrollSlider — no DOM reads, unit-testable. */
-
 /** Minimum thumb height as % of track so long chats stay grabbable. */
 export const MIN_THUMB_PCT = 8
 

@@ -1,21 +1,5 @@
-/**
- * Tests for AppLayout's URL → activeWorkspaceItemId persistence on
- * page reload. Before this feature, the URL `?view=workspace` was
- * preserved on reload but the active kanban/folder/design item was
- * lost (the in-memory `activeWorkspaceItemId` reset to null on every
- * page refresh). This file pins:
- *
- *   1. Sidebar's handleSelectItem emits `navigate` with
- *      (workspaceId, itemId) so the parent can mirror them into URL
- *   2. AppLayout's handleNavigate('workspace', ..., wsId, itemId)
- *      pushes the workspaceId + itemId query params alongside view
- *   3. On mount, AppLayout reads (workspaceId, itemId) from URL and
- *      restores activeWorkspaceItemId once the workspaces list loads
- *   4. A stale URL (item no longer exists) does not crash — the
- *      kanban-empty state is shown and the pending restore clears.
- *
- * Plan: feature "url browser kanban" (workspace kanban URL persistence).
- */
+/** Tests for AppLayout's URL → activeWorkspaceItemId persistence on page reload. Plan: feature "url
+ * browser kanban" (workspace kanban URL persistence). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick } from 'vue'
@@ -377,10 +361,8 @@ describe('AppLayout — design item URL persistence (Chunk 3 of design-url-persi
   })
 
   it('activeWorkspaceItem → URL watcher does NOT overwrite the URL when the chat suffix is present', async () => {
-    // SIMPLIFY-URL-BROWSER (2026-08-15): the legacy view=task shape
-
-    // is gone. The chat-open state is encoded as /chat/<taskId> on
-    // itemId while view=workspace. The watcher's chat-suffix guard
+    // SIMPLIFY-URL-BROWSER (2026-08-15): the legacy view=task shape is gone. The chat-open state is
+    // encoded as /chat/<taskId> on itemId while view=workspace. The watcher's chat-suffix guard
     // MUST preserve the suffix on every write.
     const replaceMock = vi.fn()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -407,19 +389,9 @@ describe('AppLayout — design item URL persistence (Chunk 3 of design-url-persi
     wrapper.unmount()
   })
 
-  // FIX (chatview-bug, task_1785726648589): when the user navigates
-  // from a design item to a kanban (or folder), the store's
-  // `activeDesignPageId` is NOT reset by `setActiveWorkspaceItem` —
-  // it stays whatever the design's active page was. The URL
-  // watcher reads `[activeWorkspaceItemId, activeDesignPageId]` and
-  // writes the URL based on both. Pre-fix, the watcher included
-  // `pageId` in the URL purely because `activeDesignPageId` was
-  // truthy, without checking whether the new active item is a
-  // design. The URL ended up as
-  // `?view=workspace&itemId=KANBAN_ID&pageId=DESIGN_PAGE_ID` —
-  // stale, and a reload would try to restore the design page
-  // against a kanban that doesn't have pages. The fix: only
-  // include `pageId` in the URL when the active item is a design.
+  // FIX (chatview-bug, task_1785726648589): when the user navigates from a design item to a kanban
+  // (or folder), the store's `activeDesignPageId` is NOT reset by `setActiveWorkspaceItem` — it
+  // stays whatever the design's active page was.
   it('activeWorkspaceItem → URL watcher does NOT leak stale pageId when switching from design to kanban', async () => {
     const replaceMock = vi.fn()
 
@@ -718,15 +690,9 @@ describe('AppLayout — design item URL persistence (Chunk 3 of design-url-persi
     wrapper.unmount()
   })
 
-  // ─── add-workspace-id-params plan (2026-08-06) ──────────────────
-  //
-
-  // When the user closes a git/skill/code-editor viewer while a
-  // task is active (e.g. they opened a viewer from the chat
-  // panel of a kanban task), the new URL must include workspaceId
-  // + itemId + pageId so the kanban / design context survives the
-  // navigation. Pre-fix these branches wrote `?view=task&task=X`
-  // only, dropping the breadcrumb.
+  // ─── add-workspace-id-params plan (2026-08-06) ────────────────── When the user closes a
+  // git/skill/code-editor viewer while a task is active (e.g. they opened a viewer from the chat
+  // panel of a kanban task), the new URL must include workspaceId + itemId + pageId so the kanban.
   it('closeGitViewer includes workspaceId + itemId when the active task belongs to a kanban (add-workspace-id-params)', async () => {
     const replaceMock = vi.fn()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1197,12 +1163,9 @@ describe('AppLayout — readable code-editor URLs (keep-append)', () => {
 })
 
 describe('AppLayout — code viewer surface (the right sidebar must survive)', () => {
-  // Regression: opening a file from the right-sidebar Explorer replaced
-  // the WHOLE <main> with the viewer overlay, so ChatView — which owns
-  // that sidebar, the header and the composer — was never mounted and
-  // the sidebar (plus its composer underneath) vanished.
-  // The viewer now renders inside ChatView; the overlay is a fallback
-  // for contexts with no chat on screen.
+  // Regression: opening a file from the right-sidebar Explorer replaced the WHOLE <main> with the
+  // viewer overlay, so ChatView — which owns that sidebar, the header and the composer — was never
+  // mounted and the sidebar (plus its composer underneath) vanished.
   beforeEach(() => {
     setActivePinia(createPinia())
     installBusForTests()

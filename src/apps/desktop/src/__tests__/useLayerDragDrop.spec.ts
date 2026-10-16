@@ -1,22 +1,12 @@
-/**
- * Behavioural tests for `useLayerDragDrop` composable — the pure
- * state machine that backs the LayersPanel drag affordance.
- *
- * Multi-drag semantics: when the dragged row is in `selectedIds`,
- * the WHOLE selection is dragged together (per D4 of the plan).
- * Per-element cycle preflight rejects target rows that are
- * themselves OR a descendant of any dragged element.
- *
- * Plan: docs/superpowers/plans/2026-07-30-design-layer-drag-join-or-leave-group.md
- * (Chunk 3 Task 3.1)
- */
+/** Behavioural tests for `useLayerDragDrop` composable — the pure state machine that backs the
+ * LayersPanel drag affordance. Multi-drag semantics: when the dragged row is in `selectedIds`, the
+ * WHOLE selection is dragged together (per D4 of the plan). */
 import { describe, expect, it } from 'vitest'
 
 import { useLayerDragDrop, TOP_LEVEL_SENTINEL } from '../composables/useLayerDragDrop'
 import type { DesignElement } from '../api'
 
 // ─── Fixtures ──────────────────────────────────────────────────────────────
-
 function makeElement(
   id: string,
   type: 'rectangle' | 'frame' | 'group' | 'text' | 'image' | 'ellipse',
@@ -58,7 +48,6 @@ const STANDARD_ELEMENTS = () => [
 ]
 
 // ─── Tests ────────────────────────────────────────────────────────────────
-
 describe('useLayerDragDrop — single-element drag', () => {
   it('onDragStart with empty selection records the dragged element id', () => {
     const { handlers, state } = useLayerDragDrop({

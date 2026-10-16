@@ -59,7 +59,6 @@ describe('useDesignHandlers', () => {
   })
 
   // ─── Chunk 9 — ungroupSelection ──────────────────────────────────────
-
   it('ungroupSelection routes to workspacesStore.ungroupDesignElements', async () => {
     const selectedIds = ref(new Set<string>(['el_g']))
     const { ungroupSelection } = useDesignHandlers({

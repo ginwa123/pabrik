@@ -1,8 +1,5 @@
-/** Tests for toolOutputParser.ts — typed JSON parsers used by tool-output components.
- * Each parser takes the envelope `data` payload as an object and handles
- * missing fields gracefully. These tests verify the type contracts and edge
- * cases (empty content, missing required fields, multiline values, special
- * chars, both success/error branches). */
+/** Tests for toolOutputParser.ts — typed JSON parsers used by tool-output components. Each parser
+ * takes the envelope `data` payload as an object and handles missing fields gracefully. */
 import { describe, expect, it } from 'vitest'
 import {
   extractBool,
@@ -54,13 +51,7 @@ describe('extractTag', () => {
     )
   })
   it('decodes XML entities in inner text (&lt;, &gt;, &quot;, &apos;, &amp;)', () => {
-    // The backend's `toXmlSuccess` / `xmlError` helpers escape these 5
-    // characters on serialization. Without un-escaping, downstream
-    // consumers (Vue templates, code-block renderers) would display
-    // `&quot;` literally instead of `"` when the underlying text
-    // contained those characters (e.g. a quote inside a source-code
-    // diff). This test pins the un-escape contract so the
-    // `&quot;`-instead-of-`"` rendering bug doesn't regress.
+    // The backend's `toXmlSuccess` / `xmlError` helpers escape these 5 characters on serialization.
     expect(
       extractTag('<before>const x = &quot;hello &amp; world &lt;3&quot;;</before>', 'before'),
     ).toBe('const x = "hello & world <3";')
@@ -68,11 +59,9 @@ describe('extractTag', () => {
     expect(extractTag('<a>it&apos;s fine</a>', 'a')).toBe("it's fine")
   })
   it('decodes &amp; LAST to avoid double-decoding (e.g. &amp;quot; → &quot; not ")', () => {
-    // `&amp;quot;` is a 6-byte sequence meaning "the literal entity
-    // &quot;". If we decoded `&amp;` first, we'd incorrectly produce
-    // `"` (because `&amp;quot;` → `&quot;` → `"` after both passes).
-    // The correct decode is: `&amp;quot;` → `&quot;` (the literal 6
-    // chars representing the entity). Order of regex passes matters.
+    // `&amp;quot;` is a 6-byte sequence meaning "the literal entity &quot;". If we decoded `&amp;`
+    // first, we'd incorrectly produce `"` (because `&amp;quot;` → `&quot;` → `"` after both
+    // passes).
     expect(extractTag('<a>&amp;quot;</a>', 'a')).toBe('&quot;')
     expect(extractTag('<a>&amp;amp;</a>', 'a')).toBe('&amp;')
   })
@@ -614,12 +603,6 @@ describe('parseMetadata', () => {
 })
 
 // 2026-08-14 — list_directory tool output (companion to ReadFile/Search/Glob).
-// Wire shape (from src/modules/agent/tools/list_directory.zig):
-//
-//   {"path":"/foo/bar","count":3,"entries":[
-//     {"name":"src","path":"/foo/bar/src","is_directory":true,"is_symlink":false},
-//     {"name":"main.zig","path":"/foo/bar/main.zig","is_directory":false,"is_symlink":false}
-//   ]}
 describe('parseListDirectory', () => {
   it('parses a success envelope with directories + files', () => {
     const r = parseListDirectory({

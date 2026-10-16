@@ -1,39 +1,6 @@
-/**
- * ChatView's cached mount: what is on screen while the REMOTE half of the
- * transcript load is still in flight.
- *
- * Contract under test (ChatView.vue, `runHistoryLoadAttempt`):
- *
- *   - The load has two halves. The cache prime (`chatEngineDb.primeFromCache`,
- *     IndexedDB) is fast; the network half (`chatEngineDb.loadDelta` on a cache
- *     hit, `api.fetchChatHistoryEffect` on a cache miss) is slow — bound by
- *     `INITIAL_HISTORY_TIMEOUT_MS` (45 s) plus a retry schedule.
- *   - `isLoading` is cleared the instant the cached rows paint, so it cannot
- *     answer "is the transcript known yet". `isInitializing` is the readgate —
- *     the skeleton is up while the remote half is outstanding AND nothing
- *     renderable has painted.
- *   - So: a cached mount whose rows render shows the CACHED TRANSCRIPT with no
- *     skeleton (that is the point of painting the cache); a cold mount, and a
- *     cached mount whose rows do not render, keep the skeleton until the
- *     remote answer lands.
- *   - A cache that painted nothing renderable must NOT confirm an empty
- *     transcript — it falls through to the authoritative full page instead.
- *
- * ⛔ WHY THIS FILE USES `vi.mock` MODULE FACTORIES, NOT `vi.spyOn`
- *
- * Two seams, both hoisted-or-nothing (see the long note in
- * `ChatView.streamingStick.spec.ts`):
- *   1. `chatEngineDb` (`sync/ChatEngineDb.ts`) drives the cache prime and the
- *      delta. `ChatEngineDb`'s constructor default is bound ONCE at module
- *      load, and that default is not a method the component ever rebinds — a
- *      late `vi.spyOn` reaches neither the prime nor the delta.
- *   2. `api.fetchChatHistoryEffect(...)` is called DIRECTLY by ChatView for the
- *      authoritative network page.
- * `vi.mock` is hoisted above the module graph, so both are the only seams that
- * work. A `vi.spyOn` here would leave the real network call in place, the retry
- * loop would hold `isLoading`, and every test would pass while asserting
- * nothing.
- */
+/** ChatView's cached mount: what is on screen while the REMOTE half of the transcript load is still
+ * in flight. Contract under test (ChatView.vue, `runHistoryLoadAttempt`): - The load has two
+ * halves. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'

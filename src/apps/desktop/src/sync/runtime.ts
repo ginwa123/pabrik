@@ -1,23 +1,6 @@
-/**
- * The Effect seam for the sync slice.
- *
- * Two things live here:
- *
- *  1. `syncStoreLayer` — the local cache as a `Layer`, for code that composes
- *     a whole Effect program and wants the service in context.
- *  2. `runSyncEffect*` — the Effect seam for Vue `<script setup>` callers.
- *     The engines return `Effect`s; the components consuming them are
- *     ordinary script blocks. Effect's rule is that you never `await`
- *     without a plan for the failure, and the plan for a local-first cache
- *     is "degrade, but say why". These helpers encode that policy once, so
- *     each call site stays a one-liner and the *reason* is no longer
- *     discarded.
- *
- * `runSyncEffect` returns `null` on failure, the shape the old
- * `catch { return null }` produced, so call sites that already branched on
- * `if (delta)` keep their shape. `runSyncEffectOr` covers operations whose
- * "nothing there" value is not `null` (an empty row list, an absent cursor).
- */
+/** The Effect seam for the sync slice. Two things live here: 1. `syncStoreLayer` — the local cache
+ * as a `Layer`, for code that composes a whole Effect program and wants the service in context. 2.
+ * `runSyncEffect*` — the Effect seam for Vue `<script setup>` callers. */
 import { Cause, Effect, Exit } from 'effect'
 import { describeSyncError, type SyncError } from './SyncError'
 import { IndexedDbStoreLive } from './IndexedDbStore'
@@ -66,18 +49,9 @@ export async function runSyncVoid(
   if (Exit.isFailure(exit)) report(op, Cause.squash(exit.cause) as SyncError)
 }
 
-/**
- * Run a fallible sync Effect and keep BOTH outcomes distinguishable.
- *
- * `runSyncEffect` degrades to `null`, which is right when "nothing there"
- * and "could not check" lead to the same correct action. It is WRONG when
- * the UI has to render the difference — a documents sidebar that shows
- * "No documents yet" because the backend was down is the exact
- * empty-vs-unavailable confusion this subsystem was ported to end, and the
- * sidebar's "a failed fetch is not emptiness" contract depends on the
- * message surviving. This variant hands back the reason so the caller can
- * record it; use it wherever an `error` ref is rendered.
- */
+/** Run a fallible sync Effect and keep BOTH outcomes distinguishable. `runSyncEffect` degrades to
+ * `null`, which is right when "nothing there" and "could not check" lead to the same correct
+ * action. */
 export async function runSyncResult<A>(
   effect: Effect.Effect<A, SyncError>,
   op: string,

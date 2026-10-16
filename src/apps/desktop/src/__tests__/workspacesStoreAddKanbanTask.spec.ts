@@ -1,21 +1,5 @@
-/**
- * Tests for workspacesStore.addKanbanTask — single store action
- * replacing the addTask + runAgentOnNewTask dance in the kanban flow.
- *
- * Behavioural coverage (vs. the plan's 4 tests):
- *   - mode='create' → api.createKanbanTask with mode='create' +
- *                      returns { task, session: null }
- *   - mode='create_and_run' → api.createKanbanTask with mode='create_and_run'
- *                              + queue_message + selected_profile_model +
- *                              returns { task, session }
- *   - mode='create_and_run' failure → notifyError + returns { task: null, session: null }
- *                                     (no throw — partial success UX)
- *   - mode='create' failure → re-throws (no partial-success path
- *                             because there's nothing to fall back to)
- *
- * Plan: docs/superpowers/plans/2026-08-14-kanban-task-create-endpoints.md
- *   Task 4
- */
+/** Tests for workspacesStore.addKanbanTask — single store action replacing the addTask +
+ * runAgentOnNewTask dance in the kanban flow. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -129,7 +113,6 @@ describe('workspacesStore.addKanbanTask', () => {
   // =====================================================================
   // mode='create_session' (plan: 2026-08-19-kanban-create-task-inits-session)
   // =====================================================================
-
   it("mode='create_session' calls api.createKanbanTask with mode='create_session' + selected_profile_model + returns session", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fakeTask = { id: 'task_new', name: 'Fix bug', task_type: 'standard' } as any

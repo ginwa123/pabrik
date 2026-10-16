@@ -1,21 +1,4 @@
-/**
- * The New Chat profile picker must list the profiles a run in THIS workspace
- * will actually use.
- *
- * A run resolves its config as `user config ⊕ this workspace's overlay`
- * (`session_llm_config.mergedConfigTextFor`), and Migration 105 moved per-
- * workspace profiles into that overlay. `GET /api/config/pabrik` is the USER
- * scope and carries no overlay, so listing from it made a workspace-only
- * profile invisible - `kilo`, defined only in one workspace's overlay, showed
- * in that workspace's Settings -> Profiles and in no picker anywhere - and
- * showed the user-level `model` / `base_url` for any profile the overlay
- * overrides.
- *
- * Mount pattern: router-less, like ChatView.profileCascade.spec.ts. The route
- * branch is exercised separately, with a real memory router, because
- * `useRoute()` is undefined for a router-less mount and the picker then falls
- * back to the store's active workspace.
- */
+/** The New Chat profile picker must list the profiles a run in THIS workspace will actually use. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, ref } from 'vue'
@@ -179,18 +162,9 @@ describe('ChatView profile picker — workspace scope', () => {
   })
 
   it('the route workspace wins over a different active workspace in the store', async () => {
-    // `/app/:workspaceId/chat/:sessionId` is the canonical chat URL, and it is
-    // the only source that is right on a cold deep-link load - the store has
-    // not resolved an active workspace yet at that point.
-    //
-    // This case cannot click the chip the way the two above do: with a router
-    // installed `onMounted` gets past its `route.query.diff` read and starts
-    // the history load, and a `vi.spyOn(api, 'getChatHistory')` does not reach
-    // that seam (`chatEngineDb` binds `getChatHistory` at module load), so
-    // `isLoading` never clears, `isInitializing` stays true and the chip is
-    // disabled on purpose. The regression is covered either way: WHICH config
-    // the picker reads is asserted here, and the rendered row is asserted in
-    // the first case.
+    // `/app/:workspaceId/chat/:sessionId` is the canonical chat URL, and it is the only source that
+    // is right on a cold deep-link load - the store has not resolved an active workspace yet at
+    // that point.
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [

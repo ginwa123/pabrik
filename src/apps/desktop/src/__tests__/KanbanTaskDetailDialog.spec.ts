@@ -1,19 +1,6 @@
-/**
- * Tests for KanbanTaskDetailDialog — focused, edit-in-place task
- * detail view. Used by the kanban tree to edit a task's name +
- * description with optional metadata (column, type, pinned).
- *
- * Mount pattern: same as KanbanSettingsDialog.spec.ts. The dialog
- * uses <Teleport to="body">, so the rendered DOM lives outside
- * wrapper.element. We use `attachTo: document.body` and query the
- * teleported content via `document.querySelector` (NOT `wrapper.find`).
- * `wrapper.emitted` still works because it tracks the vm, not the DOM
- * tree. We use native `el.click()` and `dispatchEvent('input')` for
- * interactions so v-model updates synchronously.
- *
- * Plan: docs/superpowers/plans/2026-07-16-kanban-task-detail-dialog.md
- *   Chunk 3 / Task 3.2
- */
+/** Tests for KanbanTaskDetailDialog — focused, edit-in-place task detail view. Used by the kanban
+ * tree to edit a task's name + description with optional metadata (column, type, pinned). Mount
+ * pattern: same as KanbanSettingsDialog.spec.ts. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -308,12 +295,8 @@ describe('KanbanTaskDetailDialog — metadata strip', () => {
     expect(findInDom('[data-testid="kanban-task-detail-metadata"]')).toBeNull()
   })
 
-  // ─── Read-only cwd strip (removed by 2026-08-14-kanban-task-detail-edit-cwd)
-  //
-  // The read-only cwd strip was removed in favour of the always-visible
-  // cwd picker. These tests pin the removal: in edit mode the strip
-  // testids (`kanban-task-detail-cwd-readonly`,
-  // `kanban-task-detail-cwd-readonly-empty`) MUST NOT be rendered.
+  // ─── Read-only cwd strip (removed by 2026-08-14-kanban-task-detail-edit-cwd) The read-only cwd
+  // strip was removed in favour of the always-visible cwd picker.
   it('edit mode: does NOT render the legacy read-only cwd strip', async () => {
     mountDialog({ ...TASK, cwd: '/home/foo/bar' })
     await flushPromises()
@@ -337,14 +320,9 @@ describe('KanbanTaskDetailDialog — metadata strip', () => {
   })
 })
 
-// ─── Edit-mode cwd picker (plan: 2026-08-14-kanban-task-detail-edit-cwd)
-//
-// The cwd picker was lifted out of the create-mode block so it renders
-// in BOTH modes. In edit mode the picker fires `update-cwd` so the
-// host can persist the change immediately (mirrors `update-unattended`).
-// The local `cwdSession` is initialized from `props.task?.cwd ?? ''`
-// so the picker label reflects the task's persisted cwd (or the
-// empty-state placeholder for cwd-less tasks).
+// ─── Edit-mode cwd picker (plan: 2026-08-14-kanban-task-detail-edit-cwd) The cwd picker was lifted
+// out of the create-mode block so it renders in BOTH modes. In edit mode the picker fires
+// `update-cwd` so the host can persist the change immediately (mirrors `update-unattended`).
 describe('KanbanTaskDetailDialog — edit-mode cwd picker', () => {
   let wrapper: VueWrapper | null = null
 
@@ -442,16 +420,9 @@ describe('KanbanTaskDetailDialog — edit-mode cwd picker', () => {
     expect(dropdown).not.toBeNull()
   })
 
-  // Regression for "click Browse → picker closes immediately".
-  // The cwd picker mounts a FilePickerDialog via `<Teleport to="body">`
-  // so the dialog's DOM is NOT a descendant of the cwd picker's
-  // template ref. The picker's click-outside handler used to treat
-  // any click outside the picker ref as a close signal — so clicking
-  // the Browse tab (which is inside the teleported FilePickerDialog)
-  // bubbled up to the document-click handler and closed the picker.
-  // Fix: the click-outside handler now allows the click target to be
-  // inside the teleported FilePickerDialog (matched by the
-  // `data-testid="file-picker-dialog"` testid on its root).
+  // Regression for "click Browse → picker closes immediately". The cwd picker mounts a
+  // FilePickerDialog via `<Teleport to="body">` so the dialog's DOM is NOT a descendant of the cwd
+  // picker's template ref.
   it('edit mode: clicking the Browse tab does NOT close the picker', async () => {
     mountEditDialogWithCwd(TASK)
     await flushPromises()
@@ -476,14 +447,9 @@ describe('KanbanTaskDetailDialog — edit-mode cwd picker', () => {
     ).not.toBeNull()
   })
 
-  // Regression for "click outside picker → picker closes immediately".
-  // User feedback: clicking on the kanban column body, on another card,
-  // or anywhere outside the picker dropdown was silently closing the
-  // picker while the user was just reading context. The new contract:
-  // the picker stays open until the user clicks the picker trigger
-  // again, selects a folder, or presses Cancel inside the
-  // FilePickerDialog. (The KanbanTaskDetailDialog itself still
-  // closes on backdrop click — that's a different handler.)
+  // Regression for "click outside picker → picker closes immediately". User feedback: clicking on
+  // the kanban column body, on another card, or anywhere outside the picker dropdown was silently
+  // closing the picker while the user was just reading context.
   it('edit mode: clicking outside the picker does NOT close it', async () => {
     mountEditDialogWithCwd(TASK)
     await flushPromises()
@@ -530,12 +496,9 @@ describe('KanbanTaskDetailDialog — edit-mode cwd picker', () => {
   })
 
   it('edit mode: emits update-cwd with the picked path on folder select', async () => {
-    // Drive the picker directly via its exposed handler. The
-    // FilePickerDialog is a Teleport-to-body component that uses an
-    // internal fetch pipeline — testing the full UI flow would mock
-    // global fetch (a brittle pattern). Instead we synthesise the
-    // `select` event that the dialog would emit on click, which is the
-    // exact contract the host relies on.
+    // Drive the picker directly via its exposed handler. The FilePickerDialog is a Teleport-to-body
+    // component that uses an internal fetch pipeline — testing the full UI flow would mock global
+    // fetch (a brittle pattern).
     const w = mountEditDialogWithCwd({ ...TASK, cwd: '/home/old' })
     await flushPromises()
     // Grab a ref to the picker button — the FilePickerDialog's
@@ -558,11 +521,8 @@ describe('KanbanTaskDetailDialog — edit-mode cwd picker', () => {
   })
 
   it('edit mode: emitting update-cwd clears the cwd when the user picks ""', async () => {
-    // The picker emits `''` when the user explicitly clears the
-    // per-task cwd (walks back to "kanban-level fallback" semantics).
-    // The backend's `task_update.zig` validated_cwd block treats '' as
-    // the explicit-clear sentinel — verify the dialog propagates it
-    // verbatim so the host can dispatch a clear-PUT.
+    // The picker emits `''` when the user explicitly clears the per-task cwd (walks back to
+    // "kanban-level fallback" semantics).
     const w = mountEditDialogWithCwd({ ...TASK, cwd: '/home/some/path' })
     await flushPromises()
     const vm = w!.vm as unknown as {
@@ -576,16 +536,8 @@ describe('KanbanTaskDetailDialog — edit-mode cwd picker', () => {
   })
 })
 
-// ─── Create-mode tests (kanban-add-task-via-detail-dialog) ───────────────
-//
-// The unattended-mode toggle lives inside the edit-mode dialog
-// (rendered only when `mode !== 'create'`). It's an iOS-style
-// immediate-flip switch — NOT gated on the Save button click —
-// because unattended is a runtime behavior setting, not a
-// save-button-commit. The dialog emits `update-unattended` with
-// `{ value, previous }` so the host can call
-// `api.updateSession(task.id, { isAutoRetryUntilStop: value })`
-// and roll back on PUT failure if needed.
+// ─── Create-mode tests (kanban-add-task-via-detail-dialog) ─────────────── The unattended-mode
+// toggle lives inside the edit-mode dialog (rendered only when `mode !== 'create'`).
 describe('KanbanTaskDetailDialog — unattended mode toggle', () => {
   let wrapper: VueWrapper | null = null
 
@@ -638,13 +590,9 @@ describe('KanbanTaskDetailDialog — unattended mode toggle', () => {
   })
 
   it('renders the toggle in create mode (Option A: atomic create-with-session)', async () => {
-    // The toggle used to be hidden in create mode because no
-    // session row existed yet. As of the unattended-mode Option A
-    // fix, the create payload carries is_auto_retry_until_stop
-    // and the backend atomically inserts a sessions row + sets
-    // the flag in one transaction. So the toggle is now visible
-    // from the create flow — flipping it persists at task
-    // creation time.
+    // The toggle used to be hidden in create mode because no session row existed yet. As of the
+    // unattended-mode Option A fix, the create payload carries is_auto_retry_until_stop and the
+    // backend atomically inserts a sessions row + sets the flag in one transaction.
     document.body.innerHTML = ''
     wrapper = mount(KanbanTaskDetailDialog, {
       attachTo: document.body,
@@ -691,11 +639,8 @@ describe('KanbanTaskDetailDialog — unattended mode toggle', () => {
   })
 })
 
-// The same KanbanTaskDetailDialog renders the "+ Add" flow in
-// kanban mode. The host passes `mode="create"` and `task={null}`;
-// the form starts empty and submit emits `create` (not `save`).
-// These tests verify both the rendering differences and the
-// emit shape so the contract is locked in.
+// The same KanbanTaskDetailDialog renders the "+ Add" flow in kanban mode. The host passes
+// `mode="create"` and `task={null}`; the form starts empty and submit emits `create` (not `save`).
 describe('KanbanTaskDetailDialog — create mode', () => {
   let wrapper: VueWrapper | null = null
 
@@ -805,15 +750,8 @@ describe('KanbanTaskDetailDialog — create mode', () => {
   })
 
   it('emits create (not save) with { mode: "create", name, description, is_auto_retry_until_stop, pendingFiles }', async () => {
-    // The create payload now carries is_auto_retry_until_stop
-    // (Option A: backend atomically inserts a sessions row when
-    // this is '1'). Default value at dialog open is '1' (on).
-    //
-    // NEW (plan: 2026-08-06-kanban-no-base64-in-desc): the create
-    // emit also carries `pendingFiles: PreviewFile[]` (always an
-    // array — empty when no images were staged) so the host's
-    // create-then-upload orchestrator can upload attachments AFTER
-    // the task exists.
+    // The create payload now carries is_auto_retry_until_stop (Option A: backend atomically inserts
+    // a sessions row when this is '1'). Default value at dialog open is '1' (on).
     const w = mountCreateDialog()
     await flushPromises()
     setInputValue('[data-testid="kanban-task-detail-create-name"]', '  New task  ')
@@ -919,14 +857,9 @@ describe('KanbanTaskDetailDialog — create mode', () => {
   })
 })
 
-// ─── Column dropdown (create mode) — plan 2026-08-06-kanban-add-task-button-placement ───
-//
-// Replaces the read-only column label in create mode with an
-// interactive dropdown. Mirrors the profile picker pattern
-// (button trigger + ▾ dropdown + ✓ checkmark + click-outside close).
-// Picking a column emits column-change so the host can update its
-// activeCreateColumnId in real-time. Edit mode keeps the static
-// strip — migrating an existing task to a new column is out of scope.
+// ─── Column dropdown (create mode) — plan 2026-08-06-kanban-add-task-button-placement ─── Replaces
+// the read-only column label in create mode with an interactive dropdown. Mirrors the profile
+// picker pattern (button trigger + ▾ dropdown + ✓ checkmark + click-outside close).
 describe('KanbanTaskDetailDialog — column dropdown (create mode)', () => {
   let wrapper: VueWrapper | null = null
 
@@ -1079,19 +1012,9 @@ describe('KanbanTaskDetailDialog — column dropdown (create mode)', () => {
     ).toBeNull()
   })
 
-  // NEW (2026-08-06, dropdown width/style follow-up v3). User feedback
-  // round 3: BOTH the trigger button AND the dropdown should be
-  // wider than a tiny pill — they should match each other at a
-  // proper button width (~180px). Long column names like
-  // "in_review_planning" fit on one line; short names like "todo"
-  // show with the natural empty space on the right (matches the
-  // standard <select> element UX where the button width is the
-  // widest option width).
-  // - Trigger: `min-w-[180px]` + `justify-between` so chevron sits
-  //   right; text "todo" sits left.
-  // - Dropdown: `absolute top-full mt-1 left-0 min-w-[180px]` —
-  //   anchored to wrapper's left edge, same min-width as trigger.
-  // Items get no `border-top` separator (matches profile picker).
+  // NEW (2026-08-06, dropdown width/style follow-up v3). User feedback round 3: BOTH the trigger
+  // button AND the dropdown should be wider than a tiny pill — they should match each other at a
+  // proper button width (~180px).
   it('create mode: trigger and dropdown both have min-w-[180px] and match in width', async () => {
     mountCreateWithColumns([
       { id: 'col_x', name: 'todo' },
@@ -1173,16 +1096,8 @@ describe('KanbanTaskDetailDialog — layout', () => {
     return wrapper
   }
 
-  // Regression for the "huge empty space below form" bug. The previous
-  // code used `height: min(80vh, calc(100vh - 2rem))` on the dialog card,
-  // which forced the dialog to always render at 80vh. The body
-  // (`flex-1 overflow-y-auto min-h-0`) then filled the remaining space,
-  // leaving a large gap between the form fields and the action buttons
-  // when the content was short (e.g. a new task with no description).
-  //
-  // Fix: switch to `max-height: min(80vh, calc(100vh - 2rem))` so the
-  // card shrinks to fit content when short, but caps at 80vh when the
-  // content overflows (the body then scrolls as before).
+  // Regression for the "huge empty space below form" bug. The previous code used `height: min(80vh,
+  // calc(100vh - 2rem))` on the dialog card, which forced the dialog to always render at 80vh.
   it('uses max-height (not fixed height) so the dialog shrinks to fit short content', async () => {
     mountDialog()
     await flushPromises()
@@ -1198,11 +1113,9 @@ describe('KanbanTaskDetailDialog — layout', () => {
     expect(style).not.toMatch(/(^|[\s;])height:\s*min\(80vh/)
   })
 
-  // User feedback: "make the dialog bigger". The previous `max-w-xl`
-  // (576px) was narrow for a multi-field form (task name + column
-  // picker + description + tags + folder picker + profile picker +
-  // unattended mode). Bumped to `max-w-2xl` (672px) for ~16% more
-  // horizontal room without crossing into "wide modal" territory.
+  // User feedback: "make the dialog bigger". The previous `max-w-xl` (576px) was narrow for a
+  // multi-field form (task name + column picker + description + tags + folder picker + profile
+  // picker + unattended mode).
   it('uses max-w-2xl (bigger) so the form has more horizontal room', async () => {
     mountDialog()
     await flushPromises()
@@ -1216,12 +1129,9 @@ describe('KanbanTaskDetailDialog — layout', () => {
     expect(classAttr).not.toMatch(/(^|\s)max-w-xl(\s|$)/)
   })
 
-  // User feedback: "fix the color font folder". The previous folder
-  // picker used the `📂` emoji which renders as a system-colorful icon
-  // (orange/yellow) that doesn't match the muted dark theme — the
-  // picker looked "out of place" next to the cleaner robot-emoji
-  // profile picker. Replace with an inline SVG folder icon that
-  // inherits the button's text color (so it follows the theme).
+  // User feedback: "fix the color font folder". The previous folder picker used the `📂` emoji which
+  // renders as a system-colorful icon (orange/yellow) that doesn't match the muted dark theme — the
+  // picker looked "out of place" next to the cleaner robot-emoji profile picker.
   it('create mode: folder picker uses an inline SVG icon (not the 📂 emoji)', async () => {
     mountCreateDialog('/home/user/projects/foo')
     await flushPromises()
@@ -1239,11 +1149,8 @@ describe('KanbanTaskDetailDialog — layout', () => {
     expect(svg!.getAttribute('viewBox')).toBe('0 0 20 20')
   })
 
-  // When the cwd is set, the folder picker's text color is bright
-  // (`var(--semantic-text)` = #c5c9c5) — not dim — so the picked folder
-  // path reads clearly against the dark background. Previously the
-  // dim text color (`var(--semantic-text-dim)` = #7a8382) made the path
-  // look faded next to the profile picker's bright "Default" label.
+  // When the cwd is set, the folder picker's text color is bright (`var(--semantic-text)` =
+  // #c5c9c5) — not dim — so the picked folder path reads clearly against the dark background.
   it('create mode: folder picker text color is bright when cwd is set', async () => {
     mountCreateDialog('/home/user/projects/foo')
     await flushPromises()
@@ -1274,18 +1181,9 @@ describe('KanbanTaskDetailDialog — layout', () => {
     expect(inlineStyle).toMatch(/color:\s*var\(--semantic-text-dim\)/)
   })
 
-  // ── cwd picker: open at the right place ─────────────────────────────────
-  // User feedback: "fix the folder query" — the per-task cwd picker used to
-  // always open at "/" regardless of cwd_session, forcing the user to
-  // navigate back to their cwd on every reopen. The picker now passes
-  // cwd_session as both initial-path and selected-path so reopening
-  // drops the user at the current cwd with the cwd pre-selected.
-  //
-  // These tests mock the global `fetch` (the API module calls fetch
-  // internally via apiFetch) so we can assert exactly which paths get
-  // queried — vi.spyOn(api, 'listFolder') doesn't work because the
-  // KanbanTaskDetailDialog destructures `listFolder` at module load
-  // time, before the spy replaces the namespace property.
+  // ── cwd picker: open at the right place ───────────────────────────────── User feedback: "fix
+  // the folder query" — the per-task cwd picker used to always open at "/" regardless of
+  // cwd_session, forcing the user to navigate back to their cwd on every reopen.
   describe('create mode: cwd picker opens at cwd_session (folder query fix)', () => {
     function mockFetchWithFs(entries: Record<string, Array<{ name: string; path: string; is_directory: boolean }>>) {
       return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {

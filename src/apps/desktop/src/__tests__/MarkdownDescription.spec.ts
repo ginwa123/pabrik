@@ -1,26 +1,6 @@
-/**
- * Tests for MarkdownDescription — the display-only component used to
- * render kanban task descriptions. The component renders a Markdown
- * string with marked.parse, then post-processes the HTML to wrap
- * `@/path` tokens in a `.md-file-chip` span so the LLM-style file
- * reference is visually distinct.
- *
- * Plan: docs/superpowers/plans/2026-07-25-kanban-description-rich-editor.md
- * Chunk 1 — MarkdownDescription component (display only).
- *
- * Test coverage:
- *   - Renders plain text as a paragraph.
- *   - Renders bold / italic / heading / list / code.
- *   - Detects `@/path/to/file.vue` and wraps it in `.md-file-chip`.
- *   - Does NOT match `@something` (no leading slash) or
- *     `some /path/without/at` (no `@` prefix).
- *   - Image data URLs render as `<img src="data:...">` with width/height.
- *   - `maxHeight` prop applies `style="max-height: ..."; overflow: hidden`.
- *   - Empty / null source renders nothing (no `<p></p>` artifact).
- *
- * Conventions: mirrors `KanbanCard.spec.ts` — `@vue/test-utils` mount,
- * no Pinia, no router needed (component is pure presentational).
- */
+/** Tests for MarkdownDescription — the display-only component used to render kanban task
+ * descriptions. Plan: docs/superpowers/plans/2026-07-25-kanban-description-rich-editor.md Chunk 1 —
+ * MarkdownDescription component (display only). */
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import MarkdownDescription from '../components/kanban/MarkdownDescription.vue'

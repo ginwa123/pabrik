@@ -1,30 +1,6 @@
-/**
- * Regression tests for the programmatic-scroll signal (2026-08-25
- * append-gap fix, task_1787668645042_0).
- *
- * Bug: VirtualScroller.measureItems()'s anchor compensation writes
- * `containerRef.scrollTop` directly. Assigning `.scrollTop` fires a
- * REAL native scroll event — indistinguishable from a user gesture by
- * the time it reaches ChatView's `handleVirtualScroll`. When a
- * re-measured item settles SHORTER than its estimate (streamed markdown
- * collapsing, code fences closing), the compensation moves scrollTop
- * DOWN; `userScrolledUp = deltaTop < 0` read that as a real upward
- * gesture, flipped `isAtBottom` to false, and the auto-stick
- * disengaged for the rest of the stream. Every later SSE chunk's
- * contentShift then hit the `spacer-resize-skip` guard and the gap
- * below the last message accumulated with each chunk — never
- * self-healing.
- *
- * Fix: the scroller marks its own scrollTop writes (compensation +
- * endPreserve restoration) and forwards `isProgrammatic` as the 4th
- * `scroll` emit arg; ChatView excludes programmatic events from the
- * `userScrolledUp` computation.
- *
- * jsdom note: jsdom does NOT fire a scroll event when `.scrollTop` is
- * assigned (real browsers do). Each test dispatches the follow-up
- * scroll event manually — exactly what the browser does after a
- * programmatic write — so the mark/consume wiring is observable.
- */
+/** Regression tests for the programmatic-scroll signal (2026-08-25 append-gap fix,
+ * task_1787668645042_0). Bug: VirtualScroller.measureItems()'s anchor compensation writes
+ * `containerRef.scrollTop` directly. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -107,11 +83,9 @@ describe('VirtualScroller programmatic-scroll signal', () => {
   })
 
   it('anchor-compensation scrollTop write emits isProgrammatic=true (the append-gap misread)', async () => {
-    // Scenario: user parked mid-list (anchor = item 100). The measure
-    // pass discovers every above-anchor buffer item is really 300px
-    // (vs the 64px estimate) → compensation moves scrollTop UP by
-    // Σ(300−64). The browser then fires a scroll event for that write;
-    // it must be labeled programmatic.
+    // Scenario: user parked mid-list (anchor = item 100). The measure pass discovers every
+    // above-anchor buffer item is really 300px (vs the 64px estimate) → compensation moves
+    // scrollTop UP by Σ(300−64).
     const { wrapper, el } = mountScroller(255)
     await nextTick()
 

@@ -1,19 +1,4 @@
-/**
- * Pure helpers for browser-style tabs.
- *
- * A tab is a snapshot of the router target the app already uses
- * (`view` / `session` / `workspaceId` / `itemId` / `pageId` / `sorts`),
- * so nothing here knows about views or stores — it only derives a
- * stable identity, a display hint and a valid persisted shape.
- *
- * The one new query param is `tab=<tabId>`: it names the active tab and
- * is client-only (never sent to the API). It is excluded from identity.
- *
- * Why these are separate from the store: every rule in this file is a
- * decision the reviewer wants to read in one screen (which targets
- * dedupe, which ones never become tabs, what happens to corrupt
- * storage) and they are trivially testable without Pinia or the router.
- */
+/** Pure helpers for browser-style tabs. */
 import { parseItemIdWithChat } from './buildItemIdWithChat'
 
 export type TabQuery = Record<string, string>
@@ -130,18 +115,8 @@ export function withTabParam(
   return out
 }
 
-/**
- * Dedupe identity. `tab` and `sorts` are excluded: the first names a tab
- * rather than a target, the second is per-column kanban UI state that
- * changes without the user going anywhere.
- *
- * `itemType` (when known) decides whether a task chat belongs to the item's
- * tab or gets one of its own — see `taskChatRendersInItemTab`.
- *
- * Most item types give each task chat its own tab. Today `design` is the only
- * exception: it opens its chat as a dialog inside the canvas view, so the item
- * keeps one tab however many chats you open.
- */
+/** Dedupe identity. `tab` and `sorts` are excluded: the first names a tab rather than a target, the
+ * second is per-column kanban UI state that changes without the user going anywhere. */
 export function tabKeyOf(
   path: string,
   query: Record<string, unknown> | null | undefined,
@@ -170,31 +145,17 @@ export function tabKeyOf(
   return `view:${view}`
 }
 
-/** Item types whose task chat renders as a dialog *inside* the item's view
- * (`DesignChatDialog`) — those items keep ONE tab no matter how many chats you
- * open. Every other type — kanban included — renders the chat as its own view,
- * so each chat is a tab of its own.
- * `kanban-settings` is inert here (this predicate is only ever called with an
- * item type, never with the synthetic settings key) and is kept only so the
- * list reads as a whitelist of "chat is not its own view" cases. */
+/** Item types whose task chat renders as a dialog *inside* the item's view (`DesignChatDialog`) —
+ * those items keep ONE tab no matter how many chats you open. Every other type — kanban included —
+ * renders the chat as its own view, so each chat is a tab of its own. */
 const DIALOG_ITEM_TYPES = ['design', 'kanban-settings']
 
 export function taskChatRendersInItemTab(itemType?: string | null): boolean {
   return typeof itemType === 'string' && DIALOG_ITEM_TYPES.includes(itemType)
 }
 
-/**
- * The identities the same workspace URL can have: the canonical one for the
- * known item type, plus the reading it would have had if the type were the
- * opposite. The store uses the pair to ADOPT *provisional* tabs (created
- * before the item type was known) instead of opening a duplicate — never to
- * merge two tabs that were both created with a known type.
- *
- * Only a dialog item type (see `taskChatRendersInItemTab`) has two readings:
- * it names the BARE item, while an unknown type names the task's own tab. For
- * every other type the URL has a single identity — known or unknown — so the
- * pair is a single element and there is nothing to adopt.
- */
+/** The identities the same workspace URL can have: the canonical one for the known item type, plus
+ * the reading it would have had if the type were the opposite. */
 export function tabKeyVariants(
   path: string,
   query: Record<string, unknown> | null | undefined,
@@ -256,21 +217,8 @@ export function fallbackTitle(kind: TabKind): string {
   }
 }
 
-/**
- * Legacy kanban-settings deep links used `?tab=<section>` for the inner
- * Columns/Agent switch (`columns|agent`, plus the pre-unified
- * `tools|knowledge|memories`). That key is now owned by browser tab-mode
- * (`?tab=<tabId>`), and the settings page moved to `?section=` — but
- * `syncFromTarget` (the single navigation funnel) would otherwise claim
- * a legacy `?tab=memories` as an unknown browser tab ID and rewrite it
- * to a fresh `tab_xxx` before the page ever sees it, silently dropping
- * the section. This migration runs first in the funnel: on the
- * kanban-settings path, a `?tab=` holding a legacy section value is
- * moved to `?section=` (with the `tools|knowledge|memories` → `agent`
- * collapse the view itself uses) so old bookmarks keep landing on the
- * Agent tab. Browser tab IDs (`tab_…`) and non-settings paths pass
- * through untouched; an explicit `?section=` always wins.
- */
+/** Legacy kanban-settings deep links used `?tab=<section>` for the inner Columns/Agent switch
+ * (`columns|agent`, plus the pre-unified `tools|knowledge|memories`). */
 const KANBAN_SETTINGS_LEGACY_TABS = new Set(['columns', 'agent', 'tools', 'knowledge', 'memories'])
 
 export function migrateLegacySettingsTab(

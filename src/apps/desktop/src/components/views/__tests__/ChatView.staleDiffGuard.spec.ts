@@ -1,16 +1,6 @@
-/**
- * Regression: clicking a left-sidebar chat after opening a right-sidebar
- * file did nothing (first click dead, second click worked).
- *
- * Root cause: the dying ChatView's diff writers raced ChatsList's
- * navigation on path-based URLs. This spec drives the REAL vue-router
- * (memory history) + the REAL ChatView component: mount session A with a
- * diff open, navigate to session B the way ChatsList.setActive does
- * (store + router.replace with an empty query), then fire a late write
- * from the dying instance and prove B's URL stays clean.
- *
- * Behavioural: asserts on router.currentRoute (the wire), never on source.
- */
+/** Regression: clicking a left-sidebar chat after opening a right-sidebar file did nothing (first
+ * click dead, second click worked). Root cause: the dying ChatView's diff writers raced ChatsList's
+ * navigation on path-based URLs. */
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick } from 'vue'

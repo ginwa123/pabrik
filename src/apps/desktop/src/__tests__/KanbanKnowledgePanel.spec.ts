@@ -1,13 +1,5 @@
-// Behavioural tests for KanbanKnowledgePanel — the per-board persona
-// content panel (Knowledge rows + System Prompt blocks). Extracted
-// from KanbanAgentPanel in iteration 2 of the kanban-agent-as-tab
-// plan (2026-08-27): the Agent umbrella tab was split into Tools +
-// Knowledge as separate top-level tabs. Mounted as the ?tab=knowledge
-// tab body inside KanbanSettingsView.
-//
-// Hosts the 2 persona-content sections + the 3 reused sub-dialogs.
-// Tools checkbox grid moved to KanbanToolsPanel.
-
+// Behavioural tests for KanbanKnowledgePanel — the per-board persona content panel (Knowledge rows
+// + System Prompt blocks).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { flushPromises } from '@vue/test-utils'

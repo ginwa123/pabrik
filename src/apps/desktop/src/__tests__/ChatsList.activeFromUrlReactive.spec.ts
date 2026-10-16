@@ -1,17 +1,6 @@
-/**
- * Regression test for the ChatsList stale-active bug
- * (sidebar-single-active follow-up, 2026-08-06).
- *
- * Bug: `active` was set in `loadChats()` from `currentMainView.value.kind`
- * at the time loadChats ran. After the URL navigated away from
- * `?view=chat`, the chat row's `active: true` stayed — the template
- * never re-rendered.
- *
- * Fix: derive active state in the template from `isCurrentChat(id)`,
- * which is reactive on `currentMainView.value`.
- *
- * Spec: docs/superpowers/specs/2026-08-06-sidebar-single-active-state-design.md
- */
+/** Regression test for the ChatsList stale-active bug (sidebar-single-active follow-up,
+ * 2026-08-06). Bug: `active` was set in `loadChats()` from `currentMainView.value.kind` at the time
+ * loadChats ran. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp, nextTick, reactive, ref } from 'vue'

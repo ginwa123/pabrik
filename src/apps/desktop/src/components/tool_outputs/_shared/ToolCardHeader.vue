@@ -2,24 +2,8 @@
 import { computed } from 'vue'
 import { useInjectOpenInCodeEditor } from '@/composables/useCodeEditor'
 
-/**
- * Shared chrome for tool-output cards (read_file, write_file, text_replace, etc.).
- *
- * Presentational only — the caller parses the tool's content and passes resolved
- * props. The header owns:
- *   - tool-name pill (violet)
- *   - primary field (truncated)
- *   - inline tag (e.g. "(recursive)")
- *   - right-meta text (e.g. "12L", "3 matches")
- *   - status badge (✓ / ✗)
- *   - copy-to-clipboard button
- *   - open-in-code-editor button
- *   - expand/collapse chevron
- *   - click + keyboard handling for expand
- *
- * The caller wraps this in a `<div class="font-mono text-dense rounded-md ...">`
- * card frame (which controls the red border on error).
- */
+/** Shared chrome for tool-output cards (read_file, write_file, text_replace, etc.). Presentational
+ * only — the caller parses the tool's content and passes resolved props. */
 interface Props {
   /** Tool name shown in the violet pill (e.g. "read_file") */
   toolName: string

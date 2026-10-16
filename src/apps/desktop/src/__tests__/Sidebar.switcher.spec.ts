@@ -1,17 +1,5 @@
-/**
- * Sidebar header → WorkspaceSwitcher wiring
- * (plan: docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md).
- *
- * Mounts the REAL Sidebar (harness mirrors Sidebar.deleteDesignPageConfirm)
- * and asserts each switcher emit reaches its Sidebar handler:
- *   select       → emit('selectWorkspace', id)   (AppLayout pushes URL)
- *   rename       → RenameWorkspaceModal opens
- *   delete       → ConfirmDialog opens
- *   add          → WorkspaceModal opens
- *
- * Also pins the header integration: the trigger renders the resolved
- * active workspace (getter fallback → first workspace).
- */
+/** Sidebar header → WorkspaceSwitcher wiring (plan:
+ * docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, createApp } from 'vue'

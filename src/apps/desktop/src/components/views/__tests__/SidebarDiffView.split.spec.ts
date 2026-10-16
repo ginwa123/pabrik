@@ -1,15 +1,6 @@
-/**
- * SidebarDiffView's three view controls, as BEHAVIOUR:
- *   - `mode`      — 'unified' (default, today's render) vs 'split'
- *   - `collapsed` — header only, driven from outside so it survives a body
- *                   unmount
- *   - `wholeFile` — the file's full context, fetched through `wholeFileDiff`
- *                   (mocked here; the helper has its own spec)
- *
- * The split render is asserted structurally (5 columns, per-side numbers, a
- * filler where a side has no line) because those are the properties a reader
- * checks by eye — not "the component rendered something".
- */
+/** SidebarDiffView's three view controls, as BEHAVIOUR: - `mode`      — 'unified' (default, today's
+ * render) vs 'split' - `collapsed` — header only, driven from outside so it survives a body unmount
+ * - `wholeFile` — the file's full context, fetched through `wholeFileDiff` (mocked here. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import SidebarDiffView from '../chat_right_sidebar/SidebarDiffView.vue'

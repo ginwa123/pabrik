@@ -1,19 +1,6 @@
-/**
- * Tests for ChatView's live skills-badge update from `llm_full` SSE.
- *
- * 2026-09-08 live-session-skills-sse Task 3 — the backend piggybacks
- * `session_skills` on every `llm_full` event
- * (sse_on_event_send_llm_history.zig:45). ChatView's bus.on('llm')
- * handler must apply it to `sessionSkills` in BOTH full paths
- * (in-place update ~:2335 AND push ~:2460) without calling
- * loadChatHistory, scoped to the current session via the existing
- * `event.session_id !== sid` filter.
- *
- * Like ChatView.chunk-stream.spec.ts, the behavioral part mirrors the
- * handler glue in isolation (no Pinia + Router scaffold); the static
- * contract part locks the real ChatView.vue wiring so the mirror can't
- * drift from the component.
- */
+/** Tests for ChatView's live skills-badge update from `llm_full` SSE. 2026-09-08
+ * live-session-skills-sse Task 3 — the backend piggybacks `session_skills` on every `llm_full`
+ * event (sse_on_event_send_llm_history.zig:45). */
 import { describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 import { readFileSync } from 'node:fs'

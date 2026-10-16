@@ -1,26 +1,6 @@
-/**
- * Sending or queueing a message must take the transcript to the bottom.
- *
- * ChatView's whole auto-stick is gated on `isAtBottom`: the `messages.length`
- * watcher returns early without it, `onContentShift` skips, and
- * `scrollToBottom(force = false)` does nothing. A reader who has scrolled up to
- * read history is, by definition, `isAtBottom === false`.
- *
- * So a send cannot be "scroll if we happen to be at the end" — it has to
- * *re-arm* the stick, and it has to do so SYNCHRONOUSLY. A forced
- * `scrollToBottom(true, …)` alone is not enough: it writes `container.scrollTop`
- * and leaves the flag to the native `scroll` event that follows, and the
- * browser does not fire one when the write is a no-op (the sizer already
- * reports a max scrollTop the container is already sitting at). The flag stays
- * false, and the SSE echo that carries the sent turn is answered by `Hold` —
- * the turn lands off-screen and the transcript never moves.
- *
- * These are source-level tests, following the ChatView convention (see
- * `ChatView.lazyPrefetch.spec.ts` for why): the mount-based ChatView specs
- * cannot get past the IndexedDB-backed history load in this environment. The
- * behavioural proof over a real browser — a real pabrik, a real Vite, a real
- * Chromium — is `tests/functional_ui/chatview_send_scrolls_to_bottom_ui_test.py`.
- */
+/** Sending or queueing a message must take the transcript to the bottom. ChatView's whole
+ * auto-stick is gated on `isAtBottom`: the `messages.length` watcher returns early without it,
+ * `onContentShift` skips, and `scrollToBottom(force = false)` does nothing. */
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
@@ -99,11 +79,8 @@ describe('ChatView — sending or queueing a turn takes the transcript to the bo
   })
 
   it('leaves the streaming auto-stick alone', () => {
-    // The other half of the contract, and the reason this fix is a helper and
-    // not a change to the gate. A run streaming into a transcript the reader
-    // has scrolled up in must still leave them where they are
-    // (`ChatView.streamingStick.spec.ts` proves that behaviour); only an
-    // explicit send or queue overrides it.
+    // The other half of the contract, and the reason this fix is a helper and not a change to the
+    // gate.
     const contentShift = slice('const onContentShift = (shift:', 'const teardownContentShiftRaf')
     expect(contentShift).toContain('if (!isAtBottom.value)')
 

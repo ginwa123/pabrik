@@ -5,22 +5,9 @@ import { useCurrentMainView } from './useCurrentMainView'
 
 const BASE_TITLE = 'Pabrik'
 
-/**
- * Keep the browser tab title in sync with what the main content area
- * is showing: the active session name for chats, the active task (or
- * item) name for workspace views, plain "Pabrik" everywhere else.
- *
- * Source of truth for *what* is showing is `useCurrentMainView`
- * (URL-driven, never store flags that can drift); the *names* come
- * from the navigation / workspaces stores, which the sidebar flows
- * already keep up to date (setActiveChatName, SSE rename fan-out).
- *
- * Refresh triggers (no reactive watcher): the Pinia `$subscribe`
- * hooks below fire on every store mutation (chat renames, task/item
- * switches), and `router.afterEach` covers pure URL changes where
- * the stores are untouched. Both are explicit subscriptions owned
- * for the app lifetime.
- */
+/** Keep the browser tab title in sync with what the main content area is showing: the active
+ * session name for chats, the active task (or item) name for workspace views, plain "Pabrik"
+ * everywhere else. */
 export function useDocumentTitle(): void {
   const navigationStore = useNavigationStore()
   const workspacesStore = useWorkspacesStore()

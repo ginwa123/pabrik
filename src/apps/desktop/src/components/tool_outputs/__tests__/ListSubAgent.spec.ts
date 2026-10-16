@@ -1,30 +1,4 @@
-/**
- * Tests for ListSubAgent.vue.
- *
- * Wire contract (FIXED — backend built in parallel):
- *   <list_sub_agent><profile>P</profile><count>N</count><sub_agents>
- *     <sub_agent><name>..</name><model>..</model><url_style>..</url_style>
- *     <thinking>..</thinking><temperature>..</temperature>
- *     [<max_capacity_tokens>..</max_capacity_tokens>]
- *     [<compaction_threshold_percent>..</compaction_threshold_percent>]
- *     [<thinking_budget_tokens>..</thinking_budget_tokens>]
- *     [<reasoning_effort>..</reasoning_effort>]
- *     <system_prompt><![CDATA[full text]]></system_prompt></sub_agent>
- *   ...</sub_agents></list_sub_agent>
- *   or empty: <list_sub_agent><profile>P</profile><empty/></list_sub_agent>
- * String fields may be empty; optional numeric tags may be ABSENT
- * (means 'inherits profile default'). api_key/base_url NEVER appear.
- *
- * Verifies:
- *  - populated 2 rows with tuning render names + meta + tuning grid
- *  - empty state shows "No subagents on profile <name>"
- *  - missing <profile> falls back to a placeholder string
- *  - absent optional tuning tags render no cells
- *  - long system_prompt renders in FULL (not truncated)
- *  - api_key/base_url never rendered even if injected (defense in depth)
- *  - header chip shows "N subagents · profile <name>"
- *  - collapsed by default, expands on header click
- */
+/** Tests for ListSubAgent.vue. */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
@@ -33,7 +7,6 @@ import ListSubAgent from '../ListSubAgent.vue'
 // ────────────────────────────────────────────────────────────────────────
 // Helpers
 // ────────────────────────────────────────────────────────────────────────
-
 const subAgent = (opts: {
   name: string
   model?: string
@@ -98,7 +71,6 @@ const makeEmpty = (profile = 'dev'): string => makeEnvelope({ profile, count: 0,
 // ────────────────────────────────────────────────────────────────────────
 // Tests
 // ────────────────────────────────────────────────────────────────────────
-
 describe('ListSubAgent.vue — populated', () => {
   it('header chip shows count + profile name', () => {
     const wrapper = mount(ListSubAgent, { props: { message: { content: makePopulated() } } })

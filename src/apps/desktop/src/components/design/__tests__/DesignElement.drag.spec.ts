@@ -14,11 +14,8 @@ const ELEMENT: DesignElementApi = {
   file_path: '', created_at: '', updated_at: '',
 }
 
-// jsdom 29 doesn't implement pointer capture on HTMLDivElement. The
-// production code calls `target.setPointerCapture(event.pointerId)`
-// unconditionally; jsdom throws "is not a function". Stub on the
-// prototype so every element has a no-op (matches the spirit of the
-// per-element stubbing in the plan's test bodies).
+// jsdom 29 doesn't implement pointer capture on HTMLDivElement. The production code calls
+// `target.setPointerCapture(event.pointerId)` unconditionally; jsdom throws "is not a function".
 if (!HTMLElement.prototype.setPointerCapture) {
   HTMLElement.prototype.setPointerCapture = () => {}
 }
@@ -49,11 +46,8 @@ describe('DesignElement drag', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(root as any).removeEventListener = vi.fn()
 
-    // Native dispatchEvent (NOT wrapper.trigger) — jsdom 29 makes
-    // MouseEvent.button a readonly getter, which @vue/test-utils
-    // tries to assign post-construction. The PointerEvent constructor
-    // itself accepts `button` as an init option (mirrors the pattern
-    // in DesignView.handPan.spec.ts).
+    // Native dispatchEvent (NOT wrapper.trigger) — jsdom 29 makes MouseEvent.button a readonly
+    // getter, which @vue/test-utils tries to assign post-construction.
     root.dispatchEvent(new PointerEvent('pointerdown', { button: 0, pointerId: 1, clientX: 100, clientY: 100, bubbles: true }))
 
  
@@ -232,17 +226,9 @@ describe('DesignElement drag', () => {
     expect(lastResize.width).toBe(10)
   })
 
-  // Symptom of the bug fixed in 2026-07-30: when the user clicks a
-  // resize handle, the handle's pointerdown fires startDrag(e, {
-  // resize: handle }) which then bubbles to the wrapper's @pointerdown
-  // (startDrag(e, 'move')). The wrapper's setPointerCapture steals
-  // capture from the handle, and the wrapper's move handler runs
-  // instead of the handle's resize handler. The element MOVES instead
-  // of resizing. The simplest invariant to test is the duplicate
-  // handler invocation: with the bug, both handle and wrapper fire
-  // startDrag, so 'select' is emitted twice. With the fix, only the
-  // handle fires (startDrag calls event.stopPropagation() for any
-  // non-'move' mode), so 'select' is emitted once.
+  // Symptom of the bug fixed in 2026-07-30: when the user clicks a resize handle, the handle's
+  // pointerdown fires startDrag(e, { resize: handle }) which then bubbles to the wrapper's
+  // @pointerdown (startDrag(e, 'move')).
   it('resize handle pointerdown does NOT bubble to the wrapper (single select emit, no duplicate handler)', async () => {
     const wrapper = mount(DesignElement, {
       props: { element: ELEMENT, selected: true, zoom: 1.0 },
@@ -255,31 +241,20 @@ describe('DesignElement drag', () => {
     // Deliberately do NOT stub addEventListener on the handle — let both the handle's and the
     // wrapper's listeners register normally so we can verify the bubble behaviour. (Stubbing the
     // handle's addEventListener is what hid the bug in the existing test.)
-
     nwEl.dispatchEvent(new PointerEvent('pointerdown', { button: 0, pointerId: 1, clientX: 100, clientY: 100, bubbles: true }))
 
-    // Pre-fix: 'select' emitted TWICE (handle + wrapper).
-    // Post-fix: 'select' emitted ONCE (handle only — wrapper's
-    // @pointerdown never fired because the handle called
-     
-    // event.stopPropagation()).
-     
+    // Pre-fix: 'select' emitted TWICE (handle + wrapper). Post-fix: ONCE — the wrapper's
+    // @pointerdown never fired because the handle called `event.stopPropagation()`.
     const selects = wrapper.emitted('select') ?? []
     expect(selects).toHaveLength(1)
     // Also assert 'dragStart' is emitted once (same duplicate-handler
     // pattern would cause a duplicate dragStart).
-     
     const dragStarts = wrapper.emitted('dragStart') ?? []
     expect(dragStarts).toHaveLength(1)
   })
 
-  // Strict throttle test: fires 3 rapid pointermoves within the
-  // 50ms throttle window and asserts the trailing patch was applied
-  // exactly once (not 3 times). This is the test that proves the
-  // throttle is in effect — the plan's 7 tests all happen to pass
-  // against the pre-fix unthrottled code because each one's last
-  // emit happens to be the final patch anyway. This 8th test catches
-  // the bug.
+  // Strict throttle test: fires 3 rapid pointermoves within the 50ms throttle window and asserts
+  // the trailing patch was applied exactly once (not 3 times).
   it('throttles rapid pointermoves: 3 moves within 50ms emit at most 1 translate before pointerup', async () => {
     const wrapper = mount(DesignElement, {
       props: { element: ELEMENT, selected: true, zoom: 1.0 },
@@ -303,20 +278,13 @@ describe('DesignElement drag', () => {
     moveHandler(new PointerEvent('pointermove', { clientX: 120, clientY: 120, pointerId: 1 }))
     moveHandler(new PointerEvent('pointermove', { clientX: 130, clientY: 130, pointerId: 1 }))
     // Snapshot BEFORE pointerup — the trailing emit happens on pointerup.
-     
     const emitsBeforeUp = (wrapper.emitted('translate') ?? []).length
      
     // Throttled: 0 emits (none past the 50ms window). Unthrottled: 3 emits.
     expect(emitsBeforeUp).toBeLessThanOrEqual(1)
     upHandler(new PointerEvent('pointerup', { pointerId: 1 }))
-    // BUG FIX 2026-08-06: the wire now sends INCREMENTAL dx/dy (delta
-    // since last emit). The trailing pointerup emit carries only the
-    // delta from the last throttled emit. The test below locks in the
-    // incremental contract: dx/dy in each emit is the delta since the
-    // previous emit, and the SUM of all emitted dx/dy equals the
-    // cumulative cursor movement. This is what prevents the
-    // server-side `x = x + dx` from compounding across ticks (which
-    // would make the element move "so fast").
+    // BUG FIX 2026-08-06: the wire now sends INCREMENTAL dx/dy (delta since last emit). The
+    // trailing pointerup emit carries only the delta from the last throttled emit.
     const translates = wrapper.emitted('translate') ?? []
     // Sum of dx/dy across all emits must equal the cursor delta (30).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -337,7 +305,6 @@ describe('DesignElement drag', () => {
   })
 
   // ─── Chunk 2: multi-select ────────────────────────────────────────
-
   it('emits select with the element id on pointerdown', async () => {
     const wrapper = mount(DesignElement, {
       props: { element: ELEMENT, selectedIds: [], zoom: 1.0 },
@@ -369,29 +336,7 @@ describe('DesignElement drag', () => {
   })
 
   /** REGRESSION (2026-08-06, design-mode-moves-so-fast v2): the wire `dx` was historically the
-   * CUMULATIVE cursor delta from drag-start (`dx = e.clientX - startClientX`). The backend
-   * interprets `dx` as "set x = x + dx", so each throttled emit compounded: after N //
-   * eslint-disable-next-line @typescript-eslint/no-explicit-any */
-
-  /** ticks of cursor movement d, the element ended up at d·N·(N+1)/2 // eslint-disable-next-line
-   * @typescript-eslint/no-explicit-any */
-
-  /**    * instead of d — making the element visibly leap ahead of the cursor (the "moves so fast" user
-   * complaint). The fix sends the INCREMENTAL dx (delta since last emit). Each //
-   * eslint-disable-next-line @typescript-eslint/no-explicit-any */
-
-  /**
-   * emit carries only the cursor movement SINCE the previous emit. The backend still ADDs, but the
-   * cumulative effect across emits now equals the cursor delta — not a quadratically-compounded
-   * value.
-   *
-   * This test pins the contract via `awplusTrick`-free simulates (no setTimeout-based waitFor): 3
-   * sequential pointermoves with fake timestamps inside the same throttle window, then a pointerup
-   * trailing emit. We assert: (1) SUM of dx/dy across all emits equals cursor delta (30, 30) (2)
-   * each individual emit carries delta ≤ |cursor delta| (never the cumulative)
-   *
-   * If anyone reverts to the cumulative format, (2) catches it. /
-   */
+   * CUMULATIVE cursor delta from drag-start (`dx = e.clientX - startClientX`). */
   it('each translate emit carries INCREMENTAL dx/dy (sum equals cursor delta, never compounded)', async () => {
     const wrapper = mount(DesignElement, {
       props: { element: ELEMENT, selected: true, zoom: 1.0 },
@@ -427,10 +372,8 @@ describe('DesignElement drag', () => {
 
     const translates = wrapper.emitted('translate') ?? []
 
-    // (1) Sum across all emits equals cursor delta — server will
-    // apply each emit with `x = x + dx`, so the cumulative effect
-    // must equal the cursor movement (not compound to 30·4/2 = 60).
-     
+    // (1) Sum across all emits equals cursor delta — the server applies each emit with `x = x + dx`,
+    // so the cumulative effect must equal the cursor movement, not compound to 30·4/2 = 60.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sumDx = translates.reduce((acc, t) => acc + (t[0] as any).dx, 0)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -439,11 +382,7 @@ describe('DesignElement drag', () => {
      
     expect(sumDy).toBe(30)
 
-    // (2) Each individual emit carries delta ≤ cursor delta. If
-    // anyone reverts to the old cumulative format, an emit with
-    // dx=30 (the full cursor delta) would appear in the SECOND
-    // emit — that means the wire is back to sending `e.clientX -
-    // startClientX` per tick, which compounds on the server.
+    // (2) Each individual emit carries delta ≤ cursor delta.
     for (const t of translates) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const dx = (t[0] as any).dx
@@ -483,17 +422,14 @@ describe('DesignElement drag', () => {
     root.dispatchEvent(new PointerEvent('pointerdown', { button: 0, pointerId: 1, clientX: 100, clientY: 100, bubbles: true }))
      
     // Move +50, +30 within the throttle window → only the trailing
-     
     // pointerup emit will fire, carrying the final delta.
     moveHandler(new PointerEvent('pointermove', { clientX: 150, clientY: 130, pointerId: 1 }))
     upHandler(new PointerEvent('pointerup', { pointerId: 1 }))
 
      
-    // BUG FIX 2026-08-06: the wire sends INCREMENTAL dx/dy (delta
-    // since last emit). For a single pointermove followed by a
-    // pointerup with no throttle window crossed, the trailing emit
+    // BUG FIX 2026-08-06: the wire sends INCREMENTAL dx/dy (delta since last emit). For a single
+    // pointermove followed by a pointerup with no throttle window crossed, the trailing emit
     // carries the FULL cursor delta (since lastEmittedDx was 0).
-    // The sum across emits must equal the cursor movement (50, 30).
     const groupDrags = wrapper.emitted('groupDrag') ?? []
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sumDx = groupDrags.reduce((acc, g) => acc + (g[0] as any).dx, 0)
@@ -501,14 +437,8 @@ describe('DesignElement drag', () => {
     const sumDy = groupDrags.reduce((acc, g) => acc + (g[0] as any).dy, 0)
     expect(sumDx).toBe(50)
     expect(sumDy).toBe(30)
-    // Trailing emit alone carries the full delta (no throttle fired
-    // before pointerup). The first emit's dx/dy is whatever landed
-    // before the trailing — depends on the throttle timing.
-    // We don't pin groupDrags[groupDrags.length - 1][0].dx specifically
-    // here — see the throttles-rapid test for that invariant.
-
-    // Critically: this is a GROUP drag, so no `update` should fire.
-    // The parent decides where to route the per-element updates.
+    // Trailing emit alone carries the full delta (no throttle fired before pointerup). The first
+    // emit's dx/dy is whatever landed before the trailing — depends on the throttle timing.
     expect(wrapper.emitted('update')).toBeUndefined()
   })
 
@@ -546,19 +476,9 @@ describe('DesignElement drag', () => {
     expect(wrapper.emitted('groupDrag')).toBeUndefined()
   })
 
-  // ─── Child-of-group drag suppression (2026-08-06) ─────────────────
-  // User request: elements nested inside a parent group/frame should
-  // NOT be independently movable. Clicking a child still selects it
-  // (so the user can edit properties), but pointer-drag is suppressed.
-  // The user has to drag the parent group / frame header to move the
-  // whole subtree. Resize handles still work on the child (Figma
-  // parity — child resize is independent, only child move is blocked).
-  //
-  // Wire-form note: the backend uses `COALESCE(parent_id, '')` so a
-  // top-level element arrives as `parent_id = ''`. A nested element
-  // arrives as `parent_id = 'elem_<parent>'`. Legacy shapes may have
-  // `parent_id = null` or `undefined` — both are treated as top-level.
-
+  // ─── Child-of-group drag suppression (2026-08-06) ───────────────── User request: elements
+  // nested inside a parent group/frame should NOT be independently movable. Clicking a child still
+  // selects it (so the user can edit properties), but pointer-drag is suppressed.
   it('drag on a child element (parent_id set) does NOT emit translate', async () => {
     const CHILD: DesignElementApi = {
       ...ELEMENT,
@@ -661,7 +581,6 @@ describe('DesignElement drag', () => {
   it('drag on a top-level element (parent_id === "") still emits translate (regression guard)', async () => {
      
     // parent_id is the empty string (the backend's COALESCE form for
-     
     // NULL). This is the boundary case — empty string means top-level.
     const TOP_LEVEL: DesignElementApi = {
       ...ELEMENT,
@@ -708,7 +627,6 @@ describe('DesignElement drag', () => {
   it('drag on a child element with parent_id = null (legacy shape) is treated as top-level', async () => {
     // Legacy elements returned by the API before parent_id was added
     // have `parent_id = null` (or undefined). They should be treated
-     
     // as top-level — drag is allowed.
     const LEGACY: DesignElementApi = {
       ...ELEMENT,
@@ -787,15 +705,9 @@ describe('DesignElement drag', () => {
     expect(wrapper.emitted('translate')).toBeUndefined()
   })
 
-  // ─── Click on child: select parent (2026-08-06 follow-up) ────────────
-  // User report: "when i click the element group, why its still select
-  // that child element? why not directly select the group? so i can
-  // move the group layer". Clicking a child element should now select
-  // the parent group (Figma-style deep grouping), so the user can
-  // immediately drag the group without first clicking the header.
-
-  // Helper: register a parent element in the workspace store so
-  // `parentElement` (computed via `useWorkspacesStore`) can find it.
+  // ─── Click on child: select parent (2026-08-06 follow-up) ──────────── User report: "when i
+  // click the element group, why its still select that child element? why not directly select the
+  // group? so i can move the group layer".
   const seedParentFor = (parentId: string): void => {
     const wsId = 'ws_test'
     const itemId = 'item_test'
@@ -894,7 +806,6 @@ describe('DesignElement drag', () => {
     }
     setActivePinia(createPinia())
     // No need to seed a parent — the lookup returns null for top-level.
-
     const wrapper = mount(DesignElement, {
       props: { element: TOP, selected: true, zoom: 1.0 },
     })

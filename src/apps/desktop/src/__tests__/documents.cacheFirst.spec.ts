@@ -1,20 +1,6 @@
-/**
- * The documents list is cache-first, like the sidebar's Recent chats.
- *
- * Two layers are proven separately, because they fail differently:
- *
- *  - `DocumentEngineDb` against an injected memory store — deterministic,
- *    no IndexedDB, so it can assert the exact cache contents after each
- *    write. This is the layer where a merge-vs-replace mistake hides.
- *  - `useDocumentsStore` against the real singleton — proves the user-
- *    visible contract: a warm cache paints on a cold start, and a failed
- *    revalidation NEVER degrades to an empty list.
- *
- * The trap this file is written around: a merge would let a document
- * deleted in another window (or by the agent's `delete_document` tool)
- * live in the cache forever, and every later cold boot would paint a row
- * that opens a 404. `loadDelta` therefore clears the ctx before writing.
- */
+/** The documents list is cache-first, like the sidebar's Recent chats. Two layers are proven
+ * separately, because they fail differently: - `DocumentEngineDb` against an injected memory store
+ * — deterministic, no IndexedDB, so it can assert the exact cache contents after each write. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Effect } from 'effect'
 import { setActivePinia, createPinia } from 'pinia'
@@ -130,13 +116,9 @@ describe('useDocumentsStore — cache-first contract', () => {
   })
 
   it('a REAL cold boot paints from cache with the network dead (the regression)', async () => {
-    // Seed the cache the way a previous session would have, then throw away
-    // every scrap of in-memory state. This is the user scenario the cache
-    // exists for: reload the app offline and still see the documents.
-
-    // Deliberately does NOT go through `fetchDocuments` first to populate
-    // it — that would leave `documents` populated in the pinia store, and
-    // the pre-cache code would pass this assertion by accident.
+    // Seed the cache the way a previous session would have, then throw away every scrap of
+    // in-memory state. This is the user scenario the cache exists for: reload the app offline and
+    // still see the documents.
     await run(documentEngineDb.putDocument(WS, doc()))
     setActivePinia(createPinia())
     const store = useDocumentsStore()

@@ -1,17 +1,4 @@
-/**
- * Behaviour of SetPullRequest.vue — the registered output card for the
- * `set_pull_request` tool.
- *
- * Before this card existed the tool fell into ChatView's generic fallback and
- * the collapsed row rendered raw envelope JSON
- * (`set_pull_request ✓ {"session_id":"task_…","attached":true,"url":"…`).
- * These cases pin the card to the three payload shapes the backend emits
- * (`successSetToJSON` / `successClearToJSON` / `jsonError`) — the same bytes
- * that appear in the live `llm_history.response_content` column — and to the
- * two shapes ChatView actually hands it: the unwrapped `data` object on
- * success, and the whole envelope string on failure (`innerToolData` returns
- * `unwrapped.data ?? m.content`).
- */
+/** Behaviour of SetPullRequest.vue — the registered output card for the `set_pull_request` tool. */
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 

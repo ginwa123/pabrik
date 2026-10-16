@@ -107,7 +107,6 @@ export function useChatRightSidebar(chatType: string) {
   // NOTE: `chatType` is a plain (non-reactive) parameter fixed per composable instance — observing
   // it would never fire, since the source never changes. Each instance already hydrates via
   // `ref(loadOpen(chatType))` above, so there is nothing to re-sync.
-
   return {
     isOpen,
     width,

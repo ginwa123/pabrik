@@ -79,7 +79,6 @@ const MAX_TOOLTIP_CHARS = 500
 const ARGS_EXCLUDE = ['content']
 
 // ---- Parsers ---------------------------------------------------------------
-
 function asRecord(v: unknown): Record<string, unknown> {
   if (typeof v === 'string') {
     try {
@@ -141,12 +140,9 @@ const createdAt = computed(() => strOrNull(dataRecord.value.created_at))
 
 const updatedAt = computed(() => strOrNull(dataRecord.value.updated_at))
 
-// ---- The saved body + tags -------------------------------------------------
-
-// Precedence: result `data` first (a future backend may echo the stored
-// row), then the tool-call args. `content` is the memory body; it can be
-// an empty string only for a rejected call, which never reaches success.
-
+// ---- The saved body + tags ------------------------------------------------- Precedence: result
+// `data` first (a future backend may echo the stored row), then the tool-call args. `content` is
+// the memory body; it can be an empty string only for a rejected call, which never reaches success.
 const savedContent = computed((): string | null => {
   const fromData = strOrNull(dataRecord.value.content)
   if (fromData !== null) return fromData
@@ -178,7 +174,6 @@ const savedTags = computed((): string[] => {
 })
 
 // ---- Derived display values ------------------------------------------------
-
 const isSuccess = computed(() => errorMessage.value === null)
 
 const statusIndicator = computed(() => (isRunning.value ? '…' : isSuccess.value ? '✓' : '✗'))
@@ -194,12 +189,8 @@ const HEADER_MAX_TAGS = 3
 const headerTags = computed(() => savedTags.value.slice(0, HEADER_MAX_TAGS))
 const hiddenTagCount = computed(() => Math.max(0, savedTags.value.length - HEADER_MAX_TAGS))
 
-/** Hover title: the full id, every tag, the body capped at
- *  MAX_TOOLTIP_CHARS, and the saved timestamp. The `created_at` /
- *  `updated_at` pair moved here when the expanded body was cut down to
- *  the body alone — they stay reachable without spending a row on two
- *  `CURRENT_TIMESTAMP` values that are always equal. On error, the full
- *  error text. */
+/** Hover title: the full id, every tag, the body capped at MAX_TOOLTIP_CHARS, and the saved
+ * timestamp. */
 const headerTitle = computed(() => {
   if (!isSuccess.value) return errorMessage.value ?? ''
   const parts: string[] = []
@@ -212,7 +203,6 @@ const headerTitle = computed(() => {
 })
 
 // ---- Body rendering --------------------------------------------------------
-
 /** What the card actually renders — clipped for display only. */
 const displayContent = computed(() => clip(savedContent.value ?? '', MAX_DISPLAY_CHARS))
 
@@ -239,7 +229,6 @@ const hasBody = computed(() => {
 })
 
 // ---- Actions ---------------------------------------------------------------
-
 const toggle = () => {
   // Always expandable on success (id + tags + the body) or error (1 row). On empty/missing
   // envelopes (no id + no error) we still allow expansion so the user sees "what's in here" — but
@@ -263,7 +252,6 @@ const copyContent = async () => {
 }
 
 // ---- Helpers ---------------------------------------------------------------
-
 function clip(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) : s
 }

@@ -1,21 +1,8 @@
 import * as api from '../../../api'
 import { parseUnifiedDiff, type ParsedDiffLine } from './parseUnifiedDiff'
 
-/**
- * Whole-file diff reader — the ONE way the frontend asks for a file's full
- * context, and the reason "Whole file" costs one request instead of one per
- * click.
- *
- * Deliberately SEPARATE from `helpers/folderDiffCache.ts`: that snapshot is
- * the 3-line-context diff the sidebar re-primes on every 30 s poll, and it
- * holds EVERY changed file. Writing a full-context body into it would either
- * bloat every poll or silently swap the diff view's own content. Different
- * question, different cache.
- *
- * `refused` is a real answer, not an error: the server declines to serve a
- * file whose full-context diff is over its budget, because a truncated
- * "whole file" reads as a complete one. The caller offers the code viewer.
- */
+/** Whole-file diff reader — the ONE way the frontend asks for a file's full context, and the reason
+ * "Whole file" costs one request instead of one per click. */
 export interface WholeFileDiff {
   lines: ParsedDiffLine[]
   added: number
@@ -55,9 +42,8 @@ function remember(key: string, value: WholeFileDiff): void {
   }
 }
 
-/**  * Read the whole-file diff for one path, fetching at most once per path. A backend failure REJECTS.
- * It must never resolve to an empty diff: an empty diff renders as "this file is unchanged", which
- * is the worst direction to be wrong in — and the one thing the whole-file view exists to avoid. */
+/** Read the whole-file diff for one path, fetching at most once per path. A backend failure
+ * REJECTS. */
 export async function fetchWholeFileDiff(
   cwd: string,
   path: string,

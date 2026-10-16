@@ -1,18 +1,6 @@
-/**
- * Behavioural tests for the agent-error indicator on
- * <WorkspaceItemTaskCard> (the kanban board card variant).
- *
- * The indicator surfaces a single store read (useAgentErrorStore
- * keyed by task.id == session_id) as three layered affordances:
- *   - a red ⚠ icon in the top row with a hover tooltip showing the
- *     same headline + retry chip as the ChatView's AgentErrorCard,
- *   - a red-tinted border on the card root (data-has-agent-error),
- *   - an inline pill in the meta row that swaps between
- *     `3/10 retries` and `workflow halted` based on the diagnostic.
- *
- * Plan: docs/superpowers/plans/2026-08-29-chatview-agent-error-persistent.md
- *   (Task 5 — kanban card error indicator).
- */
+/** Behavioural tests for the agent-error indicator on <WorkspaceItemTaskCard> (the kanban board
+ * card variant). Plan: docs/superpowers/plans/2026-08-29-chatview-agent-error-persistent.md (Task 5
+ * — kanban card error indicator). */
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -161,7 +149,6 @@ describe('WorkspaceItemTaskCard — agent-error indicator', () => {
     const store = useAgentErrorStore()
     store.setError('task_a', RETRY_CONTENT)
     // task_b is intentionally NOT errored.
-
     const wrapperA = mount(WorkspaceItemTaskCard, {
       props: { task: makeTask({ id: 'task_a' }), workspaceId: 'ws_1', itemId: 'item_1' },
     })
@@ -237,14 +224,7 @@ describe('WorkspaceItemTaskCard — agent-error indicator', () => {
       },
     })
     await nextTick()
-    // Inject a fake processingState via provide() — same key as the
-    // real App.vue injection.
-    // (The component re-reads the injected ref on every render.)
-    // For this test, we just assert that both indicators would
-    // render INDEPENDENTLY given the underlying state — the
-    // component test above already covers the store-driven path.
-    // Here we only assert that the error indicator does not
-    // depend on processingState — it is gated on agentError alone.
+    // Inject a fake processingState via provide() — same key as the real App.vue injection.
     expect(wrapper.find('[data-testid="task-agent-error"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="task-spinner"]').exists()).toBe(false)
   })

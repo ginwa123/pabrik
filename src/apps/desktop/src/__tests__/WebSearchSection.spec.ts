@@ -96,7 +96,6 @@ describe('WebSearchSection', () => {
   })
 
   // ─── The regressions this section exists to prevent ──────────────────────
-
   it('submitting the MASKED key does not blank the stored key', async () => {
     // The user opens Settings and hits Save without touching the key. The field still holds the
     // backend's mask, and that mask is what goes back — never `""`, which would destroy the stored
@@ -157,7 +156,6 @@ describe('WebSearchSection', () => {
   })
 
   // ─── Round-trip ──────────────────────────────────────────────────────────
-
   it('a provider round-trips through parse then serialize unchanged', () => {
     const saved = serializeWebSearchProviders(rows({ tinyfish: TINYFISH }))
     expect(saved).toEqual({ tinyfish: TINYFISH })
@@ -197,7 +195,6 @@ describe('WebSearchSection', () => {
   })
 
   // ─── Row editing ─────────────────────────────────────────────────────────
-
   it('edits a field in place without disturbing the others', async () => {
     const parsed = rows({ tinyfish: TINYFISH })
     const wrapper = mount(WebSearchSection, { props: { modelValue: parsed } })
@@ -222,7 +219,6 @@ describe('WebSearchSection', () => {
   })
 
   // ─── Host pin + {key} rules, checked before the row reaches the backend ─
-
   it('flags a pinned URL the backend would refuse', () => {
     // The same matrix `isNonPublicHost` refuses in
     // `web_search_curl.zig`, plus the scheme rule.

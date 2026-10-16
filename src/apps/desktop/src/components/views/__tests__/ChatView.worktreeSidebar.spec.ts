@@ -1,31 +1,5 @@
-/**
- * Static contract: the ChatView-embedded git-diff sidebar must follow
- * the session's worktree binding, not the session's original cwd.
- *
- * Root cause (screenshot: sidebar shows branch `main` + main-repo
- * untracked files while the chat is attached to a worktree):
- * `gitWorktreeCwd` was assigned only in `loadChatHistory()` (mount),
- * so a worktree bound mid-chat by the LLM's `set_git_worktree` tool
- * never reached `effectiveCwd` — the sidebar kept showing main.
- * The comment above `gitWorktreeCwd` even claimed SSE updates it,
- * but no code did.
- *
- * Contract (all frontend-only, no backend change):
- *  1. `refreshWorktreeBinding()` re-reads the binding via
- *     `getSession()` (lightweight session detail endpoint, no message
- *     payload — previously `getChatHistory(sessionId, 1)`).
- *  2. Both SSE full-event paths (in-place update + push) call
- *     `maybeRefreshWorktreeBinding(role, event.tool_name)`, which
- *     refreshes only for `tool_name === 'set_git_worktree'`.
- *  3. The sidebar ↻ button bubbles `refresh`:
- *     SidebarDiffPanel → ChatRightSidebar → ChatView
- *     (`@refresh="onChatSidebarRefresh"`), which re-syncs the
- *     binding before reloading the panel.
- *
- * Full ChatView mount is too heavy for a unit test, so this spec
- * greps the template source, following the repo's static-contract
- * pattern (cf. ChatView.tool-width.spec.ts).
- */
+/** Static contract: the ChatView-embedded git-diff sidebar must follow the session's worktree
+ * binding, not the session's original cwd. */
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'

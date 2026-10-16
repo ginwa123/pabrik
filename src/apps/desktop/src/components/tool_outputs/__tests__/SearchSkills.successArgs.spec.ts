@@ -1,18 +1,6 @@
-/*
- * SearchSkills.vue — the `search_skills` card.
- *
- * Pins the paged-search result shape: flat `skills[]` rows of `name` /
- * `description` only, plus `count`/`total`/`offset`/`limit`/`truncated`/
- * `next_offset`/`pattern_warning`. There is no per-row `scope` and no
- * `path` any more — the page is one workspace's skills.
- *
- * Three shapes get their own tests because they are where this card
- * breaks: a payload that still carries the old `scope`/`path` keys (a
- * transcript recorded before the table refactor) must still render its
- * names, a row with an empty description must still render its name, and
- * a row key built from a field that no longer arrives would silently
- * collapse to `undefined-undefined-<name>` for every row.
- */
+/** SearchSkills.vue — the `search_skills` card. Pins the paged-search result shape: flat `skills[]`
+ * rows of `name` / `description` only, plus `count`/`total`/`offset`/`limit`/`truncated`/
+ * `next_offset`/`pattern_warning`. */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import SearchSkills from '../SearchSkills.vue'

@@ -1,20 +1,6 @@
-/**
- * The documents API client's wire shape (Migration 095).
- *
- * In its own file, with NO `vi.mock('../api')`: a module factory that
- * spreads the real module re-wraps the exports, and the real
- * `apiFetch` never reaches the `fetch` spy the assertions install. The
- * mocking this feature needs lives in `DocumentsList.spec.ts`; the two
- * concerns do not belong in one file.
- *
- * These assert at `fetch`, not at `apiFetch`, because `apiFetch` is
- * called through the api module's own module-scope binding — a spy on
- * the exported namespace is never read. Intercepting `fetch` is both
- * the only thing that works and the stronger assertion: it proves the
- * `workspace_id` survives onto the actual request URL, and that URL is
- * the whole isolation mechanism. A helper that dropped the segment
- * would silently read a different workspace's documents.
- */
+/** The documents API client's wire shape (Migration 095). In its own file, with NO
+ * `vi.mock('../api')`: a module factory that spreads the real module re-wraps the exports, and the
+ * real `apiFetch` never reaches the `fetch` spy the assertions install. */
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import * as api from '../api'

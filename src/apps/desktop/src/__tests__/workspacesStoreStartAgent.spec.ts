@@ -1,14 +1,5 @@
-/**
- * Tests for workspacesStore.startAgentOnTask — the store action that
- * wraps api.startAgentOnTask for the kanban edit-mode "Start agent"
- * flow. Behavioural coverage: calls api.startAgentOnTask with the
- * correct URL; returns the parsed body on success; returns undefined
- * when the API throws (the host falls back to "Agent didn't start"
- * UX). Distinct from runAgentOnNewTask (create-time, sends a
- * queue_message) and runRoutine (routine-only, 404 for non-routines).
- *
- * Plan: docs/superpowers/specs/2026-08-18-kanban-task-detail-start-agent.md
- */
+/** Tests for workspacesStore.startAgentOnTask — the store action that wraps api.startAgentOnTask
+ * for the kanban edit-mode "Start agent" flow. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -47,13 +38,9 @@ describe('workspacesStore.startAgentOnTask', () => {
   })
 
   it('propagates a backend "success: false" response (does not throw)', async () => {
-    // The backend returns `{ success: true, ... }` on the happy path
-    // and 4xx errors (no body parse — they fail the apiFetch). The
-    // only way the body parses but `success: false` is if the
-    // backend adds a partial-success response shape. The host's
-    // handler maps this to "Agent didn't start — server reported
-    // failure." — verify the action is a pass-through (does NOT
-    // throw on success=false).
+    // The backend returns `{ success: true, ... }` on the happy path and 4xx errors (no body parse
+    // — they fail the apiFetch). The only way the body parses but `success: false` is if the
+    // backend adds a partial-success response shape.
     vi.spyOn(api, 'startAgentOnTask').mockResolvedValue({ success: false })
     const store = useWorkspacesStore()
     const result = await store.startAgentOnTask('ws_1', 'item_1', 'task_abc')

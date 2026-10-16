@@ -1,15 +1,5 @@
-/**
- * Behavioural tests for `ChatsList.vue` workspace scoping (plan:
- * 2026-09-22-revamp-ui-chats-workspace-scoped).
- *
- * The CHATS list is NOT global: `loadChats()` passes the scoped
- * workspace id to `api.getChats(..., workspaceId)` and the backend
- * returns only that workspace's sessions. The scope resolves from
- * the URL path workspace first, then the store's active workspace.
- * A scope change clears the old rows before refetching (no stale
- * frame). The "+" new-chat button is gone (both variants) — new
- * chats are created from workspace items.
- */
+/** Behavioural tests for `ChatsList.vue` workspace scoping (plan:
+ * 2026-09-22-revamp-ui-chats-workspace-scoped). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp, nextTick, reactive, ref } from 'vue'

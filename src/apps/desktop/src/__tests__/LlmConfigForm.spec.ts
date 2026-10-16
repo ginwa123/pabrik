@@ -111,8 +111,8 @@ describe('LlmConfigForm', () => {
     expect(wrapper.text()).toContain('Model is required')
   })
 
-  // ─── Plan 2026-07-07-compaction-inline: Compaction overrides ───
 
+  // ─── Plan 2026-07-07-compaction-inline: Compaction overrides ───
   
 
   it('has NO override checkbox — an empty context-window field is the inherit state', async () => {
@@ -227,7 +227,6 @@ describe('LlmConfigForm', () => {
   })
 
   // ─── Temperature freetext (auto or 0–1) ───
-
   it('temperature offers auto/0/0.5/1 presets via datalist', async () => {
     const wrapper = await mountOpen(LlmConfigForm, { props: { modelValue: { ...baseValue } } })
     const input = wrapper.find('[data-testid="temperature-input"]')

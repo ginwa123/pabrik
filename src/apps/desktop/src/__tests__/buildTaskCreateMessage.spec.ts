@@ -1,15 +1,5 @@
-/**
- * Tests for buildTaskCreateMessage — the `create_and_run` user-message
- * formatter (plan: 2026-09-11-kanban-create-task-message-format-worktree-toggle).
- *
- * Format contract:
- *   Task : <name>
- *   Description: <description>   <- omitted when empty/whitespace
- *                                  <- blank line +
- *   #Notes UseGitWorktree         <- only when useGitWorktree is true
- *   Path: <worktreePath>          <- only when useGitWorktree is true
- *                                    AND worktreePath is non-empty
- */
+/** Tests for buildTaskCreateMessage — the `create_and_run` user-message formatter (plan:
+ * 2026-09-11-kanban-create-task-message-format-worktree-toggle). */
 import { describe, expect, it } from 'vitest'
 
 import { buildTaskCreateMessage } from '@/components/kanban/buildTaskCreateMessage'

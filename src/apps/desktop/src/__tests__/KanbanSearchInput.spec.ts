@@ -1,15 +1,6 @@
-/**
- * Behavioural tests for <KanbanSearchInput>.
- *
- * Plan: docs/superpowers/plans/2026-07-30-kanban-task-search.md Chunk 5
- *
- * The component is a compact input + clear button + Esc-to-clear. It
- * is purely presentational — emits v-model updates; the host
- * (KanbanView.vue) owns the debounce + refetch.
- *
- * Mount via @vue/test-utils. The component is stateless (v-model only),
- * so no Pinia setup is needed for these tests.
- */
+/** Behavioural tests for <KanbanSearchInput>. Plan:
+ * docs/superpowers/plans/2026-07-30-kanban-task-search.md Chunk 5 The component is a compact input
+ * + clear button + Esc-to-clear. */
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 

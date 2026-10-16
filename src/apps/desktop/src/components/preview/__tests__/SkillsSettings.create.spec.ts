@@ -1,17 +1,5 @@
-/*
- * SkillsSettings.vue — the create path.
- *
- * The panel was read-only + delete; this pins the insert half. The
- * assertions that matter are the ones a read-only panel could not get
- * wrong:
- *
- *   1. The POST body carries all three fields, so a create with only a
- *      name does not leave the description NULL.
- *   2. A duplicate name is a 409 the FORM shows, not a toast that outlives
- *      the fields that caused it.
- *   3. The new row is selected and the list re-read, so the user sees what
- *      was actually stored rather than an empty detail pane.
- */
+/** SkillsSettings.vue — the create path. The panel was read-only + delete; this pins the insert
+ * half. The assertions that matter are the ones a read-only panel could not get wrong: 1. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'

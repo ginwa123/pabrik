@@ -1,25 +1,6 @@
-/**
- * Unit tests for the bus-backed designSse Pinia store (Chunk 6 of
- * docs/superpowers/plans/2026-07-08-design-mode-redesign.md).
- *
- * Mirrors kanbanSse.spec.ts byte-for-byte in structure. The store
- * no longer opens its own EventSource — it subscribes via
- * `useSseBus().on('design', ...)`. Tests:
- *   - install the bus via `installSseBus` + swap in a stub global
- *     client (so we never touch the network in tests)
- *   - drive design events via `__dispatchSseBus('design', event)` —
- *     the bus test injection point routes the event through the
- *     same `dispatch()` function production uses
- *   - assert the workspace-id filter drops events for other workspaces
- *   - assert the design dispatch logic calls
- *     `workspacesStore.fetchDesignElements`
- *   - assert `closeDesignSse` detaches the listener so events after
- *     close are NOT delivered
- *   - assert `initDesignSse` is idempotent (second call doesn't add
- *     a second listener)
- *   - assert `closeDesignSse` clears `activeWorkspaceId` so a later
- *     init can re-bind cleanly
- */
+/** Unit tests for the bus-backed designSse Pinia store (Chunk 6 of
+ * docs/superpowers/plans/2026-07-08-design-mode-redesign.md). Mirrors kanbanSse.spec.ts
+ * byte-for-byte in structure. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp } from 'vue'
@@ -98,15 +79,9 @@ describe('useDesignSseStore (bus-backed)', () => {
     __dispatchSseBus('design', event)
   }
 
-  // ─── Contract: idempotency + state cleanup ────────────────────────────
-  //
-  // The Chunk 6 task spec lists exactly two test contracts:
-  //   1. initDesignSse is idempotent (second call doesn't add a
-  //      second listener — confirmed by counting fetches per
-  //      dispatched event).
-  //   2. closeDesignSse clears activeWorkspaceId (so a later
-  //      initDesignSse can re-bind cleanly).
-
+  // ─── Contract: idempotency + state cleanup ──────────────────────────── The Chunk 6 task spec
+  // lists exactly two test contracts: 1. initDesignSse is idempotent (second call doesn't add a
+  // second listener.
   it('initDesignSse is idempotent — second call does NOT add a second listener', async () => {
     // Spy on workspacesStore.fetchDesignElements and count how many
     // times it fires per dispatched event. If initDesignSse added a
@@ -171,18 +146,7 @@ describe('useDesignSseStore (bus-backed)', () => {
     expect(fetchSpy).toHaveBeenCalledWith('ws_2', 'item_1', 'page_1')
   })
 })
-// ─── Chunk 3 — local-mutation SSE dedupe (design-drag-debounce-batch) ───
-//
-// Plan: docs/superpowers/plans/2026-07-30-design-drag-debounce-batch.md
-//   (Chunk 3, Task 3.4)
-//
-// Every locally-issued geometry PATCH registers the affected
-// element_id(s) in the `recentLocalMutations` Map (workspaces.ts). The
-// SSE handler reads this Map on every incoming event and SKIPS the
-// `fetchDesignElements` GET fan-out when the event is for a locally- mutated element. Combined with
-// the batch endpoint (1 PATCH instead of N per-element PATCHes per pointermove), this is the
-// dominant backend-load reduction.
-
+// ─── Chunk 3.
 describe('designSse — local-mutation dedupe', () => {
   let localStubClient: SseClient
 

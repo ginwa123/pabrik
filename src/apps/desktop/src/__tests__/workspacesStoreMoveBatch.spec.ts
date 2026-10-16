@@ -156,7 +156,6 @@ describe('workspacesStore.moveDesignElementsBatch', () => {
     expect(result.length).toBe(3)
 
     // Local cache mirrors the server response.
-     
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const elements = (store.workspaces[0] as any).items[0].design_elements
     expect(elements[0].x).toBe(100)
@@ -205,20 +204,11 @@ describe('workspacesStore.moveDesignElementsBatch', () => {
   })
 
   it('local mirror survives a fetchDesignElements array replace (race regression)', async () => {
-    // Bug history (2026-08-06): the first drag of a group/frame moved
-    // only the group, not the descendants. Root cause: an upstream
-    // `fetchDesignElements` did `item.design_elements = elements`
-    // (REPLACE), and a concurrent `moveDesignElementsBatch` mirror
-    // captured the OLD array reference. The mirror's writes to the
-    // OLD array were lost when Vue re-rendered against the NEW
-    // array. The fix: fetchDesignElements mutates in place, AND the
-    // mirror uses the same array reference (locked via the
-    // `findItem` lookup, which always returns the current
-    // `workspace.items[idx].design_elements`).
+    // Bug history (2026-08-06): the first drag of a group/frame moved only the group, not the
+    // descendants.
     const store = makeWorkspacesStore()
 
     // Initial baseline: stub getDesignPage to return the same
-     
     // elements array reference (NOT replaced by fetch).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const baseline = (store.workspaces[0] as any).items[0].design_elements
@@ -262,10 +252,8 @@ describe('workspacesStore.moveDesignElementsBatch', () => {
       { element_id: 'elem_root', dx: 100, dy: 50 },
     ])
 
-    // CRITICAL: the design_elements array must be the SAME reference
-     
-    // after the mirror (Vue 3 reactivity depends on per-index writes
-    // to the same reactive array).
+    // CRITICAL: the design_elements array must be the SAME reference after the mirror — Vue 3
+    // reactivity depends on per-index writes to the same reactive array.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const after = (store.workspaces[0] as any).items[0].design_elements
     expect(after).toBe(baseline)
@@ -278,22 +266,8 @@ describe('workspacesStore.moveDesignElementsBatch', () => {
     expect(after[2].y).toBe(150)
   })
 
-  /**
-   * BUG FIX (2026-08-06, design-mode-second-drag): the `POST
-   * .../elements/move-batch` endpoint historically emitted `elem_type`
-   * (the Zig struct field name) instead of `type` on the wire. After a
-   * single move-batch the local mirror was clobbering `type` with
-   * `undefined`, which silently disabled the cascade path on every
-   * subsequent drag (`isGroupLike = false` → `triggerGroupDrag = false`).
-   *
-   * The fix has two parts:
-   *   1. Backend: the move-batch handler now uses
-   *      `makeDesignElementResponse` (canonical wire shape).
-   *   2. Frontend: defense in depth — the store mirror step normalizes
-   *      `type` from either `type` (canonical) or `elem_type`
-   *      (legacy). This test pins the frontend side: a backend
-   *      response using `elem_type` must NOT clobber `type`.
-   */
+  /** BUG FIX (2026-08-06, design-mode-second-drag): the `POST .../elements/move-batch` endpoint
+   * historically emitted `elem_type` (the Zig struct field name) instead of `type` on the wire. */
   it('local mirror preserves `type` when backend emits `elem_type` (legacy wire shape)', async () => {
     const store = makeWorkspacesStore()
     // Seed the store with an item containing a group + a leaf.

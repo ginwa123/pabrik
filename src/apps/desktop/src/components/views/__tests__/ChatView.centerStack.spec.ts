@@ -1,17 +1,5 @@
-/**
- * Phase 3 stacked center diff (3.2): ChatView renders ALL changed files
- * stacked vertically — one lazily-mounted CenterDiffSection per file —
- * instead of a single SidebarDiffView. Fast scroll comes from
- * content-visibility + IntersectionObserver lazy mount, not pagination.
- *
- * - `centerFiles: DiffSelection[]` (ordered) + `currentPath`, with
- *   `centerDiff` set on show-diff only — list loads preload silently and
- *   never auto-open (refresh lands on chat).
- * - show-diff merges a single file (union by path); show-diff-list
- *   merges the full list with list order winning; a click on an
- *   already-loaded file only scrolls (no refetch).
- * - Each section id is `center-diff-<base64url-no-pad path>`.
- */
+/** Phase 3 stacked center diff (3.2): ChatView renders ALL changed files stacked vertically — one
+ * lazily-mounted CenterDiffSection per file — instead of a single SidebarDiffView. */
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import { shallowMount, flushPromises } from '@vue/test-utils'
 import { nextTick } from 'vue'
