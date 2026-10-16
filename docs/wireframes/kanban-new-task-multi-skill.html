@@ -102,6 +102,10 @@
   [data-ui] .dropdown { position: absolute; top: calc(100% + 5px); left: 0; z-index: 20; min-width: 320px;
               max-width: 380px; border-radius: 8px; overflow: hidden; background: var(--bg-m1);
               border: 1px solid var(--border); box-shadow: 0 10px 30px rgba(0,0,0,.55); }
+  [data-ui] .dsearch { padding: 7px 11px; border-bottom: 1px solid var(--border); }
+  [data-ui] .dsearch input { width: 100%; background: transparent; border: none; outline: none;
+                             font-size: 16px; color: var(--text); font-family: inherit; }
+  [data-ui] .dsearch input::placeholder { color: var(--text-dim); }
   [data-ui] .dhead { display: flex; align-items: center; gap: 8px; padding: 7px 11px;           border-bottom: 1px solid var(--border); font-size: 14px; color: var(--text-muted); }
   .dhead .dact { margin-left: auto; color: var(--blue); font-size: 14px; cursor: pointer;
                  background: none; border: none; font-family: inherit; }
@@ -177,15 +181,15 @@
 
   <h1>Pick several skills for one task</h1>
   <p class="sub">
-    Reading of the card: the New-task dialog already carries a <b>single</b>-choice <b>Skill</b>
-    picker (PR #958) and you want a task to carry <b>several</b> skills. You asked for the wireframe
-    <b>first</b>, so this round is <b>wireframe and plan only, no product code touched</b>: pick a
-    variant below and I implement DB, then backend, then frontend, then tests, in the same worktree.
+    This is the design record for <b>PR #966</b>. The card asked to let a task carry <b>several</b>
+    skills (today it carries one, PR #958) and to see the wireframe first. Round 1 was this wireframe;
+    you then chose <b>V1 with a search field</b>, and the implementation landed on the same branch:
+    DB, backend, dialog, tests. The panes below are live, and section 8 records the decisions.
   </p>
   <div class="flow">
-    <span class="step now">wireframe (this file)</span>
+    <span class="step">wireframe (this file)</span>
     <span class="arrow">&#8594;</span>
-    <span class="step">you pick a variant</span>
+    <span class="step now">V1 + search, chosen</span>
     <span class="arrow">&#8594;</span>
     <span class="step">Migration 112 + backend</span>
     <span class="arrow">&#8594;</span>
@@ -234,10 +238,12 @@
         </tr>
         <tr>
           <td>Read side</td>
-          <td><b>None.</b> Nothing renders a task's skill. The task model has no
-              <code>skill_name</code> field and <code>tasks_list.zig</code> never selects it, so the
-              column is <b>write-only</b> today.</td>
-          <td><code>models/workspace_item_task.zig</code>, <code>tasks_list.zig</code></td>
+          <td>The two kanban task listers <b>do</b> select it: <code>llm_history.zig</code> reads
+              <code>COALESCE(t.skill_name, '')</code> at index 19 and the list response carries the
+              field. But <b>no surface renders it</b>: the frontend's <code>Task</code> type declares
+              it and no component reads it, so a picked skill is invisible again the moment the task
+              exists.</td>
+          <td><code>llm_history.zig</code>, <code>stores/workspaces.ts</code></td>
         </tr>
       </tbody>
     </table>
@@ -365,12 +371,14 @@ Path: /home/ginwa/.config/pabrik/.worktrees/my-task
     </div>
   </div>
 
-  <h2><span class="n">2</span>V1: multi-select dropdown plus chips (recommended)</h2>
+  <h2><span class="n">2</span>V1: multi-select dropdown, chips and a search field (chosen)</h2>
   <p class="lead">
     The pill keeps its place in the row, but the dropdown becomes a <b>checkbox list that stays
-    open</b>, so many skills are picked in one pass and the dropdown closes when you click away. The
-    picked skills are echoed as <b>removable chips</b> in a strip under the row, so the choice stays
-    visible after the dropdown closes. This is the closest variant to today's markup.
+    open</b>, so many skills are picked in one pass and the dropdown closes when you click away. A
+    <b>search field</b> narrows the rows as you type, matching the name or the description, because
+    this machine carries 25 skills. The picked skills are echoed as <b>removable chips</b> in a strip
+    under the row, so the choice stays visible after the dropdown closes. This is the variant you
+    picked, and the one that shipped.
   </p>
 
   <div class="win" data-testid="paneB" data-ui>
@@ -409,6 +417,9 @@ Path: /home/ginwa/.config/pabrik/.worktrees/my-task
                 <span data-testid="paneB-head-count">2 of 6 skills selected</span>
                 <button type="button" class="dact" data-testid="paneB-clear">Clear all</button>
               </div>
+              <div class="dsearch">
+                <input type="text" data-testid="paneB-search" placeholder="Search skills..." aria-label="Search skills">
+              </div>
               <button type="button" class="drow first" data-testid="paneB-row-none">
                 <input type="checkbox" class="cb" data-testid="paneB-check-none" tabindex="-1" aria-hidden="true">
                 <span><span class="nm">None, let the agent decide</span>
@@ -439,6 +450,7 @@ Path: /home/ginwa/.config/pabrik/.worktrees/my-task
                 <span><span class="nm">verify-html-wireframe-with-agent-browser</span>
                 <span class="ds">Use after authoring any standalone HTML wireframe or preview in this repo: assert DOM geometry and interactions with agent-browser&#8230;</span></span>
               </button>
+              <div class="dempty" data-testid="paneB-nomatch" style="display:none">No skill matches that search.</div>
             </div>
           </span>
         </div>
@@ -477,6 +489,9 @@ Path: /home/ginwa/.config/pabrik/.worktrees/my-task
             header. The "None" row stays for discoverability.</span></div>
           <div class="ann"><span class="num">&#9319;</span><span>The note gets exactly one
             <code>#Skill</code> line per skill, because the frontend bake is dropped.</span></div>
+          <div class="ann"><span class="num">&#9323;</span><span>The <b>search box</b> narrows the
+            rows on the name or the description; a picked skill stays checked while hidden, so
+            clearing the query brings it back.</span></div>
         </div>
       </div>
     </div>
@@ -655,7 +670,7 @@ Path: /home/ginwa/.config/pabrik/.worktrees/my-task
     </table>
   </div>
 
-  <h2><span class="n">7</span>Implementation scope (what I touch once you pick)</h2>
+  <h2><span class="n">7</span>Implementation scope (all of it shipped in this PR)</h2>
   <div class="card">
     <table class="fixed">
       <colgroup><col style="width:42%"><col style="width:58%"></colgroup>
@@ -706,35 +721,32 @@ Path: /home/ginwa/.config/pabrik/.worktrees/my-task
     </p>
   </div>
 
-  <h2><span class="n">8</span>Pick one: the four questions I need answered</h2>
+  <h2><span class="n">8</span>Decisions</h2>
   <div class="card">
     <div class="opt rec">
       <span class="box"></span>
-      <span><span class="ot">Q1. Which picker? V1 is recommended</span>
-      <span class="od">V1 is the checkbox dropdown plus chips, V2 the chip input with a filter, V3 the
-      count-only pill. V1 keeps the row's visual language and makes the set visible. V2 scales better
-      with 25 skills but breaks the pill row's uniformity.</span></span>
+      <span><span class="ot">Q1. Picker: V1 with a search field, chosen</span>
+      <span class="od">A checkbox dropdown that stays open, a search box that narrows the rows by name
+      or by description, and removable chips under the row. Shipped in this PR.</span></span>
     </div>
     <div class="opt">
       <span class="box"></span>
-      <span><span class="ot">Q2. Cap the number of skills per task?</span>
-      <span class="od">Proposal: yes, at 20, which bounds both the wire payload and the note. Above
-      the cap the request is a 400, like the dependency count limit. Say no cap and I drop the
-      check.</span></span>
+      <span><span class="ot">Q2. Cap: 20 skills per task, accepted</span>
+      <span class="od">A 21st skill is a 400 with "skill_names: at most 20 skills per task", so
+      neither the row nor the agent's first message can grow without bound.</span></span>
     </div>
     <div class="opt">
       <span class="box"></span>
-      <span><span class="ot">Q3. Keep accepting the legacy single <code>skill_name</code> field?</span>
-      <span class="od">Proposal: yes, as a one-element list. It costs about six lines and keeps curl
-      scripts, older desktop builds and the Android client working. Say no and the field is removed
-      cleanly.</span></span>
+      <span><span class="ot">Q3. The legacy single <code>skill_name</code> field, kept</span>
+      <span class="od">Accepted as a one-element list whenever no array is sent, so curl scripts,
+      older desktop builds and any other client keep working.</span></span>
     </div>
     <div class="opt">
       <span class="box"></span>
-      <span><span class="ot">Q4. List column, or a join table like dependencies?</span>
-      <span class="od">Proposal: the <code>skill_names</code> list column, for the reasons in section
-      6. Related: today nothing ever shows a task's skill again. Do you want the chosen skills
-      surfaced on the card or in the detail view in this change, or kept out of scope?</span></span>
+      <span><span class="ot">Q4. Storage: the <code>skill_names</code> list column, accepted</span>
+      <span class="od">Migration 112 renames the column. Surfacing a task's skills on the card or in
+      the detail view stays out of scope: the wire already carries them and no component draws them,
+      which is worth its own card.</span></span>
     </div>
   </div>
 
@@ -797,11 +809,10 @@ Path: /home/ginwa/.config/pabrik/.worktrees/my-task
   </div>
 
   <p class="foot">
-    Wireframe only. No product file was modified for this round. Verified in agent-browser by
-    asserting DOM geometry and interactions rather than by looking at a screenshot, and the numbers
-    are quoted in the session reply. Artifact:
-    <code>docs/wireframes/kanban-new-task-multi-skill.html</code>, branch
-    <code>worktree/enhance-kanban-task-add-to-add-more-skills-1792163303599</code>.
+    Design record for PR #966 on branch
+    <code>worktree/enhance-kanban-task-add-to-add-more-skills-1792163303599</code>. The panes are live
+    and were verified by asserting DOM geometry and interactions in agent-browser rather than by
+    looking at a screenshot; the numbers are quoted in the session reply and in the PR body.
   </p>
 </div>
 
@@ -869,6 +880,7 @@ Path: /home/ginwa/.config/pabrik/.worktrees/my-task
   /* ---------- pane B: V1, a checkbox multi-select plus chips ---------- */
   var bSel = ['behavior-unit-tests', 'verify-html-wireframe-with-agent-browser'];
   var bOpen = false;
+  var bQuery = '';
 
   var CROSS = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
 
@@ -887,6 +899,21 @@ Path: /home/ginwa/.config/pabrik/.worktrees/my-task
     }
     var none = q('[data-testid="paneB-check-none"]');
     if (none) none.checked = bSel.length === 0;
+
+    // The search box narrows the rows; a picked skill stays checked while
+    // hidden, so clearing the query brings it back.
+    var shown = 0;
+    SKILLS.forEach(function (name) {
+      var row = q('[data-testid="paneB-row-' + name + '"]');
+      if (!row) return;
+      var match = bQuery === '' || row.textContent.toLowerCase().indexOf(bQuery) !== -1;
+      row.style.display = match ? 'flex' : 'none';
+      if (match) shown += 1;
+    });
+    var noneRow = q('[data-testid="paneB-row-none"]');
+    if (noneRow) noneRow.style.display = bQuery === '' ? 'flex' : 'none';
+    var noMatch = q('[data-testid="paneB-nomatch"]');
+    if (noMatch) noMatch.style.display = shown === 0 ? 'block' : 'none';
 
     q('[data-testid="paneB-count"]').textContent = String(bSel.length);
     q('[data-testid="paneB-label"]').textContent =
@@ -922,6 +949,10 @@ Path: /home/ginwa/.config/pabrik/.worktrees/my-task
   });
   q('[data-testid="paneB-clear"]').addEventListener('click', function () {
     bSel = [];
+    renderB();
+  });
+  q('[data-testid="paneB-search"]').addEventListener('input', function (ev) {
+    bQuery = ev.target.value.trim().toLowerCase();
     renderB();
   });
   function toggleRow(name) {
