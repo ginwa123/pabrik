@@ -1,30 +1,4 @@
-/**
- * KanbanView URL preservation — the regressions that the static-`useRoute`
- * harness could not see.
- *
- * Both pre-existing KanbanView router specs (`KanbanView.sortByApi.spec.ts`,
- * `KanbanView.rowMode.spec.ts`) mock `useRoute` with a STATIC object whose
- * `query` is frozen at mount, and `router.replace` with a bare `vi.fn()` that
- * mutates nothing. That makes two whole classes of bug structurally invisible:
- *
- *   1. **Staleness** — `flatQuery()` reads `route.query`, which vue-router only
- *      updates at navigation *finalization* (≥6 microtask hops after the call).
- *      With a frozen mock, `route.query` never changes, so a writer that reads
- *      a stale snapshot looks identical to one that reads a fresh one.
- *   2. **Path shape** — the mock hardcodes `path: '/app'`, so a writer that
- *      emits the legacy `?view=workspace` shape instead of the canonical
- *      `/app/{ws}/projects/{item}` path is indistinguishable from a correct one.
- *
- * These tests use a REAL memory router and assert on
- * `router.currentRoute.value` after `flushPromises()`, so both classes are
- * observable.
- *
- * Why the path shape matters (the actual user-visible bug): the legacy
- * `?view=workspace` URL is rewritten once at boot by
- * `AppLayout.rewriteLegacyQuery`, whose sub-state whitelist is hardcoded. Any
- * param missing from that whitelist is silently dropped on reload — which is
- * how `?layout=rows` was lost for shared links and second machines.
- */
+/** KanbanView URL preservation — the regressions that the static-`useRoute` harness could not see. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -68,12 +42,9 @@ const makeItem = (overrides: Partial<WorkspaceItem> = {}): WorkspaceItem => ({
   ...overrides,
 })
 
-/**
- * A real router with a catch-all route, so `router.replace` actually commits
- * and `route.query` actually updates. The catch-all keeps the path opaque —
- * these tests assert on the query, and on the path only where the shape is
- * the point.
- */
+/**  * A real router with a catch-all route, so `router.replace` actually commits and `route.query`
+ * actually updates. The catch-all keeps the path opaque — these tests assert on the query, and on
+ * the path only where the shape is the point. */
 async function makeRouter(initial: {
   path: string
   query?: Record<string, string>
@@ -123,7 +94,6 @@ describe('KanbanView — URL preservation (real router)', () => {
   })
 
   // ─── B1: the sorts watcher must not emit the legacy URL shape ────────────
-
   it('picking a column sort keeps the canonical path (not the legacy /app?view= shape)', async () => {
     const router = await makeRouter({
       path: `/app/${WS_ID}/projects/${ITEM_ID}`,
@@ -188,7 +158,6 @@ describe('KanbanView — URL preservation (real router)', () => {
   })
 
   // ─── B3: setLayout must not clobber ?sorts= from a stale snapshot ────────
-
   it('switching layout preserves ?sorts= in the committed URL', async () => {
     const router = await makeRouter({
       path: `/app/${WS_ID}/projects/${ITEM_ID}`,
@@ -230,7 +199,6 @@ describe('KanbanView — URL preservation (real router)', () => {
   })
 
   // ─── B2: closing the detail panel must not drop ?layout= ─────────────────
-
   it('closing the detail panel preserves ?layout= in the committed URL', async () => {
     const router = await makeRouter({
       path: `/app/${WS_ID}/projects/${ITEM_ID}`,
@@ -258,7 +226,6 @@ describe('KanbanView — URL preservation (real router)', () => {
   })
 
   // ─── Round-trip: the URL survives a reload ───────────────────────────────
-
   it('a ?layout=rows deep link restores row mode on a fresh mount', async () => {
     const router = await makeRouter({
       path: `/app/${WS_ID}/projects/${ITEM_ID}`,

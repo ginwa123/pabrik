@@ -1,34 +1,13 @@
-/**
- * Tests for SpawnSubAgent.vue live-progress rendering.
- *
- * 2026-08-23 spawn-subagent-live-progress — verifies the new `progress`
- * prop drives live per-agent rows WHILE the final `<results>` envelope
- * is still empty, and that the existing parsed-results behaviour keeps
- * working once the envelope arrives. Specifically:
- *
- *  - empty content + progress prop → renders one row per agent,
- *    running/done/failed badge per row, header count reflects state
- *  - populated `<results>` content + stale progress → parsed-results
- *    view wins (envelope is source of truth on completion)
- *  - peek button on a running row is wired when subagent_session_id
- *    is present
- *  - failed row shows ✗ styling
- *  - invalid UTF-8 / partial progress doesn't crash the row renderer
- */
+/** Tests for SpawnSubAgent.vue live-progress rendering. 2026-08-23 spawn-subagent-live-progress. */
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import SpawnSubAgent from '../SpawnSubAgent.vue'
 import type { SubAgentProgress } from '../../../helpers/subagentProgress'
 
-// ────────────────────────────────────────────────────────────────────────
-// Helpers
-// ────────────────────────────────────────────────────────────────────────
-
-// Loose props type: tests intentionally pass partial / loosely-typed
-// values (e.g. `null` sessionId, optional `progress`). vue-tsc
-// independently type-checks the production component against its
-// real prop definitions; this cast only relaxes the test fixture.
+// ──────────────────────────────────────────────────────────────────────── Helpers
+// ──────────────────────────────────────────────────────────────────────── Loose props type: tests
+// intentionally pass partial / loosely-typed values (e.g. `null` sessionId, optional `progress`).
 type TestProps = {
   content?: unknown
   expanded?: boolean
@@ -66,7 +45,6 @@ afterEach(() => {
 // ────────────────────────────────────────────────────────────────────────
 // Live-progress rendering (NEW — 2026-08-23 feature)
 // ────────────────────────────────────────────────────────────────────────
-
 describe('SpawnSubAgent.vue — live progress', () => {
   it('renders one row per progress entry when content has no <results> envelope yet', () => {
     const progress: SubAgentProgress[] = [
@@ -162,9 +140,8 @@ describe('SpawnSubAgent.vue — live progress', () => {
 
   it('tolerates empty progress array without crashing (shows starting placeholder, not 0)', () => {
     const wrapper = mountAt({ content: '', progress: [] })
-    // Without progress AND without parsed-results content, the card is
-    // still in the Phase 1 placeholder state (tool running, no
-    // <results> yet) — 2026-09-04 refresh fix shows an honest
+    // Without progress AND without parsed-results content, the card is still in the Phase 1
+    // placeholder state (tool running, no <results> yet) — 2026-09-04 refresh fix shows an honest
     // "starting…" loading card instead of the confusing "0 sub-agents".
     expect(wrapper.text()).toContain('starting')
     expect(wrapper.text()).not.toContain('0 sub-agents')
@@ -204,7 +181,6 @@ describe('SpawnSubAgent.vue — live progress', () => {
 // ────────────────────────────────────────────────────────────────────────
 // Envelope vs progress precedence (NEW — 2026-08-23 feature)
 // ────────────────────────────────────────────────────────────────────────
-
 describe('SpawnSubAgent.vue — envelope precedence', () => {
   const envelope = {
     results: [
@@ -221,10 +197,9 @@ describe('SpawnSubAgent.vue — envelope precedence', () => {
   }
 
   it('renders the parsed <results> envelope even if progress prop is also passed', async () => {
-    // Once the tool result lands, the envelope wins — progress prop is
-    // ignored. This matches the PR #299 dedupe principle: the source
-    // of truth is the llm_history row, never the SSE-only progress
-    // stream (which is ephemeral).
+    // Once the tool result lands, the envelope wins — progress prop is ignored. This matches the PR
+    // #299 dedupe principle: the source of truth is the llm_history row, never the SSE-only
+    // progress stream (which is ephemeral).
     const progress: SubAgentProgress[] = [
       sampleProgress('running', { name: 'stale', index: 0, total: 1 }),
     ]
@@ -245,7 +220,6 @@ describe('SpawnSubAgent.vue — envelope precedence', () => {
 // ────────────────────────────────────────────────────────────────────────
 // Pre-thread failure (starting-state error — task_1789301896347_4)
 // ────────────────────────────────────────────────────────────────────────
-
 describe('SpawnSubAgent.vue — pre-thread failure envelope', () => {
   // What the card receives when exec fails before any thread emits:
   // innerToolData falls back to the FULL envelope (data is null), which

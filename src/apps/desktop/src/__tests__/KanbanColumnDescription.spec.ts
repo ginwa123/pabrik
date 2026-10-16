@@ -1,21 +1,5 @@
-/**
- * Tests for the column description subtitle rendered between the
- * header row (name + count + ⋮ menu) and the cards drop zone in
- * KanbanColumn.vue.
- *
- * The description element has data-testid="kanban-column-{id}-description"
- * and is shown only when column.description is truthy (non-empty
- * string). The backend sends "" as the "no description" sentinel,
- * so the v-if="column.description" guard handles:
- *   - "" (empty string from the backend's NOT NULL DEFAULT '' column)
- *   - null (the API JSON serializes the SQLite empty TEXT as null
- *     through some paths)
- *   - undefined (legacy column literals in test fixtures predate
- *     the description field)
- *
- * Plan: docs/superpowers/plans/2026-06-27-kanban-column-description-settings.md
- *   Chunk 2 / Task 2.4
- */
+/** Tests for the column description subtitle rendered between the header row (name + count + ⋮
+ * menu) and the cards drop zone in KanbanColumn.vue. */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

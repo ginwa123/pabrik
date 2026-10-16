@@ -44,11 +44,8 @@ describe('PabrikSaveBar', () => {
   })
 
   it('pins itself to the TOP of the pane, with the separator on its bottom edge', () => {
-    // The bar used to sit at the BOTTOM of the settings pane, which put the
-    // only save/reset controls below a section the user has to scroll
-    // through. It is now mounted above the scrollable content, so the
-    // classes have to describe a top-pinned bar: `top-0`, not `bottom-0`,
-    // and the divider on the edge that faces the content.
+    // The bar used to sit at the BOTTOM of the settings pane, which put the only save/reset
+    // controls below a section the user has to scroll through.
     const wrapper = mount(PabrikSaveBar, {
       props: { dirty: true, unsavedCount: 2, saving: false },
     })

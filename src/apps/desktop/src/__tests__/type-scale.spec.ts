@@ -1,24 +1,6 @@
-/**
- * The app-wide type contract.
- *
- * The complaint that produced this file: font sizes had drifted into nine
- * hand-rolled arbitrary values (0.6rem, 0.65rem, 9px, 10px, 0.7rem,
- * 0.72rem, 11px, 0.8rem, 13px) plus Tailwind's own numeric ladder, with
- * the same visual size spelled four different ways. Nothing asserted a
- * measurement, so the next component was free to invent a tenth.
- *
- * The rule this enforces is simple: there is exactly one list of font
- * sizes and one list of font weights, in style.css's @theme block, and
- * every component picks a step off it by ROLE. A raw `text-[11px]` or a
- * bare `text-xs` fails here rather than in a screenshot review.
- *
- * Deliberately NOT a pixel-diff: that fails on a 1px antialiasing change
- * and passes on a 12px indent regression.
- *
- * Note: no `expect(value, message)` form — eslint-plugin-jest/valid-expect
- * rejects a second argument, so per-file context goes in the failure text
- * via the collected map instead.
- */
+/** The app-wide type contract. The complaint that produced this file: font sizes had drifted into
+ * nine hand-rolled arbitrary values plus Tailwind's own ladder, with one visual size spelled four
+ * different ways. */
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -26,11 +8,8 @@ import { dirname, join, relative, resolve } from 'node:path'
 
 const SRC = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
-/**
- * The scale, and the pixels behind it. This list is the SPEC; style.css is
- * the implementation. If someone retunes a step, this assertion is the one
- * place that has to be updated in step with it.
- */
+/**  * The scale, and the pixels behind it. This list is the SPEC; style.css is the implementation. If
+ * someone retunes a step, this assertion is the one place that has to be updated in step with it. */
 const SCALE: Record<string, string> = {
   '--text-micro': '10px',
   '--text-meta': '11px',
@@ -77,12 +56,9 @@ function walk(dir: string, out: string[] = []): string[] {
 const COMPONENT_FILES = walk(SRC).filter((p) => !p.endsWith('.spec.ts'))
 const CSS = readFileSync(join(SRC, 'style.css'), 'utf8')
 
-/**
- * Only the TEMPLATE and the class strings of a component are under
- * contract — a spec file legitimately contains `text-xs` inside the regex
- * that hunts for banned classes, and this file's own doc comment names the
- * old spellings. So specs are excluded from the scan.
- */
+/**  * Only the TEMPLATE and the class strings of a component are under contract — a spec file
+ * legitimately contains `text-xs` inside the regex that hunts for banned classes, and this file's
+ * own doc comment names the old spellings. So specs are excluded from the scan. */
 function collect(pick: (line: string) => string | null): Record<string, string[]> {
   const found: Record<string, string[]> = {}
   for (const file of COMPONENT_FILES) {
@@ -161,22 +137,13 @@ describe('type scale', () => {
   })
 
   it('writes no raw font-size inside a component <style> block', () => {
-    // The hole that let 96 off-scale values survive the class migration:
-    // `collect()` reads every line of every component, but it only looks
-    // for Tailwind CLASSES. A `font-size: 0.8125rem` inside a .vue
-    // <style> block is not a class, so nothing here saw it.
-    //
-    // Scanned as whole BLOCK TEXT, not line by line. A per-line
-    // `^\s*font-size:` test is vacuous: it misses the single-line rule
-    // `.probe { font-size: 13px; }` outright. (It was proved vacuous by
-    // injecting exactly that and watching the spec stay green.)
+    // The hole that let 96 off-scale values survive the class migration: `collect()` reads every
+    // line of every component, but it only looks for Tailwind CLASSES. A `font-size: 0.8125rem`
+    // inside a .vue <style> block is not a class, so nothing here saw it.
     const RAW_CSS_SIZE_RE = /font-size:\s*[0-9.]+(?:px|rem)/g
-    // A block tag must be ALONE on its line. WorkspaceItemTaskCard.vue:591
-    // carries a comment reading "…lives in the scoped <style> block" and
-    // KanbanView.vue:1641 one reading "<script setup>. Do NOT remove…";
-    // a looser match flips the tracker on there and never off, which
-    // silently skips the rest of the file. The tracker must therefore be
-    // able to prove it balanced, hence the assert below.
+    // A block tag must be ALONE on its line. WorkspaceItemTaskCard.vue:591 carries a comment
+    // reading "…lives in the scoped <style> block" and KanbanView.vue:1641 one reading "<script
+    // setup>.
     const blockTag = (tag: string, closing: boolean) =>
       new RegExp(`^\\s*${closing ? '</' : '<'}${tag}\\b[^>]*>\\s*$`)
 
@@ -210,15 +177,9 @@ describe('type scale', () => {
   })
 
   it('writes no raw font-size in a template style="" attribute', () => {
-    // The same hole by the other door: an inline `style="font-size: 8px"`
-    // carries its size mid-line, so neither the class scan nor the
-    // whole-line CSS scan can see it. Two sibling task components shipped
-    // the same warning glyph at 8px and 10px for exactly this reason.
-    //
-    // Skipped inside <script>, where the same text is DATA: the default
-    // body of a design element the user then edits in Monaco, and the
-    // xterm/Monaco fontSize options, which take a number and cannot take
-    // var() at all.
+    // The same hole by the other door: an inline `style="font-size: 8px"` carries its size
+    // mid-line, so neither the class scan nor the whole-line CSS scan can see it. Two sibling task
+    // components shipped the same warning glyph at 8px and 10px for exactly this reason.
     const INLINE_RAW_RE = /style="[^"]*font-size:\s*[0-9.]+(px|rem)/
     const blockTag = (tag: string, closing: boolean) =>
       new RegExp(`^\\s*${closing ? '</' : '<'}${tag}\\b[^>]*>\\s*$`)

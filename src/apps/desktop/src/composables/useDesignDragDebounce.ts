@@ -1,23 +1,8 @@
 import { onBeforeUnmount } from 'vue'
 
-/**
- * Trailing-edge debounce composable for the design-canvas drag handlers.
- *
- * The previous implementation used a 50 ms leading-edge throttle in
- * `DesignElement.vue`. With a 5-element multi-select drag, that fired
- * ~100 PATCHes per second — and each PATCH triggered a
- * `design_element_updated` SSE event that fans out a full-page GET on
- * the frontend. The combined multiplier overwhelmed the backend.
- *
- * This composable replaces the throttle with a trailing-edge debounce:
- * the PATCH fires only after `idleMs` (default 250) of cursor stillness,
- * or synchronously on `flush()` (called from pointerup). The final
- * position ALWAYS wins, so the user never sees the element snap back
- * to a mid-drag position.
- *
- * Plan: docs/superpowers/plans/2026-07-30-design-drag-debounce-batch.md
- *   (Chunk 2)
- */
+/** Trailing-edge debounce composable for the design-canvas drag handlers. The previous
+ * implementation used a 50 ms leading-edge throttle in `DesignElement.vue`. Plan:
+ * docs/superpowers/plans/2026-07-30-design-drag-debounce-batch.md (Chunk 2) */
 export interface UseDesignDragDebounceArgs<P> {
   onFlush: (patch: P) => void
   /** Idle window in ms. Default 250. */
@@ -72,11 +57,9 @@ export function useDesignDragDebounce<P>(
     }
   }
 
-  // Auto-cleanup on component unmount — mirrors the
-  // useKanbanScrollRestore pattern. `onBeforeUnmount` returns the
-  // noop (a `() => void`) when called outside a component setup
-  // (e.g. in unit tests). Guard so `dispose()` is safe to call
-  // without a component context.
+  // Auto-cleanup on component unmount — mirrors the useKanbanScrollRestore pattern.
+  // `onBeforeUnmount` returns the noop (a `() => void`) when called outside a component setup (e.g.
+  // in unit tests). Guard so `dispose()` is safe to call without a component context.
   const removeOnUnmount = onBeforeUnmount(() => {
     cancel()
   }) as (() => void) | undefined

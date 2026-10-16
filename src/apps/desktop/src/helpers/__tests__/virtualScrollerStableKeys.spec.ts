@@ -1,21 +1,6 @@
-/**
- * Regression tests for the stable-key height cache (2026-08-26,
- * follow-up to PR #349).
- *
- * Bug: heights were keyed by ARRAY INDEX. ChatView renders
- * `messageGroups` — a computed that re-merges/re-filters on every SSE
- * event. A group-count change (thinking-only row dropped, tool row
- * arriving, streaming row swapped) SHIFTS every later index; the
- * stored height for index k then described a DIFFERENT row (a 40px
- * tool-card height on a 2000px markdown message and vice versa). The
- * sizer became the sum of mismatched heights → wildly too tall →
- * stick-to-bottom landed in blank space (user screenshots: fully
- * blank viewport with only the error card visible).
- *
- * Fix: optional `itemKey` prop; heights keyed by stable identity.
- * A row keeps its own height wherever it moves — index shifts are
- * harmless.
- */
+/** Regression tests for the stable-key height cache (2026-08-26, follow-up to PR #349). Bug:
+ * heights were keyed by ARRAY INDEX. ChatView renders `messageGroups` — a computed that
+ * re-merges/re-filters on every SSE event. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -64,12 +49,8 @@ describe('VirtualScroller stable-key height cache', () => {
   afterEach(() => vi.useRealTimers())
 
   it('a measured item keeps its height after an index shift (regroup simulation)', async () => {
-    // 20 items, all measured at DISTINCT heights. Then the parent
-    // PREPENDS 2 items (the messageGroups regroup case: a new group
-    // inserted at the front shifts every later index). With index-keyed
-    // heights, item "0"'s height would now be attributed to the new
-    // item at index 2 — corrupting the sizer. With stable keys, item
-    // "0" keeps its own height.
+    // 20 items, all measured at DISTINCT heights. Then the parent PREPENDS 2 items (the
+    // messageGroups regroup case: a new group inserted at the front shifts every later index).
     const { wrapper, el } = mountKeyed(20)
     await nextTick()
 
@@ -160,11 +141,9 @@ describe('VirtualScroller stable-key height cache', () => {
   })
 
   it('scrollToBottom targets the REAL content bottom when the model overshoots (blank-viewport fix)', async () => {
-    // The user's screenshot: sizer 29389px but the real rendered
-    // content was far shorter — stick-to-bottom computed from
-    // scrollHeight landed PAST the last row into blank space. With the
-    // real-bottom override, the stick targets topSpacer + rendered
-    // content height instead.
+    // The user's screenshot: sizer 29389px but the real rendered content was far shorter —
+    // stick-to-bottom computed from scrollHeight landed PAST the last row into blank space. With
+    // the real-bottom override, the stick targets topSpacer + rendered content height instead.
     const { wrapper, el } = mountKeyed(20)
     await nextTick()
 
@@ -177,12 +156,9 @@ describe('VirtualScroller stable-key height cache', () => {
     vi.advanceTimersByTime(120)
     await nextTick()
 
-    // NOW the model overshoots: the sizer binding says 29389 (stale
-    // model) while the real rendered content is only 20×64=1280.
-    // jsdom: scrollHeight is whatever we define it to be — set it to
-    // the phantom value the browser would report from the inflated
-    // sizer. Also mock the content div's offsetHeight (jsdom does no
-    // layout; the browser's real value would be 1280).
+    // NOW the model overshoots: the sizer binding says 29389 (stale model) while the real rendered
+    // content is only 20×64=1280. jsdom: scrollHeight is whatever we define it to be — set it to
+    // the phantom value the browser would report from the inflated sizer.
     Object.defineProperty(el, 'scrollHeight', { value: 29389, configurable: true })
     Object.defineProperty(content, 'offsetHeight', { value: 20 * 64, configurable: true })
     // jsdom has no scrollTo; stub it to capture the target.

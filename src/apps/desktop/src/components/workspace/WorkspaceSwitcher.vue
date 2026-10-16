@@ -1,22 +1,6 @@
 <script setup lang="ts">
-/**
- * WorkspaceSwitcher — header dropdown for selecting the active
- * workspace (plan:
- * docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md).
- *
- * Replaces the sidebar's stacked WORKSPACES list: the trigger shows
- * the CURRENT workspace name, the panel lists all workspaces for
- * one-click switching, and per-row hover actions (rename/delete) +
- * "+ New workspace" absorb the workspace-level actions the list
- * rows used to own. Skeleton follows kanban/GitBaseBranchSelect.vue
- * (trigger + panel, ↑/↓/Enter/Escape, mousedown-outside close) —
- * the repo has no UI library, hand-rolled menus are house style.
- *
- * `select` is forwarded by Sidebar to AppLayout.handleSelectWorkspace,
- * which PUSHES `?view=workspace&workspaceId=X` (user decision log:
- * switches must create history entries — Back/Forward crosses
- * workspaces).
- */
+/** WorkspaceSwitcher — header dropdown for selecting the active workspace (plan:
+ * docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md). */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { Workspace } from '../../stores/workspaces'
 import OpenInNewTabMenu from '../shell/OpenInNewTabMenu.vue'
@@ -27,9 +11,8 @@ const props = withDefaults(
   defineProps<{
     workspaces: Workspace[]
     activeWorkspaceId?: string | null
-    /** Collapsed-sidebar mode: monogram trigger + the panel is
-     *  teleported to <body> (fixed position) so it escapes the
-     *  narrow sidebar's overflow. */
+    /**      * Collapsed-sidebar mode: monogram trigger + the panel is teleported to <body> (fixed position)
+     * so it escapes the narrow sidebar's overflow. */
     collapsed?: boolean
   }>(),
   { activeWorkspaceId: null, collapsed: false },
@@ -56,9 +39,8 @@ const activeWorkspace = computed(
 )
 const triggerLabel = computed(() => activeWorkspace.value?.name ?? 'Select workspace')
 
-/** 1–2 letter monogram for the collapsed trigger (algorithm moved
- *  from Sidebar's removed workspace tiles — keep in sync with the
- *  old workspaceMonogram contract). */
+/**  * 1–2 letter monogram for the collapsed trigger (algorithm moved from Sidebar's removed workspace
+ * tiles — keep in sync with the old workspaceMonogram contract). */
 const monogram = (name: string): string => {
   const cleaned = name.replace(/[^a-zA-Z0-9]/g, '')
   if (cleaned.length === 0) return '?'

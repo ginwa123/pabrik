@@ -1,22 +1,5 @@
-/**
- * Unit tests for the single-task API client (getTask).
- *
- * Plan: docs/superpowers/plans/2026-08-24-kanban-task-detail-single-fetch.md
- * (Task 3).
- *
- * The bug: opening the kanban Task details dialog refetched the WHOLE
- * task list (`getTasks(ws, item, 100)`) and plucked one task. `getTask`
- * hits the new `GET /api/workspaces/:ws/items/:item/tasks/:task_id`
- * endpoint instead — one row on the wire.
- *
- * Mirrors the `apiTasks.spec.ts` test style:
- *   - `setActivePinia(createPinia())` in `beforeEach` (apiFetch calls
- *     `useNotificationStore()` on every non-2xx response).
- *   - Mock helper includes `text: () => Promise.resolve(JSON.stringify(body))`
- *     (apiFetch calls `response.text().catch(() => '')` on every non-OK
- *     response to extract the body for the error toast).
- *   - Each test asserts on the URL built by the API function.
- */
+/** Unit tests for the single-task API client (getTask). Plan:
+ * docs/superpowers/plans/2026-08-24-kanban-task-detail-single-fetch.md (Task 3). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

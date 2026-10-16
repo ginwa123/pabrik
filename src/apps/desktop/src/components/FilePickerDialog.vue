@@ -60,7 +60,6 @@ interface TreeRow {
 }
 
 // ─── Props ─────────────────────────────────────────────────────────────────
-
 const props = defineProps<{
   modelValue: boolean
   mode?: Mode
@@ -88,14 +87,8 @@ const props = defineProps<{
   selectButtonText?: string
   /** Pre-select this path on open. */
   selectedPath?: string
-  /** NEW: show the Recent tab + tabstrip. Pass `true` to enable (the
-   *  default), omit to keep the default, pass `false` to opt out for
-   *  the single-pane tree. Vue 3.5's runtime default for `boolean?`
-   *  is `false`, so the JS-side computed below treats `undefined`
-   *  (caller didn't pass anything) as "default on" — this is the
-   *  inverse of Vue's runtime default. No caller today passes
-   *  `false`; the legacy opt-out is supported for symmetry with the
-   *  existing `showHidden?: boolean` prop. */
+  /** NEW: show the Recent tab + tabstrip. Pass `true` to enable (the default), omit to keep the
+   * default, pass `false` to opt out for the single-pane tree. */
   enableRecentHistory?: boolean
 }>()
 
@@ -109,20 +102,14 @@ const isWindowsPlatform =
 const initialPath = computed(() => props.initialPath ?? (isWindowsPlatform ? '' : '/'))
 const showHiddenDefault = computed(() => props.showHidden ?? false)
 const selectLabel = computed(() => props.selectButtonText ?? 'Select')
-// Default enableRecentHistory to true (Recent tab is the user's primary
-// flow). Vue 3.5's runtime default for `boolean?` is `false`, so we
-// treat `false` AND `undefined` as "use default" and `true` as "on".
-// An explicit `false` is therefore ambiguous — callers who want to opt
-// out today would also need to pass `false` AND see it preserved. To
-// disambiguate, callers must NOT pass `false` (they pass `undefined` or
-// nothing). For now, this is consistent with the existing
-// `showHidden?: boolean` which Vue 3.5 also defaults to false on absence.
+// Default enableRecentHistory to true (Recent tab is the user's primary flow). Vue 3.5's runtime
+// default for `boolean?` is `false`, so we treat `false` AND `undefined` as "use default" and
+// `true` as "on".
 const enableRecent = computed<boolean>(() =>
   props.enableRecentHistory === undefined ? true : !!props.enableRecentHistory,
 )
 
 // ─── Emits ─────────────────────────────────────────────────────────────────
-
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   'select': [path: string]
@@ -130,7 +117,6 @@ const emit = defineEmits<{
 }>()
 
 // ─── State ─────────────────────────────────────────────────────────────────
-
 const dialogRef = ref<HTMLElement | null>(null)
 const contentRef = ref<HTMLElement | null>(null)
 const searchInput = ref<HTMLInputElement | null>(null)
@@ -155,22 +141,16 @@ const showHiddenLocal = computed<boolean>({
     showHiddenOverride.value = v
   },
 })
-// ── Address-bar editing state ──────────────────────────────────────────
-// When isPathEditing is true the clickable breadcrumb is replaced with a
-// single text input pre-filled with currentPath. Enter navigates to
-// whatever is typed (after normalization); Escape reverts. See
-// beginPathEdit / commitPathEdit / cancelPathEdit below.
+// ── Address-bar editing state ────────────────────────────────────────── When isPathEditing is
+// true the clickable breadcrumb is replaced with a single text input pre-filled with currentPath.
+// See beginPathEdit / commitPathEdit / cancelPathEdit below.
 const isPathEditing = ref(false)
 const pathDraft = ref('')
 let previouslyFocused: HTMLElement | null = null
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
-
-// ── Cross-platform path helpers (Windows fix, 2026-09-05) ──────────────
-// See the file header for the full rationale. POSIX inputs produce
-// byte-identical results to the old POSIX-only implementations.
-
-/** True for Windows absolutes: `C:\...`, `C:/...`, UNC `\\s\s` / `//s/s`. */
+// ── Cross-platform path helpers (Windows fix, 2026-09-05) ────────────── POSIX inputs produce
+// byte-identical results to the old POSIX-only implementations; see the file header for the rest.
 function isWindowsAbs(path: string): boolean {
   if (!path) return false
   if (/^[A-Za-z]:[\\/]/.test(path)) return true
@@ -287,21 +267,9 @@ function parseBreadcrumb(path: string): Array<{ name: string; path: string }> {
 
 const breadcrumb = computed(() => parseBreadcrumb(currentPath.value))
 
-// ─── Address-bar normalization ────────────────────────────────────────────
-// Accepts whatever the user typed in the address input and returns a
-// canonical absolute path, or `null` when the input is unusable.
-//
-// Rules:
-//   - empty / whitespace                              → null (no-op)
-//   - '~' / '~/'                                      → '/'
-//   - Windows absolute (`C:\...`, `C:/...`, UNC)      → accepted as-is
-//     (separator runs collapsed, one trailing separator stripped
-//     unless the result is a root)
-//   - POSIX absolute (starts with '/')                → collapsed runs of
-//     slashes, trailing slash stripped unless root
-//   - relative path starting with './' or '../'       → relative to currentPath
-//   - bare relative path like 'docs' or 'a/b'         → joined with currentPath
-// Trailing slashes are stripped except for roots.
+// ─── Address-bar normalization ──────────────────────────────────────────── Accepts whatever the
+// user typed in the address input and returns a canonical absolute path, or `null` when the input
+// is unusable.
 function normalizeAddressInput(raw: string): string | null {
   const trimmed = raw.trim()
   if (!trimmed) return null
@@ -329,12 +297,8 @@ function normalizeAddressInput(raw: string): string | null {
     return collapsed || '/'
   }
 
-  // Relative path: resolve against currentPath so a bare "docs" jumps
-  // into "./docs" inside the current view instead of being treated as
-  // invalid. Dot-prefixed relpaths ('./a', '../a/b') are normalized as
-  // path concatenation (no realpath — we don't have access to a
-  // filesystem here and the upstream caller's loadItems will be the
-  // one that surfaces "not found" if the path doesn't exist).
+  // Relative path: resolve against currentPath so a bare "docs" jumps into "./docs" inside the
+  // current view instead of being treated as invalid.
   const base = currentPath.value
   if (trimmed.startsWith('./') || trimmed.startsWith('../')) {
     const rel = trimmed.replace(/^\.\//, '')
@@ -343,10 +307,9 @@ function normalizeAddressInput(raw: string): string | null {
   return joinRelative(base, trimmed)
 }
 
-// Relative-path join with `..` support. Preserves a Windows drive/UNC
-// prefix on the base so `notes` from `C:\Users\ginwa` resolves to
-// `C:\Users\ginwa\notes` (not `/notes`). Purely lexical — no filesystem
-// access. POSIX inputs behave exactly like the old POSIX-only version.
+// Relative-path join with `..` support. Preserves a Windows drive/UNC prefix on the base so `notes`
+// from `C:\Users\ginwa` resolves to `C:\Users\ginwa\notes` (not `/notes`). Purely lexical — no
+// filesystem access. POSIX inputs behave exactly like the old POSIX-only version.
 function joinRelative(base: string, rel: string): string {
   const driveMatch = /^[A-Za-z]:/.exec(base)
   const uncMatch = !driveMatch ? /^[\\/]{2}[^\\/]+[\\/]+[^\\/]+/.exec(base) : null
@@ -373,7 +336,6 @@ function joinRelative(base: string, rel: string): string {
 }
 
 // ─── Data loading ──────────────────────────────────────────────────────────
-
 async function loadPath(path: string): Promise<T[]> {
   isLoading.value = true
   loadError.value = null
@@ -458,7 +420,6 @@ async function toggleTreeNode(path: string) {
 }
 
 // ─── Selection ─────────────────────────────────────────────────────────────
-
 function handleItemClick(item: T) {
   const path = props.pathFor(item)
   const expandable = props.isExpandable(item)
@@ -481,10 +442,9 @@ function handleItemClick(item: T) {
 }
 
 function handleItemDoubleClick(item: T) {
-  // Double-click on a folder navigates INTO it — it must never
-  // select + close the dialog. Single click already selects the
-  // folder (folder/both mode); the Select button / Enter confirms.
-  // This mirrors Finder / Explorer / zenity --directory.
+  // Double-click on a folder navigates INTO it — it must never select + close the dialog. Single
+  // click already selects the folder (folder/both mode); the Select button / Enter confirms. This
+  // mirrors Finder / Explorer / zenity --directory.
   if (props.isExpandable(item)) {
     void navigateTo(props.pathFor(item))
     return
@@ -501,9 +461,8 @@ function handleItemDoubleClick(item: T) {
 function handleSelect() {
   const path = effectiveSelection.value
   if (!path) return
-  // Defense-in-depth (Windows cwd fix, 2026-09-05): never emit a relative
-  // path. Selections must be absolute on at least one platform — this is
-  // the last gate before a picked path is persisted as
+  // Defense-in-depth (Windows cwd fix, 2026-09-05): never emit a relative path. Selections must be
+  // absolute on at least one platform — this is the last gate before a picked path is persisted as
   // workspace_items.path and flows into sessions.cwd and the agent prompt.
   if (!isAbsPath(path)) return
   // Record every selection in the recent store (Recent rows AND Browse
@@ -525,14 +484,7 @@ function handleCancel() {
 
 const canSelect = computed(() => !!effectiveSelection.value)
 
-// Effective selection for the Select button. Order of preference:
-//   1. selectedPath — the user explicitly clicked a folder in the content pane.
-//   2. currentPath — the user navigated to a folder via the tree, breadcrumb,
-//      Up button, Backspace, or address bar. The currently-open folder is a
-//      valid selection (mirrors Finder / Explorer / zenity --directory).
-// The POSIX root '/' and the system root '' are treated as "no selection" —
-// falling back to either would emit a meaningless path that every caller
-// rejects. Windows drive roots (`C:\`) ARE valid selections. Plan:
+// Effective selection for the Select button. Plan:
 // docs/superpowers/plans/2026-08-13-folder-picker-select-button-current-folder.md
 const effectiveSelection = computed<string>(() => {
   if (mode.value !== 'folder') return selectedPath.value
@@ -541,10 +493,9 @@ const effectiveSelection = computed<string>(() => {
   return ''
 })
 
-// Whether the footer should show the "← current folder" hint. Only when
-// the fallback path is in use: folder mode, no explicit click, but a
-// non-root folder is open. Hidden in file mode (the fallback isn't active
-// there) and hidden after an explicit click (the click is more specific).
+// Whether the footer should show the "← current folder" hint. Only when the fallback path is in
+// use: folder mode, no explicit click, but a non-root folder is open. Hidden in file mode (the
+// fallback isn't active there) and hidden after an explicit click (the click is more specific).
 const showCurrentFolderHint = computed<boolean>(
   () =>
     mode.value === 'folder' &&
@@ -552,14 +503,9 @@ const showCurrentFolderHint = computed<boolean>(
     !!effectiveSelection.value,
 )
 
-// ─── Tab state (Recent / Browse) ─────────────────────────────────────────────
-//
-// Default: Recent. The Recent tab is the user's primary path — most-of-the-time
-// they pick a folder they've picked before. The Browse tab is the
-// power-user / unfamiliar-folder flow.
-//
-// The active tab is a ref (not persisted) — the user always re-enters via
-// Recent on each open.
+// ─── Tab state (Recent / Browse) ───────────────────────────────────────────── Default: Recent.
+// The Recent tab is the user's primary path — most-of-the-time they pick a folder they've picked
+// before. The Browse tab is the power-user / unfamiliar-folder flow.
 const activeTab = ref<'recent' | 'browse'>('recent')
 const recentStore = useRecentFoldersStore()
 const recentList = computed(() => recentStore.list())
@@ -583,7 +529,6 @@ function toSqliteUtc(ms: number): string {
 }
 
 // ─── Filtered view ─────────────────────────────────────────────────────────
-
 const filteredContent = computed<ContentItem[]>(() => {
   const entries = contentEntries.value ?? []
   const items: ContentItem[] = entries.map((raw) => {
@@ -628,10 +573,9 @@ const filteredContent = computed<ContentItem[]>(() => {
 const treeFlat = computed<TreeRow[]>(() => {
   const result: TreeRow[] = []
   const cache = treeEntriesCache.value
-  // Root key is '/' on POSIX, '' when the dialog opened at the system root
-  // (resolved via getSystemFolder), or a drive/UNC root (`C:\`,
-  // `\\server\share`) on Windows. Prefer '' (a failed '/' load leaves a
-  // stale empty '/' entry behind after the system-root fallback).
+  // Root key is '/' on POSIX, '' when the dialog opened at the system root (resolved via
+  // getSystemFolder), or a drive/UNC root (`C:\`, `\\server\share`) on Windows. Prefer '' (a failed
+  // '/' load leaves a stale empty '/' entry behind after the system-root fallback).
   const rootKey =
     Object.keys(cache).find((k) => k === '') ??
     Object.keys(cache).find((k) => k === '/' || isRootPath(k))
@@ -654,7 +598,6 @@ const treeFlat = computed<TreeRow[]>(() => {
 })
 
 // ─── Keyboard ──────────────────────────────────────────────────────────────
-
 function scrollHighlightedIntoView() {
   nextTick(() => {
     const el = contentRef.value?.querySelector(
@@ -777,13 +720,9 @@ function handleKeydown(event: KeyboardEvent) {
     return
   }
 }
-
-// ─── Address-bar enter / exit / commit ─────────────────────────────────────
-// beginPathEdit swaps the breadcrumb <span> tree for a single <input>
-// pre-filled with currentPath, then auto-focuses + selects so the user
-// can start typing (or paste) immediately. commitPathEdit normalizes the
-// typed value and calls navigateTo; an empty / whitespace input cancels
-// instead of navigating to '/'. cancelPathEdit just exits the editor.
+// ─── Address-bar enter / exit / commit ───────────────────────────────────── beginPathEdit swaps
+// the breadcrumb <span> tree for a single <input> pre-filled with currentPath, then auto-focuses +
+// selects so the user can start typing (or paste) immediately. commitPathEdit normalizes the typed.
 function beginPathEdit() {
   pathDraft.value = currentPath.value
   isPathEditing.value = true
@@ -814,7 +753,6 @@ function cancelPathEdit() {
 }
 
 // ─── Lifecycle ─────────────────────────────────────────────────────────────
-
 async function openDialog() {
   const startPath = initialPath.value
   currentPath.value = startPath
@@ -835,11 +773,9 @@ async function openDialog() {
 
   await expandAncestors(startPath)
 
-  // Windows first-open fallback: the POSIX default '/' doesn't exist on
-  // Windows, so the chain above loads nothing and sets loadError. Retry
-  // once at the system root ('') which the callers resolve via
-  // getSystemFolder (backend home / USERPROFILE). On POSIX '/' virtually
-  // always loads, so this branch never fires there.
+  // Windows first-open fallback: the POSIX default '/' doesn't exist on Windows, so the chain above
+  // loads nothing and sets loadError. Retry once at the system root ('') which the callers resolve
+  // via getSystemFolder (backend home / USERPROFILE).
   if (startPath === '/' && contentEntries.value.length === 0 && loadError.value) {
     loadError.value = null
     await expandAncestors('')
@@ -856,12 +792,8 @@ function closeDialog() {
   }
 }
 
-// Open guard: run openDialog on mount when the parent created this
-// dialog with modelValue already true (the common v-if +
-// v-model="show" pattern) plus closed->open updates. Without the mount
-// run the dialog renders but contentEntries / treeEntriesCache stay
-// empty, so the user sees "No folders / Empty folder" until they
-// navigate manually.
+// Open guard: run openDialog on mount when the parent created this dialog with modelValue already
+// true (the common v-if + v-model="show" pattern) plus closed->open updates.
 const wasOpen = ref(props.modelValue)
 const syncModelValue = (show: boolean) => {
   if (show) {

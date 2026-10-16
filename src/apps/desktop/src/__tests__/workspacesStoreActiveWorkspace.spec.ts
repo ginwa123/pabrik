@@ -1,14 +1,6 @@
-/**
- * Unit tests for the workspaces store's active-workspace selection —
- * the state behind the header dropdown + sidebar Projects section.
- *
- * Covers: setActiveWorkspace (select/persist/validate/foreign-clear),
- * the activeWorkspace getter precedence
- * (explicit → persisted → item-derived → first), and removal
- * fallback when the selected workspace is deleted.
- *
- * Plan: docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md
- */
+/** Unit tests for the workspaces store's active-workspace selection — the state behind the header
+ * dropdown + sidebar Projects section. Plan:
+ * docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

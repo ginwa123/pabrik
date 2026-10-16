@@ -51,36 +51,23 @@ import {
 import ToolParameters from './_shared/ToolParameters.vue'
 
 const props = defineProps<{
-  /**
-   * The inner `<data>` XML from the generate_image tool's
-   * `<tool>` envelope (already unwrapped by the parent's
-   * `tryUnwrapToolOutput` pipeline). Always XML — never JSON —
-   * because the backend's `wrapToolOutput` always wraps the impl's
-   * `<generate_image>...</generate_image>` response verbatim.
-   */
+  /** The inner `<data>` XML from the generate_image tool's `<tool>` envelope (already unwrapped by
+   * the parent's `tryUnwrapToolOutput` pipeline). */
   content: unknown
-  /**
-   * The JSON-stringified tool-call arguments (e.g.
-   * `'{"prompt":"a cat",...}'`). Used to display the prompt in the
-   * header for at-a-glance context — the agent asked for "X" and the
-   * card shows "X" without the user having to expand.
-   */
+  /**    * The JSON-stringified tool-call arguments (e.g. `'{"prompt":"a cat",...}'`). Used to display the
+   * prompt in the header for at-a-glance context — the agent asked for "X" and the card shows "X"
+   * without the user having to expand. */
   parameters?: string
-  /**
-   * Whether the row is already expanded in the parent chat (the
-   * "tool call loading placeholder" optimization — see AGENTS.md).
-   */
+  /** Whether the row is already expanded in the parent chat (the
+   * "tool call loading placeholder" optimization — see AGENTS.md). */
   expanded?: boolean
 }>()
 
 const isExpanded = ref(props.expanded ?? false)
 
-// ─── Inner-envelope parsing (typed) ───────────────────────────────────────
-//
-// Pulled from the project-wide parser in `_shared/toolOutputParser.ts`
-// so the same regexes don't drift between the parser test and the
-// component. Always XML — never JSON.
-
+// ─── Inner-envelope parsing (typed) ─────────────────────────────────────── Pulled from the
+// project-wide parser in `_shared/toolOutputParser.ts` so the same regexes don't drift between the
+// parser test and the component. Always XML — never JSON.
 const normalized = computed(() => normalizeToolContent(props.content))
 const parsed = computed<ParsedGenerateImage>(() => {
   const p = parseGenerateImage(normalized.value.data)
@@ -91,7 +78,6 @@ const parsed = computed<ParsedGenerateImage>(() => {
 })
 
 // ─── Parameter parsing (header context) ───────────────────────────────────
-
 interface GenerateImageArgs {
   prompt?: string
   model?: string
@@ -110,16 +96,12 @@ const args = computed<GenerateImageArgs>(() => {
 })
 
 // ─── Derived display values ───────────────────────────────────────────────
-
 const isSuccess = computed(() => parsed.value.error === null && parsed.value.status === 'generated')
 
 const statusIndicator = computed(() => (isSuccess.value ? '✓' : '✗'))
 
-// Header label: parameter prompt (truncated) on success, "error" on failure.
-// Fall back to the envelope's count + model when the prompt is missing
-// (e.g. legacy row without parameters). When falling back, only show
-// the `× count` suffix when count > 1 — mirrors `rightMeta` below so the
-// header doesn't say "1× dall-e-3" when there's only one image.
+// Header label: parameter prompt (truncated) on success, "error" on failure. Fall back to the
+// envelope's count + model when the prompt is missing (e.g. legacy row without parameters).
 const headerLabel = computed(() => {
   if (!isSuccess.value) return parsed.value.error ?? 'error'
   const prompt = args.value.prompt
@@ -154,7 +136,6 @@ const headerTitle = computed(() => {
 })
 
 // ─── Event handlers ───────────────────────────────────────────────────────
-
 const toggle = () => {
   isExpanded.value = !isExpanded.value
 }

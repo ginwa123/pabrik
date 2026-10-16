@@ -1,16 +1,5 @@
 <script setup lang="ts">
-// AddTaskPickerDialog — shown when the user clicks the green `+`
-// button on a workspace item. Two large cards: "Standard Chat"
-// and "Memory". (The "Routine" card was deleted in Migration 084 —
-// routines are now first-class workspace items via the sidebar's
-// "+ Add Item → Add Routine" flow.) The parent (Sidebar.vue)
-// decides which creation flow to open based on the emitted `pick`
-// value.
-//
-// Style match: backdrop + card wrapper copied verbatim from
-// AddTaskDialog.vue:44-143 so the visual language is consistent
-// with every other dialog in the app.
-
+// AddTaskPickerDialog — shown when the user clicks the green `+` button on a workspace item.
 import UiIcon from '../ui/UiIcon.vue'
 
 defineProps<{
@@ -25,14 +14,9 @@ const emit = defineEmits<{
 
 const handleClose = () => emit('close')
 
-// The picker is a chooser, not a holder: once the user has picked
-// a path, the picker has done its job and must close so the picked
-// dialog isn't stacked on top of it (only memory opens a
-// follow-up dialog — the standard-chat flow auto-creates the task
-// and navigates straight to ChatView, so there's nothing to stack).
-// Emit `pick` first (parent decides which create flow to run) and
-// then `close` (parent hides the picker). Mirrors the `emit('create', ...); handleClose()`
-// pattern in AddTaskDialog.vue:26-31.
+// The picker is a chooser, not a holder: once the user has picked a path, the picker has done its
+// job and must close so the picked dialog isn't stacked on top of it (only memory opens a follow-up
+// dialog.
 const handleStandard = () => {
   emit('pick', 'standard')
   handleClose()

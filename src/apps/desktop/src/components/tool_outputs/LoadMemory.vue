@@ -119,7 +119,6 @@ const isEmptyContent = (c: unknown): boolean =>
 const isRunning = computed(() => isEmptyContent(props.content))
 
 // ── Parse outer envelope ──────────────────────────────────────────────────
-
 const errorMessage = computed(() => normalized.value.error ?? strOrNull(dataRecord.value.error))
 
 const queryText = computed(() => strOrNull(dataRecord.value.query))
@@ -140,7 +139,6 @@ const count = computed((): number | null => numOrNull(dataRecord.value.count))
 const totalCount = computed((): number | null => numOrNull(dataRecord.value.total_count))
 
 // ── Parse entries ─────────────────────────────────────────────────────────
-
 const entries = computed((): MemoryEntry[] => {
   const results: MemoryEntry[] = []
   const raw = dataRecord.value.results
@@ -165,7 +163,6 @@ const entries = computed((): MemoryEntry[] => {
 })
 
 // ── Header summary text ──────────────────────────────────────────────────
-
 const summaryText = computed((): string => {
   if (errorMessage.value) return errorMessage.value
 
@@ -201,7 +198,6 @@ const isPaginated = computed(() => {
 })
 
 // ── Actions ───────────────────────────────────────────────────────────────
-
 const toggle = () => {
   if (hasEntries.value || isError.value || hasArgs.value) {
     isExpanded.value = !isExpanded.value
@@ -228,7 +224,6 @@ const toggleContent = (id: string): void => {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
-
 /** Truncate `s` to `max` chars, keeping both ends (more useful for
  *  long queries than a pure tail ellipsis). */
 function truncateMiddle(s: string, max: number): string {

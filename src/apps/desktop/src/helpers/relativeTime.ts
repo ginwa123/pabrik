@@ -1,26 +1,12 @@
-// Format a date string to relative time (e.g., "5m", "2h", "3d", "1w", "6mo", "2y")
-//
-// Accepts:
-//   - SQLite datetime UTC format ("YYYY-MM-DD HH:MM:SS")
-//     - the canonical wire shape for `updated_at` (Migration 017+)
-//     - also the SELECT-converted wire shape for
-//       `last_human_touched_at` (Migration 082: SELECT casts via
-//       strftime from unix-ms to SQLite datetime)
-//   - Unix-ms integer as a string ("1788008400000")
-//     - the raw storage shape for `last_human_touched_at_nano`
-//       (Migration 075 convention; Migration 082 column)
-//     - also the SSE event emit shape (the SSE emit path bypasses
-//       the SELECT conversion - see on_event_sent.zig doc comment).
-//     - detected as a string of >=10 digits with no separator chars.
-//
-// Returns 'now' for empty / invalid / unparseable inputs.
+// Format a date string to relative time (e.g., "5m", "2h", "3d", "1w", "6mo", "2y") Accepts: -
+// SQLite datetime UTC format ("YYYY-MM-DD HH:MM:SS") - the canonical wire shape for `updated_at`
+// (Migration 017+).
 export const formatRelativeTime = (dateWillBeRelative: string): string => {
   if (!dateWillBeRelative || dateWillBeRelative.trim() === '') return 'now'
 
-  // Migration 082: detect unix-ms shape (digits-only, length >= 10)
-  // before falling through to the SQLite datetime path. The SSE event
-  // emit passes the raw unix-ms integer string; the REST GET path
-  // passes the SQLite datetime string. Both must render correctly.
+  // Migration 082: detect unix-ms shape (digits-only, length >= 10) before falling through to the
+  // SQLite datetime path. The SSE event emit passes the raw unix-ms integer string; the REST GET
+  // path passes the SQLite datetime string. Both must render correctly.
   const trimmed = dateWillBeRelative.trim()
   if (/^\d{10,}$/.test(trimmed)) {
     const unixMs = Number(trimmed)

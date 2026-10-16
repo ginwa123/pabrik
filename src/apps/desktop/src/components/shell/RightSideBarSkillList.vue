@@ -27,11 +27,8 @@ const emit = defineEmits<{
   'skill-click': [skill: Skill]
 }>()
 
-// The RESOLVED workspace, not the raw `activeWorkspaceId` ref — same
-// reason DocumentsView.vue reads it this way. The ref is only set by the
-// header dropdown or a `?workspaceId=` URL restore, so a user who reached
-// this pane by clicking a project row would be told "No workspace
-// selected" while plainly having one.
+// The RESOLVED workspace, not the raw `activeWorkspaceId` ref — same reason DocumentsView.vue reads
+// it this way.
 const workspacesStore = useWorkspacesStore()
 const workspaceId = computed(() => workspacesStore.activeWorkspace?.id ?? null)
 

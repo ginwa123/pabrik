@@ -108,11 +108,8 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     mockSave.mockResolvedValueOnce({ success: true })
     const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
     await flushPromises()
-    // Make a real edit so the save bar appears. Switching tabs used to be
-    // enough BY ACCIDENT - the Profiles section emitted an update while
-    // hydrating, which happened to mark the config dirty. This test failed
-    // for exactly that reason (reproduced on the unmodified component), so it
-    // now makes the edit its assertion is actually about.
+    // Make a real edit so the save bar appears. Switching tabs used to be enough BY ACCIDENT - the
+    // Profiles section emitted an update while hydrating, which happened to mark the config dirty.
     await wrapper.find('[data-testid="toggle-notify-on-complete"]').setValue(true)
     await flushPromises()
     expect(wrapper.find('[data-testid="save-btn"]').exists()).toBe(true)
@@ -190,25 +187,9 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     expect(topLevel ?? []).not.toContainEqual(expect.objectContaining({ name: 'coder' }))
   })
 
-  // ─── Clear active profile (plan 2026-08-06-reset-active-profile) ──
-  // Plan: Settings → Profiles → Reset button next to the active pill
-  // emits `clearActive` → orchestrator calls savePabrikConfig with
-  // `active_profile: ""` (empty string) → the backend handler at
-  // `pabrik_config_put.zig:246-252` interprets empty as "clear" and
-  // sets `config_json.active_profile = null` on disk → the cascade
-  // falls through to top-level config for every chat / task. The
-  // button is gated on `activeProfile !== null` (a no-op when no
-  // active is set).
-  //
-  // Why empty string (not `undefined`)?
-  // Pre-fix the frontend sent `active_profile: undefined`, which JSON
-  // serialisation strips to no key in the PUT body. The backend's
-  // `?[]const u8` type couldn't distinguish "key absent" from
-  // "key: null" — both yielded `None` and the handler skipped the
-  // field. Using `undefined` left the user's "Set active" default
-  // in place (the Reset button silently failed). The empty-string
-  // sentinel works within the existing wire contract — the handler
-  // already maps `ap.len == 0` to "clear" exactly for this purpose.
+  // ─── Clear active profile (plan 2026-08-06-reset-active-profile) ── Plan: Settings → Profiles →
+  // Reset button next to the active pill emits `clearActive` → orchestrator calls savePabrikConfig
+  // with `active_profile: ""` (empty string) → the backend handler at.
   it('saves active_profile: "" when the Reset button is clicked', async () => {
     mockGet.mockResolvedValueOnce({
       profiles: { work: { model: 'm' }, home: { model: 'm2' } },
@@ -217,11 +198,8 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     mockSave.mockResolvedValueOnce({ success: true })
     const wrapper = await mountAt('profiles')
 
-    // Switch to Profiles tab. Plan 2026-08-25-notify-on-error moved
-    // General to index 0; Profiles is now at index 1.
-
-    // The active pill should show 'work' and the Reset button should
-    // be visible.
+    // Switch to Profiles tab. Plan 2026-08-25-notify-on-error moved General to index 0; Profiles is
+    // now at index 1. The active pill should show 'work' and the Reset button should be visible.
     expect(wrapper.text()).toContain('work')
     const resetBtn = wrapper.find('[data-testid="reset-active-btn"]')
     expect(resetBtn.exists()).toBe(true)
@@ -265,17 +243,9 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     expect(wrapper.emitted('notification')?.some((e) => e[1] === 'error')).toBe(true)
   })
 
-  // ─── General tab (plan 2026-08-25-notify-on-error-and-retry-ms-in-settings) ──
-  //
-  // Three operational settings live in the General tab:
-  //   - `notify_on_complete` (existing config.json field)
-  //   - `notify_on_error` (new field added by this plan)
-  //   - `retry_delay_ms` (existing config.json field)
-  //
-  // Each one must (a) hydrate from the API response, (b) flip the
-  // dirty pill when the user changes it, (c) round-trip through the
-  // PUT body on save.
-
+  // ─── General tab (plan 2026-08-25-notify-on-error-and-retry-ms-in-settings) ── Three operational
+  // settings live in the General tab: - `notify_on_complete` (existing config.json field) -
+  // `notify_on_error` (new field added by this plan).
   it('hydrates the General tab from the loaded config (notify_on_complete + notify_on_error + retry_delay_ms)', async () => {
     mockGet.mockResolvedValueOnce({
       notify_on_complete: true,
@@ -409,12 +379,9 @@ describe('PabrikConfigEditor (orchestrator)', () => {
   })
 
   it('the PUT body always includes all four operational settings, even when the user only edits one', async () => {
-    // The General tab MUST write all four operational settings
-    // through (syncToConfig does this unconditionally). This is a
-    // regression guard so a future refactor doesn't accidentally
-    // drop one of them and silently re-introduce the hidden-field
-    // bug. Toggling ONLY `notify_on_error` must still surface the
-    // other unchanged fields in the PUT body.
+    // The General tab MUST write all four operational settings through (syncToConfig does this
+    // unconditionally). This is a regression guard so a future refactor doesn't accidentally drop
+    // one of them and silently re-introduce the hidden-field bug.
     mockGet.mockResolvedValueOnce({
       notify_on_complete: true,
       notify_on_error: false,
@@ -535,11 +502,9 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     expect(servers.hello).not.toHaveProperty('enabled')
   })
 
-  // ─── Tools tab (plan 2026-09-22-tools-menu-config-default-tools) ──────
-
-  // Memory-history router scoped to the settings path — same real-
-  // vue-router pattern as SidebarDiffPanel.tabs.spec (no guards, no
-  // window.location, query stays observable via currentRoute).
+  // ─── Tools tab (plan 2026-09-22-tools-menu-config-default-tools) ────── Memory-history router
+  // scoped to the settings path — same real- vue-router pattern as SidebarDiffPanel.tabs.spec (no
+  // guards, no window.location, query stays observable via currentRoute).
   async function makeSettingsRouter(query: Record<string, string> = {}) {
     const router = createRouter({
       history: createMemoryHistory(),
@@ -550,13 +515,9 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     return router
   }
 
-  /**
-   * Mount the editor with a section already open.
-   *
-   * The editor no longer owns a tab strip - the settings shell navigates and
-   * the section lives in `?section=` - so a spec opens a section the way the
-   * app does: through the URL.
-   */
+  /**    * Mount the editor with a section already open. The editor no longer owns a tab strip - the
+   * settings shell navigates and the section lives in `?section=` - so a spec opens a section the
+   * way the app does: through the URL. */
   async function mountAt(section: string, query: Record<string, string> = {}) {
     const router = await makeSettingsRouter(section === 'general' ? query : { ...query, section })
     const wrapper = mount(PabrikConfigEditor, {
@@ -604,11 +565,9 @@ describe('PabrikConfigEditor (orchestrator)', () => {
   })
 
   it('mount with clean URL + stored tools → URL gains ?section=tools (mount normalization)', async () => {
-    // The reported bug: Tools active at /app/settings with no
-    // ?section=tools. The getter falls back to localStorage without
-    // touching the URL, and TabStrip skips its emit when
-    // saved==prop — so no router.replace ever runs. Mount must
-    // normalize the URL to the tab actually shown.
+    // The reported bug: Tools active at /app/settings with no ?section=tools. The getter falls back
+    // to localStorage without touching the URL, and TabStrip skips its emit when saved==prop — so
+    // no router.replace ever runs. Mount must normalize the URL to the tab actually shown.
     localStorage.setItem('pabrik-settings-active-tab', 'tools')
     const router = await makeSettingsRouter()
     mockGet.mockResolvedValueOnce({})
@@ -681,15 +640,9 @@ describe('PabrikConfigEditor (orchestrator)', () => {
   })
 
   it('mounts the save bar ABOVE the scrollable content, not below it', async () => {
-    // The bar used to be the last child of the editor, so the only
-    // save/reset controls sat below a section the user has to scroll
-    // through. It is now the first thing after the Form/JSON toggle, which
-    // is what keeps the actions reachable from any scroll position.
-    //
-    // Asserted on DOM ORDER, not on a class: the bar is a `shrink-0` flex
-    // item OUTSIDE the `flex-1 overflow-y-auto` region, so `sticky` is a
-    // no-op there and the placement is decided purely by where it is
-    // mounted. A class assertion would pass on a bar still at the bottom.
+    // The bar used to be the last child of the editor, so the only save/reset controls sat below a
+    // section the user has to scroll through. It is now the first thing after the Form/JSON toggle,
+    // which is what keeps the actions reachable from any scroll position.
     mockGet.mockResolvedValueOnce({
       notify_on_complete: false,
       notify_on_error: false,

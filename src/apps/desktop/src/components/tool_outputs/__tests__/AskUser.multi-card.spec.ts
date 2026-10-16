@@ -1,22 +1,6 @@
-/**
- * AskUser.vue — MULTIPLE pending cards in one turn.
- *
- * Every existing spec in `AskUser.spec.ts` mounts exactly ONE card. That is
- * why the shared-`window`-listener design has never failed a test: with one
- * card there is nothing for a fan-out to hit.
- *
- * The backend has no guard against a model asking two questions in one
- * assistant turn (see `tests/functional/ask_user_multi_question_test.py` for
- * the wire side), so two pending cards are a reachable state. Each instance
- * registers its OWN `window` keydown listener with no arbitration, so one
- * keystroke reaches every pending card.
- *
- * Why that is a bug and not a feature: the fan-out is not harmless fan-out.
- * `Enter` produces N concurrent POSTs to `/answer`, and each one calls
- * `resumeSession` — the backend refuses all but the first when a worker row
- * exists, so N-1 of those POSTs record an answer that no run will ever
- * deliver.
- */
+/** AskUser.vue — MULTIPLE pending cards in one turn. Every existing spec in `AskUser.spec.ts`
+ * mounts exactly ONE card. That is why the shared-`window`-listener design has never failed a test:
+ * with one card there is nothing for a fan-out to hit. */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import AskUser from '../AskUser.vue'

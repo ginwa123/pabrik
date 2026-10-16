@@ -1,34 +1,6 @@
-/**
- * Cached client for `GET /api/auth/me`.
- *
- * Why this exists: the router guard `await`s `/api/auth/me` on EVERY
- * navigation (plus `LoginView` on mount, plus `Sidebar` on mount and
- * every window focus) with a bare `fetch` — no cache, no timeout. The
- * handler itself is trivial (one indexed SELECT, ~7ms even against a
- * 3GB DB), but all SQLite access serializes on a single global
- * `SqliteBackend` mutex, so on a busy boot (~20 concurrent git-status /
- * diff / messages requests) `/me` queues behind seconds of heavy
- * queries and the navigation stalls for ~20s. A slow `/me` must never
- * block a view switch.
- *
- * Contract (stale-while-revalidate, fail-silent):
- * - Fresh cache (< TTL) returns synchronously without network.
- * - Stale cache returns immediately AND revalidates in the background.
- * - No cache awaits one live fetch (concurrent callers share it via
- *   `inflight` dedup) with a 4s timeout; on failure the guard's
- *   existing fail-open path runs (let the view render).
- * - localStorage (not just module memory) so a full page reload — the
- *   cold-cache case that hurt most — still paints from the last-known
- *   state and revalidates behind it.
- * - `invalidateAuthMe()` on login/logout so the next guard sees the
- *   new session instead of the pre-login 401 (or post-logout user).
- *
- * Stale-auth risk is bounded: TTL is 30s, logout invalidates, and a
- * wrongly-admitted view still 401s on its own data fetches (apiFetch
- * bounces those to /login). The guard already fails open on network
- * errors, so serving a seconds-old decision matches existing behavior.
- */
-
+/** Cached client for `GET /api/auth/me`. Why this exists: the router guard `await`s `/api/auth/me`
+ * on EVERY navigation (plus `LoginView` on mount, plus `Sidebar` on mount and every window focus)
+ * with a bare `fetch` — no cache, no timeout. */
 export interface AuthMeUser {
   id: string
   email: string
@@ -166,12 +138,9 @@ function fetchShared(): Promise<AuthMeResult> {
   return inflight
 }
 
-/**
- * Cached `/me` for navigation guards and chrome (sidebar/login).
- * Fresh cache hits never touch the network; stale entries are served
- * instantly with a background revalidate; cold starts share one live
- * fetch across concurrent callers.
- */
+/**  * Cached `/me` for navigation guards and chrome (sidebar/login). Fresh cache hits never touch the
+ * network; stale entries are served instantly with a background revalidate; cold starts share one
+ * live fetch across concurrent callers. */
 export async function getAuthMeCached(): Promise<AuthMeResult> {
   const cached = readEntry()
   if (cached) {

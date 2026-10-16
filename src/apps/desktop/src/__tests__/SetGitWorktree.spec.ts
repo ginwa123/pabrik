@@ -1,16 +1,6 @@
-/**
- * Tests for SetGitWorktree.vue — the tool_output component that renders
- * the XML response from the `set_git_worktree` agent tool. The component
- * is purely presentational (no API calls), so no mocks are needed.
- *
- * Mirrors the AddSkill/RemoveSkill tool_output style. Covers the three
- * XML shapes the backend can produce:
- *   1. SET success:  <worktree><session_id/><created>true</created>
- *                       <path>...</path><branch>...</branch></worktree>
- *   2. CLEAR success: <worktree><session_id/><cleared>true</cleared></worktree>
- *   3. Error:         <worktree><session_id/><created>false</created>
- *                       <error>...</error></worktree>
- */
+/** Tests for SetGitWorktree.vue — the tool_output component that renders the XML response from the
+ * `set_git_worktree` agent tool. The component is purely presentational (no API calls), so no mocks
+ * are needed. Mirrors the AddSkill/RemoveSkill tool_output style. */
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 

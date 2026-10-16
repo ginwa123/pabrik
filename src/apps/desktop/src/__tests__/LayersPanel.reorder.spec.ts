@@ -1,18 +1,6 @@
-/**
- * Wire-up regression test for LayersPanel.vue ▲/▼ buttons.
- *
- * Pre-fix symptom (silent-drop bug): clicking ▲ or ▼ on a layer row
- * emits `reorder` upward → DesignView re-emits as `reorderElements` →
- * AppLayout has no `@reorder-elements` listener → nothing happens.
- *
- * Post-fix expectation: clicking ▲ or ▼ triggers a direct call to
- * `workspacesStore.reorderDesignElements(workspaceId, itemId, pageId,
- * mode, orderedIds)` with `mode: 'bring_forward'` (▲) or
- * `mode: 'send_backward'` (▼).
- *
- * 2 behavioural tests (the project convention is behavioural only —
- * see ~/.config/pabrik/memories/static-contract-test-when-to-prefer-behavioural.md).
- */
+/** Wire-up regression test for LayersPanel.vue ▲/▼ buttons. Pre-fix symptom (silent-drop bug):
+ * clicking ▲ or ▼ on a layer row emits `reorder` upward → DesignView re-emits as `reorderElements`
+ * → AppLayout has no `@reorder-elements` listener → nothing happens. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'

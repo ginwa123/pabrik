@@ -1,14 +1,5 @@
-/**
- * Per-user browser-storage isolation, end to end (plan 2026-09-25, W5).
- *
- * The bug: every localStorage key is origin-global, so two users on the same
- * browser profile share one key space. B inherits A's cached workspace list,
- * active chat, open tabs and task media — and logout cleared none of it.
- *
- * These specs drive the real helpers (not a mock of them) through the exact
- * sequence the app performs: A caches data -> identity flips to B -> the
- * purge runs -> B's first paint reads only B's slot.
- */
+/** Per-user browser-storage isolation, end to end (plan 2026-09-25, W5). The bug: every
+ * localStorage key is origin-global, so two users on the same browser profile share one key space. */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { makeLocalStorageStub } from './helpers'
 import {
@@ -62,10 +53,9 @@ describe('per-user storage isolation', () => {
     purgeForeignScopedKeys()
     expect(readWorkspacesCache()).toBeNull()
 
-    // A signs back in: the scoped key was purged on logout, so the cache is
-    // gone — a fresh fetch repopulates it. (Asserting the purge, not a
-    // resurrection: keeping A's cache across a logout would leave it on disk
-    // for the next user on a shared profile.)
+    // A signs back in: the scoped key was purged on logout, so the cache is gone — a fresh fetch
+    // repopulates it. (Asserting the purge, not a resurrection: keeping A's cache across a logout
+    // would leave it on disk for the next user on a shared profile.)
     setCurrentUserId('user_a')
     expect(readWorkspacesCache()).toBeNull()
     writeWorkspacesCache([ws('ws_a', 'A private again')])

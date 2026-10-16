@@ -1,15 +1,6 @@
-/**
- * The Evals tab's URL contract.
- *
- * Every view switch must land in the URL, or refresh / Back-Forward /
- * shared links lose the view. The commits tab first shipped as a local
- * boolean and had exactly that bug; the Evals tab reuses the same
- * `?panel=` union rather than inventing a second param.
- *
- * These specs assert the two halves of that contract:
- *   - clicking the tab writes `?panel=evals`
- *   - mounting with `?panel=evals` restores the tab
- */
+/** The Evals tab's URL contract. Every view switch must land in the URL, or refresh / Back-Forward
+ * / shared links lose the view. The commits tab first shipped as a local boolean and had exactly
+ * that bug; the Evals tab reuses the same `?panel=` union rather than inventing a second param. */
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'

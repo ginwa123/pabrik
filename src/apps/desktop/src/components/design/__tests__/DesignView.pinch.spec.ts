@@ -1,18 +1,4 @@
-/**
- * Behavioral tests for DesignView.vue's pinch-to-zoom via Pointer
- * Events. This handler is what makes trackpad pinches work on
- * Linux WebKitGTK 4.1 (the desktop app's Linux webview) — the
- * browser there does NOT auto-convert trackpad pinches to
- * ctrlKey: true wheel events the way macOS Safari / WKWebView do,
- * so the @wheel handler can't see them.
- *
- * 4 tests:
- *   1. Two simultaneous pointerdowns + a wider pointermove → zoom in.
- *   2. Pinch direction inverts correctly (closer = zoom out).
- *   3. Mouse pointerdown is ignored (mice don't pinch).
- *   4. Pinch starting on a design element does NOT zoom the canvas
- *      (the element's own drag handler takes the gesture).
- */
+/** Behavioral tests for DesignView.vue's pinch-to-zoom via Pointer Events. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -56,14 +42,9 @@ const ITEM = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 } as any
 
-/**
- * jsdom 29 doesn't implement `setPointerCapture` / `releasePointerCapture`
- * / `hasPointerCapture` on HTMLElement. The native browser equivalents
- * require a real pointer-id-to-element binding that jsdom can't model.
- * We stub them to no-ops so the Vue handlers don't crash; the
- * pointer-state-tracking we actually want to test lives in the
- * `pinchPointers` Map inside the component.
- */
+/** jsdom 29 doesn't implement `setPointerCapture` / `releasePointerCapture` / `hasPointerCapture`
+ * on HTMLElement. The native browser equivalents require a real pointer-id-to-element binding that
+ * jsdom can't model. */
 function stubPointerCapture(el: HTMLElement): void {
   el.setPointerCapture = () => {}
   el.releasePointerCapture = () => {}
@@ -181,10 +162,9 @@ describe('DesignView pinch-to-zoom (Pointer Events)', () => {
         .element as HTMLElement
       stubPointerCapture(container)
 
-      // Two pointerdowns with pointerType='mouse' should NOT trigger
-      // any zoom — there's no third finger, just a single mouse button
-      // doing double duty. (Real mice can't pinch; this guards against
-      // accidentally firing the handler on a phantom 2nd mouse click.)
+      // Two pointerdowns with pointerType='mouse' should NOT trigger any zoom — there's no third
+      // finger, just a single mouse button doing double duty. (Real mice can't pinch; this guards
+      // against accidentally firing the handler on a phantom 2nd mouse click.)
       container.dispatchEvent(new PointerEvent('pointerdown', {
         pointerId: 1, pointerType: 'mouse',
         clientX: 200, clientY: 200, bubbles: true,
@@ -242,10 +222,9 @@ describe('DesignView pinch-to-zoom (Pointer Events)', () => {
         .element as HTMLElement
       stubPointerCapture(elementEl)
 
-      // Dispatch on the element so the bubbling pointerdown reaches
-      // the container with `event.target === elementEl`. The handler
-      // walks `target.closest('[data-design-element]')` → matches →
-      // bails before adding the pointer to pinchPointers.
+      // Dispatch on the element so the bubbling pointerdown reaches the container with
+      // `event.target === elementEl`. The handler walks `target.closest('[data-design-element]')` →
+      // matches → bails before adding the pointer to pinchPointers.
       elementEl.dispatchEvent(new PointerEvent('pointerdown', {
         pointerId: 10, pointerType: 'touch',
         clientX: 150, clientY: 150, bubbles: true,

@@ -1,16 +1,6 @@
-/**
- * Tests for CopyKanbanSpecDialog — the per-board "copy spec from
- * another kanban" modal. Mount pattern: same as
- * KanbanSettingsDialog.spec.ts (Teleport + attachTo: document.body
- * + document.querySelector for DOM assertions).
- *
- * The dialog uses a custom click-to-open listbox (not a native
- * <select>) so tests interact with it by clicking the trigger
- * button to expose the options, then clicking the option.
- *
- * Plan: docs/superpowers/plans/2026-07-04-copy-kanban-spec.md
- *   (Chunk 4, Task 4.1)
- */
+/** Tests for CopyKanbanSpecDialog — the per-board "copy spec from another kanban" modal. Mount
+ * pattern: same as KanbanSettingsDialog.spec.ts (Teleport + attachTo: document.body +
+ * document.querySelector for DOM assertions). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -89,9 +79,8 @@ describe('CopyKanbanSpecDialog', () => {
   })
 
   function mountDialog() {
-    // Mount with show: false, then flip to true — the component's
-    // watcher on `() => props.show` only fires on a transition, and
-    // this is the lifecycle hook that auto-selects the first source
+    // Mount with show: false, then flip to true — the component's watcher on `() => props.show`
+    // only fires on a transition, and this is the lifecycle hook that auto-selects the first source
     // (matches the convention in AddKanbanDialog.spec.ts).
     wrapper = mount(CopyKanbanSpecDialog, {
       attachTo: document.body,
@@ -111,11 +100,8 @@ describe('CopyKanbanSpecDialog', () => {
     return w
   }
 
-  /**
-   * The custom dropdown starts CLOSED. Tests that need to see
-   * options click the trigger first, then await flushPromises so
-   * the v-if reactively renders the listbox.
-   */
+  /**    * The custom dropdown starts CLOSED. Tests that need to see options click the trigger first, then
+   * await flushPromises so the v-if reactively renders the listbox. */
   async function openDropdown() {
     clickInDom('[data-testid="copy-kanban-spec-source-trigger"]')
     await flushPromises()

@@ -1,26 +1,6 @@
-/**
- * Floating composer — structural contract.
- *
- * The composer used to be the LAST flex child of the chat column: a
- * `p-4` block with a `border-top` and an opaque `--semantic-sidebar-bg`
- * fill, so the transcript lost that slice of its height and messages
- * ended on a hard 1px rule.
- *
- * It is now a `composer-dock` overlay pinned to the bottom of the
- * (now `relative`) column, with a `composer-scrim` gradient fading to
- * the transcript's own background. The dock's height is published as
- * `--chat-composer-inset` on the column by a ResizeObserver, and the
- * newest transcript row is padded by it, so the last message can always
- * be scrolled clear of the floating card.
- *
- * jsdom has no layout engine, so the GEOMETRY half of this (the last
- * message is not occluded when scrolled to the bottom) is asserted in
- * `tests/functional_ui/chatview_floating_composer_test.py` against a
- * real browser. What is pinned here is everything that decides the
- * geometry: the dock exists and carries the right classes, the observer
- * publishes the inset, the last row is the one that gets the padding,
- * and the old in-flow chrome is gone.
- */
+/** Floating composer — structural contract. The composer used to be the LAST flex child of the chat
+ * column: a `p-4` block with a `border-top` and an opaque `--semantic-sidebar-bg` fill, so the
+ * transcript lost that slice of its height and messages ended on a hard 1px rule. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'
@@ -57,14 +37,9 @@ vi.mock('vue-router', async () => {
   }
 })
 
-/**
- * A ResizeObserver the test can fire by hand. The global stub in
- * `setup.ts` is inert (observe/disconnect only), which is right for the
- * other suites but useless here: the whole point is to prove the dock's
- * observer publishes a height. VirtualScroller also constructs one, so
- * instances are tagged by the elements they observe and the test picks
- * out the observer that watched the composer dock.
- */
+/** A ResizeObserver the test can fire by hand. The global stub in `setup.ts` is inert
+ * (observe/disconnect only), which is right for the other suites but useless here: the whole point
+ * is to prove the dock's observer publishes a height. */
 class ControllableRO {
   static instances: ControllableRO[] = []
   observed: Element[] = []
@@ -129,9 +104,9 @@ function installBaseMocks() {
   } as any)
 }
 
-/** Three groups: short enough that the scroller's initial window covers
- *  all of them (jsdom reports a 0-height container, so the window is
- *  `buffer` rows wide), which lets the spec see the real last row. */
+/**  * Three groups: short enough that the scroller's initial window covers all of them (jsdom reports a
+ * 0-height container, so the window is `buffer` rows wide), which lets the spec see the real last
+ * row. */
 function historyWithMessages() {
   const messages = [
     { role: 'user', content: 'first question' },
@@ -289,18 +264,8 @@ describe('ChatView floating composer — source contract', () => {
   })
 
   it('lifts the composer card above the scrim so the input stays visible', () => {
-    // The scrim is a POSITIONED descendant of the dock (`position: absolute`,
-    // `z-index: auto`), and CSS paints positioned descendants AFTER in-flow,
-    // non-positioned content. A static card therefore loses to the scrim, whose
-    // opaque band spans the dock's full height — the input row, paperclip and
-    // Send button all vanish behind an empty-looking card.
-    //
-    // `pointer-events: none` on the scrim hides that from hit-testing, so
-    // neither jsdom nor `elementFromPoint` can see it. The card needs its own
-    // stacking context, positioned above the scrim. The paint order itself is
-    // asserted in tests/functional_ui/chatview_floating_composer_test.py
-    // (`test_scrim_does_not_paint_over_the_composer`); this pins the CSS that
-    // decides it, so a later refactor cannot quietly drop the stacking context.
+    // The scrim is a POSITIONED descendant of the dock (`position: absolute`, `z-index: auto`), and
+    // CSS paints positioned descendants AFTER in-flow, non-positioned content.
     const cardRule = chatViewSrc.match(
       /\.composer-dock\s+:deep\(\.composer-card\)\s*\{[^}]*\}/,
     )

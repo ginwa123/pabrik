@@ -1,18 +1,5 @@
-/**
- * Tests for KanbanCard — the draggable card wrapper around
- * WorkspaceItemTask. Verifies:
- *   - The card is rendered with draggable="true"
- *   - dragstart sets the kanban-specific MIME type
- *   - dragstart emits the taskId
- *   - dragend emits (no payload)
- *
- * The per-task row UI is owned by <WorkspaceItemTask> (tested in
- * workspaceItemTask*.spec.ts); we only verify the kanban-specific
- * drag-handle layer.
- *
- * Plan: docs/superpowers/plans/2026-06-21-workspace-item-kanban.md
- *   Chunk 6 / Task 6.3
- */
+/** Tests for KanbanCard — the draggable card wrapper around WorkspaceItemTask. Plan:
+ * docs/superpowers/plans/2026-06-21-workspace-item-kanban.md Chunk 6 / Task 6.3 */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, type VueWrapper } from '@vue/test-utils'
@@ -98,9 +85,8 @@ describe('KanbanCard', () => {
     expect(wrapper.emitted('dragend')?.[0]).toEqual([])
   })
 
-  // NEW (change-task-to-card-kanban plan): KanbanCard passes the
-  // `variant="card"` prop to its wrapped <WorkspaceItemTask> so the
-  // kanban-card UX (bordered card layout, optional description
+  // NEW (change-task-to-card-kanban plan): KanbanCard passes the `variant="card"` prop to its
+  // wrapped <WorkspaceItemTask> so the kanban-card UX (bordered card layout, optional description
   // preview) is used inside kanban columns.
   it('renders the wrapped WorkspaceItemTask in card variant (data-task-card present, data-task-row absent)', () => {
     wrapper = mountCard(sampleTask)

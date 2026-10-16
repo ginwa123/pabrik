@@ -1,21 +1,6 @@
-/**
- * Tests for the double-click guard on the create-mode commit buttons
- * ("Create task" + "▶ Create task & run agent") in
- * KanbanTaskDetailDialog.
- *
- * While the host's create request is in flight (`creating` prop true):
- *   - BOTH buttons are disabled
- *   - both labels read "Creating…"
- *   - clicking either button does NOT emit `create` / `create-and-run`
- *     (handler-level early-return — belt + suspenders on top of the
- *     browser-level disabled-attribute click drop)
- *
- * Mount pattern: same as KanbanTaskDetailDialog.runAgent.spec.ts.
- * <Teleport to="body">, so use `attachTo: document.body` +
- * `document.querySelector` (NOT `wrapper.find`).
- *
- * Plan: docs/superpowers/plans/2026-08-24-kanban-create-run-disable-double-click.md
- */
+/** Tests for the double-click guard on the create-mode commit buttons ("Create task" + "▶ Create
+ * task & run agent") in KanbanTaskDetailDialog. Plan:
+ * docs/superpowers/plans/2026-08-24-kanban-create-run-disable-double-click.md */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -83,9 +68,8 @@ describe('KanbanTaskDetailDialog — creating prop (double-click guard)', () => 
     await flushPromises()
     await typeName('My task')
 
-    // Create mode's primary half is the run action. The "Create task
-    // only" menu row keeps its own label — the two used to read
-    // "Creating…" side by side, so the footer could not say which
+    // Create mode's primary half is the run action. The "Create task only" menu row keeps its own
+    // label — the two used to read "Creating…" side by side, so the footer could not say which
     // commit the user had actually pressed.
     const runBtn = findInDom<HTMLButtonElement>(
       '[data-testid="kanban-task-detail-create-and-run"]',
@@ -184,9 +168,8 @@ describe('KanbanTaskDetailDialog — creating prop (double-click guard)', () => 
     expect(saveBtn?.disabled).toBe(true)
     expect(saveBtn?.textContent?.trim()).toBe('Save')
 
-    // Make it dirty → Save enables despite creating=true (edit mode
-    // ignores the creating prop — the host only binds it on the
-    // create-mode mount). Edit mode's name input uses the
+    // Make it dirty → Save enables despite creating=true (edit mode ignores the creating prop — the
+    // host only binds it on the create-mode mount). Edit mode's name input uses the
     // `kanban-task-detail-name` testid (create uses `-create-name`).
     const nameInput = findInDom<HTMLInputElement>(
       '[data-testid="kanban-task-detail-name"]',

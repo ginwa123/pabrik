@@ -129,10 +129,9 @@ describe('parseSpawnSubAgentArgs', () => {
     expect(parseSpawnSubAgentArgs(json, 'call_xxx')).toEqual([])
   })
 
-  // 2026-09-12 tools-required: `tools` is no longer optional — the
-  // backend rejects missing/empty/"all" at parse time, so the display
-  // parser drops such entries instead of rendering cards for a spawn
-  // that will never execute.
+  // 2026-09-12 tools-required: `tools` is no longer optional — the backend rejects
+  // missing/empty/"all" at parse time, so the display parser drops such entries instead of
+  // rendering cards for a spawn that will never execute.
   it('filters out sub-agents missing the required tools (no throw)', () => {
     const args = JSON.stringify({
       sub_agents: [{ agent_name: 'reviewer', instruction: 'x' }]  // no tools

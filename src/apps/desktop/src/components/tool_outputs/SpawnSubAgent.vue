@@ -10,17 +10,9 @@ const props = defineProps<{
   content: unknown
   expanded?: boolean
   subAgentArgs?: SubAgentArgs[] | null
-  /**
-   * 2026-08-23 spawn-subagent-live-progress: live per-sub-agent
-   * progress fed from ChatView's per-tool_call_id map. When set
-   * AND `content` has no parsed <results> envelope, the component
-   * renders these rows directly (auto-expanded — no toggle needed).
-   *
-   * When `content` contains an envelope (after the tool result
-   * lands), the parsed-results view wins and this prop is ignored —
-   * the envelope is the source of truth on completion. The map is
-   * then deleted from ChatView via `clearProgressFor(tool_call_id)`.
-   */
+  /** 2026-08-23 spawn-subagent-live-progress: live per-sub-agent progress fed from ChatView's
+   * per-tool_call_id map. When set AND `content` has no parsed <results> envelope, the component
+   * renders these rows directly (auto-expanded — no toggle needed). */
   progress?: SubAgentProgress[] | null
   /** Tool-call args (XML from jsonArgsToXml, or JSON). Rendered via the
    *  shared ToolParameters block after the agent rows. */
@@ -28,10 +20,8 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  /**
-   * Fired when the user clicks the peek button on a sub-agent row. The parent
-   * (ChatView) opens <SubAgentPeekPanel> with this payload.
-   */
+  /** Fired when the user clicks the peek button on a sub-agent row. The parent
+   * (ChatView) opens <SubAgentPeekPanel> with this payload. */
   peek: [payload: { sessionId: string; agentName: string; instruction: string }]
 }>()
 
@@ -157,21 +147,8 @@ const copyResponse = async (e: Event, response: string) => {
   await navigator.clipboard.writeText(response)
 }
 
-// ─── Live-progress rendering (2026-08-23) ──────────────────────────────
-//
-// Source-of-truth precedence: parsed envelope (from content) > live
-// progress (from props). The parsed-envelope view never changes
-// post-completion, while progress is ephemeral. Live mode is "on"
-// whenever progress is non-empty AND no envelope has been parsed yet.
-//
-// Live rows render inside the same `<div v-if="isExpanded">` slot
-// (auto-shown) so the existing card chrome is reused: badge, peek
-// button, inherited-context chip, etc. Behavioural differences:
-//   - Header counts show running/done/failed instead of ✓N ✗N
-//   - Rows render even when expandedAgents is empty
-//   - The toggle caret becomes a no-op (replaces '+' with nothing)
-//   - Failed rows get the red error styling immediately
-
+// ─── Live-progress rendering (2026-08-23) ────────────────────────────── Source-of-truth
+// precedence: parsed envelope (from content) > live progress (from props).
 const liveProgress = computed(() => props.progress ?? [])
 
 const inLiveMode = computed(
@@ -187,28 +164,9 @@ const liveSummary = computed(() => {
   }
 })
 
-// ─── Placeholder-starting fallback (2026-09-04 refresh fix, Task 0) ───
-//
-// When the backend has written the Phase 1 placeholder envelope
-// (`handle_tool.zig` empty `<data></data>`, no `<results>` yet) and no
-// live `role="subagent_progress"` events have arrived yet — e.g. right
-// after page refresh mid-run, or in the ms between placeholder SSE and
-// the first `launched` event — both `agents` and `liveProgress` are
-// empty. Previously the header fell through to `agentCount = 0` and
-// showed "0 sub-agents", indistinguishable from "finished with zero".
-//
-// `isStarting` detects that state: no parsed agents, no `<summary>`
-// (the final envelope in `tools_exec_spawn_sub_agent.zig` always
-// prints `<summary succeeded= failed= />`, so its absence means the
-// tool has NOT completed), and no live rows. The template renders a
-// pulsing "starting…" header + auto-shown body instead of "0".
-// Pre-thread failure: exec failed before any thread emitted (e.g. a
-// parse error), so there are no <agent> rows, no <summary>, and no
-// live rows — but the tool HAS completed. innerToolData falls back
-// to the full <tool> envelope in that case, which carries
-// <success>false</success> + <error>. Without this branch the card
-// renders the "starting…" placeholder forever and the error is
-// invisible.
+// ─── Placeholder-starting fallback (2026-09-04 refresh fix, Task 0) ─── When the backend has
+// written the Phase 1 placeholder envelope (`handle_tool.zig` empty `<data></data>`, no `<results>`
+// yet) and no live `role="subagent_progress"` events have arrived yet.
 const hasFailed = computed(() => normalized.value.success === false || normalized.value.error !== null)
 
 const startError = computed(() => {
@@ -225,13 +183,9 @@ const isStarting = computed(
 // header copy ("3 sub-agents starting…" vs bare "starting…").
 const expectedCount = computed(() => props.subAgentArgs?.length ?? 0)
 
-/**
- * Emit a peek event for one sub-agent row. In live-progress mode,
- * rows carry `sessionId` (set by `applyProgressEvent` once the
- * `launched` event arrives with `subagent_session_id`). Same payload
- * shape as the parsed-envelope peek so ChatView's
- * <SubAgentPeekPanel> doesn't need to branch.
- */
+/**  * Emit a peek event for one sub-agent row. In live-progress mode, rows carry `sessionId` (set by
+ * `applyProgressEvent` once the `launched` event arrives with `subagent_session_id`). Same payload
+ * shape as the parsed-envelope peek so ChatView's <SubAgentPeekPanel> doesn't need to branch. */
 function peekLiveAgent(idx: number, row: SubAgentProgress) {
   if (!row.sessionId) return
   const instruction = props.subAgentArgs?.[idx]?.instruction ?? ''

@@ -3,24 +3,8 @@ import { computed, ref } from 'vue'
 import ToolParameters from '../tool_outputs/_shared/ToolParameters.vue'
 import { normalizeToolContent, parseShell } from '../tool_outputs/_shared/toolOutputParser'
 
-/**
- * ShellTool — the canonical renderer for shell-tool outputs.
- *
- * Replaces the bash-only `Bash.vue` with a parameterised component. The
- * tool name ('bash' | 'pwsh' | 'command' | future shells) is passed in
- * as a prop and rendered as the violet pill in the card (pill renders the
- * raw prop verbatim, so toolName 'command' shows `command`). The XML
- * envelope is identical across shells (per D2 + D10 in the
- * 2026-08-14-pwsh-tool plan; the unified `command` tool reuses the same
- * 8-tag envelope), so `parseShell(toolName, content)` dispatches to the
- * right parser based on the tool name.
- *
- * Wire schema parity is locked via two tests:
- *   1. backend (Zig): shell_test.zig asserts `@typeName(ShellInput) ==
- *      @typeName(BashInput) == @typeName(PwshInput)`.
- *   2. frontend (TS): toolOutputParser.spec.ts asserts
- *      `parsePwsh(envelope) === parseBash(envelope)`.
- */
+/** ShellTool — the canonical renderer for shell-tool outputs. Replaces the bash-only `Bash.vue`
+ * with a parameterised component. */
 const props = defineProps<{
   content: unknown
   toolName: string
@@ -87,12 +71,8 @@ const hasStderr = computed(() => {
   return stderr.value && stderr.value.trim() !== '' && stderr.value.trim() !== 'No errors.'
 })
 
-// The envelope's error string. EVERY tool result carries one - a failed
-// command, a rejected argument, a tool name that does not exist. It used to
-// be computed by `normalized` and then read by nobody, so a call that never
-// ran (success:false, data:null) rendered as a card with a name, a command
-// and no body at all: indistinguishable from a command that ran and printed
-// nothing. That is how a dead `bash` call got read as "the shell is flaky".
+// The envelope's error string. EVERY tool result carries one - a failed command, a rejected
+// argument, a tool name that does not exist.
 const envelopeError = computed((): string | null => {
   const err = normalized.value.error
   if (typeof err !== 'string') return null

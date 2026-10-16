@@ -29,28 +29,21 @@ export interface SettingsSectionItem {
   id: string
   label: string
   icon: UiIconName
-  /**
-   * Heading this item sits under. A heading is rendered only where the group
-   * CHANGES, so the first group needs no separate label above the scope
-   * label the sidebar already shows.
-   */
+  /**    * Heading this item sits under. A heading is rendered only where the group CHANGES, so the first
+   * group needs no separate label above the scope label the sidebar already shows. */
   group?: string
 }
 
 const USER_SECTIONS: readonly SettingsSectionItem[] = [
-  // Decision D4: General is the ONLY thing left at user level. Profiles, MCP
-  // servers, tools, skill evals and web search moved to Workspace settings -
-  // they were always really per-workspace values, and a scope whose own label
-  // says "applies everywhere" cannot host them honestly.
+  // Decision D4: General is the ONLY thing left at user level. Profiles, MCP servers, tools, skill
+  // evals and web search moved to Workspace settings - they were always really per-workspace
+  // values, and a scope whose own label says "applies everywhere" cannot host them honestly.
   { id: 'general', label: 'General', icon: 'settings' },
 ]
 
-/**
- * Presentation for each moved config section. A `Record` keyed by the section
- * ids, not a parallel hand-written list: adding an id to
- * `WORKSPACE_AGENT_SECTIONS` without a label here is then a TYPE error, which
- * is what stops the nav and the workspace view drifting into a dead nav item.
- */
+/**  * Presentation for each moved config section. A `Record` keyed by the section ids, not a parallel
+ * hand-written list: adding an id to `WORKSPACE_AGENT_SECTIONS` without a label here is then a TYPE
+ * error, which is what stops the nav and the workspace view drifting into a dead nav item. */
 const AGENT_SECTION_META: Record<
   (typeof WORKSPACE_AGENT_SECTIONS)[number],
   { label: string; icon: UiIconName }
@@ -66,11 +59,9 @@ const WORKSPACE_SECTIONS: readonly SettingsSectionItem[] = [
   { id: 'secrets', label: 'Secrets', icon: 'key', group: 'Workspace' },
   { id: 'skills', label: 'Skills', icon: 'books', group: 'Workspace' },
   { id: 'memories', label: 'Memories', icon: 'brain', group: 'Workspace' },
-  // The sections that moved here (Migration 105 + `PabrikConfigEditor`): they
-  // edit THIS workspace's config overlay, which the backend merges over the
-  // user-level config, so a workspace that overrides nothing still behaves
-  // exactly as it did before they existed. DERIVED from the list the workspace
-  // view renders - see AGENT_SECTION_META.
+  // The sections that moved here (Migration 105 + `PabrikConfigEditor`): they edit THIS workspace's
+  // config overlay, which the backend merges over the user-level config, so a workspace that
+  // overrides nothing still behaves exactly as it did before they existed.
   ...WORKSPACE_AGENT_SECTIONS.map((id) => ({ id, ...AGENT_SECTION_META[id], group: 'Agent' })),
 ]
 
@@ -87,11 +78,9 @@ const router = (() => {
   try {
     return useRouter()
   } catch (e) {
-    // Router-less mount (unit tests): navigation becomes a no-op. The
-    // section state still works through the local-ref fallback in
-    // `useSettingsSection`, so the null here can never surface as a
-    // wrong section — only as a button that does nothing in tests.
-    // Logged so a missing router in production is visible, not silent.
+    // Router-less mount (unit tests): navigation becomes a no-op. The section state still works
+    // through the local-ref fallback in `useSettingsSection`, so the null here can never surface as
+    // a wrong section — only as a button that does nothing in tests.
     console.warn('[settings-shell] no router, navigation disabled', e)
     return null
   }
@@ -116,18 +105,8 @@ const workspaceOptions = computed(() =>
   workspacesStore.workspaces.map((w) => ({ id: w.id, name: w.name })),
 )
 
-/**
- * The workspace this settings surface is ABOUT: the one in the URL, else the
- * one the app is actually in.
- *
- * `workspaceOptions[0]` is NOT that workspace. The list API sorts by
- * `position DESC, created_at DESC` (`workspaces_list.zig`), so "first" is
- * whichever workspace the user last moved to the top — not the one they came
- * from. Switching the scope tab used to navigate there unconditionally
- * (`workspaceOptions[0]?.id ?? props.workspaceId` — the `??` could never fall
- * through, the list is never empty), which dropped the URL's workspace id and
- * showed one workspace's Profiles while the user was working in another.
- */
+/** The workspace this settings surface is ABOUT: the one in the URL, else the one the app is
+ * actually in. `workspaceOptions[0]` is NOT that workspace. */
 const inScopeWorkspaceId = computed(() =>
   resolveWorkspaceId(props.workspaceId, workspacesStore.activeWorkspace?.id),
 )
@@ -143,11 +122,9 @@ function goWorkspace(id: string): void {
   void router.push({ path: `/app/${id}/settings` })
 }
 
-/**
- * The Workspace tab's target. The in-scope workspace wins; only a cold boot
- * with neither a URL workspace nor an active one falls back to the first
- * listed row, because the tab has to resolve to something.
- */
+/**  * The Workspace tab's target. The in-scope workspace wins; only a cold boot with neither a URL
+ * workspace nor an active one falls back to the first listed row, because the tab has to resolve to
+ * something. */
 function goWorkspaceScope(): void {
   goWorkspace(inScopeWorkspaceId.value || workspaceOptions.value[0]?.id || '')
 }

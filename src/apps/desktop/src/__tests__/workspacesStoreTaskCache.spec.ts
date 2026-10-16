@@ -1,18 +1,5 @@
-/**
- * Mutation coherence for the local-first task-list cache
- * (plan docs/superpowers/plans/2026-09-24-local-first-task-list-caching.md).
- *
- * Every store mutation must keep the task cache coherent so the next
- * offline prime paints the post-mutation state:
- *  - addTask / moveTaskToColumn / toggleTask / renameTask write through.
- *  - deleteTask evicts from the column + board contexts.
- *  - a complete revalidation page drops rows the server no longer
- *    lists (remote delete / move-out) instead of merging them back.
- *
- * Each test populates the cache through the public fetch path, wipes
- * the in-memory tasks (simulating a cold view), then re-fetches with
- * the network down — the repaint can only come from the cache.
- */
+/** Mutation coherence for the local-first task-list cache (plan
+ * docs/superpowers/plans/2026-09-24-local-first-task-list-caching.md). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp } from 'vue'

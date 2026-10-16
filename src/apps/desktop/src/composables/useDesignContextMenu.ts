@@ -7,19 +7,9 @@ export interface ContextMenuState {
   targetIds: string[]
 }
 
-/**
- * Drives a Teleport-based right-click menu (used by both the design
- * layers panel and the design canvas). Owns the open/close lifecycle
- * and the document-level listeners that dismiss the menu on
- * click-outside, Escape, window resize, or scroll.
- *
- * The caller mounts <DesignContextMenu> bound to `state.value` and
- * invokes `open(event, ids)` from a `@contextmenu.prevent` handler.
- *
- * Why per-component instance: each <DesignView> / <LayersPanel>
- * gets its own composable instance so two open menus (e.g. the
- * chat-open / chat-closed branches) don't share state.
- */
+/** Drives a Teleport-based right-click menu (used by both the design layers panel and the design
+ * canvas). Owns the open/close lifecycle and the document-level listeners that dismiss the menu on
+ * click-outside, Escape, window resize, or scroll. */
 export function useDesignContextMenu() {
   const state = ref<ContextMenuState>({
     visible: false,

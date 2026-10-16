@@ -1,21 +1,4 @@
-/**
- * Behavioural tests for the top-left "New Chat" action (task_1790528102260_4).
- *
- * Requirement: one click in the top-left of the sidebar creates a chat
- * session inside the active workspace's DEFAULT project — an agent-mode
- * workspace item whose `path` is the server user's home directory
- * (Migration 094) — and navigates to it. No project is ever asked for,
- * because a workspace always has a default and a miss creates one.
- *
- * The cases below cover the three things that can silently go wrong:
- *   1. it creates the chat in the DEFAULT project, not the selected one;
- *   2. the fast path costs no network round trip (D12), and the cold path
- *      (list predating the migration) does make one;
- *   3. the guards: no workspace, double click, and a failed ensure.
- *
- * Modelled on `Sidebar.agentDirectChat.spec.ts`, which covers the same
- * `createAndOpenStandardChat` helper from the per-project `+` button.
- */
+/** Behavioural tests for the top-left "New Chat" action (task_1790528102260_4). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, createApp } from 'vue'
@@ -59,9 +42,8 @@ const WS_ID = 'ws_new_chat'
 const DEFAULT_ID = 'item_default'
 const OTHER_ID = 'item_other'
 
-// The default project, as the server sends it: `is_default: 1` and a path
-// of $HOME. The `selected` item is the one the user happens to have open —
-// the action must NOT create the chat there.
+// The default project, as the server sends it: `is_default: 1` and a path of $HOME. The `selected`
+// item is the one the user happens to have open — the action must NOT create the chat there.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function makeItem(id: string, itemType: string, isDefault: number): any {
   return {
@@ -270,10 +252,9 @@ describe('Sidebar.handleNewChat — creates a chat in the workspace default proj
     const store = useWorkspacesStore()
     store.workspaces = [makeWorkspace()]
     store.setActiveWorkspace(WS_ID)
-    // A slow resolve, so both clicks land while the first is still in the
-    // gap between "resolve the default" and "create the task". The
-    // database's partial unique index protects the *project*; this guard
-    // protects the *chat*.
+    // A slow resolve, so both clicks land while the first is still in the gap between "resolve the
+    // default" and "create the task". The database's partial unique index protects the *project*;
+    // this guard protects the *chat*.
     let releaseResolve: (() => void) | undefined
     vi.spyOn(store, 'ensureDefaultProject').mockImplementation(
       () =>
@@ -301,9 +282,8 @@ describe('Sidebar.handleNewChat — creates a chat in the workspace default proj
 
   it('a failed ensure does NOT navigate and does NOT fabricate a local project', async () => {
     const store = useWorkspacesStore()
-    // NO default in the store, so the local find misses and the endpoint is
-    // actually reached — otherwise this test would pass without ever
-    // exercising the failure path.
+    // NO default in the store, so the local find misses and the endpoint is actually reached —
+    // otherwise this test would pass without ever exercising the failure path.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     store.workspaces = [{ id: WS_ID, name: 'WS', items: [makeItem(OTHER_ID, 'agent', 0)] }] as any
     store.setActiveWorkspace(WS_ID)
@@ -344,10 +324,9 @@ describe('Sidebar.handleNewChat — creates a chat in the workspace default proj
 
   it('fresh boot with no explicit selection: falls back to first workspace instead of staying disabled', async () => {
     const store = useWorkspacesStore()
-    // Fresh boot: workspaces loaded but `activeWorkspaceId` ref never set
-    // (no dropdown pick, no ?workspaceId= URL). The header already shows
-    // the first workspace via the `activeWorkspace` computed — the button
-    // must follow the same precedence instead of staying disabled.
+    // Fresh boot: workspaces loaded but `activeWorkspaceId` ref never set (no dropdown pick, no
+    // ?workspaceId= URL). The header already shows the first workspace via the `activeWorkspace`
+    // computed — the button must follow the same precedence instead of staying disabled.
     store.workspaces = [makeWorkspace()]
     // NOTE: no setActiveWorkspace call — this is the regression.
     const addSpy = vi.spyOn(store, 'addTask').mockResolvedValue('task_new_1')

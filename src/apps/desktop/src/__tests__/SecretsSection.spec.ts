@@ -1,14 +1,6 @@
-// Workspace secrets UI.
-//
-// The load-bearing assertion in this file is test 2: a stored secret value
-// must NEVER reach the DOM — not masked, not hinted, not in a `title=`
-// tooltip, not in a `data-*` attribute. `components/pabrik/McpServersSection.vue`
-// is the shape we must not copy: it renders `maskValue(h.value)` for the
-// body but puts the RAW value in a `:title=` on the same row, so hovering
-// the masked text hands over the secret. The server never returns a value
-// for a secret at all, and this component keeps it that way in both
-// directions — nothing to render, and nothing to keep after a save.
-
+// Workspace secrets UI. The load-bearing assertion in this file is test 2: a stored secret value
+// must NEVER reach the DOM — not masked, not hinted, not in a `title=` tooltip, not in a `data-*`
+// attribute.
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
@@ -20,10 +12,9 @@ import SecretsSection from '../components/workspace/SecretsSection.vue'
 import WorkspaceSettingsView from '../components/views/WorkspaceSettingsView.vue'
 import { makeLocalStorageStub } from './helpers'
 
-// Only the four secrets calls are stubbed; everything else stays real so
-// this spec can also import the real router (which pulls AppLayout, and
-// through it the rest of the api module) without half of that module
-// going undefined underneath it.
+// Only the four secrets calls are stubbed; everything else stays real so this spec can also import
+// the real router (which pulls AppLayout, and through it the rest of the api module) without half
+// of that module going undefined underneath it.
 vi.mock('../api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api')>()
   return {
@@ -252,13 +243,8 @@ describe('SecretsSection', () => {
   })
 })
 
-// ─── WorkspaceSettingsView: the ?section= URL contract ────────────────────
-// A view that lives only in component state is unreachable by refresh,
-// Back/Forward and a shared link. The repo rule is that every view switch
-// writes the URL, so the tab strip below is a writable computed over
-// `?section=` — the same shape `NalarSettings.vue` uses, and `section` is
-// the key it owns. (`?tab=` belongs to browser tab-mode.)
-
+// ─── WorkspaceSettingsView: the ?section= URL contract ──────────────────── A view that lives only
+// in component state is unreachable by refresh, Back/Forward and a shared link.
 async function makeSettingsRouter(query: Record<string, string> = {}) {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -365,17 +351,9 @@ describe('WorkspaceSettingsView (URL-backed sections)', () => {
   })
 })
 
-// ─── Route registration order ─────────────────────────────────────────────
-// The one thing about this route that is not visible in a type checker:
-// Vue Router matches in REGISTRATION order, and `/app/:workspaceId` sits
-// directly below the new entry. Registered in the wrong place,
-// `/app/ws_1/settings` resolves as `workspace` with `workspaceId='ws_1'`
-// and the `/settings` segment is silently gone — the page would render the
-// workspace view and no test of the view itself would notice.
-//
-// This asserts against the REAL route table, not a hand-rolled copy of it,
-// so it fails if the entry is ever moved below its catch.
-
+// ─── Route registration order ───────────────────────────────────────────── The one thing about
+// this route that is not visible in a type checker: Vue Router matches in REGISTRATION order, and
+// `/app/:workspaceId` sits directly below the new entry.
 describe('workspace settings route registration', () => {
   it('resolves /app/:workspaceId/settings to the workspace-settings route', async () => {
     const real = (await import('../router/index')).default

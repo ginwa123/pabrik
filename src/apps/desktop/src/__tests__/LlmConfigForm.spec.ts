@@ -3,14 +3,9 @@ import { describe, expect, it } from 'vitest'
 
 import LlmConfigForm from '../components/pabrik/LlmConfigForm.vue'
 
-/**
- * Mount and open `Advanced`.
- *
- * Advanced is collapsed by default — that is the whole point of the redesign —
- * so a spec that wants to touch a field behind it has to open it first. The
- * helper is tolerant so it can be used for components that have no Advanced
- * section at all.
- */
+/**  * Mount and open `Advanced`. Advanced is collapsed by default — that is the whole point of the
+ * redesign — so a spec that wants to touch a field behind it has to open it first. The helper is
+ * tolerant so it can be used for components that have no Advanced section at all. */
 async function mountOpen(component: unknown, opts?: unknown) {
   // `as never` keeps `mount`'s overload resolution from narrowing the SECOND
   // argument to a VNode-props shape at every call site.
@@ -51,10 +46,9 @@ describe('LlmConfigForm', () => {
     expect(wrapper.find('[data-testid=model-input]').exists()).toBe(true)
     expect(wrapper.find('[data-testid=base-url-input]').exists()).toBe(true)
     const selects = wrapper.findAll('select')
-    // backend, thinking, url_style, reasoning_effort — 4 selects.
-    // (temperature is freetext input, not a select.)
-    // (plan 2026-08-23-model-thinking added reasoning_effort; plan 2026-09-01 gates it per style;
-    //  the `backend` discriminator added the transport select.)
+    // backend, thinking, url_style, reasoning_effort — 4 selects. (temperature is freetext input,
+    // not a select.) (plan 2026-08-23-model-thinking added reasoning_effort; plan 2026-09-01 gates
+    // it per style; the `backend` discriminator added the transport select.)
     expect(selects.length).toBe(4)
     expect(wrapper.find('[data-testid=temperature-input]').exists()).toBe(true)
     expect(wrapper.find('[data-testid=reasoning-effort-select]').exists()).toBe(true)
@@ -117,8 +111,8 @@ describe('LlmConfigForm', () => {
     expect(wrapper.text()).toContain('Model is required')
   })
 
-  // ─── Plan 2026-07-07-compaction-inline: Compaction overrides ───
 
+  // ─── Plan 2026-07-07-compaction-inline: Compaction overrides ───
   
 
   it('has NO override checkbox — an empty context-window field is the inherit state', async () => {
@@ -233,7 +227,6 @@ describe('LlmConfigForm', () => {
   })
 
   // ─── Temperature freetext (auto or 0–1) ───
-
   it('temperature offers auto/0/0.5/1 presets via datalist', async () => {
     const wrapper = await mountOpen(LlmConfigForm, { props: { modelValue: { ...baseValue } } })
     const input = wrapper.find('[data-testid="temperature-input"]')
@@ -268,10 +261,9 @@ describe('LlmConfigForm', () => {
     }
   })
 
-  // Task task_1788535488395_0 (WebView2 white select): every select/input
-  // must carry an inline color-scheme:dark hint so WebView2 renders native
-  // controls dark even though it defaults to a light color-scheme.
-  // Global `color-scheme: dark` in style.css is the primary fix.
+  // Task task_1788535488395_0 (WebView2 white select): every select/input must carry an inline
+  // color-scheme:dark hint so WebView2 renders native controls dark even though it defaults to a
+  // light color-scheme. Global `color-scheme: dark` in style.css is the primary fix.
   it('selects carry color-scheme:dark for WebView2', async () => {
     const wrapper = await mountOpen(LlmConfigForm, { props: { modelValue: { ...baseValue } } })
     const selects = wrapper.findAll('select')
@@ -282,14 +274,9 @@ describe('LlmConfigForm', () => {
   })
 })
 
-/**
- * The transport discriminator.
- *
- * `backend` is orthogonal to `url_style`: it says WHICH transport runs the
- * call, while `url_style` keeps describing the HTTP body shape. A claude-code
- * profile has no URL, no key and no request body, so those controls are
- * hidden rather than shown-but-ignored.
- */
+/**  * The transport discriminator. `backend` is orthogonal to `url_style`: it says WHICH transport runs
+ * the call, while `url_style` keeps describing the HTTP body shape. A claude-code profile has no
+ * URL, no key and no request body, so those controls are hidden rather than shown-but-ignored. */
 describe('LlmConfigForm — backend gating', () => {
   it('offers http, claude-code and opencode as backends', async () => {
     const wrapper = await mountOpen(LlmConfigForm, { props: { modelValue: { ...baseValue } } })

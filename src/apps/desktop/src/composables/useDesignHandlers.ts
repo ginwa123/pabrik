@@ -3,45 +3,20 @@ import { useWorkspacesStore } from '../stores/workspaces'
 import { designLogger } from '../helpers/designLogger'
 import type { DesignElement, DesignElementType } from '../api'
 
-/**
- * AppLayout's design-mode handlers, extracted into a composable so
- * they're directly testable (SFC <script setup> functions aren't
- * importable as named exports). The composable owns NO state — it
- * reads the active workspace/item/page from the store and dispatches
- * to the store actions. Errors surface via the notification store.
- *
- * Page CRUD (add / delete) used to live here too — AppLayout would
- * call the API and trust that DesignView would re-fetch its pages
- * list. It didn't, leaving the user staring at stale tabs until they
- * reloaded the page. The fix moved the page CRUD into DesignView
- * itself (which owns the `pages` state), so this composable no
- * longer exposes page-level handlers. The store action
- * `workspacesStore.deleteDesignPage` still exists for direct callers
- * (and is covered by `workspacesStoreDeleteDesignPage.spec.ts`).
- *
- * Chunk 6 added `groupSelection` for the Cmd+G shortcut. It reads
- * `selectedIds.value` + `activeDesignPageId` from the store /
- * caller-provided args so the wire is reachable from DesignView's
- * keyboard handler without bouncing through AppLayout.
- */
+/** AppLayout's design-mode handlers, extracted into a composable so they're directly testable (SFC
+ * <script setup> functions aren't importable as named exports). The composable owns NO state — it
+ * reads the active workspace/item/page from the store and dispatches to the store actions. */
 export interface UseDesignHandlersArgs {
   workspaceId: string | { value: string } | (() => string)
   itemId: string | { value: string } | (() => string)
   pageId: string | { value: string } | (() => string)
-  /**
-   * Reactive Set of currently-selected element ids. The composable
-   * reads `selectedIds.value.size` to enforce the 2+ rule and
-   * replaces `selectedIds.value = new Set()` after a successful
-   * group. Pass it as a ref/computed so changes from DesignView
-   * propagate here.
-   */
+  /**    * Reactive Set of currently-selected element ids. The composable reads `selectedIds.value.size`
+   * to enforce the 2+ rule and replaces `selectedIds.value = new Set()` after a successful group.
+   * Pass it as a ref/computed so changes from DesignView propagate here. */
   selectedIds: { value: Set<string> }
-  /**
-   * Optional override for the browser prompt. The default uses
-   * `window.prompt` (the first-cut implementation; Figma uses an
-   * inline rename affordance — see plan §7.1 for the follow-up).
-   * Tests pass a stub to avoid blocking on the real prompt.
-   */
+  /**    * Optional override for the browser prompt. The default uses `window.prompt` (the first-cut
+   * implementation; Figma uses an inline rename affordance — see plan §7.1 for the follow-up).
+   * Tests pass a stub to avoid blocking on the real prompt. */
   promptForName?: (defaultValue: string) => string | null
 }
 
@@ -92,13 +67,8 @@ export function useDesignHandlers(args?: UseDesignHandlersArgs) {
     }
   }
 
-  /**
-   * NEW (2026-08-06, split-move-resize plan) — translate (move) a
-   * single element by a (dx, dy) delta. Routes to POST /translate.
-   * The backend cascades the delta to every transitive descendant
-   * when the target is a `group`/`frame` — callers don't need to
-   * know about the cascade. For leaves the cascade is a no-op.
-   */
+  /** NEW (2026-08-06, split-move-resize plan) — translate (move) a single element by a (dx, dy)
+   * delta. Routes to POST /translate. */
   async function translateElement(
     workspaceId: string,
     itemId: string,
@@ -139,13 +109,8 @@ export function useDesignHandlers(args?: UseDesignHandlersArgs) {
     }
   }
 
-  /**
-   * NEW (2026-08-06, split-move-resize plan) — resize a single
-   * element with absolute x/y/width/height/rotation fields. Routes
-   * to POST /resize. Resize NEVER cascades (Figma convention —
-   * only the dragged element's bounding box changes; children keep
-   * their own positions).
-   */
+  /** NEW (2026-08-06, split-move-resize plan) — resize a single element with absolute
+   * x/y/width/height/rotation fields. Routes to POST /resize. */
   async function resizeElement(
     workspaceId: string,
     itemId: string,
@@ -204,20 +169,9 @@ export function useDesignHandlers(args?: UseDesignHandlersArgs) {
     }
   }
 
-  /**
-   * NEW (regression fix, 2026-08-14, "design mode, add element manual
-   * not working"). Routes the `createElement({ name, type, html })`
-   * payload from the AddDesignElementDialog to the
-   * workspacesStore.addDesignElement action → POST /elements endpoint.
-   * The active page id is read from the store (mirrored by DesignView
-   * on mount + every tab switch). On error, surfaces an Error toast;
-   * on success, returns the persisted DesignElement so callers can
-   * capture it in the history composable without re-fetching.
-   *
-   * Quiet no-op when activeDesignPageId is empty (matches the pattern
-   * of `updateElement` / `deleteElement` / `translateElement`) — we
-   * never want a race-condition create to land on the wrong page.
-   */
+  /** NEW (regression fix, 2026-08-14, "design mode, add element manual not working"). Routes the
+   * `createElement({ name, type, html })` payload from the AddDesignElementDialog to the
+   * workspacesStore.addDesignElement action → POST /elements endpoint. */
   async function createElement(
     workspaceId: string,
     itemId: string,
@@ -252,23 +206,9 @@ export function useDesignHandlers(args?: UseDesignHandlersArgs) {
     }
   }
 
-  /**
-   * NEW (Chunk 6 of grouped-layers plan). Figma convention: Cmd/Ctrl+G
-   * wraps the current selection into a new `group` at the union bbox.
-   *
-   * Selection gate: silent no-op when `selectedIds.size < 2` (matches
-   * Figma). The composable then prompts the user for a name via
-   * `window.prompt` (first-cut; plan §7.1 documents inline-rename as
-   * a follow-up).
-   *
-   * On success: clears the selection Set and fires a success toast.
-   * On failure: fires an error toast with the apiFetch error message.
-   *
-   * The args shape is intentional — the composable accepts only what
-   * it needs to call the store, no extra state. DesignView passes its
-   * `selectedIds` ref + `workspaceId` / `itemId` props so the wire
-   * stays in one place.
-   */
+  /** NEW (Chunk 6 of grouped-layers plan). Figma convention: Cmd/Ctrl+G wraps the current selection
+   * into a new `group` at the union bbox. Selection gate: silent no-op when `selectedIds.size < 2`
+   * (matches Figma). */
   async function groupSelection(): Promise<void> {
     if (!args) {
       console.warn('[useDesignHandlers.groupSelection] no args provided; skipping')
@@ -291,9 +231,8 @@ export function useDesignHandlers(args?: UseDesignHandlersArgs) {
     // Selected ids is stored as a Set; the API expects an array.
     const childIds = Array.from(selectedIds.value)
     const defaultName = `Group ${childIds.length}`
-    // First-cut implementation: window.prompt. A future inline-rename
-    // affordance (plan §7.1) would replace this with an input UI
-    // bound to the new group's name. Tests pass `promptForName` to
+    // First-cut implementation: window.prompt. A future inline-rename affordance (plan §7.1) would
+    // replace this with an input UI bound to the new group's name. Tests pass `promptForName` to
     // bypass the real browser prompt.
     const promptFn = promptForName ?? ((defaultValue: string): string | null => window.prompt('Name the new group:', defaultValue))
     const name = promptFn(defaultName)
@@ -309,9 +248,8 @@ export function useDesignHandlers(args?: UseDesignHandlersArgs) {
       // fresh selection (Figma behavior — grouping collapses to the
       // new parent, then the user picks the next group).
       selectedIds.value = new Set()
-      // The notification store only exposes notifyError (a single
-      // success-vs-error style is overkill for the 1-shot success
-      // case here). Success notifications auto-dismiss in 5s like
+      // The notification store only exposes notifyError (a single success-vs-error style is
+      // overkill for the 1-shot success case here). Success notifications auto-dismiss in 5s like
       // error notifications, so the UX is consistent.
       notificationStore.notifyError(
         `Grouped ${childIds.length} elements into "${name}".`,
@@ -322,18 +260,9 @@ export function useDesignHandlers(args?: UseDesignHandlersArgs) {
     }
   }
 
-  /**
-   * NEW (Chunk 9 of grouped-layers plan). Figma convention:
-   * Cmd/Ctrl+Shift+G dissolves a `group` (or `frame`) — its direct
-   * children are reparented to the group's parent (or top-level if
-   * the group had no parent), the group row is deleted.
-   *
-   * Selection gate: silent no-op when `elementId` is empty (matches
-   * Figma — Ungroup is greyed out when nothing is selected).
-   *
-   * On success: clears the selection Set and fires a success toast.
-   * On failure: fires an error toast with the apiFetch error message.
-   */
+  /** NEW (Chunk 9 of grouped-layers plan). Figma convention: Cmd/Ctrl+Shift+G dissolves a `group`
+   * (or `frame`) — its direct children are reparented to the group's parent (or top-level if the
+   * group had no parent), the group row is deleted. */
   async function ungroupSelection(elementId: string): Promise<void> {
     if (!args) {
       console.warn('[useDesignHandlers.ungroupSelection] no args provided; skipping')
@@ -363,30 +292,9 @@ export function useDesignHandlers(args?: UseDesignHandlersArgs) {
     }
   }
 
-  /**
-   * NEW (2026-08-06, design-leave-group plan). Figma-style "Pull
-   * out of group" affordance: pull the SINGLE selected element out
-   * of its current parent group/frame to top-level. Distinct from
-   * `ungroupSelection` (which dissolves the selected group itself).
-   * The parent group survives and any other children stay nested.
-   *
-   * Routes through the same reparent-batch endpoint used by the
-   * drag-out affordance (PR #151), with `newParentId: null` (top-
-   * level). The backend's cycle preflight is a no-op here (no
-   * parent_id is being set), so the only failure mode is network /
-   * server-side validation.
-   *
-   * Quiet no-op when args are missing or any of workspaceId /
-   * itemId / pageId / elementId is empty (matches the pattern of
-   * every sibling handler — see `ungroupSelection` above).
-   *
-   * On success: clears `args.selectedIds.value` and shows a toast
-   * so the user knows the action succeeded (the store mirrors the
-   * server response into the local `elements` ref automatically).
-   *
-   * On error: the store's error surfaces via `notificationStore.
-   * notifyError(...)`.
-   */
+  /** NEW (2026-08-06, design-leave-group plan). Figma-style "Pull out of group" affordance: pull
+   * the SINGLE selected element out of its current parent group/frame to top-level. Distinct from
+   * `ungroupSelection` (which dissolves the selected group itself). */
   async function moveToPage(
     elementId: string,
     newPageId: string,
@@ -449,10 +357,9 @@ export function useDesignHandlers(args?: UseDesignHandlersArgs) {
           new_parent_id: null,
         },
       )
-      // Clear selection so the user can immediately Leave group
-      // again on a fresh selection (Figma behavior — the just-
-      // pulled-out element stays highlighted through spurious
-      // context menus unless we clear).
+      // Clear selection so the user can immediately Leave group again on a fresh selection (Figma
+      // behavior — the just- pulled-out element stays highlighted through spurious context menus
+      // unless we clear).
       args.selectedIds.value = new Set()
       notificationStore.notifyError(
         'Left group. Element moved to top-level.',
@@ -463,25 +370,8 @@ export function useDesignHandlers(args?: UseDesignHandlersArgs) {
     }
   }
 
-  /**
-   * NEW (Chunk 2 Task 2.3 of drag-to-reparent plan). Figma-style
-   * drag-and-drop affordance: reparent 1 OR N selected rows into
-   * the same target (a `group`/`frame` row, or top-level). Routes
-   * ALWAYS through the batch endpoint — uniform behaviour
-   * regardless of selection size; the backend handles N=1
-   * efficiently.
-   *
-   * `newParentId` semantics:
-   *   - string = the group/frame id to move into
-   *   - null = leave any current group, become top-level
-   *
-   * Quiet no-op when any of wsId/itemId/pageId is empty OR
-   * `elementIds` is empty (matches the pattern of `updateElement` /
-   * `deleteElement` / `groupSelection`).
-   *
-   * On error (e.g. cycle) the store is unchanged and the error
-   * propagates as a notification toast.
-   */
+  /** NEW (Chunk 2 Task 2.3 of drag-to-reparent plan). Figma-style drag-and-drop affordance:
+   * reparent 1 OR N selected rows into the same target (a `group`/`frame` row, or top-level). */
   async function reparentLayers(payload: {
     workspaceId: string
     itemId: string
@@ -508,21 +398,9 @@ export function useDesignHandlers(args?: UseDesignHandlersArgs) {
     }
   }
 
-  /**
-   * NEW (Plan: docs/superpowers/plans/2026-08-06-move-element-with-descendants.md).
-   * Figma-style drag affordance: translate 1 OR N elements by a single
-   * (dx, dy) delta — the backend cascades the delta to every
-   * transitive descendant of each item's element via a recursive CTE.
-   * One HTTP call per pointermove covers arbitrary subtree depth.
-   *
-   * `items` shape mirrors the API wrapper:
-   *   { element_id, dx, dy, width?, height?, rotation? }
-   *   - dx/dy is mandatory (zero is valid for a pure resize)
-   *   - width/height/rotation apply ONLY to the element_id (not descendants)
-   *
-   * On error the store is unchanged and the error propagates as a
-   * notification toast.
-   */
+  /** NEW (Plan: docs/superpowers/plans/2026-08-06-move-element-with-descendants.md). Figma-style
+   * drag affordance: translate 1 OR N elements by a single (dx, dy) delta — the backend cascades
+   * the delta to every transitive descendant of each item's element via a recursive CTE. */
   async function moveElementWithDescendants(payload: {
     workspaceId: string
     itemId: string

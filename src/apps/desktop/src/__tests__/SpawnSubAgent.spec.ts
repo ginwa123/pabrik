@@ -1,7 +1,5 @@
-/**
- * Tests for SpawnSubAgent.vue, focusing on the new peek button +
- * event that triggers SubAgentPeekPanel.
- */
+/** Tests for SpawnSubAgent.vue, focusing on the new peek button +
+ * event that triggers SubAgentPeekPanel. */
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import SpawnSubAgent from '../components/tool_outputs/SpawnSubAgent.vue'

@@ -1,22 +1,4 @@
-/**
- * Tests for useRecentFolders — Pinia store backing the FilePickerDialog's
- * Recent tab.
- *
- * The store owns:
- *   - recentEntries: { path: string, lastUsedAt: number, pinned?: boolean }[]
- *   - addRecent(path) — dedupe by path, bump lastUsedAt, trim to cap (pinned exempt)
- *   - togglePin(path) — flips pinned, re-sort
- *   - removeRecent(path) — explicit remove (used when the user wants to forget)
- *   - list() — sorted by pinned desc, then lastUsedAt desc
- *   - Persistence: localStorage key 'pabrik-folder-picker-recent:v1'
- *
- * Persistence is the interesting part — the store hydrates from localStorage
- * on init, and writes back on every mutation (debounced 200ms via the
- * useDebounceFn pattern from `useDesignHistory.ts`).
- *
- * jsdom 29 dropped localStorage from its default globals — install the
- * Map-backed stub from `./helpers` before mounting the store.
- */
+/** Tests for useRecentFolders — Pinia store backing the FilePickerDialog's Recent tab. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useRecentFoldersStore } from '../stores/recentFolders'

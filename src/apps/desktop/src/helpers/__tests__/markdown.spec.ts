@@ -1,17 +1,6 @@
-/**
- * helpers/markdown.ts — markdown → HTML / markdown → plain text.
- *
- * The `ask_user` card is the caller that motivated this: its `question` is
- * model-authored markdown ("Markdown allowed" in `ask_user.zig`'s schema)
- * and used to reach the DOM as literal `**bold**` text.
- *
- * These tests pin the three contracts the cards depend on:
- *   1. block markdown actually renders (bold / italic / code / list);
- *   2. raw HTML in the source cannot reach the DOM;
- *   3. `stripMarkdownSyntax` keeps the WORDS and drops only the syntax,
- *      because a stripped option label and the raw option string that gets
- *      POSTed back to the model must stay recognisably the same value.
- */
+/** helpers/markdown.ts — markdown → HTML / markdown → plain text. The `ask_user` card is the caller
+ * that motivated this: its `question` is model-authored markdown ("Markdown allowed" in
+ * `ask_user.zig`'s schema) and used to reach the DOM as literal `**bold**` text. */
 import { describe, it, expect } from 'vitest'
 import { renderMarkdownHtml, renderInlineMarkdownHtml, stripMarkdownSyntax } from '../markdown'
 
@@ -109,10 +98,9 @@ describe('stripMarkdownSyntax', () => {
   })
 
   it('does not inject a space where an inline token ends', () => {
-    // Regression: joining a paragraph's inline children with ' ' turned
-    // `**staging**, but skip 087` into `staging , but skip 087`, which
-    // then rendered in the ask_user header pill and the answer chip.
-    // Blocks are space-joined; inline tokens concatenate.
+    // Regression: joining a paragraph's inline children with ' ' turned `**staging**, but skip 087`
+    // into `staging , but skip 087`, which then rendered in the ask_user header pill and the answer
+    // chip. Blocks are space-joined; inline tokens concatenate.
     expect(stripMarkdownSyntax('**staging**, but skip `087`')).toBe('staging, but skip 087')
     expect(stripMarkdownSyntax('mirror `linux/window.zig` in `mac/render.zig`')).toBe(
       'mirror linux/window.zig in mac/render.zig',

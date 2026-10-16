@@ -1,27 +1,11 @@
-/**
- * Tests for AddKanbanDialog — the modal that creates a new project
- * kanban board. The user enters a name + picks a folder (the cwd for
- * the kanban's tasks); the backend seeds the default columns. After
- * the migration to FilePickerDialog (2026-06-24), the picker is mocked
- * with a stub (real picker behavior is in FilePickerDialog.spec.ts).
- *
- * Mirrors AddItemDialog.spec.ts: same `attachTo: document.body` +
- * `document.querySelector` pattern (the dialog uses <Teleport to="body">,
- * so wrapper.find(...) returns empty — we must inspect the document
- * directly).
- *
- * Plan: docs/superpowers/plans/2026-06-21-workspace-item-kanban.md
- *   Chunk 6 / Task 6.1
- */
+/** Tests for AddKanbanDialog — the modal that creates a new project kanban board. The user enters a
+ * name + picks a folder (the cwd for the kanban's tasks); the backend seeds the default columns. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import AddKanbanDialog from '../components/dialogs/AddKanbanDialog.vue'
 
 // Stub the FilePickerDialog — we only care that the parent wires up the
 // picker's events. Real picker behavior is tested in FilePickerDialog.spec.ts.
-// The stub mirrors the picker's public API:
-//   - v-model:show (modelValue + update:modelValue)
-//   - @select(path)
 //   - title prop (displayed in stub header)
 vi.mock('../components/FilePickerDialog.vue', () => ({
   default: {
@@ -117,14 +101,9 @@ describe('AddKanbanDialog', () => {
     expect(btn?.disabled).toBe(true)
   })
 
-  // ─── Visible "Name is required" error UX (mirrors AddItemDialog) ─────────
-  //
-  // The dialog now shows an inline error below the name input after
-  // the user has interacted with an empty/whitespace field, so the
-  // disabled Add button has a visible explanation.
-  //
-  // Plan: docs/superpowers/plans/2026-07-10-empty-workspace-item-bug.md
-
+  // ─── Visible "Name is required" error UX (mirrors AddItemDialog) ───────── The dialog now shows
+  // an inline error below the name input after the user has interacted with an empty/whitespace
+  // field, so the disabled Add button has a visible explanation.
   it('whitespace-only name shows visible "Name is required" error', async () => {
     wrapper = mountDialog(true)
     await flushPromises()
@@ -173,29 +152,15 @@ describe('AddKanbanDialog', () => {
     nameInput.value = 'Sprint 12'
     nameInput.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
-    // No folder picked → button is STILL enabled (path is optional
-    // since 2026-08-06 — the backend stores NULL when the path
-    // is empty; the kanban is cwd-less until the user backfills
-    // via the "Set project root" banner in KanbanView).
+    // No folder picked → button is STILL enabled (path is optional since 2026-08-06 — the backend
+    // stores NULL when the path is empty; the kanban is cwd-less until the user backfills via the
+    // "Set project root" banner in KanbanView).
     const btn = findInDom<HTMLButtonElement>('[data-testid="add-kanban-submit"]')
     expect(btn?.disabled).toBe(false)
   })
 
-  // ─── Optional path (2026-08-06) ────────────────────────────────────
-  //
-  // Since the "make cwd session as optional" task, the user can
-  // submit the dialog with a valid name AND no folder picked.
-  // The create event must emit `create(name, '')` — the empty path
-  // string is the cwd-less kanban signal. The backend's
-  // `workspace_items_create_kanban.zig` writes NULL when the path
-  // is empty, and `session_create.zig` creates a sandbox directory
-  // per chat session when `cwd_session` is empty (the existing
-  // pre-fix behavior for legacy cwd-less kanbans).
-  //
-  // The "Set project root" banner in KanbanView surfaces after
-  // creation, offering the user a way to backfill the path via
-  // the same FilePickerDialog.
-
+  // ─── Optional path (2026-08-06) ──────────────────────────────────── Since the "make cwd session
+  // as optional" task, the user can submit the dialog with a valid name AND no folder picked.
   it('emits create(name, "") when Add is clicked without picking a folder (cwd-less kanban)', async () => {
     wrapper = mountDialog(true)
     await flushPromises()

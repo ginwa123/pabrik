@@ -1,22 +1,4 @@
-/**
- * Tests for WebSearch.vue — the tool-output card for the `web_search` agent
- * tool.
- *
- * The rows below are the plan's matrix 69-71 plus the failure envelopes:
- *
- *  - 69: the results renderer shows the `results`-array convention when present
- *  - 70: …and falls back to formatted JSON for an unfamiliar shape, no throw
- *  - 71: a provider badge shows `provider` from the envelope
- *
- * The payload is UNTYPED passthrough (D13): TinyFish answers
- * `{results:[…]}`, Brave `{web:{results:[…]}}`, Serper `{organic:[…]}` and a
- * self-hosted SearxNG a bare `[{…}]`. Only the first is the convention, so
- * these tests pin BOTH halves: the list for TinyFish, and formatted JSON for
- * every other shape — including one that cannot be serialised at all, which
- * must say so rather than render as an empty result.
- *
- * Behavioural, per the project rule: mount, query by `data-testid`, read text.
- */
+/** Tests for WebSearch.vue — the tool-output card for the `web_search` agent tool. */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
@@ -24,7 +6,6 @@ import WebSearch from '../WebSearch.vue'
 import { parseWebSearch, parseWebSearchErrorText } from '../_shared/toolOutputParser'
 
 // ─── Envelopes, shaped like the ones the backend emits ─────────────────────
-
 const successEnvelope = (provider: string, response: unknown, status = 200) => ({
   provider,
   status,
@@ -60,7 +41,6 @@ const tinyfish = {
 }
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
-
 describe('WebSearch', () => {
   it('renders the card', () => {
     const wrapper = mount(WebSearch, {
@@ -70,7 +50,6 @@ describe('WebSearch', () => {
   })
 
   // ─── matrix row 69: the `results` convention ────────────────────────────
-
   it('69: renders one row per result of a top-level `results` array', () => {
     const wrapper = mount(WebSearch, {
       props: { content: successEnvelope('tinyfish', tinyfish), expanded: true },
@@ -120,7 +99,6 @@ describe('WebSearch', () => {
   })
 
   // ─── matrix row 70: the fallback, and never a throw ─────────────────────
-
   it.each([
     ['Brave nests the same array under `web`', { web: { results: [{ title: 'B' }] } }],
     ['Serper calls it `organic`', { organic: [{ title: 'O', link: 'https://o.test' }] }],
@@ -169,7 +147,6 @@ describe('WebSearch', () => {
   })
 
   // ─── matrix row 71: the provider badge ──────────────────────────────────
-
   it('71: the provider badge comes from the envelope', () => {
     const wrapper = mount(WebSearch, {
       props: {
@@ -236,7 +213,6 @@ describe('WebSearch', () => {
   })
 
   // ─── failures ───────────────────────────────────────────────────────────
-
   it('renders the reason flag and the message of a failure envelope', () => {
     const wrapper = mount(WebSearch, {
       props: {
@@ -297,7 +273,6 @@ describe('WebSearch', () => {
   })
 
   // ─── parser ─────────────────────────────────────────────────────────────
-
   it('parseWebSearch reads the provider, status and untyped response', () => {
     const parsed = parseWebSearch(successEnvelope('tinyfish', tinyfish))
 

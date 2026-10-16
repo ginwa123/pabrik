@@ -11,12 +11,9 @@ vi.mock('../api', () => ({
 
 const mockRegistry = api.getAgentToolsRegistry as unknown as ReturnType<typeof vi.fn>
 
-/**
- * Registry fixture covering: several wireframe groups, both special
- * pills (`main-agent only`, `mode floor`), built-in-default members,
- * non-default members, and one tool missing from the static group map
- * (→ the "Other" fallback bucket).
- */
+/**  * Registry fixture covering: several wireframe groups, both special pills (`main-agent only`, `mode
+ * floor`), built-in-default members, non-default members, and one tool missing from the static
+ * group map (→ the "Other" fallback bucket). */
 const REGISTRY = [
   { name: 'command', description: 'Run a shell command' },
   { name: 'read_file', description: "Read a file's contents" },

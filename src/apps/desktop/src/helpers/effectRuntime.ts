@@ -1,19 +1,5 @@
-/**
- * The generic Effect seam for Vue `<script setup>` callers.
- *
- * `sync/runtime.ts` is the same idea specialised to the sync slice (it
- * degrades to `null`/a fallback and reports a `SyncError`). This module is
- * the domain-neutral half: run any `Effect`, get its `Exit` back, and let
- * the CALLER decide what a failure means.
- *
- * That last part is the whole point. The bug this module exists to prevent is
- * a failure being collapsed into a value the UI cannot distinguish from a
- * legitimate answer — see the chatview's "How can I help you?" empty state
- * and the rule in AGENTS.md ("Frontend — No `try`/`catch` in the desktop
- * app; use Effect-TS"). A `catch` that returns `[]` makes "the backend is
- * down" and "this session has no messages" the same value. An `Exit` keeps
- * them apart.
- */
+/** The generic Effect seam for Vue `<script setup>` callers. `sync/runtime.ts` is the same idea
+ * specialised to the sync slice (it degrades to `null`/a fallback and reports a `SyncError`). */
 import { Cause, Effect, Exit, Option } from 'effect'
 
 /** Best-effort one-liner for anything on an Effect's error channel. */
@@ -26,13 +12,9 @@ export function describeCause(cause: Cause.Cause<unknown>): string {
   return Cause.pretty(cause)
 }
 
-/**
- * Run `effect` and hand back its `Exit` — never a fallback value, never a
- * throw. The caller matches on it, so "failed" stays visible in the type.
- *
- * Failures are logged in dev; the `Exit` is still returned so the caller can
- * surface them in the UI.
- */
+/**  * Run `effect` and hand back its `Exit` — never a fallback value, never a throw. The caller matches
+ * on it, so "failed" stays visible in the type. Failures are logged in dev; the `Exit` is still
+ * returned so the caller can surface them in the UI. */
 export async function runEffectExit<A, E>(
   effect: Effect.Effect<A, E>,
   op: string,
@@ -44,13 +26,9 @@ export async function runEffectExit<A, E>(
   return exit
 }
 
-/**
- * Run `effect` for its value, degrading to `fallback` on failure.
- *
- * Use ONLY when the fallback is a genuinely equivalent answer. "The cache had
- * no new rows" is fine; "the server is unreachable" is not — that one needs
- * `runEffectExit` so the reason can reach the UI.
- */
+/**  * Run `effect` for its value, degrading to `fallback` on failure. Use ONLY when the fallback is a
+ * genuinely equivalent answer. "The cache had no new rows" is fine; "the server is unreachable" is
+ * not — that one needs `runEffectExit` so the reason can reach the UI. */
 export async function runEffectOr<A, E>(
   effect: Effect.Effect<A, E>,
   fallback: A,

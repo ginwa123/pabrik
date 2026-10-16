@@ -1,17 +1,6 @@
-/**
- * Behavioral tests for DesignView.vue's hand-mode (Space + drag to pan).
- *
- * 4 tests covering:
- *   1. Holding Space sets body cursor to grab.
- *   2. Releasing Space restores the default cursor.
- *   3. Space inside an INPUT does NOT enter grab mode (so the W x H
- *      number fields and Monaco editor still type spaces normally).
- *   4. Pointer-down + drag on the canvas container with Space held
- *      mutates scrollLeft / scrollTop (the pan).
- *
- * Plan: docs/superpowers/plans/2026-07-19-design-hand-pan-mode.md
- *       (Chunk 1, Task 1.3)
- */
+/** Behavioral tests for DesignView.vue's hand-mode (Space + drag to pan). 4 tests covering: 1.
+ * Holding Space sets body cursor to grab. 2. Releasing Space restores the default cursor. 3. Plan:
+ * docs/superpowers/plans/2026-07-19-design-hand-pan-mode.md (Chunk 1, Task 1.3) */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -167,9 +156,8 @@ describe('DesignView hand-mode pan', () => {
     expect(document.body.style.cursor).toBe('grabbing')
     expect(onMove).not.toBeNull()
 
-    // Simulate a 50-px-left, 20-px-up drag — the canvas should have
-    // scrolled +50 horizontally and +20 vertically (cursor delta is
-    // subtracted from the original scroll position, so a leftward
+    // Simulate a 50-px-left, 20-px-up drag — the canvas should have scrolled +50 horizontally and
+    // +20 vertically (cursor delta is subtracted from the original scroll position, so a leftward
     // drag with a positive delta increases scrollLeft).
     onMove!(
       new PointerEvent('pointermove', {

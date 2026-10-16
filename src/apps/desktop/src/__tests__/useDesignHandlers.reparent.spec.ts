@@ -1,9 +1,6 @@
-/**
- * Behavioural tests for `useDesignHandlers.reparentLayers`.
- *
+/** Behavioural tests for `useDesignHandlers.reparentLayers`.
  * Plan: docs/superpowers/plans/2026-07-30-design-layer-drag-join-or-leave-group.md
- * (Chunk 2 Task 2.3)
- */
+ * (Chunk 2 Task 2.3) */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

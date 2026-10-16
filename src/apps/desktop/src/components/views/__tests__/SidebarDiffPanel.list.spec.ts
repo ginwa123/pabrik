@@ -1,16 +1,5 @@
-/**
- * Phase 3 center lazy diff (3.1): the panel emits the FULL ordered file
- * list (`show-diff-list {files: DiffSelection[]}`) in addition to the
- * instant per-click `show-diff`. ChatView stacks every file vertically
- * so scroll is fast (lazy mount + content-visibility, no pagination).
- *
- * - PR mode: after splitDiffByFile, every chunk is parsed synchronously
- *   (map parseUnifiedDiff) — one getPrDiff call, no per-file fetch.
- * - Worktree mode: after getGitChanges, ONE folder-mode POST
- *   (getGitFolderDiffs) covers all staged+modified+untracked files. A
- *   failed fetch becomes error entries — one visible row per file, and no
- *   second wave of per-file requests.
- */
+/** Phase 3 center lazy diff (3.1): the panel emits the FULL ordered file list (`show-diff-list
+ * {files: DiffSelection[]}`) in addition to the instant per-click `show-diff`. */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'

@@ -63,12 +63,9 @@ const props = withDefaults(
   defineProps<{
     contentType: 'markdown' | 'text' | 'code' | 'image' | 'html'
     args: PreviewArgs
-    /**
-     * Layout variant (kept for backward compat). Only `'inline'`
-     * is used — compact chat-bubble layout that auto-resizes to fit
-     * the iframe's content height, plus an "Open in new tab" button
-     * for HTML content.
-     */
+    /**      * Layout variant (kept for backward compat). Only `'inline'` is used — compact chat-bubble
+     * layout that auto-resizes to fit the iframe's content height, plus an "Open in new tab" button
+     * for HTML content. */
     variant?: 'side' | 'inline'
   }>(),
   { variant: 'inline' },
@@ -80,8 +77,6 @@ const MIN_IFRAME_HEIGHT = 200
 
 function onIframeMessage(e: MessageEvent) {
   // Filter by source — only messages from our own auto-resize script.
-  // The parser lives in helpers/iframeAutoResize.ts so ChatView's
-  // `<html>` frames share the same protocol (with their own source tag).
   // Grows to the FULL content height (no upper cap) so no inner
   // scrollbar ever appears — the outer chat scroller owns scrolling.
   const reported = readAutoResizeHeight(e, PREVIEW_AUTO_RESIZE_SOURCE)
@@ -103,14 +98,9 @@ onUnmounted(() => {
   }
 })
 
-// ─── Auto-resize script (prepended to the iframe srcdoc) ────────────
-//
-// The reporter script and its postMessage parser live in
-// helpers/iframeAutoResize.ts — shared with ChatView.vue's `<html>`
-// frames. Same security contract as before: the sandboxed (NULL-origin)
-// frame only reports its own scrollHeight/scrollWidth; the parent only
-// writes a clamped iframe.style.height.
-
+// ─── Auto-resize script (prepended to the iframe srcdoc) ──────────── The reporter script and its
+// postMessage parser live in helpers/iframeAutoResize.ts — shared with ChatView.vue's `<html>`
+// frames.
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
@@ -156,36 +146,17 @@ const imageSrc = computed<string | null>(() => {
   return null
 })
 
-/**
- * Build the iframe's `srcdoc` value from the user HTML.
- *
- * CRITICAL: do NOT manually escape `<`, `>`, `&`, `"` here. The browser's
- * `setAttribute('srcdoc', value)` path automatically encodes those four
- * characters for the attribute value, then the iframe's own parser
- * decodes them back when loading the document. Manually escaping here
- * produces DOUBLE-escaped HTML.
- *
- * Vue's reactive `:srcdoc` binding calls setAttribute for us.
- *
- * Also wraps the HTML in:
- *   1. A tiny `<style>` reset so the preview doesn't get a default-
- *      margin surprise from the browser body.
- *   2. The AUTO_RESIZE_SCRIPT (prepended BEFORE the user's HTML) which
- *      sets up the postMessage protocol that makes the iframe auto-size
- *      to fit its content height. Follows the sandboxed-iframe pattern.
- */
+/** Build the iframe's `srcdoc` value from the user HTML. CRITICAL: do NOT manually escape `<`, `>`,
+ * `&`, `"` here. */
 const htmlSrcDoc = computed<string | null>(() => {
   if (props.contentType !== 'html') return null
   const raw = props.args.content ?? ''
   return `${PREVIEW_AUTO_RESIZE_SCRIPT}<style>html,body{margin:0;padding:0;background:#fff;}${FRAME_NO_SCROLLBAR_STYLE}</style>${raw}`
 })
 
-// ─── Open in new tab ───────────────────────────────────────────────
-//
-// HTML previews offer an "Open in new tab" action that builds a Blob
-// URL from the raw HTML and opens it via window.open. The iframe
-// stays sandboxed (NULL origin); the new tab gets the full viewport
-// width for wide content.
+// ─── Open in new tab ─────────────────────────────────────────────── HTML previews offer an "Open
+// in new tab" action that builds a Blob URL from the raw HTML and opens it via window.open. The
+// iframe stays sandboxed (NULL origin); the new tab gets the full viewport width for wide content.
 function openInNewTab() {
   if (typeof window === 'undefined' || typeof URL === 'undefined') return
   try {

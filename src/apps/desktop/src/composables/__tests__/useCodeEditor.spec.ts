@@ -1,16 +1,6 @@
-/**
- * Tests for useCodeEditor.ts — verifies the composable's `OpenInCodeEditorOptions`
- * contract and the `useInjectOpenInCodeEditor` injection key (chunks 5+6).
- *
- * The composable itself is a thin `inject` wrapper, so the meaningful test is:
- *   1. `OpenInCodeEditorOptions` accepts an optional `line` number (chunks 5+6).
- *   2. `useInjectOpenInCodeEditor()` returns the function provided via `provide`
- *      when the InjectionKey is used.
- *   3. `useInjectOpenInCodeEditor()` returns `null` when no provider exists
- *      (graceful fallback for tests / standalone components).
- *   4. The provided function receives the exact `line` value that was passed in
- *      — this is the contract the DiffView's `@jump-to-line` handler relies on.
- */
+/** Tests for useCodeEditor.ts — verifies the composable's `OpenInCodeEditorOptions` contract and
+ * the `useInjectOpenInCodeEditor` injection key (chunks 5+6). The composable itself is a thin
+ * `inject` wrapper, so the meaningful test is: 1. */
 import { mount } from '@vue/test-utils'
 import { defineComponent, h, provide } from 'vue'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'

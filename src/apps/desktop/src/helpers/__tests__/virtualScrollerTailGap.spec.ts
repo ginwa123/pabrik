@@ -1,24 +1,5 @@
-/**
- * Tail-gap cap (task_1790236655228_2) — "the gap is too long".
- *
- * The sizer height is a MODEL number (Σ measured/estimated row heights).
- * Unmeasured rows are estimated from the running median of the measured
- * ones, so a tail of short rows inherits a tall median and the model can
- * reserve thousands of px of empty sizer BELOW the real content. The user
- * screenshot: `virtual-scroller-sizer 26796px`, `content translate3d(0,
- * 23406px)`, `min-height 708px` → ~2682px of scrollable blank below the
- * last row.
- *
- * Contract under test: while the rendered window covers the LAST item, the
- * sizer must never exceed (measured content bottom + maxTailGap); and the
- * cap must lift once the window is away from the tail so rows appended
- * below can still be reached.
- *
- * jsdom has no layout, so child heights are mocked (the same idiom the
- * other virtualScroller specs use). Rows left at the jsdom default height
- * of 0 model the real failure mode: a row the scroller cannot measure, so
- * the model keeps its (median) estimate for it forever.
- */
+/** Tail-gap cap (task_1790236655228_2) — "the gap is too long". The sizer height is a MODEL number
+ * (Σ measured/estimated row heights). */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, type ComponentMountingOptions } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -95,10 +76,8 @@ function renderedIndices(el: HTMLElement): number[] {
   )
 }
 
-/**
- * The invariant the cap guarantees: the sizer never reserves more room
- * below the MEASURED content bottom than `maxTailGap`.
- */
+/** The invariant the cap guarantees: the sizer never reserves more room
+ * below the MEASURED content bottom than `maxTailGap`. */
 function expectCapHolds(el: HTMLElement, gap = 100, slack = 2): void {
   const sizer = sizerTotal(el)
   const content = contentEl(el)
@@ -120,11 +99,8 @@ describe('VirtualScroller tail-gap cap', () => {
     vi.useRealTimers()
   })
 
-  /**
-   * Build the reported state: a tall median learned from the top window,
-   * then a tail whose rows the DOM cannot measure (height 0) — so the
-   * model keeps the median estimate for every one of them.
-   */
+  /**    * Build the reported state: a tall median learned from the top window, then a tail whose rows the
+   * DOM cannot measure (height 0) — so the model keeps the median estimate for every one of them. */
   async function mountOvershootingTail(maxTailGap?: number) {
     const mounted = mountScroller(maxTailGap === undefined ? undefined : { maxTailGap })
     const { wrapper, el } = mounted

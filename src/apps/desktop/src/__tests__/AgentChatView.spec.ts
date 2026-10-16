@@ -1,5 +1,4 @@
 // Behavioural tests for AgentChatView (inline, non-dialog).
-
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick, ref, type Ref } from 'vue'
@@ -8,13 +7,8 @@ import { setActivePinia, createPinia } from 'pinia'
 import AgentChatView from '../components/views/AgentChatView.vue'
 import ChatAppBar from '../components/views/ChatAppBar.vue'
 
-// Stub ChatView — it transitively pulls in many Pinia stores
-// (useNavigationStore, useWorkspacesStore, etc.) and a real SSE bus
-// instance, none of which we need to exercise here. The stub honours
-// the real `showHeader` contract: it renders the shared ChatAppBar
-// when the flag is set and re-emits `close` from the bar's ✕, so
-// these tests assert what AgentChatView actually WIRES rather than
-// ChatView's internals (covered by ChatAppBarParity.spec.ts).
+// Stub ChatView — it transitively pulls in many Pinia stores (useNavigationStore,
+// useWorkspacesStore, etc.) and a real SSE bus instance, none of which we need to exercise here.
 const ChatViewStub = defineComponent({
   name: 'ChatView',
   props: ['chatId', 'chatName', 'type', 'cwd', 'showHeader', 'embedded'],

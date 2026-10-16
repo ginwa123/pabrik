@@ -2,15 +2,9 @@ import { describe, it, expect } from 'vitest'
 
 import router from '../router/index'
 
-/**
- * Global catch-all (`/:pathMatch(.*)*` → `/app`).
- *
- * The backend serves index.html for any route-style path under /app
- * (static_files.zig SPA fallback), so a refresh at a deep link always
- * boots the SPA — but without a matching frontend route Vue renders an
- * empty router-view. The catch-all guarantees every served path renders
- * AppLayout instead of a blank page.
- */
+/** Global catch-all (`/:pathMatch(.*)*` → `/app`). The backend serves index.html for any
+ * route-style path under /app (static_files.zig SPA fallback), so a refresh at a deep link always
+ * boots the SPA — but without a matching frontend route Vue renders an empty router-view. */
 describe('router catch-all', () => {
   it('redirects an unknown /app deep link to /app', async () => {
     await router.push('/app/kanban/ghost-item')

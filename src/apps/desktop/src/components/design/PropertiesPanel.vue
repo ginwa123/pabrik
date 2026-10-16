@@ -63,27 +63,18 @@ const isElementsLoading = computed(() => {
   return workspacesStore.isDesignElementsLoading(itemId, pageId)
 })
 
-// Undo/redo plan (Chunk 4): one history entry per field commit.
-// Pre-state is captured on input focus; post-state on @change.
-// We instantiate the composable here (rather than at DesignView)
-// so the capture is local to each field — no need to plumb ids
-// through props.
+// Undo/redo plan (Chunk 4): one history entry per field commit. Pre-state is captured on input
+// focus; post-state on @change. We instantiate the composable here (rather than at DesignView) so
+// the capture is local to each field — no need to plumb ids through props.
 const history = useDesignHistory(computed(() => workspacesStore.activeDesignPageId))
 
 const props = withDefaults(
   defineProps<{
-    // Pass the full selection set (not just the "active" one). The
-    // panel renders one of three states based on `elements.length`:
-    //   0 → empty state
-    //   1 → single-element form
-    //   >1 → multi-select banner
-    // The parent owns the selection logic; this component just formats
-    // the current selection into the right UI.
+    // Pass the full selection set (not just the "active" one).
     elements: DesignElement[]
     readonly?: boolean
-    // When true, the parent canvas is in Preview mode (toggle in the
-    // canvas header bar). The form fields are hidden and replaced
-    // with a "you're previewing" banner — the user is interacting
+    // When true, the parent canvas is in Preview mode (toggle in the canvas header bar). The form
+    // fields are hidden and replaced with a "you're previewing" banner — the user is interacting
     // with the mockup, not editing its metadata.
     previewMode?: boolean
   }>(),
@@ -105,13 +96,8 @@ const emit = defineEmits<{
   delete: [elementId: string]
 }>()
 
-// ─── Form field handlers ───────────────────────────────────────────────
-//
-// Each handler builds a patch object and emits `update`. We use
-// dedicated handlers (instead of inline @change on every input) so
-// the emit always carries the exact field that changed — the
-// parent's store action treats it as a sparse merge.
-
+// ─── Form field handlers ─────────────────────────────────────────────── Each handler builds a
+// patch object and emits `update`.
 type NumericField = 'x' | 'y' | 'width' | 'height' | 'rotation' | 'stroke_width' | 'corner_radius' | 'opacity'
 type StringField = 'name' | 'fill' | 'stroke' | 'text_content' | 'text_style' | 'image_url'
 
@@ -136,10 +122,9 @@ const handleStringChange = (field: StringField, value: string): void => {
   schedulePropertiesPanelCapturePost()
 }
 
-// Watch the single-element fields for actual change. When any
-// field updates (from a PropertiesPanel edit), we capture post-
-// state. The watcher is debounced to collapse rapid edits into a
-// single entry.
+// Watch the single-element fields for actual change. When any field updates (from a PropertiesPanel
+// edit), we capture post- state. The watcher is debounced to collapse rapid edits into a single
+// entry.
 const fieldsFingerprint = (el: DesignElement): string =>
   `${el.x}|${el.y}|${el.width}|${el.height}|${el.rotation}|${el.fill}|${el.stroke}|${el.stroke_width}|${el.corner_radius}|${el.opacity}|${el.name}|${el.text_content}|${el.image_url}|${el.type}`
 let propertiesPanelPostTimer: ReturnType<typeof setTimeout> | null = null
@@ -156,7 +141,6 @@ function schedulePropertiesPanelCapturePost(): void {
 }
 
 // ─── Confirm-before-delete state ───────────────────────────────────────
-
 const showDeleteConfirm = ref(false)
 
 const handleDeleteClick = (): void => {
@@ -176,7 +160,6 @@ const handleDeleteCancel = (): void => {
 }
 
 // ─── HTML editor (Monaco lazy-load) ────────────────────────────────────
-
 const htmlExpanded = ref(false)
 const htmlDraft = ref('')
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.
@@ -184,13 +167,9 @@ const monacoEditor = ref<any | null>(null)
 const monacoContainerRef = ref<HTMLDivElement | null>(null)
 const monacoLoadError = ref<string | null>(null)
 
-// When the user expands the editor and the element changes, seed the
-// draft with the current HTML body. We don't auto-pull on every
-// element switch — that would clobber the user's in-progress edit.
-// Instead, we pull on (a) first expand and (b) explicit element
-// change while collapsed.
-// Seed the draft when the selected element changes while collapsed
-// (prev-id guard on update). Expanded edits are never clobbered.
+// When the user expands the editor and the element changes, seed the draft with the current HTML
+// body. We don't auto-pull on every element switch — that would clobber the user's in-progress
+// edit. Instead, we pull on (a) first expand and (b) explicit element change while collapsed.
 const prevElementId = ref<string | null>(singleElement.value?.id ?? null)
 onUpdated(() => {
   const id = singleElement.value?.id ?? null
@@ -215,11 +194,9 @@ const handleExpandHtml = async (): Promise<void> => {
   if (monacoEditor.value) return
   try {
     const monaco = await import(/* @vite-ignore */ 'monaco-editor')
-    // Disable web workers — Monaco's default worker setup doesn't
-    // work in our Vite/jsdom environment; the simpler approach is to
-    // run monaco in the main thread (slightly slower autocomplete
-    // but no worker setup). For the v1 design use case (single-user,
-    // small HTML snippets) this is fine.
+    // Disable web workers — Monaco's default worker setup doesn't work in our Vite/jsdom
+    // environment; the simpler approach is to run monaco in the main thread (slightly slower
+    // autocomplete but no worker setup).
     if (typeof window !== 'undefined') {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.
       ;(window as any).MonacoEnvironment = {
@@ -255,14 +232,9 @@ const handleExpandHtml = async (): Promise<void> => {
   }
 }
 
-// Wire-up (undo/redo plan Chunk 1): was `emit('htmlChanged', htmlDraft.value)`
-// which went upward to DesignView → re-emitted → AppLayout had no
-// listener → silent drop. Now we call the store action directly.
-// Falls back to the emit if the store action throws (e.g. when the
-// single-element contract is violated mid-gesture).
-//
-// Undo/redo plan (Chunk 6): push an html_edit entry that records
-// the before/after body so undo can restore the previous body.
+// Wire-up (undo/redo plan Chunk 1): was `emit('htmlChanged', htmlDraft.value)` which went upward to
+// DesignView → re-emitted → AppLayout had no listener → silent drop. Now we call the store action
+// directly.
 const handleHtmlSave = async (): Promise<void> => {
   const el = singleElement.value
   if (!el) {
@@ -282,10 +254,9 @@ const handleHtmlSave = async (): Promise<void> => {
     // Push the html_edit entry with before/after body so undo can
     // restore the previous HTML body via PATCH.
     void history.capturePostState([el.id]).then(() => {
-      // capturePostState diffs element fields. We also need to
-      // attach the html body diff. The composable's capturePostState
-      // doesn't fetch HTML bodies (that would be slow on every
-      // drag); for html_edit we use a dedicated push.
+      // capturePostState diffs element fields. We also need to attach the html body diff. The
+      // composable's capturePostState doesn't fetch HTML bodies (that would be slow on every drag);
+      // for html_edit we use a dedicated push.
       const htmlHistoryStore = useDesignHistoryStore()
       htmlHistoryStore.push(workspacesStore.activeDesignPageId, {
         id: `entry_html_${Date.now()}_${Math.random()}`,
@@ -325,7 +296,6 @@ onBeforeUnmount(() => {
 })
 
 // ─── Computed helpers ──────────────────────────────────────────────────
-
 const isTextElement = computed(() => singleElement.value?.type === 'text')
 const isImageElement = computed(() => singleElement.value?.type === 'image')
 const showGeometrySection = computed(() => singleElement.value !== null)

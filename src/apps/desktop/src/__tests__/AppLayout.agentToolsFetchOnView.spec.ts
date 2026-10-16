@@ -1,14 +1,6 @@
-// Regression test for the agent-tool checkbox render bug.
-//
-// Bug: when the user lands directly on the agent view
-// (?view=workspace&itemId=AGENT_ID, no chat task), the AppLayout
-// watcher on `activeTask.value` never fires (activeTask is null),
-// so `agentTools` stays empty. The checkboxes render as unchecked
-// even when the rows exist in agent_tools with enabled=1.
-//
-// Symptom: clicking any checkbox sent a POST that returned 409
-// "tool already enabled for this agent" because the row was
-// already in the DB from a prior session.
+// Regression test for the agent-tool checkbox render bug. Bug: when the user lands directly on the
+// agent view (?view=workspace&itemId=AGENT_ID, no chat task), the AppLayout watcher on
+// `activeTask.value` never fires (activeTask is null), so `agentTools` stays empty.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
@@ -90,11 +82,8 @@ function setRoute(q: Record<string, string>, path = '/app') {
   } as any)
 }
 
-/**
- * Mount AppLayout with an agent item as the active workspace item
- * and NO chat task. Returns the wrapper so the test can inspect
- * the props passed to the AgentView stub.
- */
+/**  * Mount AppLayout with an agent item as the active workspace item and NO chat task. Returns the
+ * wrapper so the test can inspect the props passed to the AgentView stub. */
 function mountAgentView(): VueWrapper {
   const ws = useWorkspacesStore()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

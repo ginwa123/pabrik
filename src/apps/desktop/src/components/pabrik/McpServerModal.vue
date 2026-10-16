@@ -4,22 +4,9 @@ import { computed, onUpdated, ref } from 'vue'
 import { testMcpServer, type McpTestResult } from '../../api'
 import McpHeadersEditor, { type McpHeader } from './McpHeadersEditor.vue'
 
-/**
- * MCP server modal value — discriminated by `transport`:
- * - 'http'   → uses `url` + `headers`
- * - 'stdio'  → uses `command` + `args` + `env` + `cwd`
- *
- * The UI shows both branches under a transport toggle at the top of
- * the form. The wire shape sent to the backend is the union shape
- * declared in `McpServer` (api/index.ts).
- *
- * NOTE: the HTTP branch is a bespoke dialog (Name + URL + Headers
- * only). It deliberately does NOT reuse LlmConfigModal/LlmConfigForm —
- * those render LLM profile fields (Model, Thinking, Temperature, URL
- * style, API key, compaction overrides) which are meaningless for an
- * MCP server entry and confused users (screenshot: Add MCP server
- * showing "MiniMax-M2.7 / https://api.minimax.io/v1 / Thinking…").
- */
+/** MCP server modal value — discriminated by `transport`: - 'http'   → uses `url` + `headers` -
+ * 'stdio'  → uses `command` + `args` + `env` + `cwd` The UI shows both branches under a transport
+ * toggle at the top of the form. */
 export interface McpServerModalValue {
   name: string
   transport: 'http' | 'stdio'
@@ -61,18 +48,16 @@ const argsText = ref((props.modelValue.args ?? []).join('\n'))
 const envText = ref((props.modelValue.env ?? []).join('\n'))
 const cwdLocal = ref(props.modelValue.cwd ?? '')
 
-// If the parent passes a new modelValue (e.g. user picked a different
-// server to edit), re-seed the local textareas from it. Prev-identity
-// guard on update — the watcher this replaces was shallow, so a new
-// object identity is exactly the trigger.
+// If the parent passes a new modelValue (e.g. user picked a different server to edit), re-seed the
+// local textareas from it. Prev-identity guard on update — the watcher this replaces was shallow,
+// so a new object identity is exactly the trigger.
 function reseedFromModelValue(v: McpServerModalValue) {
   argsText.value = (v.args ?? []).join('\n')
   envText.value = (v.env ?? []).join('\n')
   cwdLocal.value = v.cwd ?? ''
-  // Editing any field invalidates a previous test result — the
-  // server may now be misconfigured even though the prior probe
-  // succeeded. Clearing prevents stale "looks good!" badges from
-  // lulling the user into saving a broken config.
+  // Editing any field invalidates a previous test result — the server may now be misconfigured even
+  // though the prior probe succeeded. Clearing prevents stale "looks good!" badges from lulling the
+  // user into saving a broken config.
   testResult.value = null
 }
 
@@ -92,18 +77,15 @@ const transport = ref<'http' | 'stdio'>(props.modelValue.transport ?? props.init
 const stdioValid = computed(() => props.modelValue.command.trim().length > 0)
 const httpValid = computed(() => props.modelValue.url.trim().length > 0)
 
-// ─── Test button state ─────────────────────────────────────────────────────
-// `testResult` carries the last probe response (or null = "no probe
-// yet"). `testing` is the loading flag — true while the HTTP call is
-// in-flight so the button shows a spinner + "Testing…" label.
+// ─── Test button state ───────────────────────────────────────────────────── `testResult` carries
+// the last probe response (or null = "no probe yet"). `testing` is the loading flag — true while
+// the HTTP call is in-flight so the button shows a spinner + "Testing…" label.
 const testResult = ref<McpTestResult | null>(null)
 const testing = ref(false)
 
-// Re-derive whether Test is enabled per branch:
-// - stdio: command present (we send the CURRENT textarea contents, not
-//   modelValue.args which the parent only refreshes on Save).
-// - http: URL present (headers come from modelValue, which updates live
-//   via updateHeaders).
+// Re-derive whether Test is enabled per branch: - stdio: command present (we send the CURRENT
+// textarea contents, not modelValue.args which the parent only refreshes on Save). - http: URL
+// present (headers come from modelValue, which updates live via updateHeaders).
 const stdioTestValid = computed(() => {
   if (transport.value !== 'stdio') return false
   if (props.modelValue.command.trim().length === 0) return false

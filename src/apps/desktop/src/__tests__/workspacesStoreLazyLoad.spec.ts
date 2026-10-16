@@ -1,14 +1,6 @@
-/**
- * Lazy per-workspace item loading (plan:
- * docs/plans/2026-09-22-revamp-ui-chats-workspace-scoped.md, Phase 4).
- *
- * init() fetches the workspace list but loads items (tasks, design
- * pages, kanban prefetch) for the ACTIVE workspace only; every other
- * workspace keeps `items: []` until visited. setActiveWorkspace
- * triggers exactly one fetch for the target — in-flight dedupe,
- * loaded-set cache on re-switch. The WorkspaceSwitcher badge reads
- * the wire `items_count` so it stays truthful for unvisited rows.
- */
+/** Lazy per-workspace item loading (plan:
+ * docs/plans/2026-09-22-revamp-ui-chats-workspace-scoped.md, Phase 4). init() fetches the workspace
+ * list but loads items (tasks, design pages, kanban prefetch) for the ACTIVE workspace. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp } from 'vue'
@@ -71,11 +63,8 @@ describe('workspaces store lazy per-workspace item loading', () => {
       configurable: true,
     })
 
-    // Declare the identity as resolved with no user (the auth-off case):
-    // `userScopedKey` then returns the legacy unscoped key, which is what
-    // these specs write via `workspacesCacheKey()`. Without this the store's
-    // first-paint gate (plan 2026-09-25, W5) refuses to read the cache,
-    // because a real boot resolves `/api/auth/me` before any view mounts.
+    // Declare the identity as resolved with no user (the auth-off case): `userScopedKey` then
+    // returns the legacy unscoped key, which is what these specs write via `workspacesCacheKey()`.
     resetUserScopeForTest()
     setCurrentUserId(null)
 

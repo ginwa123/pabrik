@@ -1,15 +1,6 @@
-/**
- * Whole-file reader: the cache/dedupe contract that makes "Whole file" cost
- * one request per file instead of one per click.
- *
- * Two properties matter more than the rest, and both are about being WRONG in
- * the safe direction:
- *   - a backend failure REJECTS. Resolving to an empty diff would render as
- *     "this file is unchanged" — the exact lie the whole-file view exists to
- *     avoid.
- *   - `refused` is a real answer that is remembered but never mistaken for
- *     content.
- */
+/** Whole-file reader: the cache/dedupe contract that makes "Whole file" cost one request per file
+ * instead of one per click. Two properties matter more than the rest, and both are about being
+ * WRONG in the safe direction: - a backend failure REJECTS. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   clearWholeFileDiffCache,

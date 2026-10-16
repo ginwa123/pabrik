@@ -1,18 +1,5 @@
-/**
- * Regression: the code editor kept persisting across chat session switches.
- *
- * Root cause: the editor session is global to AppLayout (not per-chat).
- * Switching chats pushes `/app/{ws}/chat/{newId}` with an empty query, and
- * `reconcileRoute` early-returned for path chat URLs without clearing
- * overlays — so the old file kept rendering inside the new chat's center
- * column (ChatView reads the same injected refs).
- *
- * Pins:
- *   1. Opening a file then switching the active chat clears the session
- *      (synchronous subscription — no one-frame flash of the old file).
- *   2. A deep link with `?view=code-editor&file=` still restores after the
- *      fix (no over-clearing).
- */
+/** Regression: the code editor kept persisting across chat session switches. Root cause: the editor
+ * session is global to AppLayout (not per-chat). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, reactive } from 'vue'
@@ -91,9 +78,8 @@ function mountWithReactiveRoute(initialQuery: Record<string, string>, initialPat
   return { wrapper, routeState }
 }
 
-// The session refs live in AppLayout setup; <script setup> bindings are
-// proxied on wrapper.vm (same seam AppLayout.urlPersist.spec.ts uses for
-// openInCodeEditor), with refs unwrapped.
+// The session refs live in AppLayout setup; <script setup> bindings are proxied on wrapper.vm (same
+// seam AppLayout.urlPersist.spec.ts uses for openInCodeEditor), with refs unwrapped.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const openFileOf = (wrapper: any) => wrapper.vm.codeEditorFile as unknown
 

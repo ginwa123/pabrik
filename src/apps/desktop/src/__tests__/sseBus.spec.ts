@@ -11,12 +11,9 @@ import {
 import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 import * as api from '../api'
 
-/**
- * Test-only stub SseClient. Tracks state-listener callbacks on a
- * non-public `__stateListeners` array so `emitStubState` can fan out
- * a transition to all subscribers (the production `SseClient` keeps
- * the listener list in a closure; tests reach it via `as any`).
- */
+/**  * Test-only stub SseClient. Tracks state-listener callbacks on a non-public `__stateListeners`
+ * array so `emitStubState` can fan out a transition to all subscribers (the production `SseClient`
+ * keeps the listener list in a closure; tests reach it via `as any`). */
 function makeStubClient(initial: SseState): SseClient {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const stub: any = {
@@ -38,7 +35,6 @@ function makeStubClient(initial: SseState): SseClient {
 
 function emitStubState(c: SseClient, s: SseState): void {
   // Walk the internal listener list. The stub stores it as a non-public
-
   // property — we use `as any` to reach it from the test.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const listeners = (c as any).__stateListeners as
@@ -162,11 +158,8 @@ describe('sseBus', () => {
     const stubCloseSpy = vi.spyOn(stub, 'close')
     __setSseBusGlobalClient(stub)
 
-    // The swap itself already called `original.close()` exactly once
-    // (the `_globalClient && _globalClient !== client` branch in
-    // __setSseBusGlobalClient). The test asserts bus.close() does NOT
-    // call it again — which would happen if bus.close() reads the
-    // closure-scoped `globalClient` (the pre-fix bug).
+    // The swap itself already called `original.close()` exactly once (the `_globalClient &&
+    // _globalClient !== client` branch in __setSseBusGlobalClient).
     expect(originalCloseSpy).toHaveBeenCalledTimes(1)
 
     const bus = useSseBus()
@@ -190,7 +183,6 @@ describe('sseBus', () => {
     expect(spy).toHaveBeenCalledTimes(1)
     const callArg = spy.mock.calls[0]![0]
     // The bus must wire up workers, sessions, kanban, llm, queue.
-
     expect(callArg.channels.workers).toBeDefined()
 
     expect(callArg.channels.sessions).toBeDefined()

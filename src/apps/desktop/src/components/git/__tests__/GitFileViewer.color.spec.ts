@@ -1,15 +1,6 @@
-/**
- * Code color in the git file viewer.
- *
- * `GitFileViewer` renders the SAME parsed unified diff as the review
- * sidebar, and used to render its code lines monochrome via
- * `v-html="escapeDiffHtml(line.content)"`. It now tokenizes them with the
- * shared highlighter, so both surfaces read identically.
- *
- * The language comes from the file path the viewer was opened with: a `.ts`
- * file is colored, an unknown extension is plain — the same contract the
- * diff review keeps.
- */
+/** Code color in the git file viewer. `GitFileViewer` renders the SAME parsed unified diff as the
+ * review sidebar, and used to render its code lines monochrome via
+ * `v-html="escapeDiffHtml(line.content)"`. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import GitFileViewer from '../GitFileViewer.vue'

@@ -1,16 +1,5 @@
-/**
- * Tests for the DEEP v2 logger in sseClient.ts.
- *
- * The "drops at 15s" bug surfaces as the SseClient transitioning to
- * 'reconnecting'. To diagnose it, the logger tracks:
- *   - per-message timing (sinceLastEventMs)
- *   - heartbeat count vs named-event count
- *   - stall detector (warn if no event in 7s while state=open)
- *   - rich error context (sinceLastEventMs, lastEventKind, readyStateLabel)
- *
- * These tests pin the behavior so a future refactor can't silently
- * remove the diagnostics.
- */
+/** Tests for the DEEP v2 logger in sseClient.ts. The "drops at 15s" bug surfaces as the SseClient
+ * transitioning to 'reconnecting'. */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createSseClient } from '../helpers/sseClient'
 
@@ -50,12 +39,8 @@ function createMockCtor(): { ctor: typeof EventSource; instance: () => MockEvent
       },
       emit(type, data) {
         const ev = data !== undefined ? new MessageEvent(type, { data }) : new Event(type)
-        // 'error' is special: browsers fire BOTH the onerror
-        // property AND any listeners registered via
-        // addEventListener('error', ...). The SseClient relies on
-        // this dual-fire — addEventListener logs the raw error,
-        // onerror routes to handleError which fires the
-        // disconnect-diagnosis log. Mock the dual-fire too.
+        // 'error' is special: browsers fire BOTH the onerror property AND any listeners registered
+        // via addEventListener('error', ...).
         const set = listeners.get(type)
         if (set) {
           for (const l of set) {
@@ -68,24 +53,14 @@ function createMockCtor(): { ctor: typeof EventSource; instance: () => MockEvent
         }
       },
       simulateOpen(payload: string = '{"ok":true}') {
-        // Mirror the real browser's behavior: when the SSE
-        // `connected` event arrives, readyState transitions to OPEN
-        // (1). Without this, the disconnect-diagnosis tests see
-        // readyState=CONNECTING (0) even though the server is
-        // happily sending heartbeats — and the suspect classifier
-        // misattributes the disconnect to 'unknown' instead of
-        // 'backend'. Pre-existing tests are unaffected because they
-        // assert on counts, not on readyState.
+        // Mirror the real browser's behavior: when the SSE `connected` event arrives, readyState
+        // transitions to OPEN (1).
         inst.readyState = 1
         inst.emit('connected', payload)
       },
     }
-    // The SseClient assigns `instance.onerror = ...` AFTER
-    // `addEventListener('error', ...)`. The mock needs to honor
-    // that — without dual-fire the disconnect-diagnosis log
-    // never fires because handleError is only called via
-    // onerror. See `sseClient.ts::start` for the dual-fire
-    // pattern in production.
+    // The SseClient assigns `instance.onerror = ...` AFTER `addEventListener('error', ...)`. See
+    // `sseClient.ts::start` for the dual-fire pattern in production.
     Object.defineProperty(inst, 'onerror', {
       get() {
         return onerrorHandler
@@ -106,10 +81,9 @@ beforeEach(() => {
   ;(globalThis as { __sseStallDetector?: boolean }).__sseStallDetector = true
   Object.defineProperty(globalThis, 'navigator', {
     value: {
-      // `onLine: true` is the default for a connected desktop app.
-      // The sse-disconnect-diagnosis chunk surfaces `navigatorOnline`
-      // in every diagnostic log; tests that want `suspect: 'network'`
-      // override this to `false` (see the corresponding test).
+      // `onLine: true` is the default for a connected desktop app. The sse-disconnect-diagnosis
+      // chunk surfaces `navigatorOnline` in every diagnostic log; tests that want `suspect:
+      // 'network'` override this to `false` (see the corresponding test).
       onLine: true,
       connection: {
         effectiveType: '4g',
@@ -130,27 +104,18 @@ afterEach(() => {
   delete (globalThis as { __sseStallDetector?: boolean }).__sseStallDetector
 })
 
-// Collects every log call into a searchable array. Strips the ISO
-// prefix + t=... preamble because those vary run-to-run.
-//
-// Regex design note: the original pattern was `\] (\w[\w ]*?)` which
-// only matched word chars + spaces. The sse-disconnect-diagnosis
-// chunk added messages like "close() called" / "reconnect() called"
-// that contain `(` and `)` — the original pattern silently dropped
-// those, which made the diagnostic tests look like the close() call
-// wasn't being logged. Widened to `.+?` (non-greedy any-char) and
-// pinned the boundary via ` (\{)` (or end-of-line) so the JSON
-// payload is still captured separately.
+// Collects every log call into a searchable array. Strips the ISO prefix + t=... preamble because
+// those vary run-to-run. Regex design note: the original pattern was `\] (\w[\w ]*?)` which only
+// matched word chars + spaces.
 function parseLogCalls(): Array<{ msg: string; extra?: Record<string, unknown> }> {
   const out: Array<{ msg: string; extra?: Record<string, unknown> }> = []
   for (const c of (console.log as ReturnType<typeof vi.fn>).mock.calls) {
     const line = String(c[0])
     const m = line.match(/\] (.+?)(?: (\{.*\})|$)/)
     if (m) {
-      // Group 1 is required by the regex pattern (the `m !== null` check
-      // already proves group 1 matched a non-empty run); TypeScript's
-      // RegExpMatchArray type still types captures as `string | undefined`,
-      // so the `!` asserts what the regex guarantees.
+      // Group 1 is required by the regex pattern (the `m !== null` check already proves group 1
+      // matched a non-empty run); TypeScript's RegExpMatchArray type still types captures as
+      // `string | undefined`, so the `!` asserts what the regex guarantees.
       const msg = m[1]!
       const json = m[2]
       try {
@@ -349,21 +314,7 @@ describe('SseClient deep v2 logger — error event context', () => {
   })
 })
 
-/**
- * Tests for the DISCONNECT DIAGNOSIS log added in the
- * sse-disconnect-diagnosis chunk. The classification helpers
- * (`classifyDisconnectSuspect`, `formatConclusion`) live inside
- * the `createSseClient` closure so we cannot call them directly —
- * we exercise them indirectly by simulating the relevant state and
- * asserting on the log payload.
- *
- * Each test corresponds to one of the five SUSPECT buckets:
- *   - 'backend'   — TCP was OPEN, server stopped sending
- *   - 'network'   — navigator.onLine === false
- *   - 'browser'   — tab hidden during the silence window
- *   - 'user-code' — close()/reconnect() called recently
- *   - 'unknown'   — signals conflict
- */
+/** Tests for the DISCONNECT DIAGNOSIS log added in the sse-disconnect-diagnosis chunk. */
 describe('SseClient deep v2 logger — DISCONNECT DIAGNOSIS', () => {
   it('logs DISCONNECT DIAGNOSIS with suspect=backend when TCP was OPEN during silence', () => {
     vi.useFakeTimers()
@@ -382,10 +333,9 @@ describe('SseClient deep v2 logger — DISCONNECT DIAGNOSIS', () => {
     const es = mock.instance()
     es.simulateOpen('{"ok":true}')
     es.emit('message', 'ping') // heartbeat
-    // 19 seconds of silence — long enough that STALL DETECTED fires
-    // (~7s) and the browser's error fires (~14s in jsdom + we
-    // simulate the error manually). Mirrors the user's reported
-    // symptom from the bug report.
+    // 19 seconds of silence — long enough that STALL DETECTED fires (~7s) and the browser's error
+    // fires (~14s in jsdom + we simulate the error manually). Mirrors the user's reported symptom
+    // from the bug report.
     vi.advanceTimersByTime(19_000)
     // Force the ES into CONNECTING (readyState=0) — what the
     // browser would do internally when its internal retry fires.
@@ -395,11 +345,8 @@ describe('SseClient deep v2 logger — DISCONNECT DIAGNOSIS', () => {
     const calls = parseLogCalls()
     const diag = calls.find((c) => c.msg === 'DISCONNECT DIAGNOSIS')
     expect(diag).toBeDefined()
-    // The smoking gun: readyState was OPEN for the entire silence
-    // (the stall detector would have fired while readyState=1).
-    // Even though the browser's error event arrives with readyState
-    // already changed to CONNECTING, the LAST known readiness during
-    // the silence was OPEN — so the suspect is 'backend'.
+    // The smoking gun: readyState was OPEN for the entire silence (the stall detector would have
+    // fired while readyState=1).
     expect(diag?.extra?.suspect).toBe('backend')
     // Last event was a heartbeat — proves the server was alive
     // enough to send data at some point.
@@ -463,13 +410,8 @@ describe('SseClient deep v2 logger — DISCONNECT DIAGNOSIS', () => {
   })
 
   it('logs DISCONNECT DIAGNOSIS with suspect=user-code when close() was called recently', () => {
-    // Note: this is hard to test cleanly because `close()` is
-    // terminal — after close, the connection is gone, so no
-    // subsequent STALL DETECTED or DISCONNECT DIAGNOSIS log can
-    // fire. The classifier's user-code path is exercised
-    // indirectly by the close(reason) test below (which verifies
-    // the reason is captured and surfaced) — the suspect bucket
-    // itself is wired up by the close() called → log path.
+    // Note: this is hard to test cleanly because `close()` is terminal — after close, the
+    // connection is gone, so no subsequent STALL DETECTED or DISCONNECT DIAGNOSIS log can fire.
     vi.useFakeTimers()
     const mock = createMockCtor()
     const client = createSseClient({
@@ -511,10 +453,9 @@ describe('SseClient deep v2 logger — DISCONNECT DIAGNOSIS', () => {
     )
     expect(closeCall).toBeDefined()
     expect(closeCall!.extra).toBeDefined()
-    // The caller field is a stack trace segment — must be a
-    // non-empty string. We don't assert the exact frame because
-    // vitest's stack format varies by Node version, but the
-    // captured stack should at least contain the sseClient module.
+    // The caller field is a stack trace segment — must be a non-empty string. We don't assert the
+    // exact frame because vitest's stack format varies by Node version, but the captured stack
+    // should at least contain the sseClient module.
     const caller = closeCall!.extra!.caller
     expect(caller).toBeDefined()
     expect(typeof caller).toBe('string')
@@ -576,12 +517,9 @@ describe('SseClient deep v2 logger — DISCONNECT DIAGNOSIS', () => {
     const errorLine = calls.find((c) => c.msg === 'EventSource raw error')
     expect(errorLine).toBeDefined()
     expect(errorLine?.extra?.wasStalledBefore).toBe(true)
-    // stallToErrorMs should be ~5000ms (we advanced 5s between
-    // stall firing and error firing — stall fires at 7s into the
-    // test, error fires at 14s into the test, so the gap is 7s in
-    // absolute terms but the stall was first marked at the 7s
-    // point of the open window). Allow a generous window for
-    // timer scheduling jitter.
+    // stallToErrorMs should be ~5000ms (we advanced 5s between stall firing and error firing —
+    // stall fires at 7s into the test, error fires at 14s into the test, so the gap is 7s in
+    // absolute terms but the stall was first marked at the 7s point of the open window).
     const stallToErrorMs = errorLine?.extra?.stallToErrorMs as number
     expect(stallToErrorMs).toBeGreaterThanOrEqual(6_500)
     expect(stallToErrorMs).toBeLessThan(8_000)

@@ -1,37 +1,15 @@
-/**
- * Decide when to PREFETCH older chat history — i.e. fetch the next older
- * page *before* the user's scroll reaches the load-more band, so the page
- * is already in memory (a buffer) when the band is crossed.
- *
- * Why this exists (task_1789505423062_0): `VirtualScroller`'s `loadMore`
- * check is positional AND debounced (200 ms, trailing edge, timer reset on
- * every scroll event — see `VirtualScroller.vue` `onScroll`). On a fling the
- * user therefore reaches the top edge before the request has even been
- * issued, and then waits out the round trip with nothing left to scroll.
- * Fetching early removes that wait from the critical path; committing the
- * buffered page at the positional band keeps the existing scroll-preservation
- * behaviour untouched (arm ≠ commit: prepending mid-fling would fight the
- * momentum scroll).
- *
- * Pure (no DOM, no Vue) so the decision matrix is unit-testable — the same
- * reason `virtualScrollerThreshold.ts` and `autoStickGate.ts` are standalone
- * files.
- */
-
+/** Decide when to PREFETCH older chat history — i.e. fetch the next older page *before* the user's
+ * scroll reaches the load-more band, so the page is already in memory (a buffer) when the band is
+ * crossed. */
 import { computeLoadMoreThreshold } from './virtualScrollerThreshold'
 
-/**
- * Absolute floor for the arm radius, in px. Larger than the commit band's
- * 200 px floor because the point is to start the round trip while the user
- * is still travelling.
- */
+/**  * Absolute floor for the arm radius, in px. Larger than the commit band's 200 px floor because the
+ * point is to start the round trip while the user is still travelling. */
 export const ARM_RADIUS_FLOOR_PX = 800
 
-/**
- * Proportional part of the arm radius: how many viewport heights away from
- * the top the arm fires. Must stay strictly greater than the commit band's
- * `loadMoreThresholdRatio` (0.5) so the arm always precedes the commit.
- */
+/**  * Proportional part of the arm radius: how many viewport heights away from the top the arm fires.
+ * Must stay strictly greater than the commit band's `loadMoreThresholdRatio` (0.5) so the arm
+ * always precedes the commit. */
 export const ARM_RADIUS_RATIO = 1.5
 
 /** Cold-start fetch estimate (ms) used before any round trip is measured. */
@@ -44,26 +22,13 @@ export const FETCH_EMA_ALPHA = 0.4
 export const FETCH_SAMPLE_MIN_MS = 60
 export const FETCH_SAMPLE_MAX_MS = 1200
 
-/**
- * Arm radius in px: `max(800, 1.5 × containerHeight)`.
- *
- * Delegates to `computeLoadMoreThreshold` so the "biggest of an absolute
- * floor and a viewport proportion" rule lives in exactly one place. Because
- * `max(800, 1.5h) > max(200, 0.5h)` for every `h ≥ 0`, the arm radius is
- * always strictly larger than the commit band (asserted in the spec).
- */
+/** Arm radius in px: `max(800, 1.5 × containerHeight)`. Delegates to `computeLoadMoreThreshold` so
+ * the "biggest of an absolute floor and a viewport proportion" rule lives in exactly one place. */
 export function armRadiusPx(containerHeight: number): number {
   return computeLoadMoreThreshold(ARM_RADIUS_FLOOR_PX, ARM_RADIUS_RATIO, containerHeight)
 }
 
-/**
- * Exponential moving average of observed `getChatHistory` durations.
- *
- * Recorded (and logged) even while the v1 trigger is distance-only, so the
- * PR can report "the page needed X ms and the user was given Y ms of head
- * start" — and so the velocity term can be switched on without re-deriving
- * state. Non-finite or out-of-range samples are ignored.
- */
+/** Exponential moving average of observed `getChatHistory` durations. */
 export function nextFetchEstimate(prevMs: number, measuredMs: number): number {
   const prev = Number.isFinite(prevMs) && prevMs > 0 ? prevMs : PREFETCH_SAMPLE_INIT_MS
   if (!Number.isFinite(measuredMs) || measuredMs <= 0) return prev
@@ -104,10 +69,8 @@ export interface PrefetchInput {
   sessionId: string | null
   /** A recent arm failed and the backoff window is still open. */
   backoffActive: boolean
-  /**
-   * Phase 2 hook: smoothed upward velocity in px/ms (0/undefined disables the
-   * velocity term — v1 is distance-only).
-   */
+  /** Phase 2 hook: smoothed upward velocity in px/ms (0/undefined disables the
+   * velocity term — v1 is distance-only). */
   velocityPxPerMs?: number
   /** Phase 2 hook: estimated fetch duration in ms. */
   estimatedFetchMs?: number
@@ -125,13 +88,9 @@ export interface PrefetchDecision {
   skip?: PrefetchSkip
 }
 
-/**
- * Decide whether to arm a prefetch of the next older page.
- *
- * Order matters: terminal states (no session, no more pages, already
- * buffered/fetching/committing) short-circuit first, then the optional
- * velocity term (which can arm from further out), then the distance margin.
- */
+/**  * Decide whether to arm a prefetch of the next older page. Order matters: terminal states (no
+ * session, no more pages, already buffered/fetching/committing) short-circuit first, then the
+ * optional velocity term (which can arm from further out), then the distance margin. */
 export function decidePrefetchOlder(input: PrefetchInput): PrefetchDecision {
   const armRadius =
     Number.isFinite(input.armRadiusPx) && input.armRadiusPx > 0

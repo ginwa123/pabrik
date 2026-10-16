@@ -61,10 +61,9 @@ const skillName = computed(() => {
   return v && v.trim() !== '' ? v : null
 })
 
-// In-progress fallback: prefer payload, fall back to tool-call parameters.
-// The call is `{ name }`, so `skill_name` is only present on a transcript
-// recorded before that rename — reading it alone left every in-flight
-// `use_skill` card reading "unknown" until the payload landed.
+// In-progress fallback: prefer payload, fall back to tool-call parameters. The call is `{ name }`,
+// so `skill_name` is only present on a transcript recorded before that rename — reading it alone
+// left every in-flight `use_skill` card reading "unknown" until the payload landed.
 const displaySkillName = computed(
   () =>
     skillName.value ??

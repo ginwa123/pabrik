@@ -1,26 +1,7 @@
 <script setup lang="ts">
-/**
- * PabrikGeneralSection — General tab in Pabrik settings.
- *
- * Three operational settings the user can toggle from the UI:
- *
- * 1. `notify_on_complete` — OS notification when an LLM response finishes
- *    with `finish_reason === 'stop'`. Existing config.json field.
- *
- * 2. `notify_on_error` — NEW (plan 2026-08-25-notify-on-error). OS
- *    notification when the workflow hits a transport error, exhausts
- *    retries (TooManyRetries), or fails the outer agentic loop.
- *    Mirrors `notify_on_complete` but on the error path. Default false.
- *
- * 3. `retry_delay_ms` — Backoff between failed LLM retries (0–60 000).
- *    Already persisted in config.json; just hidden from the UI before
- *    this plan. The backend clamps > 60 000 to 60 000 at the PUT layer
- *    (see pabrik_config_put.zig:133-135).
- *
- * Single `defineModel<{ ... }>()` v-model surface so the orchestrator
- * (PabrikConfigEditor.vue) hydrates from `syncFromConfig` and writes back
- * via `syncToConfig` — same pattern as the other sections.
- */
+/** PabrikGeneralSection — General tab in Pabrik settings. Three operational settings the user can
+ * toggle from the UI: 1. `notify_on_complete` — OS notification when an LLM response finishes with
+ * `finish_reason === 'stop'`. Existing config.json field. 2. */
 import { computed } from 'vue'
 import UiIcon from '../ui/UiIcon.vue'
 
@@ -85,12 +66,9 @@ function onRetryDelayInput(event: Event) {
   model.value = { ...model.value, retry_delay_ms: ms }
 }
 
-// `change` event fires when the user commits a value (blur / Enter),
-// which is the natural commit boundary for a number input. Listening
-// for `change` (NOT `input`) means vitest's `setValue()` (which fires
-// `change` by default) and the user's manual entry both reach the
-// handler. `input` fires on every keystroke which would re-emit
-// intermediate invalid states like "5" then "55".
+// `change` event fires when the user commits a value (blur / Enter), which is the natural commit
+// boundary for a number input. Listening for `change` (NOT `input`) means vitest's `setValue()`
+// (which fires `change` by default) and the user's manual entry both reach the handler.
 function onRetryDelayChange(event: Event) {
   onRetryDelayInput(event)
 }

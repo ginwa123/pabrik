@@ -1,29 +1,5 @@
-// StandardTaskChatView — thin wrapper around <ChatView> for the
-// standard (non-kanban / non-design) task chat branch in AppLayout.
-//
-// These tests pin down the wrapper's contract:
-//
-//   1. The chat-id is derived as `chat-${task.id}` (migration 052
-//      invariant: task.id == session.id).
-//   2. chat-name falls back to '' when task.name is undefined
-//      (the inline branch uses `activeTask.name ?? ''`, this
-//      wrapper preserves that fallback — defensive against
-//      backends that omit the name field).
-//   3. cwd is forwarded verbatim to ChatView.
-//   4. update-chat-id is re-emitted with the same payload
-//      (oldId, newId) ChatView emits — AppLayout's
-//      handleUpdateChatId relies on receiving both arguments
-//      verbatim to update navigationStore.activeChatId and
-//      sidebarRef.updateChatId.
-//   5. Switching the `task` prop forces a fresh ChatView mount
-//      (the `:key` reactivity rule) — preserves
-//      useChatScrollRestore's scroll position across task
-//      switches (same as the kanban chat branch's `:key="'kanban-chat-' +
-//      activeTask.id"`).
-//   6. `:show-header` is set and ChatView's `close` is re-emitted,
-//      so this mode renders the same shared ChatAppBar as the kanban
-//      and agent modes (cross-mode proof: ChatAppBarParity.spec.ts).
-
+// StandardTaskChatView — thin wrapper around <ChatView> for the standard (non-kanban / non-design)
+// task chat branch in AppLayout. These tests pin down the wrapper's contract: 1.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -44,11 +20,8 @@ function mountWrapper(props: { task: Task; cwd?: string }): {
     props,
     global: {
       stubs: {
-        // Custom ChatView stub: the default `true` stub renders no
-        // HTML and drops props. Bind the props to data attributes so
-        // the test can assert what StandardTaskChatView forwarded.
-        // Also push each mount's :key into `mountedKeys` so we can
-        // verify the wrapper's :key reactivity rule (test #5).
+        // Custom ChatView stub: the default `true` stub renders no HTML and drops props. Bind the
+        // props to data attributes so the test can assert what StandardTaskChatView forwarded.
         ChatView: {
           name: 'ChatView',
           template:
@@ -105,9 +78,8 @@ describe('StandardTaskChatView', () => {
   })
 
   it('forwards the empty string when task.name is undefined', () => {
-    // Defensive against backend payloads that omit `name` — the
-    // inline AppLayout branch used `activeTask.name ?? ''`, this
-    // wrapper preserves that fallback so ChatView never receives
+    // Defensive against backend payloads that omit `name` — the inline AppLayout branch used
+    // `activeTask.name ?? ''`, this wrapper preserves that fallback so ChatView never receives
     // `undefined` for a prop that the type system declares string.
     const task: Task = { id: 'task_noname' } as Task
     const { wrapper: w } = mountWrapper({ task })
@@ -149,9 +121,8 @@ describe('StandardTaskChatView', () => {
   })
 
   it('turns the shared chat app bar on and re-emits its ✕ as close', async () => {
-    // Pre-fix this mode rendered NO bar at all: the sidebar toggle
-    // floated over the transcript and there was no way to leave the
-    // chat from the surface. It must now match the kanban and agent
+    // Pre-fix this mode rendered NO bar at all: the sidebar toggle floated over the transcript and
+    // there was no way to leave the chat from the surface. It must now match the kanban and agent
     // modes — see ChatAppBarParity.spec.ts for the cross-mode proof.
     const task: Task = { id: 'task_a', name: 'A' } as Task
     const { wrapper: w } = mountWrapper({ task })
@@ -166,11 +137,9 @@ describe('StandardTaskChatView', () => {
   })
 
   it('forces a fresh ChatView mount when the task prop changes (useChatScrollRestore key rule)', async () => {
-    // The wrapper pins `:key="chat-${task.id}"` on <ChatView>. When
-    // the user switches tasks (e.g. via Sidebar), a new key remounts
-    // ChatView fresh — preserving scroll-restore across switches and
-    // clearing the previous task's message cache. Pre-fix (inline
-    // branch) had the same behaviour; this wrapper preserves it.
+    // The wrapper pins `:key="chat-${task.id}"` on <ChatView>. When the user switches tasks (e.g.
+    // via Sidebar), a new key remounts ChatView fresh — preserving scroll-restore across switches
+    // and clearing the previous task's message cache.
     const taskA: Task = { id: 'task_a', name: 'A' } as Task
     const taskB: Task = { id: 'task_b', name: 'B' } as Task
     const { wrapper: w } = mountWrapper({ task: taskA })

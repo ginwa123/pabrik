@@ -1,27 +1,5 @@
-/**
- * The workspace-item row's edge alignment.
- *
- * The row used to be TWO boxes: a padded <button> plus two unpadded action
- * buttons as siblings in the wrapper. The button's padding only padded the
- * button, so `+`/`×` reached the panel edge 12px past every other row in the
- * sidebar (measured: 279 vs 267 in a 280px panel). The chevron also sat in a
- * 24px hit box, which centred its glyph at x=20 while every section-header
- * chevron rendered at x=12.
- *
- * These tests assert the STRUCTURE that makes both edges resolve against one
- * gutter, rather than a pixel count — jsdom returns all-zero rects, so a
- * geometry assertion here would be vacuous. The pixel values were measured in
- * a real browser and are recorded in the comments so a reviewer can see what
- * the structure buys.
- *
- * What is asserted:
- *   1. the row carries NO inline action buttons (removed: the hover-reveal
- *      `+` / `x` rendered as oversized boxes) — the right-click menu is
- *      the only door to Add task / Delete
- *   2. the chevron carries no hit box, so it renders like a section header
- *   3. the row uses the same inter-element gap as every other row
- *   4. the right-click menu offers Add task and Delete project
- */
+/** The workspace-item row's edge alignment. The row used to be TWO boxes: a padded <button> plus
+ * two unpadded action buttons as siblings in the wrapper. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, type VueWrapper } from '@vue/test-utils'
@@ -58,21 +36,16 @@ function mountItem(item: WorkspaceItemType, isActive = false) {
   })
 }
 
-/**
- * The menu is `v-if="menuPos"`, so it only mounts after a real right-click
- * on the row. Trigger it the way a user does rather than poking the
- * composable's ref — the point of these tests is the wired path.
- */
+/**  * The menu is `v-if="menuPos"`, so it only mounts after a real right-click on the row. Trigger it
+ * the way a user does rather than poking the composable's ref — the point of these tests is the
+ * wired path. */
 async function openRowMenu(w: VueWrapper) {
   await w.find('button.flex-1').trigger('contextmenu', { clientX: 40, clientY: 40 })
   await nextTick()
 }
 
-/**
- * OpenInNewTabMenu is `<Teleport to="body">`, so its rows are NOT inside the
- * wrapper's element tree and `wrapper.find` cannot see them. Read the
- * document instead.
- */
+/**  * OpenInNewTabMenu is `<Teleport to="body">`, so its rows are NOT inside the wrapper's element tree
+ * and `wrapper.find` cannot see them. Read the document instead. */
 function menuRowExists(testid: string): boolean {
   return document.querySelector(`[data-testid="${testid}"]`) !== null
 }
@@ -111,10 +84,9 @@ describe('WorkspaceItem row — one padded box owns both edges', () => {
   })
 
   it('renders the chevron as bare text, with no hit box', () => {
-    // The chevron used to sit in a 24px `--sb-hit` box, centring its glyph at
-    // x=20 while every section-header chevron rendered at x=12. Bare text
-    // puts this one at 12 too, and the project name at 28 — matching the
-    // section titles.
+    // The chevron used to sit in a 24px `--sb-hit` box, centring its glyph at x=20 while every
+    // section-header chevron rendered at x=12. Bare text puts this one at 12 too, and the project
+    // name at 28 — matching the section titles.
     wrapper = mountItem(makeItem())
 
     const chevron = wrapper.find('[data-testid="item-row-chevron"]')

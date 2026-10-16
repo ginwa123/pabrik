@@ -1,11 +1,4 @@
-/*
- * SkillDetail.vue — the agent lock.
- *
- * The companion specs pin reading, deleting and editing. This one pins the
- * flag that decides whether the AGENT may edit: it is a property of the
- * skill, not one of the two fields the edit form owns, so it is rendered
- * in read mode too and it saves on its own.
- */
+/** SkillDetail.vue — the agent lock. The companion specs pin reading, deleting and editing. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'

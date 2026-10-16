@@ -1,22 +1,6 @@
-/**
- * Static-contract regression tests for the canvas-background removal.
- *
- * Plan: docs/superpowers/plans/2026-07-29-remove-canvas-background.md
- *
- * These tests grep DesignView.vue's source to verify the canvas
- * background feature has been removed end-to-end:
- *
- *   - No `canvasWidth` / `canvasHeight` computed properties
- *   - No drag-clamp helpers (`clampX` / `clampY`)
- *   - No nudge-clamp lines (canvasWidth.value - 10 / canvasHeight.value - 10)
- *   - No W × H header inputs (data-testid="design-page-size" / "-width-input" / "-height-input")
- *   - No `canvasBounds` passed to `computeSnapDelta`
- *   - Canvas div has no fixed width / height / box-shadow / card-bg color
- *
- * If a future refactor reintroduces any of these (e.g., "let's add
- * the canvas back"), the tests fail loudly.
- */
-
+/** Static-contract regression tests for the canvas-background removal. Plan:
+ * docs/superpowers/plans/2026-07-29-remove-canvas-background.md These tests grep DesignView.vue's
+ * source to verify the canvas background feature has been removed end-to-end:. */
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { describe, expect, it } from 'vitest'
@@ -66,12 +50,9 @@ describe('DesignView removes the canvas-background feature', () => {
   })
 
   it('canvas div has NO fixed width / height / box-shadow / card background', () => {
-    // The old inline style on <div data-testid="design-canvas"> had:
-    //   width: `${canvasWidth}px`
-    //   height: `${canvasHeight}px`
-    //   backgroundColor: 'var(--semantic-card-bg)'
-    //   boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)'
-    // None of those should remain — the canvas div is now auto-grow.
+    // The old inline style on <div data-testid="design-canvas"> had: width: `${canvasWidth}px`
+    // height: `${canvasHeight}px` backgroundColor: 'var(--semantic-card-bg)' boxShadow: '0 4px 20px
+    // rgba(0, 0, 0, 0.3)' None of those should remain — the canvas div is now auto-grow.
     expect(source).not.toMatch(/width:\s*`\$\{canvasWidth\}/)
     expect(source).not.toMatch(/height:\s*`\$\{canvasHeight\}/)
     expect(source).not.toMatch(/backgroundColor:\s*'var\(--semantic-card-bg\)'/)

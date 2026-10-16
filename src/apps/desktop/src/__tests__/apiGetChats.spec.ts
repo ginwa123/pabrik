@@ -1,22 +1,6 @@
-/**
- * Migration 082 - wire-format + mapper tests for `getChats`.
- *
- * The backend (llm_history.zig::buildSessionListJson + session_list.zig)
- * now emits `last_human_touched_at` on every session in the
- * GET /api/sessions response. These tests lock in:
- *
- *   1. The field is mapped through getChats verbatim (or default '' if absent)
- *   2. The Chat interface accepts the field as an optional string
- *   3. Empty-string values survive parsing (frontend needs this for
- *      the `?? updated_at` fallback to be defined)
- *
- * Mock pattern follows the project's `global.fetch` convention
- * (apiKanbanTagSuggestions.spec.ts) so apiFetch's internal
- * notification toast path has a Response shape it can read.
- *
- * Companion test plan: docs/superpowers/plans/2026-08-29-chat-sidebar-last-human-touched.md
- * Task 7.
- */
+/** Migration 082 - wire-format + mapper tests for `getChats`. The backend
+ * (llm_history.zig::buildSessionListJson + session_list.zig) now emits `last_human_touched_at` on
+ * every session in the GET /api/sessions response. These tests lock in: 1. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -79,10 +63,9 @@ describe('getChats - Migration 082 last_human_touched_at wire shape', () => {
   })
 
   it('defaults last_human_touched_at to empty string when the backend omits it (legacy rows)', async () => {
-    // Pre-Migration-082 sessions in the DB don't have the column at all -
-    // the backend COALESCE renders them as '' in the SELECT, but this
-    // test guards the mapper fallback too in case the field is missing
-    // from the JSON entirely.
+    // Pre-Migration-082 sessions in the DB don't have the column at all - the backend COALESCE
+    // renders them as '' in the SELECT, but this test guards the mapper fallback too in case the
+    // field is missing from the JSON entirely.
     mockFetchOnce(200, {
       sessions: [
         {

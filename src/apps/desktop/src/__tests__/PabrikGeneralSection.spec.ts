@@ -1,25 +1,4 @@
-/**
- * Tests for PabrikGeneralSection.vue — the General tab in Pabrik settings.
- *
- * Plan 2026-08-25-notify-on-error-and-retry-ms-in-settings: this section
- * surfaces three operational settings that previously lived only in
- * config.json (`notify_on_complete`, `retry_delay_ms`) plus a NEW toggle
- * (`notify_on_error`). All three are persisted through the same PUT
- * `/api/config/pabrik` round-trip; this spec verifies the UI-side contract:
- *
- *   1. The two toggles reflect `modelValue` and emit `update:modelValue`
- *      with the flipped boolean when clicked.
- *   2. The retry-delay input reflects `modelValue.retry_delay_ms`
- *      (in seconds — the UI converts to ms before emitting) and emits
- *      `update:modelValue` with the new ms value when changed.
- *   3. Values are clamped to the same range the backend applies
- *      (0–60 000 ms).
- *
- * The spec runs the component standalone with `defineModel<...>` —
- * vitest's mount helper auto-wires the v-model, so the parent's
- * PabrikConfigEditor.vue is not exercised here (that's covered by
- * `PabrikConfigEditor.spec.ts`'s "General tab" tests).
- */
+/** Tests for PabrikGeneralSection.vue — the General tab in Pabrik settings. */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 

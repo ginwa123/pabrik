@@ -1,18 +1,6 @@
 <script setup lang="ts">
-// Workspace secrets — the body of the Settings → Secrets tab.
-//
-// THE ONE RULE THIS COMPONENT EXISTS TO KEEP: a secret value is write-only.
-// The server never returns one (`Secret` is `{ id, name, created_at,
-// updated_at }`), so there is nothing to display, mask, hint or reveal —
-// and a reveal button would be a lie about data that does not exist in this
-// process. The inputs that take a value are `type="password"` with no eye
-// toggle, and every one of them is cleared the moment it is submitted.
-//
-// Do not copy `components/pabrik/McpServersSection.vue`: it renders
-// `maskValue(h.value)` as the row body while putting the RAW value into the
-// row's `:title=`, so a hover over the masked text hands over the secret.
-// That is a live leak shape in this repo, and it is the reason this file
-// has no `title=` on a value-bearing element and no masking helper at all.
+// Workspace secrets — the body of the Settings → Secrets tab. THE ONE RULE THIS COMPONENT EXISTS TO
+// KEEP: a secret value is write-only.
 import { computed, ref } from 'vue'
 import type { Secret } from '../../api'
 import EmptyState from '../pabrik/EmptyState.vue'
@@ -49,10 +37,8 @@ const rotateTarget = ref<Secret | null>(null)
 const rotateValue = ref('')
 const deleteTarget = ref<Secret | null>(null)
 
-/**
- * An empty value is not a secret. Silently swallowing the click would look
- * like a success that never happened, so the form says why instead.
- */
+/** An empty value is not a secret. Silently swallowing the click would look
+ * like a success that never happened, so the form says why instead. */
 const canAdd = computed(() => nameInput.value.trim().length > 0 && valueInput.value.length > 0)
 
 function handleAdd(): void {
@@ -109,10 +95,9 @@ function formatTimestamp(value: string): string {
   return parsed.toLocaleString()
 }
 
-// The empty state's CTA focuses the name field. Kept as a function in the
-// script block rather than an inline arrow in the template: `document` is not
-// on the component's instance type, so a template expression fails the
-// `vue-tsc --build` type-check that the pre-push hook runs.
+// The empty state's CTA focuses the name field. Kept as a function in the script block rather than
+// an inline arrow in the template: `document` is not on the component's instance type, so a
+// template expression fails the `vue-tsc --build` type-check that the pre-push hook runs.
 function focusAddName(): void {
   document.getElementById('secret-name')?.focus()
 }

@@ -1,23 +1,4 @@
-/**
- * Windows-path tests for FilePickerDialog (2026-09-05 Windows cwd fix).
- *
- * Regression suite for the mixed-separator bug: the old POSIX-only helpers
- * (`split('/')`, `lastIndexOf('/')`, `initialPath '/'`) mangled Windows
- * picks like `C:\Users\ginwa\ginwaaitoolbox` into `/Users\ginwa\...`
- * shapes (leading slash + backslashes, drive letter lost). That malformed
- * string was persisted as `workspace_items.path` and flowed into
- * `sessions.cwd` and the agent prompt.
- *
- * Conventions in this file:
- * - Mount WITHOUT `enableRecentHistory` (omit the prop) so the dialog
- *   renders the legacy single-pane Browse UX directly — same as the
- *   POSIX suite's early describes.
- * - Never query `querySelector` with a backslash-bearing `data-testid`
- *   (CSS escaping pain). Assert via breadcrumb text, the footer
- *   `file-picker-selected-path` text, `loadItems` call args, and the
- *   emitted `select` payload instead.
- * - `attachTo: document.body` is required (Teleport + Transition stub).
- */
+/** Windows-path tests for FilePickerDialog (2026-09-05 Windows cwd fix). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -43,14 +24,8 @@ function clickInDom(selector: string) {
   ;(el as HTMLElement).click()
 }
 
-// Mock Windows tree (backslash-joined, like the backend's
-// `std.fs.path.join` produces on Windows):
-//
-//   C:\
-//   └── Users
-//       └── ginwa
-//           ├── ginwaaitoolbox  (dir, empty)
-//           └── notes           (dir, one file)
+// Mock Windows tree (backslash-joined, like the backend's `std.fs.path.join` produces on Windows):
+// C:\ └── Users └── ginwa ├── ginwaaitoolbox (dir, empty) └── notes (dir, one file)
 const winTree: Record<string, Array<{ name: string; path: string; is_directory: boolean }>> = {
   'C:\\': [{ name: 'Users', path: 'C:\\Users', is_directory: true }],
   'C:\\Users': [{ name: 'ginwa', path: 'C:\\Users\\ginwa', is_directory: true }],

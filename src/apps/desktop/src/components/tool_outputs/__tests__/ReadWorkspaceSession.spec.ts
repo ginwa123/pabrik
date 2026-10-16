@@ -1,20 +1,4 @@
-/**
- * Tests for ReadWorkspaceSession.vue.
- *
- * Verifies:
- *  - dispatches correctly between behavior="list" / "search" / "search-within" / "read" / denied / error envelopes
- *  - header summary text reflects behavior, query/session, and count/total_count
- *  - "N of M" badge appears only when total_count > count (paginated)
- *  - search entries render id, role badge, session name, snippet with [match] highlighting
- *  - read entries render id, role badge, preview, and full content toggle
- *    when present (with the truncated attr surfaced as a "(truncated)" label)
- *  - list entries render session name, id, status, message count, preview
- *  - denied envelope renders the denial (never content) with a Denied badge
- *  - error envelope renders the error text in red, hides entries
- *  - empty result renders the per-behavior hint
- *  - click on header toggles expanded state (only when there are entries, an error, a denial, or args)
- *  - copy-id buttons copy the id to clipboard
- */
+/** Tests for ReadWorkspaceSession.vue. */
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -23,7 +7,6 @@ import ReadWorkspaceSession from '../ReadWorkspaceSession.vue'
 // ────────────────────────────────────────────────────────────────────────
 // Test helpers
 // ────────────────────────────────────────────────────────────────────────
-
 const makeSearchContent = (
   opts: {
     behavior?: 'search' | 'search-within'
@@ -171,7 +154,6 @@ const makeErrorContent = (msg = 'Database query failed: SyntaxError') => ({ erro
 // ────────────────────────────────────────────────────────────────────────
 // jsdom doesn't ship a clipboard by default; provide a minimal stub.
 // ────────────────────────────────────────────────────────────────────────
-
 let clipboardWrites: string[] = []
 
 beforeEach(() => {
@@ -194,7 +176,6 @@ afterEach(() => {
 // ────────────────────────────────────────────────────────────────────────
 // Tests
 // ────────────────────────────────────────────────────────────────────────
-
 describe('ReadWorkspaceSession.vue — envelope dispatch', () => {
   it('renders behavior="search" header with query + entry count', () => {
     const wrapper = mount(ReadWorkspaceSession, {
@@ -330,10 +311,9 @@ describe('ReadWorkspaceSession.vue — search entries', () => {
   })
 
   it('highlights bare-bracket spans (the format the backend actually emits)', () => {
-    // llm_history.zig calls snippet(messages_fts, 0, '[', ']', '...', 10),
-    // so a real snippet looks like `...a [portal] that refuses...` — there
-    // are no `[match]`/`[/match]` tags in it. This is a verbatim capture
-    // from the live database.
+    // llm_history.zig calls snippet(messages_fts, 0, '[', ']', '...', 10), so a real snippet looks
+    // like `...a [portal] that refuses...` — there are no `[match]`/`[/match]` tags in it. This is
+    // a verbatim capture from the live database.
     const wrapper = mount(ReadWorkspaceSession, {
       props: {
         expanded: true,

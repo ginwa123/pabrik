@@ -1,13 +1,6 @@
-/**
- * Tests for workspacesStore.stopAllAgentsInColumn — the store action that
- * wraps api.stopAllAgentsInColumn for the column "Stop all agents" flow
- * (mirror of workspacesStoreRunAllAgents.spec.ts).
- *
- * Thin wrapper (no client-side task iteration — the server owns the
- * list, so pagination is irrelevant). Mocked api returning
- * `{stopped:2, skipped:1, failed:0}` resolves to the same summary;
- * API throw → empty-lists summary, no unhandled rejection.
- */
+/** Tests for workspacesStore.stopAllAgentsInColumn — the store action that wraps
+ * api.stopAllAgentsInColumn for the column "Stop all agents" flow (mirror of
+ * workspacesStoreRunAllAgents.spec.ts). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

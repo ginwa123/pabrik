@@ -1,14 +1,4 @@
-/**
- * Tests for useCodeEditorSession.ts — the revamped open-file
- * mechanism (task fix-open-file). Covers the pure URL/path helpers
- * plus the session state machine with mocked file IO:
- *
- *   - absolute paths are never joined with cwd (footer doubling)
- *   - file param uses URL-safe base64url, legacy btoa links decode
- *   - no silent blanks: missing cwd / bad link / read failure all
- *     land in an explicit error state
- *   - open → syncUrl → watcher echo costs exactly one fetch
- */
+/** Tests for useCodeEditorSession.ts — the revamped open-file mechanism (task fix-open-file). */
 import { describe, expect, it, vi } from 'vitest'
 
 import {
