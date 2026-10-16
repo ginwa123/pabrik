@@ -21,11 +21,9 @@ pub const NormalizeError = error{
     OutOfMemory,
 };
 
-/// Validate every name, drop blanks and duplicates (keeping the order of first
-/// appearance) and return the `||`-joined form the column holds. `legacy` is
-/// the pre-Migration-112 single-name wire field: it is used only when the
-/// caller sent no array at all, so an explicit `[]` clears the list. The
-/// caller owns the returned slice.
+/// Validate every name, drop blanks and duplicates and return the `||`-joined
+/// form the column holds. `legacy` is the pre-112 single-name field, read only
+/// when no array was sent. The caller owns the returned slice.
 pub fn normalize(
     allocator: std.mem.Allocator,
     names: ?[]const []const u8,
