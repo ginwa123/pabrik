@@ -223,6 +223,16 @@
         justify-content: center;
       }
 
+      /* The mark column. Every row carries this one 16px slot at the gutter,
+         holding at most one mark: a disclosure chevron, a branch badge, a
+         status glyph, or nothing. It is what keeps every label on one edge. */
+      [data-ui] .mark-col {
+        width: 16px;
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+      }
+
       [data-ui] .sect {
         display: flex;
         align-items: center;
@@ -404,27 +414,28 @@
         border-left: 1px solid var(--border);
       }
 
-      /* Proposed: the panel indents with the row's own padding, and the rail is
-         drawn absolutely, so it never takes width off a label. */
-      [data-ui] .rail-new {
+      /* The panel's only nesting rail, and it hangs under the project's own mark
+         column at 28 rather than off the panel edge, so it brackets a child
+         block without opening an empty strip beside the gutter. */
+      [data-ui] .rail2 {
         position: relative;
       }
 
-      [data-ui] .rail-new::before {
+      [data-ui] .rail2::before {
         content: "";
         position: absolute;
-        left: 24px;
+        left: 28px;
         top: 0;
         bottom: 0;
         width: 1px;
         background: var(--border);
       }
 
-      [data-ui] .prow.deep {
+      [data-ui] .deep2 {
         padding-left: 28px;
       }
 
-      /* Declared after .sect / .prow / .newchat so it wins the gap. */
+      /* Declared after .sect / .row / .newchat so it wins the gap. */
       [data-ui] .tight {
         gap: 0;
       }
@@ -725,9 +736,10 @@
 
       <h2>After: one grammar for every line in the panel</h2>
       <p>
-        A row is three slots in a fixed order. A header is the same three questions answered the same way.
-        The label columns become three: 12 for a mark-less row at depth 0, 28 for a section title, 44 for a
-        depth-1 project, and a leading mark always sits one step left of the label it belongs to.
+        One mark column and one label column, for the whole panel. Every row puts its label at 28 and keeps
+        the 16px slot at the gutter for at most one mark: a disclosure chevron, a branch badge, a status
+        glyph, or nothing at all. The projects list has no indent of its own, so nothing opens an empty strip
+        beside the gutter. Only a third level, a task under a project, takes one step more, at 44.
       </p>
 
       <div class="cols">
@@ -741,7 +753,7 @@
                   <span class="hdrlinks"><span>Settings</span><span>Logout</span></span>
                 </div>
                 <div class="newchat tight">
-                  <span class="glyph16">
+                  <span class="mark-col">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M4 20h4L20 8l-4-4L4 16v4z" />
                     </svg>
@@ -753,7 +765,8 @@
                   <span class="chev box16">&#9654;</span><span class="stitle">Pinned</span>
                   <span class="scount">1</span>
                 </div>
-                <div class="row">
+                <div class="row tight">
+                  <span class="mark-col" aria-hidden="true"></span>
                   <span class="label">check-memory-usage-pabrik</span>
                   <span class="meta flat">21m</span>
                 </div>
@@ -763,39 +776,42 @@
                   <span class="scount">18</span>
                   <span class="sact first">&#9660;</span>
                 </div>
-                <div class="row">
+                <div class="row tight">
+                  <span class="mark-col"
+                    ><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true" style="color: var(--violet)">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 3v12M18 9a3 3 0 100-6 3 3 0 000 6zM6 21a3 3 0 100-6 3 3 0 000 6zM18 9a9 9 0 01-9 9" /></svg
+                  ></span>
                   <span class="label">Simplify feature Compaction</span>
-                  <span class="meta flat"
+                  <span class="meta flat"><span style="color: var(--yellow)">22m 46s</span></span>
+                </div>
+                <div class="row sel tight">
+                  <span class="mark-col"
                     ><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true" style="color: var(--violet)">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M6 3v12M18 9a3 3 0 100-6 3 3 0 000 6zM6 21a3 3 0 100-6 3 3 0 000 6zM18 9a9 9 0 01-9 9" /></svg
-                    ><span style="color: var(--yellow)">22m 46s</span></span
-                  >
-                </div>
-                <div class="row sel">
+                  ></span>
                   <span class="label">workflow.zig stuck its hanging, when use that rea mcp</span>
-                  <span class="meta flat"
-                    ><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true" style="color: var(--violet)">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 3v12M18 9a3 3 0 100-6 3 3 0 000 6zM6 21a3 3 0 100-6 3 3 0 000 6zM18 9a9 9 0 01-9 9" /></svg
-                    ><span style="color: var(--yellow)">23m 00s</span></span
-                  >
+                  <span class="meta flat"><span style="color: var(--yellow)">23m 00s</span></span>
                 </div>
-                <div class="row">
+                <div class="row tight">
+                  <span class="mark-col" aria-hidden="true"></span>
                   <span class="label">greeting</span>
                   <span class="meta flat"><span class="dot"></span>21m</span>
                 </div>
-                <div class="row">
+                <div class="row tight">
+                  <span class="mark-col" aria-hidden="true"></span>
                   <span class="label">windows can have system tray, in linux and mac</span>
                   <span class="meta flat">14m</span>
                 </div>
-                <div class="row">
-                  <span class="label">Enhance kanban task add</span>
-                  <span class="meta flat"
+                <div class="row tight">
+                  <span class="mark-col"
                     ><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true" style="color: var(--violet)">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M5 8l7-5 7 5M12 3v18" /></svg
-                    ><span class="staledot"></span>35m</span
-                  >
+                  ></span>
+                  <span class="label">Enhance kanban task add</span>
+                  <span class="meta flat"><span class="staledot"></span>35m</span>
                 </div>
-                <div class="row">
+                <div class="row tight">
+                  <span class="mark-col" aria-hidden="true"></span>
                   <span class="label">scope the config db for better q</span>
                   <span class="meta flat">4h</span>
                 </div>
@@ -806,14 +822,25 @@
                   <span class="runind" style="margin-left: auto"><i></i>3 running</span>
                   <span class="sact">+</span>
                 </div>
-                <div class="rail-new">
-                  <div class="prow deep tight">
-                    <span class="chev box16">&#9660;</span><span class="label">pabrik</span>
-                    <span class="meta flat"><span style="color: var(--yellow)">22m 46s</span></span>
+                <div class="row tight">
+                  <span class="mark-col chev box16">&#9660;</span><span class="label">pabrik</span>
+                  <span class="meta flat"><span style="color: var(--yellow)">22m 46s</span></span>
+                </div>
+                <div class="rail2">
+                  <div class="row tight deep2">
+                    <span class="mark-col"><span class="dot" style="background: var(--aqua)"></span></span>
+                    <span class="label">wear one row grammar</span>
+                    <span class="meta flat">3</span>
                   </div>
-                  <div class="prow deep tight"><span class="chev box16">&#9654;</span><span class="label">kabelweb</span><span class="meta flat">10</span></div>
-                  <div class="prow deep tight"><span class="chev box16">&#9654;</span><span class="label">website pabrik</span><span class="meta flat">8</span></div>
-                  <div class="prow deep tight"><span class="chev box16">&#9654;</span><span class="label">ruangsql</span><span class="meta flat">1</span></div>
+                </div>
+                <div class="row tight">
+                  <span class="mark-col chev box16">&#9654;</span><span class="label">kabelweb</span><span class="meta flat">10</span>
+                </div>
+                <div class="row tight">
+                  <span class="mark-col chev box16">&#9654;</span><span class="label">website pabrik</span><span class="meta flat">8</span>
+                </div>
+                <div class="row tight">
+                  <span class="mark-col chev box16">&#9654;</span><span class="label">ruangsql</span><span class="meta flat">1</span>
                 </div>
 
                 <div class="sect tight">
@@ -926,10 +953,11 @@
 
           <h3>Everything the row knows, in one right-aligned group</h3>
           <p>
-            Fixed order, left to right: branch badge, status mark, time. The branch badge leaves the label,
-            which removes the jitter without reserving a column. The status mark keeps its meaning and loses
-            its roam. The time is always <code>text-micro</code> and tabular, so the column right of the
-            label is one width no matter what the row has to say.
+            The mark column is on the left, one slot for one mark, and the trailing group is right-aligned
+            in a fixed order: status mark, then time. The branch badge leaves the label for the mark column,
+            so a chat with a pull request keeps the same label edge as one without. The status mark keeps its
+            meaning and loses its roam. The time is always <code>text-micro</code> and tabular, so the column
+            right of the label is one width no matter what the row has to say.
           </p>
 
           <h3>One time treatment</h3>
@@ -949,25 +977,35 @@
 
           <h3>One set of columns</h3>
           <p>
-            A row's content starts at the gutter plus one indent step per depth, and the indent step goes
-            from 12 to 16 so a mark fits inside it. So a mark-less row at depth 0, which is a chat or a
-            document, puts its label at 12. A section title puts its chevron at 12 and its title at 28. A
-            depth-1 project row puts its chevron at 28 and its name at 44. A depth-2 task row puts its mark
-            at 44 and its name at 60. The rail is drawn absolutely, so it never eats a label's width, and
-            the tree gives up 13px of indent and takes it back as label.
+            Two columns, and one step. The mark column is 16px at the gutter, so it runs 12 to 28 and every
+            label in the panel starts at 28: a section title, a chat, a document, a project. That is what
+            makes the panel read as one list rather than as four lists that happen to share an edge. The
+            indent step stays for a third level, a task under an expanded project, and it is applied to the
+            row itself rather than to a wrapper, so the mark column sits at 28 and the task's label at 44. The
+            rail for that block is drawn at 28, under the project's own mark column, so it brackets the child
+            rows without opening an empty strip beside the gutter.
           </p>
         </div>
       </div>
 
       <h2>Decisions a reviewer can flip</h2>
       <dl class="decisions">
-        <dt>The branch badge moves right, rather than a leading mark column being reserved.</dt>
+        <dt>The projects list is flat: no per-depth indent for a project, and one label edge at 28.</dt>
         <dd>
-          Reserving a 16px leading column would also stop the jitter, and it would make the badge a
-          scannable left rail, the way a kanban column is. It costs 24px of label width on every row in a
-          288px panel, for a mark most rows do not have. The trailing group costs nothing and matches the
-          panel's existing right-aligned meta voice. Flip this if the badge reads as a category rather than
-          as metadata.
+          The first cut indented the projects list by a step and a rail, which put the project chevron at 28
+          and the name at 44 and opened a 24px empty strip down the left of the tree. That strip reads as a
+          broken column, not as nesting, so the indent is gone: a project row now looks like a section row,
+          chevron in the mark column and name at 28, and the nesting is carried by order and by the header it
+          sits under. The cost is 16px of label width on the chat and document rows, which started at 12.
+          Flip this back if nesting needs a visible step more than one label edge is worth.
+        </dd>
+        <dt>The branch badge goes in the mark column, not the trailing group.</dt>
+        <dd>
+          Once the mark column exists, the badge belongs there: it is the row's one mark and the column is
+          what stops it from moving the label. Putting it in the trailing group instead would leave the mark
+          column to the chevrons alone and let the chat and document labels sit at 12, which spends 16px less
+          on a mark column most chat rows do not use, at the price of two label edges in the panel instead of
+          one.
         </dd>
         <dt>New Chat stays 40px but takes the shared columns.</dt>
         <dd>
@@ -1011,9 +1049,9 @@
         <h3>Inspector</h3>
         <p>
           <code>inspect.mjs</code> at 1440, 768 and 390: <strong>4 interface fragments</strong>, each
-          measured at 320 by 284 to 643, so all four count toward the picture floor. The panel inside each
+          measured at 320 by 284 to 675, so all four count toward the picture floor. The panel inside each
           crop measures exactly 288px. Body 16px at 1.6 leading, headline 2 lines at every width, no
-          horizontal overflow, 7.4 screens.
+          horizontal overflow, 7.8 screens.
         </p>
         <p><strong>Result: 1 FAIL, 3 WARN.</strong> All four are in the class a spec document cannot honestly satisfy, and each is answered below rather than hidden from the meter.</p>
         <ul>
@@ -1049,10 +1087,12 @@
             badge start 20px further right than the five that do not, which is the jitter, measured.
           </li>
           <li>
-            After, chat labels: <code>12</code> seven times. The branch badge moved into the trailing group
-            and the jitter is gone.
+            After, every label in the crop: <code>28</code> eleven times, and <code>44</code> once, for the
+            nested task row. The branch badge moved into the mark column and the jitter is gone.
           </li>
-          <li>Before, project name <code>41.5</code> and section title <code>28.5</code>: exactly what the live app renders. After: project name <code>44</code> and section title <code>28</code>.</li>
+          <li>Before, project name <code>41.5</code> and section title <code>28.5</code>: exactly what the live app renders. After: project name <code>28</code>, on the same edge as every other label, and a nested task at <code>44</code>.</li>
+          <li>Before, the project chevron sits at <code>25</code> with a rail at <code>13</code>, which is the empty strip. After, every mark in the panel sits at <code>12</code>, and the number of rows whose mark column starts left of the gutter is <code>0</code>.</li>
+          <li>After, every row in the crop measures <code>32</code>px, the row token, with the nested task's mark at <code>28</code> and its label at <code>44</code>.</li>
           <li>Before, the New Chat label lands at <code>44</code>. After, at <code>28</code>, on the section title's edge.</li>
           <li>Nested buttons in the wireframe: <code>0</code>. The header's own control count is unchanged at three.</li>
         </ul>

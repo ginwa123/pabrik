@@ -60,8 +60,9 @@ change.
 6. **The branch badge sits inside the truncating title span, so the label column jitters by 20px.**
    `ChatsList.vue:1152` and `:1338`. Measured in the wireframe's before crop: labels at 12 on rows without
    a badge, at 32 on rows with one.
-   *Fix:* the badge moves into the trailing group. See the first decision in the wireframe if the left
-   rail is preferred instead.
+   *Fix:* the badge moves into the row's mark column, the reserved 16px slot at the gutter. See the two
+   decisions in the wireframe: the alternative, leaving the badge in the trailing group, is listed there
+   with what it costs.
 
 7. **The same trailing slot is a filled pill on a running row and bare 60% text on an idle one.**
    `ChatsList.vue:1231` against `WorkerElapsedChip.vue:118`. Two visual classes for one question.
@@ -74,12 +75,12 @@ change.
 
 8. **The status mark is a second trailing slot, inline in the label flow**, so its x moves with the label
    length while the time stays right-aligned. `ChatsList.vue:1179` and `:1225`.
-   *Fix:* the status mark joins the trailing group, in fixed order: branch badge, status mark, time.
+   *Fix:* the status mark joins the trailing group, in fixed order: status mark, then time.
 
 9. **A sub-agent suffix is rendered monospace** inside a row label, which the app's type system reserves
    for code, and it competes with the name for the truncating width. `ChatsList.vue:1222` and `:1414`.
    *Fix:* the suffix is `text-micro` in `--color-violet`, and it moves into the trailing group with the
-   rest of what the row knows.
+   rest of what the row knows. The branch badge goes the other way, into the mark column.
 
 10. **The pinned and the recent rows are two copies of one block of markup, and they have drifted.** The
     elapsed chip's id is `chat-elapsed-chip` in the pinned copy and `chat-nav-elapsed-chip` in the recent
@@ -101,14 +102,17 @@ change.
     `ml-[var(--sb-indent)]` and a `border-l` on top of the row's own `px-[var(--sb-gutter)]`, which the
     comment at `WorkspaceItem.vue:510` promising "the project name at 28, matching the section titles"
     does not count.
-    *Fix:* the row owns its indentation; the rail is drawn absolutely so it costs no width. Columns become
-    12 (mark-less, depth 0), 28 (section title), 44 (depth-1 project), 60 (depth-2 task), with
-    `--sb-indent` raised from 12 to 16 so a mark fits inside one step.
+    *Fix:* the projects list loses its indent and its rail entirely. A project row uses the same mark
+    column and the same label edge as every other row in the panel, and the nesting is carried by order and
+    by the header it sits under. See the wireframe's first decision for why flattening beats indenting,
+    and for the cost.
 
 14. **The left rail is four edges.** Measured: the section chevron's ink at 10.5, a chat label at 12, the
     New Chat glyph centred in a 24px hit box with its ink at 19.4 and its label at 44, a project name at
     41.5. `Sidebar.vue:1155`.
-    *Fix:* New Chat keeps its 40px height and takes the shared columns: glyph at 12, label at 28.
+    *Fix:* two columns for the whole panel. The mark column is 16px at the gutter (12 to 28) and holds at
+    most one mark: a disclosure chevron, a branch badge, a status glyph, or nothing. Every label starts at
+    28, New Chat included, and New Chat keeps its 40px height.
 
 ### Comments to delete rather than correct
 
@@ -122,18 +126,21 @@ Per the repo's no-comments policy these are not rewritten, they go:
 
 ## The target grammar
 
-**Row.** `[leading mark, 16px, only for a disclosure row] [label, flex 1, truncate, text-dense]
-[trailing group, shrink-0, gap 1.5]`. Height `--sb-row`, gutter `--sb-gutter`, `rounded-lg`, gap 8.
-The trailing group is right-aligned and its order is fixed: branch badge, status mark, time. Nothing
-about a row is rendered inside the label except the label.
+**Row.** `[mark column, 16px] [label, flex 1, truncate, text-dense] [trailing group, shrink-0, gap 1.5]`.
+Height `--sb-row`, gutter `--sb-gutter`, `rounded-lg`. The mark column is present on every row and holds at
+most one mark: a disclosure chevron, a branch badge, a status glyph, or nothing. The trailing group is
+right-aligned and its order is fixed: status mark, then time. Nothing about a row is rendered inside the
+label except the label.
 
 **Header.** `[chevron button, 24x24 at the gutter] [TITLE, text-micro semibold uppercase tracked]
 [count, text-micro dim 0.7 tabular] [ml-auto: optional one action, 24x24, glyph text-meta, dim 0.7]`.
 The header itself is not a button and contains no button.
 
-**Columns.** Content starts at `--sb-gutter + depth * --sb-indent`. A row with a leading mark renders it
-in a 16px box at that offset and puts the label 16px further right. So 12 for a mark-less depth-0 row, 28
-for a section title, 44 for a depth-1 project, 60 for a depth-2 task.
+**Columns.** Two, for the whole panel: the mark column at `--sb-gutter` (12) and the label column at
+28. Every row uses both whether or not it has a mark. A third level, a task under an expanded project,
+takes one step of `--sb-indent` (raised from 12 to 16) applied to the row itself, so its mark column sits
+at 28 and its label at 44, with the rail drawn at 28 under the project's own mark column. No other row
+indents, so the panel never opens an empty strip beside the gutter.
 
 **Selected.** `--semantic-active-bg` on `--semantic-active-text` plus `inset 2px 0 0 0 var(--color-violet)`,
 for every row kind.
@@ -144,13 +151,14 @@ for every row kind.
 2. Extract the chat row into one component (`components/rows/SidebarRow.vue`, taking label, marks, meta
    and a `data-testid`), and point both `ChatsList` sections at it. No visual change yet.
 3. Rewrite the four headers to the container-plus-chevron-button shape. Delete the wrapper `<button>`.
-4. Move the branch badge, the status mark and the sub-agent suffix out of the label into the trailing
-   group.
+4. Move the branch badge out of the label into the mark column, and the status mark and the sub-agent
+   suffix into the trailing group.
 5. Swap the sidebar's elapsed chip to `variant="text"` and set that variant to `--text-micro`. Check
    `KanbanTaskRow.vue:318`.
 6. Unify the counts and the running group; align the four headers.
-7. `WorkspaceItem.vue`: token pair for the selected row; own the row indentation; absolute rail.
-   `WorkspaceItemTaskRow.vue`: the yellow token.
+7. `WorkspaceItem.vue`: token pair for the selected row; drop the list's margin and rail so a project row
+   shares the panel's two columns. `WorkspaceItemTaskRow.vue`: the yellow token, and the one indent step
+   plus the rail at 28 for the third level.
 8. `DocumentsList.vue`: same row grammar and the same indent treatment.
 9. `Sidebar.vue`: New Chat's glyph and label onto the shared columns.
 
@@ -165,7 +173,8 @@ against a fixture with one pinned chat, one running chat, one chat with a branch
 project with a task, one document, and one selected chat. Behaviours, one per test:
 
 - `gives every chat row the panel's row height`
-- `starts every chat label at the same left offset whether or not the chat has a branch`
+- `starts every label in the panel at the same left offset`
+- `keeps a chat label on that offset whether or not the chat has a branch`
 - `puts a project name one indent step right of a section title`
 - `renders a count on every section header`
 - `keeps every header control on the panel's right action edge`
@@ -179,11 +188,11 @@ to prove the label-offset test is not vacuous.
 
 ## Risks
 
-- The `--sb-indent` change moves every nested row left by up to 13px. Anything asserting a nested row's
-  absolute x, in a spec or in a functional UI test, will need the new number. Grep for `41.5` and for
-  `sb-indent` before starting.
+- Flattening the projects list moves a project row left by 13px and every chat and document label right by
+  16px. Anything asserting an absolute x, in a spec or a functional UI test, needs the new number. Grep for
+  `41.5`, for `sb-indent` and for the 12px label offset before starting.
 - Moving the branch badge changes a right-click target's position. The context menu and its test ids stay;
-  only the anchor moves.
+  only the anchor moves, and it is now always the row's mark column, so its x is constant across rows.
 - `WorkerElapsedChip`'s `--text` variant change touches `KanbanTaskRow.vue:318`. Verify that row's slot
   after the change, and if it needs 11px, give it an explicit variant instead of reverting the sidebar.
 
