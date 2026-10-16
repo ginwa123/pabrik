@@ -1139,6 +1139,7 @@ const handleCreateTaskSave = async (payload: {
   // (KanbanDescriptionEditor.pendingFiles).
   pendingFiles?: PreviewFile[]
   // NEW (Migration 070 — kanban-cwd-session-optional plan). Per-task cwd override.
+  skillName?: string
   cwdSession?: string
 }) => {
   if (!activeCreateColumnId.value) return
@@ -1183,6 +1184,7 @@ const handleCreateTaskSave = async (payload: {
             payload.useGitWorktree ?? false,
             payload.worktreePath ?? '',
             payload.worktreeBaseBranch ?? '',
+            payload.skillName ?? '',
           )
         : undefined
 
@@ -1193,6 +1195,7 @@ const handleCreateTaskSave = async (payload: {
       cwd: payload.cwdSession,
       isAutoRetryUntilStop: payload.is_auto_retry_until_stop,
       selected_profile_model: payload.selectedProfile,
+      skillName: payload.skillName,
       queue_message: queueMessage,
       imageUrls: uploadedImageUrls,
     })

@@ -5,6 +5,7 @@ export function buildTaskCreateMessage(
   useGitWorktree: boolean,
   worktreePath?: string,
   baseBranch?: string,
+  skillName?: string,
 ): string {
   const lines: string[] = [`Task : ${name}`]
   const desc = description.trim()
@@ -21,6 +22,10 @@ export function buildTaskCreateMessage(
     if (base !== '') {
       lines.push(`Base: ${base}`)
     }
+  }
+  const skill = (skillName ?? '').trim()
+  if (skill !== '') {
+    lines.push('', `#Skill ${skill}`)
   }
   return lines.join('\n')
 }
