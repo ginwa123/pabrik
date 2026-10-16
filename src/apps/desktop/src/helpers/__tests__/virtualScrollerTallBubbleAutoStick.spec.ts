@@ -222,12 +222,9 @@ describe('VirtualScroller — a 1000-message chat with full-screen-tall bubbles'
     const bottoms: number[] = []
     for (const scale of [1.15, 1.35, 1.6, 1.9, 0.9, 1.25]) {
       scrollTo(el, vm.bottomScrollTop())
-      // Vue's render is ASYNC: without this the window is still the one from
-      // the previous position when `remeasure()` runs, so the pass measures
-      // rows that are not the ones the reader is looking at and the model
-      // never moves — the loop would then assert a static bottom and prove
-      // nothing. `nextTick` alone is enough: it does not advance timers, so no
-      // debounced pass runs between the paint and the assertion.
+      // Vue's render is ASYNC: without this the window is still the one from the previous position
+      // when `remeasure()` runs, so the pass measures rows that are not the ones the reader is
+      // looking at and the model never moves.
       await nextTick()
       paintProfileHeights(el, scale)
       vm.remeasure()

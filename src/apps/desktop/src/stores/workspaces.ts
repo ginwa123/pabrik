@@ -647,18 +647,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     return workspaces.value.find((ws) => ws.id === saved)
   }
 
-  // ─── Lazy per-workspace item loading ────────────────────────────────
-  // (plan: docs/plans/2026-09-22-revamp-ui-chats-workspace-scoped.md)
-  //
-  // init() seeds every workspace row with `items: []` and loads items
-  // only for the ACTIVE workspace; other workspaces fill in on first
-  // visit via ensureWorkspaceItemsLoaded. Once loaded, items stay in
-  // memory — mutations and SSE events update the tree in place and
-  // never invalidate the loaded mark. A re-init wipes the tree, so it
-  // wipes the marks too (see init below).
-  // The init() currently in flight (null before the first call and after it settles).
-  // ensureWorkspaceItemsLoaded awaits it when called before the workspace list has been seeded (URL
-  // restore racing boot) — otherwise its await would resolve without loading anything.
+  // ─── Lazy per-workspace item loading ──────────────────────────────── (plan:
+  // docs/plans/2026-09-22-revamp-ui-chats-workspace-scoped.md) init() seeds every workspace row
+  // with `items: []` and loads items only for the ACTIVE workspace.
   let currentInit: Promise<void> | null = null
   const workspaceItemsLoaded = new Set<string>()
   const workspaceItemsInFlight = new Map<string, Promise<void>>()
@@ -1346,24 +1337,8 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
       const item = await api.createDesign(workspaceId, name, path)
       const ws = workspaces.value.find((w) => w.id === workspaceId)
       if (ws) {
-        // Defensive merge: the backend now returns the full
-        // CreateDesignResponse (id, workspace_id, item_type, name,
-        // path, position) — but if it ever regresses to the bare
-        // {id, success} shape, the sidebar would render "Untitled
-        // project" because `item.name` would be undefined. Fall
-        // back to the form's name/path (we just sent them — they're
-        // the source of truth on the client side) so the UI is
-        // always correct, regardless of what the backend returns.
-        // The kanban flow has the same pattern via `addKanbanItem`
-        // (line ~670) — mirrors the same defense-in-depth. (Bug
-        // history: kanban originally did NOT have this fallback
-        // and the backend returned a flat `CreateKanbanResponse`
-        // without the `item` wrapper, so `const { item, columns }
-        // = await api.createKanban(...)` got both as undefined and
-        // every newly-created kanban displayed as "Untitled
-        // project" until reload. The backend now wraps the
-        // response in `{item, columns}` and both store actions
-        // have the defensive fallback.)
+        // Defensive merge: the backend now returns the full CreateDesignResponse (id, workspace_id,
+        // item_type, name, path, position).
         ws.items.push({
           ...item,
           // WorkspaceItem interface fields — fall back to the form values when the response is

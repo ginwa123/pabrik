@@ -365,14 +365,9 @@ const emit = (ctx: ScrollContext, level: 'debug' | 'info' | 'warn' | 'error'): v
     `(${positionLabel}) ` +
     `msgs=${ctx.messages}`
 
-  // ── Lazy stack capture for hard-to-debug cases ─────────────────────────
-  // `new Error().stack` is expensive (allocates an Error + walks the
-  // stack), so we only do it when the log line is actually hard to
-  // diagnose from the other fields:
-  //   - container is null (the "no idea where this came from" case)
-  //   - level is warn or error (something went wrong)
-  // Normal info/debug lines skip this entirely. The stack is stripped
-  // to the first 5 frames so it stays scannable.
+  // ── Lazy stack capture for hard-to-debug cases ───────────────────────── `new Error().stack` is
+  // expensive (allocates an Error + walks the stack), so we only do it when the log line is
+  // actually hard to diagnose from the other fields:.
   if (!ctx.stack && (ctx.containerInfo.null || level === 'warn' || level === 'error')) {
     try {
       const err = new Error()

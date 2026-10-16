@@ -1,21 +1,6 @@
-/**
- * Behavioural tests for the keyboard shortcuts added in Chunk 4 of
- * the right-click group menu plan:
- *   - Cmd/Ctrl+A: select all elements on the active page
- *   - Cmd/Ctrl+]: bring forward
- *   - Cmd/Ctrl+Shift+]: bring to front
- *   - Cmd/Ctrl+[: send backward
- *   - Cmd/Ctrl+Shift+[: send to back
- *   - Backspace / Delete: delete selected elements after confirm()
- *
- * 5 tests:
- *   1. Cmd+A selects all elements.
- *   2. Cmd+Shift+] calls the reorder store action (stubbed; Chunk 5
- *      replaces the stub with a real call).
- *   3. Backspace deletes all selected elements after confirm().
- *   4. Cmd+A inside an <input> does NOT change the selection.
- *   5. Cmd+Shift+] with empty selection is a no-op.
- */
+/** Behavioural tests for the keyboard shortcuts added in Chunk 4 of the right-click group menu
+ * plan: - Cmd/Ctrl+A: select all elements on the active page - Cmd/Ctrl+]: bring forward -
+ * Cmd/Ctrl+Shift+]: bring to front - Cmd/Ctrl+[: send backward - Cmd/Ctrl+Shift+[: send to back. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'

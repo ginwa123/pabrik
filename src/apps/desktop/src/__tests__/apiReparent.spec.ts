@@ -1,18 +1,5 @@
-/**
- * Unit tests for the reparent API surface:
- *   - updateDesignElement accepts an optional `reposition: 'last_in_parent'` field
- *     (added in Chunk 1 Task 1.3 backend handler).
- *   - reparentDesignElementsBatch POSTs to
- *     /elements/reparent-batch with the parsed body.
- *
- * 5 mock-based tests. Same pattern as `apiDesign.spec.ts`:
- *   - `setActivePinia(createPinia())` in `beforeEach`.
- *   - Mock fetch via vi.fn() returning `{ ok, status, json, text }`.
- *   - Assert URL, HTTP method, body shape.
- *
- * Plan: docs/superpowers/plans/2026-07-30-design-layer-drag-join-or-leave-group.md
- * (Chunk 2 Task 2.1)
- */
+/** Unit tests for the reparent API surface: - updateDesignElement accepts an optional `reposition:
+ * 'last_in_parent'` field (added in Chunk 1 Task 1.3 backend handler). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

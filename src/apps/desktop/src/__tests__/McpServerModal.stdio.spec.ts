@@ -475,12 +475,8 @@ describe('McpServerModal — stdio transport', () => {
     await wrapper.vm.$nextTick()
   })
 
-  // ── Regression: duplicate footer (task_1788495808955_0) ─────────────
-  // PR #373 added a Test-button footer BEFORE the old Cancel+Save
-  // footer but forgot to delete the old one — the stdio dialog
-  // rendered two stacked footers (Test | Cancel Save / Cancel Save)
-  // with duplicated data-testids. Exactly one of each button must
-  // exist per open dialog.
+  // ── Regression: duplicate footer (task_1788495808955_0) ───────────── PR #373 added a
+  // Test-button footer BEFORE the old Cancel+Save footer but forgot to delete the old one.
   it('stdio branch renders exactly one footer (1 Test + 1 Cancel + 1 Save)', async () => {
     wrapper = mountModal(baseStdioServer)
     await wrapper.vm.$nextTick()

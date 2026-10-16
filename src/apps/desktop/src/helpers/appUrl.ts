@@ -1,46 +1,4 @@
-/**
- * appUrl — the single builder / parser for the app's path-based URL
- * contract (plan: 2026-09-22-revamp-ui-chats-workspace-scoped).
- *
- * ## Contract
- *
- *   /app                                            landing (creates a workspace)
- *   /app/{workspaceId}                              workspace selected
- *   /app/{workspaceId}/chat/{sessionId}             chat open
- *   /app/{workspaceId}/doc/{documentId}             document open (Migration 095)
- *   /app/{workspaceId}/projects/{projectId}         project open
- *   /app/{workspaceId}/projects/{projectId}/chat/{taskId}
- *                                                   task chat over a project
- *                                                   (path suffix — mirrors the
- *                                                   old `itemId/chat/T` suffix)
- *
- * Project sub-state stays in the query string: `?pageId=…&detail=…&sorts=…`.
- * Canonical form has NO trailing slash (the router accepts `/…/` and the
- * AppLayout rewrite strips it via `router.replace`).
- *
- *   /app/settings                                  USER-scope settings
- *                                                   (General only)
- *   /app/{workspaceId}/settings                     WORKSPACE-scope settings
- *                                                   (`?section=` picks the
- *                                                   section)
- *
- * Both settings shapes carry their scope in the PATH, so a settings page can
- * always tell which workspace it is about - the scope itself is not a query
- * param. Unchanged: `/app/kanban/:itemId/settings`.
- * Legacy (rewritten once at boot to the shapes above, never emitted):
- * `/app/chat/:sid`, `/app/task/:tid`, and every `?view=…` query URL.
- *
- * ## Why this exists
- *
- * Before this helper, every navigation call site hand-built
- * `{ path: '/app', query: { view: 'workspace', … } }` objects inline
- * (~193 `view:` matches across src + specs). The path migration would
- * have scattered string concat everywhere; instead every writer goes
- * through `buildAppUrl` and every reader through `parseAppPath`, so
- * the contract lives in exactly one file.
- *
- * Pure functions — no Vue / Pinia / vue-router imports. Trivially testable.
- */
+/** appUrl. */
 import { parseItemIdWithChat } from './buildItemIdWithChat'
 import { buildTaskUrlQuery, type TaskUrlContext } from './buildTaskUrlQuery'
 

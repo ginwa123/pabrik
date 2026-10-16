@@ -1243,12 +1243,9 @@ export async function sendChatMessage(
       silent: true,
     })
   } catch (err) {
-    // Preserve the original return-shape semantics so ChatView can
-    // branch on `status` for user-facing messages:
-    //   'bad_request'         — backend 400
-    //   'unprocessable_entity'— backend 422
-    //   'http_error'          — backend 4xx/5xx other than the above
-    //   'offline'             — network failure / fetch rejected
+    // Preserve the original return-shape semantics so ChatView can branch on `status` for
+    // user-facing messages: 'bad_request'         — backend 400 'unprocessable_entity'— backend 422
+    // 'http_error'          — backend 4xx/5xx other than the above 'offline'.
     if (err instanceof ApiError) {
       if (err.status === 400) return { status: 'bad_request' }
       if (err.status === 422) return { status: 'unprocessable_entity' }
@@ -1488,12 +1485,8 @@ export async function getChats(
       total: data.total || 0,
     }
   } catch (e) {
-    // The empty-list shape is a deliberate contract (callers render an
-    // empty section instead of crashing), but it is indistinguishable
-    // from "this scope has no sessions" — so a swallowed transport
-    // failure used to blank a populated sidebar with nothing in the
-    // console to explain it. Log the reason; the caller decides whether
-    // an empty page is believable (see ChatsList's empty-refresh guard).
+    // The empty-list shape is a deliberate contract (callers render an empty section instead of
+    // crashing), but it is indistinguishable from "this scope has no sessions".
     console.error('getChats failed; returning an empty list', e)
     return { sessions: [], has_more: false, next_cursor: null, total: 0 }
   }
@@ -1914,22 +1907,7 @@ export async function getKanbanTagSuggestions(
   }
 }
 
-// =====================================================================
-// Design Mode API (v6 — Figma-lite, file-backed HTML model)
-// =====================================================================
-//
-// 9 endpoints for the new design-mode surface, replacing the v5
-// panzoom-canvas API. The backend (src/ai_workflow/tui/http_handlers/
-// design_*.zig + src/ai_workflow/tui/agentic_loop/design_model.zig) is fully
-// implemented and tested; this section is the thin TypeScript wrapper.
-//
-// Every endpoint routes through the per-request arena on the backend,
-// so the responses are built via `std.json.Stringify.valueAlloc` and
-// are guaranteed to be valid JSON with all user-provided content
-// (HTML bodies, names) properly escaped.
-//
-// Plan: docs/superpowers/plans/2026-07-08-design-mode-redesign.md
-//   (Chunk 5, Task 5.1 + 5.2)
+// ===================================================================== Design Mode API (v6.
 export async function listDesignPages(
   workspaceId: string,
   itemId: string,

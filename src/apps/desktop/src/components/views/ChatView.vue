@@ -524,11 +524,9 @@ function onChatSidebarOpenFile(payload: { path: string; line?: number }) {
   void openInEditor({ filePath: payload.path, cwd: effectiveCwd.value, line: payload.line })
 }
 
-// Stacked center diff: every changed file renders as its own
-// lazily-mounted section so long lists scroll fast. centerDiff stays as
-// the compat "current selection" (back-button + single-file wiring);
-// centerFiles is the ordered render list, currentPath the most-visible
-// section (scroll-spy + ?diff= deep link).
+// Stacked center diff: every changed file renders as its own lazily-mounted section so long lists
+// scroll fast. centerDiff stays as the compat "current selection" (back-button + single-file
+// wiring).
 const centerDiff = ref<DiffSelection | null>(null)
 const centerFiles = ref<DiffSelection[]>([])
 const currentPath = ref<string | null>(null)
@@ -1048,15 +1046,7 @@ const onContentShift = (shift: { topSpacer: number; bottomSpacer: number; total:
     // stick is actively engaged right now (not just that the LLM is
     // busy — those are different things, see autoStickGate.ts).
     lastAutoStickAt.value = Date.now()
-    // Explicit bottom computation — DELEGATED to the scroller's
-    // scrollToBottom (2026-08-26 blank-viewport fix): the scroller
-    // targets the REAL rendered content bottom when the window shows
-    // the last item, so a residual sizer overshoot can no longer land
-    // the stick in the phantom region (the user's fully-blank
-    // viewport screenshots: sizer 29389px, window at 27971px, nothing
-    // visible). The old inline `scrollHeight - clientHeight` trusted
-    // the model total; the scroller's version falls back to it only
-    // when the model agrees with reality.
+    // Explicit bottom computation.
     virtualScrollerRef.value?.scrollToBottom('auto')
     scrollLogger.info({
       ...ctx,
@@ -1626,12 +1616,9 @@ const groupToolNames = computed((): (string | null)[] => {
     // Look for any message in this assistant group whose tool_calls_json
     // either already has a matching tool row OR yields parseable names.
     for (const msg of group.messages) {
-      // 2026-08-24 wire-shape fix (task_1787590621966_10): the backend
-      // now always serializes tool_calls_json as a JSON STRING, but
-      // older events (or any future array-shaped regression) must not
-      // crash the render — `.trim` doesn't exist on arrays and `?.`
-      // only guards null/undefined. Non-string values fall through to
-      // the finish_reason heuristic below instead of throwing.
+      // 2026-08-24 wire-shape fix (task_1787590621966_10): the backend now always serializes
+      // tool_calls_json as a JSON STRING, but older events (or any future array-shaped regression)
+      // must not crash the render.
       if (typeof msg.tool_calls_json === 'string' && msg.tool_calls_json.trim()) {
         try {
           const parsed = JSON.parse(msg.tool_calls_json)
@@ -1761,44 +1748,7 @@ const rehydrateSubAgentProgress = async () => {
 }
 
 // ─── Older-history pagination: arm → commit → refill ─────────────────────────
-//
-// Task_1789505423062_0 — "the auto fetch is loaded after the user hit the
-// max; what if the auto fetch is done before the scroll reaches the top?"
-//
-// Why the old path felt slow: VirtualScroller's `loadMore` check is positional
-// AND debounced (200 ms, trailing edge, timer reset on every scroll event — see
-// its `onScroll`). During a fling the timer keeps being pushed out, so the
-// request is only issued ~200 ms after the LAST scroll event. On a fling that
-// ends at the top, "last event" IS "user already at the top" — the half-screen
-// head start from `loadMoreThresholdRatio` is consumed before the request even
-// starts, and the round trip + preserve dance then play out in front of a user
-// who has nothing left to scroll.
-//
-// The fix, in three beats:
-//   ARM     — while the user is still far from the top (armRadiusPx), fetch the
-//             next older page speculatively and keep it in memory. Invisible:
-//             no `messages` mutation, no scrollTop write, no stick-flag bump.
-//   COMMIT  — when the user actually enters the scroller's load-more band (or
-//             the 200 ms backstop fires, or the manual button is clicked), the
-//             buffered page is prepended through the SAME preserve path as
-//             before. Zero network wait on the critical path.
-//   REFILL  — after a commit, arm the next page from the advanced cursor, so
-//             page-after-page scroll-back is instant (one page of lookahead).
-//
-// Deliberate non-behaviour: prepending mid-fling is NOT done. `beginPreserve` /
-// `endPreserve` write `scrollTop` to keep the reading position stable; doing
-// that while a momentum scroll is in flight fights the gesture (the
-// jump/teleport class already fixed in #308/#337/#349). Fetch early, commit at
-// the band.
-//
-// Invariants (asserted by ChatView.lazyPrefetch.spec.ts):
-//   1. ARM mutates no DOM/scroll state — `messages` is untouched until COMMIT.
-//   2. `messageCursor` advances ONLY at COMMIT.
-//   3. The buffer is claimed SYNCHRONOUSLY, before the first `await`, so the
-//      positional commit and the 200 ms `@load-more` backstop cannot both
-//      prepend the same page.
-//   4. A buffer is dropped when its cursor or generation no longer matches
-//      (session switch, refresh, or another path advancing the cursor).
+// Task_1789505423062_0 — "the auto fetch is loaded after the user hit the max.
 interface BufferedOlderPage {
   /** Cursor this page was requested with — must still equal `messageCursor` to commit. */
   fetchedWithCursor: string | null
@@ -2478,13 +2428,7 @@ const runHistoryLoadAttempt = async () => {
     chatPrProvider.value = data.pr_provider ?? ''
   }
 
-  // 2026-08-07-profile-persist-read — load the persisted profile
-  // selection from the messages endpoint response. onSessionChanged
-  // (below) ALSO reads it from getSession() (lightweight session detail
-  // endpoint, same sessions row), but it runs on mount/switch
-  // and races with loadChatHistory on initial mount. Reading it here
-  // is the authoritative source: whichever finishes first, the value
-  // is the same. The handler's later update will agree and not clobber.
+  // 2026-08-07-profile-persist-read.
   if (data.selected_profile_model !== undefined) {
     selectedProfile.value =
       typeof data.selected_profile_model === 'string' ? data.selected_profile_model || null : null
@@ -2866,12 +2810,9 @@ const handleVirtualScroll = (
       },
     })
   }
-  // ── Older-history prefetch (task_1789505423062_0) ────────────────────
-  //
-  // Runs on USER scroll events only: a programmatic write (anchor
-  // compensation, `endPreserve` restore) is not a gesture and must not feed
-  // the decision — but it must not skip the delta bookkeeping below either,
-  // so this is a scoped `if`, never an early return.
+  // ── Older-history prefetch (task_1789505423062_0) ──────────────────── Runs on USER scroll
+  // events only: a programmatic write (anchor compensation, `endPreserve` restore) is not a gesture
+  // and must not feed the decision.
   if (!isProgrammatic) {
     // A real upward gesture is fresh intent to read history — reset the
     // refill auto-chain budget so the next commits may chain again.
@@ -2952,14 +2893,9 @@ const handleVirtualScroll = (
     })
   }
   isAtBottom.value = nextIsAtBottom
-  // ── Realtime pill highlight ───────────────────────────────────────
-  // Light the rail pill for the latest user turn at/above the viewport
-  // BOTTOM as the user scrolls (previously the pill only lit on
-  // click-jump, so scrolling never activated any pill; and anchoring to
-  // the rendered window top lit index 0 whenever the window rendered
-  // from 0 — the overscan buffer above the viewport. See
-  // estimateViewportEnd). Pure display-ref write — no scroll writes,
-  // so it can't fight the auto-stick logic above.
+  // ── Realtime pill highlight ─────────────────────────────────────── Light the rail pill for the
+  // latest user turn at/above the viewport BOTTOM as the user scrolls (previously the pill only lit
+  // on click-jump, so scrolling never activated any pill.
   const range = virtualScrollerRef.value?.effectiveRange
   if (range) {
     const visEnd = estimateViewportEnd(
@@ -3109,14 +3045,9 @@ const connectSse = () => {
       return
     }
 
-    // 2026-08-23 hidden-messages fix — the gate previously required
-    // `event.content` to be truthy, which silently DROPPED every `full`
-    // event whose content was empty: tool-result rows (role='tool',
-    // empty raw content — the card renders from tool_name + envelope),
-    // image-only user echoes, and thinking-only assistant turns. All
-    // of those are renderable now (filteredMessages exemptions +
-    // reasoning section), so accept any event that has a finish_reason
-    // and at least ONE renderable field.
+    // 2026-08-23 hidden-messages fix — the gate previously required `event.content` to be truthy,
+    // which silently DROPPED every `full` event whose content was empty: tool-result rows
+    // (role='tool', empty raw content.
     const hasRenderableFullPayload = !!(
       event.content ||
       event.reasoning_content ||
@@ -3270,15 +3201,9 @@ const connectSse = () => {
       // tail of the message-complete render frame.
       lastAutoStickAt.value = Date.now()
       nextTick(() => {
-        // Recompute the height model BEFORE the auto-stick (append-gap
-        // fix): the streaming-* row was just replaced by the canonical
-        // DB row, which re-renders at a DIFFERENT height (markdown
-        // settles, reasoning collapses). nextTick first — the DOM must
-        // reflect the swap before offsetHeight reads mean anything.
-        // Gated on isAtBottom: a scrolled-up reader must not be
-        // disturbed by sizer mutations (the bouncing bug); the at-
-        // bottom case gets an exact sizer so the stick lands on the
-        // real last message, not in a phantom region.
+        // Recompute the height model BEFORE the auto-stick (append-gap fix): the streaming-* row
+        // was just replaced by the canonical DB row, which re-renders at a DIFFERENT height
+        // (markdown settles, reasoning collapses). nextTick first.
         if (isAtBottom.value) virtualScrollerRef.value?.remeasure()
         scrollToBottom(false, 'sse-message-complete')
       })

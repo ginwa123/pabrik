@@ -340,18 +340,7 @@ export function parseSetGitWorktree(data: unknown): ParsedSetGitWorktree {
   }
 }
 
-/**
- * `set_pull_request` result — attach-only, so the payload is one of exactly
- * two shapes (`src/modules/agent/tools/set_pull_request.zig`):
- *
- *   attach: {session_id, attached:true, url, provider, number|null,
- *            verified, warning|null, base|null, head|null}
- *   clear:  {session_id, cleared:true}
- *
- * `number` arrives as a STRING in the wire payload (the backend keeps it a
- * `[]const u8` because clones/forks carry non-numeric IIDs), so it is read
- * as an optional string and never coerced to a number.
- */
+/** `set_pull_request` result. */
 export interface ParsedSetPullRequest {
   url: string | null
   provider: string | null

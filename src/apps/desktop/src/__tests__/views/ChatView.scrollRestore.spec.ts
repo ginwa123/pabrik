@@ -10,17 +10,9 @@ import ChatView from '../../components/views/ChatView.vue'
 import { installSseBus, __resetSseBus, __setSseBusGlobalClient } from '../../helpers/sseBus'
 import type { SseClient, SseState, SseStateInfo } from '../../helpers/sseClient'
 
-// ── The history seam, hoisted ───────────────────────────────────────────────
-// This file used to reach the transcript load with `vi.spyOn(api,
-// 'getChatHistory')`, which stopped working when ChatView moved to
-// `fetchChatHistoryEffect` — so `.virtual-scroller` never mounted and every
-// test in the file failed with "expected null not to be null" while guarding
-// nothing at all.
-//
-// `chatEngineDb` binds `fetchFn = getChatHistory` as a constructor default
-// evaluated at MODULE LOAD, so a spy installed later cannot reach it; and ChatView calls
-// `api.fetchChatHistoryEffect` directly. Both seams therefore have to be a hoisted `vi.mock`
-// factory (the pattern ChatView.streamingStick.spec.ts documents at length).
+// ── The history seam, hoisted ─────────────────────────────────────────────── This file used to
+// reach the transcript load with `vi.spyOn(api, 'getChatHistory')`, which stopped working when
+// ChatView moved to `fetchChatHistoryEffect`.
 const historyRows: unknown[] = []
 const historyResponse = () => ({
   messages: historyRows,
@@ -57,13 +49,9 @@ vi.mock('vue-router', async () => {
   }
 })
 
-// `scrollTo` must ASSIGN the position and FIRE the event a browser fires.
-//
-// setup.ts already installs a polyfill that does the assignment, so the
-// `typeof … === 'undefined'` guard this block used to carry never ran — and
-// with no `scroll` event ChatView's `handleVirtualScroll` never executed, so
-// `isAtBottom` kept its initial `true` and `onContentShift` re-stuck the reader
-// to the bottom. Override unconditionally.
+// `scrollTo` must ASSIGN the position and FIRE the event a browser fires. setup.ts already installs
+// a polyfill that does the assignment, so the `typeof … === 'undefined'` guard this block used to
+// carry never ran.
 Element.prototype.scrollTo = function scrollToPolyfill(
   this: Element,
   x?: number | ScrollToOptions,

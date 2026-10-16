@@ -409,12 +409,9 @@ const restoreUrlState = async (wsList = workspacesStore.workspaces) => {
   }
 }
 
-// Run once at setup (replicates the old `{ immediate: true }` watcher):
-// with fixtures seeded before mount this restores synchronously, BEFORE
-// initializeFromSystemFolder's seedList replaces the rows (a later call
-// would see the seeded items as "loaded" and skip the fetch, stranding
-// an empty tree — see ensureWorkspaceItemsLoaded). The onMounted + pump
-// calls below cover the async-init path.
+// Run once at setup (replicates the old `{ immediate: true }` watcher): with fixtures seeded before
+// mount this restores synchronously, BEFORE initializeFromSystemFolder's seedList replaces the rows
+// (a later call would see the seeded items as "loaded" and skip the fetch, stranding an empty tree.
 void restoreUrlState()
 
 // IMPORTANT (2026-07-28 per-page chat scoping): When the user switches design pages
@@ -827,12 +824,8 @@ const closeCodeEditor = () => {
   replaceWithCurrentContext()
 }
 
-// The open file itself, so a SURFACE can render it: ChatView paints it in
-// its center column next to the chat-owned right sidebar (the user opened
-// the file FROM that sidebar — it must stay put), and the overlay in the
-// template is the fallback for every context with no chat on screen (kanban
-// board, design canvas, settings, chats list). Same session refs, no copies:
-// the template bindings above alias these exact objects.
+// The open file itself, so a SURFACE can render it: ChatView paints it in its center column next to
+// the chat-owned right sidebar (the user opened the file FROM that sidebar.
 const codeViewerState: CodeViewerState = {
   file: codeEditorSession.file,
   content: codeEditorSession.content,
@@ -998,22 +991,7 @@ const activeDesignChatPageName = ref<string>('')
 // "the chat button keep not popup, chatview") ──── Root cause: the design chat dialog's v-if gate
 // was `activeTask && ... item_type === 'design'`.
 const activeDesignChatTaskId = ref<string>('')
-// The store's `activeTaskId` going falsy clears the design-chat refs so
-// the dialog unmounts — handled by the store subscription pump below,
-// which reads `activeTaskId` directly (NOT the computed `activeTask`)
-// so it fires even when activeTask stays null the whole time (the case
-// for design items — see the bug comment above).
-// Synthetic Task for DesignChatDialog. ChatView's API expects a
-// Task object with at minimum `id` (chat-id) and `name` (for the
-// title fallback). Real design-chat tasks live in
-// `workspace_item_tasks` rows accessible via the per-page FK in
-// `design_pages.workspace_item_task_id` — but the store's
-// `workspaces.value[].items[].tasks` array is empty for design
-// items after init() (see the bug comment above), so the store's
-// `activeTask` computed returns null and we can't pass it
-// directly. Build a minimal Task from the captured FK info. `name` reads "Design Chat: <pageName>"
-// when pageName is set, otherwise falls back to "Design Chat" (matches the dialog's header
-// fallback). `taskType: 'standard'` matches the row created at page-create time per the FK plan.
+// The store's `activeTaskId` going falsy clears the design-chat refs so the dialog unmounts.
 const activeDesignChatTask = computed<TaskType | null>(() => {
   if (!activeDesignChatTaskId.value) return null
   return {
@@ -1386,23 +1364,9 @@ async function handleAgentToggleToolsBulk(toolNames: string[], enabled: boolean)
   }
 }
 
-// ─── Browser Back/forward ↔ task chat sync (non-tab mode) ─────
-//
-// Opening a task chat PUSHes `/app?...&itemId=<id>/chat/<taskId>`
-// (Sidebar.handleSelectTask), so browser Back pops the URL back to
-// the board URL — but nothing synced the STORE from the URL on
-// popstate (the chat restore only ran onMounted), leaving the chat
-// open on a board URL. This watcher closes that gap in both
-// directions:
-//   - Back (suffix gone, chat open) → clear activeTask +
-//     activeChat so the board re-renders. No router call — the URL
-//     is already the board URL.
-//   - Forward (suffix back, chat closed) → re-open that task.
-// Tab mode owns its own URL contract (tabs drive the URL via
-// applyActiveTabToUrl), so this watcher stays out of its way there.
-// Browser Back/forward task-chat sync (replaces the old itemId watcher;
-// runs from the render pump below — see the block comment there for the
-// Back/Forward contract). Kept as a named function for the pump.
+// ─── Browser Back/forward ↔ task chat sync (non-tab mode) ───── Opening a task chat PUSHes
+// `/app?...&itemId=<id>/chat/<taskId>` (Sidebar.handleSelectTask), so browser Back pops the URL
+// back to the board URL.
 const syncTaskFromItemId = () => {
   let rawItemId: string | undefined
   try {
@@ -2283,12 +2247,9 @@ onUpdated(() => {
   }
 })
 
-// Mount arms (replace the old `{ immediate: true }` watchers):
-//   - initSseStores: no-op until the workspace id is truthy; the store
-//     pump retries on every later mutation.
-//   - restoreUrlState: covers fixtures seeded before mount; the store pump
-//     covers the async initializeFromSystemFolder path.
-//   - maybeLoadAgentData: covers landing directly on an agent item.
+// Mount arms (replace the old `{ immediate: true }` watchers): - initSseStores: no-op until the
+// workspace id is truthy; the store pump retries on every later mutation. - restoreUrlState: covers
+// fixtures seeded before mount; the store pump covers the async initializeFromSystemFolder path.
 onMounted(() => {
   void initSseStores(activeWorkspaceId.value)
   void restoreUrlState()

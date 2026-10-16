@@ -90,13 +90,7 @@ describe('stripThinkingTags — <html> interplay', () => {
   })
 })
 
-// 2026-08-24 — bug-trace task_1787545088500_6: when the LLM wraps a final
-// answer in ```html / ``` / ```markdown fences around <markdown>...</markdown>
-// (or even with no wrapper at all), the fence survives stripThinkingTags and
-// marked.parse renders the ENTIRE message as a literal <pre> code block —
-// the user sees raw `##`/`**`/`[link](url)` as text instead of formatted
-// markdown. stripThinkingTags MUST strip these outer fences so the wrapped
-// markdown reaches marked.parse cleanly.
+// 2026-08-24.
 describe('stripThinkingTags — fenced markdown wrappers', () => {
   it('strips ```html fence around <markdown> (real DB row shape)', () => {
     // Bytes-verbatim copy of row 1787545407823788849 from

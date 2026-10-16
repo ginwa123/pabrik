@@ -79,13 +79,9 @@ function installChatViewMocks() {
   vi.spyOn(api, 'getPabrikConfig').mockResolvedValue({ profiles: {} } as any)
 }
 
-// ─── mount helper ──────────────────────────────────────────────────────────
-// Mounts ChatView with `:chat-id="<chatId>"` and waits for the SSE bus
-// listener to register (`isStreaming === true` is flipped at the end of
-// `connectSse()` — ChatView.vue:2322 — after `bus.on('llm', ...)` has
-// been called). Returns the wrapper. Each test owns its own wrapper;
-// tests that need a "remount" call `wrapper.unmount()` and call this
-// again — the store persists across mounts.
+// ─── mount helper ────────────────────────────────────────────────────────── Mounts ChatView with
+// `:chat-id="<chatId>"` and waits for the SSE bus listener to register (`isStreaming === true` is
+// flipped at the end of `connectSse()` — ChatView.vue:2322.
 async function mountChatView(chatId: string, processingState: Ref<Record<string, boolean>>) {
   const wrapper = mount(ChatView, {
     props: { chatId, chatName: 'Test Chat' },

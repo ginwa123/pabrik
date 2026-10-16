@@ -232,11 +232,7 @@ function renderSplitRow(row: SplitRow, idx: number, side: 'before' | 'after', la
   )
 }
 
-// renderInlineChanges was removed in the chunks 5+6 redesign — users
-// found the combination of row bg + strikethrough + per-word highlight
-// on the same line impossible to parse. renderSplitRow and
-// renderUnifiedRow now render token-colored spans (via renderHighlighted)
-// on top of the row bg instead.
+// renderInlineChanges was removed in the chunks 5+6 redesign.
 const DiffUnifiedSide = defineComponent({
   name: 'DiffUnifiedSide',
   props: {

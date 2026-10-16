@@ -164,28 +164,9 @@ const liveSummary = computed(() => {
   }
 })
 
-// ─── Placeholder-starting fallback (2026-09-04 refresh fix, Task 0) ───
-//
-// When the backend has written the Phase 1 placeholder envelope
-// (`handle_tool.zig` empty `<data></data>`, no `<results>` yet) and no
-// live `role="subagent_progress"` events have arrived yet — e.g. right
-// after page refresh mid-run, or in the ms between placeholder SSE and
-// the first `launched` event — both `agents` and `liveProgress` are
-// empty. Previously the header fell through to `agentCount = 0` and
-// showed "0 sub-agents", indistinguishable from "finished with zero".
-//
-// `isStarting` detects that state: no parsed agents, no `<summary>`
-// (the final envelope in `tools_exec_spawn_sub_agent.zig` always
-// prints `<summary succeeded= failed= />`, so its absence means the
-// tool has NOT completed), and no live rows. The template renders a
-// pulsing "starting…" header + auto-shown body instead of "0".
-// Pre-thread failure: exec failed before any thread emitted (e.g. a
-// parse error), so there are no <agent> rows, no <summary>, and no
-// live rows — but the tool HAS completed. innerToolData falls back
-// to the full <tool> envelope in that case, which carries
-// <success>false</success> + <error>. Without this branch the card
-// renders the "starting…" placeholder forever and the error is
-// invisible.
+// ─── Placeholder-starting fallback (2026-09-04 refresh fix, Task 0) ─── When the backend has
+// written the Phase 1 placeholder envelope (`handle_tool.zig` empty `<data></data>`, no `<results>`
+// yet) and no live `role="subagent_progress"` events have arrived yet.
 const hasFailed = computed(() => normalized.value.success === false || normalized.value.error !== null)
 
 const startError = computed(() => {

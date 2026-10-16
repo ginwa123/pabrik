@@ -193,7 +193,35 @@ def shorten_token(kind, lines, dropped):
         keep = keep[:best] + keep[best + 1:]
 
     if not keep or not fits(keep):
+        # One sentence that is itself too long. Truncate it at a clause
+        # boundary rather than leave the finding: the leading clause is the
+        # one that says what the thing is, and the tail is the detail the
+        # policy says belongs elsewhere.
+        return truncate_sentence(keep[0] if keep else '', indent, kind, dropped)
+    return emit_jsdoc(keep, indent) if kind == 'jsdoc' else emit_slash(keep, indent)
+
+
+# A clause boundary that is safe to cut at: a semicolon, a dash, or a comma
+# followed by a conjunction. Cutting mid-clause is what the earlier automated
+# passes did and what the user rejected.
+CLAUSE_RE = re.compile(r'[;]|\s+[—–-]\s+|,\s+(?=and|but|so|which|where|while)\s+')
+
+
+def truncate_sentence(sent, indent, kind, dropped):
+    """Cut one over-long sentence at its last safe clause boundary."""
+    width = W - len(indent) - (4 if kind == 'jsdoc' else 3)
+    if len(wrap(sent, width)) <= 3:
         return None
+    cuts = list(CLAUSE_RE.finditer(sent))
+    for m in reversed(cuts):
+        head = sent[:m.start()].rstrip(' ,;—–-')
+        if not head.endswith(('.', '!', '?')):
+            head += '.'
+        if len(wrap(head, width)) <= 3:
+            dropped.append(sent[m.start():].strip())
+            return (emit_jsdoc([head], indent) if kind == 'jsdoc'
+                    else emit_slash([head], indent))
+    return None
     return emit_jsdoc(keep, indent) if kind == 'jsdoc' else emit_slash(keep, indent)
 
 

@@ -1,10 +1,6 @@
-/** Tests for RoutineView tabs — Routine | Agent (Routine mode
- * task_1789505553300_1, option A, mirror agent_kanban_*).
- * - Routine tab renders by default with the existing config form
- *   (description / instruction / schedule / enabled / save / run).
- * - Agent tab shows the shared AgentView panel backed by the
- *   agent_routines mirror (getAgentRoutine called with ws + item ids).
- * - Switching tabs preserves both panels' state (v-if toggle). */
+/** Tests for RoutineView tabs — Routine | Agent (Routine mode task_1789505553300_1, option A,
+ * mirror agent_kanban_*). - Routine tab renders by default with the existing config form
+ * (description / instruction / schedule / enabled / save / run). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

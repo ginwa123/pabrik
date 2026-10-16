@@ -259,16 +259,9 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     expect(wrapper.emitted('notification')?.some((e) => e[1] === 'error')).toBe(true)
   })
 
-  // ─── General tab (plan 2026-08-25-notify-on-error-and-retry-ms-in-settings) ──
-  //
-  // Three operational settings live in the General tab:
-  //   - `notify_on_complete` (existing config.json field)
-  //   - `notify_on_error` (new field added by this plan)
-  //   - `retry_delay_ms` (existing config.json field)
-  //
-  // Each one must (a) hydrate from the API response, (b) flip the
-  // dirty pill when the user changes it, (c) round-trip through the
-  // PUT body on save.
+  // ─── General tab (plan 2026-08-25-notify-on-error-and-retry-ms-in-settings) ── Three operational
+  // settings live in the General tab: - `notify_on_complete` (existing config.json field) -
+  // `notify_on_error` (new field added by this plan).
   it('hydrates the General tab from the loaded config (notify_on_complete + notify_on_error + retry_delay_ms)', async () => {
     mockGet.mockResolvedValueOnce({
       notify_on_complete: true,

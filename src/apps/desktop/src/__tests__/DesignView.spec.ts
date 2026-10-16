@@ -58,11 +58,9 @@ describeRuntime('DesignView → workspacesStore active page id', () => {
   })
 
   itRuntime('preserves activeDesignPageId across unmount/remount (chat-toggle regression)', async () => {
-    // Direct reproduction of the user's reported bug: open the
-    // design on a NON-default page (Kanban Mode, page_third),
-    // then unmount + remount (which is exactly what happens when the user clicks 💬 in AppLayout's
-    // v-else-if chain — the single-column branch unmounts and the 3-column branch mounts). The
-    // activeDesignPageId must NOT be wiped to ''.
+    // Direct reproduction of the user's reported bug: open the design on a NON-default page (Kanban
+    // Mode, page_third), then unmount + remount (which is exactly what happens when the user clicks
+    // 💬 in AppLayout's v-else-if chain.
     fetchMock.mockResolvedValue({
       ok: true, status: 200,
       json: () => Promise.resolve({

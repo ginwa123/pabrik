@@ -1,20 +1,4 @@
-/**
- * Tests for SpawnSubAgent.vue live-progress rendering.
- *
- * 2026-08-23 spawn-subagent-live-progress — verifies the new `progress`
- * prop drives live per-agent rows WHILE the final `<results>` envelope
- * is still empty, and that the existing parsed-results behaviour keeps
- * working once the envelope arrives. Specifically:
- *
- *  - empty content + progress prop → renders one row per agent,
- *    running/done/failed badge per row, header count reflects state
- *  - populated `<results>` content + stale progress → parsed-results
- *    view wins (envelope is source of truth on completion)
- *  - peek button on a running row is wired when subagent_session_id
- *    is present
- *  - failed row shows ✗ styling
- *  - invalid UTF-8 / partial progress doesn't crash the row renderer
- */
+/** Tests for SpawnSubAgent.vue live-progress rendering. 2026-08-23 spawn-subagent-live-progress. */
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 

@@ -8,11 +8,7 @@ import { defineComponent, h, provide } from 'vue'
 import Glob from '../Glob.vue'
 import { OPEN_IN_CODE_EDITOR_KEY, type OpenInCodeEditorFn } from '@/composables/useCodeEditor'
 
-// ────────────────────────────────────────────────────────────────────────
-// Test fixtures — match the JSON shape emitted by the glob tool
-// (GlobJSON: {pattern,total,returned,offset,truncated,
-// truncated_by_size,files[],warning}).
-// ────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────── Test fixtures.
 const matchData = (pattern = '**/*.zig', total = 3) => ({
   pattern,
   total,
@@ -182,11 +178,9 @@ describe('Glob.vue — warning data still shows Arguments (empty/no-match)', () 
   })
 })
 
-// ────────────────────────────────────────────────────────────────────────
-// Error/empty states — the "not showing output" fix.
-// - Envelope failures render a red error block instead of a bare "0 files".
-// - Expanded empty results show the warning/empty state, not just Arguments.
-// ────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────── Error/empty states — the
+// "not showing output" fix. - Envelope failures render a red error block instead of a bare "0
+// files".
 describe('Glob.vue — error/empty states', () => {
   it('shows a red error block for envelope failures', async () => {
     const envelope = {

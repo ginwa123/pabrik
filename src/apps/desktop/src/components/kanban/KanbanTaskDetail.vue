@@ -455,13 +455,7 @@ const openDialog = async (): Promise<void> => {
     // task's persisted cwd in edit mode. Equivalent to the create-mode `cwdSession.value =
     // props.cwd ?? ''` for create, but reads the task row. `task?.cwd ??
     cwdSession.value = props.task.cwd ?? ''
-    // Media-flags change — list/get carry only `is_have_image` /
-    // `is_have_video` flags; the gallery lazy-loads via the
-    // store's fetchTaskMedia (GET .../tasks/:id/media) when a flag
-    // is true and the arrays are still empty. imageUrls is a
-    // computed tracking `props.task.imageUrls` so optimistic
-    // `updateTaskDetails({ imageUrls })` writes still re-render
-    // without a re-open.
+    // Media-flags change — list/get carry only `is_have_image` / `is_have_video` flags.
     if (props.task?.id) {
       const t = props.task
       const needMedia =
@@ -642,11 +636,9 @@ const handleSave = () => {
   // Belt + suspenders: if the user typed a tag and clicked Save without pressing Enter/comma, the
   // KanbanTagsInput still holds the draft in its local `draftInput` ref.
   tagsInputRef.value?.commitDraft()
-  // canSave reads tags.value; re-check after the commit in case the
-  // user's draft was the only "dirty" signal and committing it
-  // didn't change isDirty (e.g. duplicate draft). canSave recomputes
-  // reactively, but the read here is intentional — the Save button
-  // is disabled while canSave is false.
+  // canSave reads tags.value; re-check after the commit in case the user's draft was the only
+  // "dirty" signal and committing it didn't change isDirty (e.g. duplicate draft). canSave
+  // recomputes reactively, but the read here is intentional.
   if (!canSave.value) return
   // Attribute the in-flight state to this action so the split button can
   // narrate which commit the user actually pressed.

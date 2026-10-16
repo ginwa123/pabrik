@@ -100,19 +100,9 @@ function setScrollGeometry(
   })
 }
 
-/**
- * Wait for the composable's onMounted handler to:
- *   1. read the saved scrollTop from localStorage
- *   2. wait for scrollHeight > clientHeight (or 500ms safety net)
- *   3. attach scroll + scrollend listeners
- *
- * The scrollHeight poll happens inside `await` loops that check
- * `Date.now() - start < 500` against setTimeout(16). With real
- * timers (default in beforeEach), one iteration of the poll is
- * 16ms; the poll succeeds immediately because the harness sets
- * scrollHeight > clientHeight BEFORE mountHarness returns. A 100ms
- * real wait is plenty.
- */
+/** Wait for the composable's onMounted handler to: 1. read the saved scrollTop from localStorage 2.
+ * wait for scrollHeight > clientHeight (or 500ms safety net) 3. attach scroll + scrollend listeners
+ * The scrollHeight poll happens inside `await` loops that check `Date.now(). */
 async function waitForRestore(): Promise<void> {
   await flushPromises()
   await new Promise<void>((r) => setTimeout(r, 100))

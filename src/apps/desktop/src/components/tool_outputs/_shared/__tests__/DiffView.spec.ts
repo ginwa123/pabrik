@@ -277,14 +277,8 @@ describe('DiffView', () => {
   })
 
   it('split view: shared sizing wrapper has width:max-content + min-width:100% (one wrapper per pane)', () => {
-    // Critical UX combination: ONE shared sizing wrapper per pane
-    // (width: max-content + min-width: 100%) so every row inherits the
-    // same final width — the bg always covers the full pane, AND long
-    // lines can scroll horizontally because the wrapper's max-content
-    // width is computed from the widest row's content (or the pane,
-    // whichever is larger). Per-row width:max-content does NOT work
-    // because each row would only size from its own content. See the
-    // long comment in DiffView.vue for the full rationale.
+    // Critical UX combination: ONE shared sizing wrapper per pane (width: max-content + min-width:
+    // 100%) so every row inherits the same final width.
     const wrapper = mount(DiffView, {
       props: {
         before: 'x',

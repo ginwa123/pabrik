@@ -99,10 +99,7 @@ const assistantToolCall = (toolName: string, id = 'tc1'): Message => ({
   tool_calls_json: JSON.stringify([{ id, type: 'function', function: { name: toolName } }]),
 })
 
-// ────────────────────────────────────────────────────────────────────────
-// Test helpers — mock the api module + SSE bus + localStorage so the
-// mount is fast and stable (parity with ChatView.updatePlan.spec.ts).
-// ────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────── Test helpers.
 function installChatViewMocks(opts: { messages: Message[]; sessionId: string }) {
   vi.spyOn(api, 'getChatHistory').mockResolvedValue({
     messages: opts.messages,

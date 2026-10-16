@@ -69,16 +69,9 @@ const sidebarStore = useSidebarStore()
 const workspacesStore = useWorkspacesStore()
 const activeAddMenu = ref<string | null>(null)
 
-// Sidebar shows every project — the header search filter was removed
-// (v2 sidebar UX: no search, always-visible actions, tighter indent).
-// ─── Drag-and-drop state (item reordering) ──────────────────────────────── Scoped to a single
-// workspace's items — the revamp plan removed workspace-level reorder
-// (docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md).
-// `draggingItemId` + `draggingItemWorkspaceId` track the source; `dragOverItemId` tracks the
-// current drop target.
-// `draggingItemWorkspaceId` is needed so a cross-workspace drop can be detected and silently
-// no-op'd (defense in depth — the HTML5 DnD API doesn't have a built-in "are these from the same
-// container?" check). See docs/plans/2026-06-16-workspace-item-position-reorder.md.
+// Sidebar shows every project — the header search filter was removed (v2 sidebar UX: no search,
+// always-visible actions, tighter indent). ─── Drag-and-drop state (item reordering)
+// ──────────────────────────────── Scoped to a single workspace's items.
 const draggingItemId = ref<string | null>(null)
 const draggingItemWorkspaceId = ref<string | null>(null)
 const dragOverItemId = ref<string | null>(null)

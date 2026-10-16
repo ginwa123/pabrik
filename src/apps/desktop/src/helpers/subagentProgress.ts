@@ -1,37 +1,4 @@
-/**
- * subagentProgress.ts — pure helper for the chatview's spawn_sub_agent
- * live-progress feature.
- *
- * 2026-08-23 spawn-subagent-live-progress: the chatview's
- * SpawnSubAgent.vue card has been rendering "0 sub-agents" until the
- * parent's tool result row was populated (which only happens after
- * `group.await()` joins every sub-agent thread). This module feeds a
- * per-tool_call_id progress map that lives in ChatView.vue, so the
- * card flips from "0 sub-agents" to live per-agent rows in real
- * time.
- *
- * The reducer is pure: it takes the current map (keyed by parent
- * tool_call_id) and a single `SubAgentProgressEvent`, and returns a
- * NEW map with that event applied. Vue's reactivity requires
- * map-by-replacement (not in-place mutation) for rows to re-render,
- * so we always clone before writing.
- *
- * Wire format: the backend's `subagent_progress.zig` emitter produces
- * a `SseEvent` with `role = "subagent_progress"`. The payload
- * carries:
- *   - parent `session_id` (the chatview filters on this already)
- *   - parent `tool_call_id` (key for the per-batch progress map)
- *   - `agent_name`, `status`, `agent_index`, `total_agents`
- *   - `subagent_session_id` (only present when the sub-agent has
- *     allocated its session — frontend reducer stores undefined when
- *     absent so the peek button stays disabled)
- *   - `elapsed_ms` (drives the "running for 12s" chip)
- *
- * Adding a wire field: extend `SubAgentProgressEvent` here AND the
- * `SubAgentProgress` type below. Adding a NEW status value (e.g.
- * "cancelled"): add to `ProgressStatus` enum here AND the enum in
- * `subagent_progress.zig` (the values must stay in sync).
- */
+/** subagentProgress.ts. */
 export type ProgressStatus = 'launched' | 'completed' | 'failed'
 
 /** Sub-agent lifecycle status as exposed to UI rendering. */

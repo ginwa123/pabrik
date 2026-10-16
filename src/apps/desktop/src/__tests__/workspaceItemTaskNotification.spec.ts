@@ -128,11 +128,7 @@ describe('WorkspaceItemTaskCard — kanban task notification icon (Chunk 6)', ()
     expect(wrapper.find('[data-testid="task-reviewed"]').exists()).toBe(false)
   })
 
-  // ─────────────────────────────────────────────────────────────────
-  // State 5: defensive — finish_reason != 'stop' must never paint
-  // the dot, even if needs_human_review somehow became true
-  // (e.g. cache stale during a session-status flip).
-  // ─────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────── State 5: defensive.
   it('renders nothing when finish_reason=tool_calls even if needs_human_review is true (defensive)', () => {
     // The SQL predicate COALESCE(s.last_finish_reason,'')='stop' guarantees this in normal flow,
     // but the UI also gates on it so a stale React prop doesn't paint a phantom dot during a state
@@ -165,11 +161,9 @@ describe('WorkspaceItemTaskCard — kanban task notification icon (Chunk 6)', ()
     expect(style).toMatch(/background-?color\s*:\s*rgb\(\s*251\s*,\s*146\s*,\s*60\s*\)/i)
   })
 
-  // ─────────────────────────────────────────────────────────────────
-  // Static-contract: the icon renders in the single branch for all
-  // task types (per-task routine branches were deleted in
-  // Migration 084 — there is no separate routine branch anymore).
-  // ─────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────── Static-contract: the icon
+  // renders in the single branch for all task types (per-task routine branches were deleted in
+  // Migration 084.
   it('renders the orange dot on legacy routine-typed cards (single branch now)', () => {
     wrapper = mountCard({
       id: 't1',

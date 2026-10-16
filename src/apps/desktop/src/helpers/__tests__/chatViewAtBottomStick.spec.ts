@@ -1,45 +1,4 @@
-/**
- * "Sometimes it does not autoscroll to bottom" — the at-bottom stick disarms itself.
- *
- * ── The defect ──────────────────────────────────────────────────────────────
- * Two components measured "the bottom" with two different rulers, and the
- * disagreement was larger than either one's tolerance:
- *
- *   VirtualScroller.scrollToBottom  (VirtualScroller.vue)
- *     lands the container on the REAL content bottom —
- *     `topSpacer + content.offsetHeight` — whenever the height model overshoots
- *     by more than HYSTERESIS_PX (50). This is the blank-viewport fix: without
- *     it a sizer overshoot parks the reader in a fully-blank region.
- *
- *   ChatView.handleVirtualScroll
- *     decided at-bottom with the DOM's ruler, `scrollHeight - clientHeight`,
- *     against BOTTOM_THRESHOLD (10).
- *
- * With the tail cap latched — `sizerHeight = min(modelTotal, tailContentBottom +
- * maxTailGap)`, and `maxTailGap` DEFAULTS TO 100 — the two rulers disagree by
- * exactly the overshoot. So a *successful* auto-stick produced the scroll event
- * that marked the reader as having LEFT the bottom. Every downstream gate reads
- * that flag — `scrollToBottom(force=false)`, the `onContentShift` re-stick, the
- * SSE-chunk `remeasure` branch, and the messages-length watcher — and all four
- * went quiet for the rest of the mount. The "scroll to bottom" FAB appeared
- * while the reader sat on the last message.
- *
- * ── The fix ─────────────────────────────────────────────────────────────────
- * One ruler: `VirtualScroller.bottomScrollTop()` is now exposed, and everything
- * that asks "is the reader at the bottom?" asks the scroller. The tests below
- * pin BOTH rulers — `decideIsAtBottomDomRuler` is the old behaviour, kept as
- * the executable statement of the bug (delete it and the regression is no
- * longer described anywhere); `decideIsAtBottom` is the shipped one.
- *
- * ── Why the arithmetic lives here rather than in a mount spec ───────────────
- * `handleVirtualScroll` cannot be mounted in isolation: it is an inline handler
- * inside a 6.2k-line SFC whose at-bottom decision is interleaved with prefetch
- * arming, pill selection and six log sites. The repo's established answer to
- * this (chatViewContentShiftRestick.spec.ts) is to pin the math in pure
- * functions and pin the WIRING with source-contract tests at the bottom of this
- * file. Both halves must change together — the comment in that spec calls the
- * drift between them "the exact failure mode that let Bug C ship".
- */
+/** "Sometimes it does not autoscroll to bottom". */
 import { mount, type ComponentMountingOptions } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'

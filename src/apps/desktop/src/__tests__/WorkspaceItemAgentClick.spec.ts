@@ -1,17 +1,5 @@
-/**
- * Regression specs for the right-click "Go to settings" work
- * (task_1789493500744_2, PR #521 follow-ups).
- *
- * - Agent/routine items: plain left-click toggles expansion but does NOT
- *   emit 'click', so the main view is never yanked into the
- *   settings-looking config view (AgentView / RoutineView).
- * - Kanban items: left-click still emits 'click' exactly once, so
- *   the board keeps opening (guard against the agent early-return
- *   leaking into other item types).
- * - The context menu shows "Go to settings" for kanban + agent +
- *   routine rows and hides it for folder rows; activating it emits
- *   'goToSettings' with the item payload Sidebar routes on.
- */
+/** Regression specs for the right-click "Go to settings" work (task_1789493500744_2, PR #521
+ * follow-ups). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, type VueWrapper } from '@vue/test-utils'

@@ -65,12 +65,9 @@ function applyChunkToMessages(
         ...existing,
         content: (existing.content ?? '') + (ev.content ?? ''),
         finish_reason: ev.finish_reason ?? existing.finish_reason,
-        // tool_calls_json / tool_name arrive on the assistant turn that
-        // emits a tool call; preserve them across subsequent content chunks.
-        // 2026-08-24 wire-shape fix: only copy STRING values into
-        // tool_calls_json — the legacy `ev.tool_calls` field was an
-        // array on the old wire shape, and a non-string here would
-        // crash ChatView's `.trim()` consumer downstream.
+        // tool_calls_json / tool_name arrive on the assistant turn that emits a tool call; preserve
+        // them across subsequent content chunks. 2026-08-24 wire-shape fix: only copy STRING values
+        // into tool_calls_json.
         tool_calls_json:
           typeof (ev as { tool_calls?: unknown }).tool_calls === 'string'
             ? (ev as { tool_calls: string }).tool_calls
@@ -104,12 +101,8 @@ function applyChunkToMessages(
     }
   }
 
-  // Completion detection — applied to any chunk that carries a
-  // finish_reason. 2026-09-04 subagent-peek fix: `tool_calls` means
-  // "assistant stopped to await a tool result" — NOT terminal. Marking
-  // it complete stranded the panel on the sub-agent's FIRST tool call
-  // (status read Complete while chunks were still streaming).
-  // Terminal states only: stop | length | content_filter.
+  // Completion detection — applied to any chunk that carries a finish_reason. 2026-09-04
+  // subagent-peek fix: `tool_calls` means "assistant stopped to await a tool result".
   if (
     ev.finish_reason === 'stop' ||
     ev.finish_reason === 'length' ||

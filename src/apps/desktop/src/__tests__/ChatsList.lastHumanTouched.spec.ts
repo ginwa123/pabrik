@@ -72,11 +72,8 @@ function makeStubClient(state: 'connecting' | { next: 'open'; attempt: number })
   return stub as SseClient
 }
 
-// formatRelativeTime (src/apps/desktop/src/helpers/relativeTime.ts) accepts
-// SQLite datetime UTC strings ('YYYY-MM-DD HH:MM:SS') - which is what the
-// backend's SELECT layer emits via strftime() for last_human_touched_at
-// (Migration 082). unix-ms would be unparseable here, so we generate
-// the wire shape the backend actually produces.
+// formatRelativeTime (src/apps/desktop/src/helpers/relativeTime.ts) accepts SQLite datetime UTC
+// strings ('YYYY-MM-DD HH:MM:SS').
 function dateToSqliteUtc(agoMs: number): string {
   const date = new Date(Date.now() - agoMs)
   return date.toISOString().replace('T', ' ').slice(0, 19)

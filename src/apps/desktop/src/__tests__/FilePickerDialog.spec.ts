@@ -874,17 +874,9 @@ describe('FilePickerDialog — address bar (type a path)', () => {
   })
 })
 
-// ─── Select button — current folder fallback (folder mode) ─────────────────
-//
-// Plan: docs/superpowers/plans/2026-08-13-folder-picker-select-button-current-folder.md
-//
-// The Select button is enabled whenever the user has a meaningful folder
-// in scope — either because they clicked a folder in the content pane
-// (explicit selectedPath) OR because they navigated to a folder via the
-// tree / breadcrumb / Up / Backspace / address bar (currentPath). The
-// root path '/' is treated as "no selection" and does NOT enable the
-// button. The footer "Selected:" shows what will be emitted, and a tiny
-// "← current folder" hint appears when the fallback path is in use.
+// ─── Select button — current folder fallback (folder mode) ───────────────── Plan:
+// docs/superpowers/plans/2026-08-13-folder-picker-select-button-current-folder.md The Select button
+// is enabled whenever the user has a meaningful folder in scope.
 describe('FilePickerDialog — Select when current folder is open (folder mode)', () => {
   let wrapper: VueWrapper | null = null
 

@@ -1,40 +1,4 @@
-/**
- * ChatAttachments — a user turn with MORE THAN ONE attached image must render
- * exactly N thumbnails, and none may carry an empty `src`.
- *
- * ## The bug this pins
- *
- * `llm_history.image_url` stores N base64 data URLs joined with `||` (see
- * `insert_llm_histories.zig`, "Join multiple image URLs with || delimiter",
- * and the wire docs on `http_response.zig`). The transcript used to decode that
- * field with a bare `image_url.split('|')`.
- *
- * `||` is TWO characters, so splitting on one `|` yields an empty element in
- * every gap: `"A||B"` → `["A", "", "B"]`. Each element was bound to `:src`, so
- * the empty one became `<img src="">` — which a browser draws as a
- * broken-image icon showing its `alt` text. Two attachments rendered as three
- * thumbnails: image, literal "Attached image" placeholder, image.
- *
- * A single image was unaffected (no delimiter → no empty element), which is
- * why the bug only ever showed up on multi-image turns.
- *
- * ## Why the fixtures are `||` and not what the client sent
- *
- * The desktop used to POST a single-`|`-joined string, which is why the old
- * `sseImageUrls.spec.ts` could get away with a hand-written `'a|b|c'` fixture
- * and pass forever: it tested its own mirror, never the encoder. These tests
- * feed the value the BACKEND actually produces, which is what a live SSE
- * `llm_full` frame and `GET /api/llm/session/:id/messages` both carry.
- *
- * ## Why this mounts the child, not ChatView
- *
- * ChatView's transcript cannot render in jsdom — VirtualScroller needs real
- * layout measurements, so `wrapper.html()` is chrome only (verified: a marker
- * string in a mocked `getChatHistory` row never appears). That is precisely why
- * the empty-`src` binding had no reachable test for years. The attachment strip
- * is now its own component so the binding is assertable, and ChatView keeps the
- * same `v-if` gate and the same `openImagePreview` handler.
- */
+/** ChatAttachments. */
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 

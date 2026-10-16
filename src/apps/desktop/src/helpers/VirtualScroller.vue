@@ -126,15 +126,7 @@ const consumeProgrammaticScroll = (): boolean => {
 }
 
 // ── P1 perf: adaptive item-height estimation (task_1787551495337_9) ─────────
-//
-// `props.defaultItemHeight` is a static guess; real chat bubbles are almost
-// always taller, so unmeasured items were systematically under-estimated and
-// every measurement pass triggered anchor compensation. The estimator learns
-// the running MEDIAN of measured heights (robust against one giant code-block
-// message) and supplies far better estimates for never-measured items → fewer
-// wrong spacers → fewer compensation shifts → smoother scroll.
-// Reset when the items array is swapped for a different list (length → 0 or identity change via the
-// onUpdated prev-length guard below) so one chat's height profile doesn't bleed into another's.
+// `props.defaultItemHeight` is a static guess.
 const heightEstimator = new AdaptiveItemHeightEstimator({
   seed: props.defaultItemHeight,
   maxSamples: 64,
@@ -206,24 +198,7 @@ const updateAccumulatedHeights = () => {
   accumulatedHeights.value = h
 }
 
-// ── Sizer height — pure function of the height model (2026-09-06) ──────────
-//
-// Bounce root cause (task_1788648119245_5 audit): the previous version read
-// `visibleRange` (a function of scrollTop) in its at-bottom branch and
-// expanded to `topSpacer + realContentHeight`, where realContentHeight was
-// STALE — the template ref callback only fires on mount/replace, never on
-// child updates, so it described an OLD window. Scrolling to the bottom
-// with a stale tall window blew the sizer up ~3x; scrolling up collapsed
-// it back to the model total. sizer → scrollHeight → contentShift →
-// scrollToBottom → scrollTop → visibleRange → sizer: a loop.
-//
-// Fixed invariant: the RENDERED sizer is the model total (plus the
-// hysteresis dead-band), minus the tail-gap cap below. It changes only
-// when the height MODEL changes (measurement, items mutation) — never
-// from scrolling. Undershoot is safe: scrollToBottom targets the real DOM
-// bottom at the tail, and the model converges as items measure. Overshoot
-// from stale reads is gone by construction — there is no scroll-derived
-// input left (see the tail-gap cap for the one deliberate exception).
+// ── Sizer height.
 const modelTotal = computed(() => accumulatedHeights.value[props.items.length] ?? 0)
 
 // ── Tail-gap cap (task_1790236655228_2) ───────────────────────────────────── "the gap is too
@@ -634,33 +609,9 @@ const measureItems = () => {
   settledBottom = bottomScrollTop()
 }
 
-// ── Pre-paint measurement on rendered-range change ───────────────────────────
-//
-// The debounced measureItems (50ms) compensates at MEASUREMENT time, but
-// the jump for a tall item happens at RENDER time: when a new item enters
-// the top buffer, Vue renders it in one commit — the topSpacer shrinks by
-// its 64px estimate while its real height (e.g. a 3000px long message)
-// takes its place — shifting content under the viewport IMMEDIATELY. The
-// debounced correction arrives ≤50ms later: a visible down-up bounce.
-//
-// Fix: re-measure inside `nextTick` whenever the rendered window changes.
-// nextTick callbacks drain BEFORE the browser paints, so render +
-// measure + compensation collapse into ONE frame — no intermediate paint
-// with wrong spacers, nothing to see.
-//
-// `schedulePrePaintMeasure` (driven by onScroll + the onUpdated sync block
-// below) re-measures inside `nextTick` whenever the rendered window
-// changes. nextTick callbacks drain BEFORE the browser paints, so render +
-// measure + compensation collapse into ONE frame — no intermediate paint
-// with wrong spacers, nothing to see.
-//
-// `_inPrePaintMeasure` guards re-entrancy: measureItems mutates
-// scrollTop, which fires another scroll event → visibleRange recomputes
-// → the sync block would re-run. The guard breaks that cycle; the trailing
-// debounce below still catches any range change caused by the correction
-// itself (rare — compensation preserves the anchor's screen position). `_prePaintScheduled` dedupes
-// the onScroll call against the onUpdated call for the same scroll gesture (the scroll handler runs
-// first, the update follows for the same range — one measure, not two).
+// ── Pre-paint measurement on rendered-range change ─────────────────────────── The debounced
+// measureItems (50ms) compensates at MEASUREMENT time, but the jump for a tall item happens at
+// RENDER time: when a new item enters the top buffer, Vue renders it in one commit.
 let _inPrePaintMeasure = false
 let _prePaintTrailing: ReturnType<typeof setTimeout> | null = null
 let _prePaintScheduled = false
@@ -751,14 +702,9 @@ const onScroll = (e: Event) => {
     }
   }, 200)
 
-  // Max-wait, NOT reset-per-event: the previous clearTimeout+reschedule
-  // pushed the deadline out another 50ms on EVERY scroll event, so the
-  // trailing measure never fired while the user kept scrolling — all
-  // pending height corrections then landed in one lump the moment the
-  // gesture stopped (the "scroll, then it jumps" feel). Arm once; the
-  // fired timer clears itself, and the next scroll event arms the
-  // following pass — guaranteeing a measure at most ~50ms after the
-  // first un-flushed scroll during sustained scrolling.
+  // Max-wait, NOT reset-per-event: the previous clearTimeout+reschedule pushed the deadline out
+  // another 50ms on EVERY scroll event, so the trailing measure never fired while the user kept
+  // scrolling.
   if (!measureDebounce) {
     measureDebounce = setTimeout(() => {
       measureDebounce = null
@@ -914,25 +860,8 @@ const remeasure = () => {
 }
 
 let ro: ResizeObserver | null = null
-// ── Idle content-size observer ─────────────────────────────────────────────
-// measureItems runs on scroll, remeasure(), and rendered-range change —
-// but NOT when an already-rendered item grows on its own: async image
-// decode, a PresentFiles source fetch resolving, sub-agent progress
-// filling in, copy-button injection. The model then lags reality until
-// the user's NEXT scroll, which applies all pending corrections at
-// once: the "small scroll suddenly shows content / jumps" symptom.
-// A ResizeObserver on the CONTENT box closes that gap: real growth
-// schedules a debounced measure within ~150ms, so corrections land
-// promptly instead of accumulating.
-//
-// Loop safety (a naive observer on the container once froze the
-// browser: observe → measure → sizer write → re-observe): this observes
-// ONLY the content div's own box. Nothing in the measure path alters
-// that box — measureItems reads children; its writes move
-// topSpacer/transform (position, not size) and the sizer (a SIBLING
-// element). The callback additionally ignores sub-2px noise, skips while preserving or pre-paint
-// measuring, and stays quiet shortly after a scroll event (the scroll path already measures —
-// measuring twice would just force extra layouts).
+// ── Idle content-size observer ───────────────────────────────────────────── measureItems runs on
+// scroll, remeasure(), and rendered-range change.
 let contentRO: ResizeObserver | null = null
 let contentROTimer: ReturnType<typeof setTimeout> | null = null
 let lastContentH = -1

@@ -287,26 +287,16 @@ describe('AppLayout — kanban task view (3-column layout)', () => {
     ws.setActiveWorkspaceItem(KANBAN_ID)
     ws.setActiveTask(TASK_ID)
     await nextTick()
-    // The kanban chat branch is a v-else-if BEFORE the KanbanView branch, and
-    // the KanbanView branch only tests `item_type === 'kanban'` — so if the
-    // chat branch were written as `v-if`, or ordered after it, the board and
-    // the chat would BOTH render (board on top, chat squeezed underneath).
-    // Exactly one of them may be in the DOM.
+    // The kanban chat branch is a v-else-if BEFORE the KanbanView branch, and the KanbanView branch
+    // only tests `item_type === 'kanban'`.
     const view = wrapper.find('[data-kanban-view="stub"]')
     expect(view.exists()).toBe(false)
     wrapper.unmount()
   })
 
   it('does NOT render <KanbanView> when the active task\'s parent is a different workspace item (single-column ChatView)', async () => {
-    // When the user has a folder task selected AND a kanban is
-    // the active workspace item (an edge case — the user
-    // selected the kanban first, then somehow ended up with a
-    // task from a different parent), the 3-column branch's last
-    // condition (`activeTaskWorkspaceItemId === activeWorkspaceItem.id`)
-    // is false. We fall through to the single-column ChatView
-    // branch, so the kanban does NOT render alongside the chat.
-    // This guards against the visual mess of showing a chat
-    // for one task alongside an unrelated kanban.
+    // When the user has a folder task selected AND a kanban is the active workspace item (an edge
+    // case.
     const folder = makeFolderItem({
       id: FOLDER_ID,
       tasks: [makeTask({ id: 'task_in_folder', kanban_column_id: null })],
@@ -390,17 +380,9 @@ describe('AppLayout — kanban survives route navigation (regression: activeWork
   })
 
   it('when URL is ?view=workspace and activeWorkspaceItem is a kanban, the kanban renders (not the empty state)', async () => {
-    // Regression guard: prior to the kanban→main-content migration,
-    // AppLayout's route.query watcher at the `!view || view ===
-    // 'workspace'` branch called workspacesStore.setActiveWorkspaceItem(null)
-    // — which clobbered the active kanban selection the moment
-    // Sidebar's handleSelectItem set it (because handleSelectItem
-    // navigates to exactly this URL).
-    //
-    // The fix: the watcher no longer clears activeWorkspaceItemId
-    // for `view === 'workspace'`. Folder items would also have
-    // been broken by the previous clear; this test pins both
-    // folder and kanban cases in place.
+    // Regression guard: prior to the kanban→main-content migration, AppLayout's route.query watcher
+    // at the `!view || view === 'workspace'` branch called
+    // workspacesStore.setActiveWorkspaceItem(null).
     const kanban = makeKanbanItem()
     const wrapper = mountAppLayout([
       { id: WS_ID, name: 'WS', icon: '📁', expanded: true, items: [kanban] } as Workspace,

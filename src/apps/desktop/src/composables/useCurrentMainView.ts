@@ -102,21 +102,8 @@ export function useCurrentMainView(): ComputedRef<CurrentMainView> {
       }
       return { kind: 'none' }
     }
-    // kanban-settings page (path route /app/kanban/:itemId/settings).
-    // itemId comes from route.params (path); workspaceId is optional
-    // and comes from ?workspaceId=X query (used by the back navigation
-    // to round-trip back to ?view=workspace&workspaceId=X&itemId=Y).
-    // itemId may be empty if Vue Router matched a malformed URL — we
-    // return the empty string so the page can render a friendly hint
-    // instead of crashing.
-    //
-    // The regex matches /app/kanban/<itemId>/settings with an empty
-    // itemId ALLOWED (defensive — Vue Router would normally reject
-    // this, but we degrade gracefully so the page can render a hint).
-    // The regex deliberately does NOT match /app/kanban/X (no /settings)
-    // — the kanban board itself stays at the existing ?view=workspace
-    // URL, so a future migration to /app/kanban/:itemId would be a
-    // separate plan.
+    // kanban-settings page (path route /app/kanban/:itemId/settings). itemId comes from
+    // route.params (path).
     const kanbanSettingsMatch = /^\/app\/kanban\/([^/]*)\/settings\/?$/.exec(route?.path ?? '')
     if (kanbanSettingsMatch) {
       return {

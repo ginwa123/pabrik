@@ -131,13 +131,9 @@ describe('ChatView stacking containment — document overlay must cover the chat
     // `relative` class is here because the composer dock anchors to this column.
     expect(column.classList.contains('relative')).toBe(true)
 
-    // The scoped rule in the SFC is what actually opens the stacking
-    // context. jsdom does NOT apply SFC <style> blocks to the mounted
-    // tree, so `getComputedStyle` here would read the empty default
-    // (`isolation: ''`) on the buggy source AND on the fixed one — a
-    // green test that proves nothing. The declaration is therefore
-    // pinned against the source in the next test, and the resulting
-    // paint order is asserted in a real browser (see the header note).
+    // The scoped rule in the SFC is what actually opens the stacking context. jsdom does NOT apply
+    // SFC <style> blocks to the mounted tree, so `getComputedStyle` here would read the empty
+    // default (`isolation: ''`) on the buggy source AND on the fixed one.
   })
 
   it('the isolation is declared in the stylesheet, not only in a test-visible class', () => {

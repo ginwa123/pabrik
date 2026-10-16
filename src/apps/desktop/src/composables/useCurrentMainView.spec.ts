@@ -172,12 +172,9 @@ describe('useCurrentMainView', () => {
     expect(v.value.kind).toBe('none')
   })
 
-  // ──────────────────────────────────────────────────────────────────
-  // kanban-settings variant (plan: 2026-09-02-kanban-settings-as-page)
-  // Path-based vue-router route /app/kanban/:itemId/settings.
-  // itemId comes from route.params; workspaceId is optional and
-  // comes from ?workspaceId=X query (used by the back navigation).
-  // ──────────────────────────────────────────────────────────────────
+  // ────────────────────────────────────────────────────────────────── kanban-settings variant
+  // (plan: 2026-09-02-kanban-settings-as-page) Path-based vue-router route
+  // /app/kanban/:itemId/settings. itemId comes from route.params.
   it('returns kanban-settings view when URL is /app/kanban/:itemId/settings', () => {
     mockRoute({}, '/app/kanban/item_kanban/settings', { itemId: 'item_kanban' })
     let v!: ReturnType<typeof useCurrentMainView>

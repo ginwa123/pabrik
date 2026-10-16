@@ -20,21 +20,7 @@ const xmlEnvelope = (
   extra +
   '</background_command>'
 
-// ============================================================================
-// The JSON envelope — the shape the backend emits TODAY
-// ============================================================================
-//
-// Its absence is the bug this block exists for. `buildCompletionMessage`
-// (src/agentic_loop/background_process.zig) has emitted JSON since #563 and
-// `background_command_completion_test.zig` asserts that JSON; this parser only
-// knew the XML and the legacy prose, so every completion since then rendered as
-// raw JSON in a user bubble. Two green suites, one broken product.
-//
-// The literal below is written out BY HAND in the backend's field order
-// (`pid`, `command`, `stdout`, `truncated`, `total_bytes`, `log_path`, from
-// `std.json.Stringify`) rather than built by a helper, because a helper here
-// would let the two sides drift again while both stayed green. When the
-// backend's shape changes, this literal is the thing that fails.
+// ============================================================================ The JSON envelope.
 const jsonEnvelope = (pid: number, command: string, stdout: string) =>
   `{"pid":${pid},"command":${JSON.stringify(command)},"stdout":${JSON.stringify(stdout)},"truncated":false,"total_bytes":null,"log_path":null}`
 

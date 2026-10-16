@@ -353,11 +353,9 @@ function scroll(el: HTMLElement, top: number) {
   el.dispatchEvent(new Event('scroll'))
 }
 
-/** Dispatch a scroll event WITHOUT moving the viewport — for "the user
- * keeps scrolling and the position genuinely didn't change" (a real
- * repeated event reports the current, already-compensated position;
- * writing `el.scrollTop` here would manually undo the compensation the
- * test is trying to observe). */
+/** Dispatch a scroll event WITHOUT moving the viewport — for "the user keeps scrolling and the
+ * position genuinely didn't change" (a real repeated event reports the current, already-compensated
+ * position. */
 function dispatchScroll(el: HTMLElement) {
   el.dispatchEvent(new Event('scroll'))
 }
@@ -458,15 +456,8 @@ describe('VirtualScroller measurement anchor compensation', () => {
     vi.advanceTimersByTime(60)
     await nextTick()
 
-    // Ground truth for prefix(100) AFTER the pass:
-    //   0..42   stored 400 (phase 1 measured the full pre-measure
-    //           window — at that point estimates were still the 64px
-    //           seed, so the 800px viewport rendered 43 items)  = 17200
-    //   43..69  unmeasured, median is now 700                = 18900
-    //   70..99  first-measured at 700                         = 21000
-    //   total   = 57100, old prefix = 400 × 100 = 40000 → shift 17100.
-    // v1 would have computed Σ(700−64) over 70..99 = 19080 — wrong
-    // baseline AND blind to the unmeasured drift (43..69).
+    // Ground truth for prefix(100) AFTER the pass: 0..42   stored 400 (phase 1 measured the full
+    // pre-measure window.
     expect(el.scrollTop).toBe(57100)
     wrapper.unmount()
   })
@@ -591,14 +582,8 @@ describe('VirtualScroller measurement anchor compensation', () => {
   })
 
   it('corrects a tall item rendering above the viewport PRE-PAINT (no timer advance)', async () => {
-    // The residual jump (task_1787496087806_6 follow-up): when ONE long
-    // message scrolls into the top buffer, Vue renders it in one commit
-    // — topSpacer shrinks by the 64px estimate while ~3000px of real content takes its place →
-    // content under the viewport shifts immediately at RENDER time. The debounced measureItems only
-    // compensates ≤50ms LATER, so the user sees a down-up bounce.
-    // Fix contract: a watcher on rendered-range change must run measureItems inside nextTick
-    // (pre-paint), so render + compensation land in the SAME frame. This test asserts the
-    // correction WITHOUT advancing timers — if compensation needed the 50ms debounce, this fails.
+    // The residual jump (task_1787496087806_6 follow-up): when ONE long message scrolls into the
+    // top buffer, Vue renders it in one commit.
     const { wrapper, el } = mountScroller(255)
     await nextTick()
 

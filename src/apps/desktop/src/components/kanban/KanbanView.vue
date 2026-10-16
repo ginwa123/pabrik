@@ -211,20 +211,8 @@ const loadColumnsAndTasks = async () => {
 // URL restore — parsed sorts, updated columnSorts, called setSortMode.
 onMounted(loadColumnsAndTasks)
 
-// Navigating to a different kanban remounts this component (AppLayout's
-// KanbanView branch carries `:key` on the item id), so `onMounted` above
-// is the only load trigger — no reload-on-prop-change subscription needed.
-// ─── Horizontal scroll position preservation ──────────────────────────
-//
-// KanbanView renders the kanban board full-width. The chat task is
-// now an AppLayout branch that REPLACES the board (its own tab), not
-// a modal overlay. Opening the chat unmounts KanbanView, so BOTH axes
-// of scroll have to be persisted explicitly to survive the round-trip
-// and a refresh:
-//   - horizontal (this composable) — which column the user was looking at
-// - vertical per column (useKanbanColumnScrollRestore, called inside <KanbanColumn>) — where they
-// were in a 50-card column Plan:
-// docs/superpowers/plans/2026-07-23-preserve-kanban-horizontal-scroll.md
+// Navigating to a different kanban remounts this component (AppLayout's KanbanView branch carries
+// `:key` on the item id), so `onMounted` above is the only load trigger.
 const kanbanColumnsContainer = ref<HTMLElement | null>(null)
 const kanbanScrollStorageKey = computed(() => `kanban-scroll-${effectiveItemId.value}`)
 useKanbanScrollRestore(kanbanColumnsContainer, kanbanScrollStorageKey)
@@ -616,22 +604,7 @@ const handleProjectRootSelected = async (path: string) => {
   }
 }
 
-// ─── Task-detail dialog (kanban-task-detail-dialog — Chunk 4) ───────────
-//
-// The dialog is mounted locally in this component (NOT in AppLayout)
-// because we already have the active kanban's columns + tasks in scope
-// and resolving the matching column from `task.kanban_column_id` is
-// trivial. Mounting it in AppLayout would force AppLayout to also know
-// about the kanban's column structure, which is more complex.
-//
-// State flow:
-//   - `activeTaskDetailId` — the id of the task whose details the user
-//     wants to edit. Set when KanbanColumn's @view-task-detail fires.
-//   - `activeTaskDetail` — the live Task object (resolved via `.find`).
-//     Reactively updates if the store modifies the task mid-edit.
-//   - `activeTaskDetailColumn` — the column hosting the task (nullable
-//     for tasks with no kanban_column_id yet).
-//   - `showTaskDetail` — drives the dialog's open/closed state.
+// ─── Task-detail dialog (kanban-task-detail-dialog.
 const activeTaskDetailId = ref<string | null>(null)
 const showTaskDetail = ref(false)
 // NEW (plan: 2026-08-18-kanban-task-detail-start-agent). Error banner state for the edit-mode Start
@@ -696,16 +669,9 @@ const buildAppUrlForBoard = (query: Record<string, string>) => {
   return buildAppUrl({ workspaceId: wsId, projectId: itemId, query })
 }
 
-// ─── Board-level PR/MR list (kanban-pull-request-button) ──────────────────
-//
-// Header button → full-cover <KanbanPrList>, URL-backed as `?prs=` so a
-// deep link / refresh restores it:
-//   - opening pushes `?prs=open` (navigation — Back returns to board),
-//   - tab switches replace `?prs=open|closed` (a view switch inside
-//     the view must not stack history),
-//   - the Back link drops the param with `replace`.
-// Sibling params (`sorts`, `layout`, `detail`) are preserved via
-// flatQuery + buildAppUrlForBoard, like every other writer here.
+// ─── Board-level PR/MR list (kanban-pull-request-button) ────────────────── Header button →
+// full-cover <KanbanPrList>, URL-backed as `?prs=` so a deep link / refresh restores it: - opening
+// pushes `?prs=open` (navigation — Back returns to board).
 const PRS_PARAM = 'prs'
 
 const prsOpen = ref(false)
@@ -883,13 +849,9 @@ onMounted(() => {
   fetchPrOpenCount()
 })
 
-// Back/forward + in-app query navigations while this kanban stays
-// mounted (replaces the old ?detail= / ?layout= watchers):
-//   - ?detail= present → open that task's panel.
-//   - ?detail= dropped while the panel is open → close locally (no
-//     router call — the URL is already the board URL).
-//   - ?layout= mirrored into the ref without writing back (writing
-//     here would fight the history entry just navigated to).
+// Back/forward + in-app query navigations while this kanban stays mounted (replaces the old
+// ?detail= / ?layout= watchers): - ?detail= present → open that task's panel. - ?detail= dropped
+// while the panel is open → close locally (no router call — the URL is already the board URL).
 onBeforeRouteUpdate((to) => {
   const toQuery = to.query as Record<string, unknown>
   const rawDetail = toQuery.detail

@@ -71,15 +71,9 @@ export const useKanbanSseStore = defineStore('kanbanSse', () => {
           event.new_column_id ?? null,
           event.new_position ?? undefined,
         )
-        // Self-echo dedupe (same pattern as designSse): the backend
-        // fans `kanban_task` events to every client INCLUDING the
-        // mover, so a drag-and-drop via `moveTaskToColumn` would
-        // otherwise refetch the destination column
-        // (tasks?limit=100) right after the PATCH — the extra
-        // request in the Network panel. The local store already
-        // holds the truth (moveTaskToColumn mutated + registered
-        // this task id), so skip the refetch. Remote moves (agent
-        // tool, other tab) never register and still refetch below.
+        // Self-echo dedupe (same pattern as designSse): the backend fans `kanban_task` events to
+        // every client INCLUDING the mover, so a drag-and-drop via `moveTaskToColumn` would
+        // otherwise refetch the destination column (tasks?limit=100) right after the PATCH.
         if (isRecentLocalMutation(event.task_id)) return
         // Kanban task search (Chunk 7): forward the active q so a remote move/edit during a search
         // doesn't reset the user's narrowed view to the unfiltered list. activeSearchQueries is a

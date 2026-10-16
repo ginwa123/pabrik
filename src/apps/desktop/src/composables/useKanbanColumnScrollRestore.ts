@@ -95,11 +95,9 @@ export function useKanbanColumnScrollRestore(
     lastKnownScrollTop = clamped
   }
 
-  // Attach on mount when the element is already there, and on update when
-  // it shows up late (the scroller sits behind `v-if="cardsInColumn.length
-  // > 0"`, so on a cold load the container is still null at mount and only
-  // appears once cards arrive — which re-renders the host and lands here).
-  // `wireContainer` is idempotent per element; a null pass detaches.
+  // Attach on mount when the element is already there, and on update when it shows up late (the
+  // scroller sits behind `v-if="cardsInColumn.length > 0"`, so on a cold load the container is
+  // still null at mount and only appears once cards arrive.
   const wireContainer = (el: HTMLElement | null) => {
     if (!el) {
       detach()

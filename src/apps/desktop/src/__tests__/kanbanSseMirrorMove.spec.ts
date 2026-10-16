@@ -169,11 +169,9 @@ describe('kanbanSse — mirror local task on move/assign/unassign (fix duplicate
   })
 
   it('moved event (full integration): single-row refresh lands exactly 1 copy in colB', async () => {
-    // End-to-end: local task in colA, agent moves it to colB, the SSE
-    // event arrives, the mirror updates local state (column + slot),
-    // the single-row refresh returns the post-move wire shape, and
-    // the in-place splice lands exactly 1 copy of the task in colB
-    // and 0 in colA — with no column fetch on the wire.
+    // End-to-end: local task in colA, agent moves it to colB, the SSE event arrives, the mirror
+    // updates local state (column + slot), the single-row refresh returns the post-move wire shape,
+    // and the in-place splice lands exactly 1 copy of the task in colB and 0 in colA.
     const { ws, wsId, itemId, taskId } = seedKanbanWithTask({})
 
     // Mock api.getTask to return the moved task in colB (the

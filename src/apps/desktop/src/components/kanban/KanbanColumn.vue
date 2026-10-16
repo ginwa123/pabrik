@@ -106,15 +106,9 @@ const emit = defineEmits<{
   // `requestRunAllAgents`. The host listens for this and runs the bulk
   // stop endpoint for the column.
   requestStopAllAgents: [columnId: string]
-  // Fired when the user picks a sort mode in the column's "Sort
-  // tasks…" modal. The host (KanbanView) listens for this and:
-  //   1. fires `fetchKanbanTasks` for ONLY the changed column with
-  //      that column's sortBy/direction (per-column backend sort
-  //      — wire data arrives already in the column's own order),
-  //   2. updates the URL with the per-column sort (URL persistence).
-  // Per-column sort independence is achieved at the wire level —
-  // each column's fetchKanbanTasks carries ITS OWN sort, so other
-  // columns' data is untouched.
+  // Fired when the user picks a sort mode in the column's "Sort tasks…" modal. The host
+  // (KanbanView) listens for this and: 1. fires `fetchKanbanTasks` for ONLY the changed column with
+  // that column's sortBy/direction (per-column backend sort.
   sortChange: [
     { sortBy: 'position' | 'created_at' | 'updated_at' | 'name'; direction: 'asc' | 'desc' },
   ]

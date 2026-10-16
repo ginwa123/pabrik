@@ -167,11 +167,7 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
     const nav = useNavigationStore()
     const ws = await setupHandlersAndSeed()
     ws.setActiveTask('other_task')
-    // Re-apply the header AFTER setActiveTask — as of 2026-07-14,
-    // workspacesStore.setActiveTask calls clearActiveChat on the
-    // navigation store (see the regression test below for the
-    // rationale), so we need to set the header explicitly here to
-    // isolate the "SSE event handler ignores non-active task" contract.
+    // Re-apply the header AFTER setActiveTask.
     nav.setActiveChatName('Other Task Header')
 
     dispatch({

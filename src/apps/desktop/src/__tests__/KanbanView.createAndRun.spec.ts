@@ -419,16 +419,9 @@ describe('KanbanView.handleCreateTaskSave — create_session (plain Create task 
   })
 })
 
-// =====================================================================
-// Double-click re-entry guard (plan:
-// 2026-08-24-kanban-create-run-disable-double-click.md)
-//
-// createBusy is flipped synchronously at the top of
-// handleCreateTaskSave; the guard makes a second call in the same
-// tick (double-click faster than Vue's re-render) a no-op. The
-// dialog's disabled buttons cover the normal case; this covers the
-// same-tick race + any future caller that bypasses the dialog.
-// =====================================================================
+// ===================================================================== Double-click re-entry guard
+// (plan: 2026-08-24-kanban-create-run-disable-double-click.md) createBusy is flipped synchronously
+// at the top of handleCreateTaskSave.
 describe('KanbanView.handleCreateTaskSave — double-click re-entry guard', () => {
   let wrapper: VueWrapper | null = null
 
