@@ -28,43 +28,22 @@ const props = defineProps<{
   isLLMProcessing?: boolean
   initialMessage?: string
   reviewMode?: boolean
-  /**
-   * True while the parent is waiting for the stop-session API call to
-   * resolve. Drives the Stop button's spinner state + click-debounce.
-   * The parent (ChatView) sets this to `true` immediately on click
-   * and resets it to `false` when the LLM is no longer processing
-   * (driven by the SSE `worker deleted` event).
-   */
+  /** True while the parent is waiting for the stop-session API call to resolve. Drives the Stop
+   * button's spinner state + click-debounce. */
   isStopping?: boolean
-  /**
-   * Optional draft bucket. When set, typed-but-unsent text survives this
-   * component being remounted — and remounting is exactly what every tab
-   * switch does (AppLayout keys each view by the active tab), so without a
-   * bucket the text would silently vanish. Parents that pass no `draftKey`
-   * (GitFileViewer) read and write nothing.
-   */
+  /** Optional draft bucket. When set, typed-but-unsent text survives this component being remounted
+   * — and remounting is exactly what every tab switch does (AppLayout keys each view by the active
+   * tab), so without a bucket the text would silently vanish. */
   draftKey?: string
-  /**
-   * True while the parent view is still running its initial load
-   * (ChatView's `isInitializing`: session id unassigned or first history
-   * fetch outstanding). Disables the textarea + send button so the user
-   * can't submit against an unloaded session. Independent from
-   * `isLoading` (which also covers in-flight sends and flips the label
-   * to "Queue").
-   */
+  /** True while the parent view is still running its initial load (ChatView's `isInitializing`:
+   * session id unassigned or first history fetch outstanding). Disables the textarea + send button
+   * so the user can't submit against an unloaded session. */
   isInitializing?: boolean
 }>()
 
 const emit = defineEmits<{
   submit: [message: string, files?: File[]]
-  /**
-   * Emitted when the user clicks the Stop button. Parent
-   * (ChatView) calls api.stopSession(sessionId) — the API call
-   * lives at the parent layer because the input is shared across
-   * multiple chat views and the stop semantics are tied to the
-   * chat's sessionId, not the input box. The parent should also
-   * pass `:isStopping="true"` back via prop to show the spinner.
-   */
+  /** Emitted when the user clicks the Stop button. */
   'stop-session': []
 }>()
 
@@ -92,11 +71,8 @@ const nativeFileInput = ref<HTMLInputElement | null>(null)
 // inputs (other chat tabs, search fields, etc.).
 const chatTextareaRef = ref<HTMLTextAreaElement | null>(null)
 
-// ── Draft survival across remounts (tab switches) ─────────────────────
-// Every tab switch remounts this component, so the text in the box would
-// otherwise be lost. The bucket lives in the tabs store (in memory, per
-// window) and is keyed by the chat session, so closing and reopening a tab
-// within the session still finds the draft.
+// ── Draft survival across remounts (tab switches) ───────────────────── Every tab switch remounts
+// this component, so the text in the box would otherwise be lost.
 const draftKey = computed(() => props.draftKey ?? '')
 
 function draftBucket(): ReturnType<typeof useTabsStore> | null {
@@ -130,11 +106,9 @@ function scheduleDraftSave(): void {
   }, 200)
 }
 
-// ── Autofocus on session switch ───────────────────────────────────────
-// Clicking a chat session remounts ChatView (AppLayout `:key="activeChatId"`)
-// which remounts this input. Auto-focus the textarea so the user can type
-// immediately with no second mouse click. Guards: never steal focus from
-// an open modal dialog or a background tab.
+// ── Autofocus on session switch ─────────────────────────────────────── Clicking a chat session
+// remounts ChatView (AppLayout `:key="activeChatId"`) which remounts this input. Auto-focus the
+// textarea so the user can type immediately with no second mouse click.
 const focusInput = () => {
   const el = chatTextareaRef.value
   if (!el || el.disabled) return
@@ -154,30 +128,17 @@ if (props.initialMessage) {
 // Image preview state
 const previewFiles = ref<PreviewFile[]>([])
 
-// ── Stop button state ─────────────────────────────────────────────────────
-//
-// Stop-button state: the parent (ChatView) sets `isStopping` on click and
-// clears it when the LLM stops, so the spinner shows only while a stop is
-// actually in flight AND the agent is still processing. Folding the
-// `isLLMProcessing` reset into the computed covers the fast path (SSE
-// `worker deleted` arrives before the API round-trip) and the slow path
-// (backend processes cancel before SSE) with no mirror watcher — and no
-// stuck-spinner window.
-//
-// `stopRequested` is the optimistic claim for the same-tick window: the
-// parent's prop round-trips asynchronously, so without it a rapid second
-// click lands before the prop arrives and emits twice. It is cleared as
-// soon as the parent acknowledges (prop true) or the run ends — see the
-// onUpdated guard below.
+// ── Stop button state ───────────────────────────────────────────────────── Stop-button state: the
+// parent (ChatView) sets `isStopping` on click and clears it when the LLM stops, so the spinner
+// shows only while a stop is actually in flight AND the agent is still processing.
 const stopRequested = ref(false)
 const isStopping = computed(
   () => ((props.isStopping ?? false) || stopRequested.value) && (props.isLLMProcessing ?? false),
 )
 
 const handleStopClick = () => {
-  // Debounce: while a stop is already in flight, ignore subsequent
-  // clicks. The button is also `:disabled` while `isStopping`, so
-  // this is a defensive check for the case where the prop hasn't
+  // Debounce: while a stop is already in flight, ignore subsequent clicks. The button is also
+  // `:disabled` while `isStopping`, so this is a defensive check for the case where the prop hasn't
   // propagated yet (same render frame as the click).
   if (isStopping.value) return
   stopRequested.value = true
@@ -237,10 +198,9 @@ const sendMessageWithFiles = async () => {
   })
 }
 
-// Pre-fill when the parent provides a new initialMessage (e.g., selecting
-// diff lines). The producer lives in the parent, so the prop change is
-// picked up here with a prev-value guard on update — same truthy-only
-// assignment the watcher did.
+// Pre-fill when the parent provides a new initialMessage (e.g., selecting diff lines). The producer
+// lives in the parent, so the prop change is picked up here with a prev-value guard on update —
+// same truthy-only assignment the watcher did.
 let prevInitialMessage = props.initialMessage
 onUpdated(() => {
   const next = props.initialMessage
@@ -285,30 +245,12 @@ const handleNativeFileSelect = (event: Event) => {
   target.value = ''
 }
 
-// Handle paste event — attach pasted images as file attachments (Ctrl/Cmd+V).
-//
-// Chromium / Firefox: `e.clipboardData.items` natively contains file items,
-// so the standard sync loop below is enough.
-//
-// WebKitGTK (and WKWebView on some macOS releases): even with
-// `javascript_can_access_clipboard=true`, the `<textarea>` paste event
-// filters out non-text items from `clipboardData.items`. The paste event
-// still fires with `clipboardData` present but `items` and `files` empty,
-// so the loop below silently no-ops and the screenshot the user pasted
-// vanishes. pabrik-desktop uses WebKitGTK on Linux, which is why the same
-// `FileInput` code works in `bun dev` (Chrome) but not in
-// `pabrik-desktop` (WebKitGTK).
-//
-// The fix: after the sync `clipboardData.items` loop, if no files were
-// attached AND `navigator.clipboard.read()` is available, use the async
-// Clipboard API to read the actual clipboard contents. That call bypasses
-// the element-level filter because it reads the system clipboard directly,
-// which is what we want.
+// Handle paste event — attach pasted images as file attachments (Ctrl/Cmd+V). Chromium / Firefox:
+// `e.clipboardData.items` natively contains file items, so the standard sync loop below is enough.
 const handlePaste = async (e: ClipboardEvent) => {
-  // Scope: this listener is attached at document level (see onMounted
-  // below), so we get every paste on the page. Only intercept paste when
-  // it originated in OUR textarea — sibling input components (other chat
-  // tabs, search fields, etc.) keep their native paste behavior.
+  // Scope: this listener is attached at document level (see onMounted below), so we get every paste
+  // on the page. Only intercept paste when it originated in OUR textarea — sibling input components
+  // (other chat tabs, search fields, etc.) keep their native paste behavior.
   if (e.target !== chatTextareaRef.value) return
 
   const items = e.clipboardData?.items
@@ -338,12 +280,9 @@ const handlePaste = async (e: ClipboardEvent) => {
     }
   }
 
-  // Strategy 2: WebKitGTK <textarea> filter workaround. If the sync path
-  // found no files AND the async Clipboard API is available, use it to read
-  // the actual clipboard contents (bypassing the element-level filter).
-  // This is silently skipped in browsers without `navigator.clipboard.read`
-  // (very old Chromium), and silently no-ops if the user denies the
-  // permission prompt the API raises in some configurations.
+  // Strategy 2: WebKitGTK <textarea> filter workaround. If the sync path found no files AND the
+  // async Clipboard API is available, use it to read the actual clipboard contents (bypassing the
+  // element-level filter).
   if (pastedImageCount === 0 && navigator.clipboard?.read) {
     try {
       const clipboardItems = await navigator.clipboard.read()
@@ -360,7 +299,6 @@ const handlePaste = async (e: ClipboardEvent) => {
     } catch (err) {
       // Permission denied, clipboard unavailable, or no images present.
       // Silent fall-through — the user can still type and send text.
-
       console.debug(
         '[paste] navigator.clipboard.read() fallback skipped:',
         err instanceof Error ? err.message : err,
@@ -368,37 +306,15 @@ const handlePaste = async (e: ClipboardEvent) => {
     }
   }
 
-  // If we attached at least one image, suppress the default text paste so
-  // the textarea doesn't get a multi-MB `data:image/png;base64,…` string.
-  // NOTE: by the time the async fallback (Strategy 2) resolves, the browser's
-  // default paste action has already run synchronously, so `preventDefault()`
-  // here can't undo it. In the WebKitGTK image-only paste case, the default
-  // action would have been a no-op (items is empty), so this is a no-op too.
-  // The rarer text+image case loses the text (because WebKitGTK filtered out
-  // both text and image items from the paste event); we accept that
-  // regression in v1 — text+image paste is uncommon and the workaround
-  // would require either a contenteditable refactor or intercepting the
-  // keydown event before the browser's paste handler runs.
+  // If we attached at least one image, suppress the default text paste so the textarea doesn't get
+  // a multi-MB `data:image/png;base64,…` string.
   if (pastedImageCount > 0) {
     e.preventDefault()
   }
 }
 
-// Register the document-level capture-phase paste listener on mount and
-// unregister on unmount.
-//
-// Why document-level (capture phase) instead of `@paste` on the <textarea>?
-// The WebKitGTK filter operates on the focused element when it constructs
-// `ClipboardEvent.clipboardData` — it does NOT matter where the listener is
-// attached (capture phase at document, bubbling phase at document, or
-// directly on the textarea all see the same filtered data). The reason we
-// move to document-level here is consistency: the handler is mounted once
-// at component lifecycle and uses `e.target` to scope intercepts to our
-// textarea, so sibling input components (other chat tabs, global search
-// boxes) keep their native paste behavior. Capture phase runs before the
-// browser's own default-handler in the bubble phase, giving us the option
-// to preventDefault sync before the fallback async read decides whether
-// images were attached.
+// Register the document-level capture-phase paste listener on mount and unregister on unmount. Why
+// document-level (capture phase) instead of `@paste` on the <textarea>?
 onMounted(() => {
   document.addEventListener('paste', handlePaste, true)
   // Restore a draft from an earlier mount of this chat (tab switch), but
@@ -444,9 +360,8 @@ const completionPid = (msg: { message: string }): string | null =>
   parseBackgroundCommandOutput(msg.message)?.pid ?? null
 
 // ── @ picker server search (Task 2: plan
-// docs/superpowers/plans/2026-09-08-chatview-search-files-perf.md) ──────
-// Single round-trip per query via `api.searchFiles` — replaces the old
-// N-sequential-fetch full-tree walk (`loadAllFiles`, deleted).
+// docs/superpowers/plans/2026-09-08-chatview-search-files-perf.md) ────── Single round-trip per
+// query via `api.searchFiles`.
 let fileSearchTimer: ReturnType<typeof setTimeout> | null = null
 let fileSearchGen = 0
 let fileSearchAbort: AbortController | null = null
@@ -605,35 +520,15 @@ function scheduleDetectAtTrigger(): void {
   }, 150)
 }
 
-// ── /skill picker (mirrors the @ picker above) ─────────────────────────
-// Two triggers, in order of how far the user has typed:
-//
-// 1. `SLASH_COMMAND_RE` — a NON-EMPTY PROPER PREFIX of `skill-` at
-//    message start or after whitespace (`/s`, `/sk`, `/ski`, `/skil`,
-//    `/skill`). This is the discoverability step: the user has typed
-//    enough to be heading for the skill command but not the dash yet,
-//    so the composer offers the one completion that exists. Enter/Tab
-//    rewrites the token to the canonical `/skill-` and the picker
-//    takes over from there.
-// 2. `SLASH_TOKEN_RE` — the literal `/skill-` prefix followed by the
-//    skill-name alphabet `[A-Za-z0-9._-]`. This is the picker itself.
-//
-// Nothing else opens either surface. A bare `/`, a path like
-// `/home/ginwa/pabrik`, or prose that merely contains a slash all leave
-// the composer alone. The dash is required on purpose: it is the one
-// character that separates "the user is invoking a skill" from "the user
-// typed a slash for some other reason", and without it the picker fired
-// on every filesystem path in the message.
-// Both regexes guarantee the position rule, so `http://` and `a/b` never
-// match — the char before `/` must be start-of-line or whitespace.
-// Case-insensitive, so `/SKILL-DEPLOY` behaves like `/skill-deploy`.
+// ── /skill picker (mirrors the @ picker above) ───────────────────────── Two triggers, in order of
+// how far the user has typed: 1. `SLASH_COMMAND_RE` — a NON-EMPTY PROPER PREFIX of `skill-` at
+// message start or after whitespace (`/s`, `/sk`, `/ski`, `/skil`, `/skill`).
 const SLASH_COMMAND_RE = /(^|\s)\/(s|sk|ski|skil|skill)$/i
 const SLASH_TOKEN_RE = /(^|\s)\/skill-([\w.-]*)$/i
 const showSkillPicker = ref(false)
-// True while the `/skill-` completion hint is showing (the user typed a
-// proper prefix of the command but not the dash yet). Kept separate from
-// `showSkillPicker` so the two surfaces never render at once and the
-// hint never triggers a skills fetch.
+// True while the `/skill-` completion hint is showing (the user typed a proper prefix of the
+// command but not the dash yet). Kept separate from `showSkillPicker` so the two surfaces never
+// render at once and the hint never triggers a skills fetch.
 const showSkillCommand = ref(false)
 // Lower-cased filter text after the `skill-` marker (empty = show all).
 const skillQuery = ref('')
@@ -697,10 +592,9 @@ const detectSlashTrigger = () => {
       closeSkillPicker()
       return
     }
-    // Everything after the `skill-` marker is the filter query. Stored
-    // names are `[A-Za-z0-9._-]` (see `isValidSkillName`), so the query
-    // alphabet matches the name alphabet exactly — no separators to
-    // split, no last-segment walk.
+    // Everything after the `skill-` marker is the filter query. Stored names are `[A-Za-z0-9._-]`
+    // (see `isValidSkillName`), so the query alphabet matches the name alphabet exactly — no
+    // separators to split, no last-segment walk.
     skillQuery.value = (slashMatch[2] ?? '').toLowerCase()
     if (!showSkillPicker.value) {
       showSkillPicker.value = true
@@ -712,10 +606,9 @@ const detectSlashTrigger = () => {
     }
     return
   }
-  // Not the full token yet — is the user on the way there? A proper
-  // prefix of `skill-` (`/s`, `/sk`, `/ski`, `/skil`, `/skill`) offers
-  // the one completion that exists. No fetch happens here: the hint is
-  // a static string, so it costs nothing and works with no workspace.
+  // Not the full token yet — is the user on the way there? A proper prefix of `skill-` (`/s`,
+  // `/sk`, `/ski`, `/skil`, `/skill`) offers the one completion that exists. No fetch happens here:
+  // the hint is a static string, so it costs nothing and works with no workspace.
   if (textBeforeCursor.match(SLASH_COMMAND_RE)) {
     showSkillCommand.value = true
     closeFilePicker()
@@ -724,9 +617,8 @@ const detectSlashTrigger = () => {
   closeSkillPicker()
 }
 
-// Enter/Tab on the `/skill-` hint: rewrite the typed prefix to the
-// canonical token so the picker's own trigger fires on the next
-// keystroke. The whitespace the regex consumed is preserved, and the
+// Enter/Tab on the `/skill-` hint: rewrite the typed prefix to the canonical token so the picker's
+// own trigger fires on the next keystroke. The whitespace the regex consumed is preserved, and the
 // cursor lands right after the dash — exactly where the skill name goes.
 const acceptSkillCommand = () => {
   const text = inputText.value
@@ -751,10 +643,9 @@ const acceptSkillCommand = () => {
   })
 }
 
-// Client-side substring filter over the cached workspace list. Matches
-// the bare name, the full `skill-<name>` token shown in the row, or the
-// description — so `/skill-dep` narrows to `deploy-prod` and
-// `/SKILL-DEPLOY` behaves the same (matching is case-insensitive).
+// Client-side substring filter over the cached workspace list. Matches the bare name, the full
+// `skill-<name>` token shown in the row, or the description — so `/skill-dep` narrows to
+// `deploy-prod` and `/SKILL-DEPLOY` behaves the same (matching is case-insensitive).
 const filteredSkills = computed(() => {
   const q = skillQuery.value
   if (q === '') return skillList.value
@@ -780,16 +671,9 @@ const selectSkill = (skill: api.Skill) => {
   closeSkillPicker()
 }
 
-// ── /tool picker (mirrors the /skill picker above) ─────────────────────
-// Same two-trigger shape, same position rule, same dash requirement — the
-// only differences are the marker (`tool-`), the data source (the canonical
-// tool registry instead of the workspace skill list) and the icon.
-//
-// The registry is NOT workspace-scoped: `GET /api/agent-tools/registry`
-// serves the runtime's UNIFIED_TOOL_REGISTRY, the same list the Settings
-// checklist renders, so there is no per-workspace fetch and no workspace
-// gate. That is why the picker opens with no active workspace while the
-// `/skill-` picker does not.
+// ── /tool picker (mirrors the /skill picker above) ───────────────────── Same two-trigger shape,
+// same position rule, same dash requirement — the only differences are the marker (`tool-`), the
+// data source (the canonical tool registry instead of the workspace skill list) and the icon.
 const TOOL_COMMAND_RE = /(^|\s)\/(t|to|too|tool)$/i
 const TOOL_TOKEN_RE = /(^|\s)\/tool-([\w.-]*)$/i
 const showToolPicker = ref(false)
@@ -875,9 +759,8 @@ const detectToolTrigger = () => {
   closeToolPicker()
 }
 
-// Enter/Tab on the `/tool-` hint: rewrite the typed prefix to the
-// canonical token so the picker's own trigger fires on the next
-// keystroke. The whitespace the regex consumed is preserved, and the
+// Enter/Tab on the `/tool-` hint: rewrite the typed prefix to the canonical token so the picker's
+// own trigger fires on the next keystroke. The whitespace the regex consumed is preserved, and the
 // cursor lands right after the dash — exactly where the tool name goes.
 const acceptToolCommand = () => {
   const text = inputText.value
@@ -902,10 +785,9 @@ const acceptToolCommand = () => {
   })
 }
 
-// Client-side substring filter over the cached registry. Matches the bare
-// name, the full `tool-<name>` token shown in the row, or the description
-// — so `/tool-read` narrows to `read_file` and `/TOOL-READ` behaves the
-// same (matching is case-insensitive).
+// Client-side substring filter over the cached registry. Matches the bare name, the full
+// `tool-<name>` token shown in the row, or the description — so `/tool-read` narrows to `read_file`
+// and `/TOOL-READ` behaves the same (matching is case-insensitive).
 const filteredTools = computed(() => {
   const q = toolQuery.value
   if (q === '') return toolList.value
@@ -941,10 +823,9 @@ const selectFile = (file: FileEntry) => {
   const textAfterCursor = text.slice(pos)
   const atMatch = textBeforeCursor.match(/@([\w./\\:-]*)$/)
   if (atMatch && atMatch.index !== undefined) {
-    // Slice up to (but not including) the @ — keeps everything before
-    // the trigger untouched. Then prepend @ + picked path. The query
-    // part (atMatch[1]) is dropped because the picker already filtered
-    // down to exactly the entry the user picked.
+    // Slice up to (but not including) the @ — keeps everything before the trigger untouched. Then
+    // prepend @ + picked path. The query part (atMatch[1]) is dropped because the picker already
+    // filtered down to exactly the entry the user picked.
     inputText.value = textBeforeCursor.slice(0, atMatch.index) + '@' + file.path + textAfterCursor
   }
   closeFilePicker()

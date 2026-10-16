@@ -1,13 +1,4 @@
-/**
- * Tests for the "Use git worktree" toggle in KanbanTaskDetailDialog
- * (create mode) — plan:
- * docs/superpowers/plans/2026-09-11-kanban-create-task-message-format-worktree-toggle.md
- *   Task 2
- *
- * Mount pattern: same as KanbanTaskDetailDialog.runAgent.spec.ts.
- * <Teleport to="body">, so use `attachTo: document.body` +
- * `document.querySelector` (NOT `wrapper.find`).
- */
+/** Tests for the "Use git worktree" toggle in KanbanTaskDetailDialog (create mode). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -248,7 +239,6 @@ describe('KanbanTaskDetailDialog — Use git worktree toggle', () => {
   })
 
   // ─── Base branch (the `Base:` line) ───────────────────────────────────
-
   function findItemByText(text: string): HTMLButtonElement | null {
     return (
       findAllInDom<HTMLButtonElement>(

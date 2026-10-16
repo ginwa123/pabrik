@@ -19,10 +19,9 @@ const LOG_MAX_BYTES = 20480
 
 const processes = ref<BackgroundProcess[]>([])
 const listError = ref<string | null>(null)
-// True while `fetchList` is in flight. Without it the "No background
-// commands for this session" empty state fires on every open — a false
-// statement, since the popup is opened precisely BECAUSE commands are
-// running.
+// True while `fetchList` is in flight. Without it the "No background commands for this session"
+// empty state fires on every open — a false statement, since the popup is opened precisely BECAUSE
+// commands are running.
 const isLoadingList = ref(false)
 const show = ref(false)
 const expandedPid = ref<number | null>(null)

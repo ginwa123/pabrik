@@ -1,23 +1,4 @@
-/**
- * Regression tests: the sidebar RECENT list must not go blank because one
- * refresh failed.
- *
- * `api.getChats` swallows every transport failure (rejected fetch, the 15s
- * `apiFetch` timeout abort, non-2xx) and resolves `{ sessions: [] }`, so
- * `ChatsList.loadChats()` cannot tell "the request failed" from "this
- * workspace has no chats". It used to paint that empty page straight over
- * the rows it was already showing — and since only a scope change or a
- * session SSE event reloads the list, RECENT stayed blank for the rest of
- * the session (the reported "recent list suddenly empty").
- *
- * Contract locked here:
- *   1. an empty page over painted rows keeps the rows and schedules a retry;
- *   2. the retry repaints when the request recovers;
- *   3. an empty page on a COLD list still paints empty (no phantom rows) and
- *      the retry budget is finite;
- *   4. a scope change resets `chatsTotal` so the previous workspace's total
- *      can't drive the new scope's `loadMore` gate.
- */
+/** Regression tests: the sidebar RECENT list must not go blank because one refresh failed. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, reactive, ref, type App as VueApp } from 'vue'

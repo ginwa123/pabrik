@@ -1,10 +1,7 @@
 <script setup lang="ts">
-/**
- * Shared spinner icon — extracts the SVG-circle idiom previously
- * copy-pasted across ~10 components (AppLayout, RightSidebar,
- * GitCommits, FolderExplorer, SidebarDiffPanel) into one place.
- * New loading UI should use this instead of adding another copy.
- */
+/**  * Shared spinner icon — extracts the SVG-circle idiom previously copy-pasted across ~10 components
+ * (AppLayout, RightSidebar, GitCommits, FolderExplorer, SidebarDiffPanel) into one place. New
+ * loading UI should use this instead of adding another copy. */
 withDefaults(
   defineProps<{
     /** Tailwind size class, e.g. "w-4 h-4". Defaults to w-8 h-8. */

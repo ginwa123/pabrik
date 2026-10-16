@@ -1,18 +1,5 @@
-/**
- * KanbanView row mode — the URL-backed Columns/Rows layout toggle.
- *
- * Row mode renders the same board as a vertical list grouped by column.
- * The choice lives in `?layout=rows` so refresh, Back/Forward and shared
- * links restore it (repo rule: "Every View Switch Must Update the Browser
- * URL"). `columns` is the default and is stripped from the URL.
- *
- * Precedence: URL (deep link) → localStorage (`pabrik-kanban-layout`) →
- * `columns`.
- *
- * The router is mocked with the `vi.hoisted` pair used by
- * KanbanView.sortByApi.spec.ts so we can assert the exact query object
- * passed to `router.replace`.
- */
+/** KanbanView row mode — the URL-backed Columns/Rows layout toggle. Row mode renders the same board
+ * as a vertical list grouped by column. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -124,7 +111,6 @@ describe('KanbanView row mode', () => {
   })
 
   // ─── Toggle rendering ────────────────────────────────────────────────────
-
   it('renders both layout buttons in the header', () => {
     const mounted = mountKanbanView()
     wrapper = mounted.wrapper
@@ -152,7 +138,6 @@ describe('KanbanView row mode', () => {
   })
 
   // ─── URL writes ──────────────────────────────────────────────────────────
-
   it('clicking Rows writes ?layout=rows via router.replace', async () => {
     const mounted = mountKanbanView({ view: 'workspace', workspaceId: WS_ID, itemId: ITEM_ID })
     wrapper = mounted.wrapper
@@ -188,7 +173,6 @@ describe('KanbanView row mode', () => {
   })
 
   // ─── URL restore ─────────────────────────────────────────────────────────
-
   it('mount with ?layout=rows restores the row view', () => {
     const mounted = mountKanbanView({ layout: 'rows' })
     wrapper = mounted.wrapper
@@ -216,7 +200,6 @@ describe('KanbanView row mode', () => {
   })
 
   // ─── localStorage precedence ─────────────────────────────────────────────
-
   it('uses the stored preference when the URL has no ?layout=', () => {
     localStorage.setItem('pabrik-kanban-layout', 'rows')
     const mounted = mountKanbanView()
@@ -241,7 +224,6 @@ describe('KanbanView row mode', () => {
   })
 
   // ─── Sibling-param preservation (the ?sorts= watcher regression) ─────────
-
   it('toggling layout preserves ?sorts=', async () => {
     const mounted = mountKanbanView({
       view: 'workspace',
@@ -277,7 +259,6 @@ describe('KanbanView row mode', () => {
   })
 
   // ─── Row rendering ───────────────────────────────────────────────────────
-
   it('renders one group per column, in position order', () => {
     const mounted = mountKanbanView(
       { layout: 'rows' },
@@ -364,7 +345,6 @@ describe('KanbanView row mode', () => {
   })
 
   // ─── Collapse ────────────────────────────────────────────────────────────
-
   it('collapsing a group hides its rows and persists to localStorage', async () => {
     const mounted = mountKanbanView(
       { layout: 'rows' },
@@ -407,7 +387,6 @@ describe('KanbanView row mode', () => {
   })
 
   // ─── Event pass-through ──────────────────────────────────────────────────
-
   it('clicking a row emits selectTask', async () => {
     const mounted = mountKanbanView(
       { layout: 'rows' },
@@ -505,7 +484,6 @@ describe('KanbanView row mode', () => {
   })
 
   // ─── Column mode is untouched ────────────────────────────────────────────
-
   it('column mode still renders KanbanColumn and no row groups', () => {
     const mounted = mountKanbanView()
     wrapper = mounted.wrapper
@@ -513,12 +491,9 @@ describe('KanbanView row mode', () => {
     expect(wrapper.findAll('[data-kanban-row-group]')).toHaveLength(0)
   })
 
-  // ─── Row density (comfortable ⇄ compact) ────────────────────────────────
-  //
-  // Density is a localStorage preference, NOT a URL param — it is a
-  // legibility trade-off, not a distinct view, so a deep link should not
-  // carry it (same rule as group collapse).
-
+  // ─── Row density (comfortable ⇄ compact) ──────────────────────────────── Density is a
+  // localStorage preference, NOT a URL param — it is a legibility trade-off, not a distinct view,
+  // so a deep link should not carry it (same rule as group collapse).
   it('hides the density toggle in column mode', () => {
     const mounted = mountKanbanView()
     wrapper = mounted.wrapper

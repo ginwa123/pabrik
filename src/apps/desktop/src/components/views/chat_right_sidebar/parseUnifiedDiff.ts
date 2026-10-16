@@ -17,12 +17,9 @@ function tryParseInt(s: string): number | null {
   return isNaN(n) ? null : n
 }
 
-/**
- * One `@@ -a,b +c,d @@` header. Module-level and shared by
- * `parseUnifiedDiff` and `countDiffLines` on purpose: two copies of this
- * pattern drift the moment either is edited, and then the row counts stop
- * matching the diff they sit next to.
- */
+/**  * One `@@ -a,b +c,d @@` header. Module-level and shared by `parseUnifiedDiff` and `countDiffLines`
+ * on purpose: two copies of this pattern drift the moment either is edited, and then the row counts
+ * stop matching the diff they sit next to. */
 const HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)?$/
 
 // Pure extraction of GitFileViewer.vue parseUnifiedDiff logic so the
@@ -128,22 +125,9 @@ export interface DiffLineCounts {
   removed: number
 }
 
-/**
- * `+added / -removed` for ONE file's diff chunk, without building the line
- * array `parseUnifiedDiff` returns.
- *
- * Why this exists: the file lists want a number per row, and the only diff
- * text they have is the chunk they already hold. Parsing it into
- * `ParsedDiffLine[]` just to read two counters allocates an object per line
- * for a 900-line file — on a 35-file list that is tens of thousands of
- * objects to render two digits.
- *
- * Deliberately mirrors `parseUnifiedDiff`'s line classification (same hunk
- * regex, same "nothing before the first hunk counts" rule) so a row's
- * counts always agree with the diff the center column shows for that file.
- * `\ No newline at end of file` and the `--- / +++` headers are therefore
- * not counted, exactly as in the parser.
- */
+/** `+added / -removed` for ONE file's diff chunk, without building the line array
+ * `parseUnifiedDiff` returns. Why this exists: the file lists want a number per row, and the only
+ * diff text they have is the chunk they already hold. */
 export function countDiffLines(diffText: string): DiffLineCounts {
   let added = 0
   let removed = 0
@@ -174,11 +158,9 @@ export interface SplitDiffFile {
   text: string
 }
 
-// Split a multi-file unified diff (e.g. `gh pr diff` output) into
-// per-file chunks at `diff --git` boundaries. Pure: no IO, no Vue.
-// Status comes from the header lines: `new file mode` → A,
-// `deleted file mode` → D, `similarity index`/`rename from` → R,
-// else M. Unparseable leading text (e.g. empty diff) yields [].
+// Split a multi-file unified diff (e.g. `gh pr diff` output) into per-file chunks at `diff --git`
+// boundaries. Pure: no IO, no Vue. Status comes from the header lines: `new file mode` → A,
+// `deleted file mode` → D, `similarity index`/`rename from` → R, else M.
 export function splitDiffByFile(diffText: string): SplitDiffFile[] {
   const out: SplitDiffFile[] = []
   const lines = diffText.split('\n')
@@ -207,11 +189,9 @@ export function splitDiffByFile(diffText: string): SplitDiffFile[] {
   return out.filter((f) => f.text.trim().length > 0)
 }
 
-/**
- * Center-diff selection payload: panel row click → shell → ChatView.
- * `lines` travel by reference (no copy). `error` set when the worktree
- * fetch failed (PR mode parses inline, so error is always null there).
- */
+/**  * Center-diff selection payload: panel row click → shell → ChatView. `lines` travel by reference
+ * (no copy). `error` set when the worktree fetch failed (PR mode parses inline, so error is always
+ * null there). */
 export interface DiffSelection {
   path: string
   staged: boolean
@@ -224,9 +204,8 @@ export interface DiffSelection {
   untracked?: boolean
 }
 
-// Stacked center diff addressing: each section id is
-// `center-diff-<base64url-no-pad path>`, and the ?diff= URL param carries
-// the same encoding. btoa throws on non-latin1 paths (unicode), so fall
+// Stacked center diff addressing: each section id is `center-diff-<base64url-no-pad path>`, and the
+// ?diff= URL param carries the same encoding. btoa throws on non-latin1 paths (unicode), so fall
 // back to encodeURIComponent — still deterministic, still matchable.
 export function encodePathParam(path: string): string {
   try {

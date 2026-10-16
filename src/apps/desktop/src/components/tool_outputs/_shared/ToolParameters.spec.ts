@@ -1,10 +1,5 @@
-/**
- * Tests for ToolParameters.vue — shared Arguments block for tool-output cards.
- *
- * Guard (mirrors McpTool.vue hasArgs): trim in '', '{}' -> render nothing.
- * Else render <details><summary>Arguments</summary><pre>{{pretty}}</pre></details>.
- * pretty: try JSON.parse -> stringify null,2 else raw string (XML displays raw).
- */
+/** Tests for ToolParameters.vue — shared Arguments block for tool-output cards. Guard (mirrors
+ * McpTool.vue hasArgs): trim in '', '{}' -> render nothing. */
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 

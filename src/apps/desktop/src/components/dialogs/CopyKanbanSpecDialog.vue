@@ -54,7 +54,6 @@ const emit = defineEmits<{
 const workspacesStore = useWorkspacesStore()
 
 // ─── State ────────────────────────────────────────────────────────────
-
 const sourceItemId = ref<string>('')
 const mode = ref<'replace' | 'append'>('replace')
 const sourceDropdownOpen = ref<boolean>(false)
@@ -62,7 +61,6 @@ const sourceColumns = ref<Array<{ id: string; name: string; description: string 
 const sourceColumnsLoading = ref<boolean>(false)
 
 // ─── Picker data ──────────────────────────────────────────────────────
-
 // All kanbans in the active workspace EXCEPT the target.
 const availableSources = computed<WorkspaceItem[]>(() => {
   return workspacesStore.workspaces
@@ -90,7 +88,6 @@ const targetName = computed<string>(() => {
 })
 
 // ─── Source columns preview ───────────────────────────────────────────
-
 async function loadSourceColumns(itemId: string) {
   if (!itemId || !props.workspaceId) {
     sourceColumns.value = []
@@ -112,7 +109,6 @@ async function loadSourceColumns(itemId: string) {
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────
-
 const handleCopy = () => {
   if (!sourceItemId.value) return
   emit('copy', sourceItemId.value, mode.value)
@@ -150,11 +146,9 @@ const onDocumentClick = (e: MouseEvent) => {
   }
 }
 
-// ─── Lifecycle ────────────────────────────────────────────────────────
-
-// Reset + preselect on every open (open-sync guard below) and detach
-// the outside-click listener after close (Transition after-leave).
-// onBeforeUnmount below remains as the unmount safety net.
+// ─── Lifecycle ──────────────────────────────────────────────────────── Reset + preselect on every
+// open (open-sync guard below) and detach the outside-click listener after close (Transition
+// after-leave). onBeforeUnmount below remains as the unmount safety net.
 const handleOpen = async () => {
   sourceItemId.value = ''
   mode.value = 'replace'
@@ -176,10 +170,9 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', onDocumentClick)
 })
 
-// Open-reset without watch(): seed on mount (initial show=true) and on
-// closed->open updates. A Transition before-enter hook cannot do this — it
-// never fires on initial mount (no `appear`) and VTU stubs Transition, so
-// specs that mount then setProps(show=true) would see empty fields.
+// Open-reset without watch(): seed on mount (initial show=true) and on closed->open updates. A
+// Transition before-enter hook cannot do this — it never fires on initial mount (no `appear`) and
+// VTU stubs Transition, so specs that mount then setProps(show=true) would see empty fields.
 const wasShown = ref(props.show)
 onMounted(() => {
   if (props.show) void handleOpen()

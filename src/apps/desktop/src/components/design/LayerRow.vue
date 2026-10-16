@@ -39,28 +39,17 @@ import type { DesignElement } from '../../api'
 import UiIcon from '../ui/UiIcon.vue'
 import type { UiIconName } from '../ui/icons'
 
-/**
- * One node in the design-page layers tree. Each `DesignElement` can
- * have N nested children (when its `parent_id` points to a `group`
- * or `frame` element). The tree is built in `LayersPanel.vue` via
- * the `layerTree` computed.
- */
+/**  * One node in the design-page layers tree. Each `DesignElement` can have N nested children (when
+ * its `parent_id` points to a `group` or `frame` element). The tree is built in `LayersPanel.vue`
+ * via the `layerTree` computed. */
 export interface LayerTreeNode {
   element: DesignElement
   children: LayerTreeNode[]
 }
 
-// Vue 3 requires either a script-level `name: 'LayerRow'` declaration
-// OR `defineOptions({ name: 'LayerRow' })` in <script setup> for the
-// recursive `<LayerRow>` usage in the template to type-check under
-// vue-tsc. Without this, vue-tsc reports:
-//
-//   "Component LayerRow is not registered in any module"
-//
-// which silently passes in `bunx vitest run` but FAILS the strict
-// type-check in `bun run build`. See
-// `.pabrik/memories/pabrik-frontend-patterns.md` §"bun run build is
-// the type-check" for the bun/Node vue-tsc split.
+// Vue 3 requires either a script-level `name: 'LayerRow'` declaration OR `defineOptions({ name:
+// 'LayerRow' })` in <script setup> for the recursive `<LayerRow>` usage in the template to
+// type-check under vue-tsc.
 defineOptions({ name: 'LayerRow' })
 
 const props = withDefaults(
@@ -69,29 +58,21 @@ const props = withDefaults(
     depth: number
     selectedIds: string[]
     readonly: boolean
-    /**
-     * Shared collapse state from the parent. The parent owns a
-     * `ref(new Set<string>())` and passes the Set down by reference.
-     * Vue 3 reactivity requires the parent to REPLACE the Set (not
-     * mutate it) to trigger re-renders — LayerRow just READS it.
-     */
+    /**      * Shared collapse state from the parent. The parent owns a `ref(new Set<string>())` and passes
+     * the Set down by reference. Vue 3 reactivity requires the parent to REPLACE the Set (not
+     * mutate it) to trigger re-renders — LayerRow just READS it. */
     collapsedIds: Set<string>
-    /**
-     * Kind flag — 'row' is the default (a real element row).
-     * 'drop-zone' renders the row as a non-draggable top-level
-     * drop target used between top-level siblings. The parent
-     * LayersPanel mounts these as synthetic rows with a sentinel
-     * element id (`TOP_LEVEL_SENTINEL`).
-     */
+    /**      * Kind flag — 'row' is the default (a real element row). 'drop-zone' renders the row as a
+     * non-draggable top-level drop target used between top-level siblings. The parent LayersPanel
+     * mounts these as synthetic rows with a sentinel element id (`TOP_LEVEL_SENTINEL`). */
     kind?: 'row' | 'drop-zone'
     /** Optional drag-state visual flags from the parent. */
     isBeingDragged?: boolean
     isDropTarget?: boolean
     isDropTargetBlocked?: boolean
-    /** Drag event callbacks. The parent (LayersPanel) owns the
-     *  drag state machine via `useLayerDragDrop` and uses these
-     *  hooks to drive it. When omitted (e.g. synthetic rows) the
-     *  row stays passive. */
+    /**      * Drag event callbacks. The parent (LayersPanel) owns the drag state machine via
+     * `useLayerDragDrop` and uses these hooks to drive it. When omitted (e.g. synthetic rows) the
+     * row stays passive. */
     onLayerDragStart?: (id: string, ev: DragEvent) => void
     onLayerDragOver?: (id: string, ev: DragEvent) => void
     onLayerDragLeave?: (id: string, ev: DragEvent) => void
@@ -128,14 +109,8 @@ const isCollapsed = computed(() =>
 )
 const hasChildren = computed(() => props.node.children.length > 0)
 
-// Type icon — same mapping as the original LayersPanel. Kept here so
-// the row is self-contained (no need to forward a helper from parent).
-//
-// The row's type mark is the only thing identifying it, so it comes from
-// the shared `UiIcon` registry like every other icon in the app: one
-// pixel box, one palette, and a name a spec can pin (`data-icon="note"`)
-// instead of a box-drawing codepoint that renders at three different
-// heights depending on the platform font.
+// Type icon — same mapping as the original LayersPanel. Kept here so the row is self-contained (no
+// need to forward a helper from parent).
 const typeIcon = (type: DesignElement['type']): UiIconName => {
   switch (type) {
     case 'rectangle': return 'circle'
@@ -149,10 +124,9 @@ const typeIcon = (type: DesignElement['type']): UiIconName => {
 }
 
 const handleSelect = (event: MouseEvent): void => {
-  // Figma parity: Shift OR Ctrl/Cmd click toggles membership in the
-  // multi-selection. Plain click replaces the selection. Alt-click
-  // is intentional left unhandled (Linux/macOS window menu shortcut)
-  // so it falls through to the plain-click path.
+  // Figma parity: Shift OR Ctrl/Cmd click toggles membership in the multi-selection. Plain click
+  // replaces the selection. Alt-click is intentional left unhandled (Linux/macOS window menu
+  // shortcut) so it falls through to the plain-click path.
   const additive = event.shiftKey || event.ctrlKey || event.metaKey
   emit('select', {
     elementId: props.node.element.id,
@@ -161,10 +135,9 @@ const handleSelect = (event: MouseEvent): void => {
 }
 
 const handleContextMenu = (event: MouseEvent): void => {
-  // Figma parity: right-click on a row that IS in the multi-selection
-  // (regardless of shift) opens the menu against the full selection.
-  // Right-click on an unselected row replaces the selection with that
-  // single id and opens the menu against just that id.
+  // Figma parity: right-click on a row that IS in the multi-selection (regardless of shift) opens
+  // the menu against the full selection. Right-click on an unselected row replaces the selection
+  // with that single id and opens the menu against just that id.
   const isInSelection = props.selectedIds.includes(props.node.element.id)
   if (isInSelection) {
     emit('contextmenu', {
@@ -206,13 +179,8 @@ const handleChevronClick = (event: MouseEvent): void => {
   emit('toggleCollapse', props.node.element.id)
 }
 
-// ─── Drag-and-drop handlers (Chunk 4 Task 4.1) ──────────────────────────
-//
-// These forward to the parent LayersPanel, which owns the drag state
-// machine via `useLayerDragDrop`. The row itself stays passive —
-// all logic (cycle check, multi-drag, top-level zones) lives in the
-// composable so it can be tested without mounting the component.
-
+// ─── Drag-and-drop handlers (Chunk 4 Task 4.1) ────────────────────────── These forward to the
+// parent LayersPanel, which owns the drag state machine via `useLayerDragDrop`.
 const handleDragStart = (event: DragEvent): void => {
   if (props.kind === 'drop-zone' || props.readonly) {
     event.preventDefault()

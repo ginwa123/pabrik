@@ -1,47 +1,6 @@
-/**
- * Regression tests for the reported bug: "Chatview has issue if sse send a
- * llm chunk and llm full data finish reason stop, its like automatically go
- * to bottom scrollbar chatview".
- *
- * ── Why this file exists ────────────────────────────────────────────────────
- *
- * 1. COVERAGE GAP. No test drove the real component through the reported SSE
- *    pair. `ChatView.streamingStick.spec.ts` exercises only ONE of the four
- *    auto-stick call sites — `onContentShift` (a synthetic `content-shift`
- *    emit). The reported trigger is two OTHERS, inside the SSE handler:
- *       - `updateStreamingMessage()` → `scrollToBottom(false, 'sse-chunk')`
- *       - the `llm_full` handler     → `scrollToBottom(false,
- *         'sse-message-complete')` / `'sse-message-update'`
- *    `ChatView.chunk-stream.spec.ts` does not close the gap: it is a
- *    hand-written REPLICA of the handler, so it cannot fail on a regression
- *    in the real component.
- *
- * 2. THE MOCK SEAM (this is the part that wasted real time). ChatView's
- *    history load goes through TWO api exports, not one:
- *       a. `chatEngineDb` (`sync/ChatEngineDb.ts`) for the cache/prime and
- *          the delta. Its constructor is
- *          `constructor(private fetchFn: typeof getChatHistory = getChatHistory)`
- *          — that default is bound ONCE when `new ChatEngineDb()` runs at
- *          module load, so a later `vi.spyOn(api, 'getChatHistory')` does NOT
- *          reach it.
- *       b. `api.fetchChatHistoryEffect(...)` directly, for the authoritative
- *          network load inside `runHistoryLoadAttempt`.
- *    Mocking only `getChatHistory` (which is what the sibling specs do) leaves
- *    (b) hitting the real network: the fetch fails in jsdom, the retry loop
- *    keeps `isLoading` true, `isInitializing` never clears, and the
- *    `<VirtualScroller>` never mounts — the spec dies with
- *    "`.virtual-scroller not mounted`" without ever testing a scroll.
- *    Both must be mocked, and as a hoisted `vi.mock` module factory so the
- *    captured `fetchFn` resolves to the mock.
- *
- * ── Contract under test ─────────────────────────────────────────────────────
- *   - A reader who scrolled up must not be yanked to the bottom when an
- *     `llm_chunk` lands, nor when the `llm_full` that finishes it lands. Both
- *     paths are gated on `isAtBottom`, so these fail iff something re-arms
- *     `isAtBottom` that the reader never asked for.
- *   - A reader AT the bottom must still follow the tail — the guard against
- *     over-correcting into "streaming never auto-scrolls".
- */
+/** Regression tests for the reported bug: "Chatview has issue if sse send a llm chunk and llm full
+ * data finish reason stop, its like automatically go to bottom scrollbar chatview". ── Why this
+ * file exists ──────────────────────────────────────────────────── 1. COVERAGE GAP. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, ref, type App as VueApp, type Ref } from 'vue'
@@ -193,10 +152,9 @@ async function mountChatView(
     attachTo: document.body,
     global: { provide: { processingState } },
   })
-  // Wait for the transcript to paint. The mount gate is
-  // `!isInitializing && (isLoading || messageGroups.length > 0)` on the
-  // <VirtualScroller>, and `isInitializing` only clears once the history
-  // load settles — so the scroller's presence IS the load-completed signal.
+  // Wait for the transcript to paint. The mount gate is `!isInitializing && (isLoading ||
+  // messageGroups.length > 0)` on the <VirtualScroller>, and `isInitializing` only clears once the
+  // history load settles — so the scroller's presence IS the load-completed signal.
   for (let i = 0; i < 60; i++) {
     await new Promise((r) => setTimeout(r, 40))
     await nextTick()

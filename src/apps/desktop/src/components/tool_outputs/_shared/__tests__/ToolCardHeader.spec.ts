@@ -1,14 +1,4 @@
-/**
- * Tests for ToolCardHeader.vue — the shared header for tool-output cards.
- *
- * Verifies:
- *  - renders tool name, primary, status badge
- *  - copy-to-clipboard button copies the right value
- *  - open-in-editor button triggers the injected handler with the right args
- *  - emits `update:expanded` on click when expandable, no-op when not
- *  - hides copy / editor buttons when not applicable
- *  - renders inline tag and right-meta when provided
- */
+/** Tests for ToolCardHeader.vue — the shared header for tool-output cards. */
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, provide } from 'vue'

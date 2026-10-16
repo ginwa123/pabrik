@@ -1,29 +1,4 @@
-/**
- * Tests for the SSE kanban_task mirror fix.
- *
- * Background (bug task_1785688388584, plan
- * docs/superpowers/plans/2026-08-06-sse-kanban-move-duplicate-task.md):
- *
- * When an agent (or any non-UI client) moves a kanban task via
- * `kanban_move_task`, the backend emits a `kanban_task` SSE event with
- * `action: 'moved'`, `new_column_id: <dest>`. The frontend handler in
- * `kanbanSse.ts` calls `fetchKanbanTasks(destCol, 100, ...)` which
- * merges the fresh wire response into `item.tasks` via:
- *
- *   otherTasks = item.tasks.filter(t => t.kanban_column_id !== destCol)
- *   item.tasks = [...otherTasks, ...normalized]
- *
- * If the local task's `kanban_column_id` is still the SOURCE column
- * (because nothing locally mirrored the move), the filter keeps the
- * stale copy AND `normalized` adds the fresh dest copy — producing a
- * visible duplicate in the user's UI. User-initiated moves don't hit
- * this because `moveTaskToColumn` mutates the local column id BEFORE
- * the SSE round-trip.
- *
- * Fix: the SSE handler mirrors the local task's column_id (and
- * position) to match the event payload BEFORE the refetch. These
- * tests verify the mirror contract end-to-end.
- */
+/** Tests for the SSE kanban_task mirror fix. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'
@@ -151,10 +126,9 @@ describe('kanbanSse — mirror local task on move/assign/unassign (fix duplicate
   it('moved event: mirrors local task column_id to the destination BEFORE refresh resolves', async () => {
     const { ws, wsId, itemId, taskId } = seedKanbanWithTask({})
 
-    // Spy on refreshTask but DON'T resolve immediately so we can
-    // observe the local state between dispatch and refresh resolution.
-    // Definite-assignment assertion on the resolve callback because
-    // the inner closure assigns before the outer code reads it.
+    // Spy on refreshTask but DON'T resolve immediately so we can observe the local state between
+    // dispatch and refresh resolution. Definite-assignment assertion on the resolve callback
+    // because the inner closure assigns before the outer code reads it.
     let resolveRefresh!: () => void
     const refreshSpy = vi.spyOn(ws, 'refreshTask').mockImplementation(
       () =>
@@ -182,9 +156,8 @@ describe('kanbanSse — mirror local task on move/assign/unassign (fix duplicate
     expect(refreshSpy).toHaveBeenCalledWith(wsId, itemId, taskId)
     expect(fetchSpy).not.toHaveBeenCalled()
 
-    // The local task's column_id was mirrored to 'colB' BEFORE the
-    // awaited refresh resolves — this is the fix. Pre-fix this would
-    // still be 'colA' and the subsequent merge would duplicate the
+    // The local task's column_id was mirrored to 'colB' BEFORE the awaited refresh resolves — this
+    // is the fix. Pre-fix this would still be 'colA' and the subsequent merge would duplicate the
     // task.
     const localTask = ws.workspaces[0]!.items[0]!.tasks!.find((t) => t.id === taskId)!
     expect(localTask.kanban_column_id).toBe('colB')
@@ -196,11 +169,9 @@ describe('kanbanSse — mirror local task on move/assign/unassign (fix duplicate
   })
 
   it('moved event (full integration): single-row refresh lands exactly 1 copy in colB', async () => {
-    // End-to-end: local task in colA, agent moves it to colB, the SSE
-    // event arrives, the mirror updates local state (column + slot),
-    // the single-row refresh returns the post-move wire shape, and
-    // the in-place splice lands exactly 1 copy of the task in colB
-    // and 0 in colA — with no column fetch on the wire.
+    // End-to-end: local task in colA, agent moves it to colB, the SSE event arrives, the mirror
+    // updates local state (column + slot), the single-row refresh returns the post-move wire shape,
+    // and the in-place splice lands exactly 1 copy of the task in colB and 0 in colA.
     const { ws, wsId, itemId, taskId } = seedKanbanWithTask({})
 
     // Mock api.getTask to return the moved task in colB (the
@@ -285,19 +256,14 @@ describe('kanbanSse — mirror local task on move/assign/unassign (fix duplicate
   })
 
   it('unassigned event (full integration): task preserved as unassigned after wire response', async () => {
-    // After unassign: task stays in item.tasks with kanban_column_id
-    // = null (the "unassigned limbo" state). The UI hides it from all
-    // columns because no column matches null, but the task itself is
-    // not deleted — the user can re-assign it. Pre-fix the local
-    // task was stuck in the SOURCE column's `kanban_column_id`, so
-    // after `fetchKanbanTasks(colA)`'s merge the task was kept in BOTH
-    // the unassigned state AND the source column (visible duplicate).
+    // After unassign: task stays in item.tasks with kanban_column_id = null (the "unassigned limbo"
+    // state). The UI hides it from all columns because no column matches null, but the task itself
+    // is not deleted — the user can re-assign it.
     const { ws, wsId, itemId, taskId } = seedKanbanWithTask({})
 
-    // The unassigned branch fires fetchKanbanTasksForAllColumns which
-    // iterates each column and re-fetches. Mock api.getTasks to return
-    // an empty list for every column — the task is unassigned, so the
-    // server returns it nowhere.
+    // The unassigned branch fires fetchKanbanTasksForAllColumns which iterates each column and
+    // re-fetches. Mock api.getTasks to return an empty list for every column — the task is
+    // unassigned, so the server returns it nowhere.
     vi.spyOn(api, 'getTasks').mockResolvedValue({
       tasks: [],
       has_more: false,
@@ -402,14 +368,9 @@ describe('kanbanSse — mirror local task on move/assign/unassign (fix duplicate
   it('human_touched event: no column change (the SSE payload carries null), local untouched', async () => {
     const { ws, wsId, itemId, taskId } = seedKanbanWithTask({})
 
-    // REGRESSION (2026-08-24): human_touched has new_column_id: null.
-    // Pre-fix, the event fell into the unassign refetch branch and
-    // fired fetchKanbanTasksForAllColumns → one tasks?limit=100 per
-    // column EVERY time the user opened a task's chatview. The wire
-    // payload already carries the after-state (needs_human_review:
-    // false), so the handler must patch the local task in place and
-    // fetch NOTHING. The getTasks spy is deliberately left unmocked —
-    // any accidental network call would blow up the test.
+    // REGRESSION (2026-08-24): human_touched has new_column_id: null. Pre-fix, the event fell into
+    // the unassign refetch branch and fired fetchKanbanTasksForAllColumns → one tasks?limit=100 per
+    // column EVERY time the user opened a task's chatview.
     const getTasksSpy = vi.spyOn(api, 'getTasks')
 
     // Seed the "awaiting review" state the card shows before the
@@ -480,11 +441,9 @@ describe('kanbanSse — mirror local task on move/assign/unassign (fix duplicate
   })
 
   it('moved event: mirror slots the card at new_position among destination cards', async () => {
-    // colB already holds [t2, t3]; the agent moves task_1 from colA
-    // to colB position 1. The mirror must splice the card between
-    // t2 and t3 (display order IS array order — cardsInColumn just
-    // filters), so the board is correct with zero network beyond
-    // the single-row refresh.
+    // colB already holds [t2, t3]; the agent moves task_1 from colA to colB position 1. The mirror
+    // must splice the card between t2 and t3 (display order IS array order — cardsInColumn just
+    // filters), so the board is correct with zero network beyond the single-row refresh.
     const { ws, wsId, itemId, taskId } = seedKanbanWithTask({
       extraTasks: [
         { id: 't2', columnId: 'colB' },

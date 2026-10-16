@@ -1,9 +1,6 @@
-/**
- * Kanagawa Dragon Theme
+/** Kanagawa Dragon Theme
  * A dark, atmospheric colorscheme inspired by Japanese woodblock prints
- * Based on kanagawa.nvim colorscheme by rebelot
- */
-
+ * Based on kanagawa.nvim colorscheme by rebelot */
 export const kanagawa = {
   // Background shades
   colors: {

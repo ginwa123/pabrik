@@ -1,33 +1,6 @@
-/**
- * Behavioural tests for `ChatsList.vue` chat row active state.
- *
- * **Spec:** the chat row's `active` background is driven by the URL
- * (`?view=chat&session=X`), not by `navigationStore.sessionId` (which
- * can drift after refresh, deep-link, or `setActive` calls that
- * bypass the URL).
- *
- * **Pre-fix:** `loadChats()` set `active: savedSessionId === session.session_id`
- * where `savedSessionId` was `navigationStore.sessionId`. The URL was
- * not consulted.
- *
- * **Post-fix:** `loadChats()` derives `active` from the URL via
- * `useCurrentMainView()`. A chat row is active iff the URL is
- * `?view=chat&session=<row.id>`.
- *
- * **Deviation from the plan's verbatim test code:** the plan's
- * `pushItem` approach bypasses `loadChats()` (which is what the fix
- * actually changes), so the pushed item's `active: false` flag
- * overrides whatever `loadChats` set. The result: tests would never
- * go GREEN with the surgical fix alone.
- *
- * This file instead uses the existing `api.getChats` mock pattern
- * (mirrors `chatsListGitWorktree.spec.ts`) so `loadChats()` populates
- * `navItems` with the URL-driven active flag, then asserts on the
- * rendered DOM style.
- *
- * No static-contract checks — every assertion is on the live DOM
- * style attribute after the URL is mocked.
- */
+/** Behavioural tests for `ChatsList.vue` chat row active state. **Spec:** the chat row's `active`
+ * background is driven by the URL (`?view=chat&session=X`), not by `navigationStore.sessionId`
+ * (which can drift after refresh, deep-link, or `setActive` calls that bypass the URL). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp, nextTick, reactive, ref } from 'vue'
@@ -43,9 +16,8 @@ import {
 } from '../helpers/sseBus'
 import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 
-// Stub vue-router — ChatsList calls useRouter() in setup. The
-// `mocks: { $router: ... }` option only patches `this.$router`, so
-// we stub the composables at module level. Same pattern as
+// Stub vue-router — ChatsList calls useRouter() in setup. The `mocks: { $router: ... }` option only
+// patches `this.$router`, so we stub the composables at module level. Same pattern as
 // sidebarHandleSelectTaskUrl.spec.ts:57-77.
 const { useRouteMock, useRouterMock } = vi.hoisted(() => ({
   useRouteMock: vi.fn(() => ({ query: {} as Record<string, string>, path: '/', fullPath: '/' })),
@@ -112,9 +84,8 @@ function mountChatsList() {
 }
 
 async function flushLoadChats() {
-  // loadChats() in onMounted is async (awaits api.getChats). The
-  // mocked api.getChats resolves on the next microtask. Wait one
-  // macrotask + two Vue ticks so the render queue flushes before we
+  // loadChats() in onMounted is async (awaits api.getChats). The mocked api.getChats resolves on
+  // the next microtask. Wait one macrotask + two Vue ticks so the render queue flushes before we
   // assert on the DOM.
   await new Promise((r) => setTimeout(r, 0))
   await nextTick()
@@ -197,11 +168,9 @@ describe('ChatsList — chat row active state from URL', () => {
   })
 
   it('chat row active state reflects the URL at the time loadChats runs', async () => {
-    // The fix's invariant: loadChats() derives active from
-    // useCurrentMainView() at call time. So calling loadChats()
-    // with a different URL between renders should produce a
-     
-    // different active state.
+    // The fix's invariant: loadChats() derives active from useCurrentMainView() at call time. So
+    // calling loadChats() with a different URL between renders should produce a different active
+    // state.
     const route = reactive({
       query: {} as Record<string, string>,
       path: '/app',

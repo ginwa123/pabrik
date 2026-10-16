@@ -1,27 +1,6 @@
-/**
- * Tests for the persisted-image gallery preview in KanbanTaskDetailDialog
- * (edit mode — task already created with imageUrls).
- *
- * Bug (pre-fix): the gallery rendered <img> thumbnails but had no click
- * handler, so users on already-created tasks could see the thumbnails
- * but could NOT preview them at full size. Create-mode previews worked
- * via FilePreview.vue, but persisted data: URLs don't fit that
- * component (it requires File + blob: URL).
- *
- * Fix contract:
- *   1. Each gallery <img> is cursor:pointer and clickable.
- *   2. Clicking a thumbnail opens a Teleport overlay (rendered on
- *      document.body so it escapes the dialog overflow) showing the
- *      full-size image.
- *   3. Pressing Escape closes the overlay.
- *   4. Clicking the overlay backdrop closes the overlay.
- *   5. The overlay is removed from the DOM when closed (no stale
- *      modal on the next dialog open).
- *   6. Empty imageUrls → no gallery rendered → no overlay machinery
- *      fires.
- *
- * Plan: docs/superpowers/plans/2026-08-25-kanban-task-detail-image-preview.md
- */
+/** Tests for the persisted-image gallery preview in KanbanTaskDetailDialog (edit mode — task
+ * already created with imageUrls). Plan:
+ * docs/superpowers/plans/2026-08-25-kanban-task-detail-image-preview.md */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

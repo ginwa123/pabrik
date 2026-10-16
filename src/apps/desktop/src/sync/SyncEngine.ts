@@ -1,41 +1,5 @@
-/**
- * Generic local-first sync engine.
- *
- * Storage-agnostic orchestration: cache-then-delta reads, cursor tracking,
- * write-through, and older-page loads from cache. Knows nothing about chat —
- * concrete children (e.g. ChatEngineDb) wire the object-store name, the
- * compare function and the network fetcher.
- *
- * Effect notes
- * ------------
- * Every operation returns an `Effect` instead of a `Promise`. The important
- * change is not the promise wrapper, it is the second type parameter:
- *
- *   - Operations documented as best-effort (`putLocal`, `removeLocal`,
- *     `setCursor`, `clear`) keep their "must never break the UI" contract and
- *     therefore have an error channel of `never`. They still swallow, but
- *     with `Effect.catchAll` and a warning, instead of a bare `catch {}` that
- *     discarded the reason entirely.
- *   - Operations a caller may want to reason about (`primeFromCache`,
- *     `getCursor`, `loadOlderFromCache`) surface `SyncError`, so "the backend
- *     is down" is no longer indistinguishable from "there is nothing new".
- *
- * Two structural changes fall out of the port:
- *
- *  - The engine no longer keeps a private in-memory mirror. The `SyncStore`
- *    is always present — `IndexedDbStoreLive` falls back to memory when
- *    IndexedDB is unavailable, and `makeMemorySyncStore` is the SSR/spec
- *    variant — so the two parallel memory maps that used to exist (one here,
- *    one inside the store) collapse into one.
- *  - The store is injected as a value rather than a `Layer`, and each engine
- *    instance keeps its own — the pre-port behaviour, deliberately. A
- *    `Layer.sync` would construct a fresh instance per `Effect.provide`
- *    (rebuilding the IndexedDB connection on every operation), and sharing one
- *    instance across engines changes which rows a given engine can see, which
- *    is a separate behavioural change that needs its own test coverage.
- *    `IndexedDbStoreLive` remains available for callers that compose a whole
- *    program and want the store in context.
- */
+/** Generic local-first sync engine. Storage-agnostic orchestration: cache-then-delta reads, cursor
+ * tracking, write-through, and older-page loads from cache. */
 import { Effect, Either } from 'effect'
 import type { SyncError } from './SyncError'
 import { SyncRemoteError } from './SyncError'
@@ -52,22 +16,16 @@ export interface SyncMountResult<T> {
   fromCache: boolean
   /** The revalidated delta, or `null` when the revalidation failed. */
   delta: SyncDelta<T> | null
-  /**
-   * Why the revalidation failed, when it did. `null` means the delta fetch
-   * succeeded — including the "it succeeded and returned no rows" case that
-   * the previous `catch { return { items: cached, fromCache, delta } }` made
-   * indistinguishable from failure.
-   */
+  /**    * Why the revalidation failed, when it did. `null` means the delta fetch succeeded — including
+   * the "it succeeded and returned no rows" case that the previous `catch { return { items: cached,
+   * fromCache, delta } }` made indistinguishable from failure. */
   error: SyncError | null
 }
 
 export abstract class BaseSyncEngine<T extends Syncable, C = string> {
-  /**
-   * @param storeName Object-store name this engine reads and writes.
-   * @param store     Local-cache implementation; specs substitute a fake.
-   *                 Defaults to a fresh IndexedDB-backed store per engine,
-   *                 matching the isolation the pre-port constructors had.
-   */
+  /**    * @param storeName Object-store name this engine reads and writes. @param store Local-cache
+   * implementation; specs substitute a fake. Defaults to a fresh IndexedDB-backed store per engine,
+   * matching the isolation the pre-port constructors had. */
   constructor(
     protected readonly storeName: string,
     protected readonly store: SyncStoreShape = makeIndexedDbSyncStore(),
@@ -116,19 +74,11 @@ export abstract class BaseSyncEngine<T extends Syncable, C = string> {
       .pipe(Effect.map((rows) => rows.slice().sort(this.compareFn.bind(this)) as T[]))
   }
 
-  /**
-   * Cache-then-delta: return cached rows immediately when present, then fetch
-   * the network delta, merge (dedupe by id), persist, and advance the cursor.
-   *
-   * Never fails — a broken cache or an unreachable backend degrades to the
-   * painted cache — but `error` now records why, which the previous bare
-   * `catch` discarded.
-   */
+  /** Cache-then-delta: return cached rows immediately when present, then fetch the network delta,
+   * merge (dedupe by id), persist, and advance the cursor. */
   syncOnMount(ctx: C, limit: number): Effect.Effect<SyncMountResult<T>> {
-    // `Effect.gen` takes a generator function, and a generator's `this` is its
-    // own — so `this` has to be captured outside. It cannot be destructured
-    // instead: the engine API lives on the prototype, and an unbound
-    // destructured method would run with `this === undefined`.
+    // `Effect.gen` takes a generator function whose `this` is its own, so `this` is captured outside.
+    // It cannot be destructured: the engine API lives on the prototype.
     // oxlint-disable-next-line typescript-eslint/no-this-alias -- see above
     const engine = this
     return Effect.gen(function* () {
@@ -164,10 +114,8 @@ export abstract class BaseSyncEngine<T extends Syncable, C = string> {
     })
   }
 
-  /**
-   * Best-effort write-through (e.g. SSE `full` handler). Never fails: a cache
-   * write must not break the live update path that triggered it.
-   */
+  /** Best-effort write-through (e.g. SSE `full` handler). Never fails: a cache
+   * write must not break the live update path that triggered it. */
   putLocal(ctx: C, items: T[]): Effect.Effect<void> {
     if (items.length === 0) return Effect.void
     return this.store
@@ -182,11 +130,9 @@ export abstract class BaseSyncEngine<T extends Syncable, C = string> {
       .pipe(Effect.catchAll((e) => this.note(`removeLocal(${this.storeName})`, e)))
   }
 
-  /**
-   * Older-page read for scroll-back: cache first. An empty result means the
-   * caller should fetch from the network — an *error* now says the cache
-   * itself is unavailable, which the previous `catch { return [] }` could not.
-   */
+  /**    * Older-page read for scroll-back: cache first. An empty result means the caller should fetch
+   * from the network — an *error* now says the cache itself is unavailable, which the previous
+   * `catch { return [] }` could not. */
   loadOlderFromCache(
     ctx: C,
     beforeSortKey: string | number,

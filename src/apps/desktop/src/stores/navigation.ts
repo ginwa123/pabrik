@@ -25,13 +25,9 @@ export const useNavigationStore = defineStore('navigation', () => {
   // Chats sort direction
   const chatsSortDirection = ref(loadChatsSortDirection())
 
-  // Sub-agent peek panel state. When set, <ChatView> renders
-  // <SubAgentPeekPanel> for the given sub-agent session. The payload
-  // carries everything the panel needs from the spawn_sub_agent tool
-  // card (so we don't have to re-parse the message). Set via
-  // openPeek() from the SpawnSubAgent card's row click handler;
-  // cleared via closePeek() from the panel's close button or route
-  // change away from the parent chat.
+  // Sub-agent peek panel state. When set, <ChatView> renders <SubAgentPeekPanel> for the given
+  // sub-agent session. The payload carries everything the panel needs from the spawn_sub_agent tool
+  // card (so we don't have to re-parse the message).
   const peekPanel = ref<{
     sessionId: string
     agentName: string
@@ -128,13 +124,7 @@ export const useNavigationStore = defineStore('navigation', () => {
     } else {
       localStorage.removeItem(userScopedKey(STORAGE_KEY_ACTIVE_TASK_ID))
     }
-    // Clear chat when ACTIVATING a task. We do NOT clear the chat
-    // when passing null — that's the "exit task only, chat may still
-    // be active" case (Sidebar.vue:321, ChatsList.vue:212/227/251
-    // all call setActiveTask(null) as part of a "navigate to chat"
-    // cleanup sequence; the unconditional clear that used to live
-    // here was breaking the chat-nav paths and producing the
-    // `view=chat&session=X` welcome-page regression).
+    // Clear chat when ACTIVATING a task.
     if (taskId !== null) {
       clearActiveChat()
     }

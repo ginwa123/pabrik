@@ -1,32 +1,14 @@
-/**
- * Tests for FilePickerDialog — a generic, data-source-agnostic file/folder picker.
- *
- * The component is generic over the item type T. These tests use a MockEntry
- * shape (matching the codebase's FolderEntry from `src/api/index.ts`) but the
- * component works with any tree-shaped dataset — see the last `describe` block
- * for a git-branches example using a totally different item shape.
- *
- * IMPORTANT: The component uses both <Teleport to="body"> AND <Transition>.
- * @vue/test-utils stubs <Transition> by default, which means `wrapper.find()`
- * and `wrapper.text()` do NOT traverse into the dialog content. We must query
- * the document directly via `document.querySelector(selector)` for any
- * data-testid that lives inside the dialog. The helpers below (findInDom,
- * findAllInDom, clickInDom, keydownInDom) make that ergonomic.
- *
- * Pattern notes:
- * - `attachTo: document.body` is required for the Teleport to work in jsdom.
- * - `flushPromises` waits for the expandAncestors() chain to complete after modelValue flips.
- */
+/** Tests for FilePickerDialog — a generic, data-source-agnostic file/folder picker. The component
+ * is generic over the item type T. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import FilePickerDialog from '../components/FilePickerDialog.vue'
 import { makeLocalStorageStub } from './helpers'
 
-// Pinia + localStorage setup is required for FilePickerDialog because the
-// component now imports `useRecentFoldersStore` (the recent-folders tab).
-// Pinia requires an active instance; jsdom 29 dropped localStorage from
-// its default globals. Each test file gets a fresh Pinia + a fresh stub.
+// Pinia + localStorage setup is required for FilePickerDialog because the component now imports
+// `useRecentFoldersStore` (the recent-folders tab). Pinia requires an active instance; jsdom 29
+// dropped localStorage from its default globals. Each test file gets a fresh Pinia + a fresh stub.
 beforeEach(() => {
   setActivePinia(createPinia())
   Object.defineProperty(globalThis, 'localStorage', {
@@ -57,14 +39,8 @@ function keydownInDom(key: string) {
   el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
 }
 
-// Mock tree:
-//   /
-//   └── home
-//       └── user
-//           ├── docs    (dir)
-//           ├── notes   (dir)
-//           ├── readme  (file)
-//           └── .hidden (file, hidden)
+// Mock tree: / └── home └── user ├── docs (dir) ├── notes (dir) ├── readme (file) └── .hidden
+// (file, hidden)
 const tree: Record<string, Array<{ name: string; path: string; is_directory: boolean }>> = {
   '/': [{ name: 'home', path: '/home', is_directory: true }],
   '/home': [{ name: 'user', path: '/home/user', is_directory: true }],
@@ -271,9 +247,8 @@ describe('FilePickerDialog — selection (folder mode)', () => {
     vi.restoreAllMocks()
   })
 
-  // RENAMED + initialPath changed from '/home/user' to '/' to assert the
-  // "disabled at root" invariant. Previously: "Select button is disabled
-  // when nothing is selected". Plan:
+  // RENAMED + initialPath changed from '/home/user' to '/' to assert the "disabled at root"
+  // invariant. Previously: "Select button is disabled when nothing is selected". Plan:
   // docs/superpowers/plans/2026-08-13-folder-picker-select-button-current-folder.md
   it('Select button is disabled at root when nothing is selected', async () => {
     wrapper = mountDialog({ initialPath: '/', mode: 'folder' })
@@ -321,15 +296,9 @@ describe('FilePickerDialog — selection (folder mode)', () => {
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
   })
 
-  // UPDATED (plan: 2026-08-13-folder-picker-select-button-current-folder.md).
-  // The footer now reflects effectiveSelection (currentPath fallback), so
-  // at /home/user the footer shows the current folder even before any
-  // click. The new contract — clicking a file in folder mode does NOT
-  // select it — is unchanged: handleItemClick leaves selectedPath empty
-  // for non-expandable items in folder mode, so effectiveSelection stays
-  // on currentPath. The test now asserts the pre-click fallback (current
-  // folder shown) then the post-click invariant (footer still shows
-  // current folder, since the file click was a no-op).
+  // UPDATED (plan: 2026-08-13-folder-picker-select-button-current-folder.md). The footer now
+  // reflects effectiveSelection (currentPath fallback), so at /home/user the footer shows the
+  // current folder even before any click.
   it('clicking a file in folder mode does NOT select it (mode restricts)', async () => {
     wrapper = mountDialog({ initialPath: '/home/user', mode: 'folder' })
     await wrapper.setProps({ modelValue: true })
@@ -686,12 +655,9 @@ describe('FilePickerDialog — agnostic data source (non-folder example)', () =>
   })
 })
 
-// ─── Address-bar (path input) ──────────────────────────────────────────────────────────────
-// The "✏️ Go" button next to the breadcrumb swaps the clickable crumb row for a
-// single text input pre-filled with the current path. Enter navigates, Escape
-// reverts, the input commits on blur. Whatever the user types goes through
-// normalizeAddressInput() so a bare "docs" jumps into currentPath/docs
-// instead of being rejected as relative.
+// ─── Address-bar (path input) ────────────────────────────────────────────────────────────── The
+// "✏️ Go" button next to the breadcrumb swaps the clickable crumb row for a single text input
+// pre-filled with the current path. Enter navigates, Escape reverts, the input commits on blur.
 describe('FilePickerDialog — address bar (type a path)', () => {
   let wrapper: VueWrapper | null = null
 
@@ -787,8 +753,6 @@ describe('FilePickerDialog — address bar (type a path)', () => {
 
   it('lexical POSIX: from /home/user/docs, "../user" goes up then INTO user → /home/user/user', async () => {
     // Documents the deliberate POSIX semantics of the joinRelative helper.
-    // The resolve is purely lexical — it does NOT ask the FS whether `user`
-    // exists under the popped base. So `../user` from /home/user/docs is
     // `/home/user/user`, the same way `cd /home/user/docs && cd ../user`
     // resolves in POSIX shells.
     const loadItems = makeLoadItems()
@@ -910,17 +874,9 @@ describe('FilePickerDialog — address bar (type a path)', () => {
   })
 })
 
-// ─── Select button — current folder fallback (folder mode) ─────────────────
-//
-// Plan: docs/superpowers/plans/2026-08-13-folder-picker-select-button-current-folder.md
-//
-// The Select button is enabled whenever the user has a meaningful folder
-// in scope — either because they clicked a folder in the content pane
-// (explicit selectedPath) OR because they navigated to a folder via the
-// tree / breadcrumb / Up / Backspace / address bar (currentPath). The
-// root path '/' is treated as "no selection" and does NOT enable the
-// button. The footer "Selected:" shows what will be emitted, and a tiny
-// "← current folder" hint appears when the fallback path is in use.
+// ─── Select button — current folder fallback (folder mode) ───────────────── Plan:
+// docs/superpowers/plans/2026-08-13-folder-picker-select-button-current-folder.md The Select button
+// is enabled whenever the user has a meaningful folder in scope.
 describe('FilePickerDialog — Select when current folder is open (folder mode)', () => {
   let wrapper: VueWrapper | null = null
 
@@ -1019,17 +975,9 @@ describe('FilePickerDialog — Select when current folder is open (folder mode)'
   })
 
   it('Enter key on the dialog (no highlight) emits currentPath via the fallback', async () => {
-    // R10: pressing Enter without first pressing ArrowDown calls
-    // handleSelect() in the `else if (canSelect.value)` branch. With the
-    // fix, canSelect is true at /home/user, and Enter emits /home/user.
-    //
-    // The dialog auto-focuses the search input on open
-    // (FilePickerDialog.vue:613 `searchInput.value?.focus()`). While the
-    // search input is focused, Enter submits the first match (line 500-507)
-    // — i.e. it behaves like search-Enter, NOT dialog-Enter. To exercise
-    // the dialog-Enter branch we must move focus elsewhere first (blurring
-    // the search input). The plan covers R10 conceptually; the test must
-    // mirror the actual code path.
+    // R10: pressing Enter without first pressing ArrowDown calls handleSelect() in the `else if
+    // (canSelect.value)` branch. With the fix, canSelect is true at /home/user, and Enter emits
+    // /home/user.
     wrapper = mountDialog({ initialPath: '/home/user', mode: 'folder', closeOnSelect: true })
     await wrapper.setProps({ modelValue: true })
     await flushPromises()
@@ -1044,14 +992,9 @@ describe('FilePickerDialog — Select when current folder is open (folder mode)'
   })
 })
 
-// ─── Recent tab + tabstrip + pin ────────────────────────────────────────────
-//
-// Plan: docs/superpowers/plans/2026-08-14-folder-picker-recent-history.md
-//
-// The dialog opens on the Recent tab by default. The user sees a flat list
-// of folders they've picked before (most recent first, pinned at top). Click
-// a row to select; click the star to toggle pin. The Browse tab is one click
-// away and shows the existing two-pane tree + content layout.
+// ─── Recent tab + tabstrip + pin ──────────────────────────────────────────── Plan:
+// docs/superpowers/plans/2026-08-14-folder-picker-recent-history.md The dialog opens on the Recent
+// tab by default.
 describe('FilePickerDialog — Recent tab + tabstrip + pin', () => {
   let wrapper: VueWrapper | null = null
 
@@ -1063,14 +1006,8 @@ describe('FilePickerDialog — Recent tab + tabstrip + pin', () => {
   })
 
   it('opens on the Recent tab by default', async () => {
-    // mountDialog does NOT pass enableRecentHistory — that's the "omitted"
-    // case the default-on branch needs to handle. Vue 3.5's runtime default
-    // for `boolean?` is `false`, so `props.enableRecentHistory` reads as
-    // `false` here even though the caller didn't pass anything. The
-    // computed treats `undefined` as "default on" but `mountDialog`'s
-    // implicit spread of the override doesn't preserve `undefined`.
-    // To exercise the default-on branch, mount with `enableRecentHistory: undefined`
-    // explicitly:
+    // mountDialog does NOT pass enableRecentHistory — that's the "omitted" case the default-on
+    // branch needs to handle.
     wrapper = mountDialog({ initialPath: '/home/user', enableRecentHistory: undefined })
     await wrapper.setProps({ modelValue: true })
     await flushPromises()

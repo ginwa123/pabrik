@@ -1,17 +1,4 @@
-/**
- * Behavioural tests for KanbanView's search-filter wiring.
- *
- * Plan: docs/superpowers/plans/2026-07-30-kanban-task-search.md Chunk 6
- *
- * Verifies:
- *   - <KanbanSearchInput> renders in the header, left of ⚙️ Settings.
- *   - Typing triggers a 300ms-debounced refetch via fetchKanbanTasks(q=).
- *   - Esc / ✕ → debounced refetch with q=undefined (cleared).
- *   - "No tasks match" banner appears when tasks empty + query non-empty.
- *   - Column count badge updates when search is active.
- *
- * Uses vi.useFakeTimers() to drive the 300ms debounce deterministically.
- */
+/** Behavioural tests for KanbanView's search-filter wiring. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises } from '@vue/test-utils'
@@ -83,9 +70,8 @@ describe('KanbanView search filter wiring', () => {
     vi.advanceTimersByTime(350)
     await flushPromises()
 
-    // Per-column initial fetch (Option B): the search watcher calls
-    // fetchKanbanTasksForAllColumns, not fetchKanbanTasks directly.
-    // The underlying per-column fetches happen as
+    // Per-column initial fetch (Option B): the search watcher calls fetchKanbanTasksForAllColumns,
+    // not fetchKanbanTasks directly. The underlying per-column fetches happen as
     // Promise.all(map(col => fetchKanbanTasks(...))).
     expect(spyForAllColumns).toHaveBeenCalledWith(WS_ID, ITEM_ID, 10, 'design')
   })

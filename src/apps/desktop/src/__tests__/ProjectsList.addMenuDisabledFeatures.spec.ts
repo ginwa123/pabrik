@@ -1,13 +1,6 @@
-/**
- * The "+ Add Item" menu keeps listing every item type, but the
- * DESIGN and ROUTINE options are disabled (same treatment as the
- * always-disabled "Add Project") so the user cannot open
- * AddDesignDialog / AddRoutineItemDialog from the sidebar.
- *
- * The remaining options (Kanban, Agent) must still emit
- * `requestAddItem` — a regression here would silently break adding
- * projects.
- */
+/** The "+ Add Item" menu keeps listing every item type, but the DESIGN and ROUTINE options are
+ * disabled (same treatment as the always-disabled "Add Project") so the user cannot open
+ * AddDesignDialog / AddRoutineItemDialog from the sidebar. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref } from 'vue'

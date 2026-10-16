@@ -1,14 +1,6 @@
-/**
- * Wire-body regression tests for the terminal API fns.
- *
- * apiFetch() stringifies `body` itself — these fns must pass plain
- * objects. Passing JSON.stringify(...) double-encodes the payload
- * (the server sees a JSON *string* and answers 400 "Invalid JSON
- * body"). Caught live 2026-09-16: DevTools showed the sessions POST
- * payload as `"{\"cwd\":...}"` with "No properties".
- *
- * Backend: terminal_create/input/resize.zig.
- */
+/** Wire-body regression tests for the terminal API fns. apiFetch() stringifies `body` itself —
+ * these fns must pass plain objects. Passing JSON.stringify(...) double-encodes the payload (the
+ * server sees a JSON *string* and answers 400 "Invalid JSON body"). */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {

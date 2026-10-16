@@ -1,29 +1,5 @@
-/**
- * Unit tests for the workspaces store's `refreshTask` action.
- *
- * `refreshTask` is called from KanbanView.handleViewTaskDetail so the
- * Task details dialog opens with the LIVE `is_auto_retry_until_stop`
- * value (which lives on sessions, joined at read time) rather than
- * the value cached at workspaces store init() time. The action fetches
- * the ONE task via `api.getTask` (GET .../tasks/:task_id) and patches
- * the matching task object in place — the dialog's watcher re-derives
- * its local form state from the new task via the `[show, task?.id,
- * mode]` dependency, so the toggle reflects the live DB value.
- *
- * Plan: docs/superpowers/plans/2026-08-24-kanban-task-detail-single-fetch.md
- * (Task 3). `refreshTask` used to refetch the WHOLE task list via
- * `api.getTasks(ws, item, 100)` and pluck one task — the regression
- * test below locks in `getTask` (and NOT `getTasks`).
- *
- * Behaviors under test:
- *  1. Calls getTask (single-task endpoint), NOT getTasks (list).
- *  2. Replaces the cached task with the fresh one (including the
- *     `is_auto_retry_until_stop` field that motivated this action).
- *  3. Is a no-op when the server answers 404 → null (e.g. server-side
- *     deletion raced with our dialog open).
- *  4. Does NOT throw on API failure — the dialog should still open
- *     with the cached value. The failure is logged but suppressed.
- */
+/** Unit tests for the workspaces store's `refreshTask` action. Plan:
+ * docs/superpowers/plans/2026-08-24-kanban-task-detail-single-fetch.md (Task 3). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -163,10 +139,9 @@ describe('useWorkspacesStore.refreshTask', () => {
 
     // Cached task unchanged; failure is logged via console.warn.
     expect(ws.workspaces[0]!.items[0]!.tasks![0]!.is_auto_retry_until_stop).toBe('1')
-    // We don't assert on console.warn here — vi.restoreAllMocks() in
-    // afterEach would reset a module-level spy. The "does not throw"
-    // promise is the contract that matters for the dialog UX; the
-    // log line is incidental observability.
+    // We don't assert on console.warn here — vi.restoreAllMocks() in afterEach would reset a
+    // module-level spy. The "does not throw" promise is the contract that matters for the dialog
+    // UX; the log line is incidental observability.
   })
 
   it('only patches the task whose id matches (does not touch sibling tasks)', async () => {

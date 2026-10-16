@@ -17,10 +17,9 @@ const props = withDefaults(
       model?: string
       base_url?: string
       api_key?: string
-      /** Plan 2026-07-07-compaction-inline: per-profile compaction
-       *  errors. Not currently set by the backend (null is always
-       *  valid; > 100 is caught at the HTTP layer), but accepted
-       *  by the form so the errors prop type is future-proof. */
+      /**        * Plan 2026-07-07-compaction-inline: per-profile compaction errors. Not currently set by the
+       * backend (null is always valid; > 100 is caught at the HTTP layer), but accepted by the form
+       * so the errors prop type is future-proof. */
       max_capacity_tokens?: string
       compaction_threshold_percent?: string
     }
@@ -46,18 +45,16 @@ function updateName(val: string) {
   emit('update:modelValue', { ...props.modelValue, name: val })
 }
 function updateConfig(cfg: LlmConfig) {
-  // Editing any field invalidates a previous test result — the profile
-  // may now be misconfigured even though the prior probe succeeded.
-  // Clearing prevents stale "looks good!" badges from lulling the user
-  // into saving a broken config.
+  // Editing any field invalidates a previous test result — the profile may now be misconfigured
+  // even though the prior probe succeeded. Clearing prevents stale "looks good!" badges from
+  // lulling the user into saving a broken config.
   testResult.value = null
   emit('update:modelValue', { ...props.modelValue, config: cfg })
 }
 
-// ─── Test button state ─────────────────────────────────────────────────────
-// Mirrors McpServerModal's probe UX: `testResult` carries the last
-// `POST /api/llm/test` response (null = "no probe yet"), `testing` is
-// the loading flag while the HTTP call is in-flight.
+// ─── Test button state ───────────────────────────────────────────────────── Mirrors
+// McpServerModal's probe UX: `testResult` carries the last `POST /api/llm/test` response (null =
+// "no probe yet"), `testing` is the loading flag while the HTTP call is in-flight.
 const testResult = ref<LlmTestResult | null>(null)
 const testing = ref(false)
 

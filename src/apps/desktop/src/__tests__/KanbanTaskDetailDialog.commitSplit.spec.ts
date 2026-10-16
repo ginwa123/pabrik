@@ -1,27 +1,6 @@
-/**
- * Tests for the commit split button in KanbanTaskDetailDialog.
- *
- * The footer is one split control: a primary half plus a caret menu
- * holding the alternative commit. Which half is primary depends on the
- * mode —
- *   create:  half = "▶ Create task & run agent", menu = "Create task only"
- *   edit:    half = "Save",                        menu = "▶ Start agent"
- *
- * All four original data-testids are preserved; two of them just moved
- * into the menu. The menu is toggled with v-show rather than v-if, so
- * its items stay in the DOM while closed — `findInDom` works either way,
- * and the assertions below deliberately do not depend on the open state.
- *
- * The second half of this file covers the per-action pending label: only
- * the action the user actually pressed narrates the in-flight state, so
- * the footer can say which commit is running instead of flashing the
- * same word twice.
- *
- * Mount pattern: <Teleport to="body">, so use `attachTo: document.body`
- * + `document.querySelector` (NOT `wrapper.find`).
- *
- * Plan: docs/plans/2026-09-29-kanban-task-detail-3-buttons.md
- */
+/** Tests for the commit split button in KanbanTaskDetailDialog. The footer is one split control: a
+ * primary half plus a caret menu holding the alternative commit. Plan:
+ * docs/plans/2026-09-29-kanban-task-detail-3-buttons.md */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -74,7 +53,6 @@ describe('KanbanTaskDetailDialog — commit split button', () => {
   }
 
   // ── structure ────────────────────────────────────────────────────────
-
   it('create mode: the run action is the primary half and plain create is in the menu', async () => {
     mountDialog()
     await flushPromises()
@@ -105,7 +83,6 @@ describe('KanbanTaskDetailDialog — commit split button', () => {
   })
 
   // ── caret behaviour ──────────────────────────────────────────────────
-
   it('the caret opens and closes the menu, and reports it via aria-expanded', async () => {
     mountDialog()
     await flushPromises()
@@ -238,10 +215,9 @@ describe('KanbanTaskDetailDialog — per-action pending label', () => {
   })
 
   it('falls back to "Creating…" when the host raises creating without a click', async () => {
-    // No handler ran, so `pendingAction` is null and there is nothing to
-    // attribute the in-flight state to. The neutral wording is the point
-    // of that fallback — the old code flashed the same word on both
-    // buttons, which is the bug this spec exists to prevent regressing.
+    // No handler ran, so `pendingAction` is null and there is nothing to attribute the in-flight
+    // state to. The neutral wording is the point of that fallback — the old code flashed the same
+    // word on both buttons, which is the bug this spec exists to prevent regressing.
     mountDialog({ creating: true })
     await flushPromises()
     await typeName('My task')

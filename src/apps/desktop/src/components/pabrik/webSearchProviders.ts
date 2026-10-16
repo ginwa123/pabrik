@@ -1,47 +1,13 @@
-/**
- * webSearchProviders — the parser/serializer pair for the top-level
- * `web_search` key in config.json.
- *
- * The wire shape is a map of provider name to `PabrikWebSearchProvider`
- * (see `api/index.ts`). The UI edits it as a LIST of rows, because a
- * provider's name is editable in place and an object map cannot express
- * "the key I am currently typing" without a dance. `parse` hydrates the
- * list, `serialize` writes it back.
- *
- * Three properties this pair guarantees, all of which the backend
- * depends on:
- *
- * 1. **`key` is omitted, never emptied.** A self-hosted provider has no
- *    credential; `""` is not the same thing (an empty slice binds as SQL
- *    NULL and `isUsable` treats a declared-but-blank credential as
- *    unusable).
- * 2. **A masked key round-trips unchanged.** `key` may arrive from the
- *    API as an obfuscation string such as `sk••••7f2` rather than as the
- *    secret. Sending it back verbatim is a no-op on the server;
- *    replacing it with `""` would silently destroy the stored secret.
- *    This module therefore never invents a key value — it only decides
- *    whether to emit the one it was given.
- * 3. **`curl` is stored without the secret.** It carries the literal text
- *    `{key}` where the credential goes, never the credential itself.
- *
- * `enabled` is omit-when-true on the wire, mirroring
- * `serializeMcpServers` and the backend's default: only `false` is ever
- * written, so a save never adds churn to a config that relies on the
- * default.
- */
+/** webSearchProviders — the parser/serializer pair for the top-level `web_search` key in
+ * config.json. The wire shape is a map of provider name to `PabrikWebSearchProvider` (see
+ * `api/index.ts`). */
 import type { PabrikWebSearchProvider } from '../../api'
 
 /** The literal placeholder `curl` must contain when a key is set. */
 export const KEY_PLACEHOLDER = '{key}'
 
-/**
- * Editable row model for one provider.
- *
- * `id` is stable UI identity and is NEVER written to config.json — the
- * map key is `name`. It exists because `name` is an editable text input:
- * keying Vue's `:key` on it would destroy and rebuild the input node on
- * every keystroke, dropping focus mid-word.
- */
+/** Editable row model for one provider. `id` is stable UI identity and is NEVER written to
+ * config.json — the map key is `name`. */
 export interface WebSearchProviderRow {
   /** Stable per-row identity (Vue `:key`, error lookup). Not on the wire. */
   id: string
@@ -78,10 +44,8 @@ export function createWebSearchProviderRow(): WebSearchProviderRow {
   }
 }
 
-/**
- * Hydrate the editable list from the config's `web_search` map.
- * `null`/absent yields `[]` — same contract as `parseMcpServers`.
- */
+/** Hydrate the editable list from the config's `web_search` map.
+ * `null`/absent yields `[]` — same contract as `parseMcpServers`. */
 export function parseWebSearchProviders(
   raw: Record<string, PabrikWebSearchProvider> | null | undefined,
 ): WebSearchProviderRow[] {
@@ -107,12 +71,9 @@ export function parseWebSearchProviders(
   return out
 }
 
-/**
- * Write the editable list back to the config's `web_search` map.
- * `undefined` means "omit the key entirely" — the same signal the
- * sibling `serializeMcpServers` uses, and the one `usePabrikConfig`'s
- * diff reads as "no change".
- */
+/**  * Write the editable list back to the config's `web_search` map. `undefined` means "omit the key
+ * entirely" — the same signal the sibling `serializeMcpServers` uses, and the one
+ * `usePabrikConfig`'s diff reads as "no change". */
 export function serializeWebSearchProviders(
   rows: WebSearchProviderRow[],
 ): Record<string, PabrikWebSearchProvider> | undefined {
@@ -137,14 +98,9 @@ export function serializeWebSearchProviders(
   return Object.keys(out).length ? out : undefined
 }
 
-// ─── Host pin checks ────────────────────────────────────────────────────────
-// A TS port of `hostOfUrl` / `isNonPublicHost` / `checkHostPolicy` from
-// `src/modules/agent/tools/web_search_curl.zig`. Hand-rolled rather than
-// `new URL` so a malformed URL produces a message instead of a thrown
-// `TypeError` from inside an input handler, and so the host rules stay
-// line-for-line comparable with the backend's.
-
-/** The `host[:port]` of a URL, or `''` when there is none. */
+// ─── Host pin checks ──────────────────────────────────────────────────────── A TS port of
+// `hostOfUrl` / `isNonPublicHost` / `checkHostPolicy` from
+// `src/modules/agent/tools/web_search_curl.zig`.
 function hostOfUrl(url: string): string {
   const schemeEnd = url.indexOf('://')
   let rest = schemeEnd >= 0 ? url.slice(schemeEnd + 3) : url
@@ -160,11 +116,8 @@ function endsWithIgnoreCase(haystack: string, needle: string): boolean {
   return haystack.slice(-needle.length).toLowerCase() === needle.toLowerCase()
 }
 
-/**
- * True when `host` names a loopback, link-local, private or otherwise
- * non-public address — a cloud metadata endpoint, most of all, since a
- * key sent to `169.254.169.254` is a stolen key.
- */
+/**  * True when `host` names a loopback, link-local, private or otherwise non-public address — a cloud
+ * metadata endpoint, most of all, since a key sent to `169.254.169.254` is a stolen key. */
 export function isNonPublicHost(host: string): boolean {
   let h = host
   if (h.startsWith('[')) {
@@ -227,16 +180,6 @@ export function urlPinError(url: string): string | null {
 }
 
 // ─── Row validation ─────────────────────────────────────────────────────────
-
-/**
- * Per-row messages keyed by `WebSearchProviderRow.id`, mirroring the
- * rules the backend enforces on `web_search`. One message per row: the
- * first rule that fails, so the user is not handed a wall of text about
- * a row they are still halfway through typing.
- *
- * Exported as a pure function so the parent can call it before writing
- * `web_search` into the config snapshot — the tests drive it directly.
- */
 export function validateWebSearchRows(rows: WebSearchProviderRow[]): Record<string, string> {
   const errors: Record<string, string> = {}
   for (const row of rows) {
@@ -247,10 +190,8 @@ export function validateWebSearchRows(rows: WebSearchProviderRow[]): Record<stri
 }
 
 function validateWebSearchRow(row: WebSearchProviderRow): string | null {
-  // A row the user added and never filled in is not an error: it has no
-  // name, so `serializeWebSearchProviders` drops it and it never reaches
-  // the wire. Blocking the whole settings save over a placeholder row
-  // would be a worse failure than the one we are guarding against.
+  // A row the user added and never filled in is not an error: it has no name, so
+  // `serializeWebSearchProviders` drops it and it never reaches the wire.
   const untouched =
     !row.name.trim() &&
     !row.url.trim() &&
@@ -274,17 +215,8 @@ function validateWebSearchRow(row: WebSearchProviderRow): string | null {
   return null
 }
 
-/**
- * Route a rejected-save message onto the row it names.
- *
- * The settings save is one PUT of the whole config, so a provider the
- * backend refuses comes back as a single string. Dropping that into a
- * generic toast would leave the user hunting for which of N rows is
- * broken — the failure would be indistinguishable from a transport error.
- * This keeps the message verbatim and pins it to the row whose name it
- * mentions; a message that names no row yields `{}` and the caller
- * falls back to the global notification.
- */
+/** Route a rejected-save message onto the row it names. The settings save is one PUT of the whole
+ * config, so a provider the backend refuses comes back as a single string. */
 export function webSearchRowErrorsFromMessage(
   message: string,
   rows: WebSearchProviderRow[],

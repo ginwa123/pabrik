@@ -1,19 +1,6 @@
-/**
- * Keyboard shortcuts for the tab strip.
- *
- * Shortcut namespace: browsers own `Ctrl/Cmd+T`, `Ctrl/Cmd+W`,
- * `Ctrl/Cmd+1..9`, and Chromium also swallows `Ctrl+Tab`, so those can
- * never be the documented map for a page. The guaranteed map is
- * `Shift+Alt+…`; the familiar chords are registered opportunistically so
- * the desktop webview (which does not reserve them) feels native. There is
- * no desktop-vs-web detection flag in this repo, hence "opportunistic"
- * rather than conditional.
- *
- * The resolver is pure so the whole map is testable with synthetic
- * KeyboardEvents, and the listener is a plain function returning its own
- * teardown (no lifecycle coupling).
- */
-
+/** Keyboard shortcuts for the tab strip. Shortcut namespace: browsers own `Ctrl/Cmd+T`,
+ * `Ctrl/Cmd+W`, `Ctrl/Cmd+1..9`, and Chromium also swallows `Ctrl+Tab`, so those can never be the
+ * documented map for a page. */
 export type TabCommand = 'new' | 'close' | 'reopen' | 'next' | 'previous' | `select:${number}`
 
 export interface TabShortcutHandlers {
@@ -78,10 +65,8 @@ export function resolveTabShortcut(event: {
   return null
 }
 
-/**
- * A modal owns the keyboard while it is open — never steal its keys.
- * (`EventTarget` from a window-level dispatch has no `closest`.)
- */
+/** A modal owns the keyboard while it is open — never steal its keys.
+ * (`EventTarget` from a window-level dispatch has no `closest`.) */
 export function isTabShortcutBlocked(target: EventTarget | null | undefined): boolean {
   const element = target as (HTMLElement & { closest?: (selector: string) => Element | null }) | null
   if (!element || typeof element.closest !== 'function') return false

@@ -1,19 +1,6 @@
-/**
- * Tests for KanbanMove.vue — the tool_output component that renders
- * the XML response from the `kanban_move_task` agent tool. The component
- * is purely presentational (no API calls), so no mocks are needed.
- *
- * Mirrors the SetGitWorktree tool_output style. Covers the two XML
- * shapes the backend can produce (see kanban_move_task.zig:206-231):
- *   1. Success: <kanban_move><success>true</success><task_id>...
- *                  <task_name>...<column_id>...<column_name>...<position>...
- *   2. Error:   <kanban_move><success>false</success><error>...
- *
- * Note: the content passed in here is the *inner* XML (`<data>` of the
- * tool envelope, extracted by ChatView.vue's `innerToolData`). The
- * outer `<tool>...</tool>` envelope is unwrapped by ChatView before the
- * component sees it — same contract as SetGitWorktree.vue / ReadFile.vue.
- */
+/** Tests for KanbanMove.vue — the tool_output component that renders the XML response from the
+ * `kanban_move_task` agent tool. The component is purely presentational (no API calls), so no mocks
+ * are needed. Mirrors the SetGitWorktree tool_output style. */
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 

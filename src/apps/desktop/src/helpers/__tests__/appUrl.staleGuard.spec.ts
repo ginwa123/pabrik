@@ -1,21 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { isChatRouteStaleForSession } from '../appUrl'
 
-/**
- * Regression: left-sidebar chat click did nothing after opening a file in
- * the right sidebar (Changes tab).
- *
- * Root cause: ChatView's diff URL writers (`syncDiffParam`, `syncDiffQuery`)
- * guarded only legacy `?view=/?session=` query URLs. On path-based
- * `/app/{ws}/chat/{sid}` URLs both guards were no-ops, so the dying view's
- * scroll-spy `router.replace` raced ChatsList's chat-switch navigation —
- * either cancelling it (view snaps back to the old chat) or stamping the
- * old `?diff=` onto the new chat's URL. First click appeared dead; second
- * click (spy already stopped) worked — hence "not directly click".
- *
- * Behavioural contract for the guard: call it with the real path + owning
- * session, assert stale/fresh. No source-text greps.
- */
+/** Regression: left-sidebar chat click did nothing after opening a file in the right sidebar
+ * (Changes tab). Root cause: ChatView's diff URL writers (`syncDiffParam`, `syncDiffQuery`) guarded
+ * only legacy `?view=/?session=` query URLs. */
 describe('isChatRouteStaleForSession — dying view must not touch the URL', () => {
   const WS = 'ws_1'
   const A = 'sess_A'

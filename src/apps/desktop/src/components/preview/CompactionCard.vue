@@ -86,19 +86,9 @@
 import { ref, computed } from 'vue'
 import UiIcon from '../ui/UiIcon.vue'
 
-/**
- * CompactionCard — renders the rich `<compact_messages>` envelope that
- * `compactMessageInMemoryNew` writes to the DB. Three sections:
- *   - <metadata>: session_id, model, compacted_at
- *   - <message_index>: id + role + preview (+ tool_call_id for tool results)
- *   - <summary>: the compactor's structured output (GOAL / CURRENT STATE / ...)
- *
- * The summary section is collapsed by default to keep the chat scannable;
- * users expand it on demand to see what the compactor extracted.
- *
- * The XML is parsed in-browser with `DOMParser` (works in jsdom + all
- * modern browsers). The envelope is small (≤ a few KB) so this is cheap.
- */
+/** CompactionCard — renders the rich `<compact_messages>` envelope that `compactMessageInMemoryNew`
+ * writes to the DB. Three sections: `<metadata>`, `<message_index>` and `<summary>` (the compactor's
+ * structured output, collapsed by default and expanded on demand). */
 const props = defineProps<{
   content: string
 }>()
@@ -119,11 +109,9 @@ interface CompactionEntry {
   tool_name?: string
 }
 
-// Show more entries by default; the .compaction-entries style adds
-// max-height + overflow-y so a 359-message compaction renders as a
-// scrollable list rather than a 359-row wall. The "Show all" toggle
-// remains for accessibility (keyboard-only users can expand without
-// scrolling).
+// Show more entries by default; the .compaction-entries style adds max-height + overflow-y so a
+// 359-message compaction renders as a scrollable list rather than a 359-row wall. The "Show all"
+// toggle remains for accessibility (keyboard-only users can expand without scrolling).
 const MAX_ENTRIES_VISIBLE = 50
 
 const metadata = ref<CompactionMetadata>({})
@@ -154,10 +142,9 @@ const toggleSummary = () => {
 }
 
 const parse = (raw: string) => {
-  // Defensive: don't crash on malformed XML. The Zig-side envelope is
-  // well-formed by construction, but a DB row that got truncated mid-write
-  // (e.g. interrupted saveMessage) should still render the card, even if
-  // some sections are empty.
+  // Defensive: don't crash on malformed XML. The Zig-side envelope is well-formed by construction,
+  // but a DB row that got truncated mid-write (e.g. interrupted saveMessage) should still render
+  // the card, even if some sections are empty.
   let doc: Document
   try {
     doc = new DOMParser().parseFromString(raw, 'text/xml')
@@ -178,11 +165,9 @@ const parse = (raw: string) => {
     return
   }
 
-  // Metadata — direct child only (avoids matching a <metadata> tag that
-  // might appear inside the compactor's <summary> text). We use
-  // `parent.children` + tag filter instead of `:scope > X` because the
-  // latter is not reliably supported by jsdom's XML parser (and the
-  // project uses jsdom for component tests).
+  // Metadata — direct child only, so a <metadata> tag inside the compactor's <summary> text cannot
+  // match. `parent.children` + tag filter rather than `:scope > X`, which jsdom's XML parser does
+  // not reliably support.
   const metadataEl = directChild(root, 'metadata')
   if (metadataEl) {
     metadata.value = {
@@ -237,11 +222,8 @@ const textOf = (parent: Element, tag: string): string | undefined => {
   return t ? t : undefined
 }
 
-// Parse synchronously during setup (rather than in onMounted) so the
-// component is fully populated by the time it's rendered. This also
-// makes the component testable without a full DOM lifecycle mount
-// (vue-test-utils' `mount()` does call onMounted, but setup-time
-// parsing is more deterministic).
+// Parse synchronously during setup rather than in onMounted, so the component is populated before
+// it renders and the test does not depend on a full DOM lifecycle mount.
 parse(props.content)
 </script>
 

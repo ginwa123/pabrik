@@ -20,23 +20,7 @@ const xmlEnvelope = (
   extra +
   '</background_command>'
 
-// ============================================================================
-// The JSON envelope — the shape the backend emits TODAY
-// ============================================================================
-//
-// Its absence is the bug this block exists for. `buildCompletionMessage`
-// (src/agentic_loop/background_process.zig) has emitted JSON since #563 and
-// `background_command_completion_test.zig` asserts that JSON; this parser only
-// knew the XML and the legacy prose, so every completion since then rendered as
-// raw JSON in a user bubble. Two green suites, one broken product.
-//
-// The literal below is written out BY HAND in the backend's field order
-// (`pid`, `command`, `stdout`, `truncated`, `total_bytes`, `log_path`, from
-// `std.json.Stringify`) rather than built by a helper, because a helper here
-// would let the two sides drift again while both stayed green. When the
-// backend's shape changes, this literal is the thing that fails.
-
-/** Non-truncated: `total_bytes` and `log_path` are null. */
+// ============================================================================ The JSON envelope.
 const jsonEnvelope = (pid: number, command: string, stdout: string) =>
   `{"pid":${pid},"command":${JSON.stringify(command)},"stdout":${JSON.stringify(stdout)},"truncated":false,"total_bytes":null,"log_path":null}`
 
@@ -83,10 +67,9 @@ describe('isBackgroundCommandOutput (JSON envelope)', () => {
   })
 
   it('detects the JSON envelope but returns null when it is not one of ours', () => {
-    // Same contract as a malformed `<background_command>` block: the PREDICATE
-    // says "this is an envelope" (so the bubble is not rendered as prose) and
-    // the PARSER says "I cannot shape it" (so no card). A JSON object with no
-    // `pid` is somebody else's data.
+    // Same contract as a malformed `<background_command>` block: the PREDICATE says "this is an
+    // envelope" (so the bubble is not rendered as prose) and the PARSER says "I cannot shape it"
+    // (so no card). A JSON object with no `pid` is somebody else's data.
     const content = '{"pid":'
     expect(isBackgroundCommandOutput(content)).toBe(true)
     expect(parseBackgroundCommandOutput(content)).toBeNull()

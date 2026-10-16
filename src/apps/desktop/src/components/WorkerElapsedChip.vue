@@ -44,11 +44,9 @@ export interface WorkerActivity {
 const props = withDefaults(
   defineProps<{
     sessionId: string
-    /**
-     * `chip` — a pill with the elapsed time (sidebar rows, kanban card).
+    /** `chip` — a pill with the elapsed time (sidebar rows, kanban card).
      * `text` — bare text, for surfaces that already carry a status line
-     *          (kanban row metadata, task-detail rows).
-     */
+     *          (kanban row metadata, task-detail rows). */
     variant?: 'chip' | 'text'
     /** A distinct `data-testid` lets each surface target its own chip. */
     testId?: string

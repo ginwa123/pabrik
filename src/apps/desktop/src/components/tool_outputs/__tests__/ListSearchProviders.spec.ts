@@ -1,13 +1,5 @@
-/**
- * Tests for ListSearchProviders.vue — the tool-output card for the
- * `list_web_search_providers` agent tool.
- *
- * The listing is inert by construction (D14): the backend stores each
- * provider's curl as a TEMPLATE carrying the literal text `{key}`, so the card
- * may show it verbatim and no redaction is needed. These tests pin that the
- * template — placeholder included — reaches the screen, and that an empty or
- * malformed payload renders an explanation instead of a blank card.
- */
+/** Tests for ListSearchProviders.vue — the tool-output card for the `list_web_search_providers`
+ * agent tool. */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 

@@ -1,26 +1,6 @@
-/**
- * Tests for the `used_tools` tool dispatcher in ChatView.vue.
- *
- * `used_tools` used to fall through to the generic `v-else` fallback, which
- * dumped the raw payload into a one-liner:
- *   used_tools → ✓ {"count":10,"tools":[{"name":"update_plan",…]}
- * It now has a dedicated card. This spec pins the wiring so a future
- * dispatcher refactor cannot silently push `used_tools` back into the
- * fallback (the `v-else-if` branch order is load-bearing here — the generic
- * `v-else` sits last in the chain).
- *
- * Behavioural contract:
- *   - `tool_name === 'used_tools'` dispatches to <UsedTools :message="msg" />,
- *     on both the success and the error branch.
- *   - `search_tool` still dispatches to <ProgressiveTool> and NOT to
- *     <UsedTools> — the two cards share the name/description row shape, so a
- *     widened branch would be easy to introduce by accident.
- *   - An unrelated tool name renders neither stub (generic fallback territory).
- *
- * Mirrors ChatView.updatePlan.spec.ts (stub via vi.mock, assert on a
- * data-tool-name marker) so the internal rendering of UsedTools.vue stays in
- * components/tool_outputs/__tests__/UsedTools.spec.ts.
- */
+/** Tests for the `used_tools` tool dispatcher in ChatView.vue. `used_tools` used to fall through to
+ * the generic `v-else` fallback, which dumped the raw payload into a one-liner: used_tools → ✓
+ * {"count":10,"tools":[{"name":"update_plan",…]} It now has a dedicated card. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, ref } from 'vue'
@@ -34,11 +14,9 @@ import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 import { makeLocalStorageStub } from './helpers'
 import type { Message } from '../api'
 
-// ────────────────────────────────────────────────────────────────────────
-// Stubs — we only assert WHICH renderer the dispatcher picked, so the
-// stubs are thin markers rather than the real components.
-// ────────────────────────────────────────────────────────────────────────
-
+// ──────────────────────────────────────────────────────────────────────── Stubs — we only assert
+// WHICH renderer the dispatcher picked, so the stubs are thin markers rather than the real
+// components. ────────────────────────────────────────────────────────────────────────
 vi.mock('../components/tool_outputs/UsedTools.vue', () => ({
   default: {
     name: 'UsedTools',
@@ -82,11 +60,9 @@ function makeStubClient(initial: SseState): SseClient {
   return stub as SseClient
 }
 
+// ──────────────────────────────────────────────────────────────────────── Wire helpers (mirror the
+// backend `wrapToolOutput` shape for `used_tools` — see src/agentic_loop/tools_exec_used_tools.zig)
 // ────────────────────────────────────────────────────────────────────────
-// Wire helpers (mirror the backend `wrapToolOutput` shape for
-// `used_tools` — see src/agentic_loop/tools_exec_used_tools.zig)
-// ────────────────────────────────────────────────────────────────────────
-
 const usedToolsEnvelope = (tools: { name: string; description: string }[]): string =>
   JSON.stringify({
     tool: 'used_tools',
@@ -123,11 +99,7 @@ const assistantToolCall = (toolName: string, id = 'tc1'): Message => ({
   tool_calls_json: JSON.stringify([{ id, type: 'function', function: { name: toolName } }]),
 })
 
-// ────────────────────────────────────────────────────────────────────────
-// Test helpers — mock the api module + SSE bus + localStorage so the
-// mount is fast and stable (parity with ChatView.updatePlan.spec.ts).
-// ────────────────────────────────────────────────────────────────────────
-
+// ──────────────────────────────────────────────────────────────────────── Test helpers.
 function installChatViewMocks(opts: { messages: Message[]; sessionId: string }) {
   vi.spyOn(api, 'getChatHistory').mockResolvedValue({
     messages: opts.messages,
@@ -159,11 +131,9 @@ function installChatViewMocks(opts: { messages: Message[]; sessionId: string }) 
   vi.spyOn(api, 'getPabrikConfig').mockResolvedValue({ profiles: {} })
 }
 
-/**
- * ChatView reads `route.query` and calls `router.replace` (diff deep-linking),
- * so the mount needs a real router — without one `useRoute()` returns
- * undefined and the render throws. Catch-all route keeps the path opaque.
- */
+/**  * ChatView reads `route.query` and calls `router.replace` (diff deep-linking), so the mount needs a
+ * real router — without one `useRoute()` returns undefined and the render throws. Catch-all route
+ * keeps the path opaque. */
 async function makeRouter(): Promise<Router> {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -176,16 +146,9 @@ async function makeRouter(): Promise<Router> {
 
 let mountSeq = 0
 
-/**
- * Mount ChatView with `messages` and return the per-test container. Queries
- * must be scoped to the returned container (`document.querySelector` would see
- * the previous test's tree when a mount leaves anything behind).
- *
- * Each test gets a FRESH `chatId` on purpose: ChatView primes its messages
- * from the IndexedDB-backed `chatEngineDb` cache keyed by session id, so
- * reusing one id would make test N+1 paint test N's rows instead of the
- * mocked `getChatHistory` response.
- */
+/** Mount ChatView with `messages` and return the per-test container. Queries must be scoped to the
+ * returned container (`document.querySelector` would see the previous test's tree when a mount
+ * leaves anything behind). */
 async function mountChatViewWithMessages(messages: Message[]) {
   const chatId = `s_used_tools_${++mountSeq}`
   installChatViewMocks({ messages, sessionId: chatId })
@@ -243,7 +206,6 @@ afterEach(() => {
 // ────────────────────────────────────────────────────────────────────────
 // Tests
 // ────────────────────────────────────────────────────────────────────────
-
 describe('ChatView tool dispatcher — used_tools', () => {
   it('routes a used_tools tool result to the <UsedTools> component', async () => {
     const el = await mountChatViewWithMessages([

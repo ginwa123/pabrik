@@ -4,54 +4,9 @@ import ToolParameters from './_shared/ToolParameters.vue'
 import { extractParam } from '../../helpers/extractParam'
 import { normalizeToolContent } from './_shared/toolOutputParser'
 
-/**
- * ReadWorkspaceSession — renders the `read_workspace_session` tool result
- * (see `read_workspace_session.zig`). The tool is the LLM's window into
- * OTHER chat sessions in its own workspace — list, FTS search, per-session
- * read, and search-within — so surfacing it as a structured card matters:
- * a raw JSON dump in the chat is unreadable.
- *
- * The payload is JSON inside the standard tool envelope
- * (`{tool, parameters, success, data, error, v}`); this card renders
- * `data`, which is discriminated by `behavior`:
- *
- *   behavior="list" (workspace session discovery):
- *     { behavior, limit, count, total_count,
- *       sessions: [{ id, name, status, message_count, last_activity, preview }] }
- *
- *   behavior="search" | "search-within" (FTS results):
- *     { behavior, query, session_id, offset, limit, count, total_count,
- *       results: [{ id, session_id, session_name, role, created_at, snippet }],
- *       full_contents: [{ id, session_id, role, content, content_truncated }] | null }
- *
- *   behavior="read" (per-session message index):
- *     { behavior, order, session_id, count, total_count,
- *       message_index: [{ id, role, created_at, preview, tool_call_id,
- *                         tool_name, content, content_truncated }] }
- *
- *   denied: { denied: true, session_id, message }
- *   error:  { error: "..." }
- *
- * Two details worth knowing before editing this file:
- *
- *   * `snippet` marks its match with BARE brackets, not tags. The backend
- *     calls `snippet(messages_fts, 0, '[', ']', '...', 10)`, so a real value
- *     looks like `...a [portal] that refuses...`. `parseSnippet` also
- *     tolerates `[match]`/`[/match]` for transcripts persisted earlier.
- *
- *   * `created_at` is `YYYY-MM-DD HH:MM:SS` (the `created_iso` column), the
- *     same format the tool's own `since`/`until` parameters accept. It sorts
- *     lexicographically, which is what makes the recency grouping below
- *     correct. It was a raw nanosecond epoch until commit 1655f221.
- *
- * Search results are grouped by `session` and a role-facet footer shows
- * page-scoped counts — the backend indexes the whole JSON envelope for
- * tool rows, so a natural-language query matches tool output heavily and
- * the ratio is worth surfacing.
- */
-
+/** ReadWorkspaceSession — renders the `read_workspace_session` tool result (see
+ * `read_workspace_session.zig`). */
 // ── Shared types ──────────────────────────────────────────────────────────
-
 interface WorkspaceSession {
   id: string
   name: string
@@ -103,9 +58,8 @@ interface ReadEntry {
   preview: string
   tool_call_id?: string
   tool_name?: string
-  /** Present only when the caller passed `message_ids` and the LLM wants
-   *  the full body. `truncated` is true if the body was clipped to
-   *  `MAX_FULL_CONTENT_BYTES` (16 KB) by the backend. */
+  /**    * Present only when the caller passed `message_ids` and the LLM wants the full body. `truncated`
+   * is true if the body was clipped to `MAX_FULL_CONTENT_BYTES` (16 KB) by the backend. */
   content?: string
   content_truncated?: boolean
 }
@@ -116,10 +70,8 @@ const props = defineProps<{
   parameters?: string
 }>()
 
-/**
- * The card is presentation-only — it never routes. ChatView listens and
- * owns the navigation, same as `SpawnSubAgent`'s `peek` event.
- */
+/** The card is presentation-only — it never routes. ChatView listens and
+ * owns the navigation, same as `SpawnSubAgent`'s `peek` event. */
 const emit = defineEmits<{ openSession: [sessionId: string] }>()
 
 function openSession(sessionId: string): void {
@@ -166,7 +118,6 @@ const normalized = computed(() => normalizeToolContent(props.content))
 const dataRecord = computed(() => asRecord(normalized.value.data))
 
 // ── Parse outer envelope ─────────────────────────────────────────────────
-
 type Behavior = 'list' | 'search' | 'search-within' | 'read' | 'denied' | 'error' | 'unknown'
 
 const behavior = computed((): Behavior => {
@@ -204,9 +155,8 @@ const sessionId = computed((): string | null => strOrNull(dataRecord.value.sessi
 /** Returned-page size (count of entries in *this* response). */
 const count = computed((): number | null => numOrNull(dataRecord.value.count))
 
-/** Total rows matching the WHERE clause (before LIMIT/OFFSET). Used by
- *  the LLM to know whether more pages exist. We surface this too so the
- *  user can see "showing 20 of 47" at a glance. */
+/**  * Total rows matching the WHERE clause (before LIMIT/OFFSET). Used by the LLM to know whether more
+ * pages exist. We surface this too so the user can see "showing 20 of 47" at a glance. */
 const totalCount = computed((): number | null => numOrNull(dataRecord.value.total_count))
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for diff readability.
@@ -223,7 +173,6 @@ const deniedSessionId = computed((): string | null => strOrNull(dataRecord.value
 const deniedMessage = computed((): string | null => strOrNull(dataRecord.value.message))
 
 // ── Parse entries ────────────────────────────────────────────────────────
-
 const listSessions = computed((): WorkspaceSession[] => {
   const results: WorkspaceSession[] = []
   const raw = dataRecord.value.sessions
@@ -260,11 +209,8 @@ const searchEntries = computed((): SearchEntry[] => {
   return results
 })
 
-/**
- * Full message bodies the backend returns when the caller passes
- * `message_ids`. Keyed by message id so a hit can expand into its own body.
- * The card previously ignored this field entirely.
- */
+/**  * Full message bodies the backend returns when the caller passes `message_ids`. Keyed by message id
+ * so a hit can expand into its own body. The card previously ignored this field entirely. */
 const fullContents = computed((): Map<string, FullContent> => {
   const map = new Map<string, FullContent>()
   const raw = dataRecord.value.full_contents
@@ -284,11 +230,8 @@ const fullContents = computed((): Map<string, FullContent> => {
   return map
 })
 
-/**
- * `YYYY-MM-DD HH:MM:SS` sorts lexicographically, which is why grouping by
- * recency is only correct now that the backend returns `created_iso`
- * instead of a raw nanosecond epoch.
- */
+/**  * `YYYY-MM-DD HH:MM:SS` sorts lexicographically, which is why grouping by recency is only correct
+ * now that the backend returns `created_iso` instead of a raw nanosecond epoch. */
 function recencyKey(entry: SearchEntry): string {
   return entry.created_at ?? ''
 }
@@ -324,11 +267,8 @@ const groupedEntries = computed((): SearchGroup[] => {
   return groups
 })
 
-/**
- * Stable test-id index per hit, taken from the ORIGINAL result order rather
- * than the grouped render order, so `search-entry-snippet-N` keeps meaning
- * the same row it always did.
- */
+/**  * Stable test-id index per hit, taken from the ORIGINAL result order rather than the grouped render
+ * order, so `search-entry-snippet-N` keeps meaning the same row it always did. */
 const entryIndexById = computed((): Map<string, number> => {
   const map = new Map<string, number>()
   searchEntries.value.forEach((entry, i) => map.set(entry.id, i))
@@ -355,10 +295,8 @@ const roleFacets = computed((): RoleFacet[] => {
 
 const totalInPage = computed(() => searchEntries.value.length)
 
-/**
- * The card has no execute path, so a facet click cannot re-run the tool. It
- * copies a ready-made call the agent can paste as its next turn.
- */
+/** The card has no execute path, so a facet click cannot re-run the tool. It
+ * copies a ready-made call the agent can paste as its next turn. */
 function facetToolCall(role: string): string {
   const args: Record<string, string> = {}
   const q = queryText.value ?? displayQuery.value
@@ -407,7 +345,6 @@ const readEntries = computed((): ReadEntry[] => {
 })
 
 // ── Header summary text ──────────────────────────────────────────────────
-
 const summaryText = computed((): string => {
   if (errorMessage.value) return errorMessage.value
   if (behavior.value === 'denied') {
@@ -461,7 +398,6 @@ const hasArgs = computed(() => {
 })
 
 // ── Actions ──────────────────────────────────────────────────────────────
-
 const toggle = () => {
   if (hasEntries.value || isError.value || isDenied.value || hasArgs.value) {
     isExpanded.value = !isExpanded.value
@@ -486,7 +422,6 @@ const toggleContent = (id: string): void => {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
-
 /** Truncate `s` to `max` chars, keeping both ends (more useful for
  *  long paths/queries than a pure tail ellipsis). */
 function truncateMiddle(s: string, max: number): string {
@@ -495,19 +430,9 @@ function truncateMiddle(s: string, max: number): string {
   return `${s.slice(0, half)}…${s.slice(s.length - half)}`
 }
 
-/**
- * Split an FTS5 snippet into (text, isMatch) segments for `<mark>` rendering.
- *
- * The backend calls `snippet(messages_fts, 0, '[', ']', '...', 10)`, so a real
- * snippet wraps matches in BARE brackets — `...a [portal] that refuses...` —
- * and contains no tags at all. `[match]` / `[/match]` is still accepted
- * because tool results persisted before this card learned the bare format
- * may carry it.
- *
- * A bracket span whose text contains a literal `[` (e.g. `[xdg-[portal]`) is
- * split at the LAST inner `[`, so the surrounding text stays visible instead
- * of being highlighted wholesale.
- */
+/** Split an FTS5 snippet into (text, isMatch) segments for `<mark>` rendering. The backend calls
+ * `snippet(messages_fts, 0, '[', ']', '...', 10)`, so a real snippet wraps matches in BARE brackets
+ * — `...a [portal] that refuses...` — and contains no tags at all. */
 function parseSnippet(snippet: string): { text: string; match: boolean }[] {
   const out: { text: string; match: boolean }[] = []
   let inMatch = false

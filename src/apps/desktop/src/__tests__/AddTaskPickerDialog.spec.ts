@@ -1,22 +1,6 @@
-/**
- * Tests for the AddTaskPickerDialog — two large cards shown when
- * the user clicks the green `+` button on a workspace item. The
- * parent (Sidebar) decides which creation flow to open based on
- * the `pick` event payload.
- *
- * Note on `attachTo: document.body` + `document.querySelector`:
- * AddTaskPickerDialog uses <Teleport to="body"> to render the
- * dialog at the document root. With `mount({ attachTo:
- * document.body })`, vue-test-utils' wrapper still references the
- * mount target as `wrapper.element` (the empty `<div data-v-app>`);
- * the teleported content lives as a sibling of that div under
- * document.body. So `wrapper.find('[data-testid=...]')` returns
- * empty. The ImagePreview spec follows the same pattern (uses
- * `document.querySelector` to inspect teleported content); we do
- * the same here. Element interactions also use the native
- * `element.click()` (the ImagePreview precedent) so the event
- * reaches the listener attached to the document-attached DOM node.
- */
+/** Tests for the AddTaskPickerDialog — two large cards shown when the user clicks the green `+`
+ * button on a workspace item. The parent (Sidebar) decides which creation flow to open based on the
+ * `pick` event payload. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 
@@ -25,10 +9,9 @@ import AddTaskPickerDialog from '../components/dialogs/AddTaskPickerDialog.vue'
 describe('AddTaskPickerDialog', () => {
   let wrapper: VueWrapper | null = null
 
-  // Inline type matches the component's defineProps<{ show: boolean;
-  // projectName?: string }> — we can't import the type directly from
-  // a Vue SFC, so we duplicate the shape here. The test only ever
-  // passes `{ show: boolean }`, so this is sufficient.
+  // Inline type matches the component's defineProps<{ show: boolean; projectName?: string }> — we
+  // can't import the type directly from a Vue SFC, so we duplicate the shape here. The test only
+  // ever passes `{ show: boolean }`, so this is sufficient.
   function mountPicker(props: { show: boolean; projectName?: string }) {
     const w = mount(AddTaskPickerDialog, {
       props,
@@ -82,20 +65,17 @@ describe('AddTaskPickerDialog', () => {
     expect(w.emitted('pick')).toBeDefined()
     expect(w.emitted('pick')!.length).toBe(1)
     expect(w.emitted('pick')![0]).toEqual(['standard'])
-    // The picker is a chooser: it must self-close on pick so the
-    // picked create dialog isn't stacked on top of it. This guards
-    // the regression where the picker stayed open after picking
-    // and ended up covering the chat view after the create
-    // callback completed.
+    // The picker is a chooser: it must self-close on pick so the picked create dialog isn't stacked
+    // on top of it. This guards the regression where the picker stayed open after picking and ended
+    // up covering the chat view after the create callback completed.
     expect(w.emitted('close')).toBeDefined()
     expect(w.emitted('close')!.length).toBe(1)
   })
 
   it('emits pick="memory" when the Memory card is clicked', async () => {
     // The Memory card was added in 2026-06-20 (plan: docs/plans/
-    // 2026-06-20-add-markdown-memory.md). It opens a flow where
-    // the user creates a local .md file and a task row pointing
-    // at it (via AddMemoryDialog in mode='task' → addTask).
+    // 2026-06-20-add-markdown-memory.md). It opens a flow where the user creates a local .md file
+    // and a task row pointing at it (via AddMemoryDialog in mode='task' → addTask).
     const w = mountPicker({ show: true })
     await w.vm.$nextTick()
     const card = document.querySelector<HTMLElement>('[data-testid="picker-memory"]')!

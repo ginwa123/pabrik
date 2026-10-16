@@ -5,17 +5,9 @@ import { normalizeToolContent, parseSetPullRequest } from './_shared/toolOutputP
 import ToolParameters from './_shared/ToolParameters.vue'
 import { forgeWording } from '../../helpers/forgeWording'
 
-/**
- * `set_pull_request` result card — the sibling of `SetGitWorktree.vue`.
- *
- * Without this card the tool fell into ChatView's generic fallback, where the
- * collapsed pill printed the raw envelope data:
- * `set_pull_request ✓ {"session_id":"task_…","attached":true,"url":"https://…"}`.
- * The five fields a reader actually wants (which change request, is it real,
- * can I open it) are one line here.
- *
- * Pure presentation: no API calls, no watchers.
- */
+/** `set_pull_request` result card — the sibling of `SetGitWorktree.vue`. Without this card the tool
+ * fell into ChatView's generic fallback, where the collapsed pill printed the raw envelope data:
+ * `set_pull_request ✓ {"session_id":"task_…","attached":true,"url":"https://…"}`. */
 const props = defineProps<{
   content: unknown
   expanded?: boolean

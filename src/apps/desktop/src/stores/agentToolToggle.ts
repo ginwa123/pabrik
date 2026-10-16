@@ -1,11 +1,5 @@
-// Pure helper for the AgentView Tools panel toggle.
-//
-// Extracted from AppLayout.vue's handleAgentToggleTool so the toggle
-// logic is unit-testable without booting the full AppLayout component
-// tree (which has Vue Router, Pinia, etc. dependencies).
-//
-// Plan: docs/superpowers/plans/2026-08-19-agent-tools-toggle-wire.md (Task 4)
-
+// Pure helper for the AgentView Tools panel toggle. Plan:
+// docs/superpowers/plans/2026-08-19-agent-tools-toggle-wire.md (Task 4)
 export interface ToggleCallbacks {
   enableAgentTool: (agentId: string, toolName: string) => Promise<unknown>
   disableAgentTool: (agentId: string, toolName: string) => Promise<unknown>
@@ -15,11 +9,9 @@ export interface ToggleCallbacks {
 export interface ToggleResult {
   /** The new local list to show in the UI immediately (optimistic). */
   nextLocal: string[]
-  /**
-   * Resolves to the canonical server list (post-mutation). On
+  /** Resolves to the canonical server list (post-mutation). On
    * failure, resolves to `{ error }` and the caller reverts `nextLocal`.
-   * Never throws.
-   */
+   * Never throws. */
   serverPromise: Promise<{ canonical: string[] } | { error: unknown }>
 }
 

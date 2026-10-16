@@ -1,15 +1,4 @@
-/*
- * SkillDetail.vue — one workspace's skill, read and deleted by name.
- *
- * Pins the shape change (no `is_global`, no `path`, an `asset_count`
- * instead) and the three states that used to blur together: a load that
- * failed, a payload that carried a reason, and a payload that carried
- * neither — the last must say "not found" rather than render an empty
- * skill pane that reads like a successful read of nothing.
- *
- * The delete path is asserted on its ARGUMENTS, because the old call
- * passed `is_global` and the workspace is now the only scope there is.
- */
+/** SkillDetail.vue — one workspace's skill, read and deleted by name. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'

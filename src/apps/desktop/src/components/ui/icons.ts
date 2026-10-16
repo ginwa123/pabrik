@@ -1,21 +1,5 @@
-/**
- * The app's single icon registry.
- *
- * Every non-brand glyph the UI draws comes from here, so a panel that
- * needs a "file" or a "trash" asks for the name instead of hand-copying
- * a `<path>`. That is the whole point: a third hand-copied path drifts
- * from the first two, and a glyph nothing can assert on cannot be
- * pinned by a spec.
- *
- * Geometry is the Lucide 24x24 outline set (ISC licence,
- * https://lucide.dev), fetched as SVG and normalised to plain path `d`
- * strings so `UiIcon` renders one uniform element per shape.
- * `stroke="currentColor"` is deliberate — colour comes from the
- * surrounding CSS variable, never from a hex baked into a path.
- *
- * Brand marks do NOT belong here; `components/git/ForgeIcon.vue` owns
- * those, for the same reason Simple Icons is separate from Lucide.
- */
+/** The app's single icon registry. Every non-brand glyph the UI draws comes from here, so a panel
+ * that needs a "file" or a "trash" asks for the name instead of hand-copying a `<path>`. */
 export const ICON_PATHS = {
   atom: [
     'M11 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0',

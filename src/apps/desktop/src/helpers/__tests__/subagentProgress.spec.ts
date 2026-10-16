@@ -1,20 +1,6 @@
-/**
- * Tests for subagentProgress.ts — pure reducer for the chatview's
- * spawn_sub_agent live-progress map.
- *
- * 2026-08-23 spawn-subagent-live-progress: ChatView.vue maintains a
- * per-tool_call_id progress map and feeds it from the SSE bus's
- * `role="subagent_progress"` events. This file guards the reducer's
- * wiring semantics:
- *   - launched creates a running row, completed flips it to done,
- *     failed flips it to failed
- *   - events for unrelated tool_call_ids don't cross-contaminate
- *   - out-of-order delivery (launched after completed) doesn't
- *     downgrade a done row back to running
- *   - clearProgressFor drops the entry once the final <results>
- *     envelope lands (so the parsed-envelope view wins)
- *   - defensive: events missing required fields are ignored
- */
+/** Tests for subagentProgress.ts — pure reducer for the chatview's spawn_sub_agent live-progress
+ * map. 2026-08-23 spawn-subagent-live-progress: ChatView.vue maintains a per-tool_call_id progress
+ * map and feeds it from the SSE bus's `role="subagent_progress"` events. */
 import { describe, expect, it } from 'vitest'
 
 import {

@@ -1,27 +1,5 @@
-/**
- * Component tests for the pinned-task drag-reorder feature in
- * <WorkspaceItem>. Covers:
- *   1. The drop handler emits `reorderPinnedTasks` with the dragged
- *      row spliced at the cursor's target position (not always at
- *      the end — that was the v1 bug).
- *   2. The drop handler skips reorder when the cursor is on the
- *      dragged row itself (no-op).
- *   3. The drop handler falls back to "move to end" when no target
- *      row is recorded (e.g. drop on the region's empty padding).
- *   4. The per-row `dropIndicator` prop drives the yellow border on
- *      the row's box-shadow — above/below/null as expected.
- *   5. dragleave resets the visual indicator (cursor left the region).
- *
- * The dragover/drop events use jsdom's plain Event shim — we attach
- * a DataTransfer-shaped object as the `dataTransfer` property of the
- * event via Object.defineProperty. jsdom does NOT fire a real layout
- * / paint, so the `clientY`-vs-midpoint math in the dragover handler
- * uses the `clientY` we set on the event directly (the row's
- * `getBoundingClientRect()` returns all zeros in jsdom unless we
- * mock it).
- *
- * Plan: docs/superpowers/plans/2026-06-20-pinned-workspace-item-tasks.md
- */
+/** Component tests for the pinned-task drag-reorder feature in <WorkspaceItem>. Covers: 1. Plan:
+ * docs/superpowers/plans/2026-06-20-pinned-workspace-item-tasks.md */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, type Ref } from 'vue'
@@ -96,12 +74,9 @@ async function flush(): Promise<void> {
   await nextTick()
 }
 
-// Build a DragEvent-ish Event with a real `dataTransfer` + `clientY`.
-// jsdom doesn't support `new DragEvent('drop', { dataTransfer })`
-// and the underlying DataTransfer constructor doesn't exist, so we
-// shim the entire event surface. The handlers only read
-// `event.dataTransfer`, `event.clientY`, `event.relatedTarget`,
-// `event.currentTarget`, and `event.target` — all set below.
+// Build a DragEvent-ish Event with a real `dataTransfer` + `clientY`. jsdom doesn't support `new
+// DragEvent('drop', { dataTransfer })` and the underlying DataTransfer constructor doesn't exist,
+// so we shim the entire event surface.
 function makeDragEvent(type: string, opts: { clientY?: number; relatedTarget?: EventTarget | null } = {}): Event {
   const event = new Event(type, { bubbles: true, cancelable: true })
   Object.defineProperty(event, 'dataTransfer', { value: new DataTransferShim(), configurable: true })

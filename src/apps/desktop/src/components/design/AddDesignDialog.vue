@@ -38,15 +38,11 @@ const emit = defineEmits<{
 }>()
 
 // ─── State ─────────────────────────────────────────────────────────────────
-
 const name = ref('')
 const selectedPath = ref('')
 const showPicker = ref(false)
 const nameInput = ref<HTMLInputElement | null>(null)
-// Same "touched + visible error" UX as AddItemDialog and
-// AddKanbanDialog. After the user types (or blurs) the name field
-// empty/whitespace, the dialog shows "Name is required" below the
-// input so the disabled Add button is self-explanatory. Plan:
+// Same "touched + visible error" UX as AddItemDialog and AddKanbanDialog. Plan:
 // docs/superpowers/plans/2026-07-10-empty-workspace-item-bug.md.
 const nameTouched = ref(false)
 const nameError = computed<string | null>(() => {
@@ -55,19 +51,14 @@ const nameError = computed<string | null>(() => {
   return null
 })
 
-// ─── Picker data source ────────────────────────────────────────────────────
-
-// Adapts the existing listFolder/getSystemFolder API to the picker's
-// agnostic (path: string) => Promise<T[]> contract. Same helper as
-// AddItemDialog + AddKanbanDialog — duplicated here (not extracted)
-// to keep the dialogs independently editable.
+// ─── Picker data source ──────────────────────────────────────────────────── Adapts the existing
+// listFolder/getSystemFolder API to the picker's agnostic (path: string) => Promise<T[]> contract.
 const loadItemsForPicker = async (path: string): Promise<FolderEntry[]> => {
   const data = path ? await listFolder(path) : await getSystemFolder()
   return (data.entries || []) as FolderEntry[]
 }
 
 // ─── Handlers ──────────────────────────────────────────────────────────────
-
 const handleFolderSelected = (path: string) => {
   selectedPath.value = path
   showPicker.value = false
@@ -91,11 +82,9 @@ const handleKeydown = (event: KeyboardEvent) => {
   }
 }
 
-// ─── Lifecycle ─────────────────────────────────────────────────────────────
-
-// Reset state when the dialog opens. We deliberately do NOT preserve
-// either the name or the selected path across open/close so the
-// dialog is predictable for users.
+// ─── Lifecycle ───────────────────────────────────────────────────────────── Reset state when the
+// dialog opens. We deliberately do NOT preserve either the name or the selected path across
+// open/close so the dialog is predictable for users.
 const handleOpen = async () => {
   name.value = ''
   selectedPath.value = ''
@@ -110,10 +99,9 @@ onBeforeUnmount(() => {
   document.body.style.overflow = ''
 })
 
-// Open-reset without watch(): seed on mount (initial show=true) and on
-// closed->open updates. A Transition before-enter hook cannot do this — it
-// never fires on initial mount (no `appear`) and VTU stubs Transition, so
-// specs that mount then setProps(show=true) would see empty fields.
+// Open-reset without watch(): seed on mount (initial show=true) and on closed->open updates. A
+// Transition before-enter hook cannot do this — it never fires on initial mount (no `appear`) and
+// VTU stubs Transition, so specs that mount then setProps(show=true) would see empty fields.
 const wasShown = ref(props.show)
 onMounted(() => {
   if (props.show) void handleOpen()

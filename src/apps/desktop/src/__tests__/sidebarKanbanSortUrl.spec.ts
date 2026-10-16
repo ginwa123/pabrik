@@ -1,18 +1,5 @@
-/**
- * Behavioural tests for Sidebar's handleSelectItem when the user
- * clicks a kanban workspace item (kanban default-URL, 2026-08-06).
- *
- * Why. The user wants the URL to commit to a default sort on the
- * first click of a kanban item — so a refresh preserves the implicit
- * "newest first" pick and the wire payload doesn't carry silent
- * defaults. Sidebar.handleSelectItem now builds a
- * `?sorts=col_X:updated_at:desc,...` string from the item's columns
- * and passes it through the navigate emit's new 7th positional arg.
- *
- * Match-up: the URL write side is tested in
- * AppLayout.urlPersist.spec.ts ("handleNavigate writes sorts into
- * the URL"). This file tests the Sidebar-side construction.
- */
+/** Behavioural tests for Sidebar's handleSelectItem when the user clicks a kanban workspace item
+ * (kanban default-URL, 2026-08-06). Why. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref, createApp } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
@@ -27,11 +14,8 @@ import {
 } from '../helpers/sseBus'
 import * as api from '../api'
 
-// Local SseClient stub — mirrors the pattern in sidebarActiveState.spec.ts.
-// The real SseClient type isn't exported from sseBus, so we type the
-// stub as `any` to match the `__setSseBusGlobalClient` signature.
-// Each method returns a no-op so the bus internals stay quiet.
- 
+// Local SseClient stub — mirrors the pattern in sidebarActiveState.spec.ts. The real SseClient type
+// isn't exported from sseBus, so the stub is typed `any` to match `__setSseBusGlobalClient`.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function makeStubClient(initial: 'connecting'): any {
   const stub = {
@@ -155,12 +139,14 @@ describe('Sidebar.handleSelectItem — kanban default-URL emits sortsParam (2026
         items: [makeFolderItem()],
        
       },
+    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ] as any
 
  
 
     const wrapper = mountSidebar()
+    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const layout = wrapper.vm as any
 
@@ -189,10 +175,12 @@ describe('Sidebar.handleSelectItem — kanban default-URL emits sortsParam (2026
         items: [makeDesignItem()],
       },
      
+    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ] as any
 
     const wrapper = mountSidebar()
+    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const layout = wrapper.vm as any
 

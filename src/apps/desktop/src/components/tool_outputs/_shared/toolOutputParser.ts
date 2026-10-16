@@ -1,39 +1,6 @@
-/**
- * Typed parsers for tool-output JSON `data` payloads.
- *
- * Each parser takes the envelope's `data` payload as a parsed object (via
- * `normalizeToolContent`, which also unwraps full envelopes and JSON
- * strings), reads fields directly, and gracefully handles missing keys
- * (returns `null` for missing optional fields, sensible defaults for
- * missing required fields where applicable).
- *
- * Parsers are pure functions; safe to call inside `computed`. JSON needs
- * no entity decoding — values arrive byte-exact from `std.json`.
- *
- * The legacy XML helpers (`extractTag`, `extractBool`, `extractInt`,
- * `unescapeXml`) are retained for `helpers/isBackgroundCommandOutput.ts`,
- * the only remaining XML consumer. New code must not use them.
- *
- * Conventions:
- *   - Singular boolean fields default to `false` (absent key = false).
- *   - Optional strings return `null` when missing, not empty string.
- *   - Optional numbers return `null` when missing or unparseable.
- */
-
-/**
- * Decode XML entities produced by the backend's `toXmlSuccess` / `xmlError`.
- * Mirrors `llm_history.zig xmlEscape` (its inverse) exactly. The order matters:
- * `&amp;` MUST be replaced last, otherwise the other replacements would
- * double-decode earlier `&amp;`-prefixed entities (e.g. `&amp;quot;` would
- * incorrectly become `"` instead of `&quot;`).
- *
- * Decodes:
- *   - `&lt;`   → `<`
- *   - `&gt;`   → `>`
- *   - `&quot;` → `"`
- *   - `&apos;` → `'`
- *   - `&amp;`  → `&`   (last)
- */
+/** Typed parsers for tool-output JSON `data` payloads. */
+/** Decode XML entities produced by the backend's `toXmlSuccess` / `xmlError`. Mirrors
+ * `llm_history.zig xmlEscape` (its inverse) exactly. */
 import { stripAnsiEscapes } from '../../../helpers/stripAnsiEscapes'
 
 export function unescapeXml(s: string): string {
@@ -57,11 +24,9 @@ function findTag(content: string, tag: string): string | null {
 }
 
 export function extractTag(content: string, tag: string, _multiline = true): string | null {
-  // The `_multiline` flag is preserved for back-compat with the original
-  // public signature but is currently a no-op (the implementation already
-  // supports multiline inner content via `indexOf` matching the first `<tag>`
-  // / `</tag>` pair, which works for both single-line and multi-line
-  // bodies). Existing call sites pass only `content` and `tag`.
+  // The `_multiline` flag is preserved for back-compat with the original public signature but is
+  // currently a no-op (the implementation already supports multiline inner content via `indexOf`
+  // matching the first `<tag>` / `</tag>` pair, which works for both single-line and multi-line.
   const raw = findTag(content, tag)
   if (raw === null) return null
   return unescapeXml(raw)
@@ -87,16 +52,9 @@ export function extractInt(content: string, tag: string): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-// ─── JSON data-object helpers ──────────────────────────────────────────────
-//
-// Migrated parsers (read_file, shell family, search, ask_user) take the
-// envelope's `data` payload as a parsed object and read fields directly —
-// no tag extraction, no entity decoding (JSON needs none). The helpers
-// below are lenient by design: a JSON string is parsed, a full envelope
-// object (or its JSON string) is unwrapped one level to `.data`, and
-// anything else yields safe defaults so a card never throws.
-
-/** Coerce unknown input to a plain record. Unparseable input → {}. */
+// ─── JSON data-object helpers ────────────────────────────────────────────── Migrated parsers
+// (read_file, shell family, search, ask_user) take the envelope's `data` payload as a parsed object
+// and read fields directly — no tag extraction, no entity decoding (JSON needs none).
 function asRecord(data: unknown): Record<string, unknown> {
   if (typeof data === 'string') {
     const trimmed = data.trim()
@@ -113,11 +71,8 @@ function asRecord(data: unknown): Record<string, unknown> {
   return {}
 }
 
-/**
- * Unwrap one level when the input is a full tool envelope
- * (`{tool, parameters, success, data, error, v}` or its JSON string)
- * instead of the bare `data` payload. Otherwise coerce to a record.
- */
+/**  * Unwrap one level when the input is a full tool envelope (`{tool, parameters, success, data,
+ * error, v}` or its JSON string) instead of the bare `data` payload. Otherwise coerce to a record. */
 function unwrapDataRecord(data: unknown): Record<string, unknown> {
   const record = asRecord(data)
   if (
@@ -169,12 +124,9 @@ function boolField(o: Record<string, unknown>, key: string, defaultValue = false
   return defaultValue
 }
 
-/**
- * Normalized view of whatever a tool card's `content` prop carries:
- * either the bare `data` object (ChatView's success path) or a full
- * envelope JSON string/object (ChatView's error fallback, `m.content`).
- * Empty or unparseable input yields null data with no error (running state).
- */
+/**  * Normalized view of whatever a tool card's `content` prop carries: either the bare `data` object
+ * (ChatView's success path) or a full envelope JSON string/object (ChatView's error fallback,
+ * `m.content`). Empty or unparseable input yields null data with no error (running state). */
 export interface NormalizedToolContent {
   data: unknown
   error: string | null
@@ -275,15 +227,8 @@ export function parseWriteFile(data: unknown): ParsedWriteFile {
   }
 }
 
-/**
- * The name a skill tool acted on.
- *
- * `skill_name` is the canonical field on every skill tool payload; `name`
- * is the echo of what was requested and is absent from some rows. An EMPTY
- * `skill_name` counts as absent rather than winning — it would otherwise
- * render a card whose only label is blank, and `??` alone would not catch
- * it because `''` is neither null nor undefined.
- */
+/** The name a skill tool acted on. `skill_name` is the canonical field on every skill tool payload;
+ * `name` is the echo of what was requested and is absent from some rows. */
 function skillNameField(o: Record<string, unknown>): string {
   const primary = strOrNullField(o, 'skill_name')
   if (primary !== null && primary.trim() !== '') return primary
@@ -393,18 +338,7 @@ export function parseSetGitWorktree(data: unknown): ParsedSetGitWorktree {
   }
 }
 
-/**
- * `set_pull_request` result — attach-only, so the payload is one of exactly
- * two shapes (`src/modules/agent/tools/set_pull_request.zig`):
- *
- *   attach: {session_id, attached:true, url, provider, number|null,
- *            verified, warning|null, base|null, head|null}
- *   clear:  {session_id, cleared:true}
- *
- * `number` arrives as a STRING in the wire payload (the backend keeps it a
- * `[]const u8` because clones/forks carry non-numeric IIDs), so it is read
- * as an optional string and never coerced to a number.
- */
+/** `set_pull_request` result. */
 export interface ParsedSetPullRequest {
   url: string | null
   provider: string | null
@@ -455,11 +389,8 @@ export function parseBash(data: unknown): ParsedBash {
   const o = unwrapDataRecord(data)
   return {
     command: strOrNullField(o, 'command'),
-    // Second, independent escape guard at the parse seam. The backend
-    // strips in shell.result_to_json; this covers live/partial payloads
-    // and any future raw-bytes producer. It deliberately does NOT try to
-    // repair pre-fix rows — see helpers/stripAnsiEscapes.ts on why those
-    // are unrecoverable rather than heuristically "fixed".
+    // Second, independent escape guard at the parse seam. The backend strips in
+    // shell.result_to_json; this covers live/partial payloads and any future raw-bytes producer.
     stdout: stripAnsiEscapes(strField(o, 'stdout')),
     stderr: stripAnsiEscapes(strField(o, 'stderr')),
     exitCode: numOrNullField(o, 'exit_code'),
@@ -470,40 +401,20 @@ export function parseBash(data: unknown): ParsedBash {
   }
 }
 
-/**
- * Parse a pwsh (PowerShell Core) tool result. Same JSON `data` shape as bash —
- * per plan D2 + D10 the schema is structurally identical, only the
- * `tool` field that wraps the envelope differs.
- *
- * Functionally a clone of `parseBash` so future divergence (e.g. pwsh adds a
- * `version` field for the PowerShell version that ran) is a one-line change
- * here. Tests in `toolOutputParser.spec.ts` assert `parsePwsh(x) === parseBash(x)`
- * to catch accidental drift.
- */
+/** Parse a pwsh (PowerShell Core) tool result. Same JSON `data` shape as bash — per plan D2 + D10
+ * the schema is structurally identical, only the `tool` field that wraps the envelope differs. */
 export function parsePwsh(data: unknown): ParsedBash {
   return parseBash(data)
 }
 
-/**
- * Parse a `command` (unified shell) tool result. Same JSON `data` shape as
- * bash — the unified `command` tool reuses the identical 8-field payload
- * (`command`/`stdout`/`stderr`/`exit_code`/`truncated`/`timeout`/
- * `stdout_lines`/`stderr_lines`), only the `tool` wrapper
- * differs. Functionally an alias of `parseBash` so future payload
- * divergence is a one-line change here. Tests assert
- * `parseCommand(x) === parseBash(x)` to catch accidental drift.
- * `parseBash` / `parsePwsh` are intentionally left untouched.
- */
+/** Parse a `command` (unified shell) tool result. */
 export function parseCommand(data: unknown): ParsedBash {
   return parseBash(data)
 }
 
-/**
- * Dispatcher: parse a tool result based on the `toolName` it was registered
- * under. 'bash' / 'pwsh' / 'run_command' (legacy alias) / 'command'
- * (unified shell) all use the same payload. New shells with divergent
- * payload shapes must add their own branch here.
- */
+/**  * Dispatcher: parse a tool result based on the `toolName` it was registered under. 'bash' / 'pwsh'
+ * / 'run_command' (legacy alias) / 'command' (unified shell) all use the same payload. New shells
+ * with divergent payload shapes must add their own branch here. */
 export function parseShell(toolName: string, data: unknown): ParsedBash {
   switch (toolName) {
     case 'bash':
@@ -574,29 +485,14 @@ export function parseSearch(data: unknown): ParsedSearch {
   }
 }
 
-/**
- * One row of a `search_skills` page. Identity is the name ALONE: the page
- * is one workspace's skills, so there is no tier to tag and no path to
- * hand back. A row that arrived with the old `scope` / `path` keys still
- * parses — the extra keys are simply not read, which keeps a cached
- * transcript from rendering blank rows.
- */
+/** One row of a `search_skills` page. Identity is the name ALONE: the page is one workspace's
+ * skills, so there is no tier to tag and no path to hand back. */
 export interface SkillSearchRow {
   name: string
   description: string
 }
 
-/**
- * `search_skills` result. Mirrors `ParsedSearchTool` field-for-field
- * (`query` / `count` / `total` / `truncated` / `hint`) so the two catalog
- * cards share one paging convention, plus the paging and pattern fields
- * `search_tool` has no use for (`pattern_mode` / `pattern_warning` /
- * `offset` / `limit` / `next_offset`).
- *
- * There is no `scope`. The row set is already one workspace's, and a name
- * is unique inside a workspace, so a scope could only ever have been a
- * second, redundant key.
- */
+/** `search_skills` result. */
 export interface ParsedSearchSkills {
   query: string
   patternMode: string | null
@@ -796,19 +692,9 @@ export function parseMetadata(data: unknown): Record<string, string> {
   return result
 }
 
-// ─── generate_image ────────────────────────────────────────────────────────
-//
-// Parses the JSON `data` payload produced by `execute_generate_image` in
-// `src/modules/agent/tools/generate_image.zig`:
-//
-//   {"status":"generated","count":1,"model":"dall-e-3","size":"1024x1024",
-//    "images":[{"index":0,"path":"/cwd/.../img_xxx.png","bytes":12345,"mime":"image/png"}],
-//    "revised_prompt":"A vibrant watercolor painting of a hat-wearing cat","error":null}
-//
-// On error:
-//   {"status":null,"count":null,"model":null,"size":null,"images":[],
-//    "revised_prompt":null,"error":"HTTP 400: ..."}
-
+// ─── generate_image ──────────────────────────────────────────────────────── Parses the JSON
+// `data` payload produced by `execute_generate_image` in
+// `src/modules/agent/tools/generate_image.zig`:.
 export interface ParsedGenerateImage {
   status: string | null
   count: number | null
@@ -859,28 +745,8 @@ export function parseGenerateImage(data: unknown): ParsedGenerateImage {
   }
 }
 
-// ─── web_search ────────────────────────────────────────────────────────────
-//
-// Parses the JSON `data` payload produced by `exec_web_search` in
-// `src/agentic_loop/tools_exec_web_search.zig`.
-//
-// On success the payload is UNTYPED PASSTHROUGH (D13): `response` holds the
-// provider's own JSON, verbatim and untouched.
-//
-//   {"provider":"tinyfish","status":200,"response":{…}}
-//
-// TinyFish answers `{results:[…]}`, Brave `{web:{results:[…]}}`, Serper
-// `{organic:[…]}` and a self-hosted SearxNG a bare `[{…}]`. There is
-// deliberately NO normalized result schema, so `response` stays `unknown`
-// here and the renderer is the only layer allowed an opinion about it. A
-// shape this client has never seen is a normal outcome (D13), not an error.
-//
-// A failure carries `error` plus a reason flag — `configured:false`,
-// `unknown_provider` (+ `available`), `host_mismatch` (+ `pinned_host`,
-// `requested_host`), `invalid_curl`, `exhausted` (+ `other_providers`),
-// `unsafe_pinned_url`, `response_too_large` or `http_status`. `transport`
-// is the flagless one: DNS, TLS or timeout, and the message is the envelope.
-
+// ─── web_search ──────────────────────────────────────────────────────────── Parses the JSON
+// `data` payload produced by `exec_web_search` in `src/agentic_loop/tools_exec_web_search.zig`.
 /** The nine reasons a `web_search` envelope can fail, as the card spells them. */
 export type WebSearchErrorFlag =
   | 'configured'
@@ -902,14 +768,9 @@ export interface WebSearchProviderRef {
 export interface ParsedWebSearchError {
   /** The backend's sentence, verbatim. */
   message: string
-  /**
-   * Which reasons this envelope claims, in a fixed order so two renderings
-   * of the same failure never disagree.
-   *
-   * `transport` is the residual: it is the one failure with no key of its
-   * own, so a flagless error is reported as it. Every other flag is read
-   * off a key the backend sets.
-   */
+  /**    * Which reasons this envelope claims, in a fixed order so two renderings of the same failure
+   * never disagree. `transport` is the residual: it is the one failure with no key of its own, so a
+   * flagless error is reported as it. Every other flag is read off a key the backend sets. */
   flags: WebSearchErrorFlag[]
   /** True only for `configured:false` — nothing is set up in Settings yet. */
   configured: boolean
@@ -936,10 +797,8 @@ export interface ParsedWebSearch {
   error: ParsedWebSearchError | null
 }
 
-/**
- * Read a list of alternative providers. Accepts both spellings the backend
- * and the plan use: `[{name,url}]` objects, and a bare `["tinyfish"]` of names.
- */
+/** Read a list of alternative providers. Accepts both spellings the backend
+ * and the plan use: `[{name,url}]` objects, and a bare `["tinyfish"]` of names. */
 function providerRefs(o: Record<string, unknown>, key: string): WebSearchProviderRef[] {
   const raw = o[key]
   if (!Array.isArray(raw)) return []
@@ -991,14 +850,9 @@ export function parseWebSearchError(o: Record<string, unknown>): ParsedWebSearch
   }
 }
 
-/**
- * The exec wrapper reports a failure in TWO places: the envelope's `error`
- * field, and — for the reasons the model can recover from on its own — the
- * whole inner JSON envelope as that field's TEXT. When it is a text
- * envelope, read the flags out of it; when it is a plain sentence, report
- * the sentence and no flag, because a message with no reason key is not
- * evidence of a transport failure.
- */
+/** The exec wrapper reports a failure in TWO places: the envelope's `error` field, and — for the
+ * reasons the model can recover from on its own — the whole inner JSON envelope as that field's
+ * TEXT. */
 export function parseWebSearchErrorText(text: string): ParsedWebSearchError {
   const o = asRecord(text)
   if (typeof o.error === 'string' && Object.keys(o).length > 1) return parseWebSearchError(o)
@@ -1035,17 +889,9 @@ export function parseWebSearch(data: unknown): ParsedWebSearch {
   }
 }
 
-// ─── list_web_search_providers ─────────────────────────────────────────────
-//
-// The `exec_list_web_search_providers` payload (D14):
-//
-//   {"providers":[{"name":"tinyfish","url":"https://api.search.tinyfish.ai",
-//                  "description":"…","curl":"curl 'https://…?key={key}'"}]}
-//
-// `curl` is a TEMPLATE: it carries the literal text `{key}` where the
-// credential belongs, so the listing is safe by construction — nothing
-// secret reaches the model, and the card may render it verbatim.
-
+// ─── list_web_search_providers ───────────────────────────────────────────── The
+// `exec_list_web_search_providers` payload (D14):
+// {"providers":[{"name":"tinyfish","url":"https://api.search.tinyfish.ai".
 export interface ParsedSearchProviderEntry {
   name: string
   url: string
@@ -1077,22 +923,9 @@ export function parseListWebSearchProviders(data: unknown): ParsedListSearchProv
   return { providers }
 }
 
-// ─── list_directory ─────────────────────────────────────────────────────────
-//
-// Parses the JSON `data` payload produced by `execute_list_directory` +
-// `toJSON` in `src/modules/agent/tools/list_directory.zig`:
-//
-//   {"path":"/proj","count":3,"entries":[
-//     {"name":"src","path":"/proj/src","is_directory":true,"is_symlink":false},
-//     {"name":"main.zig","path":"/proj/main.zig","is_directory":false,"is_symlink":false}
-//   ]}
-//
-// The sort order is whatever the backend produced (directories first,
-// then files, alphabetical) — the frontend does NOT re-sort.
-//
-// On error, `normalizeToolContent` unwraps the full envelope and the
-// parser reads the `error` key — see the `error !== null` branch below.
-
+// ─── list_directory ───────────────────────────────────────────────────────── Parses the JSON
+// `data` payload produced by `execute_list_directory` + `toJSON` in
+// `src/modules/agent/tools/list_directory.zig`: {"path":"/proj","count":3,"entries":[.
 export interface ParsedListDirectoryEntry {
   name: string
   path: string
@@ -1144,22 +977,9 @@ export function parseListDirectory(data: unknown): ParsedListDirectory {
   }
 }
 
-// ─── mcp_* (universal MCP tool) ─────────────────────────────────────────────
-//
-// Any tool whose name starts with `mcp_` (e.g. `mcp_graphify_graph_stats`,
-// `mcp_db_query`) renders through the universal `<McpTool>` card. The backend
-// (`handle_tool.zig`) stores MCP results as RAW server text (not a wrapped
-// envelope) on success, and as a wrapped
-// `wrapToolOutput(..., success=false, err, "")` JSON envelope on failure — so the
-// parser tolerates BOTH shapes:
-//
-//   raw success:   `Nodes: 14885 Edges: 21958 ...` (or JSON)
-//   error envelope: `{"tool":"mcp_...","parameters":{},"success":false,"data":null,"error":"..."}`
-//
-// `toolName` is the full registry name (`mcp_<server>_<tool>`). The server is
-// the segment between the first and second underscore; the sub-tool is the
-// remainder (which may itself contain underscores, e.g. `graph_stats`).
-
+// ─── mcp_* (universal MCP tool) ───────────────────────────────────────────── Any tool whose name
+// starts with `mcp_` (e.g. `mcp_graphify_graph_stats`, `mcp_db_query`) renders through the
+// universal `<McpTool>` card.
 export interface ParsedMcp {
   /** Full registry name (e.g. `mcp_graphify_graph_stats`). */
   toolName: string
@@ -1278,35 +1098,9 @@ export function parseMcp(toolName: string, data: unknown): ParsedMcp {
   }
 }
 
-// ─── progressive tools (search_tool / view_tool / use_tool) ──────────────────
-//
-// Universal `<ProgressiveTool>` card: the three agent tools that let the model
-// browse a catalog of not-yet-enabled tools and equip one for the session.
-// Backend renderers live in `src/agentic_loop/progressive_catalog.zig`; the
-// exec adapter wraps them with the standard `wrapToolOutput` JSON envelope,
-// and the card reads the inner `data` object here.
-//
-//   search_tool success:
-//     {"query":"q","server":"s"|null,"count":N,"total":M,
-//      "tools":[{"name":"n","kind":"builtin|mcp","server":"s",
-//        "equipped":"session|no","summary":"one-liner"}, ...],
-//      "truncated":false,"hint":"..."|null}
-//   view_tool found:
-//     {"name":"n","kind":"...","server":"s","equipped":"session|no",
-//      "description":"...","parameters":{...}|"..."|null,
-//      "note":null,"hint":"..."}
-//   view_tool miss:
-//     {"name":"n","found":false,"error":"...",
-//      "did_you_mean":["..."],"hint":"..."}
-//   use_tool found (minimal equip signal — no repeated schema, view_tool
-//   already showed it):
-//     {"name":"n","kind":"...","equipped":true,
-//      "inserted":true|false,"wait_next_turn":true|false,
-//      "source":"session"|null,"note":"..."}
-//   use_tool miss:
-//     {"name":"n","equipped":false,"inserted":false,
-//      "error":"...","did_you_mean":[...],"hint":"..."}
-
+// ─── progressive tools (search_tool / view_tool / use_tool) ────────────────── Universal
+// `<ProgressiveTool>` card: the three agent tools that let the model browse a catalog of
+// not-yet-enabled tools and equip one for the session.
 export interface ProgressiveCatalogEntry {
   name: string
   kind: string
@@ -1496,18 +1290,9 @@ export function parseUseTool(data: unknown): ParsedUseTool {
 
 // Re-export shared param helper (single source of truth in helpers/).
 export { extractParam } from '../../../helpers/extractParam'
-// ─── present_files ─────────────────────────────────────────────────────────
-//
-// Parses the JSON `data` payload produced by `executePresentFilesToString` in
-// `src/modules/agent/tools/present_files.zig`:
-//
-//   {"status":"presented","count":2,"files":[
-//     {"path":"/abs/a.txt","bytes":12,"mime":"text/plain; charset=utf-8","label":"notes"},
-//     {"path":"/abs/b.jpg","bytes":48211,"mime":"image/jpeg","label":"b.jpg"}
-//   ],"error":null}
-//
-// Error shape: {"status":null,"count":0,"files":[],"error":"..."}
-
+// ─── present_files ───────────────────────────────────────────────────────── Parses the JSON
+// `data` payload produced by `executePresentFilesToString` in
+// `src/modules/agent/tools/present_files.zig`: {"status":"presented","count":2,"files":[.
 export interface ParsedPresentFile {
   path: string
   bytes: number

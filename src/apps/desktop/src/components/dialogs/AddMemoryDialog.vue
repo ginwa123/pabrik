@@ -46,24 +46,12 @@ import UiIcon from '../ui/UiIcon.vue'
 
 const props = withDefaults(defineProps<{
   show: boolean
-  /**
-   * The initial cwd to scope the new memory to. Used as the starting
-   * value of the local `cwd` ref; the user can change it via the
-   * folder picker before submitting. Typically passed by the parent
-   * as the workspace's first folder item's path, but any valid
-   * absolute path works.
-   */
+  /**    * The initial cwd to scope the new memory to. Used as the starting value of the local `cwd` ref;
+   * the user can change it via the folder picker before submitting. Typically passed by the parent
+   * as the workspace's first folder item's path, but any valid absolute path works. */
   cwd: string
-  /**
-   * 'standalone' (default) — the legacy flow: this dialog calls
-   * `createLocalMemory` and emits `create(name, path)`.
-   * 'task' — the new flow (2026-06-20): this dialog does NOT call
-   * the API. It emits `create(name, content, path)` and the parent
-   * calls `addTask(..., { taskType: 'memory', memory: { name, content } })`.
-   * The backend's `task_create.zig` for memory tasks handles both
-   * the file write AND the task-row insert in a single POST, so the
-   * parent only needs to make one API call.
-   */
+  /** 'standalone' (default) — the legacy flow: this dialog calls `createLocalMemory` and emits
+   * `create(name, path)`. 'task' — the new flow (2026-06-20): this dialog does NOT call the API. */
   mode?: 'standalone' | 'task'
 }>(), {
   mode: 'standalone',
@@ -71,24 +59,13 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   close: []
-  /**
-   * The dialog always emits 3 args: `create(name, content, path)`.
-   * In `mode='standalone'`, the dialog calls `createLocalMemory`
-   * directly and emits the API-returned path (the `content` arg is
-   * the value sent to the API; same as the dialog's textarea).
-   * In `mode='task'`, the dialog doesn't call the API; the path
-   * is the locally-computed `<cwd>/.pabrik/memories/<name>` and
-   * the parent uses all 3 args to call addTask.
-   *
-   * Single 3-tuple shape (instead of a union of 2-tuple / 3-tuple)
-   * keeps Vue's emit type system happy and matches the existing
-   * AddTaskDialog pattern (always `(name, description)`).
-   */
+  /** The dialog always emits 3 args: `create(name, content, path)`. In `mode='standalone'`, the
+   * dialog calls `createLocalMemory` directly and emits the API-returned path (the `content` arg is
+   * the value sent to the API; same as the dialog's textarea). */
   create: [name: string, content: string, path: string]
 }>()
 
 // ─── State ─────────────────────────────────────────────────────────────────
-
 const name = ref('')
 // Local cwd — starts as the prop value but the user can change it
 // via the file picker. Decoupled from `props.cwd` so the parent
@@ -102,14 +79,6 @@ const showPicker = ref(false)
 const notificationStore = useNotificationStore()
 
 // ─── Validation ─────────────────────────────────────────────────────────────
-
-/**
- * Mirrors `memories.isValidMemoryName` from
- * `src/modules/agent/tools/memories.zig:372` — kept in sync so the
- * dialog rejects obvious typos before hitting the server. The
- * server is the source of truth; if the two ever drift, the
- * server-side check returns 400.
- */
 function isValidMemoryName(rawName: string): boolean {
   const trimmed = rawName.trim()
   if (trimmed.length === 0) return false
@@ -119,19 +88,15 @@ function isValidMemoryName(rawName: string): boolean {
   return true
 }
 
-// ─── Picker data source ────────────────────────────────────────────────────
-
-// Adapts the existing listFolder/getSystemFolder API to the picker's
-// agnostic (path: string) => Promise<T[]> contract. When path is
-// empty we return the system folder root entries. Same pattern as
-// AddItemDialog.vue:44.
+// ─── Picker data source ──────────────────────────────────────────────────── Adapts the existing
+// listFolder/getSystemFolder API to the picker's agnostic (path: string) => Promise<T[]> contract.
+// When path is empty we return the system folder root entries.
 const loadItemsForPicker = async (path: string): Promise<FolderEntry[]> => {
   const data = path ? await listFolder(path) : await getSystemFolder()
   return (data.entries || []) as FolderEntry[]
 }
 
 // ─── Handlers ──────────────────────────────────────────────────────────────
-
 const handleFolderSelected = (path: string) => {
   cwd.value = path
   // Close the picker on selection — matches the AddItemDialog
@@ -158,16 +123,9 @@ const handleCreate = async () => {
 
   isSubmitting.value = true
   try {
-    // 'standalone' (default) flow: the dialog calls
-    // createLocalMemory directly and emits (name, content, path).
-    // The content arg is the same value sent to the API (the
-    // dialog's textarea). Parents that don't need content (the
-    // legacy standalone flow) can ignore it.
-    //
-    // The 'task' mode does NOT call the API — it just emits
-    // the data the parent needs to call addTask. The parent's
-    // task_create.zig will write the .md file and insert the
-    // task row in one POST.
+    // 'standalone' (default) flow: the dialog calls createLocalMemory directly and emits (name,
+    // content, path). The content arg is the same value sent to the API (the dialog's textarea).
+    // Parents that don't need content (the legacy standalone flow) can ignore it.
     if (props.mode === 'task') {
       const finalPath = `${cwd.value}/.pabrik/memories/${trimmedName}`
       emit('create', trimmedName, content.value, finalPath)
@@ -175,10 +133,9 @@ const handleCreate = async () => {
       return
     }
     const result = await createLocalMemory(trimmedName, content.value, cwd.value)
-    // createLocalMemory returns { memory: { name, title, path, size } } on
-    // success. The ApiError throw handles the non-2xx case (toast is
-    // auto-fired by apiFetch), so reaching this line means the memory
-    // exists.
+    // createLocalMemory returns { memory: { name, title, path, size } } on success. The ApiError
+    // throw handles the non-2xx case (toast is auto-fired by apiFetch), so reaching this line means
+    // the memory exists.
     emit('create', result.memory.name, content.value, result.memory.path)
     handleClose()
   } catch (err) {
@@ -201,10 +158,8 @@ const handleKeydown = (event: KeyboardEvent) => {
   }
 }
 
-// ─── Lifecycle ─────────────────────────────────────────────────────────────
-
-// Reset state on every open — matches AddItemDialog's contract.
-// Runs as the open-sync guard below so the fields are
+// ─── Lifecycle ───────────────────────────────────────────────────────────── Reset state on every
+// open — matches AddItemDialog's contract. Runs as the open-sync guard below so the fields are
 // seeded before the dialog paints.
 const handleOpen = async () => {
   name.value = ''
@@ -216,10 +171,9 @@ const handleOpen = async () => {
   nameInput.value?.focus()
 }
 
-// Open-reset without watch(): seed on mount (initial show=true) and on
-// closed->open updates. A Transition before-enter hook cannot do this — it
-// never fires on initial mount (no `appear`) and VTU stubs Transition, so
-// specs that mount then setProps(show=true) would see empty fields.
+// Open-reset without watch(): seed on mount (initial show=true) and on closed->open updates. A
+// Transition before-enter hook cannot do this — it never fires on initial mount (no `appear`) and
+// VTU stubs Transition, so specs that mount then setProps(show=true) would see empty fields.
 const wasShown = ref(props.show)
 onMounted(() => {
   if (props.show) void handleOpen()

@@ -1,17 +1,6 @@
-/**
- * Tests for KanbanView.handleCreateTaskSave's create flow with
- * create-mode image attachments (plan: 2026-08-06-kanban-image-urls-column,
- * Migration 069).
- *
- * UPDATED for the 2026-08-14 kanban-specific endpoint refactor. The
- * create flow now uses `addKanbanTask` (single round-trip to the
- * /api/.../kanban/tasks endpoint). The image_urls column is populated
- * server-side inside the createStandardTask useCase (the body
- * forwards imageUrls → backend INSERT writes the column → the
- * chatview's first user message renders them as thumbnails).
- *
- * The description stays plain text — no `data:image/` anywhere.
- */
+/** Tests for KanbanView.handleCreateTaskSave's create flow with create-mode image attachments
+ * (plan: 2026-08-06-kanban-image-urls-column, Migration 069). UPDATED for the 2026-08-14
+ * kanban-specific endpoint refactor. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

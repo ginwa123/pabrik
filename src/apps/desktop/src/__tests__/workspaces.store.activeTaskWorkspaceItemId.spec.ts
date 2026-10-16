@@ -1,23 +1,6 @@
-/**
- * Tests for workspacesStore.activeTaskWorkspaceItemId (added by
- * docs/superpowers/plans/2026-08-06-kanban-embed-chatview.md, Task 1).
- *
- * The "which kanban item owns the active task" lookup used to be a
- * local computed in AppLayout.vue (lines 701-712). It is being moved
- * into the workspaces store as a getter so that:
- *   - AppLayout's 3-column kanban|chatview v-else-if guard reads it
- *     from the store (no more local copy).
- *   - KanbanView's chat-pane branch (Task 2) reads it from the same
- *     store getter (single source of truth).
- *
- * The lookup walks every workspace's tasks looking for the active
- * task id; returns the containing item's id or null.
- *
- * Tests are BEHAVIOURAL: they build a real store, mutate
- * `workspaces`/`activeTaskId` directly (the same pattern as
- * workspacesStore.tags.spec.ts / workspacesStoreKanbanTasks.spec.ts),
- * then assert the getter returns the expected item id.
- */
+/** Tests for workspacesStore.activeTaskWorkspaceItemId (added by
+ * docs/superpowers/plans/2026-08-06-kanban-embed-chatview.md, Task 1). The "which kanban item owns
+ * the active task" lookup used to be a local computed in AppLayout.vue (lines 701-712). */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

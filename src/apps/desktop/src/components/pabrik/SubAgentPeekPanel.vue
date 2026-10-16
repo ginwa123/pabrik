@@ -1,22 +1,7 @@
 <script setup lang="ts">
-/**
- * SubAgentPeekPanel — right-side slide-over panel for watching a
- * sub-agent's progress without leaving the parent chat.
- *
- * The panel is thin chrome (header / error banner / footer) around an
- * embedded ChatView in read-only mode. ChatView owns fetch + SSE for
- * `sessionId` and renders the full message list with the same tool
- * output components, markdown, reasoning blocks, and error cards as
- * the main chat — there is no duplicated tool-dispatch chain here to
- * keep in sync with ChatView.vue.
- *
- * The `messages` prop is kept for backward compat (SubAgentPeekHost
- * still passes the composable's rows; header-adjacent consumers and
- * existing tests reference it) but the body renders via ChatView, not
- * from this prop. Status / error / tokens continue to come from
- * `useSubAgentPeek` via the host so the header stays live even while
- * ChatView owns the message list lifecycle.
- */
+/** SubAgentPeekPanel — right-side slide-over panel for watching a sub-agent's progress without
+ * leaving the parent chat. The panel is thin chrome (header / error banner / footer) around an
+ * embedded ChatView in read-only mode. */
 import { computed } from 'vue'
 import ChatView from '../views/ChatView.vue'
 import type { Message } from '../../api'
@@ -29,11 +14,8 @@ const props = defineProps<{
   instruction: string
   status: PeekStatus
   errorMessage: string | null
-  /**
-   * Retained for backward compat — SubAgentPeekHost still passes the
-   * composable's rows. The body renders via the embedded ChatView
-   * (which fetches the same session itself), not from this prop.
-   */
+  /**    * Retained for backward compat — SubAgentPeekHost still passes the composable's rows. The body
+   * renders via the embedded ChatView (which fetches the same session itself), not from this prop. */
   messages: Message[]
   totalTokens?: number
 }>()
@@ -45,7 +27,6 @@ const emit = defineEmits<{
 }>()
 
 // ── Derived display values ────────────────────────────────────────────
-
 const instructionPreview = computed(() => {
   const max = 200
   return props.instruction.length > max

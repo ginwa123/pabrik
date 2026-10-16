@@ -1,30 +1,4 @@
-/**
- * App-bar parity across the three workspace-item chat modes.
- *
- * Pre-fix, each mode hand-rolled its own bar and the three disagreed
- * on height, padding, background, width and even which controls they
- * carried:
- *
- *   - kanban  → ChatView's inline <header> (h-11, chat column only,
- *               `◫` toggle + bare `✕`)
- *   - agent   → AgentChatView's bespoke <header> (px-5 py-3, full
- *               width ABOVE the right sidebar, text "✕ Close" button,
- *               NO sidebar toggle)
- *   - folder / memory / chat / routine → no bar at all; the `◫`
- *               toggle floated over the transcript
- *
- * The fix routes all three through the shared ChatAppBar.vue by
- * setting ChatView's `showHeader` flag. This spec is the regression
- * net for that: it asserts (a) statically that no mode can grow a
- * second hand-rolled bar again, and (b) behaviourally that each host
- * really does put the shared bar on screen with the same testids and
- * the task name as its title.
- *
- * The static half follows the repo's ChatView static-contract pattern
- * (cf. ChatView.prSidebar.spec.ts) because a full ChatView mount drags
- * in the SSE bus, the sync engine and every Pinia store; the shared
- * bar's own markup is covered by ChatAppBar.spec.ts.
- */
+/** App-bar parity across the three workspace-item chat modes. */
 import { describe, expect, it, vi } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
 import { resolve, join } from 'node:path'
@@ -46,20 +20,15 @@ const agentChatViewSrc = templateOf(src('AgentChatView.vue'))
 const standardTaskChatViewSrc = templateOf(src('StandardTaskChatView.vue'))
 const appBarSrc = src('ChatAppBar.vue')
 
-/**
- * The bar's rendered markup, normalised. Vue leaves `<!--v-if-->`
- * markers where a slot rendered nothing, and the indentation of a
- * slotted-but-empty `extras` differs from an absent slot — neither is
- * a visual difference, so both are stripped before comparing.
- */
+/**  * The bar's rendered markup, normalised. Vue leaves `<!--v-if-->` markers where a slot rendered
+ * nothing, and the indentation of a slotted-but-empty `extras` differs from an absent slot —
+ * neither is a visual difference, so both are stripped before comparing. */
 const barHtml = (w: { get: (s: string) => { html: () => string } }) =>
   templateOf(w.get('[data-testid="chat-app-bar"]').html()).replace(/>\s+</g, '><').trim()
 
-// ─── A ChatView stand-in that honours the real showHeader contract ──────────
-//
-// It renders the REAL ChatAppBar (so the assertions below run against
-// the shipped bar, not a copy) and re-emits `close` from the bar's ✕,
-// exactly like ChatView does.
+// ─── A ChatView stand-in that honours the real showHeader contract ────────── It renders the REAL
+// ChatAppBar (so the assertions below run against the shipped bar, not a copy) and re-emits `close`
+// from the bar's ✕, exactly like ChatView does.
 const ChatViewStub = defineComponent({
   name: 'ChatView',
   props: ['chatId', 'chatName', 'type', 'cwd', 'showHeader', 'embedded'],
@@ -82,7 +51,6 @@ const globalOpts = { stubs: { ChatView: ChatViewStub } }
 
 describe('app-bar parity — the three workspace-item chat modes', () => {
   // ── Static contract: one app bar, three callers ──────────────────────────
-
   it('ChatAppBar.vue is the only component that renders a chat app bar', () => {
     // Nothing else in the views tree may mint the bar's testid — if a
     // mode grows its own bar again, it shows up here.
@@ -95,10 +63,9 @@ describe('app-bar parity — the three workspace-item chat modes', () => {
   })
 
   it('the visual contract lives in exactly one file', () => {
-    // The four things that made the three bars look different: the
-    // height, the padding, the background token, the border. They are
-    // declared once, in ChatAppBar.vue — no host re-declares any of
-    // them, so a mode cannot opt out of the shared look.
+    // The four things that made the three bars look different: the height, the padding, the
+    // background token, the border. They are declared once, in ChatAppBar.vue — no host re-declares
+    // any of them, so a mode cannot opt out of the shared look.
     for (const token of ['h-11', 'px-3', '--semantic-sidebar-bg', 'border-bottom']) {
       expect(appBarSrc).toContain(token)
       expect(agentChatViewSrc).not.toContain(token)
@@ -146,7 +113,6 @@ describe('app-bar parity — the three workspace-item chat modes', () => {
   })
 
   // ── Behavioural parity ──────────────────────────────────────────────────
-
   it('kanban mode renders the shared bar with the task name as title', () => {
     // The kanban branch mounts ChatView directly with
     // :show-header="true" — same contract the two wrappers forward.
@@ -218,7 +184,6 @@ describe('app-bar parity — the three workspace-item chat modes', () => {
   })
 
   // ── Close routing ───────────────────────────────────────────────────────
-
   it('the ✕ closes an agent chat (forwards ChatView close)', async () => {
     const wrapper = mount(AgentChatView, {
       props: {
@@ -252,7 +217,6 @@ describe('app-bar parity — the three workspace-item chat modes', () => {
   })
 
   // ── Agent-mode extras ───────────────────────────────────────────────────
-
   it('the agent busy spinner renders inside the shared bar', async () => {
     const processingState: Ref<Record<string, boolean>> = ref({ task_busy: true })
     const wrapper = mount(AgentChatView, {

@@ -1,17 +1,6 @@
-/**
- * Unit tests for the workspaces store's reorderWorkspaceItems action.
- *
- * reorderWorkspaceItems is the optimistic-update action called by
- * the ProjectsList drag-and-drop handler when the user reorders
- * items inside an expanded workspace. It reorders the workspace's
- * `items` array immediately (so the UI snaps on drop), then POSTs
- * the new order to the backend, rolling back on error.
- *
- * Mirrors workspacesStoreReorder.spec.ts but scoped to a single
- * workspace's items.
- *
- * Plan: docs/superpowers/plans/2026-06-16-workspace-item-position-reorder.md
- */
+/** Unit tests for the workspaces store's reorderWorkspaceItems action. reorderWorkspaceItems is the
+ * optimistic-update action called by the ProjectsList drag-and-drop handler when the user reorders
+ * items inside an expanded workspace. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

@@ -1,33 +1,6 @@
-/**
- * Regression specs for the many-messages glitch audit
- * (task_1788648119245_5: bounce / tall gap / blank / shrink).
- *
- * Three independent failure mechanisms, one spec each:
- *
- * T1 — sizer must be position-independent. `sizerHeight` used to read
- *   `visibleRange` (a function of scrollTop) in its at-bottom branch,
- *   expanding to `topSpacer + realContentHeight` where realContentHeight
- *   was STALE (the template ref callback only fires on mount/replace,
- *   never on child updates — so it describes an OLD window). Scrolling
- *   to the bottom with a stale tall window height blew the sizer up ~3x;
- *   scrolling up collapsed it back to the model total. That
- *   expand↔collapse IS the bounce. Invariant: settled sizer ==
- *   modelTotal, everywhere.
- *
- * T2 — unmeasured tail must not collapse the sizer. `estimateHeight`
- *   returned static 64px for every unmeasured item while real chat
- *   bubbles are ~400px. With 100 messages the model total (and hence
- *   the sizer + scrollHeight) collapsed to less than half the real
- *   height — the "list becomes small" symptom. The adaptive median
- *   estimator must back unmeasured items.
- *
- * T3 — streaming→DB id swap must not lose measured heights.
- *   ChatView's groupKey is group.messages[0].id; on message-complete the
- *   `streaming-*` row is replaced by the canonical DB row (new id, new
- *   key, no stored height) so the sizer suddenly shrinks by (real − 64).
- *   The scroller exposes rekeyHeight(oldKey, newKey) so ChatView can
- *   transfer the height at the swap site.
- */
+/** Regression specs for the many-messages glitch audit (task_1788648119245_5: bounce / tall gap /
+ * blank / shrink). Three independent failure mechanisms, one spec each: T1 — sizer must be
+ * position-independent. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -86,13 +59,8 @@ describe('VirtualScroller many-messages glitch audit', () => {
   afterEach(() => vi.useRealTimers())
 
   it('T1: settled sizer equals modelTotal at the bottom (no stale-window expand)', async () => {
-    // jsdom reports offsetHeight 0 (no layout), so the content div's
-    // template-ref measurement would stay 0 and the at-bottom expand
-    // path could never trigger in-test. Real browsers report the real
-    // window height once (at mount) and then go STALE (the ref callback
-    // does not refire on child updates). Simulate that: prototype-level
-    // 43000px for the content div only — per-child own-property mocks
-    // below shadow it, exactly like real layout.
+    // jsdom reports offsetHeight 0 (no layout), so the content div's template-ref measurement would
+    // stay 0 and the at-bottom expand path could never trigger in-test.
     const protoDesc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')
     Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
       configurable: true,
@@ -201,9 +169,8 @@ describe('VirtualScroller many-messages glitch audit', () => {
   })
 
   it('T4: a settled measure pass writes scrollTop zero times (no redundant compensation)', async () => {
-    // Anchor compensation writes container.scrollTop directly; each
-    // write fires a native scroll event into ChatView's isAtBottom
-    // machine. A second measure pass with no DOM changes must find
+    // Anchor compensation writes container.scrollTop directly; each write fires a native scroll
+    // event into ChatView's isAtBottom machine. A second measure pass with no DOM changes must find
     // nothing to do (changed=false early return) and write zero times.
     const { wrapper, el } = mountScroller(255)
     await nextTick()

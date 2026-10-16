@@ -1,18 +1,5 @@
-/*
- * UseSkill.vue — the `use_skill` card.
- *
- * The tool call is `{ name }` and the payload is
- * `{ skill_name, content, loaded, asset_dir, asset_count, error?,
- * available_skills? }`. Two consequences are pinned here:
- *
- *  - While the call is in flight `content` is still null, so the card
- *    falls back to the tool-call parameters for the name. That fallback
- *    has to read `name`: reading only `skill_name` left every in-flight
- *    card saying "unknown" until the payload landed.
- *  - `asset_dir` is a per-load materialisation of the bundle's companion
- *    files, not a location of record, so it is never rendered. `content`
- *    and the `available_skills` refusal branch both still are.
- */
+/** UseSkill.vue — the `use_skill` card. The tool call is `{ name }` and the payload is `{
+ * skill_name, content, loaded, asset_dir, asset_count, error?, available_skills? }`. */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import UseSkill from '../UseSkill.vue'

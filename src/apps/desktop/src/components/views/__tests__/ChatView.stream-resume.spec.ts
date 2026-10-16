@@ -1,18 +1,6 @@
-/**
- * Tests for ChatView's stream-resume-on-reselect behavior.
- *
- * 2026-09-02 stream-resume-on-reselect (task_1787673548905_0) — when
- * the user closes/re-selects a chat session mid-stream, ChatView drops
- * its `streaming-*` placeholder and resets `streamingContent`. The
- * backend keeps streaming, so the re-mounted view must recover the
- * partial text via GET /api/llm/session/:id/stream and seed the
- * streaming row BEFORE connectSse() — subsequent chunk events then
- * append seamlessly.
- *
- * Like ChatView.chunk-stream.spec.ts, this mounts a tiny harness that
- * mirrors ChatView's resume + bus.on('llm') glue in isolation (no
- * Pinia + Vue Router scaffold needed).
- */
+/** Tests for ChatView's stream-resume-on-reselect behavior. 2026-09-02 stream-resume-on-reselect
+ * (task_1787673548905_0) — when the user closes/re-selects a chat session mid-stream, ChatView
+ * drops its `streaming-*` placeholder and resets `streamingContent`. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 

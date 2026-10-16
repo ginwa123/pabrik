@@ -75,14 +75,8 @@ function redirectTarget(): string {
 }
 
 function kickSseAfterLogin(): void {
-  // The global SSE bus connects at app boot (App.vue) — possibly BEFORE
-  // login, while /api/events still 401s. A first-attempt 4xx is terminal
-  // by design ('failed', red "Connection lost" badge; see
-  // sseClient.handleError) and nothing retries it once the session
-  // cookie appears — the user had to refresh manually. Nudge the bus
-  // now that we're authenticated. reconnectGlobal also covers the
-  // multi-tab case (it asks the leader tab to reconnect).
-  // Only kick dead states: an already-open/connecting stream needs nothing.
+  // The global SSE bus connects at app boot (App.vue) — possibly BEFORE login, while /api/events
+  // still 401s.
   try {
     const bus = useSseBus()
     if (bus.state.value === 'failed' || bus.state.value === 'closed') {

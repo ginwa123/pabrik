@@ -1,22 +1,6 @@
-/**
- * Behavioural tests for the canvas Shift+click multi-select toggle
- * (Chunk 3 of the right-click group menu plan).
- *
- * Before this chunk the canvas's @select on DesignElement hard-coded
- * `additive: false`, so Shift+click on canvas never toggled membership.
- * This chunk wires `event.shiftKey` through DesignElement.vue's select
- * emit so the canvas matches the layers panel behaviour.
- *
- * 4 tests:
- *   1. Plain click on canvas element B selects only B.
- *   2. Shift+click on canvas element C adds it to the selection.
- *   3. Shift+click on canvas element C again toggles it OFF.
- *   4. Shift+click on element A (not in selection) extends selection.
- *
- * The canvas's `selectedIds` is local state in DesignView; the
- * LayersPanel reads it via a :selected-ids prop, so the assertions
- * go through the prop on the rendered <LayersPanel>.
- */
+/** Behavioural tests for the canvas Shift+click multi-select toggle (Chunk 3 of the right-click
+ * group menu plan). Before this chunk the canvas's @select on DesignElement hard-coded `additive:
+ * false`, so Shift+click on canvas never toggled membership. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -111,11 +95,8 @@ describe('DesignView canvas Shift+click multi-select toggle', () => {
     return wrapper
   }
 
-  // Helper: dispatch a pointerdown on a <DesignElement>'s root.
-   
-  // jsdom 29 makes PointerEvent.button a readonly getter, so we use
-  // native dispatchEvent. setPointerCapture stubbed to a noop so the
-  // drag handler doesn't blow up in jsdom.
+  // Helper: dispatch a pointerdown on a <DesignElement>'s root. jsdom 29 makes PointerEvent.button a
+  // readonly getter, so we use native dispatchEvent, and setPointerCapture is stubbed to a noop.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function dispatchSelect(wrapper: any, elementId: string, shiftKey: boolean): void {
     const target = wrapper.find(`[data-testid="design-element-${elementId}"]`)

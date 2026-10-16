@@ -1,67 +1,16 @@
-/**
- * designLogger.ts
- *
- * A focused logger for the design-mode drag/resize wire.
- *
- * Why this exists: when the user drags a group and only the group
- * moves but not its children ("first drag works, second needs
- * refresh"), or when non-group elements don't move, the failure mode
- * is one of:
- *
- *   - useDesignHandlers.translateElement's activeDesignPageId check
- *     fails (no-op, no API call fired)
- *   - The element's pointerdown handler emits `groupDrag` instead of
- *     `translate` (because isGroupLike|inMultiselect test was wrong)
- *   - dragStartPositions Map still has the first drag's baseline
- *     when the second drag fires (handleGroupDrag's
- *     `if (dragStartPositions === null)` check leaked)
- *   - store.translateDesignElement / moveDesignElementsBatch hit
- *     activeDesignPageId empty (silent no-op)
- *   - The SSE handler's `isRecentLocalMutation` Map returned false
- *     and `fetchDesignElements` ran with stale state on top of the
- *     optimistic local mirror
- *
- * Without per-call logs you can't tell WHICH layer broke. The log
- * lines below fire at every key step in the wire (pointerdown,
- * emit, store call, response mirror, SSE receipt) so a single
- * DevTools console scroll answers:
- *
- *   1. Did the element pointerdown fire?
- *   2. Did the right gesture path branch (move-vs-resize-vs-group)?
- *   3. What was the cursor delta?
- *   4. Did the store see the call (with what args)?
- *   5. Did the SSE echo back?
- *   6. Did the local mirror update as expected?
- *
- * Design mirrors scrollLogger.ts (info / warn / error, lazy stack
- * capture on warn+error, caller field, single emit site).
- */
-
+/** designLogger.ts A focused logger for the design-mode drag/resize wire. */
 import { ref } from 'vue'
 
 // ─── Configuration ─────────────────────────────────────────────────────────
-
-/**
- * Global logger enable. Default false to keep the production console
- * quiet; flip via the Vue devtools "design logger" toggle (a small
- * boolean stored in localStorage + reactive ref).
- *
- * We deliberately keep this SEPARATE from `import.meta.env.DEV` —
- * `import.meta.env.DEV` is a build-time constant that locks the
- * decision to "always on in dev, always off in prod". The design
- * logger is intentionally toggleable at runtime because the bugs it
- * catches (group-cascade race, SSE-dedupe race) happen in production
- * too, and a single `localStorage.dl=on` line gets the diagnostic out
- * the door without a rebuild.
- */
+/** Global logger enable. Default false to keep the production console quiet; flip via the Vue
+ * devtools "design logger" toggle (a small boolean stored in localStorage + reactive ref). */
 const STORAGE_KEY = 'pabrik.design-logger.enabled'
 
 const enabledRef = ref<boolean>(false)
 
-// Read from localStorage synchronously at module-load so the first
-// gesture in a fresh page already has the right setting. SSR-safe:
-// the typeof check protects against environments where localStorage
-// throws.
+// Read from localStorage synchronously at module-load so the first gesture in a fresh page already
+// has the right setting. SSR-safe: the typeof check protects against environments where
+// localStorage throws.
 if (typeof localStorage !== 'undefined') {
   try {
     enabledRef.value = localStorage.getItem(STORAGE_KEY) === 'on'
@@ -70,19 +19,9 @@ if (typeof localStorage !== 'undefined') {
   }
 }
 
-// AUTO-ENABLE: a developer-mode browser that has the `__designLogger`
-// escape hatch registered must have loaded the new bundle. If the user
-// reloads the page or the `__designLogger` flag wasn't set, fall back
-// to "auto on" so they immediately see diagnostics. The user can
-// still call `__designLogger.off()` to silence it. This is dev-only.
-//
-// Detection: `window.__designLogger` was set by the bottom of this
-// file (the escape hatch install). If it's not present, the bundle
-// running is OLD (pre-logger) and the page should auto-enable so the
-// next page reload picks up the new bundle.
-//
-// We use a single-shot check at module-load time to avoid re-running
-// on every navigation.
+// AUTO-ENABLE: a developer-mode browser that has the `__designLogger` escape hatch registered must
+// have loaded the new bundle. If the user reloads the page or the `__designLogger` flag wasn't set,
+// fall back to "auto on" so they immediately see diagnostics.
 if (import.meta.env.DEV && typeof window !== 'undefined') {
   const w = window as unknown as { __designLoggerAlreadyInstalled?: boolean }
   if (!w.__designLoggerAlreadyInstalled && !enabledRef.value) {
@@ -104,8 +43,7 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
 export const isDesignLoggerEnabled = (): boolean => enabledRef.value
 
 /**
- * Enable/disable at runtime. Writes the new value to localStorage so
- * the setting survives reload.
+ * Enable/disable at runtime. Writes the new value to localStorage so the setting survives reload. /
  */
 export const setDesignLoggerEnabled = (on: boolean): void => {
   enabledRef.value = on
@@ -120,16 +58,8 @@ export const setDesignLoggerEnabled = (on: boolean): void => {
 }
 
 // ─── Reasons (the most useful field) ────────────────────────────────────────
-
-/**
- * The set of `reason` values the design logger emits. Each one
- * identifies a unique point in the wire — a single DevTools
- * `grep reason=…` isolates a layer.
- *
- * Naming: a colon-separated path so a search like
- * `reason=drag:start` matches all drag-start events but
- * `reason=drag:start:group` matches only group-drag starts.
- */
+/** The set of `reason` values the design logger emits. Each one identifies a unique point in the
+ * wire — a single DevTools `grep reason=…` isolates a layer. */
 export type DesignReason =
   // ── Element layer (DesignElement.vue) ─────────────────────────────
   | 'drag:start:move'              // pointerdown on a leaf/body, single-element
@@ -177,7 +107,6 @@ export type DesignReason =
   | 'fetch:replaced-array'          // array reference replaced (the OLD bug)
 
 // ─── Context (the per-line state snapshot) ────────────────────────────────
-
 export interface ElementInfo {
   id: string
   type: string
@@ -189,51 +118,35 @@ export interface ElementInfo {
 }
 
 export interface DesignContext {
-  /**
-   * Which component / function produced this log line — without it,
-   * `drag:start:move` from `DesignElement.vue` looks identical to
-   * `drag:start:move` from anywhere else.
-   */
+  /**    * Which component / function produced this log line — without it, `drag:start:move` from
+   * `DesignElement.vue` looks identical to `drag:start:move` from anywhere else. */
   caller: string
 
   /** Stable reason code (see `DesignReason`). */
   reason: DesignReason
 
   // ── Drag gesture state ────────────────────────────────────────────
-  /**
-   * The element being interacted with (pointerdown target). Always
-   * populated for drag:* reasons.
-   */
+  /** The element being interacted with (pointerdown target). Always
+   * populated for drag:* reasons. */
   element?: ElementInfo
-  /**
-   * Cursor delta in design-px (zoom-adjusted). For drag:throttled-emit /
-   * drag:trailing-emit / emit:translate / emit:groupDrag.
-   */
+  /** Cursor delta in design-px (zoom-adjusted). For drag:throttled-emit /
+   * drag:trailing-emit / emit:translate / emit:groupDrag. */
   dx?: number
   dy?: number
   /**
    * Resize patch (absolute geometry). For emit:resize.
    */
   patch?: Partial<{ x: number; y: number; width: number; height: number; rotation: number }>
-  /**
-   * startClientX/Y captured at pointerdown — without these, a 5px
-   * discrepancy in a delta looks like "wait, where did the extra 5
-   * come from?".
-   */
+  /**    * startClientX/Y captured at pointerdown — without these, a 5px discrepancy in a delta looks like
+   * "wait, where did the extra 5 come from?". */
   startClientX?: number
   startClientY?: number
-  /**
-   * True iff this gesture branched into triggerGroupDrag (group /
-   * frame / multi-select move). The single most useful invariant —
-   * `drag:start:group=true` vs `false` tells you which wire fired.
-   */
+  /**    * True iff this gesture branched into triggerGroupDrag (group / frame / multi-select move). The
+   * single most useful invariant — `drag:start:group=true` vs `false` tells you which wire fired. */
   isGroup?: boolean
-  /**
-   * Whether the start fired dragStartPositions = null (the reset on
-   * every drag). Lets us distinguish "this drag has a clean baseline"
-   * (`fresh=true`) from "we reused the previous drag's baseline"
-   * (`fresh=false` — the suspected second-drag bug).
-   */
+  /**    * Whether the start fired dragStartPositions = null (the reset on every drag). Lets us
+   * distinguish "this drag has a clean baseline" (`fresh=true`) from "we reused the previous drag's
+   * baseline" (`fresh=false` — the suspected second-drag bug). */
   snapshotFresh?: boolean
   snapshotSize?: number
 
@@ -265,13 +178,6 @@ export interface DesignContext {
 }
 
 // ─── Throttling ────────────────────────────────────────────────────────────
-
-/**
- * Drag pointermoves fire at 60+ Hz. Without throttling, the
- * `drag:throttled-emit` lines would flood the console. Coalesce them
- * to the most recent per-gesture-id, flushing 200 ms after the last
- * fired (trailing edge so the final position is never lost).
- */
 const DEBUG_THROTTLE_MS = 200
 
 interface PendingEmit {
@@ -291,7 +197,6 @@ const flushKey = (key: string): void => {
 }
 
 // ─── Public surface ────────────────────────────────────────────────────────
-
 export interface DesignLogger {
   debug: (ctx: Omit<DesignContext, 'caller' | 'reason'> & { reason: DesignReason; caller?: string }) => void
   info: (ctx: Omit<DesignContext, 'caller' | 'reason'> & { reason: DesignReason; caller: string }) => void
@@ -299,10 +204,8 @@ export interface DesignLogger {
   error: (ctx: Omit<DesignContext, 'caller' | 'reason'> & { reason: DesignReason; caller: string }) => void
 }
 
-/**
- * Singleton. The design-mode wire has no per-chat-id scoping (one
- * design canvas at a time), so a single global logger suffices.
- */
+/** Singleton. The design-mode wire has no per-chat-id scoping (one
+ * design canvas at a time), so a single global logger suffices. */
 export const designLogger: DesignLogger = {
   debug(partial) {
     const ctx = { ...partial, caller: partial.caller ?? 'unknown' } as DesignContext
@@ -333,16 +236,9 @@ export const designLogger: DesignLogger = {
   },
 }
 
-// ─── Console escape hatch ──────────────────────────────────────────────────
-//
-// When `import.meta.env.DEV` is true, expose a `window.__designLogger`
-// so the user can toggle from DevTools without rebuilding:
-//
-//   __designLogger.on()    // enable
-//   __designLogger.off()   // disable
-//   __designLogger.status() // is it on?
-//
-// Production builds skip this entirely (so the toggle is dev-only).
+// ─── Console escape hatch ────────────────────────────────────────────────── When
+// `import.meta.env.DEV` is true, expose a `window.__designLogger` so the user can toggle from
+// DevTools without rebuilding: __designLogger.on() // enable __designLogger.off() // disable.
 if (import.meta.env.DEV && typeof window !== 'undefined') {
   (window as unknown as { __designLogger: unknown }).__designLogger = {
     on: () => setDesignLoggerEnabled(true),
@@ -352,7 +248,6 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
 }
 
 // ─── Emit ──────────────────────────────────────────────────────────────────
-
 let eventCounter = 0
 
 const emitInternal = (ctx: DesignContext, level: 'debug' | 'info' | 'warn' | 'error'): void => {
@@ -420,12 +315,8 @@ const emitInternal = (ctx: DesignContext, level: 'debug' | 'info' | 'warn' | 'er
 }
 
 // ─── Helpers for callers ───────────────────────────────────────────────────
-
-/**
- * Convert a DesignElement into the compact ElementInfo shape the
- * logger prefers. Avoids passing 30+ fields when only 5 are useful
- * for diagnostic output.
- */
+/**  * Convert a DesignElement into the compact ElementInfo shape the logger prefers. Avoids passing 30+
+ * fields when only 5 are useful for diagnostic output. */
 export const abbrevElement = (e: {
   id: string
   type: string

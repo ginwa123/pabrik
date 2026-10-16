@@ -1,16 +1,6 @@
-/**
- * Tests for KanbanView.handleRunAgentFromMenu — the card / row
- * context-menu "Run agent" host handler.
- *
- * Same store action as the detail dialog's caret menu
- * (`startAgentOnTask` → POST .../tasks/:task_id/start_agent), reached
- * without opening the dialog. The behavioural difference worth
- * pinning is the ERROR SURFACE: there is no dialog to hold an inline
- * banner, so failures go to the notification store instead.
- *
- * Distinct from KanbanView.startAgent.spec.ts (dialog path, inline
- * banner) and KanbanView.runAllAgents.spec.ts (column bulk path).
- */
+/** Tests for KanbanView.handleRunAgentFromMenu — the card / row context-menu "Run agent" host
+ * handler. Same store action as the detail dialog's caret menu (`startAgentOnTask` → POST
+ * .../tasks/:task_id/start_agent), reached without opening the dialog. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

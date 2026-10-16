@@ -23,11 +23,9 @@
     (Migration 084).
 -->
 <script setup lang="ts">
-// Extracted from WorkspaceItemTask.vue on 2026-07-02. The shared
-// logic (event handlers + drop indicator) now lives in
-// composables/useTaskActions.ts; this file owns ONLY the card
-// layout and the card-specific computeds (description preview, meta
-// row, Jira-style type accent).
+// Extracted from WorkspaceItemTask.vue on 2026-07-02. The shared logic (event handlers + drop
+// indicator) now lives in composables/useTaskActions.ts; this file owns ONLY the card layout and
+// the card-specific computeds (description preview, meta row, Jira-style type accent).
 import { inject, ref, computed, onMounted, onUnmounted, onUpdated, type Ref } from 'vue'
 import { useWorkspacesStore } from '../../stores/workspaces'
 import { useAgentErrorStore } from '../../stores/agentError'
@@ -51,10 +49,7 @@ import UiIcon from '../ui/UiIcon.vue'
 import WorkerElapsedChip from '../WorkerElapsedChip.vue'
 
 // Kanban task tags palette (Migration 067 — plan
-// docs/superpowers/plans/2026-07-28-kanban-task-tags.md). Same 6
-// colors as KanbanTagsInput.vue so the card chips and dialog
-// chips share colors. djb2 hash of the lowercase tag selects
-// the index deterministically.
+// docs/superpowers/plans/2026-07-28-kanban-task-tags.md).
 const TAG_PALETTE = [
   { bg: 'rgba(139, 92, 246, 0.18)', border: 'rgba(139, 92, 246, 0.45)', text: '#a78bfa' },
   { bg: 'rgba(59, 130, 246, 0.18)', border: 'rgba(59, 130, 246, 0.45)', text: '#60a5fa' },
@@ -87,12 +82,8 @@ const processingState = inject<Ref<Record<string, boolean>>>(
 
 const workspacesStore = useWorkspacesStore()
 
-// 2026-08-29 (task_1787985074550_0): agent-error indicator surfaces
-// the latest diagnostic for this task on the kanban card. The store
-// outlives ChatView remounts (Plan §1 — same Pinia store the
-// ChatView writes to via SSE `is_error` full events), so the
-// indicator stays in sync with the chat card across session switches.
-// task.id === session_id (migration 052 invariant) is the lookup key.
+// 2026-08-29 (task_1787985074550_0): agent-error indicator surfaces the latest diagnostic for this
+// task on the kanban card.
 const agentErrorStore = useAgentErrorStore()
 const agentError = computed(() => agentErrorStore.bySession[props.task.id] ?? null)
 const errorHeadline = computed(() =>
@@ -102,9 +93,8 @@ const errorRetryLabel = computed(() =>
   agentError.value ? parseAgentErrorHeadline(agentError.value.content).retryLabel : null,
 )
 
-// `columns` / `currentColumnId` back the context menu's "Move to
-// column" submenu. They are NOT part of the shared TaskComponentProps
-// because the sidebar-row variant (<WorkspaceItemTaskRow>) has no
+// `columns` / `currentColumnId` back the context menu's "Move to column" submenu. They are NOT part
+// of the shared TaskComponentProps because the sidebar-row variant (<WorkspaceItemTaskRow>) has no
 // board to move between and passes neither.
 const props = withDefaults(
   defineProps<
@@ -133,51 +123,30 @@ const emit = defineEmits<{
   viewTaskDetail: [taskId: string]
   openTaskInBackground: [payload: { workspaceId: string; itemId: string; taskId: string }]
   openTaskDetailInBackground: [payload: { workspaceId: string; itemId: string; taskId: string }]
-  // Context-menu "Move to column". We emit only the DESTINATION — the
-  // append position depends on how many tasks the target column holds,
-  // which this component can't see. <KanbanColumn> resolves it and
-  // re-emits the existing `moveTask` shape its host already handles.
+  // Context-menu "Move to column". We emit only the DESTINATION — the append position depends on
+  // how many tasks the target column holds, which this component can't see. <KanbanColumn> resolves
+  // it and re-emits the existing `moveTask` shape its host already handles.
   moveTaskToColumn: [payload: { taskId: string; columnId: string }]
-  // Context-menu "Run agent". Starts a worker on this task's existing
-  // session without queueing a new user message — the same
-  // `startAgentOnTask` call the detail dialog's caret menu makes, just
-  // reachable without opening the dialog. The host (KanbanView) owns
-  // the API call and the error surface; the card only reports intent.
+  // Context-menu "Run agent". Starts a worker on this task's existing session without queueing a
+  // new user message — the same `startAgentOnTask` call the detail dialog's caret menu makes, just
+  // reachable without opening the dialog.
   runAgent: [payload: { taskId: string }]
 }>()
 
-// Shared logic — event handlers, drop indicator.
-// Only the two pieces the card still uses inline. The event-taking
-// handlers (delete / rename / pin) existed for the hover buttons and
-// are gone with them — the context menu emits the same payloads
-// directly (see `*FromMenu` below), because those handlers' only job
-// was `stopPropagation()` away from the card root's @click and the
-// teleported menu never traverses the card. They stay in the composable
-// for <WorkspaceItemTaskRow>, which still renders its own buttons.
+// Shared logic — event handlers, drop indicator. Only the two pieces the card still uses inline.
 const { dropIndicatorBoxShadow, handleSelectTask } = useTaskActions(props, emit)
 
-// Right-click action menu for this task. The menu position lives in
-// useContextMenu; the task ids come from props and the handlers below.
-// `openAtPoint` is what the ContextMenu-key path uses: it takes the
-// card's own coordinates and applies the same edge clamp as a real
-// right-click, so a card near the bottom-right corner doesn't push the
-// menu off-screen.
+// Right-click action menu for this task. The menu position lives in useContextMenu; the task ids
+// come from props and the handlers below.
 const { menuPos, openAt, openAtPoint, close: closeTaskMenu } = useContextMenu()
 
 const onTaskContextMenu = (event: MouseEvent) => {
   openAt(event)
 }
 
-// Enter / Space activate the card. The root is a <div role="button"> rather
-// than a real <button> because the card contains nested interactive controls
-// (the description's @path chips / tag links) and HTML forbids
-// button-inside-button. This restores the keyboard contract the native
-// element would have given us.
-//
-// ContextMenu / F10 open the action menu. Removing the hover button strip
-// (plan §2, G1) took away the only discoverable route to rename / delete /
-// move, so the keyboard path to the menu is a hard requirement, not a
-// nice-to-have — otherwise the change is an accessibility regression.
+// Enter / Space activate the card. The root is a <div role="button"> rather than a real <button>
+// because the card contains nested interactive controls (the description's @path chips / tag links)
+// and HTML forbids button-inside-button.
 const handleCardKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault()
@@ -186,9 +155,8 @@ const handleCardKeydown = (event: KeyboardEvent) => {
   }
   if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
     event.preventDefault()
-    // Anchor at the card's centre — there is no cursor to follow on a
-    // keyboard gesture. Reuses the same viewport clamp as a real
-    // right-click so a card near the bottom-right corner doesn't push
+    // Anchor at the card's centre — there is no cursor to follow on a keyboard gesture. Reuses the
+    // same viewport clamp as a real right-click so a card near the bottom-right corner doesn't push
     // the menu off-screen.
     const rect = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect()
     openAtPoint(
@@ -207,15 +175,8 @@ const moveTaskFromMenu = (columnId: string) => {
   emit('moveTaskToColumn', { taskId: props.task.id, columnId })
 }
 
-// Pin / rename / view-detail, driven from the context menu.
-//
-// These deliberately do NOT call the `useTaskActions` handlers. Those take
-// a DOM event solely to `stopPropagation()` it away from the card root's
-// @click — a defence that the old inline buttons needed (a <button> nested
-// inside the card's role="button" div). The menu is Teleported to `body`,
-// so its clicks never traverse the card at all and there is nothing to
-// stop; synthesising a MouseEvent to satisfy the signature would be noise.
-// The emitted payloads are identical to the buttons'.
+// Pin / rename / view-detail, driven from the context menu. These deliberately do NOT call the
+// `useTaskActions` handlers.
 const pinFromMenu = () => {
   closeTaskMenu()
   emit('pinTask', props.workspaceId, props.itemId, props.task.id, !props.task.is_pinned)
@@ -229,13 +190,9 @@ const viewDetailFromMenu = () => {
   emit('viewTaskDetail', props.task.id)
 }
 
-// Context-menu "Delete task". Emits straight up like every other task
-// action; the confirmation is owned by whoever performs the delete
-// (Sidebar's ConfirmDialog, via AppLayout's delete-task pass-through).
-// The card used to open its own ConfirmDialog here, but that dialog only
-// forwarded — it never deleted anything — so the click still reached the
-// Sidebar and opened a second, stacked confirm on top of the first. Two
-// owners for one irreversible action; the card keeps none of them.
+// Context-menu "Delete task". Emits straight up like every other task action; the confirmation is
+// owned by whoever performs the delete (Sidebar's ConfirmDialog, via AppLayout's delete-task
+// pass-through).
 const requestDeleteFromMenu = () => {
   closeTaskMenu()
   emit('deleteTask', props.workspaceId, props.itemId, props.task.id)
@@ -259,10 +216,9 @@ const openTaskDetailMenuInBackground = () => {
   })
 }
 
-// Right-click menu on the git-branch badge: open GitHub branch / PR
-// URLs in a new tab. Separate position state from the card menu so a
-// badge right-click never opens the chat menu. URLs resolve via the
-// shared PR-info cache; the branch URL derives from the PR repo base.
+// Right-click menu on the git-branch badge: open GitHub branch / PR URLs in a new tab. Separate
+// position state from the card menu so a badge right-click never opens the chat menu. URLs resolve
+// via the shared PR-info cache; the branch URL derives from the PR repo base.
 const { menuPos: gitMenuPos, openAt: openGitMenuAt, close: closeGitMenu } = useContextMenu()
 const gitMenuBranchUrl = ref('')
 const gitMenuPrUrl = ref('')
@@ -300,13 +256,8 @@ const openGitPrInBackground = () => {
   window.open(url, '_blank', 'noopener')
 }
 
-// Right-click "Stop agent" — visible only while a worker runs on
-// this task (processingState[task.id] === true, same key the
-// elapsed chip + detail Start-agent button use). Calls the same
-// POST /api/llm/session/:id/stop the chat's Stop button uses
-// (task.id == session_id per Migration 052). Idempotent server-side;
-// the SSE `worker deleted` event clears processingState so the menu
-// item + chip disappear without further action.
+// Right-click "Stop agent" — visible only while a worker runs on this task
+// (processingState[task.id] === true, same key the elapsed chip + detail Start-agent button use).
 const isAgentRunning = computed(() => processingState.value[props.task.id] === true)
 const isStoppingAgent = ref(false)
 
@@ -323,55 +274,25 @@ const stopAgentFromMenu = async () => {
   }
 }
 
-// Context-menu "Run agent" — the inverse of the row above. Emits up
-// rather than calling the store itself: the card is also mounted by
-// hosts that have no workspace/item context to build the endpoint
-// path with, and the API call belongs wherever that context lives
-// (KanbanView). The menu row is hidden while a worker runs, so the
-// backend's 409 is a race guard rather than the primary UX.
+// Context-menu "Run agent" — the inverse of the row above. Emits up rather than calling the store
+// itself: the card is also mounted by hosts that have no workspace/item context to build the
+// endpoint path with, and the API call belongs wherever that context lives (KanbanView).
 const runAgentFromMenu = () => {
   closeTaskMenu()
   if (isAgentRunning.value) return
   emit('runAgent', { taskId: props.task.id })
 }
 
-// (card-ux-v3 — Jira-style priority-bar pattern). A thin 3px colored
-// stripe down the left edge of the card that reflects the task's
-// type. Standard tasks get NO stripe (cleanest default); memory
-// tasks get a blue stripe. (The old violet routine stripe was
-// deleted with per-task routines, Migration 084.)
-// Implemented as an inset box-shadow so it doesn't affect the card's
-// layout (no width change) and stacks naturally with the
-// dropIndicator box-shadow and the v6 3D base shadow.
-//
-// Returns a string suitable for use as the `boxShadow` CSS value,
-// or `''` for the no-stripe case (the caller's `||` chain keeps
-// the dropIndicator in place when the type stripe is absent).
+// (card-ux-v3 — Jira-style priority-bar pattern).
 function typeAccentShadow(): string {
   const t = props.task.task_type
   if (t === 'memory') return 'inset 3px 0 0 0 rgb(96, 165, 250)' // blue-400
   return ''
 }
 
-// (card-ux-v6) Replaces the v5 visible 1px border with a layered
-// 3D box-shadow. Three layers compose the "card floating on the
-// board" feel without a hard outline:
-//
-//   1. Outer drop shadow at idle   — soft 1+2px offset, dark rgba,
-//      lifts the card off the column visually. Hover swaps to a
-//      bigger 4+2px shadow with brighter bevel for a "picking
-//      up the card" feel.
-//   2. Inset 1px bevel highlight   — low-opacity white stroke that
-//      simulates a beveled edge in dark mode. Visible without a
-//      harsh line; without it the card looks flat against the
-//      dark column.
-//   3. (Composed in cardBoxShadow below) Type accent + dropIndicator
-//      inset shadows sit on TOP of the 3D base to keep the Jira-style
-//      left stripe and the pinned-region drag line working
-//      unchanged.
-//
-// CSS box-shadow stacking: FIRST value drawn on top. Outer shadows
-// come first (they're the dominant visual), inset accents last.
+// (card-ux-v6) Replaces the v5 visible 1px border with a layered 3D box-shadow. Three layers
+// compose the "card floating on the board" feel without a hard outline: 1. Outer drop shadow at
+// idle   — soft 1+2px offset, dark rgba, lifts the card off the column visually.
 const baseCardShadow =
   '0 1px 3px 0 rgba(0, 0, 0, 0.5), ' +
   '0 1px 2px -1px rgba(0, 0, 0, 0.4), ' +
@@ -386,12 +307,8 @@ const hoverCardShadow =
 // business logic.
 const isHovered = ref(false)
 
-// Combined box-shadow for the card. Layered values, in CSS stacking
-// order (first on top): 3D base + Jira-style type accent (left
-// stripe) + yellow drop indicator (pinned-region drag).
-//
-// On hover the 3D base swaps to its hover variant; transition-shadow
-// in the template class animates the swap smoothly.
+// Combined box-shadow for the card. Layered values, in CSS stacking order (first on top): 3D base +
+// Jira-style type accent (left stripe) + yellow drop indicator (pinned-region drag).
 const cardBoxShadow = computed<string>(() => {
   const accent = typeAccentShadow()
   const drop = dropIndicatorBoxShadow.value
@@ -402,15 +319,9 @@ const cardBoxShadow = computed<string>(() => {
   return layers.join(', ')
 })
 
-// The "time since" formatter for the meta row now lives in
-// helpers/formatTaskTimestamp.ts, shared with the row-mode row
-// (KanbanTaskRow.vue) so a card and its row-mode twin can never disagree
-// on what "2h ago" means.
-
-// The most-recent update timestamp available. Falls back to
-// `createdAt` when `updatedAt` is missing. Returns null when neither
-// is present (older task fixtures), which the meta row uses to skip
-// the time pill.
+// The "time since" formatter for the meta row now lives in helpers/formatTaskTimestamp.ts, shared
+// with the row-mode row (KanbanTaskRow.vue) so a card and its row-mode twin can never disagree on
+// what "2h ago" means. The most-recent update timestamp available.
 const lastUpdated = computed<Date | string | null>(() => {
   if (props.task.updatedAt) return props.task.updatedAt
   if (props.task.createdAt) return props.task.createdAt
@@ -422,10 +333,9 @@ const lastUpdated = computed<Date | string | null>(() => {
 // when no timestamp is present.
 const lastUpdatedLabel = computed<string>(() => formatRelativeTime(lastUpdated.value))
 
-// Visible tags for the chip row (Migration 067). Caps at 3 to
-// keep the card compact; the "+N more" affordance covers the rest.
-// `task.tags` is `[]` for tasks without tags — the v-if on the
-// tags row in the template handles the "no tags" case.
+// Visible tags for the chip row (Migration 067). Caps at 3 to keep the card compact; the "+N more"
+// affordance covers the rest. `task.tags` is `[]` for tasks without tags — the v-if on the tags row
+// in the template handles the "no tags" case.
 const VISIBLE_TAGS_MAX = 3
 const visibleTags = computed<string[]>(() => {
   const tags = props.task.tags ?? []
@@ -437,13 +347,8 @@ const extraTagsCount = computed<number>(() => {
 })
 
 // Image thumbnail (Migration 069 read-path fix, plan:
-// docs/superpowers/plans/2026-08-24-kanban-task-image-urls-read-path.md
-// Task 4). The card renders the FIRST image as a 48px-tall
-// thumbnail + a `+N` badge when more images exist. Clicking the
-// thumb opens the detail dialog (viewTaskDetail) — same affordance
-// as the `+N more` tags link. `task.imageUrls` is `string[]` (the
-// store's normalizeTaskImageUrlsInPlace splits the ||-joined wire
-// string at every fetch site); undefined for legacy task literals.
+// docs/superpowers/plans/2026-08-24-kanban-task-image-urls-read-path.md Task 4). The card renders
+// the FIRST image as a 48px-tall thumbnail + a `+N` badge when more images exist.
 const firstImage = computed<string | null>(() => {
   const urls = props.task.imageUrls
   if (!urls || urls.length === 0) return null
@@ -474,11 +379,6 @@ const typeBadge = computed<string | null>(() => {
 })
 
 // Git-branch badge (plan:
-//   docs/superpowers/plans/2026-08-06-kanban-task-git-branch.md).
-// Returns the branch name to display, or null when:
-//   - the task has no git_branch field (undefined / null)
-//   - the backend returned an empty string (not a git repo, detached
-//     HEAD, spawn failure)
 // Null results in NO badge rendered (graceful no-op for non-git
 // workspaces / tasks without worktree + non-git cwd).
 const gitBranchBadge = computed<string | null>(() => {
@@ -488,11 +388,9 @@ const gitBranchBadge = computed<string | null>(() => {
   return b
 })
 
-// Git-branch PR state coloring: green = open, violet = merged,
-// red = closed, orange = plain branch (no PR / fetch failed).
-// Same palette as SidebarDiffPanel's prStatusStyle so the kanban
-// card and the PR tab agree. Bold by design: semibold text +
-// thicker icon stroke so the badge pops against the dim meta row.
+// Git-branch PR state coloring: green = open, violet = merged, red = closed, orange = plain branch
+// (no PR / fetch failed). Same palette as SidebarDiffPanel's prStatusStyle so the kanban card and
+// the PR tab agree.
 const prStatus = ref('')
 // Conflict-only hint: true when the PR reports CONFLICTING/DIRTY.
 // Quiet-when-clean — false for mergeable, unknown, or failed fetches.
@@ -549,14 +447,8 @@ const loadPrStatus = async () => {
 const prevPrKey = ref('')
 const prKey = () => `${gitBranchBadge.value ?? ''}|${effectiveCwd.value}`
 
-// A merge or close ANYWHERE — this tab's MergeBox, or the `git_pr_state` SSE
-// event from another client — drops the shared cache entry for that branch and
-// calls this back with the pair. Without it the badge keeps the `open` green it
-// fetched before the merge until the card happens to remount.
-//
-// A subscription, not a `watch`: `local/no-watch` bans reacting to change inside
-// a component, and this signal comes from outside it. The filter is what keeps
-// a merge on one branch from re-reading all ~140 cards on the board.
+// A merge or close ANYWHERE — this tab's MergeBox, or the `git_pr_state` SSE event from another
+// client — drops the shared cache entry for that branch and calls this back with the pair.
 let unsubscribePrStatus: (() => void) | null = null
 onMounted(() => {
   prevPrKey.value = prKey()

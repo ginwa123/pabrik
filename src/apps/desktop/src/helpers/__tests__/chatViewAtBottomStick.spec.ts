@@ -1,46 +1,4 @@
-/**
- * "Sometimes it does not autoscroll to bottom" — the at-bottom stick disarms itself.
- *
- * ── The defect ──────────────────────────────────────────────────────────────
- * Two components measured "the bottom" with two different rulers, and the
- * disagreement was larger than either one's tolerance:
- *
- *   VirtualScroller.scrollToBottom  (VirtualScroller.vue)
- *     lands the container on the REAL content bottom —
- *     `topSpacer + content.offsetHeight` — whenever the height model overshoots
- *     by more than HYSTERESIS_PX (50). This is the blank-viewport fix: without
- *     it a sizer overshoot parks the reader in a fully-blank region.
- *
- *   ChatView.handleVirtualScroll
- *     decided at-bottom with the DOM's ruler, `scrollHeight - clientHeight`,
- *     against BOTTOM_THRESHOLD (10).
- *
- * With the tail cap latched — `sizerHeight = min(modelTotal, tailContentBottom +
- * maxTailGap)`, and `maxTailGap` DEFAULTS TO 100 — the two rulers disagree by
- * exactly the overshoot. So a *successful* auto-stick produced the scroll event
- * that marked the reader as having LEFT the bottom. Every downstream gate reads
- * that flag — `scrollToBottom(force=false)`, the `onContentShift` re-stick, the
- * SSE-chunk `remeasure` branch, and the messages-length watcher — and all four
- * went quiet for the rest of the mount. The "scroll to bottom" FAB appeared
- * while the reader sat on the last message.
- *
- * ── The fix ─────────────────────────────────────────────────────────────────
- * One ruler: `VirtualScroller.bottomScrollTop()` is now exposed, and everything
- * that asks "is the reader at the bottom?" asks the scroller. The tests below
- * pin BOTH rulers — `decideIsAtBottomDomRuler` is the old behaviour, kept as
- * the executable statement of the bug (delete it and the regression is no
- * longer described anywhere); `decideIsAtBottom` is the shipped one.
- *
- * ── Why the arithmetic lives here rather than in a mount spec ───────────────
- * `handleVirtualScroll` cannot be mounted in isolation: it is an inline handler
- * inside a 6.2k-line SFC whose at-bottom decision is interleaved with prefetch
- * arming, pill selection and six log sites. The repo's established answer to
- * this (chatViewContentShiftRestick.spec.ts) is to pin the math in pure
- * functions and pin the WIRING with source-contract tests at the bottom of this
- * file. Both halves must change together — the comment in that spec calls the
- * drift between them "the exact failure mode that let Bug C ship".
- */
-
+/** "Sometimes it does not autoscroll to bottom". */
 import { mount, type ComponentMountingOptions } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
@@ -61,11 +19,8 @@ const HYSTERESIS_PX = 50
 /** How far the reader may sit below the real bottom before the stick disengages. */
 const RETENTION_CAP_PX = 100
 
-/**
- * The state `VirtualScroller.scrollToBottom` computes internally, reduced to
- * the two numbers a caller needs. Mirrors `bottomScrollTop()` in
- * VirtualScroller.vue.
- */
+/**  * The state `VirtualScroller.scrollToBottom` computes internally, reduced to the two numbers a
+ * caller needs. Mirrors `bottomScrollTop()` in VirtualScroller.vue. */
 interface BottomPlan {
   /** Where the scroller parks the container. */
   target: number
@@ -108,10 +63,8 @@ interface DecisionInput {
   userScrolledUp: boolean
 }
 
-/**
- * Mirror of the at-bottom decision in ChatView.handleVirtualScroll, as shipped:
- * the gap comes from `bottomScrollTop()`.
- */
+/** Mirror of the at-bottom decision in ChatView.handleVirtualScroll, as shipped:
+ * the gap comes from `bottomScrollTop()`. */
 function decideIsAtBottom(args: DecisionInput): boolean {
   const newIsAtBottom = args.distanceFromBottom < BOTTOM_THRESHOLD_PX
   const retainedThroughGrowth =
@@ -122,15 +75,8 @@ function decideIsAtBottom(args: DecisionInput): boolean {
   return newIsAtBottom || retainedThroughGrowth
 }
 
-/**
- * The SHIPPED decision once the gap is measured against the STABLE anchor
- * (`settledBottom`) rather than a live `bottomScrollTop()`.
- *
- * The tolerance widens to `AT_BOTTOM_STABLE_TOLERANCE_PX` because the anchor is
- * written at the end of a measure pass and the model can still converge by up to
- * the tail gap before the next scroll event is handled. That residual is the
- * model's own movement, not the reader's.
- */
+/** The SHIPPED decision once the gap is measured against the STABLE anchor (`settledBottom`) rather
+ * than a live `bottomScrollTop()`. */
 function decideIsAtBottomStableAnchor(args: DecisionInput): boolean {
   const newIsAtBottom = args.distanceFromBottom < AT_BOTTOM_STABLE_TOLERANCE_PX
   const retainedThroughGrowth =
@@ -141,12 +87,9 @@ function decideIsAtBottomStableAnchor(args: DecisionInput): boolean {
   return newIsAtBottom || retainedThroughGrowth
 }
 
-/**
- * The PRE-FIX decision: same code, but the gap came from
- * `scrollHeight - scrollTop - clientHeight`. Kept so the regression stays
- * described in executable form — every test below that says "flips false" is
- * really saying "this is what the DOM ruler did".
- */
+/**  * The PRE-FIX decision: same code, but the gap came from `scrollHeight - scrollTop - clientHeight`.
+ * Kept so the regression stays described in executable form — every test below that says "flips
+ * false" is really saying "this is what the DOM ruler did". */
 function decideIsAtBottomDomRuler(args: DecisionInput & { domGap: number }): boolean {
   return decideIsAtBottom({ ...args, distanceFromBottom: args.domGap })
 }
@@ -154,7 +97,6 @@ function decideIsAtBottomDomRuler(args: DecisionInput & { domGap: number }): boo
 const QUIET_FRAME = { previousIsAtBottom: true, contentGrew: false, userScrolledUp: false }
 
 // ── The reported bug, stated as arithmetic ───────────────────────────────────
-
 describe('the two rulers, and the disarm they caused', () => {
   it('with the tail cap latched the rulers disagree by exactly maxTailGap', () => {
     const realBottom = 24000
@@ -212,7 +154,6 @@ describe('the two rulers, and the disarm they caused', () => {
 })
 
 // ── The edge matrix: every overshoot, both rulers ────────────────────────────
-
 describe('overshoot matrix — when does the DOM ruler break the stick?', () => {
   const clientHeight = 800
   const realBottom = 24000
@@ -271,7 +212,6 @@ describe('overshoot matrix — when does the DOM ruler break the stick?', () => 
 })
 
 // ── The cases the fix must NOT break ────────────────────────────────────────
-
 describe('reading history still disengages the stick', () => {
   it('a genuine upward gesture past the tolerance disengages', () => {
     expect(
@@ -323,12 +263,9 @@ describe('reading history still disengages the stick', () => {
   })
 })
 
-// ── The real component ──────────────────────────────────────────────────────
-//
-// Pure arithmetic cannot prove the component publishes the number the pure
-// function assumed. These mount VirtualScroller and read the actual
-// `bottomScrollTop()` off the exposed instance.
-
+// ── The real component ────────────────────────────────────────────────────── Pure arithmetic
+// cannot prove the component publishes the number the pure function assumed. These mount
+// VirtualScroller and read the actual `bottomScrollTop()` off the exposed instance.
 type Item = { id: string }
 const N = 120
 
@@ -422,12 +359,9 @@ describe('VirtualScroller publishes the bottom it actually lands on', () => {
 
     const anchor = vm(wrapper).bottomScrollTop()
     const domEdge = el.scrollHeight - el.clientHeight
-    // The invariant that must hold in EVERY configuration, asserted
-    // unconditionally so the test can never quietly pass by skipping: the
-    // published anchor is a position the container can actually be at, and it
-    // is never above the DOM max. An anchor past the max is unreachable — the
-    // browser clamps there — so every at-bottom comparison against it is
-    // permanently false. Which is the bug, wearing a different variable.
+    // The invariant that must hold in EVERY configuration, asserted unconditionally so the test can
+    // never quietly pass by skipping: the published anchor is a position the container can actually
+    // be at, and it is never above the DOM max.
     expect(anchor).toBeLessThanOrEqual(domEdge)
     expect(anchor).toBeGreaterThanOrEqual(0)
   })
@@ -470,7 +404,6 @@ describe('VirtualScroller publishes the bottom it actually lands on', () => {
 })
 
 // ── The logger cannot contradict the decision ───────────────────────────────
-
 describe('buildScrollContext reports the same gap the decision used', () => {
   const container = document.createElement('div')
   Object.defineProperty(container, 'scrollHeight', { value: 24500, configurable: true })
@@ -517,7 +450,6 @@ describe('buildScrollContext reports the same gap the decision used', () => {
 })
 
 // ── The scroll-restore composable ────────────────────────────────────────────
-
 describe('useChatScrollRestore asks the caller where the bottom is', () => {
   function withLocalStorage(): void {
     const store: Record<string, string> = {}
@@ -573,37 +505,9 @@ describe('useChatScrollRestore asks the caller where the bottom is', () => {
   })
 })
 
-// ── Wiring: the components must still call what the math assumed ────────────
-
-// ── The moving-target ruler (2026-10-10) ────────────────────────────────────
-//
-// The shared ruler fixed the DISAGREEMENT between two notions of the bottom. It
-// did not fix the fact that the shared one is recomputed from live DOM on every
-// read, and its two inputs move independently:
-//
-//     domEdge    = scrollHeight - clientHeight       (the height MODEL)
-//     realBottom = topSpacer + content.offsetHeight  (the RENDERED rows)
-//
-// The real-bottom override engages only while `domEdge - realBottom` exceeds
-// HYSTERESIS_PX. So when the model converges — or the rendered window shifts and
-// `topSpacer` jumps — the SAME stationary reader is measured against a different
-// number. Instrumented trace from a real browser, one SSE chunk apart, the reader
-// never having moved:
-//
-//     frame A: bottomEdge=30114  scrollTop=30071  -> 43px short -> atBottom=false
-//     frame B: bottomEdge=30093  scrollTop=30093  ->  0px short -> atBottom=true
-//
-// The reader did not move 43px; the RULER moved. `isAtBottom` therefore
-// oscillates, the jump-to-bottom arrow blinks, and every follow gate disarms on
-// the short frames. `retainedThroughGrowth` papers over most of them, but it is
-// capped at <100px and does not fire when `contentGrew` is false — so on a slow
-// runner the last settle lands on a short frame and the arrow is up when anything
-// samples it. That is the macOS flake in
-// `chatview_at_bottom_stick_ui_test.py::test_the_stick_survives_a_sizer_that_overshoots_the_content`.
-//
-// The fix: judge against `settledBottom` — where the bottom sat when the stick
-// LAST acted — which only changes when the scroller deliberately repositions.
-
+// ── Wiring: the components must still call what the math assumed ──────────── ── The moving-target
+// ruler (2026-10-10) ──────────────────────────────────── The shared ruler fixed the DISAGREEMENT
+// between two notions of the bottom.
 describe('the live ruler is a moving target, and the stick must not care', () => {
   const clientHeight = 800
 
@@ -719,18 +623,9 @@ describe('wiring — both sides really use the shared ruler', () => {
     const src = await readSource('../VirtualScroller.vue')
     expect(src).toMatch(/const bottomScrollTop = \(\): number =>/)
     expect(src).toMatch(/defineExpose\(\{[\s\S]*?bottomScrollTop,/)
-    // If scrollToBottom ever grows its own copy of the math, the two drift —
-    // which is the entire class of bug this spec exists for.
-    //
-    // Asserted on the FUNCTION BODY, not on one exact statement sequence. The
-    // body legitimately grew a line: it now records where it left the reader
-    // (`settledBottom`) so the next measure pass can tell that a bottom
-    // reader has not moved. A regex pinned to the old two-line shape failed on
-    // that bookkeeping even though the delegation never changed — a contract
-    // test that breaks on a rename of a local is not protecting the contract.
-    // What is pinned is the claim itself: the value scrolled to comes from
-    // `bottomScrollTop()`, and the arithmetic the shared ruler exists to
-    // eliminate is absent from the body.
+    // If scrollToBottom ever grows its own copy of the math, the two drift — which is the entire
+    // class of bug this spec exists for. Asserted on the FUNCTION BODY, not on one exact statement
+    // sequence.
     const body =
       /const scrollToBottom = \(behavior: ScrollBehavior = 'auto'\) => \{([\s\S]*?)\n\}/.exec(src)
     const fn = body?.[1] ?? ''
@@ -758,11 +653,9 @@ describe('wiring — both sides really use the shared ruler', () => {
     // The moving-target fix: `settledBottom` is read off the scroller and used
     // as the floor for the edge the decision measures against.
     expect(src).toMatch(/const settled = virtualScrollerRef\.value\?\.settledBottom/)
-    // The anchor REPLACES the live read; it is not max-ed with it. `settledBottom`
-    // comes from `bottomScrollTop()` at the end of a pass, and when the
-    // real-bottom override disengages that read returns the DOM edge — up to
-    // `maxTailGap` HIGHER than where the reader sits. Max-ing it in inflates the
-    // gap and disarms the very stick this protects.
+    // The anchor REPLACES the live read; it is not max-ed with it. `settledBottom` comes from
+    // `bottomScrollTop()` at the end of a pass, and when the real-bottom override disengages that
+    // read returns the DOM edge — up to `maxTailGap` HIGHER than where the reader sits.
     expect(src).toMatch(
       /typeof settled === 'number' && Number\.isFinite\(settled\)\s*\?\s*settled\s*:\s*liveEdge/,
     )

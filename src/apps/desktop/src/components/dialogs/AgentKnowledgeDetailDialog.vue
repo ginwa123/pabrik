@@ -65,10 +65,9 @@ const pathInput = ref<HTMLInputElement | null>(null)
 // The row's CURRENT mode at open time (content non-empty = inline).
 const rowIsInline = computed(() => !!props.row && !!props.row.content)
 
-// Absolute on either platform: POSIX `/...` or Windows `C:\...`,
-// `C:/...`, UNC `\\server\share` / `//server/share`. Mirrors
-// AgentKnowledgeDialog.vue + backend resolvePath + FilePickerDialog isWindowsAbs.
-// POSIX inputs behave byte-identically to the old startsWith('/') check.
+// Absolute on either platform: POSIX `/...` or Windows `C:\...`, `C:/...`, UNC `\\server\share` /
+// `//server/share`. Mirrors AgentKnowledgeDialog.vue + backend resolvePath + FilePickerDialog
+// isWindowsAbs. POSIX inputs behave byte-identically to the old startsWith('/') check.
 function isAbsolutePath(p: string): boolean {
   if (!p) return false
   if (p.startsWith('/')) return true
@@ -143,10 +142,9 @@ const handleOpen = async () => {
   }
 }
 
-// Open-reset without watch(): seed on mount (initial show=true) and on
-// closed->open updates. A Transition before-enter hook cannot do this — it
-// never fires on initial mount (no `appear`) and VTU stubs Transition, so
-// specs that mount then setProps(show=true) would see empty fields.
+// Open-reset without watch(): seed on mount (initial show=true) and on closed->open updates. A
+// Transition before-enter hook cannot do this — it never fires on initial mount (no `appear`) and
+// VTU stubs Transition, so specs that mount then setProps(show=true) would see empty fields.
 const wasShown = ref(props.show)
 onMounted(() => {
   if (props.show) void handleOpen()

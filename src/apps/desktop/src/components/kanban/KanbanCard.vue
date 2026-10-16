@@ -39,22 +39,17 @@ const props = withDefaults(
     task: Task
     workspaceId: string
     itemId: string
-    // Optional: the parent WorkspaceItem (for forwarded events from
-    // <WorkspaceItemTaskCard> that need the full item context —
-    // currently unused, but accepted for forward compatibility if a
+    // Optional: the parent WorkspaceItem (for forwarded events from <WorkspaceItemTaskCard> that
+    // need the full item context — currently unused, but accepted for forward compatibility if a
     // future routine-task action needs the item.path).
     item?: WorkspaceItem
-    // Absolute path used as the root for `@`-trigger file pickers in
-    // the descendant <WorkspaceItemTaskCard>'s description preview +
-    // any future editor embedded directly on the card. Optional —
-    // falls back to '' (no @path resolution) when the kanban has no
-    // path set (legacy kanbans).
+    // Absolute path used as the root for `@`-trigger file pickers in the descendant
+    // <WorkspaceItemTaskCard>'s description preview + any future editor embedded directly on the
+    // card.
     cwd?: string
-    //
-    // The board's columns + the card's own column, threaded down to
-    // the card's context menu for the "Move to column" submenu. The
-    // menu emits the destination only; the append position is resolved
-    // one level up in <KanbanColumn>, which can see the whole board.
+    // The board's columns + the card's own column, threaded down to the card's context menu for the
+    // "Move to column" submenu. The menu emits the destination only; the append position is
+    // resolved one level up in <KanbanColumn>, which can see the whole board.
     columns?: KanbanColumn[]
     currentColumnId?: string | null
   }>(),
@@ -88,10 +83,9 @@ const emit = defineEmits<{
 }>()
 
 const handleDragStart = (event: DragEvent) => {
-  // Set a dedicated MIME type so the drop handler in KanbanColumn can
-  // read it back without colliding with the sidebar's other DnD
-  // payloads. `effectAllowed = 'move'` gives the cursor the move-hint
-  // arrow during drag.
+  // Set a dedicated MIME type so the drop handler in KanbanColumn can read it back without
+  // colliding with the sidebar's other DnD payloads. `effectAllowed = 'move'` gives the cursor the
+  // move-hint arrow during drag.
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move'
     event.dataTransfer.setData('application/x-kanban-task-id', props.task.id)

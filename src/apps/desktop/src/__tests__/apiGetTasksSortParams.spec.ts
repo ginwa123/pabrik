@@ -1,22 +1,6 @@
-/**
- * Behavioural tests for the no-default-sort-by behavior of
- * `api.getTasks` (kanban default-URL, 2026-08-06).
- *
- * Why. The frontend used to send `sort_by=updated_at&direction=desc`
- * on every task-fetch — even when the URL had no `sorts` param and
- * the user hadn't picked a sort. The backend's default is also
- * `updated_at desc`, so the wire payload was redundant and noisy in
- * the network tab. The user feedback: "no need set default when
- * load task kanban".
- *
- * New behaviour: `api.getTasks` only adds `sort_by` and `direction`
- * to the URL params when BOTH are explicitly provided. Missing
- * either → both omitted → backend defaults apply.
- *
- * Match-up: the URL round-trip end-to-end tests in
- * `AppLayout.urlPersist.spec.ts` and `KanbanView.sortByApi.spec.ts`
- * cover the higher-level "click sort → URL → fetch" flow.
- */
+/** Behavioural tests for the no-default-sort-by behavior of `api.getTasks` (kanban default-URL,
+ * 2026-08-06). Why. The frontend used to send `sort_by=updated_at&direction=desc` on every
+ * task-fetch — even when the URL had no `sorts` param and the user hadn't picked a sort. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api'
 
@@ -35,7 +19,6 @@ describe('api.getTasks — sort params (2026-08-06 no-default behavior)', () => 
   })
 
   // ─── 1. No sort params → URL omits sort_by + direction ──────────────
-
   it('omits sort_by + direction when neither is provided', async () => {
     fetchSpy.mockResolvedValueOnce(
       new Response(
@@ -103,7 +86,6 @@ describe('api.getTasks — sort params (2026-08-06 no-default behavior)', () => 
   })
 
   // ─── 2. Both provided → URL has sort_by + direction ─────────────────
-
   it('includes sort_by + direction when both are provided', async () => {
     fetchSpy.mockResolvedValueOnce(
       new Response(
@@ -135,7 +117,6 @@ describe('api.getTasks — sort params (2026-08-06 no-default behavior)', () => 
   })
 
   // ─── 3. Other params (column_id, q, cursor) still sent ──────────────
-
   it('still includes column_id, q, and cursor when no sort provided', async () => {
     fetchSpy.mockResolvedValueOnce(
       new Response(

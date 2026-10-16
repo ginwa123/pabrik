@@ -1,19 +1,6 @@
-/**
- * Tests for KanbanSortMenu — the menu used inside the kanban's
- * per-column "⋮" menu (Sort tasks…) and (in future) the kanban
- * header.
- *
- * The component supports two render modes via the `showTrigger` prop:
- *  - showTrigger=true (default) — renders a `<button>` trigger + a
- *    click-toggled dropdown `<ul>`. Used as a standalone dropdown
- *    in the kanban header (or anywhere a button is the entry point).
- *  - showTrigger=false — renders just the `<ul>` items, no button,
- *    no click-outside / Esc handlers. Used inside the column's
- *    centered sort modal (the modal provides its own backdrop +
- *    Esc close).
- *
- * Plan: docs/superpowers/plans/2026-08-06-kanban-sort-by.md Task 2
- */
+/** Tests for KanbanSortMenu — the menu used inside the kanban's per-column "⋮" menu (Sort tasks…)
+ * and (in future) the kanban header. Plan: docs/superpowers/plans/2026-08-06-kanban-sort-by.md Task
+ * 2 */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 

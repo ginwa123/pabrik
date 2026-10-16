@@ -98,7 +98,6 @@ const isEmptyContent = (c: unknown): boolean =>
 const isRunning = computed(() => isEmptyContent(props.content))
 
 // ---- Error / hint detection ------------------------------------------------
-
 const errorMessage = computed(() => parsed.value.error)
 
 const hintMessage = computed(() => parsed.value.hint)
@@ -112,7 +111,6 @@ const pagination = computed(() => {
 const isSuccess = computed(() => parsed.value.success)
 
 // ---- Parsed columns + tasks ------------------------------------------------
-
 const columns = computed((): ColumnSummary[] =>
   parsed.value.columns.map((c) => ({
     id: c.id,
@@ -136,7 +134,6 @@ const assignedTasks = computed(() => tasks.value.filter((t) => t.column_id.lengt
 const unassignedTasks = computed(() => tasks.value.filter((t) => t.column_id.length === 0))
 
 // ---- Derived display values ------------------------------------------------
-
 const statusIndicator = computed(() => (isSuccess.value ? '✓' : '✗'))
 
 const headerLabel = computed(() => {

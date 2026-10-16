@@ -1,21 +1,6 @@
-/**
- * Unit tests for the design API client (listDesignPages, createDesignPage,
- * getDesignPage, addDesignElement, updateDesignElement, deleteDesignElement,
- * getDesignElementHtml, updateDesignElementHtml, updateDesignElementGeometry).
- *
- * 9 mock-based tests, one per public API function. Mirrors the
- * `kanbanApi.spec.ts` test style:
- *   - `setActivePinia(createPinia())` in `beforeEach` (apiFetch calls
- *     `useNotificationStore()` on every non-2xx response).
- *   - Mock helper includes `text: () => Promise.resolve(JSON.stringify(body))`
- *     (apiFetch calls `response.text().catch(() => '')` on every non-OK
- *     response to extract the body for the error toast).
- *   - Each test asserts URL, HTTP method, body shape (for write verbs),
- *     and the returned payload shape.
- *
- * Plan: docs/superpowers/plans/2026-07-08-design-mode-redesign.md
- *   (Chunk 5, Task 5.4)
- */
+/** Unit tests for the design API client (listDesignPages, createDesignPage, getDesignPage,
+ * addDesignElement, updateDesignElement, deleteDesignElement, getDesignElementHtml,
+ * updateDesignElementHtml, updateDesignElementGeometry). 9 mock-based tests, one per public API. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -39,11 +24,9 @@ describe('api.design', () => {
   const fetchMock = vi.fn()
 
   beforeEach(() => {
-    // apiFetch calls useNotificationStore() on every non-2xx response to
-    // fire an error toast. Without an active Pinia the call throws.
-    // setActivePinia(createPinia()) mounts a fresh store for each test
-    // so the toast path can run without crashing.
-    // (See project memory apiFetch-mock-must-include-text-and-pinia.)
+    // apiFetch calls useNotificationStore() on every non-2xx response to fire an error toast.
+    // Without an active Pinia the call throws. setActivePinia(createPinia()) mounts a fresh store
+    // for each test so the toast path can run without crashing.
     setActivePinia(createPinia())
   })
 

@@ -55,11 +55,9 @@ const props = withDefaults(
   defineProps<{
     modelValue: string
     cwd: string
-    // Required for image upload. The kanban task id is used as the
-    // upload bucket — files land in
+    // Required for image upload. The kanban task id is used as the upload bucket — files land in
     // `<item.path>/.pabrik/attachments/<taskId>/<n>.<ext>`.
-    // Empty string disables image upload (the editor still works for
-    // text + @path references).
+    // Empty string disables image upload (the editor still works for text + @path references).
     taskId?: string
     // Optional cap. `undefined` (default) = unlimited, no maxlength
     // enforcement. When set, the textarea enforces it via `maxlength`
@@ -80,13 +78,9 @@ const emit = defineEmits<{
   'update:modelValue': [value: string]
 }>()
 
-// ─── State ──────────────────────────────────────────────────────────────
-
-// Local editable copy of the prop (uncontrolled between parent syncs:
-// typing works even when the parent does not round-trip our emits, e.g.
-// in specs that mount without v-model). Every local write goes through
-// commitText so the parent stays in sync and the rehydrate guard below
-// recognises our own keystrokes' round-trip echo.
+// ─── State ────────────────────────────────────────────────────────────── Local editable copy of
+// the prop (uncontrolled between parent syncs: typing works even when the parent does not
+// round-trip our emits, e.g. in specs that mount without v-model).
 const text = ref(props.modelValue)
 let lastSeenText = props.modelValue
 const commitText = (v: string): void => {
@@ -95,11 +89,9 @@ const commitText = (v: string): void => {
   emit('update:modelValue', v)
 }
 const previewFiles = ref<PreviewFile[]>([])
-// Files staged in CREATE mode (taskId='') — uploaded by the host AFTER
-// the task exists. Mirrors previewFiles but exists only for the
-// create-mode flow; in edit mode it stays empty because uploads happen
-// inline (see addImageFile). Exposed via defineExpose so the parent
-// dialog can hand it to the host's create-then-upload orchestrator.
+// Files staged in CREATE mode (taskId='') — uploaded by the host AFTER the task exists. Mirrors
+// previewFiles but exists only for the create-mode flow; in edit mode it stays empty because
+// uploads happen inline (see addImageFile).
 const pendingFiles = ref<PreviewFile[]>([])
 const showFilePicker = ref(false)
 const fileQuery = ref('')
@@ -122,8 +114,6 @@ const counterText = computed<string>(() =>
 
 // ─── @-trigger file picker ──────────────────────────────────────────────
 // Ported 1:1 from FileInput.vue Task 2 (plan:
-// docs/superpowers/plans/2026-09-08-chatview-search-files-perf.md).
-// Single round-trip per query via `api.searchFiles` — replaces the old
 // N-sequential-fetch full-tree walk (`loadAllFiles`, deleted).
 let fileSearchTimer: ReturnType<typeof setTimeout> | null = null
 let fileSearchGen = 0
@@ -282,9 +272,8 @@ const selectFile = (file: FileEntry) => {
   const pos = textareaRef.value.selectionStart ?? 0
   const before = text.value.slice(0, pos)
   const after = text.value.slice(pos)
-  // Strip the `@` trigger token but keep the file path verbatim
-  // (e.g. `/src/main.zig` inserts as-is — no `@` prefix). The path
-  // chip detector in <MarkdownDescription> matches `/path/to/file`
+  // Strip the `@` trigger token but keep the file path verbatim (e.g. `/src/main.zig` inserts as-is
+  // — no `@` prefix). The path chip detector in <MarkdownDescription> matches `/path/to/file`
   // directly, so a leading `@` is unnecessary noise.
   const atMatch = before.match(/@([\w./\\:-]*)$/)
   const insertText = file.path
@@ -363,7 +352,6 @@ const onTextareaInput = (event: Event) => {
 }
 
 // ─── Image paste (mirrors FileInput.vue strategy 1 + 2) ────────────────
-
 const isImageFile = (file: File): boolean => file.type.startsWith('image/')
 const isVideoFile = (file: File): boolean => file.type.startsWith('video/')
 const isMediaFile = (file: File): boolean => isImageFile(file) || isVideoFile(file)
@@ -419,37 +407,14 @@ const addImageFile = async (file: File) => {
   previewFiles.value.push(previewEntry)
 
   if (!props.taskId) {
-    // CREATE MODE — the task doesn't exist on the server yet, so
-    // there's no taskId to upload to. We MUST NOT inject the base64
-    // payload into the description text:
-    //   - A 4 MB image base64-encodes to ~5.5 MB of text.
-    //   - It would store multi-MB raw base64 in the DB TEXT column,
-    //     which then propagates into the chat view's render of the
-    //     task description (see the bug screenshot — 487 052/5000).
-    //
-    // Instead, stage the file in `pendingFiles` (exposed via
-    // defineExpose). The dialog's host (KanbanView.handleCreateTaskSave)
-    // reads pendingFiles after `addTask` returns the new taskId,
-    // uploads each via `api.uploadTaskAttachment(taskId, file)`, then
-    // patches the description with `![name](<url>)` markdown.
+    // CREATE MODE — the task doesn't exist on the server yet, so there's no taskId to upload to.
     pendingFiles.value.push(previewEntry)
     return
   }
 
-  // EDIT MODE (Migration 069 — kanban image urls column). The
-  // task exists on the server. We stage the new image in
-  // `pendingFiles` and let the host PATCH the new column
-  // (`image_urls`) on Save — same orchestration as create mode.
-  // The previous edit-mode flow called `api.uploadTaskAttachment`
-  // (POST /.../attachments) and inserted `![name](url)` markdown
-  // into the description. The migration removed that endpoint
-  // entirely (the wildcard GET was broken, the POST was tied to
-  // the kanban's filesystem path) — see
-  // docs/superpowers/plans/2026-08-06-kanban-image-urls-column.md.
-  //
-  // The dialog still surfaces the user's edits (add/remove)
-  // via the same `pendingFiles` array on Save; the host reads
-  // it and PATCHes `image_urls` via `updateTaskDetails`.
+  // EDIT MODE (Migration 069 — kanban image urls column). The task exists on the server. We stage
+  // the new image in `pendingFiles` and let the host PATCH the new column (`image_urls`) on Save —
+  // same orchestration as create mode.
   pendingFiles.value.push(previewEntry)
   return
 }
@@ -497,7 +462,6 @@ const handlePaste = async (event: ClipboardEvent) => {
 }
 
 // ─── Native file picker (paperclip) ────────────────────────────────────
-
 const triggerFilePicker = () => {
   nativeFileInput.value?.click()
 }
@@ -515,7 +479,6 @@ const handleNativeFileSelect = async (event: Event) => {
 }
 
 // ─── Preview removal — strips the matching data URL from the markdown ──
-
 const handlePreviewUpdate = (newFiles: PreviewFile[]) => {
   // Find removed files (in old but not in new).
   const removed = previewFiles.value.filter((old) => !newFiles.includes(old))
@@ -525,19 +488,16 @@ const handlePreviewUpdate = (newFiles: PreviewFile[]) => {
   }
   for (const r of removed) {
     if (r.previewUrl.startsWith('blob:')) URL.revokeObjectURL(r.previewUrl)
-    // In edit mode the description carries an `![name](<url>)` block
-    // we need to strip — same logic as before. In create mode the
-    // description never received a markdown block (the file is only
-    // in previewFiles/pendingFiles), so the regex find/replace is a
-    // safe no-op (nothing matches).
+    // In edit mode the description carries an `![name](<url>)` block we need to strip — same logic
+    // as before. In create mode the description never received a markdown block (the file is only
+    // in previewFiles/pendingFiles), so the regex find/replace is a safe no-op (nothing matches).
     const fileName = r.file.name
     const escapedName = fileName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const blockRegex = new RegExp(`!\\[${escapedName}\\]\\([^)]+\\)`, 'g')
     commitText(text.value.replace(blockRegex, '').replace(/[ \t]+(\n|$)/g, '$1'))
     // Drop the corresponding entry from pendingFiles (create mode).
-    // The user's intent on removing a preview is "don't upload this
-    // either" — otherwise the host would silently upload a file the
-    // user already discarded.
+    // The user's intent on removing a preview is "don't upload this either" — otherwise the host
+    // would silently upload a file the user already discarded.
     const pendingIdx = pendingFiles.value.findIndex((p) => p.previewUrl === r.previewUrl)
     if (pendingIdx !== -1) pendingFiles.value.splice(pendingIdx, 1)
   }
@@ -545,7 +505,6 @@ const handlePreviewUpdate = (newFiles: PreviewFile[]) => {
 }
 
 // ─── Mount: re-hydrate previewFiles from existing modelValue ───────────
-
 // Decode a `data:<mime>;base64,<payload>` URL into a File. Avoids
 // `fetch(dataUrl)` because jsdom does not implement data: URL fetch.
 const dataUrlToFile = (dataUrl: string, name: string): File => {
@@ -624,20 +583,16 @@ onMounted(() => {
   rehydratePreviews()
 })
 
-// ─── Rehydrate on external modelValue changes (e.g. dialog re-open) ──
-// We only re-hydrate when the modelValue grows (new image added externally).
-// `lastSeenText` is set by the bridge setter above, so the parent's
-// round-trip echo of our own keystrokes is recognised and skipped here.
+// ─── Rehydrate on external modelValue changes (e.g. dialog re-open) ── We only re-hydrate when the
+// modelValue grows (new image added externally). `lastSeenText` is set by the bridge setter above,
+// so the parent's round-trip echo of our own keystrokes is recognised and skipped here.
 const prevModelValue = ref(props.modelValue)
 onUpdated(() => {
   const v = props.modelValue
   if (v === prevModelValue.value) return
   prevModelValue.value = v
-  // Mirror externally-changed props into the editable copy (mount seeds
-  // it; this covers dialog re-opens with new content). The echo emit
-  // preserves the old mirror-watcher's cascade; lastSeenText updates
-  // below so the echo check sees pre-mirror state, exactly like the
-  // old watcher ordering did.
+  // Mirror externally-changed props into the editable copy (mount seeds it; this covers dialog
+  // re-opens with new content).
   if (v !== text.value) {
     text.value = v
     emit('update:modelValue', v)
@@ -658,11 +613,9 @@ const autoResize = (event: Event) => {
   target.style.height = `${Math.min(target.scrollHeight, 400)}px`
 }
 
-// Expose `pendingFiles` to the parent dialog so it can pass the staged
-// files up to the host's create-then-upload orchestrator. Vue auto-unwraps
-// refs in defineExpose, so `wrapper.vm.pendingFiles` returns the raw
-// array (not a Ref). See KanbanDescriptionEditor.spec.ts for the
-// pendingFiles contract (5 tests).
+// Expose `pendingFiles` to the parent dialog so it can pass the staged files up to the host's
+// create-then-upload orchestrator. See KanbanDescriptionEditor.spec.ts for the pendingFiles
+// contract (5 tests).
 defineExpose({ pendingFiles })
 </script>
 

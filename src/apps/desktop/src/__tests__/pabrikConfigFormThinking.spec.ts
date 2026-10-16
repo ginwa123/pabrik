@@ -1,26 +1,12 @@
-// Vitest tests for the model-thinking fields in LlmConfigForm.vue
-// (plan 2026-08-23-model-thinking + 2026-09-01-migrate-openai-legacy-to-response).
-//
-// Covers:
-//  - The new fields are wired into the form data interface.
-//  - When `thinking === 'off'`, the budget + effort row is hidden (all styles).
-//  - Per-style gating: anthropic shows budget hides effort, openai/openai-response show effort hides budget.
-//  - The input emits `null` for blank values, parsed integers for
-//    valid input, and clamps to >= 1024.
-//  - Hidden fields preserve values (not nulled) on style switch.
-
+// Vitest tests for the model-thinking fields in LlmConfigForm.vue (plan 2026-08-23-model-thinking +
+// 2026-09-01-migrate-openai-legacy-to-response).
 import { describe, it, expect } from 'vitest'
 import { mount, VueWrapper } from '@vue/test-utils'
 import LlmConfigForm from '../components/pabrik/LlmConfigForm.vue'
 
-/**
- * Mount and open `Advanced`.
- *
- * Advanced is collapsed by default — that is the whole point of the redesign —
- * so a spec that wants to touch a field behind it has to open it first. The
- * helper is tolerant so it can be used for components that have no Advanced
- * section at all.
- */
+/**  * Mount and open `Advanced`. Advanced is collapsed by default — that is the whole point of the
+ * redesign — so a spec that wants to touch a field behind it has to open it first. The helper is
+ * tolerant so it can be used for components that have no Advanced section at all. */
 async function mountOpen(component: unknown, opts?: unknown) {
   // `as never` keeps `mount`'s overload resolution from narrowing the SECOND
   // argument to a VNode-props shape at every call site.
@@ -55,7 +41,6 @@ describe('LlmConfigForm Thinking fields', () => {
   })
 
   // ─── Per-style gating (plan 2026-09-01) ───
-
   it('anthropic + thinking=on: shows budget, hides effort', async () => {
     const wrapper = await mountOpen(LlmConfigForm, {
       props: { modelValue: { ...baseConfig, url_style: 'anthropic', thinking: 'on' } },

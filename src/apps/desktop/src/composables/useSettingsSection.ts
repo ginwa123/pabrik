@@ -15,17 +15,9 @@ interface UseSettingsSectionOptions {
   storageKey: string
 }
 
-/**
- * URL-synced settings-section state, shared by the user + workspace
- * settings pages. Read order is URL (`?section=`) → localStorage →
- * default; writes go through `router.replace` so refresh, Back/Forward
- * and shared links restore the open section. The default section is
- * stripped from the query to keep URLs clean.
- *
- * No watchers: the section is a writable computed over the route, and a
- * local ref backs it when the component mounts without a router (unit
- * tests). Same shape as the per-page implementations this replaces.
- */
+/** URL-synced settings-section state, shared by the user + workspace settings pages. Read order is
+ * URL (`?section=`) → localStorage → default; writes go through `router.replace` so refresh,
+ * Back/Forward and shared links restore the open section. */
 export function useSettingsSection(options: UseSettingsSectionOptions) {
   const { sections, defaultSection, storageKey } = options
 
@@ -78,10 +70,9 @@ export function useSettingsSection(options: UseSettingsSectionOptions) {
       try {
         localStorage.setItem(storageKey, next)
       } catch {
-        // Best-effort persistence only: the URL (source of truth) is
-        // written below, and `local` already holds the new section, so a
-        // failed write only affects the next cold load's fallback — the
-        // failure cannot reach the user as a wrong section.
+        // Best-effort persistence only: the URL (source of truth) is written below, and `local`
+        // already holds the new section, so a failed write only affects the next cold load's
+        // fallback — the failure cannot reach the user as a wrong section.
       }
       if (!router || !route) return
       const rest = { ...route.query }
@@ -95,11 +86,9 @@ export function useSettingsSection(options: UseSettingsSectionOptions) {
     section.value = next
   }
 
-  // Mount normalization: the getter falls back to localStorage when the
-  // URL has no `?section=`, which would render the stored section with a
-  // clean URL. Rewrite the URL to reflect the section actually shown,
-  // and persist a deep link to storage so the next clean load restores
-  // it. Replace, not push — mount is not a navigation.
+  // Mount normalization: the getter falls back to localStorage when the URL has no `?section=`,
+  // which would render the stored section with a clean URL. Rewrite the URL to reflect the section
+  // actually shown, and persist a deep link to storage so the next clean load restores it.
   onMounted(() => {
     if (!router || !route) return
     try {
