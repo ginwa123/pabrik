@@ -99,3 +99,41 @@ makes the choice a user preference instead of a permanent diff. The knob belongs
 - Assert the pill-rail case: with ≥ 2 user messages, content insets are symmetric.
 - Wireframe itself: `agent-browser` load + click-through (Today / A / B / C / slider / back)
   asserting `getBoundingClientRect()` per state; no page errors.
+
+## 8. Implemented — option C (this PR)
+
+**Chosen: C.** One token, three presets, cycled from the chat app bar and remembered per browser.
+
+| Preset | `--chat-content-max` | @1450 (column 1162) | @2560 (column 2272) |
+|---|---|---|---|
+| `full` *(default)* | `100%` | row 1162, gutter **0 / 0** | row 2272, gutter **0 / 0** |
+| `wide` | `1400px` | row 1162, gutter 0 / 0 | row 1400, gutter 436 / 436 |
+| `comfortable` | `896px` | row 896, gutter 133 / 133 | row 896, gutter 688 / 688 |
+
+- **New:** `src/composables/useChatContentWidth.ts` — module-scope state (not a pinia store: the app
+  bar is mounted bare in specs and rendered by three chat hosts, and all three must share one value).
+  Persisted at `localStorage['pabrik-chat-content-width']`; an unknown or missing value reads as `full`.
+- **`ChatAppBar.vue`** — the control: a `⇔ <preset>` button between the extras slot and the `◫`
+  toggle. No prop, so the three chat modes stay byte-identical (`ChatAppBarParity.spec.ts` still passes).
+- **`ChatView.vue`** — `--chat-content-max: 100%` on `.chat-column`, the two narrowed preset classes,
+  the four capped sites now `max-w-[var(--chat-content-max)]`, and the pill-rail strip mirrored
+  (`padding-left` as well as `padding-right`) so a full-bleed row keeps its text centred.
+- **Tests:** `useChatContentWidth.spec.ts` (6), `ChatAppBar.contentWidth.spec.ts` (4),
+  `ChatView.contentWidth.spec.ts` (5, source-grep) — 15 new, all green.
+
+### Live verification (worktree `dist/` served on `:8080`, headless Chrome)
+
+- @1450, `full`: column 1162, row **1162**, gutter **0 / 0**, composer box 1130 — was 896 / 133 / 133.
+- @2560, `full`: column 2272, row 2272, gutter **0 / 0** — was 688 / 688, i.e. 61 % of the window empty.
+- Cycling the control moves the label, the token, the class and the geometry together; the choice
+  survives a reload (`full` → `comfortable` restored label + `896px` + 133 / 133 gutter).
+- `.has-pill-rail` probe: a `[data-group-key]` row now measures `padding 48 / 48` (was 0 / 48).
+- No page errors.
+
+### Gates
+
+`vitest --run` on the touched specs (38 passed) · `vue-tsc --build` clean · `oxlint` clean on all six
+files · `eslint` clean on all six files · `prettier --check` clean.
+The three failures in the wider `ChatView.*` set (`centerDiff › drops stale diffs on cwd change`,
+`centerSync › syncs currentPath to ?diff=`, `tool-width › tool-group container fills the column`) were
+reproduced with these edits reverted, so all three are pre-existing red.

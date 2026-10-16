@@ -14,6 +14,7 @@ import { marked } from 'marked'
 import * as api from '../../api'
 import { chatEngineDb, newestCursor, toChatMessage } from '../../sync/ChatEngineDb'
 import { runSyncEffect, runSyncEffectOr, runSyncVoid } from '../../sync/runtime'
+import { useChatContentWidth } from '../../composables/useChatContentWidth'
 import { useChatScrollRestore } from '../../composables/useChatScrollRestore'
 import {
   stripThinkingTags,
@@ -178,6 +179,7 @@ const emit = defineEmits<{
 
 // Check if session is pending (needs creation on first message)
 const isPendingSession = computed(() => props.chatId.startsWith('pending-'))
+const { presetClass: chatWidthClass } = useChatContentWidth()
 
 interface Message {
   id: string
@@ -3665,7 +3667,11 @@ const compactSession = async () => {
       fires the observer on every input event) never re-runs ChatView's
       (very large) render.
     -->
-    <div :ref="setChatColumnEl" class="relative flex flex-col h-full flex-1 min-w-0 chat-column">
+    <div
+      :ref="setChatColumnEl"
+      class="relative flex flex-col h-full flex-1 min-w-0 chat-column"
+      :class="chatWidthClass"
+    >
       <!--
         Chat app bar. Rendered only when the parent passed the
         `showHeader` prop. Every chat host sets it (kanban
@@ -3775,7 +3781,7 @@ const compactSession = async () => {
         <div
           v-if="isInitializing"
           data-testid="chat-initializing-skeleton"
-          class="flex flex-col gap-3 px-4 max-w-4xl mx-auto pt-6 w-full"
+          class="flex flex-col gap-3 px-4 max-w-[var(--chat-content-max)] mx-auto pt-6 w-full"
           role="status"
           aria-label="Loading conversation"
         >
@@ -3924,7 +3930,7 @@ const compactSession = async () => {
         >
           <template #default="{ item: group, index: groupIndex }">
             <div
-              class="px-4 max-w-4xl mx-auto"
+              class="px-4 max-w-[var(--chat-content-max)] mx-auto"
               :class="[
                 groupIndex === 0 ? 'pt-6' : '',
                 isLastGroup(groupIndex) ? 'last-transcript-row' : '',
@@ -4546,7 +4552,7 @@ const compactSession = async () => {
              the newest error is always visible without scrolling. -->
         <div
           v-if="agentError"
-          class="px-4 max-w-4xl mx-auto agent-error-list"
+          class="px-4 max-w-[var(--chat-content-max)] mx-auto agent-error-list"
           data-testid="agent-error-list"
         >
           <AgentErrorCard :key="agentError.id" :content="agentError.content" />
@@ -4616,7 +4622,7 @@ const compactSession = async () => {
         data-testid="composer-dock"
       >
         <div class="composer-scrim" aria-hidden="true" data-testid="composer-scrim"></div>
-        <div class="max-w-4xl mx-auto">
+        <div class="max-w-[var(--chat-content-max)] mx-auto">
           <FileInput
             ref="fileInputRef"
             :cwd="sessionCwd"
@@ -5467,9 +5473,12 @@ const compactSession = async () => {
    them through `:deep()`. The agent-error band is a plain descendant of
    the wrapper (outside the scroller's height model), so it takes the same
    padding directly — the strip stays continuous down the transcript. */
+/* Mirror the strip. Padding one side only was invisible while the rows were
+   centred; a full-bleed row is shifted 32px off the column's centre without it. */
 .messages-scroll-hide-native.has-pill-rail :deep([data-group-key]),
 .messages-scroll-hide-native.has-pill-rail .agent-error-list {
   padding-right: var(--pill-rail-gutter, 48px);
+  padding-left: var(--pill-rail-gutter, 48px);
 }
 
 /* ─── Floating composer ──────────────────────────────────────────────────
@@ -5482,6 +5491,7 @@ const compactSession = async () => {
    to a plain 1rem of bottom padding, matching the old flow layout. */
 .chat-column {
   --chat-composer-inset: 0px;
+  --chat-content-max: 100%;
 
   /* Contain this surface's whole z-ladder.
      `position: relative` with `z-index: auto` does NOT open a stacking
@@ -5497,6 +5507,16 @@ const compactSession = async () => {
      overlay, so DocumentsView does not have to be raised above a number
      that would have to be raised again. */
   isolation: isolate;
+}
+
+/* Transcript width presets. Every row and the composer cap themselves at
+   `--chat-content-max`, so `full` is the default and `comfortable` is the
+   old centred 56rem (896px) cap. */
+.chat-column.chat-width-comfortable {
+  --chat-content-max: 896px;
+}
+.chat-column.chat-width-wide {
+  --chat-content-max: 1400px;
 }
 
 .composer-dock {
