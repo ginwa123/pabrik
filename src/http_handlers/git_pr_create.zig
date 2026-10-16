@@ -225,10 +225,7 @@ fn resolveCreateProvider(allocator: std.mem.Allocator, io: std.Io, body: anytype
 // Behavioural tests: the forge CLI argv + output handling.
 
 const builtin_t = @import("builtin");
-
-fn skipOnWindows() bool {
-    return builtin_t.os.tag == .windows;
-}
+const hf = @import("helpers").host_fixture;
 
 fn haveGit() bool {
     var c = std.process.spawn(std.testing.io, .{
@@ -241,40 +238,32 @@ fn haveGit() bool {
     return true;
 }
 
-/// A throwaway dir under `.zig-cache/tmp` plus executable fixtures.
+/// A throwaway dir under `.zig-cache/tmp` plus fixture programs, written by
+/// `host_fixture` so they run on POSIX and Windows alike. The 512-byte
+/// stack buffer matters: `std.fs.max_path_bytes` is ~96 KB on Windows.
 const Fixture = struct {
-    tmp: std.testing.TmpDir,
-    root: []u8,
+    inner: hf.Fixture,
     allocator: std.mem.Allocator,
 
     fn init(allocator: std.mem.Allocator) !Fixture {
-        var tmp = std.testing.tmpDir(.{});
-        errdefer tmp.cleanup();
-        // NOT sized from `std.fs.max_path_bytes`: that is ~96 KB on Windows,
-        // and this is a stack buffer.
-        var buf: [512]u8 = undefined;
-        const root = try tmp.dir.realPath(std.testing.io, &buf);
-        const owned = try allocator.dupe(u8, buf[0..root]);
-        return .{ .tmp = tmp, .root = owned, .allocator = allocator };
+        return .{ .inner = try hf.Fixture.init(allocator), .allocator = allocator };
     }
 
     fn deinit(self: *Fixture) void {
-        self.tmp.cleanup();
-        self.allocator.free(self.root);
+        self.inner.deinit();
     }
 
-    fn writeExec(self: *Fixture, name: []const u8, script: []const u8) ![]u8 {
-        try self.tmp.dir.writeFile(std.testing.io, .{ .sub_path = name, .data = script });
-        if (builtin_t.os.tag != .windows) {
-            try self.tmp.dir.setFilePermissions(std.testing.io, name, .executable_file, .{});
-        }
-        return std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ self.root, name });
+    /// The fixture root, as an absolute path.
+    fn root(self: *Fixture) []const u8 {
+        return self.inner.root;
     }
 
-    /// `writeExec` for an allocator-owned script: writes, frees, returns.
-    fn writeScript(self: *Fixture, name: []const u8, script: []const u8) ![]u8 {
-        defer self.allocator.free(script);
-        return self.writeExec(name, script);
+    fn writeProgram(self: *Fixture, name: []const u8, payload: hf.Payload) ![]u8 {
+        return self.inner.writeProgram(name, payload);
+    }
+
+    fn writeProgramText(self: *Fixture, name: []const u8, script: []const u8) ![]u8 {
+        return self.inner.writeProgramText(name, script);
     }
 };
 
@@ -283,7 +272,7 @@ const Fixture = struct {
 /// reads from `git branch --show-current`.
 fn makeGitRepoOnBranch(fx: *Fixture) ![]u8 {
     const a = fx.allocator;
-    const repo = try std.fmt.allocPrint(a, "{s}/repo", .{fx.root});
+    const repo = try std.fmt.allocPrint(a, "{s}/repo", .{fx.root()});
     var init = run_captured.run(a, std.testing.io, &.{ "git", "init", "-q", "-b", "worktree/feature-x", repo }, .{
         .timeout_ms = 30_000,
     }) catch return error.SkipZigTest;
@@ -302,7 +291,6 @@ const testing = std.testing;
 // ───────────────────────── GitLab (glab) create path ─────────────────────────
 
 test "create: github still runs the exact historical gh pr create argv" {
-    if (skipOnWindows()) return error.SkipZigTest;
     if (!haveGit()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
@@ -310,12 +298,13 @@ test "create: github still runs the exact historical gh pr create argv" {
     const repo = try makeGitRepoOnBranch(&fx);
     defer a.free(repo);
 
-    const argv_file = try std.fmt.allocPrint(a, "{s}/argv", .{fx.root});
+    const argv_file = try std.fmt.allocPrint(a, "{s}/argv", .{fx.root()});
     defer a.free(argv_file);
     // Echoes the URL so the success path is also exercised.
-    const gh = try fx.writeScript("gh", try std.fmt.allocPrint(a,
-        "#!/bin/sh\nfor a in \"$@\"; do echo \"$a\"; done > '{s}'\necho '{s}'"
-    , .{ argv_file, "https://github.com/acme/app/pull/42" }));
+    const gh = try fx.writeProgram("gh", .{
+        .argv_file = argv_file,
+        .stdout = "https://github.com/acme/app/pull/42",
+    });
     defer a.free(gh);
 
     const res = try createPullRequestUseCaseWith(a, std.testing.io, gh, .github, repo, "main", "T", "B");
@@ -328,15 +317,14 @@ test "create: github still runs the exact historical gh pr create argv" {
     defer a.free(recorded);
     // No --head: gh infers it from the worktree checkout, and that
     // behaviour must not change for existing GitHub users.
-    try testing.expect(std.mem.indexOf(u8, recorded, "pr\ncreate\n--base\nmain\n--title\nT\n--body\nB\n") != null);
-    try testing.expect(std.mem.indexOf(u8, recorded, "--head") == null);
+    try testing.expect(hf.recordedArgvContainsSequence(recorded, &.{ "pr", "create", "--base", "main", "--title", "T", "--body", "B" }));
+    try testing.expect(!hf.recordedArgvContains(recorded, "--head"));
 }
 
 test "create: gitlab runs glab mr create with --source-branch and --yes" {
     // --yes is load-bearing: without it glab drops into an interactive
     // confirm in a non-tty child and burns the whole 60s budget.
     // --source-branch is equally required because glab will not infer it.
-    if (skipOnWindows()) return error.SkipZigTest;
     if (!haveGit()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
@@ -344,11 +332,12 @@ test "create: gitlab runs glab mr create with --source-branch and --yes" {
     const repo = try makeGitRepoOnBranch(&fx);
     defer a.free(repo);
 
-    const argv_file = try std.fmt.allocPrint(a, "{s}/argv", .{fx.root});
+    const argv_file = try std.fmt.allocPrint(a, "{s}/argv", .{fx.root()});
     defer a.free(argv_file);
-    const glab = try fx.writeScript("glab", try std.fmt.allocPrint(a,
-        "#!/bin/sh\nfor a in \"$@\"; do echo \"$a\"; done > '{s}'\necho '{s}'"
-    , .{ argv_file, "https://gitlab.com/group/sub/repo/-/merge_requests/7" }));
+    const glab = try fx.writeProgram("glab", .{
+        .argv_file = argv_file,
+        .stdout = "https://gitlab.com/group/sub/repo/-/merge_requests/7",
+    });
     defer a.free(glab);
 
     const res = try createPullRequestUseCaseWith(a, std.testing.io, glab, .gitlab, repo, "main", "T", "B");
@@ -359,14 +348,13 @@ test "create: gitlab runs glab mr create with --source-branch and --yes" {
 
     const recorded = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, argv_file, a, .limited(64 * 1024));
     defer a.free(recorded);
-    try testing.expect(std.mem.indexOf(u8, recorded, "mr\ncreate\n--source-branch\nworktree/feature-x\n--target-branch\nmain\n--title\nT\n--description\nB\n--yes\n") != null);
+    try testing.expect(hf.recordedArgvContainsSequence(recorded, &.{ "mr", "create", "--source-branch", "worktree/feature-x", "--target-branch", "main", "--title", "T", "--description", "B", "--yes" }));
 }
 
 test "create: a glab banner before the URL does not become pr_url" {
     // THE regression this guards: the use case used to treat the WHOLE
     // trimmed stdout as the URL. glab prints a banner first, so that stored a
     // non-URL as pr_url, and the frontend then handed it to set_pull_request,
-    if (skipOnWindows()) return error.SkipZigTest;
     if (!haveGit()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
@@ -374,12 +362,9 @@ test "create: a glab banner before the URL does not become pr_url" {
     const repo = try makeGitRepoOnBranch(&fx);
     defer a.free(repo);
 
-    const glab = try fx.writeExec("glab",
-        "#!/bin/sh\n" ++
-            "echo 'Creating merge request for worktree/feature-x on gitlab.com'\n" ++
-            "echo\n" ++
-            "echo 'https://gitlab.com/g/s/r/-/merge_requests/7'\n"
-    );
+    const glab = try fx.writeProgram("glab", .{
+        .stdout = "Creating merge request for worktree/feature-x on gitlab.com\n\nhttps://gitlab.com/g/s/r/-/merge_requests/7\n",
+    });
     defer a.free(glab);
 
     const res = try createPullRequestUseCaseWith(a, std.testing.io, glab, .gitlab, repo, "main", "T", "B");
@@ -388,17 +373,16 @@ test "create: a glab banner before the URL does not become pr_url" {
 }
 
 test "create: the generic provider fails without spawning anything" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
     // A script that would leave a sentinel if it ever ran.
-    const sentinel = try std.fmt.allocPrint(a, "{s}/ran", .{fx.root});
+    const sentinel = try std.fmt.allocPrint(a, "{s}/ran", .{fx.root()});
     defer a.free(sentinel);
-    const prog = try fx.writeScript("nope", try std.fmt.allocPrint(a, "touch '{s}'\n", .{sentinel}));
+    const prog = try fx.writeProgram("nope", .{ .touch_file = sentinel });
     defer a.free(prog);
 
-    const res = try createPullRequestUseCaseWith(a, std.testing.io, prog, .generic, fx.root, "main", "T", "B");
+    const res = try createPullRequestUseCaseWith(a, std.testing.io, prog, .generic, fx.root(), "main", "T", "B");
     defer freeCreateResult(a, res);
     try testing.expectEqual(GhStatus.gh_failed, res.status);
     try testing.expect(std.mem.indexOf(u8, res.stderr, "no forge CLI") != null);
@@ -412,12 +396,11 @@ test "create: the generic provider fails without spawning anything" {
 }
 
 test "create: a missing CLI names glab, not gh" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
 
-    const res = try createPullRequestUseCaseWith(a, std.testing.io, "/pabrik/definitely/not/glab", .gitlab, fx.root, "main", "T", "B");
+    const res = try createPullRequestUseCaseWith(a, std.testing.io, "/pabrik/definitely/not/glab", .gitlab, fx.root(), "main", "T", "B");
     defer freeCreateResult(a, res);
     try testing.expectEqual(GhStatus.gh_failed, res.status);
     try testing.expect(std.mem.indexOf(u8, res.stderr, "glab") != null);

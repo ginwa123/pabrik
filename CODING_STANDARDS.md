@@ -312,7 +312,7 @@ is to run it against known input on every invocation.
 stopgap, not the rule's final form**, and this is the deliberate
 exception to §3's "land it with zero debt".
 
-The debt is 91 Windows skips. Their fix is not a per-platform test — it
+The debt is 50 Windows skips. Their fix is not a per-platform test — it
 is a fixture that runs everywhere, which for this repo means no test may
 depend on `/bin/sh` being present. That conversion cannot be verified
 from POSIX (a Windows payload is only known-good when Windows has run
@@ -321,16 +321,54 @@ Windows cell or deleted tests. The ceiling exists so the number is
 printed on every cell and every night, cannot grow, and names the edit
 that lowers it.
 
+### How the `/bin/sh` dependency was actually removed
+
+Zig 0.16's Windows spawn path
+(`std.Io.Threaded.windowsCreateProcessPathExt`) already handles batch
+files: when the program name ends in `.cmd` or `.bat` it calls
+`CreateProcessW` with `lpApplicationName = <system32>\cmd.exe` and
+`lpCommandLine = cmd.exe /d /e:ON /v:OFF /c "<script>" <escaped args>`.
+So a `.cmd` file IS spawnable from `std.process.spawn` on Windows — the
+missing piece was only a helper that writes the right payload per host.
+
+That helper is `src/helpers/host_fixture.zig`. `Fixture.writeProgram`
+takes a `Payload` (stdout, stderr, exit code, an argv-recording file, a
+sentinel to touch, print-cwd, sleep, kill-self, repeat-N) and renders a
+`#!/bin/sh` script on POSIX or a `.cmd` batch file on Windows. Both
+dialects are written in lockstep, so a new `Payload` field cannot be
+honoured on one host and silently ignored on the other — and the module's
+own tests run on every host, because a fixture helper that declines a
+host is the same defect one level up.
+
+Two consequences worth knowing before adding a fixture:
+
+- **The recorded argv has a different shape per host.** POSIX records one
+  argument per line; `cmd.exe` receives the arguments as one command-line
+  string, so `echo %*` records them space-separated. Assert through
+  `host_fixture.recordedArgvContains` / `recordedArgvContainsSequence`,
+  which match whole arguments in whichever shape this host produced. A
+  substring match is a trap: `--head` must not be satisfied by
+  `--head-ref`, and the create suite asserts that flag is ABSENT.
+- **`printf '%s'` cannot carry a NUL.** The POSIX renderer emits payloads
+  with `printf '%b'` and octal-escapes every non-printable byte, so the
+  "non-UTF8 bytes survive capture" test still proves the pipe is
+  byte-transparent.
+
 The conversion, in one line per family:
 
-| family | tests | shape of the fix |
+| family | tests | state |
 |---|---|---|
-| `git_pr_status` | 25 | fixture program + spec, not `#!/bin/sh` |
-| `run_captured` | 16 | a host payload per test, as its own `probe_argv` already does |
-| `git_pr_list` / `create` / `close`, `status_pull_request` | 18 | same fixture program as `git_pr_status` |
-| `mcp_stdio` | 6 | same fixture program (an NDJSON speaker) |
-| symlink / `/proc` / `setenv` sites | 6 | a host-general helper (handle count, env set, link-or-fail-loudly) |
-| the ~84 `return;` vacuous passes | 0 counted | convert to a real assertion, never to a skip |
+| `git_pr_status` | 25 | converted — `host_fixture` payloads |
+| `run_captured` | 16 | converted — `host_fixture` payloads |
+| `git_pr_list` / `create` / `close`, `status_pull_request` | 18 | converted — `host_fixture` payloads |
+| `mcp_stdio` | 6 | still open — needs an NDJSON speaker fixture |
+| symlink / `/proc` / `setenv` sites | 6 | still open — a host-general helper (handle count, env set, link-or-fail-loudly) |
+| the ~84 `return;` vacuous passes | 0 counted | still open — convert to a real assertion, never to a skip |
+
+The 59 converted tests are why the ceiling could fall from 91 to 50 in
+one change. The remaining 50 are the families whose Windows payload has
+not yet been run on Windows, which is exactly what the nightly job is
+for.
 
 `--strict` is the finish line and is already wired and tested; flipping
 the step to it is a one-word change once the table above is empty.

@@ -14,6 +14,7 @@ pub const sanitize_control_chars = @import("xml_escape.zig").sanitizeControlChar
 pub const text_normalize = @import("text_normalize.zig");
 pub const path_validate = @import("path_validate.zig");
 pub const test_path = @import("test_path.zig");
+pub const host_fixture = @import("host_fixture.zig");
 pub const git_env_guard = @import("git_env_guard.zig");
 pub const xmlUnescape = @import("xml_unescape.zig").xmlUnescape;
 

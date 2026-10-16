@@ -250,57 +250,90 @@ pub fn gitPrCloseHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, r
 
 const testing = std.testing;
 const builtin_t = @import("builtin");
+const hf = @import("helpers").host_fixture;
 
-fn skipOnWindows() bool {
-    return builtin_t.os.tag == .windows;
-}
-
+/// A throwaway directory plus fixture programs, written by `host_fixture`
+/// so they run on POSIX (`#!/bin/sh`) and Windows (`.cmd`) alike.
 const Fixture = struct {
-    tmp: std.testing.TmpDir,
-    root: []u8,
+    inner: hf.Fixture,
     allocator: std.mem.Allocator,
 
     fn init(allocator: std.mem.Allocator) !Fixture {
-        var tmp = std.testing.tmpDir(.{});
-        errdefer tmp.cleanup();
-        var buf: [512]u8 = undefined;
-        const root = try tmp.dir.realPath(testing.io, &buf);
-        return .{ .tmp = tmp, .root = try allocator.dupe(u8, buf[0..root]), .allocator = allocator };
+        return .{ .inner = try hf.Fixture.init(allocator), .allocator = allocator };
     }
 
     fn deinit(self: *Fixture) void {
-        self.tmp.cleanup();
-        self.allocator.free(self.root);
+        self.inner.deinit();
     }
 
-    fn writeExec(self: *Fixture, name: []const u8, script: []const u8) ![]u8 {
-        try self.tmp.dir.writeFile(testing.io, .{ .sub_path = name, .data = script });
-        if (!skipOnWindows()) try self.tmp.dir.setFilePermissions(testing.io, name, .executable_file, .{});
-        return std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ self.root, name });
+    /// The fixture root, as an absolute path.
+    fn root(self: *Fixture) []const u8 {
+        return self.inner.root;
+    }
+
+    fn writeProgram(self: *Fixture, name: []const u8, payload: hf.Payload) ![]u8 {
+        return self.inner.writeProgram(name, payload);
+    }
+
+    /// Write a body this file rendered for the current host.
+    fn writeProgramText(self: *Fixture, name: []const u8, script: []const u8) ![]u8 {
+        return self.inner.writeProgramText(name, script);
     }
 };
 
-/// A script that answers like `gh`: `close` records the whole argv and exits
-/// with `close_code`; anything else (the `view` re-read) prints `view_json`.
+/// A program that answers like `gh`: `close` records the whole argv and
+/// exits with `close_code`; anything else prints `view_json`. The branch on
+/// the subcommand is what `host_fixture.Payload` cannot express.
 fn ghScript(fx: *Fixture, argv_file: []const u8, close_code: u8, close_stderr: []const u8, view_json: []const u8) ![]u8 {
-    // The script text is owned only until it has been written to the file.
-    const script = try std.fmt.allocPrint(fx.allocator,
+    const script = if (builtin_t.os.tag == .windows) blk: {
+        // Both emit statements come from `host_fixture`, so this body cannot
+        // drift onto a different — and silently wrong — Windows output
+        // primitive, the way a hand-typed `copy /b` did.
+        var out_buf: [128]u8 = undefined;
+        var out_w: std.Io.Writer = .fixed(&out_buf);
+        try hf.cmdEmitLine(&out_w, .stdout, null);
+        var err_buf: [128]u8 = undefined;
+        var err_w: std.Io.Writer = .fixed(&err_buf);
+        try hf.cmdEmitLine(&err_w, .stderr, null);
+        break :blk try std.fmt.allocPrint(fx.allocator,
+            // `%~n0` is the script's own name — the analogue of the POSIX
+            // branch's `basename "$0"` — and it shares ONE line with %*,
+            // because the Windows record IS cmd's single command tail.
+            \\@echo off
+            \\if "%~2"=="close" (
+            \\  > "{s}" echo %~n0 %*
+            \\  {s}  exit /b {d}
+            \\)
+            \\{s}exit /b 0
+            \\
+        , .{ argv_file, err_w.buffered(), close_code, out_w.buffered() });
+    } else try std.fmt.allocPrint(fx.allocator,
         \\#!/bin/sh
         \\if [ "$2" = "close" ]; then
         \\  echo "$(basename "$0")" > '{s}'
         \\  for a in "$@"; do echo "$a"; done >> '{s}'
-        \\  echo '{s}' >&2
+        \\  printf '%s' '{s}' >&2
         \\  exit {d}
         \\fi
-        \\cat <<'JSONEOF'
-        \\{s}
-        \\JSONEOF
+        \\printf '%s' '{s}'
+        \\exit 0
         \\
-        // Two `{s}` for the dump path (the program line, then the arguments), then
-        // the stderr text, the exit code and the status payload.
     , .{ argv_file, argv_file, close_stderr, close_code, view_json });
     defer fx.allocator.free(script);
-    return fx.writeExec("gh", script);
+    const prog = try fx.writeProgramText("gh", script);
+    // The Windows branch reads its payloads from sidecar data files, because
+    // `cmd.exe`'s `echo` cannot emit a byte-exact payload.
+    if (builtin_t.os.tag == .windows) {
+        try fx.inner.tmp.dir.writeFile(std.testing.io, .{
+            .sub_path = hf.sidecarFileName(.stdout),
+            .data = view_json,
+        });
+        try fx.inner.tmp.dir.writeFile(std.testing.io, .{
+            .sub_path = hf.sidecarFileName(.stderr),
+            .data = close_stderr,
+        });
+    }
+    return prog;
 }
 
 const CLOSED_VIEW =
@@ -312,18 +345,17 @@ const OPEN_VIEW =
 ;
 
 test "close: a closed re-read means closed, and no branch deletion is ever passed" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
 
-    const argv_file = try std.fmt.allocPrint(a, "{s}/argv", .{fx.root});
+    const argv_file = try std.fmt.allocPrint(a, "{s}/argv", .{fx.root()});
     defer a.free(argv_file);
     const gh = try ghScript(&fx, argv_file, 0, "", CLOSED_VIEW);
     defer a.free(gh);
 
     var detail: ?[]u8 = null;
-    const out = try closeUseCaseWithPrograms(a, testing.io, .{ .gh = gh }, fx.root, "893", "github", &detail);
+    const out = try closeUseCaseWithPrograms(a, testing.io, .{ .gh = gh }, fx.root(), "893", "github", &detail);
     const st = out.status;
     defer {
         a.free(out.status.provider);
@@ -350,20 +382,22 @@ test "close: a closed re-read means closed, and no branch deletion is ever passe
 
     const recorded = try std.Io.Dir.cwd().readFileAlloc(testing.io, argv_file, a, .limited(64 * 1024));
     defer a.free(recorded);
-    try testing.expectEqualStrings("gh\npr\nclose\n893\n", recorded);
+    // The program name plus the three arguments, in order. The recorded
+    // shape differs per host (one per line on POSIX, space-separated on
+    // Windows), so the assertion goes through the host-aware helper.
+    try testing.expect(hf.recordedArgvContainsSequence(recorded, &.{ "gh", "pr", "close", "893" }));
     // The two destructive flags that must never be built here, asserted on the
     // argv that was actually spawned rather than on the builder's source.
-    try testing.expect(std.mem.indexOf(u8, recorded, "--delete-branch") == null);
-    try testing.expect(std.mem.indexOf(u8, recorded, "--comment") == null);
+    try testing.expect(!hf.recordedArgvContains(recorded, "--delete-branch"));
+    try testing.expect(!hf.recordedArgvContains(recorded, "--comment"));
 }
 
 test "close: an exit 0 that did NOT close is closed:false with the forge's own answer" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
 
-    const argv_file = try std.fmt.allocPrint(a, "{s}/argv", .{fx.root});
+    const argv_file = try std.fmt.allocPrint(a, "{s}/argv", .{fx.root()});
     defer a.free(argv_file);
     // `gh` exits 0 (it does when the PR is already closed, among others) but
     // the re-read still says OPEN. Reporting success here would be the lie the
@@ -372,7 +406,7 @@ test "close: an exit 0 that did NOT close is closed:false with the forge's own a
     defer a.free(gh);
 
     var detail: ?[]u8 = null;
-    const out = try closeUseCaseWithPrograms(a, testing.io, .{ .gh = gh }, fx.root, "893", "github", &detail);
+    const out = try closeUseCaseWithPrograms(a, testing.io, .{ .gh = gh }, fx.root(), "893", "github", &detail);
     defer {
         a.free(out.status.provider);
         a.free(out.status.pr_url);
@@ -398,18 +432,17 @@ test "close: an exit 0 that did NOT close is closed:false with the forge's own a
 }
 
 test "close: a failing close surfaces the CLI's stderr" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
 
-    const argv_file = try std.fmt.allocPrint(a, "{s}/argv", .{fx.root});
+    const argv_file = try std.fmt.allocPrint(a, "{s}/argv", .{fx.root()});
     defer a.free(argv_file);
     const gh = try ghScript(&fx, argv_file, 1, "HTTP 403: Resource not accessible by integration", CLOSED_VIEW);
     defer a.free(gh);
 
     var detail: ?[]u8 = null;
-    const res = closeUseCaseWithPrograms(a, testing.io, .{ .gh = gh }, fx.root, "893", "github", &detail);
+    const res = closeUseCaseWithPrograms(a, testing.io, .{ .gh = gh }, fx.root(), "893", "github", &detail);
     try testing.expectError(error.CloseFailed, res);
     const d = detail orelse return error.NoDetail;
     defer a.free(d);
@@ -422,7 +455,7 @@ test "close: an empty pr is refused instead of closing the current branch" {
     defer fx.deinit();
 
     var detail: ?[]u8 = null;
-    const res = closeUseCaseWithPrograms(a, testing.io, .{}, fx.root, "", "github", &detail);
+    const res = closeUseCaseWithPrograms(a, testing.io, .{}, fx.root(), "", "github", &detail);
     try testing.expectError(error.ForgeUnsupported, res);
     const d = detail orelse return error.NoDetail;
     defer a.free(d);
@@ -435,6 +468,6 @@ test "close: the generic provider has no CLI to close with" {
     defer fx.deinit();
 
     var detail: ?[]u8 = null;
-    const res = closeUseCaseWithPrograms(a, testing.io, .{}, fx.root, "893", "generic", &detail);
+    const res = closeUseCaseWithPrograms(a, testing.io, .{}, fx.root(), "893", "generic", &detail);
     try testing.expectError(error.ForgeUnsupported, res);
 }

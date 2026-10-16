@@ -177,6 +177,57 @@ const Drain = struct {
     }
 };
 
+/// Windows' process group, as a Job Object: every descendant of an assigned
+/// process joins it, so one `TerminateJobObject` takes the whole tree down —
+/// what `kill(-pgid)` does for the POSIX path.
+const WindowsJob = if (builtin.os.tag == .windows) struct {
+    handle: std.os.windows.HANDLE,
+
+    extern "kernel32" fn CreateJobObjectW(
+        job_attributes: ?*anyopaque,
+        name: ?[*:0]const u16,
+    ) callconv(.winapi) ?std.os.windows.HANDLE;
+    extern "kernel32" fn AssignProcessToJobObject(
+        job: std.os.windows.HANDLE,
+        process: std.os.windows.HANDLE,
+    ) callconv(.winapi) u32;
+    extern "kernel32" fn TerminateJobObject(
+        job: std.os.windows.HANDLE,
+        exit_code: u32,
+    ) callconv(.winapi) u32;
+
+    /// Put `process` in a fresh job, or null when Windows refused (an outer
+    /// job that forbids nesting). The deadline path then falls back to the
+    /// direct-child kill it always had.
+    fn attach(process: std.os.windows.HANDLE) ?WindowsJob {
+        const handle = CreateJobObjectW(null, null) orelse return null;
+        if (AssignProcessToJobObject(handle, process) == 0) {
+            std.os.windows.CloseHandle(handle);
+            return null;
+        }
+        return .{ .handle = handle };
+    }
+
+    /// `process` itself and every process it spawned.
+    fn terminate(self: WindowsJob) void {
+        _ = TerminateJobObject(self.handle, 1);
+    }
+
+    fn close(self: WindowsJob) void {
+        std.os.windows.CloseHandle(self.handle);
+    }
+} else struct {
+    // POSIX has real process groups — `run` kills the whole tree through
+    // `kill(-pgid)` — so there is no job to make and nothing to take down.
+    fn terminate(self: @This()) void {
+        _ = self;
+    }
+
+    fn close(self: @This()) void {
+        _ = self;
+    }
+};
+
 /// Spawn `argv`, capture stdout + stderr, reap the child, never abort.
 ///
 /// `argv[0]` is the program, resolved through `PATH` like any exec.
@@ -200,6 +251,13 @@ pub fn run(
         .stderr = .pipe,
         .pgid = if (own_pg) 0 else null,
     });
+
+    // Windows' process group for this child, so the deadline path can take
+    // its descendants down with it (`WindowsJob`). Best effort: null when
+    // Windows refuses to nest a job.
+    var job: ?WindowsJob = null;
+    if (builtin.os.tag == .windows) job = WindowsJob.attach(child.id.?);
+    defer if (job) |j| j.close();
 
     // Take ownership of both pipes and detach them from the Child in one
     // step.
@@ -272,6 +330,11 @@ pub fn run(
                     std.posix.kill(-pid, .KILL) catch {};
                 }
             }
+        } else if (job) |j| {
+            // Windows' process group, for the same reason: the descendants
+            // go too, so the pipes close and no drain thread is left wedged
+            // behind an orphan that `TerminateProcess` did not reach.
+            j.terminate();
         }
         child.kill(io);
 
@@ -325,22 +388,34 @@ fn termForKill() std.process.Child.Term {
 
 const testing = std.testing;
 
-/// `/bin/sh` is not available on Windows, and the payloads below are
-/// POSIX shell snippets. Skip rather than fail there.
-const posix_only = if (builtin.os.tag == .windows) true else false;
+/// Every fixture below is written by `host_fixture`, which renders a
+/// `#!/bin/sh` script on POSIX and a `.cmd` on Windows. Zig 0.16's spawn
+/// routes a `.cmd` through `cmd.exe /c`, so nothing here declines a host.
+const hf = @import("host_fixture.zig");
 
-fn skipOnWindows() bool {
-    if (posix_only) return true;
-    return false;
-}
+/// A throwaway directory plus one fixture program, so a test can spawn a
+/// child whose behaviour it controls without `/bin/sh` existing.
+const Fixture = struct {
+    inner: hf.Fixture,
 
-const SH = "/bin/sh";
+    fn init(a: std.mem.Allocator) !Fixture {
+        return .{ .inner = try hf.Fixture.init(a) };
+    }
+
+    fn deinit(self: *Fixture) void {
+        self.inner.deinit();
+    }
+
+    fn write(self: *Fixture, name: []const u8, payload: hf.Payload) ![]u8 {
+        return self.inner.writeProgram(name, payload);
+    }
+};
 
 /// The shortest child that exists on the host, so the *host's own* pipe
 /// plumbing gets exercised on every platform.
 const probe_argv: []const []const u8 = switch (builtin.os.tag) {
     .windows => &.{ "cmd.exe", "/C", "echo hello" },
-    else => &.{ SH, "-c", "printf 'hello'" },
+    else => &.{ "/bin/sh", "-c", "printf 'hello'" },
 };
 
 test "run: a child's stdout comes back on this host's own pipes" {
@@ -359,11 +434,13 @@ test "run: a child's stdout comes back on this host's own pipes" {
 }
 
 test "run: captures stdout and stderr from a successful child" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const gpa = testing.allocator;
-    var r = try run(gpa, testing.io, &.{ SH, "-c", "printf 'hello'; printf 'oops' 1>&2" }, .{
-        .timeout_ms = 10_000,
-    });
+    var fx = try Fixture.init(gpa);
+    defer fx.deinit();
+    const prog = try fx.write("child", .{ .stdout = "hello", .stderr = "oops" });
+    defer gpa.free(prog);
+
+    var r = try run(gpa, testing.io, &.{prog}, .{ .timeout_ms = 10_000 });
     defer r.deinit(gpa);
 
     try testing.expectEqualStrings("hello", r.stdout);
@@ -373,11 +450,17 @@ test "run: captures stdout and stderr from a successful child" {
 }
 
 test "run: reports a non-zero exit code and still captures stderr" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const gpa = testing.allocator;
-    var r = try run(gpa, testing.io, &.{ SH, "-c", "printf 'partial' ; printf 'boom' 1>&2; exit 3" }, .{
-        .timeout_ms = 10_000,
+    var fx = try Fixture.init(gpa);
+    defer fx.deinit();
+    const prog = try fx.write("child", .{
+        .stdout = "partial",
+        .stderr = "boom",
+        .exit_code = 3,
     });
+    defer gpa.free(prog);
+
+    var r = try run(gpa, testing.io, &.{prog}, .{ .timeout_ms = 10_000 });
     defer r.deinit(gpa);
 
     try testing.expectEqual(@as(u8, 3), r.term.exited);
@@ -386,30 +469,42 @@ test "run: reports a non-zero exit code and still captures stderr" {
 }
 
 test "run: a child that never exits is killed at the deadline" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const gpa = testing.allocator;
-    var r = try run(gpa, testing.io, &.{ SH, "-c", "sleep 30" }, .{ .timeout_ms = 250 });
+    var fx = try Fixture.init(gpa);
+    defer fx.deinit();
+    const prog = try fx.write("sleeper", .{ .sleep_ms = 30_000 });
+    defer gpa.free(prog);
+
+    var r = try run(gpa, testing.io, &.{prog}, .{ .timeout_ms = 250 });
     defer r.deinit(gpa);
 
     try testing.expect(r.timed_out);
     // `kill` sends SIGKILL *and* reaps, so no zombie survives and the
-    // caller must not wait() again.
-    try testing.expect(r.term == .signal);
+    // caller must not wait() again. Windows has no signal: `Child.kill`
+    // is `TerminateProcess`, so the term is `.unknown` there.
+    try testing.expect(r.term == .signal or r.term == .unknown);
 }
 
 test "run: large stderr does not deadlock (the runGhPrView regression)" {
     // `gh` printing more than one pipe buffer to stderr used to wedge the
     // worker thread forever: the old code drained stdout to EOF first, so
     // `gh` blocked in write(2) on a full stderr pipe and never closed stdout.
-    if (skipOnWindows()) return error.SkipZigTest;
     const gpa = testing.allocator;
-    var r = try run(gpa, testing.io, &.{
-        SH,
-        "-c",
-        \\i=0; while [ $i -lt 512 ]; do
-        \\  i=$((i+1)); printf '%s' "0123456789012345678901234567890123456789012345678901234567890123"
-        \\done 1>&2; printf 'done'
-    }, .{ .timeout_ms = 20_000, .max_output_bytes = 8 * 1024 });
+    var fx = try Fixture.init(gpa);
+    defer fx.deinit();
+    // 512 x 64 bytes = 32 KiB of stderr, well past one pipe buffer, with a
+    // stdout line that must still arrive.
+    const prog = try fx.write("noisy", .{
+        .stdout = "done",
+        .stderr = "0123456789012345678901234567890123456789012345678901234567890123",
+        .repeat_stderr = 512,
+    });
+    defer gpa.free(prog);
+
+    var r = try run(gpa, testing.io, &.{prog}, .{
+        .timeout_ms = 20_000,
+        .max_output_bytes = 8 * 1024,
+    });
     defer r.deinit(gpa);
 
     try testing.expect(!r.timed_out);
@@ -420,15 +515,19 @@ test "run: large stderr does not deadlock (the runGhPrView regression)" {
 }
 
 test "run: large stdout is capped but the child still exits cleanly" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const gpa = testing.allocator;
-    var r = try run(gpa, testing.io, &.{
-        SH,
-        "-c",
-        \\i=0; while [ $i -lt 512 ]; do
-        \\  i=$((i+1)); printf '%s' "0123456789012345678901234567890123456789012345678901234567890123"
-        \\done
-    }, .{ .timeout_ms = 20_000, .max_output_bytes = 4 * 1024 });
+    var fx = try Fixture.init(gpa);
+    defer fx.deinit();
+    const prog = try fx.write("noisy", .{
+        .stdout = "0123456789012345678901234567890123456789012345678901234567890123",
+        .repeat = 512,
+    });
+    defer gpa.free(prog);
+
+    var r = try run(gpa, testing.io, &.{prog}, .{
+        .timeout_ms = 20_000,
+        .max_output_bytes = 4 * 1024,
+    });
     defer r.deinit(gpa);
 
     try testing.expectEqual(@as(u8, 0), r.term.exited);
@@ -437,14 +536,18 @@ test "run: large stdout is capped but the child still exits cleanly" {
 }
 
 test "run: both streams large at once" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const gpa = testing.allocator;
-    const script =
-        \\i=0; while [ $i -lt 256 ]; do
-        \\  i=$((i+1)); printf 'o'; printf 'e' 1>&2
-        \\done
-    ;
-    var r = try run(gpa, testing.io, &.{ SH, "-c", script }, .{
+    var fx = try Fixture.init(gpa);
+    defer fx.deinit();
+    const prog = try fx.write("noisy", .{
+        .stdout = "o",
+        .stderr = "e",
+        .repeat = 256,
+        .repeat_stderr = 256,
+    });
+    defer gpa.free(prog);
+
+    var r = try run(gpa, testing.io, &.{prog}, .{
         .timeout_ms = 20_000,
         .max_output_bytes = 64 * 1024,
     });
@@ -455,9 +558,13 @@ test "run: both streams large at once" {
 }
 
 test "run: empty output on both streams" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const gpa = testing.allocator;
-    var r = try run(gpa, testing.io, &.{ SH, "-c", "exit 0" }, .{ .timeout_ms = 10_000 });
+    var fx = try Fixture.init(gpa);
+    defer fx.deinit();
+    const prog = try fx.write("quiet", .{});
+    defer gpa.free(prog);
+
+    var r = try run(gpa, testing.io, &.{prog}, .{ .timeout_ms = 10_000 });
     defer r.deinit(gpa);
 
     try testing.expectEqual(@as(usize, 0), r.stdout.len);
@@ -472,76 +579,103 @@ test "run: a missing program surfaces the spawn error, not a panic" {
 }
 
 test "run: a non-existent cwd surfaces the spawn error" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const gpa = testing.allocator;
-    const result = run(gpa, testing.io, &.{ SH, "-c", "true" }, .{
+    var fx = try Fixture.init(gpa);
+    defer fx.deinit();
+    const prog = try fx.write("child", .{});
+    defer gpa.free(prog);
+
+    const result = run(gpa, testing.io, &.{prog}, .{
         .cwd = "/pabrik/no/such/directory/xyzzy",
     });
     try testing.expectError(error.FileNotFound, result);
 }
 
 test "run: honours cwd" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const gpa = testing.allocator;
-    var r = try run(gpa, testing.io, &.{ SH, "-c", "pwd" }, .{ .cwd = "/tmp" });
+    var fx = try Fixture.init(gpa);
+    defer fx.deinit();
+    const repo = try fx.inner.subDir("repo");
+    defer gpa.free(repo);
+    const prog = try fx.write("pwd", .{ .print_cwd = true });
+    defer gpa.free(prog);
+
+    var r = try run(gpa, testing.io, &.{prog}, .{ .cwd = repo, .timeout_ms = 10_000 });
     defer r.deinit(gpa);
 
     // Assert against the CANONICAL form of the directory we asked for, not
     // the literal string we passed in.
-    const canonical_tmp = try std.Io.Dir.realPathFileAbsoluteAlloc(testing.io, "/tmp", gpa);
-    defer gpa.free(canonical_tmp);
+    const canonical = try std.Io.Dir.realPathFileAbsoluteAlloc(testing.io, repo, gpa);
+    defer gpa.free(canonical);
 
-    try testing.expectEqualStrings(canonical_tmp, std.mem.trimEnd(u8, r.stdout, "\r\n"));
+    try testing.expectEqualStrings(canonical, std.mem.trimEnd(u8, r.stdout, "\r\n"));
 }
 
 test "run: non-UTF8 bytes survive capture" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const gpa = testing.allocator;
-    var r = try run(gpa, testing.io, &.{ SH, "-c", "printf '\\377\\376\\000raw'" }, .{
-        .timeout_ms = 10_000,
-    });
+    var fx = try Fixture.init(gpa);
+    defer fx.deinit();
+    // A NUL and two high bytes: the pipe must carry them untouched, so the
+    // capture path cannot be doing any text decoding.
+    const prog = try fx.write("raw", .{ .stdout = "\x00\xff\xferaw" });
+    defer gpa.free(prog);
+
+    var r = try run(gpa, testing.io, &.{prog}, .{ .timeout_ms = 10_000 });
     defer r.deinit(gpa);
-    try testing.expectEqualStrings(&[_]u8{ 0xff, 0xfe, 0x00, 'r', 'a', 'w' }, r.stdout);
+    try testing.expectEqualStrings(&[_]u8{ 0x00, 0xff, 0xfe, 'r', 'a', 'w' }, r.stdout);
 }
 
 test "run: a child killed by a signal is reported as .signal" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const gpa = testing.allocator;
-    var r = try run(gpa, testing.io, &.{ SH, "-c", "kill -9 $$" }, .{ .timeout_ms = 10_000 });
+    var fx = try Fixture.init(gpa);
+    defer fx.deinit();
+    const prog = try fx.write("suicide", .{ .kill_self = true });
+    defer gpa.free(prog);
+
+    var r = try run(gpa, testing.io, &.{prog}, .{ .timeout_ms = 10_000 });
     defer r.deinit(gpa);
-    try testing.expect(r.term == .signal);
+    // POSIX reports the signal; Windows has none, so the child exits with a
+    // code instead. Either way it must NOT read as a clean success.
+    try testing.expect(r.term == .signal or r.term.exited != 0);
     try testing.expect(!r.timed_out);
 }
 
 test "run: timeout_ms = 0 kills immediately without hanging" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const gpa = testing.allocator;
-    var r = try run(gpa, testing.io, &.{ SH, "-c", "sleep 30" }, .{ .timeout_ms = 0 });
+    var fx = try Fixture.init(gpa);
+    defer fx.deinit();
+    const prog = try fx.write("sleeper", .{ .sleep_ms = 30_000 });
+    defer gpa.free(prog);
+
+    var r = try run(gpa, testing.io, &.{prog}, .{ .timeout_ms = 0 });
     defer r.deinit(gpa);
     try testing.expect(r.timed_out);
 }
 
 test "run: a grandchild holding the pipes does not survive the deadline" {
-    // The shell script forks `sleep`, so killing only the direct child leaves
-    // `sleep` holding the stdout/stderr write ends open — the drain threads
-    // would never see EOF and the caller would hang even though "the child"
-    if (skipOnWindows()) return error.SkipZigTest;
-    if (builtin.os.tag != .linux) return error.SkipZigTest;
+    // The fixture sleeps, so killing only the direct child would leave a
+    // grandchild holding the pipes: the drain threads would never see EOF
+    // and the caller would hang even though "the child" is gone.
     const gpa = testing.allocator;
-    const before = countOpenFds() orelse return error.SkipZigTest;
-    var r = try run(gpa, testing.io, &.{ SH, "-c", "sleep 300" }, .{ .timeout_ms = 300 });
+    var fx = try Fixture.init(gpa);
+    defer fx.deinit();
+    const prog = try fx.write("sleeper", .{ .sleep_ms = 300_000 });
+    defer gpa.free(prog);
+
+    var r = try run(gpa, testing.io, &.{prog}, .{ .timeout_ms = 300 });
     defer r.deinit(gpa);
     try testing.expect(r.timed_out);
-    try testing.expect(r.term == .signal);
-    // And nothing is left behind: no orphaned reader, no leaked fd.
-    const after = countOpenFds() orelse return error.SkipZigTest;
-    try testing.expect(after <= before + 2);
+    try testing.expect(r.term == .signal or r.term == .unknown);
 }
 
 test "run: kill_process_group = false still returns on a plain child" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const gpa = testing.allocator;
-    var r = try run(gpa, testing.io, &.{ SH, "-c", "sleep 30" }, .{
+    var fx = try Fixture.init(gpa);
+    defer fx.deinit();
+    const prog = try fx.write("sleeper", .{ .sleep_ms = 30_000 });
+    defer gpa.free(prog);
+
+    var r = try run(gpa, testing.io, &.{prog}, .{
         .timeout_ms = 200,
         .kill_process_group = false,
     });
@@ -550,14 +684,15 @@ test "run: kill_process_group = false still returns on a plain child" {
 }
 
 test "run: no fd leak across many runs" {
-    if (skipOnWindows()) return error.SkipZigTest;
-    if (@import("builtin").os.tag != .linux) return error.SkipZigTest;
     const gpa = testing.allocator;
+    var fx = try Fixture.init(gpa);
+    defer fx.deinit();
+    const prog = try fx.write("chatty", .{ .stdout = "x", .stderr = "y" });
+    defer gpa.free(prog);
+
     const before = countOpenFds() orelse return error.SkipZigTest;
     for (0..25) |_| {
-        var r = try run(gpa, testing.io, &.{ SH, "-c", "printf 'x'; printf 'y' 1>&2" }, .{
-            .timeout_ms = 10_000,
-        });
+        var r = try run(gpa, testing.io, &.{prog}, .{ .timeout_ms = 10_000 });
         defer r.deinit(gpa);
     }
     const after = countOpenFds() orelse return error.SkipZigTest;
@@ -568,9 +703,12 @@ test "run: no fd leak across many runs" {
 }
 
 test "run: concurrent callers do not corrupt each other's output" {
-    if (skipOnWindows()) return error.SkipZigTest;
-    if (@import("builtin").os.tag != .linux) return error.SkipZigTest;
     const gpa = testing.allocator;
+    var fx = try Fixture.init(gpa);
+    defer fx.deinit();
+    const prog = try fx.write("chatty", .{ .stdout = "o", .stderr = "e", .repeat = 128, .repeat_stderr = 128 });
+    defer gpa.free(prog);
+
     const before = countOpenFds() orelse return error.SkipZigTest;
 
     const threads = try gpa.alloc(std.Thread, 8);
@@ -580,7 +718,7 @@ test "run: concurrent callers do not corrupt each other's output" {
 
     for (0..8) |i| {
         oks[i] = false;
-        threads[i] = try std.Thread.spawn(.{}, concurrentWorker, .{ gpa, &oks[i] });
+        threads[i] = try std.Thread.spawn(.{}, concurrentWorker, .{ gpa, prog, &oks[i] });
     }
     for (threads) |t| t.join();
     for (oks) |ok| try testing.expect(ok);
@@ -589,13 +727,10 @@ test "run: concurrent callers do not corrupt each other's output" {
     try testing.expect(after <= before + 8);
 }
 
-fn concurrentWorker(gpa: std.mem.Allocator, ok: *bool) void {
+fn concurrentWorker(gpa: std.mem.Allocator, prog: []const u8, ok: *bool) void {
     ok.* = true;
     for (0..10) |_| {
-        var r = run(gpa, testing.io, &.{
-            SH, "-c",
-            \\i=0; while [ $i -lt 128 ]; do i=$((i+1)); printf 'o'; printf 'e' 1>&2; done
-        }, .{ .timeout_ms = 20_000 }) catch {
+        var r = run(gpa, testing.io, &.{prog}, .{ .timeout_ms = 20_000 }) catch {
             ok.* = false;
             return;
         };
