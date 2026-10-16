@@ -98,23 +98,37 @@ change.
     `yellow-400` is not in this theme; `--color-yellow` is `#c4b28a`.
     *Fix:* the token.
 
-13. **The project label sits at 41.5, not at 28.5 with the section titles.** `ProjectsList.vue:449` adds
-    `ml-[var(--sb-indent)]` and a `border-l` on top of the row's own `px-[var(--sb-gutter)]`, which the
-    comment at `WorkspaceItem.vue:510` promising "the project name at 28, matching the section titles"
-    does not count.
-    *Fix:* the projects list loses its indent and its rail entirely. A project row uses the same mark
-    column and the same label edge as every other row in the panel, and the nesting is carried by order and
-    by the header it sits under. See the wireframe's first decision for why flattening beats indenting,
-    and for the cost.
+13. **The projects list and the documents list sit on a 12px left margin, so their rows are inset 13px
+    while a RECENT row is flush.** Measured in the wireframe's two crops: project and document rows have a
+    box of `[13..288]`, RECENT rows `[0..288]`. That strip runs down the whole of both sections and stops
+    dead at RECENT, and it shows again in a selected project's background, which begins where the margin
+    ends. It is the most visible inconsistency in the panel and it is one line in each file.
+    `ProjectsList.vue:449`, `DocumentsList.vue:194`.
+    *Fix:* no margin on either list. Every row's box becomes `[0..288]`, so a selected project's background
+    spans the panel exactly as a selected chat's does. The label still sits at 28, because the mark column
+    puts it there, not a margin pushing the row right.
 
-14. **The projects list draws a 1px rule down its left edge**, from the first project to the last, and a
+14. **The project label sits at 41.5, not at 28.5 with the section titles.** The same `ml-[var(--sb-indent)]`
+    plus `border-l` on top of the row's own `px-[var(--sb-gutter)]`, which the comment at
+    `WorkspaceItem.vue:510` promising "the project name at 28, matching the section titles" does not count.
+    *Fix:* with the margin gone the chevron sits at 12 and the name at 28, on the section title's edge.
+
+15. **The same two lists draw a 1px rule down their left edge**, from the first project to the last, and a
     project's task list draws the same rule again. It is the hairline divider the app's own house style
     bans, and together with the indent it is what makes the left of the tree read as a second column.
     `ProjectsList.vue:449`, `DocumentsList.vue:194`, `WorkspaceItem.vue:613` and `:725`.
     *Fix:* delete every one of them. Nesting is carried by the label column and the row order, not by a
     rule. Nothing in the panel draws a vertical line.
 
-15. **The left rail is four edges.** Measured: the section chevron's ink at 10.5, a chat label at 12, the
+16. **The expanded projects block carries 8px of padding under its last row and 6px of top margin on its
+    first**, and a project's own task and design-page lists repeat the whole pattern a level down (a 12px
+    margin, a 12px padding and a rule, which lands a task's label at 57). `ProjectsList.vue:435` and `:466`,
+    `WorkspaceItem.vue:613` and `:725`.
+    *Fix:* the block has no space of its own and no margin, and a task inside a project takes no step
+    either: its mark sits at 12 and its label at 28, the same two columns as everything else. The section's
+    whole rhythm is the header's 28px and the row's 32px.
+
+17. **The left rail is four edges.** Measured: the section chevron's ink at 10.5, a chat label at 12, the
     New Chat glyph centred in a 24px hit box with its ink at 19.4 and its label at 44, a project name at
     41.5. `Sidebar.vue:1155`.
     *Fix:* two columns for the whole panel. The mark column is 16px at the gutter (12 to 28) and holds at
@@ -143,63 +157,73 @@ label except the label.
 [count, text-micro dim 0.7 tabular] [ml-auto: optional one action, 24x24, glyph text-meta, dim 0.7]`.
 The header itself is not a button and contains no button.
 
-**Columns.** Two, for the whole panel: the mark column at `--sb-gutter` (12) and the label column at
-28. Every row uses both whether or not it has a mark, so no row starts further right than another and the
-panel never opens an empty strip. A third level, a task under an expanded project, takes one step of
-`--sb-indent` (raised from 12 to 16) applied to the row itself, so its mark column sits at 28 and its
-label at 44. No vertical rule is drawn anywhere; the step is the whole nesting cue, and the indented row's
-own mark column makes it read as a step rather than as a gap.
+**Columns.** Two, for the whole panel, at every depth: the mark column at `--sb-gutter` (12) and the
+label column at 28. Every row uses both whether or not it has a mark, so no row starts further right than
+another and the panel never opens an empty strip. Nothing indents, not a project, not a task under a
+project, not a document, so the panel stops using `--sb-indent` altogether: the only nesting cue is a row's
+order under the header it belongs to. No vertical rule is drawn anywhere either.
 
 **Selected.** `--semantic-active-bg` on `--semantic-active-text` plus `inset 2px 0 0 0 var(--color-violet)`,
 for every row kind.
 
 ## Implementation order
 
-1. `style.css`: `--sb-indent` 12 to 16. Nothing else moves until the tree columns are honest.
-2. Extract the chat row into one component (`components/rows/SidebarRow.vue`, taking label, marks, meta
-   and a `data-testid`), and point both `ChatsList` sections at it. No visual change yet.
+1. Delete the 12px left margin and the 1px left border from the projects list and the documents list
+   (`ProjectsList.vue:449`, `DocumentsList.vue:194`), the 8px of trailing padding (`:435`) and the first
+   row's 6px top margin (`:466`). One edit per file, needing nothing else, and it removes the strip that
+   prompted the whole review: every row's box goes from `[13..288]` to `[0..288]`. Land it on its own so it
+   can be seen before anything else moves.
+2. Extract the chat row into one component (`components/rows/SidebarRow.vue`, taking label, marks, meta and
+   a `data-testid`), and point both `ChatsList` sections at it. No visual change.
 3. Rewrite the four headers to the container-plus-chevron-button shape. Delete the wrapper `<button>`.
 4. Move the branch badge out of the label into the mark column, and the status mark and the sub-agent
    suffix into the trailing group.
 5. Swap the sidebar's elapsed chip to `variant="text"` and set that variant to `--text-micro`. Check
    `KanbanTaskRow.vue:318`.
 6. Unify the counts and the running group; align the four headers.
-7. `WorkspaceItem.vue`: token pair for the selected row; drop the list's margin and rail so a project row
-   shares the panel's two columns. `WorkspaceItemTaskRow.vue`: the yellow token, and the one indent step
-   plus the rail at 28 for the third level.
-8. `DocumentsList.vue`: same row grammar, and drop the list's rule so no document list carries one
-   either.
-9. `Sidebar.vue`: New Chat's glyph and label onto the shared columns.
+7. `WorkspaceItem.vue`: the token pair for the selected row, and drop the margin and the rule from the
+   project list, its task list (`:613`) and its design-page list (`:725`) so all three levels share the
+   panel's two columns. `WorkspaceItemTaskRow.vue`: the yellow token, and no indent step.
+8. `DocumentsList.vue`: the same row grammar, and no rule on the list.
+9. `Sidebar.vue`: New Chat's glyph and its label onto the shared columns.
 
-Steps 2 and 3 are separable from the visual work and can land first, on their own, with no pixel change:
-that is the safest way to review this.
+Steps 2 and 3 change no pixel and can land first, on their own: that is the safest way to review this.
+Nothing here needs `--sb-indent`, so the panel stops using that token; leave the token in `style.css`, since
+other surfaces may read it and a token that is still declared is cheaper than a second migration.
 
 ## Tests
 
-`Sidebar.spacing.spec.ts` stays for the token values, but it cannot see any of the fifteen findings, so
-the fix needs a rendered guard. One file, `__tests__/Sidebar.rowGrammar.spec.ts`, mounting the sidebar
-against a fixture with one pinned chat, one running chat, one chat with a branch and an open PR, one
-project with a task, one document, and one selected chat. Behaviours, one per test:
+`Sidebar.spacing.spec.ts` stays for the token values, but it is a source scan, so it cannot see any of the
+seventeen findings. The fix needs a rendered guard: one file, `__tests__/Sidebar.rowGrammar.spec.ts`,
+mounting the sidebar against a fixture with one pinned chat, one running chat, one chat with a branch and
+an open PR, one project with a task, one document, and one selected chat. Behaviours, one per test:
 
-- `gives every chat row the panel's row height`
+- `gives every list row the panel's row height`
 - `starts every label in the panel at the same left offset`
 - `keeps a chat label on that offset whether or not the chat has a branch`
-- `puts a project name one indent step right of a section title`
+- `gives a project, a task inside it and a document the same label offset as a chat`
+- `starts every row's box at the panel's left edge, with no margin on any list`
+- `draws no vertical rule in the panel`
 - `renders a count on every section header`
 - `keeps every header control on the panel's right action edge`
 - `nests no button inside a button`
 - `gives a chat row and a project row the same selected background`
 - `renders the elapsed time and the relative time at the same font size and weight`
 
-Each asserts a measured box, not a class string, so a rename or a class reshuffle stays green while a
-drift goes red. Add a deliberately-failing control run once (drop the branch badge back into the label)
-to prove the label-offset test is not vacuous.
+Each asserts a measured box, not a class string, so a rename or a class reshuffle stays green while a drift
+goes red. Add one deliberate mutation (put the branch badge back inside the label) to prove the label-offset
+test is not vacuous.
 
 ## Risks
 
-- Flattening the projects list moves a project row's mark left by 13px and every chat and document label
-  right by 16px. Anything asserting an absolute x, in a spec or a functional UI test, needs the new
-  number. Grep for `41.5`, for `sb-indent`, for `border-l` and for the 12px label offset before starting.
+- Flattening the panel moves a project row's mark left by 13px, a task row's label left by 29px, and every
+  chat and document label right by 16px. Anything asserting an absolute x, in a spec or a functional UI
+  test, needs the new number. Grep for `41.5`, for `57`, for `sb-indent`, for `border-l` and for the 12px
+  label offset before starting.
+- With nothing indenting, a project and the tasks under it share a label edge. That is the point of the
+  change, and it does mean the only cue that a task belongs to the project above it is its order. If that
+  reads badly on screen, one `--sb-indent` step for the third level is the smallest thing to add back, and
+  it is the first of the wireframe's flip-able decisions.
 - Moving the branch badge changes a right-click target's position. The context menu and its test ids stay;
   only the anchor moves, and it is now always the row's mark column, so its x is constant across rows.
 - `WorkerElapsedChip`'s `--text` variant change touches `KanbanTaskRow.vue:318`. Verify that row's slot

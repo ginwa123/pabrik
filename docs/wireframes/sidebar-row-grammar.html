@@ -327,6 +327,14 @@
         color: #fff;
       }
 
+      [data-ui] .trunc {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+
       [data-ui] .label {
         flex: 1;
         min-width: 0;
@@ -406,16 +414,38 @@
         color: var(--muted);
       }
 
-      /* Today: the list adds a 12px margin and a 1px rail on top of the row's
-         own 12px gutter, so the chevron lands at 25 and the name at 41.5. */
+      /* Today: the list itself carries a 12px left margin and a 1px rail, on top
+         of the row's own 12px gutter, so a project row's box starts at 13 and its
+         chevron lands at 25. The block also pads 8px under its last row, and its
+         first row is pushed down 6px. */
       [data-ui] .rail-old {
+        position: relative;
+        margin-left: 12px;
+        border-left: 1px solid var(--border);
+        padding-bottom: 8px;
+      }
+
+      /* The documents list carries the same 12px margin and rail as projects, so
+         its rows are inset to 13 and their titles land at 25. */
+      [data-ui] .rail-doc {
         position: relative;
         margin-left: 12px;
         border-left: 1px solid var(--border);
       }
 
-      [data-ui] .deep2 {
-        padding-left: 28px;
+      [data-ui] .docrow {
+        display: flex;
+        align-items: center;
+        height: 32px;
+        padding: 0 12px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      /* The hardcoded selected pair a project row uses today. */
+      [data-ui] .prow.sel-hc {
+        background: #2e2d29;
+        color: #fff;
       }
 
       /* Declared after .sect / .row / .newchat so it wins the gap. */
@@ -620,7 +650,7 @@
                 <span class="sact first">+</span>
               </div>
               <div class="rail-old" data-rail="today">
-                <div class="prow">
+                <div class="prow sel-hc" style="margin-top: 6px">
                   <span class="chev">&#9660;</span><span class="label">pabrik</span>
                   <span class="meta"><span class="chip">22m 46s</span></span>
                 </div>
@@ -631,10 +661,15 @@
 
               <div class="sect">
                 <span class="chev">&#9654;</span><span class="stitle">Documents</span>
-                <span class="scount">0</span>
+                <span class="scount">4</span>
                 <span class="sact first">+</span>
               </div>
-              <div class="empty">No documents yet</div>
+              <div class="rail-doc">
+                <div class="docrow"><span class="trunc">models.dev catalog + profile editor</span></div>
+                <div class="docrow"><span class="trunc">Plan: simplify the Settings editor</span></div>
+                <div class="docrow"><span class="trunc">Plan: move Profiles into Workspace sett&#8230;</span></div>
+                <div class="docrow"><span class="trunc">Markdown</span></div>
+              </div>
 
               <div class="ruler"><span style="left: 12px">12</span><span style="left: 28.5px">28.5</span><span style="left: 41.5px">41.5</span><span style="left: 44px">44</span></div>
             </div>
@@ -707,18 +742,28 @@
               <code>WorkspaceItem.vue:510</code>.
             </li>
             <li>
-              <span class="num">&#9325;</span> The projects list draws a 1px rule down its left edge, from
-              the first project to the last, which is the hairline divider the app's own house style bans
-              outright and the reason the left of the tree reads as a second column. It is a left border
-              on the list element itself, not on a row. <code>ProjectsList.vue:449</code>, and the same
-              device again on a project's task list at <code>WorkspaceItem.vue:613</code>.
-            </li>
-            <li>
               <span class="num">&#9323;</span> Pinned draws its separating rule under its rows, so the rule
               moves when the section expands, where the other three draw it under the header.
               <code>ChatsList.vue:1096</code> against <code>1274</code>. The spacing spec pins Recent,
               Projects and Documents, so Pinned is the one header nothing guards.
               <code>Sidebar.spacing.spec.ts:113</code>.
+            </li>
+            <li>
+              <span class="num">&#9325;</span> The projects list and the documents list each sit on a 12px
+              left margin, so every row inside them starts at <code>13</code> while a RECENT row starts at
+              <code>0</code>. Measured in the crops: project and document rows <code>[13..288]</code>,
+              RECENT rows <code>[0..288]</code>. That 13px strip runs the whole height of both sections and
+              stops dead at RECENT, which is why it reads as a margin that appears halfway down the panel.
+              Select a project and the inset shows again in its highlight, because the background stops
+              where the margin starts. <code>ProjectsList.vue:449</code>,
+              <code>DocumentsList.vue:194</code>.
+            </li>
+            <li>
+              <span class="num">&#9326;</span> The same two lists draw a 1px rule down their left edge, from
+              the first row to the last, which is the hairline divider the app's own house style bans
+              outright and the second half of why the strip reads as its own column. It is a left border on
+              the list element, not on a row. A project's task list does it a third time at
+              <code>WorkspaceItem.vue:613</code>.
             </li>
           </ol>
         </div>
@@ -812,11 +857,11 @@
                   <span class="runind" style="margin-left: auto"><i></i>3 running</span>
                   <span class="sact">+</span>
                 </div>
-                <div class="row tight">
+                <div class="row tight sel">
                   <span class="mark-col chev box16">&#9660;</span><span class="label">pabrik</span>
                   <span class="meta flat"><span style="color: var(--yellow)">22m 46s</span></span>
                 </div>
-                <div class="row tight deep2">
+                <div class="row tight">
                   <span class="mark-col"><span class="dot" style="background: var(--aqua)"></span></span>
                   <span class="label">wear one row grammar</span>
                   <span class="meta flat">3</span>
@@ -837,12 +882,27 @@
 
                 <div class="sect tight">
                   <span class="chev box16">&#9654;</span><span class="stitle">Documents</span>
-                  <span class="scount">0</span>
+                  <span class="scount">4</span>
                   <span class="sact first">+</span>
                 </div>
-                <div class="empty">No documents yet</div>
+                <div class="row tight">
+                  <span class="mark-col" aria-hidden="true"></span>
+                  <span class="label">models.dev catalog + profile editor</span>
+                </div>
+                <div class="row tight">
+                  <span class="mark-col" aria-hidden="true"></span>
+                  <span class="label">Plan: simplify the Settings editor</span>
+                </div>
+                <div class="row tight">
+                  <span class="mark-col" aria-hidden="true"></span>
+                  <span class="label">Plan: move Profiles into Workspace sett&#8230;</span>
+                </div>
+                <div class="row tight">
+                  <span class="mark-col" aria-hidden="true"></span>
+                  <span class="label">Markdown</span>
+                </div>
 
-                <div class="ruler"><span style="left: 12px">12</span><span style="left: 28px">28</span><span style="left: 44px">44</span></div>
+                <div class="ruler"><span style="left: 12px">mark 12</span><span style="left: 28px">label 28</span></div>
               </div>
               <div class="edge" aria-hidden="true"></div>
             </div>
@@ -969,28 +1029,64 @@
 
           <h3>One set of columns</h3>
           <p>
-            Two columns, and one step. The mark column is 16px at the gutter, so it runs 12 to 28 and every
-            label in the panel starts at 28: a section title, a chat, a document, a project. That is what
-            makes the panel read as one list rather than as four lists that happen to share an edge. The
-            indent step stays for a third level, a task under an expanded project, and it is applied to the
-            row itself rather than to a wrapper, so the mark column sits at 28 and the task's label at 44.
-            There is no vertical rule anywhere in the panel: a line down the left of a list is the hairline
-            divider the app's house style bans, and the label column plus the row order already carry the
-            nesting without it.
+            Two columns, at every depth, with no step between them. The mark column is 16px at the gutter,
+            so it runs 12 to 28, and every label in the panel starts at 28: a section title, a chat, a
+            document, a project, and a task under a project. Nothing indents, so nothing opens a strip, and
+            the panel reads as one list rather than as four that happen to share an edge. What nesting there
+            is, is carried by order and by the header a row sits under. No vertical rule is drawn anywhere:
+            a line down the left of a list is the hairline divider the app's house style bans.
           </p>
         </div>
       </div>
 
+      <h2>Margins and rules removed</h2>
+      <p>
+        Read off the two crops, in pixels, at the panel's left edge. The row box is the clickable box, so
+        this is also where a hover or selected background begins and ends.
+      </p>
+      <div class="panel">
+        <ul>
+          <li>
+            <strong>12px left margin on the list</strong> (<code>ProjectsList.vue:449</code>,
+            <code>DocumentsList.vue:194</code>). Measured: a project or document row's box is
+            <code>[13..288]</code> while a RECENT row's is <code>[0..288]</code>. Removed: every row's box
+            becomes <code>[0..288]</code>, and a selected row's background spans the panel.
+          </li>
+          <li>
+            <strong>1px left border on the same two lists</strong> (<code>ProjectsList.vue:449</code>,
+            <code>DocumentsList.vue:194</code>, and a project's task list at
+            <code>WorkspaceItem.vue:613</code>). Measured: one vertical rule in the panel. Removed: zero.
+          </li>
+          <li>
+            <strong>8px of padding under the last project row</strong>
+            (<code>ProjectsList.vue:435</code>). Measured: 8px between the last row's box and the block's
+            end. Removed, so the section's rhythm is the header's 28px and the row's 32px alone.
+          </li>
+          <li>
+            <strong>6px of top margin on the first project row</strong>
+            (<code>ProjectsList.vue:466</code>). Removed for the same reason.
+          </li>
+          <li>
+            <strong>The same pattern a level down</strong> (<code>WorkspaceItem.vue:613</code> and
+            <code>:725</code>): a 12px left margin, a 12px left padding and a 1px rule on a project's task
+            and design-page lists. Measured in the crop: a nested task's mark sits at <code>12</code> and
+            its label at <code>28</code>, the same two columns as every other row. Removed: the margin and
+            the rule, and no step replaces them.
+          </li>
+        </ul>
+      </div>
+
       <h2>Decisions a reviewer can flip</h2>
       <dl class="decisions">
-        <dt>The projects list is flat: no per-depth indent for a project, and one label edge at 28.</dt>
+        <dt>Nothing indents. Not a project, not a task under a project, not a document.</dt>
         <dd>
           The first cut indented the projects list by a step and a rail, which put the project chevron at 28
-          and the name at 44 and opened a 24px empty strip down the left of the tree. That strip reads as a
-          broken column, not as nesting, so the indent is gone: a project row now looks like a section row,
-          chevron in the mark column and name at 28, and the nesting is carried by order and by the header it
-          sits under. The cost is 16px of label width on the chat and document rows, which started at 12.
-          Flip this back if nesting needs a visible step more than one label edge is worth.
+          and the name at 44 and opened a 24px empty strip down the left of the tree. The second kept one
+          step for a task inside a project. Both are gone: every row in the panel shares the same two
+          columns, so the only thing that changes from row to row is the label. The cost is 16px of label
+          width on the chat and document rows, which used to start at 12, and any visible step between a
+          project and the tasks inside it, which now have to be read from their order under it. Flip this if
+          nesting needs a visible step more than flatness is worth.
         </dd>
         <dt>The branch badge goes in the mark column, not the trailing group.</dt>
         <dd>
@@ -1044,7 +1140,7 @@
           <code>inspect.mjs</code> at 1440, 768 and 390: <strong>4 interface fragments</strong>, each
           measured at 320 by 284 to 675, so all four count toward the picture floor. The panel inside each
           crop measures exactly 288px. Body 16px at 1.6 leading, headline 2 lines at every width, no
-          horizontal overflow, 8.3 screens.
+          horizontal overflow, 9.3 screens.
         </p>
         <p><strong>Result: 1 FAIL, 3 WARN.</strong> All four are in the class a spec document cannot honestly satisfy, and each is answered below rather than hidden from the meter.</p>
         <ul>
@@ -1080,13 +1176,14 @@
             badge start 20px further right than the five that do not, which is the jitter, measured.
           </li>
           <li>
-            After, every label in the crop: <code>28</code> eleven times, and <code>44</code> once, for the
-            nested task row. The branch badge moved into the mark column and the jitter is gone.
+            After, every label in the crop: <code>28</code>, every one of them. The branch badge moved into
+            the mark column, the indent is gone, and the jitter with it.
           </li>
-          <li>Before, project name <code>41.5</code> and section title <code>28.5</code>: exactly what the live app renders. After: project name <code>28</code>, on the same edge as every other label, and a nested task at <code>44</code>.</li>
-          <li>Before, a project row's leftmost ink is its chevron at <code>25</code>, and the list's rail runs at <code>13</code>, so 13 to 25 is empty on every project row. After, a project row's leftmost ink is at <code>12</code>: the gutter, the same edge a section chevron uses.</li>
-          <li>Marks that exist in the proposed panel, by x: <code>12</code> ten times, and <code>28</code> for the nested task row. Marks are the only thing in that column; a row without one leaves it empty, which is what buys the single label edge.</li>
-          <li>After, every row in the crop measures <code>32</code>px, the row token, with the nested task's mark at <code>28</code> and its label at <code>44</code>.</li>
+          <li>Before, project name <code>41.5</code> and section title <code>28.5</code>: exactly what the live app renders. After: <code>28</code> for a project name, a document title, a section title, a chat and a nested task alike.</li>
+          <li>Row boxes, before: project rows <code>[13..288]</code>, document rows <code>[13..288]</code>, RECENT rows <code>[0..288]</code>. After: all seventeen rows <code>[0..288]</code> with a left margin of <code>0</code>.</li>
+          <li>The selected row's background, before: <code>[13..288]</code> in <code>rgb(46, 45, 41)</code>, the hardcoded pair. After: <code>[0..288]</code> in <code>rgb(40, 39, 39)</code>, <code>--semantic-active-bg</code>.</li>
+          <li>Marks that exist in the proposed panel, by x: <code>12</code>, all nine of them, the nested task's included. Marks are the only thing in that column; a row without one leaves it empty, which is what buys the single label edge.</li>
+          <li>After, every row in the crop measures <code>32</code>px, the row token, at every depth, with its label at <code>28</code>.</li>
           <li>Vertical rules inside the panel: <code>1</code> today, the projects list's rail, and <code>0</code> proposed. Every element in the proposed crop measures a zero left and right border.</li>
           <li>Before, the New Chat label lands at <code>44</code>. After, at <code>28</code>, on the section title's edge.</li>
           <li>Nested buttons in the wireframe: <code>0</code>. The header's own control count is unchanged at three.</li>
