@@ -5325,6 +5325,10 @@ export interface ModelCatalogResponse {
   catalog: ModelCatalogState
   fetched_at_ms: number
   models: ModelCatalogEntry[]
+  /** The last background sync's failure, when it failed. ABSENT when the last
+   * attempt succeeded or none has run yet — so its presence is itself the news. */
+  last_sync_error?: string
+  last_sync_at_ms?: number
 }
 
 export interface ModelResolve {
@@ -5350,6 +5354,11 @@ export interface ModelResolve {
   fetched_at_ms?: number
   /** Present only when the model could not be resolved. */
   reason?: string
+  /** The last sync attempt failed with this error name (e.g. `InvalidPayloadJson`).
+   * Absent otherwise. Without it the UI can only report a state, never a cause —
+   * which is how "no catalog yet" stayed unexplained. */
+  last_sync_error?: string
+  last_sync_at_ms?: number
 }
 
 /** `GET /api/models/catalog` — the model picker's data. Filtered server-side. */

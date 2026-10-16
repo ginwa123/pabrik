@@ -201,9 +201,15 @@ const factWarning = computed<string | null>(() => {
     return 'checking…'
   }
   if (r.source === 'builtin') {
-    return r.catalog === 'absent'
-      ? 'no catalog yet — the built-in 200k window applies'
-      : 'unknown model — the built-in 200k window applies'
+    // An absent catalog has TWO causes, and they are not the same news: nothing
+    // has synced yet (wait), versus every sync FAILING (something is broken and
+    // waiting will not help). The backend names the failure; the line shows it.
+    if (r.catalog === 'absent') {
+      return r.last_sync_error
+        ? `catalog sync failed — ${r.last_sync_error} (the built-in 200k window applies)`
+        : 'no catalog yet — the built-in 200k window applies'
+    }
+    return 'unknown model — the built-in 200k window applies'
   }
   return null
 })

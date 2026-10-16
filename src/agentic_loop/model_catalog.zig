@@ -79,10 +79,21 @@ pub const ModelFacts = struct {
 // ============================================================================
 // models.dev's own payload shape — only the fields pabrik consumes.
 
+/// ONE `reasoning_options` entry. Every field below is deliberately LOOSE: a
+/// strict reading rejected the whole 5.7 MB payload over one hostile row, and an
+/// absent catalog is worse than a slightly incomplete fact about it.
 pub const RawReasoningOption = struct {
     @"type": ?[]const u8 = null,
-    min: ?u32 = null,
-    values: ?[]const []const u8 = null,
+    /// SIGNED on purpose: models.dev writes `-1` for "no minimum" (nvidia
+    /// nemotron-3-nano-omni). Read as `u32` this ONE row failed the whole parse;
+    /// `budgetMinRaw` turns a non-positive minimum into "no minimum".
+    min: ?i64 = null,
+    /// `null` ENTRIES occur, not just a null ARRAY: `sarvam-30b` ships
+    /// `[null,"low","medium","high"]`, which `[]const []const u8` cannot hold.
+    /// The trim skips the nulls instead of failing the parse.
+    values: ?[]const ?[]const u8 = null,
+    // models.dev also sends a `max` (the ceiling, e.g. 32768); pabrik has no use
+    // for it, and `ignore_unknown_fields` drops it.
 };
 
 pub const RawLimit = struct { context: ?u32 = null, output: ?u32 = null };
@@ -438,10 +449,19 @@ pub fn trimRawPayload(alloc: Allocator, body: []const u8, fetched_at_ms: i64) ![
                 try std.json.Stringify.encodeJsonString(reasoningKindName(kind), .{}, w);
 
                 if (effortValuesRaw(rm)) |vals| {
-                    if (vals.len > 0) {
+                    // Null entries are dropped, not encoded: a `null` is not an
+                    // effort level and the cache's own shape is `[]const []const u8`.
+                    var kept: usize = 0;
+                    for (vals) |maybe| {
+                        if (maybe != null) kept += 1;
+                    }
+                    if (kept > 0) {
                         try w.writeAll(",\"effort_values\":[");
-                        for (vals, 0..) |v, i| {
-                            if (i > 0) try w.writeByte(',');
+                        var written: usize = 0;
+                        for (vals) |maybe| {
+                            const v = maybe orelse continue;
+                            if (written > 0) try w.writeByte(',');
+                            written += 1;
                             try std.json.Stringify.encodeJsonString(v, .{}, w);
                         }
                         try w.writeByte(']');
@@ -490,7 +510,9 @@ fn reasoningFromRaw(m: RawModel) ReasoningKind {
     return .none;
 }
 
-fn effortValuesRaw(m: RawModel) ?[]const []const u8 {
+/// The model's advertised effort values, nulls included: models.dev puts a bare
+/// `null` in this array (`sarvam/sarvam-30b`), and the caller drops it.
+fn effortValuesRaw(m: RawModel) ?[]const ?[]const u8 {
     const opts = m.reasoning_options orelse return null;
     for (opts) |o| {
         const t = o.@"type" orelse continue;
@@ -499,11 +521,17 @@ fn effortValuesRaw(m: RawModel) ?[]const []const u8 {
     return null;
 }
 
+/// The model's budget floor. models.dev types this SIGNED and uses `-1` for
+/// "none" (nvidia nemotron); anything that cannot be a token floor becomes
+/// `null` — "the catalog does not know" — never a clamped lie.
 fn budgetMinRaw(m: RawModel) ?u32 {
     const opts = m.reasoning_options orelse return null;
     for (opts) |o| {
         const t = o.@"type" orelse continue;
-        if (std.mem.eql(u8, t, "budget_tokens")) return o.min;
+        if (!std.mem.eql(u8, t, "budget_tokens")) continue;
+        const raw = o.min orelse return null;
+        if (raw <= 0 or raw > std.math.maxInt(u32)) return null;
+        return @intCast(raw);
     }
     return null;
 }
@@ -591,7 +619,6 @@ fn intersectSendable(a: Allocator, values: []const []const u8) ![]const []const 
     }
     return out;
 }
-
 
 // ============================================================================
 // Trim + cache file
@@ -921,9 +948,9 @@ test "ModelCatalog: trim keeps the seven fields pabrik acts on and drops the res
     // Fields pabrik never reads must not survive the trim — that is the whole
     // point of shipping a 2.3 MB cache instead of a 5.45 MB payload.
     for ([_][]const u8{
-        "deprecated",         "canonical_model_id", "modalities",
-        "open_weights",       "knowledge",          "release_date",
-        "description",        "tool_call",          "cache_read",
+        "deprecated",   "canonical_model_id", "modalities",
+        "open_weights", "knowledge",          "release_date",
+        "description",  "tool_call",          "cache_read",
     }) |dropped| {
         try testing.expect(std.mem.indexOf(u8, trimmed, dropped) == null);
     }
@@ -976,6 +1003,74 @@ test "ModelCatalog: trim rejects a payload that is not models.dev JSON" {
     try testing.expectError(error.InvalidPayloadJson, trimRawPayload(testing.allocator, "", 0));
     // Truncated mid-download.
     try testing.expectError(error.InvalidPayloadJson, trimRawPayload(testing.allocator, "{\"deepseek\":{\"models\":", 0));
+}
+
+/// Two REAL models.dev rows, copied verbatim from the 2026-10-16 payload, that
+/// used to reject the whole document. `raw` stays a string literal so the exact
+/// bytes under test are visible in the test.
+const RAW_HOSTILE_FIXTURE =
+    \\{
+    \\  "sarvam": {
+    \\    "id": "sarvam",
+    \\    "name": "Sarvam",
+    \\    "models": {
+    \\      "sarvam-30b": {
+    \\        "id": "sarvam-30b",
+    \\        "name": "Sarvam 30B",
+    \\        "reasoning": true,
+    \\        "reasoning_options": [{ "type": "effort", "values": [null, "low", "medium", "high"] }],
+    \\        "limit": { "context": 131072 }
+    \\      }
+    \\    }
+    \\  },
+    \\  "nvidia": {
+    \\    "id": "nvidia",
+    \\    "name": "NVIDIA",
+    \\    "models": {
+    \\      "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning": {
+    \\        "name": "Nemotron 3 Nano Omni 30B A3B Reasoning",
+    \\        "reasoning": true,
+    \\        "reasoning_options": [{ "type": "toggle" }, { "type": "budget_tokens", "min": -1, "max": 32768 }],
+    \\        "limit": { "context": 131072, "output": 32768 }
+    \\      }
+    \\    }
+    \\  }
+    \\}
+;
+
+test "ModelCatalog: trim survives the two real rows that used to blank the catalog" {
+    const alloc = testing.allocator;
+
+    // WHY (2026-10-16): these two rows failed the ENTIRE payload's parse, which
+    // is why the DB stayed empty and every profile answered "no catalog yet".
+    const trimmed = try trimRawPayload(alloc, RAW_HOSTILE_FIXTURE, 0);
+    defer alloc.free(trimmed);
+
+    var cat = try Catalog.fromCacheJson(alloc, trimmed);
+    defer cat.deinit();
+
+    // Neither provider was lost to the other one's bad row.
+    try testing.expectEqual(@as(usize, 2), cat.providerCount());
+    try testing.expectEqual(@as(usize, 2), cat.modelCount());
+
+    // The null entry is DROPPED, the real effort levels survive in order.
+    const sarvam = cat.lookup("sarvam", "sarvam-30b") orelse return error.TestUnexpectedResult;
+    try testing.expectEqual(ReasoningKind.effort, sarvam.reasoning);
+    try testing.expectEqual(@as(usize, 3), sarvam.effort_values.len);
+    try testing.expectEqualStrings("low", sarvam.effort_values[0]);
+    try testing.expectEqualStrings("medium", sarvam.effort_values[1]);
+    try testing.expectEqualStrings("high", sarvam.effort_values[2]);
+    try testing.expectEqual(@as(u32, 131_072), sarvam.context_window.?);
+
+    // A non-positive floor is "the catalog does not know a floor" — not a parse
+    // failure, and not a clamped `1` either.
+    const nvidia = cat.lookup("nvidia", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning") orelse
+        return error.TestUnexpectedResult;
+    try testing.expectEqual(ReasoningKind.budget_tokens, nvidia.reasoning);
+    try testing.expect(nvidia.reasoning.hasBudget());
+    try testing.expect(nvidia.budget_min == null);
+    try testing.expectEqual(@as(u32, 131_072), nvidia.context_window.?);
+    try testing.expectEqual(@as(u32, 32_768), nvidia.output_tokens.?);
 }
 
 test "ModelCatalog: installing a catalog retires the previous one instead of freeing it" {
