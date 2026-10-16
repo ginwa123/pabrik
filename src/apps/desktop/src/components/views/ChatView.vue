@@ -2155,6 +2155,10 @@ const evaluateOlderPrefetch = () => {
  * and is the only path that commits a page, so the guards run exactly once per attempt: - the
  * auto-stick gate applies ONLY to `trigger === 'edge'` (the scroll trigger). */
 const maybeLoadOlder = async (trigger: 'edge' | 'manual') => {
+  // The open must not spend a scroll-back request: while the initial load is
+  // still placing the transcript the scroller can transiently report its edge,
+  // before the bottom/restore scroll of the first page has landed.
+  if (isInitialLoad && trigger === 'edge') return
   const container = virtualScrollerRef.value?.containerRef
   const ctx = buildScrollContext(container, {
     chatId: sessionId.value || props.chatId,
@@ -2798,10 +2802,10 @@ const handleVirtualScroll = (
       },
     })
   }
-  // ── Older-history prefetch (task_1789505423062_0) ──────────────────── Runs on USER scroll
-  // events only: a programmatic write (anchor compensation, `endPreserve` restore) is not a gesture
-  // and must not feed the decision.
-  if (!isProgrammatic) {
+  // ── Older-history prefetch ─────────────────────────────────────────── USER scroll events only: a
+  // programmatic write (anchor compensation, `endPreserve` restore) is not a gesture, and neither is
+  // the initial load — a late unmarked scroll event there would arm while the transcript is placed.
+  if (!isProgrammatic && !isInitialLoad) {
     // A real upward gesture is fresh intent to read history — reset the
     // refill auto-chain budget so the next commits may chain again.
     if (deltaTop < 0) prefetchAutoChain = 0

@@ -29,9 +29,10 @@ describe('older-history prefetch — trigger wiring', () => {
     // scroller's own band, without waiting for the 200 ms @load-more backstop.
     expect(body).toContain("void maybeLoadOlder('edge')")
     expect(body).toContain('effectiveLoadMoreThreshold')
-    // Velocity sampling / arming must be skipped for programmatic writes:
-    // an anchor-compensation scrollTop write is not a gesture.
-    expect(body).toMatch(/if \(!isProgrammatic\) \{[\s\S]*evaluateOlderPrefetch\(\)/)
+    // Velocity sampling / arming must be skipped for programmatic writes (an
+    // anchor-compensation scrollTop write is not a gesture) and for the initial
+    // load, whose late unmarked scroll events armed a fetch on open.
+    expect(body).toMatch(/if \(!isProgrammatic && !isInitialLoad\) \{[\s\S]*evaluateOlderPrefetch\(\)/)
   })
 
   it('evaluateOlderPrefetch is the only place that consults the decision helper', async () => {
