@@ -3,6 +3,7 @@
  * settings" the same code path with no seam to tell them apart. */
 import {
   deleteProfile as apiDeleteProfile,
+  deleteWorkspaceProfile,
   getPabrikConfig,
   getWorkspaceConfig,
   savePabrikConfig,
@@ -32,9 +33,9 @@ export interface PabrikConfigSource {
   load(): Promise<PabrikConfig>
   /** Persist the whole edited config. */
   save(config: PabrikConfig): Promise<void>
-  /** Remove one profile by name. User scope has a dedicated endpoint (it has to live-reload the
-   * backend's in-memory config). Workspace scope does not: the overlay is read per session, so the
-   * following `save()` is what actually removes it. */
+  /** Remove one profile by name. Each scope has its own endpoint: the user-scope one also
+   * live-reloads the backend's in-memory config, and the workspace-scope one clears this workspace's
+   * copy so the overlay merge cannot inherit the profile back. */
   deleteProfile(name: string): Promise<void>
 }
 
@@ -58,8 +59,8 @@ export function workspaceConfigSource(workspaceId: string): PabrikConfigSource {
     save: async (config) => {
       await saveWorkspaceConfig(workspaceId, config)
     },
-    deleteProfile: async () => {
-      // See the interface doc: no endpoint, and none is needed.
+    deleteProfile: async (name) => {
+      await deleteWorkspaceProfile(workspaceId, name)
     },
   }
 }

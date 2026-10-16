@@ -1,10 +1,9 @@
-//! HTTP handler + use-case for `DELETE /api/config/pabrik/profiles/:name`.
-//! Removes a single profile from `config.json` and live-reloads the in-memory
-//! `LlmConfig` so running workflows see the change.
+//! Deleting one LLM profile, from either scope: the user-scope route
+//! `DELETE /api/config/pabrik/profiles/:name`, and the workspace-scope twin in
+//! `workspace_config.zig`, which also clears this workspace's own copy.
 
 const std = @import("std");
 const json = std.json;
-const http_response = @import("http_response.zig");
 const auth_common = @import("auth_common.zig");
 const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
@@ -15,63 +14,77 @@ const user_config_store = pabrikcore.user_config_store;
 // Domain types
 // =====================================================================
 
-/// Struct shape that the use-case mutates in-place. The full LlmConfig type
-/// lives in `Config.zig` and is much heavier (it deserializes every known
-/// field).
-pub const PabrikConfigJsonForDelete = struct {
-    api_key: []const u8 = "",
-    model: []const u8 = "",
-    base_url: []const u8 = "",
-    // Empty default — matches the parallel `ConfigJson` in
-    // `pabrik_config_get.zig`/`pabrik_config_put.zig` and the `LlmConfigJson`
-    // convention.
-    url_style: []const u8 = "",
-    max_tokens: ?usize = null,
-    system_prompt: []const u8 = "",
-    profiles_models: ?json.Value = null,
-    active_profile: ?[]const u8 = null,
-
-    /// Free all owned strings, the `profiles_models` ObjectMap's keys, the
-    /// nested object values (shallow deep-clean for the strings), and the
-    /// backing storage.
-    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
-        allocator.free(self.api_key);
-        allocator.free(self.model);
-        allocator.free(self.base_url);
-        allocator.free(self.url_style);
-        allocator.free(self.system_prompt);
-        if (self.active_profile) |ap| allocator.free(ap);
-        if (self.profiles_models) |_| {
-            if (self.profiles_models.? == .object) {
-                // Take a direct mutable pointer to the field in `self`'s
-                // storage.
-                const obj: *json.ObjectMap = &self.profiles_models.?.object;
-                // Walk the top-level entries: free each top-level key (duped
-                // by `put`) and — if the value is an object — free the nested
-                // ObjectMap's string values and backing storage via
-                var iter = obj.iterator();
-                while (iter.next()) |entry| {
-                    allocator.free(entry.key_ptr.*);
-                    if (entry.value_ptr.* == .object) {
-                        const nested: *json.ObjectMap = @constCast(&entry.value_ptr.*.object);
-                        freeObjectMapContents(allocator, nested);
-                    }
-                }
-                obj.deinit(allocator);
-            }
-        }
-    }
-};
-
-/// Response shape returned by `DELETE /api/config/pabrik/profiles/:name`.
-/// `active_profile_was_cleared` is true iff the deleted profile was the
-/// active one (the handler also cleared `active_profile` on disk).
+/// Body of every profile-delete response, on both routes.
 pub const ProfileDeleteResponse = struct {
     success: bool,
     profile_name: []const u8,
     active_profile_was_cleared: bool = false,
     error_message: ?[]const u8 = null,
 };
+
+/// What removing a profile from a config document did.
+pub const RemovalOutcome = struct {
+    /// The named profile was present and is gone from the document.
+    removed: bool,
+    /// `active_profile` named it, and that field was cleared.
+    active_cleared: bool,
+};
+
+/// The document with one profile removed, re-serialized in full. `document` is
+/// owned by the caller.
+pub const ProfileRemoval = struct {
+    document: []u8,
+    outcome: RemovalOutcome,
+};
+
+// =====================================================================
+// Use-cases (pure)
+// =====================================================================
+
+/// Remove `name` from `document_json`'s `profiles_models` map, keeping every
+/// other key of the document.
+pub fn removeProfileFromDocument(
+    allocator: std.mem.Allocator,
+    document_json: []const u8,
+    name: []const u8,
+) !ProfileRemoval {
+    const value = std.json.parseFromSliceLeaky(json.Value, allocator, document_json, .{}) catch
+        return error.InvalidDocument;
+    const obj = switch (value) {
+        .object => |o| o,
+        else => return error.InvalidDocument,
+    };
+
+    var removed = false;
+    if (obj.getPtr("profiles_models")) |profiles| {
+        if (profiles.* == .object) {
+            removed = profiles.object.swapRemove(name);
+        }
+    }
+
+    // Only when the profile really was there: a 404 must not clear the field.
+    var active_cleared = false;
+    if (removed) {
+        if (obj.getPtr("active_profile")) |active| {
+            if (active.* == .string and std.mem.eql(u8, active.string, name)) {
+                active.* = .null;
+                active_cleared = true;
+            }
+        }
+    }
+
+    const document = try std.json.Stringify.valueAlloc(allocator, value, .{
+        .whitespace = .indent_tab,
+    });
+    return .{
+        .document = document,
+        .outcome = .{ .removed = removed, .active_cleared = active_cleared },
+    };
+}
+
+// =====================================================================
+// The user-level config document
+// =====================================================================
 
 /// Resolved on-disk config paths. Both slices live for the lifetime of the
 /// request (per-request arena) — no explicit `free` needed.
@@ -80,102 +93,61 @@ const ConfigPaths = struct {
     path: []const u8,
 };
 
-/// Outcome of the live-reload phase.
-const LiveReloadResult = union(enum) {
-    ok,
-    warning: []const u8,
-    fatal: []const u8,
-};
-
-// =====================================================================
-// Use-case (pure)
-// =====================================================================
-
-/// Free the contents of an ObjectMap: walks its entries, freeing the string
-/// values, then frees the ObjectMap's backing storage.
-fn freeObjectMapContents(allocator: std.mem.Allocator, obj: *json.ObjectMap) void {
-    var iter = obj.iterator();
-    while (iter.next()) |entry| {
-        switch (entry.value_ptr.*) {
-            .string => |s| allocator.free(s),
-            else => {},
-        }
-    }
-    obj.deinit(allocator);
-}
-
-/// Recursively free all owned data inside a `json.Value` reachable through a
-/// mutable pointer.
-fn freeJsonValueDeep(allocator: std.mem.Allocator, value: *json.Value) void {
-    switch (value.*) {
-        .null, .bool, .integer, .float => {},
-        .string => |s| allocator.free(s),
-        .number_string => |s| allocator.free(s),
-        .array => |*arr| {
-            for (arr.items) |*item| {
-                freeJsonValueDeep(allocator, item);
-            }
-            arr.deinit();
-        },
-        .object => |*obj| {
-            // Walk the entries: free the keys (duped by put) and recursively
-            // free the values. Production data has duped keys, so this is
-            // safe in production.
-            var iter = obj.iterator();
-            while (iter.next()) |entry| {
-                allocator.free(entry.key_ptr.*);
-                freeJsonValueDeep(allocator, entry.value_ptr);
-            }
-            obj.deinit(allocator);
-        },
-    }
-}
-
-/// Pure use-case: remove the named profile from `cfg.profiles_models` and
-/// clear `cfg.active_profile` if it matched. Returns true if the profile
-/// existed and was removed, false otherwise.
-pub fn removeProfileFromConfig(
+/// The user-level config document: `users.config_json` under `--auth`,
+/// `config.json` otherwise. `null` when there is nothing to read.
+pub fn loadUserConfigDocument(
     allocator: std.mem.Allocator,
-    cfg: *PabrikConfigJsonForDelete,
+    io: std.Io,
+    di: *pabrikcore.App,
+    owner: []const u8,
+) !?[]u8 {
+    if (di.auth_enabled) return user_config_store.loadRaw(allocator, di.db, owner);
+    const paths = try resolveConfigPaths(allocator);
+    return readConfigFile(allocator, io, paths.path);
+}
+
+/// Write the user-level config document back where `loadUserConfigDocument`
+/// read it from.
+pub fn saveUserConfigDocument(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    di: *pabrikcore.App,
+    owner: []const u8,
+    document: []const u8,
+) !void {
+    if (di.auth_enabled) return user_config_store.saveRaw(allocator, di.db, owner, document);
+    const paths = try resolveConfigPaths(allocator);
+    try ensureConfigDir(io, paths.dir);
+    try writeConfigFile(io, paths.path, document);
+}
+
+/// Remove `name` from the user-level config and persist the result. `removed =
+/// false` means the document had no such profile and nothing was written.
+pub fn removeProfileFromUserConfig(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    di: *pabrikcore.App,
+    owner: []const u8,
     name: []const u8,
-) !bool {
-    if (cfg.profiles_models == null) return false;
-    if (cfg.profiles_models.? != .object) return false;
+) !RemovalOutcome {
+    const existing = try loadUserConfigDocument(allocator, io, di, owner) orelse return .{
+        .removed = false,
+        .active_cleared = false,
+    };
+    const removal = try removeProfileFromDocument(allocator, existing, name);
+    if (!removal.outcome.removed) return removal.outcome;
 
-    // Take a direct mutable pointer to the ObjectMap field in `cfg`'s
-    // storage (see `deinit` for the rationale on avoiding the
-    // `if (optional) |pm|` capture chain).
-    const profiles_obj: *json.ObjectMap = &cfg.profiles_models.?.object;
-
-    if (profiles_obj.get(name) == null) return false;
-
-    // fetchSwapRemove returns the KV pair; the caller takes ownership of
-    // freeing the key and any value-owned data.
-    if (profiles_obj.fetchSwapRemove(name)) |kv| {
-        allocator.free(kv.key);
-        if (kv.value == .object) {
-            const removed_obj: *json.ObjectMap = @constCast(&kv.value.object);
-            freeObjectMapContents(allocator, removed_obj);
-        }
-    }
-
-    if (cfg.active_profile) |ap| {
-        if (std.mem.eql(u8, ap, name)) {
-            allocator.free(ap);
-            cfg.active_profile = null;
-        }
-    }
-
-    return true;
+    try saveUserConfigDocument(allocator, io, di, owner, removal.document);
+    return removal.outcome;
 }
 
 // =====================================================================
-// Handler
+// Handler: DELETE /api/config/pabrik/profiles/:name
 // =====================================================================
 
-/// `DELETE /api/config/pabrik/profiles/:name` Removes a single profile from
-/// `config.json` and live-reloads the in-memory `LlmConfig` so running
-/// workflows see the change.
+/// Removes a single profile from the user-level config (`users.config_json`
+/// under `--auth`, `config.json` otherwise) and live-reloads the in-memory
+/// `LlmConfig` so running workflows see the change.
 pub fn pabrikConfigProfileDeleteHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -184,143 +156,76 @@ pub fn pabrikConfigProfileDeleteHandler(
     const allocator = ctx.allocator;
     const io = ctx.io;
 
-    // 1. Validate `:name` path parameter.
     const name = req.params.get("name") orelse
         return makeErrorResponse(allocator, res, 400, "", "Missing :name path parameter");
     if (name.len == 0)
         return makeErrorResponse(allocator, res, 400, "", "Profile name cannot be empty");
 
-    // 1b. Auth mode: per-user config from users.config_json
-    // (Migration 092). config.json is ignored and the global
-    // LlmConfig is NOT reloaded (config is per-user).
-    {
-        const di = pabrikcore.getSingleton() catch {
-            return makeErrorResponse(allocator, res, 500, name, "Failed to resolve session");
-        };
-        if (di.auth_enabled) {
-            const tok = auth_common.parseSessionToken(req.headers) orelse {
-                return makeErrorResponse(allocator, res, 401, name, "Unauthenticated");
-            };
-            const sess = auth_common.lookupSession(allocator, di.db, tok) orelse {
-                return makeErrorResponse(allocator, res, 401, name, "Unauthenticated");
-            };
-            defer auth_common.freeSessionLookup(allocator, sess);
-            const stored = user_config_store.loadRaw(allocator, di.db, sess.user_id) catch {
-                return makeErrorResponse(allocator, res, 500, name, "Failed to load user config");
-            };
-            if (stored == null) {
-                return makeErrorResponse(allocator, res, 404, name, "No user config exists");
-            }
-            const content = stored.?;
-            var config_json = parseConfigJson(allocator, content) catch
-                return makeErrorResponse(allocator, res, 500, name, "Invalid JSON in user config");
-            const was_active = isActiveProfile(&config_json, name);
-            const removed = removeProfileFromConfig(allocator, &config_json, name) catch {
-                config_json.deinit(allocator);
-                return makeErrorResponse(allocator, res, 500, name, "Failed to remove profile");
-            };
-            if (!removed) {
-                config_json.deinit(allocator);
-                return makeErrorResponse(allocator, res, 404, name, "Profile not found");
-            }
-            const config_str = std.json.Stringify.valueAlloc(allocator, config_json, .{
-                .whitespace = .indent_tab,
-            }) catch {
-                config_json.deinit(allocator);
-                return makeErrorResponse(allocator, res, 500, name, "Failed to serialize user config");
-            };
-            user_config_store.saveRaw(allocator, di.db, sess.user_id, config_str) catch {
-                config_json.deinit(allocator);
-                return makeErrorResponse(allocator, res, 500, name, "Failed to save user config");
-            };
-            config_json.deinit(allocator);
-            di.clearMcpToolsCache();
-            return makeSuccessResponse(allocator, res, name, was_active, null);
-        }
+    const di = pabrikcore.getSingleton() catch
+        return makeErrorResponse(allocator, res, 500, name, "Failed to resolve session");
+
+    // Auth mode: the session names the owner whose `config_json` is edited.
+    // The id is COPIED: `freeSessionLookup` runs at the end of this block, and
+    // the work below happens after that.
+    var owner: []const u8 = "";
+    var owner_owned: ?[]u8 = null;
+    defer if (owner_owned) |owned| allocator.free(owned);
+    if (di.auth_enabled) {
+        const tok = auth_common.parseSessionToken(req.headers) orelse
+            return makeErrorResponse(allocator, res, 401, name, "Unauthenticated");
+        const sess = auth_common.lookupSession(allocator, di.db, tok) orelse
+            return makeErrorResponse(allocator, res, 401, name, "Unauthenticated");
+        defer auth_common.freeSessionLookup(allocator, sess);
+        owner_owned = try allocator.dupe(u8, sess.user_id);
+        owner = owner_owned.?;
     }
 
-    // 2. Resolve on-disk config paths (dir + file). The PUT handler
-    //    (pabrik_config_put.zig) uses the same pattern.
-    const paths = resolveConfigPaths(allocator, name) catch
-        return makeErrorResponse(allocator, res, 500, name, "Failed to resolve config paths");
-
-    // 3. Ensure the config directory exists (idempotent).
-    ensureConfigDir(io, paths.dir) catch
-        return makeErrorResponse(allocator, res, 500, name, "Failed to create config directory");
-
-    // 4. Read the existing config file. `null` = file does not exist.
-    const content = readConfigFile(allocator, io, paths.path) catch {
-        return makeErrorResponse(allocator, res, 500, name, "Failed to read config");
-    } orelse {
-        return makeErrorResponse(allocator, res, 404, name, "No config file exists");
+    const outcome = removeProfileFromUserConfig(allocator, io, di, owner, name) catch |err| switch (err) {
+        error.InvalidDocument => return makeErrorResponse(allocator, res, 500, name, "Invalid JSON in config"),
+        else => return makeErrorResponse(allocator, res, 500, name, "Failed to update the config"),
     };
-
-    // 5. Parse the existing config. On failure, `content` is freed by
-    //    the arena (per-request reaps request-scoped allocations).
-    var config_json = parseConfigJson(allocator, content) catch
-        return makeErrorResponse(allocator, res, 500, name, "Invalid JSON in config");
-
-    // 6. Apply the use-case: remove the named profile. Capture
-    //    `was_active` BEFORE the use-case clears it (the use-case
-    //    sets `cfg.active_profile = null` on a match).
-    const was_active = isActiveProfile(&config_json, name);
-    const removed = removeProfileFromConfig(allocator, &config_json, name) catch {
-        config_json.deinit(allocator);
-        return makeErrorResponse(allocator, res, 500, name, "Failed to remove profile");
-    };
-    if (!removed) {
-        config_json.deinit(allocator);
+    if (!outcome.removed)
         return makeErrorResponse(allocator, res, 404, name, "Profile not found");
+
+    // Config is per-user under `--auth`, so there is no global to reload.
+    if (di.auth_enabled) {
+        di.clearMcpToolsCache();
+        return makeSuccessResponse(allocator, res, name, outcome.active_cleared, null);
     }
 
-    // 7. Write the updated config back to disk. On failure, free the
-    //    parsed struct so its owned strings don't leak.
-    writeConfigBack(allocator, io, paths.path, &config_json) catch {
-        config_json.deinit(allocator);
-        return makeErrorResponse(allocator, res, 500, name, "Failed to write config");
-    };
-
-    // 8. Live-reload the in-memory LlmConfig.
-    const reload_result = liveReloadLlmConfig(io, name);
-
-    config_json.deinit(allocator);
-
-    return switch (reload_result) {
-        .ok => makeSuccessResponse(allocator, res, name, was_active, null),
-        .warning => |msg| makeSuccessResponse(allocator, res, name, was_active, msg),
+    return switch (liveReloadLlmConfig(io, name)) {
+        .ok => makeSuccessResponse(allocator, res, name, outcome.active_cleared, null),
+        .warning => |msg| makeSuccessResponse(allocator, res, name, outcome.active_cleared, msg),
         .fatal => |msg| makeErrorResponse(allocator, res, 500, name, msg),
     };
 }
 
 // =====================================================================
-// Sub-helpers (handler plumbing)
+// File-mode plumbing
 // =====================================================================
 
-/// Get the singleton, then resolve the config dir + file path.
-/// Logs the error and returns the same error variant on failure so
-/// the handler can map it to HTTP 500.
-fn resolveConfigPaths(allocator: std.mem.Allocator, name: []const u8) !ConfigPaths {
+/// Resolve the config dir + file path from the process environment.
+fn resolveConfigPaths(allocator: std.mem.Allocator) !ConfigPaths {
     const di = pabrikcore.getSingleton() catch |err| {
-        std.log.err("DELETE /api/config/pabrik/profiles/{s}: singleton unavailable: {s}", .{ name, @errorName(err) });
+        std.log.err("profile delete: singleton unavailable: {s}", .{@errorName(err)});
         return error.SingletonUnavailable;
     };
     const environment_ptr = di.environment orelse {
-        std.log.err("DELETE /api/config/pabrik/profiles/{s}: environment unavailable", .{name});
+        std.log.err("profile delete: environment unavailable", .{});
         return error.EnvironmentUnavailable;
     };
-    // `getDefaultConfigDir` does not actually modify the env, but its
-    // signature takes a mutable pointer. The same pattern is used in
-    // `pabrik_config_put.zig:185-225`.
+    // `getDefaultConfigDir` only READS the map, but its parameter is a mutable
+    // pointer - the same cast the config handlers use.
     const environment: *std.process.Environ.Map = @ptrCast(@constCast(environment_ptr));
 
     const config_dir = config.getDefaultConfigDir(allocator, environment) catch |err| {
-        std.log.err("DELETE /api/config/pabrik/profiles/{s}: failed to get config dir: {s}", .{ name, @errorName(err) });
+        std.log.err("profile delete: failed to get config dir: {s}", .{@errorName(err)});
         return error.ConfigDirFailed;
     };
     errdefer allocator.free(config_dir);
 
     const config_path = std.fs.path.join(allocator, &[_][]const u8{ config_dir, "config.json" }) catch |err| {
-        std.log.err("DELETE /api/config/pabrik/profiles/{s}: failed to build config path: {s}", .{ name, @errorName(err) });
+        std.log.err("profile delete: failed to build config path: {s}", .{@errorName(err)});
         return error.ConfigPathFailed;
     };
 
@@ -328,22 +233,19 @@ fn resolveConfigPaths(allocator: std.mem.Allocator, name: []const u8) !ConfigPat
 }
 
 /// Create the config directory if it does not exist (idempotent).
-/// The original handler inlined this as a `catch |err|` block.
 fn ensureConfigDir(io: std.Io, config_dir: []const u8) !void {
     std.Io.Dir.cwd().createDirPath(io, config_dir) catch |err| {
-        std.log.err("DELETE /api/config/pabrik/profiles: failed to create config dir: {s}", .{@errorName(err)});
+        std.log.err("profile delete: failed to create config dir: {s}", .{@errorName(err)});
         return err;
     };
 }
 
-/// Read the entire config file into a heap-allocated buffer.
-/// Returns `null` if the file does not exist (HTTP 404 path).
-/// Returns other errors on I/O failure (HTTP 500 path).
+/// Read the whole config file. `null` means it does not exist.
 fn readConfigFile(allocator: std.mem.Allocator, io: std.Io, config_path: []const u8) !?[]u8 {
     const file = std.Io.Dir.openFileAbsolute(io, config_path, .{}) catch |err| switch (err) {
         error.FileNotFound => return null,
         else => {
-            std.log.err("DELETE /api/config/pabrik/profiles: failed to open config: {s}", .{@errorName(err)});
+            std.log.err("profile delete: failed to open config: {s}", .{@errorName(err)});
             return err;
         },
     };
@@ -352,87 +254,60 @@ fn readConfigFile(allocator: std.mem.Allocator, io: std.Io, config_path: []const
     var read_buffer: [4096]u8 = undefined;
     var reader = file.reader(io, &read_buffer);
     return reader.interface.allocRemaining(allocator, .limited(1024 * 1024)) catch |err| {
-        std.log.err("DELETE /api/config/pabrik/profiles: failed to read config: {s}", .{@errorName(err)});
+        std.log.err("profile delete: failed to read config: {s}", .{@errorName(err)});
         return err;
     };
 }
 
-/// Parse the on-disk config JSON into a `PabrikConfigJsonForDelete`.
-/// The parsed struct's strings are independent allocations; ownership
-/// transfers to the caller (use `deinit` to free them).
-fn parseConfigJson(allocator: std.mem.Allocator, content: []const u8) !PabrikConfigJsonForDelete {
-    const parsed = std.json.parseFromSliceLeaky(PabrikConfigJsonForDelete, allocator, content, .{
-        .ignore_unknown_fields = true,
-    }) catch |err| {
-        std.log.err("DELETE /api/config/pabrik/profiles: failed to parse config: {s}", .{@errorName(err)});
-        return err;
-    };
-    return parsed;
-}
-
-/// Was the named profile the currently-active one? The use-case
-/// clears `active_profile` if it matched, so we capture this BEFORE
-/// calling the use-case.
-fn isActiveProfile(cfg: *const PabrikConfigJsonForDelete, name: []const u8) bool {
-    return if (cfg.active_profile) |ap| std.mem.eql(u8, ap, name) else false;
-}
-
-/// Serialize the updated config and write it back to disk (truncate).
-/// On success the file on disk is the new authoritative state.
-fn writeConfigBack(
-    allocator: std.mem.Allocator,
-    io: std.Io,
-    config_path: []const u8,
-    config_json: *PabrikConfigJsonForDelete,
-) !void {
-    const config_str = std.json.Stringify.valueAlloc(allocator, config_json.*, .{
-        .whitespace = .indent_tab,
-    }) catch |err| {
-        std.log.err("DELETE /api/config/pabrik/profiles: failed to serialize config: {s}", .{@errorName(err)});
-        return err;
-    };
-
+/// Replace the config file with `document` (truncate).
+fn writeConfigFile(io: std.Io, config_path: []const u8, document: []const u8) !void {
     const write_file = std.Io.Dir.createFileAbsolute(io, config_path, .{
         .truncate = true,
     }) catch |err| {
-        std.log.err("DELETE /api/config/pabrik/profiles: failed to open config for write: {s}", .{@errorName(err)});
+        std.log.err("profile delete: failed to open config for write: {s}", .{@errorName(err)});
         return err;
     };
     defer write_file.close(io);
 
     var write_buffer: [4096]u8 = undefined;
     var writer = write_file.writer(io, &write_buffer);
-    writer.interface.writeAll(config_str) catch |err| {
-        std.log.err("DELETE /api/config/pabrik/profiles: failed to write config: {s}", .{@errorName(err)});
+    writer.interface.writeAll(document) catch |err| {
+        std.log.err("profile delete: failed to write config: {s}", .{@errorName(err)});
         return err;
     };
     writer.flush() catch |err| {
-        std.log.err("DELETE /api/config/pabrik/profiles: failed to flush config: {s}", .{@errorName(err)});
+        std.log.err("profile delete: failed to flush config: {s}", .{@errorName(err)});
         return err;
     };
 }
 
+/// Outcome of the live-reload phase.
+pub const LiveReloadResult = union(enum) {
+    ok,
+    warning: []const u8,
+    fatal: []const u8,
+};
+
 /// Live-reload the global `LlmConfig` from disk.
-fn liveReloadLlmConfig(io: std.Io, name: []const u8) LiveReloadResult {
+pub fn liveReloadLlmConfig(io: std.Io, name: []const u8) LiveReloadResult {
     const di = pabrikcore.getSingleton() catch |err| {
-        std.log.err("DELETE /api/config/pabrik/profiles/{s}: live reload singleton failed: {s}", .{ name, @errorName(err) });
+        std.log.err("profile delete: live reload singleton failed: {s}", .{@errorName(err)});
         return .{ .warning = "Profile deleted from disk but live reload failed (singleton unavailable)" };
     };
 
     const env_for_reload: *std.process.Environ.Map = @ptrCast(@constCast(di.environment orelse {
-        std.log.err("DELETE /api/config/pabrik/profiles/{s}: live reload environment unavailable", .{name});
+        std.log.err("profile delete/{s}: live reload environment unavailable", .{name});
         return .{ .warning = "Profile deleted from disk but live reload failed (environment unavailable)" };
     }));
 
     const global_allocator = di.allocator;
     var new_cfg = config.LlmConfig.init(global_allocator, io, null, env_for_reload) catch |err| {
-        std.log.err("DELETE /api/config/pabrik/profiles/{s}: live reload parse failed: {s}", .{ name, @errorName(err) });
+        std.log.err("profile delete/{s}: live reload parse failed: {s}", .{ name, @errorName(err) });
         return .{ .warning = "Profile deleted from disk but live reload parse failed" };
     };
 
     const new_ptr = global_allocator.create(config.LlmConfig) catch |err| {
-        std.log.err("DELETE /api/config/pabrik/profiles/{s}: live reload alloc failed: {s}", .{ name, @errorName(err) });
-        // Free the local copy we failed to heap-allocate.
+        std.log.err("profile delete/{s}: live reload alloc failed: {s}", .{ name, @errorName(err) });
         var mut: *config.LlmConfig = &new_cfg;
         mut.deinit();
         return .{ .fatal = "Out of memory" };
@@ -441,17 +316,16 @@ fn liveReloadLlmConfig(io: std.Io, name: []const u8) LiveReloadResult {
 
     // Atomically swap. Previous-pointer free happens inside setLlmConfig.
     pabrikcore.setLlmConfig(di, new_ptr);
-    std.log.info("DELETE /api/config/pabrik/profiles/{s}: live-reloaded llm_config", .{name});
+    std.log.info("profile delete/{s}: live-reloaded llm_config", .{name});
     return .ok;
 }
 
 // =====================================================================
-// Response builders (DRY)
+// Response builders (shared with the workspace-scope route)
 // =====================================================================
 
 /// Build a JSON error response with a `ProfileDeleteResponse` body.
-/// Used for every 4xx/5xx exit path in the handler.
-fn makeErrorResponse(
+pub fn makeErrorResponse(
     allocator: std.mem.Allocator,
     res: gserverz.HttpResponse,
     status_code: u16,
@@ -466,139 +340,189 @@ fn makeErrorResponse(
     return res.jsonResponse(.{ .status_code = status_code, .data = body });
 }
 
-/// Build the 200 OK success response. `warning` is `null` on a clean
-/// success or a short string on a "deleted from disk but live reload
-/// had a non-fatal issue" outcome.
-fn makeSuccessResponse(
+/// Build the 200 OK success response. `warning` is `null` on a clean success or
+/// a short string when the delete landed but the live reload did not.
+pub fn makeSuccessResponse(
     allocator: std.mem.Allocator,
     res: gserverz.HttpResponse,
     name: []const u8,
-    was_active: bool,
+    active_cleared: bool,
     warning: ?[]const u8,
 ) !gserverz.HttpResponse {
     const body = try std.json.Stringify.valueAlloc(allocator, ProfileDeleteResponse{
         .success = true,
         .profile_name = name,
-        .active_profile_was_cleared = was_active,
+        .active_profile_was_cleared = active_cleared,
         .error_message = warning,
     }, .{});
     return res.jsonResponse(.{ .status_code = 200, .data = body });
 }
 
-// ===== Tests merged from pabrik_config_profile_delete_test.zig (2026-09-11
-// flatten) ===== Tests for the pure `removeProfileFromConfig` use-case used
-// by the `DELETE /api/config/pabrik/profiles/:name` handler.
+// =====================================================================
+// Tests
+// =====================================================================
 
 const testing = std.testing;
 
-// The symbols under test (`removeProfileFromConfig` and
-// `PabrikConfigJsonForDelete`) are defined in
-// `http_handlers/pabrik_config_profile_delete.zig` and re-exported by
+/// A config shaped like a real one: the profile map, the active profile, and
+/// the keys that have nothing to do with profiles.
+const FULL_CONFIG =
+    \\{"profiles_models":{
+    \\  "alpha":{"model":"gpt-4o","base_url":"https://api.example.com","api_key":"sk-alpha"},
+    \\  "beta":{"model":"claude","base_url":"https://api.anthropic.com","api_key":"sk-beta"}},
+    \\ "active_profile":"alpha",
+    \\ "mcp_servers":{"graphify":{"command":"/usr/bin/python3"}},
+    \\ "tools":["glob","search"],
+    \\ "skill_evals":{"enabled":true,"max_skills_per_run":5},
+    \\ "web_search":{"brave":{"url":"https://api.search.brave.com","key":"sk-search"}},
+    \\ "notify_on_complete":true,
+    \\ "retry_delay_ms":2000}
+;
 
-/// Build a `PabrikConfigJsonForDelete` with two profiles (`alpha` and `beta`)
-/// and `active_profile = "alpha"`.
-fn makeConfigJson(allocator: std.mem.Allocator) !PabrikConfigJsonForDelete {
-    var cfg: PabrikConfigJsonForDelete = .{};
-    errdefer cfg.deinit(allocator);
+/// Every test runs on an ARENA: `removeProfileFromDocument` parses with
+/// `parseFromSliceLeaky` (the handlers give it the request arena), so the
+/// document and everything parsed out of it share one lifetime.
+const TestArena = struct {
+    state: std.heap.ArenaAllocator,
 
-    cfg.api_key = try allocator.dupe(u8, "test-key");
-    cfg.model = try allocator.dupe(u8, "gpt-4o");
-    cfg.base_url = try allocator.dupe(u8, "https://api.example.com");
-    cfg.url_style = try allocator.dupe(u8, "openai");
-    cfg.max_tokens = null;
-    cfg.system_prompt = try allocator.dupe(u8, "");
-    cfg.active_profile = try allocator.dupe(u8, "alpha");
+    fn init() TestArena {
+        return .{ .state = std.heap.ArenaAllocator.init(testing.allocator) };
+    }
 
-    // Build the profiles map as a local var, populate it, then attach to
-    // `cfg` — the same pattern used in `pabrik_config_put.zig`.
-    var profiles = try json.ObjectMap.init(allocator, &.{}, &.{});
-    errdefer profiles.deinit(allocator);
+    fn deinit(self: *TestArena) void {
+        self.state.deinit();
+    }
 
-    // alpha
-    var alpha = try json.ObjectMap.init(allocator, &.{}, &.{});
-    try alpha.put(allocator, "model", .{ .string = try allocator.dupe(u8, "gpt-4o") });
-    try alpha.put(allocator, "base_url", .{ .string = try allocator.dupe(u8, "https://api.example.com") });
-    try profiles.put(allocator, try allocator.dupe(u8, "alpha"), .{ .object = alpha });
+    fn allocator(self: *TestArena) std.mem.Allocator {
+        return self.state.allocator();
+    }
+};
 
-    // beta
-    var beta = try json.ObjectMap.init(allocator, &.{}, &.{});
-    try beta.put(allocator, "model", .{ .string = try allocator.dupe(u8, "claude") });
-    try beta.put(allocator, "base_url", .{ .string = try allocator.dupe(u8, "https://api.anthropic.com") });
-    try profiles.put(allocator, try allocator.dupe(u8, "beta"), .{ .object = beta });
+test "removeProfileFromDocument: removes the named profile and keeps every other key" {
+    var arena = TestArena.init();
+    defer arena.deinit();
+    const alloc = arena.allocator();
 
-    cfg.profiles_models = .{ .object = profiles };
-    return cfg;
+    const removal = try removeProfileFromDocument(alloc, FULL_CONFIG, "alpha");
+    try testing.expect(removal.outcome.removed);
+
+    var parsed = try std.json.parseFromSlice(std.json.Value, alloc, removal.document, .{});
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+
+    const profiles = obj.get("profiles_models").?.object;
+    try testing.expect(profiles.get("alpha") == null);
+    try testing.expectEqualStrings("claude", profiles.get("beta").?.object.get("model").?.string);
+    try testing.expectEqualStrings(
+        "sk-beta",
+        profiles.get("beta").?.object.get("api_key").?.string,
+    );
+
+    // The keys a stripped write-back struct used to drop.
+    try testing.expect(obj.get("mcp_servers").?.object.get("graphify") != null);
+    try testing.expectEqual(@as(usize, 2), obj.get("tools").?.array.items.len);
+    try testing.expectEqual(true, obj.get("skill_evals").?.object.get("enabled").?.bool);
+    try testing.expectEqualStrings(
+        "sk-search",
+        obj.get("web_search").?.object.get("brave").?.object.get("key").?.string,
+    );
+    try testing.expectEqual(true, obj.get("notify_on_complete").?.bool);
+    try testing.expectEqual(@as(i64, 2000), obj.get("retry_delay_ms").?.integer);
 }
 
-/// Build a minimal `PabrikConfigJsonForDelete` with `profiles_models = null`
-/// and `active_profile = null` — exercises the "missing profiles_models"
-/// graceful path.
-fn makeEmptyConfigJson(allocator: std.mem.Allocator) !PabrikConfigJsonForDelete {
-    var cfg: PabrikConfigJsonForDelete = .{};
-    errdefer cfg.deinit(allocator);
+test "removeProfileFromDocument: clears active_profile when it named the deleted profile" {
+    var arena = TestArena.init();
+    defer arena.deinit();
+    const alloc = arena.allocator();
 
-    cfg.api_key = try allocator.dupe(u8, "");
-    cfg.model = try allocator.dupe(u8, "");
-    cfg.base_url = try allocator.dupe(u8, "");
-    cfg.url_style = try allocator.dupe(u8, "openai");
-    cfg.max_tokens = null;
-    cfg.system_prompt = try allocator.dupe(u8, "");
-    cfg.profiles_models = null;
-    cfg.active_profile = null;
+    const removal = try removeProfileFromDocument(alloc, FULL_CONFIG, "alpha");
+    try testing.expect(removal.outcome.active_cleared);
 
-    return cfg;
+    var parsed = try std.json.parseFromSlice(std.json.Value, alloc, removal.document, .{});
+    defer parsed.deinit();
+    try testing.expect(parsed.value.object.get("active_profile").? == .null);
 }
 
-test "removeProfileFromConfig: removes the named profile and returns true" {
-    const allocator = testing.allocator;
-    var cfg = try makeConfigJson(allocator);
-    defer cfg.deinit(allocator);
+test "removeProfileFromDocument: leaves active_profile alone when another profile was deleted" {
+    var arena = TestArena.init();
+    defer arena.deinit();
+    const alloc = arena.allocator();
 
-    const removed = try removeProfileFromConfig(allocator, &cfg, "alpha");
-    try testing.expect(removed);
+    const removal = try removeProfileFromDocument(alloc, FULL_CONFIG, "beta");
+    try testing.expect(removal.outcome.removed);
+    try testing.expect(!removal.outcome.active_cleared);
 
-    const obj = cfg.profiles_models.?.object;
-    try testing.expectEqual(@as(usize, 1), obj.count());
-    try testing.expect(obj.get("alpha") == null);
-    try testing.expect(obj.get("beta") != null);
+    var parsed = try std.json.parseFromSlice(std.json.Value, alloc, removal.document, .{});
+    defer parsed.deinit();
+    try testing.expectEqualStrings("alpha", parsed.value.object.get("active_profile").?.string);
 }
 
-test "removeProfileFromConfig: returns false when the profile does not exist" {
-    const allocator = testing.allocator;
-    var cfg = try makeConfigJson(allocator);
-    defer cfg.deinit(allocator);
+test "removeProfileFromDocument: reports not-removed for an unknown name, changing nothing" {
+    var arena = TestArena.init();
+    defer arena.deinit();
+    const alloc = arena.allocator();
 
-    const removed = try removeProfileFromConfig(allocator, &cfg, "ghost");
-    try testing.expect(!removed);
+    const removal = try removeProfileFromDocument(alloc, FULL_CONFIG, "ghost");
+    try testing.expect(!removal.outcome.removed);
+    try testing.expect(!removal.outcome.active_cleared);
 
-    // Existing profiles unchanged
-    const obj = cfg.profiles_models.?.object;
-    try testing.expectEqual(@as(usize, 2), obj.count());
+    // The document round-trips unchanged, so a caller that ignores the flag
+    // still cannot lose data by writing it back.
+    var before = try std.json.parseFromSlice(std.json.Value, alloc, FULL_CONFIG, .{});
+    defer before.deinit();
+    var after = try std.json.parseFromSlice(std.json.Value, alloc, removal.document, .{});
+    defer after.deinit();
+    try testing.expectEqual(
+        before.value.object.get("profiles_models").?.object.count(),
+        after.value.object.get("profiles_models").?.object.count(),
+    );
+    try testing.expect(after.value.object.get("tools") != null);
 }
 
-test "removeProfileFromConfig: clears active_profile when it matches the deleted name" {
-    const allocator = testing.allocator;
-    var cfg = try makeConfigJson(allocator);
-    defer cfg.deinit(allocator);
+test "removeProfileFromDocument: a document with no profiles map still round-trips" {
+    var arena = TestArena.init();
+    defer arena.deinit();
+    const alloc = arena.allocator();
 
-    _ = try removeProfileFromConfig(allocator, &cfg, "alpha");
-    try testing.expect(cfg.active_profile == null);
+    const removal = try removeProfileFromDocument(alloc, "{\"retry_delay_ms\":2000}", "alpha");
+    try testing.expect(!removal.outcome.removed);
+
+    var parsed = try std.json.parseFromSlice(std.json.Value, alloc, removal.document, .{});
+    defer parsed.deinit();
+    try testing.expectEqual(@as(i64, 2000), parsed.value.object.get("retry_delay_ms").?.integer);
 }
 
-test "removeProfileFromConfig: preserves active_profile when it does not match" {
-    const allocator = testing.allocator;
-    var cfg = try makeConfigJson(allocator);
-    defer cfg.deinit(allocator);
+test "removeProfileFromDocument: removes the last profile without touching the rest" {
+    var arena = TestArena.init();
+    defer arena.deinit();
+    const alloc = arena.allocator();
 
-    _ = try removeProfileFromConfig(allocator, &cfg, "beta");
-    try testing.expectEqualStrings("alpha", cfg.active_profile.?);
+    const last =
+        \\{"profiles_models":{"only":{"model":"m"}},"active_profile":"only","tools":["glob"]}
+    ;
+    const removal = try removeProfileFromDocument(alloc, last, "only");
+    try testing.expect(removal.outcome.removed);
+
+    var parsed = try std.json.parseFromSlice(std.json.Value, alloc, removal.document, .{});
+    defer parsed.deinit();
+    try testing.expectEqual(
+        @as(usize, 0),
+        parsed.value.object.get("profiles_models").?.object.count(),
+    );
+    try testing.expectEqual(@as(usize, 1), parsed.value.object.get("tools").?.array.items.len);
 }
 
-test "removeProfileFromConfig: handles missing profiles_models gracefully" {
-    const allocator = testing.allocator;
-    var cfg = try makeEmptyConfigJson(allocator);
-    defer cfg.deinit(allocator);
+test "removeProfileFromDocument: a malformed document is rejected, never half-applied" {
+    var arena = TestArena.init();
+    defer arena.deinit();
+    const alloc = arena.allocator();
 
-    const removed = try removeProfileFromConfig(allocator, &cfg, "alpha");
-    try testing.expect(!removed);
+    try testing.expectError(
+        error.InvalidDocument,
+        removeProfileFromDocument(alloc, "{oops", "alpha"),
+    );
+    try testing.expectError(
+        error.InvalidDocument,
+        removeProfileFromDocument(alloc, "[1,2,3]", "alpha"),
+    );
 }

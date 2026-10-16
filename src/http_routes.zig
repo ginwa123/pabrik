@@ -375,6 +375,7 @@ fn registerWorkspaceDocumentRoutes(authed: *Group) !void {
     // moved out of the User-scope Pabrik page into Workspace settings.
     try authed.get("/api/workspaces/:workspace_id/config", ai_mod.http_handlers.workspaceConfigGetHandler);
     try authed.put("/api/workspaces/:workspace_id/config", ai_mod.http_handlers.workspaceConfigPutHandler);
+    try authed.delete("/api/workspaces/:workspace_id/config/profiles/:name", ai_mod.http_handlers.workspaceConfigProfileDeleteHandler);
 }
 
 fn registerKanbanRoutes(authed: *Group) !void {
