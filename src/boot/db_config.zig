@@ -32,11 +32,6 @@ pub const best: databases.database.SqliteConfig = .{
     .max_idle_time_ms = 30_000,
 };
 
-/// How often the periodic reaper runs, in milliseconds. The pool only reaps
-/// inline on `release` / the `claim` slow path, so with no traffic nothing
-/// would ever shrink it - this tick is what does.
-pub const reap_interval_ms: u64 = 15_000;
-
 /// Page cache this policy commits to for `readers` pooled readers plus the
 /// single write connection, in KiB.
 pub fn pageCacheBudgetKb(readers: u32) u32 {
@@ -487,12 +482,4 @@ test "an override is applied to a live connection, not just to the struct" {
     try databases.database.openWithConfig(&db, io, .{ .sqlite_path = path }, cfg);
 
     try std.testing.expectEqual(@as(i64, -128), try readPragmaInt(&db, allocator, "PRAGMA cache_size"));
-}
-
-test "the reaper tick is at least as frequent as the age it enforces" {
-    // If the tick were slower than `max_idle_time_ms`, an idle reader could
-    // outlive its expiry by up to the difference and the pool would hold
-    // memory the config claims to have released.
-    try std.testing.expect(reap_interval_ms <= best.max_idle_time_ms);
-    try std.testing.expect(reap_interval_ms > 0);
 }

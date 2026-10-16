@@ -344,8 +344,8 @@ test {
     // (mirrors cleanup_stale_worker pattern). Re-imported here for the
     // same reason — see plan 2026-08-19-cleanup-stale-background-process.
     _ = @import("schedulers/cleanup_stale_background_process.zig");
-    // schedulers/reap_idle_readers.zig has inline tests for the pool reaper
-    // (same lazy-compilation workaround as the schedulers above).
+    // schedulers/reap_idle_readers.zig is the cron callback for the pool
+    // reaper (same lazy-compilation workaround as the schedulers above).
     _ = @import("schedulers/reap_idle_readers.zig");
     // boot/db_config.zig holds the pragma assertions plus the `--db-*`
     // override parser's tests.
