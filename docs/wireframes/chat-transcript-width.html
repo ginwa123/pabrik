@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chat transcript — removing the left/right gaps (wireframe)</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#1D1C19;--card:#22211e;--sunken:#141311;--line:#282727;
+    --text:#c5c9c5;--muted:#a6a69c;--dim:#7a8382;
+    --link:#8ba4b0;--green:#87a987;--red:#c4746e;--amber:#c4b28a;--violet:#8992a7;
+  }
+  body{font-family:Inter,system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);font-size:13.5px;line-height:1.55;padding-bottom:56px}
+  .bar{display:flex;align-items:center;gap:10px;padding:12px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:20;flex-wrap:wrap}
+  .bar h1{font-size:15.5px;font-weight:600}
+  .tag{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:3px 9px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}
+  .spacer{flex:1}
+  .opts{display:flex;gap:3px;background:var(--sunken);border:1px solid var(--line);border-radius:999px;padding:3px}
+  .opts button{border:0;background:transparent;color:var(--muted);font-size:12.5px;padding:6px 13px;border-radius:999px;cursor:pointer;font-family:inherit;white-space:nowrap}
+  .opts button.on{background:#2e2d29;color:#fff;font-weight:600}
+  main{padding:18px 20px 0}
+  h2{font-size:14.5px;margin:26px 0 10px;padding-top:14px;border-top:1px solid var(--line)}
+  h2 .n{color:var(--dim);font-family:ui-monospace,monospace;margin-right:7px}
+  h3{font-size:13px;margin:14px 0 6px;color:var(--text)}
+  p.lede{color:var(--muted);max-width:110ch}
+  p.lede code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;background:var(--sunken);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+  .note{border-left:3px solid var(--link);background:var(--card);border-radius:0 8px 8px 0;padding:10px 14px;margin:12px 0;color:var(--muted);font-size:12.5px}
+  .note b{color:var(--text)}
+  .warn{border-left-color:var(--amber)}
+  .bad{border-left-color:var(--red)}
+  .good{border-left-color:var(--green)}
+  /* ── to-scale stage ───────────────────────────────────────────────── */
+  .stagewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--sunken);padding:0}
+  .stage{display:flex;width:1450px;height:420px;position:relative;background:var(--sunken)}
+  .vside{flex:0 0 288px;width:288px;background:#12120f;border-right:1px solid var(--line);
+         display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--dim);font-size:11px;font-family:ui-monospace,monospace}
+  .vside b{color:var(--muted);font-weight:600;font-size:11.5px}
+  .vcol{flex:1;position:relative;background:var(--bg);overflow:hidden}
+  .gap{position:absolute;top:0;bottom:0;width:max(0px,calc((100% - var(--content-max))/2));
+       background-image:repeating-linear-gradient(45deg,#1a1917 0 6px,#232220 6px 12px);
+       /* outline, not border: a border would be inside the box and make a collapsed
+          gutter measure 2px instead of 0. */
+       outline:1px dashed #3c3b37;outline-offset:-1px;
+       display:flex;align-items:center;justify-content:center;z-index:0}
+  .gap-l{left:0}
+  .gap-r{right:0}
+  .gap span{font-family:ui-monospace,monospace;font-size:11px;color:var(--amber);white-space:nowrap}
+  .rows{position:relative;z-index:1;margin-inline:auto;max-width:var(--content-max);width:100%;
+        padding:14px var(--row-pad,16px) 14px;display:flex;flex-direction:column;gap:9px;height:100%;
+        /* No transition on purpose: the read-out reads getBoundingClientRect() in the
+           same tick as the click, so an eased max-width would make the label report a
+           stale width while the gutter had already jumped. Snapping keeps the two honest. */}
+  .stage[data-opt="B"]{--row-pad:24px}
+  .r-row{display:flex}
+  .r-row.user{justify-content:flex-end}
+  .bubble{background:#2b2a26;border:1px solid var(--line);border-radius:14px;padding:7px 12px;font-size:12.5px;max-width:90%}
+  .tcard{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:var(--text);
+         display:flex;align-items:center;gap:10px;width:100%;min-width:0}
+  .tcard .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tcard .badge{border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:var(--muted);font-size:10.5px;flex-shrink:0}
+  .tcard .ck{color:var(--green);flex-shrink:0}
+  .prose{color:var(--muted);font-size:12.5px;line-height:1.6}
+  .prose .hl{color:var(--text)}
+  .stage-foot{display:flex;align-items:center;gap:14px;padding:9px 12px;border-top:1px solid var(--line);flex-wrap:wrap;font-size:12px}
+  .readout{font-family:ui-monospace,monospace;font-size:11.5px;color:var(--text);background:var(--sunken);border:1px solid var(--line);border-radius:6px;padding:5px 9px}
+  .legend{list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:6px 18px;margin-top:10px;font-size:12.5px;color:var(--muted)}
+  .legend li{display:flex;gap:8px;align-items:flex-start}
+  .legend .num{color:var(--amber);font-family:ui-monospace,monospace;flex-shrink:0}
+  .legend b{color:var(--text);font-weight:600}
+  table{border-collapse:collapse;width:100%;margin:10px 0;font-size:12.5px}
+  th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+  th{background:var(--sunken);color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em}
+  td.num{font-family:ui-monospace,monospace;white-space:nowrap}
+  tr.hi td{background:#201f1c}
+  .yes{color:var(--green)}.no{color:var(--red)}.meh{color:var(--amber)}
+  /* ── proportional strips ─────────────────────────────────────────── */
+  .strips{display:flex;flex-direction:column;gap:7px;margin:10px 0}
+  .strip-lab{display:flex;gap:10px;align-items:center;font-size:11.5px;font-family:ui-monospace,monospace;color:var(--muted)}
+  .strip-lab .w{width:112px;color:var(--text)}
+  .strip{width:760px;height:22px;display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden;background:var(--sunken);flex-shrink:0}
+  .strip i{display:block;height:100%}
+  .strip .g{background-image:repeating-linear-gradient(45deg,#1a1917 0 6px,#232220 6px 12px)}
+  .strip .c{background:#2e2d29;display:flex;align-items:center;justify-content:center;font-size:10.5px;color:var(--muted);font-family:ui-monospace,monospace}
+  .rowline{display:flex;gap:12px;align-items:center}
+  .kv{display:grid;grid-template-columns:200px 1fr;gap:3px 14px;font-size:12.5px;margin:8px 0}
+  .kv dt{color:var(--muted)}
+  .kv dd{font-family:ui-monospace,monospace;font-size:12px}
+  .k{color:var(--link)}
+  input[type=range]{width:230px;accent-color:var(--link)}
+  .ctrls{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--muted)}
+  .qs{counter-reset:q}
+  .qs>li{margin:9px 0 9px 4px;list-style:none;padding-left:30px;position:relative}
+  .qs>li:before{counter-increment:q;content:"Q" counter(q);position:absolute;left:0;top:1px;color:var(--link);font-family:ui-monospace,monospace;font-size:11.5px}
+  .rec{color:var(--green);font-size:12.5px}
+  .rec:before{content:"→ recommendation: ";color:var(--green);font-weight:600}
+  .foot{margin-top:26px;padding-top:12px;border-top:1px solid var(--line);color:var(--dim);font-size:11.5px}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <h1>Chat transcript — the left &amp; right gaps</h1>
+  <span class="tag">measured on main @ bba481b06</span>
+  <span class="tag">1450 × 980, headless Chrome</span>
+  <div class="spacer"></div>
+  <div class="opts" role="tablist" aria-label="Width option">
+    <button id="optToday" class="on" onclick="setOpt('today')">Today</button>
+    <button id="optA" onclick="setOpt('A')">A · full-bleed</button>
+    <button id="optB" onclick="setOpt('B')">B · full-bleed + inset</button>
+    <button id="optC" onclick="setOpt('C')">C · width token</button>
+  </div>
+</div>
+
+<main>
+
+<p class="lede">
+  I read the ask as: <b>the transcript and the composer are capped at 896 px and centred</b>, so on a wide window the
+  chat lives in a narrow column with a big dead gutter on either side — you drew those two gutters. This is the
+  measurement, then four ways to remove them. <b>Wireframe only — nothing here is implemented.</b>
+</p>
+
+<div class="note">
+  Why you see it and I measured it: the sidebar hides in your screenshot, so the chat column was your whole
+  ~1450 px window while the rows stayed 896 px — <b>≈277 px of empty space each side (38 % of the window)</b>.
+  I reproduced it against a second server instance on <span class="mono">:8080</span>; your <span class="mono">:8081</span> server was never touched.
+</div>
+
+<!-- ─────────────────────────────────────────────────────────────── -->
+<h2><span class="n">1</span>Today, to scale — 1 px = 1 px</h2>
+
+<div class="stagewrap">
+  <div class="stage" id="stage" data-opt="today" style="--content-max:896px">
+    <div class="vside"><b>left sidebar</b><span>288 px</span><span style="opacity:.6">(hidden in your shot)</span></div>
+    <div class="vcol" id="vcol">
+      <div class="gap gap-l" id="gapL"><span id="gapLlab">133px</span></div>
+      <div class="gap gap-r" id="gapR"><span id="gapRlab">133px</span></div>
+      <div class="rows" id="rows">
+        <div class="r-row user"><div class="bubble">Task : make mermaid diagram how this app work</div></div>
+        <div class="tcard"><span class="grow">load_memory “pabrik app architecture mermaid diagram”</span><span class="badge">10 of 339 hits · with content</span></div>
+        <div class="tcard"><span class="grow">kanban_list 7 columns · 20/170 tasks</span><span class="ck">✓</span></div>
+        <div class="tcard"><span class="grow">command $ ls -la &amp;&amp; echo &amp;&amp; git log --oneline -5 &amp;&amp; git branch --show-current</span><span class="badge" style="color:var(--red)">failed</span></div>
+        <p class="prose">Assistant prose, tool cards, diffs, code and the composer are all one column: every transcript
+          row carries <span class="hl">px-4 max-w-4xl mx-auto</span> (ChatView.vue:3927). <span class="hl">max-w-4xl</span> resolves to
+          <span class="hl">56rem</span> = 896 px and <span class="hl">mx-auto</span> centres it — those are the two bands the hatching marks.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<ol class="legend">
+  <li><span class="num">①</span><span><b>Left gutter 133 px</b> — measured, <span class="mono">#gapL.getBoundingClientRect().width</span>.</span></li>
+  <li><span class="num">②</span><span><b>Right gutter 133 px</b> — identical; the cap is symmetric, so the two gaps are one fact.</span></li>
+  <li><span class="num">③</span><span><b>Row 896 px</b> — its own content is 864 px after the row's 16 px <span class="mono">px-4</span> padding each side.</span></li>
+  <li><span class="num">④</span><span><b>Chat column 1162 px</b> = 1450 viewport − 288 sidebar. The 896 px box is centred inside it.</span></li>
+  <li><span class="num">⑤</span><span><b>Nothing in the transcript escapes the cap</b> — tool cards, code, diffs and the input card are all inside it.</span></li>
+</ol>
+
+<h3>Measured at four window widths (sidebar 288 px visible)</h3>
+<table>
+  <thead><tr><th>Window</th><th>Chat column</th><th>Row width</th><th>Gutter each side</th><th>Column that is empty</th><th>Prose line</th></tr></thead>
+  <tbody>
+    <tr><td class="num">1100</td><td class="num">812</td><td class="num">812</td><td class="num">0 / 0</td><td class="num">0 %</td><td>≈ 100 ch</td></tr>
+    <tr class="hi"><td class="num">1450</td><td class="num">1162</td><td class="num">896</td><td class="num">133 / 133</td><td class="num">23 %</td><td>≈ 110 ch</td></tr>
+    <tr><td class="num">1920</td><td class="num">1632</td><td class="num">896</td><td class="num">368 / 368</td><td class="num">45 %</td><td>≈ 110 ch</td></tr>
+    <tr><td class="num">2560</td><td class="num">2272</td><td class="num">896</td><td class="num">688 / 688</td><td class="num">61 %</td><td>≈ 110 ch</td></tr>
+  </tbody>
+</table>
+<p class="lede">Below ≈1184 px of column the cap never binds and there is no gap — that is why this is a wide-window problem only.</p>
+
+<h3>The same four windows, drawn proportionally</h3>
+<div class="strips">
+  <div class="rowline"><span class="strip-lab"><span class="w">window 1100</span></span>
+    <span class="strip"><i class="g" style="width:0%"></i><i class="c" style="width:100%">content 812 — no gap</i><i class="g" style="width:0%"></i></span></div>
+  <div class="rowline"><span class="strip-lab"><span class="w">window 1450</span></span>
+    <span class="strip"><i class="g" style="width:11.4%"></i><i class="c" style="width:77.2%">content 896</i><i class="g" style="width:11.4%"></i></span></div>
+  <div class="rowline"><span class="strip-lab"><span class="w">window 1920</span></span>
+    <span class="strip"><i class="g" style="width:22.5%"></i><i class="c" style="width:55%">content 896</i><i class="g" style="width:22.5%"></i></span></div>
+  <div class="rowline"><span class="strip-lab"><span class="w">window 2560</span></span>
+    <span class="strip"><i class="g" style="width:30.3%"></i><i class="c" style="width:39.4%">content 896</i><i class="g" style="width:30.3%"></i></span></div>
+</div>
+
+<!-- ─────────────────────────────────────────────────────────────── -->
+<h2><span class="n">2</span>Where the 896 px comes from — exactly four sites</h2>
+<table id="sites">
+  <thead><tr><th>#</th><th>Site</th><th>What it caps</th><th>Class string at HEAD</th></tr></thead>
+  <tbody>
+    <tr><td class="num">1</td><td class="num">ChatView.vue:3778</td><td>loading skeleton</td><td class="mono">flex flex-col gap-3 px-4 max-w-4xl mx-auto pt-6 w-full</td></tr>
+    <tr><td class="num">2</td><td class="num">ChatView.vue:3927</td><td><b>every transcript row</b> — user bubble, assistant prose, tool cards, diffs</td><td class="mono">px-4 max-w-4xl mx-auto</td></tr>
+    <tr><td class="num">3</td><td class="num">ChatView.vue:4549</td><td>agent-error band</td><td class="mono">px-4 max-w-4xl mx-auto agent-error-list</td></tr>
+    <tr><td class="num">4</td><td class="num">ChatView.vue:4619</td><td>the composer / input card</td><td class="mono">max-w-4xl mx-auto</td></tr>
+  </tbody>
+</table>
+<dl class="kv">
+  <dt>Token behind <span class="mono">max-w-4xl</span></dt><dd>--container-4xl: 56rem &nbsp;→&nbsp; 896 px @ 16 px root</dd>
+  <dt>Token behind <span class="mono">px-4</span></dt><dd>--spacing: .25rem &nbsp;→&nbsp; padding-inline: 16px</dd>
+  <dt>Source of both</dt><dd>the shipped bundle — src/apps/desktop/dist/assets/index-*.css</dd>
+  <dt>Composer cap box (real element, measured)</dt><dd>x = 421, width = 896, right = 1317 &nbsp;(column 288 → 1450, so 133 / 133)</dd>
+  <dt>A row with the row's own classes (probe, measured)</dt><dd>x = 421, width = 896, right = 1317 &nbsp;— identical, so rows and composer share one cap</dd>
+</dl>
+<div class="note good">
+  <b>The important one is site 2.</b> Fix it and the transcript goes edge to edge. Sites 1, 3 and 4 must move with it or the
+  skeleton, the error band and the input card stay narrow inside a wide transcript and the layout jumps when loading ends.
+</div>
+
+<!-- ─────────────────────────────────────────────────────────────── -->
+<h2><span class="n">3</span>The options — click one, the stage above re-renders</h2>
+
+<div class="stage-foot" style="border:1px solid var(--line);border-radius:10px">
+  <span class="readout" id="readout">row 896 · content 864 · gutter 133 + 133 = 266 (23 % of the 1162px column)</span>
+  <div class="ctrls">
+    <label for="widthSlider">C · cap</label>
+    <input type="range" id="widthSlider" min="896" max="1450" step="8" value="1160" disabled oninput="setCap(this.value)">
+    <span class="mono" id="capVal">896px (fixed)</span>
+  </div>
+</div>
+
+<table>
+  <thead><tr><th>Option</th><th>What changes</th><th>@1450: row / gutter</th><th>@2560: row / gutter</th><th>Cost</th></tr></thead>
+  <tbody>
+    <tr class="hi"><td><b>Today</b></td><td>—</td><td class="num">896 · 133 + 133</td><td class="num">896 · 688 + 688</td><td class="no">gaps 38 % of a maximised window</td></tr>
+    <tr><td><b>A · full-bleed</b></td><td>delete <span class="mono">max-w-4xl mx-auto</span> at all four sites</td><td class="num">1162 · 0 + 0</td><td class="num">2272 · 0 + 0</td><td class="meh">prose ≈ 250 ch/line at 2560</td></tr>
+    <tr><td><b>B · full-bleed + 24 px inset</b></td><td>as A, with <span class="mono">padding-inline: 24px</span> instead of 16</td><td class="num">1162 · 0 + 0, 24 px breathing room</td><td class="num">2272 · 0 + 0</td><td class="meh">same long prose, softer edge</td></tr>
+    <tr><td><b>C · width token</b> <span style="color:var(--green)">◀ recommended</span></td><td>one token <span class="mono">--chat-content-max</span> + a control; default <span class="mono">100%</span></td><td class="num">1162 · 0 + 0</td><td class="num">2272 · 0 + 0</td><td class="yes">one token, reversible per user</td></tr>
+  </tbody>
+</table>
+
+<div class="note">
+  <b>A vs B vs C is really one question:</b> the cap exists so a maximised window does not stretch prose to 250 characters.
+  C keeps that opinion available without forcing it on you — turn it down to 896 and today's layout comes back, token for token.
+</div>
+
+<h3>What C looks like in the code</h3>
+<table>
+  <thead><tr><th>Piece</th><th>Where</th></tr></thead>
+  <tbody>
+    <tr><td>the knob</td><td class="mono">.chat-column { --chat-content-max: 100%; } &nbsp;— next to the existing <span class="mono">--chat-composer-inset</span> (ChatView.vue:3668 style block)</td></tr>
+    <tr><td>the four sites</td><td class="mono">max-w-4xl</span> → <span class="mono">max-w-[var(--chat-content-max)]</span>, <span class="mono">mx-auto</span> stays</td></tr>
+    <tr><td>the value</td><td>a stored setting: <span class="mono">comfortable 896</span> · <span class="mono">wide 1400</span> · <span class="mono">full 100%</span> — default for you: <span class="mono">full</span></td></tr>
+    <tr><td>the control</td><td>chat app bar (next to the <span class="mono">◫</span> sidebar toggle), or Settings → Appearance</td></tr>
+  </tbody>
+</table>
+
+<!-- ─────────────────────────────────────────────────────────────── -->
+<h2><span class="n">4</span>Traps found while measuring — read before implementing</h2>
+<div class="note bad">
+  <b>① The pill rail is already handled — for rows only, and asymmetrically.</b>
+  <span class="mono">.has-pill-rail</span> puts <span class="mono">padding-right: 48px</span> on every row (ChatView.vue:5462-5471) so the
+  rail's pills (18 px + 32 px rail) cannot sit on a bubble. Today that 48 px hides inside the empty gutter. Full-bleed makes it a
+  <b>visible 48 px right / 16 px left asymmetry</b> in any chat with ≥ 2 user messages — the mirrored-padding fix belongs in the same change.
+</div>
+<div class="note warn">
+  <b>② The composer dock is not covered by that rail gutter.</b> Site 4 has no <span class="mono">has-pill-rail</span> rule, so full-bleed
+  moves the input card's right edge into the rail's band. Check it with the rail visible before shipping.
+</div>
+<div class="note">
+  <b>③ The tool cards already follow the row.</b> <span class="mono">.tool-sequence</span>, <span class="mono">.tool-item</span> and
+  <span class="mono">.chat-tool-card</span> are all <span class="mono">width: 100%</span> with <span class="mono">min-width: 0</span>, and
+  <span class="mono">.chat-tool-card pre { overflow-x: auto }</span> — so wide payloads scroll inside rather than stretch the card.
+  No change needed, and <span class="mono">ChatView.tool-width.spec.ts</span> pins all of it, including the exact
+  <span class="mono">class="min-w-0 flex-1 w-full"</span> container.
+</div>
+<div class="note">
+  <b>④ The floating composer is vertical only.</b> <span class="mono">--chat-composer-inset</span> / <span class="mono">.last-transcript-row</span>
+  (ChatView.vue:5564) pad the last row <i>down</i>, so a horizontal change cannot desync them. VirtualScroller's
+  <span class="mono">measureItems()</span> reads <span class="mono">offsetHeight</span>, so horizontal width is invisible to the height model
+  too — no scroll anchoring risk.
+</div>
+<div class="note">
+  <b>⑤ No test pins the cap.</b> Grepping <span class="mono">max-w-4xl</span> across <span class="mono">src/</span>,
+  <span class="mono">tests/</span> and <span class="mono">tests/functional_ui/</span> finds the four sites in ChatView.vue and nothing else
+  (the other hits are the compiled bundle in <span class="mono">webapp_assets.zig</span>). The blast radius is the four sites.
+</div>
+
+<!-- ─────────────────────────────────────────────────────────────── -->
+<h2><span class="n">5</span>Open questions — pick one per line</h2>
+<ol class="qs">
+  <li>Which option — <b>A</b> plain full-bleed, <b>B</b> full-bleed with a 24 px inset, or <b>C</b> a width token + control?
+    <span class="rec">C, defaulting to full — it does exactly what you drew and can be dialled back to 896 without another PR.</span></li>
+  <li>If C: where does the control live — chat app bar, or Settings → Appearance?
+    <span class="rec">app bar; you are looking at the chat when the gap annoys you.</span></li>
+  <li>Should prose alone keep a reading measure (~90 ch) while cards and diffs go full width?
+    <span class="rec">no for now — it re-creates a gap around paragraphs, which is the thing you drew.</span></li>
+  <li>Does the sidebar count? With the sidebar open the column is 1162 px, so the change is worth only 266 px; with it hidden it is 554 px.
+    <span class="rec">the cap is per-column, so both are fixed by the same change — nothing extra to do.</span></li>
+  <li>The composer: follow the transcript, or stay at 896 like a document's signature block?
+    <span class="rec">follow it — a wide transcript over a narrow input card reads as a bug.</span></li>
+  <li>Add <span class="mono">tests/functional_ui/chatview_width_test.py</span> asserting gutter 0 at 1450 px, so the cap cannot creep back?
+    <span class="rec">yes, one assertion per option chosen.</span></li>
+</ol>
+
+<p class="foot">
+  Wireframe for approval — no code changed. Geometry measured with headless Chrome against a second instance of this
+  build on <span class="mono">http://127.0.0.1:8080</span> (window 1450×980, sidebar 288 px) at main <span class="mono">bba481b06</span>;
+  the running server on <span class="mono">:8081</span> was not touched. Stage above is drawn at real scale inside a scrollable frame.
+</p>
+
+</main>
+
+<script>
+// JS-optional: the markup ships the "Today" state (896px, gaps labelled 133) and the CSS
+// computes the gap widths from --content-max, so with JS disabled this page still renders
+// a correct Today figure. Everything below only re-labels and re-measures.
+var stage = document.getElementById('stage');
+var vcol = document.getElementById('vcol');
+var rows = document.getElementById('rows');
+var gapL = document.getElementById('gapL');
+var gapR = document.getElementById('gapR');
+var slider = document.getElementById('widthSlider');
+var capVal = document.getElementById('capVal');
+
+function px(n) { return Math.round(n) + 'px'; }
+
+function readout() {
+  var cw = vcol.getBoundingClientRect().width;
+  var rw = rows.getBoundingClientRect().width;
+  var cs = getComputedStyle(rows);
+  var pl = parseFloat(cs.paddingLeft), pr = parseFloat(cs.paddingRight);
+  var l = gapL.getBoundingClientRect().width, r = gapR.getBoundingClientRect().width;
+  document.getElementById('gapLlab').textContent = px(l);
+  document.getElementById('gapRlab').textContent = px(r);
+  document.getElementById('readout').textContent =
+    'row ' + Math.round(rw) + ' · content ' + Math.round(rw - pl - pr) +
+    ' · pad ' + Math.round(pl) + '/' + Math.round(pr) +
+    ' · gutter ' + Math.round(l) + ' + ' + Math.round(r) +
+    ' = ' + Math.round(l + r) + ' (' + Math.round((l + r) / cw * 100) + ' % of the ' + Math.round(cw) + 'px column)';
+}
+
+function setOpt(which) {
+  stage.setAttribute('data-opt', which);
+  document.getElementById('optToday').className = which === 'today' ? 'on' : '';
+  document.getElementById('optA').className = which === 'A' ? 'on' : '';
+  document.getElementById('optB').className = which === 'B' ? 'on' : '';
+  document.getElementById('optC').className = which === 'C' ? 'on' : '';
+  slider.disabled = which !== 'C';
+  if (which === 'today') { stage.style.setProperty('--content-max', '896px'); }
+  if (which === 'A' || which === 'B') { stage.style.setProperty('--content-max', '100%'); }
+  if (which === 'C') { setCap(slider.value); return; }
+  capVal.textContent = which === 'today' ? '896px (fixed)' : '100% (full-bleed)';
+  readout();
+}
+
+function setCap(v) {
+  v = parseInt(v, 10);
+  stage.style.setProperty('--content-max', v + 'px');
+  capVal.textContent = v + 'px';
+  readout();
+}
+
+window.addEventListener('resize', readout);
+readout();
+</script>
+
+</body>
+</html>
