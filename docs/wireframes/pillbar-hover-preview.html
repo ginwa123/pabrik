@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wireframe — the user-pill hover preview box (why it is a 34px sliver, and 4 ways to fix it)</title>
+<style>
+  :root {
+    --bg: #181616; --bg-m1: #1D1C19; --bg-m2: #12120f;
+    --bg-p1: #282727; --bg-p2: #393836;
+    --border: #282727; --border-light: #393836;
+    --text: #c5c9c5; --text-muted: #a6a69c; --text-dim: #7a8382;
+    --violet: #8992a7; --aqua: #8ea4a2; --yellow: #c4b28a; --blue: #8ba4b0;
+    --green: #87a987; --red: #c4746e; --orange: #b6927b;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text);
+         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         font-size: 14px; line-height: 1.5; padding: 32px; }
+  .page { max-width: 1320px; margin: 0 auto; }
+  h1 { font-size: 21px; font-weight: 600; margin-bottom: 4px; }
+  .sub { color: var(--text-dim); font-size: 13px; margin-bottom: 10px; }
+  .sub b { color: var(--text-muted); font-weight: 500; }
+  .flow { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-dim);
+          margin-bottom: 22px; flex-wrap: wrap; }
+  .flow .step { background: var(--bg-m1); border: 1px solid var(--border); border-radius: 5px; padding: 3px 10px; }
+  .flow .step.now { border-color: var(--violet); color: var(--text); }
+  .flow .arrow { color: var(--violet); }
+
+  h2 { font-size: 15px; font-weight: 600; margin: 30px 0 4px; }
+  h2 .n { color: var(--violet); font-weight: 500; margin-right: 6px; }
+  h3 { font-size: 13px; font-weight: 600; color: var(--text-muted); margin: 18px 0 6px; }
+  p.lead { color: var(--text-muted); font-size: 13px; margin-bottom: 10px; max-width: 110ch; }
+  code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px;
+         background: var(--bg-m2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
+  .card { background: var(--bg-m1); border: 1px solid var(--border); border-radius: 8px;
+          padding: 14px 16px; margin: 10px 0 18px; }
+  .card.bad { border-left: 3px solid var(--red); }
+  .card.good { border-left: 3px solid var(--green); }
+  .card.warn { border-left: 3px solid var(--yellow); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; font-weight: 600; color: var(--text-muted); font-size: 10px;
+       text-transform: uppercase; letter-spacing: .06em; padding: 6px 8px; border-bottom: 1px solid var(--border);
+       white-space: nowrap; }
+  td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td.mono, .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
+  .dim { color: var(--text-dim); } .muted { color: var(--text-muted); }
+  .badval { color: var(--red); } .okval { color: var(--green); } .warnval { color: var(--yellow); }
+
+  .chip { display: inline-block; font-size: 10px; text-transform: uppercase; letter-spacing: .07em;
+          border-radius: 20px; padding: 2px 8px; border: 1px solid var(--border-light); color: var(--text-muted); }
+  .chip.bad { color: var(--red); border-color: rgba(196,116,110,.45); }
+  .chip.good { color: var(--green); border-color: rgba(135,169,135,.45); }
+  .chip.warn { color: var(--yellow); border-color: rgba(196,178,138,.45); }
+
+  pre { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; line-height: 1.5;
+        background: var(--bg-m2); border: 1px solid var(--border); border-radius: 6px;
+        padding: 10px 12px; overflow-x: auto; }
+  pre .add { color: var(--green); } pre .del { color: var(--red); }
+  pre .cmt { color: var(--text-dim); }
+
+  .switch { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .switch button { background: var(--bg-m1); border: none; border-right: 1px solid var(--border);
+                   color: var(--text-dim); font: inherit; font-size: 12px; padding: 5px 11px; cursor: pointer; }
+  .switch button:last-child { border-right: none; }
+  .switch button.on { background: var(--violet); color: var(--bg); }
+  .switch button:hover:not(.on) { color: var(--text); }
+  .hint { color: var(--text-dim); font-size: 12px; margin: 6px 0 14px; }
+
+  /* ---------- mock rows ---------- */
+  .mockrow { display: flex; gap: 18px; align-items: flex-start; margin-bottom: 20px; }
+  .mockframe { flex: 1 1 auto; min-width: 0; overflow-x: auto; }
+  .mockmeta { font-size: 12px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+  .mocknotes { width: 360px; flex-shrink: 0; font-size: 12px; }
+  @media (max-width: 1100px) { .mockrow { flex-direction: column; } .mocknotes { width: 100%; } }
+  .kv { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--border); padding: 3px 0; }
+  .kv:last-child { border-bottom: none; }
+  .kv .k { color: var(--text-dim); }
+  .kv .v { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+  /* =====================================================================
+     The real component, classes and declarations VERBATIM.
+     Source: src/apps/desktop/src/components/chat/UserPillRail.vue:115-207
+             src/apps/desktop/src/components/views/ChatView.vue:5412-5414
+     Only the selector prefix `.wf-host` is added so it cannot leak into the
+     wireframe's own chrome. The four `.user-pill-message` variants are the
+     only intentional difference between the panes.
+     ===================================================================== */
+  .wf-host {
+    position: relative;
+    overflow: hidden;
+    background: #171614;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    height: 360px;
+    display: flex; flex-direction: column;
+  }
+  .wf-host.has-pill-rail { --pill-rail-gutter: 48px; }
+  .wf-host.has-pill-rail .wf-row { padding-right: var(--pill-rail-gutter, 48px); }
+  .wf-row { padding: 12px 16px; font-size: 12px; color: #8d8d86; border-bottom: 1px solid #201f1d; }
+  .wf-row .bub { background: #23262b; border: 1px solid #2c3037; border-radius: 8px; padding: 7px 10px; color: #b9bec4; }
+
+  /* ChatScrollSlider.vue — right: 2px + width 12px, z-index 20 */
+  .wf-host .wf-slider { position: absolute; right: 2px; top: 8px; bottom: 8px; width: 12px;
+                        z-index: 20; border-radius: 999px; background: transparent; }
+  .wf-host .wf-slider i { position: absolute; left: 3px; right: 3px; top: 12%; height: 26%;
+                          border-radius: 999px; background: var(--border); opacity: .7; }
+
+  /* UserPillRail.vue:115 — the rail. 24px pill + 4px padding x 2 = a 32px box. */
+  .wf-host .user-pill-rail {
+    position: absolute;
+    right: 18px;                       /* ChatView.vue:5412 `:deep(.user-pill-rail)` */
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex; flex-direction: column;
+    --pill-h: 4px;
+    --pill-gap: 8px;
+    --pill-pad: 8px;
+    --pill-pitch: calc(var(--pill-h) + var(--pill-gap));
+    gap: var(--pill-gap);
+    z-index: 20;
+    padding: var(--pill-pad) 4px;
+    border-radius: 999px;
+  }
+  /* UserPillRail.vue:143 */
+  .wf-host .user-pill {
+    width: 24px; height: var(--pill-h); border-radius: 999px;
+    padding: 0; border: none; cursor: pointer;
+    background-color: var(--border); opacity: .55;
+    transition: opacity .15s ease, transform .15s ease, background-color .15s ease;
+  }
+  .wf-host .user-pill:hover, .wf-host .user-pill:focus-visible {
+    opacity: 1; transform: scaleX(1.25); background-color: var(--text-muted); outline: none;
+  }
+  .wf-host .user-pill--active { opacity: 1; background-color: #8b5cf6; }
+
+  /* UserPillRail.vue:186 — the box's shared look (identical in all four panes). */
+  .wf-host .user-pill-message {
+    position: absolute;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background-color: var(--bg-m1);
+    color: var(--text);
+    font-size: 12px;                   /* --text-dense */
+    line-height: 1.45;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    pointer-events: none;
+    z-index: 21;
+    box-shadow: 0 8px 24px -8px rgba(0,0,0,.65);
+    display: -webkit-box; -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3; overflow: hidden;
+  }
+  /* ── V0 · HEAD, exactly as shipped (UserPillRail.vue:186-203) ────────── */
+  .wf-host.pv-v0 .user-pill-message {
+    right: 0;
+    transform: translate(-100%, -50%);
+    max-width: 280px;
+    margin-right: 8px;
+  }
+  /* ── V1 · the one-line width fix — WRONG on its own ─────────────────── */
+  .wf-host.pv-v1 .user-pill-message {
+    right: 0;
+    transform: translate(-100%, -50%);
+    width: max-content;
+    max-width: 280px;
+    margin-right: 8px;
+  }
+  /* ── V2 · box hoisted beside the rail: containing block = the wrapper ── */
+  .wf-host.pv-v2 {
+    /* The rail's rhythm has to be RESTATED here — the box no longer inherits
+       it from the rail. This duplication is V2's real cost. */
+    --pill-h: 4px; --pill-gap: 8px; --pill-pad: 8px;
+    --pill-pitch: calc(var(--pill-h) + var(--pill-gap));
+    --rail-w: 32px; --rail-right: 18px;
+  }
+  .wf-host.pv-v2 .user-pill-message {
+    right: calc(var(--rail-right) + var(--rail-w) + 8px);
+    left: auto;
+    transform: translateY(-50%);
+    width: max-content;
+    max-width: min(280px, calc(100% - var(--rail-right) - var(--rail-w) - 16px));
+  }
+  /* ── V3 · RECOMMENDED — same parent, correct anchor ─────────────────── */
+  .wf-host.pv-v3 .user-pill-message {
+    right: 100%;                       /* 100% of the rail's own 32px width */
+    transform: translateY(-50%);
+    margin-right: 8px;
+    width: max-content;
+    max-width: 280px;
+  }
+
+  /* wireframe-only: the measured-width ruler, never part of the product */
+  .wf-ruler { position: absolute; height: 0; border-top: 1px dashed var(--violet); z-index: 30; display: none; }
+  .wf-ruler::before, .wf-ruler::after { content: ''; position: absolute; top: -4px; width: 1px; height: 8px;
+                                        background: var(--violet); }
+  .wf-ruler::before { left: 0; } .wf-ruler::after { right: 0; }
+  .wf-ruler span { position: absolute; top: 3px; left: 50%; transform: translateX(-50%);
+                   font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 10px;
+                   color: var(--violet); white-space: nowrap; }
+  .wf-gap { position: absolute; height: 0; border-top: 1px dashed var(--orange); z-index: 30; display: none; }
+  .wf-gap span { position: absolute; top: 3px; left: 50%; transform: translateX(-50%);
+                 font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 10px;
+                 color: var(--orange); white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Pillbar hover preview — why the box is a 34px sliver</h1>
+  <div class="sub">Task <b>task_1792162810941_3</b> · worktree <b>worktree/ffix-the-pillbar-hover-1792162799691</b> ·
+    source <b>UserPillRail.vue:186</b> · shipped by <b>PR #953</b></div>
+  <div class="flow">
+    <span class="step">report + screenshot</span><span class="arrow">→</span>
+    <span class="step now">measure the box (this wireframe)</span><span class="arrow">→</span>
+    <span class="step">pick a variant</span><span class="arrow">→</span>
+    <span class="step">patch UserPillRail.vue</span><span class="arrow">→</span>
+    <span class="step">functional UI test</span>
+  </div>
+
+  <p class="lead">
+    PR #953 added a styled preview box that opens when a pill is hovered. It never looked right for a
+    reason nobody could see: <b>jsdom has no layout engine</b>, so the spec suite that shipped it could only
+    assert that the element <em>exists</em> — never how wide it is. The two defects below were found by
+    rendering the component's real markup with its real CSS in a browser and reading
+    <code>getBoundingClientRect()</code>. Both are in the same seven declarations.
+  </p>
+
+  <h2><span class="n">1</span>Two defects, not one</h2>
+  <div class="grid2">
+    <div class="card bad">
+      <h3 style="margin-top:0">D1 — the box shrink-to-fits against a 32px containing block</h3>
+      <p class="lead" style="margin-bottom:8px">
+        The rule sets <code>max-width: 280px</code> but <b>no width</b>. An absolutely positioned box with
+        <code>left: auto</code> and no width is shrink-to-fit, and its available width comes from its
+        <b>containing block</b> — which is the rail's own padding box, <b>32px</b> wide
+        (<code>right: 18px</code> + <code>padding: 8px 4px</code> + a 24px pill).
+        <code>max-width</code> is only an upper bound, so it never binds: the box comes out at
+        <b>the rail's own scale instead of 280px</b> — 32–34px in the measurements below, and the exact
+        used width even drifts with the hovered text, because a shrink-to-fit width is content-dependent.
+      </p>
+      <div class="kv"><span class="k">measured box width</span><span class="v badval" data-k="d1-w">33.7px</span></div>
+      <div class="kv"><span class="k">measured content width</span><span class="v badval" data-k="d1-c">11.7px (padding 10px × 2)</span></div>
+      <div class="kv"><span class="k">characters per line</span><span class="v badval" data-k="d1-ch">2</span></div>
+      <div class="kv"><span class="k">lines, then ellipsis-clamped</span><span class="v badval" data-k="d1-l">4 deep → 3 shown</span></div>
+      <p class="lead" style="margin:8px 0 0">
+        <b>This is the sliver in the report.</b> The message text is
+        <code>/skill-behavior-unit-tests</code>, and <code>overflow-wrap: anywhere</code> lets it break
+        after every single character — the box renders <code>/</code>, <code>s</code>, <code>k</code> … one
+        character per line, then hides the rest behind the clamp.
+      </p>
+    </div>
+
+    <div class="card bad">
+      <h3 style="margin-top:0">D2 — the box is anchored a full box-width too far left</h3>
+      <p class="lead" style="margin-bottom:8px">
+        <code>right: 0</code> already puts the box's right edge <em>at the rail's right edge</em>. Then
+        <code>translate(-100%, -50%)</code> moves it a further <b>its own width</b> to the left. The gap
+        between the pill and its own box is therefore <code>boxWidth − 24px</code> — the anchor is a
+        function of the box's width, which is why nobody noticed it.
+      </p>
+      <div class="kv"><span class="k">today, at 33.7px wide</span><span class="v warnval" data-k="d2-today">gap 9.7px — looks fine</span></div>
+      <div class="kv"><span class="k">after fixing D1 only</span><span class="v badval" data-k="d2-after">gap 256px — flies to mid-transcript</span></div>
+      <p class="lead" style="margin:8px 0 0">
+        <b>D1 and D2 cancel out. Fix the width alone and the box jumps ~256px away from the pill it
+        belongs to — a new bug, worse than the one reported.</b> Any acceptable fix has to move the
+        anchor and the width in the same change.
+      </p>
+    </div>
+  </div>
+
+  <h2><span class="n">2</span>Measured matrix — 4 variants × 4 transcript widths</h2>
+  <p class="lead">
+    Read live from the DOM by this page's own measurement pass (offscreen hosts at each width; the first
+    pill hovered; <code>getBoundingClientRect()</code> on the box and the rail). Hover any pill in
+    section 3 to reproduce a cell by hand.
+  </p>
+  <div class="card">
+    <table id="matrix">
+      <thead>
+        <tr>
+          <th style="width:220px">variant</th>
+          <th>900px pane</th><th>640px pane</th><th>460px pane</th>
+          <th>320px pane <span class="dim">(changes sidebar open)</span></th>
+          <th style="width:150px">gap pillow→box</th>
+        </tr>
+      </thead>
+      <tbody id="matrixBody">
+        <!-- Baked with the values measured before this file was written; the
+             script below overwrites every cell with a fresh measurement on
+             load. JS off ⇒ these numbers still stand. -->
+        <tr data-variant="v0">
+          <td><b>V0 · HEAD</b> <span class="chip bad">broken</span></td>
+          <td class="mono badval" data-cell="v0-900">33.7px · 2 ch/line</td>
+          <td class="mono badval" data-cell="v0-640">33.7px · 2 ch/line</td>
+          <td class="mono badval" data-cell="v0-460">33.7px · 2 ch/line</td>
+          <td class="mono badval" data-cell="v0-320">33.7px · 2 ch/line</td>
+          <td class="mono" data-cell="v0-gap">9.7px</td>
+        </tr>
+        <tr data-variant="v1">
+          <td><b>V1 · width only</b> <span class="chip bad">regression</span></td>
+          <td class="mono warnval" data-cell="v1-900">280px · 44 ch/line</td>
+          <td class="mono warnval" data-cell="v1-640">280px · 44 ch/line</td>
+          <td class="mono badval" data-cell="v1-460">280px · 44 ch/line</td>
+          <td class="mono badval" data-cell="v1-320">280px · 44 ch/line</td>
+          <td class="mono badval" data-cell="v1-gap">256px</td>
+        </tr>
+        <tr data-variant="v3">
+          <td><b>V3 · <code>right: 100%</code></b> <span class="chip good">recommended</span></td>
+          <td class="mono okval" data-cell="v3-900">280px · 44 ch/line</td>
+          <td class="mono okval" data-cell="v3-640">280px · 44 ch/line</td>
+          <td class="mono okval" data-cell="v3-460">280px · 44 ch/line</td>
+          <td class="mono warnval" data-cell="v3-320">280px · 44 ch/line</td>
+          <td class="mono okval" data-cell="v3-gap">8px</td>
+        </tr>
+        <tr data-variant="v2">
+          <td><b>V2 · box hoisted</b> <span class="chip warn">works, bigger diff</span></td>
+          <td class="mono okval" data-cell="v2-900">280px · 44 ch/line</td>
+          <td class="mono okval" data-cell="v2-640">280px · 44 ch/line</td>
+          <td class="mono okval" data-cell="v2-460">280px · 44 ch/line</td>
+          <td class="mono okval" data-cell="v2-320">252px · 40 ch/line</td>
+          <td class="mono okval" data-cell="v2-gap">8px</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2><span class="n">3</span>The panes — hover any pill, and watch the ruler</h2>
+  <p class="hint">
+    Each pane below renders the component's real markup and real CSS. The dashed violet ruler measures the
+    box; the orange ruler measures the gap between the pill and the box it opened. Change the transcript
+    width to see how each variant behaves in a narrow pane.
+  </p>
+  <div class="switch" id="paneSwitch">
+    <button type="button" data-w="320">320px</button>
+    <button type="button" data-w="460">460px</button>
+    <button type="button" data-w="640" class="on">640px</button>
+    <button type="button" data-w="900">900px</button>
+  </div>
+
+  <div style="margin-top:16px" id="mocks"></div>
+
+  <h2><span class="n">4</span>The candidate patches</h2>
+
+  <h3>V3 — RECOMMENDED · two declarations, same parent, same <code>top</code> math</h3>
+  <pre><span class="cmt">// src/apps/desktop/src/components/chat/UserPillRail.vue:186</span>
+ .user-pill-message {
+   position: absolute;
+<span class="del">-  right: 0;</span>
+<span class="del">-  transform: translate(-100%, -50%);</span>
+<span class="del">-  max-width: 280px;</span>
+<span class="del">-  margin-right: 8px;</span>
+<span class="add">+  /* Anchor to the rail's LEFT edge: `right: 100%` is 100% of the rail's own</span>
+<span class="add">+     32px width, so the box's right edge lands `margin-right` left of the</span>
+<span class="add">+     pills. `right: 0` + `translateX(-100%)` counted the offset twice. */</span>
+<span class="add">+  right: 100%;</span>
+<span class="add">+  transform: translateY(-50%);</span>
+<span class="add">+  margin-right: 8px;</span>
+<span class="add">+  /* An explicit width. With `left: auto` and no width the box shrink-to-fits</span>
+<span class="add">+     against the rail's 32px padding box and collapses to ~34px. */</span>
+<span class="add">+  width: max-content;</span>
+<span class="add">+  max-width: 280px;</span>
+ }</pre>
+  <div class="card good">
+    <b>Why this one.</b>
+    It repairs both defects, keeps the box a child of the rail — so <code>pillCentreTop</code>'s
+    <code>calc(var(--pill-pad) + i * var(--pill-pitch) + var(--pill-h) / 2)</code> still reads the
+    <em>one</em> copy of the stack geometry that lives on the rail — and it touches nothing outside the
+    one rule. The keyboard-focus path, the key-guarded close, <code>pointer-events: none</code>,
+    <code>aria-hidden</code> and the 3-line clamp are all untouched.
+    <br><br>
+    <b>Residual, stated honestly:</b> under a ~340px pane a 280px box hangs up to 19px past the pane's
+    left edge (measured: 19px at 320px). It cannot be clamped in CSS from inside the rail, because
+    <code>100%</code> in a <code>max-width</code> would resolve against the rail's 32px, not the pane.
+    Accept it, or take V2.
+  </div>
+
+  <h3>V2 — fully adaptive, at the cost of the single source of truth</h3>
+  <pre><span class="cmt">// the box renders as a SIBLING of &lt;nav class="user-pill-rail"&gt;, inside the</span>
+<span class="cmt">// messages wrapper — so its containing block is the wrapper, not the rail.</span>
+ .user-pill-message {
+   position: absolute;
+<span class="add">+  right: calc(var(--rail-right) + var(--rail-w) + 8px);</span>
+<span class="add">+  transform: translateY(-50%);</span>
+<span class="add">+  width: max-content;</span>
+<span class="add">+  max-width: min(280px, calc(100% - var(--rail-right) - var(--rail-w) - 16px));</span>
+ }</pre>
+  <div class="card warn">
+    Only this variant survives a 320px pane intact (252px box, fully inside). The price: the box leaves
+    the rail's subtree, so it no longer inherits <code>--pill-h</code> / <code>--pill-gap</code> /
+    <code>--pill-pad</code> — those have to be restated on the new parent (or the <code>top</code> math has
+    to become measurement-based, which the component was deliberately built to avoid). The box would also
+    be rendered by the host (<code>ChatView</code>) instead of by the component, moving state that
+    currently belongs to the rail. Bigger diff, real drift risk, for a case that only bites below ~340px.
+  </div>
+
+  <h3>V1 — must not ship</h3>
+  <div class="card bad">
+    Adding <code>width: max-content</code> and nothing else turns the 2-character sliver into a legible
+    280px box that is <b>256px away from the pill that opened it</b>, overhanging the pane's left edge by
+    267px in a narrow pane. It is the shape of bug that looks like progress in a wide-pane screenshot.
+  </div>
+
+  <h2><span class="n">5</span>What lands with the fix</h2>
+  <table>
+    <thead><tr><th style="width:280px">file</th><th>change</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="mono">components/chat/UserPillRail.vue<span class="dim">:186-203</span></td>
+        <td>the V3 declarations above (4 removed, 4 added, comments reflowed to the 3-line ceiling)</td>
+      </tr>
+      <tr>
+        <td class="mono">tests/functional_ui/<br>chatview_pillrail_hover_test.py <span class="chip good">new</span></td>
+        <td>
+          <b>jsdom cannot guard this</b> — no layout engine, so a unit test can only re-assert the source
+          text. The honest guard drives the real app (the pattern
+          <code>chatview_pillrail_center_test.py</code> already establishes) and asserts: exactly one
+          <code>[data-testid="user-pill-message"]</code> after hovering a pill; its measured width
+          <b>≥ 200px</b>; the box's right edge within <b>8–12px</b> of the rail's left edge; its left edge
+          inside the wrapper; and the box gone after <code>mouseleave</code>.
+        </td>
+      </tr>
+      <tr>
+        <td class="mono">components/chat/__tests__/<br>UserPillRail.spec.ts</td>
+        <td>
+          keep every existing case (they pin behaviour, which still holds). Add one source-contract case so
+          the regression cannot be reintroduced silently: the <code>.user-pill-message</code> rule must
+          carry a <code>width:</code> and must not carry <code>translate(-100%</code>.
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2><span class="n">6</span>Decisions I need from you</h2>
+  <div class="card">
+    <ol style="margin-left:18px">
+      <li><b>V3 or V2?</b> I recommend <b>V3</b>: two declarations, one file, the component's
+        architecture and its single-source-of-truth geometry intact. It leaves a ≤19px left overhang
+        below a ~340px pane; V2 removes that but restructures where the box lives.</li>
+      <li><b>Is the ≤19px narrow-pane overhang acceptable as a follow-up?</b> If not, take V2 now — it is
+        the only variant measured to fit at 320px.</li>
+      <li><b>Keep <code>-webkit-line-clamp: 3</code>?</b> At 280px a typical pill preview fits in 1–2 lines,
+        so the clamp only ever bites on a pasted wall of text. 3 is a reasonable ceiling — say the word if
+        you want 4.</li>
+      <li><b>Ship the functional UI test with the patch?</b> Without it, this exact defect can come back
+        through any stylesheet edit and no unit test will notice.</li>
+    </ol>
+  </div>
+</div>
+
+<!--
+  JS-off contract: the mock rails below are built by script, because the box only
+  exists on hover and a hover is a pointer event. Everything a human needs to judge
+  the change WITHOUT script is static in this file: the diagnosis in section 1, the
+  measured matrix in section 2 (baked with real measured values), the candidate
+  patches in section 4 and the decisions in section 6. The script only adds the
+  hoverable panes and refreshes the numbers from fresh measurements.
+-->
+<script>
+(function () {
+  var PILLS = ['/skill-behavior-unit-tests /skill-no-comments', 'hi',
+               'Delete profile not work fix that', 'no catalog yet ? why ?',
+               'scroll not work in models profile', 'a',
+               'another question here', 'last one'];
+  var WIDTHS = [900, 640, 460, 320];
+  var VARIANTS = [
+    { id: 'v0', title: 'V0 — HEAD, as shipped today', chip: 'BROKEN · 2 characters per line', cls: 'bad' },
+    { id: 'v1', title: 'V1 — width only (no anchor fix)', chip: 'REGRESSION · box leaves the pill', cls: 'bad' },
+    { id: 'v3', title: 'V3 — right: 100% + width', chip: 'RECOMMENDED', cls: 'good' },
+    { id: 'v2', title: 'V2 — box hoisted beside the rail', chip: 'WORKS · bigger diff', cls: 'warn' }
+  ];
+  var BOX_OUTSIDE = { v2: true };
+
+  var rowsHtml = ''
+    + '<div class="wf-row"><div class="bub">load_memory "delete profile" · 10 of 182 hits</div></div>'
+    + '<div class="wf-row"><div class="bub">kanban_list 7 columns · 20/159 tasks</div></div>'
+    + '<div class="wf-row">I\'ll start by checking my kanban status and loading memory, then diving into the codebase.</div>'
+    + '<div class="wf-row"><div class="bub">Use a functional test for this change.</div></div>'
+    + '<div class="wf-row dim">…</div>';
+
+  var sliderHtml = '<div class="wf-slider"><i></i></div>';
+
+  function pillsHtml() {
+    var out = '<nav class="user-pill-rail" data-rail>';
+    PILLS.forEach(function (txt, i) {
+      out += '<button type="button" class="user-pill' + (i === 0 ? ' user-pill--active' : '')
+           + '" data-i="' + i + '" aria-label="Jump to message: ' + txt + '"></button>';
+    });
+    return out + '</nav>';
+  }
+
+  /* ── open / close, mirroring the component's key-guarded logic ────────── */
+  function boxOf(host) { return host.querySelector('[data-box]'); }
+
+  function openPill(host, i) {
+    var box = boxOf(host);
+    var pill = host.querySelector('[data-i="' + i + '"]');
+    if (!box || !pill) return;
+    box.textContent = pill.getAttribute('aria-label').replace('Jump to message: ', '');
+    box.style.display = '-webkit-box';
+    var variant = host.getAttribute('data-variant');
+    var n = host.querySelectorAll('.user-pill').length;
+    if (variant === 'v2') {
+      /* The hoisted box is positioned against the WRAPPER, so the pill's centre
+         has to be re-derived from the stack height instead of read off the rail.
+         A wireframe-pane convenience — the real component would need this in CSS. */
+      var pitch = 12, pad = 8, h = 4;
+      var stackH = 2 * pad + n * h + (n - 1) * (pitch - h);
+      box.style.top = 'calc(50% + ' + ((pad + i * pitch + h / 2) - stackH / 2) + 'px)';
+    } else {
+      box.style.top = 'calc(var(--pill-pad) + ' + i + ' * var(--pill-pitch) + var(--pill-h) / 2)';
+    }
+    host.setAttribute('data-open', String(i));
+    drawGuides(host);
+  }
+
+  function closeBox(host) {
+    var box = boxOf(host);
+    if (box) box.style.display = 'none';
+    host.removeAttribute('data-open');
+    var ruler = host.querySelector('[data-ruler]'), gap = host.querySelector('[data-gap]');
+    if (ruler) ruler.style.display = 'none';
+    if (gap) gap.style.display = 'none';
+  }
+
+  /* ── the two rulers, so the geometry is visible not asserted ─────────── */
+  function drawGuides(host) {
+    var box = boxOf(host), rail = host.querySelector('[data-rail]');
+    if (!box || !rail) return;
+    var hb = host.getBoundingClientRect(), bb = box.getBoundingClientRect(), lb = rail.getBoundingClientRect();
+    var ruler = host.querySelector('[data-ruler]');
+    ruler.style.display = 'block';
+    ruler.style.left = (bb.left - hb.left) + 'px';
+    ruler.style.width = bb.width + 'px';
+    ruler.style.top = Math.min(hb.height - 26, bb.bottom - hb.top + 6) + 'px';
+    ruler.querySelector('span').textContent = 'box ' + Math.round(bb.width) + 'px';
+    var gap = host.querySelector('[data-gap]');
+    gap.style.display = 'block';
+    gap.style.left = (bb.right - hb.left) + 'px';
+    gap.style.width = Math.max(0, lb.left - bb.right) + 'px';
+    gap.style.top = (bb.top - hb.top + bb.height / 2) + 'px';
+    gap.querySelector('span').textContent = 'gap ' + Math.round(lb.left - bb.right) + 'px';
+  }
+
+  function wire(host) {
+    host.querySelectorAll('.user-pill').forEach(function (b) {
+      var i = Number(b.getAttribute('data-i'));
+      b.addEventListener('mouseenter', function () { openPill(host, i); });
+      b.addEventListener('mouseleave', function () {
+        if (host.getAttribute('data-open') === String(i)) closeBox(host);
+      });
+      b.addEventListener('focus', function () { openPill(host, i); });
+      b.addEventListener('blur', function () { closeBox(host); });
+    });
+    host.querySelector('[data-rail]').addEventListener('mouseleave', function () { closeBox(host); });
+  }
+
+  function buildHost(variant, width, container) {
+    var host = document.createElement('div');
+    host.className = 'wf-host has-pill-rail pv-' + variant;
+    host.setAttribute('data-variant', variant);
+    host.style.width = width + 'px';
+    host.innerHTML = rowsHtml + sliderHtml + pillsHtml();
+    var boxHtml = '<div class="user-pill-message" data-box aria-hidden="true" style="display:none"></div>';
+    if (BOX_OUTSIDE[variant]) host.insertAdjacentHTML('beforeend', boxHtml);
+    else host.querySelector('[data-rail]').insertAdjacentHTML('beforeend', boxHtml);
+    host.insertAdjacentHTML('beforeend',
+      '<div class="wf-ruler" data-ruler><span></span></div>' +
+      '<div class="wf-gap" data-gap><span></span></div>');
+    wire(host);
+    container.appendChild(host);
+    return host;
+  }
+
+  /* ── measurement ─────────────────────────────────────────────────────── */
+  function measure(host) {
+    var variant = host.getAttribute('data-variant');
+    openPill(host, 0);
+    var box = boxOf(host), rail = host.querySelector('[data-rail]');
+    var hb = host.getBoundingClientRect(), rb = box.getBoundingClientRect(), lb = rail.getBoundingClientRect();
+    var cs = getComputedStyle(box);
+    var inner = rb.width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+                - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth);
+    var lineH = parseFloat(cs.lineHeight) || 18;
+    var ink = document.createElement('span');
+    ink.textContent = '/skill-behavior-unit-tests';
+    ink.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap;font:' + cs.font;
+    document.body.appendChild(ink);
+    var tokenW = ink.getBoundingClientRect().width;
+    ink.remove();
+    return {
+      variant: variant,
+      width: Math.round(hb.width),
+      boxWidth: Math.round(rb.width * 10) / 10,
+      contentWidth: Math.round(inner * 10) / 10,
+      lines: Math.round(rb.height / lineH),
+      charsPerLine: Math.max(0, Math.floor(inner / (tokenW / 27))),
+      gap: Math.round((lb.left - rb.right) * 10) / 10,
+      overhang: Math.max(0, Math.round((hb.left - rb.left) * 10) / 10),
+      clamped: box.scrollHeight > Math.ceil(rb.height),
+      boxHeight: Math.round(rb.height * 10) / 10
+    };
+  }
+
+  /* ── visible mocks ───────────────────────────────────────────────────── */
+  var mocks = document.getElementById('mocks');
+  var visible = [];
+
+  VARIANTS.forEach(function (v) {
+    var row = document.createElement('div');
+    row.className = 'mockrow';
+    row.setAttribute('data-row', v.id);
+    row.innerHTML =
+      '<div class="mockframe">' +
+        '<div class="mockmeta">' + v.title + ' <span class="chip ' + v.cls + '">' + v.chip + '</span></div>' +
+      '</div>' +
+      '<div class="mocknotes">' +
+        '<div class="kv"><span class="k">box width</span><span class="v" data-anno="' + v.id + '-w">—</span></div>' +
+        '<div class="kv"><span class="k">content width</span><span class="v" data-anno="' + v.id + '-c">—</span></div>' +
+        '<div class="kv"><span class="k">characters per line</span><span class="v" data-anno="' + v.id + '-ch">—</span></div>' +
+        '<div class="kv"><span class="k">lines / clamped</span><span class="v" data-anno="' + v.id + '-l">—</span></div>' +
+        '<div class="kv"><span class="k">gap pill → box</span><span class="v" data-anno="' + v.id + '-g">—</span></div>' +
+        '<div class="kv"><span class="k">overhang past pane left</span><span class="v" data-anno="' + v.id + '-o">—</span></div>' +
+      '</div>';
+    mocks.appendChild(row);
+    var host = buildHost(v.id, 640, row.querySelector('.mockframe'));
+    visible.push(host);
+  });
+
+  function refreshVisible() {
+    visible.forEach(function (host) {
+      var m = measure(host);
+      var id = m.variant;
+      var set = function (suffix, text) {
+        var el = document.querySelector('[data-anno="' + id + '-' + suffix + '"]');
+        if (el) el.textContent = text;
+      };
+      set('w', m.boxWidth + 'px');
+      set('c', m.contentWidth + 'px');
+      set('ch', m.charsPerLine + ' char/line');
+      set('l', m.lines + (m.clamped ? ' · clamped' : ''));
+      set('g', m.gap + 'px');
+      set('o', m.overhang + 'px' + (m.overhang === 0 ? ' · fits' : ' · hangs out'));
+      host.querySelector('[data-ruler]').style.display = 'none';
+    });
+  }
+
+  window.wfSetPaneWidth = function (w) {
+    visible.forEach(function (host) { host.style.width = w + 'px'; });
+    document.querySelectorAll('#paneSwitch button').forEach(function (b) {
+      b.classList.toggle('on', Number(b.getAttribute('data-w')) === w);
+    });
+    refreshVisible();
+    return WIDTHS.indexOf(w) >= 0;
+  };
+  document.querySelectorAll('#paneSwitch button').forEach(function (b) {
+    b.addEventListener('click', function () { window.wfSetPaneWidth(Number(b.getAttribute('data-w'))); });
+  });
+
+  /* ── the matrix, measured from offscreen hosts ────────────────────────── */
+  var off = document.createElement('div');
+  off.style.cssText = 'position:absolute;left:-20000px;top:0;width:1000px';
+  document.body.appendChild(off);
+
+  (function fillMatrix() {
+    VARIANTS.forEach(function (v) {
+      WIDTHS.forEach(function (w) {
+        var host = buildHost(v.id, w, off);
+        var m = measure(host);
+        var cell = document.querySelector('[data-cell="' + v.id + '-' + w + '"]');
+        if (cell) {
+          cell.textContent = m.boxWidth + 'px · ' + m.charsPerLine + ' ch/line';
+          cell.setAttribute('data-box-width', String(m.boxWidth));
+          cell.setAttribute('data-chars', String(m.charsPerLine));
+          cell.setAttribute('data-overhang', String(m.overhang));
+        }
+        if (w === 900) {
+          var gapCell = document.querySelector('[data-cell="' + v.id + '-gap"]');
+          if (gapCell) {
+            gapCell.textContent = m.gap + 'px';
+            gapCell.setAttribute('data-gap', String(m.gap));
+            gapCell.setAttribute('data-box-width', String(m.boxWidth));
+          }
+        }
+        closeBox(host);
+      });
+    });
+  })();
+
+  /* Section 1's headline numbers, re-measured rather than typed. */
+  (function fillHeadline() {
+    var v0 = measure(off.querySelector('[data-variant="v0"][style*="width: 900px"]'));
+    var v1 = measure(off.querySelector('[data-variant="v1"][style*="width: 900px"]'));
+    var kv = function (k, text) { var el = document.querySelector('[data-k="' + k + '"]'); if (el) el.textContent = text; };
+    kv('d1-w', v0.boxWidth + 'px');
+    kv('d1-c', v0.contentWidth + 'px (padding 10px × 2)');
+    kv('d1-ch', v0.charsPerLine + '');
+    kv('d1-l', v0.lines + ' deep → 3 shown');
+    kv('d2-today', 'gap ' + v0.gap + 'px — looks fine');
+    kv('d2-after', 'gap ' + v1.gap + 'px — flies to mid-transcript');
+  })();
+
+  refreshVisible();
+
+  /* Test hooks. */
+  window.wf = {
+    measure: measure,
+    visible: function () { return visible; },
+    openPill: openPill,
+    matrix: function () {
+      return Array.prototype.map.call(document.querySelectorAll('#matrixBody td[data-cell]'), function (c) {
+        return { cell: c.getAttribute('data-cell'), text: c.textContent.trim() };
+      });
+    },
+    snapshot: function () {
+      return {
+        paneWidth: Number(visible[0].style.width.replace('px', '')),
+        onButtons: Array.prototype.map.call(
+          document.querySelectorAll('#paneSwitch button.on'),
+          function (b) { return b.getAttribute('data-w'); }),
+        boxes: visible.map(function (host) {
+          var box = boxOf(host);
+          var open = host.hasAttribute('data-open');
+          return {
+            variant: host.getAttribute('data-variant'),
+            boxExists: !!box,
+            boxVisible: !!(box && open && box.getBoundingClientRect().width > 0),
+            boxWidth: box ? Math.round(box.getBoundingClientRect().width * 10) / 10 : 0,
+            hostWidth: Math.round(host.getBoundingClientRect().width),
+            annoBoxWidth: (document.querySelector('[data-anno="' + host.getAttribute('data-variant') + '-w"]') || {}).textContent
+          };
+        }),
+        hOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1
+      };
+    }
+  };
+})();
+</script>
+</body>
+</html>
