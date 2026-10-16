@@ -935,6 +935,7 @@ pub const StdioRegistry = struct {
 
 const testing = std.testing;
 const hf = @import("helpers").host_fixture;
+const run_captured = @import("helpers").run_captured;
 
 // ── Framing tests (no child needed) ────────────────────────────────────────
 
@@ -1949,16 +1950,30 @@ test "send and recv after deinit return BrokenPipe instead of writing to a recyc
     try testing.expect(client.reader == null);
 }
 
+/// Header promising 100 bytes, then 2 delivered: the header is complete and
+/// the truncation is in the BODY, which is what leaves the tail in the
+/// reader buffer when the child exits.
+const TRUNCATED_CONTENT_LENGTH_FRAME = "Content-Length: 100\r\n\r\nab";
+
 test "recv nulls the reader after a mid-frame failure so the next recv cannot replay buffered bytes" {
     // The persistent 4 KiB reader buffer can hold the tail of an abandoned
     // frame.
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
+    const a = testing.allocator;
+    var fx = try hf.Fixture.init(a);
+    defer fx.deinit();
     // Header promises 100 bytes, the child delivers 2 and exits.
-    const argv: []const []const u8 = &.{ "sh", "-c", "printf 'Content-Length: 100\\r\\n\\r\\nab'" };
-    var client = StdioClient.init(testing.allocator, testing.io, argv) catch |err| {
-        if (err == error.ChildSpawnFailed) return error.SkipZigTest;
-        return err;
-    };
+    const child_argv = try fx.writeProgram("truncated-frame", .{ .stdout = TRUNCATED_CONTENT_LENGTH_FRAME });
+    defer a.free(child_argv);
+    // Premise, asserted rather than assumed: this host's fixture really does
+    // deliver a header promising 100 bytes with 2 body bytes after it, so a
+    // child that printed nothing cannot make the recvs below pass vacuously.
+    var probe = try run_captured.run(a, testing.io, &.{child_argv}, .{ .timeout_ms = 10_000 });
+    defer probe.deinit(a);
+    try testing.expectEqual(@as(u8, 0), probe.term.exited);
+    try testing.expect(std.mem.indexOf(u8, probe.stdout, "Content-Length: 100") != null);
+    try testing.expect(std.mem.endsWith(u8, std.mem.trimEnd(u8, probe.stdout, "\r\n"), "ab"));
+
+    var client = try StdioClient.init(a, testing.io, &.{child_argv});
     defer client.deinit();
     try testing.expect(client.reader == null); // lazily created, not yet
 
@@ -1966,7 +1981,7 @@ test "recv nulls the reader after a mid-frame failure so the next recv cannot re
     if (first) |body| {
         // A completed frame would mean the truncated header somehow
         // resolved — the premise of this test is wrong.
-        client.allocator().free(body);
+        a.free(body);
         return error.TestUnexpectedResult;
     } else |err| {
         // UnexpectedEof is the expected shape; RecvTimeout is accepted
@@ -1980,7 +1995,7 @@ test "recv nulls the reader after a mid-frame failure so the next recv cannot re
     // 2-byte tail as if it were a message.
     const second = client.recv(2_000 * std.time.ns_per_ms, null);
     if (second) |body| {
-        client.allocator().free(body);
+        a.free(body);
         return error.TestUnexpectedResult;
     } else |err| {
         try testing.expect(err == StdioError.UnexpectedEof or err == StdioError.RecvTimeout);
