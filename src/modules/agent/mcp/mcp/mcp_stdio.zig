@@ -48,7 +48,7 @@ fn waitReadable(
     is_cancelled: ?*const fn () bool,
 ) bool {
     if (comptime builtin.os.tag == .windows) {
-        return true;
+        return waitReadableWindows(io, file, deadline_abs, deadline_ns, is_cancelled);
     } else {
         const has_deadline = deadline_ns != 0;
         while (true) {
@@ -78,6 +78,45 @@ fn waitReadable(
             // n == 0: slice elapsed with no data — loop to recheck
             // deadline/cancel.
         }
+    }
+}
+
+/// The Windows half of `waitReadable`. `PeekNamedPipe` is the only
+/// non-destructive readiness probe for a pipe handle, so this is what makes
+/// the deadline reachable: a read on a silent child otherwise parks forever.
+fn waitReadableWindows(
+    io: std.Io,
+    file: std.Io.File,
+    deadline_abs: i128,
+    deadline_ns: u64,
+    is_cancelled: ?*const fn () bool,
+) bool {
+    const kernel32 = struct {
+        extern "kernel32" fn PeekNamedPipe(
+            pipe: std.os.windows.HANDLE,
+            buf: ?*anyopaque,
+            buf_size: std.os.windows.ULONG,
+            bytes_read: ?*std.os.windows.ULONG,
+            total_bytes_avail: ?*std.os.windows.ULONG,
+            bytes_left_this_message: ?*std.os.windows.ULONG,
+        ) callconv(.winapi) std.os.windows.BOOL;
+    };
+    const has_deadline = deadline_ns != 0;
+    while (true) {
+        if (is_cancelled) |cb| if (cb()) return false;
+        const now_ns = std.Io.Timestamp.now(io, .real).nanoseconds;
+        if (has_deadline and now_ns >= deadline_abs) return false;
+        var avail: std.os.windows.ULONG = 0;
+        // A failed peek means the child's end is gone (BROKEN_PIPE) or the
+        // handle is no longer a pipe: report readiness and let the read
+        // surface the real EOF, exactly like the POSIX poll-error path.
+        if (!kernel32.PeekNamedPipe(file.handle, null, 0, null, &avail, null).toBool()) return true;
+        if (avail > 0) return true;
+        // Same ≤100ms slice as the POSIX branch: short enough that the cancel
+        // callback and the deadline stay responsive.
+        const rem_ms: i128 = if (has_deadline) @divTrunc(deadline_abs - now_ns, std.time.ns_per_ms) else 100;
+        const slice_ms: u64 = @intCast(@min(@max(rem_ms, 1), 100));
+        std.Io.sleep(io, .{ .nanoseconds = slice_ms * std.time.ns_per_ms }, .real) catch {};
     }
 }
 
@@ -895,6 +934,7 @@ pub const StdioRegistry = struct {
 // ============================================================================
 
 const testing = std.testing;
+const hf = @import("helpers").host_fixture;
 
 // ── Framing tests (no child needed) ────────────────────────────────────────
 
@@ -1366,18 +1406,21 @@ test "markStale on unknown name is a no-op (does not panic or insert)" {
 // ────────────── Regression coverage for the `/api/mcp/test` hang: probing a
 // stdio server with empty args spawns the bare command (e.g.
 
-/// Argv for a child that stays alive and silent well past any test
-/// deadline. POSIX-only (`sleep`); Windows callers must skip first.
-fn silent_child_argv() []const []const u8 {
-    return &.{ "sleep", "30" };
+/// A child that stays alive and silent well past any test deadline, rendered
+/// by `host_fixture`: a `sleep`ing script on POSIX, the batch file's `ping`
+/// sleep on Windows. It prints NOTHING, so only the deadline ends the recv.
+fn write_silent_child(fx: *hf.Fixture) ![]u8 {
+    return fx.writeProgram("silent-child", .{ .sleep_ms = 5_000 });
 }
 
 test "recv times out on truly-silent child (empty-args bare command)" {
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
-    var client = StdioClient.init(testing.allocator, testing.io, silent_child_argv()) catch |err| {
-        if (err == error.ChildSpawnFailed) return;
-        return err;
-    };
+    const a = testing.allocator;
+    var fx = try hf.Fixture.init(a);
+    defer fx.deinit();
+    const child_argv = try write_silent_child(&fx);
+    defer a.free(child_argv);
+
+    var client = try StdioClient.init(a, testing.io, &.{child_argv});
     defer client.deinit();
 
     const start = std.Io.Timestamp.now(testing.io, .real).nanoseconds;
@@ -1395,11 +1438,13 @@ test "recv times out on truly-silent child (empty-args bare command)" {
 }
 
 test "recv aborts on cancel with truly-silent child" {
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
-    var client = StdioClient.init(testing.allocator, testing.io, silent_child_argv()) catch |err| {
-        if (err == error.ChildSpawnFailed) return;
-        return err;
-    };
+    const a = testing.allocator;
+    var fx = try hf.Fixture.init(a);
+    defer fx.deinit();
+    const child_argv = try write_silent_child(&fx);
+    defer a.free(child_argv);
+
+    var client = try StdioClient.init(a, testing.io, &.{child_argv});
     defer client.deinit();
 
     const cancel = struct {
@@ -1547,17 +1592,20 @@ test "recv with deadline still delivers data (happy path)" {
     try testing.expectEqualStrings("{\"jsonrpc\":\"2.0\",\"id\":1}", body);
 }
 
+/// Two NDJSON responses in ONE payload: the shape a fast server produces when
+/// it coalesces back-to-back messages into a single pipe write.
+const COALESCED_NDJSON = "{\"jsonrpc\":\"2.0\",\"id\":1}\n{\"jsonrpc\":\"2.0\",\"id\":2}\n";
+
 test "recv preserves coalesced back-to-back lines (lightpanda hang)" {
     // A fast server writes two NDJSON lines in one pipe write; the first
     // recv() must not drop the second line with its buffer.
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
-    const argv: []const []const u8 = &.{
-        "sh", "-c", "printf '{\"jsonrpc\":\"2.0\",\"id\":1}\\n{\"jsonrpc\":\"2.0\",\"id\":2}\\n'",
-    };
-    var client = StdioClient.init(testing.allocator, testing.io, argv) catch |err| {
-        if (err == error.ChildSpawnFailed) return;
-        return err;
-    };
+    const a = testing.allocator;
+    var fx = try hf.Fixture.init(a);
+    defer fx.deinit();
+    const child_argv = try fx.writeProgram("coalesced-ndjson", .{ .stdout = COALESCED_NDJSON });
+    defer a.free(child_argv);
+
+    var client = try StdioClient.init(a, testing.io, &.{child_argv});
     defer client.deinit();
 
     // Both bodies come from the client's per-client arena (see the
