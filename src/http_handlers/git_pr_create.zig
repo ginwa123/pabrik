@@ -317,8 +317,8 @@ test "create: github still runs the exact historical gh pr create argv" {
     defer a.free(recorded);
     // No --head: gh infers it from the worktree checkout, and that
     // behaviour must not change for existing GitHub users.
-    try testing.expect(std.mem.indexOf(u8, recorded, "pr\ncreate\n--base\nmain\n--title\nT\n--body\nB\n") != null);
-    try testing.expect(std.mem.indexOf(u8, recorded, "--head") == null);
+    try testing.expect(hf.recordedArgvContainsSequence(recorded, &.{ "pr", "create", "--base", "main", "--title", "T", "--body", "B" }));
+    try testing.expect(!hf.recordedArgvContains(recorded, "--head"));
 }
 
 test "create: gitlab runs glab mr create with --source-branch and --yes" {
@@ -348,7 +348,7 @@ test "create: gitlab runs glab mr create with --source-branch and --yes" {
 
     const recorded = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, argv_file, a, .limited(64 * 1024));
     defer a.free(recorded);
-    try testing.expect(std.mem.indexOf(u8, recorded, "mr\ncreate\n--source-branch\nworktree/feature-x\n--target-branch\nmain\n--title\nT\n--description\nB\n--yes\n") != null);
+    try testing.expect(hf.recordedArgvContainsSequence(recorded, &.{ "mr", "create", "--source-branch", "worktree/feature-x", "--target-branch", "main", "--title", "T", "--description", "B", "--yes" }));
 }
 
 test "create: a glab banner before the URL does not become pr_url" {

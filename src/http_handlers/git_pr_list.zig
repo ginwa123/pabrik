@@ -581,7 +581,7 @@ test "list: github asks by state and limit, and the recorded argv says so" {
 
     const recorded = try std.Io.Dir.cwd().readFileAlloc(testing.io, argv_file, a, .limited(64 * 1024));
     defer a.free(recorded);
-    try testing.expect(std.mem.indexOf(u8, recorded, "pr\nlist\n--state\nclosed\n--limit\n5\n--json\n") != null);
+    try testing.expect(hf.recordedArgvContainsSequence(recorded, &.{ "pr", "list", "--state", "closed", "--limit", "5", "--json" }));
 }
 
 test "list: a full page reports truncated, and an empty stdout is an empty result" {

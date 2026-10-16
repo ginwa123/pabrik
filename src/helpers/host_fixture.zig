@@ -67,6 +67,23 @@ pub const Fixture = struct {
     pub fn writeProgram(self: *Fixture, name: []const u8, payload: Payload) ![]u8 {
         const script = try renderProgram(self.allocator, payload);
         defer self.allocator.free(script);
+        // On Windows the payloads live in sidecar data files the batch file
+        // copies to its streams, because `cmd.exe`'s `echo` cannot emit a
+        // byte-exact payload. On POSIX the payload is inline in the script.
+        if (builtin.os.tag == .windows) {
+            if (payload.stdout.len > 0) {
+                try self.tmp.dir.writeFile(std.testing.io, .{
+                    .sub_path = dataFileName(payload, .stdout),
+                    .data = payload.stdout,
+                });
+            }
+            if (payload.stderr.len > 0) {
+                try self.tmp.dir.writeFile(std.testing.io, .{
+                    .sub_path = dataFileName(payload, .stderr),
+                    .data = payload.stderr,
+                });
+            }
+        }
         return self.writeProgramText(name, script);
     }
 
@@ -186,46 +203,64 @@ fn renderCmd(allocator: std.mem.Allocator, payload: Payload) ![]u8 {
     // every assertion below compares byte-for-byte.
     try w.writeAll("@echo off\n");
 
+    // WHY NOT `echo`: it appends a space, ends with CRLF, and cannot emit a
+    // NUL. The payload therefore lives in a sidecar data file the TEST
+    // writes, copied to the stream with `copy /b`, which is byte-exact.
+    if (payload.stdout.len > 0) {
+        try w.print("copy /b \"{s}\" nul\n", .{dataFileName(payload, .stdout)});
+    }
+    if (payload.stderr.len > 0) {
+        try w.print("copy /b \"{s}\" >&2\n", .{dataFileName(payload, .stderr)});
+    }
+    if (payload.repeat) |n| {
+        try w.print("for /L %%i in (1,1,{d}) do copy /b \"{s}\" nul\n", .{ n, dataFileName(payload, .stdout) });
+    }
+    if (payload.repeat_stderr) |n| {
+        try w.print("for /L %%i in (1,1,{d}) do copy /b \"{s}\" >&2\n", .{ n, dataFileName(payload, .stderr) });
+    }
     if (payload.argv_file) |path| {
         if (payload.argv_file_body) |body| {
             try w.print("> \"{s}\" echo {s}\n", .{ path, body });
         } else {
-            // `%*` is the whole argument list; echoing it one-per-line is
-            // argv string. The suites that assert on it compare against
-            // that shape (see `argvRecordedShape`).
+            // `%*` is the whole argument list, space-separated on one line.
+            // The suites that assert on it compare against that shape (see
+            // `argvRecordedShape`).
             try w.print("> \"{s}\" echo %*\n", .{path});
         }
     }
     if (payload.touch_file) |path| {
         try w.print("type nul > \"{s}\"\n", .{path});
     }
-    if (payload.sleep_ms) |ms| {
-        // `timeout` refuses to run when stdin is redirected, which is
-        // exactly the case here, so `<nul` is required.
-        const secs = @max(1, @divTrunc(ms + 999, 1000));
-        try w.print("timeout /T {d} /NOBREAK < nul\n", .{secs});
-    }
     if (payload.print_cwd) {
         try w.writeAll("cd\n");
     }
-    if (payload.repeat_stderr) |n| {
-        try w.print("for /L %%i in (1,1,{d}) do >>&2 echo {s}\n", .{ n, payload.stderr });
-    } else if (payload.stderr.len > 0) {
-        try w.print(">>&2 echo {s}\n", .{payload.stderr});
-    }
-    if (payload.repeat) |n| {
-        try w.print("for /L %%i in (1,1,{d}) do echo {s}\n", .{ n, payload.stdout });
-    } else if (payload.stdout.len > 0) {
-        try w.print("echo {s}\n", .{payload.stdout});
+    if (payload.sleep_ms) |ms| {
+        // `ping -n` is the portable Windows sleep. `timeout` is NOT used: it
+        // refuses to run when stdin is redirected (which `run_captured`
+        // always does) and exits at once, so the deadline test would fail.
+        const secs = @max(2, @divTrunc(ms + 999, 1000));
+        try w.print("ping -n {d} 127.0.0.1 > nul\n", .{secs});
     }
     if (payload.kill_self) {
-        // Windows has no signal to send to yourself. `exit /b` with a
-        // use it assert on "the child did not report success" rather than
-        // on a specific signal.
+        // Windows has no signal to send to yourself, so `exit /b` with a
+        // distinctive code is the analogue; the suites assert the child did
+        // not report success rather than naming a signal.
         try w.writeAll("exit /b 9\n");
     }
     try w.print("exit /b {d}\n", .{payload.exit_code});
     return aw.toOwnedSlice();
+}
+
+/// Which stream a sidecar data file carries.
+const DataStream = enum { stdout, stderr };
+
+/// The sidecar file `renderCmd` copies a payload from, named per stream so
+/// a payload writing both cannot have one clobber the other.
+fn dataFileName(payload: Payload, stream: DataStream) []const u8 {
+    return switch (stream) {
+        .stdout => if (payload.stderr.len > 0) "pabrik-fixture-out.bin" else "pabrik-fixture.bin",
+        .stderr => "pabrik-fixture-err.bin",
+    };
 }
 
 /// How a fixture's recorded argv looks on this host: one argument per line

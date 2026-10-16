@@ -290,20 +290,20 @@ fn ghScript(fx: *Fixture, argv_file: []const u8, close_code: u8, close_stderr: [
             \\@echo off
             \\if "%~2"=="close" (
             \\  > "{s}" echo %*
-            \\  >&2 echo {s}
+            \\  copy /b "pabrik-fixture-err.bin" >&2
             \\  exit /b {d}
             \\)
-            \\echo {s}
+            \\copy /b "pabrik-fixture.bin" nul
             \\exit /b 0
             \\
-        , .{ argv_file, close_stderr, close_code, view_json })
+        , .{ argv_file, close_code })
     else
         try std.fmt.allocPrint(fx.allocator,
             \\#!/bin/sh
             \\if [ "$2" = "close" ]; then
             \\  echo "$(basename "$0")" > '{s}'
             \\  for a in "$@"; do echo "$a"; done >> '{s}'
-            \\  echo '{s}' >&2
+            \\  printf '%s' '{s}' >&2
             \\  exit {d}
             \\fi
             \\printf '%s' '{s}'
@@ -311,7 +311,20 @@ fn ghScript(fx: *Fixture, argv_file: []const u8, close_code: u8, close_stderr: [
             \\
         , .{ argv_file, argv_file, close_stderr, close_code, view_json });
     defer fx.allocator.free(script);
-    return fx.writeProgramText("gh", script);
+    const prog = try fx.writeProgramText("gh", script);
+    // The Windows branch reads its payloads from sidecar data files, because
+    // `cmd.exe`'s `echo` cannot emit a byte-exact payload.
+    if (builtin_t.os.tag == .windows) {
+        try fx.inner.tmp.dir.writeFile(std.testing.io, .{
+            .sub_path = "pabrik-fixture.bin",
+            .data = view_json,
+        });
+        try fx.inner.tmp.dir.writeFile(std.testing.io, .{
+            .sub_path = "pabrik-fixture-err.bin",
+            .data = close_stderr,
+        });
+    }
+    return prog;
 }
 
 const CLOSED_VIEW =

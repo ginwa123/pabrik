@@ -956,7 +956,11 @@ test "runGhPrView: a gh killed by a signal is reported, not a success" {
     defer if (detail) |d| a.free(d);
     try testing.expectError(error.FetchFailed, runGhPrView(a, testing.io, gh, fx.root(), "", 10_000, &detail));
     try testing.expect(detail != null);
-    try testing.expect(std.mem.indexOf(u8, detail.?, "signal") != null);
+    // POSIX reports the signal that killed the child; Windows has no signal
+    // to send, so the fixture exits with a code instead and the detail names
+    // that. Either way it must NOT read as a clean success.
+    try testing.expect(std.mem.indexOf(u8, detail.?, "signal") != null or
+        std.mem.indexOf(u8, detail.?, "exited with code") != null);
 }
 
 test "runGhPrView: a missing gh binary maps to CliMissing" {
@@ -1202,9 +1206,9 @@ test "useCase: a GitLab MR URL routes to the glab path, not gh" {
 
     const recorded = try std.Io.Dir.cwd().readFileAlloc(testing.io, glab_argv, a, .limited(64 * 1024));
     defer a.free(recorded);
-    try testing.expect(std.mem.indexOf(u8, recorded, "mr\nview\n") != null);
-    try testing.expect(std.mem.indexOf(u8, recorded, "--output\njson\n") != null);
-    try testing.expect(std.mem.indexOf(u8, recorded, "https://gitlab.com/acme/app/-/merge_requests/3\n") != null);
+    try testing.expect(hf.recordedArgvContainsSequence(recorded, &.{ "mr", "view" }));
+    try testing.expect(hf.recordedArgvContainsSequence(recorded, &.{ "--output", "json" }));
+    try testing.expect(hf.recordedArgvContains(recorded, "https://gitlab.com/acme/app/-/merge_requests/3"));
 }
 
 test "useCase: the origin remote decides the forge when no provider is given" {
