@@ -89,6 +89,9 @@ extern "c" fn time(t: ?*i64) i64;
 extern "c" fn kill(pid: c_int, sig: c_int) c_int;
 extern "c" fn waitpid(pid: c_int, status: *c_int, options: c_int) c_int;
 extern "c" fn nanosleep(req: *const Timespec, rem: ?*Timespec) c_int;
+/// `VOID Sleep(DWORD dwMilliseconds);` (Win32 kernel32) — the only sleep a
+/// non-PTY host has, since `nanosleep` does not exist there.
+extern "kernel32" fn Sleep(dw_milliseconds: u32) callconv(.winapi) void;
 
 const Timespec = extern struct {
     tv_sec: isize,
@@ -175,7 +178,8 @@ fn registry() *std.StringHashMap(*Session) {
 
 /// Look a session up by id. The caller must hold no lock; the returned
 /// pointer is valid until `destroySession` runs for it.
-pub fn getSession(id: []const u8) ?*Session {    const reg = registry();
+pub fn getSession(id: []const u8) ?*Session {
+    const reg = registry();
     mutexLock(&g_mutex);
     defer g_mutex.unlock();
     return reg.get(id);
@@ -222,6 +226,54 @@ pub fn setMaxSessionsForTest(n: u32) u32 {
     return prev;
 }
 
+/// Test-only registry insert that owns NO OS handles (no forkpty, no child,
+/// no master fd): stamps, sweep, cap, owner checks and reap can then be
+/// driven from ONE body on every host. `s.id` dies with the reap — copy it.
+pub fn insertSessionForTest(owner: []const u8) SessionError!*Session {
+    const id = try allocId();
+    errdefer g_alloc.free(id);
+    const owner_copy = g_alloc.dupe(u8, owner) catch return error.OutOfMemory;
+    errdefer g_alloc.free(owner_copy);
+    const session = g_alloc.create(Session) catch return error.OutOfMemory;
+    errdefer g_alloc.destroy(session);
+    const now = nowSeconds();
+    session.* = .{
+        .id = id,
+        .master_fd = -1,
+        .child_pid = 0,
+        .cols = default_cols,
+        .rows = default_rows,
+        .owner = owner_copy,
+        .buf = .empty,
+        .base = 0,
+        .total = 0,
+        .exited = false,
+        .exit_code = null,
+        .mutex = .unlocked,
+        .last_active_s = now,
+        .last_user_active_s = now,
+        .last_output_at_s = 0,
+        .last_output_total = 0,
+    };
+    const reg = registry();
+    mutexLock(&g_mutex);
+    defer g_mutex.unlock();
+    reg.put(id, session) catch return error.OutOfMemory;
+    return session;
+}
+
+/// Test-only: the PTY backend this host has, as an explicit per-host table.
+/// A host with no row is a compile error, never a third silent branch.
+const PtyBackend = enum { posix_pty, none };
+
+fn ptyBackend() PtyBackend {
+    return switch (builtin.os.tag) {
+        .linux, .macos => .posix_pty,
+        .windows => .none,
+        else => @compileError("terminal_session: no PTY-backend row for this host"),
+    };
+}
+
 /// Test-only hook invoked by `sweepIdleExcluding` right after the victims are
 /// detached from the registry (g_mutex already released) and before teardown
 /// begins.
@@ -249,9 +301,9 @@ pub fn isBusy(s: *Session) bool {
 }
 
 /// Explicit user touch (attach/switch): refreshes both the absolute
-/// and the user-idle stamps. Background polls must NOT call this.
+/// and the user-idle stamps. Background polls must NOT call this. Pure
+/// bookkeeping — no PTY is involved, so it runs on every host.
 pub fn touchUser(s: *Session) void {
-    if (comptime !is_pty_os) return;
     mutexLock(&s.mutex);
     defer s.mutex.unlock();
     const now = nowSeconds();
@@ -268,7 +320,8 @@ fn sweepIdle() void {
 /// session mid-call (old readOutput swept first, then locked the freed
 /// pointer — heap UAF surfacing as a remap abort in appendSlice).
 fn sweepIdleExcluding(exclude: ?*Session) void {
-    if (comptime !is_pty_os) return;
+    // Registry + stamps only: the PTY teardown is the gated part (inside
+    // `reapSession`), so the sweep decision itself runs on every host.
     const now = nowSeconds();
     const reg = registry();
     mutexLock(&g_mutex);
@@ -352,8 +405,19 @@ pub fn shouldReap(user_idle: bool, abs_idle: bool, busy: bool) bool {
     return (user_idle and !busy) or abs_idle;
 }
 
+/// Max-sessions cap check: registry bookkeeping, no syscalls, so the rule
+/// lives in one place and holds on every host.
+fn checkSessionCapacity() SessionError!void {
+    const reg = registry();
+    mutexLock(&g_mutex);
+    const n = reg.count();
+    const cap = g_max_sessions;
+    g_mutex.unlock();
+    if (n >= cap) return error.TooManySessions;
+}
+
 // ---------------------------------------------------------------------
-// Lifecycle (POSIX only — every reference is comptime-gated)
+// Lifecycle (PTY syscalls are comptime-gated; the registry is not)
 // ---------------------------------------------------------------------
 
 pub const SessionInfo = struct {
@@ -427,14 +491,7 @@ fn createSessionPosix(io: std.Io, cwd: []const u8, shell_opt: ?[]const u8, cols_
     // accumulating forever. Sweep first so a reaped slot frees
     // immediately, then enforce the max-sessions cap with 429.
     sweepIdle();
-    {
-        const reg = registry();
-        mutexLock(&g_mutex);
-        const n = reg.count();
-        const cap = g_max_sessions;
-        g_mutex.unlock();
-        if (n >= cap) return error.TooManySessions;
-    }
+    try checkSessionCapacity();
 
     const shell_path: []const u8 = blk: {
         const s = shell_opt orelse "";
@@ -530,6 +587,8 @@ pub fn drainSession(s: *Session) void {
 }
 
 fn drainLocked(s: *Session) void {
+    // No master fd => no PTY to drain (a session with no OS handles).
+    if (s.master_fd < 0) return;
     var pfds = [_]PollFd{.{ .fd = s.master_fd, .events = POLLIN, .revents = 0 }};
     var chunk: [8192]u8 = undefined;
     var drained: usize = 0;
@@ -585,7 +644,7 @@ fn appendLocked(s: *Session, bytes: []const u8) void {
     if (s.buf.items.len > buffer_cap) {
         const drop = trimDropLen(s.buf.items.len, buffer_cap);
         // Ordered drop of the oldest bytes.
-        std.mem.copyForwards(u8, s.buf.items[0..s.buf.items.len - drop], s.buf.items[drop..]);
+        std.mem.copyForwards(u8, s.buf.items[0 .. s.buf.items.len - drop], s.buf.items[drop..]);
         s.buf.items.len -= drop;
         s.base += drop;
     }
@@ -604,6 +663,9 @@ fn shrinkCapacityLocked(s: *Session) void {
 /// Non-blocking child reaping. Sets `exited`/`exit_code` exactly once.
 fn pollExitLocked(s: *Session) void {
     if (s.exited) return;
+    // No OS child => nothing to reap. Also keeps `waitpid` off pid 0, which
+    // means "any child of this process group".
+    if (s.child_pid <= 0) return;
     var status: c_int = 0;
     const rc = waitpid(s.child_pid, &status, WNOHANG);
     if (rc <= 0) return;
@@ -673,17 +735,17 @@ pub fn sliceOutput(s: *Session, cursor: u64) OutputSlice {
 
 /// Drain + slice in one call (the poll endpoint's primitive).
 pub fn readOutput(s: *Session, cursor: u64) OutputSlice {
-    if (comptime !is_pty_os) {
-        return .{ .data = &.{}, .cursor = cursor, .exited = true, .exit_code = null };
-    }
     // Every poll reaps the long-idle, but polls do NOT refresh the user stamp
-    // — only explicit input/resize/attach does.
+    // — only explicit input/resize/attach does. Sweep + age stamp are
+    // bookkeeping (every host); only the PTY drain is POSIX-only.
     sweepIdleExcluding(s);
     mutexLock(&s.mutex);
     s.last_active_s = nowSeconds();
     defer s.mutex.unlock();
-    drainLocked(s);
-    pollExitLocked(s);
+    if (comptime is_pty_os) {
+        drainLocked(s);
+        pollExitLocked(s);
+    }
     const start = @max(cursor, s.base);
     if (start >= s.total) {
         return .{ .data = &.{}, .cursor = s.total, .exited = s.exited, .exit_code = s.exit_code };
@@ -708,15 +770,16 @@ pub const OwnedOutput = struct {
 };
 
 pub fn readOutputAlloc(allocator: std.mem.Allocator, s: *Session, cursor: u64) !OwnedOutput {
-    if (comptime !is_pty_os) {
-        return .{ .data = try allocator.alloc(u8, 0), .cursor = cursor, .exited = true, .exit_code = null };
-    }
+    // Same host-independent bookkeeping as `readOutput`: the copy is taken on
+    // every host, only the PTY drain is POSIX-only.
     sweepIdleExcluding(s);
     mutexLock(&s.mutex);
     defer s.mutex.unlock();
     s.last_active_s = nowSeconds();
-    drainLocked(s);
-    pollExitLocked(s);
+    if (comptime is_pty_os) {
+        drainLocked(s);
+        pollExitLocked(s);
+    }
     const start = @max(cursor, s.base);
     if (start >= s.total) {
         return .{
@@ -752,9 +815,9 @@ pub fn resizeSession(s: *Session, cols: u16, rows: u16) SessionError!void {
     s.rows = rows;
 }
 
-/// Kill the child (if running), close the master, drop the session.
+/// Kill the child (if running), close the master, drop the session. The
+/// registry removal runs on every host; `reapSession` gates the PTY part.
 pub fn destroySession(id: []const u8) SessionError!void {
-    if (comptime !is_pty_os) return error.UnsupportedPlatform;
     const reg = registry();
     mutexLock(&g_mutex);
     const entry = reg.fetchRemove(id) orelse {
@@ -765,9 +828,9 @@ pub fn destroySession(id: []const u8) SessionError!void {
     reapSession(entry.value);
 }
 
-/// Owner-checked `destroySession` (plan 2026-09-25, W2.5).
+/// Owner-checked `destroySession` (plan 2026-09-25, W2.5). The owner check
+/// is registry bookkeeping, so it holds on every host.
 pub fn destroySessionForOwner(id: []const u8, caller_owner: []const u8) SessionError!void {
-    if (comptime !is_pty_os) return error.UnsupportedPlatform;
     const reg = registry();
     mutexLock(&g_mutex);
     const entry = reg.fetchRemove(id) orelse {
@@ -789,21 +852,28 @@ pub fn destroySessionForOwner(id: []const u8, caller_owner: []const u8) SessionE
 /// must have removed it under g_mutex (exclusive ownership) and must
 /// not touch `s` afterwards. Frees `s.id` and `s` itself.
 fn reapSession(s: *Session) void {
-    mutexLock(&s.mutex);
-    s.last_active_s = nowSeconds();
-    const already_exited = s.exited;
-    s.mutex.unlock();
-    if (!already_exited) _ = kill(s.child_pid, SIGKILL);
+    // Only a session that owns OS handles has anything to tear down: a
+    // session with no PTY (no child, no master fd) is pure bookkeeping, so
+    // the registry half of this runs on every host.
+    if (comptime is_pty_os) {
+        if (s.child_pid > 0) {
+            mutexLock(&s.mutex);
+            s.last_active_s = nowSeconds();
+            const already_exited = s.exited;
+            s.mutex.unlock();
+            if (!already_exited) _ = kill(s.child_pid, SIGKILL);
 
-    // Bounded reap so the child never stays a zombie (50 x 10ms).
-    var i: usize = 0;
-    var status: c_int = 0;
-    while (i < 50) : (i += 1) {
-        if (waitpid(s.child_pid, &status, WNOHANG) != 0) break;
-        sleepMillis(10);
+            // Bounded reap so the child never stays a zombie (50 x 10ms).
+            var i: usize = 0;
+            var status: c_int = 0;
+            while (i < 50) : (i += 1) {
+                if (waitpid(s.child_pid, &status, WNOHANG) != 0) break;
+                sleepMillis(10);
+            }
+
+            if (s.master_fd >= 0) _ = close(s.master_fd);
+        }
     }
-
-    _ = close(s.master_fd);
     s.buf.deinit(g_alloc);
     g_alloc.free(s.owner);
     g_alloc.free(s.id);
@@ -811,11 +881,17 @@ fn reapSession(s: *Session) void {
 }
 
 fn sleepMillis(ms: u64) void {
-    const ts = Timespec{
-        .tv_sec = @intCast(ms / 1000),
-        .tv_nsec = @intCast((ms % 1000) * 1_000_000),
-    };
-    _ = nanosleep(&ts, null);
+    switch (builtin.os.tag) {
+        .linux, .macos => {
+            const ts = Timespec{
+                .tv_sec = @intCast(ms / 1000),
+                .tv_nsec = @intCast((ms % 1000) * 1_000_000),
+            };
+            _ = nanosleep(&ts, null);
+        },
+        .windows => Sleep(@intCast(ms)),
+        else => {},
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -862,42 +938,51 @@ test "decodeStatus maps normal exits and signals" {
     try testing.expectEqual(@as(i32, -9), decodeStatus(0x0009));
 }
 
-test "empty cwd falls back to the server cwd (posix only)" {
-    if (comptime !is_pty_os) return error.SkipZigTest;
-
-    const info = try createSession(testing.io, "", "/bin/sh", 80, 24, "user_test");
-    defer destroySession(info.id) catch {};
-    const s = getSession(info.id) orelse return error.SessionNotFound;
-    _ = s;
+test "empty cwd falls back to the server cwd" {
+    switch (ptyBackend()) {
+        .posix_pty => {
+            // Only the fallback lets this reach the spawn: validateCreate
+            // would reject the empty string as a relative path.
+            const info = try createSession(testing.io, "", "/bin/sh", 80, 24, "user_test");
+            defer destroySession(info.id) catch {};
+            try testing.expect(getSession(info.id) != null);
+        },
+        .none => {
+            // No PTY backend: the spawn this test needs is the refusal.
+            try testing.expectError(error.UnsupportedPlatform, createSession(testing.io, "", "/bin/sh", 80, 24, "user_test"));
+        },
+    }
 }
 
-test "idle sweep reaps untouched sessions, keeps active ones (posix only)" {
-    if (comptime !is_pty_os) return error.SkipZigTest;
+test "idle sweep reaps untouched sessions, keeps active ones" {
     const prev_timeout = setIdleTimeoutForTest(3600);
     defer _ = setIdleTimeoutForTest(prev_timeout);
     const prev_kill = setIdleKillForTest(3600);
     defer _ = setIdleKillForTest(prev_kill);
 
-    const a = try createSession(testing.io, "/tmp", "/bin/sh", 80, 24, "user_test");
+    const a = try insertSessionForTest("user_test");
     const a_id = try testing.allocator.dupe(u8, a.id);
     defer testing.allocator.free(a_id);
-    const b = try createSession(testing.io, "/tmp", "/bin/sh", 80, 24, "user_test");
-    defer destroySession(b.id) catch {};
+    const b = try insertSessionForTest("user_test");
+    const b_id = try testing.allocator.dupe(u8, b.id);
+    defer testing.allocator.free(b_id);
+    defer destroySession(b_id) catch {};
 
-    // Backdate a past the timeout (both stamps); touch b's user stamp
-    // so it stays fresh. A bare output poll must NOT save a session.
-    const sa = getSession(a_id) orelse return error.SessionNotFound;
-    mutexLock(&sa.mutex);
-    sa.last_active_s -= 7200;
-    sa.last_user_active_s = sa.last_active_s;
-    sa.mutex.unlock();
-    const sb = getSession(b.id) orelse return error.SessionNotFound;
-    touchUser(sb);
-    _ = readOutput(sb, 0);
+    // a: stale on both stamps. b: user-idle but absolutely fresh, so only
+    // the explicit touch saves it — a bare output poll must NOT.
+    mutexLock(&a.mutex);
+    a.last_active_s -= 7200;
+    a.last_user_active_s = a.last_active_s;
+    a.mutex.unlock();
+    mutexLock(&b.mutex);
+    b.last_user_active_s -= 7200;
+    b.mutex.unlock();
+    touchUser(b);
+    _ = readOutput(b, 0);
 
     sweepIdle();
     try testing.expect(getSession(a_id) == null);
-    try testing.expect(getSession(b.id) != null);
+    try testing.expect(getSession(b_id) != null);
 }
 
 test "isBusyByStamps exempts recent output, not exited or stale" {
@@ -907,34 +992,39 @@ test "isBusyByStamps exempts recent output, not exited or stale" {
     try testing.expect(!isBusyByStamps(true, 1000, 1001));
 }
 
-test "poll does not refresh the user stamp (posix only)" {
-    if (comptime !is_pty_os) return error.SkipZigTest;
-    const info = try createSession(testing.io, "/tmp", "/bin/sh", 80, 24, "user_test");
-    defer destroySession(info.id) catch {};
-    const s = getSession(info.id) orelse return error.SessionNotFound;
+test "poll does not refresh the user stamp" {
+    const s = try insertSessionForTest("user_test");
+    const id = try testing.allocator.dupe(u8, s.id);
+    defer testing.allocator.free(id);
+    defer destroySession(id) catch {};
+
     mutexLock(&s.mutex);
     s.last_user_active_s -= 100;
+    s.last_active_s -= 100;
     const user_before = s.last_user_active_s;
+    const abs_before = s.last_active_s;
     s.mutex.unlock();
     _ = readOutput(s, 0);
     mutexLock(&s.mutex);
     const user_after = s.last_user_active_s;
+    const abs_after = s.last_active_s;
     s.mutex.unlock();
+
+    // The poll ages the session forward but leaves the user stamp alone.
     try testing.expectEqual(user_before, user_after);
+    try testing.expect(abs_after > abs_before);
 }
 
-test "busy session survives the user-idle kill (posix only)" {
-    if (comptime !is_pty_os) return error.SkipZigTest;
+test "busy session survives the user-idle kill" {
     const prev_kill = setIdleKillForTest(60);
     defer _ = setIdleKillForTest(prev_kill);
     const prev_timeout = setIdleTimeoutForTest(3600);
     defer _ = setIdleTimeoutForTest(prev_timeout);
 
-    const info = try createSession(testing.io, "/tmp", "/bin/sh", 80, 24, "user_test");
-    const id = try testing.allocator.dupe(u8, info.id);
+    const s = try insertSessionForTest("user_test");
+    const id = try testing.allocator.dupe(u8, s.id);
     defer testing.allocator.free(id);
     defer destroySession(id) catch {};
-    const s = getSession(id) orelse return error.SessionNotFound;
     // User idle past the kill window, but output just grew (dev server).
     mutexLock(&s.mutex);
     s.last_user_active_s = nowSeconds() - 3600;
@@ -947,49 +1037,77 @@ test "busy session survives the user-idle kill (posix only)" {
     try testing.expect(getSession(id) != null);
 }
 
-test "max sessions cap rejects over the limit (posix only)" {
-    if (comptime !is_pty_os) return error.SkipZigTest;
-    const prev_max = setMaxSessionsForTest(2);
-    defer _ = setMaxSessionsForTest(prev_max);
+test "max sessions cap rejects over the limit" {
     const prev_kill = setIdleKillForTest(3600);
     defer _ = setIdleKillForTest(prev_kill);
     const prev_timeout = setIdleTimeoutForTest(3600);
     defer _ = setIdleTimeoutForTest(prev_timeout);
 
-    const a = try createSession(testing.io, "/tmp", "/bin/sh", 80, 24, "user_test");
-    defer destroySession(a.id) catch {};
-    const b = try createSession(testing.io, "/tmp", "/bin/sh", 80, 24, "user_test");
-    defer destroySession(b.id) catch {};
-    try testing.expectError(error.TooManySessions, createSession(testing.io, "/tmp", "/bin/sh", 80, 24, "user_test"));
+    // Cap the count one above what the registry holds: the next insert is
+    // what the cap must refuse.
+    const base = sessionCount();
+    const prev_max = setMaxSessionsForTest(@intCast(base + 1));
+    defer _ = setMaxSessionsForTest(prev_max);
+
+    const s = try insertSessionForTest("user_test");
+    const id = try testing.allocator.dupe(u8, s.id);
+    defer testing.allocator.free(id);
+    defer destroySession(id) catch {};
+
+    // At the cap: refused. On a host that can spawn, the real entry point
+    // refuses for the same reason (the cap is checked before the fork).
+    try testing.expectEqual(base + 1, sessionCount());
+    try testing.expectError(error.TooManySessions, checkSessionCapacity());
+    if (ptyBackend() == .posix_pty) {
+        try testing.expectError(error.TooManySessions, createSession(testing.io, "/tmp", "/bin/sh", 80, 24, "user_test"));
+    }
+
+    // One slot below the cap is accepted again.
+    try destroySession(id);
+    try checkSessionCapacity();
 }
 
-test "spawned shell echoes input (posix only)" {
-    if (comptime !is_pty_os) return error.SkipZigTest;
+test "spawned shell echoes input" {
+    switch (ptyBackend()) {
+        .posix_pty => {
+            const cwd = "/tmp";
+            const info = try createSession(testing.io, cwd, "/bin/sh", 80, 24, "user_test");
+            defer destroySession(info.id) catch {};
 
-    const cwd = "/tmp";
-    const info = try createSession(testing.io, cwd, "/bin/sh", 80, 24, "user_test");
-    defer destroySession(info.id) catch {};
+            const s = getSession(info.id) orelse return error.SessionNotFound;
+            // Give the shell a moment to start, then send a marker.
+            sleepMillis(500);
+            _ = try writeInput(s, "echo MARKER-7f3a9c\n");
 
-    const s = getSession(info.id) orelse return error.SessionNotFound;
-    // Give the shell a moment to start, then send a marker.
-    sleepMillis(500);
-    _ = try writeInput(s, "echo MARKER-7f3a9c\n");
-
-    // Poll for the marker (shell echo + command output).
-    var found = false;
-    var cursor: u64 = 0;
-    var ticks: usize = 0;
-    while (ticks < 100) : (ticks += 1) {
-        const out = readOutput(s, cursor);
-        cursor = out.cursor;
-        if (std.mem.indexOf(u8, out.data, "MARKER-7f3a9c") != null) {
-            found = true;
-            break;
-        }
-        if (out.exited) break;
-        sleepMillis(100);
+            // Poll for the marker (shell echo + command output).
+            var found = false;
+            var cursor: u64 = 0;
+            var ticks: usize = 0;
+            while (ticks < 100) : (ticks += 1) {
+                const out = readOutput(s, cursor);
+                cursor = out.cursor;
+                if (std.mem.indexOf(u8, out.data, "MARKER-7f3a9c") != null) {
+                    found = true;
+                    break;
+                }
+                if (out.exited) break;
+                sleepMillis(100);
+            }
+            try testing.expect(found);
+        },
+        .none => {
+            // No PTY backend: every PTY step this test needs is a refusal,
+            // while the registry teardown stays host-independent.
+            try testing.expectError(error.UnsupportedPlatform, createSession(testing.io, "/tmp", "/bin/sh", 80, 24, "user_test"));
+            const s = try insertSessionForTest("user_test");
+            const id = try testing.allocator.dupe(u8, s.id);
+            defer testing.allocator.free(id);
+            try testing.expectError(error.UnsupportedPlatform, writeInput(s, "echo MARKER-7f3a9c\n"));
+            try testing.expectError(error.UnsupportedPlatform, resizeSession(s, 80, 40));
+            try destroySession(id);
+            try testing.expect(getSession(id) == null);
+        },
     }
-    try testing.expect(found);
 }
 
 // ---------------------------------------------------------------------
@@ -1024,57 +1142,64 @@ test "drain budget bounds one poll (no unbounded spin)" {
     try testing.expectEqual(@as(usize, 32), max_drain_iters);
 }
 
-test "readOutput never reaps its own session mid-call (posix only)" {
-    if (comptime !is_pty_os) return error.SkipZigTest;
+test "readOutput never reaps its own session mid-call" {
     const prev_timeout = setIdleTimeoutForTest(3600);
     defer _ = setIdleTimeoutForTest(prev_timeout);
     const prev_kill = setIdleKillForTest(1);
     defer _ = setIdleKillForTest(prev_kill);
 
-    const info = try createSession(testing.io, "/tmp", "/bin/sh", 80, 24, "user_test");
-    const id = try testing.allocator.dupe(u8, info.id);
+    const s = try insertSessionForTest("user_test");
+    const id = try testing.allocator.dupe(u8, s.id);
     defer testing.allocator.free(id);
     defer destroySession(id) catch {};
-    const s = getSession(id) orelse return error.SessionNotFound;
-    // User-idle past the 1s kill window, but absolutely fresh: the old
-    // readOutput swept first and freed self before locking (UAF). The
-    // fixed version excludes self from its own sweep.
+    const victim = try insertSessionForTest("user_test");
+    const victim_id = try testing.allocator.dupe(u8, victim.id);
+    defer testing.allocator.free(victim_id);
+
+    // The caller: user-idle past the 1s kill window, but absolutely fresh.
+    // The old readOutput swept first and freed self before locking (UAF).
     mutexLock(&s.mutex);
     s.last_user_active_s = nowSeconds() - 3600;
     s.last_active_s = nowSeconds();
     s.mutex.unlock();
+    // A genuinely stale neighbour, so "self survived" cannot mean the sweep
+    // never ran.
+    mutexLock(&victim.mutex);
+    victim.last_user_active_s = nowSeconds() - 3600;
+    victim.last_active_s = nowSeconds() - 7200;
+    victim.last_output_at_s = 0;
+    victim.mutex.unlock();
 
     _ = readOutput(s, 0);
     try testing.expect(getSession(id) != null);
+    try testing.expect(getSession(victim_id) == null);
 }
 
-test "readOutputAlloc returns an owned copy independent of the ring (posix only)" {
-    if (comptime !is_pty_os) return error.SkipZigTest;
+test "readOutputAlloc returns an owned copy independent of the ring" {
     const prev_timeout = setIdleTimeoutForTest(3600);
     defer _ = setIdleTimeoutForTest(prev_timeout);
     const prev_kill = setIdleKillForTest(3600);
     defer _ = setIdleKillForTest(prev_kill);
 
-    const info = try createSession(testing.io, "/tmp", "/bin/sh", 80, 24, "user_test");
-    defer destroySession(info.id) catch {};
-    const s = getSession(info.id) orelse return error.SessionNotFound;
-    sleepMillis(500);
-    _ = try writeInput(s, "echo OWNED-COPY-4d2e\n");
-    var cursor: u64 = 0;
-    var found = false;
-    var ticks: usize = 0;
-    while (ticks < 50) : (ticks += 1) {
-        const out = try readOutputAlloc(testing.allocator, s, cursor);
-        defer testing.allocator.free(out.data);
-        cursor = out.cursor;
-        if (std.mem.indexOf(u8, out.data, "OWNED-COPY-4d2e") != null) {
-            found = true;
-            break;
-        }
-        if (out.exited) break;
-        sleepMillis(100);
-    }
-    try testing.expect(found);
+    const s = try insertSessionForTest("user_test");
+    const id = try testing.allocator.dupe(u8, s.id);
+    defer testing.allocator.free(id);
+    defer destroySession(id) catch {};
+
+    mutexLock(&s.mutex);
+    appendLocked(s, "OWNED-COPY-4d2e");
+    s.mutex.unlock();
+
+    const out = try readOutputAlloc(testing.allocator, s, 0);
+    defer testing.allocator.free(out.data);
+    try testing.expectEqualStrings("OWNED-COPY-4d2e", out.data);
+    try testing.expectEqual(@as(u64, "OWNED-COPY-4d2e".len), out.cursor);
+
+    // The ring moved on after the call: the copy must not follow it.
+    mutexLock(&s.mutex);
+    appendLocked(s, "-TAIL");
+    s.mutex.unlock();
+    try testing.expectEqualStrings("OWNED-COPY-4d2e", out.data);
 }
 
 // ---------------------------------------------------------------------
@@ -1095,8 +1220,7 @@ const SweepRace = struct {
     }
 };
 
-test "concurrent sweep and destroy never double-free a victim (posix only)" {
-    if (comptime !is_pty_os) return error.SkipZigTest;
+test "concurrent sweep and destroy never double-free a victim" {
     const prev_kill = setIdleKillForTest(1);
     defer _ = setIdleKillForTest(prev_kill);
     const prev_timeout = setIdleTimeoutForTest(3600);
@@ -1118,14 +1242,14 @@ test "concurrent sweep and destroy never double-free a victim (posix only)" {
         var victims: [per_round]*Session = undefined;
         var i: usize = 0;
         while (i < per_round) : (i += 1) {
-            const info = try createSession(testing.io, "/tmp", "/bin/sh", 80, 24, "user_test");
+            const s = try insertSessionForTest("user_test");
             // Test-owned id copies: the session's own id buffer is freed by
             // whoever reaps it, so the destroy side must hash its own stable
             // slice (mirrors DELETE, whose id comes from the request, not the
-            const owned = try testing.allocator.dupe(u8, info.id);
+            const owned = try testing.allocator.dupe(u8, s.id);
             errdefer testing.allocator.free(owned);
             try owned_ids.append(testing.allocator, owned);
-            victims[i] = getSession(owned) orelse return error.SessionNotFound;
+            victims[i] = s;
         }
         // Make every session a sweep victim (idle past kill, never busy).
         for (victims) |s| {
@@ -1221,14 +1345,13 @@ test "mayAccess: an empty owner on either side means no identity (auth off)" {
 }
 
 test "getSessionForOwner: foreign id is indistinguishable from a missing one" {
-    if (comptime !is_pty_os) return error.SkipZigTest;
     const prev_timeout = setIdleTimeoutForTest(3600);
     defer _ = setIdleTimeoutForTest(prev_timeout);
     const prev_kill = setIdleKillForTest(3600);
     defer _ = setIdleKillForTest(prev_kill);
 
-    const info = try createSession(testing.io, "/tmp", "/bin/sh", 80, 24, "user_a");
-    const id = try testing.allocator.dupe(u8, info.id);
+    const s = try insertSessionForTest("user_a");
+    const id = try testing.allocator.dupe(u8, s.id);
     defer testing.allocator.free(id);
     defer destroySession(id) catch {};
 
@@ -1240,14 +1363,13 @@ test "getSessionForOwner: foreign id is indistinguishable from a missing one" {
 }
 
 test "destroySessionForOwner: a foreign caller cannot kill the session" {
-    if (comptime !is_pty_os) return error.SkipZigTest;
     const prev_timeout = setIdleTimeoutForTest(3600);
     defer _ = setIdleTimeoutForTest(prev_timeout);
     const prev_kill = setIdleKillForTest(3600);
     defer _ = setIdleKillForTest(prev_kill);
 
-    const info = try createSession(testing.io, "/tmp", "/bin/sh", 80, 24, "user_a");
-    const id = try testing.allocator.dupe(u8, info.id);
+    const s = try insertSessionForTest("user_a");
+    const id = try testing.allocator.dupe(u8, s.id);
     defer testing.allocator.free(id);
     defer destroySession(id) catch {};
 
