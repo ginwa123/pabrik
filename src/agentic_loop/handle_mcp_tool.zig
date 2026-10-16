@@ -544,7 +544,10 @@ fn echoServerJson() []const u8 {
 /// to a real local child and to a log file the tests read to count lease
 /// attempts (`.err` is the only level it keeps).
 const StdioCallFixture = struct {
-    threaded: std.Io.Threaded,
+    /// Heap-allocated on purpose: `std.Io.Threaded.io()` stores
+    /// `userdata = &threaded`, so holding the Threaded BY VALUE here would
+    /// leave `io` pointing at `init`'s dead frame — UB that hangs on Windows.
+    threaded: *std.Io.Threaded,
     logger: logger_mod.Logger,
     servers: std.json.Parsed(std.json.Value),
     cfg: config_mod.LlmConfig,
@@ -553,7 +556,9 @@ const StdioCallFixture = struct {
 
     fn init(server_name: []const u8, server_json: []const u8, log_path: []const u8) !StdioCallFixture {
         const allocator = testing.allocator;
-        var threaded = std.Io.Threaded.init(allocator, .{});
+        const threaded = try allocator.create(std.Io.Threaded);
+        errdefer allocator.destroy(threaded);
+        threaded.* = std.Io.Threaded.init(allocator, .{});
         errdefer threaded.deinit();
         const io = threaded.io();
 
@@ -624,6 +629,7 @@ const StdioCallFixture = struct {
         std.Io.Dir.cwd().deleteFile(self.io, self.log_path) catch {};
         testing.allocator.free(self.log_path);
         self.threaded.deinit();
+        testing.allocator.destroy(self.threaded);
         self.servers.deinit();
     }
 };
