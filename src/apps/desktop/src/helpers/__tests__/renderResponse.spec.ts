@@ -125,11 +125,6 @@ describe('renderResponse mcp_* summary', () => {
 })
 
 /** The pill for a tool that has NO registered output card. */
-/** `set_pull_request` was the reported case: the collapsed row read `set_pull_request ✓
- * {"session_id":"task_…","attached":true,"url":"https://…` — the first 80 characters of the
- * envelope's `data`, which is a summary of nothing. */
-/** The pill carries the name and status; the payload lives in the expanded body (see
- * `toolPayloadPreview.spec.ts`). */
 describe('renderResponse unregistered-tool fallback', () => {
   beforeEach(() => {
     _resetRenderResponseCache()

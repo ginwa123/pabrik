@@ -1,9 +1,4 @@
 /** Unit tests for the drag-and-drop handlers on workspace ITEMS in ProjectsList.vue. */
-/** The handlers convert the HTML5 drag events (dragstart, dragover, drop, dragend) on a
- * per-workspace `<ul>` (event delegation) into a `reorder-workspace-items` emit with the new
- * top-to-bottom ID order, scoped to the workspace the drop target belongs to. */
-/** Scoped to a single workspace's items — the 2026-09-22 revamp plan removed workspace-level
- * reorder from the UI. Plan: docs/superpowers/plans/2026-06-16-workspace-item-position-reorder.md */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { defineComponent, h, nextTick } from 'vue'
@@ -18,11 +13,6 @@ import { makeLocalStorageStub } from './helpers'
 
 /** Minimal stub for WorkspaceItemComponent that renders just the `<li>` with the data-* attributes
  * the parent uses for event delegation. */
-/** The real component has a lot of children (button, spinner, task list, etc.) that we don't need
- * for the drag-and-drop test — the events bubble up to the parent `<ul>` and the handler uses
- * `closest('[data-item-id]')` to find the source. */
-/** Keeping the stub minimal avoids the real component's deep dep tree (WorkspaceItemTask, etc.)
- * which would slow the test down and require its own setup. */
 const WorkspaceItemStub = defineComponent({
   name: 'WorkspaceItem',
   props: {

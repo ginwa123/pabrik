@@ -28,11 +28,6 @@ const ALL_RULES: RuleName[] = [
 
 /** Lint `code` with ONLY `rules` enabled and return the rule ids that fired. Isolation matters
  * here: the rules legitimately OVERLAP. */
-/** A watcher that writes back into the value it watches is often ALSO pure derived state, so
- * `watch(items, v => { items.value = [...v, next] })` trips two bans at once. */
-/** Running every rule on every fixture would make each test assert about the others' behaviour, and
- * a test that fails for an unrelated reason is a test people delete. Each describe block opts into
- * just its own rule. */
 function lint(code: string, rules: RuleName[] = ALL_RULES): string[] {
   const messages = linter.verify(
     code,

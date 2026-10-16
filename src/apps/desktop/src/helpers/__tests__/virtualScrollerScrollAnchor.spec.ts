@@ -364,8 +364,6 @@ function dispatchScroll(el: HTMLElement) {
 
 /** Give the rendered children fake offsetHeights: `tallPx` for items above `anchorIndex`,
  * `estimatePx` for the rest. Returns the expected compensation total for the above-anchor set. */
-/** Pass `onlyIndex` to make exactly ONE above-anchor item tall (the "single long message" case);
- * the rest keep the estimate. */
 function mockChildHeights(
   el: HTMLElement,
   anchorIndex: number,

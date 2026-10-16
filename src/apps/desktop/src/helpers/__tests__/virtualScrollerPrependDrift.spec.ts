@@ -1,15 +1,4 @@
 /** Regression test: sizer drift over a long chat with loadMore prepends. */
-/** User report (task_1787551495337_9 follow-up): with ~100 messages the chat developed persistent
- * gaps — messages clustered at the top of the scroller with empty space below, and stick-to-bottom
- * landing wrong. Root cause: stored heights are keyed by ARRAY INDEX. */
-/** Every loadMore prepend shifts every item's index by +N, but the height map kept its old keys —
- * so after the first prepend EVERY stored height described the wrong message. */
-/** Over a long session the sizer drifted hundreds of px away from the real content: scroll math
- * (findStartIndex, stick-to-bottom, anchor compensation) all computed against a phantom layout. */
-/** Fix: beginPreserve remaps the height map (+N per key) BEFORE the items array is mutated, so each
- * stored height stays attached to its own item. */
-/** This test drives a realistic lifecycle — mixed-height messages, scroll-measure passes, a
- * prepend, streaming appends — and asserts the sizer converges to Σ real heights. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'

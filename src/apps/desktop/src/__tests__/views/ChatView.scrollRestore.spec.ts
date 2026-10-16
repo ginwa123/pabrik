@@ -176,9 +176,6 @@ async function mountChatView(chatId: string): Promise<VueWrapper> {
 /** Configure the VirtualScroller container's scrollHeight and clientHeight to simulate a known
  * geometry. Without this, jsdom reports 0 for both and the "max <= 0" branch skips any scroll
  * restoration. */
-/** The VirtualScroller's own measurement loop uses defaultItemHeight (200px) × items.length = the
- * natural scrollHeight, so we override it after mount to a known value. `scrollHeight` should be >
- * `clientHeight` for restore() to return a non-null value. */
 function findScrollerContainer(wrapper: VueWrapper): HTMLElement | null {
   // The VirtualScroller renders a `<div class="virtual-scroller">` container. Find it via the
   // wrapper's HTML. If it's missing, the test is racing the initial mount — return null and let the

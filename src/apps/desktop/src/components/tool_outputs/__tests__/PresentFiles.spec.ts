@@ -280,8 +280,6 @@ describe('PresentFiles', () => {
 /** Loading-space reserves (scroll pop-in fix). Text/html/pdf/image previews resolve asynchronously
  * AFTER the card mounts. Without reserved space the card mounts small and pops taller when the
  * fetch/decode lands — mid-scroll, that reads as "content suddenly shows up". */
-/** Each loading state therefore reserves approximately its ready size so the pop-in becomes a
- * same-size content swap instead of a layout jump. */
 describe('PresentFiles loading reserves', () => {
   const pendingFetch = () => new Promise<Response>(() => {})
 

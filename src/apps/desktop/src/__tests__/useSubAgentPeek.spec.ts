@@ -1,14 +1,6 @@
 /** Tests for the useSubAgentPeek composable (skeleton — Chunk 1). Mocks global.fetch to assert the
  * initial history call shape and the messages ref updates. The SSE/chunk-accumulation behavior is
  * covered by Chunk 2 tests. */
-/** After the single-global-EventSource migration (Chunks 1-3 of the `single-sse-all-sessions`
- * plan), the composable no longer creates its own SseClient and the bus no longer exposes a
- * per-session subscribe/unsubscribe API. */
-/** The composable registers a listener on the bus's `llm` channel and filters by `event.session_id
- * === sid` on the JS side. Tests install the bus in `beforeEach` and drive `llm` events via
- * `__dispatchSseBus`. */
-/** The bus's single global SseClient is replaced with a stub so no real EventSource is opened in
- * jsdom. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, nextTick } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'

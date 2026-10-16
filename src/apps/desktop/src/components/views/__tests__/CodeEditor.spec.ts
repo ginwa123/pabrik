@@ -1,14 +1,5 @@
 /** Behavioural tests for the read-only code viewer (`views/CodeEditor.vue`), rendered from
  * `?view=code-editor`. */
-/** Regression context (task_1790594549955_1, "when i click code editor there is no code"): the
- * previous implementation lazy-loaded monaco with a dynamic import marked `@vite-ignore`. */
-/** That marker makes Vite keep the BARE specifier in the production bundle
- * (``import(`monaco-editor`)``), which no browser can resolve — `onMounted` rejected and the body
- * stayed empty while the header still rendered. */
-/** The old spec only grepped the source for the import shape, so it passed while the shipped bundle
- * was broken. These tests therefore assert the OBSERVABLE viewer: real rows, real line numbers,
- * real syntax tokens — plus a source contract that no browser-unresolvable dependency comes
- * back. */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { mount } from '@vue/test-utils'

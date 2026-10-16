@@ -539,8 +539,6 @@ const handleCloseAddRoutineItemDialog = () => {
 
 /** Resolve the cwd to scope a new local memory to. Uses the first folder-type item in the target
  * workspace as the project root (the most natural "cwd" for the workspace). */
-/** Falls back to '' when the workspace has no folder items — the AddMemoryDialog then shows its own
- * "no cwd" error and refuses to submit. */
 const resolveCwdForMemory = (workspaceId: string): string => {
   // workspacesStore is a Pinia store; its `workspaces` getter auto-unwraps the underlying ref (no
   // `.value` access in the store-public surface). See src/apps/desktop/src/stores/workspaces.ts for
@@ -560,8 +558,6 @@ const resolveCwdForMemory = (workspaceId: string): string => {
 /** Resolve the cwd to scope a new memory TASK to. Unlike `resolveCwdForMemory` (which uses the
  * workspace's first folder), this function takes the SPECIFIC item_id the user picked — the memory
  * task is attached to that item, and the .md file is scoped to that item's path. */
-/** Returns '' if the item can't be found or has no path (in which case the AddMemoryDialog will
- * show its own "no cwd" error and refuse to submit). */
 const resolveCwdForItem = (itemId: string): string => {
   const item = workspacesStore.allWorkspaceItems.find((i) => i.id === itemId)
   if (!item) return ''

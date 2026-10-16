@@ -45,8 +45,6 @@ const ITEM = {
 /** jsdom 29 doesn't implement `setPointerCapture` / `releasePointerCapture` / `hasPointerCapture`
  * on HTMLElement. The native browser equivalents require a real pointer-id-to-element binding that
  * jsdom can't model. */
-/** We stub them to no-ops so the Vue handlers don't crash; the pointer-state-tracking we actually
- * want to test lives in the `pinchPointers` Map inside the component. */
 function stubPointerCapture(el: HTMLElement): void {
   el.setPointerCapture = () => {}
   el.releasePointerCapture = () => {}

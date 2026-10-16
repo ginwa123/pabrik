@@ -35,8 +35,6 @@ const props = withDefaults(defineProps<Props>(), {
 /** Emitted when the user clicks a line-number cell in the diff. Payload is the 1-based line number
  * in the file (the `after`-side line for split view, the actual row's new-line number for unified
  * view). */
-/** Parents should wire this to the code-editor open handler so the user can land on the exact line
- * they were inspecting. */
 const emit = defineEmits<{
   'jump-to-line': [line: number]
 }>()
@@ -100,11 +98,6 @@ const readMode = readStoredMode // suppress unused warning if some bundler tree-
 // ──────────────────────────────────────────────────────────────────────────── Sub-components —
 // inline to avoid 3 separate files for tiny helpers.
 // ────────────────────────────────────────────────────────────────────────────
-/** Renders one side (before/after) of the split-view. Structure: an `overflow-x-auto` scroll
- * container > one sizing WRAPPER (`width: max-content; min-width: 100%` — sized once, to fit the
- * widest row or the pane, whichever is larger) > each row (`width: 100%` of that wrapper). */
-/** Because every row's width comes from the same already-sized wrapper, every row — long or short —
- * paints a background across the exact same width, at any scroll position. */
 const DiffSplitSide = defineComponent({
   name: 'DiffSplitSide',
   props: {
@@ -244,7 +237,6 @@ function renderSplitRow(row: SplitRow, idx: number, side: 'before' | 'after', la
 // on the same line impossible to parse. renderSplitRow and
 // renderUnifiedRow now render token-colored spans (via renderHighlighted)
 // on top of the row bg instead.
-/** Renders the unified-view rows: line numbers, diff prefix, and content, all in a single column. */
 const DiffUnifiedSide = defineComponent({
   name: 'DiffUnifiedSide',
   props: {

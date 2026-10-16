@@ -71,9 +71,6 @@ const rowExists = (wrapper: ReturnType<typeof mount>, testId: string) =>
   wrapper.find(`[data-testid="${testId}"]`).exists()
 
 /** The section headers ("Staged Changes (2)", "Changes (1)", "Untracked (1)") as plain strings. */
-/** Queried by their own class rather than by `wrapper.text()`, because "Staged Changes (2)"
- * CONTAINS "Changes (" — a substring assertion cannot tell an emptied Changes section from a Staged
- * one that happens to be non-empty. */
 const sectionHeaders = (wrapper: ReturnType<typeof mount>): string[] =>
   wrapper
     .findAll('.text-micro.font-semibold.uppercase')

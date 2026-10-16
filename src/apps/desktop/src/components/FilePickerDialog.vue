@@ -89,11 +89,6 @@ const props = defineProps<{
   selectedPath?: string
   /** NEW: show the Recent tab + tabstrip. Pass `true` to enable (the default), omit to keep the
    * default, pass `false` to opt out for the single-pane tree. */
-  /** Vue 3.5's runtime default for `boolean?` is `false`, so the JS-side computed below treats
-   * `undefined` (caller didn't pass anything) as "default on" — this is the inverse of Vue's
-   * runtime default. */
-  /** No caller today passes `false`; the legacy opt-out is supported for symmetry with the existing
-   * `showHidden?: boolean` prop. */
   enableRecentHistory?: boolean
 }>()
 
@@ -157,7 +152,6 @@ let previouslyFocused: HTMLElement | null = null
 // ── Cross-platform path helpers (Windows fix, 2026-09-05) ──────────────
 // See the file header for the full rationale. POSIX inputs produce
 // byte-identical results to the old POSIX-only implementations.
-/** True for Windows absolutes: `C:\...`, `C:/...`, UNC `\\s\s` / `//s/s`. */
 function isWindowsAbs(path: string): boolean {
   if (!path) return false
   if (/^[A-Za-z]:[\\/]/.test(path)) return true

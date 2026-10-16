@@ -1,9 +1,6 @@
 /** Wire-up regression test for PropertiesPanel.vue Monaco Save button. Pre-fix symptom (silent-drop
  * bug): clicking "Save" in the Monaco HTML editor emits `htmlChanged` upward → DesignView re-emits
  * → AppLayout has no `@html-changed` listener → nothing happens. */
-/** Post-fix expectation: clicking Save calls `workspacesStore.updateDesignElementHtml(workspaceId,
- * itemId, pageId, elementId, html)` directly. 1 behavioural test (project convention: behavioural
- * only — see ~/.config/pabrik/memories/static-contract-test-when-to-prefer-behavioural.md). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'

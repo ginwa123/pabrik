@@ -19,7 +19,6 @@ const isLoaded = computed(() => props.loaded !== false)
 /** Assign a FRESH object rather than mutating `model.enabled` in place — `defineModel` only emits
  * `update:modelValue` on reassignment, so an in-place write would leave the orchestrator's watcher
  * (and therefore the dirty pill) unaware that anything changed. */
-/** Same shape as PabrikGeneralSection's toggle handlers. */
 function onToggle(event: Event) {
   model.value = { ...model.value, enabled: (event.target as HTMLInputElement).checked }
 }

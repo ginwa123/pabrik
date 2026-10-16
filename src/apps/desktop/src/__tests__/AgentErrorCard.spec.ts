@@ -1,7 +1,6 @@
 /** Tests for AgentErrorCard.vue — the dedicated renderer for agentic-loop error/retry diagnostics
  * (e.g. `[Retry 1/10] StreamInterrupted … Server said: …`). The component is purely presentational
  * (parses a string, no API calls), so no mocks are needed. */
-/** Mirrors the style of `CompactionCard.spec.ts`. */
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 

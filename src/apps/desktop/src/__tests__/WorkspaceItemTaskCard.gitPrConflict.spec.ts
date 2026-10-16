@@ -1,7 +1,6 @@
 /** Conflict-only hint for the git-branch badge in WorkspaceItemTaskCard (quiet-when-clean).
  * Contract: CONFLICTING appends " · ⚠ conflicts" to the badge label, sets data-pr-conflict, and
  * extends the tooltip with "merge conflicts". */
-/** MERGEABLE/unknown renders exactly as before (bare branch, no attr). */
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

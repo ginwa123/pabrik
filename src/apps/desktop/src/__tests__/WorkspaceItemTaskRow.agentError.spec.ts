@@ -1,9 +1,6 @@
 /** Behavioural tests for the agent-error indicator on <WorkspaceItemTaskRow> (the sidebar list row
  * variant). The sidebar row has tighter horizontal real estate than the kanban card, so it ships a
  * single affordance — a small red ⚠ icon with the same hover-tooltip payload as the kanban card. */
-/** No border ring (no row-level border exists); no meta pill (the row has no meta row). Plan:
- * docs/superpowers/plans/2026-08-29-chatview-agent-error-persistent.md (Task 6 — sidebar task row
- * indicator). */
 import { describe, expect, it, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

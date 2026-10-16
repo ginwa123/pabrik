@@ -118,9 +118,6 @@ function decideIsAtBottom(args: DecisionInput): boolean {
 
 /** The SHIPPED decision once the gap is measured against the STABLE anchor (`settledBottom`) rather
  * than a live `bottomScrollTop()`. */
-/** The tolerance widens to `AT_BOTTOM_STABLE_TOLERANCE_PX` because the anchor is written at the end
- * of a measure pass and the model can still converge by up to the tail gap before the next scroll
- * event is handled. That residual is the model's own movement, not the reader's. */
 function decideIsAtBottomStableAnchor(args: DecisionInput): boolean {
   const newIsAtBottom = args.distanceFromBottom < AT_BOTTOM_STABLE_TOLERANCE_PX
   const retainedThroughGrowth =

@@ -32,7 +32,6 @@
  * "cancelled"): add to `ProgressStatus` enum here AND the enum in
  * `subagent_progress.zig` (the values must stay in sync).
  */
-/** Wire-level enum mirrored from subagent_progress.zig `ProgressStatus`. */
 export type ProgressStatus = 'launched' | 'completed' | 'failed'
 
 /** Sub-agent lifecycle status as exposed to UI rendering. */
@@ -84,9 +83,6 @@ export type SubAgentProgressMap = Record<string, SubAgentProgress[]>
 /** True when a tool message is a spawn_sub_agent row still in Phase 1 placeholder state (no
  * `<summary>` → the tool hasn't completed). Used by ChatView.rehydrateSubAgentProgress to decide
  * which rows need a snapshot fetch. */
-/** Mirrors SpawnSubAgent.vue's `isStarting` (agents==0 && summary==null && no live rows) at the
- * message-list level: the final envelope in `tools_exec_spawn_sub_agent.zig` always prints
- * `<summary succeeded= failed= />`, so its absence means the batch is still running. */
 export function isPlaceholderSpawnRow(msg: {
   role?: string
   tool_name?: string | null
@@ -109,8 +105,6 @@ export function isPlaceholderSpawnRow(msg: {
 /** Pure reducer: apply ONE progress event to the current map and return a NEW map. Vue reactivity
  * demands map-by-replacement; we never mutate the input. Defensive: ignores events that don't carry
  * the required fields (no role / tool_call_id / status / agent_index). */
-/** Such events would indicate a backend regression — return the original map so the UI keeps its
- * previous state. */
 export function applyProgressEvent(
   map: SubAgentProgressMap,
   event: SubAgentProgressEvent,
@@ -183,9 +177,6 @@ export function clearProgressFor(
 /** 2026-09-04 refresh rehydrate (task_1788505292766_1): fold a `GET /api/subagent/progress`
  * snapshot into the map. Each snapshot row maps 1:1 onto a `SubAgentProgressEvent`, so we reuse the
  * tested `applyProgressEvent` reducer (including its done→running guard). */
-/** Backend "" session ids normalize to undefined — same as the omitted wire field on the live SSE
- * path (peek stays disabled). Returns a NEW map (map-by-replacement for Vue reactivity); an empty
- * snapshot leaves the map untouched. */
 export function applySnapshotRows(
   map: SubAgentProgressMap,
   toolCallId: string,

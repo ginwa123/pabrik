@@ -15,8 +15,6 @@ export type ConfigScope = 'user' | 'workspace'
 /** The config sections that live in Workspace settings, in nav order. One list, two consumers: the
  * settings shell renders a nav item per entry and the workspace view renders an editor for each -
  * so a section can never be listed but unrenderable (a dead link) or renderable but unlisted. */
-/** `general` is deliberately absent: it is the ONE thing left at user level (decision D4), because
- * it genuinely applies to every workspace. */
 export const WORKSPACE_AGENT_SECTIONS = ['profiles', 'mcp', 'tools', 'evals'] as const
 
 /**  * Does the WORKSPACE settings page render this section? The complement of
@@ -37,8 +35,6 @@ export interface PabrikConfigSource {
   /** Remove one profile by name. User scope has a dedicated endpoint (it has to live-reload the
    * backend's in-memory config). Workspace scope does not: the overlay is read per session, so the
    * following `save()` is what actually removes it. */
-  /** Resolving immediately is the honest answer there, and it keeps the editor's optimistic-delete
-   * flow identical in both scopes. */
   deleteProfile(name: string): Promise<void>
 }
 

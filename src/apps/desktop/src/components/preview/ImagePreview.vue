@@ -4,8 +4,6 @@ import { computed, onBeforeUnmount, onMounted, onUpdated } from 'vue'
 /** Full-screen image preview overlay. Renders nothing when `src` is an empty string; otherwise
  * teleports a dimmed backdrop + image + close button to <body>. Clicking the backdrop or pressing
  * Escape emits `close`. */
-/** The body scroll is locked while the preview is open so the chat behind it cannot be scrolled.
- * Usage: <ImagePreview :src="previewImageUrl" @close="previewImageUrl = null" /> */
 const props = defineProps<{
   src: string
 }>()

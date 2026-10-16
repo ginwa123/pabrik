@@ -1,8 +1,5 @@
 /** Unit tests for the older-history prefetch decision (task_1789505423062_0). Pure-function
  * coverage only — no DOM, no Vue. */
-/** The wire-level proof that the prefetch actually fires before the scroll reaches the top lives in
- * the functional UI test (`tests/functional_ui/chatview_lazy_prefetch_ui_test.py`), and the
- * ChatView wiring is pinned by `ChatView.lazyPrefetch.spec.ts`. */
 import { describe, it, expect } from 'vitest'
 import {
   ARM_RADIUS_FLOOR_PX,

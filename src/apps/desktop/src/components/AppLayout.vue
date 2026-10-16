@@ -1349,14 +1349,6 @@ async function handleAgentToggleTool(toolName: string, enabled: boolean) {
 
 /** Bulk-toggle multiple tools at once (fired by AgentView's "Select all" / "Clear" buttons in the
  * Tools panel). */
-/** Runs every tool through the same optimistic-then-server-confirm path as a single toggle so
- * failures are observable per-tool and the UI stays in sync with the server canonical list. */
-/** Concurrency: requests are fired in parallel (Promise.all) — the backend handler is per-tool
- * INSERT/DELETE so there is no cross-row contention. On any failure we re-fetch the canonical list
- * from the server, which collapses partial successes into a single coherent view. */
-/** On the wire, individual enable/disable failures are logged but don't abort the rest of the batch
- * — the user gets the best- effort outcome (everything they could enable was enabled) and a
- * re-fetch corrects any drift. */
 async function handleAgentToggleToolsBulk(toolNames: string[], enabled: boolean) {
   if (!activeWorkspaceItem.value) return
   const agentId = activeWorkspaceItem.value.id
@@ -1533,7 +1525,6 @@ const handleKanbanRequestRenameColumn = (columnId: string) => {
 /** Forward a kanban rename (from either the Settings dialog header pencil or the KanbanView header
  * pencil) to the store. Both children emit `rename-item` with the trimmed new name; the store
  * action optimistic-updates + rolls back on error. */
-/** Plan: docs/superpowers/plans/2026-06-30-edit-workspace-item-name.md */
 const handleKanbanRenameItem = (newName: string) => {
   if (!activeWorkspaceItem.value) return
   const ws = activeWorkspace.value
@@ -2127,12 +2118,6 @@ const retryEditorRestore = () => {
 // Expose the design chat open handler so tests can simulate the user clicking the 💬 button in
 // DesignView (which emits `openChat`). In production, this is reached via the DesignView emit chain
 // — tests don't render DesignView because they stub it.
-/** The store side of a navigation. The render chain reads the STORES
- * (`workspacesStore.activeWorkspaceItem`, `navigationStore.activeChatId`) — not the URL — so a
- * navigation that only rewrote the URL left the previous view on screen. */
-/** A sidebar click set both (WorkspaceItem → Sidebar.handleSelectItem → emit), which is why this
- * only showed up once tabs could be activated directly: switching between two workspace tabs kept
- * rendering the same item. */
 function mirrorTargetIntoStores(path: string, query: Record<string, string>, chatName?: string) {
   if (path !== '/app') return
   const view = query.view ?? 'chat'
@@ -2167,8 +2152,6 @@ function applyActiveTabToUrl() {
 /** The funnel. Every navigation in the app lands here — sidebar clicks, the chats list,
  * kanban/design chat dialogs, deep links, the Back button — so no call site has to know the tab
  * strip exists, and a view type added later becomes tabbable for free. */
-/** Gated on mount so it runs AFTER the restore block above: the deep link is resolved by the
- * existing code first, then normalised with its `tab=` name. */
 function syncFromRoute() {
   // The item's type decides whether a task chat belongs to the item's tab (kanban/design open it as
   // a dialog inside that view) or gets its own. Only trust it when it describes the item this URL

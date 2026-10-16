@@ -119,11 +119,6 @@ describe('DesignView single-element drag → translate emit', () => {
   /** REGRESSION (2026-08-06, design-mode-cannot-move bug): the single-element drag wire previously
    * bailed with `selectedIds.value.size !== 1` — if the user had a stale multi- select from earlier
    * (e.g. multi-clicked to deselect, or never reset), the drag silently no-op'd. */
-  /** The wire was rewired to trust the `elementId` carried in the `translate` event instead of
-   * fishing it out of `selectedIds`. This test pins the new contract. Scenario: element is dragged
-   * after `selectedIds` was wiped (size 0). */
-  /** The drag still fires the `translateElement` emit because the source emits `translate` with `{
-   * elementId, dx, dy }` (the post-#162 fix). */
   it('sends translate emit even when selectedIds is empty (drag source carries elementId)', async () => {
     const _store = useWorkspacesStore()
     _store.setActiveDesignPage('page_1')
@@ -199,7 +194,6 @@ describe('DesignView single-element drag → translate emit', () => {
   /** Regression: the OLD wire bailed when selectedIds had 2+ elements (the old assumption was
    * "single-element drag ⇒ exactly one selected"); the NEW wire still fires because the `translate`
    * event carries the elementId directly. */
-  /** drag source — not the selection set. / */
   it('still fires translate when selectedIds has multiple ids (drag source carries elementId)', async () => {
     const _store = useWorkspacesStore()
     _store.setActiveDesignPage('page_1')

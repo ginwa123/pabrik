@@ -1,7 +1,6 @@
 /** Tests for the profile-model picker in KanbanTaskDetailDialog (create mode only). Mount pattern:
  * same as KanbanTaskDetailDialog.runAgent.spec.ts — <Teleport to="body">, attachTo: document.body +
  * document.querySelector. */
-/** Plan: docs/superpowers/plans/2026-08-06-kanban-task-profile-selector.md Task 1 / Step 1.1 */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

@@ -1,14 +1,6 @@
 /** Full-viewport content-window specs for VirtualScroller.vue. Symptom: with many messages,
  * scrolling to the bottom shrinks the `.virtual-scroller-content` div to half (or less) of the chat
  * height, leaving blank sizer below it. */
-/** Mechanism: `visibleRange` covers the viewport in MODEL space (estimates), but the real DOM can
- * be much shorter when estimates overshoot reality — a tail of short tool-card groups against a
- * ~400px running median, plus up to HYSTERESIS_PX of residue per item that never corrects. */
-/** The content div is only as tall as its rendered children, so it renders short. Fix pinned here:
- * the content window carries `min-height: <containerHeight>px`, so its box is never shorter than
- * one viewport — at the bottom, in the middle, and for short lists. */
-/** The content is absolutely positioned (out of flow) and measureItems reads child heights, so the
- * min-height never feeds back into the sizer model or the compensation loop. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -117,9 +109,6 @@ describe('VirtualScroller full-viewport content window', () => {
 /** Two-tier hysteresis: the sizer must converge to the real content bottom instead of parking up to
  * HYSTERESIS_PX (50) per item too tall — the persistent blank gap below the last message at max
  * scroll (sizer 40383px vs content bottom ~37095px in the report). */
-/** Setup pins the estimator out of the picture: 20 items with buffer=30 means the whole list is
- * always rendered, so after the first measure pass every item has a REAL stored height and no
- * estimates remain. modelTotal assertions are then exact. */
 describe('VirtualScroller two-tier measurement dead-band', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())

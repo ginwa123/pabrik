@@ -9,10 +9,6 @@ import type { Secret } from '../api'
 /** This store's error channel. Every network call below returns `Effect<A, SecretsRequestError>`
  * rather than a promise that may reject, so the failure is in the TYPE and each call site has to
  * decide what to do with it. */
-/** The alternative — the `try { ... } catch { secrets.value = [] }` shape — is the bug this repo
- * forbids: it makes an outage indistinguishable from an empty workspace. Tag is coarse on purpose. */
-/** The UI acts on one distinction: "the request worked" vs "the request did not", with the reason
- * for the second. */
 export class SecretsRequestError extends Data.TaggedError('SecretsRequestError')<{
   /** Store action that triggered the request, e.g. `list`, `create`. */
   readonly op: string
@@ -42,10 +38,6 @@ function request<A>(op: string, run: () => Promise<A>): Effect.Effect<A, Secrets
 /** Run an Effect and keep BOTH outcomes distinguishable. Deliberately NOT `runSyncEffectOr(effect,
  * [], op)`: that helper degrades to an empty row list, which is precisely the "a failed fetch
  * renders as 'no rows'" collapse this store exists to avoid. */
-/** It returns the reason so the caller can put it in `error` and render it. */
-/** Same contract and same reasoning as `runSyncResult` in `sync/runtime.ts`, specialised to this
- * store's error type (and therefore defined here — `sync/` is not on this task's edit surface, and
- * its helpers are typed to `SyncError`). */
 async function runRequest<A>(
   effect: Effect.Effect<A, SecretsRequestError>,
   op: string,
@@ -66,17 +58,12 @@ export const useSecretsStore = defineStore('secrets', () => {
   /** Last failure message, or null. Rendered by the view — never write-only. */
   const error = ref<string | null>(null)
   /** True once a list has been fetched for SOME workspace. */
-  /** Distinguishes "not loaded yet" (render nothing) from "loaded, and there are none" (render the
-   * empty state) — without it a fresh view shows a misleading "No secrets yet" before the first
-   * request returns, and shows it again on every failed reload. */
   const loaded = ref(false)
 
   const count = computed(() => secrets.value.length)
 
   /** Fetch the list for a workspace. A failure leaves whatever was last painted on screen and
    * records `error`; it never blanks the list. */
-  /** Blanking on failure would turn a transient outage into data loss in the user's eyes — and
-   * would make the empty state render for a workspace that has three secrets. */
   async function fetchSecrets(workspaceId: string): Promise<void> {
     if (!workspaceId) return
     loading.value = true
@@ -97,8 +84,6 @@ export const useSecretsStore = defineStore('secrets', () => {
   /** Create a secret. `value` is consumed here and nowhere else: it goes into the request body and
    * is not copied into any state. The returned `Secret` — the only thing this store keeps — has no
    * value field, so there is nothing downstream that could render one. */
-  /** Returns `null` on failure with `error` set; the caller must render that rather than treating
-   * the null as "nothing was created". */
   async function createSecret(
     workspaceId: string,
     name: string,

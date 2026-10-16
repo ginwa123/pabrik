@@ -1,12 +1,5 @@
 /** Tests for ChatView's Stop button wiring. The Stop button lives in FileInput.vue (visible only
  * when `isLLMProcessing === true`). */
-/** Clicking it emits a `stop-session` event; ChatView's `handleStopSession` translates that into a
- * `api.stopSession(sessionId)` call against the backend's `POST /api/llm/session/:session/stop`
- * endpoint. */
-/** The backend flips `worker.cancelled=1`; the workflow breaks on the next iteration boundary;
- * `deleteWorker` fires a SSE `worker deleted` event; `App.vue`'s worker-event listener removes the
- * session from `processingState`; `isLLMProcessing` becomes false; the button auto-hides. */
-/** Plan: docs/superpowers/plans/2026-08-06-chatview-stop-button.md */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, ref, type App as VueApp, type Ref } from 'vue'

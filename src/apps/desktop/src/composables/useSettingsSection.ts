@@ -18,9 +18,6 @@ interface UseSettingsSectionOptions {
 /** URL-synced settings-section state, shared by the user + workspace settings pages. Read order is
  * URL (`?section=`) → localStorage → default; writes go through `router.replace` so refresh,
  * Back/Forward and shared links restore the open section. */
-/** The default section is stripped from the query to keep URLs clean. No watchers: the section is a
- * writable computed over the route, and a local ref backs it when the component mounts without a
- * router (unit tests). Same shape as the per-page implementations this replaces. */
 export function useSettingsSection(options: UseSettingsSectionOptions) {
   const { sections, defaultSection, storageKey } = options
 

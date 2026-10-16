@@ -1,10 +1,6 @@
 /** Behavioural mount tests for DesignElementPreview.vue. The component renders a sandboxed iframe
  * for the element's HTML body. When `editable=true`, the iframe body becomes contenteditable and
  * emits `htmlChanged` on blur. */
-/** Fill contract (2026-07-29, fix for "white in corner" bug): the iframe's `background` style is
- * bound to `props.fill`, NOT a hardcoded 'white'. */
-/** When `fill` is empty (or unset), the iframe background is 'transparent' so the parent wrapper's
- * `backgroundColor: element.fill` shows through. */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'

@@ -1,7 +1,6 @@
 /** Tests for the "Create task & run agent" button in KanbanTaskDetailDialog (create mode). Mount
  * pattern: same as KanbanTaskDetailDialog.spec.ts. <Teleport to="body">, so use `attachTo:
  * document.body` + `document.querySelector` (NOT `wrapper.find`). */
-/** Plan: docs/superpowers/plans/2026-08-06-kanban-create-task-run-agent.md Task 2 / Step 2.1 */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

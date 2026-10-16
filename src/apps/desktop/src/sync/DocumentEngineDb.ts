@@ -1,16 +1,6 @@
 /** Document-list child of the generic sync engine (sidebar local-first). Mirrors SessionEngineDb:
  * cache-then-revalidate over `api.listDocuments`, each row keeping the full server object in `raw`
  * so cached paints render through the store with no shape drift. */
-/** The cache is partitioned by workspace (`ctx` = workspace id), matching the Documents section's
- * `workspaceId` prop boundary. Why IndexedDB and not localStorage: `Document.content` is the full
- * markdown body and `listDocuments` returns every body in the workspace. */
-/** A workspaces-style localStorage cache (~100 bytes/row) would hit the ~5 MB quota after a handful
- * of real documents, and the cache helper is fail-silent by design — so it would degrade to a
- * silent permanent miss with no error to explain it. IndexedDB has no such ceiling. */
-/** Cursor note: like sessions, there is no cursor. */
-/** `listDocuments` is a single unpaginated call returning the whole workspace, so a delta is "the
- * whole list" — merge is a same-id replace, and rows the server no longer returns are dropped by
- * the store's full-page write rather than lingering as orphans (see `fetchDeltaPage`). */
 import { Effect } from 'effect'
 import * as api from '../api'
 import type { Document } from '../api'
@@ -108,12 +98,6 @@ export class DocumentEngineDb extends BaseSyncEngine<DocumentRow, DocumentCtx> {
 
   /** Background refresh for a cached paint: fetch the whole workspace, replace the cached rows for
    * this ctx, hand back the delta. */
-  /** Honest about failure — a rejected fetch surfaces as `SyncRemoteError` rather than a null
-   * result, so the store can tell "no documents" from "the list could not refresh" and keep the
-   * painted rows in the latter case. */
-  /** `clear(ctx)` before `putLocal` matters here in a way it does not for sessions: a document
-   * deleted from another window (or by the agent's `delete_document` tool) would otherwise stay in
-   * the cache forever, because a merge only ever adds or replaces by id. */
   loadDelta(ctx: DocumentCtx): Effect.Effect<DocumentDelta, SyncError> {
     // A generator's `this` is its own, so capture the engine outside.
     // oxlint-disable-next-line typescript-eslint/no-this-alias -- see SyncEngine.syncOnMount

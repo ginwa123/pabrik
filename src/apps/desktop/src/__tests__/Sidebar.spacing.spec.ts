@@ -49,7 +49,6 @@ type Line = { n: number; text: string }
 /** Lines between `sb-scope: overlay` markers are floating popovers (tooltips, dropdown cards), not
  * rows in the three menus. They keep their own width and type scale on purpose, so the row contract
  * does not apply to them. */
-/** The marker is explicit and reviewable rather than a regex guessing at what counts as a popover. */
 function menuLines(src: string): Line[] {
   const out: Line[] = []
   let inOverlay = false

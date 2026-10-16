@@ -193,8 +193,6 @@ export interface DesignPage {
 
 /** Element types emitted by the backend's `ElementType` enum. Wire form is the lowercase
  * `tagName` string; the backend maps it back to the enum at the handler boundary. */
-/** Normalize the `type` field on a design element from the wire. The `GET /design/pages/:page_id`
- * endpoint emits `type` (matches the frontend contract). */
 export const normalizeDesignElementType = <
   T extends { type?: DesignElementType; elem_type?: string },
 >(
@@ -469,46 +467,6 @@ export async function reorderWorkspaceItems(
 }
 
 // Task API
-/**
- * Fetch tasks for a workspace item, with optional cursor pagination.
- *
- * @param workspaceId  - owning workspace
- * @param itemId       - workspace item (e.g. a project folder)
- * @param limit        - page size (default 20; backend clamps at 100)
- * @param cursor       - the encoded "<sort_value>|<id>" from the
- *                       previous page's `next_cursor`; pass undefined
- *                       for the first page
- * @param sortBy       - field to sort by: 'created_at' | 'updated_at'
- *                       | 'name'. Default: undefined — the backend
- *                       applies its own default ('updated_at'). Send
- *                       an explicit value when the URL has a sort
- *                       param (`?sorts=col_X:updated_at:desc`) and
- *                       the user wants the backend to honour it.
- *                       Both `sortBy` AND `direction` must be provided
- *                       together; otherwise the backend defaults apply.
- * @param direction    - 'asc' | 'desc'. Default: undefined (backend
- *                       default 'desc'). See sortBy for the pairing
- *                       rule.
- * @param columnId     - optional kanban column id (per-column
- *                       pagination, plan 2026-08-06-kanban-per-column-
- *                       pagination.md). When set, the backend's WHERE
- *                       clause restricts results to tasks whose
- *                       `kanban_column_id` matches (or IS NULL,
- *                       preserving legacy rows). When unset, the
- *                       full board-wide result is returned (the
- *                       initial page of every kanban view).
- * @param q            - optional case-insensitive substring filter
- *                       applied at the SQL level against `name`,
- *                       `description`, and `tags`. Pass undefined or
- *                       '' to disable the filter. The backend escapes
- *                       `%`/`_`/`\` in the input before binding, so a
- *                       user typing `%` matches a literal `%` in the
- *                       data (not every row). Pagination advances
- *                       through the filtered set, not the unfiltered
- *                       set, when q is set.
- * @returns `{ tasks, has_more, next_cursor }`. `next_cursor` is null
- *          when there are no more pages.
- */
 export async function getTasks(
   workspaceId: string,
   itemId: string,
@@ -576,9 +534,6 @@ export async function getTask(
 /** Stamp `workspace_item_tasks.last_human_touched_at` so the kanban card flips from the
  * orange "AI finished — awaiting review" dot to the green "reviewed" checkmark.
  * Fire-and-forget: failures log a warning but don't surface as toasts. */
-/** Lazy media fetch for ONE task (media-flags change). GET
- * /api/workspaces/:ws/items/:item/tasks/:task_id/media → { image_urls, video_urls } (`||`-delimited
- * raw strings). */
 export async function getTaskMedia(
   workspaceId: string,
   itemId: string,
@@ -638,8 +593,6 @@ export async function markTaskHumanTouched(
 /** Create a task under a workspace item. The third arg is a single params object: for a standard
  * task pass `{ name, description?, taskType: 'standard' }`, for a memory pass `{ name, taskType:
  * 'memory', memory: { name, content } }`. */
-/** `taskType: 'routine'` was deleted (Migration 084) — routines are now first-class workspace
- * items, see `createRoutineItem`. */
 export async function createTask(
   workspaceId: string,
   itemId: string,
@@ -748,8 +701,6 @@ export interface KanbanCreateAndRunPayload {
 /** New mode (`create_session`) — inserts the sessions row keyed by task.id + persists
  * selected_profile_model + emits session_created SSE, but does NOT call emit_run_agent. Returns
  * `session: { id, name, status: 'idle' }`. */
-/** No `queue_message` field (the agent never starts on this path). Plan:
- * docs/superpowers/plans/2026-08-19-kanban-create-task-inits-session.md */
 export interface KanbanCreateSessionOnlyPayload {
   mode: 'create_session'
   name: string
@@ -892,8 +843,6 @@ export async function deleteTask(
 /** Pin or unpin a task. The backend bumps the row's `pinned_position` to MAX+1 (when pinning) so a
  * newly-pinned task lands at the BOTTOM of the pinned region; the user can drag it to a different
  * position afterwards. */
-/** Returns the new `pinned_position` so the store can confirm the row landed where the user
- * expects. 404: task not found 500: DB write failed */
 export async function pinTask(
   workspaceId: string,
   itemId: string,
@@ -914,7 +863,6 @@ export async function pinTask(
 /** Reorder the pinned subset of a single workspace item. The `orderedIds` array is the full
  * top-to-bottom display order of the pinned rows. The backend assigns `pinned_position = count - 1
  * - i` so the rows render in the user's chosen order. */
-/** Plan: docs/superpowers/plans/2026-06-20-pinned-workspace-item-tasks.md */
 export async function reorderPinnedTasks(
   workspaceId: string,
   itemId: string,
@@ -931,9 +879,6 @@ export async function reorderPinnedTasks(
 
 /** Manually fire a workspace routine. Returns the session_id (which equals the routine id — every
  * fire appends to the same session chat). */
-/** The backend responds 200 + body as soon as the fire is submitted — the actual LLM call happens
- * asynchronously. 404: routine does not exist (or doesn't belong to this item) 409: routine is
- * disabled or another fire is in progress 500: fire failed */
 export async function runWorkspaceRoutine(
   workspaceId: string,
   itemId: string,
@@ -1079,8 +1024,6 @@ function parseTimestamp(ts: number | string): number {
 /** The transcript fetch failed — transport, non-2xx, or an abort. Deliberately coarse: the UI acts
  * on "the transcript is unavailable", not on which kind of unavailable it is, and the retry policy
  * is the same for all three. */
-/** The point of the tag is only that the failure is DISTINGUISHABLE from an empty transcript — see
- * the empty-state bug this replaced. */
 export class ChatHistoryError extends Data.TaggedError('ChatHistoryError')<{
   readonly sessionId: string
   readonly reason: string
@@ -1088,9 +1031,6 @@ export class ChatHistoryError extends Data.TaggedError('ChatHistoryError')<{
 
 /** An SSE frame that arrived on a named channel with a body that is not the JSON its wire name
  * promises. */
-/** Named so the failure is DISTINGUISHABLE from "the event never arrived": the frame is dropped and
- * the reason is logged, but a parse failure on one frame must not take down the dispatcher that is
- * delivering the rest. */
 export class SseFrameError extends Data.TaggedError('SseFrameError')<{
   readonly eventType: string
   readonly reason: string
@@ -1139,14 +1079,6 @@ export type ChatHistoryResponse = {
 /** The transcript endpoint, WITH the failure in the type. Returns `Effect<ChatHistoryResponse,
  * ChatHistoryError>`, so "the backend is unreachable" is a value the caller must handle — it cannot
  * be mistaken for an empty transcript. */
-/** That distinction is the whole fix: a slow or erroring backend previously returned `messages:
- * []`, the empty state's `v-if` went true, and the chatview claimed a full session was empty ("How
- * can I help you?"). See AGENTS.md, "Frontend — No `try`/`catch` in the desktop app". */
-/** `getChatHistory` (below) is the explicitly-named best-effort variant built on this one, for the
- * three metadata callers whose fallback chains depend on degrading quietly. */
-/** `timeoutMs` lets the transcript load outlive apiFetch's 15 s default: a `limit=1000` page
- * carrying base64 image_urls and tool JSON routinely needs longer, and that abort is what turned a
- * slow server into a phantom empty session. */
 export function fetchChatHistoryEffect(
   sessionId: string,
   limit = 50,
@@ -1222,11 +1154,6 @@ export function fetchChatHistoryEffect(
 /** Best-effort transcript: a failure yields an EMPTY transcript rather than a rejection,
  * implemented on the Effect seam so no `try`/`catch` sits between the failure and the value the
  * caller gets. */
-/** Correct ONLY for the three metadata callers — AppLayout's cwd fallback, ChatView's
- * `refreshWorktreeBinding` (`limit=1`), and the older-page prefetch — whose fallback chains depend
- * on degrading quietly. */
-/** The initial transcript load must use `fetchChatHistoryEffect`, so "the backend is unreachable"
- * can never be handed to the UI as "this session is empty". */
 export function getChatHistory(
   sessionId: string,
   limit = 50,
@@ -1707,9 +1634,6 @@ export async function compactSession(
 /** Stop/cancel a running LLM session by flipping the worker's `cancelled` flag in the DB. The
  * backend handler (`sessionStopHandler` in `src/ai_workflow/tui/ http_handlers/session_stop.zig`)
  * runs `llm_history.cancelSession` which sets `UPDATE worker SET cancelled = 1 WHERE id = ?`. */
-// Answer a pending `ask_user` question (Migration 088). The ask_user agent tool ends the turn: it
-// records a question and returns immediately. THIS call settles that question, rewrites the
-// tool-result row the model will read, and starts a new run so the conversation resumes.
 export async function answerAskUser(
   sessionId: string,
   body: {
@@ -1755,8 +1679,6 @@ export interface Worker {
   /** Unix SECONDS of the last heartbeat, as a numeric string. The backend selects
    * `w.last_activity_nano AS last_activity` and every `Row.values` entry is a `[]u8`, so the column
    * is serialised as a JSON string even though the underlying column is INTEGER. */
-  /** The SSE `WorkerEvent.last_activity` is a bare number — the two wire shapes disagree, which is
-   * why consumers normalise both (see `toMillis` in App.vue). */
   last_activity: string | null
   last_activity_description: string | null
   created_at: string | null
@@ -1792,8 +1714,6 @@ export async function createWorkspaceItem(
 /** Create a new design workspace item (`item_type='design'`). The `path` is REQUIRED because design
  * elements live as HTML files under `<path>/.pabrik/design/...` (the model layer rejects
  * element-add with `ItemPathMissing` if path is NULL — see design_model.zig). */
-/** Mirrors `createKanban(workspaceId, name, path)` but requires the path (no cwd-less design).
- * Returns the new `WorkspaceItem`. POST /api/workspaces/:workspaceId/items/design */
 export async function createDesign(
   workspaceId: string,
   name: string,
@@ -1828,9 +1748,6 @@ export async function deleteWorkspaceItem(
 // error-toast-on-non-2xx contract is consistent with the rest of the
 // app. On 4xx/5xx the call throws `ApiError`; the toast is fired
 // before the throw so the user sees the message inline.
-/**  * Create a new kanban workspace item. The backend seeds three default columns (todo / in progress /
- * done) and returns the item plus the freshly-created columns so the caller can render the board
- * without a second round-trip. POST /api/workspaces/:workspaceId/items/kanban */
 export async function createKanban(
   workspaceId: string,
   name: string,
@@ -1876,7 +1793,6 @@ export async function listKanbanColumns(
 /** Add a new column to a kanban. `position` is optional — when omitted the backend appends at the
  * end of the existing sequence (max(position)+1). Returns the newly-created column (with its
  * server-assigned `id` and `position`). */
-/** POST /api/workspaces/:workspaceId/items/:itemId/kanban/columns */
 export async function addKanbanColumn(
   workspaceId: string,
   itemId: string,
@@ -1892,15 +1808,6 @@ export async function addKanbanColumn(
 
 /** Copy a kanban's column spec (names + descriptions, preserving order) from a source kanban to a
  * target kanban. Tasks are NOT copied — only the column "template". */
-/** Destructive for the target: in `replace` mode, the target's existing columns are deleted (with
- * task unassignment) and replaced with copies of the source's. In `append` mode, the source's
- * columns are appended after the target's existing MAX(position). */
-/** Returns the target's new full column list `{columns, count}` (same envelope as
- * `listKanbanColumns`). */
-/** The frontend replaces its local `kanban_columns` array with this list in one round trip —
- * backend's atomic emit/replace pattern matches every other kanban mutation endpoint. */
-/** POST /api/workspaces/:workspaceId/items/:itemId/kanban/copy_spec_from/:sourceItemId Plan:
- * docs/superpowers/plans/2026-07-04-copy-kanban-spec.md (Chunk 3, Task 3.1) */
 export async function copyKanbanSpec(
   workspaceId: string,
   targetItemId: string,
@@ -1919,12 +1826,6 @@ export async function copyKanbanSpec(
 /** Patch a kanban column. Both `name` and `position` are optional; pass only the fields you want to
  * change. The backend applies the patch and re-numbers sibling positions when `position` changes.
  * Returns the FULL updated board (`{columns, count}`) — same envelope as `listKanbanColumns`. */
-/** The backend emits the full board on every successful PATCH so the frontend never needs a
- * follow-up GET to see the post-rename ordering or sibling positions. */
-/** The store replaces its local `kanban_columns` array with the backend's returned list
- * (defensively re-sorted by position), so sibling columns (which the backend may have renumbered
- * when `position` changed) are mirrored in the same round-trip. */
-/** PATCH /api/workspaces/:workspaceId/items/:itemId/kanban/columns/:columnId */
 export async function updateKanbanColumn(
   workspaceId: string,
   itemId: string,
@@ -1943,7 +1844,6 @@ export async function updateKanbanColumn(
 /** Delete a kanban column. Tasks in the column are unassigned (kanban_column_id set to NULL) — they
  * remain visible in the folder-list view as "Unassigned". Idempotent: a 200 is returned whether the
  * column existed or not (handled by the backend). */
-/** DELETE /api/workspaces/:workspaceId/items/:itemId/kanban/columns/:columnId */
 export async function deleteKanbanColumn(
   workspaceId: string,
   itemId: string,
@@ -1957,9 +1857,6 @@ export async function deleteKanbanColumn(
 
 /** Move a task to a new column and position within that column. The backend's `moveTask` does the
  * move + sibling re-numbering in a single transaction. */
-/** Returns the updated task with the new `kanban_column_id` and `kanban_position` so the caller can
- * confirm the move landed where expected. PATCH
- * /api/workspaces/:workspaceId/items/:itemId/tasks/:taskId/move */
 export async function moveTask(
   workspaceId: string,
   itemId: string,
@@ -2033,8 +1930,6 @@ export async function getKanbanTagSuggestions(
 //
 // Plan: docs/superpowers/plans/2026-07-08-design-mode-redesign.md
 //   (Chunk 5, Task 5.1 + 5.2)
-/**  * GET /api/workspaces/:workspaceId/items/:itemId/design/pages List all pages in a design workspace
- * item, ordered by `position` ascending. Returns `{ pages, count }` envelope. */
 export async function listDesignPages(
   workspaceId: string,
   itemId: string,
@@ -2108,8 +2003,6 @@ export async function addDesignElement(
 /** PUT /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/:elementId Full
  * update of an element. The body shape is `Partial<DesignElement>` — any subset of fields can be
  * patched. The backend applies the patch as a sparse merge (omitted fields left unchanged). */
-/** Returns the full updated DesignElement record (so the frontend can sync its local Pinia store
- * from the response). */
 export async function updateDesignElement(
   workspaceId: string,
   itemId: string,
@@ -2134,9 +2027,6 @@ export interface GroupDesignElementsRequest {
 /** POST /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/group NEW (Chunk 5
  * of grouped-layers plan). Wraps 2+ elements into a new `group` (or `frame`) parent at the union
  * bbox of the children. */
-/** The backend sets `parent_id` on each child to the new group's id in a single transaction.
- * Response 201: `{ parent: DesignElement, children: DesignElement[] }`. Error shape: 400
- * (BadChildId / ChildAcrossDifferentPages), 404 (PageNotFound), 409 (ChildAlreadyParented). */
 export async function groupDesignElements(
   workspaceId: string,
   itemId: string,
@@ -2172,12 +2062,6 @@ export async function reorderDesignElements(
 
 /** POST /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/reparent-batch NEW
  * (Chunk 1b of drag-to-reparent plan). Atomic N-element reparent in a single transaction. */
-/** Used by the LayersPanel drag-and-drop affordance so dragging 1 or N selected rows into a group
- * uses ONE round-trip instead of N parallel PUTs. The whole batch is all-or-nothing — if ANY
- * element would close a cycle, the batch fails with 400 BadReparent and no DB writes happen. */
-/** Body shape: `{ element_ids: [...], new_parent_id: ... | null, reposition: 'last_in_parent' }`.
- * Response 200: `{ updated: DesignElement[] }` in input order. Error shape: 400 (EmptyElementIds /
- * BadElementId / BadNewParentId / BadReparent), 404 (PageNotFound), 409 (CrossPageIds). */
 export interface ReparentDesignElementsBatchRequest {
   element_ids: string[]
   /** null = top-level (leave any current group). */
@@ -2204,9 +2088,6 @@ export async function reparentDesignElementsBatch(
 
 /** DELETE /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/:elementId
  * Idempotent delete. */
-/** Returns `{ success: true }` whether the row existed or not (the backend returns 200 either way —
- * a missing element is not a 404 here because the canonical "I want this gone" semantic should be
- * idempotent). */
 export async function deleteDesignElement(
   workspaceId: string,
   itemId: string,
@@ -2222,10 +2103,6 @@ export async function deleteDesignElement(
 /** POST /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/ungroup Dissolve a
  * `group` or `frame` element: reparent its direct children to the group's parent (or top-level if
  * the group had no parent), then delete the group row. */
-/** Children keep their absolute x/y — their geometry is independent of the group's bbox. Body: `{
- * element_id: 'elem_g' }`. Response 200: `{ orphaned: DesignElement[] }` — the children in their
- * new post-reparent state. Error shape: 400 (BadGroupId / NotAGroup / EmptyGroup), 500
- * (DbError). */
 export async function ungroupDesignElements(
   workspaceId: string,
   itemId: string,
@@ -2239,12 +2116,6 @@ export async function ungroupDesignElements(
 }
 
 /** DELETE /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId Delete a design page. */
-/** The backend (design_model.deletePage) handles the SQL DELETE on design_pages (FK ON DELETE
- * CASCADE cleans up the child design_page_elements rows) and recursively rmdirs the on-disk
- * `<item_path>/.pabrik/design/<sanitized_page_name>/` folder. */
-/** UI-only — no LLM tool exposes this endpoint, only the DesignView tab-strip × button. Returns 200
- * with `{success:true}`. 404 if the page didn't exist (idempotent — caller treats 404 as success).
- * Plan: docs/superpowers/plans/2026-07-25-design-page-delete-button.md (Chunk 2) */
 export async function deleteDesignPage(
   workspaceId: string,
   itemId: string,
@@ -2273,7 +2144,6 @@ export async function getDesignElementHtml(
 /** PATCH /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/:elementId/html
  * Persist a new HTML body for an element. Triggered by the contenteditable / Monaco save flow — the
  * content is the user- edited inner HTML of the element's iframe. */
-/** Returns the full updated DesignElement record. */
 export async function updateDesignElementHtml(
   workspaceId: string,
   itemId: string,
@@ -2323,10 +2193,6 @@ export async function translateDesignElement(
 /** POST /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/:elementId/resize
  * NEW (2026-08-06) — single-element resize. The body carries absolute `(x, y, width, height,
  * rotation?)` fields. At least one field is required. */
-/** Resize NEVER cascades (Figma convention — only the dragged element's bounding box changes;
- * children keep their own positions). Returns the single updated DesignElement. Replaces
- * `updateDesignElementGeometry` for the resize use case. */
-/** See `docs/superpowers/plans/2026-08-06-split-move-resize.md`. */
 export async function resizeDesignElement(
   workspaceId: string,
   itemId: string,
@@ -2360,9 +2226,6 @@ export interface GeometryBatchUpdateResponse {
 /** Atomic N-element geometry update. Used by the canvas drag handler when multiple elements are
  * selected (multi-element drag, group / frame being moved) so the N per-element PATCHes collapse
  * into ONE PATCH per pointermove. */
-/** Combined with the trailing-edge debounce in `useDesignDragDebounce`, this drops the request rate
- * from ~200 req/sec to ~2 req/sec for a 5-element drag. Plan:
- * docs/superpowers/plans/2026-07-30-design-drag-debounce-batch.md (Chunk 3, Task 3.1) */
 export async function updateDesignElementsGeometryBatch(
   workspaceId: string,
   itemId: string,
@@ -2377,9 +2240,6 @@ export async function updateDesignElementsGeometryBatch(
 
 /** Server-side cascade move. Each item's `(dx, dy)` applies to the element AND every transitive
  * descendant of that element via a single recursive CTE inside one SQL transaction. */
-/** Optional `width`/`height`/`rotation` apply ONLY to the root element (Figma convention — resize
- * is per-element, not per-subtree). Plan:
- * docs/superpowers/plans/2026-08-06-move-element-with-descendants.md (Chunk 3, Task 3.1) */
 export interface MoveBatchItem {
   element_id: string
   /** Translation delta in CSS px. Cascades to descendants. */
@@ -2414,9 +2274,6 @@ export async function moveDesignElementsBatch(
 /** Move an element to a different page in the same design item. Mirrors the backend `POST
  * .../elements/:element_id/move-to-page` endpoint. Changes the element's `page_id` (and `position`
  * on the target page) instead of `x`/`y`. */
-/** When `apply_to_children=true` (the default), the move cascades to every transitive descendant
- * via a recursive CTE in one SQL transaction (same semantics as `moveDesignElementsBatch` but
- * cross-page). Plan: docs/superpowers/plans/2026-08-06-move-element-to-page.md (Chunk 4) */
 export interface MoveElementToPageInput {
   /** REQUIRED. The destination page id. Must be on the same design item. */
   new_page_id: string
@@ -2505,9 +2362,6 @@ export interface SkillCreateResponse {
 
 /** POST /api/workspaces/:workspaceId/skills 201 with the stored row, so the caller can render what
  * it just wrote without a second GET. */
-/** A duplicate name in the SAME workspace is a 409 — the store's `upsertSkill` is create-or-replace
- * by design (the importer runs on every start-up), so the refusal has to live on this route, where
- * the caller is a human who pressed a button. */
 export async function createSkill(
   workspaceId: string,
   input: { name: string; description?: string; content?: string; is_can_auto_improve?: boolean },
@@ -2524,10 +2378,6 @@ export interface SkillUpdateResponse {
 
 /** PATCH /api/workspaces/:workspaceId/skills/:skillName The name is a path param and is IMMUTABLE:
  * a rename would break every `use_skill({ name })` call and every cached `skill_eval` verdict. */
-/** A `name` in the body is therefore a claim about which row is being addressed, and a claim that
- * does not match answers 404 — the same answer a foreign workspace gets. An omitted field keeps its
- * value; an explicit `''` clears it. */
-/** That distinction is why the body fields are optional rather than defaulted. */
 export async function updateSkill(
   workspaceId: string,
   skillName: string,
@@ -2745,9 +2595,6 @@ export interface GitBlameResponse {
 }
 
 /** The blame fetch failed — transport or non-2xx. */
-/** Deliberately coarse: blame is annotation, not content, so the viewer acts on "no chips", and the
- * only thing the tag must guarantee is that the failure is distinguishable from an
- * empty-but-successful blame (same contract as `ChatHistoryError` above). */
 export class GitBlameError extends Data.TaggedError('GitBlameError')<{
   readonly cwd: string
   readonly file: string
@@ -2837,9 +2684,6 @@ export interface GitPrCreateResponse {
 }
 
 /** Open a PR/MR on `worktreePath`. */
-/** `provider` is optional and forwarded verbatim: omitting it lets the backend detect the forge
- * from the worktree's `origin` remote, which is the right answer whenever the caller never learned
- * a provider (a board badge, a worktree opened without an attached PR). */
 export async function createGitPr(
   worktreePath: string,
   base: string,
@@ -2883,9 +2727,6 @@ export interface GitBranchesResponse {
 }
 
 /** List the local + remote-tracking branches of the repo at `repoPath`. */
-/** Never throws and never rejects: a missing/unreachable repo path, a non-git directory (backend
- * 404), or a backend that is down all degrade to the empty response so the picker gracefully falls
- * back to a plain text input. The user can always type a ref by hand. */
 export async function listGitBranches(repoPath: string): Promise<GitBranchesResponse> {
   const empty: GitBranchesResponse = {
     is_git_repo: false,
@@ -3169,9 +3010,6 @@ export async function getSkillEvalsSummary(sessionId = ''): Promise<SkillEvalsSu
 /** Record that a human accepted a verdict. `result_id` is a QUERY parameter, not a path segment —
  * the backend keeps every route under this prefix a literal so no `:param` route can shadow a later
  * one. */
-/** A 409 means either "already applied" or "the body changed since this verdict was computed"; both
- * are surfaced to the caller rather than swallowed, because the UI must offer a re-evaluate in the
- * second case. */
 export async function applySkillEvalResult(
   resultId: string,
   action = 'apply',
@@ -3280,35 +3118,23 @@ export interface UnifiedChannels {
   /** Subscribe to background-process lifecycle events. The backend emits two granular names
    * (`background_process_created` on spawn, `background_process_completed` on exit) that share the
    * same `BackgroundProcessEvent` payload. */
-  /** Both route on the central `background_process` key — the consumer filters by
-   * `event.session_id` JS-side and re-fetches the list. */
   backgroundProcess?: (event: BackgroundProcessEvent) => void
   /** Subscribe to skill-eval lifecycle events. The backend emits three granular names
    * (`skill_evals_run_started`, `skill_evals_run_finished`, `skill_evals_result_applied`) that
    * share the same `SkillEvalEvent` payload. */
-  /** All three route on the central `skill_evals` key — the consumer filters by `event.session_id`
-   * JS-side and re-fetches the eval list for the Evals tab. */
   skillEvals?: (event: SkillEvalEvent) => void
   /** Subscribe to file stage/unstage events. The backend emits two granular names
    * (`git_file_staged` on `git add`, `git_file_unstaged` on `git restore --staged`) that share the
    * same `GitFileStageEvent` payload. */
-  /** Both route on the central `git_file_stage` key — the consumer filters by `event.cwd` JS-side
-   * and moves ONE row between Staged / Changes / Untracked instead of re-fetching the whole
-   * git-status list. */
   gitFileStage?: (event: GitFileStageEvent) => void
   /** Subscribe to change-request state events. */
   gitPrState?: (event: GitPrStateEvent) => void
   /** Subscribe to design-mode element mutations. The backend emits three granular event names
    * (`design_element_created`, `design_element_updated`, `design_element_deleted`) that share the
    * same `DesignElementEvent` payload (the `action` discriminator tells them apart). */
-  /** All three route on the central `design_element` event_bus key — the consumer filters by
-   * `action` if it cares about the distinction (the `designSse` store treats all three uniformly:
-   * re-fetch the page's element list). */
   design?: (event: DesignElementEvent) => void
   /** Subscribe to LLM streaming events. When `sessionId` is provided, the factory sends `llm:<sid>`
    * (per-session routing — used by any future caller that wants server-side filtering). */
-  /** When omitted, the factory sends bare `llm` — the backend broadcasts ALL sessions' LLM events
-   * on the central key, and the consumer filters by `event.session_id` on the JS side. */
   llm?: { sessionId?: string; onEvent: (event: SseEvent) => void }
   /**    * Subscribe to queue-message events. Same pattern as `llm`: `sessionId` provided → per-session
    * routing; omitted → central key (consumer filters by `event.session_id`). */
@@ -3710,9 +3536,6 @@ export interface PabrikProfile {
   /** Which TRANSPORT runs this profile's calls: `"http"` (default), `"claude-code"` (the local
    * `claude` CLI, subscription auth via `claude login`), or `"opencode"` (the local `opencode` CLI,
    * auth via `opencode login`). Mirrors the backend's `LlmProfile.backend`. */
-  /** Orthogonal to `url_style`, which keeps describing the HTTP wire format only — a CLI profile
-   * never builds a request body, so `base_url` / `api_key` / `url_style` do not apply to it. Absent
-   * = `"http"`, so existing configs need no migration. */
   backend?: string
   /**    * Claude Code only: `CLAUDE_CONFIG_DIR` for this profile. Two profiles pointing at two
    * directories are two different `claude login` sessions — the way per-profile identity works when
@@ -3727,19 +3550,14 @@ export interface PabrikProfile {
   /** Optional override for this profile's context window (in tokens). When null (or omitted), the
    * backend's built-in per-model default is used (e.g. 200_000 for MiniMax-M2.7, 500_000 for
    * MiniMax-M3, 200_000 fallback). Useful for self-hosted models with a non-standard window. */
-  /** Mirrors the backend's `LlmProfile.max_capacity_tokens` field (added in the
-   * configurable-compaction Chunk 7 reshape). */
   max_capacity_tokens?: number | null
   /** Compaction threshold as a percentage (0-100) of this profile's context window. When null (or
    * omitted), defaults to 80. Out-of-range values are rejected by the backend with
    * `error.InvalidThresholdPercent`. */
-  /** Mirrors the backend's `LlmProfile.compaction_threshold_percent`. */
   compaction_threshold_percent?: number | null
   /** Anthropic-only override for `thinking.budget_tokens`. Plan 2026-08-23-model-thinking. Mirrors
    * `LlmProfile.thinking_budget_tokens`. Hidden when `thinking === "off"`. Range (0, 2_000_000]
    * enforced server-side. */
-  /** When null/omitted, the backend uses the 50%-of-max heuristic (or Anthropic `type: "adaptive"`
-   * when `thinking === "auto"`). */
   thinking_budget_tokens?: number | null
   /**    * OpenAI-style reasoning effort (o1/o3/GPT-5/DeepSeek-R1). Plan 2026-08-23-model-thinking.
    * Mirrors `LlmProfile.reasoning_effort`. Hidden when `thinking === "off"`. Server-side validation
@@ -3805,12 +3623,6 @@ export interface McpServer {
 /** One entry of the top-level `web_search` map in `config.json` — the wire shape of a single
  * web-search provider. The map key is the provider name the agent passes to `web_search`; the agent
  * discovers the names through `list_web_search_providers`. */
-/** `key` and `description` are OMITTED when absent, never sent as `""` — a self-hosted provider has
- * no credential and `"key": ""` is not the same thing to the backend (an empty slice binds as SQL
- * NULL, and `isUsable` treats it as a declared-but-blank credential). */
-/** `key` may come back MASKED rather than as the secret, so the value the form holds is not
- * necessarily the credential. Round-tripping it unchanged is therefore required — replacing it with
- * `""` would blank the stored secret. See `components/pabrik/webSearchProviders.ts`. */
 export interface PabrikWebSearchProvider {
   /** Host pin. The ONLY host whose requests may carry `key`. Must be
    *  `https` and must not name a loopback, private or link-local host. */
@@ -3831,8 +3643,6 @@ export interface PabrikWebSearchProvider {
 
 /** The Skill Evals block of `config.json`, as the wire carries it (snake_case, matching
  * `SkillEvalsJson` in `Config.zig`). `enabled` is the master switch the Settings toggle writes. */
-/** The other fields are the budgets around it and are sent back unchanged so a save from the toggle
- * can never reset a value the user hand-edited. */
 export interface PabrikSkillEvalsConfig {
   enabled?: boolean
   max_skills_per_run?: number
@@ -3851,12 +3661,6 @@ export interface PabrikConfig {
   active_profile?: string
   /** Map of MCP server name to its raw JSON config (snake_case). Each value follows the `{"url":
    * "...", "headers": {...}}` shape used by the LLM config. Sent verbatim to the backend on save. */
-  /** Raw wire shape of a single MCP server entry (snake_case, matches `mcp_servers` in
-   * config.json). Discriminated by which top-level field is present: `command` ⇒ stdio, `url` ⇒
-   * http. */
-  /** Note: this type is also re-exported and re-used by the `PabrikConfigEditor.vue`
-   * parser/serializer pair so the frontend round-trips config.json unchanged. If you add a field
-   * here, add it to the `McpServer` interface above too (camelCase). */
   mcp_servers?: Record<
     string,
     | { url: string; headers?: Record<string, string>; enabled?: boolean }
@@ -3869,8 +3673,6 @@ export interface PabrikConfig {
   /** Map of web-search provider name to its configuration — the top-level `web_search` key in
    * config.json. Keys of this map are the names the agent passes to `web_search`'s `provider`
    * argument; the agent discovers them through `list_web_search_providers`. */
-  /** `null` / absent = the key is not in config.json. Sent verbatim to the backend on save; see
-   * `PabrikWebSearchProvider` for the value shape and the rules the backend enforces on it. */
   web_search?: Record<string, PabrikWebSearchProvider> | null
   /** @deprecated Per-profile only (plan 2026-09-04-subagents-per-profile). The backend (`GET
    * /api/config/pabrik`) always returns `sub_agents: null` at the top level; each profile owns its
@@ -3883,17 +3685,9 @@ export interface PabrikConfig {
   /** Plan 2026-08-25-notify-on-error — opt-in OS notification flag for the error path. When true,
    * the backend fires a desktop notification when the workflow hits a transport error, exhausts
    * retries (TooManyRetries), or fails the outer agentic loop. */
-  /** Defaults to `false` when absent (matches `LlmConfigJson`). Independent from
-   * `notify_on_complete` — toggling one doesn't affect the other. */
   notify_on_error?: boolean
   /** Skill Evals block — the master switch for the `run_skill_eval` tool and the budget knobs
    * around it. */
-  /** `enabled: true` injects the tool into the main agent's tool list and lets the agent evaluate
-   * the skills the session actually loaded; `false` (the default, and what a config with no
-   * `skill_evals` key reads as) removes the tool entirely. */
-  /** The backend always sends this object (never `null`), so the toggle can always render a real
-   * on/off rather than guessing. Sending it back in the PUT persists the switch; omitting it leaves
-   * the on-disk value untouched. */
   skill_evals?: PabrikSkillEvalsConfig
   /**    * Compaction threshold in KB. Sessions whose DB-stored token estimate exceeds this value trigger
    * context compaction. Defaults to `100` when absent. Not exposed in the UI — power users can edit
@@ -3902,7 +3696,6 @@ export interface PabrikConfig {
   /** Optional top-level override for the model's context window (in tokens). `null` = fall through
    * to per-profile override, then built-in default. Restored in plan 2026-07-07-compaction-inline
    * so the Defaults tab can show + edit the top-level compaction defaults. */
-  /** Mirrors `LlmConfig.max_capacity_token_model`. */
   max_capacity_token_model?: number | null
   /**    * Optional top-level compaction threshold as a percentage (0-100). `null` = fall through to
    * per-profile override, then built-in 80. Mirrors `LlmConfig.compaction_threshold_percent`. */
@@ -3910,12 +3703,10 @@ export interface PabrikConfig {
   /** Delay in milliseconds before the workflow retries a failed `callDynamicAgentNew` call. 0 = no
    * delay (current behavior, the retry fires immediately on the next loop iteration). Range: 0–60
    * 000. The backend clamps values > 60 000 to 60 000. */
-  /** Mirrors `LlmConfig.retry_delay_ms` in `Config.zig`. */
   retry_delay_ms?: number
   /** Plan 2026-09-10-web-launch-toggle — browser-mode flag. When true, the settings General tab
    * advertises the same UI in the system browser (URL pill + auto-open) and the server defaults to
    * a random local port at startup. Defaults to `false` when absent (matches `LlmConfigJson`). */
-  /** Lifecycle A: the server keeps running when false. */
   web_launch_enabled?: boolean
   // Per-profile compaction overrides (`max_capacity_tokens` /
   // `compaction_threshold_percent`) live on `PabrikProfile` (Chunk
@@ -3939,9 +3730,6 @@ export async function savePabrikConfig(config: PabrikConfig): Promise<{ success:
 
 // ─── Per-workspace config overlay (Migration 105) ──────────────────────── The workspace-scope
 // twin of the pair above.
-/**  * `GET /api/workspaces/:id/config` — throws on a non-2xx (unlike the user-scope `getPabrikConfig`,
- * which swallows the failure into `{}`): the workspace page must be able to tell "inheriting" from
- * "could not look". */
 export async function getWorkspaceConfig(workspaceId: string): Promise<PabrikConfig> {
   return await apiFetch<PabrikConfig>(`/workspaces/${encodeURIComponent(workspaceId)}/config`)
 }
@@ -3959,7 +3747,6 @@ export async function saveWorkspaceConfig(
 /** Plan 2026-09-10-web-launch-toggle — browser-mode status. `GET /api/web/status` is read-only
  * (lifecycle A: no server-side start/stop). `url` is always the live bound port
  * (`http://127.0.0.1:<port>/`, loopback-only). */
-/** `null` on network/API failure so the pill can render a waiting hint. */
 export interface WebStatus {
   enabled: boolean
   running: boolean
@@ -3978,8 +3765,6 @@ export async function getWebStatus(): Promise<WebStatus | null> {
 /** Response shape from `DELETE /api/config/pabrik/profiles/:name`. `active_profile_was_cleared` is
  * `true` when the deleted profile was the active one (the backend also cleared `active_profile` on
  * disk). */
-/** `error_message` is set when the request succeeded (HTTP 200) but a downstream concern (live
- * reload) failed — the deletion still persisted. */
 export interface ProfileDeleteResponse {
   success: boolean
   profile_name: string
@@ -4294,11 +4079,6 @@ export async function closePr(
 /** Merge a PR/MR (POST /api/git/pr/merge). `method` is REQUIRED: the backend refuses an empty one
  * with a 400 rather than spawning, because `gh pr merge` without a strategy flag prompts for the
  * method and a non-tty child cannot answer it. */
-/** The response carries BOTH an outcome and the forge's own status payload, re-read after the
- * command ran. `success` is `status.status === 'merged'`, not an exit code: `glab mr merge` can
- * return 0 having only armed auto-merge, and a GitHub merge queue accepts a PR without merging
- * it. */
-/** `pending` is that middle state, and the UI must render it as "not merged yet". */
 export interface GitPrMerge {
   success: boolean
   method: string
@@ -4347,10 +4127,6 @@ export async function mergePr(
 /** PR CI checks (GET /api/git/pr/checks via `gh pr checks`). `checks` is one row per CI job;
  * `steps` is filled in for failed and cancelled jobs only — "which job failed" is already on the PR
  * page, "which process or task failed" is what the user comes here for. */
-/** `steps_error` is the contract that matters: when the backend tried to read a job's steps and
- * could not, the reason lands here so the panel can say so. */
-/** An empty `steps` with an empty `steps_error` is a real answer (an external check has no steps);
- * an empty `steps` with a message is a gap. */
 export interface GitPrCheckStep {
   name: string
   number: number
@@ -5322,7 +5098,6 @@ export async function deleteTerminalSession(id: string): Promise<{ ok: boolean }
 // ─── Documents (Migration 095) ─────────────────────────────────────────── Workspace-scoped
 // markdown documents. A document belongs to a workspace directly — it is NOT a `workspace_items`
 // row and never appears in the project tree; the sidebar's Documents section is its only home.
-/** One row of the `documents` table. Mirrors `documents_store.DocumentRow`. */
 export interface Document {
   id: string
   workspace_id: string
@@ -5363,7 +5138,6 @@ export async function getDocument(
 /** POST /api/workspaces/:workspaceId/documents Body: `{ title, content?, format? }`. `title` is
  * required and must be non-blank; `content` may be empty (a blank note is a legitimate starting
  * state and round-trips as `''` rather than tripping the column's NOT NULL). */
-/** Returns 201 with the stored row. */
 export async function createDocument(
   workspaceId: string,
   title: string,
@@ -5404,9 +5178,6 @@ export async function deleteDocument(
 // ─── Workspace secrets (Migration 101) ─────────────────────────────────── Named credentials
 // scoped to one workspace: an API key the agent's tools can substitute into a request, never
 // displayed back to the browser. NO RESPONSE EVER CONTAINS THE VALUE.
-/**  * One row of the `workspace_secrets` table. The absence of a value field is the contract, not an
- * oversight. A row this shape cannot be rendered with its credential in it because the credential
- * is not on it. */
 export interface Secret {
   id: string
   name: string
@@ -5429,8 +5200,6 @@ export async function listSecrets(
 /** POST /api/workspaces/:workspaceId/secrets Body: `{ name, value }`. `name` must be non-blank and
  * unique within the workspace; `value` is write-only — the response carries the created row WITHOUT
  * it. */
-/** The caller drops its copy of `value` on the floor once this resolves; there is nothing to read
- * back later. */
 export async function createSecret(
   workspaceId: string,
   name: string,
@@ -5445,8 +5214,6 @@ export async function createSecret(
 /** PATCH /api/workspaces/:workspaceId/secrets/:secretId Body: `{ name?, value? }`. Both fields are
  * partial — send `{ value }` to rotate a credential without touching its name, or `{ name }` to
  * rename without re-supplying a value. */
-/** An omitted field keeps its current value; `value: ''` is a rejected empty credential, not a
- * clear operation. Like the reads, the response never carries the value back. */
 export async function updateSecret(
   workspaceId: string,
   secretId: string,
@@ -5554,7 +5321,6 @@ export async function refreshModelCatalog(): Promise<{
 /** Best-effort `resolveModel`. The failure is a DISCRIMINATED RESULT, not a swallowed value:
  * `{kind:'error', message}` is not something a caller can mistake for `context_window: 0`, which is
  * exactly the bug the Effect-style rule exists to prevent. */
-/** Mirrors `testLlmProfile`, which also never rejects. */
 export type ModelResolveOutcome =
   { kind: 'ok'; value: ModelResolve } | { kind: 'error'; message: string }
 

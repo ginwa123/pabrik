@@ -191,9 +191,6 @@ const hiddenTagCount = computed(() => Math.max(0, savedTags.value.length - HEADE
 
 /** Hover title: the full id, every tag, the body capped at MAX_TOOLTIP_CHARS, and the saved
  * timestamp. */
-/** The `created_at` / `updated_at` pair moved here when the expanded body was cut down to the body
- * alone — they stay reachable without spending a row on two `CURRENT_TIMESTAMP` values that are
- * always equal. On error, the full error text. */
 const headerTitle = computed(() => {
   if (!isSuccess.value) return errorMessage.value ?? ''
   const parts: string[] = []

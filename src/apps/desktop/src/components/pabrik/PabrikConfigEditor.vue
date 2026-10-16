@@ -100,7 +100,6 @@ const jsonApplied = ref(false)
 /** What is wrong with the textarea, or null when it is applicable. Live, not on-submit: the Apply
  * button is disabled and the reason is on screen while the user types, so an invalid paste never
  * looks like it worked. */
-/** Never reformats the text - rewriting what somebody is typing is the fastest way to lose an edit. */
 const jsonProblem = computed<string | null>(() => {
   const text = jsonText.value.trim()
   if (text.length === 0) return 'Nothing to apply — the JSON is empty.'
@@ -219,8 +218,6 @@ function showJson() {
 
 /** Leave JSON mode. Refuses to leave when the textarea holds text that has NOT been applied and
  * cannot be - leaving would silently discard an edit the user is mid-way through. */
-/** EMPTY is not "unusable": there is nothing to lose, so leaving is allowed (which is what makes a
- * `?mode=json` deep link escapable before the textarea has been seeded). */
 function showForm() {
   if (mode.value === 'json' && jsonText.value.trim().length > 0 && !applyJson()) return
   mode.value = 'form'
@@ -233,8 +230,6 @@ function onJsonInput() {
 /** Fold the textarea into the in-memory config, then re-hydrate the sections. Written straight to
  * `config` rather than through `setConfig`: `setConfig` re-snapshots, which would mark this edit as
  * already-saved and hide the save bar. */
-/** The snapshot must keep describing what the SERVER last gave us. Returns false (leaving the
- * config untouched) when the text is unusable. */
 function applyJson(): boolean {
   if (jsonProblem.value !== null) return false
   config.value = JSON.parse(jsonText.value) as PabrikConfig
@@ -1004,9 +999,6 @@ function confirmDeleteProfile() {
 }
 
 // ─── Loading ─────────────────────────────────────────────────────────────
-/**  * Re-read the effective config through the source. The mount path's only load path. (It used to be
- * shared with a reset/copy control; that control is gone - the boot seeding IS the migration, so
- * there is nothing left to reset to or copy in.) */
 async function reload() {
   try {
     const data = await source.load()

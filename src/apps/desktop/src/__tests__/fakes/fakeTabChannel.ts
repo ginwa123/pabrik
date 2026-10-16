@@ -115,9 +115,6 @@ export function settle(ms = 0): Promise<void> {
 }
 
 /** Wait until `pred()` holds (or the deadline passes). */
-/** Preferred over a fixed `settle(ms)` for anything that depends on the watchdog re-arm: the
- * coordinator re-checks `now - lastLeaderBeatAt` before claiming, so the takeover can take up to
- * two watchdog periods, and a fixed wait becomes flaky under parallel load. */
 export async function waitFor(pred: () => boolean, timeoutMs = 600): Promise<void> {
   const start = Date.now()
   while (!pred() && Date.now() - start < timeoutMs) await settle(5)

@@ -30,9 +30,6 @@ export function isIdentityResolved(): boolean {
 }
 
 /** Resolve the identity from the cached `/api/auth/me` and store it. Returns the id (or null). */
-/** Fail-silent: a network error leaves the previous value in place, because a transient `/me`
- * failure must not silently switch the app to the unscoped key space (that would paint the previous
- * user's cache under the new user's session). */
 export async function refreshCurrentUserId(): Promise<string | null> {
   try {
     const { data } = await getAuthMeCached()
@@ -75,7 +72,6 @@ export function isForeignScopedKey(key: string): boolean {
 /** Remove every localStorage entry that belongs to a user other than the current one (or every
  * scoped entry when there is no current user). Only touches keys carrying the `::u:` marker, so
  * unscoped preference keys and the auth cache itself are never destroyed. */
-/** Returns the number removed. */
 export function purgeForeignScopedKeys(): number {
   if (typeof localStorage === 'undefined') return 0
   let removed = 0

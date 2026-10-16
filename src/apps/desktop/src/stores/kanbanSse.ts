@@ -1,22 +1,4 @@
 /** KanbanSse — bus-backed kanban event handlers (Chunk 10 of the unify-frontend-sse plan). */
-/** Before this migration, the store opened its OWN EventSource via `createUnifiedSseConnection` for
- * the `kanban` channel — the 5th duplicate subscription to a stream the bus (opened by App.vue at
- * app start via `installSseBus`) already subscribes to. */
-/** That setup opened an EventSource per Pinia store activation (and a 2nd one for every
- * `initKanbanSse` re-entry), saturating the browser's per-origin HTTP/1.1 connection pool and
- * triggering the chained `ERR_INCOMPLETE_CHUNKED_ENCODING` reconnect loop. */
-/** After: the store subscribes via `useSseBus().on('kanban', ...)` (one listener per Pinia store
- * activation, lifetime ≈ page lifetime). The bus's singleton EventSource owns the actual network
- * stream and re-emits events to all subscribers with built-in reconnect-on-drop. */
-/** The async `initKanbanSse` signature is preserved (callers in AppLayout's `initSseStores` `await`
- * it) even though the body is synchronous, because the cooperative-init semantic contract with the
- * AppLayout caller is part of the public API. */
-/** The backend's kanban SSE routing keys (`kanban_column`, `kanban_task`) are GLOBAL — every
- * connected client receives every event. The handler filters client-side by `event.workspace_id ==
- * activeWorkspaceId` before dispatching to workspacesStore. */
-/** Workspace switches update the filter via `setActiveWorkspaceId` (no re-subscription — the bus
- * listener is workspace-agnostic). Plan: docs/superpowers/plans/2026-06-30-unify-frontend-sse.md
- * Chunk 10. */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useSseBus, __getSseBusGlobalClient } from '../helpers/sseBus'
@@ -46,18 +28,6 @@ export const useKanbanSseStore = defineStore('kanbanSse', () => {
   /** Subscribe the kanban store to the bus's `kanban` channel. The function signature stays `async`
    * + `Promise<void>` to preserve the cooperative-init semantic contract with AppLayout's
    * `initSseStores(activeWorkspaceId)` awaiting kanbanSseStore.initKanbanSse(newId) })`. */
-  /** The body is synchronous (bus subscription is in-memory), but callers still `await` us and
-   * that's part of the public API. Idempotent: a second call with the same workspaceId is a no-op
-   * (the listener + filter are already in place). */
-  /** A call with a different workspaceId updates the filter without re-subscribing. The bus
-   * listener is GLOBAL — workspace-id filtering happens inside the handler closure, so we don't
-   * detach/re-attach. */
-  /** Throws if the bus is not yet installed — call this AFTER App.vue's `onMounted` has run. */
-  /** The bus is installed by App.vue's `onMounted`, which runs after AppLayout.vue's mount in
-   * practice (the AppLayout's `initSseStores` on workspace switch fires only after both components
-   * have mounted, by which point the bus is ready). */
-  /** The async signature preserves the cooperative-init contract with that caller — even though the
-   * body is now synchronous, callers still `await` us. */
   async function initKanbanSse(workspaceId: string): Promise<void> {
     // Set the filter first — if we're called for the first time, the listener (registered below)
     // will read this value on its first event. If we're called for a re-init with a new
@@ -197,10 +167,6 @@ export const useKanbanSseStore = defineStore('kanbanSse', () => {
 
   /** Update the workspace filter without re-subscribing the bus listener. Called by AppLayout's
    * `initSseStores` on workspace switch when the user switches workspaces after the initial setup. */
-  /** A workspace switch is just a filter change because the backend's kanban routing keys are
-   * global (every connected client sees every kanban event). Re-installs the bus handlers if they
-   * were torn down (e.g. by a prior `closeKanbanSse` then a workspace re-mount). */
-  /** The async signature matches `initKanbanSse` so AppLayout can `await` either the same way. */
   async function setActiveWorkspaceId(workspaceId: string): Promise<void> {
     await initKanbanSse(workspaceId)
   }
@@ -208,8 +174,6 @@ export const useKanbanSseStore = defineStore('kanbanSse', () => {
   /** Initial kanban-column sync on SSE (re)connect. Mirrors `fetchInitialWorkers()` in App.vue — a
    * server restart can lose in-memory state, so the next open should re-fetch the active kanban
    * item's columns to make sure local state matches the DB. */
-  /** No-op if the active workspace item isn't a kanban (chat folders don't have columns; the SSE
-   * events for other workspaces are filtered out at the dispatch layer anyway). */
   async function fetchInitialKanban(workspaceId: string): Promise<void> {
     // Throttled: bus.state flips to 'open' on every reconnect, and without a
     // guard each reconnect would refetch columns (the columns/workers storm in

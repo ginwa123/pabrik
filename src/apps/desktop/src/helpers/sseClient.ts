@@ -1,7 +1,4 @@
 /** sseClient.ts Auto-reconnecting wrapper around the browser-native `EventSource`. */
-/** State emitted by `SseClient`. See the state machine in the file header for transitions. -
- * `connecting`:   An `EventSource` was just opened; waiting for the first byte / the server's
- * `connected` named event. - `open`:         Server sent a `connected` named event. */
 export type SseState = 'connecting' | 'open' | 'reconnecting' | 'closed' | 'failed'
 
 /**  * Side-channel info attached to every state emission. Lets UI (and tests) distinguish "first error
@@ -41,8 +38,6 @@ export interface SseClientOptions {
   /** Fires once, after the server's first `connected` named event. This is the canonical "we are
    * live" signal. Do NOT treat the raw `open` event (HTTP 200 + headers) as live — the connection
    * can still be rejected at the protocol level by the server. */
-  /** The 'connected' event is ALSO passed to `onEvent` with `eventType === 'connected'`, so
-   * adapters that want the payload can read it from there. */
   onConnected?: () => void
   /** Fires on every state transition. Use it to drive a Vue ref
    * for reactive UI (e.g. the `SseStatusBadge`). */
@@ -56,7 +51,6 @@ export interface SseClientOptions {
   /** Hard cap on reconnect attempts. After this many failed retries (post-open), state becomes
    * `failed` and no further retries are scheduled. The first attempt does NOT count against this
    * cap (a 4xx on the first try already goes to `failed` immediately). */
-  /** Default: `Infinity` (an SSE stream is expected to live the lifetime of the page). */
   maxAttempts?: number
   /**    * Random source for jitter. Override in tests to make the backoff schedule deterministic.
    * Default: `Math.random`. Jitter formula: `delay = exp * (0.5 + 0.5 * random())` (full-jitter
@@ -94,20 +88,12 @@ export interface SseClientOptions {
   /** Stall threshold in ms. While `state === 'open'`, if no event (message / heartbeat / connected)
    * arrives within this window, the client treats the stream as silently dead and reconnects (see
    * `stallRecovery`). */
-  /** Default: 30_000 — well ABOVE the ~15s backend keep-alive (`sse_manager.sendHeartbeat`), with
-   * margin for timer jitter. A threshold below the heartbeat interval guarantees false-positive
-   * reconnects on every idle window. Tests may pass a smaller value for determinism. */
   stallThresholdMs?: number
   /**    * When true (default), a stall triggers `es.close()` + `scheduleRetry({ reason: 'stall' })`
    * instead of only logging. Set false to restore log-only behaviour (e.g. for diagnosis). */
   stallRecovery?: boolean
   /** Max time in ms to wait for the server's `connected` handshake after (re)starting the
    * EventSource before treating the stream as dead. */
-  /** Guards against streams that return HTTP 200 + valid SSE framing but never emit the handshake
-   * (e.g. a backend rejection path that cannot change the already-sent status code) — without this
-   * the client sits in 'connecting' forever. */
-  /** Heartbeats do NOT reset this timer; only the handshake does. Default: 15_000. Firing routes
-   * through the normal error path (`failed` on first attempt, backoff retry once ever open). */
   connectedTimeoutMs?: number
 }
 

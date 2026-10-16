@@ -1,15 +1,5 @@
 /** Strip thinking tags and extract content from special wrappers. This should be used at the
  * display layer (Vue), NOT in API responses. Memoized (2026-09-11). */
-/** Why: ChatView calls this 2-3x per message on EVERY `messages` mutation — `filteredMessages`,
- * `hasBubbleContent` → `hasVisibleContent`, and (independently) `renderResponse` — and an SSE chunk
- * mutates `messages` once per chunk. */
-/** So the same strings are re-scanned on every chunk, over the WHOLE loaded transcript, even though
- * only the streaming message changed. */
-/** Measured on the real DB (newest-100 rows of a 2.21 MB session, 1.05 MB max row): 34 ms per
- * recompute — 79% of the total per-chunk render cost — which saturates the main thread (43 ms × 20
- * chunks/s) and is exactly the "webview freezes while a task streams" report. */
-/** Cached hits are ~free, so the per-chunk cost drops to the parts that genuinely changed. The
- * value is returned by reference, so callers must treat it as read-only. */
 const STRIP_CACHE_MAX_CHARS = 16 * 1024 * 1024
 // A single entry larger than this is not cached: keeping it would evict
 // everything else on arrival (cache thrash) for no benefit.

@@ -1,10 +1,5 @@
 /** KanbanView row mode — the URL-backed Columns/Rows layout toggle. Row mode renders the same board
  * as a vertical list grouped by column. */
-/** The choice lives in `?layout=rows` so refresh, Back/Forward and shared links restore it (repo
- * rule: "Every View Switch Must Update the Browser URL"). `columns` is the default and is stripped
- * from the URL. Precedence: URL (deep link) → localStorage (`pabrik-kanban-layout`) → `columns`. */
-/** The router is mocked with the `vi.hoisted` pair used by KanbanView.sortByApi.spec.ts so we can
- * assert the exact query object passed to `router.replace`. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

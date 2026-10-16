@@ -1,10 +1,5 @@
 /** usePabrikConfig — single source of truth for the Pabrik settings UI. Owns the in-memory
  * `PabrikConfig` and a deep snapshot taken at load time. */
-/** `dirty` is a computed that re-runs whenever any tracked field changes; `unsavedCount` is the
- * number of leaf-level changes (shallow count; exact field-level diffs are not required for the
- * dirty pill). `save()` writes the whole config through the given `PabrikConfigSource`. */
-/** On success the snapshot is refreshed; on failure `dirty` stays true so the save bar keeps
- * showing. `reset()` restores the in-memory config from the snapshot. */
 import { computed, ref } from 'vue'
 
 import type { PabrikConfig } from '../api'
@@ -52,7 +47,6 @@ export function usePabrikConfig(source: PabrikConfigSource = userConfigSource())
   /** Set the config directly and take a snapshot of it. Use this when the orchestrator needs to
    * layer in legacy data (e.g. localStorage fallback) before the API response arrives, instead of
    * using the composable's `load()` which fetches the API itself. */
-  /** The provided value is what `dirty` will compare future edits against. */
   function setConfig(c: PabrikConfig) {
     config.value = c
     loaded.value = true
@@ -94,9 +88,6 @@ export function usePabrikConfig(source: PabrikConfigSource = userConfigSource())
 
 /** Count primitive field differences between two JSON strings. Used to drive the "N unsaved
  * changes" pill in the save bar. */
-/** Walks both trees in parallel; for each key present in either object, recurses if both values are
- * objects, else counts a leaf mismatch (different value OR present-in-one-only). Arrays are
- * compared element-by-element. Returns the total count. */
 function countLeafDiffs(aJson: string, bJson: string): number {
   let a: unknown
   let b: unknown

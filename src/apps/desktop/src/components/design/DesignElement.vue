@@ -93,26 +93,13 @@ const emit = defineEmits<{
   /** DEPRECATED — replaced by `translate` (move) and `resize` (Figma parity with the backend's POST
    * /translate + POST /resize split — see
    * `docs/superpowers/plans/2026-08-06-split-move-resize.md`). */
-  /** Kept for back-compat; new callers MUST emit the typed events. */
   update: [patch: Partial<DesignElement>]
   /** NEW (2026-08-06) — fires on every pointermove during a drag for a SINGLE element (leaf OR a
    * single-element drag of a group that didn't trigger the group-drag path). */
-  /** Payload is the CURSOR DELTA `(dx, dy)` in design-px PLUS the source element's id — the parent
-   * is responsible for adding the delta to the element's start position before calling
-   * `workspacesStore.translateDesignElement`. */
-  /** The `elementId` was added 2026-08-06 (post-#162 fix) because the single-element drag wire
-   * previously relied on `selectedIds.size === 1` to identify the dragged element. */
-  /** That check is fragile: if the user shift-clicked to deselect (toggling removed the dragged
-   * id), or if a multi-select from earlier wasn't cleared, the parent's `handleElementTranslate`
-   * bailed early — the element never moved. */
-  /** Carrying the id in the event makes the wire self-contained. Replaces `update` for the move use
-   * case. */
   translate: [payload: { elementId: string; dx: number; dy: number }]
   /** NEW (2026-08-06) — fires on every pointermove during a RESIZE gesture (dragging one of the 8
    * resize handles). Payload carries the absolute target `(x, y, width, height, rotation)` after
    * applying the cursor delta to the start geometry. */
-  /** Parent calls `workspacesStore.resizeDesignElement` with this absolute patch. Replaces `update`
-   * for the resize use case. */
   resize: [patch: Partial<DesignElement>]
   // Chunk 2: when the user drags an element that's part of a multi-selection, the WHOLE selection
   // moves. The parent (DesignView) applies the dx/dy to every selected element's start position;

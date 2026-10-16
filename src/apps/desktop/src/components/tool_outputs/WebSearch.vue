@@ -66,7 +66,6 @@ const parsed = computed<ParsedWebSearch>(() => {
 /** The provider, preferring the envelope's own word for it and falling back to the name the call
  * asked for — a `configured` failure names no provider at all, and a card that then says "unknown"
  * loses the only fact it has. */
-/** `||`, not `??`: an envelope may carry `"provider":""`, which is no name. */
 interface WebSearchArgs {
   provider?: string
   curl?: string
@@ -103,8 +102,6 @@ interface ResultRow {
 /** Whether a provider-supplied URL may become an `href`. The payload is passthrough (D13): the
  * backend pins the host it REQUESTS and scrubs the key, but it never inspects what came back, so a
  * `url` here is whatever the provider wrote. */
-/** Only http(s) becomes a link; anything else (`javascript:`, `data:`, a bare word) is shown as
- * plain text, because a clickable one runs in this app's origin. */
 function isWebUrl(url: string): boolean {
   return /^https?:\/\//i.test(url)
 }
@@ -130,8 +127,6 @@ function firstText(record: Record<string, unknown>, keys: string[]): string {
 
 /** The ranked list, or null when the payload is not the `results` convention. The check is
  * deliberately narrow: a TOP-LEVEL `results` whose every member is an object. */
-/** Brave nests the same array under `web`, SearxNG returns a bare array — both are real payloads
- * and both render as formatted JSON. */
 const rows = computed<ResultRow[] | null>(() => {
   const raw = asRecord(parsed.value.response).results
   if (!Array.isArray(raw)) return null

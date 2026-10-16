@@ -1,20 +1,6 @@
 <script setup lang="ts">
 /** "Create worktree" dialog. Mounted by ChatView.vue when the user clicks "Create worktree" in the
  * WorktreeMenu (no-worktree branch). The dialog is a small folder-picker + name input. */
-/** The user picks a PARENT DIRECTORY via the FilePickerDialog (modal), then types a SHORT BASENAME
- * (e.g. "auth-fix", "bug-123") for the worktree itself. The dialog composes the final absolute path
- * as `${parentDir}/${basename}` and emits `create(path)`. */
-/** The parent sends a system message to the LLM asking it to call
- * set_git_worktree(path=<full_path>). Migrated from an inline FolderExplorer + breadcrumb + "Up"
- * button to the shared FilePickerDialog component. */
-/** Net effect: ~150 fewer lines, the picker is a proper modal with search/hidden-files/keyboard
- * nav, and the user no longer has to type paths in a tiny text input. Public API (unchanged from
- * before the migration): props:  initialCwd? */
-/** (absolute path used as the starting parent dir) emits:  create(path: string), close() The tool
- * handles path validation (must be absolute, no .., no null bytes, ≤ 4096 chars, basename matches
- * [A-Za-z0-9._-]{1,100}) and the worktree-add subprocess. */
-/** The branch defaults to worktree/<basename(path)> in the tool, so the LLM doesn't need to pass
- * it. */
 import { ref, computed, onMounted, nextTick, onBeforeUnmount } from 'vue'
 import { getSystemFolder, listFolder, type FolderEntry } from '../../api'
 import FilePickerDialog from '../FilePickerDialog.vue'

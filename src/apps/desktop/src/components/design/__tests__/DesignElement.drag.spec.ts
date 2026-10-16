@@ -339,20 +339,6 @@ describe('DesignElement drag', () => {
 
   /** REGRESSION (2026-08-06, design-mode-moves-so-fast v2): the wire `dx` was historically the
    * CUMULATIVE cursor delta from drag-start (`dx = e.clientX - startClientX`). */
-  /** ticks of cursor movement d, the element ended up at d·N·(N+1)/2 // eslint-disable-next-line
-   * @typescript-eslint/no-explicit-any */
-  /**    * instead of d — making the element visibly leap ahead of the cursor (the "moves so fast" user
-   * complaint). The fix sends the INCREMENTAL dx (delta since last emit). Each //
-   * eslint-disable-next-line @typescript-eslint/no-explicit-any */
-  /** emit carries only the cursor movement SINCE the previous emit. The backend still ADDs, but the
-   * cumulative effect across emits now equals the cursor delta — not a quadratically-compounded
-   * value. */
-  /** This test pins the contract via `awplusTrick`-free simulates (no setTimeout-based waitFor): 3
-   * sequential pointermoves with fake timestamps inside the same throttle window, then a pointerup
-   * trailing emit. */
-  /** We assert: (1) SUM of dx/dy across all emits equals cursor delta (30, 30) (2) each individual
-   * emit carries delta ≤ |cursor delta| (never the cumulative) If anyone reverts to the cumulative
-   * format, (2) catches it. / */
   it('each translate emit carries INCREMENTAL dx/dy (sum equals cursor delta, never compounded)', async () => {
     const wrapper = mount(DesignElement, {
       props: { element: ELEMENT, selected: true, zoom: 1.0 },

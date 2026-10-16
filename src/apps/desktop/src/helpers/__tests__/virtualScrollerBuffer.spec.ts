@@ -15,7 +15,6 @@ function makeItems(n: number): Array<{ id: number }> {
 /** Mount a VirtualScroller with the given items and a known container geometry. jsdom does not lay
  * out, so we set `clientHeight` / `scrollHeight` directly to make `onScroll`'s geometry reads
  * return realistic values. */
-/** The default item height of 200px matches ChatView's setting, which is the primary caller. */
 function mountScroller(props: {
   items: Array<{ id: number }>
   buffer?: number

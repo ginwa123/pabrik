@@ -1,10 +1,5 @@
 /** Renders the real <KanbanRowView> to static HTML for visual review. This is a REVIEW HARNESS, not
  * a test — there are no assertions. */
-/** It mounts the actual component with realistic fixtures, serializes the result, and inlines the
- * real compiled Tailwind CSS so the output can be opened in a browser and judged by eye. */
-/** Green unit tests prove the row emits the right events; they cannot prove the row is readable,
- * which is a visual property. Run: npx vitest --run src/__tests__/KanbanRowView.preview.spec.ts
- * Out: /tmp/kanban-row-comfortable.html + /tmp/kanban-row-compact.html */
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'

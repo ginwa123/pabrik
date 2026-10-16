@@ -1,10 +1,5 @@
 /** Code color in the diff review. `SidebarDiffView` used to render every code line through
  * `v-html="escapeDiffHtml(line.content)"` — escaped, but monochrome. */
-/** These tests assert the behaviour that replaced it: every rendered line is split into `tok-*`
- * spans by the shared highlighter, in BOTH the unified and the split render, while the row
- * background stays the source of truth for added/removed. */
-/** The plaintext case is asserted too, because that is the contract that makes this change safe: an
- * unknown extension must render exactly as it did before (one `tok-plain` span per line, no color). */
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import SidebarDiffView from '../chat_right_sidebar/SidebarDiffView.vue'

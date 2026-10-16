@@ -1,9 +1,5 @@
 /** Behavioural tests for DesignView's `<LayersPanel @reparent>` wire (Chunk 4 Task 4.3 of
  * drag-to-reparent plan). */
-/** Mounts DesignView, dispatches the `handleLayerReparent` handler directly on the VM with the
- * composable result shape, and asserts the store's `reparentDesignElementsBatch` action was called
- * with the right payload. */
-/** Plan: docs/superpowers/plans/2026-07-30-design-layer-drag-join-or-leave-group.md */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'

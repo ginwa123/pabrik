@@ -74,24 +74,13 @@ export interface SseBus {
   /** Which role THIS window plays when cross-tab sharing is active: `leader` owns the single
    * EventSource, `follower` receives events over the BroadcastChannel. `off` = sharing disabled
    * (every window opens its own connection, the pre-tab-sharing behaviour). */
-  /** Optional so existing test doubles typed as `SseBus` stay valid. */
   readonly tabRole?: ShallowRef<TabSharingRole>
   /** Subscribe to "your view may be stale, refresh from the API" signals. Fires when this window
    * takes over the shared connection (events emitted during the handover gap reached nobody) and
    * when it returns from being hidden long enough to have been frozen/throttled. Coalesced. */
-  /** Returns an unsubscribe function. No-op when tab sharing is off, because a window that holds
-   * its own connection never misses a delivery. */
   readonly onResync?: (cb: (reason: string) => void) => () => void
   /** Subscribe to SSE connection-state transitions (`connecting | open | reconnecting | closed |
    * failed`). */
-  /** Prefer this over reaching for `__getSseBusGlobalClient()`: with cross-tab sharing the
-   * underlying `SseClient` is created INSIDE the `onBecomeLeader` callback, so it does not exist
-   * yet when a component's `onMounted` runs. */
-  /** A subscriber registered on the client at that moment is silently dropped (`?.` short-circuits
-   * on null) and never sees the first `open` - which is exactly how `App.vue`'s
-   * `fetchInitialWorkers` stopped firing and the sidebar lost its processing spinners. */
-  /** Bus-level subscribers are held for the bus's lifetime and replayed onto every client the bus
-   * opens, so they survive leader handover and reconnects. Returns an unsubscribe function. */
   readonly onStateChange?: (cb: (s: SseState) => void) => () => void
 }
 
@@ -100,11 +89,6 @@ export type TabSharingRole = 'off' | 'leader' | 'follower'
 /** Install options — all optional; the defaults are what production uses. `tabSharing` (default
  * `'auto'`): open ONE EventSource for the whole browser profile and fan events out to the other
  * tabs over a `BroadcastChannel`. */
-/** Browsers cap HTTP/1.1 connections per origin at ~6, so before this every open tab consumed a
- * slot and the 7th tab could not stream at all. */
-/** `'auto'` resolves to OFF under vitest (`import.meta.env.MODE === 'test'`) because the jsdom
- * environment leaks Node's `BroadcastChannel`, which would otherwise push every existing SSE suite
- * onto the asynchronous election path. Tests that exercise sharing pass `'on'` explicitly. */
 export interface SseBusInstallOptions {
   tabSharing?: 'auto' | 'on' | 'off'
   /** Test seam: how to open the cross-tab channel. */
@@ -465,11 +449,6 @@ export function __dispatchSseBus<K extends keyof SseEventMap>(
 /** Test-only: replaces the global SseClient and re-wires the state mirror. Closes the previous
  * global client (if any) and detaches the old `onStateChange` listener before subscribing the new
  * client's listener. */
-/** Updates the bus's public `state` ShallowRef to the new client's initial state so observers see
- * the swap immediately. No-op if the bus is not installed. */
-/** Used by the migration test files (Chunks 5-7) to drive the SSE state badge behavior — the
- * production code paths under test react to `bus.state.value` transitions, not to the underlying
- * `EventSource` lifecycle. */
 export function __setSseBusGlobalClient(client: SseClient): void {
   if (!_instance) return
   // Detach the OLD client's state listener first so it doesn't keep

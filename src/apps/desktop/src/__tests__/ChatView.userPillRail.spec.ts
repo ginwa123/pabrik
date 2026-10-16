@@ -1,18 +1,5 @@
 /** Source-contract tests for the 2026-09-09 chatview user-pill work: cursor-pagination fixes +
  * pill-rail wiring in ChatView.vue. */
-/** Background: the loadMore branch of loadChatHistory never advanced
- * `messageCursor`/`hasMoreMessages` (assignments lived only in the initial-load branch), so every
- * 2nd+ loadMore re-sent the same cursor and re-prepended the same page forever. */
-/** No dedupe existed, and PAGE_SIZE=1000 defeated pagination. ChatView is a 4000-line SFC (hard to
- * mount — see ChatView.hiddenMessages.spec.ts). These tests lock the SOURCE-LEVEL invariants so a
- * refactor that reverts any fix is caught immediately. The pill-rail GUTTER lives here too. */
-/** The rail is `position: absolute`, so it is out of flow and its pills paint straight over the
- * message bubbles; the wrapper has to reserve the strip. */
-/** That is a geometry claim jsdom cannot make (no layout engine, no custom-property resolution), so
- * what is pinned is the class binding plus the CSS that consumes it — the two ends that must both
- * exist for the gutter to appear. */
-/** The painted result is asserted in a real browser by
- * tests/functional_ui/chatview_pillrail_overlap_test.py. */
 import { describe, it, expect } from 'vitest'
 
 const readChatViewSource = async (): Promise<string> => {

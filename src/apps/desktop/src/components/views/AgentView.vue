@@ -34,12 +34,6 @@ interface Props {
   tools: string[]
   systemPrompts?: AgnosticSystemPromptRow[]
   /** True while the PARENT's agent-bundle fetch is in flight. */
-  /** The three parents (AppLayout, KanbanSettingsView, RoutineView) fetch fire-and-forget with no
-   * flag of their own, so `knowledge` and `systemPrompts` start as `[]` and the panels below render
-   * their empty states — "No knowledge files yet." for an agent that has five. */
-  /** This prop lets them hold a skeleton instead. Named `parentLoading`, not `loading`: the
-   * component already owns a local `loading` ref for its OWN tool-registry fetch, and a same-named
-   * prop is a `vue/no-dupe-keys` collision. */
   parentLoading?: boolean
 }
 

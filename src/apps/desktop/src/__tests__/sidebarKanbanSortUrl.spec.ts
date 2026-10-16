@@ -1,12 +1,5 @@
 /** Behavioural tests for Sidebar's handleSelectItem when the user clicks a kanban workspace item
  * (kanban default-URL, 2026-08-06). Why. */
-/** The user wants the URL to commit to a default sort on the first click of a kanban item — so a
- * refresh preserves the implicit "newest first" pick and the wire payload doesn't carry silent
- * defaults. */
-/** Sidebar.handleSelectItem now builds a `?sorts=col_X:updated_at:desc,...` string from the item's
- * columns and passes it through the navigate emit's new 7th positional arg. */
-/** Match-up: the URL write side is tested in AppLayout.urlPersist.spec.ts ("handleNavigate writes
- * sorts into the URL"). This file tests the Sidebar-side construction. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref, createApp } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'

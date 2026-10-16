@@ -1,9 +1,6 @@
 /** Lock in the post-revamp contract: the expanded PROJECTS section renders with no background fill.
  * Only the active content item (URL-driven — see WorkspaceItem.activeFromUrl.spec.ts) gets the
  * `--semantic-active-bg` background + violet accent bar. */
-/** The workspace ROW whose expanded state used to be conflated with active state is gone (the
- * header dropdown owns workspace selection now), so this pins the section header + body too. Plan:
- * docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref } from 'vue'

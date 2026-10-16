@@ -1,8 +1,6 @@
 /** virtualScrollerScrollAnchor.ts Pure math for VirtualScroller's measurement-shift compensation.
  * Why this exists: `measureItems()` rewrites REAL heights over ESTIMATES for every rendered child —
  * including up to `buffer` items ABOVE the viewport. */
-// Keep the wire shape honest without importing DOM types into a pure
-// module: heights are plain numbers in px.
 type geometry_px = number
 
 /**  * One pending height write from a measure pass. Carried on the debug log only — compensation itself

@@ -3,23 +3,6 @@ import { isThinkingTags, getThinkingTags, stripThinkingTags } from './stripTags'
 import { tryUnwrapToolOutput } from './unwrapToolOutput'
 
 /** Render a chat message's content to HTML. */
-/** Extracted from ChatView.vue (2026-08-27, task_1787761084050_0) and memoized: the previous
- * in-component implementation called `marked.parse` synchronously inside `v-html`, so every
- * re-render of ChatView re-parsed every visible message's markdown. */
-/** For a long chat (50+ messages) with SSE chunks landing every ~100ms, that's O(visible_messages ×
- * renders_per_second) parse calls per second. The cache collapses that to O(unique_messages) per
- * content mutation — the per-render parse loop goes away. */
-/** Cache key is `${role}|${tool_name}|${trimmedContent}`. The function trims `content` at the top,
- * so leading/trailing whitespace variants share an entry (otherwise a streaming assistant message
- * would fill the cache with every chunk that happened to have a trailing newline). */
-/** The cache is bounded to `MAX_CACHE_ENTRIES`; when it fills up, the entire cache is cleared. */
-/** A long chat with thousands of distinct message variants will see periodic cache misses after
- * each clear, but the typical pattern is "100s of renders over the same 50 messages" — the clear
- * never fires. */
-/** The 4 trailing `diffview_*` / `finish_reason` / `tool_calls_json` parameters are kept for diff
- * readability with the original Vue call sites. */
-/** They are NOT used by the function body — the visible return value depends only on `(content,
- * role, tool_name)`, which is also what the cache keys on. */
 const escapeHtml = (text: string): string => {
   const div = document.createElement('div')
   div.textContent = text

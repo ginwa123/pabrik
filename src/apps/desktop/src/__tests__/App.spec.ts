@@ -20,9 +20,6 @@ import { makeLocalStorageStub } from './helpers'
 
 /** Test-only stub SseClient. Mirrors the helper in `sseBus.spec.ts` (kept inline rather than shared
  * to avoid coupling between the two spec files). */
-/** Tracks state-listener callbacks on a non-public `__stateListeners` array so `emitStubState` can
- * fan out a transition to all subscribers — the production `SseClient` keeps the listener list in a
- * closure; tests reach it via `as any`. */
 function makeStubClient(initial: SseState): SseClient {
    
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

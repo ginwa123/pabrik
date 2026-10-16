@@ -1,10 +1,5 @@
 /** Tests for the workspaces store's session-events handling. The backend cascade for task rename
  * emits a `session.updated` event on /api/sessions/stream. */
-/** After the unify-frontend-sse migration (Chunk 6), the workspaces store receives session events
- * through the global sseBus (opened once by App.vue) rather than opening its own EventSource. */
-/** We use the bus's test injection point (`__dispatchSseBus`) to drive events deterministically.
- * task.id == session_id (per AppLayout.vue:651 `:chat-id="activeTask.id"`), so the lookup is a
- * straight equality match on task.id. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp } from 'vue'

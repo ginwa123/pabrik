@@ -35,7 +35,6 @@
  * Mirrors `zig src/helpers/ansi.zig`. Tests in `stripAnsiEscapes.spec.ts`
  * assert behaviour on real byte sequences; keep the two in step.
  */
-/** C0 control that introduces every ECMA-48 escape sequence. */
 const ESC = 0x1b
 /** Bell — the legacy terminator for OSC / DCS payloads. */
 const BEL = 0x07

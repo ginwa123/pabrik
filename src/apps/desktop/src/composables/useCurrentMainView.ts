@@ -10,8 +10,6 @@ export type CurrentMainView =
   | {
       /** Document page (Migration 095). `/app/{ws}/doc/{id}` — a PAGE shape, so the document
        * REPLACES the main view and the chat is not mounted underneath it. */
-      /** `workspaceId` is optional: a deep link that resolves before a workspace is active still
-       * renders, and an unresolvable one lets the view say so instead of guessing. */
       kind: 'document'
       documentId: string
       workspaceId?: string

@@ -1,8 +1,6 @@
 /** Regression tests for the workspace item row activity marker. The per-TASK row already has its
  * marker, and the per-ITEM row (the project row) must have one too — so a user who collapsed the
  * task list can still tell "this project is busy". */
-/** WorkspaceItem reads the same `processingState` ref App.vue provides. The circle spinner was
- * removed — the elapsed time pill is now the only marker. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, type Ref } from 'vue'

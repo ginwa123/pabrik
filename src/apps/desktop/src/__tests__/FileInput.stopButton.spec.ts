@@ -1,9 +1,6 @@
 /** Tests for FileInput's Stop button — visible only when `isLLMProcessing` is true. The button
  * emits a `stop-session` event for the parent (ChatView) to translate into a `POST
  * /api/llm/session/:session/stop` call. */
-/** We deliberately don't call the API directly from FileInput — the component is shared across
- * multiple chat views and the stop semantics are tied to the chat's sessionId, not the input box.
- * Plan: docs/superpowers/plans/2026-08-06-chatview-stop-button.md */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

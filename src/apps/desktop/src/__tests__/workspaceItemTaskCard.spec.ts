@@ -354,11 +354,6 @@ describe('WorkspaceItemTaskCard card-ux-v3 (Jira-style type accent)', () => {
 /** Static-contract test: WorkspaceItem.vue (the only non-KanbanCard consumer) MUST import the Row
  * variant, not the Card. The Card is exclusively used by the kanban tree (KanbanCard →
  * KanbanColumn). */
-/** If someone accidentally swaps the import, the sidebar list would render as a kanban card and the
- * layout would break. History: pre-split, this guard asserted that WorkspaceItem.vue did NOT pass
- * `variant="card"` to <WorkspaceItemTask>. */
-/** After the split the variant prop is gone — the consumer is now structurally different (Row vs
- * Card file). The new assertion checks the import shape instead. */
 describe('WorkspaceItem.vue — task component invariant', () => {
   const SIDEBAR_PATH = resolve(__dirname, '..', 'components', 'workspace', 'WorkspaceItem.vue')
 

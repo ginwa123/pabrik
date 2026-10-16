@@ -31,8 +31,6 @@ const props = defineProps<{
   /** Branch from the bottom status bar (single source of truth, drilled via ChatRightSidebar from
    * ChatView's `sidebarBranch`). `undefined` while the status bar is still loading — the panel
    * falls back to its own fetched branch. */
-  /** Kills the worktree-switch race where the panel's independent getGitChanges resolved with the
-   * stale branch. */
   branch?: string
   /** Attached PR URL (set_pull_request tool). Non-empty switches the panel to PR mode. */
   prUrl?: string
@@ -165,11 +163,6 @@ const prError = ref<string | null>(null)
 const prStatus = ref('')
 const prStatusTitle = ref('')
 /** The whole status payload, not just the derived strings above. */
-/** The merge box needs `head_sha` (the merge's head guard), `base_ref` (to say "into main"),
- * `number`/`title`/`head_ref` (the default commit message) and `mergeable` / `merge_state` (whether
- * a merge is allowed, and why not). */
-/** All of them arrive in the request the 30 s poll already makes, so keeping the object costs
- * nothing and a second fetch for them would be the expensive way to own two sources of truth. */
 const prStatusData = ref<api.GitPrStatus | null>(null)
 // Conflict flag from the same payload (`mergeable`/`merge_state`).
 // Quiet-when-clean: only CONFLICTING/DIRTY surfaces UI; every other
@@ -859,14 +852,11 @@ const onCommitFileClick = async (payload: { commit: api.GitCommit; file: api.Git
 // ── Surgical stage/unstage (SSE-driven) ───────────────────────────────── `+` / `−` used to answer
 // with `await loadGitStatus()` — a full `git status --porcelain -uall` plus untracked-directory
 // expansion, then a second folder-wide diff request.
-/** Which of the three worktree lists a path can sit in. */
 type StageList = 'staged' | 'unstaged' | 'untracked'
 
 /** Where a path belongs after a stage/unstage. Unstaging a file that was ONLY staged leaves it
  * modified in the worktree; unstaging one that was untracked-and-just-staged puts it back under
  * Untracked. */
-/** The backend's porcelain parse makes the same call: `??` → untracked, anything else with a
- * worktree status → modified. */
 function nextStageList(from: StageList, action: 'staged' | 'unstaged'): StageList {
   if (action === 'staged') return 'staged'
   return from === 'untracked' ? 'untracked' : 'unstaged'
@@ -875,9 +865,6 @@ function nextStageList(from: StageList, action: 'staged' | 'unstaged'): StageLis
 /** The list the row the user just acted on was in. Derived from the ACTION, not from list
  * precedence, because the action IS the evidence: the `+` button only exists on a Changes or
  * Untracked row and the `−` button only on a Staged one. */
-/** Precedence would get the both-lists case wrong — a path that is staged AND further modified
- * appears in Staged and Changes at once, and clicking the `+` on its Changes row must move THAT
- * row, not silently treat it as an unstage of the Staged one. */
 function actingList(
   lists: {
     staged: api.GitFileChange[]

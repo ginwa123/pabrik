@@ -26,8 +26,6 @@ const BACKGROUND_XML_RE = /<background_command>([\s\S]*?)<\/background_command>/
 /** A candidate JSON envelope: an object whose first key is `pid`. Cheap and deliberately narrow. It
  * keeps `JSON.parse` off the hot path of ordinary chat history, and lets the predicate answer
  * without parsing, so a user message that merely contains `{` is not misdetected. */
-/** It is not a validity check: a message that starts like ours still has to survive
- * `shapeFromJson`, which returns null if it is something else. */
 const JSON_ENVELOPE_RE = /^\s*\{\s*"pid"\s*:/
 
 /**  * Failure of the JSON branch. A tagged error so the failure channel has a type instead of `unknown`

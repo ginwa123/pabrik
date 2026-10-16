@@ -124,11 +124,6 @@ export function createTabChannel(opts: TabChannelOptions): TabChannel {
   let onVisibility: (() => void) | null = null
 
   /** Total ordering for leadership. */
-  /** A single NUMERIC rank is not enough: two tabs created in the same millisecond tie, and a tie
-   * never resolves - both keep leading and the profile ends up with two connections (caught by
-   * `sseTabChannel.spec.ts > two tabs that start simultaneously converge`). */
-  /** So compare the tuple instead: visible beats hidden, then the older tab wins, then tabId breaks
-   * the tie. */
   function outranksTheirs(peer: Peer): boolean {
     if (peer.visible !== isVisible()) return isVisible()
     if (peer.startedAt !== startedAt) return startedAt < peer.startedAt

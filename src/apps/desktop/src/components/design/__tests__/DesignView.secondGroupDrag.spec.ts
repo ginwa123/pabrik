@@ -78,10 +78,6 @@ describe('DesignView second group drag (regression)', () => {
   /** Find the DesignElement that represents `group` in the mounted DesignView, hook its
    * `addEventListener` so we can intercept the pointermove/pointerup handlers, then fire a complete
    * gesture. */
-  /**
-   * `position` and the v-for is `for element in elements`). /
-   */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function setupGestureOnGroup(wrapper: any) {
     const allEls = wrapper.findAll('[data-design-element]')
      

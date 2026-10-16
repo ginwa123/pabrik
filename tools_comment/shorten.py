@@ -239,6 +239,19 @@ def shorten(path, apply_changes, log):
                 pieces.append(list(tl))
             else:
                 pieces.append(new)
+
+        # The rule counts the whole RUN, not each token. Four stacked JSDoc
+        # blocks that are each three lines are one ten-line block and one
+        # finding. When the run is still over the ceiling, drop whole trailing
+        # tokens until it fits — the first token is the one that says what the
+        # thing is, so it always survives.
+        def run_len(ps):
+            return sum(len(p) for p in ps)
+
+        while len(pieces) > 1 and run_len(pieces) > 3:
+            dropped.append(' '.join(l.strip().lstrip('/*').strip()
+                                    for l in pieces[-1] if l.strip()))
+            pieces = pieces[:-1]
         if dropped:
             new_block = [l for p in pieces for l in p]
             if new_block != block:

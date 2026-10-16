@@ -987,14 +987,6 @@ const handleElementUpdate = (patch: Partial<DesignElementApi>): void => {
 /** NEW (2026-08-06, split-move-resize plan) — handler for the `translate` event fired by
  * DesignElement during a single-element drag (move mode). The payload is the cursor DELTA in
  * design-px PLUS the source element id. */
-/** Routes through `useDesignHandlers.translateElement` → POST /translate. The backend handles
- * cascade-to-descendants for groups, so we just forward the delta + the element id. */
-/** BUG FIX (2026-08-06): previously bailed with `selectedIds.size !== 1` — relying on the parent's
- * selectedIds state. */
-/** That was fragile: if the user shift-clicked to deselect (toggle removed the dragged id) or if a
- * stale multi-select from earlier wasn't cleared, the single-element drag would silently no-op. */
-/** Now we trust the elementId from the event payload and only fall back to `selectedIds` for
- * back-compat. */
 const handleElementTranslate = (payload: { elementId?: string; dx: number; dy: number }): void => {
   // Prefer the elementId from the event (the drag SOURCE knows what it is).
   // Fall back to selectedIds only if the event doesn't carry it (older
@@ -1030,7 +1022,6 @@ const handleElementTranslate = (payload: { elementId?: string; dx: number; dy: n
 /** NEW (2026-08-06, split-move-resize plan) — handler for the `resize` event fired by DesignElement
  * during a resize gesture. The payload is the absolute target geometry after applying the cursor
  * delta. Routes through `useDesignHandlers.resizeElement` → POST /resize. */
-/** Resize never cascades (Figma convention). */
 const handleElementResize = (patch: Partial<DesignElementApi>): void => {
   if (selectedIds.value.size !== 1) {
     designLogger.warn({

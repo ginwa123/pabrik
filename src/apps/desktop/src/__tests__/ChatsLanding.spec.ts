@@ -14,10 +14,6 @@ import { useWorkspacesStore } from '../stores/workspaces'
 /** The landing page is a static brand page with ONE affordance (spec:
  * docs/superpowers/specs/2026-09-13-home-landing-design.md, amended by the 2026-09-22 revamp plan —
  * `/app` now creates workspaces). */
-/** Three of these tests are SCOPE GUARDS: the user removed the composer, the actions and the modes
- * strip, and the page used to fake an assistant turn — so a future "just one quick action", a
- * reintroduced canned message, or a chat list should fail here rather than ship. */
-/** The create-workspace form is the deliberate, asserted exception. */
 describe('Chats — Pabrik landing page', () => {
   beforeEach(() => {
     setActivePinia(createPinia())

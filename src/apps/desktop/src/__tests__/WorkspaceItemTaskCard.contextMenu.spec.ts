@@ -1,7 +1,6 @@
 /** <WorkspaceItemTaskCard> — right-click context menu. The card's hover action strip (pin / rename
  * / details / delete) was replaced by this menu. Every action the buttons performed must still
  * fire, with the SAME emitted payload, or the change silently removed functionality. */
-/** Plan: docs/superpowers/plans/2026-09-25-kanban-card-context-menu-move-to-column.md */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, type Ref } from 'vue'

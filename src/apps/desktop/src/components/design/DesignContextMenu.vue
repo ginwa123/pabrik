@@ -44,9 +44,6 @@ const props = defineProps<{
   y: number
   targetIds: string[]
   /** The full element list for the active page. */
-  // `parent_id` accepts the same shape the API returns: a non-empty string means the element is
-  // currently inside a group/frame; empty string (`COALESCE(parent_id, '')`) or null/undefined
-  // means top-level.
   elements: ReadonlyArray<{ id: string; type: string; parent_id?: string | null }>
 }>()
 

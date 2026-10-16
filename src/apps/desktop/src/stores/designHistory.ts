@@ -1,11 +1,6 @@
 /** Pinia store for design-mode undo/redo history. Holds per-page history stacks (Map<pageId, {past,
  * future}>). Persists to localStorage on every push (debounced 500 ms via the composable's
  * `useDebounceFn`). Cleared on page switch (Figma parity: redo stack lost when changing pages). */
-/** The store is intentionally minimal — the `useDesignHistory` composable owns the business logic
- * (capture helpers, inverse/ forward application). */
-/** The store is just the data layer. localStorage key format:
- * `design-history:v1:<workspaceId>:<itemId>:<pageId>` The `:v1:` segment is bumped on
- * schema-breaking changes; old buckets are silently discarded. */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { DesignElement } from '../api'

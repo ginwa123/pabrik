@@ -1,8 +1,5 @@
 /** Tests for KanbanColumnEditor — the modal that handles add / rename / delete of a kanban column.
  * One component, three modes (mode prop). */
-/** Mounts with attachTo: document.body + inspects the teleported content via document.querySelector
- * (same pattern as AddKanbanDialog.spec.ts and AddTaskPickerDialog.spec.ts). Plan:
- * docs/superpowers/plans/2026-06-21-workspace-item-kanban.md Chunk 6 / Task 6.2 */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import KanbanColumnEditor from '../components/kanban/KanbanColumnEditor.vue'

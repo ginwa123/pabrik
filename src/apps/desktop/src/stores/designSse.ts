@@ -1,24 +1,5 @@
 /** DesignSse — bus-backed design-event handlers (Chunk 6 of the design-mode-redesign plan). Mirrors
  * `kanbanSse.ts` byte-for-byte in structure. */
-/** The bus is opened once by App.vue via `installSseBus`; this store just subscribes to the
- * `design` channel via `useSseBus().on('design', ...)` and dispatches incoming events to the
- * workspacesStore so the local Pinia state stays in sync with the backend. */
-/** The backend's design SSE routing keys (`design_element_created`, `design_element_updated`,
- * `design_element_deleted`) are GLOBAL — every connected client receives every event. */
-/** The bus listener filters client-side by `event.workspace_id == activeWorkspaceId` before
- * dispatching to the store. */
-/** Workspace switches update the filter via `setActiveWorkspaceId` (no re-subscription — the bus
- * listener is workspace-agnostic). **Page-id tracking** — incoming events carry `event.page_id +
- * element_id`, so for a full re-fetch we need to know which page the user is currently editing. */
-/** Chunk 7 (AppLayout v-else-if for design) will wire the active page id via the workspacesStore
- * (e.g. `activePageId` ref); the SSE handler in this store will then resolve the right page before
- * calling `fetchDesignElements`. */
-/** Until Chunk 7 lands, the handler takes a conservative approach: re-fetch the elements for the
- * event's pageId directly (`fetchDesignElements(workspaceId, itemId, pageId)`), trusting the
- * workspaceStore's per-item `design_elements` cache. */
-/** The fetched data is the FULL page record from the backend (the API returns `{ page, elements[]
- * }`); the store action overwrites the item's `design_elements` with the response. Plan:
- * docs/superpowers/plans/2026-07-08-design-mode-redesign.md Chunk 6. */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useSseBus, __getSseBusGlobalClient } from '../helpers/sseBus'
@@ -48,16 +29,6 @@ export const useDesignSseStore = defineStore('designSse', () => {
    * + `Promise<void>` to preserve the cooperative-init semantic contract with AppLayout's
    * `initSseStores(activeWorkspaceId)` awaiting designSseStore.initDesignSse(newId) })` (Chunk
    * 8). */
-  /** The body is synchronous (bus subscription is in-memory), but callers still `await` us and
-   * that's part of the public API. Idempotent: a second call with the same workspaceId is a no-op
-   * (the listener + filter are already in place). */
-  /** A call with a different workspaceId updates the filter without re-subscribing. The bus
-   * listener is GLOBAL — workspace-id filtering happens inside the handler closure, so we don't
-   * detach/re-attach. */
-  /** Throws if the bus is not yet installed — call this AFTER App.vue's `onMounted` has run. */
-  /** The bus is installed by App.vue's `onMounted`, which runs after AppLayout.vue's mount in
-   * practice (AppLayout's `initSseStores` on workspace switch fires only after both components have
-   * mounted, by which point the bus is ready). */
   async function initDesignSse(workspaceId: string): Promise<void> {
     // Set the filter first — if we're called for the first time, the listener (registered below)
     // will read this value on its first event. If we're called for a re-init with a new
@@ -168,10 +139,6 @@ export const useDesignSseStore = defineStore('designSse', () => {
 
   /** Update the workspace filter without re-subscribing the bus listener. Called by AppLayout's
    * `initSseStores` on workspace switch when the user switches workspaces after the initial setup. */
-  /** A workspace switch is just a filter change because the backend's design routing keys are
-   * global (every connected client sees every design event). Re-installs the bus handlers if they
-   * were torn down (e.g. by a prior `closeDesignSse` then a workspace re-mount). */
-  /** The async signature matches `initDesignSse` so AppLayout can `await` either the same way. */
   async function setActiveWorkspaceId(workspaceId: string): Promise<void> {
     await initDesignSse(workspaceId)
   }

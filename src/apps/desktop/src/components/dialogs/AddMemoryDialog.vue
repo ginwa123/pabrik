@@ -52,10 +52,6 @@ const props = withDefaults(defineProps<{
   cwd: string
   /** 'standalone' (default) — the legacy flow: this dialog calls `createLocalMemory` and emits
    * `create(name, path)`. 'task' — the new flow (2026-06-20): this dialog does NOT call the API. */
-  /** It emits `create(name, content, path)` and the parent calls `addTask(..., { taskType:
-   * 'memory', memory: { name, content } })`. */
-  /** The backend's `task_create.zig` for memory tasks handles both the file write AND the task-row
-   * insert in a single POST, so the parent only needs to make one API call. */
   mode?: 'standalone' | 'task'
 }>(), {
   mode: 'standalone',
@@ -66,10 +62,6 @@ const emit = defineEmits<{
   /** The dialog always emits 3 args: `create(name, content, path)`. In `mode='standalone'`, the
    * dialog calls `createLocalMemory` directly and emits the API-returned path (the `content` arg is
    * the value sent to the API; same as the dialog's textarea). */
-  /** In `mode='task'`, the dialog doesn't call the API; the path is the locally-computed
-   * `<cwd>/.pabrik/memories/<name>` and the parent uses all 3 args to call addTask. */
-  /** Single 3-tuple shape (instead of a union of 2-tuple / 3-tuple) keeps Vue's emit type system
-   * happy and matches the existing AddTaskDialog pattern (always `(name, description)`). */
   create: [name: string, content: string, path: string]
 }>()
 
@@ -87,9 +79,6 @@ const showPicker = ref(false)
 const notificationStore = useNotificationStore()
 
 // ─── Validation ─────────────────────────────────────────────────────────────
-/**  * Mirrors `memories.isValidMemoryName` from `src/modules/agent/tools/memories.zig:372` — kept in
- * sync so the dialog rejects obvious typos before hitting the server. The server is the source of
- * truth; if the two ever drift, the server-side check returns 400. */
 function isValidMemoryName(rawName: string): boolean {
   const trimmed = rawName.trim()
   if (trimmed.length === 0) return false

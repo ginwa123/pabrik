@@ -1,10 +1,5 @@
 /** The documents Pinia store (Migration 095). The store is the one sanctioned place for
  * `try`/`catch` in the desktop app, so every failure has to be VISIBLE afterwards. */
-/** The theme of this spec is the distinction the store exists to preserve: **"there is nothing
- * here" and "I could not check" are different states**, and a `catch` that returns `[]` with no
- * error collapses them. */
-/** That is the bug class PR #719 shipped (a slow backend rendered the empty state for a session
- * full of messages), and these assertions are the guard. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -35,10 +30,6 @@ const doc = (id: string, overrides: Partial<api.Document> = {}): api.Document =>
 
 /** The list is cache-first now, and `documentEngineDb` is a module singleton whose IndexedDB
  * fallback is a module-level Map. */
-/** That cache deliberately outlives `createPinia()` — which is the feature — but it means rows
- * cached by one test are still primed by the next, flipping `loaded` to true before the mocked
- * `listDocuments` is ever consulted. */
-/** Every test here asserts a cold load, so each starts from an empty cache. */
 async function clearDocumentsCache(workspaceId = 'ws_1'): Promise<void> {
   const { documentEngineDb } = await import('../sync/DocumentEngineDb')
   const { runSyncVoid } = await import('../sync/runtime')

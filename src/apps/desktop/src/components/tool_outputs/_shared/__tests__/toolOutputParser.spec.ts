@@ -1,7 +1,5 @@
 /** Tests for toolOutputParser.ts — typed JSON parsers used by tool-output components. Each parser
  * takes the envelope `data` payload as an object and handles missing fields gracefully. */
-/** These tests verify the type contracts and edge cases (empty content, missing required fields,
- * multiline values, special chars, both success/error branches). */
 import { describe, expect, it } from 'vitest'
 import {
   extractBool,

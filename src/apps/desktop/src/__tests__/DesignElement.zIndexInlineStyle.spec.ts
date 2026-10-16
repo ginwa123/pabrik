@@ -1,15 +1,4 @@
 /** Behavioural mount tests for `DesignElement.vue::elementStyle::zIndex`. */
-/** SYMPTOM (2026-08-06, task_1785988530202): the right-click reorder menu (Bring to front / forward
- * / Send backward / back) and the keyboard shortcuts (Ctrl+]/[) updated `z_index` in the DB
- * correctly but the canvas visual stacking didn't change. */
-/** ROOT CAUSE: `DesignElement.vue::elementStyle` did NOT include `zIndex`. For `position: absolute`
- * elements without explicit z-index CSS, DOM order = visual stacking. */
-/** The frontend's `reorderDesignElements` mirrors the backend response IN-PLACE (preserves array
- * order), so the DOM order doesn't change either. Net: z_index changes in DB but visual stacking
- * stays the same. FIX: add `zIndex: props.element.z_index` to the elementStyle computed object. */
-/** CSS then handles the stacking correctly. These tests verify the WIRE contract: the wrapper's
- * inline `style` attribute contains `z-index: <z_index>px` for every element, so CSS stacking
- * matches the database's z_index. */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
