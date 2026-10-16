@@ -1,12 +1,47 @@
 <template>
   <div class="compaction-card" data-testid="compaction-card">
-    <header class="compaction-header" :class="{ 'compaction-header-clickable': true }">
+    <header class="compaction-header">
       <UiIcon name="box" class="compaction-icon" size-class="w-4.5 h-4.5" />
       <span class="compaction-title">Conversation Compaction</span>
       <span class="compaction-count" data-testid="compaction-count">
         {{ entries.length }} message{{ entries.length === 1 ? '' : 's' }} compacted
       </span>
     </header>
+
+    <section v-if="plan" class="compaction-plan" data-testid="compaction-plan">
+      <div class="section-heading">
+        <h4 class="compaction-section-title">Task plan carried forward</h4>
+        <span v-if="plan.updated_at" class="section-note">Updated {{ plan.updated_at }}</span>
+      </div>
+      <pre class="plan-content" data-testid="compaction-plan-content">{{ plan.markdown }}</pre>
+    </section>
+
+    <section v-if="workDir" class="compaction-workdir" data-testid="compaction-workdir">
+      <div class="section-heading">
+        <h4 class="compaction-section-title">Working directory</h4>
+        <span v-if="workDir.branch" class="section-note">
+          {{ workDir.branch }}{{ workDir.head ? ` · ${workDir.head}` : '' }}
+        </span>
+      </div>
+      <dl class="workdir-list">
+        <template v-if="workDir.git_worktree_cwd">
+          <dt>Worktree</dt>
+          <dd data-testid="compaction-workdir-worktree">{{ workDir.git_worktree_cwd }}</dd>
+        </template>
+        <template v-if="workDir.session_cwd">
+          <dt>Session cwd</dt>
+          <dd data-testid="compaction-workdir-session">{{ workDir.session_cwd }}</dd>
+        </template>
+        <template v-if="workDir.active_dir">
+          <dt>Active</dt>
+          <dd data-testid="compaction-workdir-active">{{ workDir.active_dir }}</dd>
+        </template>
+        <template v-if="dirtySummary">
+          <dt>Changes</dt>
+          <dd>{{ dirtySummary }}</dd>
+        </template>
+      </dl>
+    </section>
 
     <section v-if="hasMetadata" class="compaction-metadata" data-testid="compaction-metadata">
       <div v-if="metadata.session_id" class="metadata-item">
@@ -36,6 +71,11 @@
           {{ showAll ? 'Show fewer' : `Show all ${entries.length}` }}
         </button>
       </div>
+      <p v-if="omittedEntries > 0" class="section-note" data-testid="compaction-omitted">
+        {{ omittedEntries }} older message{{ omittedEntries === 1 ? '' : 's' }} rolled up but not
+        listed; the full history is still in the session and readable with
+        <code>read_workspace_session</code>.
+      </p>
       <ul class="compaction-entries">
         <li
           v-for="(entry, idx) in visibleEntries"
@@ -77,7 +117,7 @@
         v-if="summaryExpanded"
         class="summary-content"
         data-testid="compaction-summary-content"
-      >{{ summary }}</pre>
+        >{{ summary }}</pre>
     </section>
   </div>
 </template>
@@ -86,9 +126,9 @@
 import { ref, computed } from 'vue'
 import UiIcon from '../ui/UiIcon.vue'
 
-/** CompactionCard — renders the rich `<compact_messages>` envelope that `compactMessageInMemoryNew`
- * writes to the DB. Three sections: `<metadata>`, `<message_index>` and `<summary>` (the compactor's
- * structured output, collapsed by default and expanded on demand). */
+/** CompactionCard — renders the handoff envelope `compactMessageInMemoryNew` writes to the DB.
+ * Envelopes written since the JSON format change carry the task plan and the working directory ahead
+ * of the dropped-message index; earlier XML envelopes still render, without those two sections. */
 const props = defineProps<{
   content: string
 }>()
@@ -103,20 +143,41 @@ interface CompactionMetadata {
 interface CompactionEntry {
   id: string
   role: string
-  created_at?: string
   preview: string
   tool_call_id?: string
-  tool_name?: string
 }
 
-// Show more entries by default; the .compaction-entries style adds max-height + overflow-y so a
-// 359-message compaction renders as a scrollable list rather than a 359-row wall. The "Show all"
-// toggle remains for accessibility (keyboard-only users can expand without scrolling).
+interface CompactionPlan {
+  markdown: string
+  updated_at?: string
+}
+
+interface CompactionWorkingDirectory {
+  active_dir?: string
+  session_cwd?: string
+  git_worktree_cwd?: string
+  branch?: string
+  head?: string
+  is_git_repo?: boolean
+  dirty_total?: number
+}
+
+type EnvelopeParse =
+  | { kind: 'not_envelope' }
+  | { kind: 'malformed' }
+  | { kind: 'ok'; payload: Record<string, unknown> }
+
+// Show more entries by default; .compaction-entries adds max-height + overflow-y so a 359-message
+// compaction renders as a scrollable list rather than a 359-row wall. The "Show all" toggle remains
+// for accessibility (keyboard-only users can expand without scrolling).
 const MAX_ENTRIES_VISIBLE = 50
 
 const metadata = ref<CompactionMetadata>({})
 const entries = ref<CompactionEntry[]>([])
 const summary = ref<string>('')
+const plan = ref<CompactionPlan | null>(null)
+const workDir = ref<CompactionWorkingDirectory | null>(null)
+const omittedEntries = ref(0)
 
 const showAll = ref(false)
 const summaryExpanded = ref(false)
@@ -134,6 +195,12 @@ const visibleEntries = computed(() => {
   return entries.value.slice(0, MAX_ENTRIES_VISIBLE)
 })
 
+const dirtySummary = computed(() => {
+  const total = workDir.value?.dirty_total
+  if (typeof total !== 'number' || total <= 0) return ''
+  return total === 1 ? '1 uncommitted file' : `${total} uncommitted files`
+})
+
 const toggleShowAll = () => {
   showAll.value = !showAll.value
 }
@@ -141,25 +208,76 @@ const toggleSummary = () => {
   summaryExpanded.value = !summaryExpanded.value
 }
 
-const parse = (raw: string) => {
-  // Defensive: don't crash on malformed XML. The Zig-side envelope is well-formed by construction,
-  // but a DB row that got truncated mid-write (e.g. interrupted saveMessage) should still render
-  // the card, even if some sections are empty.
-  let doc: Document
+/** Reads the JSON envelope the backend writes today. `not_envelope` sends the caller to the XML
+ * reader, which is how envelopes written before the format change still render. */
+const parseJsonEnvelope = (raw: string): EnvelopeParse => {
+  const trimmed = raw.trim()
+  if (!trimmed.startsWith('{"compact_messages"')) return { kind: 'not_envelope' }
+
+  let decoded: unknown
   try {
-    doc = new DOMParser().parseFromString(raw, 'text/xml')
+    decoded = JSON.parse(trimmed)
   } catch {
-    return
+    return { kind: 'malformed' }
   }
 
-  // Bail on parser errors (<parsererror> element). The card renders empty.
+  const payload = (decoded as { compact_messages?: unknown } | null)?.compact_messages
+  if (!payload || typeof payload !== 'object') return { kind: 'malformed' }
+  return { kind: 'ok', payload: payload as Record<string, unknown> }
+}
+
+const applyPayload = (root: Record<string, unknown>): void => {
+  const meta = asRecord(root.metadata)
+  metadata.value = {
+    session_id: asString(meta.session_id),
+    model: asString(meta.model),
+    compacted_at: asString(meta.compacted_at),
+    original_count: meta.original_count === undefined ? undefined : String(meta.original_count),
+  }
+
+  const planRecord = asRecord(root.plan)
+  const markdown = asString(planRecord.markdown)
+  plan.value = markdown ? { markdown, updated_at: asString(planRecord.updated_at) } : null
+
+  const dir = asRecord(root.working_directory)
+  workDir.value = Object.keys(dir).length
+    ? {
+        active_dir: asString(dir.active_dir),
+        session_cwd: asString(dir.session_cwd),
+        git_worktree_cwd: asString(dir.git_worktree_cwd),
+        branch: asString(dir.branch),
+        head: asString(dir.head),
+        is_git_repo: dir.is_git_repo === true,
+        dirty_total: typeof dir.dirty_total === 'number' ? dir.dirty_total : undefined,
+      }
+    : null
+
+  const index = Array.isArray(root.message_index) ? root.message_index : []
+  entries.value = index.map((item) => {
+    const entry = asRecord(item)
+    return {
+      id: asString(entry.id) ?? '',
+      role: asString(entry.role) ?? 'unknown',
+      preview: asString(entry.preview) ?? '',
+      tool_call_id: asString(entry.tool_call_id),
+    }
+  })
+
+  summary.value = asString(root.summary) ?? ''
+
+  const truncated = asRecord(root.truncated_entries)
+  omittedEntries.value = typeof truncated.count === 'number' ? truncated.count : 0
+}
+
+/** XML envelopes from before the JSON format change. Kept so old transcript rows still render. */
+const parseXml = (raw: string): void => {
+  // DOMParser reports malformed markup as a <parsererror> element rather than throwing, so the
+  // check below is the whole guard — and a DB row truncated mid-write still renders the card.
+  const doc = new DOMParser().parseFromString(raw, 'text/xml')
   if (doc.querySelector('parsererror')) {
     return
   }
 
-  // <compact_messages> may or may not be the root. Some encoders wrap it
-  // in an extra <div> or include a leading XML prolog. Use a tolerant
-  // selector: any direct child of <compact_messages> matches the schema.
   const root = doc.querySelector('compact_messages')
   if (!root) {
     return
@@ -178,25 +296,31 @@ const parse = (raw: string) => {
     }
   }
 
-  // Message index
   const indexEl = directChild(root, 'message_index')
   if (indexEl) {
-    const entryEls = directChildren(indexEl, 'entry')
-    entries.value = entryEls.map((el) => ({
+    entries.value = directChildren(indexEl, 'entry').map((el) => ({
       id: textOf(el, 'id') ?? '',
       role: textOf(el, 'role') ?? 'unknown',
-      created_at: textOf(el, 'created_at') || undefined,
       preview: textOf(el, 'preview') ?? '',
       tool_call_id: textOf(el, 'tool_call_id') || undefined,
-      tool_name: textOf(el, 'tool_name') || undefined,
     }))
   }
 
-  // Summary
+  // The <plan> and <working_directory> sections exist only in JSON envelopes.
   const summaryEl = directChild(root, 'summary')
   if (summaryEl) {
     summary.value = (summaryEl.textContent ?? '').trim()
   }
+}
+
+const asRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {}
+
+const asString = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined
+  return value.length > 0 ? value : undefined
 }
 
 const directChild = (parent: Element, tag: string): Element | null => {
@@ -224,7 +348,13 @@ const textOf = (parent: Element, tag: string): string | undefined => {
 
 // Parse synchronously during setup rather than in onMounted, so the component is populated before
 // it renders and the test does not depend on a full DOM lifecycle mount.
-parse(props.content)
+const parsedEnvelope = parseJsonEnvelope(props.content)
+if (parsedEnvelope.kind === 'ok') {
+  applyPayload(parsedEnvelope.payload)
+} else if (parsedEnvelope.kind === 'not_envelope') {
+  parseXml(props.content)
+}
+// `malformed`: recognised as an envelope but unreadable, so the card renders its empty state.
 </script>
 
 <style scoped>
@@ -268,6 +398,59 @@ parse(props.content)
   white-space: nowrap;
 }
 
+.section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.section-note {
+  font-size: var(--text-meta);
+  color: var(--color-text-dim);
+}
+
+.compaction-plan {
+  margin-bottom: 12px;
+}
+
+.plan-content {
+  margin: 0;
+  padding: 10px;
+  background-color: var(--color-bg);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: var(--text-dense);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.compaction-workdir {
+  margin-bottom: 12px;
+}
+
+.workdir-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  margin: 0;
+  font-size: var(--text-dense);
+}
+
+.workdir-list dt {
+  color: var(--color-text-dim);
+}
+
+.workdir-list dd {
+  margin: 0;
+  font-family: monospace;
+  word-break: break-all;
+}
+
 .compaction-metadata {
   display: flex;
   gap: 12px;
@@ -276,7 +459,6 @@ parse(props.content)
   padding: 8px 10px;
   background-color: var(--color-bg);
   border-radius: 4px;
-  border: 1px solid var(--color-border-soft);
 }
 
 .metadata-item {
@@ -287,9 +469,7 @@ parse(props.content)
 }
 
 .metadata-label {
-  font-size: var(--text-micro);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  font-size: var(--text-meta);
   color: var(--color-text-dim);
 }
 
@@ -301,12 +481,10 @@ parse(props.content)
 }
 
 .compaction-section-title {
-  margin: 0 0 6px 0;
-  font-size: var(--text-meta);
+  margin: 0;
+  font-size: var(--text-body);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--color-text-dim);
+  color: var(--color-text);
 }
 
 .compaction-index-header {
@@ -335,14 +513,12 @@ parse(props.content)
   list-style: none;
   padding: 0;
   margin: 0;
-  border: 1px solid var(--color-border-soft);
+  background-color: var(--color-bg);
   border-radius: 4px;
-  /* `overflow: hidden` clipped the inner border-radius corners; switch
-     to `overflow-y: auto` so a long entry list scrolls inside the card
-     instead of pushing the chat viewport down by hundreds of pixels.
-     `max-height` caps the visual size — combined with MAX_ENTRIES_VISIBLE
-     = 50, the common case (≤50 entries) shows everything inline, and
-     larger compactions scroll within the card. */
+  /* `overflow-y: auto` keeps a long entry list inside the card instead of
+     pushing the chat viewport down by hundreds of pixels. `max-height` caps
+     the visual size — with MAX_ENTRIES_VISIBLE = 50 the common case shows
+     everything inline, and larger compactions scroll within the card. */
   max-height: 400px;
   overflow-y: auto;
 }
@@ -352,23 +528,20 @@ parse(props.content)
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border-bottom: 1px solid var(--color-border-soft);
   font-size: var(--text-dense);
   min-width: 0;
 }
 
-.compaction-entry:last-child {
-  border-bottom: none;
+.compaction-entry + .compaction-entry {
+  margin-top: 1px;
 }
 
 .role-badge {
   font-size: var(--text-micro);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  font-weight: 600;
   padding: 2px 6px;
   border-radius: 4px;
-  background-color: var(--color-bg);
+  background-color: var(--color-bg-elevated);
   color: var(--color-text);
   min-width: 64px;
   text-align: center;
@@ -391,7 +564,7 @@ parse(props.content)
 }
 
 .role-unknown {
-  background-color: var(--color-bg);
+  background-color: var(--color-bg-elevated);
   color: var(--color-text-dim);
 }
 
@@ -418,7 +591,7 @@ parse(props.content)
 .entry-tool-call-id {
   font-family: monospace;
   font-size: var(--text-micro);
-  background-color: var(--color-bg);
+  background-color: var(--color-bg-elevated);
   padding: 1px 5px;
   border-radius: 3px;
   color: var(--color-text-dim);
@@ -427,8 +600,6 @@ parse(props.content)
 
 .compaction-summary {
   margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid var(--color-border-soft);
 }
 
 .summary-toggle {
@@ -470,14 +641,12 @@ parse(props.content)
   padding: 10px;
   background-color: var(--color-bg);
   border-radius: 4px;
-  border: 1px solid var(--color-border-soft);
-  font-family: monospace;
-  font-size: var(--text-meta);
+  font-family: inherit;
+  font-size: var(--text-dense);
   line-height: 1.5;
   white-space: pre-wrap;
   word-wrap: break-word;
   max-height: 320px;
   overflow-y: auto;
-  margin-bottom: 0;
 }
 </style>

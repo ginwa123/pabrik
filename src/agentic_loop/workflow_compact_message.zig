@@ -21,50 +21,18 @@ const xml_escape = @import("helpers").xml_escape;
 const llm_history = @import("llm_history.zig");
 const insertLLMHistory = @import("insert_llm_histories.zig").inserLLMHistories;
 const event_bus_mod = pabrikcore.event_bus;
-// 2026-08-19 — session_plan agent tools. `fetchSessionPlan` reads the
-// current plan row from `session_plan` (Migration 076) and `enrichCompactionXml`
-// embeds it as a `<plan>` section in the compaction envelope.
+// `fetchSessionPlan` reads the current plan row from `session_plan`
+// (Migration 076); the handoff envelope carries it as its leading section.
 const session_plan_mod = pabrikcore.session_plan;
+const git_state_mod = @import("git_state.zig");
+const envelope_mod = @import("compaction_envelope.zig");
 
 const testing = std.testing;
 
 // ─── Compaction-context types
-// ──────────────────────────────────────────────── One user-turn row from
-// `llm_history`.
-pub const UserTurn = struct {
-    content: []const u8,
-    created_at: []const u8,
-
-    pub fn deinit(self: UserTurn, allocator: std.mem.Allocator) void {
-        allocator.free(self.content);
-        allocator.free(self.created_at);
-    }
-};
-
-// One row from the `session_activity` per-session log (Migration 073).
-pub const RecentActivity = struct {
-    description: []const u8,
-    created_at: []const u8,
-
-    pub fn deinit(self: RecentActivity, allocator: std.mem.Allocator) void {
-        allocator.free(self.description);
-        allocator.free(self.created_at);
-    }
-};
-
-// One read_file tool-result row from `llm_history`. `path` is the extracted
-// value from the `<path>...</path>` tag in the XML envelope.
-pub const ReadFileTurn = struct {
-    path: []const u8,
-    raw_content: []const u8,
-    created_at: []const u8,
-
-    pub fn deinit(self: ReadFileTurn, allocator: std.mem.Allocator) void {
-        allocator.free(self.path);
-        allocator.free(self.raw_content);
-        allocator.free(self.created_at);
-    }
-};
+pub const UserTurn = envelope_mod.UserTurn;
+pub const RecentActivity = envelope_mod.RecentActivity;
+pub const ReadFileTurn = envelope_mod.ReadFileTurn;
 
 // ─── Compaction-context helpers ──────────────────────────────────────────────
 
@@ -231,163 +199,35 @@ pub fn fetchSessionPlan(
     return session_plan_mod.getPlanOpt(allocator, db, session_id);
 }
 
-/// Embed the user history, read_file paths, recent session activities, and
-/// loaded session skills into the compacted XML. Returns a new `[]u8`
-/// allocated from `allocator`; caller owns it.
-pub fn enrichCompactionXml(
+/// `sessions.git_worktree_cwd` — the directory the file and command tools are
+/// bound to. "" when the session works in its own cwd.
+pub fn fetchSessionWorktreeCwd(
     allocator: std.mem.Allocator,
-    compacted_xml: []const u8,
-    user_turns: []const UserTurn,
-    read_files: []const ReadFileTurn,
-    recent_activities: []const RecentActivity,
-    session_skills: []const llm_history.SkillInfo,
-    /// Optional plan row fetched BEFORE mark_history_not_for_llmrun.
-    /// `null` when no plan exists (silently omitted from the envelope).
-    plan: ?session_plan_mod.PlanRow,
-    cwd: []const u8,
+    db: *sqlite.SqliteBackend,
+    session_id: []const u8,
 ) ![]u8 {
-    const MAX_USER_TURNS: usize = 100;
-    const MAX_USER_CONTENT_CHARS: usize = 2000;
-    const MAX_SKILLS: usize = 50;
-    const MAX_SKILL_CONTENT_CHARS: usize = 10_000;
+    return llm_history.getSessionGitWorktreeCwd(allocator, db, session_id);
+}
 
-    var out: std.ArrayList(u8) = .empty;
-    errdefer out.deinit(allocator);
+/// A handoff envelope is a JSON document; this is how one is recognised.
+pub const COMPACTION_ENVELOPE_PREFIX = envelope_mod.ENVELOPE_PREFIX;
 
-    try out.appendSlice(allocator, "<compaction_context>\n");
+/// A handoff only pays off once this many messages have accumulated.
+pub const MIN_MESSAGES_TO_COMPACT: usize = 5;
 
-    // ── user_history ──────────────────────────────────────────────
-    try out.appendSlice(allocator, "  <user_history");
-    if (user_turns.len > MAX_USER_TURNS) {
-        try out.print(allocator, " truncated_by=\"{d}\"", .{user_turns.len - MAX_USER_TURNS});
-    }
-    try out.appendSlice(allocator, ">\n");
-    const show_user_count = @min(user_turns.len, MAX_USER_TURNS);
-    for (user_turns[0..show_user_count]) |t| {
-        const truncated = if (t.content.len > MAX_USER_CONTENT_CHARS)
-            t.content[0..MAX_USER_CONTENT_CHARS]
-        else
-            t.content;
-        const escaped = try xml_escape(allocator, truncated);
-        defer allocator.free(escaped);
-        try out.print(
-            allocator,
-            "    <turn created_at=\"{s}\">{s}</turn>\n",
-            .{ t.created_at, escaped },
-        );
-    }
-    try out.appendSlice(allocator, "  </user_history>\n");
-
-    // ── read_files (deduped; first-occurrence wins) ───────────────
-    var seen: std.StringHashMapUnmanaged(void) = .empty;
-    defer seen.deinit(allocator);
-    try out.appendSlice(allocator, "  <read_files>\n");
-    for (read_files) |rf| {
-        if (seen.contains(rf.path)) continue;
-        try seen.put(allocator, rf.path, {});
-        const abs = try resolvePath(allocator, rf.path, cwd);
-        defer allocator.free(abs);
-        const escaped = try xml_escape(allocator, rf.path);
-        defer allocator.free(escaped);
-        try out.print(
-            allocator,
-            "    <path abs=\"{s}\">{s}</path>\n",
-            .{ abs, escaped },
-        );
-    }
-    try out.appendSlice(allocator, "  </read_files>\n");
-
-    // ── recent_activities (omitted entirely when empty) ─────────── Mirrors
-    // the user_history / read_files pattern: the section is useful for "what
-    // was the agent doing/thinking at the tail of the compacted-away
-    if (recent_activities.len > 0) {
-        try out.appendSlice(allocator, "  <recent_activities");
-        try out.print(allocator, " count=\"{d}\"", .{recent_activities.len});
-        try out.appendSlice(allocator, ">\n");
-        for (recent_activities) |a| {
-            const escaped = try xml_escape(allocator, a.description);
-            defer allocator.free(escaped);
-            try out.print(
-                allocator,
-                "    <activity created_at=\"{s}\">{s}</activity>\n",
-                .{ a.created_at, escaped },
-            );
+/// Messages accumulated after the newest handoff envelope. Equal to
+/// `messages.len` when the session has never been compacted.
+pub fn messagesSinceLastCompaction(messages: []const AgentMessage) usize {
+    var last_envelope: ?usize = null;
+    for (messages, 0..) |message, index| {
+        const content = message.content orelse continue;
+        const trimmed = std.mem.trim(u8, content, " \t\r\n");
+        if (std.mem.startsWith(u8, trimmed, COMPACTION_ENVELOPE_PREFIX)) {
+            last_envelope = index;
         }
-        try out.appendSlice(allocator, "  </recent_activities>\n");
     }
-
-    // ── session_skills (loaded-once guidance material) ──────────── Skills
-    // are typically large, free-form reference material that the compactor is
-    // unlikely to summarize verbatim.
-    try out.appendSlice(allocator, "  <session_skills");
-    if (session_skills.len > MAX_SKILLS) {
-        try out.print(allocator, " truncated_by=\"{d}\"", .{session_skills.len - MAX_SKILLS});
-    }
-    try out.appendSlice(allocator, ">\n");
-    const show_skill_count = @min(session_skills.len, MAX_SKILLS);
-    for (session_skills[0..show_skill_count]) |skill| {
-        const name_escaped = try xml_escape(allocator, skill.skill_name);
-        defer allocator.free(name_escaped);
-        try out.print(allocator, "    <skill name=\"{s}\"", .{name_escaped});
-        if (skill.loaded_at) |ts| {
-            try out.print(allocator, " loaded_at=\"{d}\"", .{ts});
-        }
-        try out.appendSlice(allocator, ">\n");
-        const truncated = if (skill.content.len > MAX_SKILL_CONTENT_CHARS)
-            skill.content[0..MAX_SKILL_CONTENT_CHARS]
-        else
-            skill.content;
-        // CDATA escape: XML CDATA sections cannot contain the literal
-        // sequence `]]>`.
-        try out.appendSlice(allocator, "      <content><![CDATA[\n");
-        if (std.mem.indexOf(u8, truncated, "]]>") == null) {
-            try out.appendSlice(allocator, truncated);
-        } else {
-            var rest = truncated;
-            while (std.mem.indexOf(u8, rest, "]]>")) |idx| {
-                try out.appendSlice(allocator, rest[0..idx]); // up to but NOT incl "]]"
-                try out.appendSlice(allocator, "]]><![CDATA[>"); // close current, reopen, literal '>'
-                rest = rest[idx + 3 ..];
-            }
-            try out.appendSlice(allocator, rest);
-        }
-        try out.appendSlice(allocator, "\n      ]]></content>\n");
-        try out.appendSlice(allocator, "    </skill>\n");
-    }
-    try out.appendSlice(allocator, "  </session_skills>\n");
-
-    // ── plan (current task plan, when set) ───────────────────────── Mirrors
-    // the session_skills pattern: omitted entirely when absent so the
-    // envelope stays clean for sessions without a plan.
-    if (plan) |p| {
-        try out.appendSlice(allocator, "  <plan");
-        if (p.updated_at.len > 0) {
-            try out.print(allocator, " updated_at=\"{s}\"", .{p.updated_at});
-        }
-        try out.appendSlice(allocator, ">\n    <content><![CDATA[\n");
-        // CDATA escape: same pattern as session_skills — split on `]]>`.
-        if (std.mem.indexOf(u8, p.plan_md, "]]>") == null) {
-            try out.appendSlice(allocator, p.plan_md);
-        } else {
-            var rest = p.plan_md;
-            while (std.mem.indexOf(u8, rest, "]]>")) |idx| {
-                try out.appendSlice(allocator, rest[0..idx]);
-                try out.appendSlice(allocator, "]]><![CDATA[>");
-                rest = rest[idx + 3 ..];
-            }
-            try out.appendSlice(allocator, rest);
-        }
-        try out.appendSlice(allocator, "\n    ]]></content>\n  </plan>\n");
-    }
-
-    // ── summary (the original compactor output, wrapped in CDATA) ─
-    try out.appendSlice(allocator, "  <summary><![CDATA[\n");
-    try out.appendSlice(allocator, compacted_xml);
-    try out.appendSlice(allocator, "\n]]></summary>\n");
-
-    try out.appendSlice(allocator, "</compaction_context>\n");
-
-    return out.toOwnedSlice(allocator);
+    const start = (last_envelope orelse return messages.len) + 1;
+    return messages.len - start;
 }
 
 fn resolvePath(allocator: std.mem.Allocator, path: []const u8, cwd: []const u8) ![]u8 {
@@ -647,8 +487,8 @@ pub const CompactDeps = struct {
     /// to skip the function early. Production: `shouldCompactDefault`.
     shouldCompact: fn (ThresholdCtx) bool,
 
-    /// Call the compaction LLM to produce compacted XML. Production:
-    /// `agentic_loop_mod.callCompactAgent`.
+    /// Produce the optional summary. Production: `callCompactAgent`, which
+    /// returns a caller-owned heap copy (or null) that this function frees.
     callCompactAgent: fn (CallCompactAgentInput) ?[]const u8,
 
     /// Persist the compacted state to DB + return the new in-memory list.
@@ -657,7 +497,7 @@ pub const CompactDeps = struct {
     compactMessagesInMemory: fn (
         allocator: std.mem.Allocator,
         messages: std.ArrayList(agent.AgentMessage),
-        compacted_xml: []const u8,
+        envelope: []const u8,
         session_id: []const u8,
         model: []const u8,
         cwd: []const u8,
@@ -722,12 +562,21 @@ pub fn maybeCompactMessagesNew(
         return false;
     }
 
-    const copy_messages = try allocator.dupe(agent.AgentMessage, messages.items);
-    var copy_list = std.ArrayList(agent.AgentMessage).fromOwnedSlice(copy_messages);
-    defer copy_list.deinit(allocator);
+    const new_since_last = messagesSinceLastCompaction(messages.items);
+    if (new_since_last < MIN_MESSAGES_TO_COMPACT) {
+        logger.debugFmt("[COMPACTION] skipped: {d} message(s) since the last handoff", .{new_since_last});
+        return false;
+    }
 
-    const compacted_xml = deps.callCompactAgent(
-        .{
+    var compacted_xml: ?[]const u8 = null;
+    defer if (compacted_xml) |xml| allocator.free(xml);
+
+    if (llm_config.compaction_llm_summary) {
+        const copy_messages = try allocator.dupe(agent.AgentMessage, messages.items);
+        var copy_list = std.ArrayList(agent.AgentMessage).fromOwnedSlice(copy_messages);
+        defer copy_list.deinit(allocator);
+
+        compacted_xml = deps.callCompactAgent(.{
             .allocator = allocator,
             .io = io,
             .messages = copy_list,
@@ -737,10 +586,11 @@ pub fn maybeCompactMessagesNew(
             .url_style = url_style,
             .session_id = session_id,
             .logger = logger,
-        },
-    ) orelse {
-        return false;
-    };
+        });
+        if (compacted_xml == null) {
+            logger.warnFmt("[COMPACTION] summarization failed; using the deterministic envelope", .{});
+        }
+    }
 
     // Fetch user chat history + read_file paths + recent activities BEFORE
     // the mark_history_not_for_llmrun step takes them offline.
@@ -790,25 +640,45 @@ pub fn maybeCompactMessagesNew(
     };
     defer if (session_plan_row) |*p| p.deinit(allocator);
 
-    const enriched_xml = enrichCompactionXml(
-        allocator,
-        compacted_xml,
-        user_turns.items,
-        read_files.items,
-        recent_activities.items,
-        session_skills,
-        session_plan_row,
-        cwd,
-    ) catch |err| {
-        logger.warnFmt("[COMPACTION] enrichCompactionXml failed: {s}", .{@errorName(err)});
+    const git_worktree_cwd = fetchSessionWorktreeCwd(allocator, db, session_id) catch |err| blk: {
+        logger.warnFmt("[COMPACTION] fetchSessionWorktreeCwd failed: {s}", .{@errorName(err)});
+        break :blk try allocator.dupe(u8, "");
+    };
+    defer allocator.free(git_worktree_cwd);
+
+    const active_dir = if (git_worktree_cwd.len > 0) git_worktree_cwd else cwd;
+    const git_state_row = git_state_mod.fetchGitState(allocator, io, active_dir) catch |err| blk: {
+        logger.warnFmt("[COMPACTION] fetchGitState failed: {s}", .{@errorName(err)});
+        break :blk null;
+    };
+    defer if (git_state_row) |state| state.deinit(allocator);
+
+    const envelope = envelope_mod.build(.{
+        .allocator = allocator,
+        .io = io,
+        .session_id = session_id,
+        .model = model,
+        .dropped_messages = messages.items[1..],
+        .original_count = messages.items.len,
+        .plan = session_plan_row,
+        .session_cwd = cwd,
+        .git_worktree_cwd = git_worktree_cwd,
+        .git_state = git_state_row,
+        .user_turns = user_turns.items,
+        .read_files = read_files.items,
+        .recent_activities = recent_activities.items,
+        .session_skills = session_skills,
+        .summary = compacted_xml,
+    }) catch |err| {
+        logger.warnFmt("[COMPACTION] buildCompactionEnvelope failed: {s}", .{@errorName(err)});
         return false;
     };
-    defer allocator.free(enriched_xml);
+    defer allocator.free(envelope);
 
     _ = try deps.compactMessagesInMemory(
         allocator,
         messages.*,
-        enriched_xml,
+        envelope,
         session_id,
         model,
         cwd,
@@ -826,7 +696,8 @@ pub fn maybeCompactMessagesNew(
 pub fn compactMessageInMemoryNew(
     allocator: std.mem.Allocator,
     messages: std.ArrayList(agent.AgentMessage),
-    compacted_xml: []const u8,
+    /// Handoff document rendered by `envelope_mod.build`.
+    envelope: []const u8,
     session_id: []const u8,
     model: []const u8,
     cwd: []const u8,
@@ -843,17 +714,8 @@ pub fn compactMessageInMemoryNew(
     // Mark all existing messages in this session as not for LLM (soft-delete)
     try mark_history_not_for_llmrun(allocator, db, session_id);
 
-    // Build the compacted summary content with XML wrapping
-    const summary_content = try buildCompactionEnvelope(
-        allocator,
-        messages.items[1..],
-        total,
-        session_id,
-        model,
-        io,
-        compacted_xml,
-        logger,
-    );
+    // The new message owns this copy; the caller frees its own.
+    const summary_content = try allocator.dupe(u8, envelope);
 
     // `inserLLMHistories` returns a heap-allocated copy of the generated row
     // id (`allocator.dupe(u8, id)` at the bottom of that function).
@@ -930,133 +792,9 @@ pub fn compactMessageInMemoryNew(
     return new_messages;
 }
 
-/// Build the structured `<compact_messages>` envelope that replaces the
-/// dropped messages after compaction.
-const MAX_INDEX_ENTRIES: usize = 50;
-
-fn buildCompactionEnvelope(
-    allocator: std.mem.Allocator,
-    dropped_messages: []const agent.AgentMessage,
-    original_count: usize,
-    session_id: []const u8,
-    model: []const u8,
-    io: std.Io,
-    compacted_xml: []const u8,
-    logger: *Logger,
-) ![]u8 {
-    // Real RFC3339-ish timestamp from std.Io.Timestamp — same pattern
-    // the logger's Timing.timestampIso uses. Non-empty so the test
-    // can verify the tag is present without hardcoding a value.
-    const now_iso = try timestampIso(allocator, io);
-    defer allocator.free(now_iso);
-
-    var env: std.ArrayList(u8) = .empty;
-    defer env.deinit(allocator);
-
-    try env.appendSlice(allocator, "<compact_messages>\n");
-
-    // --- metadata header ---
-    try env.print(allocator,
-        \\  <metadata>
-        \\    <session_id>{s}</session_id>
-        \\    <model>{s}</model>
-        \\    <compacted_at>{s}</compacted_at>
-        \\    <original_count>{d}</original_count>
-        \\  </metadata>
-        \\
-    , .{ session_id, model, now_iso, original_count });
-
-    // --- message_index --- Capped to MAX_INDEX_ENTRIES so a very long
-    // session (e.g. 360+ dropped messages) can't blow up the envelope size on
-    // its own; we keep the most RECENT dropped messages since those are most
-    try env.appendSlice(allocator, "  <message_index>\n");
-
-    const show_count = @min(dropped_messages.len, MAX_INDEX_ENTRIES);
-    const start_idx = dropped_messages.len - show_count;
-    const omitted_count = dropped_messages.len - show_count;
-
-    if (omitted_count > 0) {
-        try env.print(
-            allocator,
-            "    <truncated_entries count=\"{d}\" note=\"older entries omitted from index; use read_workspace_session with session_id to fetch full history from DB\"/>\n",
-            .{omitted_count},
-        );
-    }
-
-    for (dropped_messages[start_idx..], start_idx..) |msg, i| {
-        const msg_id = try std.fmt.allocPrint(allocator, "adhoc_{d}", .{i});
-        defer allocator.free(msg_id);
-
-        const role_str = msg.role.to_str();
-        const preview = msg.content orelse "";
-        // Byte-slice cap; fine for ASCII previews. If non-English content
-        // is common, swap for a UTF-8-aware trim so we don't cut a
-        // multi-byte codepoint in half.
-        const preview_trimmed = if (preview.len > 100) preview[0..100] else preview;
-        const preview_escaped = try xml_escape(allocator, preview_trimmed);
-        defer allocator.free(preview_escaped);
-
-        try env.print(allocator,
-            \\    <entry>
-            \\      <id>{s}</id>
-            \\      <role>{s}</role>
-            \\
-        , .{ msg_id, role_str });
-
-        // For tool-result messages, surface tool_call_id so the agent can
-        // match results back to calls.
-        if (msg.role == .tool) {
-            const tcid = msg.tool_call_id orelse "";
-            const tcid_escaped = try xml_escape(allocator, tcid);
-            defer allocator.free(tcid_escaped);
-            try env.print(allocator, "      <tool_call_id>{s}</tool_call_id>\n", .{tcid_escaped});
-        }
-
-        try env.print(allocator,
-            \\      <preview>{s}</preview>
-            \\    </entry>
-            \\
-        , .{preview_escaped});
-    }
-
-    try env.appendSlice(allocator, "  </message_index>\n");
-
-    // --- summary (the compactor's output) --- Hard cap as a safety net — the
-    // real budget should be enforced via the compactor prompt itself, but we
-    // never want a misbehaving model response to produce an unbounded
-    const summary_to_embed = compacted_xml;
-
-    // Wrapped in CDATA so embedded <, >, & in the summary (quoted file
-    // contents, shell output, diffs, etc.) can never break the envelope.
-    try env.appendSlice(allocator, "  <summary><![CDATA[\n");
-    if (std.mem.indexOf(u8, summary_to_embed, "]]>") == null) {
-        try env.appendSlice(allocator, summary_to_embed);
-    } else {
-        var rest = summary_to_embed;
-        while (std.mem.indexOf(u8, rest, "]]>")) |idx| {
-            try env.appendSlice(allocator, rest[0 .. idx + 2]); // up to and incl "]]"
-            try env.appendSlice(allocator, "]]><![CDATA[>"); // close, literal '>', reopen
-            rest = rest[idx + 3 ..];
-        }
-        try env.appendSlice(allocator, rest);
-    }
-    try env.appendSlice(allocator, "\n]]></summary>\n");
-
-    try env.appendSlice(allocator, "</compact_messages>\n");
-
-    const result = try env.toOwnedSlice(allocator);
-    logger.debugFmt(
-        "[COMPACTION] envelope size: {d} bytes, {d}/{d} index entries shown, summary {d}/{d} bytes",
-        .{ result.len, show_count, dropped_messages.len, summary_to_embed.len, compacted_xml.len },
-    );
-
-    return result;
-}
-
 // ─── Tests ─────────────────────────────────────────────────────────────────
 // Convention: walk ALL migrations from scratch so the schema under test is
 // GUARANTEED to match production.
-
 
 fn setupDb() !struct {
     db: sqlite.SqliteBackend,
@@ -1289,16 +1027,12 @@ test "fetchRecentActivities returns the most recent N rows in chrono order" {
         .{ .id = "a4", .description = "reviewing", .created_at = "2026-01-01 00:00:04" },
     };
     for (sess_a_rows) |r| {
-        try s.db.exec(alloc,
-            "INSERT INTO session_activity (id, session_id, description, created_at) " ++
-                "VALUES (?, ?, ?, ?)",
-            &.{ r.id, "sess_a", r.description, r.created_at });
+        try s.db.exec(alloc, "INSERT INTO session_activity (id, session_id, description, created_at) " ++
+            "VALUES (?, ?, ?, ?)", &.{ r.id, "sess_a", r.description, r.created_at });
     }
     // Other-session row — must be filtered out by the WHERE clause.
-    try s.db.exec(alloc,
-        "INSERT INTO session_activity (id, session_id, description, created_at) " ++
-            "VALUES (?, ?, ?, ?)",
-        &.{ "a_x", "sess_b", "wrong session", "2026-01-01 00:00:01" });
+    try s.db.exec(alloc, "INSERT INTO session_activity (id, session_id, description, created_at) " ++
+        "VALUES (?, ?, ?, ?)", &.{ "a_x", "sess_b", "wrong session", "2026-01-01 00:00:01" });
 
     var turns = try fetchRecentActivities(alloc, &s.db, "sess_a", 3);
     defer {
@@ -1335,182 +1069,6 @@ test "fetchRecentActivities returns an empty list when the session has no activi
     defer turns.deinit(alloc);
 
     try testing.expectEqual(@as(usize, 0), turns.items.len);
-}
-
-test "enrichCompactionXml with empty user history and empty read files returns the original compacted_xml wrapped in <summary>" {
-    const alloc = testing.allocator;
-    const result = try enrichCompactionXml(
-        alloc,
-        "GOAL: ship X\nNEXT: test",
-        &.{},
-        &.{},
-        &.{},
-        &.{},
-        null, // no plan
-        "/tmp",
-    );
-    defer alloc.free(result);
-
-    try testing.expect(std.mem.indexOf(u8, result, "<compaction_context>") != null);
-    try testing.expect(std.mem.indexOf(u8, result, "<user_history>") != null);
-    try testing.expect(std.mem.indexOf(u8, result, "<read_files>") != null);
-    try testing.expect(std.mem.indexOf(u8, result, "<summary>") != null);
-    try testing.expect(std.mem.indexOf(u8, result, "GOAL: ship X") != null);
-    try testing.expect(std.mem.indexOf(u8, result, "<turn ") == null);
-    try testing.expect(std.mem.indexOf(u8, result, "<path ") == null);
-}
-
-test "enrichCompactionXml embeds user history and read files with the right content" {
-    const alloc = testing.allocator;
-    const user_turns = [_]UserTurn{
-        .{ .content = "fix the bug", .created_at = "2026-01-01 00:00:01" },
-        .{ .content = "now also write tests", .created_at = "2026-01-01 00:00:05" },
-    };
-    const read_files = [_]ReadFileTurn{
-        .{
-            .path = "/home/user/foo.zig",
-            .raw_content = "<path>/home/user/foo.zig</path>",
-            .created_at = "2026-01-01 00:00:02",
-        },
-    };
-    const result = try enrichCompactionXml(
-        alloc,
-        "GOAL: ship X",
-        &user_turns,
-        &read_files,
-        &.{},
-        &.{},
-        null, // no plan
-        "/home/user",
-    );
-    defer alloc.free(result);
-
-    try testing.expect(std.mem.indexOf(u8, result, "<turn created_at=\"2026-01-01 00:00:01\">fix the bug</turn>") != null);
-    try testing.expect(std.mem.indexOf(u8, result, "<turn created_at=\"2026-01-01 00:00:05\">now also write tests</turn>") != null);
-    try testing.expect(std.mem.indexOf(u8, result, "<path abs=\"/home/user/foo.zig\">/home/user/foo.zig</path>") != null);
-    try testing.expect(std.mem.indexOf(u8, result, "<summary>") != null);
-}
-
-test "enrichCompactionXml emits all 50 user turns when the cap is hit" {
-    const alloc = testing.allocator;
-    var turns: [50]UserTurn = undefined;
-    var owned_strings: [50][]u8 = undefined;
-    for (&turns, &owned_strings, 0..) |*t, *owned, i| {
-        owned.* = try std.fmt.allocPrint(alloc, "turn {d}", .{i});
-        t.* = .{
-            .content = owned.*,
-            .created_at = "2026-01-01 00:00:00",
-        };
-    }
-    defer for (owned_strings) |s| alloc.free(s);
-
-    const result = try enrichCompactionXml(
-        alloc,
-        "summary",
-        &turns,
-        &.{},
-        &.{},
-        &.{},
-        null, // no plan
-        "/tmp",
-    );
-    defer alloc.free(result);
-
-    for (turns, 0..) |_, i| {
-        const needle = try std.fmt.allocPrint(alloc, ">turn {d}</turn>", .{i});
-        defer alloc.free(needle);
-        try testing.expect(std.mem.indexOf(u8, result, needle) != null);
-    }
-}
-
-test "enrichCompactionXml deduplicates read_file on the same path" {
-    const alloc = testing.allocator;
-    const read_files = [_]ReadFileTurn{
-        .{ .path = "/home/user/foo.zig", .raw_content = "", .created_at = "t1" },
-        .{ .path = "/home/user/bar.zig", .raw_content = "", .created_at = "t2" },
-        .{ .path = "/home/user/foo.zig", .raw_content = "", .created_at = "t3" },
-        .{ .path = "/home/user/baz.zig", .raw_content = "", .created_at = "t4" },
-        .{ .path = "/home/user/bar.zig", .raw_content = "", .created_at = "t5" },
-    };
-    const result = try enrichCompactionXml(
-        alloc,
-        "summary",
-        &.{},
-        &read_files,
-        &.{},
-        &.{},
-        null, // no plan
-        "/home/user",
-    );
-    defer alloc.free(result);
-
-    try testing.expectEqual(@as(usize, 3), countSubstring(result, "<path "));
-    try testing.expect(std.mem.indexOf(u8, result, "<path abs=\"/home/user/foo.zig\">/home/user/foo.zig</path>") != null);
-    try testing.expect(std.mem.indexOf(u8, result, "<path abs=\"/home/user/bar.zig\">/home/user/bar.zig</path>") != null);
-    try testing.expect(std.mem.indexOf(u8, result, "<path abs=\"/home/user/baz.zig\">/home/user/baz.zig</path>") != null);
-    try testing.expect(std.mem.indexOf(u8, result, "truncated_by") == null);
-}
-
-test "enrichCompactionXml embeds recent_activities inside <compaction_context>" {
-    // Regression: when recent_activities are non-empty, the enrich helper
-    // MUST emit a `<recent_activities>` section alongside <user_history> +
-    // <read_files>, with one <activity> per row, each row's description
-    const alloc = testing.allocator;
-    const recent_activities = [_]RecentActivity{
-        .{ .description = "[2026-08-13 10:00] planning the migration", .created_at = "2026-08-13 10:00:00" },
-        .{ .description = "[2026-08-13 10:01] <bold>writing</bold> the test", .created_at = "2026-08-13 10:01:00" },
-    };
-    const result = try enrichCompactionXml(
-        alloc,
-        "GOAL: ship X",
-        &.{},
-        &.{},
-        &recent_activities,
-        &.{},
-        null, // no plan
-        "/tmp",
-    );
-    defer alloc.free(result);
-
-    // Section header is present, and the section lives INSIDE
-    // <compaction_context> (not at top level).
-    try testing.expect(std.mem.indexOf(u8, result, "<recent_activities") != null);
-    try testing.expect(std.mem.indexOf(u8, result, "</recent_activities>") != null);
-    // Activities live BETWEEN <recent_activities> and </recent_activities>.
-    const header_pos = std.mem.indexOf(u8, result, "<recent_activities").?;
-    // Both descriptions are embedded.
-    try testing.expect(std.mem.indexOfPos(u8, result, header_pos, "planning the migration") != null);
-    try testing.expect(std.mem.indexOfPos(u8, result, header_pos, "<bold>writing</bold> the test") == null); // XML-escaped
-    try testing.expect(std.mem.indexOfPos(u8, result, header_pos, "&lt;bold&gt;writing&lt;/bold&gt; the test") != null);
-    // Activities appear in chrono order (oldest first) — the same order
-    // they were passed in (caller is responsible for sorting, matching
-    // the existing user_history/read_files ordering rule).
-    const planning_pos = std.mem.indexOfPos(u8, result, header_pos, "planning the migration").?;
-    const writing_pos = std.mem.indexOfPos(u8, result, header_pos, "writing").?;
-    try testing.expect(planning_pos < writing_pos);
-    // The section is INSIDE <compaction_context>, not at top level.
-    const ctx_open = std.mem.indexOf(u8, result, "<compaction_context>").?;
-    try testing.expect(ctx_open < header_pos);
-}
-
-test "enrichCompactionXml omits <recent_activities> when the slice is empty" {
-    // Mirrors the existing "omit when empty" pattern for user_history
-    // and read_files sections: emitting an empty <recent_activities/>
-    // would add no information and pollute the envelope.
-    const alloc = testing.allocator;
-    const result = try enrichCompactionXml(
-        alloc,
-        "GOAL: ship X",
-        &.{},
-        &.{},
-        &.{},
-        &.{},
-        null, // no plan
-        "/tmp",
-    );
-    defer alloc.free(result);
-
-    try testing.expect(std.mem.indexOf(u8, result, "<recent_activities") == null);
 }
 
 // ─── session_skills tests ───────────────────────────────────────────────────
@@ -1594,175 +1152,6 @@ test "fetchSessionSkills returns empty slice when session_id is empty" {
         alloc.free(skills);
     }
     try testing.expectEqual(@as(usize, 0), skills.len);
-}
-
-test "enrichCompactionXml embeds session_skills with name, loaded_at, and CDATA-wrapped content" {
-    const alloc = testing.allocator;
-    const skills = [_]llm_history.SkillInfo{
-        .{
-            .skill_name = try alloc.dupe(u8, "code-review"),
-            .content = try alloc.dupe(u8, "always check the test before merging"),
-            .loaded_at = 1700000000,
-        },
-        .{
-            .skill_name = try alloc.dupe(u8, "no-yolo"),
-            .content = try alloc.dupe(u8, "never skip writing tests"),
-            .loaded_at = null,
-        },
-    };
-    defer for (skills) |s2| s2.deinit(alloc);
-
-    const result = try enrichCompactionXml(
-        alloc,
-        "summary",
-        &.{},
-        &.{},
-        &.{},
-        &skills,
-        null, // no plan
-        "/tmp",
-    );
-    defer alloc.free(result);
-
-    try testing.expect(std.mem.indexOf(u8, result, "<session_skills>") != null);
-    try testing.expect(std.mem.indexOf(u8, result, "<skill name=\"code-review\" loaded_at=\"1700000000\">") != null);
-    try testing.expect(std.mem.indexOf(u8, result, "<content><![CDATA[\nalways check the test before merging\n      ]]></content>") != null);
-    // Skill without loaded_at omits the attribute entirely.
-    try testing.expect(std.mem.indexOf(u8, result, "<skill name=\"no-yolo\">") != null);
-    try testing.expect(std.mem.indexOf(u8, result, "<content><![CDATA[\nnever skip writing tests\n      ]]></content>") != null);
-    try testing.expect(std.mem.indexOf(u8, result, "</session_skills>") != null);
-}
-
-test "enrichCompactionXml escapes XML special chars in skill name" {
-    const alloc = testing.allocator;
-    const skills = [_]llm_history.SkillInfo{
-        .{
-            .skill_name = try alloc.dupe(u8, "fix<this> & \"that\""),
-            .content = try alloc.dupe(u8, "body"),
-            .loaded_at = null,
-        },
-    };
-    defer for (skills) |s2| s2.deinit(alloc);
-
-    const result = try enrichCompactionXml(
-        alloc,
-        "summary",
-        &.{},
-        &.{},
-        &.{},
-        &skills,
-        null, // no plan
-        "/tmp",
-    );
-    defer alloc.free(result);
-
-    try testing.expect(std.mem.indexOf(u8, result, "<skill name=\"fix&lt;this&gt; &amp; &quot;that&quot;\">") != null);
-}
-
-test "enrichCompactionXml splits skill content CDATA on ']]>' boundary" {
-    const alloc = testing.allocator;
-    const skills = [_]llm_history.SkillInfo{
-        .{
-            .skill_name = try alloc.dupe(u8, "weird-content"),
-            .content = try alloc.dupe(u8, "before ]]> middle ]]> after"),
-            .loaded_at = null,
-        },
-    };
-    defer for (skills) |s2| s2.deinit(alloc);
-
-    const result = try enrichCompactionXml(
-        alloc,
-        "summary",
-        &.{},
-        &.{},
-        &.{},
-        &skills,
-        null, // no plan
-        "/tmp",
-    );
-    defer alloc.free(result);
-
-    // The two ]]> sequences must be split into adjacent CDATA sections
-    // so the envelope is still well-formed XML, with the literal '>'
-    // reappearing between them.
-    try testing.expect(std.mem.indexOf(u8, result, "before ]]><![CDATA[> middle ]]><![CDATA[> after") != null);
-}
-
-test "enrichCompactionXml adds truncated_by when session_skills exceeds the 50-cap" {
-    const alloc = testing.allocator;
-    var skills: [51]llm_history.SkillInfo = undefined;
-    var owned_names: [51][]u8 = undefined;
-    var owned_contents: [51][]u8 = undefined;
-    for (&skills, &owned_names, &owned_contents, 0..) |*s2, *owned_name, *owned_content, i| {
-        owned_name.* = try std.fmt.allocPrint(alloc, "skill-{d}", .{i});
-        owned_content.* = try alloc.dupe(u8, "body");
-        s2.* = .{
-            .skill_name = owned_name.*,
-            .content = owned_content.*,
-            .loaded_at = null,
-        };
-    }
-    // Only free the underlying slices (owned_names/owned_contents) — the
-    // SkillInfo structs themselves are stack-allocated and SkillInfo.deinit
-    // would free the same memory again. skills[i].skill_name and
-    defer for (owned_names) |n| alloc.free(n);
-    defer for (owned_contents) |c| alloc.free(c);
-
-    const result = try enrichCompactionXml(
-        alloc,
-        "summary",
-        &.{},
-        &.{},
-        &.{},
-        &skills,
-        null, // no plan
-        "/tmp",
-    );
-    defer alloc.free(result);
-
-    try testing.expect(std.mem.indexOf(u8, result, "<session_skills truncated_by=\"1\">") != null);
-    // Only the first 50 are embedded.
-    try testing.expect(std.mem.indexOf(u8, result, "<skill name=\"skill-0\">") != null);
-    try testing.expect(std.mem.indexOf(u8, result, "<skill name=\"skill-49\">") != null);
-    try testing.expect(std.mem.indexOf(u8, result, "<skill name=\"skill-50\">") == null);
-}
-
-test "enrichCompactionXml positions session_skills between read_files and summary" {
-    const alloc = testing.allocator;
-    const read_files = [_]ReadFileTurn{
-        .{ .path = "/home/user/foo.zig", .raw_content = "", .created_at = "t1" },
-    };
-    const skills = [_]llm_history.SkillInfo{
-        .{
-            .skill_name = try alloc.dupe(u8, "guide"),
-            .content = try alloc.dupe(u8, "how to behave"),
-            .loaded_at = null,
-        },
-    };
-    defer for (skills) |s2| s2.deinit(alloc);
-
-    const result = try enrichCompactionXml(
-        alloc,
-        "summary",
-        &.{},
-        &read_files,
-        &.{},
-        &skills,
-        null, // no plan
-        "/tmp",
-    );
-    defer alloc.free(result);
-
-    // Order: <compaction_context> <user_history> </user_history>
-    // <read_files> </read_files> <session_skills> </session_skills>
-    // <summary> </summary> </compaction_context>
-    const idx_user_history = std.mem.indexOf(u8, result, "<user_history>").?;
-    const idx_read_files = std.mem.indexOf(u8, result, "<read_files>").?;
-    const idx_session_skills = std.mem.indexOf(u8, result, "<session_skills>").?;
-    const idx_summary = std.mem.indexOf(u8, result, "<summary>").?;
-    try testing.expect(idx_user_history < idx_read_files);
-    try testing.expect(idx_read_files < idx_session_skills);
-    try testing.expect(idx_session_skills < idx_summary);
 }
 
 fn countSubstring(hay: []const u8, needle: []const u8) usize {
@@ -1985,7 +1374,6 @@ test "buildCompactMessagePrompt: empty-messages list (only system + 1 user) excl
     try testing.expect(std.mem.indexOf(u8, s, "[user]: ONLY_USER") == null);
 }
 
-
 // ─── Inline tests (formerly compaction_config_threshold_test.zig) ───────
 // Per-profile compaction threshold integration test. Inlined here.
 
@@ -2199,110 +1587,6 @@ test "compactionThresholdPercent: top-level defaults (cfg) cascade before built-
 // Inlined from workflow_compaction_envelope_test.zig (Migration 076 tests)
 // ════════════════════════════════════════════════════════════════════════════
 
-test "enrichCompactionXml embeds <plan> when session_plan has a plan" {
-    var s = try setupDb();
-    defer teardownDb(&s);
-    const alloc = testing.allocator;
-
-    const session_id = "sess_plan_present";
-    {
-        const ts = try session_plan.savePlan(alloc, &s.db, .{
-            .session_id = session_id,
-            .content = "# My Plan\n\n- [ ] step 1\n- [x] step 2 done\n",
-        });
-        defer alloc.free(ts);
-    }
-
-    const plan_row = (try session_plan.getPlanOpt(alloc, &s.db, session_id)).?;
-    defer plan_row.deinit(alloc);
-
-    const result = try enrichCompactionXml(
-        alloc,
-        "summary text",
-        &.{},
-        &.{},
-        &.{},
-        &.{},
-        plan_row,
-        "/tmp",
-    );
-    defer alloc.free(result);
-
-    // The <plan> section header + close tag are both present.
-    try testing.expect(std.mem.indexOf(u8, result, "<plan ") != null);
-    try testing.expect(std.mem.indexOf(u8, result, "</plan>") != null);
-    // updated_at attribute is embedded (the row we just inserted has one).
-    try testing.expect(std.mem.indexOf(u8, result, "updated_at=\"") != null);
-    // The plan content is wrapped in CDATA so raw `<`, `>`, `&` inside
-    // the plan markdown never breaks the envelope.
-    try testing.expect(std.mem.indexOf(u8, result, "<content><![CDATA[") != null);
-    try testing.expect(std.mem.indexOf(u8, result, "]]></content>") != null);
-    // The actual plan body is preserved verbatim.
-    try testing.expect(std.mem.indexOf(u8, result, "# My Plan") != null);
-    try testing.expect(std.mem.indexOf(u8, result, "- [ ] step 1") != null);
-    try testing.expect(std.mem.indexOf(u8, result, "- [x] step 2 done") != null);
-}
-
-test "enrichCompactionXml omits <plan> when session_plan is absent" {
-    // No row inserted for this session_id — getPlanOpt would return null.
-    var s = try setupDb();
-    defer teardownDb(&s);
-    const alloc = testing.allocator;
-
-    const result = try enrichCompactionXml(
-        alloc,
-        "summary text",
-        &.{},
-        &.{},
-        &.{},
-        &.{},
-        null, // no plan row at all
-        "/tmp",
-    );
-    defer alloc.free(result);
-
-    // No <plan> section is emitted when plan is null — mirrors the
-    // "omit when empty" convention used for <recent_activities>.
-    try testing.expect(std.mem.indexOf(u8, result, "<plan") == null);
-}
-
-test "enrichCompactionXml CDATA-splits plan content containing literal ]]>" {
-    // Regression: XML CDATA sections cannot contain the literal sequence
-    // `]]>`.
-    var s = try setupDb();
-    defer teardownDb(&s);
-    const alloc = testing.allocator;
-
-    const session_id = "sess_plan_cdata";
-    {
-        const ts = try session_plan.savePlan(alloc, &s.db, .{
-            .session_id = session_id,
-            .content = "before ]]> middle ]]> after",
-        });
-        defer alloc.free(ts);
-    }
-
-    const plan_row = (try session_plan.getPlanOpt(alloc, &s.db, session_id)).?;
-    defer plan_row.deinit(alloc);
-
-    const result = try enrichCompactionXml(
-        alloc,
-        "summary text",
-        &.{},
-        &.{},
-        &.{},
-        &.{},
-        plan_row,
-        "/tmp",
-    );
-    defer alloc.free(result);
-
-    // The two ]]> sequences must be split into adjacent CDATA sections
-    // so the envelope is still well-formed XML, with the literal '>'
-    // reappearing between them.
-    try testing.expect(std.mem.indexOf(u8, result, "before ]]><![CDATA[> middle ]]><![CDATA[> after") != null);
-}
-
 // ─── Part 2 tests (ex-workflow_commpact_message.zig, merged 2026-09-10) ──────
 
 // ─── Mock infrastructure ────────────────────────────────────────────────────
@@ -2330,8 +1614,8 @@ const MockState = struct {
     // ─── compactMessagesInMemory mock ──────────────────────────────────
     compact_messages_in_memory_calls: u32 = 0,
     /// Owned copy of the compacted XML the mock received.
-    last_compacted_xml_owned: []u8 = "",
-    last_compacted_xml: []const u8 = "", // alias — points into last_compacted_xml_owned
+    last_envelope_owned: []u8 = "",
+    last_envelope: []const u8 = "", // alias — points into last_envelope_owned
     last_compact_session_id: []const u8 = "",
     last_compact_model: []const u8 = "",
     /// Event bus the most-recent `compactMessagesInMemory` call was invoked
@@ -2350,13 +1634,12 @@ fn resetMockState() void {
     mock_state = .{};
 }
 
-/// Free the heap-owned copy of the last compacted XML and reset the pointer
-/// fields.
-fn releaseLastCompactedXml() void {
-    if (mock_state.last_compacted_xml_owned.len > 0) {
-        std.testing.allocator.free(mock_state.last_compacted_xml_owned);
-        mock_state.last_compacted_xml_owned = "";
-        mock_state.last_compacted_xml = "";
+/// Free the heap-owned copy of the last envelope and reset the pointer fields.
+fn releaseLastEnvelope() void {
+    if (mock_state.last_envelope_owned.len > 0) {
+        std.testing.allocator.free(mock_state.last_envelope_owned);
+        mock_state.last_envelope_owned = "";
+        mock_state.last_envelope = "";
     }
 }
 
@@ -2377,13 +1660,15 @@ fn mockCallCompactAgent(obj: CallCompactAgentInput) ?[]const u8 {
     mock_state.last_agent_base_url = obj.base_url;
     mock_state.last_agent_url_style = obj.url_style;
     mock_state.last_agent_messages_len = obj.messages.items.len;
-    return mock_state.next_compact_xml;
+    const canned = mock_state.next_compact_xml orelse return null;
+    // Production returns a heap copy the caller frees, so the fake must too.
+    return obj.allocator.dupe(u8, canned) catch null;
 }
 
 fn mockCompactMessagesInMemory(
     allocator: std.mem.Allocator,
     messages: std.ArrayList(agent.AgentMessage),
-    compacted_xml: []const u8,
+    envelope: []const u8,
     session_id: []const u8,
     model: []const u8,
     cwd: []const u8,
@@ -2401,9 +1686,9 @@ fn mockCompactMessagesInMemory(
     // null vs non-null wiring without spinning up the full singleton.
     mock_state.last_event_bus = event_bus;
     // Dup the XML before storing — caller frees the original on return.
-    // (See `last_compacted_xml_owned` doc-comment and `releaseLastCompactedXml`.)
-    mock_state.last_compacted_xml_owned = try allocator.dupe(u8, compacted_xml);
-    mock_state.last_compacted_xml = mock_state.last_compacted_xml_owned;
+    // (See `last_envelope_owned` and `releaseLastEnvelope`.)
+    mock_state.last_envelope_owned = try allocator.dupe(u8, envelope);
+    mock_state.last_envelope = mock_state.last_envelope_owned;
     mock_state.last_compact_session_id = session_id;
     mock_state.last_compact_model = model;
     if (mock_state.compact_skip) return error.Skip;
@@ -2451,7 +1736,6 @@ fn buildMessages(allocator: std.mem.Allocator) !std.ArrayList(agent.AgentMessage
     return list;
 }
 
-
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
 test "shouldCompact dep is called with the right context (force, tokens, model)" {
@@ -2491,7 +1775,90 @@ test "shouldCompact dep is called with the right context (force, tokens, model)"
     try testing.expectEqualStrings("gpt-4o-mini", mock_state.last_ctx_model);
 }
 
-test "shouldCompact returning false short-circuits — no other deps called" {
+test "an envelope with too few messages behind it is not compacted again" {
+    resetMockState();
+    const alloc = testing.allocator;
+    const cfg = buildTestConfig(alloc);
+    var messages: std.ArrayList(agent.AgentMessage) = .empty;
+    defer freeMessages(alloc, &messages);
+    var lg = Logger.init(alloc, std.testing.io, .{});
+    defer lg.deinit();
+
+    try messages.append(alloc, .{ .role = .system, .content = try alloc.dupe(u8, "sys") });
+    try messages.append(alloc, .{ .role = .user, .content = try alloc.dupe(u8, "{\"compact_messages\":{}}") });
+    try messages.append(alloc, .{ .role = .assistant, .content = try alloc.dupe(u8, "carrying on") });
+
+    mock_state.should_compact_result = true;
+
+    const result = try maybeCompactMessagesNew(
+        mockCompactDeps,
+        alloc,
+        999_999,
+        "test-model",
+        false,
+        &messages,
+        "sk-test",
+        "https://test.example",
+        "openai",
+        "/tmp",
+        "sess_guard",
+        undefined,
+        std.testing.io,
+        &lg,
+        null,
+        &cfg,
+        null,
+    );
+
+    try testing.expectEqual(false, result);
+    try testing.expectEqual(@as(u32, 0), mock_state.compact_messages_in_memory_calls);
+}
+
+test "messages accumulated after a handoff make the next one worth running" {
+    resetMockState();
+    const alloc = testing.allocator;
+    const cfg = buildTestConfig(alloc);
+    var messages: std.ArrayList(agent.AgentMessage) = .empty;
+    defer freeMessages(alloc, &messages);
+    var lg = Logger.init(alloc, std.testing.io, .{});
+    defer lg.deinit();
+    var s = try setupDbForEnrichmentTest();
+    defer teardownDbForEnrichmentTest(&s);
+
+    try messages.append(alloc, .{ .role = .system, .content = try alloc.dupe(u8, "sys") });
+    try messages.append(alloc, .{ .role = .user, .content = try alloc.dupe(u8, "{\"compact_messages\":{}}") });
+    for (0..MIN_MESSAGES_TO_COMPACT) |_| {
+        try messages.append(alloc, .{ .role = .user, .content = try alloc.dupe(u8, "more work") });
+    }
+
+    mock_state.should_compact_result = true;
+    defer releaseLastEnvelope();
+
+    const result = try maybeCompactMessagesNew(
+        mockCompactDeps,
+        alloc,
+        200_000,
+        "test-model",
+        false,
+        &messages,
+        "sk-test",
+        "https://test.example",
+        "openai",
+        "/tmp",
+        "sess_again",
+        &s.db,
+        std.testing.io,
+        &lg,
+        null,
+        &cfg,
+        null,
+    );
+
+    try testing.expect(result);
+    try testing.expectEqual(@as(u32, 1), mock_state.compact_messages_in_memory_calls);
+}
+
+test "shouldCompact declining means no work at all" {
     resetMockState();
     const alloc = testing.allocator;
     const cfg = buildTestConfig(alloc);
@@ -2517,9 +1884,9 @@ test "shouldCompact returning false short-circuits — no other deps called" {
         undefined,
         std.testing.io,
         &lg,
-        null, // event_bus — test has no SSE subscriber
+        null,
         &cfg,
-        null, // profile — no override in these tests
+        null,
     );
 
     try testing.expectEqual(false, result);
@@ -2528,7 +1895,7 @@ test "shouldCompact returning false short-circuits — no other deps called" {
     try testing.expectEqual(@as(u32, 0), mock_state.compact_messages_in_memory_calls);
 }
 
-test "shouldCompact returning true routes through callCompactAgent" {
+test "the compactor is never called while compaction_llm_summary is off" {
     resetMockState();
     const alloc = testing.allocator;
     const cfg = buildTestConfig(alloc);
@@ -2536,78 +1903,122 @@ test "shouldCompact returning true routes through callCompactAgent" {
     defer freeMessages(alloc, &messages);
     var lg = Logger.init(alloc, std.testing.io, .{});
     defer lg.deinit();
+    var s = try setupDbForEnrichmentTest();
+    defer teardownDbForEnrichmentTest(&s);
 
     mock_state.should_compact_result = true;
-    mock_state.next_compact_xml = null; // callCompactAgent returns null → function returns false
+    mock_state.next_compact_xml = "GOAL: unused";
+    defer releaseLastEnvelope();
 
     const result = try maybeCompactMessagesNew(
         mockCompactDeps,
         alloc,
-        100,
+        200_000,
         "test-model",
-        true, // force — shouldCompact mock just receives it; mock decides
-        &messages,
-        "sk-bespoke",
-        "https://bespoke.example",
-        "openai",
-        "/tmp",
-        "sess_mock",
-        undefined, // db — not reached when callCompactAgent returns null
-        std.testing.io,
-        &lg,
-        null, // event_bus — test has no SSE subscriber
-        &cfg,
-        null, // profile — no override in these tests
-    );
-
-    try testing.expectEqual(false, result);
-    try testing.expectEqual(@as(u32, 1), mock_state.should_compact_calls);
-    try testing.expectEqual(@as(u32, 1), mock_state.call_compact_agent_calls);
-    // compact_messages_in_memory was NOT called (callCompactAgent returned null)
-    try testing.expectEqual(@as(u32, 0), mock_state.compact_messages_in_memory_calls);
-    // callCompactAgent received the right fields
-    try testing.expectEqualStrings("test-model", mock_state.last_agent_model);
-    try testing.expectEqualStrings("sk-bespoke", mock_state.last_agent_api_key);
-    try testing.expectEqualStrings("https://bespoke.example", mock_state.last_agent_base_url);
-    try testing.expectEqualStrings("openai", mock_state.last_agent_url_style);
-    try testing.expectEqual(@as(usize, 6), mock_state.last_agent_messages_len);
-}
-
-test "callCompactAgent returning null short-circuits — compact_messages_in_memory not called" {
-    resetMockState();
-    const alloc = testing.allocator;
-    const cfg = buildTestConfig(alloc);
-    var messages = try buildMessages(alloc);
-    defer freeMessages(alloc, &messages);
-    var lg = Logger.init(alloc, std.testing.io, .{});
-    defer lg.deinit();
-
-    mock_state.should_compact_result = true;
-    mock_state.next_compact_xml = null;
-
-    const result = try maybeCompactMessagesNew(
-        mockCompactDeps,
-        alloc,
-        100,
-        "test-model",
-        false,
+        true,
         &messages,
         "sk-test",
         "https://test.example",
         "openai",
         "/tmp",
-        "sess_mock",
-        undefined,
+        "sess_no_summary",
+        &s.db,
         std.testing.io,
         &lg,
-        null, // event_bus — test has no SSE subscriber
+        null,
         &cfg,
-        null, // profile — no override in these tests
+        null,
     );
 
-    try testing.expectEqual(false, result);
+    try testing.expect(result);
+    try testing.expectEqual(@as(u32, 0), mock_state.call_compact_agent_calls);
+    try testing.expectEqual(@as(u32, 1), mock_state.compact_messages_in_memory_calls);
+}
+
+test "compaction_llm_summary on routes through the compactor and carries its output" {
+    resetMockState();
+    const alloc = testing.allocator;
+    var cfg = buildTestConfig(alloc);
+    cfg.compaction_llm_summary = true;
+    var messages = try buildMessages(alloc);
+    defer freeMessages(alloc, &messages);
+    var lg = Logger.init(alloc, std.testing.io, .{});
+    defer lg.deinit();
+    var s = try setupDbForEnrichmentTest();
+    defer teardownDbForEnrichmentTest(&s);
+
+    mock_state.should_compact_result = true;
+    mock_state.next_compact_xml = "NEXT ACTION: merge";
+    defer releaseLastEnvelope();
+
+    const result = try maybeCompactMessagesNew(
+        mockCompactDeps,
+        alloc,
+        200_000,
+        "test-model",
+        true,
+        &messages,
+        "sk-bespoke",
+        "https://bespoke.example",
+        "openai",
+        "/tmp",
+        "sess_summary",
+        &s.db,
+        std.testing.io,
+        &lg,
+        null,
+        &cfg,
+        null,
+    );
+
+    try testing.expect(result);
     try testing.expectEqual(@as(u32, 1), mock_state.call_compact_agent_calls);
-    try testing.expectEqual(@as(u32, 0), mock_state.compact_messages_in_memory_calls);
+    try testing.expectEqualStrings("sk-bespoke", mock_state.last_agent_api_key);
+    try testing.expectEqualStrings("https://bespoke.example", mock_state.last_agent_base_url);
+    try testing.expectEqualStrings("openai", mock_state.last_agent_url_style);
+    try testing.expect(std.mem.indexOf(u8, mock_state.last_envelope, "NEXT ACTION: merge") != null);
+}
+
+test "a failed summarization still compacts, with a null summary" {
+    resetMockState();
+    const alloc = testing.allocator;
+    var cfg = buildTestConfig(alloc);
+    cfg.compaction_llm_summary = true;
+    var messages = try buildMessages(alloc);
+    defer freeMessages(alloc, &messages);
+    var lg = Logger.init(alloc, std.testing.io, .{});
+    defer lg.deinit();
+    var s = try setupDbForEnrichmentTest();
+    defer teardownDbForEnrichmentTest(&s);
+
+    mock_state.should_compact_result = true;
+    mock_state.next_compact_xml = null;
+    defer releaseLastEnvelope();
+
+    const result = try maybeCompactMessagesNew(
+        mockCompactDeps,
+        alloc,
+        200_000,
+        "test-model",
+        true,
+        &messages,
+        "sk-test",
+        "https://test.example",
+        "openai",
+        "/tmp",
+        "sess_summary_failed",
+        &s.db,
+        std.testing.io,
+        &lg,
+        null,
+        &cfg,
+        null,
+    );
+
+    try testing.expect(result);
+    try testing.expectEqual(@as(u32, 1), mock_state.call_compact_agent_calls);
+    try testing.expectEqual(@as(u32, 1), mock_state.compact_messages_in_memory_calls);
+    try testing.expect(std.mem.indexOf(u8, mock_state.last_envelope, "\"summary\":null") != null);
 }
 
 test "full happy path: all three deps called, returns true" {
@@ -2623,7 +2034,7 @@ test "full happy path: all three deps called, returns true" {
 
     mock_state.should_compact_result = true;
     mock_state.next_compact_xml = "GOAL: ship it\nNEXT ACTION: merge";
-    defer releaseLastCompactedXml();
+    defer releaseLastEnvelope();
 
     const result = try maybeCompactMessagesNew(
         mockCompactDeps,
@@ -2647,11 +2058,8 @@ test "full happy path: all three deps called, returns true" {
 
     try testing.expectEqual(true, result);
     try testing.expectEqual(@as(u32, 1), mock_state.should_compact_calls);
-    try testing.expectEqual(@as(u32, 1), mock_state.call_compact_agent_calls);
     try testing.expectEqual(@as(u32, 1), mock_state.compact_messages_in_memory_calls);
-    // The bare compacted_xml is now wrapped in <compaction_context> by the
-    // new enrichment step; the bare content survives inside <summary>.
-    try testing.expect(std.mem.indexOf(u8, mock_state.last_compacted_xml, "GOAL: ship it\nNEXT ACTION: merge") != null);
+    try testing.expect(std.mem.startsWith(u8, mock_state.last_envelope, envelope_mod.ENVELOPE_PREFIX));
     try testing.expectEqualStrings("sess_bespoke", mock_state.last_compact_session_id);
     try testing.expectEqualStrings("test-model", mock_state.last_compact_model);
 }
@@ -2670,7 +2078,7 @@ test "compact_messages_in_memory error propagates to caller" {
     mock_state.should_compact_result = true;
     mock_state.next_compact_xml = "valid xml";
     mock_state.compact_skip = true; // mock returns error.Skip
-    defer releaseLastCompactedXml();
+    defer releaseLastEnvelope();
 
     const result = maybeCompactMessagesNew(
         mockCompactDeps,
@@ -2814,7 +2222,7 @@ test "happy path embeds user history and read_file paths into the compaction XML
 
     mock_state.should_compact_result = true;
     mock_state.next_compact_xml = "GOAL: ship X";
-    defer releaseLastCompactedXml();
+    defer releaseLastEnvelope();
 
     const result = try maybeCompactMessagesNew(
         mockCompactDeps,
@@ -2838,12 +2246,12 @@ test "happy path embeds user history and read_file paths into the compaction XML
 
     try testing.expect(result);
     try testing.expectEqual(@as(u32, 1), mock_state.compact_messages_in_memory_calls);
-    try testing.expect(std.mem.indexOf(u8, mock_state.last_compacted_xml, "<user_history>") != null);
-    try testing.expect(std.mem.indexOf(u8, mock_state.last_compacted_xml, "<read_files>") != null);
-    try testing.expect(std.mem.indexOf(u8, mock_state.last_compacted_xml, "first user message") != null);
-    try testing.expect(std.mem.indexOf(u8, mock_state.last_compacted_xml, "second user message") != null);
-    try testing.expect(std.mem.indexOf(u8, mock_state.last_compacted_xml, "/home/user/foo.zig") != null);
-    try testing.expect(std.mem.indexOf(u8, mock_state.last_compacted_xml, "GOAL: ship X") != null);
+    try testing.expect(std.mem.indexOf(u8, mock_state.last_envelope, "\"user_history\"") != null);
+    try testing.expect(std.mem.indexOf(u8, mock_state.last_envelope, "\"read_files\"") != null);
+    try testing.expect(std.mem.indexOf(u8, mock_state.last_envelope, "first user message") != null);
+    try testing.expect(std.mem.indexOf(u8, mock_state.last_envelope, "second user message") != null);
+    try testing.expect(std.mem.indexOf(u8, mock_state.last_envelope, "/home/user/foo.zig") != null);
+    try testing.expect(std.mem.indexOf(u8, mock_state.last_envelope, "\"summary\":null") != null);
 }
 
 test "compaction still proceeds when fetchUserChatHistory returns empty (no user rows)" {
@@ -2864,7 +2272,7 @@ test "compaction still proceeds when fetchUserChatHistory returns empty (no user
 
     mock_state.should_compact_result = true;
     mock_state.next_compact_xml = "GOAL: ship X";
-    defer releaseLastCompactedXml();
+    defer releaseLastEnvelope();
 
     const result = try maybeCompactMessagesNew(
         mockCompactDeps,
@@ -2888,9 +2296,8 @@ test "compaction still proceeds when fetchUserChatHistory returns empty (no user
 
     try testing.expect(result);
     try testing.expectEqual(@as(u32, 1), mock_state.compact_messages_in_memory_calls);
-    // The enrich helper wraps the bare compacted_xml in <compaction_context>.
-    try testing.expect(std.mem.indexOf(u8, mock_state.last_compacted_xml, "<compaction_context>") != null);
-    try testing.expect(std.mem.indexOf(u8, mock_state.last_compacted_xml, "GOAL: ship X") != null);
+    try testing.expect(std.mem.indexOf(u8, mock_state.last_envelope, "\"user_history\":[]") != null);
+    try testing.expect(std.mem.indexOf(u8, mock_state.last_envelope, "\"summary\":null") != null);
 }
 
 // ─── Migration 073 — recent_activities integration tests
@@ -2919,7 +2326,7 @@ test "happy path embeds prior session_activity rows in <recent_activities>" {
 
     mock_state.should_compact_result = true;
     mock_state.next_compact_xml = "GOAL: ship X";
-    defer releaseLastCompactedXml();
+    defer releaseLastEnvelope();
 
     const result = try maybeCompactMessagesNew(
         mockCompactDeps,
@@ -2943,16 +2350,14 @@ test "happy path embeds prior session_activity rows in <recent_activities>" {
 
     try testing.expect(result);
     try testing.expectEqual(@as(u32, 1), mock_state.compact_messages_in_memory_calls);
-    // The <recent_activities> section is embedded inside
-    // <compaction_context> by enrichCompactionXml.
-    try testing.expect(std.mem.indexOf(u8, mock_state.last_compacted_xml, "<recent_activities") != null);
-    try testing.expect(std.mem.indexOf(u8, mock_state.last_compacted_xml, "planning the migration") != null);
-    try testing.expect(std.mem.indexOf(u8, mock_state.last_compacted_xml, "writing the test") != null);
-    try testing.expect(std.mem.indexOf(u8, mock_state.last_compacted_xml, "wiring it in") != null);
+    try testing.expect(std.mem.indexOf(u8, mock_state.last_envelope, "\"recent_activities\"") != null);
+    try testing.expect(std.mem.indexOf(u8, mock_state.last_envelope, "planning the migration") != null);
+    try testing.expect(std.mem.indexOf(u8, mock_state.last_envelope, "writing the test") != null);
+    try testing.expect(std.mem.indexOf(u8, mock_state.last_envelope, "wiring it in") != null);
     // The activities must appear in chronological (oldest first) order.
-    const planning_pos = std.mem.indexOf(u8, mock_state.last_compacted_xml, "planning the migration").?;
-    const writing_pos = std.mem.indexOf(u8, mock_state.last_compacted_xml, "writing the test").?;
-    const wiring_pos = std.mem.indexOf(u8, mock_state.last_compacted_xml, "wiring it in").?;
+    const planning_pos = std.mem.indexOf(u8, mock_state.last_envelope, "planning the migration").?;
+    const writing_pos = std.mem.indexOf(u8, mock_state.last_envelope, "writing the test").?;
+    const wiring_pos = std.mem.indexOf(u8, mock_state.last_envelope, "wiring it in").?;
     try testing.expect(planning_pos < writing_pos);
     try testing.expect(writing_pos < wiring_pos);
 
@@ -2990,7 +2395,7 @@ test "omits <recent_activities> when session has no prior activity" {
 
     mock_state.should_compact_result = true;
     mock_state.next_compact_xml = "GOAL: ship X";
-    defer releaseLastCompactedXml();
+    defer releaseLastEnvelope();
 
     const result = try maybeCompactMessagesNew(
         mockCompactDeps,
@@ -3014,8 +2419,8 @@ test "omits <recent_activities> when session has no prior activity" {
 
     try testing.expect(result);
     try testing.expectEqual(@as(u32, 1), mock_state.compact_messages_in_memory_calls);
-    // <recent_activities> should be omitted entirely (no empty tag).
-    try testing.expect(std.mem.indexOf(u8, mock_state.last_compacted_xml, "<recent_activities") == null);
+    // With no recorded activity the array is empty; the key is always present.
+    try testing.expect(std.mem.indexOf(u8, mock_state.last_envelope, "\"recent_activities\":[]") != null);
 }
 
 // ─── shouldCompactDefault unit tests (Anthropic + OpenAI styles) ───────────
@@ -3422,8 +2827,8 @@ test "PR regression: callCompactAgent mock asserts url_style propagation" {
 }
 
 // ─── Inlined from workflow_compaction_envelope_test.zig
-// ─────────────────────── Compaction envelope tests: cover
-// `compactMessageInMemoryNew` and `enrichCompactionXml` integration paths
+// ─────────────────────── Compaction persistence tests: cover
+// `compactMessageInMemoryNew` and its marking contract
 
 fn envelopeSetupDb() !struct {
     db: sqlite.SqliteBackend,
@@ -3486,35 +2891,28 @@ fn envelopeBuildMessages(allocator: std.mem.Allocator) !std.ArrayList(agent.Agen
     return list;
 }
 
-test "compactMessageInMemoryNew: envelope contains metadata header" {
+test "compactMessageInMemoryNew keeps the system prompt and hands the envelope on unchanged" {
     var s = try envelopeSetupDb();
     defer envelopeTeardownDb(&s);
     const alloc = testing.allocator;
 
     const messages = try envelopeBuildMessages(alloc);
-    // No defer messages.deinit — compactMessageInMemoryNew takes ownership
-    // (T → !T): its body deinits messages.items + the ArrayList, leaving our
-    // test scope's copy stale. Double-deinit would crash.
 
     var lg = Logger.init(alloc, std.testing.io, .{});
     defer lg.deinit();
 
-    const compacted_xml =
-        \\GOAL: fix login
-        \\NEXT ACTION: ship it
-    ;
-
+    const envelope = "{\"compact_messages\":{\"format_version\":2}}";
     const new_messages = try compactMessageInMemoryNew(
         alloc,
         messages,
-        compacted_xml,
+        envelope,
         "sess_123",
         "gpt-4o",
         "/tmp",
         &s.db,
         s.threaded.io(),
         &lg,
-        null, // event_bus — no SSE subscriber in tests
+        null,
     );
     defer {
         for (new_messages.items) |*m| m.deinit(alloc);
@@ -3522,42 +2920,43 @@ test "compactMessageInMemoryNew: envelope contains metadata header" {
         nm_owned.deinit(alloc);
     }
 
-    try testing.expectEqual(@as(usize, 2), new_messages.items.len); // [system, compact_summary]
-    const summary = new_messages.items[1].content.?;
-    try testing.expect(std.mem.indexOf(u8, summary, "<compact_messages>") != null);
-    try testing.expect(std.mem.indexOf(u8, summary, "</compact_messages>") != null);
-    try testing.expect(std.mem.indexOf(u8, summary, "<session_id>sess_123</session_id>") != null);
-    try testing.expect(std.mem.indexOf(u8, summary, "<model>gpt-4o</model>") != null);
-    try testing.expect(std.mem.indexOf(u8, summary, "<original_count>6</original_count>") != null);
-    // Compactor's summary text is preserved inside <summary>...</summary>
-    try testing.expect(std.mem.indexOf(u8, summary, "<summary>") != null);
-    try testing.expect(std.mem.indexOf(u8, summary, "GOAL: fix login") != null);
-    try testing.expect(std.mem.indexOf(u8, summary, "NEXT ACTION: ship it") != null);
-    // The <compacted_at> tag must exist and be non-empty
-    try testing.expect(std.mem.indexOf(u8, summary, "<compacted_at>") != null);
-    try testing.expect(std.mem.indexOf(u8, summary, "</compacted_at>") != null);
-    const ca_tag = std.mem.indexOf(u8, summary, "<compacted_at>").?;
-    const ca_close = std.mem.indexOf(u8, summary, "</compacted_at>").?;
-    try testing.expect(ca_close > ca_tag + "<compacted_at>".len);
+    try testing.expectEqual(@as(usize, 2), new_messages.items.len);
+    try testing.expectEqualStrings("You are a coding agent.", new_messages.items[0].content.?);
+    try testing.expectEqualStrings(envelope, new_messages.items[1].content.?);
 }
 
-test "compactMessageInMemoryNew: message_index lists every dropped message with id, role, preview" {
+test "compactMessageInMemoryNew marks every older row unfed and leaves the envelope as the only fed row" {
     var s = try envelopeSetupDb();
     defer envelopeTeardownDb(&s);
     const alloc = testing.allocator;
+    const session_id = "sess_fed";
+
+    const old_ids = [_][]const u8{ "id_a", "id_b", "id_c" };
+    for (old_ids) |id| {
+        try s.db.exec(
+            alloc,
+            "INSERT INTO llm_history (id, session_id, model, response_content, role, is_feed_to_llm, created_at_nano) " ++
+                "VALUES (?, ?, 'gpt-4o', 'old turn', 'user', 1, '2026-01-01 00:00:00')",
+            &.{ id, session_id },
+        );
+    }
 
     const messages = try envelopeBuildMessages(alloc);
-    // No defer messages.deinit — compactMessageInMemoryNew takes ownership
-    // (T → !T): its body deinits messages.items + the ArrayList, leaving our
-    // test scope's copy stale. Double-deinit would crash.
-
     var lg = Logger.init(alloc, std.testing.io, .{});
     defer lg.deinit();
 
+    const envelope = "{\"compact_messages\":{\"format_version\":2}}";
     const new_messages = try compactMessageInMemoryNew(
-        alloc, messages, "summary text", "sess_abc", "gpt-4o", "/tmp",
-        &s.db, s.threaded.io(), &lg,
-        null, // event_bus — no SSE subscriber in tests
+        alloc,
+        messages,
+        envelope,
+        session_id,
+        "gpt-4o",
+        "/tmp",
+        &s.db,
+        s.threaded.io(),
+        &lg,
+        null,
     );
     defer {
         for (new_messages.items) |*m| m.deinit(alloc);
@@ -3565,57 +2964,42 @@ test "compactMessageInMemoryNew: message_index lists every dropped message with 
         nm_owned.deinit(alloc);
     }
 
-    const summary = new_messages.items[1].content.?;
-
-    // <message_index> section must exist and contain one entry per dropped
-    // message (everything except index 0 = the system prompt). The 6-msg
-    // fixture drops 5 messages (indices 1..5).
-    try testing.expect(std.mem.indexOf(u8, summary, "<message_index>") != null);
-    try testing.expect(std.mem.indexOf(u8, summary, "</message_index>") != null);
-
-    // Every non-system role from the fixture must appear in the index.
-    try testing.expect(std.mem.indexOf(u8, summary, "<role>user</role>") != null);
-    try testing.expect(std.mem.indexOf(u8, summary, "<role>assistant</role>") != null);
-    try testing.expect(std.mem.indexOf(u8, summary, "<role>tool</role>") != null);
-
-    // Each index entry must include a message id and a preview. CURRENT IMPL:
-    // the envelope uses synthetic `adhoc_<i>` ids (where `i` is the index
-    // into `dropped_messages`, i.e. messages.items[1..]).
-    try testing.expect(std.mem.indexOf(u8, summary, "<id>adhoc_2</id>") != null);
-    try testing.expect(std.mem.indexOf(u8, summary, "<preview>") != null);
+    try testing.expectEqual(@as(usize, 3), try countRowsWithFeedFlag(alloc, &s.db, session_id, false));
+    try testing.expectEqual(@as(usize, 1), try countRowsWithFeedFlag(alloc, &s.db, session_id, true));
+    const fed = try fedEnvelope(alloc, &s.db, session_id);
+    defer alloc.free(fed);
+    // A stored user row is the {user,name,msg} chat envelope, so the handoff
+    // text arrives escaped inside `msg` rather than verbatim.
+    try testing.expect(std.mem.indexOf(u8, fed, "compact_messages") != null);
 }
 
-test "compactMessageInMemoryNew: tool-role index entries include tool_call_id" {
-    // Regression: a tool-result message has `tool_call_id`. The index must
-    // surface it so the agent can match the result back to the call.
-    var s = try envelopeSetupDb();
-    defer envelopeTeardownDb(&s);
-    const alloc = testing.allocator;
+fn countRowsWithFeedFlag(
+    alloc: std.mem.Allocator,
+    db: *sqlite.SqliteBackend,
+    session_id: []const u8,
+    fed: bool,
+) !usize {
+    const sql = if (fed)
+        "SELECT COUNT(*) FROM llm_history WHERE session_id = ? AND is_feed_to_llm = 1"
+    else
+        "SELECT COUNT(*) FROM llm_history WHERE session_id = ? AND (is_feed_to_llm = 0 OR is_feed_to_llm IS NULL)";
+    var q = try db.query(alloc, sql, &.{session_id});
+    defer q.deinit();
+    const row = (try q.next()) orelse return error.RowMissing;
+    defer row.deinit(alloc);
+    return std.fmt.parseInt(usize, row.values[0], 10) catch 0;
+}
 
-    const messages = try envelopeBuildMessages(alloc);
-    // No defer messages.deinit — compactMessageInMemoryNew takes ownership
-    // (T → !T): its body deinits messages.items + the ArrayList, leaving our
-    // test scope's copy stale. Double-deinit would crash.
-
-    var lg = Logger.init(alloc, std.testing.io, .{});
-    defer lg.deinit();
-
-    const new_messages = try compactMessageInMemoryNew(
-        alloc, messages, "summary", "sess_xyz", "gpt-4o", "/tmp",
-        &s.db, s.threaded.io(), &lg,
-        null, // event_bus — no SSE subscriber in tests
+fn fedEnvelope(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8) ![]u8 {
+    var q = try db.query(
+        alloc,
+        "SELECT response_content FROM llm_history WHERE session_id = ? AND is_feed_to_llm = 1",
+        &.{session_id},
     );
-    defer {
-        for (new_messages.items) |*m| m.deinit(alloc);
-        var nm_owned = new_messages;
-        nm_owned.deinit(alloc);
-    }
-
-    const summary = new_messages.items[1].content.?;
-    try testing.expect(std.mem.indexOf(u8, summary, "<tool_call_id>tc_1</tool_call_id>") != null);
-    // tool_name is intentionally NOT in the envelope; the tool_call_id
-    // alone is enough to pair the result back to the originating call.
-    try testing.expect(std.mem.indexOf(u8, summary, "<tool_name>") == null);
+    defer q.deinit();
+    const row = (try q.next()) orelse return error.RowMissing;
+    defer row.deinit(alloc);
+    return alloc.dupe(u8, row.values[0]);
 }
 
 test "compactMessageInMemoryNew: existing short-circuit (total <= 4) returns messages unchanged" {
@@ -3631,8 +3015,15 @@ test "compactMessageInMemoryNew: existing short-circuit (total <= 4) returns mes
     defer lg.deinit();
 
     const result = try compactMessageInMemoryNew(
-        alloc, messages, "summary", "sess_1", "gpt-4o", "/tmp",
-        &s.db, s.threaded.io(), &lg,
+        alloc,
+        messages,
+        "summary",
+        "sess_1",
+        "gpt-4o",
+        "/tmp",
+        &s.db,
+        s.threaded.io(),
+        &lg,
         null, // event_bus — no SSE subscriber in tests
     );
     defer {
@@ -3644,165 +3035,6 @@ test "compactMessageInMemoryNew: existing short-circuit (total <= 4) returns mes
 
     try testing.expectEqual(@as(usize, 2), result.items.len); // unchanged
     try testing.expectEqualStrings("hi", result.items[1].content.?);
-}
-
-test "buildCompactionEnvelope: all previews are capped at 100 chars regardless of role" {
-    // CURRENT IMPL: the envelope caps every preview at 100 bytes
-    // (`preview.len > 100` → trim). There is no role-based 200/500
-    // distinction.
-    var s = try envelopeSetupDb();
-    defer envelopeTeardownDb(&s);
-    const alloc = testing.allocator;
-
-    const long_text = try alloc.alloc(u8, 1000);
-    defer alloc.free(long_text);
-    @memset(long_text, 'x');
-
-    var messages: std.ArrayList(agent.AgentMessage) = .empty;
-    try messages.append(alloc, .{ .role = .system, .content = try alloc.dupe(u8, "sys") });
-    try messages.append(alloc, .{
-        .id = try alloc.dupe(u8, "1782027251703514461"),
-        .role = .user,
-        .content = try alloc.dupe(u8, long_text),
-    });
-    try messages.append(alloc, .{
-        .id = try alloc.dupe(u8, "1782027292873814871"),
-        .role = .assistant,
-        .content = try alloc.dupe(u8, "I'll handle that"),
-    });
-    try messages.append(alloc, .{
-        .id = try alloc.dupe(u8, "1782027292879102675"),
-        .role = .tool,
-        .content = try alloc.dupe(u8, long_text),
-        .tool_call_id = try alloc.dupe(u8, "tc_1"),
-    });
-    try messages.append(alloc, .{
-        .id = try alloc.dupe(u8, "1782027306945614038"),
-        .role = .assistant,
-        .content = try alloc.dupe(u8, "Done"),
-    });
-
-    var lg = Logger.init(alloc, std.testing.io, .{});
-    defer lg.deinit();
-
-    const new_messages = try compactMessageInMemoryNew(
-        alloc, messages, "summary", "sess_500", "gpt-4o", "/tmp",
-        &s.db, s.threaded.io(), &lg,
-        null, // event_bus — no SSE subscriber in tests
-    );
-    defer {
-        for (new_messages.items) |*m| m.deinit(alloc);
-        var nm_owned = new_messages;
-        nm_owned.deinit(alloc);
-    }
-
-    const summary = new_messages.items[1].content.?;
-
-    // 4 dropped messages, so user is `adhoc_0` and tool is `adhoc_2`.
-    try testing.expect(std.mem.indexOf(u8, summary, "<id>adhoc_0</id>") != null);
-    try testing.expect(std.mem.indexOf(u8, summary, "<id>adhoc_2</id>") != null);
-    try testing.expect(std.mem.indexOf(u8, summary, "<role>user</role>") != null);
-    try testing.expect(std.mem.indexOf(u8, summary, "<role>tool</role>") != null);
-
-    // Slice out the user entry and the tool entry by their ids.
-    const user_id_pos = std.mem.indexOf(u8, summary, "<id>adhoc_0</id>").?;
-    const tool_id_pos = std.mem.indexOf(u8, summary, "<id>adhoc_2</id>").?;
-    const user_entry_end = std.mem.indexOfPos(u8, summary, user_id_pos, "</entry>").?;
-    const tool_entry_end = std.mem.indexOfPos(u8, summary, tool_id_pos, "</entry>").?;
-
-    const user_entry = summary[user_id_pos..user_entry_end];
-    const tool_entry = summary[tool_id_pos..tool_entry_end];
-
-    // Both previews are trimmed to exactly 100 chars.
-    const user_p_start = std.mem.indexOf(u8, user_entry, "<preview>").? + "<preview>".len;
-    const user_p_end = std.mem.indexOf(u8, user_entry, "</preview>").?;
-    try testing.expectEqual(@as(usize, 100), user_p_end - user_p_start);
-
-    const tool_p_start = std.mem.indexOf(u8, tool_entry, "<preview>").? + "<preview>".len;
-    const tool_p_end = std.mem.indexOf(u8, tool_entry, "</preview>").?;
-    try testing.expectEqual(@as(usize, 100), tool_p_end - tool_p_start);
-}
-
-test "buildCompactionEnvelope: content=null yields empty preview (no content_parts extraction)" {
-    // CURRENT IMPL: when `msg.content` is null (vision / multimodal messages
-    // carry text in `content_parts`, not `content`), the preview falls
-    // through to "" via `msg.content orelse ""`.
-    var s = try envelopeSetupDb();
-    defer envelopeTeardownDb(&s);
-    const alloc = testing.allocator;
-
-    const part_text = "What is in this image?";
-
-    const image_part = agent.ContentPart{
-        .part_type = "image_url",
-        .text = null,
-        .image_url = .{
-            .url = try alloc.dupe(u8, "data:image/png;base64,iVBORw0..."),
-            .detail = null,
-        },
-    };
-    const text_part = agent.ContentPart{
-        .part_type = "text",
-        .text = try alloc.dupe(u8, part_text),
-        .image_url = null,
-    };
-    const content_parts = try alloc.dupe(agent.ContentPart, &[_]agent.ContentPart{ text_part, image_part });
-
-    var messages: std.ArrayList(agent.AgentMessage) = .empty;
-    try messages.append(alloc, .{ .role = .system, .content = try alloc.dupe(u8, "sys") });
-    try messages.append(alloc, .{
-        .id = try alloc.dupe(u8, "1782027251703514461"),
-        .role = .user,
-        .content = null,
-        .content_parts = content_parts,
-    });
-    // Add enough messages so total > 4 (the compaction threshold).
-    try messages.append(alloc, .{
-        .id = try alloc.dupe(u8, "1782027292873814871"),
-        .role = .assistant,
-        .content = try alloc.dupe(u8, "Looking at the image"),
-    });
-    try messages.append(alloc, .{
-        .id = try alloc.dupe(u8, "1782027292879102675"),
-        .role = .tool,
-        .content = try alloc.dupe(u8, "image processed"),
-        .tool_call_id = try alloc.dupe(u8, "tc_v1"),
-    });
-    try messages.append(alloc, .{
-        .id = try alloc.dupe(u8, "1782027306945614038"),
-        .role = .assistant,
-        .content = try alloc.dupe(u8, "It's a sunset"),
-    });
-    try messages.append(alloc, .{
-        .id = try alloc.dupe(u8, "1782027317965287809"),
-        .role = .user,
-        .content = try alloc.dupe(u8, "thanks"),
-    });
-
-    var lg = Logger.init(alloc, std.testing.io, .{});
-    defer lg.deinit();
-
-    const new_messages = try compactMessageInMemoryNew(
-        alloc, messages, "summary", "sess_vision", "gpt-4o", "/tmp",
-        &s.db, s.threaded.io(), &lg,
-        null, // event_bus — no SSE subscriber in tests
-    );
-    defer {
-        for (new_messages.items) |*m| m.deinit(alloc);
-        var nm_owned = new_messages;
-        nm_owned.deinit(alloc);
-    }
-
-    const summary = new_messages.items[1].content.?;
-    // The first dropped message (user with content=null, content_parts set)
-    // is at dropped_messages[0] → `adhoc_0`. Its preview is empty.
-    try testing.expect(std.mem.indexOf(u8, summary, "<id>adhoc_0</id>") != null);
-    // No text-part content leaks into the preview.
-    try testing.expect(std.mem.indexOf(u8, summary, "What is in this image?") == null);
-    // The empty preview appears for the vision message.
-    try testing.expect(std.mem.indexOf(u8, summary, "<preview></preview>") != null);
-    // (If you want to fix the underlying limitation, change
-    // workflow.zig:1148 to fall back to concatenated content_parts text.)
 }
 
 test "end-to-end: compacted rows are findable via getCompactedMessages after compaction" {
@@ -3862,8 +3094,15 @@ test "end-to-end: compacted rows are findable via getCompactedMessages after com
     defer lg.deinit();
 
     const new_messages = try compactMessageInMemoryNew(
-        alloc, messages, "summary", session_id, "gpt-4o", "/tmp",
-        &s.db, s.threaded.io(), &lg,
+        alloc,
+        messages,
+        "summary",
+        session_id,
+        "gpt-4o",
+        "/tmp",
+        &s.db,
+        s.threaded.io(),
+        &lg,
         null, // event_bus — no SSE subscriber in tests
     );
     defer {
@@ -3872,25 +3111,11 @@ test "end-to-end: compacted rows are findable via getCompactedMessages after com
         nm_owned.deinit(alloc);
     }
 
-    const summary = new_messages.items[1].content.?;
-
-    // CURRENT IMPL: the envelope uses synthetic `adhoc_<i>` ids, not the
-    // real DB primary keys. Confirm the pattern is present.
-    try testing.expect(std.mem.indexOf(u8, summary, "<id>adhoc_0</id>") != null);
-    try testing.expect(std.mem.indexOf(u8, summary, "<id>adhoc_4</id>") != null);
-    // Real ids MUST NOT be embedded in the envelope (the impl does not
-    // reach into AgentMessage.id).
-    for (ids) |id| {
-        const needle = try std.fmt.allocPrint(alloc, "<id>{s}</id>", .{id});
-        defer alloc.free(needle);
-        try testing.expect(std.mem.indexOf(u8, summary, needle) == null);
-    }
+    try testing.expectEqual(@as(usize, 2), new_messages.items.len);
 
     // Pull ALL compacted rows for the session (no message_ids filter) and
     // verify each pre-seeded row is findable with its original content.
-    const found = try llm_history.getCompactedMessages(alloc, &s.db,
-        session_id,
-        .{ .limit = 100 });
+    const found = try llm_history.getCompactedMessages(alloc, &s.db, session_id, .{ .limit = 100 });
     defer {
         for (found) |m| {
             var copy = m;

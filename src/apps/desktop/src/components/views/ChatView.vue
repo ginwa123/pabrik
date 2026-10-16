@@ -393,13 +393,15 @@ const onHtmlFrameResize = (event: MessageEvent): void => {
   frame.style.height = `${growFrameToContent(reported)}px`
 }
 
-// Detect a compaction summary message — a user-role message whose content is the
-// `<compact_messages>` envelope written by `compactMessageInMemoryNew`. The user bubble renders it
-// as a structured `CompactionCard` instead of a wall of escaped XML.
+// A compaction handoff: a user-role message carrying the envelope `compactMessageInMemoryNew`
+// writes. JSON since the format change, XML before it, so both prefixes are recognised — the bubble
+// renders a `CompactionCard` instead of a wall of raw document text.
 const isCompactionMessage = (msg: { role: string; content: string } | undefined): boolean => {
   if (!msg) return false
   if (msg.role !== 'user') return false
-  return msg.content.trimStart().startsWith('<compact_messages>')
+  const trimmed = msg.content.trimStart()
+  if (trimmed.startsWith('{"compact_messages"')) return true
+  return trimmed.startsWith('<compact_messages>')
 }
 
 // Session ID extracted from props on mount
@@ -2707,8 +2709,7 @@ const handleVirtualScroll = (
   const liveEdge = virtualScrollerRef.value?.bottomScrollTop?.() ?? scrollHeight - clientHeight
   // The anchor is the bottom the reader was LAST parked at, so it is the number the reader's
   // position is actually referenced to.
-  const bottomEdge =
-    typeof settled === 'number' && Number.isFinite(settled) ? settled : liveEdge
+  const bottomEdge = typeof settled === 'number' && Number.isFinite(settled) ? settled : liveEdge
   const distanceFromBottom = Math.max(0, bottomEdge - actualScrollTop)
   const distanceFromTop = Math.max(0, actualScrollTop)
   // Widened only for the stable-anchor read; a live read keeps the tight
@@ -4402,8 +4403,7 @@ const compactSession = async () => {
                                 class="tool-payload text-dense font-mono whitespace-pre-wrap break-all px-2 py-1.5 m-0"
                                 :style="{ color: 'var(--semantic-text-dim)' }"
                                 data-testid="tool-payload-preview"
-                                >{{ toolPayloadPreview(msg.content) }}</pre
-                              >
+                                >{{ toolPayloadPreview(msg.content) }}</pre>
                             </div>
                           </div>
                         </div>

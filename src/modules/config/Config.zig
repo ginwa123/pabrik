@@ -104,6 +104,9 @@ pub const LlmConfig = struct {
     /// Optional top-level compaction threshold as a percentage (0-100) of the
     /// model's context window.
     compaction_threshold_percent: ?u8 = null,
+    /// Add a model-written summary to each compaction envelope. Off by default:
+    /// the envelope is deterministic without it.
+    compaction_llm_summary: bool = false,
     /// Plan 2026-08-06-set-active-profile-default — optional name of a
     /// profile in `profiles_models` that the workflow uses as the default
     /// when neither the session's `selected_profile_model` nor the POST
@@ -375,6 +378,9 @@ pub const LlmConfig = struct {
         /// Optional top-level compaction threshold as a percentage (0-100).
         /// Null = fall through to per-profile override, then 80.
         compaction_threshold_percent: ?u8 = null,
+        /// Add a model-written summary to each compaction envelope. Off by
+        /// default: the envelope is deterministic without it.
+        compaction_llm_summary: bool = false,
         /// Plan 2026-08-06-set-active-profile-default — name of the profile
         /// to use as the default when no other selection is set.
         active_profile: ?[]const u8 = null,
@@ -745,6 +751,7 @@ pub const LlmConfig = struct {
             // 2026-07-07-compaction-inline.
             .max_capacity_token_model = config_json.max_capacity_token_model,
             .compaction_threshold_percent = config_json.compaction_threshold_percent,
+            .compaction_llm_summary = config_json.compaction_llm_summary,
             // Plan 2026-08-06-set-active-profile-default — load the
             // user-chosen default profile from JSON.
             .active_profile = blk: {
@@ -1553,6 +1560,7 @@ pub const LlmConfig = struct {
             // allocation needed (they're plain optionals).
             .max_capacity_token_model = self.max_capacity_token_model,
             .compaction_threshold_percent = self.compaction_threshold_percent,
+            .compaction_llm_summary = self.compaction_llm_summary,
             // Plan 2026-08-06-set-active-profile-default — deep-dupe
             // the user-chosen default profile name (null stays null).
             .active_profile = if (self.active_profile) |ap|
