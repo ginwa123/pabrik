@@ -1096,29 +1096,43 @@ defineExpose({
       class="shrink-0 flex flex-col border-b border-[--color-border]/40"
       data-testid="pinned-section"
     >
-      <button
-        class="px-[var(--sb-gutter)] h-7 flex items-center gap-2 w-full text-left hover:opacity-70 transition-opacity shrink-0"
+      <div
+        class="px-[var(--sb-gutter)] h-7 flex items-center shrink-0 border-b border-[--color-border]/40"
+        data-testid="pinned-section-header"
         @click="sidebarStore.togglePinnedExpanded()"
       >
-        <span
-          class="text-meta transition-transform duration-200"
-          :style="{ transform: sidebarStore.pinnedExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }"
-          style="color: var(--semantic-text-dim)"
-          >▶</span
+        <button
+          class="flex items-center h-full min-w-0 flex-1 text-left transition-opacity hover:opacity-80"
+          :aria-expanded="sidebarStore.pinnedExpanded"
+          aria-label="Pinned"
+          @click.stop="sidebarStore.togglePinnedExpanded()"
         >
-        <span
-          class="text-micro font-semibold uppercase tracking-[0.08em]"
-          style="color: var(--semantic-text-dim)"
-          data-testid="pinned-section-title"
-          >Pinned</span
-        >
-        <span
-          class="text-micro opacity-60"
-          style="color: var(--semantic-text-dim)"
-          data-testid="pinned-section-count"
-          >{{ pinnedItems.length }}</span
-        >
-      </button>
+          <span
+            class="w-[var(--sb-mark)] shrink-0 flex items-center text-meta transition-transform duration-200"
+            :style="{
+              transform: sidebarStore.pinnedExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+            }"
+            style="color: var(--semantic-text-dim)"
+            >▶</span
+          >
+          <span
+            class="text-micro font-semibold uppercase tracking-[0.08em]"
+            style="color: var(--semantic-text-dim)"
+            data-testid="pinned-section-title"
+            >Pinned</span
+          >
+          <span
+            class="text-micro ml-1.5"
+            style="
+              color: var(--semantic-text-dim);
+              opacity: 0.7;
+              font-variant-numeric: tabular-nums;
+            "
+            data-testid="pinned-section-count"
+            >{{ pinnedItems.length }}</span
+          >
+        </button>
+      </div>
       <div v-if="sidebarStore.pinnedExpanded" class="flex flex-col pb-1">
         <button
           v-for="item in pinnedItems"
@@ -1267,39 +1281,54 @@ defineExpose({
          button (removed 2026-09-22 revamp) — new chats are created
          from workspace items (projects), so every chat belongs to a
          workspace and the list below can stay scoped. -->
-    <button
-      class="px-[var(--sb-gutter)] h-7 flex items-center gap-2 w-full text-left hover:opacity-70 transition-opacity shrink-0 border-b border-[--color-border]/40"
+    <div
+      class="px-[var(--sb-gutter)] h-7 flex items-center shrink-0 border-b border-[--color-border]/40"
+      data-testid="recent-section-header"
       @click="toggleNavSection"
     >
-      <span
-        class="text-meta transition-transform duration-200"
-        :style="{ transform: sidebarStore.navExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }"
-        style="color: var(--semantic-text-dim)"
-        >▶</span
+      <button
+        class="flex items-center h-full min-w-0 flex-1 text-left transition-opacity hover:opacity-80"
+        :aria-expanded="sidebarStore.navExpanded"
+        aria-label="Recent"
+        @click.stop="toggleNavSection"
       >
-      <span
-        class="text-micro font-semibold uppercase tracking-[0.08em]"
-        style="color: var(--semantic-text-dim)"
-        data-testid="recent-section-title"
-        >Recent</span
-      >
-      <div class="flex items-center gap-1 ml-auto" v-if="sidebarStore.navExpanded">
-        <button
-          @click.stop="onSortToggle"
-          :title="
-            chatsSortDirection === 'desc'
-              ? 'Newest first (click to flip)'
-              : 'Oldest first (click to flip)'
-          "
-          :aria-label="chatsSortDirection === 'desc' ? 'Sort: newest first' : 'Sort: oldest first'"
-          data-testid="chats-sort-toggle"
-          class="w-[var(--sb-hit)] h-[var(--sb-hit)] text-meta font-medium transition-opacity duration-150 hover:opacity-100 flex items-center justify-center"
-          style="color: var(--semantic-text-dim); opacity: 0.7"
+        <span
+          class="w-[var(--sb-mark)] shrink-0 flex items-center text-meta transition-transform duration-200"
+          :style="{
+            transform: sidebarStore.navExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+          }"
+          style="color: var(--semantic-text-dim)"
+          >▶</span
         >
-          {{ chatsSortDirection === 'desc' ? '↓' : '↑' }}
-        </button>
-      </div>
-    </button>
+        <span
+          class="text-micro font-semibold uppercase tracking-[0.08em]"
+          style="color: var(--semantic-text-dim)"
+          data-testid="recent-section-title"
+          >Recent</span
+        >
+        <span
+          class="text-micro ml-1.5"
+          style="color: var(--semantic-text-dim); opacity: 0.7; font-variant-numeric: tabular-nums"
+          data-testid="recent-section-count"
+          >{{ recentTotal }}</span
+        >
+      </button>
+      <button
+        v-if="sidebarStore.navExpanded"
+        @click.stop="onSortToggle"
+        :title="
+          chatsSortDirection === 'desc'
+            ? 'Newest first (click to flip)'
+            : 'Oldest first (click to flip)'
+        "
+        :aria-label="chatsSortDirection === 'desc' ? 'Sort: newest first' : 'Sort: oldest first'"
+        data-testid="chats-sort-toggle"
+        class="ml-auto w-[var(--sb-hit)] h-[var(--sb-hit)] text-meta font-medium transition-opacity duration-150 hover:opacity-100 flex items-center justify-center shrink-0"
+        style="color: var(--semantic-text-dim); opacity: 0.7"
+      >
+        {{ chatsSortDirection === 'desc' ? '↓' : '↑' }}
+      </button>
+    </div>
 
     <!-- Chat List -->
     <div v-if="sidebarStore.navExpanded" class="flex-1 min-h-0 flex flex-col overflow-hidden">

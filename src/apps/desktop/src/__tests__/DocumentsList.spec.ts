@@ -95,6 +95,13 @@ describe('DocumentsList — section chrome', () => {
     listDocuments.mockResolvedValue({ documents: DOCS, count: DOCS.length })
   })
 
+  it('nests no control inside the section header', async () => {
+    const wrapper = mountList()
+    await nextTick()
+    expect(wrapper.findAll('button button')).toHaveLength(0)
+    wrapper.unmount()
+  })
+
   it('renders the Documents header with the sidebar token geometry', async () => {
     const router = await makeRouter()
     const wrapper = mountList(router)
