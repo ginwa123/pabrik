@@ -309,12 +309,14 @@ fn handleCrashSignalSiginfo(
     // there is no fault address — say so explicitly instead of printing a
     // meaningless reinterpreted-union value.
     const fault_line = if (has_fault_addr)
-        std.fmt.allocPrint(alloc,
+        std.fmt.allocPrint(
+            alloc,
             "Fault address: 0x{x} ({s})\nsi_code: {d} ({s})\nBuild: {s}, {s}-{s}\n",
             .{ fault_addr, classifyFaultAddr(fault_addr), si_code, si_meaning, @tagName(builtin.mode), @tagName(builtin.cpu.arch), @tagName(builtin.os.tag) },
         ) catch ""
     else
-        std.fmt.allocPrint(alloc,
+        std.fmt.allocPrint(
+            alloc,
             "Fault address: n/a (abort-style signal carries sender info, not a fault address)\nsi_code: {d} ({s})\nBuild: {s}, {s}-{s}\n",
             .{ si_code, si_meaning, @tagName(builtin.mode), @tagName(builtin.cpu.arch), @tagName(builtin.os.tag) },
         ) catch "";
@@ -413,7 +415,8 @@ fn handleWindowsException(exception_info: *std.os.windows.EXCEPTION_POINTERS) ca
             8 => "DEP/execute (data-execution-prevention)",
             else => "unknown access kind",
         };
-        access_line = std.fmt.allocPrint(alloc,
+        access_line = std.fmt.allocPrint(
+            alloc,
             "Access: {s} at fault address 0x{x} ({s})\n",
             .{ rw_txt, fault, classifyFaultAddr(fault) },
         ) catch "";
@@ -451,7 +454,8 @@ pub fn handleSegfaultReport(
     , .{ name, segfaultWhy(name), @tagName(builtin.mode), @tagName(builtin.cpu.arch), @tagName(builtin.os.tag) }) catch "=== CRASH: unrecoverable fault ===\n";
     defer alloc.free(header);
 
-    const detail = std.fmt.allocPrint(alloc,
+    const detail = std.fmt.allocPrint(
+        alloc,
         "Fault address: 0x{x} ({s})\n",
         .{ fault_addr, if (addr == null) "no address available" else classifyFaultAddr(fault_addr) },
     ) catch "";
@@ -492,12 +496,14 @@ fn emitCrashReport(
     defer if (sym) |s| allocator.free(s);
 
     const sym_section = if (sym) |s|
-        std.fmt.allocPrint(allocator,
+        std.fmt.allocPrint(
+            allocator,
             "Symbolicated stack trace ({d} frames — function + file:line):\n{s}",
             .{ stack.return_addresses.len, s },
         ) catch ""
     else
-        std.fmt.allocPrint(allocator,
+        std.fmt.allocPrint(
+            allocator,
             "Symbolicated stack trace: UNAVAILABLE (stripped binary or no debug info — see raw addresses below)\n",
             .{},
         ) catch "";
@@ -683,20 +689,50 @@ test "classifyFaultAddr buckets fault addresses" {
 // ─── faultAddrFromSiginfo / siCodeFromSiginfo: siginfo extraction ─────
 
 test "faultAddrFromSiginfo and siCodeFromSiginfo extract siginfo fields" {
-    // Linux-only: the test constructs the Linux siginfo_t shape
-    // (fields.sigfault.addr). Other platforms have a different layout.
-    if (builtin.os.tag != .linux) return error.SkipZigTest;
+    // One body, every host: both helpers are comptime reflection over this
+    // host's `siginfo_t`. Linux reads `fields.sigfault.addr`; the BSD/Darwin
+    // libc struct names it `addr`, which neither helper probes.
+    switch (builtin.os.tag) {
+        .linux => {
+            var info = std.mem.zeroes(std.posix.siginfo_t);
+            info.code = 1;
+            info.fields = .{ .sigfault = .{
+                .addr = @ptrFromInt(0xdeadbeef),
+                .addr_lsb = 0,
+                .first = .{ .pkey = 0 },
+            } };
 
-    var info = std.mem.zeroes(std.posix.siginfo_t);
-    info.code = 1;
-    info.fields = .{ .sigfault = .{
-        .addr = @ptrFromInt(0xdeadbeef),
-        .addr_lsb = 0,
-        .first = .{ .pkey = 0 },
-    } };
+            try testing.expectEqual(@as(usize, 0xdeadbeef), faultAddrFromSiginfo(&info));
+            try testing.expectEqual(@as(i32, 1), siCodeFromSiginfo(&info));
+        },
+        .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos, .freebsd, .dragonfly, .haiku, .serenity, .openbsd => {
+            var info = std.mem.zeroes(std.posix.siginfo_t);
+            info.code = 11;
+            if (@hasField(@TypeOf(info), "addr")) info.addr = @ptrFromInt(0xdeadbeef);
 
-    try testing.expectEqual(@as(usize, 0xdeadbeef), faultAddrFromSiginfo(&info));
-    try testing.expectEqual(@as(i32, 1), siCodeFromSiginfo(&info));
+            try testing.expectEqual(@as(usize, 0), faultAddrFromSiginfo(&info));
+            try testing.expectEqual(@as(i32, 11), siCodeFromSiginfo(&info));
+        },
+        .netbsd => {
+            // A bare union of `pad` and `_ksiginfo`: neither helper finds a
+            // field it looks for, so both answer 0 rather than faulting.
+            var info = std.mem.zeroes(std.posix.siginfo_t);
+            try testing.expectEqual(@as(usize, 0), faultAddrFromSiginfo(&info));
+            try testing.expectEqual(@as(i32, 0), siCodeFromSiginfo(&info));
+        },
+        .windows => {
+            // `std.c.siginfo_t` is `void` on Windows, so there is no shape
+            // for the reflection to read — which is why the Windows handler
+            // reports `EXCEPTION_*` codes instead (windowsExceptionDescription).
+            try testing.expect(std.posix.siginfo_t == void);
+        },
+        else => {
+            // An un-named host FAILS here rather than passing with nothing
+            // read: add its siginfo_t expectation to this table.
+            std.debug.print("\n!! siginfo_t host not in the test's table !!\n", .{});
+            try testing.expect(false);
+        },
+    }
 }
 
 // ─── formatRawAddrs: deterministic hex formatting ─────────────────────
@@ -722,7 +758,6 @@ test "symbolicateStack returns null for an empty trace" {
     const empty: std.debug.StackTrace = .{ .return_addresses = &.{}, .skipped = .none };
     try testing.expect(symbolicateStack(testing.allocator, &empty) == null);
 }
-
 
 // ─── Behavioural coverage (out-of-process) ────────────────────────────
 // scripts/crash_handler_smoke.sh It compiles a tiny `crash_trigger.zig`

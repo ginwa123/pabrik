@@ -1504,6 +1504,15 @@ pub fn appendSubAgentsListing(
 // ============================================================================
 
 const testing = std.testing;
+const hf = @import("helpers").host_fixture;
+
+/// The two replies a stdio MCP server owes `buildMCPToolsRun`: the
+/// `initialize` result, then the `tools/list` result naming one tool. A
+/// fixture reading three stdin lines and printing these speaks it all.
+const mcp_stdio_handshake_reply =
+    \\{"jsonrpc":"2.0","id":"1","result":{"protocolVersion":"2024-11-05"}}
+    \\{"jsonrpc":"2.0","id":"2","result":{"tools":[{"name":"hello","description":"says hi","inputSchema":{"type":"object","properties":{}}}]}}
+;
 
 test "buildMCPToolsRun: null input returns null (no servers configured)" {
     const result = try buildMCPToolsRun(testing.allocator, .null, null);
@@ -1591,12 +1600,16 @@ test "buildMCPToolsRun: stdio server with empty command is skipped" {
 
 test "buildMCPToolsRun: disabled servers are skipped (enabled server's tools only)" {
     // MCP server toggle: a server with explicit `"enabled": false` must be
-    // skipped BEFORE any spawn/connect, so only the enabled server's
-    // `mcp_<server>_<tool>` names reach the agent.
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
-    const script =
-        \\while read -r line; do case $line in *tools/list*) echo '{"jsonrpc":"2.0","id":"2","result":{"tools":[{"name":"hello","description":"says hi","inputSchema":{"type":"object","properties":{}}}]}}';; *params*) echo '{"jsonrpc":"2.0","id":"1","result":{"protocolVersion":"2024-11-05"}}';; esac; done
-    ;
+    // skipped BEFORE any spawn/connect. Both entries name the SAME fixture
+    // server, so spawning the disabled one yields a 2nd tool, not a failure.
+    var fx = try hf.Fixture.init(testing.allocator);
+    defer fx.deinit();
+    const server = try fx.writeProgram("mcp-server", .{
+        .stdout = mcp_stdio_handshake_reply,
+        .sleep_ms = 500,
+    });
+    defer testing.allocator.free(server);
+
     var args_ena = std.json.Array.init(testing.allocator);
     var args_dis = std.json.Array.init(testing.allocator);
     var ena_obj = try std.json.ObjectMap.init(testing.allocator, &.{}, &.{});
@@ -1615,14 +1628,10 @@ test "buildMCPToolsRun: disabled servers are skipped (enabled server's tools onl
         while (di.next()) |kv| testing.allocator.free(kv.key_ptr.*);
         dis_obj.deinit(testing.allocator);
     }
-    try args_ena.append(.{ .string = "-c" });
-    try args_ena.append(.{ .string = script });
-    try args_dis.append(.{ .string = "-c" });
-    try args_dis.append(.{ .string = script });
-    try ena_obj.put(testing.allocator, try testing.allocator.dupe(u8, "command"), .{ .string = "/bin/sh" });
+    try ena_obj.put(testing.allocator, try testing.allocator.dupe(u8, "command"), .{ .string = server });
     try ena_obj.put(testing.allocator, try testing.allocator.dupe(u8, "args"), .{ .array = args_ena });
     try ena_obj.put(testing.allocator, try testing.allocator.dupe(u8, "enabled"), .{ .bool = true });
-    try dis_obj.put(testing.allocator, try testing.allocator.dupe(u8, "command"), .{ .string = "/bin/sh" });
+    try dis_obj.put(testing.allocator, try testing.allocator.dupe(u8, "command"), .{ .string = server });
     try dis_obj.put(testing.allocator, try testing.allocator.dupe(u8, "args"), .{ .array = args_dis });
     try dis_obj.put(testing.allocator, try testing.allocator.dupe(u8, "enabled"), .{ .bool = false });
     try outer.put(testing.allocator, try testing.allocator.dupe(u8, "ena"), .{ .object = ena_obj });

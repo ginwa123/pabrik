@@ -621,7 +621,7 @@ test "GhPrView parses open-PR payload with null mergedAt/closedAt" {
 // ============================================================================
 // Behavioural test suite for the `gh pr view` child-process path.
 
-const builtin_t = @import("builtin");
+const open_descriptors = @import("helpers").open_descriptors;
 const hf = @import("helpers").host_fixture;
 
 /// A throwaway directory under `.zig-cache/tmp` plus fixture programs,
@@ -737,17 +737,6 @@ fn freeResponse(a: std.mem.Allocator, res: http_response.GitPrStatusResponse) vo
         res.base_ref,  res.author,    res.created_at,  res.updated_at,
         res.merged_at, res.closed_at,
     }) |s| a.free(s);
-}
-
-fn openFdCount() ?usize {
-    var dir = std.Io.Dir.cwd().openDir(std.testing.io, "/proc/self/fd", .{
-        .iterate = true,
-    }) catch return null;
-    defer std.Io.Dir.close(dir, std.testing.io);
-    var it = dir.iterate();
-    var n: usize = 0;
-    while (it.next(std.testing.io) catch null) |_| n += 1;
-    return n;
 }
 
 // ─────────────────────────── runGhPrView ───────────────────────────
@@ -1011,7 +1000,7 @@ fn concurrentGhWorker(ctx: *ConcurrentGhCtx) void {
 test "runGhPrView: 8 concurrent callers never trip the double-close abort" {
     // The reported crash was a `closeFd` EBADF inside `childCleanupPosix` on
     // a worker-pool thread, so it only ever showed up under concurrency.
-    if (builtin_t.os.tag != .linux) return error.SkipZigTest;
+    // Descriptors on POSIX, handles on Windows: one count per host here.
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
@@ -1019,7 +1008,7 @@ test "runGhPrView: 8 concurrent callers never trip the double-close abort" {
     const gh = try fx.writeProgram("gh", .{ .stdout = "{\"number\":1,\"state\":\"OPEN\"}" });
     defer a.free(gh);
 
-    const before = openFdCount() orelse return error.SkipZigTest;
+    const before = try open_descriptors.count();
     const oks = try a.alloc(bool, 8);
     defer a.free(oks);
     const ctxs = try a.alloc(ConcurrentGhCtx, 8);
@@ -1035,7 +1024,7 @@ test "runGhPrView: 8 concurrent callers never trip the double-close abort" {
     for (threads) |t| t.join();
     for (oks) |ok| try testing.expect(ok);
 
-    const after = openFdCount() orelse return error.SkipZigTest;
+    const after = try open_descriptors.count();
     try testing.expect(after <= before + 8);
 }
 

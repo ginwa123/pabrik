@@ -15,6 +15,7 @@ pub const text_normalize = @import("text_normalize.zig");
 pub const path_validate = @import("path_validate.zig");
 pub const test_path = @import("test_path.zig");
 pub const host_fixture = @import("host_fixture.zig");
+pub const open_descriptors = @import("open_descriptors.zig");
 pub const git_env_guard = @import("git_env_guard.zig");
 pub const xmlUnescape = @import("xml_unescape.zig").xmlUnescape;
 

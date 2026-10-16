@@ -3,6 +3,7 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const open_descriptors = @import("open_descriptors.zig");
 
 /// Default per-stream capture cap. Matches the 64 KiB every hand-rolled
 /// caller had hardcoded, and is comfortably larger than any `gh pr view`
@@ -690,15 +691,15 @@ test "run: no fd leak across many runs" {
     const prog = try fx.write("chatty", .{ .stdout = "x", .stderr = "y" });
     defer gpa.free(prog);
 
-    const before = countOpenFds() orelse return error.SkipZigTest;
+    // Descriptors on POSIX, handles on Windows, from `open_descriptors` — a
+    // leaked one per run is the classic symptom of a double-close "fixed" by
+    // not closing at all. Slack is for allocator noise, not 25 leaks.
+    const before = try open_descriptors.count();
     for (0..25) |_| {
         var r = try run(gpa, testing.io, &.{prog}, .{ .timeout_ms = 10_000 });
         defer r.deinit(gpa);
     }
-    const after = countOpenFds() orelse return error.SkipZigTest;
-    // A leaked descriptor per run is the classic symptom of a
-    // childCleanupPosix double-close being "fixed" by not closing at
-    // all. Allow a small slack for the allocator, not 25 fds.
+    const after = try open_descriptors.count();
     try testing.expect(after <= before + 4);
 }
 
@@ -709,7 +710,7 @@ test "run: concurrent callers do not corrupt each other's output" {
     const prog = try fx.write("chatty", .{ .stdout = "o", .stderr = "e", .repeat = 128, .repeat_stderr = 128 });
     defer gpa.free(prog);
 
-    const before = countOpenFds() orelse return error.SkipZigTest;
+    const before = try open_descriptors.count();
 
     const threads = try gpa.alloc(std.Thread, 8);
     defer gpa.free(threads);
@@ -723,7 +724,7 @@ test "run: concurrent callers do not corrupt each other's output" {
     for (threads) |t| t.join();
     for (oks) |ok| try testing.expect(ok);
 
-    const after = countOpenFds() orelse return error.SkipZigTest;
+    const after = try open_descriptors.count();
     try testing.expect(after <= before + 8);
 }
 
@@ -740,13 +741,4 @@ fn concurrentWorker(gpa: std.mem.Allocator, prog: []const u8, ok: *bool) void {
             return;
         }
     }
-}
-
-fn countOpenFds() ?usize {
-    var dir = std.Io.Dir.cwd().openDir(testing.io, "/proc/self/fd", .{ .iterate = true }) catch return null;
-    defer std.Io.Dir.close(dir, testing.io);
-    var it = dir.iterate();
-    var n: usize = 0;
-    while (it.next(testing.io) catch null) |_| n += 1;
-    return n;
 }
