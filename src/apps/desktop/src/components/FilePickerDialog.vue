@@ -723,9 +723,7 @@ function handleKeydown(event: KeyboardEvent) {
 }
 // ─── Address-bar enter / exit / commit ───────────────────────────────────── beginPathEdit swaps
 // the breadcrumb <span> tree for a single <input> pre-filled with currentPath, then auto-focuses +
-// selects so the user can start typing (or paste) immediately. commitPathEdit normalizes the
-// typed value and calls navigateTo; an empty / whitespace input cancels
-// instead of navigating to '/'. cancelPathEdit just exits the editor.
+// selects so the user can start typing (or paste) immediately. commitPathEdit normalizes the typed.
 function beginPathEdit() {
   pathDraft.value = currentPath.value
   isPathEditing.value = true

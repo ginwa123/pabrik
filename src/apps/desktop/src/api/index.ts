@@ -1727,20 +1727,9 @@ export async function deleteWorkspaceItem(
   })
 }
 
-// Kanban API
-//
-// Backend endpoints (Chunk 3 of the workspace-item-kanban plan):
-//   POST   /api/workspaces/:wsId/items/kanban                 → 201
-//   GET    /api/workspaces/:wsId/items/:itemId/kanban/columns → 200
-//   POST   /api/workspaces/:wsId/items/:itemId/kanban/columns → 201
-//   PATCH  /api/workspaces/:wsId/items/:itemId/kanban/columns/:columnId → 200
-//   DELETE /api/workspaces/:wsId/items/:itemId/kanban/columns/:columnId → 200
-//   PATCH  /api/workspaces/:wsId/items/:itemId/tasks/:taskId/move        → 200
-//
-// All wrappers route through `apiFetch` (NOT raw `fetch`) so the
-// error-toast-on-non-2xx contract is consistent with the rest of the
-// app. On 4xx/5xx the call throws `ApiError`; the toast is fired
-// before the throw so the user sees the message inline.
+// Kanban API Backend endpoints (Chunk 3 of the workspace-item-kanban plan): POST
+// /api/workspaces/:wsId/items/kanban → 201 GET /api/workspaces/:wsId/items/:itemId/kanban/columns →
+// 200 POST /api/workspaces/:wsId/items/:itemId/kanban/columns → 201 PATCH.
 export async function createKanban(
   workspaceId: string,
   name: string,
@@ -3779,12 +3768,9 @@ export async function testMcpServer(body: {
   url?: string
   headers?: Record<string, string>
 }): Promise<McpTestResult> {
-  // We deliberately DON'T use the shared `apiFetch` wrapper here
-  // because (a) the endpoint always returns HTTP 200 with a payload
-  // that may carry `{ ok: false, ... }`, and (b) we want the modal's
-  // inline result panel to render the error message rather than
-  // firing a toast notification. Direct fetch + manual JSON parse
-  // gives us that without bypassing the API base constant.
+  // We deliberately DON'T use the shared `apiFetch` wrapper here because (a) the endpoint always
+  // returns HTTP 200 with a payload that may carry `{ ok: false, ... }`, and (b) we want the
+  // modal's inline result panel to render the error message rather than firing a toast.
   const res = await fetch(`${API_BASE}/mcp/test`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -3820,11 +3806,9 @@ export type LlmTestResult =
   | { ok: false; error: string; details?: string }
 
 export async function testLlmProfile(body: LlmTestRequest): Promise<LlmTestResult> {
-  // Deliberately NOT the shared `apiFetch` wrapper (same reason as
-  // `testMcpServer` above): the endpoint always returns HTTP 200 with
-  // a payload that may carry `{ ok: false, ... }`, and we want the
-  // modal's inline result panel to render the error rather than
-  // firing a toast notification.
+  // Deliberately NOT the shared `apiFetch` wrapper (same reason as `testMcpServer` above): the
+  // endpoint always returns HTTP 200 with a payload that may carry `{ ok: false, ... }`, and we
+  // want the modal's inline result panel to render the error rather than firing a toast.
   const res = await fetch(`${API_BASE}/llm/test`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

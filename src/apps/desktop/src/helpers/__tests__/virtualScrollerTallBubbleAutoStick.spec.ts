@@ -1,55 +1,6 @@
-/**
- * The reported shape, at the layer that can express it:
- *
- *   "Chatview has issue if sse send a llm chunk and llm full data finish
- *    reason stop, its like automatically go to bottom scrollbar chatview"
- *   + "if the messages many and the content response is long, it is not auto
- *      scroll bottom"
- *
- * THE SCENARIO
- *   A long chat (1000 messages) whose bubbles are not uniform: many are a
- *   normal paragraph, some are taller than the whole viewport, and some carry
- *   a collapsed "thought"/reasoning section that is a small pill until it is
- *   expanded. One long streamed response then arrives.
- *
- * WHY IT BREAKS
- *   Two things must be true at once, which is why a 20-message test never sees
- *   it:
- *
- *   1. The sizer is very tall (1000 messages), so a correction to the model
- *      above the viewport is measured in THOUSANDS of pixels, not tens.
- *   2. The virtual window keeps EXPANDING while the reader follows the stream,
- *      because the tall bubbles render far taller than the estimator guessed.
- *      Every newly rendered row above the anchor is measured for the first
- *      time, and its real height replaces the guess.
- *
- *   The anchor pass then compensates: `scrollTop += (prefix after − prefix
- *   before)`. That is correct for a reader in the history and wrong for a
- *   reader at the bottom, who has no view to preserve — the content they are
- *   reading is exactly what just got resized. The write strands them thousands
- *   of pixels above the bottom, and ChatView reads that as "the user left the
- *   bottom", disarming every follow gate for the rest of the mount. The rest
- *   of the long response then streams off-screen and the reader watches a gap
- *   grow. (`tests/functional_ui/chatview_at_bottom_stick_ui_test.py` recorded
- *   it as a −15,900px correction with `scrollHeight` essentially unchanged.)
- *
- * THE INVARIANT UNDER TEST
- *   Scoped to the scroller's own responsibility, one pass at a time: **if a
- *   measure pass finds the reader at the bottom, that pass leaves them at the
- *   bottom** — whatever it just did to the model. The correction is still
- *   APPLIED (the sizer converges); it is just aimed at the bottom instead of
- *   at the anchor.
- *
- *   Re-sticking across the passes BETWEEN remeasures is ChatView's job
- *   (`scrollToBottom` after `remeasure`, and `onContentShift` on growth), so
- *   asserting that here would be asserting the wrong layer. The companion
- *   `ChatView.tallBubbleAutoStick.spec.ts` asserts the app's own `isAtBottom`
- *   flag end-to-end over the same shape.
- *
- * Note on the reasoning section: jsdom cannot lay it out, so "tall because an
- * expanded thought block" is modelled here as height — which is what the
- * scroller actually consumes.
- */
+/** The reported shape, at the layer that can express it: "Chatview has issue if sse send a llm
+ * chunk and llm full data finish reason stop, its like automatically go to bottom scrollbar
+ * chatview" + "if the messages many and the content response is long, it is not auto scroll. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'

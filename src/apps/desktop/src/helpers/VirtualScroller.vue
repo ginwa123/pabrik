@@ -543,21 +543,9 @@ const measureItems = () => {
     atBottomTarget: wasAtBottom ? bottomScrollTop() : undefined,
     maxScrollTop: reachableScrollTop(),
   })
-  // ── The write gate is `shiftPx !== 0`, and that is deliberate but partial ──
-  //
-  // It drops the helper's OTHER return: `target: 'bottom'` carries the prefix
-  // delta it absorbed alongside, and on a streaming turn that delta is normally
-  // 0 (content grows AT/AFTER the anchor, so the prefix above it does not move),
-  // so the re-target a bottom reader gets is computed and then discarded here.
-  //
-  // Not changed with the 2026-10-12 compensation work, on purpose. Staging the
-  // case — park at the bottom, grow the last rendered row by 2000px, run
-  // `remeasure()` — re-pins the reader anyway, because ChatView's `onContentShift`
-  // re-stick fires off the sizer change and calls `scrollToBottom`. So the gap is
-  // latent, not demonstrated, and widening this gate is a behaviour change to the
-  // streaming stick path (which has a history of CI flakes) with no witness to
-  // justify it. If it ever needs to be closed, that is the change to make — the
-  // helper's `atBottomTarget > prevScrollTop` guard already makes it downward-only.
+  // ── The write gate is `shiftPx !== 0`, and that is deliberate but partial ── It drops the
+  // helper's OTHER return: `target: 'bottom'` carries the prefix delta it absorbed alongside, and
+  // on a streaming turn that delta is normally 0 (content grows AT/AFTER the anchor, so the prefix.
   if (result.shiftPx !== 0 && !isPreservingScroll.value) {
     // Mark BEFORE the write: assigning .scrollTop fires a native scroll event that onScroll must
     // label as programmatic (see the counter comment above — without this, a downward compensation
@@ -868,13 +856,9 @@ let lastContentH = -1
 let lastScrollEventAt = 0
 const CONTENT_RO_DEBOUNCE_MS = 150
 const CONTENT_RO_MIN_DELTA_PX = 2
-// ── Watch-free sync block ──────────────────────────────────────────────────
-// The six reactive edges above (scrollability emit, items-length rebuild,
-// tail-cap latch, contentShift emit, rendered-range measure) run here:
-// onMounted for the initial pass, onUpdated with prev-value guards after
-// that. `itemHeights` needs no entry: `measureItems()` and `rekeyHeight()`
-// already call `updateAccumulatedHeights()` synchronously after writing,
-// so the deleted debounced deep watcher only ever re-ran the same update.
+// ── Watch-free sync block ────────────────────────────────────────────────── The six reactive
+// edges above (scrollability emit, items-length rebuild, tail-cap latch, contentShift emit,
+// rendered-range measure) run here: onMounted for the initial pass, onUpdated with prev-value.
 let prevRangeStart = -1
 let prevRangeEnd = -1
 onMounted(() => {

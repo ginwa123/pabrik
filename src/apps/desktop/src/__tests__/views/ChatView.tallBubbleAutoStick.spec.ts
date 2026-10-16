@@ -1,52 +1,6 @@
-/**
- * The reported scenario, end to end on the real component:
- *
- *   "Chatview has issue if sse send a llm chunk and llm full data finish
- *    reason stop, its like automatically go to bottom scrollbar chatview"
- *   + "if the messages many and the content response is long, it is not auto
- *      scroll bottom"
- *
- * A 1000-message chat, bubbles whose content is tall enough to fill the screen
- * on its own, and the "thought" (reasoning) sections — then a long streamed
- * response that arrives as a run of `llm_chunk` events and finishes with the
- * `llm_full(finish_reason='stop')` that swaps the streaming row for the
- * canonical one.
- *
- * WHY THE SHAPE MATTERS
- *   Both halves of the report are needed to break it, and neither is enough:
- *
- *   - MANY messages make the sizer hundreds of screens tall, so any correction
- *     to the height model above the viewport is measured in thousands of
- *     pixels rather than tens.
- *   - TALL content (and reasoning sections, which are a small collapsed pill
- *     until expanded) makes the virtual window keep EXPANDING as the response
- *     grows, so batches of rows above the anchor measure for the first time
- *     mid-turn.
- *
- *   The anchor-compensation pass then wrote `scrollTop += prefixDelta`, which
- *   is right for a reader in the history and wrong for a reader at the bottom.
- *   It stranded them thousands of pixels up, and — this is the part that makes
- *   the REPORTED symptom — ChatView reads that write as "the user left the
- *   bottom" and disarms every follow gate. The rest of the long response then
- *   streams off-screen. The fix and its geometry live in
- *   `virtualScrollerScrollAnchor.ts` / `VirtualScroller.measureItems`; the
- *   regression test for the geometry is
- *   `virtualScrollerTallBubbleAutoStick.spec.ts`.
- *
- * WHAT IS ASSERTED HERE
- *   The app's OWN answer, not a re-derivation of it: `.chat-scroll-to-bottom`
- *   is rendered under `v-if="!isAtBottom && …"`, so its ABSENCE is literally
- *   the flag every follow gate reads. Re-deriving the predicate in the test is
- *   how a test passes while asserting nothing.
- *
- *   jsdom has no layout, so this file cannot express the pixel-level geometry
- *   (that is the sibling spec's job and the Playwright suite's). What it does
- *   prove is that the real SSE handler, over the real 1000-message transcript
- *   with the real tall bodies and reasoning sections, never flips that flag off
- *   for a reader who is at the bottom — including across the
- *   `streaming-*` → canonical-row swap, which is the specific event the report
- *   names.
- */
+/** The reported scenario, end to end on the real component: "Chatview has issue if sse send a llm
+ * chunk and llm full data finish reason stop, its like automatically go to bottom scrollbar
+ * chatview" + "if the messages many and the content response is long, it is not auto scroll. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, ref, type App as VueApp, type Ref } from 'vue'

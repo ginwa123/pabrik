@@ -273,24 +273,9 @@ describe('ChatView onContentShift restick (extracted)', () => {
     )
   })
 
-  // ── Bug D (task_1787638309623_3 round 2): stick must NOT re-engage for a
-  // user who is ALREADY scrolled up ─────────────────────────────────────────
-  //
-  // The content-grew guard from round 1 (`isAtBottom = newIsAtBottom ||
-  // disengagedByContentGrowth`) was designed for "user AT bottom, content
-  // grows away" — but it can't distinguish that from "user ALREADY scrolled
-  // up reading, content grows below, viewport stationary". In the second
-  // case it RE-ENGAGES the stick (previousIsAtBottom=false → true), and the
-  // next contentShift yanks the user to the bottom — the "bouncing text"
-  // symptom.
-  //
-  // Log evidence (scroll#234-#247): user scrolling up (top 33249→30533,
-  // bottom 4436px), SSE chunk grew scrollHeight +172 with deltaTop≈0,
-  // `spacer-resize-stick` fired and teleported the user to top=35039
-  // (bottom=4px) mid-read.
-  //
-  // Fix: only RETAIN the stick if it WAS engaged. A user who already
-  // scrolled up must never be re-engaged by content growth.
+  // ── Bug D (task_1787638309623_3 round 2): stick must NOT re-engage for a user who is ALREADY
+  // scrolled up ───────────────────────────────────────── The content-grew guard from round 1
+  // (`isAtBottom = newIsAtBottom || disengagedByContentGrowth`) was designed for "user AT bottom.
   describe('Bug D: content growth must not re-engage a disengaged stick', () => {
     /** The decision function handleVirtualScroll runs for isAtBottom.
      * Mirrors the production fix in ChatView.vue. */

@@ -24,11 +24,9 @@ function findTag(content: string, tag: string): string | null {
 }
 
 export function extractTag(content: string, tag: string, _multiline = true): string | null {
-  // The `_multiline` flag is preserved for back-compat with the original
-  // public signature but is currently a no-op (the implementation already
-  // supports multiline inner content via `indexOf` matching the first `<tag>`
-  // / `</tag>` pair, which works for both single-line and multi-line
-  // bodies). Existing call sites pass only `content` and `tag`.
+  // The `_multiline` flag is preserved for back-compat with the original public signature but is
+  // currently a no-op (the implementation already supports multiline inner content via `indexOf`
+  // matching the first `<tag>` / `</tag>` pair, which works for both single-line and multi-line.
   const raw = findTag(content, tag)
   if (raw === null) return null
   return unescapeXml(raw)
@@ -694,15 +692,9 @@ export function parseMetadata(data: unknown): Record<string, string> {
   return result
 }
 
-// ─── generate_image ────────────────────────────────────────────────────────
-// Parses the JSON `data` payload produced by `execute_generate_image` in
-// `src/modules/agent/tools/generate_image.zig`:
-//   {"status":"generated","count":1,"model":"dall-e-3","size":"1024x1024",
-//    "images":[{"index":0,"path":"/cwd/.../img_xxx.png","bytes":12345,"mime":"image/png"}],
-//    "revised_prompt":"A vibrant watercolor painting of a hat-wearing cat","error":null}
-// On error:
-//   {"status":null,"count":null,"model":null,"size":null,"images":[],
-//    "revised_prompt":null,"error":"HTTP 400: ..."}
+// ─── generate_image ──────────────────────────────────────────────────────── Parses the JSON
+// `data` payload produced by `execute_generate_image` in
+// `src/modules/agent/tools/generate_image.zig`:.
 export interface ParsedGenerateImage {
   status: string | null
   count: number | null
@@ -897,13 +889,9 @@ export function parseWebSearch(data: unknown): ParsedWebSearch {
   }
 }
 
-// ─── list_web_search_providers ─────────────────────────────────────────────
-// The `exec_list_web_search_providers` payload (D14):
-//   {"providers":[{"name":"tinyfish","url":"https://api.search.tinyfish.ai",
-//                  "description":"…","curl":"curl 'https://…?key={key}'"}]}
-// `curl` is a TEMPLATE: it carries the literal text `{key}` where the
-// credential belongs, so the listing is safe by construction — nothing
-// secret reaches the model, and the card may render it verbatim.
+// ─── list_web_search_providers ───────────────────────────────────────────── The
+// `exec_list_web_search_providers` payload (D14):
+// {"providers":[{"name":"tinyfish","url":"https://api.search.tinyfish.ai".
 export interface ParsedSearchProviderEntry {
   name: string
   url: string
@@ -935,17 +923,9 @@ export function parseListWebSearchProviders(data: unknown): ParsedListSearchProv
   return { providers }
 }
 
-// ─── list_directory ─────────────────────────────────────────────────────────
-//
-// Parses the JSON `data` payload produced by `execute_list_directory` +
-// `toJSON` in `src/modules/agent/tools/list_directory.zig`:
-//
-//   {"path":"/proj","count":3,"entries":[
-//     {"name":"src","path":"/proj/src","is_directory":true,"is_symlink":false},
-//     {"name":"main.zig","path":"/proj/main.zig","is_directory":false,"is_symlink":false}
-// ]} The sort order is whatever the backend produced (directories first, then files, alphabetical)
-// — the frontend does NOT re-sort. On error, `normalizeToolContent` unwraps the full envelope and
-// the parser reads the `error` key — see the `error !== null` branch below.
+// ─── list_directory ───────────────────────────────────────────────────────── Parses the JSON
+// `data` payload produced by `execute_list_directory` + `toJSON` in
+// `src/modules/agent/tools/list_directory.zig`: {"path":"/proj","count":3,"entries":[.
 export interface ParsedListDirectoryEntry {
   name: string
   path: string
@@ -1310,17 +1290,9 @@ export function parseUseTool(data: unknown): ParsedUseTool {
 
 // Re-export shared param helper (single source of truth in helpers/).
 export { extractParam } from '../../../helpers/extractParam'
-// ─── present_files ─────────────────────────────────────────────────────────
-//
-// Parses the JSON `data` payload produced by `executePresentFilesToString` in
-// `src/modules/agent/tools/present_files.zig`:
-//
-//   {"status":"presented","count":2,"files":[
-//     {"path":"/abs/a.txt","bytes":12,"mime":"text/plain; charset=utf-8","label":"notes"},
-//     {"path":"/abs/b.jpg","bytes":48211,"mime":"image/jpeg","label":"b.jpg"}
-//   ],"error":null}
-//
-// Error shape: {"status":null,"count":0,"files":[],"error":"..."}
+// ─── present_files ───────────────────────────────────────────────────────── Parses the JSON
+// `data` payload produced by `executePresentFilesToString` in
+// `src/modules/agent/tools/present_files.zig`: {"status":"presented","count":2,"files":[.
 export interface ParsedPresentFile {
   path: string
   bytes: number

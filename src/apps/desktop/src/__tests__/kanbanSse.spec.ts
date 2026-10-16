@@ -533,12 +533,9 @@ describe('useKanbanSseStore (bus-backed)', () => {
   })
 
   it('forwards the active q to fetchKanbanTasks on kanban_task events (Chunk 7)', async () => {
-    // CONTRACT (kanban task search, plan
-    // docs/superpowers/plans/2026-07-30-kanban-task-search.md Chunk 7):
-    // When the SSE handler triggers a task refetch, it MUST forward
-    // the active q from activeSearchQueries so a remote move/edit
-    // during a search doesn't reset the user's narrowed view to the
-    // unfiltered list.
+    // CONTRACT (kanban task search, plan docs/superpowers/plans/2026-07-30-kanban-task-search.md
+    // Chunk 7): When the SSE handler triggers a task refetch, it MUST forward the active q from
+    // activeSearchQueries so a remote move/edit during a search doesn't reset the user's narrowed.
     const ws = useWorkspacesStore()
     // Seed the activeSearchQueries for item_1.
     ws.activeSearchQueries.set('item_1', 'design')

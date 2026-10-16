@@ -9,11 +9,9 @@ import { Effect } from 'effect'
 import * as api from '../../api'
 import ChatView from '../../components/views/ChatView.vue'
 
-// ── The hoisted api mock ────────────────────────────────────────────────────
-// Two seams, both required, both hoisted (same reason as
-// ChatView.streamingStick.spec.ts): `chatEngineDb` binds `fetchFn =
-// getChatHistory` as a constructor default evaluated at module load, and
-// ChatView's authoritative load calls `api.fetchChatHistoryEffect` directly.
+// ── The hoisted api mock ──────────────────────────────────────────────────── Two seams, both
+// required, both hoisted (same reason as ChatView.streamingStick.spec.ts): `chatEngineDb` binds
+// `fetchFn = getChatHistory` as a constructor default evaluated at module load, and ChatView's.
 const historyRows: unknown[] = []
 const historyResponse = () => ({
   messages: historyRows,
@@ -69,17 +67,9 @@ Element.prototype.scrollTo = function scrollToPolyfill(
   el.dispatchEvent(new Event('scroll'))
 }
 
-// ── The geometry under test ─────────────────────────────────────────────────
-//
-// The whole bug is the gap between the ESTIMATE and the MEASURED height, so the
-// two must be different numbers and both must be knowable:
-//
-//   VIEWPORT   800px
-//   ROW        200px real (mocked offsetHeight)
-//   ROWS       100  →  real total 20000px, real bottom 19200px
-// ESTIMATE 64px → estimated total 6400px, estimated bottom 5600px A reader who closed at 9000px is
-// in the middle of the REAL transcript and far above the ESTIMATED bottom — so the estimate cannot
-// be the thing that decides where they land, or the restore is meaningless.
+// ── The geometry under test ───────────────────────────────────────────────── The whole bug is the
+// gap between the ESTIMATE and the MEASURED height, so the two must be different numbers and both
+// must be knowable: VIEWPORT 800px ROW 200px real (mocked offsetHeight) ROWS 100 → real total.
 const VIEWPORT = 800
 const ROW_HEIGHT = 200
 const ROW_COUNT = 100

@@ -290,15 +290,9 @@ const history = useDesignHistory(computed(() => activePageId.value))
 // progress, snap math (computeSnapDelta) emits the 1px violet alignment guides the user should see.
 const snapGuides = ref<SnapGuide[]>([])
 
-// ─── Preview/Edit mode ──────────────────────────────────────────────────
-//
-// When `isPreviewMode === true`, each element's iframe gets
-// `pointer-events: auto` (so the user can type into inputs / click
-// buttons inside the rendered HTML) and the edit chrome (resize
-// handles, selection outline, drag handler) is suppressed. State is
-// transient — no localStorage, no backend roundtrip — a "play the
-// mockup" affordance. Default false.
-// Keyboard: - Cmd/Ctrl+P: toggle Preview ↔ Edit - Esc: exit Preview (return to Edit)
+// ─── Preview/Edit mode ────────────────────────────────────────────────── When `isPreviewMode ===
+// true`, each element's iframe gets `pointer-events: auto` (so the user can type into inputs /
+// click buttons inside the rendered HTML) and the edit chrome (resize handles, selection outline.
 const isPreviewMode = ref<boolean>(false)
 
 const togglePreviewMode = (): void => {

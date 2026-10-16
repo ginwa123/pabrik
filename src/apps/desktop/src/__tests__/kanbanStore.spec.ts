@@ -145,23 +145,9 @@ describe('useWorkspacesStore — kanban actions', () => {
       errorSpy.mockRestore()
     })
 
-    // ─── "Untitled project" regression ─────────────────────────────────
-    //
-    // The bug: the backend used to return a flat `CreateKanbanResponse`
-    // (no wrapper) so the frontend's `const { item, columns } = await
-    // api.createKanban(...)` got both as undefined, the local store
-    // pushed an item with all fields undefined, and the sidebar
-    // rendered the `{{ item.name || 'Untitled project' }}` fallback
-    // until the user reloaded (the reloaded state came from
-    // getWorkspacesItems which has the correct shape).
-    //
-    // The defense-in-depth fix: even if the API ever regresses to a
-    // bare `{id, success}` envelope or omits `name`/`item_type`/`path`,
-    // the store action falls back to the form's values so the
-    // sidebar always renders the typed name. This test pins the
-    // contract — without the fallback, the new item would have
-    // `name: undefined` and the sidebar would render "Untitled
-    // project" until reload.
+    // ─── "Untitled project" regression ───────────────────────────────── The bug: the backend used
+    // to return a flat `CreateKanbanResponse` (no wrapper) so the frontend's `const { item, columns
+    // } = await api.createKanban(...)` got both as undefined, the local store pushed an item with.
     it('falls back to the form name when the API response omits it (regression for "Untitled project" bug)', async () => {
       const store = seedStore()
       // API returns an item with no `name` / `item_type` / `path`.

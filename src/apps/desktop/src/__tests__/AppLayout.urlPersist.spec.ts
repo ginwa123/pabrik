@@ -690,14 +690,9 @@ describe('AppLayout — design item URL persistence (Chunk 3 of design-url-persi
     wrapper.unmount()
   })
 
-  // ─── add-workspace-id-params plan (2026-08-06) ──────────────────
-  //
-  // When the user closes a git/skill/code-editor viewer while a
-  // task is active (e.g. they opened a viewer from the chat
-  // panel of a kanban task), the new URL must include workspaceId
-  // + itemId + pageId so the kanban / design context survives the
-  // navigation. Pre-fix these branches wrote `?view=task&task=X`
-  // only, dropping the breadcrumb.
+  // ─── add-workspace-id-params plan (2026-08-06) ────────────────── When the user closes a
+  // git/skill/code-editor viewer while a task is active (e.g. they opened a viewer from the chat
+  // panel of a kanban task), the new URL must include workspaceId + itemId + pageId so the kanban.
   it('closeGitViewer includes workspaceId + itemId when the active task belongs to a kanban (add-workspace-id-params)', async () => {
     const replaceMock = vi.fn()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -849,17 +849,9 @@ let streamContentVersion = 0
 // Queue state
 const queuedMessages = ref<api.QueuedMessage[]>([])
 
-// Scroll refs
-// We declare an explicit interface for the VirtualScroller instance because
-// `InstanceType<typeof VirtualScroller>` doesn't resolve cleanly for a generic
-// Vue SFC component (the compiler infers a function signature that doesn't
-// satisfy Vue's component-ref constructor constraint).
-//
-// Note: `containerRef` and the `isX`/`effectiveX` refs are AUTO-UNWRAPPED
-// by `defineExpose` — the exposed property is the ref's `.value`, not
-// the ref object. The existing `handleVirtualScroll` reads `.containerRef.value` (double-unwrapped,
-// which returns undefined); it falls back to the event `target` so the bug is invisible. The
-// scroll-restore composable reads `.containerRef` directly.
+// Scroll refs We declare an explicit interface for the VirtualScroller instance because
+// `InstanceType<typeof VirtualScroller>` doesn't resolve cleanly for a generic Vue SFC component
+// (the compiler infers a function signature that doesn't satisfy Vue's component-ref constructor.
 interface VirtualScrollerExposed {
   scrollToIndex: (index: number, behavior?: ScrollBehavior) => void
   scrollToTop: (behavior?: ScrollBehavior) => void
@@ -909,11 +901,9 @@ const scrollerContainerRef = computed<HTMLElement | null>(
 // a function (re-resolved on its interval) instead of a raw element.
 const getChatScrollContainer = (): HTMLElement | null => scrollerContainerRef.value
 const chatScrollStorageKey = computed(() => `chat-scroll-${sessionId.value || props.chatId}`)
-// The restore composable's "is the saved position still at the bottom?" test
-// has to use the SAME bottom edge the auto-stick uses, or a position saved
-// while the reader sat on the last message (which lives at the real content
-// bottom, up to `maxTailGap` above the DOM edge) reads as "scrolled up" and
-// gets restored verbatim.
+// The restore composable's "is the saved position still at the bottom?" test has to use the SAME
+// bottom edge the auto-stick uses, or a position saved while the reader sat on the last message
+// (which lives at the real content bottom, up to `maxTailGap` above the DOM edge) reads as.
 const chatScrollRestore = useChatScrollRestore(
   scrollerContainerRef,
   chatScrollStorageKey,

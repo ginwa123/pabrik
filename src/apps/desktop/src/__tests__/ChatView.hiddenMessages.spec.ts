@@ -191,11 +191,9 @@ describe('HTML tag support — ChatView render branch (source contract)', () => 
     expect(source).toMatch(/\.chat-html-frame \{/)
   })
 
-  // 2026-09-13 (task_1789312493325_7 "html render"): PR #309 shipped the
-  // iframe with a WHITE background and no height management, so an LLM that
-  // answered in HTML mode (the response-formatting prompt offers it) put a
-  // bright slab with its own scrollbar inside the dark transcript. These
-  // guard the two halves of the fix.
+  // 2026-09-13 (task_1789312493325_7 "html render"): PR #309 shipped the iframe with a WHITE
+  // background and no height management, so an LLM that answered in HTML mode (the
+  // response-formatting prompt offers it) put a bright slab with its own scrollbar inside the dark.
   it('paints the frame with the app theme instead of a hardcoded white', async () => {
     const source = await readChatViewSource()
     // The frame element ...

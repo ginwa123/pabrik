@@ -55,10 +55,9 @@ describe('SidebarDiffView — code color (unified)', () => {
 
   it('keeps the +/− change sign glued to the code it marks', () => {
     const wrapper = mountView()
-    // The sign is its own span and the code is now one span per token, so
-    // this also pins the whitespace contract: a newline/indent between the
-    // two inline spans must NOT reach the rendered line (Vue's condensed
-    // whitespace drops it), or every diff row would gain a stray space.
+    // The sign is its own span and the code is now one span per token, so this also pins the
+    // whitespace contract: a newline/indent between the two inline spans must NOT reach the
+    // rendered line (Vue's condensed whitespace drops it), or every diff row would gain a stray.
     expect(wrapper.text()).toContain('+const added = 3')
     expect(wrapper.text()).toContain('−const gone = 2')
   })

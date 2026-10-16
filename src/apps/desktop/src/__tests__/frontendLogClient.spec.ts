@@ -8,13 +8,9 @@ import {
   type FrontendLogClientHandle,
 } from '../helpers/frontendLogClient'
 
-// ─── Minimal FakeWindow ──────────────────────────────────────────────────
-// Mirrors what `installFrontendLogClient` actually reads from the target:
-// `addEventListener` (3 event types), `removeEventListener` (3 types),
-// `console.{error,warn,log,info,debug}` (only `error` + `warn` are
-// patched, but the helper accepts the whole console). We do NOT need
-// `dispatchEvent` for these tests (we fire listeners directly), but the
-// type includes it so the helper can be cast as `Window` cleanly.
+// ─── Minimal FakeWindow ────────────────────────────────────────────────── Mirrors what
+// `installFrontendLogClient` actually reads from the target: `addEventListener` (3 event types),
+// `removeEventListener` (3 types), `console.{error,warn,log,info,debug}` (only `error` + `warn`.
 interface FakeWindow {
   addEventListener: (type: string, cb: EventListenerOrEventListenerObject) => void
   removeEventListener: (type: string, cb: EventListenerOrEventListenerObject) => void

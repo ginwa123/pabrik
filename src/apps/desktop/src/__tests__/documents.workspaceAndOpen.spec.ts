@@ -340,18 +340,9 @@ describe('AppLayout — a document is a PAGE, not a ?doc= overlay', () => {
   })
 
   it('a document path CLEARS the active chat, so no ChatView mounts under it', async () => {
-    // The bug this pins is subtle and survived two earlier specs. <main>
-    // does NOT have one v-if chain: the standalone `v-if` on
-    // <DesignChatDialog> splits it in two, so <DocumentsView> (early, first chain) and the
-    // standalone `<ChatView v-else-if="activeChatId…">` (late, second chain) are in DIFFERENT
-    // chains.
-    // Independent chains are not mutually exclusive, so with `activeChatId` still set the chat
-    // rendered UNDERNEATH the document page.
-    // It hid from the specs for two reasons: the kanban-path spec above has no active chat (so the
-    // ChatView branch is false for an unrelated reason), and a hard page load has no chat state
-    // either.
-    // It only shows when a CHAT is active and the user clicks a row — which is why the Playwright
-    // test drives an actual click.
+    // The bug this pins is subtle and survived two earlier specs. <main> does NOT have one v-if
+    // chain: the standalone `v-if` on <DesignChatDialog> splits it in two, so <DocumentsView>
+    // (early, first chain) and the standalone `<ChatView v-else-if="activeChatId…">` (late, second.
     const { useNavigationStore } = await import('../stores/navigation')
     navigate(DOC_PATH)
     useDocumentsStore().documents = [DOC]

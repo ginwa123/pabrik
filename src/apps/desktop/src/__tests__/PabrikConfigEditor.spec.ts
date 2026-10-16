@@ -187,25 +187,9 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     expect(topLevel ?? []).not.toContainEqual(expect.objectContaining({ name: 'coder' }))
   })
 
-  // ─── Clear active profile (plan 2026-08-06-reset-active-profile) ──
-  // Plan: Settings → Profiles → Reset button next to the active pill
-  // emits `clearActive` → orchestrator calls savePabrikConfig with
-  // `active_profile: ""` (empty string) → the backend handler at
-  // `pabrik_config_put.zig:246-252` interprets empty as "clear" and
-  // sets `config_json.active_profile = null` on disk → the cascade
-  // falls through to top-level config for every chat / task. The
-  // button is gated on `activeProfile !== null` (a no-op when no
-  // active is set).
-  //
-  // Why empty string (not `undefined`)?
-  // Pre-fix the frontend sent `active_profile: undefined`, which JSON
-  // serialisation strips to no key in the PUT body. The backend's
-  // `?[]const u8` type couldn't distinguish "key absent" from
-  // "key: null" — both yielded `None` and the handler skipped the
-  // field. Using `undefined` left the user's "Set active" default
-  // in place (the Reset button silently failed). The empty-string
-  // sentinel works within the existing wire contract — the handler
-  // already maps `ap.len == 0` to "clear" exactly for this purpose.
+  // ─── Clear active profile (plan 2026-08-06-reset-active-profile) ── Plan: Settings → Profiles →
+  // Reset button next to the active pill emits `clearActive` → orchestrator calls savePabrikConfig
+  // with `active_profile: ""` (empty string) → the backend handler at.
   it('saves active_profile: "" when the Reset button is clicked', async () => {
     mockGet.mockResolvedValueOnce({
       profiles: { work: { model: 'm' }, home: { model: 'm2' } },

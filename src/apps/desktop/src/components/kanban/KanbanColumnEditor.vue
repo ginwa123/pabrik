@@ -125,10 +125,9 @@ const handleKeydown = (event: KeyboardEvent) => {
   }
 }
 
-// ─── Lifecycle ─────────────────────────────────────────────────────────────
-// Seed the name field on first render (so a rename modal opened with show=true at mount time has
-// the column's name pre-filled, not an empty string), and reset + refocus on every subsequent open
-// via the open-sync guard below.
+// ─── Lifecycle ───────────────────────────────────────────────────────────── Seed the name field
+// on first render (so a rename modal opened with show=true at mount time has the column's name
+// pre-filled, not an empty string), and reset + refocus on every subsequent open via the open-sync.
 name.value = props.initialName ?? ''
 const handleOpen = async () => {
   name.value = props.initialName ?? ''

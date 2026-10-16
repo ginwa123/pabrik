@@ -1,13 +1,6 @@
-// src/apps/desktop/src/__tests__/fakes/fakeTabChannel.ts
-//
-// In-process stand-in for `BroadcastChannel`, so several "tabs" can be simulated
-// inside one vitest worker:
-//   * instances created with the same name see each other's messages,
-//   * the sender never receives its own message (matches the real API),
-//   * delivery is asynchronous (matches the real API),
-//   * `hub.log` records every message for assertions,
-//   * `hub.kill(channel)` drops a participant WITHOUT announcing anything —
-//     used to simulate a tab whose process died (no `down` message).
+// src/apps/desktop/src/__tests__/fakes/fakeTabChannel.ts In-process stand-in for
+// `BroadcastChannel`, so several "tabs" can be simulated inside one vitest worker: * instances
+// created with the same name see each other's messages, * the sender never receives its own.
 import type { TabChannelLike } from '../../helpers/sseTabChannel'
 
 type MessageListener = (event: { data: unknown }) => void

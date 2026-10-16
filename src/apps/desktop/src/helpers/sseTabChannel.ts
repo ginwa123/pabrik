@@ -411,11 +411,9 @@ export function createTabChannel(opts: TabChannelOptions): TabChannel {
 
     close(): void {
       if (closed) return
-      // Announce the handover BEFORE flipping the internal `closed` flag:
-      // `post()` is a no-op once closed, so posting after the flag would silently
-      // drop the `down` message and the remaining tabs would not take over until
-      // the heartbeat timeout (caught by `sseTabChannel.spec.ts > closing the
-      // leader hands leadership to a remaining tab`).
+      // Announce the handover BEFORE flipping the internal `closed` flag: `post()` is a no-op once
+      // closed, so posting after the flag would silently drop the `down` message and the remaining
+      // tabs would not take over until the heartbeat timeout (caught by `sseTabChannel.spec.ts >.
       if (leader) post({ k: 'down', tabId })
       closed = true
       stopHeartbeat()

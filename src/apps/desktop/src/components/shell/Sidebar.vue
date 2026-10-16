@@ -475,17 +475,9 @@ const handleCreateItem = async (name: string, path: string) => {
   }
 }
 
-// Kanban item creation (Chunk 6 of workspace-item-kanban plan):
-// user fills in the name + picks a project folder, AddKanbanDialog
-// emits `create(name, path)`, we call workspacesStore.addKanbanItem
-// (the store action from Chunk 5) which POSTs to
-// /api/workspaces/:wsId/items/kanban and pushes the new item + its
-// 3 default columns into the local store. Then close the dialog.
-// The new item appears in the sidebar immediately (the workspace
-// is auto-expanded by the store action, same UX as
-// addWorkspaceItem). The path is required so every chat session
-// created under the kanban's tasks has a cwd to run git / file
-// tools in.
+// Kanban item creation (Chunk 6 of workspace-item-kanban plan): user fills in the name + picks a
+// project folder, AddKanbanDialog emits `create(name, path)`, we call workspacesStore.addKanbanItem
+// (the store action from Chunk 5) which POSTs to /api/workspaces/:wsId/items/kanban and pushes the.
 const handleCreateKanban = async (name: string, path: string) => {
   if (addItemTargetWorkspaceId.value) {
     await workspacesStore.addKanbanItem(addItemTargetWorkspaceId.value, name, path)

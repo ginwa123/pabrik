@@ -326,13 +326,9 @@ import {
   updateDesignElement as updateDesignElementApi,
   updateDesignElementHtml as updateDesignElementHtmlApi,
   deleteDesignElement as deleteDesignElementApi,
-  // NEW (design-pages-in-workspace-tree plan, 2026-08-06): the store
-  // owns a `designPagesByItemId` cache so both the sidebar tree and
-  // DesignView read from the same source. listDesignPages is now
-  // called from `fetchDesignPages` (defined below in this file)
-  // instead of the per-component `loadPages` helper that lived in
-  // DesignView. createDesignPage / deleteDesignPage continue to be
-  // called here so the cache stays authoritative after a mutation.
+  // NEW (design-pages-in-workspace-tree plan, 2026-08-06): the store owns a `designPagesByItemId`
+  // cache so both the sidebar tree and DesignView read from the same source. listDesignPages is now
+  // called from `fetchDesignPages` (defined below in this file) instead of the per-component.
   listDesignPages as listDesignPagesApi,
   createDesignPage as createDesignPageApi,
   deleteDesignPage as deleteDesignPageApi,

@@ -221,6 +221,19 @@ def truncate_sentence(sent, indent, kind, dropped):
             dropped.append(sent[m.start():].strip())
             return (emit_jsdoc([head], indent) if kind == 'jsdoc'
                     else emit_slash([head], indent))
+
+    # No safe clause boundary. Fall back to the last WORD boundary that fits,
+    # which is a weaker cut but still never splits a word and still keeps the
+    # leading clause — the sentence's subject and verb come first.
+    words = sent.split()
+    for end in range(len(words), 0, -1):
+        head = ' '.join(words[:end]).rstrip(' ,;—–-')
+        if not head.endswith(('.', '!', '?')):
+            head += '.'
+        if len(wrap(head, width)) <= 3:
+            dropped.append(' '.join(words[end:]))
+            return (emit_jsdoc([head], indent) if kind == 'jsdoc'
+                    else emit_slash([head], indent))
     return None
     return emit_jsdoc(keep, indent) if kind == 'jsdoc' else emit_slash(keep, indent)
 

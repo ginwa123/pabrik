@@ -296,24 +296,9 @@ const openContextMenuInBackground = () => {
   openChatInNewTab({ id })
 }
 
-// ─── Rename ────────────────────────────────────────────────────────────────
-//
-// Goes through `api.updateTaskSimple`, NOT `api.updateSession`, and the
-// difference is load-bearing:
-//
-//   updateTaskSimple → PUT /api/workspaces/tasks/:task_id →
-//     task_update.updateTaskName → cascade to llm_history.updateSessionName,
-//     whose SQL is `UPDATE sessions SET name = ?` and nothing else.
-//
-//   updateSession    → PUT /api/llm/session/:id →
-//     session_update calls updateSessionSelectedProfileModel UNCONDITIONALLY,
-//     and api/index.ts fills that field with '' whenever the caller omits it.
-//     Empty means CLEAR on the wire (session_update.zig:13), so a rename
-//     through this path would silently reset the chat's model profile AND
-//     bump updated_at, jumping the row to the top of a list sorted by it.
-// Both end at the same `sessions.name`; only one touches anything else.
-// The cascade ends in a `session_updated` SSE broadcast, which the
-// onSessionEvent subscription above turns back into a loadChats().
+// ─── Rename ──────────────────────────────────────────────────────────────── Goes through
+// `api.updateTaskSimple`, NOT `api.updateSession`, and the difference is load-bearing:
+// updateTaskSimple → PUT /api/workspaces/tasks/:task_id → task_update.updateTaskName → cascade to.
 const renameModalOpen = ref(false)
 const renameModalName = ref('')
 
@@ -808,11 +793,9 @@ const loadChats = async () => {
   burstChatPrStatus()
 }
 
-// Deep-link / refresh cover, extracted so both the cache paint and
-// the delta paint can run it: if the URL already shows a chat,
-// optimistic-clear its dot + fire the touch so the dot clears
-// without waiting for the next SSE refresh. fireSessionTouched is
-// once-per-lifetime guarded, so the double call is a no-op.
+// Deep-link / refresh cover, extracted so both the cache paint and the delta paint can run it: if
+// the URL already shows a chat, optimistic-clear its dot + fire the touch so the dot clears without
+// waiting for the next SSE refresh. fireSessionTouched is once-per-lifetime guarded, so the double.
 const restoreActiveFromUrl = () => {
   // If we found and activated a saved chat, restore it in AppLayout
   const activeItem = navItems.value.find((item) => item.active)

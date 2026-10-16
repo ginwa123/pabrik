@@ -68,11 +68,9 @@ describe('useWorkspacesStore.init()', () => {
     // NEW (kanban-prefetch-on-init plan): mock listKanbanColumns so
     // the kanban-columns fetch in init() doesn't hit the network.
     vi.spyOn(api, 'listKanbanColumns').mockImplementation(listKanbanColumnsMock)
-    // Reset call history so toHaveBeenCalledTimes assertions stay
-    // scoped to a single test. vi.restoreAllMocks() (in afterEach)
-    // restores spy implementations but does NOT clear vi.fn()
-    // call history, so without this the second test sees the first
-    // test's calls and the call-count assertion below flakes.
+    // Reset call history so toHaveBeenCalledTimes assertions stay scoped to a single test.
+    // vi.restoreAllMocks() (in afterEach) restores spy implementations but does NOT clear vi.fn()
+    // call history, so without this the second test sees the first test's calls and the call-count.
     listDesignPagesMock.mockClear()
     listKanbanColumnsMock.mockClear()
     // getTasks is reused for per-column kanban task fetches. Clear its call history too so the

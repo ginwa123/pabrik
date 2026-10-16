@@ -251,18 +251,9 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
   })
 
   it('setActiveTask(null) does NOT clear navigationStore.activeChatId', async () => {
-    // REGRESSION (2026-07-16, `view=chat&session=X` showed welcome page
-    // instead of <ChatView>): the unconditional `clearActiveChat()`
-    // in `setActiveTask` was breaking the chat-nav paths in
-    // Sidebar.vue:316-322 and ChatsList.vue:220-232, where
-    // `setActiveChat(...)` is called immediately BEFORE
-    // `setActiveTask(null)`. The clear undid the just-set chat and
-    // left `activeChatId === ''`, so the v-else-if chain at
-    // AppLayout.vue:1611 (`activeChatId.startsWith('chat-')`) failed
-    // and fell through to <Chats/> (welcome). Now: clearing the
-    // task must NOT clear the chat — callers that need both cleared
-    // (e.g. handleCloseTaskView in AppLayout.vue:528) explicitly
-    // call `navigationStore.clearActiveChat()` themselves.
+    // REGRESSION (2026-07-16, `view=chat&session=X` showed welcome page instead of <ChatView>): the
+    // unconditional `clearActiveChat()` in `setActiveTask` was breaking the chat-nav paths in
+    // Sidebar.vue:316-322 and ChatsList.vue:220-232, where `setActiveChat(...)` is called.
     const ws = await setupHandlersAndSeed()
     const nav = useNavigationStore()
     ws.setActiveTask('task_1')
@@ -276,17 +267,9 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
   })
 
   it('setActiveTask(taskId) DOES clear navigationStore.activeChatId', async () => {
-    // The opposite-direction invariant: ACTIVATING a task must clear
-    // any active chat, otherwise the v-else-if chain at
-    // AppLayout.vue:1459 (`currentView === 'task' && activeTask`)
-    // and the v-else-if at AppLayout.vue:1611
-    // (`activeChatId.startsWith('chat-')`) would BOTH be true,
-    // picking whichever renders first (whichever v-else-if chain
-    // wins) and leaving the other branch out of sync. The previous
-    // unconditional `clearActiveChat()` happened to satisfy this
-    // requirement as a side effect of also clearing on null — the
-    // new conditional version preserves the "activate a task → no
-    // chat left over" contract.
+    // The opposite-direction invariant: ACTIVATING a task must clear any active chat, otherwise the
+    // v-else-if chain at AppLayout.vue:1459 (`currentView === 'task' && activeTask`) and the
+    // v-else-if at AppLayout.vue:1611 (`activeChatId.startsWith('chat-')`) would BOTH be true.
     const ws = await setupHandlersAndSeed()
     const nav = useNavigationStore()
     nav.setActiveChat('pre_task', 'Pre-Task Chat')

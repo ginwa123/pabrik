@@ -437,15 +437,9 @@ const syncItemToUrl = (oldItemId: string | null) => {
   // targets; the task-chat suffix is preserved from the current URL when the suffixed task is still
   // the store's live task.
   const safeItemId = itemId ?? ''
-  // The live task id is read from `activeTaskId` (the raw id), NOT
-  // the `activeTask` computed: the computed resolves the parent
-  // item from the loaded tree, which is null when the parent's
-  // workspace hasn't loaded its items yet (lazy loading) or in
-  // tests that seed the task id without the full tree. The suffix
-  // represents "chat dialog open for task T" — as long as T is the
-  // active task id, the dialog stays, loaded parent or not.
-  // Navigating to a DIFFERENT item still drops the suffix because
-  // Sidebar clears the active task first (setActiveTask(null)).
+  // The live task id is read from `activeTaskId` (the raw id), NOT the `activeTask` computed: the
+  // computed resolves the parent item from the loaded tree, which is null when the parent's
+  // workspace hasn't loaded its items yet (lazy loading) or in tests that seed the task id without.
   const liveTaskId = workspacesStore.activeTaskId ?? workspacesStore.activeTask?.id ?? null
   const pathParsed = parseAppPath(route.path)
   const urlChatTask =
@@ -971,20 +965,9 @@ const chatSurfaceActive = computed(() => {
   return activeChatId.value.startsWith('chat-')
 })
 
-// ─── Kanban task chat ────────────────────────────────────────────────────────
-//
-// The kanban task chat is a normal view in the <main> chain (see the
-// `activeWorkspaceItem.item_type === 'kanban'` branch, which sits BEFORE
-// the KanbanView branch), not a modal. There is therefore no open-state
-// ref or watcher here: the chain's `activeTask` gate IS the state, and the
-// board tab and the chat tab are two different tab keys pointing at the
-// same item. Closing is handled by handleCloseTaskView, which closes the
-// owning tab when tab mode gives the chat one.
-// Captured from DesignView's `openChat` payload — the design page's own name (NOT the workspace
-// item name). The dialog's header uses it as "Design Chat: <pageName>". Mirrors the FK-plan naming
-// convention (2026-07-28-design-page-workspace-item-task-fk.md).
-// Cleared when activeTask is cleared so a stale pageName from a prior chat doesn't leak into the
-// next opened chat's header.
+// ─── Kanban task chat ──────────────────────────────────────────────────────── The kanban task
+// chat is a normal view in the <main> chain (see the `activeWorkspaceItem.item_type === 'kanban'`
+// branch, which sits BEFORE the KanbanView branch), not a modal. There is therefore no open-state.
 const activeDesignChatPageName = ref<string>('')
 
 // ─── Design chat task FK handle (plan: 2026-08-06-design-chat-as-dialog, bug fix from user report

@@ -5,12 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SpawnSubAgent from '../SpawnSubAgent.vue'
 import type { SubAgentProgress } from '../../../helpers/subagentProgress'
 
-// ────────────────────────────────────────────────────────────────────────
-// Helpers
-// ────────────────────────────────────────────────────────────────────────
-// Loose props type: tests intentionally pass partial / loosely-typed values (e.g. `null` sessionId,
-// optional `progress`). vue-tsc independently type-checks the production component against its real
-// prop definitions; this cast only relaxes the test fixture.
+// ──────────────────────────────────────────────────────────────────────── Helpers
+// ──────────────────────────────────────────────────────────────────────── Loose props type: tests
+// intentionally pass partial / loosely-typed values (e.g. `null` sessionId, optional `progress`).
 type TestProps = {
   content?: unknown
   expanded?: boolean

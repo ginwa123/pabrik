@@ -1,60 +1,6 @@
-/**
- * unifiedSseBuffer.spec.ts
- *
- * Regression test for Plan Reviewer finding #1 (in
- * docs/superpowers/plans/2026-06-30-unify-sse-endpoints.md):
- *
- *   The unified factory's default-message handler MUST use a SINGLE
- *   shared buffer for the 3 default-`message` event families
- *   (workers, sessions, llm). Using one buffer per channel was
- *   tempting (symmetry) but would leak memory on the long-lived
- *   global SSE because every incoming event would be appended to
- *   ALL N buffers even though only 1 consumer matches the shape.
- *
- * What this test verifies
- * ────────────────────────
- * We cannot inspect the closure-private `defaultMessageBuf` directly.
- * Instead, we observe its EFFECT: after dispatching N events of one
- * shape, a subsequent event of a DIFFERENT shape must still parse +
- * dispatch correctly. If the buffer had leaked (buggy per-channel
- * buffers), each non-matching buffer would accumulate N events and
- * the parser would corrupt the next shape's parse — either dispatching
- * the wrong event, dispatching nothing, or throwing.
- *
- * Concretely:
- *   1. Fire 100 worker-shape events.   → workers cb fires 100 times.
- *   2. Fire 1 session-shape event.    → session cb fires exactly once.
- *   3. Fire 1 llm-shape event.        → llm cb fires exactly once.
- *
- * With the buggy 3-buffer design:
- *   - The "session buffer" would contain 100 worker events + 1
- *     session event. The parser's `indexOf('{')` finds the FIRST
- *     `{` and `lastIndexOf('}')` finds the LAST `}` — slicing
- *     produces a malformed multi-object string. JSON.parse throws,
- *     the catch-arm slices past `jsonStart+1` (1 byte), and the
- *     rest of the accumulated garbage stays in the buffer.
- *   - The "llm buffer" suffers the same corruption.
- *   - The session/llm callbacks would NEVER fire (parse throws
- *     before the dispatch).
- *
- * With the correct 1-buffer design:
- *   - After each worker dispatch, the buffer is sliced to empty
- *     (or to just a trailing '\n').
- *   - The next session event arrives with a clean buffer, parses
- *     correctly, dispatches exactly once.
- *   - The next llm event does the same.
- *
- * Why we spy on `createSseClient` (not the EventSource)
- * ──────────────────────────────────────────────────────
- * Spying on `createSseClient` lets us capture the `onEvent`
- * callback directly — no need for a mock EventSource, no fake
- * timers, no `setTimeout(start, 0)` deferral. We just call
- * `onEvent(rawString, 'message')` and assert behavior. This is
- * the most surgical test of the factory's INTERNAL logic.
- *
- * If a future refactor adds 3 per-channel buffers, this test
- * will fail with `expected session cb to fire 1 times, got 0`.
- */
+/** unifiedSseBuffer.spec.ts Regression test for Plan Reviewer finding #1 (in
+ * docs/superpowers/plans/2026-06-30-unify-sse-endpoints.md): The unified factory's default-message
+ * handler MUST use a SINGLE shared buffer for the 3 default-`message` event families (workers. */
 import { assert, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createUnifiedSseConnection } from '../api'
