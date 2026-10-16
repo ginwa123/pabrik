@@ -536,7 +536,7 @@ const handlePinnedDrop = (event: DragEvent) => {
                dot, or count — never two at once. Previously each had its
                own ml-auto and they overlapped into a floating pill
                (wireframe R2). -->
-          <span class="ml-2 flex items-center gap-1.5 shrink-0">
+          <span class="ml-auto flex items-center gap-1.5 shrink-0">
             <!-- How long that task has been running. Time pill is the only
                activity marker — the circle spinner was removed as redundant. -->
             <WorkerElapsedChip

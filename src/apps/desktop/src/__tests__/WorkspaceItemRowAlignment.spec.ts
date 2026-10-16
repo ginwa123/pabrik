@@ -98,14 +98,17 @@ describe('WorkspaceItem row — one padded box owns both edges', () => {
     expect(chevron.text()).toContain('▶')
   })
 
-  it('uses the same inter-element gap as every other row in the panel', () => {
-    // `gap-0.5` (2px) against every other row's `gap-2` (8px) is what left
-    // the project name 6px left of where it belonged.
+  it('puts its label at the gutter plus the mark column, and on no other offset', () => {
+    // The row bought its offset with a flex gap once, which is how a project
+    // name and a chat name disagreed. The offset is the 16px mark column now.
     wrapper = mountItem(makeItem())
 
-    const cls = wrapper.find('button.flex-1').classes().join(' ')
-    expect(cls).toContain('gap-2')
-    expect(cls).not.toContain('gap-0.5')
+    const row = wrapper.find('button.flex-1')
+    expect(row.classes()).toContain('px-[var(--sb-gutter)]')
+    expect(row.classes()).not.toContain('gap-2')
+    const mark = row.find('span')
+    expect(mark.classes()).toContain('w-[var(--sb-mark)]')
+    expect(mark.text()).toContain('▶')
   })
 
   it('offers Add task and Delete project in the right-click menu', async () => {
