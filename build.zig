@@ -2514,33 +2514,17 @@ pub fn build(b: *std.Build) void {
     b.step("test:helpers:git_env_guard", "Run git_env_guard helper tests")
         .dependOn(&run_git_env_guard_tests.step);
 
-    // ── zginlint: the Zig linter (src/modules/zginlint/README.md) ──────── A
-    // standalone, std-only module — deliberately NOT part of the pabrikcore
-    // module graph, so its tests compile without the app's dependency stack
-    const zginlint_target = b.graph.host;
-    const zginlint_exe = b.addExecutable(.{
-        .name = "zginlint",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/modules/zginlint/main.zig"),
-            .target = zginlint_target,
-            .optimize = optimize,
-        }),
+    // ── zginlint: the Zig linter (github.com/ginwa123/zglint) ───────────
+    // Moved out of this tree; its unit tests run in that repo's CI now, not
+    // here (a consumer build never runs a dependency's test blocks).
+    const zginlint_dep = b.dependency("zginlint", .{
+        .target = target,
+        .optimize = optimize,
     });
+    const zginlint_exe = zginlint_dep.artifact("zginlint");
     const install_zginlint = b.addInstallArtifact(zginlint_exe, .{});
     b.step("zginlint", "Build the zginlint CLI into zig-out/bin/zginlint")
         .dependOn(&install_zginlint.step);
-
-    const zginlint_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/modules/zginlint/test_root.zig"),
-            .target = zginlint_target,
-            .optimize = optimize,
-        }),
-    });
-    const run_zginlint_tests = b.addRunArtifact(zginlint_tests);
-    test_step.dependOn(&run_zginlint_tests.step);
-    b.step("test:zginlint", "Run the zginlint unit tests")
-        .dependOn(&run_zginlint_tests.step);
 
     // The gate's whole definition: the tree paths it covers. There is no
     // baseline and no per-file ceiling — a finding is a finding, so the only

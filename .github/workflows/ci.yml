@@ -272,10 +272,10 @@ jobs:
           bash scripts/lint-no-catch-unreachable.sh
 
   # ── 1b. zginlint ────────────────────────────────────────────────────
-  # The Zig linter's gate: `src/modules/zginlint/` implemented as a CLI,
-  # run over the tree with zero tolerance — no baseline, no per-file
-  # ceiling, no suppression. The rule is documented in
-  # CODING_STANDARDS.md §4.
+  # The Zig linter's gate: github.com/ginwa123/zglint, pinned by URL +
+  # hash in `build.zig.zon`, run over this tree as a CLI with zero
+  # tolerance — no baseline, no per-file ceiling, no suppression. The rule
+  # is documented in CODING_STANDARDS.md §4.
   #
   # It hangs off `lint` for the same reason the backend cells do: a red
   # cheap gate must not schedule an expensive job. Nothing here consumes
