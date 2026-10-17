@@ -16,7 +16,6 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fc_bin="${FC_BIN:-firecracker}"
 guest_kernel="${GUEST_KERNEL:-$HOME/firecracker-demo/vmlinux-6.18.51}"
 work="${PABRIK_VM_WORKDIR:-${TMPDIR:-/tmp}/pabrik-vm-smoke}"
-rootfs="$work/rootfs"
 image="$work/base.ext4"
 serial_log="$work/serial.log"
 api_sock="$work/api.sock"
@@ -39,27 +38,21 @@ trap cleanup EXIT
 command -v "$fc_bin" >/dev/null || fail "firecracker not found: $fc_bin (set FC_BIN)"
 command -v mkfs.ext4 >/dev/null || fail "mkfs.ext4 missing (e2fsprogs)"
 command -v debugfs >/dev/null || fail "debugfs missing (e2fsprogs)"
+[ -f "$repo_root/scripts/guest-image.manifest" ] || fail "guest-image.manifest missing"
 command -v python3 >/dev/null || fail "python3 missing"
 
 rm -rf "$work"
-mkdir -p "$rootfs"/{proc,sys,dev,tmp,bin,workspace}
+mkdir -p "$work"
 say "kernel  $guest_kernel sha256=$(sha256sum "$guest_kernel" | cut -c1-16)"
 
-say "building pabrik-vm-agent and the probe fixture (static x86_64-linux-musl)"
-zig build-exe "$repo_root/src/vm_agent/main.zig" \
-  -target x86_64-linux-musl -O ReleaseSmall -femit-bin="$rootfs/init"
-chmod +x "$rootfs/init"
+say "building the probe fixture (static x86_64-linux-musl)"
 zig build-exe "$repo_root/src/vm_agent/probe.zig" \
-  -target x86_64-linux-musl -O ReleaseSmall -femit-bin="$rootfs/bin/probe"
-chmod +x "$rootfs/bin/probe"
-say "agent   sha256=$(sha256sum "$rootfs/init" | cut -c1-16) bytes=$(stat -c %s "$rootfs/init")"
-say "probe   sha256=$(sha256sum "$rootfs/bin/probe" | cut -c1-16) bytes=$(stat -c %s "$rootfs/bin/probe")"
+  -target x86_64-linux-musl -O ReleaseSmall -femit-bin="$work/pabrik-probe"
+say "probe   bytes=$(stat -c %s "$work/pabrik-probe")"
 
-# Unprivileged: no loop mount, no root — mkfs.ext4 -d populates from a directory.
-truncate -s 64M "$image"
-mkfs.ext4 -q -F -L pabrik-guest -d "$rootfs" "$image"
-e2fsck -fn "$image" >/dev/null
-say "image   sha256=$(sha256sum "$image" | cut -c1-16) (64 MiB ext4, e2fsck clean)"
+say "assembling the guest image from the pinned manifest"
+PABRIK_VM_CACHE="${PABRIK_VM_CACHE:-$HOME/.cache/pabrik-vm}" \
+  "$repo_root/scripts/build-guest-image.sh" --out "$image" --probe "$work/pabrik-probe"
 
 say "starting firecracker (unprivileged, no NIC)"
 "$fc_bin" --api-sock "$api_sock" --enable-pci >"$work/fc.stdout" 2>&1 &

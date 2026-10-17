@@ -805,3 +805,60 @@ Five findings:
 Reproduce: `FC_BIN=<firecracker> scripts/vm-guest-smoke.sh` (needs `/dev/kvm`, e2fsprogs,
 python3; no root, no tap, no sudo).
 
+---
+
+## 21. The userland supply chain — decided, implemented, running
+
+§20 finding 4 left the image with no userland (Arch's `/usr/lib/initcpio/busybox` is dynamic, so it
+cannot run in the guest). This is the answer, and it is running today:
+
+**The guest rootfs is assembled from a pinned `alpine-minirootfs` (musl end to end), and
+`scripts/guest-image.manifest` is the whole supply chain.**
+
+| piece | what it does |
+|---|---|
+| `scripts/guest-image.manifest` | one `<sha256>  <url>` line per artifact. Nothing else may enter the image. |
+| `scripts/build-guest-image.sh` | fetch → **verify sha256 (fail closed)** → extract (no root, no loop mount) → add `/init` + `/bin/pabrik-probe` → `mkfs.ext4 -d` → `e2fsck -fn` → print image sha256 |
+| `scripts/vm-guest-smoke.sh` | uses the builder, then boots and drives the protocol |
+
+Verified in the guest, over vsock, as `uid=1000`:
+
+```
+/vm-smoke ok  the guest image ships a real shell          → 3.24.2
+/vm-smoke ok  shell expansion and command substitution    → 42 / 1000
+/vm-smoke ok  busybox provides the userland               → 304 applets
+```
+
+### The rules (these are the supply chain)
+
+1. **Nothing enters the image except through the manifest**, and every entry carries a 64-char
+   SHA-256. A missing hash or a mismatch stops the build — the same "fail closed" rule
+   `CODING_STANDARDS.md` §3.4 sets for lints.
+2. **Version-pinned URLs only.** `/alpine/v3.24/releases/...` is immutable;
+   `/alpine/latest-stable/...` is banned in the manifest because the pinned content could move.
+3. **The image hash is the version.** The builder prints it; `workspace_vms.image_version` records
+   it, so a workspace is tied to the bytes it was created to boot, and an upgrade is a new image
+   rather than a mutation.
+4. **Our own binaries are built from this repo in the same run** (`/init`, and the probe fixture),
+   so the image hash transitively pins the agent's source.
+5. **Fetch through `PABRIK_VM_CACHE`** (`~/.cache/pabrik-vm`), so a rebuild works offline and CI can
+   seed the cache; verification happens on every build, cached or not.
+
+### Where the size goes next (P2/P3)
+
+Today the base gives `sh` + coreutils (304 busybox applets) and no more. The dev toolchain —
+`git`, `node`, `python`, `rust`, `zig` — is added as **Alpine packages from the same pinned
+generation** (`apk add --root <rootfs> --repository <pinned-snapshot> ...`), each package an entry
+in the manifest. `apk` needs apk-tools on the build host, so that step belongs in the CI image
+build (a container), not in the local rootless path. **Decision to make in P2:** the exact package
+set per plan tier (a smaller `base` image + a fatter `dev` image is the obvious split).
+
+### Two caveats, both recorded rather than papered over
+
+- **Ownership.** A rootless build cannot restore root ownership, so the whole base lands as
+  `uid 1000` inside the guest — meaning a `uid-1000` workload *can* rewrite `/bin/busybox`. Inside a
+  tenant's own VM the blast radius is their own workspace, but this must not ship: CI builds the
+  image as root (in a container), and the builder warns loudly when it cannot.
+- **The build needs the network once** (~19 s for 3.7 MB from here) and then works from cache.
+  CI must cache by hash and must never skip verification to make a build faster.
+
