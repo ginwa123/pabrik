@@ -7,6 +7,7 @@ const AgentTool = schemas.AgentTool;
 const ToolProperty = schemas.ToolProperty;
 const ToolParameters = schemas.ToolParameters;
 const AgentToolFunction = schemas.AgentToolFunction;
+const git_hardening = @import("helpers").git_hardening;
 
 /// Per-entry result returned by the iterator. Owned by the caller (use
 /// `freeEntries`).
@@ -72,7 +73,7 @@ pub fn execute_list_directory(
         // so the entry is shown rather than silently dropped.
         if (respect_ignore_files) {
             const git_result = std.process.run(allocator, io, .{
-                .argv = &.{ "git", "-C", dir_path_abs, "check-ignore", name },
+                .argv = &(git_hardening.git_prefix ++ .{ "-C", dir_path_abs, "check-ignore", name }),
             }) catch blk: {
                 break :blk std.process.RunResult{
                     .term = .{ .exited = 128 },

@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const git_hardening = @import("helpers").git_hardening;
 
 /// Error set for system folder operations
 pub const SystemFolderError = error{
@@ -272,7 +273,8 @@ pub const SystemFolder = struct {
             // `--` ends option parsing so names starting with `-` are treated
             // as paths (the old per-entry form had no `--` and mis-checked
             // such names as flags — this is strictly more correct, same
-            argv.appendSlice(allocator, &.{ "git", "-C", dir_path, "check-ignore", "--" }) catch break;
+            git_hardening.appendGit(&argv, allocator) catch break;
+            argv.appendSlice(allocator, &.{ "-C", dir_path, "check-ignore", "--" }) catch break;
             argv.appendSlice(allocator, chunk) catch break;
             const result = std.process.run(allocator, io, .{ .argv = argv.items }) catch continue;
             defer allocator.free(result.stdout);

@@ -1,0 +1,12 @@
+# Guest image artifacts. One `<sha256>  <url>` pair per line; `#` comments.
+#
+# The build FAILS CLOSED: a line without a checksum, or a download whose hash
+# does not match, stops the build. Nothing else may enter the image — this file
+# is the whole supply chain for the guest rootfs.
+#
+# Alpine's minirootfs is musl end to end, which is why it works in a guest with
+# no glibc: busybox is the shell and the coreutils (304 applets), and `apk` can
+# add pinned packages later (`git`, `node`) from the same repository snapshot.
+#
+# Version pinning: the v3.24 path is immutable; never use latest-stable here.
+c5ca053cfe1d85c5b96dff8b9bc57045f7f184a30ffb6b65776409ca90388677  https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/x86_64/alpine-minirootfs-3.24.2-x86_64.tar.gz

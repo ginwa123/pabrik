@@ -7,6 +7,7 @@ const AgentToolFunction = schemas.AgentToolFunction;
 const AgentTool = schemas.AgentTool;
 const pabrik = @import("pabrikcore");
 const sqlite = pabrik.sqlite;
+const git_hardening = @import("helpers").git_hardening;
 
 /// Input structure for set_git_worktree tool
 pub const SetGitWorktreeInput = struct {
@@ -164,7 +165,8 @@ pub fn buildWorktreeAddArgv(
 ) ![][]const u8 {
     var argv: std.ArrayList([]const u8) = .empty;
     errdefer argv.deinit(allocator);
-    try argv.appendSlice(allocator, &.{ "git", "worktree", "add", "-b", branch, worktree_path });
+    try git_hardening.appendGit(&argv, allocator);
+    try argv.appendSlice(allocator, &.{ "worktree", "add", "-b", branch, worktree_path });
     if (base.len > 0) try argv.append(allocator, base);
     return argv.toOwnedSlice(allocator);
 }
@@ -1497,18 +1499,26 @@ test "buildWorktreeAddArgv omits the start-point when base is empty" {
     const argv = try buildWorktreeAddArgv(testing.allocator, "worktree/x", "/tmp/wt/x", "");
     defer testing.allocator.free(argv);
 
-    const expected = [_][]const u8{ "git", "worktree", "add", "-b", "worktree/x", "/tmp/wt/x" };
-    try testing.expectEqual(expected.len, argv.len);
-    for (expected, argv) |want, got| try testing.expectEqualStrings(want, got);
+    const tail = [_][]const u8{ "worktree", "add", "-b", "worktree/x", "/tmp/wt/x" };
+    try testing.expectEqual(git_hardening.git_prefix.len + tail.len, argv.len);
+    for (tail, argv[argv.len - tail.len ..]) |want, got| try testing.expectEqualStrings(want, got);
 }
 
 test "buildWorktreeAddArgv appends the base as the start-point" {
     const argv = try buildWorktreeAddArgv(testing.allocator, "worktree/x", "/tmp/wt/x", "origin/main");
     defer testing.allocator.free(argv);
 
-    const expected = [_][]const u8{ "git", "worktree", "add", "-b", "worktree/x", "/tmp/wt/x", "origin/main" };
-    try testing.expectEqual(expected.len, argv.len);
-    for (expected, argv) |want, got| try testing.expectEqualStrings(want, got);
+    const tail = [_][]const u8{ "worktree", "add", "-b", "worktree/x", "/tmp/wt/x", "origin/main" };
+    try testing.expectEqual(git_hardening.git_prefix.len + tail.len, argv.len);
+    for (tail, argv[argv.len - tail.len ..]) |want, got| try testing.expectEqualStrings(want, got);
+}
+
+test "buildWorktreeAddArgv disables repo hooks before the subcommand" {
+    const argv = try buildWorktreeAddArgv(testing.allocator, "worktree/x", "/tmp/wt/x", "");
+    defer testing.allocator.free(argv);
+
+    try testing.expectEqualStrings("/dev/null", git_hardening.configValue("core.hooksPath").?);
+    for (argv[git_hardening.git_prefix.len..]) |arg| try testing.expect(!std.mem.eql(u8, arg, "-c"));
 }
 
 test "jsonError carries message with special chars raw" {

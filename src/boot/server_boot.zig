@@ -6,6 +6,8 @@ const helpers = @import("helpers");
 const database = @import("databases").database;
 const gserverz = @import("kabelweb").server;
 const cli_args = @import("../cli_args.zig");
+const runtime_mode = @import("../runtime_mode.zig");
+const vmd_client = @import("../vmd/vmd_client.zig");
 const migration = @import("../migrations/mod.zig").migration;
 const static_files = @import("../modules/static_files.zig");
 const shutdown = @import("shutdown.zig");
@@ -59,6 +61,64 @@ pub fn parseCliArgs(allocator: std.mem.Allocator, argv: []const []const u8) !?cl
         .invalid => |failure| {
             cli_args.reportFailure(failure);
             return error.InvalidArgs;
+        },
+    };
+}
+
+/// One open of a probe path: a missing /dev/kvm or cgroup mount is an answer,
+/// not an error, so this never propagates.
+fn probeReadable(io: std.Io, path: []const u8) bool {
+    const file = std.Io.Dir.openFileAbsolute(io, path, .{}) catch return false;
+    file.close(io);
+    return true;
+}
+
+/// A manager that answers a ping is the last thing `--saas` needs: without it
+/// the process could start and then have to run tenant commands on the host.
+fn probeManager(allocator: std.mem.Allocator, socket_path: []const u8) bool {
+    var client = vmd_client.Client.init(allocator, socket_path);
+    client.guard_ms = 1_000;
+    const version = client.ping() catch return false;
+    allocator.free(version);
+    return true;
+}
+
+/// Applies `--saas`: it implies auth, then refuses unless this host can honour
+/// isolation. Refusal is logged and returns null so the caller can exit. On
+/// success the resolved mode and the manager's socket are recorded process-wide.
+pub fn enforceRuntimeMode(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    env: *const std.process.Environ.Map,
+    cli: *cli_args.CliArgs,
+) ?runtime_mode.Mode {
+    if (cli.saas) cli.auth_enabled = true;
+    const is_linux = comptime @import("builtin").os.tag == .linux;
+    var manager_reachable = false;
+    if (is_linux) {
+        if (cli.saas) {
+            if (runtime_mode.defaultSocketPath(allocator, env)) |path| {
+                // Process-lifetime: the tool layer reads it on every command,
+                // so it is never freed.
+                runtime_mode.setManagerSocket(path);
+                manager_reachable = probeManager(allocator, path);
+            } else |_| {}
+        }
+    }
+    const probe = runtime_mode.Probe{
+        .os = @import("builtin").os.tag,
+        .kvm_readable = if (is_linux) probeReadable(io, "/dev/kvm") else false,
+        .cgroup2_mounted = if (is_linux) probeReadable(io, "/sys/fs/cgroup/cgroup.controllers") else false,
+        .vmd_reachable = manager_reachable,
+    };
+    return switch (runtime_mode.decide(cli.saas, probe)) {
+        .ok => |mode| {
+            runtime_mode.setCurrent(mode);
+            return mode;
+        },
+        .refused => |refusal| {
+            std.log.err("{s}", .{runtime_mode.message(refusal)});
+            return null;
         },
     };
 }

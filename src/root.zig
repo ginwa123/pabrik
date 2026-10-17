@@ -207,6 +207,13 @@ pub const session_db = @import("agentic_loop/llm_history.zig");
 pub const llm_history = @import("agentic_loop/llm_history.zig");
 pub const llm_history_model_guard = @import("agentic_loop/llm_history_model_guard.zig");
 pub const workspace_scope = @import("agentic_loop/workspace_scope.zig");
+/// The `--saas` execution substrate for shell commands, and the manager client
+/// it speaks to. The wire protocol and its policy live under `src/vmd/` and are
+/// std-only, so the daemon, the server and the tests share one definition.
+pub const vm_runtime = @import("agentic_loop/vm_runtime.zig");
+pub const vmd_policy = @import("vmd/policy.zig");
+pub const vmd_rpc = @import("vmd/rpc.zig");
+pub const vmd_client = @import("vmd/vmd_client.zig");
 pub const agent_memories = @import("agentic_loop/agent_memories.zig");
 /// Workspace-scoped document storage (Migration 098).
 pub const documents_store = @import("agentic_loop/documents_store.zig");
