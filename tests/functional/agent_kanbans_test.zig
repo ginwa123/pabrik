@@ -36,6 +36,7 @@ const EXPECTED_KANBAN_SEEDED_TOOLS = [_][]const u8{
     "read_workspace_session",
     "remove_file",
     "remove_skill",
+    "run_session",
     "save_memory",
     "search",
     "search_documents",

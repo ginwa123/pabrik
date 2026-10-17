@@ -60,6 +60,7 @@ test {
     _ = @import("tools/set_design_page.zig");
     _ = @import("tools/update_plan.zig");
     _ = @import("tools/read_workspace_session.zig");
+    _ = @import("tools/run_session.zig");
     _ = @import("tools/document.zig"); // add_document / edit_document (Migration 098)
     _ = @import("tools/glob.zig");
     _ = @import("tools/memory.zig");

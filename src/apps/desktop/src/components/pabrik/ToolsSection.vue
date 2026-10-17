@@ -9,7 +9,7 @@ const props = defineProps<{ modelValue: string[] | null }>()
 const emit = defineEmits<{ change: [list: string[]] }>()
 
 // Display selection while config.json has no `tools` key: the built-in seed lists from
-// src/agentic_loop/tools_equipped.zig — DEFAULT_AGENT_TOOLS (26 names) + DEFAULT_KANBAN_TOOLS
+// src/agentic_loop/tools_equipped.zig — DEFAULT_AGENT_TOOLS + DEFAULT_KANBAN_TOOLS
 // (kanban_list, kanban_move_task).
 const BUILTIN_DEFAULT_TOOLS: readonly string[] = [
   'command',
@@ -32,6 +32,9 @@ const BUILTIN_DEFAULT_TOOLS: readonly string[] = [
   'save_memory',
   'load_memory',
   'read_workspace_session',
+  // Starts or resumes a session agent, another workspace included. Default-on, like
+  // `spawn_sub_agent`: handing work to another session is core agent behaviour.
+  'run_session',
   // Workspace-scoped documents (Migration 095). Default-on: writing a note the user asked for is a
   // core agent behaviour, and both tools refuse cleanly outside a workspace-linked session, so
   // enabling them by default costs nothing.
@@ -93,6 +96,7 @@ const GROUP_BY_TOOL: Record<string, string> = {
   save_memory: 'Memory & sessions',
   load_memory: 'Memory & sessions',
   read_workspace_session: 'Memory & sessions',
+  run_session: 'Memory & sessions',
   add_document: 'Documents',
   edit_document: 'Documents',
   search_documents: 'Documents',
@@ -134,7 +138,7 @@ const GROUP_BY_TOOL: Record<string, string> = {
 // Hard invariants of the runtime (not user configuration):
 // MAIN_AGENT_ONLY_NAMES never reach sub-agents, and the two kanban
 // tools are the mode floor that is always re-added in kanban mode.
-const MAIN_AGENT_ONLY = new Set(['spawn_sub_agent', 'ask_user'])
+const MAIN_AGENT_ONLY = new Set(['spawn_sub_agent', 'ask_user', 'run_session'])
 const MODE_FLOOR = new Set(['kanban_list', 'kanban_move_task'])
 
 type Pill = { label: string; color: string }

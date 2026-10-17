@@ -16,6 +16,8 @@ const list_memory_mod = pabrikcore.list_memory_tool;
 const save_memory_mod = pabrikcore.memory;
 const load_memory_mod = pabrikcore.memory;
 const read_workspace_session_mod = pabrikcore.read_workspace_session_tool;
+// `run_session` — start/resume a session agent, another workspace included.
+const run_session_mod = pabrikcore.run_session;
 const document_mod = pabrikcore.document_tool;
 const use_skill_mod = pabrikcore.skill_tools;
 const remove_skill_mod = pabrikcore.skill_tools;
@@ -102,6 +104,9 @@ pub fn equips(allocator: std.mem.Allocator) []const AgentTool {
         save_memory_mod.save_memory_tool,
         load_memory_mod.load_memory_tool,
         read_workspace_session_mod.read_workspace_session_tool,
+        // run_session: start or resume a session agent, INCLUDING one in
+        // another workspace.
+        run_session_mod.run_session_tool,
         // Workspace secrets: the discovery half of `{{SECRETS:NAME}}`. Takes
         // no parameters and returns NAMES only — the value is substituted at
         // dispatch and never reaches a tool result.
@@ -227,6 +232,10 @@ pub fn UNIFIED_TOOL_REGISTRY() []const ToolInfo {
         .{ .name = "save_memory", .exec = tools.execSaveMemory, .tool_def = save_memory_mod.save_memory_tool },
         .{ .name = "load_memory", .exec = tools.execLoadMemory, .tool_def = load_memory_mod.load_memory_tool },
         .{ .name = "read_workspace_session", .exec = tools.execReadWorkspaceSession, .tool_def = read_workspace_session_mod.read_workspace_session_tool },
+        // run_session — the WRITE sibling of read_workspace_session: it starts
+        // a new session agent or resumes an existing one, and its target
+        // workspace may be another one.
+        .{ .name = "run_session", .exec = tools.execRunSession, .tool_def = run_session_mod.run_session_tool },
         // Workspace credential discovery. Without a registry entry here the
         // name reaches the model and dispatch misses with `error.UnknownTool`
         // — which the UI renders as a tool that is still running.
@@ -329,6 +338,9 @@ pub const DEFAULT_AGENT_TOOLS: []const []const u8 = &.{
     save_memory_mod.save_memory_tool.function.name,
     load_memory_mod.load_memory_tool.function.name,
     read_workspace_session_mod.read_workspace_session_tool.function.name,
+    // Default-on, like `spawn_sub_agent`: delegating work to another session
+    // or another workspace is core agent behaviour.
+    run_session_mod.run_session_tool.function.name,
     // Credential discovery.
     list_secrets_mod.list_secrets_tool.function.name,
     // Workspace-scoped documents (Migration 098).

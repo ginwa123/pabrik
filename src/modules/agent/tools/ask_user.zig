@@ -191,6 +191,9 @@ pub const MAIN_AGENT_ONLY_NAMES = [_][]const u8{
     // run_skill_eval drives an eval, and an eval reads the skill ledger and
     // can spawn the judging sub-agents.
     "run_skill_eval",
+    // run_session starts a whole new agent run — a sub-agent doing that
+    // recurses without a human anywhere in the chain.
+    "run_session",
 };
 
 /// True when `name` is in `MAIN_AGENT_ONLY_NAMES`.
