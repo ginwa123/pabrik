@@ -77,7 +77,7 @@ pub fn terminalInputHandler(
         };
         const message: []const u8 = switch (err) {
             error.SessionExited => "terminal session has exited",
-            error.UnsupportedPlatform => "terminal sessions require Linux or macOS",
+            error.UnsupportedPlatform => "terminal sessions are not supported on this platform",
             else => "failed to write to terminal",
         };
         return res.jsonResponse(.{

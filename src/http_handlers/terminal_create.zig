@@ -28,6 +28,12 @@ pub const TerminalCreateBody = struct {
 pub const TerminalCreateResponse = struct {
     id: []const u8,
     pid: i32,
+    /// Which console this session actually got — `"posix-pty"` on Linux and
+    /// macOS, `"conpty"` for a real Windows pseudoconsole, `"pipe"` for the
+    /// degraded Windows fallback (no prompt echo, no ANSI, no resize). The
+    /// frontend ignores it; a client that cares about full fidelity can
+    /// refuse to stay silent about a downgrade it did not ask for.
+    backend: []const u8,
 };
 
 pub fn terminalCreateHandler(
@@ -77,7 +83,7 @@ pub fn terminalCreateHandler(
             error.InvalidSize => "cols/rows must be in [2, 1000]",
             error.CwdNotDir => "cwd is not an existing directory",
             error.TooManySessions => "max 20 terminal sessions — close one to open a new shell",
-            error.UnsupportedPlatform => "terminal sessions require Linux or macOS",
+            error.UnsupportedPlatform => "terminal sessions are not supported on this platform",
             error.SpawnFailed => "failed to spawn shell",
             error.OutOfMemory => "Out of memory",
             // Unreachable on create — see the status switch above.
@@ -92,6 +98,7 @@ pub fn terminalCreateHandler(
     const json_str = try std.json.Stringify.valueAlloc(allocator, TerminalCreateResponse{
         .id = info.id,
         .pid = info.pid,
+        .backend = info.backend,
     }, .{});
     return res.jsonResponse(.{ .status_code = 201, .data = json_str });
 }
@@ -114,8 +121,10 @@ test "create response serializes id + pid" {
     const json = try std.json.Stringify.valueAlloc(testing.allocator, TerminalCreateResponse{
         .id = "term-1",
         .pid = 4242,
+        .backend = "conpty",
     }, .{});
     defer testing.allocator.free(json);
     try testing.expect(std.mem.indexOf(u8, json, "term-1") != null);
     try testing.expect(std.mem.indexOf(u8, json, "4242") != null);
+    try testing.expect(std.mem.indexOf(u8, json, "conpty") != null);
 }

@@ -46,7 +46,7 @@ pub fn terminalDeleteHandler(
         };
         const message: []const u8 = switch (err) {
             error.SessionNotFound => "terminal session not found",
-            error.UnsupportedPlatform => "terminal sessions require Linux or macOS",
+            error.UnsupportedPlatform => "terminal sessions are not supported on this platform",
             else => "failed to delete terminal session",
         };
         return res.jsonResponse(.{

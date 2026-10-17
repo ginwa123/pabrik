@@ -2,6 +2,7 @@
 // `tests/functional/terminal_ws_test.py` (same test names, same order).
 
 const std = @import("std");
+const builtin = @import("builtin");
 const testing = std.testing;
 const harness = @import("harness.zig");
 const Harness = harness.Harness;
@@ -18,6 +19,14 @@ const WS_MAGIC = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 /// Read buffer for the socket. Must exceed the largest frame payload
 /// this suite will see; see hazard (1) in the header.
 const rd_buf_len = 128 * 1024;
+
+/// The shell every terminal in this suite runs. Windows has no `/bin/sh`;
+/// `cmd.exe` is its interactive equivalent and every assertion below holds
+/// for it unchanged.
+const SHELL = if (builtin.os.tag == .windows)
+    "C:\\Windows\\System32\\cmd.exe"
+else
+    "/bin/sh";
 
 /// Write buffer for the socket. One frame is at most a few hundred
 /// bytes here, but `Stream.Writer` needs a real buffer to own.
@@ -363,7 +372,12 @@ fn expectedAccept(key: []const u8) ![]u8 {
 /// `_create_session` — `POST /api/terminal/sessions`, return the OWNED
 /// terminal id.
 fn createSession(h: *Harness) ![]u8 {
-    const body = try std.fmt.allocPrint(gpa, "{{\"cwd\":\"{s}\",\"shell\":\"/bin/sh\"}}", .{h.temp_dir});
+    // `std.json.Stringify`, never a hand-built template: `h.temp_dir` is a
+    // Windows path full of backslashes, and `{"cwd":"C:\Users\..."}` is not
+    // JSON — the server answers 400 and the failure looks like a terminal
+    // bug. The shell is the platform's own; `/bin/sh` does not exist on
+    // Windows and `validateShell` rejects a shell that cannot be spawned.
+    const body = try std.json.Stringify.valueAlloc(gpa, .{ .cwd = h.temp_dir, .shell = SHELL }, .{});
     defer gpa.free(body);
 
     var r = try h.http(io, .POST, "/api/terminal/sessions", .{ .json_body = body, .expect = &.{201} });
