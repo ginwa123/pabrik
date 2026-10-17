@@ -118,6 +118,67 @@ pub const Fixture = struct {
     }
 };
 
+/// The shape `dirLink` builds on a given host class. Named so a test can say
+/// which one it is looking at, and so a host with neither FAILS the test that
+/// needs a link instead of passing it vacuously.
+pub const DirLinkKind = enum { posix_symlink, windows_junction };
+
+/// The kind of directory link this host can create WITHOUT a privilege, or
+/// `null` where this tree names no shape.
+pub fn dirLinkKind() ?DirLinkKind {
+    return switch (builtin.os.tag) {
+        .windows => .windows_junction,
+        .linux, .macos, .freebsd, .netbsd, .openbsd, .dragonfly, .illumos, .haiku, .serenity, .ios, .tvos, .watchos, .visionos => .posix_symlink,
+        else => null,
+    };
+}
+
+/// Point the directory link `link_abs` at the directory `target_abs` (which
+/// must exist; `link_abs` must not), in the shape this host can build without
+/// a privilege. Paths underneath it reparse through it on every host.
+pub fn dirLink(allocator: std.mem.Allocator, io: std.Io, target_abs: []const u8, link_abs: []const u8) !void {
+    // Windows needs SeCreateSymbolicLinkPrivilege for a real symlink
+    // (`error.PermissionDenied` without it, which is what a CI runner has); a
+    // directory JUNCTION needs none and reparses the paths underneath it too.
+    return switch (dirLinkKind() orelse return error.NoDirectoryLinkShapeForHost) {
+        .posix_symlink => std.Io.Dir.symLinkAbsolute(io, target_abs, link_abs, .{ .is_directory = true }),
+        .windows_junction => dirLinkJunction(allocator, io, link_abs, target_abs),
+    };
+}
+
+/// `mklink /J` is a `cmd.exe` builtin with no Win32 entry point of its own, so
+/// the command goes in a `.cmd` script — `std.process.spawn` runs a `.cmd`
+/// through `cmd.exe` — where a target path with a space needs no escaping.
+fn dirLinkJunction(allocator: std.mem.Allocator, io: std.Io, link_abs: []const u8, target_abs: []const u8) !void {
+    var script_dir = std.testing.tmpDir(.{});
+    defer script_dir.cleanup();
+    const script = try std.fmt.allocPrint(
+        allocator,
+        "@echo off\r\nmklink /J \"{s}\" \"{s}\"\r\nexit /b %ERRORLEVEL%\r\n",
+        .{ link_abs, target_abs },
+    );
+    defer allocator.free(script);
+    try script_dir.dir.writeFile(io, .{ .sub_path = "dir-link.cmd", .data = script });
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const len = try script_dir.dir.realPath(io, &buf);
+    const script_path = try std.fs.path.join(allocator, &.{ buf[0..len], "dir-link.cmd" });
+    defer allocator.free(script_path);
+
+    // stderr inherited: mklink words its refusals there, and the caller's
+    // failure should say why.
+    var child = try std.process.spawn(io, .{
+        .argv = &.{script_path},
+        .stdin = .ignore,
+        .stdout = .ignore,
+        .stderr = .inherit,
+    });
+    switch (try child.wait(io)) {
+        .exited => |code| if (code == 0) return,
+        else => {},
+    }
+    return error.DirLinkFailed;
+}
+
 /// Render `payload` as a script this host can execute. Private: a Windows
 /// body NAMES the sidecar data files, and only `Fixture.writeProgram`
 /// writes them — handing the text to `writeProgramText` emits nothing.

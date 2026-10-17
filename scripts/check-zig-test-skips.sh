@@ -21,6 +21,9 @@
 #     macOS ARM64  4229/4244 tests passed (15 skipped)
 #     Windows X64  4163/4257 tests passed (94 skipped)   <-- the outlier
 #
+# (Windows reached 0 skipped on 2026-10-16; the ceilings below carry the
+# per-platform history of how the debt was paid down.)
+#
 # Windows skips 9x what Linux does. The overwhelming majority of those
 # ninety-four are `if (skipOnWindows()) return error.SkipZigTest;` on a
 # test that spawns a `/bin/sh` fixture script. On Windows those tests
@@ -48,14 +51,15 @@
 #
 # WHY A PER-PLATFORM CEILING AND NOT A FLAT ZERO
 # ----------------------------------------------
-# Zero is the goal, and `--strict` is that check, but it is not yet
-# satisfiable: converting the Windows skips needs real Windows runs to
-# verify each payload, and pretending otherwise would mean either a
-# permanently red job or deleting the tests. The ceiling is what makes
-# the number (a) visible in every backend cell, (b) impossible to raise,
-# and (c) mechanically lowerable — `--baseline` is in the failure and the
-# notice text. CODING_STANDARDS.md §3 carries the rule and the measured
-# numbers; the nightly Windows job is how the remainder gets converted.
+# Zero is the goal, and `--strict` is that check. Windows reached it on
+# 2026-10-16, so its ceiling is now a literal 0 — any Windows skip at all is
+# a red job, which is where every platform is headed. The ceilings remain
+# per-platform only because Linux (4) and macOS (4) still carry skips; the
+# ceiling is what makes those numbers (a) visible in every backend cell,
+# (b) impossible to raise, and (c) mechanically lowerable — `--baseline` is
+# in the failure and the notice text. CODING_STANDARDS.md §3 carries the
+# rule and the measured numbers; the nightly Windows job is how the
+# remainder of the OTHER platforms gets converted.
 #
 # USAGE
 #   check-zig-test-skips.sh --summary <log> --platform windows
@@ -105,15 +109,30 @@ cd "$REPO_ROOT"
 # host and the suites no longer decline Windows:
 #   run_captured 16, git_pr_status 25, git_pr_list 6, git_pr_create 5,
 #   git_pr_close 3, status_pull_request 4  = 59 tests converted.
-# The remaining 50 are the families that still need a real Windows run to
-# verify (mcp_stdio's NDJSON speaker, the symlink / /proc / setenv sites,
-# and the ~84 vacuous `return;` passes, which count as PASS and are
-# therefore not in this number at all).
+# The remaining 50 were the families that still needed a real Windows run to
+# verify (mcp_stdio's NDJSON speaker, the symlink / /proc / setenv sites, the
+# PTY session tests).
+#
+# 50 -> 0 (2026-10-16, the same day): all 33 remaining Windows skips were
+# converted, each into an assertion of what the code DOES on Windows —
+#   mcp_stdio 4 (portable fixtures; the Windows readiness probe was a real
+#     bug: `waitReadable` returned true unconditionally, so a recv deadline
+#     could never fire), the symlink sites 6 (a directory junction needs no
+#     privilege), /proc + siginfo + setenv introspection 6 (a host table:
+#     `helpers.open_descriptors` counts fds on Linux and handles on Windows),
+#     terminal_session 11 (session bookkeeping without a PTY;
+#     `error.UnsupportedPlatform` asserted where Windows genuinely has no
+#     PTY), Agent.callStreaming 6 (a std.Io.net fixture; the three stall
+#     tests had asserted `error.StreamIdleTimeout`, which has no producer
+#     left in the tree).
+# The presets stay per-platform only because the leftover skips differ;
+# Windows is at zero, and the same conversions took Linux 10 -> 4 and
+# macOS 15 -> 4 (their own notices asked for exactly those numbers).
 baseline_for() {
   case "$1" in
-    linux)   echo "${PABRIK_ZIG_TEST_SKIPS_LINUX:-10}" ;;
-    macos)   echo "${PABRIK_ZIG_TEST_SKIPS_MACOS:-15}" ;;
-    windows) echo "${PABRIK_ZIG_TEST_SKIPS_WINDOWS:-50}" ;;
+    linux)   echo "${PABRIK_ZIG_TEST_SKIPS_LINUX:-4}" ;;
+    macos)   echo "${PABRIK_ZIG_TEST_SKIPS_MACOS:-4}" ;;
+    windows) echo "${PABRIK_ZIG_TEST_SKIPS_WINDOWS:-0}" ;;
     *) return 1 ;;
   esac
 }
@@ -346,26 +365,45 @@ EOF
   check "a log one over the windows ceiling fails" 1 "$rc"
   rc=0; check_log "$tmp/windows.log" linux 0 >/dev/null 2>&1 || rc=$?
   check "the same log fails the tighter linux ceiling" 1 "$rc"
-  rc=0; check_log "$tmp/at_ceiling.log" windows 1 >/dev/null 2>&1 || rc=$?
-  check "the same log fails --strict" 1 "$rc"
+  # The windows ceiling is a literal 0, so the log above has no skip group at
+  # all and --strict would rightly accept it. This fixture cannot be accepted:
+  # it is the case every platform is working toward.
+  printf 'Build Summary: 14/14 steps succeeded; 4163/4257 tests passed (1 skipped)\n' > "$tmp/one_skip.log"
+  rc=0; check_log "$tmp/one_skip.log" windows 1 >/dev/null 2>&1 || rc=$?
+  check "a log with a skip fails --strict" 1 "$rc"
   rc=0; check_log "$tmp/empty.log" windows 0 >/dev/null 2>&1 || rc=$?
   check "an unmeasurable log FAILS (not a pass)" 1 "$rc"
 
   # 13. Slack under the ceiling must PASS and must say what to re-pin —
-  #     that notice is the only thing that lowers a ceiling.
-  printf 'Build Summary: 14/14 steps succeeded; 4250/4257 tests passed (5 skipped)\n' > "$tmp/slack.log"
-  local notice
-  notice="$(check_log "$tmp/slack.log" linux 0 2>/dev/null || true)"
-  rc=0; check_log "$tmp/slack.log" linux 0 >/dev/null 2>&1 || rc=$?
-  check "slack under the ceiling passes" 0 "$rc"
-  case "$notice" in
-    *"PABRIK_ZIG_TEST_SKIPS_LINUX=5"*)
-      echo "  ok   slack names the exact value to re-pin" ;;
-    *)
-      echo "  FAIL slack did not name PABRIK_ZIG_TEST_SKIPS_LINUX=5"
-      echo "       got: $notice"
-      failures=$((failures + 1)) ;;
-  esac
+  #     that notice is the only thing that lowers a ceiling. The platform is
+  #     PICKED, not named: a hardcoded one breaks the day its ceiling hits 0.
+  local slack_platform="" slack_ceiling=0
+  for p in linux macos windows; do
+    if [ "$(baseline_for "$p")" -gt 0 ]; then
+      slack_platform="$p"
+      slack_ceiling="$(baseline_for "$p")"
+      break
+    fi
+  done
+  if [ -z "$slack_platform" ]; then
+    echo "  ok   slack notice: every ceiling is 0, so nothing can be re-pinned"
+  else
+    local slack=$((slack_ceiling - 1))
+    local slack_pin="PABRIK_ZIG_TEST_SKIPS_$(echo "$slack_platform" | tr '[:lower:]' '[:upper:]')=${slack}"
+    printf 'Build Summary: 14/14 steps succeeded; 4250/4257 tests passed (%s skipped)\n' "$slack" > "$tmp/slack.log"
+    local notice
+    notice="$(check_log "$tmp/slack.log" "$slack_platform" 0 2>/dev/null || true)"
+    rc=0; check_log "$tmp/slack.log" "$slack_platform" 0 >/dev/null 2>&1 || rc=$?
+    check "slack under the ${slack_platform} ceiling passes" 0 "$rc"
+    case "$notice" in
+      *"$slack_pin"*)
+        echo "  ok   slack names the exact value to re-pin" ;;
+      *)
+        echo "  FAIL slack did not name ${slack_pin}"
+        echo "       got: $notice"
+        failures=$((failures + 1)) ;;
+    esac
+  fi
 
   # 11. The ceilings are pinned integers and every platform resolves.
   local p

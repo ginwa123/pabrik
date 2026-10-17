@@ -65,16 +65,36 @@ test "ambientGitEnvOverride is null in a clean environment" {
     try std.testing.expect(ambientGitEnvOverride() == null);
 }
 
-// setenv/unsetenv exist on POSIX only; the guard itself (getenv) is portable.
+// `setenv`/`unsetenv` exist on POSIX only. Windows spells the same thing
+// with the CRT's `_putenv_s`, which is the setter behind the `getenv` this
+// module reads — an empty value REMOVES the variable there.
 extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
 extern "c" fn unsetenv(name: [*:0]const u8) c_int;
+extern "c" fn _putenv_s(name: [*:0]const u8, value: [*:0]const u8) c_int;
+
+/// Set `name` in the environment `ambientGitEnvOverride` reads it from:
+/// libc's `setenv` on POSIX, the CRT's `_putenv_s` on Windows.
+fn setAmbientVar(name: [*:0]const u8, value: [*:0]const u8) c_int {
+    return switch (builtin.os.tag) {
+        .windows => _putenv_s(name, value),
+        else => setenv(name, value, 1),
+    };
+}
+
+/// Remove `name` from that same environment — an empty value is how
+/// `_putenv_s` spells `unsetenv`.
+fn unsetAmbientVar(name: [*:0]const u8) c_int {
+    return switch (builtin.os.tag) {
+        .windows => _putenv_s(name, ""),
+        else => unsetenv(name),
+    };
+}
 
 test "ambientGitEnvOverride trips on a set redirect var and clears after unset" {
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
-    try std.testing.expect(setenv("GIT_DIR", "/tmp/probe-guard-test", 1) == 0);
+    try std.testing.expectEqual(@as(c_int, 0), setAmbientVar("GIT_DIR", "/tmp/probe-guard-test"));
     try std.testing.expectEqualStrings("GIT_DIR", ambientGitEnvOverride().?);
     try std.testing.expectError(error.AmbientGitEnvRedirect, requireCleanGitEnv());
-    try std.testing.expect(unsetenv("GIT_DIR") == 0);
+    try std.testing.expectEqual(@as(c_int, 0), unsetAmbientVar("GIT_DIR"));
     try std.testing.expect(ambientGitEnvOverride() == null);
     try requireCleanGitEnv();
 }

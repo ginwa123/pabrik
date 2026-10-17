@@ -913,8 +913,18 @@ jobs:
           # `bash -e`, which aborts on the failed pipeline below BEFORE the
           # `status=$?` line, so the loop never retried (CI run 39001590245).
           set +e
+          # Windows compiles the two mod_tests shards ONE STEP AT A TIME. When
+          # its .zig-cache misses (any build.zig/zon change — cache key v4-zig-*),
+          # both ~1 GB LLVM compiles otherwise run at once on a 4-core runner and
+          # the killed child is what leaves "unable to read results of configure
+          # phase" behind — which the retry below cannot recover, because the
+          # second attempt is just as cold (run 39001339808, and main's own
+          # 38998531861). Serialising them costs a couple of minutes warm.
+          jobs_flag=""
+          if [[ "${RUNNER_OS:-}" == "Windows" ]]; then jobs_flag="-j1"; fi
           for attempt in 1 2; do
-            zig build test --summary all -Dno-webapp-rebuild 2>&1 \
+            # shellcheck disable=SC2086  # $jobs_flag is a deliberate word list
+            zig build test $jobs_flag --summary all -Dno-webapp-rebuild 2>&1 \
               | tee "$RUNNER_TEMP/zig-test/summary.log"
             status=$?
             if [[ "$status" -ne 0 ]] && grep -q "unable to read results of configure phase" "$RUNNER_TEMP/zig-test/summary.log"; then

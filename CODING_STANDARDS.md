@@ -229,6 +229,17 @@ Measured on one *green* run (2026-10-13, run 38428191906):
 | `backend (macOS ARM64)` | 4229/4244 passed | **15** |
 | `backend (Windows X64)` | 4163/4257 passed | **94** |
 
+**Update, 2026-10-16 — Windows is at ZERO.** The ceiling went 91 → 50 → 0 in
+a single day as the families above were converted one at a time: the
+`/bin/sh` fixtures to `helpers.host_fixture`, the symlink sites to a
+directory junction (no privilege needed), the `/proc`-only counters to
+`helpers.open_descriptors` (open fds on Linux, open handles on Windows), the
+PTY session tests to bookkeeping with `error.UnsupportedPlatform` asserted
+where Windows genuinely has no PTY, and the six `Agent.callStreaming` tests
+to a `std.Io.net` fixture. Linux dropped 10 → 4 and macOS 15 → 4 in the same
+change, since those converted tests now run there too; the ceiling for a
+platform at zero is a literal `0`.
+
 Windows skipped nine times what Linux did, on a green pipeline, with 81
 test bodies under `src/` able to bail out on Windows — 61 through a
 `skipOnWindows()` helper, 17 behind a direct `.windows` gate, 3 that need

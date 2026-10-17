@@ -5,6 +5,7 @@ const pabrik_core = @import("pabrikcore");
 const gserverz = pabrik_core.gserverz;
 const pr_provider = pabrik_core.pr_provider;
 const run_captured = @import("helpers").run_captured;
+const host_fixture = @import("helpers").host_fixture;
 
 // ── What this is for ──────────────────────────────────────────────────────
 // The PR tab knows a PR is `mergeable=CONFLICTING` but nothing about *which*
@@ -515,24 +516,26 @@ fn makeRepo(fx: *const FixtureDir) ![]const u8 {
 }
 
 test "fixture dir survives a symlinked temp root with a trailing slash (macOS shape)" {
-    // Regression guard, 2026-10-03. macOS failed every one of these tests
+    // Regression guard, 2026-10-03: macOS failed every one of these tests
     // with `FixtureInsideRealRepo` because $TMPDIR is BOTH a symlink into
-    // /private AND ends in a slash: the constructed path was
+    // /private AND ends in a slash, so `<link>/pabrik-prconflicts-…` builds.
     const allocator = testing.allocator;
-    // The bug this guards is macOS/Linux-shaped, and on Windows the symlink
-    // creates but the mixed `\`+`/` path does not resolve the same way —
-    // GitHub's runners also lack SeCreateSymbolicLinkPrivilege by default, so
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
+    // Windows has the same shape, built here: %TEMP% is a plain path, so the
+    // link is ours, and a directory JUNCTION needs no privilege to make.
+    const sep: u8 = switch (builtin.os.tag) {
+        .windows => '\\',
+        else => '/',
+    };
 
     var env = std.process.Environ.Map.init(allocator);
     defer env.deinit();
     const raw = env.get("TMPDIR") orelse env.get("TEMP") orelse env.get("TMP") orelse "/tmp";
-    const root = std.mem.trimEnd(u8, raw, "/");
+    const root = std.mem.trimEnd(u8, raw, "/\\");
 
     var rb: [std.Io.Dir.max_path_bytes]u8 = undefined;
     var wb: [std.Io.Dir.max_path_bytes]u8 = undefined;
-    const real_root = try std.fmt.bufPrint(&rb, "{s}/pabrik-tmpprobe-real", .{root});
-    const link_root = try std.fmt.bufPrint(&wb, "{s}/pabrik-tmpprobe-link", .{root});
+    const real_root = try std.fmt.bufPrint(&rb, "{s}{c}pabrik-tmpprobe-real", .{ root, sep });
+    const link_root = try std.fmt.bufPrint(&wb, "{s}{c}pabrik-tmpprobe-link", .{ root, sep });
     const with_slash = try std.fmt.allocPrint(allocator, "{s}/", .{link_root});
     defer allocator.free(with_slash);
 
@@ -540,14 +543,11 @@ test "fixture dir survives a symlinked temp root with a trailing slash (macOS sh
     std.Io.Dir.cwd().deleteTree(testing.io, link_root) catch {};
     var d = try std.Io.Dir.cwd().createDirPathOpen(testing.io, real_root, .{});
     d.close(testing.io);
-    // Windows needs SeCreateSymbolicLinkPrivilege, which GitHub's runners do
-    // not grant by default — skip rather than fail there. The macOS/Linux
-    // runners are the ones that actually regressed.
-    std.Io.Dir.cwd().symLink(testing.io, real_root, link_root, .{}) catch return error.SkipZigTest;
+    try host_fixture.dirLink(allocator, testing.io, real_root, link_root);
     defer std.Io.Dir.cwd().deleteTree(testing.io, link_root) catch {};
     defer std.Io.Dir.cwd().deleteTree(testing.io, real_root) catch {};
 
-    // `with_slash` is exactly macOS's $TMPDIR: a symlinked root ending in "/".
+    // `with_slash` is exactly macOS's $TMPDIR: a linked root ending in "/".
     var fx = try makeFixtureDirIn(allocator, with_slash);
     defer fx.deinit();
 

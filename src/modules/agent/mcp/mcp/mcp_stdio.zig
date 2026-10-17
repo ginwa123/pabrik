@@ -48,7 +48,7 @@ fn waitReadable(
     is_cancelled: ?*const fn () bool,
 ) bool {
     if (comptime builtin.os.tag == .windows) {
-        return true;
+        return waitReadableWindows(io, file, deadline_abs, deadline_ns, is_cancelled);
     } else {
         const has_deadline = deadline_ns != 0;
         while (true) {
@@ -78,6 +78,45 @@ fn waitReadable(
             // n == 0: slice elapsed with no data — loop to recheck
             // deadline/cancel.
         }
+    }
+}
+
+/// The Windows half of `waitReadable`. `PeekNamedPipe` is the only
+/// non-destructive readiness probe for a pipe handle, so this is what makes
+/// the deadline reachable: a read on a silent child otherwise parks forever.
+fn waitReadableWindows(
+    io: std.Io,
+    file: std.Io.File,
+    deadline_abs: i128,
+    deadline_ns: u64,
+    is_cancelled: ?*const fn () bool,
+) bool {
+    const kernel32 = struct {
+        extern "kernel32" fn PeekNamedPipe(
+            pipe: std.os.windows.HANDLE,
+            buf: ?*anyopaque,
+            buf_size: std.os.windows.ULONG,
+            bytes_read: ?*std.os.windows.ULONG,
+            total_bytes_avail: ?*std.os.windows.ULONG,
+            bytes_left_this_message: ?*std.os.windows.ULONG,
+        ) callconv(.winapi) std.os.windows.BOOL;
+    };
+    const has_deadline = deadline_ns != 0;
+    while (true) {
+        // Probe BEFORE the hook: a handle that is not a pipe (a regular file,
+        // the shape main's readFramed test uses) is always ready, and polling
+        // the caller's hook for it would be one callback per byte of input.
+        var avail: std.os.windows.ULONG = 0;
+        if (!kernel32.PeekNamedPipe(file.handle, null, 0, null, &avail, null).toBool()) return true;
+        if (avail > 0) return true;
+        // Nothing to read yet, so only NOW do we wait: the hook and the
+        // deadline are consulted once per ≤100 ms slice while waiting.
+        if (is_cancelled) |cb| if (cb()) return false;
+        const now_ns = std.Io.Timestamp.now(io, .real).nanoseconds;
+        if (has_deadline and now_ns >= deadline_abs) return false;
+        const rem_ms: i128 = if (has_deadline) @divTrunc(deadline_abs - now_ns, std.time.ns_per_ms) else 100;
+        const slice_ms: u64 = @intCast(@min(@max(rem_ms, 1), 100));
+        std.Io.sleep(io, .{ .nanoseconds = slice_ms * std.time.ns_per_ms }, .real) catch {};
     }
 }
 
@@ -558,6 +597,8 @@ pub const StdioClient = struct {
             // a double close of a possibly-recycled fd.
             if (!self.is_dead) fd.close(self.io);
             self.stdin = null;
+            // Same hand-over as `deinit`: the child must not Close it again.
+            self.child.stdin = null;
         }
     }
 
@@ -581,6 +622,12 @@ pub const StdioClient = struct {
         self.stdin = null;
         self.stdout = null;
         self.stderr = null;
+        // `Child.kill` closes the child's OWN copies of these pipe handles,
+        // which are the ones just closed above — hand ownership over instead
+        // of Closing them twice (std printed STATUS_INVALID_HANDLE per handle).
+        self.child.stdin = null;
+        self.child.stdout = null;
+        self.child.stderr = null;
         killBounded(self.io, &self.child, REAP_GRACE_PERIOD_NS);
         self.child.id = null;
     }
@@ -932,6 +979,8 @@ pub const StdioRegistry = struct {
 // ============================================================================
 
 const testing = std.testing;
+const hf = @import("helpers").host_fixture;
+const run_captured = @import("helpers").run_captured;
 
 // ── Framing tests (no child needed) ────────────────────────────────────────
 
@@ -1471,18 +1520,21 @@ test "markStale on unknown name is a no-op (does not panic or insert)" {
 // ────────────── Regression coverage for the `/api/mcp/test` hang: probing a
 // stdio server with empty args spawns the bare command (e.g.
 
-/// Argv for a child that stays alive and silent well past any test
-/// deadline. POSIX-only (`sleep`); Windows callers must skip first.
-fn silent_child_argv() []const []const u8 {
-    return &.{ "sleep", "30" };
+/// A child that stays alive and silent well past any test deadline, rendered
+/// by `host_fixture`: a `sleep`ing script on POSIX, the batch file's `ping`
+/// sleep on Windows. It prints NOTHING, so only the deadline ends the recv.
+fn write_silent_child(fx: *hf.Fixture) ![]u8 {
+    return fx.writeProgram("silent-child", .{ .sleep_ms = 5_000 });
 }
 
 test "recv times out on truly-silent child (empty-args bare command)" {
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
-    var client = StdioClient.init(testing.allocator, testing.io, silent_child_argv()) catch |err| {
-        if (err == error.ChildSpawnFailed) return;
-        return err;
-    };
+    const a = testing.allocator;
+    var fx = try hf.Fixture.init(a);
+    defer fx.deinit();
+    const child_argv = try write_silent_child(&fx);
+    defer a.free(child_argv);
+
+    var client = try StdioClient.init(a, testing.io, &.{child_argv});
     defer client.deinit();
 
     const start = std.Io.Timestamp.now(testing.io, .real).nanoseconds;
@@ -1500,11 +1552,13 @@ test "recv times out on truly-silent child (empty-args bare command)" {
 }
 
 test "recv aborts on cancel with truly-silent child" {
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
-    var client = StdioClient.init(testing.allocator, testing.io, silent_child_argv()) catch |err| {
-        if (err == error.ChildSpawnFailed) return;
-        return err;
-    };
+    const a = testing.allocator;
+    var fx = try hf.Fixture.init(a);
+    defer fx.deinit();
+    const child_argv = try write_silent_child(&fx);
+    defer a.free(child_argv);
+
+    var client = try StdioClient.init(a, testing.io, &.{child_argv});
     defer client.deinit();
 
     const cancel = struct {
@@ -1652,17 +1706,20 @@ test "recv with deadline still delivers data (happy path)" {
     try testing.expectEqualStrings("{\"jsonrpc\":\"2.0\",\"id\":1}", body);
 }
 
+/// Two NDJSON responses in ONE payload: the shape a fast server produces when
+/// it coalesces back-to-back messages into a single pipe write.
+const COALESCED_NDJSON = "{\"jsonrpc\":\"2.0\",\"id\":1}\n{\"jsonrpc\":\"2.0\",\"id\":2}\n";
+
 test "recv preserves coalesced back-to-back lines (lightpanda hang)" {
     // A fast server writes two NDJSON lines in one pipe write; the first
     // recv() must not drop the second line with its buffer.
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
-    const argv: []const []const u8 = &.{
-        "sh", "-c", "printf '{\"jsonrpc\":\"2.0\",\"id\":1}\\n{\"jsonrpc\":\"2.0\",\"id\":2}\\n'",
-    };
-    var client = StdioClient.init(testing.allocator, testing.io, argv) catch |err| {
-        if (err == error.ChildSpawnFailed) return;
-        return err;
-    };
+    const a = testing.allocator;
+    var fx = try hf.Fixture.init(a);
+    defer fx.deinit();
+    const child_argv = try fx.writeProgram("coalesced-ndjson", .{ .stdout = COALESCED_NDJSON });
+    defer a.free(child_argv);
+
+    var client = try StdioClient.init(a, testing.io, &.{child_argv});
     defer client.deinit();
 
     // Both bodies come from the client's per-client arena (see the
@@ -2006,16 +2063,30 @@ test "send and recv after deinit return BrokenPipe instead of writing to a recyc
     try testing.expect(client.reader == null);
 }
 
+/// Header promising 100 bytes, then 2 delivered: the header is complete and
+/// the truncation is in the BODY, which is what leaves the tail in the
+/// reader buffer when the child exits.
+const TRUNCATED_CONTENT_LENGTH_FRAME = "Content-Length: 100\r\n\r\nab";
+
 test "recv nulls the reader after a mid-frame failure so the next recv cannot replay buffered bytes" {
     // The persistent 4 KiB reader buffer can hold the tail of an abandoned
     // frame.
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
+    const a = testing.allocator;
+    var fx = try hf.Fixture.init(a);
+    defer fx.deinit();
     // Header promises 100 bytes, the child delivers 2 and exits.
-    const argv: []const []const u8 = &.{ "sh", "-c", "printf 'Content-Length: 100\\r\\n\\r\\nab'" };
-    var client = StdioClient.init(testing.allocator, testing.io, argv) catch |err| {
-        if (err == error.ChildSpawnFailed) return error.SkipZigTest;
-        return err;
-    };
+    const child_argv = try fx.writeProgram("truncated-frame", .{ .stdout = TRUNCATED_CONTENT_LENGTH_FRAME });
+    defer a.free(child_argv);
+    // Premise, asserted rather than assumed: this host's fixture really does
+    // deliver a header promising 100 bytes with 2 body bytes after it, so a
+    // child that printed nothing cannot make the recvs below pass vacuously.
+    var probe = try run_captured.run(a, testing.io, &.{child_argv}, .{ .timeout_ms = 10_000 });
+    defer probe.deinit(a);
+    try testing.expectEqual(@as(u8, 0), probe.term.exited);
+    try testing.expect(std.mem.indexOf(u8, probe.stdout, "Content-Length: 100") != null);
+    try testing.expect(std.mem.endsWith(u8, std.mem.trimEnd(u8, probe.stdout, "\r\n"), "ab"));
+
+    var client = try StdioClient.init(a, testing.io, &.{child_argv});
     defer client.deinit();
     try testing.expect(client.reader == null); // lazily created, not yet
 
@@ -2023,7 +2094,7 @@ test "recv nulls the reader after a mid-frame failure so the next recv cannot re
     if (first) |body| {
         // A completed frame would mean the truncated header somehow
         // resolved — the premise of this test is wrong.
-        client.allocator().free(body);
+        a.free(body);
         return error.TestUnexpectedResult;
     } else |err| {
         // UnexpectedEof is the expected shape; RecvTimeout is accepted
@@ -2037,7 +2108,7 @@ test "recv nulls the reader after a mid-frame failure so the next recv cannot re
     // 2-byte tail as if it were a message.
     const second = client.recv(2_000 * std.time.ns_per_ms, null);
     if (second) |body| {
-        client.allocator().free(body);
+        a.free(body);
         return error.TestUnexpectedResult;
     } else |err| {
         try testing.expect(err == StdioError.UnexpectedEof or err == StdioError.RecvTimeout);
