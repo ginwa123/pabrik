@@ -420,10 +420,11 @@ should not have to remember it. Before adding one:
 ## 4. A comment block is at most three lines
 
 **Capped.** The rule is `zginlint/max-comment-lines`, implemented in
-`src/modules/zginlint/` and run by `zig build zginlint:check`, wired into
-the `zginlint` job of `.github/workflows/ci.yml` and mirrored by
-`.husky/pre-commit`. The tree is at zero findings, so the gate asks for
-zero — there is no baseline and no suppression.
+github.com/ginwa123/zglint and pinned by URL + hash in `build.zig.zon`. It
+is run by `zig build zginlint:check`, wired into the `zginlint` job of
+`.github/workflows/ci.yml` and mirrored by `.husky/pre-commit`. The tree is
+at zero findings, so the gate asks for zero — there is no baseline and no
+suppression.
 
 ```zig
 // WRONG — one block, four lines.
@@ -513,14 +514,15 @@ change behaviour, and the diff proves it did not.
 
 ```bash
 zig build zginlint:check   # the gate: fail on any finding
-zig build test:zginlint    # the linter's own tests (also part of `zig build test`)
-zig build zginlint         # build zig-out/bin/zginlint
+zig build zginlint         # install zig-out/bin/zginlint from the pin
 zig-out/bin/zginlint --help
 ```
 
-Exit codes: `0` clean, `1` findings, `2` a usage or I/O error.
-`src/modules/zginlint/README.md` covers the lexer's contract, the CLI and
-how to add a rule.
+Exit codes: `0` clean, `1` findings, `2` a usage or I/O error. The
+linter's README (github.com/ginwa123/zglint) covers the lexer's contract,
+the CLI and how to add a rule, and its own unit tests are part of that
+repo's CI — not `zig build test` here, because a consumer build never runs
+a dependency's test blocks.
 
 ---
 

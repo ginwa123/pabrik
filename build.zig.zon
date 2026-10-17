@@ -176,6 +176,25 @@
             .url = "git+https://github.com/ginwa123/kabelweb.git#497a509f778b02a7ab2694b5a6dc1b2a5d0e1c88",
             .hash = "kabelweb-0.0.0-vhZam4BoHQAUm6MtkH6jf1qLfoBUoTCkE6qwgsFSgCpM",
         },
+        // The Zig linter (github.com/ginwa123/zglint), moved out of
+        // `src/modules/zginlint/`. A std-only package with no dependencies of
+        // its own; this pin is what keeps `zig build zginlint:check` — the
+        // gate CODING_STANDARDS §4 and .husky/pre-commit mirror — running.
+        //
+        // To move the pin: take the new SHA from that repo's main, run
+        //   zig fetch "git+https://github.com/ginwa123/zglint.git#<sha>"
+        // and paste the `zginlint-0.0.0-…` line it prints. Pin a commit ON
+        // main, never a PR branch head: a squash-merge deletes the branch
+        // head, and a stale `.hash` keeps satisfying a build after the URL
+        // moves (the same traps the `kabelweb` pin above lives with).
+        //
+        // Its unit tests are NOT part of `zig build test` here: they run in
+        // that repo's CI, because a consumer build never runs a dependency's
+        // test blocks.
+        .zginlint = .{
+            .url = "git+https://github.com/ginwa123/zglint.git#bd346bb08c07d0cc1c9d261b0ed1cc46586ca889",
+            .hash = "zginlint-0.0.0-0kYHps_-AAAni9TozY89aHgd9j2DX93yo4-4pILsz_P7",
+        },
         // Cross-platform portable helpers (sleep, fileExists,
         // unixTimestampNanos, etc.) used by every module. Promoted
         // to its own package so multiple sub-packages can `b.dependency`
