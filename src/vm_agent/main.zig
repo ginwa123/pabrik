@@ -1,8 +1,6 @@
-//! `pabrik-vm-agent` — guest PID 1. Phase P1 scope: mount the pseudo
-//! filesystems, create the device nodes this kernel does not provide, announce
-//! itself on the serial console, and serve framed JSON requests over vsock:
-//! `hello`, `exec` (argv, cwd, timeout, output budget, non-root uid) and
-//! `shutdown`. File RPC and port forwarding land in P2/P3.
+//! `pabrik-vm-agent` — guest PID 1: mount the pseudo filesystems, create the
+//! device nodes this kernel lacks, then serve framed JSON over vsock (`hello`,
+//! `exec`, `shutdown`). File RPC and port forwarding land in P2/P3.
 
 const std = @import("std");
 const linux = std.os.linux;

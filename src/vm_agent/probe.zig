@@ -1,9 +1,6 @@
-//! Static multicall fixture for the guest image. The protocol tests need
-//! *something* to exec; the product image will carry a pinned static busybox
-//! instead (see docs/plans/2026-10-17-workspace-is-a-microvm.md §20).
-//!
-//! Raw syscalls only, and argv comes from /proc/self/cmdline: this runs as PID
-//! N in a guest whose userland is deliberately empty.
+//! Static multicall fixture for the guest image: the protocol tests need
+//! *something* to exec, and the product image ships a busybox instead (see
+//! docs/plans/2026-10-17-workspace-is-a-microvm.md §20).
 
 const std = @import("std");
 const linux = std.os.linux;
