@@ -21,6 +21,9 @@
 #     macOS ARM64  4229/4244 tests passed (15 skipped)
 #     Windows X64  4163/4257 tests passed (94 skipped)   <-- the outlier
 #
+# (Windows reached 0 skipped on 2026-10-16; the ceilings below carry the
+# per-platform history of how the debt was paid down.)
+#
 # Windows skips 9x what Linux does. The overwhelming majority of those
 # ninety-four are `if (skipOnWindows()) return error.SkipZigTest;` on a
 # test that spawns a `/bin/sh` fixture script. On Windows those tests
@@ -48,14 +51,15 @@
 #
 # WHY A PER-PLATFORM CEILING AND NOT A FLAT ZERO
 # ----------------------------------------------
-# Zero is the goal, and `--strict` is that check, but it is not yet
-# satisfiable: converting the Windows skips needs real Windows runs to
-# verify each payload, and pretending otherwise would mean either a
-# permanently red job or deleting the tests. The ceiling is what makes
-# the number (a) visible in every backend cell, (b) impossible to raise,
-# and (c) mechanically lowerable — `--baseline` is in the failure and the
-# notice text. CODING_STANDARDS.md §3 carries the rule and the measured
-# numbers; the nightly Windows job is how the remainder gets converted.
+# Zero is the goal, and `--strict` is that check. Windows reached it on
+# 2026-10-16, so its ceiling is now a literal 0 — any Windows skip at all is
+# a red job, which is where every platform is headed. The ceilings remain
+# per-platform only because Linux (10) and macOS (15) still carry skips; the
+# ceiling is what makes those numbers (a) visible in every backend cell,
+# (b) impossible to raise, and (c) mechanically lowerable — `--baseline` is
+# in the failure and the notice text. CODING_STANDARDS.md §3 carries the
+# rule and the measured numbers; the nightly Windows job is how the
+# remainder of the OTHER platforms gets converted.
 #
 # USAGE
 #   check-zig-test-skips.sh --summary <log> --platform windows
@@ -105,15 +109,29 @@ cd "$REPO_ROOT"
 # host and the suites no longer decline Windows:
 #   run_captured 16, git_pr_status 25, git_pr_list 6, git_pr_create 5,
 #   git_pr_close 3, status_pull_request 4  = 59 tests converted.
-# The remaining 50 are the families that still need a real Windows run to
-# verify (mcp_stdio's NDJSON speaker, the symlink / /proc / setenv sites,
-# and the ~84 vacuous `return;` passes, which count as PASS and are
-# therefore not in this number at all).
+# The remaining 50 were the families that still needed a real Windows run to
+# verify (mcp_stdio's NDJSON speaker, the symlink / /proc / setenv sites, the
+# PTY session tests).
+#
+# 50 -> 0 (2026-10-16, the same day): all 33 remaining Windows skips were
+# converted, each into an assertion of what the code DOES on Windows —
+#   mcp_stdio 4 (portable fixtures; the Windows readiness probe was a real
+#     bug: `waitReadable` returned true unconditionally, so a recv deadline
+#     could never fire), the symlink sites 6 (a directory junction needs no
+#     privilege), /proc + siginfo + setenv introspection 6 (a host table:
+#     `helpers.open_descriptors` counts fds on Linux and handles on Windows),
+#     terminal_session 11 (session bookkeeping without a PTY;
+#     `error.UnsupportedPlatform` asserted where Windows genuinely has no
+#     PTY), Agent.callStreaming 6 (a std.Io.net fixture; the three stall
+#     tests had asserted `error.StreamIdleTimeout`, which has no producer
+#     left in the tree).
+# The presets stay per-platform because Linux (10) and macOS (15) are not
+# there yet; Windows is.
 baseline_for() {
   case "$1" in
     linux)   echo "${PABRIK_ZIG_TEST_SKIPS_LINUX:-10}" ;;
     macos)   echo "${PABRIK_ZIG_TEST_SKIPS_MACOS:-15}" ;;
-    windows) echo "${PABRIK_ZIG_TEST_SKIPS_WINDOWS:-50}" ;;
+    windows) echo "${PABRIK_ZIG_TEST_SKIPS_WINDOWS:-0}" ;;
     *) return 1 ;;
   esac
 }
@@ -346,8 +364,12 @@ EOF
   check "a log one over the windows ceiling fails" 1 "$rc"
   rc=0; check_log "$tmp/windows.log" linux 0 >/dev/null 2>&1 || rc=$?
   check "the same log fails the tighter linux ceiling" 1 "$rc"
-  rc=0; check_log "$tmp/at_ceiling.log" windows 1 >/dev/null 2>&1 || rc=$?
-  check "the same log fails --strict" 1 "$rc"
+  # The windows ceiling is a literal 0, so the log above has no skip group at
+  # all and --strict would rightly accept it. This fixture cannot be accepted:
+  # it is the case every platform is working toward.
+  printf 'Build Summary: 14/14 steps succeeded; 4163/4257 tests passed (1 skipped)\n' > "$tmp/one_skip.log"
+  rc=0; check_log "$tmp/one_skip.log" windows 1 >/dev/null 2>&1 || rc=$?
+  check "a log with a skip fails --strict" 1 "$rc"
   rc=0; check_log "$tmp/empty.log" windows 0 >/dev/null 2>&1 || rc=$?
   check "an unmeasurable log FAILS (not a pass)" 1 "$rc"
 
