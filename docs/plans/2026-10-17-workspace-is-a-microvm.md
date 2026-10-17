@@ -755,3 +755,53 @@ Four findings that change P2:
 
 Reproduce: `FC_BIN=<firecracker> scripts/vm-guest-smoke.sh`.
 
+---
+
+## 20. P1 status (step 2 landed) — exec over the protocol
+
+`scripts/vm-guest-smoke.sh` now drives the whole protocol and asserts ten behaviours from the host
+side (`scripts/vm-guest-probe.py` is the client):
+
+| assertion | result |
+|---|---|
+| muxer handshake, `hello` frame | ok |
+| `exec` stdout round-trip (`/bin/probe echo …`) | ok |
+| exit code 0 / non-zero exit code 7 + stderr | ok |
+| **commands run as `uid=1000`** (non-root, `no_new_privs`) | ok |
+| a guest-written file survives in the sealed image | ok, read offline as `persisted` |
+| `timeout_ms: 500` on a 30 s sleep → `exec.timeout` + killed | ok |
+| `max_output_bytes: 64` on a 4 KiB flood → `truncated`, 64 bytes kept | ok |
+| `shutdown` ack | ok |
+
+Implementation: `src/vm_agent/main.zig` (fork + two pipes + `poll` loop, `setgid`/`setuid`
+1000, `PR_SET_NO_NEW_PRIVS`, per-exec output budget, `SIGKILL` on deadline,
+`{"exec.stdout","exec.stderr","exec.exit","exec.timeout"}` frames, base64 payloads), plus
+`src/vm_agent/probe.zig` — a 9 KB static multicall fixture (`echo`, `id`, `env`, `write`, `read`,
+`sleep`, `fail`) so the protocol has something to exec before the image has a userland.
+
+Five findings:
+
+1. **exec as uid 1000 with `no_new_privs` works in this minimal guest** — `id` reports
+   `uid=1000 gid=1000`, so the "agent is PID 1 root, workloads are not" split from §8.1 is real,
+   not aspirational.
+2. **The missing `devtmpfs` is solved without a custom kernel.** The agent creates its own device
+   nodes as root-in-guest (`mknod /dev/null`, `zero`, `full`, `random`, `urandom`, `tty`, plus a
+   `devpts` attempt) and logs `device nodes prepared`. This reverses §19's finding 3 for P1/P2:
+   a self-built kernel is a size/speed optimization, not a prerequisite.
+3. **A hard VM stop leaves the image unclean, and `debugfs` does not replay the journal.** The
+   guest's `fsync` did commit (the transaction was in the journal), but the file appeared in the
+   image only after `e2fsck -fy`. So: **any offline read of a stopped workspace needs a journal
+   replay first**; a raw `cp` backup is still safe. It is also the argument for a clean stop
+   (`sync` in the guest, then stop) before snapshot, export or cross-workspace CoW (§9.4).
+4. **The golden image needs a pinned static userland, and this box has none.** Arch's
+   `/usr/lib/initcpio/busybox` is dynamically linked (glibc + libcrypt), so it cannot run in this
+   guest; that is why the probe fixture exists. P2's exit criterion ("a real session's commands run
+   in the VM") needs `busybox-static` (built in CI, or fetched with a pinned checksum) in the image
+   — a supply-chain decision that now has a deadline.
+5. **The VM smoke test cannot run on hosted CI.** Firecracker needs `/dev/kvm`, which GitHub-hosted
+   runners do not expose, so this stays a local/self-hosted-runner test. It is deliberately not
+   wired into `zig build test`; the P2 CI plan needs a self-hosted Linux runner or nothing.
+
+Reproduce: `FC_BIN=<firecracker> scripts/vm-guest-smoke.sh` (needs `/dev/kvm`, e2fsprogs,
+python3; no root, no tap, no sudo).
+

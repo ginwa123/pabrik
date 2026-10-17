@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Phase P1 smoke: build a guest ext4 image around `pabrik-vm-agent`, boot it on
-# Firecracker without root, and complete a framed vsock `hello` round-trip.
+# Firecracker without root, and drive the protocol: `hello`, `exec` (argv, exit
+# code, non-root uid, timeout, output budget), `shutdown`, plus an offline read
+# of the image to prove the guest's file survived in the sealed disk.
 #
 # Needs: /dev/kvm readable, a firecracker binary, a guest kernel (ELF vmlinux),
-# mkfs.ext4 + sha256sum + python3. No tap, no iptables, no sudo.
+# e2fsprogs + sha256sum + python3. No tap, no iptables, no sudo.
 #
 # Usage: scripts/vm-guest-smoke.sh
 # Env:   FC_BIN, GUEST_KERNEL, PABRIK_VM_WORKDIR
@@ -36,23 +38,28 @@ trap cleanup EXIT
 [ -f "$guest_kernel" ] || fail "guest kernel not found: $guest_kernel (set GUEST_KERNEL)"
 command -v "$fc_bin" >/dev/null || fail "firecracker not found: $fc_bin (set FC_BIN)"
 command -v mkfs.ext4 >/dev/null || fail "mkfs.ext4 missing (e2fsprogs)"
+command -v debugfs >/dev/null || fail "debugfs missing (e2fsprogs)"
 command -v python3 >/dev/null || fail "python3 missing"
 
 rm -rf "$work"
-mkdir -p "$rootfs"/{proc,sys,dev,tmp}
+mkdir -p "$rootfs"/{proc,sys,dev,tmp,bin,workspace}
 say "kernel  $guest_kernel sha256=$(sha256sum "$guest_kernel" | cut -c1-16)"
 
-say "building pabrik-vm-agent (static, x86_64-linux-musl)"
+say "building pabrik-vm-agent and the probe fixture (static x86_64-linux-musl)"
 zig build-exe "$repo_root/src/vm_agent/main.zig" \
   -target x86_64-linux-musl -O ReleaseSmall -femit-bin="$rootfs/init"
 chmod +x "$rootfs/init"
+zig build-exe "$repo_root/src/vm_agent/probe.zig" \
+  -target x86_64-linux-musl -O ReleaseSmall -femit-bin="$rootfs/bin/probe"
+chmod +x "$rootfs/bin/probe"
 say "agent   sha256=$(sha256sum "$rootfs/init" | cut -c1-16) bytes=$(stat -c %s "$rootfs/init")"
+say "probe   sha256=$(sha256sum "$rootfs/bin/probe" | cut -c1-16) bytes=$(stat -c %s "$rootfs/bin/probe")"
 
 # Unprivileged: no loop mount, no root — mkfs.ext4 -d populates from a directory.
-truncate -s 32M "$image"
+truncate -s 64M "$image"
 mkfs.ext4 -q -F -L pabrik-guest -d "$rootfs" "$image"
 e2fsck -fn "$image" >/dev/null
-say "image   sha256=$(sha256sum "$image" | cut -c1-16) (32 MiB ext4, e2fsck clean)"
+say "image   sha256=$(sha256sum "$image" | cut -c1-16) (64 MiB ext4, e2fsck clean)"
 
 say "starting firecracker (unprivileged, no NIC)"
 "$fc_bin" --api-sock "$api_sock" --enable-pci >"$work/fc.stdout" 2>&1 &
@@ -85,22 +92,28 @@ if [ -z "$banner" ]; then
   fail "guest never announced the vsock listener"
 fi
 say "guest banner: $banner"
+say "device setup: $(grep -m1 'device nodes' "$serial_log" | tr -d '\r')"
 
-say "vsock hello round-trip over the hybrid-vsock unix socket"
-python3 "$repo_root/scripts/vm-vsock-hello.py" "$vsock_sock"
+say "protocol probe (hello, exec, exit code, uid, timeout, output budget, shutdown)"
+python3 "$repo_root/scripts/vm-guest-probe.py" "$vsock_sock"
 
-# The guest acknowledges `shutdown` and then asks the kernel to power off. On
-# this kernel that degrades to "System halted instead" (no ACPI power path), so
-# the VM does NOT exit by itself — stopping the VM is the manager's job (P2).
-# Asserted here so a silent regression cannot pass as a clean shutdown.
+# The guest acknowledged `shutdown`, but it cannot power the VM off: this kernel
+# logs "Power off not available: System halted instead" (no ACPI power path), so
+# stopping the VM is the manager's job (P2).
 grep -q 'shutdown requested' "$serial_log" || fail "the guest never logged the shutdown request"
-say "guest log confirms: $(grep -m1 'shutdown requested' "$serial_log" | tr -d '\r')"
-pipestatus="$(grep -m1 'Power off not available' "$serial_log" || true)"
-if [ -n "$pipestatus" ]; then
-  say "known kernel limitation: $(printf '%s' "$pipestatus" | tr -d '\r')"
-fi
+say "known kernel limitation: $(grep -m1 'Power off not available' "$serial_log" | tr -d '\r')"
 
 kill "$fc_pid" 2>/dev/null || true
 wait "$fc_pid" 2>/dev/null || true
 fc_pid=""
-say "OK - image, rootless boot, vsock hello, guest shutdown ack (serial: $serial_log)"
+
+# A hard VM stop leaves an UNMOUNTED ext4: the guest's committed transaction
+# sits in the journal, which debugfs does not replay. e2fsck -fy is the replay
+# step — the same one mount would do — and needs no root.
+say "offline image read (no mount, no root): does the guest's file persist?"
+e2fsck -fy "$image" >/dev/null 2>&1 || true
+persisted="$(debugfs -R 'cat /workspace/hello.txt' "$image" 2>/dev/null | head -1)"
+[ "$persisted" = "persisted" ] || fail "expected /workspace/hello.txt to contain 'persisted', got '$persisted'"
+say "image /workspace/hello.txt = $persisted"
+
+say "OK - image, rootless boot, exec protocol, shutdown ack, persisted file (serial: $serial_log)"
