@@ -103,10 +103,9 @@ fn waitReadableWindows(
     };
     const has_deadline = deadline_ns != 0;
     while (true) {
-        // Probe BEFORE consulting the hook: a handle that is not a pipe (a
-        // regular file, the shape main's readFramed test uses) is always
-        // ready, and polling the caller's hook for it would be one callback
-        // per byte of input — the very regression that test pins.
+        // Probe BEFORE the hook: a handle that is not a pipe (a regular file,
+        // the shape main's readFramed test uses) is always ready, and polling
+        // the caller's hook for it would be one callback per byte of input.
         var avail: std.os.windows.ULONG = 0;
         if (!kernel32.PeekNamedPipe(file.handle, null, 0, null, &avail, null).toBool()) return true;
         if (avail > 0) return true;
