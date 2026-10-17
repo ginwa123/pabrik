@@ -3,7 +3,7 @@
 - **Task**: `task_1792245573147_0` — "Workspace is a vm from microvm"
 - **Worktree**: `~/.config/pabrik/.worktrees/workspace-is-a-vm-from-microvm-1792245526062`
 - **Branch**: `worktree/workspace-is-a-vm-from-microvm-1792245526062` (base `main`)
-- **Status**: rev 4 — **P0 has landed in this branch** (§18); the rest is still a plan.
+- **Status**: rev 5 — **P0, P1 and all of P2 have landed in this branch** (§18–§24); P3+ is still a plan.
 - **Human decision** (2026-10-17): the microVM runtime is a **Linux-only, opt-in mode** (`pabrik --saas`).
   Without the flag Pabrik behaves exactly as today; every non-SaaS feature works in both modes.
 
@@ -901,6 +901,9 @@ Reproduce: `FC_BIN=<firecracker> scripts/vmd-smoke.sh` (needs `/dev/kvm`; no roo
 
 ## 23. Where to pick up (handoff brief)
 
+> **Superseded by §24 for P2:** the two cards this brief names — P2b and P2c — have both
+> landed. The rest of the brief (P3, the CI/image card, the human decisions) still stands.
+
 **State.** P0, P1 and P2a have landed on
 `worktree/workspace-is-a-vm-from-microvm-1792245526062` (PR #983, 9 commits, base `main`).
 Everything below was verified on this box; nothing else is claimed.
@@ -939,3 +942,79 @@ cannot power the VM off, so stopping is the manager's job; Firecracker refuses t
 `api.sock`; the VMM must not share the manager's stdout; `zginlint` counts files *with* findings, and
 a `//!` header over three lines fails CI.
 
+---
+
+## 24. P2 status (steps b and c landed) — the daemon, and the command tool routed into it
+
+§22 landed P2a (the Zig client). This is P2b and P2c:
+
+| item | where | proof |
+|---|---|---|
+| the RPC: framed JSON, `workspace_id` + action only, 4 MiB cap before allocation | `src/vmd/rpc.zig` | 16 vmd unit tests (`zig build test:vmd`, in `zig build test`) |
+| the policy the whole design rests on: an inert id, a workspace-relative `cwd`, the peer rule | `src/vmd/policy.zig` | same suite; `../../etc` and `/etc` are refused |
+| the host-side client (one connect, one frame, one reply) | `src/vmd/vmd_client.zig` | driven by the CLI below |
+| the daemon: unix socket, `SO_PEERCRED`, one VM per workspace, adoption from disk | `src/vmd/daemon.zig` | `scripts/vmd-daemon-smoke.sh` 8/8 |
+| `serve` / `ping` / `exec` / `status` / `stop`; `run` unchanged | `src/vmd/main.zig` | `scripts/vmd-smoke.sh` 5/5 (P2a, still green) |
+| `--saas` boots only when a manager answers a ping; local mode identical | `src/runtime_mode.zig`, `src/boot/server_boot.zig` | `scripts/vmd-saas-smoke.sh` 3/3 |
+| the routing seam: an executor replaces the host spawn, the host path is untouched | `shell.Executor`, `execute_command_with`, `src/agentic_loop/vm_runtime.zig`, `workspace_scope.resolveWorkspaceRoot` | unit tests + the two smokes |
+| build wiring: `zig build vmd`, `zig build test:vmd` (both in `zig build test`) | `build.zig` | 4670/4674 pass, 4 skipped = the pinned Linux ceiling |
+
+```
+[vmd-daemon-smoke] ok  ping -> pabrik-vmd 0.1
+[vmd-daemon-smoke] ok  exec -> uid 1000 on Alpine 3.24.2
+[vmd-daemon-smoke] ok  $VMS/workspaces/demo/{disk.ext4,api.sock,vsock.sock,serial.log,fc.log,fc.pid}, vmm pid=4097457
+[vmd-daemon-smoke] ok  status -> ready pid=4097457
+[vmd-daemon-smoke] ok  a restarted daemon adopted vmm pid=4097457 and ran a command in it
+[vmd-daemon-smoke] ok  /etc and ../../etc were refused before any VM was touched
+[vmd-daemon-smoke] ok  stop ended vmm pid=4097457; the next command booted pid=4097513 and read the file back
+[vmd-daemon-smoke] ok  uid 1000 was refused by a daemon expecting uid 1001 (SO_PEERCRED, not a claim)
+
+[vmd-saas-smoke] ok  pabrik --port 8080 -> runtime mode: local
+[vmd-saas-smoke] ok  exit 2 and a refusal that names pabrik-vmd
+[vmd-saas-smoke] ok  pabrik --saas --port 8080 -> runtime mode: saas (manager on …/vmd.sock)
+```
+
+### The decisions this phase turned into code
+
+1. **The daemon holds no VM map.** `<workspace>/fc.pid` plus a live `api.sock` *is* the
+   state, so a restarted `pabrik-vmd` adopts the VMs it finds instead of orphaning them —
+   asserted, including "the same daemon restart keeps the same VMM pid". It also removes
+   the mutex a per-process map would need, and only the boot path takes a lock (an
+   `flock` on the workspace directory) so two callers cannot bind one disk.
+2. **"Stopped" is a fact, not a claim.** SIGKILL is asynchronous and an adopted VMM is
+   nobody's child, so `stop` polls until the pid is gone *and* reaps it with
+   `wait4(WNOHANG)` when it is our own child (a zombie still answers `kill(pid, 0)`).
+3. **The workspace id is the only input, so it must be inert.** `workspaceIdValid` allows
+   `[A-Za-z0-9_-]` only: an id is not a place, and `../../etc` must not be able to steer
+   `layoutFor`. The exec cwd is the same rule in the other direction — *relative*, with no
+   `.`/`..` segment, joined under `/workspace` by the daemon.
+4. **`SO_PEERCRED` is the kernel's statement, not the caller's.** The daemon accepts its
+   own uid unless `--allowed-uid` says otherwise, and logs who it refused. Proven the only
+   way it can be on a single-uid box: run a daemon that expects uid+1 and watch it refuse.
+5. **The seam is a parameter.** `shell.execute_shell_with(…, executor)` and
+   `command.execute_command_with(…, executor)`; `null` is the host path byte-for-byte, and
+   `vm_runtime.executorFor` returns null unless the process booted `--saas` *and* the
+   backend can exist on this platform. No global hook, no half-switched process.
+6. **Fail closed, and say so.** In SaaS mode a command whose session does not resolve to a
+   workspace, or whose `cwd` is outside it, is *refused* — never run on the host. Same for
+   the boot: `--saas` without a manager that answers a ping exits 2 and names
+   `pabrik-vmd serve` / `PABRIK_VMD_SOCKET`.
+7. **A legal capture cannot produce an illegal frame.** The reply is base64, so
+   `max_output_bytes` is capped at 1 MiB in the RPC — well under the 4 MiB frame.
+
+### What this does NOT yet do (stated, not implied)
+
+- **Detached commands are refused under `--saas`** with a named error: `mode` in the guest
+  is a P3 item, and pretending otherwise would silently change `command`'s contract. So is
+  `§10.5`'s `vm_id`/`guest_pid` accounting — `session_background_process` has no guest
+  columns yet.
+- **No cgroup scope per VM.** `§10.2`'s limits are not applied by the daemon; the VM has
+  its `mem_size_mib`/`vcpu_count` and nothing else. That is the next card, not a claim here.
+- **The routing is proven without an LLM.** The tool envelope, the executor selection, the
+  cwd mapping, the capture shaping and the RPC are covered by unit tests, and the RPC is
+  driven end-to-end by the daemon smoke — but no agent loop has yet *chosen* to run a
+  `command` inside a VM, because that needs a model. P3's `PABRIK_VM_TEST=1` smoke is where
+  that run belongs.
+- **`pabrik-vmd` must be started by hand.** Nothing supervises the daemon (no unit file,
+  no auto-spawn), and the reconciler of `§10.1` (`absent → … → failed`, backoff) is only
+  its first two states in code: `ready` and `absent`.

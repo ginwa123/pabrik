@@ -376,7 +376,6 @@ fn webview2MissingPrereq(b: *std.Build) ?[]const u8 {
 }
 
 /// Vendored Lua 5.4 sources compiled into a module.
-
 /// A `--test-filter` one shard gets compiled with, plus the cost weight the
 /// balancer assigns to it.
 const TestShardEntry = struct {
@@ -2513,6 +2512,35 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_git_env_guard_tests.step);
     b.step("test:helpers:git_env_guard", "Run git_env_guard helper tests")
         .dependOn(&run_git_env_guard_tests.step);
+
+    // === pabrik-vmd (src/vmd/main.zig) — the workspace VM manager ===
+    // Linux-only: it speaks to a unix socket and forks a VMM, and the tests
+    // that drive it need /dev/kvm (scripts/vmd-smoke.sh, scripts/vmd-daemon-smoke.sh).
+    const vmd_step = b.step("vmd", "Build pabrik-vmd into zig-out/bin/pabrik-vmd");
+    const vmd_test_step = b.step("test:vmd", "Run the pabrik-vmd unit tests");
+    if (target.result.os.tag == .linux) {
+        const vmd_exe = b.addExecutable(.{
+            .name = "pabrik-vmd",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("src/vmd/main.zig"),
+                .target = target,
+                .optimize = optimize,
+            }),
+        });
+        const install_vmd = b.addInstallArtifact(vmd_exe, .{});
+        vmd_step.dependOn(&install_vmd.step);
+
+        const vmd_tests = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("src/vmd/main.zig"),
+                .target = target,
+                .optimize = optimize,
+            }),
+        });
+        const run_vmd_tests = b.addRunArtifact(vmd_tests);
+        vmd_test_step.dependOn(&run_vmd_tests.step);
+        test_step.dependOn(&run_vmd_tests.step);
+    }
 
     // ── zginlint: the Zig linter (src/modules/zginlint/README.md) ──────── A
     // standalone, std-only module — deliberately NOT part of the pabrikcore

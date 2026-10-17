@@ -31,7 +31,9 @@ pub fn resolveWorkspaceId(
     defer if (cwd) |c| allocator.free(c);
     const c = cwd orelse return null;
     if (c.len == 0) return null;
-    return matchWorkspaceByPath(allocator, db, c);
+    const match = (try matchWorkspaceByPath(allocator, db, c)) orelse return null;
+    defer allocator.free(match.root);
+    return match.workspace_id;
 }
 
 /// True when both sessions resolve to the same non-null workspace.
@@ -125,9 +127,7 @@ pub fn sessionCwd(
     db: *sqlite.SqliteBackend,
     session_id: []const u8,
 ) !?[]u8 {
-    var rows = try db.query(allocator,
-        "SELECT COALESCE(cwd, '') FROM sessions WHERE id = ? LIMIT 1",
-        &.{session_id});
+    var rows = try db.query(allocator, "SELECT COALESCE(cwd, '') FROM sessions WHERE id = ? LIMIT 1", &.{session_id});
     defer rows.deinit();
     if (try rows.next()) |row| {
         defer row.deinit(allocator);
@@ -137,13 +137,54 @@ pub fn sessionCwd(
     return null;
 }
 
+/// The winning item of the longest-prefix match: both the workspace it
+/// belongs to and the directory it names. Both slices are owned by the caller.
+pub const WorkspaceMatch = struct {
+    workspace_id: []u8,
+    root: []u8,
+
+    pub fn deinit(self: WorkspaceMatch, allocator: std.mem.Allocator) void {
+        allocator.free(self.workspace_id);
+        allocator.free(self.root);
+    }
+};
+
+/// The host directory a session's workspace lives in, by the same order and
+/// longest-prefix rule `resolveWorkspaceId` uses. A session whose workspace
+/// cannot be located has no root, and its commands must not be guessed at.
+pub fn resolveWorkspaceRoot(
+    allocator: std.mem.Allocator,
+    db: *sqlite.SqliteBackend,
+    session_id: []const u8,
+) !?[]u8 {
+    if (session_id.len == 0) return null;
+
+    var rows = try db.query(allocator,
+        \\SELECT COALESCE(wi.path, '') FROM workspace_item_tasks t
+        \\JOIN workspace_items wi ON wi.id = t.workspace_item_id
+        \\WHERE t.id = ? LIMIT 1
+    , &.{session_id});
+    defer rows.deinit();
+    if (try rows.next()) |row| {
+        defer row.deinit(allocator);
+        if (row.values[0].len > 0) return try allocator.dupe(u8, row.values[0]);
+    }
+
+    const cwd = (try sessionCwd(allocator, db, session_id)) orelse return null;
+    defer allocator.free(cwd);
+    if (cwd.len == 0) return null;
+    const match = (try matchWorkspaceByPath(allocator, db, cwd)) orelse return null;
+    defer allocator.free(match.workspace_id);
+    return match.root;
+}
+
 /// Longest-prefix match of `cwd` against `workspace_items.path`. A path
 /// matches when it equals `cwd` or is a `/`-bounded prefix of it.
 fn matchWorkspaceByPath(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
     cwd: []const u8,
-) !?[]u8 {
+) !?WorkspaceMatch {
     var rows = try db.query(allocator,
         \\SELECT workspace_id, path FROM workspace_items
         \\WHERE path IS NOT NULL AND path != ''
@@ -151,10 +192,12 @@ fn matchWorkspaceByPath(
     defer rows.deinit();
 
     var best_len: usize = 0;
-    // Owned copy of the winning workspace id (row memory is freed on
-    // every row.deinit, so the winner must be duped to survive).
+    // Owned copies of the winner (row memory is freed on every row.deinit,
+    // so the winner must be duped to survive).
     var winner: ?[]u8 = null;
+    var winner_root: ?[]u8 = null;
     errdefer if (winner) |w| allocator.free(w);
+    errdefer if (winner_root) |r| allocator.free(r);
     var tied = false;
 
     while (try rows.next()) |row| {
@@ -167,7 +210,9 @@ fn matchWorkspaceByPath(
             best_len = item_path.len;
             tied = false;
             if (winner) |w| allocator.free(w);
+            if (winner_root) |r| allocator.free(r);
             winner = try allocator.dupe(u8, row.values[0]);
+            winner_root = try allocator.dupe(u8, item_path);
         } else if (item_path.len == best_len and winner != null and
             !std.mem.eql(u8, row.values[0], winner.?))
         {
@@ -176,11 +221,12 @@ fn matchWorkspaceByPath(
         }
     }
 
-    if (tied) {
+    if (tied or winner == null or winner_root == null) {
         if (winner) |w| allocator.free(w);
+        if (winner_root) |r| allocator.free(r);
         return null;
     }
-    return winner;
+    return .{ .workspace_id = winner.?, .root = winner_root.? };
 }
 
 fn isPathPrefix(prefix: []const u8, path: []const u8) bool {
@@ -299,9 +345,7 @@ test "resolveWorkspaceId: prefix boundary is slash-aware, ties fail closed" {
     const alloc = testing.allocator;
 
     // /proj/abc must NOT match item path /proj/a (no slash boundary).
-    try ctx.db.exec(alloc,
-        "INSERT INTO sessions (id, name, status, cwd) VALUES ('s6', 'Boundary', 'active', '/proj/abc')",
-        &.{});
+    try ctx.db.exec(alloc, "INSERT INTO sessions (id, name, status, cwd) VALUES ('s6', 'Boundary', 'active', '/proj/abc')", &.{});
     try testing.expect(try resolveWorkspaceId(alloc, &ctx.db, "s6") == null);
 
     // Ambiguity: second workspace claims the same path -> tie -> null.
@@ -309,9 +353,7 @@ test "resolveWorkspaceId: prefix boundary is slash-aware, ties fail closed" {
         \\INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position)
         \\VALUES ('i3', 'w2', 'kanban', 'Dup', '/proj/a', 1)
     , &.{});
-    try ctx.db.exec(alloc,
-        "INSERT INTO sessions (id, name, status, cwd) VALUES ('s7', 'Tied', 'active', '/proj/a/x')",
-        &.{});
+    try ctx.db.exec(alloc, "INSERT INTO sessions (id, name, status, cwd) VALUES ('s7', 'Tied', 'active', '/proj/a/x')", &.{});
     try testing.expect(try resolveWorkspaceId(alloc, &ctx.db, "s7") == null);
 }
 
@@ -352,4 +394,47 @@ test "workspaceSessionIds: task-linked plus cwd-matched, others excluded" {
     const empty = try workspaceSessionIds(alloc, &ctx.db, "");
     defer freeSessionIds(alloc, empty);
     try testing.expectEqual(@as(usize, 0), empty.len);
+}
+
+test "resolveWorkspaceRoot: a task-linked session reports its item's directory" {
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+    const alloc = testing.allocator;
+
+    const root = (try resolveWorkspaceRoot(alloc, &ctx.db, "s1")) orelse
+        return error.TestUnexpectedResult;
+    defer alloc.free(root);
+    try testing.expectEqualStrings("/proj/a", root);
+}
+
+test "resolveWorkspaceRoot: a cwd-matched session reports the longest matching item" {
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+    const alloc = testing.allocator;
+
+    const root = (try resolveWorkspaceRoot(alloc, &ctx.db, "s3")) orelse
+        return error.TestUnexpectedResult;
+    defer alloc.free(root);
+    try testing.expectEqualStrings("/proj/a", root);
+}
+
+test "resolveWorkspaceRoot: a session with no workspace, and a workspace with no path, have none" {
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+    const alloc = testing.allocator;
+
+    try testing.expect(try resolveWorkspaceRoot(alloc, &ctx.db, "s4") == null);
+    try testing.expect(try resolveWorkspaceRoot(alloc, &ctx.db, "s5") == null);
+    try testing.expect(try resolveWorkspaceRoot(alloc, &ctx.db, "nope") == null);
+    try testing.expect(try resolveWorkspaceRoot(alloc, &ctx.db, "") == null);
+
+    try ctx.db.exec(alloc,
+        \\INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position)
+        \\VALUES ('i9', 'w9', 'kanban', 'NoPath', '', 1)
+    , &.{});
+    try ctx.db.exec(alloc,
+        \\INSERT INTO workspace_item_tasks (id, name, workspace_item_id)
+        \\VALUES ('s9', 'T9', 'i9')
+    , &.{});
+    try testing.expect(try resolveWorkspaceRoot(alloc, &ctx.db, "s9") == null);
 }

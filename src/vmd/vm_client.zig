@@ -49,6 +49,9 @@ pub const Layout = struct {
     vsock_sock: []u8,
     serial_log: []u8,
     fc_log: []u8,
+    /// The pid of the VMM this workspace is running, if any. It is how a fresh
+    /// manager tells a live VMM from the sockets a hard kill left behind.
+    fc_pid: []u8,
 
     pub fn deinit(self: Layout, allocator: std.mem.Allocator) void {
         allocator.free(self.dir);
@@ -57,6 +60,7 @@ pub const Layout = struct {
         allocator.free(self.vsock_sock);
         allocator.free(self.serial_log);
         allocator.free(self.fc_log);
+        allocator.free(self.fc_pid);
     }
 };
 
@@ -75,6 +79,8 @@ pub fn layoutFor(allocator: std.mem.Allocator, spec: Spec) !Layout {
     const serial_log = try std.fmt.allocPrint(allocator, "{s}/serial.log", .{dir});
     errdefer allocator.free(serial_log);
     const fc_log = try std.fmt.allocPrint(allocator, "{s}/fc.log", .{dir});
+    errdefer allocator.free(fc_log);
+    const fc_pid = try std.fmt.allocPrint(allocator, "{s}/fc.pid", .{dir});
     return .{
         .dir = dir,
         .disk = disk,
@@ -82,6 +88,7 @@ pub fn layoutFor(allocator: std.mem.Allocator, spec: Spec) !Layout {
         .vsock_sock = vsock_sock,
         .serial_log = serial_log,
         .fc_log = fc_log,
+        .fc_pid = fc_pid,
     };
 }
 
@@ -224,6 +231,94 @@ fn waitForApiSocket(api_sock: []const u8, timeout_ms: u32) !void {
     return Error.ConnectFailed;
 }
 
+/// `<root>/workspaces/<id>` exists. The manager takes its boot lock on that
+/// directory, so it has to exist before the lock, not inside `boot`.
+pub fn ensureWorkspaceDir(layout: Layout) !void {
+    try ensureDir(layout.dir);
+}
+
+/// Record the VMM's pid so a later manager can adopt it instead of guessing
+/// from a socket that a hard kill also leaves behind.
+pub fn writePid(layout: Layout, pid: linux.pid_t) void {
+    var buf: [4096]u8 = undefined;
+    const path = cstr(layout.fc_pid, &buf) orelse return;
+    const rc = linux.open(path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o644);
+    if (linux.errno(rc) != .SUCCESS) return;
+    const fd: linux.fd_t = @intCast(rc);
+    defer _ = linux.close(fd);
+    var text: [24]u8 = undefined;
+    const written = std.fmt.bufPrint(&text, "{d}\n", .{pid}) catch return;
+    writeAll(fd, written) catch {};
+}
+
+pub fn clearPid(layout: Layout) void {
+    var buf: [4096]u8 = undefined;
+    const path = cstr(layout.fc_pid, &buf) orelse return;
+    _ = linux.unlink(path);
+}
+
+pub fn readPid(layout: Layout) ?linux.pid_t {
+    var buf: [4096]u8 = undefined;
+    const path = cstr(layout.fc_pid, &buf) orelse return null;
+    const rc = linux.open(path, .{ .ACCMODE = .RDONLY }, 0);
+    if (linux.errno(rc) != .SUCCESS) return null;
+    const fd: linux.fd_t = @intCast(rc);
+    defer _ = linux.close(fd);
+    var text: [24]u8 = undefined;
+    const n = linux.read(fd, &text, text.len);
+    if (linux.errno(n) != .SUCCESS or n == 0) return null;
+    const trimmed = std.mem.trim(u8, text[0..n], " \n\r\t");
+    const pid = std.fmt.parseInt(i32, trimmed, 10) catch return null;
+    if (pid <= 0) return null;
+    return @intCast(pid);
+}
+
+/// Signal 0 is the "does this process exist" probe. It goes through the raw
+/// syscall because `std.os.linux`'s `SIG` is an enum with no zero member.
+fn pidAlive(pid: linux.pid_t) bool {
+    const err = linux.errno(linux.syscall2(.kill, @intCast(pid), 0));
+    return err == .SUCCESS or err == .PERM;
+}
+
+/// Live means more than "the pid file exists": the recorded process must still
+/// be running AND its control socket must answer.
+pub fn vmmAlive(layout: Layout) bool {
+    const pid = readPid(layout) orelse return false;
+    if (!pidAlive(pid)) return false;
+    const fd = connectUnix(layout.api_sock) catch return false;
+    _ = linux.close(fd);
+    return true;
+}
+
+/// Stop a VMM this workspace recorded, if it is still running. Returns whether
+/// anything was actually stopped.
+pub fn stopRecorded(layout: Layout) bool {
+    const pid = readPid(layout) orelse return false;
+    clearPid(layout);
+    if (!pidAlive(pid)) return false;
+    _ = linux.kill(pid, linux.SIG.KILL);
+    // SIGKILL is asynchronous, and a VMM this process did not fork is nobody's
+    // child, so there is no `wait4` to collect it. Answering "stopped" before
+    // the pid is gone would be a claim the caller cannot verify.
+    return waitGone(pid, 5000);
+}
+
+/// `wait_pid(2)`'s WNOHANG. A VMM we forked becomes a zombie that `kill(pid,
+/// 0)` still reports as alive, so the reap has to happen inside the poll.
+const wno_hang: u32 = 1;
+
+fn waitGone(pid: linux.pid_t, timeout_ms: u32) bool {
+    var waited: u32 = 0;
+    while (waited < timeout_ms) : (waited += 10) {
+        var status: u32 = 0;
+        const rc = linux.wait4(pid, &status, wno_hang, null);
+        if (linux.errno(rc) == .SUCCESS and rc != 0) return true;
+        if (!pidAlive(pid)) return true;
+        sleepMs(10);
+    }
+    return false;
+}
+
 pub const Vm = struct {
     pid: linux.pid_t,
     layout: Layout,
@@ -289,6 +384,7 @@ pub fn boot(allocator: std.mem.Allocator, spec: Spec) !Vm {
 
     const pid = try spawnFirecracker(spec, layout);
     errdefer _ = linux.kill(pid, linux.SIG.KILL);
+    writePid(layout, pid);
 
     try waitForApiSocket(layout.api_sock, boot_timeout_ms);
 
@@ -349,6 +445,7 @@ pub fn waitReady(layout: Layout, timeout_ms: u32) !void {
 }
 
 pub fn stop(vm: *Vm) void {
+    clearPid(vm.layout);
     _ = linux.kill(vm.pid, linux.SIG.KILL);
     var status: u32 = 0;
     _ = linux.wait4(vm.pid, &status, 0, null);
