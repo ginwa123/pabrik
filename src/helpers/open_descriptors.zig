@@ -55,19 +55,26 @@ fn windowsHandleCount() CountError!usize {
     return n;
 }
 
-/// The kernel's own answer: `poll` reports POLLNVAL for a slot this process
-/// does not hold and leaves the flags at 0 for one it does, so a sweep to
-/// `probe_limit_fd` counts exactly the open descriptors. No `/proc` needed.
+/// The kernel's own answer: `fcntl(fd, F_GETFD)` answers EBADF for a slot this
+/// process does not hold, so a sweep to `probe_limit_fd` counts exactly the
+/// open descriptors. No `/proc` needed.
 fn posixDescriptorCount() CountError!usize {
     var n: usize = 0;
     var fd: std.posix.fd_t = 0;
     while (fd < probe_limit_fd) : (fd += 1) {
-        var one = [_]std.posix.pollfd{.{ .fd = fd, .events = 0, .revents = 0 }};
-        _ = std.posix.poll(&one, 0) catch return error.CountFailed;
-        if (one[0].revents & std.posix.POLL.NVAL == 0) n += 1;
+        if (posix_arm.isOpen(fd)) n += 1;
     }
     return n;
 }
+
+/// POSIX only. A `poll`/POLLNVAL sweep was the first version and macOS proved
+/// it wrong: Darwin's poll never reported the slot the test had just opened, so
+/// the count never moved — the self-check below is what caught it.
+const posix_arm = if (builtin.os.tag == .windows) struct {} else struct {
+    fn isOpen(fd: std.posix.fd_t) bool {
+        return std.c.fcntl(fd, std.c.F.GETFD, @as(c_int, 0)) >= 0;
+    }
+};
 
 /// Windows only. `struct {}` elsewhere keeps the Win32 symbol out of the
 /// build on every other host, and out of the way of a cross-compile.
