@@ -40,7 +40,7 @@ daemon_pid=""
 start_daemon() {
   local extra=("$@")
   PABRIK_VM_DIR="$vms" "$vmd" serve --socket "$sock" --base-image "$image" \
-    --kernel "$guest_kernel" --fc "$fc_bin" "${extra[@]}" 2>>"$work/vmd.log" &
+    --kernel "$guest_kernel" --fc "$fc_bin" --sweep-interval-ms 1000 "${extra[@]}" 2>>"$work/vmd.log" &
   daemon_pid=$!
   for _ in $(seq 1 100); do
     [ -S "$sock" ] && return 0
@@ -72,6 +72,11 @@ out="$(exec_in --timeout-ms 20000 -- /bin/sh -c 'id -u; cat /etc/alpine-release'
 expected=$'1000\n3.24.2'
 [ "$out" = "$expected" ] || fail "unexpected exec output: $out"
 say "ok  exec -> uid 1000 on Alpine 3.24.2"
+
+say "the reconciler sweeps on its own clock"
+for _ in $(seq 1 40); do grep -q 'swept 1 workspace' "$work/vmd.log" && break; sleep 0.1; done
+grep -q 'swept 1 workspace' "$work/vmd.log" || fail "no sweep reached the log (see $work/vmd.log)"
+say "ok  $(grep -m1 'swept 1 workspace' "$work/vmd.log" | sed 's/^pabrik-vmd: //')"
 
 say "every path came from the workspace id, and the VMM's pid is recorded"
 for f in disk.ext4 api.sock vsock.sock serial.log fc.log fc.pid; do
@@ -119,6 +124,59 @@ new_pid="$(tr -d '[:space:]' < "$vms/workspaces/$ws/fc.pid")"
 [ "$new_pid" != "$vmm_pid" ] || fail "the same VMM pid came back after a stop"
 say "ok  stop ended vmm pid=$vmm_pid; the next command booted pid=$new_pid and read the file back"
 
+say "a killed VMM leaves its sockets behind, and the reconciler reclaims them"
+stop_daemon
+start_daemon --sweep-interval-ms 0
+live_pid="$(tr -d '[:space:]' < "$vms/workspaces/$ws/fc.pid")"
+kill -9 "$live_pid"
+for _ in $(seq 1 50); do kill -0 "$live_pid" 2>/dev/null || break; sleep 0.1; done
+[ -e "$vms/workspaces/$ws/api.sock" ] || fail "a SIGKILLed VMM was expected to leave api.sock behind"
+out="$(status_of)"
+[ "$out" = "absent pid=0" ] || fail "status after kill -9 was $out, not absent"
+[ -e "$vms/workspaces/$ws/api.sock" ] && fail "the stale api.sock outlived the reconcile"
+[ -e "$vms/workspaces/$ws/vsock.sock" ] && fail "the stale vsock.sock outlived the reconcile"
+out="$(exec_in --timeout-ms 20000 -- /bin/sh -c 'echo reclaimed')"
+[ "$out" = "reclaimed" ] || fail "the first command after a kill -9 failed: $out"
+revived_pid="$(tr -d '[:space:]' < "$vms/workspaces/$ws/fc.pid")"
+[ "$revived_pid" != "$live_pid" ] || fail "the killed VMM's pid came back"
+say "ok  kill -9 left pid=$live_pid dead and its sockets behind; the next command reclaimed them and booted pid=$revived_pid"
+
+say "a socket a VMM nobody recorded owns is refused, never unlinked"
+mv "$vms/workspaces/$ws/fc.pid" "$vms/workspaces/$ws/fc.pid.hidden"
+out="$(status_of)"
+[ "$out" = 'failed pid=0 error="api.sock is owned by a VMM this daemon has no pid for"' ] ||
+  fail "a VMM with no recorded pid was not refused: $out"
+[ -e "$vms/workspaces/$ws/api.sock" ] || fail "the socket of an unaccounted VMM was unlinked"
+rc=0
+exec_in -- /bin/true >/dev/null 2>"$work/unaccounted.txt" || rc=$?
+[ "$rc" -ne 0 ] || fail "a command ran in a workspace the daemon cannot account for"
+mv "$vms/workspaces/$ws/fc.pid.hidden" "$vms/workspaces/$ws/fc.pid"
+out="$(status_of)"
+[ "$out" = "ready pid=$revived_pid" ] || fail "the workspace did not recover once its pid was back: $out"
+say "ok  the unaccounted VMM kept its socket and the workspace recovered with its pid back"
+
+say "a boot that fails is recorded with its reason, then backed off instead of retried"
+badroot="$work/vms-bad"
+badsock="$work/vmd-bad.sock"
+PABRIK_VM_DIR="$badroot" "$vmd" serve --socket "$badsock" --base-image "$work/missing.ext4" \
+  --kernel "$guest_kernel" --fc "$fc_bin" --backoff-base-ms 60000 --sweep-interval-ms 0 \
+  2>>"$work/vmd-bad.log" &
+bad_pid=$!
+for _ in $(seq 1 100); do [ -S "$badsock" ] && break; sleep 0.05; done
+rc=0
+PABRIK_VM_DIR="$badroot" "$vmd" exec --socket "$badsock" --workspace-id demo -- /bin/true \
+  >/dev/null 2>"$work/bad-err.txt" || rc=$?
+[ "$rc" -ne 0 ] || fail "a workspace whose base image is missing booted anyway"
+grep -q "refused: vm_unavailable" "$work/bad-err.txt" || fail "the refusal did not name vm_unavailable: $(cat "$work/bad-err.txt")"
+grep -q '^error=DiskCloneFailed' "$badroot/workspaces/demo/vmd.state" ||
+  fail "the failed state did not record why: $(cat "$badroot/workspaces/demo/vmd.state")"
+out="$(PABRIK_VM_DIR="$badroot" "$vmd" status --socket "$badsock" --workspace-id demo)"
+[ "$out" = 'failed pid=0 error="the last attempt failed; waiting before the next"' ] ||
+  fail "the failure was not backed off: $out"
+kill -TERM "$bad_pid" 2>/dev/null || true
+wait "$bad_pid" 2>/dev/null || true
+say "ok  a missing base image -> failed(DiskCloneFailed) on disk, and a backoff on the next request"
+
 say "a peer the daemon does not expect is refused"
 stop_daemon
 foreign_uid=$(( $(id -u) + 1 ))
@@ -130,4 +188,4 @@ grep -q "refused: forbidden_peer" "$work/forged.txt" || fail "refusal did not na
 grep -q "refused uid=$(id -u) " "$work/vmd.log" || fail "the daemon did not log who it refused"
 say "ok  uid $(id -u) was refused by a daemon expecting uid $foreign_uid (SO_PEERCRED, not a claim)"
 
-say "OK - daemon auth, exec in the VM, derived paths, adoption across restarts, stop"
+say "OK - daemon auth, exec in the VM, derived paths, adoption, stop, and the reconciler"

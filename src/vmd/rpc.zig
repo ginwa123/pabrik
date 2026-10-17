@@ -66,7 +66,7 @@ pub const ExecResult = struct {
 pub const Response = union(enum) {
     pong: struct { version: []const u8 },
     ack,
-    status: struct { state: []const u8, pid: i64 },
+    status: struct { state: []const u8, pid: i64, last_error: []const u8 },
     exec_result: ExecResult,
     failure: struct { code: FailureCode, message: []const u8 },
 };
@@ -297,13 +297,14 @@ pub fn encodeAck(allocator: std.mem.Allocator, id: i64) ![]u8 {
     return out.finish(allocator);
 }
 
-pub fn encodeStatus(allocator: std.mem.Allocator, id: i64, state: []const u8, pid: i64) ![]u8 {
+pub fn encodeStatus(allocator: std.mem.Allocator, id: i64, state: []const u8, pid: i64, last_error: []const u8) ![]u8 {
     var out = try ObjectWriter.init(allocator);
     errdefer out.list.deinit(allocator);
     try out.strField(allocator, "type", "status");
     try out.intField(allocator, "id", id);
     try out.strField(allocator, "state", state);
     try out.intField(allocator, "pid", pid);
+    if (last_error.len > 0) try out.strField(allocator, "error", last_error);
     return out.finish(allocator);
 }
 
@@ -372,6 +373,7 @@ pub fn decodeResponse(
         return .{ .arena = arena, .value = .{ .status = .{
             .state = stringField(object, "state") orelse "",
             .pid = integerField(object, "pid") orelse 0,
+            .last_error = stringField(object, "error") orelse "",
         } } };
     }
     if (std.mem.eql(u8, kind, "failure")) {
@@ -599,7 +601,7 @@ test "rpc: pong and status decode to their own shape" {
         else => return error.TestExpectedPong,
     }
 
-    const status = try encodeStatus(allocator, 9, "ready", 4242);
+    const status = try encodeStatus(allocator, 9, "ready", 4242, "");
     defer allocator.free(status);
     var decoded_status = try decodeResponse(allocator, status);
     defer decoded_status.deinit();

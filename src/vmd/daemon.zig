@@ -7,6 +7,7 @@ const linux = std.os.linux;
 const rpc = @import("rpc.zig");
 const policy = @import("policy.zig");
 const vm_client = @import("vm_client.zig");
+const reconciler_mod = @import("reconciler.zig");
 
 pub const Error = error{
     SocketFailed,
@@ -20,8 +21,6 @@ const unix_af: u32 = 1;
 const sock_stream: u32 = 1;
 const backlog: u32 = 16;
 
-const lock_ex: i32 = 2;
-
 pub const Config = struct {
     socket_path: []const u8,
     base_image: []const u8,
@@ -33,11 +32,20 @@ pub const Config = struct {
     /// which is the single-user case; a daemon started as root sets it to the
     /// server's uid.
     allowed_uid: ?u32 = null,
+    /// 0 turns the background sweep off.
+    sweep_interval_ms: u32 = reconciler_mod.default_sweep_interval_ms,
+    /// The first retry delay after a failed attempt; doubles up to a minute.
+    backoff_base_ms: i64 = reconciler_mod.default_backoff_base_ms,
 };
 
 pub const State = struct {
     label: []const u8,
     pid: i64,
+    last_error: []const u8 = "",
+
+    pub fn deinit(self: State, allocator: std.mem.Allocator) void {
+        allocator.free(self.last_error);
+    }
 };
 
 // ─── the manager: workspace id in, derived paths out ────────────────────
@@ -70,58 +78,47 @@ pub const Manager = struct {
         };
     }
 
-    /// The layout of a workspace whose VM is up, booting it when it is not.
-    /// The caller owns the returned layout.
+    /// Every daemon call goes through this one state machine.
+    fn reconciler(self: *const Manager) reconciler_mod.Reconciler {
+        return reconciler_mod.Reconciler.init(self.allocator, .{
+            .root = self.config.root,
+            .base_image = self.config.base_image,
+            .kernel = self.config.kernel,
+            .fc_bin = self.config.fc_bin,
+            .mem_mib = self.config.mem_mib,
+            .backoff_base_ms = self.config.backoff_base_ms,
+        });
+    }
+
+    /// The workspace's layout, booting its VM only when the reconciler says so.
     pub fn ensure(self: *const Manager, allocator: std.mem.Allocator, workspace_id: []const u8) !vm_client.Layout {
-        const layout = try self.layoutFor(allocator, workspace_id);
-        errdefer layout.deinit(allocator);
-        try vm_client.ensureWorkspaceDir(layout);
-
-        if (!vm_client.vmmAlive(layout)) {
-            // Two callers can arrive for a workspace nobody has booted. The
-            // lock serialises them; without it both would bind one disk.
-            const lock = try lockWorkspace(layout.dir);
-            defer _ = linux.close(lock);
-            if (!vm_client.vmmAlive(layout)) {
-                var vm = try vm_client.boot(allocator, self.spec(workspace_id));
-                vm.deinit();
-            }
+        const record = try self.reconciler().request(allocator, workspace_id);
+        defer record.deinit(allocator);
+        if (record.state != .ready) {
+            log("workspace {s} is {s}: {s}", .{ workspace_id, record.state.name(), record.last_error });
+            return error.VmUnavailable;
         }
-
-        try vm_client.waitReady(layout, vm_client.boot_timeout_ms);
-        return layout;
+        return self.layoutFor(allocator, workspace_id);
     }
 
     pub fn state(self: *const Manager, allocator: std.mem.Allocator, workspace_id: []const u8) !State {
-        const layout = try self.layoutFor(allocator, workspace_id);
-        defer layout.deinit(allocator);
-        if (!vm_client.vmmAlive(layout)) return .{ .label = "absent", .pid = 0 };
-        return .{ .label = "ready", .pid = @intCast(vm_client.readPid(layout) orelse 0) };
+        const record = try self.reconciler().observe(allocator, workspace_id);
+        defer record.deinit(allocator);
+        return .{
+            .label = record.state.name(),
+            .pid = if (record.state == .ready) record.pid else 0,
+            .last_error = try allocator.dupe(u8, record.last_error),
+        };
     }
 
-    /// Ends the workspace's VM. `false` means there was nothing running, which
-    /// is an answer, not a failure.
+    /// `false` means nothing was running, or that a VMM this daemon cannot
+    /// account for still owns the workspace.
     pub fn stopWorkspace(self: *const Manager, allocator: std.mem.Allocator, workspace_id: []const u8) bool {
-        const layout = self.layoutFor(allocator, workspace_id) catch return false;
-        defer layout.deinit(allocator);
-        return vm_client.stopRecorded(layout);
+        const record = self.reconciler().stop(allocator, workspace_id) catch return false;
+        defer record.deinit(allocator);
+        return record.state == .absent;
     }
 };
-
-/// An exclusive `flock` on the workspace directory itself — no lock file to
-/// create, and the kernel hands it back when the fd closes.
-fn lockWorkspace(dir: []const u8) !linux.fd_t {
-    var buf: [4096]u8 = undefined;
-    if (dir.len >= buf.len) return Error.BindFailed;
-    @memcpy(buf[0..dir.len], dir);
-    buf[dir.len] = 0;
-    const rc = linux.open(@ptrCast(&buf), .{ .ACCMODE = .RDONLY, .DIRECTORY = true }, 0);
-    if (linux.errno(rc) != .SUCCESS) return Error.BindFailed;
-    const fd: linux.fd_t = @intCast(rc);
-    errdefer _ = linux.close(fd);
-    if (linux.errno(linux.flock(fd, lock_ex)) != .SUCCESS) return Error.BindFailed;
-    return fd;
-}
 
 // ─── peer credentials ───────────────────────────────────────────────────
 
@@ -173,7 +170,7 @@ fn unlinkIfExists(path: []const u8) void {
 
 fn listenUnix(path: []const u8) !linux.fd_t {
     if (path.len + 1 > 108) return Error.BindFailed;
-    const rc = linux.socket(unix_af, sock_stream, 0);
+    const rc = linux.socket(unix_af, sock_stream | linux.SOCK.CLOEXEC, 0);
     if (linux.errno(rc) != .SUCCESS) return Error.SocketFailed;
     const fd: linux.fd_t = @intCast(rc);
     errdefer _ = linux.close(fd);
@@ -199,8 +196,15 @@ pub fn serve(allocator: std.mem.Allocator, config: Config) !void {
     }
 
     const manager = Manager.init(allocator, config);
+    if (config.sweep_interval_ms > 0) {
+        const sweeper = std.Thread.spawn(.{}, sweepLoop, .{manager}) catch |err| blk: {
+            log("no background sweep: {s}", .{@errorName(err)});
+            break :blk null;
+        };
+        if (sweeper) |thread| thread.detach();
+    }
     while (!stopping.load(.seq_cst)) {
-        const rc = linux.accept(fd, null, null);
+        const rc = linux.accept4(fd, null, null, linux.SOCK.CLOEXEC);
         const err = linux.errno(rc);
         if (err == .INTR) continue;
         if (err != .SUCCESS) return Error.AcceptFailed;
@@ -211,6 +215,31 @@ pub fn serve(allocator: std.mem.Allocator, config: Config) !void {
         };
         thread.detach();
     }
+}
+
+/// The reconciler's clock: one pass over every workspace per interval. It
+/// never waits on a workspace somebody is booting, because its lock is a try.
+fn sweepLoop(manager: Manager) void {
+    var arena = std.heap.ArenaAllocator.init(manager.allocator);
+    while (!stopping.load(.seq_cst)) {
+        defer _ = arena.reset(.retain_capacity);
+        const report = manager.reconciler().sweep(arena.allocator()) catch |err| {
+            log("sweep failed: {s}", .{@errorName(err)});
+            sleepMs(manager.config.sweep_interval_ms);
+            continue;
+        };
+        if (report.workspaces > 0) {
+            log("swept {d} workspace(s): ready={d} starting={d} absent={d} failed={d}", .{
+                report.workspaces, report.ready, report.starting, report.absent, report.failed,
+            });
+        }
+        sleepMs(manager.config.sweep_interval_ms);
+    }
+}
+
+fn sleepMs(ms: u32) void {
+    const ts = linux.timespec{ .sec = @intCast(ms / 1000), .nsec = @intCast((ms % 1000) * std.time.ns_per_ms) };
+    _ = linux.nanosleep(&ts, null);
 }
 
 fn serveConnection(manager: Manager, conn: linux.fd_t) void {
@@ -260,7 +289,8 @@ fn dispatch(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request
         .ping => return rpc.encodePong(allocator, request.id),
         .status => {
             const state = try manager.state(allocator, request.workspace_id);
-            return rpc.encodeStatus(allocator, request.id, state.label, state.pid);
+            defer state.deinit(allocator);
+            return rpc.encodeStatus(allocator, request.id, state.label, state.pid, state.last_error);
         },
         .stop => {
             _ = manager.stopWorkspace(allocator, request.workspace_id);

@@ -1016,5 +1016,87 @@ a `//!` header over three lines fails CI.
   `command` inside a VM, because that needs a model. P3's `PABRIK_VM_TEST=1` smoke is where
   that run belongs.
 - **`pabrik-vmd` must be started by hand.** Nothing supervises the daemon (no unit file,
-  no auto-spawn), and the reconciler of `§10.1` (`absent → … → failed`, backoff) is only
-  its first two states in code: `ready` and `absent`.
+  no auto-spawn). ~~The reconciler of `§10.1` is only its first two states in code.~~ §25
+  closed that: `absent → starting → ready`, with `failed(last_error)`, backoff and a sweep.
+
+---
+
+## 25. P2b's reconciler — the state machine, and the lock a VMM was holding
+
+`src/vmd/reconciler.zig` is the one writer of a workspace's VM state. §24 shipped
+`ready` and `absent`; this is the rest of §10.1, and it closes the gap §24 named.
+
+| item | where | proof |
+|---|---|---|
+| `decide` — a pure function of the record plus three probes | `reconciler.zig` | 13 unit tests: no VMM, no clock, no socket |
+| the persisted record (`vmd.state`: state, pid, attempts, retry_at, since, error) | `reconciler.zig` | round-trip, plus a forged-newline test |
+| stale `api.sock`/`vsock.sock` reclaimed only once nothing owns them | `observe` | smoke: `kill -9` → `absent`, sockets gone, next command boots |
+| `failed(last_error)` + exponential backoff (1 s → 60 s) | `decide` / `request` | smoke: a missing base image → `failed`, then a backoff |
+| the sweep: every workspace, one pass per interval | `sweep`, `--sweep-interval-ms` | smoke: `swept 1 workspace(s): ready=1 …` |
+| `status` carries the reason, not just the state | `rpc.zig`, `vmd_client.zig` | smoke: `failed pid=0 error="…"` |
+
+### The decision table
+
+```
+socket owned by a VMM with no recorded pid   -> refuse (never unlink)
+live pid, hello answered                     -> adopt
+live pid, no hello yet, inside the deadline   -> await_hello  (starting)
+live pid, no hello, past the deadline         -> failed("the guest never answered hello")
+recorded failed, inside the backoff           -> failed(backing off)
+dead pid (or none), nothing on the socket     -> reclaim its sockets, then boot
+```
+
+The first row is the safety property: **a connect that succeeds is the only evidence a
+socket has an owner.** The socket *file* outlives the VMM that made it and the pid file
+can be missing or stale, so a live socket nobody recorded must stop the daemon rather
+than be unlinked — unlinking it would boot a second VMM onto one disk.
+
+### The bug this surfaced: a VMM inherited the workspace lock
+
+The daemon serialises boots with an `flock` on the workspace directory, and
+`vm_client.boot` forks the VMM *after* that lock is taken — so the child inherited the
+open file description and Firecracker held the workspace's lock for its whole life
+(`/proc/<vmm>/fd/6 -> …/workspaces/<id>`). Every later `flock` on that workspace then
+blocked forever, which the old code never noticed because it only took the lock on the
+boot path and never probed the workspace again. The first symptom here was a request
+that hung with nothing in the daemon log.
+
+Fix: every fd the daemon holds across a fork is now `CLOEXEC` — the workspace lock, the
+state file, the pid file, the listening socket and the accepted connections. `execve`
+drops them, which is what makes the lock mean "somebody is booting right now".
+
+### Reproduce
+
+```
+FC_BIN=$HOME/firecracker-demo/firecracker scripts/vmd-daemon-smoke.sh   # 12/12
+```
+
+```
+[vmd-daemon-smoke] ok  ping -> pabrik-vmd 0.1
+[vmd-daemon-smoke] ok  exec -> uid 1000 on Alpine 3.24.2
+[vmd-daemon-smoke] ok  swept 1 workspace(s): ready=1 starting=0 absent=0 failed=0
+[vmd-daemon-smoke] ok  …/workspaces/demo/{disk.ext4,api.sock,vsock.sock,serial.log,fc.log,fc.pid}, vmm pid=908967
+[vmd-daemon-smoke] ok  status -> ready pid=908967
+[vmd-daemon-smoke] ok  a restarted daemon adopted vmm pid=908967 and ran a command in it
+[vmd-daemon-smoke] ok  /etc and ../../etc were refused before any VM was touched
+[vmd-daemon-smoke] ok  stop ended vmm pid=908967; the next command booted pid=909036 and read the file back
+[vmd-daemon-smoke] ok  kill -9 left pid=909036 dead and its sockets behind; the next command reclaimed them and booted pid=909074
+[vmd-daemon-smoke] ok  the unaccounted VMM kept its socket and the workspace recovered with its pid back
+[vmd-daemon-smoke] ok  a missing base image -> failed(DiskCloneFailed) on disk, and a backoff on the next request
+[vmd-daemon-smoke] ok  uid 1000 was refused by a daemon expecting uid 1001 (SO_PEERCRED, not a claim)
+```
+
+`zig build test:vmd` — 31/31 (15 reconciler, 6 policy, 9 rpc, 1 test root). The branch was
+also merged up to `origin/main` (b09240e2e): `build.zig` keeps this branch's `vmd` block
+and main's `zglint` dependency, and `workspace_scope.zig` keeps both test sets.
+
+### What this still does NOT do (stated, not implied)
+
+- **No `busy`/`idle`/`suspended`.** §10.1's counter states want a shared counter the
+  daemon deliberately does not carry — a lock held across a multi-second boot is what
+  hangs a manager — so the record is `absent`/`starting`/`ready`/`failed`. Suspend/resume
+  is a P3 card.
+- **The sweep reclaims, it does not stop.** An idle VM is left running: idle-stop needs a
+  policy and a `busy` counter, neither of which exists yet.
+- **No cgroup scope and no supervisor.** §10.2's limits and a unit file are untouched —
+  `pabrik-vmd` is still started by hand.

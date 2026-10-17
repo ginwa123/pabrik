@@ -10,6 +10,9 @@ pub const max_frame: usize = 64 * 1024;
 pub const default_mem_mib: u32 = 512;
 pub const default_vcpus: u32 = 1;
 pub const boot_timeout_ms: u32 = 20_000;
+/// A hello probe against a wedged guest must fail, not hang the caller: the
+/// daemon's sweeper holds a workspace lock while it probes.
+pub const hello_probe_ms: u32 = 2_000;
 pub const poll_slice_ms: i32 = 200;
 
 const unix_af: u32 = 1;
@@ -118,9 +121,9 @@ const SockaddrUn = extern struct {
     path: [108]u8,
 };
 
-fn connectUnix(path: []const u8) !linux.fd_t {
+pub fn connectUnix(path: []const u8) !linux.fd_t {
     if (path.len + 1 > 108) return Error.ConnectFailed;
-    const rc = linux.socket(unix_af, sock_stream, 0);
+    const rc = linux.socket(unix_af, sock_stream | linux.SOCK.CLOEXEC, 0);
     if (linux.errno(rc) != .SUCCESS) return Error.SocketFailed;
     const fd: linux.fd_t = @intCast(rc);
     var addr = SockaddrUn{ .family = unix_af, .path = [_]u8{0} ** 108 };
@@ -152,6 +155,11 @@ fn readExact(fd: linux.fd_t, buf: []u8) !void {
     }
 }
 
+fn setReceiveTimeout(fd: linux.fd_t, ms: u32) void {
+    const tv = linux.timeval{ .sec = @intCast(ms / 1000), .usec = @intCast((ms % 1000) * 1000) };
+    _ = linux.setsockopt(fd, linux.SOL.SOCKET, linux.SO.RCVTIMEO, @ptrCast(&tv), @sizeOf(linux.timeval));
+}
+
 fn sleepMs(ms: u64) void {
     const ts = linux.timespec{
         .sec = @intCast(ms / 1000),
@@ -161,7 +169,7 @@ fn sleepMs(ms: u64) void {
 }
 
 /// NUL-terminated copies for execve, which cannot take Zig slices.
-fn cstr(src: []const u8, dst: []u8) ?[*:0]const u8 {
+pub fn cstr(src: []const u8, dst: []u8) ?[*:0]const u8 {
     if (src.len + 1 > dst.len) return null;
     @memcpy(dst[0..src.len], src);
     dst[src.len] = 0;
@@ -242,7 +250,7 @@ pub fn ensureWorkspaceDir(layout: Layout) !void {
 pub fn writePid(layout: Layout, pid: linux.pid_t) void {
     var buf: [4096]u8 = undefined;
     const path = cstr(layout.fc_pid, &buf) orelse return;
-    const rc = linux.open(path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o644);
+    const rc = linux.open(path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true, .CLOEXEC = true }, 0o644);
     if (linux.errno(rc) != .SUCCESS) return;
     const fd: linux.fd_t = @intCast(rc);
     defer _ = linux.close(fd);
@@ -260,7 +268,7 @@ pub fn clearPid(layout: Layout) void {
 pub fn readPid(layout: Layout) ?linux.pid_t {
     var buf: [4096]u8 = undefined;
     const path = cstr(layout.fc_pid, &buf) orelse return null;
-    const rc = linux.open(path, .{ .ACCMODE = .RDONLY }, 0);
+    const rc = linux.open(path, .{ .ACCMODE = .RDONLY, .CLOEXEC = true }, 0);
     if (linux.errno(rc) != .SUCCESS) return null;
     const fd: linux.fd_t = @intCast(rc);
     defer _ = linux.close(fd);
@@ -280,34 +288,11 @@ fn pidAlive(pid: linux.pid_t) bool {
     return err == .SUCCESS or err == .PERM;
 }
 
-/// Live means more than "the pid file exists": the recorded process must still
-/// be running AND its control socket must answer.
-pub fn vmmAlive(layout: Layout) bool {
-    const pid = readPid(layout) orelse return false;
-    if (!pidAlive(pid)) return false;
-    const fd = connectUnix(layout.api_sock) catch return false;
-    _ = linux.close(fd);
-    return true;
-}
-
-/// Stop a VMM this workspace recorded, if it is still running. Returns whether
-/// anything was actually stopped.
-pub fn stopRecorded(layout: Layout) bool {
-    const pid = readPid(layout) orelse return false;
-    clearPid(layout);
-    if (!pidAlive(pid)) return false;
-    _ = linux.kill(pid, linux.SIG.KILL);
-    // SIGKILL is asynchronous, and a VMM this process did not fork is nobody's
-    // child, so there is no `wait4` to collect it. Answering "stopped" before
-    // the pid is gone would be a claim the caller cannot verify.
-    return waitGone(pid, 5000);
-}
-
 /// `wait_pid(2)`'s WNOHANG. A VMM we forked becomes a zombie that `kill(pid,
 /// 0)` still reports as alive, so the reap has to happen inside the poll.
 const wno_hang: u32 = 1;
 
-fn waitGone(pid: linux.pid_t, timeout_ms: u32) bool {
+pub fn waitGone(pid: linux.pid_t, timeout_ms: u32) bool {
     var waited: u32 = 0;
     while (waited < timeout_ms) : (waited += 10) {
         var status: u32 = 0;
@@ -341,7 +326,7 @@ fn removeIfExists(path: []const u8) void {
 fn pathExists(path: []const u8) bool {
     var buf: [4096]u8 = undefined;
     const z = cstr(path, &buf) orelse return false;
-    const rc = linux.open(z, .{ .ACCMODE = .RDONLY }, 0);
+    const rc = linux.open(z, .{ .ACCMODE = .RDONLY, .CLOEXEC = true }, 0);
     if (linux.errno(rc) == .SUCCESS) {
         _ = linux.close(@intCast(rc));
         return true;
@@ -429,19 +414,24 @@ pub fn boot(allocator: std.mem.Allocator, spec: Spec) !Vm {
 /// its listener is up, so the first request must be a retried hello.
 pub fn waitReady(layout: Layout, timeout_ms: u32) !void {
     var waited: u32 = 0;
-    var payload: [max_frame]u8 = undefined;
     while (waited < timeout_ms) : (waited += 100) {
-        readyBlk: {
-            const fd = connectUnix(layout.vsock_sock) catch break :readyBlk;
-            defer _ = linux.close(fd);
-            handshake(fd, agent_port) catch break :readyBlk;
-            sendFrame(fd, "{\"type\":\"hello\"}") catch break :readyBlk;
-            const text = readFrame(fd, &payload) catch break :readyBlk;
-            if (std.mem.indexOf(u8, text, "\"hello\"") != null) return;
-        }
+        if (helloOnce(layout)) return;
         sleepMs(100);
     }
     return Error.Timeout;
+}
+
+/// One `hello` on a fresh connection. `false` means the guest's listener is not
+/// up yet, which is normal for the first second after InstanceStart.
+pub fn helloOnce(layout: Layout) bool {
+    var payload: [max_frame]u8 = undefined;
+    const fd = connectUnix(layout.vsock_sock) catch return false;
+    defer _ = linux.close(fd);
+    setReceiveTimeout(fd, hello_probe_ms);
+    handshake(fd, agent_port) catch return false;
+    sendFrame(fd, "{\"type\":\"hello\"}") catch return false;
+    const text = readFrame(fd, &payload) catch return false;
+    return std.mem.indexOf(u8, text, "\"hello\"") != null;
 }
 
 pub fn stop(vm: *Vm) void {
@@ -651,7 +641,7 @@ pub fn exec(allocator: std.mem.Allocator, layout: Layout, request: ExecRequest) 
 pub fn readSerialExcerpt(allocator: std.mem.Allocator, layout: Layout, max_bytes: usize) ![]u8 {
     var buf: [4096]u8 = undefined;
     const z = cstr(layout.serial_log, &buf) orelse return Error.OutOfMemory;
-    const rc = linux.open(z, .{ .ACCMODE = .RDONLY }, 0);
+    const rc = linux.open(z, .{ .ACCMODE = .RDONLY, .CLOEXEC = true }, 0);
     if (linux.errno(rc) != .SUCCESS) return allocator.alloc(u8, 0);
     const fd: linux.fd_t = @intCast(rc);
     defer _ = linux.close(fd);

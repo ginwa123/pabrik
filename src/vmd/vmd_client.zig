@@ -50,9 +50,11 @@ pub const ExecOutcome = struct {
 pub const WorkspaceState = struct {
     state: []u8,
     pid: i64,
+    last_error: []u8,
 
     pub fn deinit(self: WorkspaceState, allocator: std.mem.Allocator) void {
         allocator.free(self.state);
+        allocator.free(self.last_error);
     }
 };
 
@@ -101,6 +103,7 @@ pub const Client = struct {
             .status => |s| .{
                 .state = try self.allocator.dupe(u8, s.state),
                 .pid = s.pid,
+                .last_error = try self.allocator.dupe(u8, s.last_error),
             },
             .failure => |f| self.reportFailure(f),
             else => Error.ProtocolViolation,
@@ -217,7 +220,7 @@ const SockaddrUn = extern struct {
 
 fn connectUnix(path: []const u8) !linux.fd_t {
     if (path.len + 1 > 108) return Error.ConnectFailed;
-    const rc = linux.socket(unix_af, sock_stream, 0);
+    const rc = linux.socket(unix_af, sock_stream | linux.SOCK.CLOEXEC, 0);
     if (linux.errno(rc) != .SUCCESS) return Error.SocketFailed;
     const fd: linux.fd_t = @intCast(rc);
     errdefer _ = linux.close(fd);

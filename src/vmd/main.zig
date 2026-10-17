@@ -8,6 +8,7 @@ const vm_client = @import("vm_client.zig");
 const vmd_client = @import("vmd_client.zig");
 const daemon = @import("daemon.zig");
 const policy = @import("policy.zig");
+const reconciler = @import("reconciler.zig");
 const rpc = @import("rpc.zig");
 
 const usage =
@@ -28,6 +29,8 @@ const usage =
     \\  --root DIR           VM root (default: $PABRIK_VM_DIR, else ~/.local/share/pabrik/vms)
     \\  --socket PATH        daemon socket (default: $PABRIK_VMD_SOCKET)
     \\  --allowed-uid N      uid the daemon accepts (default: its own)
+    \\  --sweep-interval-ms N  how often every workspace is reconciled (default 15000, 0 = off)
+    \\  --backoff-base-ms N  first retry delay after a failed boot (default 1000)
     \\  --mem MIB            guest memory (default 512)
     \\  --cwd DIR            working directory inside the guest for `run` (default /workspace)
     \\  --cwd-rel R          workspace-relative directory for `exec` (default: the root)
@@ -49,6 +52,8 @@ const Options = struct {
     cwd_rel: []const u8 = "",
     timeout_ms: u32 = rpc.default_timeout_ms,
     max_output_bytes: usize = rpc.default_max_output_bytes,
+    sweep_interval_ms: u32 = reconciler.default_sweep_interval_ms,
+    backoff_base_ms: i64 = reconciler.default_backoff_base_ms,
     command: []const []const u8 = &.{},
 };
 
@@ -126,6 +131,12 @@ fn parse(args: []const []const u8, options: *Options) void {
             i += 1;
         } else if (std.mem.eql(u8, arg, "--max-output-bytes")) {
             options.max_output_bytes = number(usize, "--max-output-bytes", valueAt(args, i));
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--sweep-interval-ms")) {
+            options.sweep_interval_ms = number(u32, "--sweep-interval-ms", valueAt(args, i));
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--backoff-base-ms")) {
+            options.backoff_base_ms = number(i64, "--backoff-base-ms", valueAt(args, i));
             i += 1;
         } else if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
             emit(1, "{s}", .{usage});
@@ -268,6 +279,8 @@ fn serve(init: std.process.Init, arena: std.mem.Allocator, options: *Options) !v
         .fc_bin = options.fc_bin,
         .mem_mib = options.mem_mib,
         .allowed_uid = options.allowed_uid,
+        .sweep_interval_ms = options.sweep_interval_ms,
+        .backoff_base_ms = options.backoff_base_ms,
     }) catch |err| {
         emit(2, "pabrik-vmd: serve failed: {s}\n", .{@errorName(err)});
         std.process.exit(1);
@@ -298,7 +311,11 @@ fn statusCommand(init: std.process.Init, arena: std.mem.Allocator, options: *Opt
     var client = vmd_client.Client.init(init.gpa, options.socket);
     const state = client.status(options.workspace_id) catch reportClientError(&client);
     defer state.deinit(init.gpa);
-    emit(1, "{s} pid={d}\n", .{ state.state, state.pid });
+    if (state.last_error.len > 0) {
+        emit(1, "{s} pid={d} error=\"{s}\"\n", .{ state.state, state.pid, state.last_error });
+    } else {
+        emit(1, "{s} pid={d}\n", .{ state.state, state.pid });
+    }
 }
 
 fn stopCommand(init: std.process.Init, arena: std.mem.Allocator, options: *Options) !void {
@@ -352,6 +369,7 @@ fn reportClientError(client: *const vmd_client.Client) noreturn {
 // test root, and this binary is the root of the vmd suite.
 test {
     _ = @import("policy.zig");
+    _ = @import("reconciler.zig");
     _ = @import("rpc.zig");
     _ = @import("vmd_client.zig");
     _ = @import("daemon.zig");
