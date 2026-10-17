@@ -15,7 +15,7 @@ const SEARCH_DOCUMENTS = "search_documents";
 // Expected tool list — mirrors tests/functional/default_tools.py
 // ============================================================================
 
-/// Mirrors `DEFAULT_AGENT_TOOLS` — 33 names, sorted ASC, matching the wire
+/// Mirrors `DEFAULT_AGENT_TOOLS` — 35 names, sorted ASC, matching the wire
 /// order of `GET /api/agents/:agent_id/tools`.
 const DEFAULT_AGENT_TOOLS = [_][]const u8{
     "add_document",
@@ -37,6 +37,7 @@ const DEFAULT_AGENT_TOOLS = [_][]const u8{
     "read_workspace_session",
     "remove_file",
     "remove_skill",
+    "run_session",
     "save_memory",
     "search",
     "search_documents",
@@ -48,6 +49,7 @@ const DEFAULT_AGENT_TOOLS = [_][]const u8{
     "use_skill",
     "use_tool",
     "used_tools",
+    "view_session",
     "view_tool",
     "web_search",
     "write_file",
@@ -77,6 +79,7 @@ const AGENT_TOOLS_WITH_DELETE = [_][]const u8{
     "read_workspace_session",
     "remove_file",
     "remove_skill",
+    "run_session",
     "save_memory",
     "search",
     "search_documents",
@@ -88,6 +91,7 @@ const AGENT_TOOLS_WITH_DELETE = [_][]const u8{
     "use_skill",
     "use_tool",
     "used_tools",
+    "view_session",
     "view_tool",
     "web_search",
     "write_file",
