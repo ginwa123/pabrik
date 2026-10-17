@@ -1382,6 +1382,49 @@ pub fn writeInput(s: *Session, data: []const u8) SessionError!usize {
 /// POSIX loop, which bounds a stuck write with a 1 s `poll` — a paste larger
 fn writeInputWin(s: *Session, data: []const u8) SessionError!usize {
     const h = s.win.in_write orelse return error.WriteFailed;
+    // A pipe has no line discipline: the shell reads it in batch mode, where
+    // only `\r\n` commits a line. A client sends Enter as a bare `\r` (xterm's
+    // onData), so the pipe backend rewrites it — see `bareCrCount`.
+    if (s.win.kind == .conpty) return writeRawAll(h, data);
+    const extra = bareCrCount(data);
+    if (extra == 0) return writeRawAll(h, data);
+    const buf = g_alloc.alloc(u8, data.len + extra) catch return error.OutOfMemory;
+    defer g_alloc.free(buf);
+    const n = expandBareCr(buf, data);
+    _ = try writeRawAll(h, buf[0..n]);
+    // Every requested byte reached the shell; report the request's length and
+    // not the wire length the CR rewrite produced.
+    return data.len;
+}
+
+/// Bare CRs: the `\r` a client sends for Enter, which a pipe-backed shell
+/// refuses to read as end-of-line. A CR already opening a CRLF pair is left
+/// alone, so an explicit CRLF stays ONE terminator and never becomes two.
+fn bareCrCount(data: []const u8) usize {
+    var n: usize = 0;
+    for (data, 0..) |b, i| {
+        if (b == '\r' and (i + 1 == data.len or data[i + 1] != '\n')) n += 1;
+    }
+    return n;
+}
+
+/// Write `data` into `buf` (at least `data.len + bareCrCount(data)` long),
+/// turning every bare CR into CRLF; returns the bytes written. Pure, so the
+/// rewrite is testable on every host instead of only behind a live shell.
+fn expandBareCr(buf: []u8, data: []const u8) usize {
+    var n: usize = 0;
+    for (data, 0..) |b, i| {
+        buf[n] = b;
+        n += 1;
+        if (b == '\r' and (i + 1 == data.len or data[i + 1] != '\n')) {
+            buf[n] = '\n';
+            n += 1;
+        }
+    }
+    return n;
+}
+
+fn writeRawAll(h: HANDLE, data: []const u8) SessionError!usize {
     var off: usize = 0;
     while (off < data.len) {
         // A single Win32 write is capped at DWORD bytes.
@@ -1632,6 +1675,26 @@ fn sleepMillis(ms: u64) void {
 
 const testing = std.testing;
 
+test "a bare CR is the terminator a client sends, and CRLF is left alone" {
+    // Enter as the CLIENT sends it: one bare `\r`, never CRLF. A pipe-backed
+    // cmd.exe treats only CRLF as end-of-line, so the pipe backend rewrites it
+    // — without that the line never commits and typing looks dead.
+    var buf: [64]u8 = undefined;
+
+    try testing.expectEqual(@as(usize, 1), bareCrCount("dir\r"));
+    try testing.expectEqual(@as(usize, 0), bareCrCount("dir\r\n"));
+    try testing.expectEqual(@as(usize, 2), bareCrCount("a\rb\r\nc\rd"));
+
+    try testing.expectEqualStrings("dir\r\n", buf[0..expandBareCr(&buf, "dir\r")]);
+    // An explicit CRLF stays ONE terminator; doubling it would run the line
+    // twice (an extra empty command on every write).
+    try testing.expectEqualStrings("dir\r\n", buf[0..expandBareCr(&buf, "dir\r\n")]);
+    try testing.expectEqualStrings("a\r\nb\r\nc\r\nd", buf[0..expandBareCr(&buf, "a\rb\r\nc\rd")]);
+    // No CR at all: byte-for-byte (this is also the fast path `writeInputWin`
+    // takes when `bareCrCount` is 0).
+    try testing.expectEqualStrings("ls -la", buf[0..expandBareCr(&buf, "ls -la")]);
+}
+
 test "validateCreate accepts absolute cwd with defaults" {
     const dims = try validateCreate("/tmp", null, null);
     try testing.expectEqual(default_cols, dims.cols);
@@ -1858,10 +1921,11 @@ test "spawned shell echoes input" {
 
             const s = getSession(info.id) orelse return error.SessionNotFound;
             sleepMillis(500);
-            // cmd.exe reads in cooked mode: CR commits the line, so the
-            // input ends CRLF (a bare LF works on most builds, but not by
-            // contract). On the pipe backend the shell never echoes, so the
-            _ = try writeInput(s, "echo MARKER-7f3a9c\r\n");
+            // Enter as the CLIENT sends it, not as a test finds convenient:
+            // xterm's onData emits one bare `\r`, and a pipe-backed cmd.exe
+            // honours only CRLF — which is why `writeInputWin` rewrites it.
+            _ = try writeInput(s, "echo MARKER-7f3a9c");
+            _ = try writeInput(s, if (std.mem.eql(u8, be, backend_pipe)) "\r" else "\r\n");
             try expectMarker(s, "MARKER-7f3a9c", 100);
 
             // resize is `ResizePseudoConsole` on ConPTY and a recorded
