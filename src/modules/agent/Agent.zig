@@ -3596,96 +3596,72 @@ test "callStreaming ignores a claude-code UrlStyle when backend is http" {
     try expectErrorCallStreaming(error.InvalidUri, result);
 }
 
-// ============================================================================
-// Real network test — spins up a fake HTTP server, points the agent at it,
-// and verifies the idle-timeout fix actually fires on a stalled connection.
+// A PORTABLE fake HTTP server (std.Io.net, so it runs on Windows too): the
+// streaming tests point the agent at it, and its behaviours cover the three
+// ways a server can leave a stream for dead.
 
+/// How the fixture answers a connection. Every behaviour either finishes its
+/// response or holds the socket open until the test stops the fixture.
 const ServerBehavior = enum {
-    /// Accept one connection, send only the HTTP head, then sleep forever.
-    /// Tests: StreamIdleTimeout (the agent gets the head, reads 0 bytes for
-    /// the body, and the idle window expires).
+    /// Send the HTTP head, then hold the socket open with no body at all.
     head_only_then_stall,
-    /// Accept one connection, send head + one valid SSE chunk, then sleep
-    /// forever. Tests: StreamIdleTimeout (after the first chunk, no more
-    /// bytes arrive, idle window expires).
+    /// Send the head plus one valid SSE chunk, then hold it open.
     one_chunk_then_stall,
-    /// Accept one connection, send head, then close immediately (RST or FIN).
-    /// Tests: StreamEmpty (the agent gets the head, reads 0 bytes for the
-    /// body, the socket is already in `.closing` state, no chunks delivered).
+    /// Send the head, then close at once (FIN with no body byte).
     head_then_close,
+    /// Send a complete chunked SSE body that ends in a finish_reason, then hold
+    /// the socket open. The one behaviour `callStreaming` can SUCCEED against.
+    complete_chunked_response,
 };
 
+/// A one-listener HTTP fixture on every host. It replaced one that drove
+/// `std.os.linux` raw sockets — Linux-only, and it closed fds behind std.Io's
+/// back, which hung `std.Io.Threaded.closeFd` on teardown.
 const FakeServer = struct {
-    listener_fd: i32,
+    allocator: std.mem.Allocator,
+    listener: std.Io.net.Server,
     port: u16,
+    behavior: ServerBehavior,
+    stop: std.atomic.Value(bool),
+    /// Set by the worker once a connection has been accepted, so a test can
+    /// avoid racing the accept loop's first scheduling.
+    connection_seen: std.atomic.Value(bool),
     thread: std.Thread,
-    stop: std.atomic.Value(bool) = .init(false),
-    /// Set by the server thread once a connection has been accepted.
-    /// Test code can wait on this to avoid races.
-    connection_seen: std.atomic.Value(bool) = .init(false),
 
-    fn start(behavior: ServerBehavior) !FakeServer {
-        const fd: i32 = blk: {
-            const rc = linux.socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-            if (rc > std.math.maxInt(i32)) return error.SocketCreationFailed;
-            break :blk @as(i32, @intCast(rc));
+    fn start(allocator: std.mem.Allocator, behavior: ServerBehavior) !*FakeServer {
+        const io = std.testing.io;
+        const address = try std.Io.net.IpAddress.parseIp4("127.0.0.1", 0);
+        const listener = address.listen(io, .{}) catch return error.BindFailed;
+
+        const self = try allocator.create(FakeServer);
+        errdefer allocator.destroy(self);
+        self.* = .{
+            .allocator = allocator,
+            .listener = listener,
+            // Port 0 above asked the OS to pick; the resolved value only lands
+            // in the socket AFTER listen() runs.
+            .port = listener.socket.address.getPort(),
+            .behavior = behavior,
+            .stop = std.atomic.Value(bool).init(false),
+            .connection_seen = std.atomic.Value(bool).init(false),
+            .thread = undefined,
         };
-        errdefer _ = linux.close(fd);
-
-        // Allow fast port reuse so repeated test runs don't TIME_WAIT.
-        const opt: i32 = 1;
-        try posix.setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, std.mem.asBytes(&opt));
-
-        // Bind to 127.0.0.1:0 (OS-assigned port).
-        var sockaddr: linux.sockaddr.in = .{
-            .family = AF_INET,
-            .port = 0, // OS-assigned
-            .addr = @bitCast(@as(u32, 0x0100007f)), // 127.0.0.1
-            .zero = undefined,
-        };
-        {
-            const rc = linux.bind(fd, @ptrCast(&sockaddr), @sizeOf(linux.sockaddr.in));
-            if (rc != 0) return error.BindFailed;
-        }
-        {
-            const rc = linux.listen(fd, 1);
-            if (rc != 0) return error.ListenFailed;
-        }
-
-        // Read back the assigned port.
-        var assigned: linux.sockaddr.in = undefined;
-        var assigned_len: linux.socklen_t = @sizeOf(linux.sockaddr.in);
-        {
-            const rc = linux.getsockname(fd, @ptrCast(&assigned), &assigned_len);
-            if (rc != 0) return error.GetsocknameFailed;
-        }
-        const port = std.mem.bigToNative(u16, assigned.port);
-
-        var server = FakeServer{
-            .listener_fd = fd,
-            .port = port,
-            .thread = undefined, // set below
-        };
-        server.thread = try std.Thread.spawn(.{}, serve, .{
-            server.listener_fd,
-            behavior,
-            &server.stop,
-            &server.connection_seen,
-        });
-        return server;
+        self.thread = try std.Thread.spawn(.{}, serve, .{self});
+        return self;
     }
 
-    fn shutdown(self: *FakeServer) void {
+    /// Stop the worker, close the listener, free the fixture. Safe while the
+    /// worker is parked in accept OR holding a stalled connection open.
+    fn deinit(self: *FakeServer) void {
+        const io = std.testing.io;
         self.stop.store(true, .release);
-        // Force the accept() to return by closing the listener. This unblocks
-        // the worker thread even if it's stuck in accept().
-        _ = linux.close(self.listener_fd);
+        wakeAccept(self.port);
         self.thread.join();
+        self.listener.deinit(io);
+        self.allocator.destroy(self);
     }
 
-    /// Block until the worker thread has accepted a connection, or 5s elapses.
-    /// Avoids a race where the agent's request reaches the kernel before the
-    /// server thread has been scheduled.
+    /// Block until the worker has accepted a connection, or 5s elapses.
     fn waitForConnection(self: *FakeServer) void {
         const start_ms = nowMs();
         while (!self.connection_seen.load(.acquire)) {
@@ -3695,76 +3671,83 @@ const FakeServer = struct {
     }
 };
 
+/// One throwaway connection, opened only to unpark a worker sitting in
+/// `accept`. A failure means the worker was not parked after all, so the error
+/// is deliberately ignored.
+fn wakeAccept(port: u16) void {
+    const io = std.testing.io;
+    const address = std.Io.net.IpAddress.parseIp4("127.0.0.1", port) catch return;
+    const stream = address.connect(io, .{ .mode = .stream }) catch return;
+    stream.close(io);
+}
+
 fn nowMs() i64 {
     return @intCast(@divTrunc(std.Io.Timestamp.now(std.testing.io, .real).nanoseconds, std.time.ns_per_ms));
 }
 
-fn serve(
-    listener_fd: i32,
-    behavior: ServerBehavior,
-    stop: *std.atomic.Value(bool),
-    connection_seen: *std.atomic.Value(bool),
-) void {
-    const head =
-        "HTTP/1.1 200 OK\r\n" ++
-        "Content-Type: text/event-stream\r\n" ++
-        "Transfer-Encoding: chunked\r\n" ++
-        "Connection: close\r\n" ++
-        "\r\n";
+const sse_head =
+    "HTTP/1.1 200 OK\r\n" ++
+    "Content-Type: text/event-stream\r\n" ++
+    "Transfer-Encoding: chunked\r\n" ++
+    "Connection: close\r\n" ++
+    "\r\n";
+const sse_delta_chunk = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n";
+const sse_finish_chunk = "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n";
 
-    // Loop accepting connections so the FD-leak regression tests can drive
-    // multiple callStreaming calls against the same port (the original
-    // single- accept server returned after one connection, so subsequent
-    while (!stop.load(.acquire)) {
-        const conn_rc = linux.accept(listener_fd, null, null);
-        if (conn_rc > std.math.maxInt(i32)) {
-            // Listener closed (test teardown) or accept errored. Exit.
+/// Worker: accept, answer per `behavior`, repeat until `stop` is published, so
+/// the leak tests can drive several calls against ONE port. A stall behaviour
+/// holds its socket, so only `head_then_close` serves call after call.
+fn serve(self: *FakeServer) void {
+    const io = std.testing.io;
+    while (true) {
+        const conn = self.listener.accept(io) catch return;
+        if (self.stop.load(.acquire)) {
+            // The wake connection `deinit` opened: nothing to answer.
+            conn.close(io);
             return;
         }
-        const conn_fd: i32 = @intCast(conn_rc);
-        defer _ = linux.close(conn_fd);
-
-        connection_seen.store(true, .release);
-
-        sendAll(conn_fd, head) catch continue;
-
-        switch (behavior) {
-            .head_only_then_stall => {
-                sleepUntilStop(stop, 60_000);
-                return;
-            },
-            .one_chunk_then_stall => {
-                const body_chunk = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n";
-                var hex_buf: [16]u8 = undefined;
-                const chunk_header = std.fmt.bufPrint(&hex_buf, "{x}\r\n", .{body_chunk.len}) catch continue;
-                sendAll(conn_fd, chunk_header) catch continue;
-                sendAll(conn_fd, body_chunk) catch continue;
-                sendAll(conn_fd, "\r\n") catch continue;
-                sleepUntilStop(stop, 60_000);
-                return;
-            },
-            .head_then_close => {
-                // Close immediately. The client will see FIN and reader state
-                // will transition to `.closing` before it has read any body.
-                // Loop continues to accept the next connection.
-                continue;
-            },
-        }
+        self.connection_seen.store(true, .release);
+        serveConnection(io, conn, self.behavior, &self.stop) catch {};
+        conn.close(io);
     }
 }
 
-fn sendAll(fd: i32, data: []const u8) !void {
-    var sent: usize = 0;
-    while (sent < data.len) {
-        const rc = linux.write(fd, data[sent..].ptr, data.len - sent);
-        if (rc > std.math.maxInt(i32)) return error.WriteFailed;
-        const n: i32 = @intCast(rc);
-        if (n < 0) return error.WriteFailed;
-        if (n == 0) return error.WriteFailed;
-        sent += @as(usize, @intCast(n));
+fn serveConnection(
+    io: std.Io,
+    conn: std.Io.net.Stream,
+    behavior: ServerBehavior,
+    stop: *std.atomic.Value(bool),
+) !void {
+    var writer = conn.writer(io, &.{});
+    try writer.interface.writeAll(sse_head);
+    switch (behavior) {
+        .one_chunk_then_stall => try writeSseChunk(&writer.interface, sse_delta_chunk),
+        .complete_chunked_response => {
+            try writeSseChunk(&writer.interface, sse_delta_chunk);
+            try writeSseChunk(&writer.interface, sse_finish_chunk);
+            // The zero-length chunk ends the body: a complete SSE response,
+            // which the client may finish without ever seeing a FIN.
+            try writer.interface.writeAll("0\r\n\r\n");
+        },
+        .head_only_then_stall, .head_then_close => {},
+    }
+    try writer.interface.flush();
+
+    // Hold the socket open instead of closing it: a FIN raced against the
+    // head is what a stall looks like, and for the complete response the
+    // chunked terminator is already the end of the body.
+    switch (behavior) {
+        .head_then_close => {},
+        .head_only_then_stall, .one_chunk_then_stall, .complete_chunked_response => sleepUntilStop(stop, 60_000),
     }
 }
 
+/// One `Transfer-Encoding: chunked` frame: hex length, body, CRLF.
+fn writeSseChunk(w: *std.Io.Writer, body: []const u8) !void {
+    try w.print("{x}\r\n", .{body.len});
+    try w.writeAll(body);
+    try w.writeAll("\r\n");
+}
 fn sleepUntilStop(stop: *std.atomic.Value(bool), max_ms: u64) void {
     const start_ms = nowMs();
     while (!stop.load(.acquire)) {
@@ -3790,70 +3773,107 @@ fn makeBaseUrl(allocator: std.mem.Allocator, port: u16) ![]u8 {
     return std.fmt.allocPrint(allocator, "http://127.0.0.1:{d}", .{port});
 }
 
-/// Helper: run callStreaming against a fake server with custom timeouts.
-/// Returns the outcome (CallError or success) and the elapsed wall-clock ms.
+/// Counting callback: how many stream chunks reached the caller, so a test can
+/// tell "the server never sent a body" from "it sent one and then died".
+const ChunkCounter = struct {
+    seen: usize = 0,
+
+    fn callback(ctx: ?*anyopaque, _: StreamChunk) void {
+        const self: *ChunkCounter = @ptrCast(@alignCast(ctx orelse return));
+        self.seen += 1;
+    }
+};
+
+/// Run callStreaming against a fake server with custom timeouts; returns the
+/// outcome and the elapsed wall-clock ms. The agent runs on an arena because
+/// `callStreaming` is arena-scoped, so the helper only serves FAILING calls.
 fn runStreamingWithTimeout(
     port: u16,
     idle_timeout_ms: u32,
     read_timeout_ms: u32,
+    chunks: *ChunkCounter,
 ) !struct {
     result: anyerror!CallResponse,
     elapsed_ms: i64,
 } {
-    var a = try Agent.init_with_options(testing_allocatorCallStreaming, std.testing.io, .{
+    var arena = std.heap.ArenaAllocator.init(testing_allocatorCallStreaming);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var a = Agent.init_with_options(alloc, std.testing.io, .{
         .idle_timeout_ms = idle_timeout_ms,
         .read_timeout_ms = read_timeout_ms,
     });
     defer a.deinit();
 
-    const base_url = try makeBaseUrl(testing_allocatorCallStreaming, port);
-    defer testing_allocatorCallStreaming.free(base_url);
-    a.baseUrl = base_url;
+    a.baseUrl = try makeBaseUrl(alloc, port);
     a.model = "test-model";
     a.apiKey = "test-key";
 
     const start_ms = nowMs();
-    const result = a.callStreaming(makeCall(), null, noopCallback);
+    const result = a.callStreaming(makeCall(), chunks, ChunkCounter.callback);
     const elapsed_ms = nowMs() - start_ms;
     return .{ .result = result, .elapsed_ms = elapsed_ms };
 }
 
-test "callStreaming returns StreamIdleTimeout within idle window when server stalls after head" {
-    // The watchdog thread force-cancels the in-flight recv via
-    // shutdown(SHUT_RD) when no body bytes arrive for `idle_timeout_ms`.
-    if (true) return error.SkipZigTest;
-    var server = try FakeServer.start(.head_only_then_stall);
-    defer server.shutdown();
+// These tests assert error.StreamInterrupted, not StreamIdleTimeout: the
+// transport exposes only CURLOPT_TIMEOUT_MS (fed from read_timeout_ms) and
+// StreamIdleTimeout has no producer left anywhere in the tree.
+
+test "callStreaming bounds a server that stalls after the head by read_timeout_ms" {
+    const server = try FakeServer.start(testing_allocatorCallStreaming, .head_only_then_stall);
+    defer server.deinit();
     server.waitForConnection();
 
+    var chunks = ChunkCounter{};
     const idle_ms: u32 = 500;
-    const outcome = try runStreamingWithTimeout(server.port, idle_ms, 30_000);
+    const read_ms: u32 = 3_000;
+    const outcome = try runStreamingWithTimeout(server.port, idle_ms, read_ms, &chunks);
 
-    // Detection must happen between [idle_ms, idle_ms + ~750ms] (one watchdog
-    // poll cycle of slack).
+    // Head only, so the body never delivered a single chunk to the callback.
+    try expectEqualCallStreaming(0, chunks.seen);
+    // The call ended at its configured stream deadline, within one poll cycle
+    // of slack — a hang would never reach the next line.
     try expectCallStreaming(outcome.elapsed_ms >= @as(i64, @intCast(idle_ms)) - 50);
-    try expectCallStreaming(outcome.elapsed_ms <= @as(i64, @intCast(idle_ms)) + 750);
-
-    try expectErrorCallStreaming(error.StreamIdleTimeout, outcome.result);
+    try expectCallStreaming(outcome.elapsed_ms <= @as(i64, @intCast(read_ms)) + 2_500);
+    try expectErrorCallStreaming(error.StreamInterrupted, outcome.result);
 }
 
-test "callStreaming returns StreamIdleTimeout within idle window when server stalls after first chunk" {
-    // Same hang-on-cleanup issue as the test above — see the comment there
-    // for the full explanation. Skipped to keep `zig build test` fast.
-    if (true) return error.SkipZigTest;
-    var server = try FakeServer.start(.one_chunk_then_stall);
-    defer server.shutdown();
+test "callStreaming bounds a server that stalls after one chunk by read_timeout_ms" {
+    const server = try FakeServer.start(testing_allocatorCallStreaming, .one_chunk_then_stall);
+    defer server.deinit();
     server.waitForConnection();
 
+    var chunks = ChunkCounter{};
     const idle_ms: u32 = 50;
-    const outcome = try runStreamingWithTimeout(server.port, idle_ms, 2_000);
+    const read_ms: u32 = 2_000;
+    const outcome = try runStreamingWithTimeout(server.port, idle_ms, read_ms, &chunks);
 
+    // The delta chunk DID arrive and reach the caller before the stall — which
+    // is what separates this case from the head-only one above.
+    try expectEqualCallStreaming(1, chunks.seen);
     try expectCallStreaming(outcome.elapsed_ms >= @as(i64, @intCast(idle_ms)) - 50);
-    try expectCallStreaming(outcome.elapsed_ms <= @as(i64, @intCast(idle_ms)) + 750);
-
-    try expectErrorCallStreaming(error.StreamIdleTimeout, outcome.result);
+    try expectCallStreaming(outcome.elapsed_ms <= @as(i64, @intCast(read_ms)) + 2_500);
+    try expectErrorCallStreaming(error.StreamInterrupted, outcome.result);
 }
 
+test "callStreaming bounds a silent server by read_timeout_ms, not by the idle window" {
+    // idle_timeout_ms sits far below read_timeout_ms: the call must still be
+    // bounded by the READ deadline. What this rejects is a stream outliving
+    // its deadline, or returning anything but a retryable stream error.
+    const server = try FakeServer.start(testing_allocatorCallStreaming, .head_only_then_stall);
+    defer server.deinit();
+    server.waitForConnection();
+
+    var chunks = ChunkCounter{};
+    const idle_ms: u32 = 50;
+    const read_ms: u32 = 1_500;
+    const outcome = try runStreamingWithTimeout(server.port, idle_ms, read_ms, &chunks);
+
+    try expectEqualCallStreaming(0, chunks.seen);
+    try expectCallStreaming(outcome.elapsed_ms <= @as(i64, @intCast(read_ms)) + 2_500);
+    try expectErrorCallStreaming(error.StreamInterrupted, outcome.result);
+}
 /// Portable fixture for the cancellation test: a listener that accepts ONE
 /// connection, answers with an HTTP/1.1 SSE head plus a single `data:` chunk,
 /// then holds the connection open without sending anything else.
@@ -3978,34 +3998,9 @@ test "callStreaming reports a mid-stream cancel as error.Cancelled, never as a r
     try expectCallStreaming(CancelState.polls >= 2);
 }
 
-// Note: the original third skipped test ("head_then_close") was a
-// pre-existing flaky test unrelated to the watchdog (its skip comment said
-// "the std.testing.io event loop scheduling is not deterministic in this
-
-test "callStreaming returns within idle_timeout when server is silent (watchdog timing)" {
-    // Same hang-on-cleanup issue as the first streaming test — see the
-    // comment there for the full explanation. Skipped to keep
-    // `zig build test` fast.
-    if (true) return error.SkipZigTest;
-    // Pin the watchdog's actual timing. The watchdog wakes every ~250ms,
-    // so detection should happen within (idle_timeout_ms, idle_timeout_ms + 750ms).
-    var server = try FakeServer.start(.head_only_then_stall);
-    defer server.shutdown();
-    server.waitForConnection();
-
-    const idle_ms: u32 = 50;
-    const outcome = try runStreamingWithTimeout(server.port, idle_ms, 2_000);
-
-    // Lower bound: not faster than the timeout
-    try expectCallStreaming(outcome.elapsed_ms >= @as(i64, @intCast(idle_ms)) - 50);
-    // Upper bound: detection within one extra watchdog-poll cycle (~750ms)
-    try expectCallStreaming(outcome.elapsed_ms <= @as(i64, @intCast(idle_ms)) + 750);
-
-    try expectErrorCallStreaming(error.StreamIdleTimeout, outcome.result);
-}
-
-// ============================================================================
-// FD-leak regression tests (2026-07-15).
+// FD-leak regression tests. `countPipes` is the Linux metric; the host table
+// `helpers.open_descriptors.count()` counts the same thing on Windows (open
+// HANDLES), so these tests assert on every host.
 
 /// Count anonymous pipes currently open in the test process via /proc/self/fd.
 /// Returns 0 on non-Linux (the leak is Linux-only) and on any proc access error.
@@ -4045,150 +4040,154 @@ fn countPipes() usize {
     }
     return pipes;
 }
+/// Linux-only sanity input: a runner holding most of its 1024 soft FD limit
+/// must not have its absolute pipe count read as a leak signal. The assertions
+/// below are baseline-independent, so this reports instead of skipping.
+fn reportCrowdedPipeTable(baseline_pipes: usize) void {
+    if (baseline_pipes > 800) {
+        std.debug.print(
+            "  note: /proc already reports {} open pipes (soft limit 1024); " ++
+                "measuring deltas only.\n",
+            .{baseline_pipes},
+        );
+    }
+}
+
+/// The agent the leak tests drive: same shape every time, only the allocator
+/// and the port differ. A test that will feed real SSE must pass an arena.
+fn initLeakTestAgent(allocator: std.mem.Allocator, base_url: []const u8) !Agent {
+    var a = Agent.init_with_options(allocator, std.testing.io, .{
+        .idle_timeout_ms = 2_000,
+        .read_timeout_ms = 5_000,
+    });
+    a.baseUrl = base_url;
+    a.model = "test-model";
+    a.apiKey = "test-key";
+    return a;
+}
 
 test "callStreaming does not leak pipe FDs across many failed calls (TDD: RED → GREEN)" {
-    if (builtin.os.tag != .linux) return error.SkipZigTest;
-
-    // Skipped: same std.Io.Threaded.closeFd hang as the 3 tests above (see
-    // the comment on the first "StreamIdleTimeout" test for the full
-    // diagnosis).
-    if (true) return error.SkipZigTest;
-
-    // The pre-fix leak rate is so severe (~100 pipes per failed call) that
-    // running N≥3 iterations in the shared test-runner process hits the 1024
-    // FD limit.
-
-    const pipes_baseline = countPipes();
-    // Default Linux FD soft limit is 1024. Leave 200 FDs of headroom for the
-    // test infra itself (listen socket, agent, httpClient, FDs needed by
-    // countPipes iteration, etc).
-    if (pipes_baseline > 800) {
-        std.debug.print(
-            "  skip: baseline pipes={} too high (likely shared test runner with prior leak); " ++
-                "the leak is reproducible in isolation — run this test alone to verify the fix.\n",
-            .{pipes_baseline},
-        );
-        return error.SkipZigTest;
-    }
-
-    // Use head_then_close: server closes the TCP connection immediately
-    // after accepting, before sending any response body. This reliably
-    // triggers the error path that historically leaked pipe FDs.
-    var server = try FakeServer.start(.head_then_close);
-    defer server.shutdown();
+    const server = try FakeServer.start(testing_allocatorCallStreaming, .head_then_close);
+    defer server.deinit();
     server.waitForConnection();
 
     const base_url = try makeBaseUrl(testing_allocatorCallStreaming, server.port);
     defer testing_allocatorCallStreaming.free(base_url);
 
-    var a = try Agent.init_with_options(testing_allocatorCallStreaming, std.testing.io, .{
-        .idle_timeout_ms = 2_000,
-        .read_timeout_ms = 5_000,
-    });
+    var a = try initLeakTestAgent(testing_allocatorCallStreaming, base_url);
     defer a.deinit();
-    a.baseUrl = base_url;
-    a.model = "test-model";
-    a.apiKey = "test-key";
 
-    // Warmup: one call to absorb any one-time allocation (e.g. httpClient
-    // pool init) so we measure the per-call steady-state, not setup cost.
+    // Warmup: one call absorbs what the FIRST request allocates once (client
+    // pool init, curl's own state), so what follows is per-call steady state
+    // and not setup cost.
     _ = a.callStreaming(makeCall(), null, noopCallback) catch {};
 
     const pipes_before = countPipes();
+    reportCrowdedPipeTable(pipes_before);
+    const handles_before = try helpers.open_descriptors.count();
 
-    // N=2 keeps the test fast and stays within FD limit. Pre-fix the leak
-    // is ~100/call → +200 pipes → easily detected by the assertion. Post-fix
-    // the growth should be 0-2 pipes total.
-    const N: usize = 2;
+    // A server that closes right after the head is the path that historically
+    // leaked ~100 pipes per call, so N=3 is enough to see one per call.
+    const N: usize = 3;
     var i: usize = 0;
     while (i < N) : (i += 1) {
         _ = a.callStreaming(makeCall(), null, noopCallback) catch {};
     }
 
-    const pipes_after = countPipes();
-    const growth = pipes_after -| pipes_before;
-
-    // Pre-fix baseline: ~100+ pipes per call. Post-fix threshold: ≤2
-    // pipes per call (so N=2 → ≤4 growth). If the leak returns at the
-    // pre-fix scale, this catches it (expect ~200 growth).
-    try expectCallStreaming(growth < N * 2);
+    const pipes_growth = countPipes() -| pipes_before;
+    const handles_growth = (try helpers.open_descriptors.count()) -| handles_before;
+    if (pipes_growth >= N or handles_growth >= N) {
+        std.debug.print(
+            "  leaked descriptors over {} calls: pipes +{} ({} -> {}), handles +{} ({} -> {})\n",
+            .{ N, pipes_growth, pipes_before, countPipes(), handles_growth, handles_before, try helpers.open_descriptors.count() },
+        );
+    }
+    // ONE leaked descriptor per call is N growth, so N is the threshold that
+    // catches it; the pre-fix leak was ~100x that.
+    try expectCallStreaming(pipes_growth < N);
+    try expectCallStreaming(handles_growth < N);
 }
 
 test "callStreaming zero-pipe-budget: even one failed call must not grow pipes" {
-    // Stronger assertion: a single failed callStreaming MUST not grow the
-    // pipe count at all. Any growth is a leak.
-    if (builtin.os.tag != .linux) return error.SkipZigTest;
-
-    // Skipped: same std.Io.Threaded.closeFd hang as the test above.
-    if (true) return error.SkipZigTest;
-
-    if (countPipes() > 800) return error.SkipZigTest;
-
-    var server = try FakeServer.start(.head_then_close);
-    defer server.shutdown();
+    // Stronger than the N-call test above: a SINGLE failed call must grow
+    // neither the pipe count (Linux) nor the handle count (every host) at all.
+    const server = try FakeServer.start(testing_allocatorCallStreaming, .head_then_close);
+    defer server.deinit();
     server.waitForConnection();
 
     const base_url = try makeBaseUrl(testing_allocatorCallStreaming, server.port);
     defer testing_allocatorCallStreaming.free(base_url);
 
-    var a = try Agent.init_with_options(testing_allocatorCallStreaming, std.testing.io, .{
-        .idle_timeout_ms = 2_000,
-        .read_timeout_ms = 5_000,
-    });
+    var a = try initLeakTestAgent(testing_allocatorCallStreaming, base_url);
     defer a.deinit();
-    a.baseUrl = base_url;
-    a.model = "test-model";
-    a.apiKey = "test-key";
 
-    // Warmup
+    // Warmup, exactly as above.
     _ = a.callStreaming(makeCall(), null, noopCallback) catch {};
+
     const pipes_before = countPipes();
+    reportCrowdedPipeTable(pipes_before);
+    const handles_before = try helpers.open_descriptors.count();
 
-    // One additional call
     _ = a.callStreaming(makeCall(), null, noopCallback) catch {};
-    const pipes_after = countPipes();
 
-    // Strict: zero growth. The pre-fix baseline would fail this at ~100+.
-    try expectEqualCallStreaming(pipes_before, pipes_after);
+    // STRICT: zero growth. A leak test that allows one descriptor per call is
+    // the bug this budget exists to prevent.
+    try expectEqualCallStreaming(pipes_before, countPipes());
+    try expectEqualCallStreaming(handles_before, try helpers.open_descriptors.count());
 }
 
 test "callStreaming recovers cleanly after a failed call (success path)" {
-    // Regression guard: when the server closes immediately (head_then_close),
-    // the agent should remain usable for the next call.
-    if (builtin.os.tag != .linux) return error.SkipZigTest;
+    // Regression guard: rejected calls must leave the agent usable, and a
+    // COMPLETE SSE body from a healthy server must still come back as a real
+    // response with content.
+    const dead = try FakeServer.start(testing_allocatorCallStreaming, .head_then_close);
+    defer dead.deinit();
+    const healthy = try FakeServer.start(testing_allocatorCallStreaming, .complete_chunked_response);
+    defer healthy.deinit();
+    dead.waitForConnection();
 
-    // Skipped: same std.Io.Threaded.closeFd hang as the test above.
-    if (true) return error.SkipZigTest;
+    const dead_url = try makeBaseUrl(testing_allocatorCallStreaming, dead.port);
+    defer testing_allocatorCallStreaming.free(dead_url);
+    const healthy_url = try makeBaseUrl(testing_allocatorCallStreaming, healthy.port);
+    defer testing_allocatorCallStreaming.free(healthy_url);
 
-    if (countPipes() > 800) return error.SkipZigTest;
-
-    var server = try FakeServer.start(.head_then_close);
-    defer server.shutdown();
-    server.waitForConnection();
-
-    const base_url = try makeBaseUrl(testing_allocatorCallStreaming, server.port);
-    defer testing_allocatorCallStreaming.free(base_url);
-
-    var a = try Agent.init_with_options(testing_allocatorCallStreaming, std.testing.io, .{
-        .idle_timeout_ms = 2_000,
-        .read_timeout_ms = 5_000,
-    });
+    // The success path really does deliver a chunk, so the agent runs on an
+    // arena for the reason `runStreamingWithTimeout` documents.
+    var arena = std.heap.ArenaAllocator.init(testing_allocatorCallStreaming);
+    defer arena.deinit();
+    var a = try initLeakTestAgent(arena.allocator(), dead_url);
     defer a.deinit();
-    a.baseUrl = base_url;
-    a.model = "test-model";
-    a.apiKey = "test-key";
 
-    // Two consecutive failed calls — both must NOT crash, hang, or leak.
-    // (The pre-fix leak crashes the test runner with ProcessFdQuotaExceeded
-    // after a handful of iterations.)
-    _ = a.callStreaming(makeCall(), null, noopCallback) catch {};
+    // Warmup against the dead server only: the FIRST request to a host pays a
+    // one-time cost that must not be read as a per-call leak, and the healthy
+    // fixture below serves exactly one connection.
     _ = a.callStreaming(makeCall(), null, noopCallback) catch {};
 
-    // Sanity: we should be able to start a third call without the test
-    // runner having run out of FDs or corrupted state.
-    _ = a.callStreaming(makeCall(), null, noopCallback) catch {};
+    const pipes_before = countPipes();
+    reportCrowdedPipeTable(pipes_before);
+    const handles_before = try helpers.open_descriptors.count();
+
+    // Neither failed call may crash, hang, or come back as a success it did
+    // not get. (Pre-fix, the runner died of ProcessFdQuotaExceeded here.)
+    const failures: usize = 2;
+    var attempt: usize = 0;
+    while (attempt < failures) : (attempt += 1) {
+        const failed = a.callStreaming(makeCall(), null, noopCallback);
+        if (failed) |_| return error.TestUnexpectedResult else |_| {}
+    }
+    // One leaked descriptor per call would be `failures` growth, so that is
+    // the threshold — the same shape the N-call test uses.
+    try expectCallStreaming(countPipes() -| pipes_before < failures);
+    try expectCallStreaming((try helpers.open_descriptors.count()) -| handles_before < failures);
+
+    // The agent is still able to complete a real turn — and it is a real one:
+    // the SSE delta arrived as content, with a finish_reason to end it.
+    a.baseUrl = healthy_url;
+    var ok = try a.callStreaming(makeCall(), null, noopCallback);
+    defer ok.deinit();
+    try expectEqualStringsCallStreaming("hi", ok.content orelse return error.MissingContent);
+    try expectCallStreaming(ok.finish_reason != null);
 }
-
 // ===== Tests merged from image_content_test.zig (2026-09-29 flatten) =====
 const expectEqualImageContent = std.testing.expectEqual;
 const expectEqualStringsImageContent = std.testing.expectEqualStrings;
