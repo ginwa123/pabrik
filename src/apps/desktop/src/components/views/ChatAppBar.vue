@@ -40,8 +40,14 @@
       extras               —            content pinned to the right of
                                          the title, before the buttons
                                          (AgentChatView's SessionSlider)
+
+  It also carries the transcript-width control (useChatContentWidth) next to
+  the sidebar toggle. No prop: the bar is shared, so all three modes and both
+  the hosted and the bare mount get the identical control.
 -->
 <script setup lang="ts">
+import { useChatContentWidth } from '../../composables/useChatContentWidth'
+
 withDefaults(
   defineProps<{
     title: string
@@ -56,6 +62,8 @@ const emit = defineEmits<{
   close: []
   'toggle-sidebar': []
 }>()
+
+const { label: widthLabel, nextLabel: widthNextLabel, cycleWidth } = useChatContentWidth()
 </script>
 
 <template>
@@ -76,6 +84,19 @@ const emit = defineEmits<{
     </span>
 
     <slot name="extras" />
+
+    <button
+      type="button"
+      class="shrink-0 h-7 px-2 rounded flex items-center gap-1 text-micro hover:opacity-70 transition-opacity"
+      style="color: var(--semantic-text-dim)"
+      :title="`Transcript width: ${widthLabel}. Click for ${widthNextLabel}.`"
+      :aria-label="`Transcript width: ${widthLabel}. Click for ${widthNextLabel}.`"
+      data-testid="chat-app-bar-width-toggle"
+      @click="cycleWidth"
+    >
+      <span aria-hidden="true">⇔</span>
+      <span data-testid="chat-app-bar-width-label">{{ widthLabel }}</span>
+    </button>
 
     <button
       v-if="showSidebarToggle"

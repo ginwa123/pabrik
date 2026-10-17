@@ -292,36 +292,48 @@ const handleItemDragEnd = () => {
          moved to the header WorkspaceSwitcher (revamp plan:
          docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md). -->
     <div class="relative shrink-0" data-workspace-menu>
-      <button
-        class="px-[var(--sb-gutter)] h-7 flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity w-full text-left border-b border-[--color-border]/40"
+      <div
+        class="px-[var(--sb-gutter)] h-7 flex items-center shrink-0 border-b border-[--color-border]/40"
+        data-testid="projects-section-header"
         @click="toggleProjectsSection"
       >
-        <span
-          class="text-meta transition-transform duration-200"
-          :style="{
-            transform: sidebarStore.projectsExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-          }"
-          style="color: var(--semantic-text-dim)"
-          >▶</span
+        <button
+          class="flex items-center h-full min-w-0 flex-1 text-left transition-opacity hover:opacity-80"
+          :aria-expanded="sidebarStore.projectsExpanded"
+          aria-label="Projects"
+          @click.stop="toggleProjectsSection"
         >
-        <span
-          class="text-micro font-semibold uppercase tracking-[0.08em]"
-          style="color: var(--semantic-text-dim)"
-          >Projects</span
-        >
-        <span
-          v-if="workspace"
-          class="text-micro"
-          style="color: var(--semantic-text-dim); opacity: 0.7"
-          data-testid="projects-count"
-          >{{ workspace.items.length }}</span
-        >
+          <span
+            class="w-[var(--sb-mark)] shrink-0 flex items-center text-meta transition-transform duration-200"
+            :style="{
+              transform: sidebarStore.projectsExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+            }"
+            style="color: var(--semantic-text-dim)"
+            >▶</span
+          >
+          <span
+            class="text-micro font-semibold uppercase tracking-[0.08em]"
+            style="color: var(--semantic-text-dim)"
+            >Projects</span
+          >
+          <span
+            v-if="workspace"
+            class="text-micro ml-1.5"
+            style="
+              color: var(--semantic-text-dim);
+              opacity: 0.7;
+              font-variant-numeric: tabular-nums;
+            "
+            data-testid="projects-count"
+            >{{ workspace.items.length }}</span
+          >
+        </button>
         <!-- Running indicator: dot + count text only, never an elapsed
              pill. The elapsed pill lives on the owning row (ChatsList /
              WorkspaceItem) so one run renders one pill (wireframe R1). -->
         <span
           v-if="workspace && runningTaskCountInWorkspace(workspace) > 0"
-          class="flex items-center gap-1.5 shrink-0"
+          class="ml-auto flex items-center gap-1.5 shrink-0"
           data-testid="workspace-running-indicator"
           :title="runningTaskCountInWorkspace(workspace) + ' worker(s) running in this workspace'"
         >
@@ -331,13 +343,17 @@ const handleItemDragEnd = () => {
           />
           <span
             class="text-micro"
-            style="color: var(--semantic-text-dim); opacity: 0.7; font-variant-numeric: tabular-nums"
+            style="
+              color: var(--semantic-text-dim);
+              opacity: 0.7;
+              font-variant-numeric: tabular-nums;
+            "
             >{{ runningTaskCountInWorkspace(workspace) }} running</span
           >
         </span>
         <button
           v-if="sidebarStore.projectsExpanded && workspace"
-          class="ml-auto w-[var(--sb-hit)] h-[var(--sb-hit)] text-meta font-medium transition-opacity duration-150 hover:opacity-100 flex items-center justify-center"
+          class="ml-1.5 w-[var(--sb-hit)] h-[var(--sb-hit)] text-meta font-medium transition-opacity duration-150 hover:opacity-100 flex items-center justify-center shrink-0"
           style="color: var(--semantic-text-dim); opacity: 0.7"
           title="Add Item"
           aria-label="Add Item"
@@ -346,7 +362,7 @@ const handleItemDragEnd = () => {
         >
           +
         </button>
-      </button>
+      </div>
       <!-- Search removed (v2 sidebar UX) — every project is listed. -->
       <!-- Add-item menu — promoted from the old bottom "+ Add Item"
            row into the section header (revamp plan). -->
@@ -432,7 +448,7 @@ const handleItemDragEnd = () => {
          stranded at the bottom of a full-height Projects box. -->
     <div>
       <Transition name="collapse">
-        <div v-show="sidebarStore.projectsExpanded" class="pb-2">
+        <div v-show="sidebarStore.projectsExpanded">
           <!-- Projects loading skeleton — shown while the workspace tree
                is fetching and no items are painted yet. Keeps the section
                from flashing "No projects yet" on a slow boot. -->
@@ -441,13 +457,9 @@ const handleItemDragEnd = () => {
             :rows="4"
             test-id="projects-loading-skeleton"
           />
-          <!-- Selected workspace items (single workspace — revamp plan).
-               One indent step per level (--sb-indent); the row supplies
-               its own gutter, so the guide never double-counts. -->
           <ul
             v-if="workspace"
-            class="ml-[var(--sb-indent)] space-y-0 border-l"
-            style="border-color: var(--color-border)"
+            class="space-y-0"
             @dragstart="handleItemDragStart"
             @dragover="handleItemDragOver"
             @dragleave="handleItemDragLeave"
@@ -463,7 +475,6 @@ const handleItemDragEnd = () => {
               :is-item-dragging="draggingItemId === item.id"
               :is-item-drag-over="dragOverItemId === item.id && draggingItemId !== item.id"
               :is-item-drag-over-insert-after="dragOverItemInsertAfter"
-              class="first:mt-1.5"
               @click="handleItemClick(workspace.id, $event.id)"
               @open-item-in-background="emit('openItemInBackground', $event)"
               @go-to-settings="emit('goToSettings', $event)"

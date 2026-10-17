@@ -61,6 +61,13 @@ pub extern "c" fn webview_bind(
 pub extern "c" fn webview_unbind(w: *Webview, name: [*:0]const u8) Error;
 pub extern "c" fn webview_return(w: *Webview, id: [*:0]const u8, status: c_int, result: [*:0]const u8) Error;
 
+/// Hook run once the native window exists and the event loop is about to
+/// start — the only moment a tray icon can join the platform main loop.
+pub const Ready = struct {
+    ctx: *anyopaque,
+    attach: *const fn (ctx: *anyopaque, view: *Webview) void,
+};
+
 /// High-level convenience: create a windowed webview, navigate, run the main
 /// loop until the window closes, then destroy. Mirrors the old webview.run()
 /// contract so main.zig stays simple.
@@ -71,6 +78,7 @@ pub fn runWindow(
     height: c_int,
     debug: bool,
     force_x11: bool,
+    ready: ?Ready,
 ) !void {
     // Pin WebKitGTK hardware compositing before WebKit initialises
     // (task_1787761084050_0).
@@ -86,6 +94,8 @@ pub fn runWindow(
     const w = webview_create(if (debug) 1 else 0, null) orelse
         return error.WebviewCreateFailed;
     defer _ = webview_destroy(w);
+
+    if (ready) |hook| hook.attach(hook.ctx, w);
 
     _ = webview_set_title(w, title);
     _ = webview_set_size(w, width, height, .none);

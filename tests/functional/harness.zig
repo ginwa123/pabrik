@@ -559,6 +559,10 @@ pub const Harness = struct {
         try env_map.put("XDG_STATE_HOME", xdg_state);
         try env_map.put("XDG_DATA_HOME", xdg_data);
         try env_map.put("XDG_CACHE_HOME", xdg_cache);
+        // A functional-test child boots with no cached snapshot, so the catalog's
+        // priming fetch would open one live 5 MB request per spawned server. The
+        // boot behaviour itself is covered by the unit tests.
+        try env_map.put("PABRIK_MODEL_CATALOG_FETCH", "0");
         if (is_windows) {
             try env_map.put("USERPROFILE", temp_dir);
             const roaming = try std.fs.path.join(gpa, &.{ temp_dir, "AppData", "Roaming" });
@@ -1512,6 +1516,9 @@ pub fn runPabrikCommand(
     try env_map.put("XDG_STATE_HOME", xdg_state);
     try env_map.put("XDG_DATA_HOME", xdg_data);
     try env_map.put("XDG_CACHE_HOME", xdg_cache);
+    // Same reason as `boot` above: a CLI subcommand boots the app too, and a
+    // 5 MB fetch from a test process is not what any of these suites measure.
+    try env_map.put("PABRIK_MODEL_CATALOG_FETCH", "0");
 
     // The capture files live inside `home` — normally the harness tempdir,
     // which teardown removes anyway.

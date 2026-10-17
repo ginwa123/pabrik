@@ -1,6 +1,6 @@
-//! `model_catalog_refresh` — the network half of the model catalog. Three
-//! jobs, and nothing else: 1. `loadAtBoot` — read the DB into the in-memory
-//! index.
+//! `model_catalog_refresh` — the network half of the model catalog: read the
+//! cached snapshot at boot, fetch models.dev on a timer, and RECORD what the last
+//! attempt did so "why is there no catalog yet?" has an answer.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -17,6 +17,29 @@ pub const MAX_FETCH_BYTES: usize = 32 * 1024 * 1024;
 /// One hour, in nanoseconds.
 pub const SYNC_INTERVAL_NS: i96 = 3_600 * 1_000_000_000;
 
+/// The loop's FIRST wait: a boot that read NO snapshot fetches NOW, because an
+/// hour of silence leaves every profile on the built-in window (and a server
+/// restarted more often than hourly would never fetch at all).
+pub fn firstDelayNs(have_snapshot: bool) i96 {
+    return if (have_snapshot) SYNC_INTERVAL_NS else 0;
+}
+
+/// The gate's decision, split from the environment read so a test can cover it
+/// on every host. OFF only on an explicit `"0"`: a wrong default there silently
+/// empties the catalog.
+fn gateAllows(value: ?[]const u8) bool {
+    const v = value orelse return true;
+    return !std.mem.eql(u8, v, "0");
+}
+
+/// `PABRIK_MODEL_CATALOG_FETCH=0` disables the fetch. `Harness.boot` sets it,
+/// since a functional-test child boots with no snapshot and would otherwise make
+/// one live 5 MB request per spawned server. Production never sets it.
+fn fetchingEnabled() bool {
+    const value: ?[]const u8 = if (std.c.getenv("PABRIK_MODEL_CATALOG_FETCH")) |z| std.mem.span(z) else null;
+    return gateAllows(value);
+}
+
 pub const Report = struct {
     providers: usize,
     models: usize,
@@ -30,9 +53,64 @@ pub const FetchError = error{
     CatalogFetchStatus,
 };
 
+/// What the last `refresh` did, for the READ side to report. `error_name` is
+/// `@errorName`'s static string: nothing to free, no lifetime to get wrong.
+pub const LastAttempt = struct {
+    /// 0 = nothing attempted in this process yet.
+    at_ms: i64 = 0,
+    ok: bool = false,
+    /// `""` until an attempt fails.
+    error_name: []const u8 = "",
+    providers: usize = 0,
+    models: usize = 0,
+};
+
+var last_attempt: LastAttempt = .{};
+
+/// Zig 0.16 removed `std.Thread.Mutex`; `std.atomic.Mutex` plus a spin loop is
+/// what the rest of this directory uses (see `stream_snapshot.zig`).
+var last_attempt_mu: std.atomic.Mutex = .unlocked;
+
+fn lastAttemptLock() void {
+    while (!last_attempt_mu.tryLock()) std.atomic.spinLoopHint();
+}
+
+/// A COPY, taken under the lock: `refresh` runs on the timer's thread while
+/// handlers read this, and a torn pair would read as a failure that succeeded.
+pub fn lastAttempt() LastAttempt {
+    lastAttemptLock();
+    defer last_attempt_mu.unlock();
+    return last_attempt;
+}
+
+fn recordAttempt(attempt: LastAttempt) void {
+    lastAttemptLock();
+    defer last_attempt_mu.unlock();
+    last_attempt = attempt;
+}
+
 /// Fetch models.dev and install the result. Every failure propagates — the
-/// manual endpoint reports it, the timer logs it. Neither invents a fallback.
+/// endpoint reports it, the timer logs it — and BOTH record it: an empty catalog
+/// whose syncs failed silently reads exactly like one that was never tried.
 pub fn refresh(alloc: Allocator, io: std.Io, db: *sqlite.SqliteBackend) !Report {
+    const report = fetchAndInstall(alloc, io, db) catch |err| {
+        recordAttempt(.{
+            .at_ms = std.Io.Clock.now(.real, io).toMilliseconds(),
+            .ok = false,
+            .error_name = @errorName(err),
+        });
+        return err;
+    };
+    recordAttempt(.{
+        .at_ms = report.fetched_at_ms,
+        .ok = true,
+        .providers = report.providers,
+        .models = report.models,
+    });
+    return report;
+}
+
+fn fetchAndInstall(alloc: Allocator, io: std.Io, db: *sqlite.SqliteBackend) !Report {
     var client = http_client.Client.init(alloc);
     var resp = try http_client.get(&client, catalog.SOURCE_URL, .{
         .timeout_ms = 60_000,
@@ -91,25 +169,39 @@ pub fn loadAtBoot(alloc: Allocator, db: *sqlite.SqliteBackend) bool {
     return true;
 }
 
-/// Detached hourly sync. Nothing joins it; it dies with the process.
+/// Detached sync timer. Nothing joins it; it dies with the process.
+/// `loadAtBoot` runs first, so the FIRST fetch is immediate when boot had nothing
+/// to read and waits the interval when it did.
 pub fn startBackgroundSync(alloc: Allocator, db: *sqlite.SqliteBackend) void {
-    const thread = std.Thread.spawn(.{}, backgroundLoop, .{ alloc, db }) catch |err| {
+    if (!fetchingEnabled()) {
+        std.log.info("model catalog: background sync disabled (PABRIK_MODEL_CATALOG_FETCH=0)", .{});
+        return;
+    }
+
+    const have_snapshot = catalog.getSingleton() != null;
+    const first_delay_ns = firstDelayNs(have_snapshot);
+    const thread = std.Thread.spawn(.{}, backgroundLoop, .{ alloc, db, first_delay_ns }) catch |err| {
         std.log.warn("model catalog: background sync not started: {s}", .{@errorName(err)});
         return;
     };
     thread.detach();
     std.log.info("model catalog: background sync every {d} minutes", .{SYNC_INTERVAL_NS / (60 * 1_000_000_000)});
+    if (!have_snapshot) {
+        std.log.info("model catalog: nothing cached — fetching models.dev now", .{});
+    }
 }
 
-fn backgroundLoop(alloc: Allocator, db: *sqlite.SqliteBackend) void {
+fn backgroundLoop(alloc: Allocator, db: *sqlite.SqliteBackend, first_delay_ns: i96) void {
     // Its OWN io instance: `std.Io.Threaded` is not shareable across threads,
     // and the timer must not borrow the server's.
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
 
+    var delay_ns = first_delay_ns;
     while (true) {
-        std.Io.sleep(io, .{ .nanoseconds = SYNC_INTERVAL_NS }, .awake) catch return;
+        if (delay_ns > 0) std.Io.sleep(io, .{ .nanoseconds = delay_ns }, .awake) catch return;
+        delay_ns = SYNC_INTERVAL_NS;
         refreshOnceWithLog(alloc, io, db);
     }
 }
@@ -125,4 +217,24 @@ pub fn refreshOnceWithLog(alloc: Allocator, io: std.Io, db: *sqlite.SqliteBacken
         "model catalog: synced {d} providers / {d} models ({d} -> {d} bytes)",
         .{ report.providers, report.models, report.bytes_raw, report.bytes_trimmed },
     );
+}
+
+// ============================================================================
+// Behaviour tests
+
+const testing = std.testing;
+
+test "model catalog refresh: a boot WITH a snapshot waits an interval, one WITHOUT waits zero" {
+    // The snapshot is the whole difference: boot already loaded it, so there is
+    // nothing to fetch yet. With nothing loaded, the hour of silence is what
+    // left the DB empty and every profile on the built-in window.
+    try testing.expectEqual(SYNC_INTERVAL_NS, firstDelayNs(true));
+    try testing.expectEqual(@as(i96, 0), firstDelayNs(false));
+}
+
+test "model catalog refresh: only an explicit '0' turns the background fetch off" {
+    try testing.expect(gateAllows(null)); // unset = on, which is production
+    try testing.expect(gateAllows("1"));
+    try testing.expect(gateAllows(""));
+    try testing.expect(!gateAllows("0"));
 }

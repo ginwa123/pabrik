@@ -185,7 +185,7 @@ pub fn findInstalledWebapp(
     return null;
 }
 
-fn fileExists(path: []const u8) bool {
+pub fn fileExists(path: []const u8) bool {
     // Zig 0.16 removed `std.fs.accessAbsolute`; the new path is
     // `std.Io.Dir.accessAbsolute(io, path, .{})` which requires an io handle.
     var buf: [std.fs.max_path_bytes:0]u8 = undefined;

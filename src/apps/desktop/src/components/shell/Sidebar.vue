@@ -1137,7 +1137,7 @@ defineExpose({
          title/aria-label. -->
     <button
       data-testid="sidebar-new-chat-button"
-      class="h-10 flex items-center gap-2 shrink-0 px-[var(--sb-gutter)] border-b transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40"
+      class="h-10 flex items-center shrink-0 px-[var(--sb-gutter)] border-b transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40"
       :class="isCollapsed ? 'justify-center px-0' : 'hover:bg-[var(--semantic-card-bg)]'"
       style="border-color: var(--color-border)"
       :disabled="!newChatWorkspaceId || isCreatingChat"
@@ -1152,7 +1152,7 @@ defineExpose({
       @click="handleNewChat"
     >
       <span
-        class="w-[var(--sb-hit)] text-center text-meta leading-none"
+        class="w-[var(--sb-mark)] flex items-center justify-center text-meta leading-none"
         :style="{ color: 'var(--semantic-text-dim)' }"
         aria-hidden="true"
         >{{ isCreatingChat ? '◌' : '✎' }}</span

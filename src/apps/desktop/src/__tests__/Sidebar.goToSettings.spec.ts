@@ -73,8 +73,9 @@ function mountSidebar(item: WorkspaceItem) {
 
 async function clickGoToSettings(item: WorkspaceItem) {
   const wrapper = mountSidebar(item)
-  const row = wrapper.find('button.flex-1')
-  await row.trigger('contextmenu', { clientX: 120, clientY: 160 })
+  const row = wrapper.find('[data-testid="item-name"]').element.closest('button')!
+  row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 120, clientY: 160 }))
+  await nextTick()
   const entry = document.body.querySelector(
     '[data-testid="go-to-settings-item"]',
   ) as HTMLButtonElement | null

@@ -38,7 +38,7 @@ pub const CallOptions = struct {
 
 /// `AcquireOptions.is_cancelled`/`recv` take a bare `fn () bool`, so the session
 /// rides on a threadlocal — the shape `workflow.zig` uses for `llm_cancel_thunk`.
-/// The hook is throttled (50 ms, latched) because it is polled per BYTE.
+/// The hook is throttled (50 ms, latched) because every wait polls it.
 const session_cancel = struct {
     const POLL_INTERVAL_NS: i96 = 50 * std.time.ns_per_ms;
 

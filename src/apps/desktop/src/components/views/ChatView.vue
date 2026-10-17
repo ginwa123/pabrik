@@ -14,12 +14,14 @@ import { marked } from 'marked'
 import * as api from '../../api'
 import { chatEngineDb, newestCursor, toChatMessage } from '../../sync/ChatEngineDb'
 import { runSyncEffect, runSyncEffectOr, runSyncVoid } from '../../sync/runtime'
+import { useChatContentWidth } from '../../composables/useChatContentWidth'
 import { useChatScrollRestore } from '../../composables/useChatScrollRestore'
 import {
   stripThinkingTags,
-  isHtmlTags,
   VirtualScroller,
   renderResponse,
+  hasRichBlocks,
+  extractRichBlocks,
   toolPayloadPreview,
   CHAT_HTML_FRAME_RESIZE_SOURCE,
   autoResizeScript,
@@ -136,6 +138,7 @@ import { hasSkillEnvelope, splitSkillEnvelope } from '../../helpers/skillEnvelop
 // for agentic-loop error/retry diagnostics (is_error=true SSE events).
 import AgentErrorCard from '../chat/AgentErrorCard.vue'
 import ChatAttachments from '../chat/ChatAttachments.vue'
+import MermaidDiagram from '../chat/MermaidDiagram.vue'
 import UserPillRail, { type UserPill } from '../chat/UserPillRail.vue'
 import ChatScrollSlider from '../chat/ChatScrollSlider.vue'
 import { pickActivePillIndex, isPillGroup, estimateViewportEnd } from '../chat/activePill'
@@ -178,6 +181,7 @@ const emit = defineEmits<{
 
 // Check if session is pending (needs creation on first message)
 const isPendingSession = computed(() => props.chatId.startsWith('pending-'))
+const { presetClass: chatWidthClass } = useChatContentWidth()
 
 interface Message {
   id: string
@@ -242,47 +246,6 @@ const setupCodeBlockCopyButtons = () => {
       block.appendChild(btn)
     })
   })
-}
-
-// NOTE: renderResponse is no longer defined here — it was extracted to `helpers/renderResponse.ts`
-// and exported via `@/helpers`.
-interface HtmlSegment {
-  /** Text before this html block (markdown-rendered inline). */
-  before: string
-  /** Inner payload of the <html>...</html> block (goes into srcdoc). */
-  html: string
-}
-
-/** True when the message contains at least one closed <html> block. */
-const msgHasHtml = (content: string | undefined): boolean => {
-  if (!content) return false
-  return isHtmlTags(content) || /<html>[\s\S]*?<\/html>/i.test(content)
-}
-
-/**  * Split a message into segments: for each closed <html>...</html> block, one segment carrying the
- * preceding markdown and the block's inner HTML. Unclosed tags mid-stream fall through to the
- * legacy v-html path. */
-const extractHtmlBlocks = (content: string): HtmlSegment[] => {
-  const segments: HtmlSegment[] = []
-  const regex = /<html>([\s\S]*?)<\/html>/gi
-  let lastIndex = 0
-  let match: RegExpExecArray | null
-  while ((match = regex.exec(content)) !== null) {
-    const before = content.slice(lastIndex, match.index)
-    const inner = match[1] ?? ''
-    if (before.trim() || segments.length === 0) {
-      segments.push({ before: before.trim(), html: inner })
-    } else {
-      // Consecutive blocks: attach empty `before` to keep pairing.
-      segments.push({ before: '', html: inner })
-    }
-    lastIndex = regex.lastIndex
-  }
-  const tail = content.slice(lastIndex).trim()
-  if (tail || segments.length === 0) {
-    segments.push({ before: tail, html: '' })
-  }
-  return segments
 }
 
 /**  * The `<html>` frame is a separate document with a NULL origin, so the app's CSS custom properties
@@ -393,13 +356,15 @@ const onHtmlFrameResize = (event: MessageEvent): void => {
   frame.style.height = `${growFrameToContent(reported)}px`
 }
 
-// Detect a compaction summary message — a user-role message whose content is the
-// `<compact_messages>` envelope written by `compactMessageInMemoryNew`. The user bubble renders it
-// as a structured `CompactionCard` instead of a wall of escaped XML.
+// A compaction handoff: a user-role message carrying the envelope `compactMessageInMemoryNew`
+// writes. JSON since the format change, XML before it, so both prefixes are recognised — the bubble
+// renders a `CompactionCard` instead of a wall of raw document text.
 const isCompactionMessage = (msg: { role: string; content: string } | undefined): boolean => {
   if (!msg) return false
   if (msg.role !== 'user') return false
-  return msg.content.trimStart().startsWith('<compact_messages>')
+  const trimmed = msg.content.trimStart()
+  if (trimmed.startsWith('{"compact_messages"')) return true
+  return trimmed.startsWith('<compact_messages>')
 }
 
 // Session ID extracted from props on mount
@@ -2707,8 +2672,7 @@ const handleVirtualScroll = (
   const liveEdge = virtualScrollerRef.value?.bottomScrollTop?.() ?? scrollHeight - clientHeight
   // The anchor is the bottom the reader was LAST parked at, so it is the number the reader's
   // position is actually referenced to.
-  const bottomEdge =
-    typeof settled === 'number' && Number.isFinite(settled) ? settled : liveEdge
+  const bottomEdge = typeof settled === 'number' && Number.isFinite(settled) ? settled : liveEdge
   const distanceFromBottom = Math.max(0, bottomEdge - actualScrollTop)
   const distanceFromTop = Math.max(0, actualScrollTop)
   // Widened only for the stable-anchor read; a live read keeps the tight
@@ -3664,7 +3628,11 @@ const compactSession = async () => {
       fires the observer on every input event) never re-runs ChatView's
       (very large) render.
     -->
-    <div :ref="setChatColumnEl" class="relative flex flex-col h-full flex-1 min-w-0 chat-column">
+    <div
+      :ref="setChatColumnEl"
+      class="relative flex flex-col h-full flex-1 min-w-0 chat-column"
+      :class="chatWidthClass"
+    >
       <!--
         Chat app bar. Rendered only when the parent passed the
         `showHeader` prop. Every chat host sets it (kanban
@@ -3774,7 +3742,7 @@ const compactSession = async () => {
         <div
           v-if="isInitializing"
           data-testid="chat-initializing-skeleton"
-          class="flex flex-col gap-3 px-4 max-w-4xl mx-auto pt-6 w-full"
+          class="flex flex-col gap-3 px-4 max-w-[var(--chat-content-max)] mx-auto pt-6 w-full"
           role="status"
           aria-label="Loading conversation"
         >
@@ -3923,7 +3891,7 @@ const compactSession = async () => {
         >
           <template #default="{ item: group, index: groupIndex }">
             <div
-              class="px-4 max-w-4xl mx-auto"
+              class="px-4 max-w-[var(--chat-content-max)] mx-auto"
               :class="[
                 groupIndex === 0 ? 'pt-6' : '',
                 isLastGroup(groupIndex) ? 'last-transcript-row' : '',
@@ -4402,8 +4370,7 @@ const compactSession = async () => {
                                 class="tool-payload text-dense font-mono whitespace-pre-wrap break-all px-2 py-1.5 m-0"
                                 :style="{ color: 'var(--semantic-text-dim)' }"
                                 data-testid="tool-payload-preview"
-                                >{{ toolPayloadPreview(msg.content) }}</pre
-                              >
+                                >{{ toolPayloadPreview(msg.content) }}</pre>
                             </div>
                           </div>
                         </div>
@@ -4453,28 +4420,31 @@ const compactSession = async () => {
                            padded area below it. -->
                       <div v-if="group.messages.some(hasVisibleContent)" class="assistant-messages">
                         <div v-for="(msg, idx) in group.messages" :key="idx" class="assistant-item">
-                          <!-- <html> blocks render as live sandboxed iframes
-                               (null origin = security boundary); any text
-                               outside the tags still renders as markdown.
-                               Legacy messages take the v-else path unchanged. -->
-                          <template v-if="msg.role === 'assistant' && msgHasHtml(msg.content)">
+                          <!-- <html> and <mermaid> blocks render as themselves;
+                               `sandbox="allow-scripts"` with no same-origin is
+                               the null-origin security boundary. -->
+                          <template v-if="msg.role === 'assistant' && hasRichBlocks(msg.content)">
                             <template
-                              v-for="(seg, sIdx) in extractHtmlBlocks(msg.content || '')"
+                              v-for="(seg, sIdx) in extractRichBlocks(msg.content || '')"
                               :key="sIdx"
                             >
                               <!-- eslint-disable-next-line vue/no-v-html -->
                               <span
-                                v-if="seg.before"
-                                v-html="marked.parse(seg.before, { async: false })"
+                                v-if="seg.kind === 'markdown' && seg.payload"
+                                v-html="marked.parse(seg.payload, { async: false })"
                               ></span>
                               <iframe
-                                v-if="seg.html"
+                                v-else-if="seg.kind === 'html' && seg.payload"
                                 class="chat-html-frame"
                                 sandbox="allow-scripts"
                                 scrolling="no"
                                 style="overflow: hidden"
-                                :srcdoc="buildHtmlSrcdoc(seg.html)"
+                                :srcdoc="buildHtmlSrcdoc(seg.payload)"
                               ></iframe>
+                              <MermaidDiagram
+                                v-else-if="seg.kind === 'mermaid' && seg.payload"
+                                :source="seg.payload"
+                              />
                             </template>
                           </template>
                           <span
@@ -4546,7 +4516,7 @@ const compactSession = async () => {
              the newest error is always visible without scrolling. -->
         <div
           v-if="agentError"
-          class="px-4 max-w-4xl mx-auto agent-error-list"
+          class="px-4 max-w-[var(--chat-content-max)] mx-auto agent-error-list"
           data-testid="agent-error-list"
         >
           <AgentErrorCard :key="agentError.id" :content="agentError.content" />
@@ -4616,7 +4586,7 @@ const compactSession = async () => {
         data-testid="composer-dock"
       >
         <div class="composer-scrim" aria-hidden="true" data-testid="composer-scrim"></div>
-        <div class="max-w-4xl mx-auto">
+        <div class="max-w-[var(--chat-content-max)] mx-auto">
           <FileInput
             ref="fileInputRef"
             :cwd="sessionCwd"
@@ -5467,9 +5437,12 @@ const compactSession = async () => {
    them through `:deep()`. The agent-error band is a plain descendant of
    the wrapper (outside the scroller's height model), so it takes the same
    padding directly — the strip stays continuous down the transcript. */
+/* Mirror the strip. Padding one side only was invisible while the rows were
+   centred; a full-bleed row is shifted 32px off the column's centre without it. */
 .messages-scroll-hide-native.has-pill-rail :deep([data-group-key]),
 .messages-scroll-hide-native.has-pill-rail .agent-error-list {
   padding-right: var(--pill-rail-gutter, 48px);
+  padding-left: var(--pill-rail-gutter, 48px);
 }
 
 /* ─── Floating composer ──────────────────────────────────────────────────
@@ -5482,6 +5455,7 @@ const compactSession = async () => {
    to a plain 1rem of bottom padding, matching the old flow layout. */
 .chat-column {
   --chat-composer-inset: 0px;
+  --chat-content-max: 100%;
 
   /* Contain this surface's whole z-ladder.
      `position: relative` with `z-index: auto` does NOT open a stacking
@@ -5497,6 +5471,16 @@ const compactSession = async () => {
      overlay, so DocumentsView does not have to be raised above a number
      that would have to be raised again. */
   isolation: isolate;
+}
+
+/* Transcript width presets. Every row and the composer cap themselves at
+   `--chat-content-max`, so `full` is the default and `comfortable` is the
+   old centred 56rem (896px) cap. */
+.chat-column.chat-width-comfortable {
+  --chat-content-max: 896px;
+}
+.chat-column.chat-width-wide {
+  --chat-content-max: 1400px;
 }
 
 .composer-dock {

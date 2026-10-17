@@ -82,6 +82,7 @@ pub const ResponseFormatting =
     \\- Markdown → `<markdown> ... </markdown>`
     \\- Plain text → `<plain> ... </plain>`
     \\- **HTML Responses:** you can use `<html> ... </html>` to show a rich rendered response. The UI renders this content directly — do NOT escape or fence the markup, emit it verbatim.
+    \\- **Diagram Responses:** you can use `<mermaid> ... </mermaid>` to render a diagram. Emit raw Mermaid source inside it, verbatim — no fence, no escaped entities, no `%%{init}%%` theme (the UI themes it).
     \\
     \\The transcript is DARK (dark background, light text). Do NOT set your own page or code colours — a light palette (`background:#fff`, `#f6f8fa`, `color:#111`) renders unreadable. Omit colours and the UI theme applies; or use: bg #1D1C19, text #c5c9c5, muted #a6a69c, border #282727, link #8ba4b0.
     \\

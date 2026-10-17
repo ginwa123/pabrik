@@ -11,6 +11,7 @@ const extraction = @import("extraction.zig");
 const webview_lib = @import("webview_lib.zig");
 const attach = @import("attach.zig");
 const browser = @import("browser.zig");
+const tray = @import("tray.zig");
 const pabrikcore = @import("pabrikcore");
 
 /// See `src/main.zig` for why this decl exists. It matters most here:
@@ -80,7 +81,13 @@ pub fn main(init: std.process.Init) !void {
             try browser.openBrowser(io, url);
             return;
         }
-        try runWebview(allocator, cfg, url);
+        var icon_buf: [std.fs.max_path_bytes]u8 = undefined;
+        var session = Session{
+            .io = io,
+            .url = url,
+            .icon = tray.resolveIcon(cfg.icon_path, "", path_resolve.fileExists, &icon_buf),
+        };
+        try runWebview(allocator, cfg, &session);
         return;
     }
 
@@ -165,7 +172,49 @@ pub fn main(init: std.process.Init) !void {
     if (comptime builtin.os.tag == .windows) {
         pointWebView2AtBundledRuntime(allocator, self_exe_owned);
     }
-    try runWebview(allocator, cfg, url);
+    var icon_buf: [std.fs.max_path_bytes]u8 = undefined;
+    var session = Session{
+        .io = io,
+        .url = url,
+        .icon = tray.resolveIcon(cfg.icon_path, webapp_dir, path_resolve.fileExists, &icon_buf),
+        .daemon_pid = attach_target.pid,
+    };
+    try runWebview(allocator, cfg, &session);
+}
+
+/// Everything the tray callbacks need, alive for as long as the window is.
+const Session = struct {
+    io: std.Io,
+    url: []const u8,
+    icon: tray.IconSource,
+    /// Pid of the pabrik daemon this desktop spawned, or 0 (we attached to
+    /// one that was already running and must not stop it).
+    daemon_pid: i32 = 0,
+    view: ?*webview_lib.Webview = null,
+};
+
+/// Install the tray once the native window exists, on the thread that owns
+/// the platform main loop.
+fn attachTray(ctx: *anyopaque, view: *webview_lib.Webview) void {
+    const session: *Session = @ptrCast(@alignCast(ctx));
+    session.view = view;
+    tray.install(.{ .ctx = ctx, .on = onTrayAction }, session.icon) catch |err| {
+        std.log.warn("Tray icon unavailable: {s}", .{@errorName(err)});
+    };
+}
+
+fn onTrayAction(ctx: *anyopaque, action: tray.Action) void {
+    const session: *Session = @ptrCast(@alignCast(ctx));
+    switch (action) {
+        .show_window => if (session.view) |view| {
+            tray.presentNativeWindow(webview_lib.webview_get_window(view));
+        },
+        .open_in_browser => browser.openBrowser(session.io, session.url) catch {},
+        .quit => {
+            _ = subprocess.terminateByPid(session.daemon_pid);
+            if (session.view) |view| _ = webview_lib.webview_terminate(view);
+        },
+    }
 }
 
 /// Open the webview window and run the platform event loop (blocks until the
@@ -198,15 +247,15 @@ fn pointWebView2AtBundledRuntime(allocator: std.mem.Allocator, self_exe_path: []
 fn runWebview(
     allocator: std.mem.Allocator,
     cfg: cli.Config,
-    url: []const u8,
+    session: *Session,
 ) !void {
     // Null-terminate the strings the C ABI expects.
     const title_z = try allocator.dupeZ(u8, cfg.title);
     defer allocator.free(title_z);
-    const url_z = try allocator.dupeZ(u8, url);
+    const url_z = try allocator.dupeZ(u8, session.url);
     defer allocator.free(url_z);
 
-    std.log.info("Opening webview at {s}", .{url});
+    std.log.info("Opening webview at {s}", .{session.url});
     webview_lib.runWindow(
         title_z.ptr,
         url_z.ptr,
@@ -214,6 +263,7 @@ fn runWebview(
         @intCast(cfg.window_height),
         cfg.enable_devtools,
         cfg.force_x11,
+        .{ .ctx = session, .attach = attachTray },
     ) catch |err| {
         std.log.err("Webview error: {s}", .{@errorName(err)});
         // Windows: webview_create fails when the WebView2 EVERGREEN RUNTIME
@@ -222,7 +272,7 @@ fn runWebview(
             std.log.err("The WebView2 window could not be created.", .{});
             std.log.err("Install the WebView2 evergreen runtime and re-run:", .{});
             std.log.err("  https://go.microsoft.com/fwlink/p/?LinkId=2124703", .{});
-            std.log.err("Workaround: open {s} in Edge/Chrome (backend is running).", .{url});
+            std.log.err("Workaround: open {s} in Edge/Chrome (backend is running).", .{session.url});
         }
         return err;
     };

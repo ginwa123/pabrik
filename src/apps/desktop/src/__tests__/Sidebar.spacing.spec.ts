@@ -13,6 +13,7 @@ const SRC = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const TOKENS: Record<string, string> = {
   '--sb-gutter': '12px',
   '--sb-row': '32px',
+  '--sb-mark': '16px',
   '--sb-indent': '12px',
   '--sb-hit': '24px',
 }
@@ -95,6 +96,20 @@ describe('sidebar spacing + type scale', () => {
       return m ? line.trim().slice(0, 90) : null
     })
     expect(found).toEqual({})
+  })
+
+  it('keeps every list flush: nothing in the panel indents and nothing draws a rail', () => {
+    const found = collect((line) => {
+      if (/ml-\[var\(--sb-indent\)\]/.test(line)) return 'a list still carries an indent'
+      if (/\bborder-l\b/.test(line)) return 'a list still draws a rail'
+      return null
+    })
+    expect(found).toEqual({})
+  })
+
+  it('gives every list row the same mark column, which is what puts its label at 28', () => {
+    const missing = ROW_FILES.filter((f) => !read(f).includes('w-[var(--sb-mark)]'))
+    expect(missing).toEqual([])
   })
 
   it('uses one row height token for every list row', () => {

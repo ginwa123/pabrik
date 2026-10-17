@@ -140,11 +140,13 @@ describe('WorkspaceItemTaskRow per-task row', () => {
     const { wrapper } = mountTask()
     const rowButton = wrapper.find('[data-task-row]')
     expect(rowButton.exists()).toBe(true)
-    expect(rowButton.attributes('style')).toContain('rgb(46, 45, 42)')
-    expect(rowButton.attributes('style')).toContain('rgb(230, 230, 224)')
+    expect(rowButton.attributes('style')).toContain('var(--semantic-active-bg)')
+    expect(rowButton.attributes('style')).toContain('var(--semantic-active-text)')
+    // No row may pin a palette colour: a retune of the theme has to reach every surface.
+    expect(rowButton.attributes('style')).not.toMatch(/#[0-9a-f]{6}/i)
     const bullet = wrapper.find('span.w-1.h-1.rounded-full')
-    // Active/pinned bullet is the gold #e8c87a (hardcoded hex, not a var).
-    expect(bullet.attributes('style')).toContain('rgb(232, 200, 122)')
+    expect(bullet.attributes('style')).toContain('var(--color-yellow)')
+    expect(bullet.attributes('style')).not.toMatch(/#[0-9a-f]{6}/i)
   })
 
   it('emits selectTask with task.id when the row is clicked', async () => {

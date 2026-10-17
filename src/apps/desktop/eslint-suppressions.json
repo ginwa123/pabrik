@@ -215,11 +215,8 @@
     }
   },
   "src/components/preview/PreviewContentRenderer.vue": {
-    "local/no-silent-fallback-catch": {
-      "count": 1
-    },
     "local/no-try-catch": {
-      "count": 3
+      "count": 2
     }
   },
   "src/components/preview/ShellTool.vue": {

@@ -105,35 +105,46 @@ onUpdated(() => {
 <template>
   <div class="flex flex-col shrink-0" data-testid="documents-section">
     <div class="relative shrink-0">
-      <button
-        class="px-[var(--sb-gutter)] h-7 flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity w-full text-left border-b border-[--color-border]/40"
+      <div
+        class="px-[var(--sb-gutter)] h-7 flex items-center shrink-0 border-b border-[--color-border]/40"
         data-testid="documents-section-header"
         @click="toggleDocumentsSection"
       >
-        <span
-          class="text-meta transition-transform duration-200"
-          :style="{
-            transform: sidebarStore.documentsExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-          }"
-          style="color: var(--semantic-text-dim)"
-          >▶</span
+        <button
+          class="flex items-center h-full min-w-0 flex-1 text-left transition-opacity hover:opacity-80"
+          :aria-expanded="sidebarStore.documentsExpanded"
+          aria-label="Documents"
+          @click.stop="toggleDocumentsSection"
         >
-        <span
-          class="text-micro font-semibold uppercase tracking-[0.08em]"
-          style="color: var(--semantic-text-dim)"
-          data-testid="documents-section-title"
-          >Documents</span
-        >
-        <span
-          v-if="workspaceId"
-          class="text-micro"
-          style="color: var(--semantic-text-dim); opacity: 0.7"
-          data-testid="documents-count"
-          >{{ documents.length }}</span
-        >
+          <span
+            class="w-[var(--sb-mark)] shrink-0 flex items-center text-meta transition-transform duration-200"
+            :style="{
+              transform: sidebarStore.documentsExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+            }"
+            style="color: var(--semantic-text-dim)"
+            >▶</span
+          >
+          <span
+            class="text-micro font-semibold uppercase tracking-[0.08em]"
+            style="color: var(--semantic-text-dim)"
+            data-testid="documents-section-title"
+            >Documents</span
+          >
+          <span
+            v-if="workspaceId"
+            class="text-micro ml-1.5"
+            style="
+              color: var(--semantic-text-dim);
+              opacity: 0.7;
+              font-variant-numeric: tabular-nums;
+            "
+            data-testid="documents-count"
+            >{{ documents.length }}</span
+          >
+        </button>
         <button
           v-if="sidebarStore.documentsExpanded && workspaceId"
-          class="ml-auto w-[var(--sb-hit)] h-[var(--sb-hit)] text-meta font-medium transition-opacity duration-150 hover:opacity-100 flex items-center justify-center"
+          class="ml-auto w-[var(--sb-hit)] h-[var(--sb-hit)] text-meta font-medium transition-opacity duration-150 hover:opacity-100 flex items-center justify-center shrink-0"
           style="color: var(--semantic-text-dim); opacity: 0.7"
           title="New Document"
           aria-label="New Document"
@@ -142,7 +153,7 @@ onUpdated(() => {
         >
           +
         </button>
-      </button>
+      </div>
     </div>
 
     <!-- No `max-h`/`overflow-y` of its own: the sidebar <nav> scrolls the
@@ -189,14 +200,10 @@ onUpdated(() => {
         No documents yet
       </p>
 
-      <ul
-        v-else
-        class="ml-[var(--sb-indent)] space-y-0 border-l"
-        style="border-color: var(--color-border)"
-      >
+      <ul v-else class="space-y-0">
         <li v-for="doc in documents" :key="doc.id">
           <button
-            class="relative w-full flex items-center gap-2 px-[var(--sb-gutter)] h-[var(--sb-row)] rounded-lg text-dense transition-all duration-150 border-t border-transparent overflow-hidden text-left"
+            class="relative w-full flex items-center px-[var(--sb-gutter)] h-[var(--sb-row)] rounded-lg text-dense transition-all duration-150 border-t border-transparent overflow-hidden text-left"
             :data-testid="`document-row-${doc.id}`"
             :style="
               isCurrentDocument(doc.id)
@@ -205,7 +212,8 @@ onUpdated(() => {
             "
             @click="selectDocument(doc.id)"
           >
-            <span class="truncate">{{ doc.title }}</span>
+            <span class="w-[var(--sb-mark)] shrink-0" aria-hidden="true"></span>
+            <span class="flex-1 min-w-0 truncate">{{ doc.title }}</span>
           </button>
         </li>
       </ul>
