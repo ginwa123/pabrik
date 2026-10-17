@@ -11,6 +11,14 @@ pub fn resolveWorkspaceId(
 ) !?[]u8 {
     if (session_id.len == 0) return null;
 
+    // 0. An explicit binding on the session row. It is an OVERRIDE, not a
+    // requirement: a legacy row (or a fixture without the column) still
+    // resolves through the two steps below, so a failed read is not fatal.
+    if (stampedWorkspaceId(allocator, db, session_id)) |stamped| {
+        if (stamped.len > 0) return stamped;
+        allocator.free(stamped);
+    }
+
     // 1. Exact task link.
     {
         var rows = try db.query(allocator,
@@ -32,6 +40,26 @@ pub fn resolveWorkspaceId(
     const c = cwd orelse return null;
     if (c.len == 0) return null;
     return matchWorkspaceByPath(allocator, db, c);
+}
+
+/// The workspace explicitly stamped on this session row, or null when there is
+/// none. A missing column (a pre-Migration-025 table) reads as null, never an
+/// error — the column is an override, not a requirement.
+fn stampedWorkspaceId(
+    allocator: std.mem.Allocator,
+    db: *sqlite.SqliteBackend,
+    session_id: []const u8,
+) ?[]u8 {
+    var rows = db.query(
+        allocator,
+        "SELECT COALESCE(workspace_id, '') FROM sessions WHERE id = ? LIMIT 1",
+        &.{session_id},
+    ) catch return null;
+    defer rows.deinit();
+    const row = (rows.next() catch return null) orelse return null;
+    defer row.deinit(allocator);
+    if (row.values.len < 1) return null;
+    return allocator.dupe(u8, row.values[0]) catch null;
 }
 
 /// True when both sessions resolve to the same non-null workspace.
@@ -210,7 +238,8 @@ fn setupDb() !TestCtx {
         \\  id TEXT PRIMARY KEY,
         \\  name TEXT NOT NULL,
         \\  status TEXT DEFAULT 'active',
-        \\  cwd TEXT
+        \\  cwd TEXT,
+        \\  workspace_id TEXT
         \\)
     , &.{});
     try db.exec(alloc,
@@ -352,4 +381,83 @@ test "workspaceSessionIds: task-linked plus cwd-matched, others excluded" {
     const empty = try workspaceSessionIds(alloc, &ctx.db, "");
     defer freeSessionIds(alloc, empty);
     try testing.expectEqual(@as(usize, 0), empty.len);
+}
+
+test "resolveWorkspaceId: a stamped workspace_id overrides the cwd heuristic" {
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+    const alloc = testing.allocator;
+
+    // s3's cwd (/proj/a/sub) belongs to w1, but the row is pinned to w2.
+    try ctx.db.exec(alloc, "UPDATE sessions SET workspace_id = 'w2' WHERE id = 's3'", &.{});
+    const pinned = try resolveWorkspaceId(alloc, &ctx.db, "s3");
+    defer if (pinned) |w| alloc.free(w);
+    try testing.expect(pinned != null);
+    try testing.expectEqualStrings("w2", pinned.?);
+
+    // Positive control: the SAME row resolves by cwd once the pin is gone, so
+    // the assertion above is the override and not a broken fixture.
+    try ctx.db.exec(alloc, "UPDATE sessions SET workspace_id = NULL WHERE id = 's3'", &.{});
+    const by_cwd = try resolveWorkspaceId(alloc, &ctx.db, "s3");
+    defer if (by_cwd) |w| alloc.free(w);
+    try testing.expect(by_cwd != null);
+    try testing.expectEqualStrings("w1", by_cwd.?);
+}
+
+test "resolveWorkspaceId: a stamped workspace_id overrides a conflicting task link" {
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+    const alloc = testing.allocator;
+
+    // s1 is task-linked to w1. An explicit binding is authoritative, so the
+    // heuristic resolver must not win over the writer.
+    try ctx.db.exec(alloc, "UPDATE sessions SET workspace_id = 'w2' WHERE id = 's1'", &.{});
+    const resolved = try resolveWorkspaceId(alloc, &ctx.db, "s1");
+    defer if (resolved) |w| alloc.free(w);
+    try testing.expect(resolved != null);
+    try testing.expectEqualStrings("w2", resolved.?);
+}
+
+test "resolveWorkspaceId: a sessions table without the column still resolves by task link" {
+    // The pre-Migration-025 shape (and every older test fixture): step 0 must
+    // degrade to "no stored binding" rather than failing the whole lookup.
+    const alloc = testing.allocator;
+    var threaded = std.Io.Threaded.init(alloc, .{});
+    defer threaded.deinit();
+    var db: sqlite.SqliteBackend = .{};
+    defer db.deinit();
+    try db.init(threaded.io(), ":memory:");
+
+    try db.exec(alloc, "CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT, cwd TEXT)", &.{});
+    try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, path TEXT)", &.{});
+    try db.exec(alloc, "CREATE TABLE workspace_item_tasks (id TEXT PRIMARY KEY, name TEXT, workspace_item_id TEXT)", &.{});
+    try db.exec(alloc, "INSERT INTO workspace_items (id, workspace_id, path) VALUES ('i1', 'w1', '/proj/a')", &.{});
+    try db.exec(alloc, "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) VALUES ('s1', 'T', 'i1')", &.{});
+    try db.exec(alloc, "INSERT INTO sessions (id, name, cwd) VALUES ('s1', 'S', '/proj/a')", &.{});
+
+    const resolved = try resolveWorkspaceId(alloc, &db, "s1");
+    defer if (resolved) |w| alloc.free(w);
+    try testing.expect(resolved != null);
+    try testing.expectEqualStrings("w1", resolved.?);
+}
+
+test "workspaceSessionIds: a stamped session is listed under its own workspace" {
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+    const alloc = testing.allocator;
+
+    try ctx.db.exec(alloc, "UPDATE sessions SET workspace_id = 'w2' WHERE id = 's3'", &.{});
+    const ids = try workspaceSessionIds(alloc, &ctx.db, "w2");
+    defer freeSessionIds(alloc, ids);
+
+    var found_s2 = false;
+    var found_s3 = false;
+    for (ids) |id| {
+        if (std.mem.eql(u8, id, "s2")) found_s2 = true;
+        if (std.mem.eql(u8, id, "s3")) found_s3 = true;
+        // The cwd heuristic would have claimed s3 for w1; the pin must win.
+        try testing.expect(!std.mem.eql(u8, id, "s1"));
+    }
+    try testing.expect(found_s2);
+    try testing.expect(found_s3);
 }
