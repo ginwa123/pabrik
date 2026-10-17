@@ -52,6 +52,9 @@ pub fn main(init: std.process.Init) !void {
 
     // `var` because --tls-selfsigned overwrites the parsed cert/key paths.
     var cli = (try server_boot.parseCliArgs(allocator, argv_flat.items)) orelse return;
+    // Before TLS and the config thread: a refused mode must exit cleanly.
+    const boot_mode = server_boot.enforceRuntimeMode(io, &cli) orelse std.process.exit(2);
+    std.log.info("runtime mode: {s}", .{@tagName(boot_mode)});
     const tls_ctx = try server_boot.setupTlsCtx(allocator, environment, &cli);
 
     if (init.environ_map.get("HOME")) |home| {

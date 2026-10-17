@@ -6,6 +6,7 @@ const helpers = @import("helpers");
 const database = @import("databases").database;
 const gserverz = @import("kabelweb").server;
 const cli_args = @import("../cli_args.zig");
+const runtime_mode = @import("../runtime_mode.zig");
 const migration = @import("../migrations/mod.zig").migration;
 const static_files = @import("../modules/static_files.zig");
 const shutdown = @import("shutdown.zig");
@@ -59,6 +60,33 @@ pub fn parseCliArgs(allocator: std.mem.Allocator, argv: []const []const u8) !?cl
         .invalid => |failure| {
             cli_args.reportFailure(failure);
             return error.InvalidArgs;
+        },
+    };
+}
+
+/// One open of a probe path: a missing /dev/kvm or cgroup mount is an answer,
+/// not an error, so this never propagates.
+fn probeReadable(io: std.Io, path: []const u8) bool {
+    const file = std.Io.Dir.openFileAbsolute(io, path, .{}) catch return false;
+    file.close(io);
+    return true;
+}
+
+/// Applies `--saas`: it implies auth, then refuses unless this host can honour
+/// isolation. Refusal is logged and returns null so the caller can exit.
+pub fn enforceRuntimeMode(io: std.Io, cli: *cli_args.CliArgs) ?runtime_mode.Mode {
+    if (cli.saas) cli.auth_enabled = true;
+    const is_linux = comptime @import("builtin").os.tag == .linux;
+    const probe = runtime_mode.Probe{
+        .os = @import("builtin").os.tag,
+        .kvm_readable = if (is_linux) probeReadable(io, "/dev/kvm") else false,
+        .cgroup2_mounted = if (is_linux) probeReadable(io, "/sys/fs/cgroup/cgroup.controllers") else false,
+    };
+    return switch (runtime_mode.decide(cli.saas, probe)) {
+        .ok => |mode| mode,
+        .refused => |refusal| {
+            std.log.err("{s}", .{runtime_mode.message(refusal)});
+            return null;
         },
     };
 }

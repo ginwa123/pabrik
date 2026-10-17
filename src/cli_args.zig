@@ -29,6 +29,10 @@ pub const CliArgs = struct {
     /// cookie + middleware). Off by default so existing single-user setups
     /// keep working with zero behaviour change.
     auth_enabled: bool = false,
+    /// `--saas`: every workspace runs in its own microVM (Linux + KVM only).
+    /// Implies `--auth` and refuses to start where it cannot be honoured; see
+    /// `src/runtime_mode.zig` for the decision table.
+    saas: bool = false,
     /// `-h` / `--help` was seen. `parse` prints the usage text and stops
     /// scanning, so the caller must bail out without starting anything.
     help_requested: bool = false,
@@ -108,6 +112,8 @@ pub fn parse(
             out.tls_selfsigned = true;
         } else if (std.mem.eql(u8, arg, "--auth")) {
             out.auth_enabled = true;
+        } else if (std.mem.eql(u8, arg, "--saas")) {
+            out.saas = true;
         } else if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
             // Help wins over everything to its right, exactly as it did when
             // this block was inline in `main`: `pabrik --help --port abc`
@@ -133,12 +139,13 @@ pub fn reportFailure(f: Failure) void {
 }
 
 pub fn printUsage() void {
-    logger_mod.debugPrint("Usage: pabrik [--port PORT] [--static-dir DIR] [--http2 h2c|off] [--tls CERT KEY | --tls-selfsigned] [--auth]\n", .{});
+    logger_mod.debugPrint("Usage: pabrik [--port PORT] [--static-dir DIR] [--http2 h2c|off] [--tls CERT KEY | --tls-selfsigned] [--auth] [--saas]\n", .{});
     logger_mod.debugPrint("  --port PORT          Port to run the HTTP server on (0 = pick a random free port; default: 8081, or random when web_launch_enabled is on)\n", .{});
     logger_mod.debugPrint("  --static-dir DIR     Serve files from DIR at HTTP / (e.g. for a webapp)\n", .{});
     logger_mod.debugPrint("  --no-static-dir      API only: serve no static files at / (overrides --static-dir)\n", .{});
     logger_mod.debugPrint("  --http2 h2c|off      Also accept HTTP/2 cleartext (h2c) clients on the same port (default: off)\n", .{});
     logger_mod.debugPrint("  --auth               Require login (session cookie + middleware). When off, all endpoints are open.\n", .{});
+    logger_mod.debugPrint("  --saas               Run each workspace in its own microVM (Linux + KVM only; implies --auth).\n", .{});
     logger_mod.debugPrint("Database policy (defaults are tuned for low RAM; override to trade RAM for throughput):\n", .{});
     logger_mod.debugPrint("  --db-read-conns=N              Readers opened at boot (warm floor)\n", .{});
     logger_mod.debugPrint("  --db-max-read-conns=N          Ceiling on pooled readers (0 = uncapped)\n", .{});
@@ -194,6 +201,7 @@ test "parse: no arguments yields the documented defaults" {
     try testing.expectEqual(@as(?[]const u8, null), args.tls_key_path);
     try testing.expectEqual(false, args.tls_selfsigned);
     try testing.expectEqual(false, args.auth_enabled);
+    try testing.expectEqual(false, args.saas);
     try testing.expectEqual(false, args.help_requested);
 }
 
@@ -356,4 +364,25 @@ test "parse: out is RESET between calls, so a second parse cannot inherit" {
     try ok(&.{}, &args);
     try testing.expectEqual(false, args.auth_enabled);
     try testing.expectEqual(@as(?u16, null), args.port);
+}
+
+test "parse: --saas is off by default and independent of --auth" {
+    var off: CliArgs = .{};
+    defer freeParsed(testing.allocator, off);
+    try ok(&.{}, &off);
+    try testing.expectEqual(false, off.saas);
+
+    var both: CliArgs = .{};
+    defer freeParsed(testing.allocator, both);
+    try ok(&.{ "--saas", "--auth" }, &both);
+    try testing.expectEqual(true, both.saas);
+    try testing.expectEqual(true, both.auth_enabled);
+
+    // `--saas` alone stays `--saas` here: implying `--auth` is the boot
+    // path's job, because only it knows whether the platform can honour it.
+    var saas_only: CliArgs = .{};
+    defer freeParsed(testing.allocator, saas_only);
+    try ok(&.{"--saas"}, &saas_only);
+    try testing.expectEqual(true, saas_only.saas);
+    try testing.expectEqual(false, saas_only.auth_enabled);
 }

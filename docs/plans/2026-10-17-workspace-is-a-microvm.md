@@ -3,7 +3,7 @@
 - **Task**: `task_1792245573147_0` — "Workspace is a vm from microvm"
 - **Worktree**: `~/.config/pabrik/.worktrees/workspace-is-a-vm-from-microvm-1792245526062`
 - **Branch**: `worktree/workspace-is-a-vm-from-microvm-1792245526062` (base `main`)
-- **Status**: PLANNING (rev 3) — nothing implemented.
+- **Status**: rev 4 — **P0 has landed in this branch** (§18); the rest is still a plan.
 - **Human decision** (2026-10-17): the microVM runtime is a **Linux-only, opt-in mode** (`pabrik --saas`).
   Without the flag Pabrik behaves exactly as today; every non-SaaS feature works in both modes.
 
@@ -600,8 +600,8 @@ Anti-goals: `sleep 2; assert`, "wait for the SSH banner", existence/arity assert
 
 | Phase | Deliverable | Exit criterion |
 |---|---|---|
-| **P0 — seam + flag** | `WorkspaceRuntime`/`WorkspaceFs` + `HostRuntime` + `FakeRuntime`; `--saas`; preflight (Linux, `/dev/kvm`, cgroup2, auth); `server_settings.runtime` | `--saas` refuses correctly off-Linux/no-KVM; local mode byte-identical (modulo §2.2); tests green |
-| **P0.5 — tenancy gate** | answers to §16 Q1–Q3; quota model; `pabrik user create` | no later phase depends on an unresolved tenant question |
+| **P0 — seam + flag** | `--saas` flag + preflight, then the `WorkspaceRuntime`/`WorkspaceFs` seam with `HostRuntime`/`FakeRuntime` (**flag + preflight done, seam still open**) | `--saas` refuses correctly off-Linux/no-KVM; local mode byte-identical (modulo §2.2); tests green |
+| **P0.5 — tenancy gate** | answers to §16 Q1–Q3; quota model; an admin bootstrap built on the existing `pabrik create-admin` subcommand | no later phase depends on an unresolved tenant question |
 | **P1 — image + benchmark** | rootfs build (reflink/unprivileged `mkfs.ext4 -d`), pinned kernel hash, `pabrik-vm-agent`, **sealed-vs-shared benchmark as the control arm** | rootless `qemu -M microvm` runs `echo`; benchmark table exists (boot, `git status`, `npm install`, 500 MB read, image clone time) — and the design survives it |
 | **P2 — vmd + exec** | `pabrik-vmd` as a **separate process** (workspace_id-only RPC, `SO_PEERCRED`); `VmRuntime` + hybrid vsock; non-root command uid; cgroup scopes; `vm_id`/`guest_pid` | commands run in the VM; host `ps` shows no agent shell; restarting `pabrik` leaves VMs alive; a forged RPC without the right uid is rejected |
 | **P3 — files, git, serving** | all file tools + git through the agent; download hardening (attachment/nosniff); folder/diff/index content from the guest with size caps | criteria 8, 9, 11 pass; no host `git` on a tenant tree |
@@ -617,7 +617,7 @@ Anti-goals: `sleep 2; assert`, "wait for the SSH banner", existence/arity assert
 
 1. **Tenancy**: user, organization, or "whoever owns the workspace"? Quotas, mount plans and audit logs
    all depend on it — before P2.
-2. **First admin**: `pabrik user create` vs env-var on first boot (nothing exists today; `users` since
+2. **First admin**: `pabrik create-admin --email E --password P` already exists (`src/boot/cli_dispatch.zig:133`) and provisions a default workspace, so this may need no new code — only a decision about who may run it in SaaS mode.
    migration 77, `workspace_members` since 100).
 3. **Quota and scale**: this box (14 GB, ~5 GB free) honestly supports ~6–8 live VMs at 512 MB —
    one box or a scheduler over boxes?
@@ -691,3 +691,32 @@ git_pr_conflicts.zig:78      git -C <path> …
 status_pull_request.zig:783  git remote get-url origin
 (+ any host `git diff`/`git show`: .gitattributes textconv / filter drivers)
 ```
+
+---
+
+## 18. Implementation status (this branch)
+
+Landed in `worktree/workspace-is-a-vm-from-microvm-1792245526062`:
+
+| item | where | proof |
+|---|---|---|
+| `--saas` flag, usage line, parse test | `src/cli_args.zig` | 67/67 file tests pass |
+| mode decision + refusal messages with an injected probe | `src/runtime_mode.zig` (new) | 6/6 tests pass |
+| preflight wired before TLS/config/DB; refusal exits 2 | `src/boot/server_boot.zig`, `src/main.zig` | `pabrik --saas` prints the refusal and exits `2`; `pabrik --port 8099` booted and logged `runtime mode: local` |
+| git hardening prefix (`-c` policy: fsmonitor, hooksPath, diff.external, pager, sshCommand, protocol.ext) | `src/helpers/git_hardening.zig` (new) | 3/3 tests pass |
+| wired into `git status` (fsmonitor), `git worktree add` (post-checkout) and both `check-ignore` sites | `git_state.zig`, `set_git_worktree.zig`, `system_folder.zig`, `list_directory.zig` | `zig build test:shard:0` compiles the whole tower; the two argv tests were rewritten and pass |
+
+Still open from P0, deliberately: the `WorkspaceRuntime`/`WorkspaceFs` seam (`HostRuntime` +
+`FakeRuntime` + routing the tool layer through it) and `server_settings.runtime` — that table has no
+consumer until `pabrik-vmd` exists, and a table nobody writes is not worth a migration.
+
+Three of §2.1's seven call sites are **not** yet hardened: `git_pr_status.zig:267,341`,
+`git_pr_conflicts.zig:78`, `status_pull_request.zig:783`. They run `rev-parse`/`remote get-url`,
+which spawn no hooks and no filters, so they are the lowest-risk remainder — but the rule is "git
+never runs on an untrusted tree", so they are listed as open rather than settled.
+
+The environment-variable half of the hardening (`GIT_CONFIG_NOSYSTEM`,
+`GIT_TERMINAL_PROMPT`, `GIT_OPTIONAL_LOCKS`) is **not** wired: `helpers/run_captured.run` has no
+`env_map` parameter, so it needs a signature change across its call sites. The `-c` layer is the
+load-bearing one (command-line config outranks every config file), so the env layer is a follow-up,
+not a gap in the current policy.
