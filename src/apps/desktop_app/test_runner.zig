@@ -10,4 +10,5 @@ test {
     _ = @import("extraction.zig");
     _ = @import("webview_lib.zig");
     _ = @import("attach.zig");
+    _ = @import("tray.zig");
 }

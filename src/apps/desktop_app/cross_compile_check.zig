@@ -4,11 +4,18 @@
 const std = @import("std");
 const extraction = @import("extraction.zig");
 const subprocess = @import("subprocess.zig");
+const tray = @import("tray.zig");
 
 const assets = [_]extraction.AssetEntry{
     .{ .path = "/index.html", .content = "<html></html>", .mime = "text/html" },
     .{ .path = "/assets/app.js", .content = "console.log(1)", .mime = "application/javascript" },
 };
+
+fn nothingExists(_: []const u8) bool {
+    return false;
+}
+
+fn ignoreTrayAction(_: *anyopaque, _: tray.Action) void {}
 
 export fn pabrik_desktop_cross_compile_check() callconv(.c) void {
     // Persistent content-addressed dir: `persistentBaseDir` (env + per-OS
@@ -33,4 +40,13 @@ export fn pabrik_desktop_cross_compile_check() callconv(.c) void {
     if (subprocess.probeHealth(1)) return;
     if (subprocess.probeWebapp(1)) return;
     if (subprocess.waitForHealth(1, 1, 1)) |_| {} else |_| {}
+    if (subprocess.terminateByPid(1)) return;
+
+    // The tray: icon resolution in the shared model plus whichever backend
+    // this target selects.
+    var icon_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const icon = tray.resolveIcon("/tmp/pabrik.png", "/tmp/webapp", nothingExists, &icon_buf);
+    var sink: u8 = 0;
+    tray.install(.{ .ctx = &sink, .on = ignoreTrayAction }, icon) catch {};
+    tray.presentNativeWindow(null);
 }
