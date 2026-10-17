@@ -2,7 +2,7 @@
  * LlmConfigForm specs cover what the form EMITS. These cover what it TELLS YOU — which is the whole
  * point of the redesign, and the part that would otherwise be untested decoration. */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
+import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 
 import { resolveModelOutcome, getModelCatalog } from '../api'
 import LlmConfigForm from '../components/pabrik/LlmConfigForm.vue'
@@ -44,6 +44,39 @@ const baseValue: FormValue = {
 function mountForm(overrides: Partial<FormValue> = {}) {
   return mount(LlmConfigForm, { props: { modelValue: { ...baseValue, ...overrides } } })
 }
+
+/** A catalog fake that pages the way the endpoint does: the page size the form asks for decides
+ * how many rows exist to render, so a test can tell a clipped list from a small page. */
+function stubCatalogPage(total: number): void {
+  vi.mocked(getModelCatalog).mockImplementation(async (_q, _provider, limit) => {
+    const page = Math.min(limit ?? total, total)
+    return {
+      total,
+      returned: page,
+      catalog: 'fresh',
+      fetched_at_ms: 1_760_000_000_000,
+      models: Array.from({ length: page }, (_, i) => ({
+        provider_id: `provider-${i}`,
+        provider_name: `Provider ${i}`,
+        model_id: `flash-${i}`,
+        model_name: `Flash ${i}`,
+        context_window: 1_000_000,
+        output_tokens: null,
+        reasoning: 'effort',
+        temperature: true,
+      })),
+    }
+  })
+}
+
+/** Type into the model field and wait out the picker's debounce, the way a user does. */
+async function typeModel(wrapper: VueWrapper, text: string): Promise<void> {
+  await wrapper.find('[data-testid=model-input]').setValue(text)
+  await new Promise((r) => setTimeout(r, 250))
+  await flushPromises()
+}
+
+const pickerRows = (wrapper: VueWrapper) => wrapper.findAll('[data-testid^=model-option-]')
 
 beforeEach(() => {
   vi.mocked(getModelCatalog).mockResolvedValue({
@@ -184,7 +217,12 @@ describe('LlmConfigForm — the model picker', () => {
   it('offers catalog matches and chooses one on click', async () => {
     vi.mocked(resolveModelOutcome).mockResolvedValue({
       kind: 'ok',
-      value: { model: 'deepseek-flash', catalog: 'fresh', source: 'catalog', context_window: 1_000_000 },
+      value: {
+        model: 'deepseek-flash',
+        catalog: 'fresh',
+        source: 'catalog',
+        context_window: 1_000_000,
+      },
     })
     vi.mocked(getModelCatalog).mockResolvedValue({
       total: 2,
@@ -247,6 +285,128 @@ describe('LlmConfigForm — the model picker', () => {
     await new Promise((r) => setTimeout(r, 250))
     await flushPromises()
 
-    expect(wrapper.find('[data-testid=model-picker-error]').text()).toContain('catalog request failed')
+    expect(wrapper.find('[data-testid=model-picker-error]').text()).toContain(
+      'catalog request failed',
+    )
+  })
+
+  it('offers a whole page of matches, so a broad query stays browsable', async () => {
+    stubCatalogPage(1130)
+    const wrapper = mountForm()
+    await flushPromises()
+    await typeModel(wrapper, 'flash')
+
+    expect(pickerRows(wrapper).length).toBeGreaterThan(20)
+  })
+
+  it('scrolls the matches past the fold instead of clipping them', async () => {
+    // jsdom has no layout engine, so the reachable-rows proxy is the scroll container a
+    // browser would honour.
+    stubCatalogPage(1130)
+    const wrapper = mountForm()
+    await flushPromises()
+    await typeModel(wrapper, 'flash')
+
+    const classes = wrapper.find('[data-testid=model-picker-results]').classes()
+    expect(classes).toContain('overflow-y-auto')
+    expect(classes.some((c) => c.startsWith('max-h-'))).toBe(true)
+  })
+
+  it('counts the page it shows against the matches it found', async () => {
+    stubCatalogPage(1130)
+    const wrapper = mountForm()
+    await flushPromises()
+    await typeModel(wrapper, 'flash')
+
+    const summary = wrapper.find('[data-testid=model-picker-summary]').text()
+    expect(summary).toContain(String(pickerRows(wrapper).length))
+    expect(summary).toContain('1130')
+  })
+
+  it('states a plain count when every match fits in the page', async () => {
+    stubCatalogPage(3)
+    const wrapper = mountForm()
+    await flushPromises()
+    await typeModel(wrapper, 'flash')
+
+    expect(wrapper.find('[data-testid=model-picker-summary]').text()).toBe('3 matches')
+  })
+})
+
+describe('LlmConfigForm — the effort control', () => {
+  /** DeepSeek V4.1 Flash: models.dev advertises more levels than pabrik can send. */
+  function stubModelWithEffort(): void {
+    vi.mocked(resolveModelOutcome).mockResolvedValue({
+      kind: 'ok',
+      value: {
+        model: 'deepseek-v4.1-flash',
+        catalog: 'fresh',
+        source: 'catalog',
+        context_window: 1_048_576,
+        reasoning: 'effort',
+        effort_values: ['none', 'low', 'high', 'max'],
+        effort_values_sendable: ['low', 'high'],
+      },
+    })
+  }
+
+  async function openAdvanced(model = 'deepseek-v4.1-flash') {
+    const wrapper = mountForm({ model })
+    await flushPromises()
+    await wrapper.find('[data-testid=advanced-toggle]').trigger('click')
+    return wrapper
+  }
+
+  const offeredLevels = (wrapper: VueWrapper) =>
+    wrapper
+      .findAll<HTMLOptionElement>('[data-testid=reasoning-effort-select] option')
+      .map((o) => o.element.value)
+      .filter((v) => v !== '')
+
+  it('offers exactly the levels this model can be sent with', async () => {
+    stubModelWithEffort()
+    const wrapper = await openAdvanced()
+
+    expect(offeredLevels(wrapper)).toEqual(['low', 'high'])
+  })
+
+  it('names the levels it offers, so the label cannot promise one the dropdown cannot set', async () => {
+    stubModelWithEffort()
+    const wrapper = await openAdvanced()
+
+    const select = wrapper.find('[data-testid=reasoning-effort-select]')
+    const label = select.element.parentElement?.querySelector('label')?.textContent ?? ''
+    const named = (label.match(/this model: (.+)\)/)?.[1] ?? '')
+      .split('·')
+      .map((s) => s.trim())
+      .filter((s) => s !== '')
+
+    expect(named.length).toBeGreaterThan(0)
+    for (const level of named) expect(offeredLevels(wrapper)).toContain(level)
+  })
+
+  it('names the model levels pabrik cannot send instead of dropping them quietly', async () => {
+    stubModelWithEffort()
+    const wrapper = await openAdvanced()
+
+    const note = wrapper.find('[data-testid=effort-dropped]').text()
+    expect(note).toContain('none')
+    expect(note).toContain('max')
+  })
+
+  it('claims nothing about the model when the catalog has no effort facts', async () => {
+    vi.mocked(resolveModelOutcome).mockResolvedValue({
+      kind: 'ok',
+      value: {
+        model: 'self-hosted',
+        catalog: 'absent',
+        source: 'builtin',
+        context_window: 200_000,
+      },
+    })
+    const wrapper = await openAdvanced('self-hosted')
+
+    expect(offeredLevels(wrapper)).toEqual(['low', 'medium', 'high'])
+    expect(wrapper.find('[data-testid=effort-dropped]').exists()).toBe(false)
   })
 })
