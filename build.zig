@@ -2514,6 +2514,21 @@ pub fn build(b: *std.Build) void {
     b.step("test:helpers:git_env_guard", "Run git_env_guard helper tests")
         .dependOn(&run_git_env_guard_tests.step);
 
+    // Same story for `git_hardening.zig`: the `helpers` PACKAGE is a separate
+    // module, so its inline tests are not reachable from `src/root.zig` and
+    // the `mod_tests` binary never compiles them.
+    const git_hardening_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/helpers/git_hardening.zig"),
+            .target = test_target,
+            .optimize = optimize,
+        }),
+    });
+    const run_git_hardening_tests = b.addRunArtifact(git_hardening_tests);
+    test_step.dependOn(&run_git_hardening_tests.step);
+    b.step("test:helpers:git_hardening", "Run git_hardening helper tests")
+        .dependOn(&run_git_hardening_tests.step);
+
     // ── zginlint: the Zig linter (github.com/ginwa123/zglint) ───────────
     // Moved out of this tree; its unit tests run in that repo's CI now, not
     // here (a consumer build never runs a dependency's test blocks).
