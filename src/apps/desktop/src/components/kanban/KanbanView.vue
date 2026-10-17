@@ -1667,11 +1667,11 @@ const handleCreateTaskSave = async (payload: {
   -->
     <div
       v-if="showTaskDetail || showCreateDialog"
-      class="absolute inset-0 z-30 overflow-y-auto"
+      class="absolute inset-0 z-30 overflow-hidden"
       style="background-color: var(--semantic-content-bg)"
       data-testid="kanban-detail-panel"
     >
-      <div class="w-full max-w-6xl mx-auto p-4 sm:p-6">
+      <div class="flex h-full w-full flex-col p-3 sm:p-4">
         <KanbanTaskDetail
           v-if="showTaskDetail"
           :show="showTaskDetail"

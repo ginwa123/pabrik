@@ -940,7 +940,7 @@ const isMediaLoading = computed<boolean>(() => {
 <template>
   <div
     v-if="show && (task || isCreateMode)"
-    class="kanban-task-detail w-full flex flex-col"
+    class="kanban-task-detail flex min-h-0 w-full flex-1 flex-col"
     style="
       background-color: var(--semantic-card-bg);
       border: 1px solid var(--color-border);
@@ -1794,9 +1794,13 @@ const isMediaLoading = computed<boolean>(() => {
 <style scoped>
 .ktd-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 328px;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 24%);
   gap: 24px;
   align-items: start;
+}
+
+.ktd-main > * {
+  max-width: 1000px;
 }
 
 .ktd-rail {
@@ -1807,6 +1811,7 @@ const isMediaLoading = computed<boolean>(() => {
   border-radius: 10px;
   background-color: var(--semantic-sidebar-bg);
   border: 1px solid var(--color-border);
+  max-width: 460px;
 }
 
 .ktd-rail-group {
