@@ -201,6 +201,17 @@ def test_malformed_mermaid_falls_back_to_its_source(ui_harness: UIHarness, page)
     assert "flowchart TD" in page.locator('[data-testid="chat-mermaid"]').inner_text(), (
         "the fallback must show the source, not an empty box"
     )
+    # mermaid's OWN "Syntax error in text" graphic never reaches the page: without
+    # `suppressErrorRendering` it is drawn into a temp node appended to <body>, so
+    # every failed attempt piled another bomb at the bottom of the transcript.
+    stray = page.evaluate(
+        """() => ({
+            debris: document.body.textContent.includes('Syntax error in text'),
+            tempNodes: document.querySelectorAll('[id^="dchat-mermaid-"]').length,
+        })"""
+    )
+    assert not stray["debris"], f"mermaid's error graphic leaked into the page: {stray}"
+    assert stray["tempNodes"] == 0, f"mermaid left its temporary node behind: {stray}"
     assert not errors, f"page errors while rendering a broken diagram: {errors}"
 
 
