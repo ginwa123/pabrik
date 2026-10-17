@@ -55,7 +55,7 @@ fn useCase(
     try di.session_map_lock.lock(io);
     defer di.session_map_lock.unlock(io);
 
-    var entries = std.ArrayListUnmanaged(SessionToClientIdsEntry){ .items = &.{}, .capacity = 0 };
+    var entries = std.ArrayList(SessionToClientIdsEntry){ .items = &.{}, .capacity = 0 };
     errdefer entries.deinit(allocator);
 
     var total_clients: u32 = 0;
@@ -65,7 +65,7 @@ fn useCase(
         const session_id = entry.key_ptr.*;
         const client_list = entry.value_ptr.*;
 
-        var client_id_hexes = std.ArrayListUnmanaged([]const u8){ .items = &.{}, .capacity = 0 };
+        var client_id_hexes = std.ArrayList([]const u8){ .items = &.{}, .capacity = 0 };
         errdefer client_id_hexes.deinit(allocator);
 
         for (client_list.items) |client_id| {

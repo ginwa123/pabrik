@@ -251,7 +251,7 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
         log_path: []const u8,
         notified: bool = false,
     };
-    var dead: std.ArrayListUnmanaged(DeadPair) = .empty;
+    var dead: std.ArrayList(DeadPair) = .empty;
     defer dead.deinit(a);
 
     // `kind = 'job'` is not an optimization — it is the OTHER HALF of
@@ -368,7 +368,7 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
     // Task 3: expose the deduped notified session_ids for the wake loop in
     // `handle()`.
     {
-        var uniq: std.ArrayListUnmanaged([]const u8) = .empty;
+        var uniq: std.ArrayList([]const u8) = .empty;
         defer uniq.deinit(allocator);
         for (dead.items) |pair| {
             if (!pair.notified) continue;
@@ -423,7 +423,7 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
 
     // Collect only the notified pairs for the DELETE. Failed-notify
     // pairs stay in the table for the next tick to retry.
-    var doomed: std.ArrayListUnmanaged(DeadPair) = .empty;
+    var doomed: std.ArrayList(DeadPair) = .empty;
     defer doomed.deinit(a);
     for (dead.items) |pair| {
         if (!pair.notified) continue;
@@ -451,11 +451,11 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
         // Build SQL + params in the arena — both are scoped to this
         // chunk iteration so the arena frees them when chunk_start
         // advances.
-        var sql_buf: std.ArrayListUnmanaged(u8) = .empty;
+        var sql_buf: std.ArrayList(u8) = .empty;
         defer sql_buf.deinit(a);
         sql_buf.appendSlice(a, "DELETE FROM session_background_process WHERE ") catch continue;
 
-        var params: std.ArrayListUnmanaged([]const u8) = .empty;
+        var params: std.ArrayList([]const u8) = .empty;
         defer params.deinit(a);
 
         var ok = true;

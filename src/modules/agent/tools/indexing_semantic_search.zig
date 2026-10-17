@@ -118,7 +118,7 @@ pub const GitignoreEntry = struct {
 };
 
 pub const GitignoreContext = struct {
-    entries: std.ArrayListUnmanaged(GitignoreEntry),
+    entries: std.ArrayList(GitignoreEntry),
     root_cwd: []const u8,
 
     pub fn init(root_cwd: []const u8) @This() {

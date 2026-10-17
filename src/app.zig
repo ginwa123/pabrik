@@ -440,7 +440,7 @@ pub fn registerSessionClient(session_id: []const u8, client_id: [16]u8, is_use_l
     }
 
     // New session — build list first
-    var list = std.ArrayListUnmanaged([16]u8).empty;
+    var list = std.ArrayList([16]u8).empty;
     try list.append(allocator, client_id);
 
     const result = try di.session_to_client_ids.getOrPut(allocator, session_id);
