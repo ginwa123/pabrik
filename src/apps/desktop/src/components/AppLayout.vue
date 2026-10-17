@@ -173,6 +173,7 @@ async function handleBootUrl(): Promise<void> {
     parsed.kind === 'workspace' ||
     parsed.kind === 'project' ||
     parsed.kind === 'projectChat' ||
+    parsed.kind === 'projectAdd' ||
     parsed.kind === 'chat'
       ? parsed.workspaceId
       : undefined
@@ -327,7 +328,13 @@ const pendingUrlRestore = ref<{
     // project is a workspace item, so the project path restores
     // exactly like the old `?view=workspace&itemId=` shape.
     const parsedPath = parseAppPath(route.path)
-    if (parsedPath.kind === 'project' || parsedPath.kind === 'projectChat') {
+    // `/add` extends the project path, so it restores the same item/pageId —
+    // without this a deep link to the add page renders a blank main view.
+    if (
+      parsedPath.kind === 'project' ||
+      parsedPath.kind === 'projectChat' ||
+      parsedPath.kind === 'projectAdd'
+    ) {
       const pageId = route.query.pageId as string | undefined
       return {
         workspaceId: parsedPath.workspaceId,
@@ -473,13 +480,21 @@ const syncItemToUrl = (oldItemId: string | null) => {
   const urlDetail = route.query.detail as string | undefined
   if (urlDetail) {
     const urlProject =
-      pathParsed.kind === 'project' || pathParsed.kind === 'projectChat'
+      pathParsed.kind === 'project' ||
+      pathParsed.kind === 'projectChat' ||
+      pathParsed.kind === 'projectAdd'
         ? pathParsed.projectId
         : parseItemIdWithChat((route.query.itemId as string) ?? '').itemId
     if (urlProject === safeItemId) {
       sub.detail = urlDetail
     }
   }
+  // The add-task page is the project path + `/add`, its target column in `?column=`. Keep both only
+  // while the URL names the store's own item — otherwise this mirror would replace a `/add` deep
+  // link back to the plain board the moment its item lands (dropping the page the user asked for).
+  const keepAdd = pathParsed.kind === 'projectAdd' && pathParsed.projectId === safeItemId
+  const urlAddColumn = keepAdd ? (route.query.column as string | undefined) : undefined
+  if (urlAddColumn) sub.column = urlAddColumn
   // A document is its own path, so this mirror never targets one — there
   // is no `doc` query for a store write to strip.
   let target: AppUrlLocation | null = null
@@ -488,6 +503,7 @@ const syncItemToUrl = (oldItemId: string | null) => {
       workspaceId: wsId,
       projectId: safeItemId,
       chatTaskId,
+      addTask: keepAdd && !chatTaskId,
       query: sub,
     })
   } else if (workspacesStore.activeWorkspaceId) {
@@ -933,7 +949,8 @@ const currentView = computed(() => {
   if (
     parsedPath.kind === 'workspace' ||
     parsedPath.kind === 'project' ||
-    parsedPath.kind === 'projectChat'
+    parsedPath.kind === 'projectChat' ||
+    parsedPath.kind === 'projectAdd'
   ) {
     return 'workspace'
   }
@@ -1742,13 +1759,19 @@ const handleKanbanOpenTaskDetailInBackground = (payload: {
   const wsId =
     payload.workspaceId ||
     activeWorkspace?.value?.id ||
-    (pathParsed.kind === 'project' || pathParsed.kind === 'projectChat'
+    (pathParsed.kind === 'project' ||
+    pathParsed.kind === 'projectChat' ||
+    pathParsed.kind === 'projectAdd'
       ? pathParsed.workspaceId
       : '') ||
     (route.query.workspaceId as string) ||
     ''
   const pathProject =
-    pathParsed.kind === 'project' || pathParsed.kind === 'projectChat' ? pathParsed.projectId : ''
+    pathParsed.kind === 'project' ||
+    pathParsed.kind === 'projectChat' ||
+    pathParsed.kind === 'projectAdd'
+      ? pathParsed.projectId
+      : ''
   const bareItemId =
     payload.itemId ||
     pathProject ||
@@ -1953,9 +1976,14 @@ const reconcileRoute = async () => {
       clearAllOverlays()
       return
     }
-  } else if (parsed.kind === 'project' || parsed.kind === 'projectChat') {
+  } else if (
+    parsed.kind === 'project' ||
+    parsed.kind === 'projectChat' ||
+    parsed.kind === 'projectAdd'
+  ) {
     // Path project URLs: adopt workspace + item, sync the task chat suffix, drop any standalone
-    // chat.
+    // chat. `/add` rides the project path, so it adopts the same context — no task is active on
+    // the add page (wantTaskId stays null for it), exactly as on the plain board.
     if (workspacesStore.activeWorkspaceId !== parsed.workspaceId) {
       await workspacesStore.setActiveWorkspace(parsed.workspaceId)
     }

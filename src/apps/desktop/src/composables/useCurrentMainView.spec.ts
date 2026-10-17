@@ -305,6 +305,27 @@ describe('useCurrentMainView', () => {
     })
   })
 
+  it('returns workspace with itemId for /app/{ws}/projects/{pid}/add', () => {
+    // The add page is the project's own page, so it keeps the same
+    // `workspace` view — the sidebar keeps its active project row open.
+    mockRoute({ pageId: 'page_1' }, '/app/ws_1/projects/item_7/add', {
+      workspaceId: 'ws_1',
+      projectId: 'item_7',
+    })
+    let v!: ReturnType<typeof useCurrentMainView>
+    function setup() {
+      v = useCurrentMainView()
+    }
+    setup()
+    expect(v.value).toEqual({
+      kind: 'workspace',
+      workspaceId: 'ws_1',
+      itemId: 'item_7',
+      pageId: 'page_1',
+      chatTaskId: undefined,
+    })
+  })
+
   it('returns workspace with chatTaskId for /app/{ws}/projects/{pid}/chat/{tid}', () => {
     mockRoute({}, '/app/ws_1/projects/item_7/chat/task_3', {
       workspaceId: 'ws_1',

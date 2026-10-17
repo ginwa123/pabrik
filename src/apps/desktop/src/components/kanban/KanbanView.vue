@@ -67,7 +67,7 @@ import { useWorkspacesStore } from '../../stores/workspaces'
 import { useNotificationStore } from '../../stores/notifications'
 import { useKanbanScrollRestore } from '../../composables/useKanbanScrollRestore'
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
-import { buildAppUrl } from '../../helpers/appUrl'
+import { buildAppUrl, parseAppPath } from '../../helpers/appUrl'
 import type { PreviewFile } from '../file/FilePreview.vue'
 import type { WorkspaceItem, Task, KanbanColumn as KanbanColumnType } from '../../stores/workspaces'
 
@@ -845,6 +845,7 @@ const closeDetailLocal = () => {
 
 onMounted(() => {
   openDetailFromRoute()
+  openCreateFromRoute()
   openPrsFromRoute()
   fetchPrOpenCount()
 })
@@ -862,6 +863,13 @@ onBeforeRouteUpdate((to) => {
     // locally WITHOUT touching the router (the URL is already
     // the board URL). This is what makes Back return to kanban.
     closeDetailLocal()
+  }
+  if (parseAppPath(to.path).kind === 'projectAdd') {
+    const columnId = readAddColumnParam()
+    if (columnId && columnId !== activeCreateColumnId.value) activeCreateColumnId.value = columnId
+    if (!showCreateDialog.value) openCreateFromRoute()
+  } else if (showCreateDialog.value) {
+    closeCreateLocal()
   }
   const rawLayout = toQuery[LAYOUT_PARAM]
   const nextLayout: KanbanLayout = rawLayout === 'rows' ? 'rows' : 'columns'
@@ -1108,10 +1116,59 @@ const activeCreateColumn = computed<KanbanColumnType | null>(() => {
 // Bound to <KanbanColumn>'s `@add-task`. Sets the target column +
 // opens the create dialog. Resets any previous error so a fresh
 // open doesn't carry over a stale banner.
+const ADD_COLUMN_PARAM = 'column'
+
+const buildAppUrlForAdd = (query: Record<string, string>) => {
+  const wsId = props.workspaceId
+  const itemId = effectiveItemId.value
+  if (!wsId || !itemId) return { path: '/app', query }
+  return buildAppUrl({ workspaceId: wsId, projectId: itemId, addTask: true, query })
+}
+
+const readAddColumnParam = (): string | null => {
+  const raw: unknown = route?.query?.[ADD_COLUMN_PARAM]
+  return typeof raw === 'string' && raw.trim() !== '' ? raw : null
+}
+
+const boardQueryWithoutAdd = (): Record<string, string> => {
+  const query = flatQuery()
+  delete query[ADD_COLUMN_PARAM]
+  return query
+}
+
 const handleViewCreateTask = (columnId: string) => {
   activeCreateColumnId.value = columnId
   createError.value = null
   showCreateDialog.value = true
+  const query = flatQuery()
+  query[ADD_COLUMN_PARAM] = columnId
+  void router?.push(buildAppUrlForAdd(query))
+}
+
+// Open the create page for a `/add` deep link (refresh, shared link, new tab). The column rides
+// `?column=`; with none, the leftmost column is the default — the same rule the header button uses.
+const openCreateFromRoute = () => {
+  if (parseAppPath(route?.path ?? '').kind !== 'projectAdd') return
+  if (showCreateDialog.value) return
+  const columnId = readAddColumnParam() ?? sortedColumns.value[0]?.id ?? null
+  if (!columnId) return
+  activeCreateColumnId.value = columnId
+  createError.value = null
+  showCreateDialog.value = true
+}
+
+const closeCreateLocal = () => {
+  showCreateDialog.value = false
+  activeCreateColumnId.value = null
+}
+
+const onCreateShowUpdate = (open: boolean) => {
+  if (open) {
+    showCreateDialog.value = true
+    return
+  }
+  closeCreateLocal()
+  void router?.replace(buildAppUrlForBoard(boardQueryWithoutAdd()))
 }
 
 // Create-task submit handler.
@@ -1219,8 +1276,8 @@ const handleCreateTaskSave = async (payload: {
     // In plain create mode the backend's INSERT path already persisted image_urls (via the
     // createStandardTask useCase). In create_and_run mode the same path applies. We don't need a
     // follow-up updateTaskDetails call — the columns are populated server-side now.
-    showCreateDialog.value = false
-    activeCreateColumnId.value = null
+    closeCreateLocal()
+    void router?.replace(buildAppUrlForBoard(boardQueryWithoutAdd()))
   } catch (err) {
     console.error('Failed to create kanban task:', err)
     createError.value = err instanceof Error ? err.message : String(err)
@@ -1632,7 +1689,8 @@ const handleCreateTaskSave = async (payload: {
         />
         <KanbanTaskDetail
           v-if="showCreateDialog"
-          v-model:show="showCreateDialog"
+          :show="showCreateDialog"
+          @update:show="onCreateShowUpdate"
           mode="create"
           :task="null"
           :column="activeCreateColumn"

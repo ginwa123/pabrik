@@ -75,7 +75,7 @@ describe('appUrl — path-based URL contract (2026-09-22 revamp)', () => {
   })
 
   describe('parseAppPath', () => {
-    it('parses all five shapes', () => {
+    it('parses the base shapes (landing, workspace, chat, project, projectChat)', () => {
       expect(parseAppPath('/app')).toEqual({ kind: 'landing' })
       expect(parseAppPath('/app/ws_1')).toEqual({ kind: 'workspace', workspaceId: 'ws_1' })
       expect(parseAppPath('/app/ws_1/chat/sess_9')).toEqual({
@@ -122,9 +122,10 @@ describe('appUrl — path-based URL contract (2026-09-22 revamp)', () => {
       expect(normalizeAppPath('/')).toBe('/')
       expect(normalizeAppPath('')).toBe('/app')
     })
-    it('isAppPath matches the five shapes only', () => {
+    it('isAppPath matches the six shapes only', () => {
       expect(isAppPath('/app')).toBe(true)
       expect(isAppPath('/app/ws_1/chat/s')).toBe(true)
+      expect(isAppPath('/app/ws_1/projects/item_7/add')).toBe(true)
       expect(isAppPath('/app/settings')).toBe(false)
       expect(isAppPath('/app/chat/s')).toBe(false)
     })
@@ -213,6 +214,57 @@ describe('appUrl — path-based URL contract (2026-09-22 revamp)', () => {
     })
     it('a document path is canonical (no legacy rewrite)', () => {
       expect(detectLegacyAppUrl('/app/ws_1/doc/doc_9', {})).toBeNull()
+    })
+  })
+
+  describe('kanban add-task page shape', () => {
+    it('builds /app/{ws}/projects/{pid}/add', () => {
+      expect(buildAppUrl({ workspaceId: 'ws_1', projectId: 'item_7', addTask: true })).toEqual({
+        path: '/app/ws_1/projects/item_7/add',
+        query: {},
+      })
+    })
+    it('carries the query sub-state through (which column the composer opens in)', () => {
+      const url = buildAppUrl({
+        workspaceId: 'ws_1',
+        projectId: 'item_7',
+        addTask: true,
+        query: { column: 'col_1' },
+      })
+      expect(url).toEqual({ path: '/app/ws_1/projects/item_7/add', query: { column: 'col_1' } })
+    })
+    it('parses /app/{ws}/projects/{pid}/add', () => {
+      expect(parseAppPath('/app/ws_1/projects/item_7/add')).toEqual({
+        kind: 'projectAdd',
+        workspaceId: 'ws_1',
+        projectId: 'item_7',
+      })
+      expect(isAppPath('/app/ws_1/projects/item_7/add')).toBe(true)
+    })
+    it('ignores a trailing slash', () => {
+      expect(parseAppPath('/app/ws_1/projects/item_7/add/')).toEqual({
+        kind: 'projectAdd',
+        workspaceId: 'ws_1',
+        projectId: 'item_7',
+      })
+    })
+    it('does not swallow the sibling shapes', () => {
+      // `add` shares the `/projects/{pid}` prefix with project and
+      // project-chat, so an ordering slip in the parser would turn one of
+      // them into the add page.
+      expect(parseAppPath('/app/ws_1/projects/p').kind).toBe('project')
+      expect(parseAppPath('/app/ws_1/projects/p/chat/t').kind).toBe('projectChat')
+      expect(parseAppPath('/app/ws_1').kind).toBe('workspace')
+    })
+    it('addTask needs a project, and excludes the task chat', () => {
+      // The add page and an open task chat are two different screens, so both
+      // at once is a caller bug rather than a URL worth guessing at.
+      expect(() => buildAppUrl({ workspaceId: 'ws_1', addTask: true })).toThrow(
+        /addTask requires projectId/,
+      )
+      expect(() =>
+        buildAppUrl({ workspaceId: 'ws_1', projectId: 'p', addTask: true, chatTaskId: 't' }),
+      ).toThrow(/addTask cannot combine with chatTaskId/)
     })
   })
 

@@ -25,5 +25,10 @@ describe('router catch-all', () => {
 
     await router.push('/app/kanban/item_1/settings')
     expect(router.currentRoute.value.path).toBe('/app/kanban/item_1/settings')
+
+    // Would land on /app via the catch-all if this route were registered
+    // after it.
+    await router.push('/app/ws_1/projects/item_7/add')
+    expect(router.currentRoute.value.path).toBe('/app/ws_1/projects/item_7/add')
   })
 })

@@ -56,6 +56,13 @@ const router = createRouter({
       name: 'project-chat',
       component: AppLayout,
     },
+    // Kanban add-task page. Registered before `/projects/:projectId` — vue-router matches in order,
+    // so the longer path is the one that decides.
+    {
+      path: '/app/:workspaceId/projects/:projectId/add',
+      name: 'project-add',
+      component: AppLayout,
+    },
     {
       path: '/app/:workspaceId/projects/:projectId',
       name: 'project',
