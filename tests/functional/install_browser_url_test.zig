@@ -97,6 +97,44 @@ const EnvShadow = struct {
 /// copies plus the isolated HOME the install ran under.
 const InstallDirs = struct { bindir: []u8, home: []u8, base_url: []u8 };
 
+/// The desktop app's runtime webapp cache under an isolated HOME. install.sh
+/// resolves it as `${XDG_DATA_HOME:-$HOME/.local/share}/pabrik/desktop-webapp`
+/// — the same path src/apps/desktop_app/extraction.zig materialises into.
+fn webappCacheDir(alloc: Allocator, home: []const u8) ![]u8 {
+    return std.fs.path.join(alloc, &.{ home, ".local", "share", "pabrik", "desktop-webapp" });
+}
+
+fn pathExists(path: []const u8) bool {
+    Io.Dir.cwd().access(io, path, .{}) catch return false;
+    return true;
+}
+
+/// The env install.sh runs under here: an isolated HOME plus its matching
+/// XDG_DATA_HOME (so the cache assertions cannot touch the developer's real
+/// cache) and no .desktop fetch.
+fn installEnv(home: []const u8, xdg_data_home: []const u8, base_url: []const u8) [4][2][]const u8 {
+    return .{
+        .{ "HOME", home },
+        .{ "XDG_DATA_HOME", xdg_data_home },
+        .{ "PABRIK_BASE_URL", base_url },
+        .{ "PABRIK_SKIP_DESKTOP_ENTRY", "1" },
+    };
+}
+
+/// Leave a stale runtime webapp cache behind, the way a desktop run from an
+/// earlier build does: a `<hash>` dir holding an index.html.
+fn seedWebappCache(cache: []const u8) !void {
+    try Io.Dir.cwd().createDirPath(io, cache);
+    const hash_dir = try std.fs.path.join(gpa, &.{ cache, "stalehash0000" });
+    defer gpa.free(hash_dir);
+    try Io.Dir.cwd().createDirPath(io, hash_dir);
+    const index = try std.fs.path.join(gpa, &.{ hash_dir, "index.html" });
+    defer gpa.free(index);
+    var f = try Io.Dir.cwd().createFile(io, index, .{});
+    defer f.close(io);
+    try f.writeStreamingAll(io, "<html>stale webapp</html>");
+}
+
 fn installToIsolatedBindir(scratch: []const u8, triple: []const u8) !InstallDirs {
     const stage = try harness.harnessPath(gpa, scratch, &.{"release-stage"});
     defer gpa.free(stage);
@@ -118,6 +156,12 @@ fn installToIsolatedBindir(scratch: []const u8, triple: []const u8) !InstallDirs
         defer f.close(io);
         try f.writeStreamingAll(io, "# fake rc for the installer test\n");
     }
+
+    // A stale runtime webapp cache, the way an earlier install's desktop run
+    // leaves one behind: a real install must clear it.
+    const cache = try webappCacheDir(gpa, home);
+    defer gpa.free(cache);
+    try seedWebappCache(cache);
 
     const real_bin = try harness.resolvePabrikBin(io, gpa);
     defer gpa.free(real_bin);
@@ -145,16 +189,13 @@ fn installToIsolatedBindir(scratch: []const u8, triple: []const u8) !InstallDirs
     errdefer gpa.free(base_url);
 
     // The user flow: pipe install.sh into a shell against the staged
-    // "release".
+    // "release". XDG_DATA_HOME is pinned to the isolated HOME so the cache
+    // install.sh clears is the fixture's, never the developer's.
+    const xdg_data_home = try std.fs.path.join(gpa, &.{ home, ".local", "share" });
+    defer gpa.free(xdg_data_home);
+    const env = installEnv(home, xdg_data_home, base_url);
     try expectExitZero(
-        try runChild(
-            &.{ "bash", "install.sh", "--dir", bindir },
-            &.{
-                .{ "PABRIK_BASE_URL", base_url },
-                .{ "PABRIK_SKIP_DESKTOP_ENTRY", "1" },
-                .{ "HOME", home },
-            },
-        ),
+        try runChild(&.{ "bash", "install.sh", "--dir", bindir }, &env),
         "install.sh",
     );
     return .{ .bindir = bindir, .home = home, .base_url = base_url };
@@ -197,20 +238,30 @@ test "install_sh installs runnable pabrik binaries" {
         "installed pabrik --help",
     );
 
-    // Re-running against identical content exits 0 via the up-to-date
-    // path (no reinstall, no duplicate rc lines) — the "user updates"
-    // flow when there is nothing new.
+    // The stale runtime webapp cache the fixture seeded is gone: a real
+    // install clears it so the next launch re-extracts this build's assets.
+    const cache = try webappCacheDir(gpa, dirs.home);
+    defer gpa.free(cache);
+    if (pathExists(cache)) {
+        std.debug.print("install.sh left the webapp cache behind: {s}\n", .{cache});
+        return error.TestUnexpectedResult;
+    }
+
+    // Re-seed it, then re-run against identical content: the up-to-date fast
+    // path exits 0 before touching anything, so the cache survives — that is
+    // what "user updates when there is nothing new" must do.
+    try seedWebappCache(cache);
+    const rerun_xdg = try std.fs.path.join(gpa, &.{ dirs.home, ".local", "share" });
+    defer gpa.free(rerun_xdg);
+    const rerun_env = installEnv(dirs.home, rerun_xdg, dirs.base_url);
     try expectExitZero(
-        try runChild(
-            &.{ "bash", "install.sh", "--dir", bindir },
-            &.{
-                .{ "PABRIK_BASE_URL", dirs.base_url },
-                .{ "PABRIK_SKIP_DESKTOP_ENTRY", "1" },
-                .{ "HOME", dirs.home },
-            },
-        ),
+        try runChild(&.{ "bash", "install.sh", "--dir", bindir }, &rerun_env),
         "install.sh re-run",
     );
+    if (!pathExists(cache)) {
+        std.debug.print("the up-to-date re-run cleared the cache at {s}\n", .{cache});
+        return error.TestUnexpectedResult;
+    }
 
     // And the bindir was exported to PATH in the isolated rc file
     // (marker once — re-running the installer never duplicates it).
@@ -235,6 +286,59 @@ test "install_sh installs runnable pabrik binaries" {
             idx = pos + marker.len;
         }
         try testing.expectEqual(@as(usize, 1), count);
+    }
+}
+
+// --uninstall removes the binaries, the shipped html dir AND the runtime
+// webapp cache: a removed install leaves nothing of the webapp behind.
+test "install_sh --uninstall removes the webapp cache" {
+    const triple = try installTriple();
+    try harness.requirePabrikBin(io, gpa);
+
+    const scratch = try harness.makeScratchDir(gpa);
+    defer gpa.free(scratch);
+    defer harness.cleanupExtraDir(io, gpa, scratch);
+
+    const dirs = try installToIsolatedBindir(scratch, triple);
+    defer gpa.free(dirs.bindir);
+    defer gpa.free(dirs.home);
+    defer gpa.free(dirs.base_url);
+    const bindir = dirs.bindir;
+
+    // The shipped-UI layout install.sh produces, plus a runtime webapp cache
+    // (the fixture's install cleared the one it seeded) — both must be gone
+    // afterwards.
+    const html_dir = try std.fs.path.join(gpa, &.{ bindir, "html" });
+    defer gpa.free(html_dir);
+    try Io.Dir.cwd().createDirPath(io, html_dir);
+    const html_index = try std.fs.path.join(gpa, &.{ html_dir, "index.html" });
+    defer gpa.free(html_index);
+    {
+        var f = try Io.Dir.cwd().createFile(io, html_index, .{});
+        defer f.close(io);
+        try f.writeStreamingAll(io, "<html>shipped ui</html>");
+    }
+    const cache = try webappCacheDir(gpa, dirs.home);
+    defer gpa.free(cache);
+    try seedWebappCache(cache);
+    try testing.expect(pathExists(cache));
+
+    const xdg_data_home = try std.fs.path.join(gpa, &.{ dirs.home, ".local", "share" });
+    defer gpa.free(xdg_data_home);
+    const env = installEnv(dirs.home, xdg_data_home, dirs.base_url);
+    try expectExitZero(
+        try runChild(&.{ "bash", "install.sh", "--dir", bindir, "--uninstall" }, &env),
+        "install.sh --uninstall",
+    );
+
+    const installed = try std.fs.path.join(gpa, &.{ bindir, "pabrik" });
+    defer gpa.free(installed);
+    if (pathExists(installed) or pathExists(html_index) or pathExists(cache)) {
+        std.debug.print(
+            "--uninstall left something behind: bin={} html={} cache={}\n",
+            .{ pathExists(installed), pathExists(html_index), pathExists(cache) },
+        );
+        return error.TestUnexpectedResult;
     }
 }
 

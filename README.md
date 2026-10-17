@@ -54,7 +54,13 @@ new terminals pick it up; `PABRIK_NO_MODIFY_PATH=1` opts out).
 Re-running the installer updates an existing install in place (it says
 already-up-to-date when the binaries match, `Updated …` otherwise). Options: `bash install.sh --system` for `/usr/local/bin`,
 `--no-desktop` for the server only, `--version TAG` for a pinned release,
-`--uninstall` to remove. macOS GUI users can also grab `Pabrik-*.zip`
+`--uninstall` to remove. On Linux/macOS, an install and `--uninstall` also
+clear the desktop
+app's cached UI (`~/.local/share/pabrik/desktop-webapp`, or
+`~/Library/Application Support/pabrik/desktop-webapp` on macOS), so the next
+launch re-extracts the assets of the build you just installed; an
+already-up-to-date re-run changes nothing at all. macOS GUI users can also
+grab `Pabrik-*.zip`
 (Pabrik.app) from the
 [ci-latest release](https://github.com/ginwa123/pabrik/releases/tag/ci-latest).
 

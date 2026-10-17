@@ -32,6 +32,11 @@
 # in Spotlight/Launchpad by name.
 #
 # Idempotent: re-running overwrites the previous bundle.
+#
+# The desktop app's runtime UI cache (~/Library/Application Support/pabrik/
+# desktop-webapp: one dir per build plus a `current` symlink, see
+# src/apps/desktop_app/extraction.zig) is cleared too, so the next launch
+# re-extracts the assets of the bundle just installed.
 
 set -euo pipefail
 
@@ -77,6 +82,15 @@ fi
 # tools or hardened runtimes must not fail the install).
 xattr -dr com.apple.quarantine "${DEST_APP}" 2>/dev/null || true
 codesign --force --deep -s - "${DEST_APP}" 2>/dev/null || true
+
+# Stale UI cache: drop it so the next launch materialises THIS bundle's
+# assets. Only that subdir goes -- its siblings `data/` and `tls/` hold the
+# user's database and certificates.
+WEBAPP_CACHE="${HOME}/Library/Application Support/pabrik/desktop-webapp"
+if [[ -d "${WEBAPP_CACHE}" ]]; then
+    rm -rf "${WEBAPP_CACHE}"
+    echo "Cleared the webapp cache (${WEBAPP_CACHE})."
+fi
 
 echo "Installed Pabrik.app -> ${DEST_APP}"
 echo "Spotlight/Launchpad will index it as 'Pabrik' (reindex can take ~1 min on first install)."

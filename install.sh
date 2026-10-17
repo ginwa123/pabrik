@@ -23,6 +23,16 @@
 #
 # Flags: --help | --version TAG | --dir DIR | --system | --no-desktop | --uninstall
 #
+# Webapp cache: a real install and --uninstall clear the desktop app's
+# runtime UI cache -- `$HOME/.local/share/pabrik/desktop-webapp` on Linux
+# (`$XDG_DATA_HOME`) and `$HOME/Library/Application Support/pabrik/
+# desktop-webapp` on macOS. It holds one `<hash>` dir per build plus a
+# `current` symlink, and nothing else ever prunes it, so the next launch
+# re-extracts the assets of the build just installed. The shipped UI a bare
+# `pabrik` serves (`$BINDIR/html`) is replaced on every real install and
+# removed on --uninstall. A re-run whose binaries already match exits
+# before touching either (see the up-to-date fast path below).
+#
 # Windows users: this script does not run on Windows. In PowerShell run:
 #   irm https://raw.githubusercontent.com/ginwa123/pabrik/main/install.ps1 | iex
 
@@ -51,6 +61,31 @@ while [[ $# -gt 0 ]]; do
         *) echo "Unknown flag: $1 (see --help)" >&2; exit 1 ;;
     esac
 done
+
+# Where the desktop app caches the UI it materialises from its embedded
+# assets: `<data home>/pabrik/desktop-webapp`, one dir per content hash plus
+# a `current` symlink (src/apps/desktop_app/extraction.zig). Platform split
+# matches persistentBaseDir() there.
+webapp_cache_dir() {
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        echo "$HOME/Library/Application Support/pabrik/desktop-webapp"
+    else
+        echo "${XDG_DATA_HOME:-$HOME/.local/share}/pabrik/desktop-webapp"
+    fi
+}
+
+# Drop that cache so the next launch re-extracts the assets belonging to the
+# build we just installed -- old hash dirs are never pruned otherwise. Only
+# the desktop-webapp subdir is removed: its siblings `data/` and `tls/` hold
+# the user's database and certificates.
+clear_webapp_cache() {
+    local dir
+    dir="$(webapp_cache_dir)"
+    if [[ -d "$dir" ]]; then
+        rm -rf "$dir"
+        echo "Cleared the webapp cache ($dir)."
+    fi
+}
 
 resolve_triple() {
     local os arch
@@ -109,6 +144,7 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
     if [[ "$SYSTEM" -eq 1 ]]; then
         rm -f /usr/share/applications/pabrik.desktop /usr/share/applications/pabrik-browser.desktop
     fi
+    clear_webapp_cache
     echo "Uninstalled pabrik from ${BINDIR}."
     exit 0
 fi
@@ -195,6 +231,11 @@ fi
 if [[ "$HAD_EXISTING" -eq 1 ]]; then
     echo "Updated existing installation to ${TAG}."
 fi
+
+# The binaries (and therefore the embedded UI) changed: drop the desktop's
+# webapp cache so the next launch re-extracts the assets of THIS build
+# instead of reusing a stale copy next to it.
+clear_webapp_cache
 
 # Shipped UI (serves /app): the server auto-discovers "${BINDIR}/html"
 # (same portable layout as zig-out/bin/html in a checkout), so a bare
