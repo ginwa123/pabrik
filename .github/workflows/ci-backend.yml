@@ -784,6 +784,18 @@ jobs:
           # match and no cache is restored. This prevents a stale build.exe
           # (from an older build.zig) from being used.
 
+      - name: Drop the zig build-runner tmp dir
+        # `.zig-cache/tmp` holds the per-step configure results the parent
+        # build runner hands to a child. It is inside the cache restored just
+        # above, so those entries belong to a different run: a child can find
+        # one gone or hashed for inputs this run never built, and dies with
+        #   unable to read results of configure phase from '.zig-cache\tmp\<hash>': FileNotFound
+        # (windows-latest 2026-10-17, three cells; the same commit passed that
+        # job earlier the same day, so the state is the variable, not the code).
+        # Nothing here is cacheable: it is rewritten in milliseconds.
+        shell: bash
+        run: rm -rf .zig-cache/tmp
+
       - name: Resolve the Zig global cache dir
         id: zig-global-dir
         # The path is asked of zig rather than hardcoded because it is
@@ -891,8 +903,23 @@ jobs:
           # `tee`'s — without it a failing suite would report success.
           set -o pipefail
           mkdir -p "$RUNNER_TEMP/zig-test"
-          zig build test --summary all -Dno-webapp-rebuild 2>&1 \
-            | tee "$RUNNER_TEMP/zig-test/summary.log"
+          # A step's configure results can still go missing part-way through
+          # (the runner owns that dir, and a stalled child can outlive them).
+          # That is infrastructure, not a test result: retry once with the tmp
+          # dir cleared, and ONLY for that exact message, so that a real test
+          # failure still fails here.
+          for attempt in 1 2; do
+            zig build test --summary all -Dno-webapp-rebuild 2>&1 \
+              | tee "$RUNNER_TEMP/zig-test/summary.log"
+            status=$?
+            if [[ "$status" -ne 0 ]] && grep -q "unable to read results of configure phase" "$RUNNER_TEMP/zig-test/summary.log"; then
+              echo "zig build test: a configure-phase result vanished (attempt $attempt); clearing .zig-cache/tmp and retrying"
+              rm -rf .zig-cache/tmp
+              continue
+            fi
+            exit "$status"
+          done
+          exit 1
 
       - name: Skipped-test ceiling (zig build test)
         # Every platform's `zig build test` prints
