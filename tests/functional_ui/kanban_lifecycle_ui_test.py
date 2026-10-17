@@ -282,24 +282,11 @@ def test_kanban_via_real_ui_click_create_button(ui_harness: UIHarness, page) -> 
     # Submit by clicking the Save button. Different UIs do different
     # things on Enter (some submit, some don't); clicking Save is
     # the most reliable.
-    # Commit. The create dialog's footer is a split button: the left
-    # half is "▶ Create task & run agent" and "Create task only" lives
-    # in the caret menu, so the menu has to be opened before the item
-    # is clickable. Playwright refuses to click a display:none element,
-    # so this cannot be skipped the way the unit specs get away with it.
-    caret = page.locator('[data-testid="kanban-task-detail-commit-caret"]').first
+    # Commit. The footer is two flat buttons: the run action and
+    # "Create task", both visible, so the click is direct.
     save_button = page.locator('[data-testid="kanban-task-detail-save"]').first
-    if caret.count() > 0 and save_button.count() > 0:
-        caret.click()
-        page.wait_for_timeout(150)
-        save_button.click()
-    else:
-        # Pre-split-button fallback: a text selector, then Enter.
-        fallback = page.locator("button:has-text('Save')").first
-        if fallback.count() > 0:
-            fallback.click()
-        else:
-            page.keyboard.press("Enter")
+    assert save_button.count() > 0, "flat Create task button not found"
+    save_button.click()
     page.wait_for_timeout(1000)
 
     # Verify the task appears via the API (more reliable than DOM check

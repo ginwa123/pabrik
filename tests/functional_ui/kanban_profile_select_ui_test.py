@@ -307,17 +307,16 @@ def test_dialog_create_task_persists_picked_profile_in_db(
         ).first.click()
         page.wait_for_timeout(100)
 
-    # 5. Commit via "Create task only". The create dialog's footer is a
-    #    split button — the left half is "▶ Create task & run agent", so
-    #    the plain create has to be opened from the caret menu first.
-    caret = page.locator('[data-testid="kanban-task-detail-commit-caret"]').first
-    assert caret.count() > 0, "commit split caret not found"
-    caret.click()
-    page.wait_for_timeout(150)
+    # 5. Commit via the flat "Create task" button. The footer's split
+    #    button and its caret menu are gone: plain create is its own
+    #    button at the right of the sticky action row.
     save_button = page.locator(
         '[data-testid="kanban-task-detail-save"]'
     ).first
     assert save_button.count() > 0, "Create task / Save button not found"
+    assert save_button.inner_text().strip() == "Create task", (
+        f"expected the flat 'Create task' button, got {save_button.inner_text()!r}"
+    )
     save_button.click()
     page.wait_for_timeout(800)
 
@@ -503,12 +502,8 @@ def test_dialog_picked_profile_surfaces_in_chatview_chip(
     ).first.click()
     page.wait_for_timeout(100)
 
-    # The create dialog's footer is a split button; "Create task only"
-    # lives in the caret menu, so open it before clicking.
-    page.locator(
-        '[data-testid="kanban-task-detail-commit-caret"]'
-    ).first.click()
-    page.wait_for_timeout(150)
+    # The footer's split button and its caret menu are gone; plain
+    # create is the flat "Create task" button.
     page.locator(
         '[data-testid="kanban-task-detail-save"]'
     ).first.click()
