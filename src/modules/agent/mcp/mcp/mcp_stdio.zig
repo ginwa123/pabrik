@@ -597,6 +597,8 @@ pub const StdioClient = struct {
             // a double close of a possibly-recycled fd.
             if (!self.is_dead) fd.close(self.io);
             self.stdin = null;
+            // Same hand-over as `deinit`: the child must not Close it again.
+            self.child.stdin = null;
         }
     }
 
@@ -620,6 +622,12 @@ pub const StdioClient = struct {
         self.stdin = null;
         self.stdout = null;
         self.stderr = null;
+        // `Child.kill` closes the child's OWN copies of these pipe handles,
+        // which are the ones just closed above — hand ownership over instead
+        // of Closing them twice (std printed STATUS_INVALID_HANDLE per handle).
+        self.child.stdin = null;
+        self.child.stdout = null;
+        self.child.stderr = null;
         killBounded(self.io, &self.child, REAP_GRACE_PERIOD_NS);
         self.child.id = null;
     }
