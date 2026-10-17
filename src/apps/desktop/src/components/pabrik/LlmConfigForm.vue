@@ -122,9 +122,26 @@ const catalogState = ref<'fresh' | 'stale' | 'absent'>('absent')
 const pickerError = ref<string | null>(null)
 let pickerTimer: ReturnType<typeof setTimeout> | null = null
 
+/** The picker's page — the backend's own default (`DEFAULT_LIMIT` in `models_catalog.zig`). The
+ * page is what you BROWSE; typing is what narrows. */
+const PICKER_LIMIT = 50
+
+/** What the header says. The match count and the page size are different numbers, so a header
+ * printing only the count promised rows the list could never show. */
+const pickerSummary = computed<string>(() => {
+  const total = pickerTotal.value
+  const shown = pickerResults.value.length
+  if (shown >= total) return `${total} match${total === 1 ? '' : 'es'}`
+  return `${shown} of ${total} matches — keep typing to narrow`
+})
+
 async function runPickerSearch(): Promise<void> {
   try {
-    const res = await getModelCatalog(props.modelValue.model.trim() || undefined, undefined, 6)
+    const res = await getModelCatalog(
+      props.modelValue.model.trim() || undefined,
+      undefined,
+      PICKER_LIMIT,
+    )
     pickerResults.value = res.models
     pickerTotal.value = res.total
     catalogState.value = res.catalog
@@ -255,7 +272,21 @@ const modelSupportsReasoning = computed<boolean>(() => {
   if (!hasFacts.value) return true
   return resolved.value?.reasoning !== 'none'
 })
-const effortOptions = computed<string[]>(() => resolved.value?.effort_values_sendable ?? [])
+/** One set feeds the label AND the dropdown, so the label cannot name a level the dropdown does
+ * not offer. The catalog already filtered the model's own list down to what pabrik can send
+ * (`model_catalog.zig`); with no facts at all the generic three are offered. */
+const effortOptions = computed<string[]>(() => {
+  const sendable = resolved.value?.effort_values_sendable ?? []
+  return sendable.length > 0 ? sendable : ['low', 'medium', 'high']
+})
+
+/** The model's advertised levels pabrik cannot send. Said out loud, because a list shorter than
+ * the model's own is otherwise a mystery. */
+const effortDropped = computed<string[]>(() => {
+  const sendable = resolved.value?.effort_values_sendable ?? []
+  const advertised = resolved.value?.effort_values ?? []
+  return advertised.filter((v) => !sendable.some((s) => s.toLowerCase() === v.toLowerCase()))
+})
 const isAnthropicShape = computed<boolean>(
   () => (resolved.value?.url_style ?? props.modelValue.url_style) === 'anthropic',
 )
@@ -417,25 +448,30 @@ const overrideCount = computed<number>(() => {
         <div
           class="text-micro font-mono px-3 py-1.5 border-b"
           style="color: var(--semantic-text-dim); border-color: var(--color-border)"
+          data-testid="model-picker-summary"
         >
-          {{ pickerTotal }} match{{ pickerTotal === 1 ? '' : 'es' }}
+          {{ pickerSummary }}
         </div>
-        <button
-          v-for="m in pickerResults"
-          :key="m.provider_id + '/' + m.model_id"
-          type="button"
-          @mousedown.prevent="chooseModel(m)"
-          class="w-full flex items-center justify-between gap-3 px-3 py-1.5 hover:opacity-80 text-left"
-          :data-testid="`model-option-${m.model_id}`"
-        >
-          <span class="font-mono text-dense truncate" style="color: var(--semantic-text)">{{
-            m.model_id
-          }}</span>
-          <span class="font-mono text-micro shrink-0" style="color: var(--semantic-text-dim)">
-            · {{ m.provider_name
-            }}<template v-if="m.context_window"> · {{ fmtTokens(m.context_window) }}</template>
-          </span>
-        </button>
+        <!-- The page scrolls: a broad query matches far more than fits on screen, and a
+             clipped list is a list of rows nobody can click. -->
+        <div class="max-h-[260px] overflow-y-auto" data-testid="model-picker-results">
+          <button
+            v-for="m in pickerResults"
+            :key="m.provider_id + '/' + m.model_id"
+            type="button"
+            @mousedown.prevent="chooseModel(m)"
+            class="w-full flex items-center justify-between gap-3 px-3 py-1.5 hover:opacity-80 text-left"
+            :data-testid="`model-option-${m.model_id}`"
+          >
+            <span class="font-mono text-dense truncate" style="color: var(--semantic-text)">{{
+              m.model_id
+            }}</span>
+            <span class="font-mono text-micro shrink-0" style="color: var(--semantic-text-dim)">
+              · {{ m.provider_name
+              }}<template v-if="m.context_window"> · {{ fmtTokens(m.context_window) }}</template>
+            </span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -687,8 +723,12 @@ const overrideCount = computed<number>(() => {
         <div v-if="showsEffort">
           <label :class="labelBase" :style="labelStyle">
             Effort
-            <span v-if="resolved?.effort_values?.length" class="font-mono" :style="helperStyle">
-              (this model: {{ resolved?.effort_values?.join(' · ') }})
+            <span
+              v-if="resolved?.effort_values_sendable?.length"
+              class="font-mono"
+              :style="helperStyle"
+            >
+              (this model: {{ effortOptions.join(' · ') }})
             </span>
           </label>
           <select
@@ -707,14 +747,19 @@ const overrideCount = computed<number>(() => {
             data-testid="reasoning-effort-select"
           >
             <option value="">inherit — Auto</option>
-            <option
-              v-for="v in effortOptions.length > 0 ? effortOptions : ['low', 'medium', 'high']"
-              :key="v"
-              :value="v"
-            >
+            <option v-for="v in effortOptions" :key="v" :value="v">
               {{ v }}
             </option>
           </select>
+          <p
+            v-if="effortDropped.length > 0"
+            class="text-dense mt-1"
+            :style="helperStyle"
+            data-testid="effort-dropped"
+          >
+            Also offered by this model: {{ effortDropped.join(' · ') }} — pabrik cannot send
+            those.
+          </p>
         </div>
         <div
           v-else-if="hasFacts && !modelSupportsReasoning"
