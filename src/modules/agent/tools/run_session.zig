@@ -17,15 +17,15 @@ pub const RunSessionInput = struct {
     /// An existing session to run. Alone it resumes the agent with no new
     /// user turn.
     session_id: []const u8 = "",
-    /// Target workspace for a NEW session. ANOTHER workspace is allowed on
-    /// purpose — that is the point of this tool.
+    /// Your OWN workspace, for a NEW session. Accepted only as a restatement
+    /// of it — naming any other workspace is a refusal.
     workspace_id: []const u8 = "",
     /// Case-insensitive alternative to `workspace_id`.
     workspace_name: []const u8 = "",
     /// Name of a NEW session. Default: derived from `message`.
     name: []const u8 = "",
-    /// Absolute working directory for a NEW session. Default: the target
-    /// workspace's project path.
+    /// Absolute working directory for a NEW session. Default: the caller's
+    /// workspace project path.
     cwd: []const u8 = "",
     /// LLM profile for a NEW session. Default: the target workspace's active
     /// profile — the loop resolves it from the session's own config scope.
@@ -47,6 +47,10 @@ pub const RunSessionError = error{
     /// A workspace target paired with an existing `session_id` — the session
     /// already has a workspace, so the target is a contradiction.
     WorkspaceTargetWithExistingSession,
+    /// The target is outside the caller's own workspace: either another
+    /// workspace named in a workspace selector, or a `session_id` that
+    /// resolves to one.
+    CrossWorkspaceForbidden,
     SessionNotFound,
     WorkerAlreadyRunning,
     WorkspaceNotFound,
@@ -84,13 +88,12 @@ pub const RunPlan = struct {
 
 pub const run_session_tool_system_prompt =
     \\## Run Session Tool — Behavior
-    \\Use `run_session` to start or resume an agent session, including one in ANOTHER workspace.
-    \\- `message` alone → START a new session in the target workspace and run it on that prompt.
+    \\Use `run_session` to start or resume an agent session IN YOUR OWN WORKSPACE.
+    \\- `message` alone → START a new session in your workspace and run it on that prompt.
     \\- `session_id` alone → RESUME that session's agent with no new user turn.
     \\- `session_id` + `message` → send the message to that existing session and run it.
-    \\- `workspace_id` (or `workspace_name`) picks the target for a NEW session. Omit it for your own
-    \\  workspace; name another one to hand the work to that workspace's agent, which runs with that
-    \\  workspace's project directory, config and secrets.
+    \\- Your workspace is the only reachable one: a `session_id` that belongs to another workspace,
+    \\  or a `workspace_id`/`workspace_name` that is not your own, is REFUSED.
     \\- The run is ASYNCHRONOUS: the call returns as soon as the run is scheduled, not when it ends.
     \\- A session that already has a worker running is REFUSED — never retried in a loop.
     \\
@@ -108,26 +111,26 @@ pub const run_session_tool = AgentTool{
         \\- SEND (`session_id` + `message`): queue `message` onto that existing session and run it.
         \\- RESUME (`session_id` alone): run that existing session's agent with NO new user message.
         \\
-        \\CROSS-WORKSPACE: `workspace_id` (or a case-insensitive `workspace_name`) names the target for a NEW session and MAY be ANOTHER workspace — that is the point of this tool. Omitted, the new session lands in your own workspace. The new session runs in the target's project directory and resolves that workspace's config, skills and secrets. A workspace target is refused alongside `session_id`: an existing session already has a workspace.
+        \\SAME WORKSPACE ONLY: the target is always YOUR workspace. A NEW session is created in it and runs in that workspace's project directory with its config, skills and secrets. `workspace_id`/`workspace_name` are accepted only as a restatement of your own workspace — naming another one is refused, and so is a `session_id` that lives in another workspace. Another workspace's session can never be reached or run from here. A workspace target is also refused alongside `session_id`: an existing session already has a workspace.
         \\
         \\ASYNCHRONOUS: the run is scheduled, not awaited. This call returns as soon as the run is queued — it does NOT wait for the agent to finish, and it does not report the result. Follow the run by reading the session later.
         \\
-        \\REFUSALS (`success:false`, nothing started): a session whose worker is already running (started, and NOT silently queued); an unknown `session_id`, `workspace_id` or `workspace_name`; a relative `cwd`; a workspace that owns no directory; a caller with no resolvable workspace; and both `workspace_id` and `workspace_name` at once.
+        \\REFUSALS (`success:false`, nothing started): a `session_id` or workspace target OUTSIDE your workspace; a session whose worker is already running (started, and NOT silently queued); an unknown `session_id`, `workspace_id` or `workspace_name`; a relative `cwd`; a workspace that owns no directory; a caller with no resolvable workspace; and both `workspace_id` and `workspace_name` at once.
         \\
         \\MAIN-AGENT-ONLY: never available to a sub-agent.
         \\
-        \\Examples: {"message": "run the test suite and report failures"} · {"message": "bump the pin", "workspace_id": "ws_123"} · {"message": "fix the failing spec", "workspace_name": "kabelweb"} · {"session_id": "sess_42"} resume · {"session_id": "sess_42", "message": "also update the docs"} send.
+        \\Examples: {"message": "run the test suite and report failures"} · {"message": "fix the failing spec", "cwd": "/abs/path"} · {"session_id": "sess_42"} resume · {"session_id": "sess_42", "message": "also update the docs"} send.
         ,
         .parameters = .{
             .type = "object",
             .properties = &.{
                 .{ .name = "message", .type = "string", .description = "Prompt for a NEW session (START), or a message to queue onto `session_id` (SEND)." },
-                .{ .name = "session_id", .type = "string", .description = "Existing session to run. Alone it resumes with no new user turn." },
-                .{ .name = "workspace_id", .type = "string", .description = "Target workspace for a NEW session. MAY be another workspace. Omit for your own. Mutually exclusive with workspace_name and with session_id." },
-                .{ .name = "workspace_name", .type = "string", .description = "Case-insensitive alternative to workspace_id, e.g. \"kabelweb\". Mutually exclusive with workspace_id and with session_id." },
+                .{ .name = "session_id", .type = "string", .description = "Existing session to run. Must be in YOUR workspace or the call is refused. Alone it resumes with no new user turn." },
+                .{ .name = "workspace_id", .type = "string", .description = "Your OWN workspace, for a NEW session. Naming any OTHER workspace is refused. Mutually exclusive with workspace_name and with session_id." },
+                .{ .name = "workspace_name", .type = "string", .description = "Case-insensitive alternative to workspace_id; must also be your own workspace. Mutually exclusive with workspace_id and with session_id." },
                 .{ .name = "name", .type = "string", .description = "Name for a NEW session. Default: derived from the first line of `message`." },
-                .{ .name = "cwd", .type = "string", .description = "ABSOLUTE working directory for a NEW session. Default: the target workspace's project path." },
-                .{ .name = "profile", .type = "string", .description = "LLM profile name for a NEW session. Default: the target workspace's active profile." },
+                .{ .name = "cwd", .type = "string", .description = "ABSOLUTE working directory for a NEW session. Default: your workspace's project path." },
+                .{ .name = "profile", .type = "string", .description = "LLM profile name for a NEW session. Default: your workspace's active profile." },
                 .{ .name = "allowed_tools", .type = "string", .description = "CSV allowlist for a NEW session. Omit or leave empty for every equipped tool." },
             },
             .required = &.{},
@@ -235,8 +238,9 @@ fn workspaceProjectPath(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend,
     return null;
 }
 
-/// An absolute directory for the NEW session, or a refusal. `caller_cwd` is
-/// only consulted when the target IS the caller's own workspace.
+/// An absolute directory for the NEW session, or a refusal. `caller_cwd`
+/// wins over `workspace_id`'s project path because it is where the caller
+/// is already working.
 fn resolveCwd(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -285,13 +289,14 @@ pub fn planRunSession(
     const has_session = input.session_id.len > 0;
     if (!has_message and !has_session) return error.NothingToRun;
 
-    if (has_session) return planExistingSession(allocator, db, input, has_message);
+    if (has_session) return planExistingSession(allocator, db, caller_session_id, input, has_message);
     return planNewSession(allocator, db, caller_session_id, caller_cwd, input);
 }
 
 fn planExistingSession(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
+    caller_session_id: []const u8,
     input: RunSessionInput,
     has_message: bool,
 ) !RunPlan {
@@ -300,6 +305,12 @@ fn planExistingSession(
     }
     if (!try sessionExists(allocator, db, input.session_id)) return error.SessionNotFound;
     if (is_worker_running.isWorkerRunning(allocator, db, input.session_id)) return error.WorkerAlreadyRunning;
+    // The same gate `read_workspace_session` uses: a session outside the
+    // caller's workspace is never run. Fail CLOSED — an unresolvable pair
+    // (a caller with no workspace) is not "same".
+    if (!try workspace_scope.isSameWorkspace(allocator, db, caller_session_id, input.session_id)) {
+        return error.CrossWorkspaceForbidden;
+    }
 
     const fields = try ask_user_pending.loadSessionRunFields(allocator, db, input.session_id);
     defer fields.deinit(allocator);
@@ -344,28 +355,24 @@ fn planNewSession(
 ) !RunPlan {
     const caller_workspace = try workspace_scope.resolveWorkspaceId(allocator, db, caller_session_id);
     defer if (caller_workspace) |w| allocator.free(w);
+    const own = caller_workspace orelse return error.NoWorkspace;
 
-    const is_own_workspace = input.workspace_id.len == 0 and input.workspace_name.len == 0;
-
-    var target_workspace_id: []u8 = undefined;
+    // A workspace selector is a restatement of the caller's own workspace.
+    // Naming a DIFFERENT one is the cross-workspace refusal.
     if (input.workspace_id.len > 0) {
         if (!try workspaceExists(allocator, db, input.workspace_id)) return error.WorkspaceNotFound;
-        target_workspace_id = try allocator.dupe(u8, input.workspace_id);
+        if (!std.mem.eql(u8, input.workspace_id, own)) return error.CrossWorkspaceForbidden;
     } else if (input.workspace_name.len > 0) {
-        target_workspace_id = (try workspaceIdByName(allocator, db, input.workspace_name)) orelse
+        const named = (try workspaceIdByName(allocator, db, input.workspace_name)) orelse
             return error.WorkspaceNotFound;
-    } else {
-        target_workspace_id = try allocator.dupe(u8, caller_workspace orelse return error.NoWorkspace);
+        defer allocator.free(named);
+        if (!std.mem.eql(u8, named, own)) return error.CrossWorkspaceForbidden;
     }
+
+    const target_workspace_id = try allocator.dupe(u8, own);
     errdefer allocator.free(target_workspace_id);
 
-    const cwd = try resolveCwd(
-        allocator,
-        db,
-        input.cwd,
-        if (is_own_workspace) caller_cwd else "",
-        target_workspace_id,
-    );
+    const cwd = try resolveCwd(allocator, db, input.cwd, caller_cwd, target_workspace_id);
     errdefer allocator.free(cwd);
 
     const session_id = try allocateSessionId(allocator);
@@ -395,9 +402,9 @@ fn planNewSession(
 
 /// The refusal code the LLM reads, plus one actionable sentence.
 fn refusalMessage(code: []const u8) []const u8 {
-    if (std.mem.eql(u8, code, "nothing_to_run")) return "Provide `message` to start a new session, or `session_id` to run an existing one.";
-    if (std.mem.eql(u8, code, "ambiguous_workspace")) return "Pass `workspace_id` OR `workspace_name`, not both.";
-    if (std.mem.eql(u8, code, "workspace_target_with_existing_session")) return "`workspace_id`/`workspace_name` only choose a target for a NEW session — drop them when you pass `session_id`.";
+    if (std.mem.eql(u8, code, "nothing_to_run")) return "Provide `message` to start a new session, or `session_id` to run an existing one.";    if (std.mem.eql(u8, code, "ambiguous_workspace")) return "Pass `workspace_id` OR `workspace_name`, not both.";
+    if (std.mem.eql(u8, code, "cross_workspace_forbidden")) return "That target is outside YOUR workspace. `run_session` only reaches your own workspace — start or resume sessions in the workspace you are in.";
+    if (std.mem.eql(u8, code, "workspace_target_with_existing_session")) return "`workspace_id`/`workspace_name` only restate your own workspace for a NEW session — drop them when you pass `session_id`.";
     if (std.mem.eql(u8, code, "session_not_found")) return "No session with that `session_id`.";
     if (std.mem.eql(u8, code, "worker_already_running")) return "That session is already running. Do not retry in a loop — wait for it, or start a different session.";
     if (std.mem.eql(u8, code, "workspace_not_found")) return "No workspace matches that id or name.";
@@ -414,6 +421,7 @@ pub fn refusalCode(err: anyerror) []const u8 {
         error.NothingToRun => "nothing_to_run",
         error.AmbiguousWorkspace => "ambiguous_workspace",
         error.WorkspaceTargetWithExistingSession => "workspace_target_with_existing_session",
+        error.CrossWorkspaceForbidden => "cross_workspace_forbidden",
         error.SessionNotFound => "session_not_found",
         error.WorkerAlreadyRunning => "worker_already_running",
         error.WorkspaceNotFound => "workspace_not_found",
@@ -588,10 +596,12 @@ fn setupDb() !TestCtx {
         \\VALUES ('item_a', 'ws_a', 'agent', 'Project Default', '/repos/alpha', 1, 1),
         \\       ('item_b', 'ws_b', 'agent', 'Project Default', '/repos/kabelweb', 1, 1)
     , &.{});
-    // The caller is a task chat in ws_a; `peer` is an explicit ws_b session.
+    // `mate` is a sibling session inside the caller's own workspace (ws_a);
+    // `peer` belongs to another workspace (ws_b) and must be unreachable.
     try db.exec(alloc,
         \\INSERT INTO sessions (id, name, status, cwd, selected_profile_model, is_auto_retry_until_stop, user_id, workspace_id)
         \\VALUES ('caller', 'Caller', 'active', '/repos/alpha', 'alpha-profile', 0, 'u_1', NULL),
+        \\       ('mate', 'Mate', 'active', '/repos/alpha/sub', 'alpha-profile', 0, 'u_1', 'ws_a'),
         \\       ('peer', 'Peer', 'active', '/repos/kabelweb/sub', 'kabel-profile', 1, 'u_1', 'ws_b')
     , &.{});
     return .{ .db = db, .threaded = threaded };
@@ -621,36 +631,51 @@ test "run_session: a bare message starts a new session in the caller's own works
     try testing.expect(!plan.skip_initial_queue_message);
 }
 
-test "run_session: an explicit workspace_id starts the session in THAT workspace" {
+test "run_session: naming your OWN workspace explicitly is accepted" {
     var s = try setupDb();
     defer teardown(&s);
     const alloc = testing.allocator;
 
     var plan = try planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
         .message = "run the suite",
-        .workspace_id = "ws_b",
+        .workspace_id = "ws_a",
     });
     defer plan.deinit(alloc);
 
     try testing.expectEqual(RunMode.started, plan.mode);
-    try testing.expectEqualStrings("ws_b", plan.workspace_id);
-    // The other workspace's project directory, not the caller's.
-    try testing.expectEqualStrings("/repos/kabelweb", plan.cwd);
+    try testing.expectEqualStrings("ws_a", plan.workspace_id);
+    try testing.expectEqualStrings("/repos/alpha", plan.cwd);
 }
 
-test "run_session: workspace_name resolves the target case-insensitively" {
+test "run_session: another workspace's id or name is refused" {
     var s = try setupDb();
     defer teardown(&s);
     const alloc = testing.allocator;
 
+    try testing.expectError(error.CrossWorkspaceForbidden, planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
+        .message = "x",
+        .workspace_id = "ws_b",
+    }));
+    try testing.expectError(error.CrossWorkspaceForbidden, planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
+        .message = "x",
+        .workspace_name = "kabelweb",
+    }));
+}
+
+test "run_session: workspace_name resolves your own workspace case-insensitively" {
+    var s = try setupDb();
+    defer teardown(&s);
+    const alloc = testing.allocator;
+
+    // Stored as "Alpha"; the caller may write it any way it likes.
     var plan = try planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
         .message = "bump the pin",
-        .workspace_name = "kabelweb",
+        .workspace_name = "alpha",
     });
     defer plan.deinit(alloc);
 
-    try testing.expectEqualStrings("ws_b", plan.workspace_id);
-    try testing.expectEqualStrings("/repos/kabelweb", plan.cwd);
+    try testing.expectEqualStrings("ws_a", plan.workspace_id);
+    try testing.expectEqualStrings("/repos/alpha", plan.cwd);
 }
 
 test "run_session: an unknown workspace is refused rather than retargeted" {
@@ -675,8 +700,8 @@ test "run_session: both workspace selectors at once is refused" {
 
     try testing.expectError(error.AmbiguousWorkspace, planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
         .message = "x",
-        .workspace_id = "ws_b",
-        .workspace_name = "KabelWeb",
+        .workspace_id = "ws_a",
+        .workspace_name = "Alpha",
     }));
 }
 
@@ -693,18 +718,18 @@ test "run_session: a session_id alone resumes without fabricating a user turn" {
     defer teardown(&s);
     const alloc = testing.allocator;
 
-    var plan = try planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{ .session_id = "peer" });
+    var plan = try planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{ .session_id = "mate" });
     defer plan.deinit(alloc);
 
     try testing.expectEqual(RunMode.resumed, plan.mode);
     try testing.expect(plan.skip_initial_queue_message);
     try testing.expectEqualStrings("", plan.queue_message);
     // The run inherits the SESSION's own row, not the caller's.
-    try testing.expectEqualStrings("Peer", plan.session_name);
-    try testing.expectEqualStrings("/repos/kabelweb/sub", plan.cwd);
-    try testing.expectEqualStrings("kabel-profile", plan.profile);
-    try testing.expectEqualStrings("1", plan.is_auto_retry_until_stop);
-    try testing.expectEqualStrings("ws_b", plan.workspace_id);
+    try testing.expectEqualStrings("Mate", plan.session_name);
+    try testing.expectEqualStrings("/repos/alpha/sub", plan.cwd);
+    try testing.expectEqualStrings("alpha-profile", plan.profile);
+    try testing.expectEqualStrings("0", plan.is_auto_retry_until_stop);
+    try testing.expectEqualStrings("ws_a", plan.workspace_id);
 }
 
 test "run_session: a session_id plus a message queues that message onto it" {
@@ -713,7 +738,7 @@ test "run_session: a session_id plus a message queues that message onto it" {
     const alloc = testing.allocator;
 
     var plan = try planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
-        .session_id = "peer",
+        .session_id = "mate",
         .message = "also update the docs",
     });
     defer plan.deinit(alloc);
@@ -721,6 +746,41 @@ test "run_session: a session_id plus a message queues that message onto it" {
     try testing.expectEqual(RunMode.sent, plan.mode);
     try testing.expect(!plan.skip_initial_queue_message);
     try testing.expectEqualStrings("also update the docs", plan.queue_message);
+}
+
+test "run_session: another workspace's session_id is refused" {
+    var s = try setupDb();
+    defer teardown(&s);
+    const alloc = testing.allocator;
+
+    // `peer` lives in ws_b. Naming it must not run it, resume it, or accept
+    // a message for it.
+    try testing.expectError(error.CrossWorkspaceForbidden, planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
+        .session_id = "peer",
+    }));
+    try testing.expectError(error.CrossWorkspaceForbidden, planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
+        .session_id = "peer",
+        .message = "hello",
+    }));
+}
+
+test "run_session: a session with no resolvable workspace is refused for a peer too" {
+    var s = try setupDb();
+    defer teardown(&s);
+    const alloc = testing.allocator;
+
+    // `orphan` resolves to nothing, so a caller cannot prove it is the same
+    // workspace — the gate fails closed, in both directions.
+    try s.db.exec(alloc,
+        \\INSERT INTO sessions (id, name, status, cwd, user_id) VALUES ('orphan', 'Orphan', 'active', '/nowhere', 'u_1')
+    , &.{});
+
+    try testing.expectError(error.CrossWorkspaceForbidden, planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
+        .session_id = "orphan",
+    }));
+    try testing.expectError(error.CrossWorkspaceForbidden, planRunSession(alloc, &s.db, "orphan", "/nowhere", .{
+        .session_id = "caller",
+    }));
 }
 
 test "run_session: an unknown session_id is refused" {
@@ -739,13 +799,13 @@ test "run_session: a busy worker is refused instead of silently queueing" {
     defer teardown(&s);
     const alloc = testing.allocator;
 
-    try s.db.exec(alloc, "INSERT INTO worker (id, session_id) VALUES ('peer', 'peer')", &.{});
+    try s.db.exec(alloc, "INSERT INTO worker (id, session_id) VALUES ('mate', 'mate')", &.{});
 
     try testing.expectError(error.WorkerAlreadyRunning, planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
-        .session_id = "peer",
+        .session_id = "mate",
     }));
     try testing.expectError(error.WorkerAlreadyRunning, planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
-        .session_id = "peer",
+        .session_id = "mate",
         .message = "x",
     }));
 }
@@ -756,11 +816,11 @@ test "run_session: a workspace target alongside a session_id is refused" {
     const alloc = testing.allocator;
 
     try testing.expectError(error.WorkspaceTargetWithExistingSession, planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
-        .session_id = "peer",
+        .session_id = "mate",
         .workspace_id = "ws_a",
     }));
     try testing.expectError(error.WorkspaceTargetWithExistingSession, planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
-        .session_id = "peer",
+        .session_id = "mate",
         .workspace_name = "Alpha",
     }));
 }
@@ -777,7 +837,7 @@ test "run_session: a relative cwd is refused, an absolute one wins over the work
 
     var plan = try planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
         .message = "x",
-        .workspace_id = "ws_b",
+        .workspace_id = "ws_a",
         .cwd = "/tmp/elsewhere",
     });
     defer plan.deinit(alloc);
@@ -850,11 +910,18 @@ test "run_session: a workspace with no project directory is refused" {
     defer teardown(&s);
     const alloc = testing.allocator;
 
-    try s.db.exec(alloc, "INSERT INTO workspaces (id, name) VALUES ('ws_empty', 'Empty')", &.{});
+    // The CALLER's own workspace, task-linked, whose only item has no path:
+    // there is no directory to run a new session in.
+    try s.db.exec(alloc, "INSERT INTO workspaces (id, name) VALUES ('ws_bare', 'Bare')", &.{});
+    try s.db.exec(alloc,
+        \\INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position, is_default)
+        \\VALUES ('item_bare', 'ws_bare', 'folder', 'Code', '', 1, 1)
+    , &.{});
+    try s.db.exec(alloc, "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) VALUES ('bare_task', 'T', 'item_bare')", &.{});
+    try s.db.exec(alloc, "INSERT INTO sessions (id, name, status, cwd, user_id) VALUES ('bare_task', 'Bare caller', 'active', '', 'u_1')", &.{});
 
-    try testing.expectError(error.WorkspaceHasNoPath, planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
+    try testing.expectError(error.WorkspaceHasNoPath, planRunSession(alloc, &s.db, "bare_task", "", .{
         .message = "x",
-        .workspace_id = "ws_empty",
     }));
 }
 
@@ -868,12 +935,12 @@ test "run_session: a workspace with only a non-default item still resolves its p
         \\INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position, is_default)
         \\VALUES ('item_p', 'ws_plain', 'folder', 'Code', '/repos/plain', 2, 0)
     , &.{});
+    try s.db.exec(alloc, "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) VALUES ('plain_task', 'T', 'item_p')", &.{});
+    try s.db.exec(alloc, "INSERT INTO sessions (id, name, status, cwd, user_id) VALUES ('plain_task', 'Plain caller', 'active', '', 'u_1')", &.{});
 
-    var plan = try planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
-        .message = "x",
-        .workspace_id = "ws_plain",
-    });
+    var plan = try planRunSession(alloc, &s.db, "plain_task", "", .{ .message = "x" });
     defer plan.deinit(alloc);
+    try testing.expectEqualStrings("ws_plain", plan.workspace_id);
     try testing.expectEqualStrings("/repos/plain", plan.cwd);
 }
 
@@ -882,6 +949,7 @@ test "run_session: a refusal renders the code and an actionable sentence" {
     try testing.expectEqualStrings("worker_already_running", refusalCode(error.WorkerAlreadyRunning));
     try testing.expectEqualStrings("nothing_to_run", refusalCode(error.NothingToRun));
     try testing.expectEqualStrings("cwd_not_absolute", refusalCode(error.CwdNotAbsolute));
+    try testing.expectEqualStrings("cross_workspace_forbidden", refusalCode(error.CrossWorkspaceForbidden));
     try testing.expectEqualStrings("run_session_failed", refusalCode(error.Unexpected));
 
     const out = try refusalJSON(alloc, "worker_already_running", refusalMessage("worker_already_running"));
@@ -893,22 +961,25 @@ test "run_session: a refusal renders the code and an actionable sentence" {
     try testing.expect(std.mem.indexOf(u8, parsed.value.object.get("message").?.string, "already running") != null);
 }
 
-test "run_session: the schema and prompt teach the cross-workspace target" {
+test "run_session: the schema and prompt teach the same-workspace rule" {
     const tool = run_session_tool.function;
     try testing.expectEqualStrings("run_session", tool.name);
-    try testing.expect(std.mem.indexOf(u8, tool.description, "CROSS-WORKSPACE") != null);
+    try testing.expect(std.mem.indexOf(u8, tool.description, "SAME WORKSPACE ONLY") != null);
     try testing.expect(std.mem.indexOf(u8, tool.description, "ASYNCHRONOUS") != null);
-    try testing.expect(std.mem.indexOf(u8, run_session_tool_system_prompt, "ANOTHER workspace") != null);
+    try testing.expect(std.mem.indexOf(u8, run_session_tool_system_prompt, "IN YOUR OWN WORKSPACE") != null);
 
     var saw_id = false;
     var saw_name = false;
     for (tool.parameters.properties) |p| {
         if (std.mem.eql(u8, p.name, "workspace_id")) {
             saw_id = true;
-            // The LLM only tries another workspace if the parameter says so.
-            try testing.expect(std.mem.indexOf(u8, p.description, "another workspace") != null);
+            // The refusal is only discoverable if the parameter says so.
+            try testing.expect(std.mem.indexOf(u8, p.description, "refused") != null);
         }
         if (std.mem.eql(u8, p.name, "workspace_name")) saw_name = true;
+        if (std.mem.eql(u8, p.name, "session_id")) {
+            try testing.expect(std.mem.indexOf(u8, p.description, "YOUR workspace") != null);
+        }
     }
     try testing.expect(saw_id);
     try testing.expect(saw_name);
