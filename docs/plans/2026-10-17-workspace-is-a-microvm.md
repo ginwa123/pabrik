@@ -862,3 +862,38 @@ set per plan tier (a smaller `base` image + a fatter `dev` image is the obvious 
 - **The build needs the network once** (~19 s for 3.7 MB from here) and then works from cache.
   CI must cache by hash and must never skip verification to make a build faster.
 
+---
+
+## 22. P2 status (step a landed) — pabrik's own VM client
+
+`src/vmd/vm_client.zig` is the product's side of the protocol — boot, exec, stop — and
+`src/vmd/main.zig` is a CLI over it. `scripts/vmd-smoke.sh` asserts five behaviours:
+
+```
+[vmd-smoke] ok  exec over the Zig client -> hello / uid 1000 / Alpine 3.24.2
+[vmd-smoke] ok  exit=7 reported and stderr forwarded
+[vmd-smoke] ok  /workspace/keep.txt read back after a full VM restart
+[vmd-smoke] ok  deadline tripped, reported as timed_out
+[vmd-smoke] ok  $PABRIK_VM_DIR/workspaces/demo/{disk.ext4,api.sock,vsock.sock,serial.log,fc.log}
+```
+
+**The layout rule is now code, not a promise**: `layoutFor()` derives every path from a workspace
+id (`<root>/workspaces/<id>/…`), which is what lets P2b's RPC take an id and literally nothing else.
+The base image is cloned per workspace with `cp --reflink=auto` (O(1) on this box's btrfs), so the
+sealed disk from §9.1 is real and a workspace's files survive a stopped VM — asserted, not assumed.
+
+Three findings, all of which the daemon has to respect:
+
+1. **Ready is not "started".** The muxer accepts a `CONNECT` before the guest's listener exists, so
+   the first request can fail with a protocol error (my first attempt did). Readiness = **a retried
+   `hello` answered** (`waitReady`), the §10.1 definition — nothing weaker works.
+2. **Stale sockets break a boot.** Firecracker refuses to bind an `api.sock` that already exists, and
+   a killed VM leaves one behind. The manager unlinks both sockets before boot; in P2b the reconciler
+   must first prove no live VMM owns them.
+3. **The VMM must not inherit the manager's stdout.** Firecracker's early lines ("Running
+   Firecracker…", "Listening on API socket…") went to the CLI's stdout and corrupted the captured
+   command output. The child now writes both streams to the workspace's `fc.log` and reads stdin from
+   `/dev/null` — a daemon whose stdout is a protocol stream cannot let a child share it.
+
+Reproduce: `FC_BIN=<firecracker> scripts/vmd-smoke.sh` (needs `/dev/kvm`; no root, no tap, no sudo).
+
