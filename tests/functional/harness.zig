@@ -149,10 +149,14 @@ fn canonicalMissing(io: Io, allocator: Allocator, path: []const u8) ![]u8 {
     };
     const out = try std.fs.path.join(allocator, &.{ buf[0..len], base });
     defer allocator.free(out);
-    return allocator.dupe(u8, normcaseSlice(out));
+    const owned = try allocator.dupe(u8, out);
+    return normcaseSlice(owned);
 }
 
-fn normcaseSlice(s: []const u8) []const u8 {
+/// Lower-case an OWNED path in place on Windows (`C:\Tmp` and `c:\tmp` are
+/// the same directory there, and the safety gates compare prefixes). Takes
+/// `[]u8`, not `[]const u8`: it rewrites the buffer, and a const slice
+fn normcaseSlice(s: []u8) []u8 {
     if (!is_windows) return s;
     for (s) |*c| {
         if (c.* >= 'A' and c.* <= 'Z') c.* += 32;
@@ -619,7 +623,10 @@ pub const Harness = struct {
             // the binary spawned (a PTY a terminal test drives).
             .pgid = if (is_windows) null else 0,
         });
-        const child_pid: u32 = if (is_windows) @intCast(child.id.?) else @intCast(child.id.?);
+        // `child.id` is a process HANDLE on Windows, not a pid. Everything
+        // downstream of `child_pid` is POSIX-shaped — `pidAlive()` is
+        // hardcoded true there and `reapOrphanTestPids` never signals on
+        const child_pid: u32 = if (is_windows) 0 else @intCast(child.id.?);
 
         // 11. Record pids so a subsequent boot can reap us if we die.
         //     Format is "<harness_pid> <pabrik_pid>\n" — the same
@@ -633,7 +640,10 @@ pub const Harness = struct {
         //     propagate — the caller never gets a half-live harness.
         waitReady(io, gpa, chosen_port, opts.ready_timeout_s, child_pid, log_path) catch |err| {
             child.kill(io);
-            _ = child.wait(io) catch {};
+            // `kill` clears `id` on Windows (it closes the process handle),
+            // and `Child.wait` ASSERTS that it is set — so a slow boot would
+            // turn into an unreachable-code panic instead of the NotReady
+            if (child.id != null) _ = child.wait(io) catch {};
             return err;
         };
 
@@ -1181,12 +1191,16 @@ pub fn reapOrphanTestPids(io: Io, gpa: Allocator) !usize {
         // a concurrent scan must NOT kill it.
         if (pidAlive(harness_pid)) continue;
 
-        // Harness is dead. Kill the `pabrik` child if alive.
-        const self_pid: u32 = if (is_windows) 0 else @intCast(std.os.linux.getpid());
-        if (pabrik_pid != 0 and pabrik_pid != self_pid) {
-            posix.kill(@intCast(pabrik_pid), SIGTERM) catch {};
-            if (!waitPidDead(io, pabrik_pid, 1.0)) {
-                posix.kill(@intCast(pabrik_pid), SIGKILL) catch {};
+        // Harness is dead. Kill the `pabrik` child if alive — POSIX only:
+        // Windows has no `kill(pid)` by number, `pidAlive` is always true
+        // there (so the scan above never reaches this line), and
+        if (!is_windows) {
+            const self_pid: u32 = @intCast(std.os.linux.getpid());
+            if (pabrik_pid != 0 and pabrik_pid != self_pid) {
+                signalGroup(pabrik_pid, SIGTERM);
+                if (!waitPidDead(io, pabrik_pid, 1.0)) {
+                    signalGroup(pabrik_pid, SIGKILL);
+                }
             }
         }
 

@@ -3,11 +3,21 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-/// True on the platforms that can host a PTY session.
-pub const is_pty_os: bool = switch (builtin.os.tag) {
-    .linux, .macos => true,
-    else => false,
+/// Which pseudo-terminal backend this host has.
+///
+///   * `posix_pty` — `forkpty(3)`: Linux and macOS.
+pub const PtyBackend = enum { posix_pty, conpty, none };
+
+pub const pty_backend: PtyBackend = switch (builtin.os.tag) {
+    .linux, .macos => .posix_pty,
+    .windows => .conpty,
+    else => .none,
 };
+
+/// True on the platforms that can host a PTY session. Kept as the one
+/// name every caller (and `terminal_ws.zig`) gates on — it is now true on
+/// Windows too, because ConPTY is a real PTY and not a pipe fallback.
+pub const is_pty_os: bool = pty_backend != .none;
 
 /// Seconds of zero interaction after which an abandoned session is
 /// reaped (24h). Any open (attach flush), poll, input, or resize
@@ -99,13 +109,177 @@ const Timespec = extern struct {
 };
 
 // ---------------------------------------------------------------------
+// Win32 ConPTY surface (extern "kernel32" / "ws2_32" — no @cImport)
+//
+
+/// `HANDLE` — an opaque kernel object handle (pointer-sized). Absence is
+/// modelled as `null`, never as `INVALID_HANDLE_VALUE`.
+const HANDLE = *anyopaque;
+/// `BOOL` — a 32-bit signed int in the Win32 ABI (not Zig's `bool`).
+const WINBOOL = c_int;
+const DWORD = u32;
+/// `HRESULT` — `< 0` means failure.
+const HRESULT = i32;
+/// `COORD` — character-cell dimensions. X is the COLUMN count (this
+/// ordering is the classic Win32 trap: it is X-then-Y, i.e. cols-first).
+const Coord = extern struct { X: i16, Y: i16 };
+
+const SecurityAttributes = extern struct {
+    nLength: DWORD,
+    lpSecurityDescriptor: ?*anyopaque,
+    bInheritHandle: WINBOOL,
+};
+
+/// `STARTUPINFOW` (the `W` = UTF-16 variant).
+const StartupInfoW = extern struct {
+    cb: DWORD,
+    lpReserved: ?[*:0]u16,
+    lpDesktop: ?[*:0]u16,
+    lpTitle: ?[*:0]u16,
+    dwX: DWORD,
+    dwY: DWORD,
+    dwXSize: DWORD,
+    dwYSize: DWORD,
+    dwXCountChars: DWORD,
+    dwYCountChars: DWORD,
+    dwFillAttribute: DWORD,
+    dwFlags: DWORD,
+    wShowWindow: u16,
+    cbReserved2: u16,
+    lpReserved2: ?[*]u8,
+    hStdInput: ?HANDLE,
+    hStdOutput: ?HANDLE,
+    hStdError: ?HANDLE,
+};
+
+/// `STARTUPINFOEXW` — a `STARTUPINFOW` immediately followed by the
+/// attribute-list pointer. `cb` must be `@sizeOf` THIS struct, which is
+/// what tells `CreateProcessW` the attribute list is present.
+const StartupInfoExW = extern struct {
+    StartupInfo: StartupInfoW,
+    lpAttributeList: ?*anyopaque,
+};
+
+const ProcessInformation = extern struct {
+    hProcess: HANDLE,
+    hThread: HANDLE,
+    dwProcessId: DWORD,
+    dwThreadId: DWORD,
+};
+
+/// `PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE` — the attribute slot that hands
+/// the fresh pseudoconsole to the child instead of letting it allocate a
+/// console of its own.
+const PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE: usize = 0x00020016;
+/// `EXTENDED_STARTUPINFO_PRESENT`.
+const EXTENDED_STARTUPINFO_PRESENT: DWORD = 0x00080000;
+/// `HANDLE_FLAG_INHERIT`.
+const HANDLE_FLAG_INHERIT: DWORD = 0x00000001;
+/// `STARTF_USESTDHANDLES` — "the hStd* fields are the child's standard
+/// handles, use THEM". Load-bearing on both Windows backends: without it the
+/// OS quietly duplicates the CALLER's standard handles into a console-flagged
+const STARTF_USESTDHANDLES: DWORD = 0x00000100;
+/// `WaitForSingleObject`'s "signaled" result.
+const WAIT_OBJECT_0: DWORD = 0;
+/// `WaitForSingleObject`'s "the deadline passed" result.
+const WAIT_TIMEOUT: DWORD = 258;
+
+extern "kernel32" fn CreatePseudoConsole(size: Coord, hInput: HANDLE, hOutput: HANDLE, dwFlags: DWORD, phPC: *HANDLE) callconv(.winapi) HRESULT;
+extern "kernel32" fn ResizePseudoConsole(hPC: HANDLE, size: Coord) callconv(.winapi) HRESULT;
+extern "kernel32" fn ClosePseudoConsole(hPC: HANDLE) callconv(.winapi) void;
+extern "kernel32" fn CreatePipe(hReadPipe: *HANDLE, hWritePipe: *HANDLE, lpPipeAttributes: ?*SecurityAttributes, nSize: DWORD) callconv(.winapi) WINBOOL;
+extern "kernel32" fn PeekNamedPipe(hNamedPipe: HANDLE, lpBuffer: ?*anyopaque, nBufferSize: DWORD, lpBytesRead: ?*DWORD, lpTotalBytesAvail: ?*DWORD, lpBytesLeftThisMessage: ?*DWORD) callconv(.winapi) WINBOOL;
+extern "kernel32" fn ReadFile(hFile: HANDLE, lpBuffer: [*]u8, nNumberOfBytesToRead: DWORD, lpNumberOfBytesRead: ?*DWORD, lpOverlapped: ?*anyopaque) callconv(.winapi) WINBOOL;
+extern "kernel32" fn WriteFile(hFile: HANDLE, lpBuffer: [*]const u8, nNumberOfBytesToWrite: DWORD, lpNumberOfBytesWritten: ?*DWORD, lpOverlapped: ?*anyopaque) callconv(.winapi) WINBOOL;
+extern "kernel32" fn CloseHandle(hObject: HANDLE) callconv(.winapi) WINBOOL;
+extern "kernel32" fn TerminateProcess(hProcess: HANDLE, uExitCode: c_uint) callconv(.winapi) WINBOOL;
+extern "kernel32" fn WaitForSingleObject(hHandle: HANDLE, dwMilliseconds: DWORD) callconv(.winapi) DWORD;
+extern "kernel32" fn GetExitCodeProcess(hProcess: HANDLE, lpExitCode: *DWORD) callconv(.winapi) WINBOOL;
+extern "kernel32" fn SetHandleInformation(hObject: HANDLE, dwMask: DWORD, dwFlags: DWORD) callconv(.winapi) WINBOOL;
+extern "kernel32" fn InitializeProcThreadAttributeList(lpAttributeList: ?*anyopaque, dwAttributeCount: DWORD, dwFlags: DWORD, lpSize: *usize) callconv(.winapi) WINBOOL;
+extern "kernel32" fn UpdateProcThreadAttribute(lpAttributeList: *anyopaque, dwFlags: DWORD, attribute: usize, lpValue: *const anyopaque, cbSize: usize, lpPreviousValue: ?*anyopaque, lpReturnSize: ?*usize) callconv(.winapi) WINBOOL;
+extern "kernel32" fn DeleteProcThreadAttributeList(lpAttributeList: *anyopaque) callconv(.winapi) void;
+extern "kernel32" fn CreateProcessW(
+    lpApplicationName: ?[*:0]const u16,
+    lpCommandLine: ?[*:0]u16,
+    lpProcessAttributes: ?*SecurityAttributes,
+    lpThreadAttributes: ?*SecurityAttributes,
+    bInheritHandles: WINBOOL,
+    dwCreationFlags: DWORD,
+    lpEnvironment: ?[*:0]const u16,
+    lpCurrentDirectory: ?[*:0]const u16,
+    lpStartupInfo: *StartupInfoW,
+    lpProcessInformation: *ProcessInformation,
+) callconv(.winapi) WINBOOL;
+
+/// `WSAPOLLFD` — Winsock's poll record. `fd` is POINTER-sized (`SOCKET`
+/// is `UINT_PTR`), unlike POSIX `struct pollfd`, so the `PollFd` above
+/// cannot be reused: a 4-byte `fd` would put `events` four bytes early
+const WsaPollFd = extern struct { fd: usize, events: i16, revents: i16 };
+/// `POLLRDNORM` — Winsock's "readable" bit. It is 0x0100, NOT POSIX
+/// `POLLIN`'s 0x001; the two spaces do not overlap.
+const POLLRDNORM: i16 = 0x0100;
+extern "ws2_32" fn WSAPoll(fdarray: [*]WsaPollFd, nfds: c_ulong, timeout: c_int) callconv(.c) c_int;
+
+/// Widen kabelweb's `i32` SOCKET value to the pointer-sized `SOCKET`
+/// `WSAPOLLFD.fd` wants. Sign-preserving on purpose: `-1`
+/// (`INVALID_SOCKET`) must widen to the all-ones pattern `WSAPoll`
+fn socketToUsize(sock: i32) usize {
+    return @as(usize, @bitCast(@as(isize, sock)));
+}
+
+/// Which side of a websocket pump's multiplex has something to say.
+pub const Readiness = struct { pty: bool, sock: bool };
+
+/// Block until the session has console output or the client socket is
+/// readable, or `timeout_ms` elapses. One call site (`terminal_ws.zig`),
+/// so neither backend's readiness vocabulary leaks upward.
+pub fn waitReadable(s: *Session, client_fd: i32, timeout_ms: c_int) Readiness {
+    if (comptime pty_backend == .conpty) {
+        var fds = [_]WsaPollFd{.{ .fd = socketToUsize(client_fd), .events = POLLRDNORM, .revents = 0 }};
+        const rc = WSAPoll(&fds, 1, timeout_ms);
+        return .{ .pty = true, .sock = rc > 0 and (fds[0].revents & POLLRDNORM) != 0 };
+    } else {
+        var pfds = [_]PollFd{
+            .{ .fd = s.masterFd(), .events = POLLIN, .revents = 0 },
+            .{ .fd = client_fd, .events = POLLIN, .revents = 0 },
+        };
+        if (poll(&pfds, 2, timeout_ms) < 0) return .{ .pty = false, .sock = false };
+        return .{ .pty = (pfds[0].revents & POLLIN) != 0, .sock = (pfds[1].revents & POLLIN) != 0 };
+    }
+}
+
+/// Which Windows mechanism is BEHIND a session's handle set. Both feed the
+/// same ring buffer, so only two things read this: `resizeSession` (a pipe
+/// has no window size to set) and the create response, which reports it so
+pub const WinBackend = enum { conpty, pipe };
+
+/// The ConPTY handle set. Four kernel objects per session, all owned by
+/// the session and all released by `reapSession`:
+///
+pub const WinPty = struct {
+    kind: WinBackend = .conpty,
+    pc: ?HANDLE = null,
+    in_write: ?HANDLE = null,
+    out_read: ?HANDLE = null,
+    proc: ?HANDLE = null,
+    thread: ?HANDLE = null,
+};
+
+// ---------------------------------------------------------------------
 // Session
 // ---------------------------------------------------------------------
 
 pub const Session = struct {
     id: []u8,
+    /// POSIX PTY master fd, or `-1` on a ConPTY host.
     master_fd: c_int,
+    /// POSIX child pid, or the Windows process id on a ConPTY host (the
+    /// NumProcessId `CreateProcessW` reported — used for BOTH the create
+    /// response's `pid` and the exit check, so the two can never disagree).
     child_pid: c_int,
+    /// Windows ConPTY handles; empty on POSIX.
+    win: WinPty = .{},
     cols: u16,
     rows: u16,
     /// Owning user id (plan 2026-09-25, W2.5).
@@ -262,18 +436,6 @@ pub fn insertSessionForTest(owner: []const u8) SessionError!*Session {
     return session;
 }
 
-/// Test-only: the PTY backend this host has, as an explicit per-host table.
-/// A host with no row is a compile error, never a third silent branch.
-const PtyBackend = enum { posix_pty, none };
-
-fn ptyBackend() PtyBackend {
-    return switch (builtin.os.tag) {
-        .linux, .macos => .posix_pty,
-        .windows => .none,
-        else => @compileError("terminal_session: no PTY-backend row for this host"),
-    };
-}
-
 /// Test-only hook invoked by `sweepIdleExcluding` right after the victims are
 /// detached from the registry (g_mutex already released) and before teardown
 /// begins.
@@ -359,10 +521,14 @@ fn sweepIdleExcluding(exclude: ?*Session) void {
 // Pure validation (unit-tested, no syscalls)
 // ---------------------------------------------------------------------
 
+/// A validated (cols, rows) pair. Named so both create paths and the
+/// session record can pass it around as one value.
+pub const Dims = struct { cols: u16, rows: u16 };
+
 /// Validate create inputs without touching the OS. `cwd` must be a
 /// non-empty absolute path; `cols`/`rows` fall back to defaults when
 /// null and must land in [min_dim, max_dim] otherwise.
-pub fn validateCreate(cwd: []const u8, cols: ?u16, rows: ?u16) SessionError!struct { cols: u16, rows: u16 } {
+pub fn validateCreate(cwd: []const u8, cols: ?u16, rows: ?u16) SessionError!Dims {
     if (cwd.len == 0 or !std.fs.path.isAbsolute(cwd)) return error.InvalidCwd;
     const c = cols orelse default_cols;
     const r = rows orelse default_rows;
@@ -423,14 +589,31 @@ fn checkSessionCapacity() SessionError!void {
 pub const SessionInfo = struct {
     id: []const u8,
     pid: i32,
+    /// Which console this session ACTUALLY got, as a wire string. On Linux
+    /// and macOS that is always "posix-pty". On Windows it is "conpty" for a
+    /// real pseudoconsole and "pipe" for the degraded fallback, and the
+    backend: []const u8,
 };
+
+/// The wire names `SessionInfo.backend` can take.
+pub const backend_posix_pty: []const u8 = "posix-pty";
+pub const backend_conpty: []const u8 = "conpty";
+pub const backend_pipe: []const u8 = "pipe";
 
 /// Spawn a shell on a fresh PTY. `shell` null/empty selects `$SHELL`, then
 /// `/bin/bash`, then `/bin/sh`. `owner` is the server-derived user id (plan
 /// 2026-09-25, W2.5).
 pub fn createSession(io: std.Io, cwd: []const u8, shell: ?[]const u8, cols: ?u16, rows: ?u16, owner: []const u8) SessionError!SessionInfo {
-    if (comptime !is_pty_os) return error.UnsupportedPlatform;
-    return createSessionPosix(io, cwd, shell, cols, rows, owner);
+    // `if (comptime ...) { } else { }` rather than two early returns: Zig
+    // elides the NOT-taken branch of a comptime-known condition, and only
+    // the taken one is analyzed. That is what lets one file hold both
+    if (comptime pty_backend == .conpty) {
+        return createSessionWin(io, cwd, shell, cols, rows, owner);
+    } else if (comptime pty_backend == .posix_pty) {
+        return createSessionPosix(io, cwd, shell, cols, rows, owner);
+    } else {
+        return error.UnsupportedPlatform;
+    }
 }
 
 /// True when `caller_owner` may drive `s`.
@@ -458,7 +641,19 @@ fn allocId() SessionError![]u8 {
     return std.fmt.allocPrint(g_alloc, "term-{x}", .{n}) catch return error.OutOfMemory;
 }
 
+/// The default shell for this host. POSIX: `$SHELL`, then `/bin/bash`.
+/// Windows: `%COMSPEC%`, then the System32 path a machine that has no
+/// COMSPEC still has one at. UTF-8 in, UTF-8 out — the create path
 fn defaultShell() []const u8 {
+    if (comptime pty_backend == .conpty) {
+        // `cmd.exe` is what a Windows console gives you, and COMSPEC is
+        // where Explorer/the OS points at it.
+        if (getenv("COMSPEC")) |s| {
+            const span = std.mem.span(s);
+            if (span.len > 0 and std.fs.path.isAbsolute(span)) return span;
+        }
+        return "C:\\Windows\\System32\\cmd.exe";
+    }
     // $SHELL via libc (no allocator, no std.posix.getenv in 0.16).
     if (getenv("SHELL")) |s| {
         const span = std.mem.span(s);
@@ -551,7 +746,7 @@ fn createSessionPosix(io: std.Io, cwd: []const u8, shell_opt: ?[]const u8, cols_
     };
     g_mutex.unlock();
 
-    return .{ .id = id, .pid = @intCast(pid) };
+    return .{ .id = id, .pid = @intCast(pid), .backend = backend_posix_pty };
 }
 
 /// Child side of forkpty: chdir, set TERM, exec the shell. Diverges
@@ -574,6 +769,425 @@ fn childMain(cwd: []const u8, shell_path: []const u8) noreturn {
     _exit(127);
 }
 
+// ---------------------------------------------------------------------
+// Windows ConPTY backend
+//
+
+/// Copy `src` into `dst` as NUL-terminated UTF-16LE. Returns the slice
+/// WITHOUT the terminator (the terminator is what the `W` calls read).
+/// A path longer than `dst` fails closed: truncating here would spawn the
+fn utf8ToWide(dst: []u16, src: []const u8) SessionError![:0]u16 {
+    if (dst.len == 0) return error.SpawnFailed;
+    const n = std.unicode.utf8ToUtf16Le(dst[0 .. dst.len - 1], src) catch return error.SpawnFailed;
+    dst[n] = 0;
+    return dst[0..n :0];
+}
+
+/// The handle set a Windows spawn produced, before any Session owns it.
+const WinSpawn = struct {
+    handles: WinPty = .{},
+    pid: DWORD = 0,
+};
+
+/// Windows create. Validates once, then spawns on the best backend this
+/// host can actually deliver.
+///
+fn createSessionWin(io: std.Io, cwd: []const u8, shell: ?[]const u8, cols: ?u16, rows: ?u16, owner: []const u8) SessionError!SessionInfo {
+    // Empty cwd (fresh standalone chats have no session cwd yet): fall back
+    // to the server process cwd, mirroring the POSIX path exactly.
+    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const eff_cwd: []const u8 = if (cwd.len == 0) blk: {
+        const ptr = getcwd(&cwd_buf, cwd_buf.len) orelse return error.CwdNotDir;
+        break :blk std.mem.span(ptr);
+    } else cwd;
+
+    const dims = try validateCreate(eff_cwd, cols, rows);
+    try validateShell(shell);
+
+    // eff_cwd must exist and be a directory. Checked BEFORE the spawn so a
+    // bad cwd is a clean 404 and never a shell that exits instantly.
+    {
+        var dir = std.Io.Dir.openDirAbsolute(io, eff_cwd, .{}) catch return error.CwdNotDir;
+        dir.close(io);
+    }
+
+    sweepIdle();
+    try checkSessionCapacity();
+
+    const shell_path: []const u8 = blk: {
+        const s = shell orelse "";
+        if (s.len > 0) break :blk s;
+        break :blk defaultShell();
+    };
+
+    var spawned: WinSpawn = if (createSessionConPty(eff_cwd, dims, shell_path)) |s| s else |err| switch (err) {
+        error.PseudoConsoleUnusable => blk: {
+            // Loud on purpose: an operator reading a log must not have to
+            // guess why their terminal has no prompt.
+            std.debug.print(
+                "terminal: this host's pseudoconsole never produced a byte and its client did not survive " ++
+                    "initialisation (see terminal_session.zig); creating the session with the pipe backend instead " ++
+                    "— input, output and exit work, but there is no prompt echo, no ANSI and no window resize\n",
+                .{},
+            );
+            break :blk try createSessionPipeWin(eff_cwd, dims, shell_path);
+        },
+        // `@as` widens what is left to the public set: a bare `return err`
+        // here would put `PseudoConsoleUnusable` back into THIS function's
+        // error set, increasing the type every caller has to switch on.
+        else => |e| return @as(SessionError, e),
+    };
+
+    // From here a real shell exists, so EVERY exit must release it. The
+    // session takes the handle set; until it exists, `spawned` owns it.
+    var session: ?*Session = null;
+    var id: ?[]u8 = null;
+    var owner_copy: ?[]u8 = null;
+    errdefer {
+        if (session) |s| {
+            reapSessionWin(s);
+            g_alloc.free(s.owner);
+            g_alloc.free(s.id);
+            g_alloc.destroy(s);
+        } else {
+            closeWinHandles(spawned.handles, false);
+            if (owner_copy) |o| g_alloc.free(o);
+            if (id) |i| g_alloc.free(i);
+        }
+    }
+
+    id = try allocId();
+    owner_copy = g_alloc.dupe(u8, owner) catch return error.OutOfMemory;
+    const s = g_alloc.create(Session) catch return error.OutOfMemory;
+    s.* = winSessionRecord(id.?, owner_copy.?, spawned.handles, spawned.pid, dims);
+    session = s;
+    // Ownership moved; a later failure must not close these twice.
+    spawned.handles = .{};
+    spawned.pid = 0;
+
+    const reg = registry();
+    mutexLock(&g_mutex);
+    reg.put(id.?, s) catch {
+        g_mutex.unlock();
+        return error.OutOfMemory;
+    };
+    g_mutex.unlock();
+    return .{ .id = id.?, .pid = @intCast(s.child_pid), .backend = if (s.win.kind == .conpty) backend_conpty else backend_pipe };
+}
+
+/// The Session record for a Windows spawn. One literal for both backends:
+/// only the handle set and the reported kind differ.
+fn winSessionRecord(id: []u8, owner: []u8, handles: WinPty, pid: DWORD, dims: Dims) Session {
+    return .{
+        .id = id,
+        .master_fd = -1,
+        .child_pid = @intCast(pid),
+        .win = handles,
+        .cols = dims.cols,
+        .rows = dims.rows,
+        .owner = owner,
+        .buf = .empty,
+        .base = 0,
+        .total = 0,
+        .exited = false,
+        .exit_code = null,
+        .mutex = .unlocked,
+        .last_active_s = nowSeconds(),
+        .last_user_active_s = nowSeconds(),
+        .last_output_at_s = 0,
+        .last_output_total = 0,
+    };
+}
+
+/// A Windows spawn that failed AND may be retried on the other backend.
+const WinSpawnError = SessionError || error{PseudoConsoleUnusable};
+
+fn createSessionConPty(eff_cwd: []const u8, dims: Dims, shell_path: []const u8) WinSpawnError!WinSpawn {
+
+    // UTF-16 conversions for the two `W` calls.
+    var cwd_w: [std.fs.max_path_bytes + 1]u16 = undefined;
+    var shell_w: [std.fs.max_path_bytes + 1]u16 = undefined;
+    const cwd_z = try utf8ToWide(&cwd_w, eff_cwd);
+    const shell_z = try utf8ToWide(&shell_w, shell_path);
+
+    // `lpApplicationName` stays null and the command line's first token is
+    // the QUOTED application path — the documented way to name an
+    // executable that may contain spaces (`C:\Program Files\...`).
+    var cmdline_w: [std.fs.max_path_bytes + 3]u16 = undefined;
+    cmdline_w[0] = '"';
+    @memcpy(cmdline_w[1..][0..shell_z.len], shell_z);
+    cmdline_w[1 + shell_z.len] = '"';
+    cmdline_w[2 + shell_z.len] = 0;
+    // Length is the opening quote + the path + the closing quote; the NUL at
+    // `2 + len` is the sentinel the slice type asserts. Off by one here is
+    // a panic, not a silent over-read past the end of the command line.
+    const cmdline: [:0]u16 = cmdline_w[0 .. 2 + shell_z.len :0];
+
+    // ---- pipes -------------------------------------------------------
+    // `bInheritHandle` is 1 only so the console can pick them up; every
+    // flag is cleared again below. A null HANDLE is "absent", so the
+    var sa = SecurityAttributes{
+        .nLength = @sizeOf(SecurityAttributes),
+        .lpSecurityDescriptor = null,
+        .bInheritHandle = 1,
+    };
+
+    var in_read_h: ?HANDLE = null;
+    var in_write_h: ?HANDLE = null;
+    var out_read_h: ?HANDLE = null;
+    var out_write_h: ?HANDLE = null;
+    var pc_h: ?HANDLE = null;
+    var child: ?ProcessInformation = null;
+    errdefer {
+        if (child) |pi| {
+            _ = TerminateProcess(pi.hProcess, 1);
+            _ = WaitForSingleObject(pi.hProcess, 200);
+            _ = CloseHandle(pi.hProcess);
+            _ = CloseHandle(pi.hThread);
+        }
+        if (pc_h) |h| ClosePseudoConsole(h);
+        if (in_write_h) |h| _ = CloseHandle(h);
+        if (out_read_h) |h| _ = CloseHandle(h);
+        if (in_read_h) |h| _ = CloseHandle(h);
+        if (out_write_h) |h| _ = CloseHandle(h);
+    }
+
+    {
+        var r: HANDLE = undefined;
+        var w: HANDLE = undefined;
+        if (CreatePipe(&r, &w, &sa, 0) == 0) return error.SpawnFailed;
+        in_read_h = r;
+        in_write_h = w;
+    }
+    {
+        var r: HANDLE = undefined;
+        var w: HANDLE = undefined;
+        if (CreatePipe(&r, &w, &sa, 0) == 0) return error.SpawnFailed;
+        out_read_h = r;
+        out_write_h = w;
+    }
+    // NOTHING crosses into the child by inheritance: the pseudoconsole
+    // attribute is what wires the child's console, and an inherited copy
+    // of the write end would keep the input pipe open after we close it.
+    _ = SetHandleInformation(in_read_h.?, HANDLE_FLAG_INHERIT, 0);
+    _ = SetHandleInformation(in_write_h.?, HANDLE_FLAG_INHERIT, 0);
+    _ = SetHandleInformation(out_read_h.?, HANDLE_FLAG_INHERIT, 0);
+    _ = SetHandleInformation(out_write_h.?, HANDLE_FLAG_INHERIT, 0);
+
+    {
+        var pc: HANDLE = undefined;
+        // COORD is X-then-Y and X is the COLUMN count.
+        const hr = CreatePseudoConsole(.{ .X = @intCast(dims.cols), .Y = @intCast(dims.rows) }, in_read_h.?, out_write_h.?, 0, &pc);
+        if (hr < 0) return error.SpawnFailed;
+        pc_h = pc;
+    }
+
+    // ---- attribute list + process ------------------------------------
+    {
+        var attr_size: usize = 0;
+        _ = InitializeProcThreadAttributeList(null, 1, 0, &attr_size);
+        if (attr_size == 0) return error.SpawnFailed;
+        const attr_buf = g_alloc.alignedAlloc(u8, std.mem.Alignment.of(usize), attr_size) catch return error.OutOfMemory;
+        defer g_alloc.free(attr_buf);
+        if (InitializeProcThreadAttributeList(attr_buf.ptr, 1, 0, &attr_size) == 0) return error.SpawnFailed;
+        defer DeleteProcThreadAttributeList(attr_buf.ptr);
+
+        var si: StartupInfoExW = std.mem.zeroes(StartupInfoExW);
+        // `cb` must cover the EX attribute, or CreateProcessW reads the
+        // attribute pointer as uninitialised tail bytes and ignores it.
+        si.StartupInfo.cb = @sizeOf(StartupInfoExW);
+        si.lpAttributeList = attr_buf.ptr;
+        // The attribute VALUE is the HPCON itself, so the pointer we hand
+        // over must address a plain HANDLE — `&pc_h` would be a pointer to
+        // an OPTIONAL, and `&pc_value` is a pointer to a pointer, since
+        const pc_value: HANDLE = pc_h.?;
+        if (UpdateProcThreadAttribute(attr_buf.ptr, 0, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, @ptrCast(&pc_value), @sizeOf(HANDLE), null, null) == 0) return error.SpawnFailed;
+
+        var pi: ProcessInformation = undefined;
+        const ok = CreateProcessW(
+            null,
+            cmdline.ptr,
+            null,
+            null,
+            1, // bInheritHandles — no handle is flagged inheritable; the
+            // console, not inheritance, wires the child.
+            EXTENDED_STARTUPINFO_PRESENT,
+            null, // lpEnvironment: inherit ours
+            cwd_z.ptr,
+            &si.StartupInfo,
+            &pi,
+        );
+        if (ok == 0) return error.SpawnFailed;
+        child = pi;
+    }
+
+    // ---- is the pseudoconsole actually SERVICING this client? --------
+    // A console that works puts the shell's prompt on OUR output pipe
+    // within milliseconds. A console whose client dies during DLL
+    if (!pseudoconsoleIsLive(out_read_h.?, child.?.hProcess)) return error.PseudoConsoleUnusable;
+
+    // The console owns its pipe ends from here on; ours are closed so the
+    // child's output reaches exactly one reader.
+    in_read_h = null;
+    out_write_h = null;
+
+    const pi = child.?;
+    const handles = WinPty{
+        .kind = .conpty,
+        .pc = pc_h,
+        .in_write = in_write_h,
+        .out_read = out_read_h,
+        .proc = pi.hProcess,
+        .thread = pi.hThread,
+    };
+    // Ownership moves to the returned WinSpawn: the errdefer above must
+    // not close these on a later failure.
+    pc_h = null;
+    in_write_h = null;
+    out_read_h = null;
+    child = null;
+    return .{ .handles = handles, .pid = pi.dwProcessId };
+}
+
+/// How long a fresh pseudoconsole gets to produce its first byte (and how
+/// finely we look), before we decide it is not servicing its client.
+const conpty_probe_ms: usize = 1500;
+const conpty_probe_step_ms: usize = 25;
+
+/// Does this pseudoconsole actually work?
+///
+/// A console that works puts the shell's prompt on OUR output pipe within
+fn pseudoconsoleIsLive(out_read: HANDLE, proc: HANDLE) bool {
+    var waited: usize = 0;
+    while (waited < conpty_probe_ms) : (waited += conpty_probe_step_ms) {
+        var avail: DWORD = 0;
+        if (PeekNamedPipe(out_read, null, 0, null, &avail, null) == 0) return false;
+        if (avail > 0) return true;
+        if (WaitForSingleObject(proc, 0) == WAIT_OBJECT_0) return false;
+        sleepMillis(conpty_probe_step_ms);
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------------
+// Windows pipe backend — the fallback behind `error.PseudoConsoleUnusable`
+//
+
+/// Returns the PLAIN `SessionError`: unlike the pseudoconsole path there is
+/// nothing to fall back FROM, so `PseudoConsoleUnusable` is not in its set
+/// and the caller's `try` cannot smuggle it out.
+fn createSessionPipeWin(eff_cwd: []const u8, dims: Dims, shell_path: []const u8) SessionError!WinSpawn {
+    _ = dims; // a pipe has no window size; the dims are recorded by the caller
+    var cwd_w: [std.fs.max_path_bytes + 1]u16 = undefined;
+    var shell_w: [std.fs.max_path_bytes + 1]u16 = undefined;
+    const cwd_z = try utf8ToWide(&cwd_w, eff_cwd);
+    const shell_z = try utf8ToWide(&shell_w, shell_path);
+
+    var cmdline_w: [std.fs.max_path_bytes + 3]u16 = undefined;
+    cmdline_w[0] = '"';
+    @memcpy(cmdline_w[1..][0..shell_z.len], shell_z);
+    cmdline_w[1 + shell_z.len] = '"';
+    cmdline_w[2 + shell_z.len] = 0;
+    const cmdline: [:0]u16 = cmdline_w[0 .. 2 + shell_z.len :0];
+
+    var sa = SecurityAttributes{
+        .nLength = @sizeOf(SecurityAttributes),
+        .lpSecurityDescriptor = null,
+        .bInheritHandle = 1,
+    };
+
+    var in_read_h: ?HANDLE = null;
+    var in_write_h: ?HANDLE = null;
+    var out_read_h: ?HANDLE = null;
+    var out_write_h: ?HANDLE = null;
+    var child: ?ProcessInformation = null;
+    errdefer {
+        if (child) |pi| {
+            _ = TerminateProcess(pi.hProcess, 1);
+            _ = WaitForSingleObject(pi.hProcess, 200);
+            _ = CloseHandle(pi.hProcess);
+            _ = CloseHandle(pi.hThread);
+        }
+        if (in_write_h) |h| _ = CloseHandle(h);
+        if (out_read_h) |h| _ = CloseHandle(h);
+        if (in_read_h) |h| _ = CloseHandle(h);
+        if (out_write_h) |h| _ = CloseHandle(h);
+    }
+
+    // stdin: the shell reads `in_read_h`, we write `in_write_h`.
+    {
+        var r: HANDLE = undefined;
+        var w: HANDLE = undefined;
+        if (CreatePipe(&r, &w, &sa, 0) == 0) return error.SpawnFailed;
+        in_read_h = r;
+        in_write_h = w;
+    }
+    // stdout + stderr share ONE pipe: the panel renders one stream, and a
+    // second reader would mean a second writer to the ring buffer for no
+    // gain beyond interleaving the two.
+    {
+        var r: HANDLE = undefined;
+        var w: HANDLE = undefined;
+        if (CreatePipe(&r, &w, &sa, 0) == 0) return error.SpawnFailed;
+        out_read_h = r;
+        out_write_h = w;
+    }
+    // Only the CHILD's ends may cross into it.
+    _ = SetHandleInformation(in_write_h.?, HANDLE_FLAG_INHERIT, 0);
+    _ = SetHandleInformation(out_read_h.?, HANDLE_FLAG_INHERIT, 0);
+
+    var si: StartupInfoExW = std.mem.zeroes(StartupInfoExW);
+    si.StartupInfo.cb = @sizeOf(StartupInfoW);
+    // Here the pipes ARE the child's standard handles, and saying so is what
+    // stops the OS from quietly duplicating ours instead.
+    si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    si.StartupInfo.hStdInput = in_read_h.?;
+    si.StartupInfo.hStdOutput = out_write_h.?;
+    si.StartupInfo.hStdError = out_write_h.?;
+
+    var pi: ProcessInformation = undefined;
+    // bInheritHandles = 1: the three handles above are the only inheritable
+    // ones, so exactly they cross.
+    if (CreateProcessW(null, cmdline.ptr, null, null, 1, 0, null, cwd_z.ptr, &si.StartupInfo, &pi) == 0) return error.SpawnFailed;
+    child = pi;
+
+    // The child owns its ends now; ours would only keep the pipes alive
+    // past its exit (so `PeekNamedPipe` would never report end-of-input).
+    _ = CloseHandle(in_read_h.?);
+    _ = CloseHandle(out_write_h.?);
+    in_read_h = null;
+    out_write_h = null;
+
+    const handles = WinPty{
+        .kind = .pipe,
+        .in_write = in_write_h,
+        .out_read = out_read_h,
+        .proc = pi.hProcess,
+        .thread = pi.hThread,
+    };
+    in_write_h = null;
+    out_read_h = null;
+    child = null;
+    return .{ .handles = handles, .pid = pi.dwProcessId };
+}
+
+/// Release a Windows handle set whose owner has already cleared its copy:
+/// close OUR input write end (the shell sees end-of-input and leaves), close
+/// the pseudoconsole when there is one, wait briefly for the shell, kill it
+fn closeWinHandles(win: WinPty, already_exited: bool) void {
+    if (win.in_write) |h| _ = CloseHandle(h);
+    if (win.pc) |h| ClosePseudoConsole(h);
+    if (win.proc) |h| {
+        if (!already_exited and WaitForSingleObject(h, 250) == WAIT_TIMEOUT) {
+            _ = TerminateProcess(h, 1);
+            _ = WaitForSingleObject(h, 250);
+        }
+        _ = CloseHandle(h);
+    }
+    if (win.thread) |h| _ = CloseHandle(h);
+    if (win.out_read) |h| _ = CloseHandle(h);
+}
+
 /// Drain newly arrived output into the session buffer and refresh the
 /// exit state. Safe to call on every poll; never blocks (zero-timeout
 /// `poll()` gates each `read()`).
@@ -586,7 +1200,46 @@ pub fn drainSession(s: *Session) void {
     pollExitLocked(s);
 }
 
+/// Host dispatch for the drain. Both backends append into the SAME ring
+/// buffer through `appendLocked`, which is why every layer above this
+/// point (`sliceOutput` / `readOutput` / `readOutputAlloc` / the websocket
 fn drainLocked(s: *Session) void {
+    // if/else, not two early returns: only the taken branch of a
+    // comptime-known condition is analyzed, and a statement FOLLOWING such
+    // an `if` still is. That distinction is what keeps `poll(2)`/`read(2)`
+    if (comptime pty_backend == .conpty) {
+        drainLockedWin(s);
+    } else {
+        drainLockedPosix(s);
+    }
+}
+
+/// Win32 drain, for BOTH Windows backends (a pseudoconsole's output pipe and
+/// the pipe fallback's stdout pipe are the same kind of object to us):
+/// `PeekNamedPipe` is the non-blocking readiness probe — it
+fn drainLockedWin(s: *Session) void {
+    // A null handle means no ConPTY to drain (a sessionless test row, or a
+    // session already reaped).
+    const h = s.win.out_read orelse return;
+    var chunk: [8192]u8 = undefined;
+    var drained: usize = 0;
+    var iters: usize = 0;
+    while (iters < max_drain_iters and drained < max_drain_bytes_per_call) {
+        iters += 1;
+        var avail: DWORD = 0;
+        if (PeekNamedPipe(h, null, 0, null, &avail, null) == 0) return;
+        if (avail == 0) return;
+        const want: DWORD = @intCast(@min(@as(usize, avail), chunk.len));
+        var got: DWORD = 0;
+        if (ReadFile(h, &chunk, want, &got, null) == 0) return;
+        if (got == 0) return;
+        const m: usize = @intCast(got);
+        appendLocked(s, chunk[0..m]);
+        drained += m;
+    }
+}
+
+fn drainLockedPosix(s: *Session) void {
     // No master fd => no PTY to drain (a session with no OS handles).
     if (s.master_fd < 0) return;
     var pfds = [_]PollFd{.{ .fd = s.master_fd, .events = POLLIN, .revents = 0 }};
@@ -663,6 +1316,29 @@ fn shrinkCapacityLocked(s: *Session) void {
 /// Non-blocking child reaping. Sets `exited`/`exit_code` exactly once.
 fn pollExitLocked(s: *Session) void {
     if (s.exited) return;
+    if (comptime pty_backend == .conpty) {
+        pollExitLockedWin(s);
+    } else {
+        pollExitLockedPosix(s);
+    }
+}
+
+/// Win32 exit check, for both backends (the process handle is the process
+/// handle). `WaitForSingleObject(..., 0)` is the non-blocking "has it
+/// finished" probe — `waitpid(WNOHANG)`'s counterpart — and the
+fn pollExitLockedWin(s: *Session) void {
+    const h = s.win.proc orelse return;
+    if (WaitForSingleObject(h, 0) != WAIT_OBJECT_0) return;
+    var code: DWORD = 0;
+    if (GetExitCodeProcess(h, &code) == 0) return;
+    s.exited = true;
+    // Windows exit codes are UNSIGNED. Bit-cast rather than @intCast so a
+    // code above INT_MAX (STATUS_CONTROL_C_EXIT is 0xC000013A) reports as
+    // a negative number instead of panicking a debug build.
+    s.exit_code = @bitCast(code);
+}
+
+fn pollExitLockedPosix(s: *Session) void {
     // No OS child => nothing to reap. Also keeps `waitpid` off pid 0, which
     // means "any child of this process group".
     if (s.child_pid <= 0) return;
@@ -684,9 +1360,9 @@ fn decodeStatus(status: c_int) i32 {
     return -@as(i32, @intCast(sig));
 }
 
-/// Write input bytes to the PTY master (terminal input = keystrokes).
+/// Write input bytes to the console (terminal input = keystrokes).
 pub fn writeInput(s: *Session, data: []const u8) SessionError!usize {
-    if (comptime !is_pty_os) return error.UnsupportedPlatform;
+    if (comptime pty_backend == .none) return error.UnsupportedPlatform;
     mutexLock(&s.mutex);
     s.last_active_s = nowSeconds();
     s.last_user_active_s = s.last_active_s;
@@ -694,6 +1370,31 @@ pub fn writeInput(s: *Session, data: []const u8) SessionError!usize {
     drainLocked(s);
     pollExitLocked(s);
     if (s.exited) return error.SessionExited;
+    if (comptime pty_backend == .conpty) {
+        return writeInputWin(s, data);
+    } else {
+        return writeInputPosix(s, data);
+    }
+}
+
+/// Win32 write, for both backends: straight into the console's input pipe (or
+/// the shell's stdin pipe). There is no `POLLOUT` equivalent, so — unlike the
+/// POSIX loop, which bounds a stuck write with a 1 s `poll` — a paste larger
+fn writeInputWin(s: *Session, data: []const u8) SessionError!usize {
+    const h = s.win.in_write orelse return error.WriteFailed;
+    var off: usize = 0;
+    while (off < data.len) {
+        // A single Win32 write is capped at DWORD bytes.
+        const want: DWORD = @intCast(@min(data.len - off, std.math.maxInt(DWORD)));
+        var wrote: DWORD = 0;
+        if (WriteFile(h, data[off..].ptr, want, &wrote, null) == 0) return error.WriteFailed;
+        if (wrote == 0) return error.WriteFailed;
+        off += @intCast(wrote);
+    }
+    return off;
+}
+
+fn writeInputPosix(s: *Session, data: []const u8) SessionError!usize {
     var off: usize = 0;
     var pfds = [_]PollFd{.{ .fd = s.master_fd, .events = POLLOUT, .revents = 0 }};
     while (off < data.len) {
@@ -809,8 +1510,21 @@ pub fn resizeSession(s: *Session, cols: u16, rows: u16) SessionError!void {
     s.last_user_active_s = s.last_active_s;
     defer s.mutex.unlock();
     if (s.exited) return error.SessionExited;
-    var win = Winsize{ .ws_row = rows, .ws_col = cols, .ws_xpixel = 0, .ws_ypixel = 0 };
-    if (ioctl(s.master_fd, TIOCSWINSZ, &win) != 0) return error.ResizeFailed;
+    if (comptime pty_backend == .conpty) {
+        if (s.win.kind == .conpty) {
+            // ConPTY re-renders the client's screen at the new size and
+            // delivers the console's own resize event to the shell — the
+            // same observable effect `TIOCSWINSZ` + SIGWINCH has on POSIX.
+            const pc = s.win.pc orelse return error.ResizeFailed;
+            if (ResizePseudoConsole(pc, .{ .X = @intCast(cols), .Y = @intCast(rows) }) < 0) return error.ResizeFailed;
+        }
+        // A pipe has no console and so no window size. The new dims are
+        // recorded and the call SUCCEEDS: the frontend reflows its own
+        // viewport, and "resize a terminal that has nothing to resize" is
+    } else {
+        var win = Winsize{ .ws_row = rows, .ws_col = cols, .ws_xpixel = 0, .ws_ypixel = 0 };
+        if (ioctl(s.master_fd, TIOCSWINSZ, &win) != 0) return error.ResizeFailed;
+    }
     s.cols = cols;
     s.rows = rows;
 }
@@ -853,31 +1567,49 @@ pub fn destroySessionForOwner(id: []const u8, caller_owner: []const u8) SessionE
 /// not touch `s` afterwards. Frees `s.id` and `s` itself.
 fn reapSession(s: *Session) void {
     // Only a session that owns OS handles has anything to tear down: a
-    // session with no PTY (no child, no master fd) is pure bookkeeping, so
+    // session with no PTY (no child, no handles) is pure bookkeeping, so
     // the registry half of this runs on every host.
-    if (comptime is_pty_os) {
-        if (s.child_pid > 0) {
-            mutexLock(&s.mutex);
-            s.last_active_s = nowSeconds();
-            const already_exited = s.exited;
-            s.mutex.unlock();
-            if (!already_exited) _ = kill(s.child_pid, SIGKILL);
-
-            // Bounded reap so the child never stays a zombie (50 x 10ms).
-            var i: usize = 0;
-            var status: c_int = 0;
-            while (i < 50) : (i += 1) {
-                if (waitpid(s.child_pid, &status, WNOHANG) != 0) break;
-                sleepMillis(10);
-            }
-
-            if (s.master_fd >= 0) _ = close(s.master_fd);
-        }
+    if (comptime pty_backend == .conpty) {
+        reapSessionWin(s);
+    } else {
+        reapSessionPosix(s);
     }
     s.buf.deinit(g_alloc);
     g_alloc.free(s.owner);
     g_alloc.free(s.id);
     g_alloc.destroy(s);
+}
+
+fn reapSessionPosix(s: *Session) void {
+    if (s.child_pid <= 0) return;
+    mutexLock(&s.mutex);
+    s.last_active_s = nowSeconds();
+    const already_exited = s.exited;
+    s.mutex.unlock();
+    if (!already_exited) _ = kill(s.child_pid, SIGKILL);
+
+    // Bounded reap so the child never stays a zombie (50 x 10ms).
+    var i: usize = 0;
+    var status: c_int = 0;
+    while (i < 50) : (i += 1) {
+        if (waitpid(s.child_pid, &status, WNOHANG) != 0) break;
+        sleepMillis(10);
+    }
+
+    if (s.master_fd >= 0) _ = close(s.master_fd);
+}
+
+/// Tear down a Windows session, either backend.
+///
+/// The order matters and is the one the API demands:
+fn reapSessionWin(s: *Session) void {
+    const win = s.win;
+    s.win = .{};
+    mutexLock(&s.mutex);
+    s.last_active_s = nowSeconds();
+    const already_exited = s.exited;
+    s.mutex.unlock();
+    closeWinHandles(win, already_exited);
 }
 
 fn sleepMillis(ms: u64) void {
@@ -939,17 +1671,26 @@ test "decodeStatus maps normal exits and signals" {
 }
 
 test "empty cwd falls back to the server cwd" {
-    switch (ptyBackend()) {
+    // Only the fallback lets this reach the spawn: validateCreate would
+    // reject the empty string as a relative path.
+    switch (pty_backend) {
         .posix_pty => {
-            // Only the fallback lets this reach the spawn: validateCreate
-            // would reject the empty string as a relative path.
             const info = try createSession(testing.io, "", "/bin/sh", 80, 24, "user_test");
             defer destroySession(info.id) catch {};
             try testing.expect(getSession(info.id) != null);
         },
+        .conpty => {
+            // No shell override either: the empty cwd must fall back to the
+            // server's cwd AND `%COMSPEC%` must resolve, or this throws
+            // instead of returning a session.
+            const info = try createSession(testing.io, "", null, 80, 24, "user_test");
+            defer destroySession(info.id) catch {};
+            try testing.expect(getSession(info.id) != null);
+            try testing.expect(info.pid > 0);
+        },
         .none => {
             // No PTY backend: the spawn this test needs is the refusal.
-            try testing.expectError(error.UnsupportedPlatform, createSession(testing.io, "", "/bin/sh", 80, 24, "user_test"));
+            try testing.expectError(error.UnsupportedPlatform, createSession(testing.io, "", null, 80, 24, "user_test"));
         },
     }
 }
@@ -1058,8 +1799,11 @@ test "max sessions cap rejects over the limit" {
     // refuses for the same reason (the cap is checked before the fork).
     try testing.expectEqual(base + 1, sessionCount());
     try testing.expectError(error.TooManySessions, checkSessionCapacity());
-    if (ptyBackend() == .posix_pty) {
-        try testing.expectError(error.TooManySessions, createSession(testing.io, "/tmp", "/bin/sh", 80, 24, "user_test"));
+    if (pty_backend != .none) {
+        // Empty cwd resolves to the SERVER's cwd, which exists on every
+        // host. The literal "/tmp" this used to pass would be a CwdNotDir
+        // 404 on Windows, and the assertion below would then pass for
+        try testing.expectError(error.TooManySessions, createSession(testing.io, "", null, 80, 24, "user_test"));
     }
 
     // One slot below the cap is accepted again.
@@ -1067,38 +1811,86 @@ test "max sessions cap rejects over the limit" {
     try checkSessionCapacity();
 }
 
+/// Poll `readOutput` for `marker` until it appears or `ticks` run out.
+/// ONE body for every backend: what the console hands back is a byte
+/// stream, and ConPTY wraps it in cursor/colour escapes exactly like a
+fn expectMarker(s: *Session, marker: []const u8, ticks: usize) !void {
+    var found = false;
+    var cursor: u64 = 0;
+    var i: usize = 0;
+    while (i < ticks) : (i += 1) {
+        const out = readOutput(s, cursor);
+        cursor = out.cursor;
+        if (std.mem.indexOf(u8, out.data, marker) != null) {
+            found = true;
+            break;
+        }
+        if (out.exited) break;
+        sleepMillis(100);
+    }
+    if (!found) {
+        std.debug.print("marker {s} never appeared\n", .{marker});
+        return error.TestUnexpectedResult;
+    }
+}
+
 test "spawned shell echoes input" {
-    switch (ptyBackend()) {
+    switch (pty_backend) {
         .posix_pty => {
-            const cwd = "/tmp";
-            const info = try createSession(testing.io, cwd, "/bin/sh", 80, 24, "user_test");
+            const info = try createSession(testing.io, "/tmp", "/bin/sh", 80, 24, "user_test");
             defer destroySession(info.id) catch {};
 
             const s = getSession(info.id) orelse return error.SessionNotFound;
             // Give the shell a moment to start, then send a marker.
             sleepMillis(500);
             _ = try writeInput(s, "echo MARKER-7f3a9c\n");
+            try expectMarker(s, "MARKER-7f3a9c", 100);
+        },
+        .conpty => {
+            // The Windows parity assertion, end to end on ONE live shell:
+            // a Windows session answers the same operations the POSIX one
+            // does — create, input, echo, resize, and an observed process
+            const info = try createSession(testing.io, "", null, 80, 24, "user_test");
+            defer destroySession(info.id) catch {};
+            try testing.expect(info.pid > 0);
+            const be = info.backend;
+            try testing.expect(std.mem.eql(u8, be, backend_conpty) or std.mem.eql(u8, be, backend_pipe));
 
-            // Poll for the marker (shell echo + command output).
-            var found = false;
+            const s = getSession(info.id) orelse return error.SessionNotFound;
+            sleepMillis(500);
+            // cmd.exe reads in cooked mode: CR commits the line, so the
+            // input ends CRLF (a bare LF works on most builds, but not by
+            // contract). On the pipe backend the shell never echoes, so the
+            _ = try writeInput(s, "echo MARKER-7f3a9c\r\n");
+            try expectMarker(s, "MARKER-7f3a9c", 100);
+
+            // resize is `ResizePseudoConsole` on ConPTY and a recorded
+            // no-op on a pipe; both must SUCCEED, because a caller cannot
+            // act on "this terminal cannot be resized".
+            try resizeSession(s, 100, 40);
+
+            // `exit` ends the shell. The session must report exited + code
+            // 0 rather than hang — which is exactly what the DELETE
+            // handler and the websocket pump's exit frame read.
+            _ = try writeInput(s, "exit\r\n");
+            var exit_code: ?i32 = null;
             var cursor: u64 = 0;
-            var ticks: usize = 0;
-            while (ticks < 100) : (ticks += 1) {
+            var i: usize = 0;
+            while (i < 100) : (i += 1) {
                 const out = readOutput(s, cursor);
                 cursor = out.cursor;
-                if (std.mem.indexOf(u8, out.data, "MARKER-7f3a9c") != null) {
-                    found = true;
+                if (out.exited) {
+                    exit_code = out.exit_code;
                     break;
                 }
-                if (out.exited) break;
                 sleepMillis(100);
             }
-            try testing.expect(found);
+            try testing.expectEqual(@as(?i32, 0), exit_code);
         },
         .none => {
             // No PTY backend: every PTY step this test needs is a refusal,
             // while the registry teardown stays host-independent.
-            try testing.expectError(error.UnsupportedPlatform, createSession(testing.io, "/tmp", "/bin/sh", 80, 24, "user_test"));
+            try testing.expectError(error.UnsupportedPlatform, createSession(testing.io, "", null, 80, 24, "user_test"));
             const s = try insertSessionForTest("user_test");
             const id = try testing.allocator.dupe(u8, s.id);
             defer testing.allocator.free(id);

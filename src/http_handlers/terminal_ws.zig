@@ -7,14 +7,10 @@ const terminal_session = @import("terminal_session.zig");
 const auth_common = @import("auth_common.zig");
 const ws_frames = gserverz.ws_frames;
 
-const PollFd = extern struct {
-    fd: c_int,
-    events: c_short,
-    revents: c_short,
-};
-
-const POLLIN: c_short = 1;
-extern "c" fn poll(fds: [*]PollFd, nfds: c_uint, timeout: c_int) c_int;
+/// How long one pump tick blocks waiting for activity. This is the
+/// websocket's latency floor, and the one number the two hosts disagree
+/// on: POSIX `poll(2)` wakes the instant the shell writes, so it can
+const pump_tick_ms: c_int = if (terminal_session.pty_backend == .conpty) 20 else 100;
 
 /// Max buffered client bytes before a complete frame must arrive.
 /// Control frames are tiny (keystrokes, resize JSON); anything larger
@@ -27,7 +23,7 @@ const out_frame_chunk: usize = 16 * 1024;
 const max_client_payload: usize = 1024 * 1024;
 
 pub const WsControl = struct {
-    @"type": []const u8 = "",
+    type: []const u8 = "",
     data: ?[]const u8 = null,
     cols: ?u16 = null,
     rows: ?u16 = null,
@@ -76,7 +72,7 @@ fn sendBinary(server: *gserverz.GinwaServer, allocator: std.mem.Allocator, fd: i
 
 fn sendExit(server: *gserverz.GinwaServer, allocator: std.mem.Allocator, fd: i32, exit_code: ?i32) !void {
     const body = try std.json.Stringify.valueAlloc(allocator, .{
-        .@"type" = "exit",
+        .type = "exit",
         .exit_code = exit_code,
     }, .{});
     defer allocator.free(body);
@@ -100,7 +96,7 @@ fn handleControl(
 ) !bool {
     // Returns false when the socket should close (session exited).
     const parsed = std.json.parseFromSliceLeaky(WsControl, allocator, payload, .{}) catch return true;
-    if (std.mem.eql(u8, parsed.@"type", "input")) {
+    if (std.mem.eql(u8, parsed.type, "input")) {
         const data = parsed.data orelse return true;
         if (data.len == 0) return true;
         _ = terminal_session.writeInput(session, data) catch |err| {
@@ -113,7 +109,7 @@ fn handleControl(
         };
         return true;
     }
-    if (std.mem.eql(u8, parsed.@"type", "resize")) {
+    if (std.mem.eql(u8, parsed.type, "resize")) {
         const cols = parsed.cols orelse return true;
         const rows = parsed.rows orelse return true;
         terminal_session.resizeSession(session, cols, rows) catch {};
@@ -154,16 +150,18 @@ pub fn terminalWsHandler(
     // stamp so switching back to a session keeps it alive.
     terminal_session.touchUser(session);
 
-    // No PTY on this OS (Windows): close handshake runs on return.
+    // No PTY backend on this host: the close handshake runs on return.
+    // Both real backends pump through the SAME loop below — POSIX forkpty
+    // and Windows ConPTY differ only in `waitReadable`, which picks the
     if (comptime terminal_session.is_pty_os) {
-        return pumpPosix(server, allocator, client_fd, id, session);
+        return pump(server, allocator, client_fd, id, session);
     } else {
         return;
     }
 }
 
-/// Connection pump (POSIX only — see the comptime gate above).
-fn pumpPosix(
+/// Connection pump (every host with a PTY backend — see the gate above).
+fn pump(
     server: *gserverz.GinwaServer,
     allocator: std.mem.Allocator,
     client_fd: i32,
@@ -199,15 +197,11 @@ fn pumpPosix(
         // may have freed it while we held no lock. A null lookup ends
         // the socket; the session is gone so there is nothing to pump.
         const live = terminal_session.getSession(id) orelse return;
-        // Multiplex PTY + socket (100ms tick — no threads).
-        var pfds = [_]PollFd{
-            .{ .fd = live.masterFd(), .events = POLLIN, .revents = 0 },
-            .{ .fd = client_fd, .events = POLLIN, .revents = 0 },
-        };
-        if (poll(&pfds, 2, 100) < 0) return;
+        // Multiplex console + socket (no threads — one tick, both sides).
+        const ready = terminal_session.waitReadable(live, client_fd, pump_tick_ms);
 
         // PTY → socket.
-        if (pfds[0].revents & POLLIN != 0) {
+        if (ready.pty) {
             const cur = terminal_session.getSession(id) orelse return;
             const out = terminal_session.readOutputAlloc(allocator, cur, cursor) catch return;
             defer allocator.free(out.data);
@@ -233,7 +227,7 @@ fn pumpPosix(
         }
 
         // Socket → PTY.
-        if (pfds[1].revents & POLLIN == 0) continue;
+        if (!ready.sock) continue;
         const n = server.recvFromClient(client_fd, &net_buf) catch return;
         if (n == 0) return; // peer closed
         if (pending.items.len + n > max_pending) return;
@@ -322,11 +316,11 @@ test "frameWireLen rejects unmasked frames" {
 test "control JSON parses input and resize shapes" {
     var input = try std.json.parseFromSlice(WsControl, testing.allocator, "{\"type\":\"input\",\"data\":\"ls\\n\"}", .{});
     defer input.deinit();
-    try testing.expectEqualStrings("input", input.value.@"type");
+    try testing.expectEqualStrings("input", input.value.type);
     try testing.expectEqualStrings("ls\n", input.value.data.?);
 
     var resize = try std.json.parseFromSlice(WsControl, testing.allocator, "{\"type\":\"resize\",\"cols\":100,\"rows\":40}", .{});
     defer resize.deinit();
-    try testing.expectEqualStrings("resize", resize.value.@"type");
+    try testing.expectEqualStrings("resize", resize.value.type);
     try testing.expectEqual(@as(u16, 100), resize.value.cols.?);
 }

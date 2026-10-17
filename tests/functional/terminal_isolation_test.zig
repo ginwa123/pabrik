@@ -101,7 +101,10 @@ fn login(h: *Harness, email: []const u8) ![]u8 {
 fn createTerminal(h: *Harness, cookie: ?[]const u8) ![]u8 {
     const cwd = try harness.harnessPath(gpa, h.temp_dir, &.{});
     defer gpa.free(cwd);
-    const body = try std.fmt.allocPrint(gpa, "{{\"cwd\":\"{s}\"}}", .{cwd});
+    // `std.json.Stringify`, never a hand-built template: a Windows cwd is
+    // full of backslashes and `{"cwd":"C:\Users\..."}` is NOT JSON, so the
+    // server answers 400 "Invalid JSON body" and the failure reads like a
+    const body = try std.json.Stringify.valueAlloc(gpa, .{ .cwd = cwd }, .{});
     defer gpa.free(body);
 
     var r = try rawHttp(h, .POST, "/api/terminal/sessions", body, cookie);

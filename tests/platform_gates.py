@@ -20,12 +20,13 @@ Two rules govern this file:
    test has since been made portable must be deleted, not kept as a
    belt-and-braces skip — a stale skip hides the next regression.
 
-Nothing in here is a product bug. ``src/http_handlers/terminal_session.zig``
-gates the terminal API on ``linux || macos`` (``is_pty_os``); the
-corresponding Python suites are skipped on Windows for the same reason
-the frontend hides the terminal panel there. If the product ever grows
-ConPTY support, delete the ``terminal_*`` rows — do not un-skip the tests
-by hand elsewhere.
+Nothing in here is a product bug. The table used to gate the whole terminal
+API on Windows (``is_pty_os = linux || macos``); the product has since grown
+a Windows backend — ConPTY, with a pipe fallback for a host whose
+pseudoconsole cannot start a client — so those rows were deleted, as this
+file's own rule required. The one terminal row that remains is the
+Playwright panel suite, which has no Windows runner for toolchain reasons
+that have nothing to do with the platform gate.
 """
 
 from __future__ import annotations
@@ -99,51 +100,21 @@ GATES: tuple[Gate, ...] = (
     ),
 
     # ── Product gate: no pty backend on Windows ──────────────────────────
-    # src/http_handlers/terminal_session.zig:
-    #   pub const is_pty_os = switch (builtin.os.tag) {
-    #       .linux, .macos => true, else => false };
-    # so /api/terminal/* answers UnsupportedPlatform. These tests would
-    # pass a --port and a /bin/sh that do not exist, and assert on a
-    # shape the server never produces.
-    # Each of these four is SELF-CONTAINED on purpose, even though they
-    # share one cause. "same product gate as terminal_session_test.py" is
-    # unreadable to the person scanning a CI log for this one test — they
-    # have no other file open — and platform_gates_test.py rejects a
-    # reason that does not name the platform or a portable blocker. The
-    # file:line citation is what keeps four near-identical rows honest.
-    Gate(
-        "win32",
-        "terminal_session_test.py",
-        "no pty backend on Windows: terminal_session.zig sets "
-        "is_pty_os = linux || macos, so /api/terminal/sessions answers "
-        "UnsupportedPlatform and the /bin/sh this test passes does not exist",
-    ),
-    Gate(
-        "win32",
-        "terminal_ws_test.py",
-        "no pty backend on Windows: terminal_session.zig sets "
-        "is_pty_os = linux || macos, so the terminal websocket never "
-        "opens a pty and this handshake cannot complete",
-    ),
-    Gate(
-        "win32",
-        "terminal_limits_test.py",
-        "no pty backend on Windows: terminal_session.zig sets "
-        "is_pty_os = linux || macos, so none of the 20 sessions this "
-        "test opens reaches a live shell to size",
-    ),
-    Gate(
-        "win32",
-        "terminal_isolation_test.py",
-        "no pty backend on Windows: terminal_session.zig sets "
-        "is_pty_os = linux || macos, so the two sessions this test "
-        "isolates never open and there is nothing to keep apart",
-    ),
+    # DELETED 2026-10-17. Every row here said "no pty backend on Windows:
+    # terminal_session.zig sets is_pty_os = linux || macos", and that is no
+    # longer true: the terminal API ships a Windows backend (ConPTY, with a
+    # pipe fallback for a host whose pseudoconsole cannot start a client),
+    # and the four `terminal_*` suites run — and pass — on Windows with a
+    # `cmd.exe` instead of the `/bin/sh` they used to pass. A gate whose
+    # subject has been fixed is a gate that hides the next regression, so
+    # the rows are gone rather than kept as belt and braces.
     Gate(
         "win32",
         "terminal_sidebar_ui_test.py",
-        "drives a real PTY in the browser's terminal panel; the panel "
-        "itself is not shipped on Windows (same is_pty_os gate)",
+        "a Playwright browser test of the terminal panel; the Windows CI "
+        "cell runs `zig build test` and installs no browser or UI "
+        "toolchain, so this suite has no Windows runner (the API it drives "
+        "is covered on Windows by the terminal_* Zig suites)",
     ),
 
     # ── POSIX signal / waitpid semantics ────────────────────────────────

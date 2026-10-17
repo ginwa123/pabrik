@@ -2,14 +2,25 @@
 // `tests/functional/terminal_session_test.py` (same test names, same order).
 
 const std = @import("std");
+const builtin = @import("builtin");
 const testing = std.testing;
 const harness = @import("harness.zig");
 const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// The shell every terminal in this suite runs.
-const SHELL = "/bin/sh";
+/// The shell every terminal in this suite runs. Windows has no `/bin/sh`;
+/// `cmd.exe` is its interactive equivalent, and the assertions below hold
+/// for it unchanged — a marker line goes in and the marker comes out. The
+const SHELL = if (builtin.os.tag == .windows)
+    "C:\\Windows\\System32\\cmd.exe"
+else
+    "/bin/sh";
+
+/// How a line ends on this host's shell. `cmd.exe` reads in cooked mode and
+/// commits on CR, so its lines end CRLF; a POSIX shell is happy with LF.
+/// Not cosmetic: a bare LF works on most `cmd.exe` builds but is not the
+const LINE_END = if (builtin.os.tag == .windows) "\r\n" else "\n";
 
 /// Monotonic milliseconds (`.awake`, not the wall clock — an NTP step
 /// must not extend a poll deadline).
@@ -17,11 +28,11 @@ fn nowMs() i64 {
     return std.Io.Timestamp.now(io, .awake).toMilliseconds();
 }
 
-/// `"echo <marker>\n"` as an OWNED buffer. Written with `allocPrint` rather
-/// than `"echo " ++ marker ++ "\n"`, which only compiles for comptime-known
-/// operands — and a marker is exactly the value a test wants to vary.
+/// `"echo <marker>"` + this platform's line end, as an OWNED buffer.
+/// Written with `allocPrint` rather than `"echo " ++ marker ++ "\n"`, which
+/// only compiles for comptime-known operands — and a marker is exactly the
 fn echoLine(marker: []const u8) ![]u8 {
-    return std.fmt.allocPrint(gpa, "echo {s}\n", .{marker});
+    return std.fmt.allocPrint(gpa, "echo {s}{s}", .{ marker, LINE_END });
 }
 
 // ============================================================================
@@ -465,7 +476,7 @@ test "input_after_exit_is_410" {
     defer deleteSession(&h, sid);
 
     {
-        var r = try inputRaw(&h, sid, "exit\n", &.{200});
+        var r = try inputRaw(&h, sid, "exit" ++ LINE_END, &.{200});
         defer r.deinit();
     }
 

@@ -87,7 +87,7 @@ pub fn terminalResizeHandler(
         const message: []const u8 = switch (err) {
             error.InvalidSize => "cols/rows must be in [2, 1000]",
             error.SessionExited => "terminal session has exited",
-            error.UnsupportedPlatform => "terminal sessions require Linux or macOS",
+            error.UnsupportedPlatform => "terminal sessions are not supported on this platform",
             else => "failed to resize terminal",
         };
         return res.jsonResponse(.{
