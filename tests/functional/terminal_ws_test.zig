@@ -487,13 +487,18 @@ test "ws_echo_round_trip" {
         }
     }
 
-    // 2. Masked input → binary echo back.
+    // 2. Masked input → binary echo back. The two frames mirror the CLIENT
+    // exactly: one for the typed text, one carrying Enter as a bare `\r`
+    // (xterm's onData) — never CRLF. A suite that writes its own CRLF tests
+    // its own spelling, not the socket's contract, and that is how the
+    // pipe backend shipped a terminal whose commands never committed.
     const marker = "WS-MARK-4f8e2a";
     {
-        const msg = try std.fmt.allocPrint(gpa, "{{\"type\":\"input\",\"data\":\"echo {s}\\n\"}}", .{marker});
+        const msg = try std.fmt.allocPrint(gpa, "{{\"type\":\"input\",\"data\":\"echo {s}\"}}", .{marker});
         defer gpa.free(msg);
         try ws.sendText(msg);
     }
+    try ws.sendText("{\"type\":\"input\",\"data\":\"\\r\"}");
 
     const seen = (try collectUntil(ws, marker, 20_000)) orelse {
         std.debug.print("marker '{s}' never arrived\n", .{marker});
