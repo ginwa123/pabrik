@@ -65,6 +65,19 @@ pub const PabrikProcess = struct {
     }
 };
 
+/// Ask a pabrik the desktop itself started to stop. Reports whether the
+/// signal was delivered; a non-positive pid (nobody's child) is a no-op, as
+/// is Windows, where the desktop does not track a pabrik pid.
+pub fn terminateByPid(pid: i32) bool {
+    if (pid <= 0) return false;
+    if (comptime builtin.os.tag == .windows) return false;
+    std.posix.kill(pid, std.posix.SIG.TERM) catch |err| {
+        std.log.warn("could not stop the pabrik process we started (pid {d}): {s}", .{ pid, @errorName(err) });
+        return false;
+    };
+    return true;
+}
+
 /// Poll http://127.0.0.1:<port>/health until it returns 200 or `timeout_ms`
 /// elapses. Returns `error.HealthCheckTimeout` on timeout.
 pub fn waitForHealth(
@@ -417,4 +430,15 @@ test "waitForHealth: succeeds when target returns 200" {
     // Client side uses raw syscalls via waitForHealth (no Io).
     const result = waitForHealth(port, 2000, 50);
     try testing.expect(result != error.HealthCheckTimeout);
+}
+
+test "terminateByPid signals nothing for a pid the desktop does not own" {
+    try testing.expect(!terminateByPid(0));
+    try testing.expect(!terminateByPid(-1));
+}
+
+test "terminateByPid reports the signal it could not deliver" {
+    // No process can hold this pid: it is above every platform's pid_max,
+    // so POSIX answers ESRCH and Windows never tries.
+    try testing.expect(!terminateByPid(2_000_000_000));
 }

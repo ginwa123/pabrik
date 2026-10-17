@@ -42,6 +42,9 @@ pub const AttachTarget = struct {
     /// `we_spawned = true` means the daemon outlives the desktop; `false`
     /// means we attached to one the user started independently.
     we_spawned: bool,
+    /// Pid of the daemon this desktop spawned (0 when it spawned none, and
+    /// on platforms that do not expose one). Only ever a process we own.
+    pid: i32 = 0,
 };
 
 pub const AttachError = error{
@@ -200,6 +203,7 @@ fn autoSpawnAndWaitForHealth(
         .host = try allocator.dupe(u8, "127.0.0.1"),
         .port = spawn_port,
         .we_spawned = true,
+        .pid = child.pid,
     };
 }
 
