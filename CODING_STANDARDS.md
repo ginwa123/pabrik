@@ -236,8 +236,9 @@ directory junction (no privilege needed), the `/proc`-only counters to
 `helpers.open_descriptors` (open fds on Linux, open handles on Windows), the
 PTY session tests to bookkeeping with `error.UnsupportedPlatform` asserted
 where Windows genuinely has no PTY, and the six `Agent.callStreaming` tests
-to a `std.Io.net` fixture. Linux (10) and macOS (15) are what is left; the
-ceiling for a platform at zero is a literal `0`.
+to a `std.Io.net` fixture. Linux dropped 10 → 4 and macOS 15 → 4 in the same
+change, since those converted tests now run there too; the ceiling for a
+platform at zero is a literal `0`.
 
 Windows skipped nine times what Linux did, on a green pipeline, with 81
 test bodies under `src/` able to bail out on Windows — 61 through a

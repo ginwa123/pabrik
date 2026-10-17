@@ -54,7 +54,7 @@
 # Zero is the goal, and `--strict` is that check. Windows reached it on
 # 2026-10-16, so its ceiling is now a literal 0 — any Windows skip at all is
 # a red job, which is where every platform is headed. The ceilings remain
-# per-platform only because Linux (10) and macOS (15) still carry skips; the
+# per-platform only because Linux (4) and macOS (4) still carry skips; the
 # ceiling is what makes those numbers (a) visible in every backend cell,
 # (b) impossible to raise, and (c) mechanically lowerable — `--baseline` is
 # in the failure and the notice text. CODING_STANDARDS.md §3 carries the
@@ -125,12 +125,13 @@ cd "$REPO_ROOT"
 #     PTY), Agent.callStreaming 6 (a std.Io.net fixture; the three stall
 #     tests had asserted `error.StreamIdleTimeout`, which has no producer
 #     left in the tree).
-# The presets stay per-platform because Linux (10) and macOS (15) are not
-# there yet; Windows is.
+# The presets stay per-platform only because the leftover skips differ;
+# Windows is at zero, and the same conversions took Linux 10 -> 4 and
+# macOS 15 -> 4 (their own notices asked for exactly those numbers).
 baseline_for() {
   case "$1" in
-    linux)   echo "${PABRIK_ZIG_TEST_SKIPS_LINUX:-10}" ;;
-    macos)   echo "${PABRIK_ZIG_TEST_SKIPS_MACOS:-15}" ;;
+    linux)   echo "${PABRIK_ZIG_TEST_SKIPS_LINUX:-4}" ;;
+    macos)   echo "${PABRIK_ZIG_TEST_SKIPS_MACOS:-4}" ;;
     windows) echo "${PABRIK_ZIG_TEST_SKIPS_WINDOWS:-0}" ;;
     *) return 1 ;;
   esac
@@ -374,20 +375,35 @@ EOF
   check "an unmeasurable log FAILS (not a pass)" 1 "$rc"
 
   # 13. Slack under the ceiling must PASS and must say what to re-pin —
-  #     that notice is the only thing that lowers a ceiling.
-  printf 'Build Summary: 14/14 steps succeeded; 4250/4257 tests passed (5 skipped)\n' > "$tmp/slack.log"
-  local notice
-  notice="$(check_log "$tmp/slack.log" linux 0 2>/dev/null || true)"
-  rc=0; check_log "$tmp/slack.log" linux 0 >/dev/null 2>&1 || rc=$?
-  check "slack under the ceiling passes" 0 "$rc"
-  case "$notice" in
-    *"PABRIK_ZIG_TEST_SKIPS_LINUX=5"*)
-      echo "  ok   slack names the exact value to re-pin" ;;
-    *)
-      echo "  FAIL slack did not name PABRIK_ZIG_TEST_SKIPS_LINUX=5"
-      echo "       got: $notice"
-      failures=$((failures + 1)) ;;
-  esac
+  #     that notice is the only thing that lowers a ceiling. The platform is
+  #     PICKED, not named: a hardcoded one breaks the day its ceiling hits 0.
+  local slack_platform="" slack_ceiling=0
+  for p in linux macos windows; do
+    if [ "$(baseline_for "$p")" -gt 0 ]; then
+      slack_platform="$p"
+      slack_ceiling="$(baseline_for "$p")"
+      break
+    fi
+  done
+  if [ -z "$slack_platform" ]; then
+    echo "  ok   slack notice: every ceiling is 0, so nothing can be re-pinned"
+  else
+    local slack=$((slack_ceiling - 1))
+    local slack_pin="PABRIK_ZIG_TEST_SKIPS_$(echo "$slack_platform" | tr '[:lower:]' '[:upper:]')=${slack}"
+    printf 'Build Summary: 14/14 steps succeeded; 4250/4257 tests passed (%s skipped)\n' "$slack" > "$tmp/slack.log"
+    local notice
+    notice="$(check_log "$tmp/slack.log" "$slack_platform" 0 2>/dev/null || true)"
+    rc=0; check_log "$tmp/slack.log" "$slack_platform" 0 >/dev/null 2>&1 || rc=$?
+    check "slack under the ${slack_platform} ceiling passes" 0 "$rc"
+    case "$notice" in
+      *"$slack_pin"*)
+        echo "  ok   slack names the exact value to re-pin" ;;
+      *)
+        echo "  FAIL slack did not name ${slack_pin}"
+        echo "       got: $notice"
+        failures=$((failures + 1)) ;;
+    esac
+  fi
 
   # 11. The ceilings are pinned integers and every platform resolves.
   local p
