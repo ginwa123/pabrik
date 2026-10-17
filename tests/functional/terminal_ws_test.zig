@@ -487,11 +487,9 @@ test "ws_echo_round_trip" {
         }
     }
 
-    // 2. Masked input → binary echo back. The two frames mirror the CLIENT
-    // exactly: one for the typed text, one carrying Enter as a bare `\r`
-    // (xterm's onData) — never CRLF. A suite that writes its own CRLF tests
-    // its own spelling, not the socket's contract, and that is how the
-    // pipe backend shipped a terminal whose commands never committed.
+    // 2. Masked input → binary echo back. The two frames mirror the CLIENT:
+    // the typed text, then Enter as a bare `\r` (xterm's onData) — never CRLF.
+    // A suite that writes its own CRLF tests its spelling, not the contract.
     const marker = "WS-MARK-4f8e2a";
     {
         const msg = try std.fmt.allocPrint(gpa, "{{\"type\":\"input\",\"data\":\"echo {s}\"}}", .{marker});

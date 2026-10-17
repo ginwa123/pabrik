@@ -1676,10 +1676,9 @@ fn sleepMillis(ms: u64) void {
 const testing = std.testing;
 
 test "a bare CR is the terminator a client sends, and CRLF is left alone" {
-    // The EXACT shape a terminal client sends for Enter: one bare `\r`
-    // (xterm's onData), never CRLF. A pipe-backed cmd.exe treats only CRLF as
-    // end-of-line, so the pipe backend rewrites it — without the rewrite the
-    // line sits in the shell's buffer forever and typing looks dead.
+    // Enter as the CLIENT sends it: one bare `\r`, never CRLF. A pipe-backed
+    // cmd.exe treats only CRLF as end-of-line, so the pipe backend rewrites it
+    // — without that the line never commits and typing looks dead.
     var buf: [64]u8 = undefined;
 
     try testing.expectEqual(@as(usize, 1), bareCrCount("dir\r"));
