@@ -87,6 +87,12 @@ pub const add_mcp_server = @import("modules/agent/tools/add_mcp_server.zig"); //
 pub const edit_mcp_server = add_mcp_server;
 pub const delete_mcp_server = add_mcp_server;
 pub const read_workspace_session_tool = @import("modules/agent/tools/read_workspace_session.zig");
+/// `run_session` — start or resume a session agent in the caller's OWN
+/// workspace; a target outside it is refused, so scope is never spoofable.
+pub const run_session = @import("modules/agent/tools/run_session.zig");
+/// `view_session` — read ONE session's detail (cwd, git worktree, task,
+/// workspace, profile, PR, running state). Your own session by default.
+pub const view_session = @import("modules/agent/tools/view_session.zig");
 // Workspace credential discovery: names only, never a value.
 pub const list_secrets = @import("modules/agent/tools/list_secrets.zig");
 /// `add_document` / `edit_document` agent tools (Migration 098). The

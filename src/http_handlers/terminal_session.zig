@@ -288,6 +288,10 @@ pub const Session = struct {
     /// absolute cursor of `buf[0]`, `total` the absolute cursor of the
     /// end. Bytes in [0, base) were dropped by the cap.
     buf: std.ArrayList(u8),
+    /// Uncommitted input for the PIPE backend, which has no line discipline
+    /// of its own: the server echoes what the user types and commits the whole
+    /// line on Enter, so the view and the shell's line never disagree.
+    line: std.ArrayList(u8) = .empty,
     base: u64,
     total: u64,
     exited: bool,
@@ -1083,12 +1087,23 @@ fn createSessionPipeWin(eff_cwd: []const u8, dims: Dims, shell_path: []const u8)
     const cwd_z = try utf8ToWide(&cwd_w, eff_cwd);
     const shell_z = try utf8ToWide(&shell_w, shell_path);
 
-    var cmdline_w: [std.fs.max_path_bytes + 3]u16 = undefined;
+    // cmd.exe echoes every line it reads from a pipe, which would print each
+    // command twice now that the server echoes the typing; `/Q` turns that off.
+    // The argument is cmd.exe's alone — any other shell is named on its own.
+    const calm = std.ascii.eqlIgnoreCase(std.fs.path.basename(shell_path), "cmd.exe");
+    var cmdline_w: [std.fs.max_path_bytes + 8]u16 = undefined;
     cmdline_w[0] = '"';
     @memcpy(cmdline_w[1..][0..shell_z.len], shell_z);
     cmdline_w[1 + shell_z.len] = '"';
-    cmdline_w[2 + shell_z.len] = 0;
-    const cmdline: [:0]u16 = cmdline_w[0 .. 2 + shell_z.len :0];
+    var n: usize = 2 + shell_z.len;
+    if (calm) {
+        for (" /Q") |c| {
+            cmdline_w[n] = c;
+            n += 1;
+        }
+    }
+    cmdline_w[n] = 0;
+    const cmdline: [:0]u16 = cmdline_w[0..n :0];
 
     var sa = SecurityAttributes{
         .nLength = @sizeOf(SecurityAttributes),
@@ -1382,6 +1397,63 @@ pub fn writeInput(s: *Session, data: []const u8) SessionError!usize {
 /// POSIX loop, which bounds a stuck write with a 1 s `poll` — a paste larger
 fn writeInputWin(s: *Session, data: []const u8) SessionError!usize {
     const h = s.win.in_write orelse return error.WriteFailed;
+    // A ConPTY console cooks its own input — echo included — so it gets the
+    // client's bytes untouched. A PIPE has no line discipline at all: see
+    // `writeInputPipeWin`.
+    if (s.win.kind == .conpty) return writeRawAll(h, data);
+    return writeInputPipeWin(s, h, data);
+}
+
+/// The line discipline a pipe does not have: a pipe-backed cmd.exe echoes a line
+/// only when it COMMITS and treats DEL as an ordinary character, so the server
+/// keeps the line, echoes the typing, and hands over the line + CRLF on Enter.
+fn writeInputPipeWin(s: *Session, h: HANDLE, data: []const u8) SessionError!usize {
+    for (data) |b| {
+        if (b == '\r' or b == '\n') {
+            _ = try writeRawAll(h, s.line.items);
+            _ = try writeRawAll(h, "\r\n");
+            s.line.clearRetainingCapacity();
+            appendEchoLocked(s, "\r\n");
+            continue;
+        }
+        if (b == 0x7f or b == 0x08) {
+            const drop = eraseCodepoint(s.line.items) orelse continue;
+            s.line.items.len -= drop;
+            appendEchoLocked(s, "\x08 \x08");
+            continue;
+        }
+        // Control bytes (Ctrl+C, arrows, Tab) are DROPPED: a pipe carries no
+        // signals and no console history, so forwarding them would only put
+        // invisible junk into the line the shell runs.
+        if (b < 0x20) continue;
+        try s.line.append(g_alloc, b);
+        appendEchoLocked(s, &[_]u8{b});
+    }
+    return data.len;
+}
+
+/// Bytes the trailing UTF-8 codepoint of `line` occupies, or null when there is
+/// nothing left to erase. Continuation bytes (10xxxxxx) belong to the codepoint
+/// before them, so Backspace removes a whole character and not half of one.
+fn eraseCodepoint(line: []const u8) ?usize {
+    if (line.len == 0) return null;
+    var i = line.len - 1;
+    while (i > 0 and (line[i] & 0xc0) == 0x80) i -= 1;
+    return line.len - i;
+}
+
+/// The server's echo of the user's typing, appended to the same ring the shell
+/// writes into. The output stamps are restored around it: typing is not shell
+/// output, so it must not mark the session busy for the idle sweep.
+fn appendEchoLocked(s: *Session, bytes: []const u8) void {
+    const out_at = s.last_output_at_s;
+    const out_total = s.last_output_total;
+    appendLocked(s, bytes);
+    s.last_output_at_s = out_at;
+    s.last_output_total = out_total;
+}
+
+fn writeRawAll(h: HANDLE, data: []const u8) SessionError!usize {
     var off: usize = 0;
     while (off < data.len) {
         // A single Win32 write is capped at DWORD bytes.
@@ -1575,6 +1647,7 @@ fn reapSession(s: *Session) void {
         reapSessionPosix(s);
     }
     s.buf.deinit(g_alloc);
+    s.line.deinit(g_alloc);
     g_alloc.free(s.owner);
     g_alloc.free(s.id);
     g_alloc.destroy(s);
@@ -1631,6 +1704,57 @@ fn sleepMillis(ms: u64) void {
 // ---------------------------------------------------------------------
 
 const testing = std.testing;
+
+test "backspace erases a whole codepoint, not a byte" {
+    try testing.expect(eraseCodepoint("") == null);
+    try testing.expectEqual(@as(?usize, 1), eraseCodepoint("dir"));
+    // A multi-byte codepoint goes back to its lead byte in one press.
+    try testing.expectEqual(@as(?usize, 2), eraseCodepoint("d\u{e9}"));
+    try testing.expectEqual(@as(?usize, 3), eraseCodepoint("\u{20ac}"));
+    try testing.expectEqual(@as(?usize, 1), eraseCodepoint("abc\u{e9}d"));
+}
+
+test "the pipe backend echoes typing and commits the line on Enter" {
+    switch (pty_backend) {
+        .posix_pty => {},
+        .none => {},
+        .conpty => {
+            const info = try createSession(testing.io, "", null, 80, 24, "user_test");
+            defer destroySession(info.id) catch {};
+            // A real console cooks AND echoes its own input; only the pipe
+            // fallback needs the server's discipline, so only it asserts.
+            if (!std.mem.eql(u8, info.backend, backend_pipe)) return;
+
+            const s = getSession(info.id) orelse return error.SessionNotFound;
+            sleepMillis(500);
+            // Typing shows up BEFORE the line commits — the whole point.
+            _ = try writeInput(s, "echo ECHOED-4c1a9f");
+            try expectMarker(s, "echo ECHOED-4c1a9f", 50);
+            // Backspace erases one cell in the view...
+            _ = try writeInput(s, "\x7f");
+            try expectMarker(s, "\x08 \x08", 50);
+            // ...and that same byte is gone from the line the shell runs.
+            _ = try writeInput(s, "\r");
+            try expectMarker(s, "ECHOED-4c1a9\r\n", 100);
+            // `/Q` keeps the pipe shell from echoing the line a second time:
+            // exactly our own echo of the typed text, nothing more.
+            const out = readOutput(s, 0);
+            try testing.expectEqual(@as(usize, 1), std.mem.count(u8, out.data, "echo ECHOED-4c1a9"));
+
+            _ = try writeInput(s, "exit\r");
+            var i: usize = 0;
+            while (i < 100) : (i += 1) {
+                const o = readOutput(s, 0);
+                if (o.exited) {
+                    try testing.expectEqual(@as(?i32, 0), o.exit_code);
+                    return;
+                }
+                sleepMillis(100);
+            }
+            return error.TestUnexpectedResult;
+        },
+    }
+}
 
 test "validateCreate accepts absolute cwd with defaults" {
     const dims = try validateCreate("/tmp", null, null);
@@ -1858,10 +1982,11 @@ test "spawned shell echoes input" {
 
             const s = getSession(info.id) orelse return error.SessionNotFound;
             sleepMillis(500);
-            // cmd.exe reads in cooked mode: CR commits the line, so the
-            // input ends CRLF (a bare LF works on most builds, but not by
-            // contract). On the pipe backend the shell never echoes, so the
-            _ = try writeInput(s, "echo MARKER-7f3a9c\r\n");
+            // Enter as the CLIENT sends it, not as a test finds convenient:
+            // xterm's onData emits one bare `\r`, and a pipe-backed cmd.exe
+            // honours only CRLF — which is why `writeInputWin` rewrites it.
+            _ = try writeInput(s, "echo MARKER-7f3a9c");
+            _ = try writeInput(s, if (std.mem.eql(u8, be, backend_pipe)) "\r" else "\r\n");
             try expectMarker(s, "MARKER-7f3a9c", 100);
 
             // resize is `ResizePseudoConsole` on ConPTY and a recorded
