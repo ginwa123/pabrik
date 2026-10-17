@@ -57,7 +57,7 @@ fn windowsHandleCount() CountError!usize {
 
 /// The kernel's own answer: `fcntl(fd, F_GETFD)` answers EBADF for a slot this
 /// process does not hold, so a sweep to `probe_limit_fd` counts exactly the
-/// open descriptors. No `/proc` needed.
+/// open descriptors. No `/proc` needed, and no libc on Linux (see posix_arm).
 fn posixDescriptorCount() CountError!usize {
     var n: usize = 0;
     var fd: std.posix.fd_t = 0;
@@ -72,7 +72,10 @@ fn posixDescriptorCount() CountError!usize {
 /// the count never moved — the self-check below is what caught it.
 const posix_arm = if (builtin.os.tag == .windows) struct {} else struct {
     fn isOpen(fd: std.posix.fd_t) bool {
-        return std.c.fcntl(fd, std.c.F.GETFD, @as(c_int, 0)) >= 0;
+        return switch (builtin.os.tag) {
+            .linux => @as(isize, @bitCast(std.os.linux.fcntl(fd, std.os.linux.F.GETFD, 0))) >= 0,
+            else => std.c.fcntl(fd, std.c.F.GETFD, @as(c_int, 0)) >= 0,
+        };
     }
 };
 
