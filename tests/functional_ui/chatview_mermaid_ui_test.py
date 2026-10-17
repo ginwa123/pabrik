@@ -227,3 +227,83 @@ def test_legacy_markdown_message_has_no_diagram(ui_harness: UIHarness, page) -> 
     page.wait_for_selector(".markdown-content h1", timeout=20000)
     assert page.locator(".markdown-content h1").inner_text() == "Heading"
     assert page.locator('[data-testid="chat-mermaid"]').count() == 0
+
+
+# ─── Test 6: click to enlarge, and copy the source ──────────────────────────
+
+#: Captures `navigator.clipboard.writeText` calls in the page, so the assertion
+#: is about what the APP wrote, not about the OS clipboard (which needs a
+#: grant and can be flaky in headless CI).
+CLIPBOARD_SPY = """
+(() => {
+  window.__copied = [];
+  const clip = navigator.clipboard || {};
+  const original = clip.writeText ? clip.writeText.bind(clip) : null;
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: Object.assign(clip, {
+      writeText: (text) => {
+        window.__copied.push(String(text));
+        return original ? original(text) : Promise.resolve();
+      },
+    }),
+  });
+})()
+"""
+
+
+def test_diagram_previews_on_click_and_copies_its_source(ui_harness: UIHarness, page) -> None:
+    """The reader's two moves: enlarge the diagram, or take the source away.
+
+    The preview must actually be BIGGER than the inline drawing (that is the
+    whole point of clicking), Escape must close it, and the copy button must
+    hand the exact Mermaid source to the clipboard.
+    """
+    h = ui_harness
+    session_id = "sess_mermaid_preview_001"
+    workspace_id = _seed_turn(h, session_id, f"<mermaid>{MERMAID_SOURCE}</mermaid>")
+    page.add_init_script(CLIPBOARD_SPY)
+    open_chatview(page, h, workspace_id, session_id)
+
+    page.wait_for_selector('[data-testid="chat-mermaid-svg"] svg', timeout=20000)
+    inline = page.evaluate(
+        """() => {
+            const svg = document.querySelector('[data-testid="chat-mermaid-svg"] svg');
+            const r = svg.getBoundingClientRect();
+            return { width: r.width, height: r.height };
+        }"""
+    )
+
+    # The copy chrome appears on hover and copies the block's source verbatim.
+    page.hover('[data-testid="chat-mermaid"]')
+    page.click('[data-testid="chat-mermaid-copy"]')
+    page.wait_for_function("() => (window.__copied || []).length > 0", timeout=5000)
+    copied = page.evaluate("() => window.__copied")
+    assert copied == [MERMAID_SOURCE], f"copied {copied!r}, expected the block source"
+
+    page.click('[data-testid="chat-mermaid-enlarge"]')
+    page.wait_for_selector('[data-testid="mermaid-preview"]', timeout=10000)
+    enlarged = page.evaluate(
+        """() => {
+            const svg = document.querySelector('[data-testid="mermaid-preview-svg"] svg');
+            const r = svg.getBoundingClientRect();
+            return {
+                width: r.width,
+                height: r.height,
+                overflow: getComputedStyle(document.body).overflow,
+            };
+        }"""
+    )
+    print("inline:", inline, "preview:", enlarged)
+
+    assert enlarged["width"] > inline["width"], (
+        f"the preview must enlarge the diagram: {inline['width']}px -> {enlarged['width']}px"
+    )
+    assert enlarged["height"] > 40, f"preview svg not laid out: {enlarged}"
+    assert enlarged["overflow"] == "hidden", "the transcript must not scroll under the overlay"
+
+    page.keyboard.press("Escape")
+    page.wait_for_selector('[data-testid="mermaid-preview"]', state="detached", timeout=5000)
+    assert page.evaluate("() => getComputedStyle(document.body).overflow") != "hidden", (
+        "closing the preview must release the scroll lock"
+    )

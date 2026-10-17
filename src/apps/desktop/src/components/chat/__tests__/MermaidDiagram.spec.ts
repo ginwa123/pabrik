@@ -119,4 +119,52 @@ describe('MermaidDiagram', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="chat-mermaid-svg"]').html()).not.toContain('stale')
   })
+
+  it('opens a full-screen preview on click, and closes it again', async () => {
+    const wrapper = mountDiagram(SOURCE)
+    await flushPromises()
+    expect(document.querySelector('[data-testid="mermaid-preview"]')).toBeNull()
+
+    await wrapper.find('[data-testid="chat-mermaid-enlarge"]').trigger('click')
+    const overlay = document.querySelector('[data-testid="mermaid-preview"]')
+    expect(overlay).not.toBeNull()
+    // The preview shows the SAME drawing, enlarged by the overlay's CSS.
+    expect(overlay?.querySelector('[data-testid="mermaid-preview-svg"] svg')).not.toBeNull()
+    expect(document.body.style.overflow).toBe('hidden')
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+    expect(document.querySelector('[data-testid="mermaid-preview"]')).toBeNull()
+    expect(document.body.style.overflow).toBe('')
+  })
+
+  it('closes the preview from its close button', async () => {
+    const wrapper = mountDiagram(SOURCE)
+    await flushPromises()
+    await wrapper.find('[data-testid="chat-mermaid-enlarge"]').trigger('click')
+    ;(document.querySelector('[data-testid="mermaid-preview-close"]') as HTMLElement).click()
+    await flushPromises()
+    expect(document.querySelector('[data-testid="mermaid-preview"]')).toBeNull()
+  })
+
+  it('copies the mermaid source, and says so on the button', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    const wrapper = mountDiagram(SOURCE)
+    await flushPromises()
+
+    await wrapper.find('[data-testid="chat-mermaid-copy"]').trigger('click')
+    await flushPromises()
+
+    expect(writeText).toHaveBeenCalledWith(SOURCE)
+    expect(wrapper.find('[data-testid="chat-mermaid-copy"]').classes()).toContain(
+      'chat-mermaid-copy--done',
+    )
+    expect(wrapper.find('[data-testid="chat-mermaid-copy"]').attributes('aria-label')).toBe(
+      'Copied',
+    )
+  })
 })
