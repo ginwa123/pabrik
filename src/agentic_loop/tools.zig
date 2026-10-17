@@ -20,6 +20,8 @@ pub const execLoadMemory = @import("../modules/agent/tools/memory.zig").execLoad
 pub const execReadWorkspaceSession = @import("../modules/agent/tools/read_workspace_session.zig").execReadWorkspaceSession;
 // run_session: start/resume a session agent, another workspace included.
 pub const execRunSession = @import("../modules/agent/tools/run_session.zig").execRunSession;
+// view_session: one session's detail (cwd, worktree, task, running state).
+pub const execViewSession = @import("../modules/agent/tools/view_session.zig").execViewSession;
 // Workspace credential DISCOVERY. The value never leaves the store — this
 // adapter lists names only (see list_secrets.zig).
 pub const execListSecrets = @import("../modules/agent/tools/list_secrets.zig").execListSecrets;

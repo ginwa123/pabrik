@@ -48,6 +48,7 @@ const EXPECTED_KANBAN_SEEDED_TOOLS = [_][]const u8{
     "use_skill",
     "use_tool",
     "used_tools",
+    "view_session",
     "view_tool",
     "web_search",
     "write_file",

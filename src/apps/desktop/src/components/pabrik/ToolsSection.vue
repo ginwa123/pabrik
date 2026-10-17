@@ -54,6 +54,9 @@ const BUILTIN_DEFAULT_TOOLS: readonly string[] = [
   'spawn_sub_agent',
   'list_sub_agent',
   'used_tools',
+  // Read-only introspection: where this session runs (cwd, git worktree, task)
+  // and whether a run is in flight. Default-on, like `read_workspace_session`.
+  'view_session',
   'search_tool',
   'view_tool',
   'use_tool',
@@ -97,6 +100,7 @@ const GROUP_BY_TOOL: Record<string, string> = {
   load_memory: 'Memory & sessions',
   read_workspace_session: 'Memory & sessions',
   run_session: 'Memory & sessions',
+  view_session: 'Memory & sessions',
   add_document: 'Documents',
   edit_document: 'Documents',
   search_documents: 'Documents',
