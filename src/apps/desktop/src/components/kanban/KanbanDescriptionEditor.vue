@@ -688,14 +688,14 @@ defineExpose({ pendingFiles })
         :placeholder="placeholder"
         :maxlength="maxLength ?? undefined"
         :data-testid="testId"
-        rows="6"
+        rows="10"
         class="flex-1 px-3 py-2.5 rounded-lg text-body outline-none transition-all duration-200 resize-y"
         style="
           background-color: var(--semantic-sidebar-bg);
           border: 1px solid var(--color-border);
           color: var(--semantic-text);
           font-family: inherit;
-          min-height: 160px;
+          min-height: 280px;
         "
         @input="onTextareaInput"
         @keydown="handleKeydown"
