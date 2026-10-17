@@ -148,19 +148,21 @@ describe('stripThinkingTags — filter interplay (unit)', () => {
 })
 
 // -------------------------------------------------------------------------
-// <html> wrapper tag rendering (2026-08-23 html-tag-support, Task 3)
+// Wrapper-tag rendering — <html> and <mermaid>
 // -------------------------------------------------------------------------
-describe('HTML tag support — ChatView render branch (source contract)', () => {
-  it('imports the html helpers from @/helpers', async () => {
+describe('Rich-block support — ChatView render branch (source contract)', () => {
+  it('imports the rich-block helpers from @/helpers', async () => {
     const source = await readChatViewSource()
-    expect(source).toMatch(/import \{[^}]*isHtmlTags[^}]*\} from '@\/helpers'/)
+    expect(source).toMatch(/import \{[^}]*hasRichBlocks[^}]*\} from '@\/helpers'/)
+    expect(source).toMatch(/import \{[^}]*extractRichBlocks[^}]*\} from '@\/helpers'/)
   })
 
-  it('branches the assistant template on msgHasHtml before the v-html path', async () => {
+  it('branches the assistant template on hasRichBlocks before the v-html path', async () => {
     const source = await readChatViewSource()
-    // The template must check msgHasHtml(msg.content) and render the
-    // iframe branch INSTEAD of the legacy v-html span for that message.
-    expect(source).toMatch(/v-if="msg\.role === 'assistant' && msgHasHtml\(msg\.content\)"/)
+    // The template must check hasRichBlocks(msg.content) and render the
+    // iframe/diagram branches INSTEAD of the legacy v-html span for that
+    // message.
+    expect(source).toMatch(/v-if="msg\.role === 'assistant' && hasRichBlocks\(msg\.content\)"/)
     // The legacy renderResponse call site survives (v-else path).
     expect(source).toMatch(/renderResponse\(\s*\n\s*msg\.content,/)
   })
@@ -174,10 +176,20 @@ describe('HTML tag support — ChatView render branch (source contract)', () => 
     expect(source).not.toMatch(/sandbox="allow-scripts allow-same-origin"/)
   })
 
-  it('extracts per-block segments via extractHtmlBlocks', async () => {
+  it('splits a message into per-block segments with extractRichBlocks', async () => {
     const source = await readChatViewSource()
-    expect(source).toMatch(/const extractHtmlBlocks/)
-    expect(source).toMatch(/extractHtmlBlocks\(msg\.content \|\| ''\)/)
+    expect(source).toMatch(/extractRichBlocks\(msg\.content \|\| ''\)/)
+  })
+
+  it('renders a mermaid segment through MermaidDiagram, never as HTML', async () => {
+    const source = await readChatViewSource()
+    expect(source).toMatch(/import MermaidDiagram from '\.\.\/chat\/MermaidDiagram\.vue'/)
+    expect(source).toMatch(
+      /v-else-if="seg\.kind === 'mermaid' && seg\.payload"\s*\n\s*:source="seg\.payload"/,
+    )
+    // The mermaid source is text handed to the diagram component — it must
+    // not reach the DOM through the markdown `v-html` branch.
+    expect(source).toMatch(/v-if="seg\.kind === 'markdown' && seg\.payload"/)
   })
 
   it('wraps fragment blocks in a minimal srcdoc shell via buildHtmlSrcdoc', async () => {

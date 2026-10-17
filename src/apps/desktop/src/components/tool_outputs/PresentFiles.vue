@@ -41,8 +41,10 @@
     - video/*: native `<video controls>`. audio/*: native `<audio controls>`.
     - text-like (text/*, application/json, application/javascript):
       fetched source (≤ 512 KB, sliced to 200k chars) rendered via
-      `PreviewContentRenderer` — markdown for `.md`, code + language for
-      known code extensions, plain text otherwise.
+      `PreviewContentRenderer` — markdown for `.md` (its <mermaid>
+      blocks and ```mermaid fences included), a diagram for `.mmd` /
+      `.mermaid`, code + language for known code extensions, plain text
+      otherwise.
     - everything else: generic file row (icon + name + size + mime + ⬇).
 
   Header (always visible):
@@ -164,19 +166,24 @@ const extOf = (f: ParsedPresentFile): string => {
   return dot === -1 ? '' : base.slice(dot).toLowerCase()
 }
 
+/** Mermaid source files render as a diagram of themselves, not as their own text. */
+const MERMAID_EXTS = new Set(['.mmd', '.mermaid'])
+
 /** Text-like files render fetched source inline (not just a row). */
 const isTextLike = (f: ParsedPresentFile): boolean => {
   if (isHtml(f)) return false
   const m = mimeLower(f)
   if (m.startsWith('text/')) return true
   if (m.includes('application/json') || m.includes('application/javascript')) return true
-  return extOf(f) in CODE_LANG_BY_EXT
+  const ext = extOf(f)
+  return ext in CODE_LANG_BY_EXT || MERMAID_EXTS.has(ext)
 }
 
-type TextRendererType = 'markdown' | 'text' | 'code'
+type TextRendererType = 'markdown' | 'text' | 'code' | 'mermaid'
 
 const textRendererType = (f: ParsedPresentFile): TextRendererType => {
   const ext = extOf(f)
+  if (MERMAID_EXTS.has(ext)) return 'mermaid'
   if (ext === '.md' || mimeLower(f).includes('markdown')) return 'markdown'
   if (ext in CODE_LANG_BY_EXT) return 'code'
   return 'text'

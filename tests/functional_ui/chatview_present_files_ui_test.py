@@ -410,3 +410,147 @@ def test_present_files_frame_tracks_a_document_that_shrinks(
         "return el ? el.tagName : '' }"
     )
     assert bottom != "HTML", "the frame's bare canvas is exposed at its bottom edge"
+
+# ─── Test: a presented markdown / .mmd file draws its mermaid diagram ───────
+
+PRESENTED_MD = """# Flow
+
+Here is the pipeline:
+
+```mermaid
+flowchart TD
+  A[Ask] --> B[Diagram]
+```
+
+Done.
+"""
+
+PRESENTED_MMD = "flowchart LR\n  X[Left] --> Y[Right]\n"
+
+
+def test_present_files_markdown_and_mmd_render_diagrams(
+    ui_harness: UIHarness, page,
+) -> None:
+    """A presented file containing mermaid renders a DIAGRAM, not source text.
+
+    Two real files on disk inside the isolated session cwd (the download
+    endpoint's sandbox root):
+
+    * ``flow.md`` — prose around a ```mermaid fence (what an agent writes
+      into a report);
+    * ``flow.mmd`` — bare mermaid source, no fence, mime
+      ``application/octet-stream`` (what a server guesses for ``.mmd``).
+
+    Both are fetched over the same-origin inline endpoint and rendered by
+    the shared ``PreviewContentRenderer``; the diagram itself must be the
+    same app-themed SVG the transcript draws.
+    """
+    h = ui_harness
+    session_id = "sess_present_files_mermaid_001"
+
+    md_path = h.temp_dir / "flow.md"
+    mmd_path = h.temp_dir / "flow.mmd"
+    md_path.write_bytes(PRESENTED_MD.encode("utf-8"))
+    mmd_path.write_bytes(PRESENTED_MMD.encode("utf-8"))
+
+    workspace_id = create_workspace(h)
+    seed = DbSeed(_seed_db_path(h))
+    files = [
+        {
+            "path": str(md_path),
+            "bytes": md_path.stat().st_size,
+            "mime": "text/markdown; charset=utf-8",
+            "label": "flow.md",
+        },
+        {
+            "path": str(mmd_path),
+            "bytes": mmd_path.stat().st_size,
+            "mime": "application/octet-stream",
+            "label": "flow.mmd",
+        },
+    ]
+    envelope = json.dumps(
+        {
+            "tool": "present_files",
+            "parameters": {"files": [{"path": f["path"]} for f in files]},
+            "success": True,
+            "data": {
+                "status": "presented",
+                "count": len(files),
+                "files": files,
+                "error": None,
+            },
+            "error": None,
+            "v": 1,
+        }
+    )
+    with seed.connect() as conn:
+        seed.seed_session(
+            conn, session_id, "Present Files Mermaid", cwd=str(h.temp_dir),
+        )
+        bind_session_workspace(conn, workspace_id, session_id)
+        ts = DbSeed.baseline_timestamps(count=3, interval_seconds=30)
+        seed.seed_user_message(conn, session_id, "show me the flow", created_at=ts[0])
+        seed.seed_assistant_message(
+            conn,
+            session_id,
+            text="",
+            finish_reason="tool_calls",
+            tool_calls=[{
+                "id": "call_present_mermaid_001",
+                "type": "function",
+                "function": {
+                    "name": "present_files",
+                    "arguments": {"files": [{"path": f["path"]} for f in files]},
+                },
+            }],
+            created_at=ts[1],
+        )
+        seed.seed_tool_result(
+            conn, session_id, "call_present_mermaid_001", "present_files", envelope,
+            created_at=ts[2],
+        )
+
+    open_chatview(page, h, workspace_id, session_id)
+    page.wait_for_selector('[data-testid="present-files-card"]', timeout=15000)
+    card = page.locator('[data-testid="present-files-card"]').first
+    card.scroll_into_view_if_needed()
+    header = card.locator('[role="button"]').first
+    if header.get_attribute("aria-expanded") == "false":
+        header.click()
+
+    # 1. The `.md` preview draws its fence as a diagram, prose intact.
+    md_box = page.locator('[data-testid="present-files-inline-text-0"]')
+    md_box.wait_for(timeout=15000)
+    md_box.locator('[data-testid="chat-mermaid-svg"] svg').wait_for(timeout=20000)
+    assert md_box.locator("h1").count() > 0, "prose around the diagram must still render"
+    md_text = md_box.inner_text()
+    assert "```mermaid" not in md_text, f"the fence still renders as text: {md_text!r}"
+    assert "Done." in md_text, "prose after the diagram must still render"
+
+    # 2. A whole-file `.mmd` (no fence) is all diagram.
+    mmd_box = page.locator('[data-testid="present-files-inline-text-1"]')
+    mmd_box.wait_for(timeout=15000)
+    mmd_box.locator('[data-testid="preview-mermaid"] svg').wait_for(timeout=20000)
+    m = mmd_box.evaluate(
+        """el => {
+            const svg = el.querySelector('svg');
+            const r = svg.getBoundingClientRect();
+            const node = svg.querySelector('g.node rect, g.node polygon, g.node circle');
+            return {
+                width: r.width,
+                height: r.height,
+                nodeFill: node ? getComputedStyle(node).fill : '',
+                labels: Array.from(svg.querySelectorAll('g.node text'))
+                    .map((t) => t.textContent.trim())
+                    .join('|'),
+            };
+        }"""
+    )
+    print("presented .mmd diagram:", m)
+
+    assert m["width"] > 40 and m["height"] > 40, f"svg not laid out: {m}"
+    assert m["labels"] == "Left|Right", f"labels came from flow.mmd: {m}"
+    # Same app theme as the transcript's diagrams (--color-bg-p1 node fill),
+    # not mermaid's stock light palette.
+    assert m["nodeFill"] == "rgb(40, 39, 39)", f"node fill is not the app token: {m}"

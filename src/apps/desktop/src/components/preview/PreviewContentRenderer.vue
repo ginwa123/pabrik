@@ -13,7 +13,7 @@
   full-width page when the inline view truncates.
 
   Props:
-    - `contentType`: one of 'markdown' | 'text' | 'code' | 'image' | 'html'.
+    - `contentType`: one of 'markdown' | 'text' | 'code' | 'image' | 'html' | 'mermaid'.
     - `args`: object with `content`, `title`, `caption`, `language` fields.
       `content` is the raw payload. `title` renders above. `caption`
       renders below. `language` selects the code fence hint (matches the
@@ -25,12 +25,14 @@
 
     | content_type  | Render path                                |
     |---------------|---------------------------------------------|
-    | markdown      | marked.parse(c) → v-html                    |
+    | markdown      | extractRichBlocks(c) → marked.parse (html blocks  |
+    |               | render inline) + <MermaidDiagram> per mermaid   |
     | text          | <pre class="whitespace-pre-wrap"> + escaped |
     | code          | <pre><code class="language-X"> + escaped    |
     | image         | <img :src="data:/http URL only">            |
     | html          | <iframe sandbox="allow-scripts" srcdoc=...> +  |
     |               | (inline only) "Open full preview" → button  |
+    | mermaid       | <MermaidDiagram :source="c">                 |
     | (anything else) | empty container (defensive)              |
 
   Security note for the `html` branch:
@@ -47,10 +49,12 @@ import { marked } from 'marked'
 import {
   PREVIEW_AUTO_RESIZE_SCRIPT,
   PREVIEW_AUTO_RESIZE_SOURCE,
+  extractRichBlocks,
   frameDocumentStyle,
   growFrameToContent,
   readAutoResizeHeight,
 } from '@/helpers'
+import MermaidDiagram from '../chat/MermaidDiagram.vue'
 
 export interface PreviewArgs {
   content?: string
@@ -61,7 +65,7 @@ export interface PreviewArgs {
 
 const props = withDefaults(
   defineProps<{
-    contentType: 'markdown' | 'text' | 'code' | 'image' | 'html'
+    contentType: 'markdown' | 'text' | 'code' | 'image' | 'html' | 'mermaid'
     args: PreviewArgs
     /**      * Layout variant (kept for backward compat). Only `'inline'` is used — compact chat-bubble
      * layout that auto-resizes to fit the iframe's content height, plus an "Open in new tab" button
@@ -110,19 +114,12 @@ function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;')
 }
 
-// markdown / text / code branch (consumed via v-html). The other
-// branches (`image`, `html`) render via dedicated elements below
-// — the v-html string is empty for them so we don't double-render.
+// text / code branch (consumed via v-html). `image`, `html`, `markdown` and
+// `mermaid` render via dedicated elements instead — the v-html string is
+// empty for them so we don't double-render.
 const renderedContent = computed<string>(() => {
   const ct = props.contentType
   const c = props.args.content ?? ''
-  if (ct === 'markdown') {
-    try {
-      return marked.parse(c, { async: false }) as string
-    } catch {
-      return `<pre>${escapeHtml(c)}</pre>`
-    }
-  }
   if (ct === 'text') {
     return `<pre class="whitespace-pre-wrap break-all">${escapeHtml(c)}</pre>`
   }
@@ -130,9 +127,12 @@ const renderedContent = computed<string>(() => {
     const lang = props.args.language ?? 'plaintext'
     return `<pre><code class="language-${escapeHtml(lang)}">${escapeHtml(c)}</code></pre>`
   }
-  // 'image' and 'html' render via dedicated template branches.
   return ''
 })
+
+/**  * A presented markdown file can carry mermaid — as a `<mermaid>` block or a ```mermaid fence — so
+ * its prose and its diagrams render from one text pass. */
+const markdownSegments = computed(() => extractRichBlocks(props.args.content ?? ''))
 
 // XSS guard for image: only data: URLs and http(s) URLs are allowed.
 // Other payloads (e.g. javascript:) silently render nothing — the
@@ -248,10 +248,30 @@ function openInNewTab() {
       </div>
     </div>
 
+    <div v-else-if="contentType === 'mermaid'" data-testid="preview-mermaid">
+      <MermaidDiagram :source="args.content ?? ''" />
+    </div>
+
     <!--
       Markdown / text / code / image content (non-html) flow through
-      the v-else branch below.
+      the branches below. An `html` SEGMENT of a presented markdown file
+      renders inline here too: this pane has no per-segment frame, and
+      dropping the block would silently lose content.
     -->
+    <div
+      v-else-if="contentType === 'markdown'"
+      class="text-dense text-[var(--semantic-text)] markdown-content"
+    >
+      <template v-for="(seg, sIdx) in markdownSegments" :key="sIdx">
+        <!-- eslint-disable-next-line vue/no-v-html -->
+        <span
+          v-if="seg.kind !== 'mermaid' && seg.payload"
+          v-html="marked.parse(seg.payload, { async: false })"
+        ></span>
+        <MermaidDiagram v-else-if="seg.kind === 'mermaid' && seg.payload" :source="seg.payload" />
+      </template>
+    </div>
+
     <div
       v-else
       class="text-dense text-[var(--semantic-text)] markdown-content"
