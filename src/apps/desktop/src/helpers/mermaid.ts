@@ -77,6 +77,10 @@ export const resolveMermaidPalette = (): MermaidPalette => {
 const buildConfig = (p: MermaidPalette): MermaidConfig => ({
   startOnLoad: false,
   securityLevel: 'strict',
+  // Without this, a diagram mermaid cannot parse is DRAWN as its "Syntax error in text" graphic and
+  // appended to <body> instead of failing: the transcript got a stray bomb at the bottom of the page.
+  // We render our own fallback (source + reason), so mermaid must reject instead.
+  suppressErrorRendering: true,
   theme: 'base',
   fontFamily: p.font,
   // Root-level, NOT `flowchart.htmlLabels` — mermaid 12 deprecated the per-diagram key and the
@@ -170,11 +174,20 @@ export const _resetMermaidLoader = (): void => {
 
 let renderSeq = 0
 
-/** Render Mermaid source to SVG markup. `mermaid.render` needs a unique, DOM-safe id per call: it
- * writes a temporary node under it and scopes the generated stylesheet to `#<id>`. */
+/** Render Mermaid source to SVG. The id is unique per call: mermaid scopes the generated stylesheet to
+ * `#<id>`. It is NOT given a container on purpose — a container that is not laid out when mermaid
+ * measures (`getBBox` on a `display:none` subtree) yields a 16x16 diagram. */
 export const renderMermaid = async (source: string): Promise<string> => {
   const mermaid = await loadMermaid()
   renderSeq += 1
-  const { svg } = await mermaid.render(`chat-mermaid-${renderSeq}`, source)
-  return svg
+  const id = `chat-mermaid-${renderSeq}`
+  return mermaid.render(id, source).then(
+    (result) => result.svg,
+    (cause: unknown) => {
+      // mermaid's temp nodes are `d<id>`, `<id>` and `i<id>` (see `removeExistingElements` in
+      // mermaid.core.mjs); its own cleanup only ever looks up the id it is about to REUSE, so ours.
+      for (const leftover of [id, `d${id}`, `i${id}`]) document.getElementById(leftover)?.remove()
+      throw cause
+    },
+  )
 }

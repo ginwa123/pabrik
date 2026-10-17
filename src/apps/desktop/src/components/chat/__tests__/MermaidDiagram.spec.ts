@@ -49,6 +49,7 @@ describe('MermaidDiagram', () => {
       securityLevel: string
       theme: string
       htmlLabels: boolean
+      suppressErrorRendering: boolean
       themeVariables: { darkMode: boolean; background: string; lineColor: string }
     }
     expect(config.startOnLoad).toBe(false)
@@ -57,6 +58,9 @@ describe('MermaidDiagram', () => {
     // Root-level: mermaid 12 deprecated `flowchart.htmlLabels`, and HTML labels
     // would inherit the transcript's Tailwind preflight inside the diagram.
     expect(config.htmlLabels).toBe(false)
+    // A diagram mermaid cannot parse must REJECT, not draw its "Syntax error"
+    // graphic into the page (which is what appears at the bottom of the chat).
+    expect(config.suppressErrorRendering).toBe(true)
     expect(config.themeVariables.darkMode).toBe(true)
     // Canvas is the card surface, not a white sheet on a dark transcript.
     expect(config.themeVariables.background).toBe(MERMAID_PALETTE_FALLBACK.canvas)
@@ -71,6 +75,7 @@ describe('MermaidDiagram', () => {
     const wrapper = mountDiagram(SOURCE)
     await flushPromises()
 
+    // No diagram: the fallback replaces it entirely.
     expect(wrapper.find('[data-testid="chat-mermaid-svg"]').exists()).toBe(false)
     const note = wrapper.find('[data-testid="chat-mermaid-error"]')
     expect(note.text()).toContain('Parse error on line 2')
