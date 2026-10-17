@@ -722,16 +722,16 @@ describe('KanbanTaskDetailDialog — create mode', () => {
     expect(strip).toBeNull()
   })
 
-  it('"Create task only" menu item is disabled when name is empty', async () => {
+  it('the flat "Create task" button is disabled when name is empty', async () => {
     mountCreateDialog()
     await flushPromises()
-    // In create mode the commit split button's left half is the run
-    // action, so the plain create lives in the caret menu under this
-    // testid.
+    // Create mode's two commit buttons are flat siblings: the plain
+    // create under this testid, next to ▶ Create task & run agent.
+    // Both are gated on a non-empty name.
     const saveBtn = findInDom<HTMLButtonElement>(
       '[data-testid="kanban-task-detail-save"]',
     )
-    expect(saveBtn?.textContent).toContain('Create task only')
+    expect(saveBtn?.textContent?.trim()).toBe('Create task')
     expect(saveBtn?.hasAttribute('disabled')).toBe(true)
   })
 
@@ -1018,10 +1018,10 @@ describe('KanbanTaskDetailDialog — column dropdown (create mode)', () => {
     ).toBeNull()
   })
 
-  // NEW (2026-08-06, dropdown width/style follow-up v3). User feedback round 3: BOTH the trigger
-  // button AND the dropdown should be wider than a tiny pill — they should match each other at a
-  // proper button width (~180px).
-  it('create mode: trigger and dropdown both have min-w-[180px] and match in width', async () => {
+  // NEW (kanban panel restructure). The dropdown is no longer an absolutely positioned overlay
+  // pinned to the trigger's left edge — it renders IN PLACE, as the next normal-flow block below
+  // its trigger. The old pins (min-w-[180px] + left-0 on the dropdown) described the overlay.
+  it('create mode: the column dropdown flows under a min-w-[180px] trigger with no width cap', async () => {
     mountCreateWithColumns([
       { id: 'col_x', name: 'todo' },
       { id: 'col_y', name: 'in_review_planning' },
@@ -1039,21 +1039,24 @@ describe('KanbanTaskDetailDialog — column dropdown (create mode)', () => {
     expect(trigger).not.toBeNull()
     expect(dropdown).not.toBeNull()
 
-    // Trigger is a wide button, not a tiny pill.
+    // Trigger is still a wide button, not a tiny pill.
     const triggerClass = trigger!.getAttribute('class') ?? ''
     expect(triggerClass).toContain('min-w-[180px]')
     expect(triggerClass).toContain('justify-between')
 
-    // Dropdown matches the trigger width via min-w-[180px] + left-0
-    // anchored to wrapper's left edge. NOT full body width.
+    // The dropdown is an in-flow block sharing the trigger's container, laid out
+    // right below it (jsdom has no layout, so "same parent + next element
+    // sibling" is the measurable form of "directly below, same width").
     const dropdownClass = dropdown!.getAttribute('class') ?? ''
-    expect(dropdownClass).toContain('min-w-[180px]')
-    expect(dropdownClass).toContain('left-0')
-    expect(dropdownClass).not.toContain('w-full')
-    expect(dropdownClass).not.toContain('inset-x-0')
-    expect(dropdownClass).not.toContain('w-max')
+    expect(dropdownClass).not.toContain('absolute')
+    expect(dropdownClass).not.toContain('top-full')
+    expect(dropdownClass).not.toContain('z-20')
+    // No width cap of its own: an in-flow block fills its column instead.
+    expect(dropdownClass).not.toMatch(/(^|\s)(min-w-|max-w-|w-)/)
+    expect(dropdown!.parentElement).toBe(trigger!.parentElement)
+    expect(trigger!.nextElementSibling).toBe(dropdown!)
 
-    // Items have no border-top separator (matches profile picker style).
+    // The items keep their testids (and the profile-picker row style: no per-row separator).
     const item = dropdown!.querySelector<HTMLElement>(
       '[data-testid="kanban-task-detail-column-picker-item-col_y"]',
     )

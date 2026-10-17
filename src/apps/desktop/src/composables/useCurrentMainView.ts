@@ -62,7 +62,13 @@ export function useCurrentMainView(): ComputedRef<CurrentMainView> {
     if (parsed.kind === 'chat') {
       return { kind: 'chat', sessionId: parsed.sessionId, workspaceId: parsed.workspaceId }
     }
-    if (parsed.kind === 'project' || parsed.kind === 'projectChat') {
+    if (
+      parsed.kind === 'project' ||
+      parsed.kind === 'projectChat' ||
+      parsed.kind === 'projectAdd'
+    ) {
+      // `/add` maps onto the same `workspace` view as its project, so the
+      // sidebar keeps the active project row while the add page is open.
       return {
         kind: 'workspace',
         workspaceId: parsed.workspaceId,

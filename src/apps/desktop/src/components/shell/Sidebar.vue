@@ -397,7 +397,9 @@ const handleSelectItem = async (workspaceId: string, itemId: string) => {
     const existingSorts = route.query.sorts as string | undefined
     const pathParsed = parseAppPath(route.path)
     const urlItemId =
-      pathParsed.kind === 'project' || pathParsed.kind === 'projectChat'
+      pathParsed.kind === 'project' ||
+      pathParsed.kind === 'projectChat' ||
+      pathParsed.kind === 'projectAdd'
         ? pathParsed.projectId
         : parseItemIdWithChat((route.query.itemId as string | undefined) ?? '').itemId
     if (existingSorts && urlItemId === itemId) {

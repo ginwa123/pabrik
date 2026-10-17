@@ -163,7 +163,15 @@ const emit = defineEmits<{
   // their own ref. Kept for backward compatibility with the existing test suite and for the
   // KanbanSettingsDialog-style pattern.
   close: []
-  save: [payload: { mode: 'edit'; name: string; description: string; tags: string[]; depends_on?: string[] }]
+  save: [
+    payload: {
+      mode: 'edit'
+      name: string
+      description: string
+      tags: string[]
+      depends_on?: string[]
+    },
+  ]
   // Create-mode counterpart. Host wires this to workspacesStore.addTask
   // + moveTaskToColumn. Same payload shape as `save` but with
   // mode='create' so the parent handler can switch on it.
@@ -556,12 +564,10 @@ onMounted(() => {
   // NEW (Migration 070 — kanban-cwd-session-optional plan). Same
   // pattern for the per-task cwd picker.
   document.addEventListener('mousedown', handleDocumentClickCwd)
-  document.addEventListener('click', handleDocumentClickCommitMenu)
 })
 onUnmounted(() => {
   document.removeEventListener('click', handleDocumentClickColumn)
   document.removeEventListener('mousedown', handleDocumentClickCwd)
-  document.removeEventListener('click', handleDocumentClickCommitMenu)
 })
 
 // Dirty tracking — the Save button enables only when the form is
@@ -614,35 +620,6 @@ const isWorkerRunning = computed<boolean>(() => {
   return processingState?.[props.task.id] === true
 })
 
-// ─── Commit split button ──────────────────────────────────────────────── The two commit actions
-// are one split control: the left half is the action we expect you to want, the caret menu holds
-// the alternative (create mode → "Create task only", edit mode → "▶ Start agent").
-const commitMenuOpen = ref(false)
-const commitMenuRef = ref<HTMLElement | null>(null)
-
-const toggleCommitMenu = () => {
-  commitMenuOpen.value = !commitMenuOpen.value
-}
-
-const closeCommitMenu = () => {
-  commitMenuOpen.value = false
-}
-
-// A menu item commits the form, so it must close the menu it came from —
-// otherwise the popup sits over the panel the action just navigated to.
-const runMenuAction = (action: () => void) => {
-  closeCommitMenu()
-  action()
-}
-
-const handleDocumentClickCommitMenu = (event: MouseEvent) => {
-  if (!commitMenuOpen.value) return
-  const target = event.target as Node | null
-  if (commitMenuRef.value && target && !commitMenuRef.value.contains(target)) {
-    closeCommitMenu()
-  }
-}
-
 // ─── Handlers ─────────────────────────────────────────────────────────── NEW (plan:
 // 2026-08-18-kanban-task-detail-start-agent). Edit-mode handler for the ▶ Start agent button.
 const handleStartAgent = () => {
@@ -675,8 +652,6 @@ const handleSave = () => {
   // "dirty" signal and committing it didn't change isDirty (e.g. duplicate draft). canSave
   // recomputes reactively, but the read here is intentional.
   if (!canSave.value) return
-  // Attribute the in-flight state to this action so the split button can
-  // narrate which commit the user actually pressed.
   if (isCreateMode.value) pendingAction.value = 'create'
   if (isCreateMode.value) {
     emit('create', {
@@ -781,13 +756,6 @@ const commitTagsDraftOnSaveMouseDown = () => {
 }
 
 const handleKeydown = (event: KeyboardEvent) => {
-  // Escape peels one layer at a time: an open commit menu absorbs the key
-  // instead of the whole panel closing and losing the form.
-  if (event.key === 'Escape' && commitMenuOpen.value) {
-    event.stopPropagation()
-    closeCommitMenu()
-    return
-  }
   if (event.key === 'Escape') handleClose()
 }
 
@@ -996,40 +964,19 @@ const isMediaLoading = computed<boolean>(() => {
         background-color: var(--semantic-card-bg);
       "
     >
-      <div class="flex items-center justify-between gap-3">
-        <div class="flex items-center gap-2 min-w-0">
-          <button
-            type="button"
-            @click="handleClose"
-            data-testid="kanban-task-detail-back"
-            class="shrink-0 h-8 px-2 rounded-lg flex items-center gap-1 text-body font-medium transition-colors duration-200 hover:opacity-80"
-            style="color: var(--semantic-text-muted)"
-            title="Back to board"
-          >
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M15 19l-7-7 7-7"
-              />
-            </svg>
-            <span>Back</span>
-          </button>
-          <h3
-            :id="isCreateMode ? 'kanban-task-detail-create-title' : 'kanban-task-detail-title'"
-            class="text-lead font-semibold flex items-center gap-2 truncate"
-            style="color: var(--semantic-text)"
-          >
-            <UiIcon :name="isCreateMode ? 'plus' : 'pencil'" />
-            {{ isCreateMode ? 'New task' : 'Task details' }}
-          </h3>
-        </div>
+      <div class="flex items-start justify-between gap-3">
+        <h3
+          :id="isCreateMode ? 'kanban-task-detail-create-title' : 'kanban-task-detail-title'"
+          class="text-title font-semibold truncate"
+          style="color: var(--semantic-text)"
+        >
+          {{ isCreateMode ? 'New task' : 'Task details' }}
+        </h3>
         <button
           type="button"
           @click="handleClose"
           data-testid="kanban-task-detail-close"
-          class="w-8 h-8 rounded-lg flex items-center justify-center transition-colors duration-200 hover:opacity-80"
+          class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors duration-200 hover:opacity-80"
           style="color: var(--semantic-text-muted)"
           title="Close"
         >
@@ -1043,7 +990,7 @@ const isMediaLoading = computed<boolean>(() => {
           </svg>
         </button>
       </div>
-      <p class="text-dense mt-1" style="color: var(--semantic-text-dim)">
+      <p class="text-dense mt-1" style="color: var(--semantic-text-muted)">
         {{
           isCreateMode
             ? 'Create a new task, or start an agent on it right away.'
@@ -1092,172 +1039,49 @@ const isMediaLoading = computed<boolean>(() => {
                first form field. pt-4 keeps a clean rhythm without the
                dead air. -->
     <div class="flex-1 overflow-y-auto min-h-0 px-5 pt-4 pb-4">
-      <!-- Task name input — big, prominent, full-width -->
-      <div class="mb-4">
-        <label
-          for="kanban-task-detail-name"
-          class="block text-dense font-medium mb-2"
-          style="color: var(--semantic-text-dim)"
-        >
-          Task name
-        </label>
-        <input
-          id="kanban-task-detail-name"
-          ref="nameInput"
-          v-model="name"
-          type="text"
-          placeholder="Enter task name…"
-          :data-testid="isCreateMode ? 'kanban-task-detail-create-name' : 'kanban-task-detail-name'"
-          class="w-full px-3 py-2.5 rounded-lg text-lead font-medium outline-none transition-all duration-200"
-          style="
-            background-color: var(--semantic-sidebar-bg);
-            border: 1px solid var(--color-border);
-            color: var(--semantic-text);
-          "
-          @keyup.enter="handleEnterKey"
-        />
-      </div>
-
-      <!-- Metadata strip (read-only). Hidden when no metadata
-                 is available, which keeps the layout tight for the
-                 common case (standard task with no pin / column
-                 yet to load). In create mode the strip renders ONLY
-                 when a column is provided — pin/type don't apply to
-                 a brand-new task. The column + type + pinned items
-                 render as small chips (sidebar-bg + dim text) instead
-                 of plain dim text so they read as "metadata badges"
-                 rather than orphan labels. -->
-      <div
-        v-if="columnLabel || (!isCreateMode && (taskTypeLabel || task?.is_pinned))"
-        class="mb-4 flex items-center gap-2 flex-wrap"
-        data-testid="kanban-task-detail-metadata"
-      >
-        <!-- NEW (plan: 2026-08-06-kanban-add-task-button-placement).
-                   Column picker (create mode only). Replaces the read-only
-                   column chip in create mode — the user picks the target
-                   column inside the dialog (mirrors the profile picker
-                   pattern: button trigger + ▾ dropdown + ✓ checkmark +
-                   click-outside close). Pick emits column-change so the
-                   host updates activeCreateColumnId in real-time. Edit mode
-                   falls through to the static chip below. -->
-        <div
-          v-if="isCreateMode && props.availableColumns.length > 0"
-          ref="columnPickerRef"
-          class="relative"
-        >
-          <button
-            type="button"
-            @click.stop="toggleColumnPicker"
-            class="min-w-[180px] px-2.5 py-1 rounded-md text-dense hover:opacity-80 inline-flex items-center justify-between gap-1.5"
-            style="
-              background-color: var(--semantic-sidebar-bg);
-              border: 1px solid var(--color-border);
-              color: var(--semantic-text);
-            "
-            data-testid="kanban-task-detail-column-picker"
-          >
-            <span class="inline-flex items-center gap-1.5">
-              <UiIcon name="clipboard" />
-              <span class="font-medium">{{ columnLabel }}</span>
-            </span>
-            <span class="text-micro" style="color: var(--semantic-text-dim)">▾</span>
-          </button>
-          <div
-            v-if="isColumnPickerOpen"
-            class="absolute top-full mt-1 left-0 min-w-[180px] rounded-lg shadow-lg z-20 overflow-hidden"
-            style="background-color: var(--semantic-card-bg); border: 1px solid var(--color-border)"
-            data-testid="kanban-task-detail-column-picker-dropdown"
-            @click.stop
-          >
-            <button
-              v-for="col in props.availableColumns"
-              :key="col.id"
-              type="button"
-              @click="selectColumn(col.id)"
-              class="w-full text-left px-3 py-2 text-dense hover:opacity-80 flex items-center justify-between"
-              style="color: var(--semantic-text)"
-              :data-testid="`kanban-task-detail-column-picker-item-${col.id}`"
+      <div class="ktd-grid">
+        <div class="ktd-main">
+          <div class="mb-5">
+            <label
+              for="kanban-task-detail-name"
+              class="block text-dense font-medium mb-2"
+              style="color: var(--semantic-text-muted)"
             >
-              <span class="font-medium">{{ col.name }}</span>
-              <span v-if="selectedColumnId === col.id">✓</span>
-            </button>
+              Task name
+            </label>
+            <input
+              id="kanban-task-detail-name"
+              ref="nameInput"
+              v-model="name"
+              type="text"
+              placeholder="Enter task name…"
+              :data-testid="
+                isCreateMode ? 'kanban-task-detail-create-name' : 'kanban-task-detail-name'
+              "
+              class="ktd-title w-full outline-none"
+              @keyup.enter="handleEnterKey"
+            />
           </div>
-        </div>
-        <!-- Edit mode: read-only column chip (NEW: styled as
-                   a chip instead of plain dim text). Folder icon
-                   prefix + bordered pill, matches the cwd picker
-                   + profile picker visual language in the same dialog. -->
-        <span
-          v-else-if="columnLabel"
-          data-testid="kanban-task-detail-column"
-          class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-dense font-medium"
-          style="
-            background-color: var(--semantic-sidebar-bg);
-            border: 1px solid var(--color-border);
-            color: var(--semantic-text);
-          "
-        >
-          <UiIcon name="clipboard" />
-          {{ columnLabel }}
-        </span>
-        <span
-          v-if="!isCreateMode && taskTypeLabel"
-          data-testid="kanban-task-detail-type"
-          class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-dense font-medium"
-          style="
-            background-color: var(--semantic-sidebar-bg);
-            border: 1px solid var(--color-border);
-            color: var(--semantic-text-muted);
-          "
-        >
-          {{ taskTypeLabel }}
-        </span>
-        <span
-          v-if="!isCreateMode && task?.is_pinned"
-          data-testid="kanban-task-detail-pinned"
-          class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-dense font-medium"
-          style="
-            background-color: var(--semantic-sidebar-bg);
-            border: 1px solid var(--color-border);
-            color: var(--semantic-text-muted);
-          "
-        >
-          <UiIcon name="pin" />
-          Pinned
-        </span>
-        <!-- The read-only cwd strip (legacy) was removed by the
-                   2026-08-14-kanban-task-detail-edit-cwd plan: the
-                   picker button label now shows the cwd in both
-                   modes, so the read-only span was redundant.
-                   Plan: docs/superpowers/plans/
-                   2026-08-14-kanban-task-detail-edit-cwd.md -->
-      </div>
 
-      <!-- Description — editor by default in both modes (preserves the
-                 existing test contract: the textarea is always
-                 available). A "Preview" toggle below renders the
-                 current description as Markdown so the user can see
-                 how it'll look on the card without leaving the form.
+          <!-- Description — editor in both modes. The editor owns its own
+                 textarea, paperclip, char counter, @-trigger file picker
+                 and image previews; the dialog passes the v-model + cwd. -->
+          <div>
+            <div class="mb-1">
+              <label
+                for="kanban-task-detail-description"
+                class="block text-dense font-medium"
+                style="color: var(--semantic-text-muted)"
+              >
+                Description
+              </label>
+            </div>
+            <p class="text-meta mb-2" style="color: var(--semantic-text-muted)">
+              Markdown supported. Type <span class="font-mono">@</span> to link a file. Paste or
+              attach images.
+            </p>
 
-                 The editor owns its own textarea, paperclip, char
-                 counter, @-trigger file picker, and image previews —
-                 the dialog just passes the v-model and the cwd. -->
-      <div>
-        <div class="mb-1">
-          <label
-            for="kanban-task-detail-description"
-            class="block text-dense font-medium"
-            style="color: var(--semantic-text-dim)"
-          >
-            Description
-          </label>
-        </div>
-        <p class="text-meta mb-2" style="color: var(--semantic-text-dim)">
-          Markdown supported. Type <span class="font-mono">@</span> to link a file. Paste or attach
-          images.
-        </p>
-
-        <!-- Migration 069 — kanban image urls gallery. Reads
+            <!-- Migration 069 — kanban image urls gallery. Reads
                    from task.imageUrls (set by the create-mode host
                    flow OR loaded from the row on edit-mode open).
                    Each image is a `data:image/<mime>;base64,...`
@@ -1268,274 +1092,309 @@ const isMediaLoading = computed<boolean>(() => {
                    read-only display of what's currently persisted.
                    Plan: docs/superpowers/plans/2026-08-06-kanban-
                    image-urls-column.md. -->
-        <div
-          v-if="imageUrls.length > 0"
-          class="mb-3 flex flex-wrap gap-2"
-          data-testid="kanban-task-detail-image-gallery"
-        >
-          <img
-            v-for="(url, idx) in imageUrls"
-            :key="idx"
-            :src="url"
-            :alt="`Task image ${idx + 1}`"
-            class="w-24 h-24 object-cover rounded border cursor-pointer transition-opacity hover:opacity-80"
-            style="border-color: var(--color-border)"
-            :data-testid="`kanban-task-detail-image-${idx}`"
-            @click="openImagePopup(url)"
-          />
-        </div>
-        <div
-          v-else-if="isMediaLoading"
-          class="mb-3 text-meta"
-          style="color: var(--semantic-text-dim)"
-          data-testid="kanban-task-detail-media-loading"
-        >
-          Loading media…
-        </div>
+            <div
+              v-if="imageUrls.length > 0"
+              class="mb-3 flex flex-wrap gap-2"
+              data-testid="kanban-task-detail-image-gallery"
+            >
+              <img
+                v-for="(url, idx) in imageUrls"
+                :key="idx"
+                :src="url"
+                :alt="`Task image ${idx + 1}`"
+                class="w-24 h-24 object-cover rounded border cursor-pointer transition-opacity hover:opacity-80"
+                style="border-color: var(--color-border)"
+                :data-testid="`kanban-task-detail-image-${idx}`"
+                @click="openImagePopup(url)"
+              />
+            </div>
+            <div
+              v-else-if="isMediaLoading"
+              class="mb-3 text-meta"
+              style="color: var(--semantic-text-muted)"
+              data-testid="kanban-task-detail-media-loading"
+            >
+              Loading media…
+            </div>
 
-        <!-- Editor: shown in BOTH create + edit modes. The
+            <!-- Editor: shown in BOTH create + edit modes. The
                    previous "Preview" toggle button (which flipped to
                    <MarkdownDescription>) was removed per user
                    feedback — the dialog stays focused on the editor.
                    Plan: 2026-08-06-kanban-no-base64-in-desc. -->
-        <KanbanDescriptionEditor
-          ref="descriptionEditorRef"
-          v-model="description"
-          :cwd="cwd"
-          :task-id="props.task?.id ?? ''"
-          :max-length="undefined"
-          :test-id="
-            isCreateMode
-              ? 'kanban-task-detail-create-description'
-              : 'kanban-task-detail-description'
-          "
-          data-testid="kanban-task-detail-description-editor"
-        />
-      </div>
+            <KanbanDescriptionEditor
+              ref="descriptionEditorRef"
+              v-model="description"
+              :cwd="cwd"
+              :task-id="props.task?.id ?? ''"
+              :max-length="undefined"
+              :test-id="
+                isCreateMode
+                  ? 'kanban-task-detail-create-description'
+                  : 'kanban-task-detail-description'
+              "
+              data-testid="kanban-task-detail-description-editor"
+            />
+          </div>
 
-      <!-- Tags (Migration 067 — kanban task tags feature).
+          <!-- Tags (Migration 067 — kanban task tags feature).
                  Free-form chip input. Always shown (create + edit
                  modes). The KanbanTagsInput component handles all
                  validation + dedupe + color rendering. -->
-      <div class="mt-4">
-        <label
-          for="kanban-task-detail-tags"
-          class="block text-dense font-medium mb-1"
-          style="color: var(--semantic-text-dim)"
-        >
-          Tags
-        </label>
-        <p class="text-meta mb-2" style="color: var(--semantic-text-dim)">
-          Optional. Press Enter or comma to add. Letters, digits, underscores, hyphens.
-        </p>
-        <KanbanTagsInput
-          ref="tagsInputRef"
-          v-model="tags"
-          :suggestions="filteredTagSuggestions"
-          :has-more="tagSuggestions.hasMore.value"
-          :loading-more="tagSuggestions.loading.value"
-          :on-load-more="tagSuggestions.loadNextPage"
-          :test-id="isCreateMode ? 'kanban-task-detail-create-tags' : 'kanban-task-detail-tags'"
-        />
-      </div>
+          <div class="mt-4">
+            <label
+              for="kanban-task-detail-tags"
+              class="block text-dense font-medium mb-1"
+              style="color: var(--semantic-text-muted)"
+            >
+              Tags
+            </label>
+            <p class="text-meta mb-2" style="color: var(--semantic-text-muted)">
+              Optional. Press Enter or comma to add. Letters, digits, underscores, hyphens.
+            </p>
+            <KanbanTagsInput
+              ref="tagsInputRef"
+              v-model="tags"
+              :suggestions="filteredTagSuggestions"
+              :has-more="tagSuggestions.hasMore.value"
+              :loading-more="tagSuggestions.loading.value"
+              :on-load-more="tagSuggestions.loadNextPage"
+              :test-id="isCreateMode ? 'kanban-task-detail-create-tags' : 'kanban-task-detail-tags'"
+            />
+          </div>
 
-      <!-- Dependencies (kanban task dependencies feature). Edit mode
+          <!-- Dependencies (kanban task dependencies feature). Edit mode
              only: a new task has no id yet, so there is nothing to
              point an edge at until it is created. Same save path as
              tags — the picker v-models `dependsOn`, handleSave
              forwards it only when changed. -->
-      <div v-if="!isCreateMode && dependsCandidates.length > 0" class="mt-4">
-        <label
-          for="kanban-task-detail-depends"
-          class="block text-dense font-medium mb-1"
-          style="color: var(--semantic-text-dim)"
-        >
-          Depends on
-        </label>
-        <p class="text-meta mb-2" style="color: var(--semantic-text-dim)">
-          Blocked until every dependency reaches a completing column. Orange dot = not completed yet.
-        </p>
-        <KanbanDependsInput
-          v-model="dependsOn"
-          :tasks="dependsCandidates"
-          :self-task-id="props.task?.id ?? ''"
-          :blocked-ids="blockedDepIds"
-          test-id="kanban-task-detail-depends"
-        />
-      </div>
-
-      <!-- Settings section. Groups the per-task cwd picker, profile
-                 picker (create-mode only), and Unattended-mode toggle
-                 into one visually-coherent region — all three answer
-                 the same question: "how will this task run?". The
-                 section sits below Tags, separated by a divider, with
-                 a small subheading that announces the group. This
-                 replaces the previous scattered layout (one row with
-                 `border-top`, another row right after with another
-                 `border-top` and `mt-2`) that read as three separate
-                 floating controls instead of one settings block. -->
-      <div
-        class="mt-5 pt-4"
-        style="border-top: 1px solid var(--color-border)"
-        data-testid="kanban-task-detail-settings-section"
-      >
-        <h4 class="text-dense font-semibold mb-3" style="color: var(--semantic-text-dim)">
-          Settings
-        </h4>
-
-        <!-- Row 1: per-task cwd picker (always shown) +
-                profile picker (create mode only). Both use the same
-                chip-style trigger so they read as a pair. -->
-        <div
-          class="flex items-center gap-2 flex-wrap mb-3"
-          data-testid="kanban-task-detail-settings-pickers"
-        >
-          <!-- Per-task cwd picker. Same trigger pattern as the
+          <div v-if="!isCreateMode && dependsCandidates.length > 0" class="mt-4">
+            <label
+              for="kanban-task-detail-depends"
+              class="block text-dense font-medium mb-1"
+              style="color: var(--semantic-text-muted)"
+            >
+              Depends on
+            </label>
+            <p class="text-meta mb-2" style="color: var(--semantic-text-muted)">
+              Blocked until every dependency reaches a completing column. Orange dot = not completed
+              yet.
+            </p>
+            <KanbanDependsInput
+              v-model="dependsOn"
+              :tasks="dependsCandidates"
+              :self-task-id="props.task?.id ?? ''"
+              :blocked-ids="blockedDepIds"
+              test-id="kanban-task-detail-depends"
+            />
+          </div>
+        </div>
+        <aside class="ktd-rail">
+          <div
+            v-if="columnLabel || (!isCreateMode && (taskTypeLabel || task?.is_pinned))"
+            class="ktd-rail-group"
+            data-testid="kanban-task-detail-metadata"
+          >
+            <div v-if="isCreateMode && props.availableColumns.length > 0" ref="columnPickerRef">
+              <span class="ktd-rail-label">Column</span>
+              <button
+                type="button"
+                @click.stop="toggleColumnPicker"
+                class="ktd-picker w-full min-w-[180px] justify-between flex items-center gap-1.5"
+                data-testid="kanban-task-detail-column-picker"
+              >
+                <span class="inline-flex items-center gap-1.5">
+                  <UiIcon name="clipboard" />
+                  <span class="font-medium">{{ columnLabel }}</span>
+                </span>
+                <span class="text-micro" style="color: var(--semantic-text-muted)">▾</span>
+              </button>
+              <div
+                v-if="isColumnPickerOpen"
+                class="ktd-list mt-1"
+                data-testid="kanban-task-detail-column-picker-dropdown"
+                @click.stop
+              >
+                <button
+                  v-for="col in props.availableColumns"
+                  :key="col.id"
+                  type="button"
+                  @click="selectColumn(col.id)"
+                  class="ktd-list-row w-full text-left text-dense flex items-center justify-between"
+                  style="color: var(--semantic-text)"
+                  :data-testid="`kanban-task-detail-column-picker-item-${col.id}`"
+                >
+                  <span class="font-medium">{{ col.name }}</span>
+                  <span v-if="selectedColumnId === col.id">✓</span>
+                </button>
+              </div>
+            </div>
+            <div v-else-if="columnLabel">
+              <span class="ktd-rail-label">Column</span>
+              <span
+                data-testid="kanban-task-detail-column"
+                class="ktd-picker w-full inline-flex items-center gap-1.5"
+              >
+                <UiIcon name="clipboard" />
+                {{ columnLabel }}
+              </span>
+            </div>
+            <div
+              v-if="!isCreateMode && (taskTypeLabel || task?.is_pinned)"
+              class="flex flex-wrap items-center gap-1.5 mt-2"
+            >
+              <span v-if="taskTypeLabel" data-testid="kanban-task-detail-type" class="ktd-chip">
+                {{ taskTypeLabel }}
+              </span>
+              <span v-if="task?.is_pinned" data-testid="kanban-task-detail-pinned" class="ktd-chip">
+                <UiIcon name="pin" />
+                Pinned
+              </span>
+            </div>
+          </div>
+          <div class="ktd-rail-group" data-testid="kanban-task-detail-settings-section">
+            <!-- Per-task cwd picker. Same trigger pattern as the
                      profile picker (button toggle + click-outside
                      close + ▾ caret). Pre-populated from the parent
                      kanban's path in create mode, or the task's
                      persisted `cwd` field in edit mode. Plan:
                      docs/superpowers/plans/2026-08-14-kanban-task-
                      detail-edit-cwd.md -->
-          <div ref="cwdPickerRef" class="relative shrink-0">
-            <button
-              type="button"
-              @click.stop="toggleCwdPicker"
-              class="px-2.5 py-1 rounded-md text-dense hover:opacity-80 inline-flex items-center gap-1.5 transition-opacity duration-200"
-              :style="cwdPickerStyle"
-              :title="
-                cwdSession
-                  ? `Project root: ${cwdSession}`
-                  : isCreateMode
-                    ? 'No project root (optional)'
-                    : 'No project root. Click to set a per-task cwd.'
-              "
-              data-testid="kanban-task-detail-cwd-picker"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                class="w-3.5 h-3.5 shrink-0"
-                aria-hidden="true"
-                data-testid="kanban-task-detail-cwd-picker-icon"
-              >
-                <path
-                  d="M2 5a2 2 0 012-2h4.586a1 1 0 01.707.293L11 5h5a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V5z"
-                />
-              </svg>
-              <span class="font-medium">Project root</span>
-              <span
-                class="font-mono truncate max-w-[200px] inline-block align-middle"
-                style="color: var(--semantic-text-muted)"
-              >
-                {{ cwdSession ? cwdSession : '(none)' }}
-              </span>
-              <span class="text-micro shrink-0" style="color: var(--semantic-text-dim)">▾</span>
-            </button>
-            <div
-              v-if="isCwdPickerOpen"
-              class="absolute z-30 mt-1 left-0"
-              data-testid="kanban-task-detail-cwd-picker-dropdown"
-            >
-              <FilePickerDialog
-                v-model="isCwdPickerOpen"
-                mode="folder"
-                :load-items="loadFoldersForCwdPicker"
-                :key-for="(e: any) => e.path as string"
-                :path-for="(e: any) => e.path as string"
-                :is-expandable="(e: any) => e.is_directory as boolean"
-                :label-for="(e: any) => e.name as string"
-                :close-on-select="true"
-                :initial-path="cwdSession || props.cwd || '/'"
-                :selected-path="cwdSession || props.cwd || ''"
-                title="Select Per-Task Project Root"
-                :enable-recent-history="true"
-                @select="selectCwd"
-              />
-            </div>
-          </div>
-
-          <!-- Profile picker (create mode only). Same chip-style
-                     trigger as the cwd picker so they read as siblings. -->
-          <div v-if="isCreateMode" ref="profilePickerRef" class="relative shrink-0">
-            <button
-              type="button"
-              @click.stop="toggleProfilePicker"
-              class="px-2.5 py-1 rounded-md text-dense hover:opacity-80 inline-flex items-center gap-1.5 transition-opacity duration-200"
-              style="
-                background-color: var(--semantic-sidebar-bg);
-                border: 1px solid var(--color-border);
-                color: var(--semantic-text);
-              "
-              :title="
-                selectedProfile
-                  ? `Using profile: ${selectedProfile}`
-                  : 'Using default (top-level config)'
-              "
-              data-testid="kanban-task-detail-profile-picker"
-            >
-              <UiIcon name="robot" />
-              <span class="font-medium">Profile</span>
-              <span style="color: var(--semantic-text-muted)">{{
-                selectedProfile || 'Default'
-              }}</span>
-              <span class="text-micro shrink-0" style="color: var(--semantic-text-dim)">▾</span>
-            </button>
-            <div
-              v-if="isProfilePickerOpen"
-              class="absolute top-full mt-1 left-0 min-w-[240px] rounded-lg shadow-lg z-20 overflow-hidden"
-              style="
-                background-color: var(--semantic-card-bg);
-                border: 1px solid var(--color-border);
-              "
-              data-testid="kanban-task-detail-profile-picker-dropdown"
-              @click.stop
-            >
+            <div ref="cwdPickerRef">
               <button
                 type="button"
-                @click="selectProfile('')"
-                class="w-full text-left px-3 py-2 text-dense hover:opacity-80 flex items-center justify-between"
-                style="color: var(--semantic-text)"
-                data-testid="kanban-task-detail-profile-picker-item"
+                @click.stop="toggleCwdPicker"
+                class="ktd-picker w-full text-dense flex items-center gap-1.5 transition-opacity duration-200"
+                :style="cwdPickerStyle"
+                :title="
+                  cwdSession
+                    ? `Project root: ${cwdSession}`
+                    : isCreateMode
+                      ? 'No project root (optional)'
+                      : 'No project root. Click to set a per-task cwd.'
+                "
+                data-testid="kanban-task-detail-cwd-picker"
               >
-                <span class="font-medium">Default (top-level config)</span>
-                <span v-if="selectedProfile === ''">✓</span>
-              </button>
-              <button
-                v-for="p in availableProfiles"
-                :key="p.name"
-                type="button"
-                @click="selectProfile(p.name)"
-                class="w-full text-left px-3 py-2 text-dense hover:opacity-80"
-                style="color: var(--semantic-text); border-top: 1px solid var(--color-border)"
-                data-testid="kanban-task-detail-profile-picker-item"
-              >
-                <div class="flex items-center justify-between">
-                  <span class="font-medium">{{ p.name }}</span>
-                  <span v-if="selectedProfile === p.name">✓</span>
-                </div>
-                <div class="text-micro mt-0.5" style="color: var(--semantic-text-muted)">
-                  {{ p.model }} · {{ p.base_url }}
-                </div>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  class="w-3.5 h-3.5 shrink-0"
+                  aria-hidden="true"
+                  data-testid="kanban-task-detail-cwd-picker-icon"
+                >
+                  <path
+                    d="M2 5a2 2 0 012-2h4.586a1 1 0 01.707.293L11 5h5a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V5z"
+                  />
+                </svg>
+                <span class="font-medium">Project root</span>
+                <span
+                  class="font-mono truncate max-w-[200px] inline-block align-middle"
+                  style="color: var(--semantic-text-muted)"
+                >
+                  {{ cwdSession ? cwdSession : '(none)' }}
+                </span>
+                <span class="text-micro shrink-0" style="color: var(--semantic-text-dim)">▾</span>
               </button>
               <div
-                v-if="!profilesLoading && availableProfiles.length === 0"
-                class="px-3 py-2 text-dense"
-                style="color: var(--semantic-text-muted)"
-                data-testid="kanban-task-detail-profile-picker-empty"
+                v-if="isCwdPickerOpen"
+                class="absolute z-30 mt-1 left-0"
+                data-testid="kanban-task-detail-cwd-picker-dropdown"
               >
-                No profiles configured. Add one in Settings.
+                <FilePickerDialog
+                  v-model="isCwdPickerOpen"
+                  mode="folder"
+                  :load-items="loadFoldersForCwdPicker"
+                  :key-for="(e: any) => e.path as string"
+                  :path-for="(e: any) => e.path as string"
+                  :is-expandable="(e: any) => e.is_directory as boolean"
+                  :label-for="(e: any) => e.name as string"
+                  :close-on-select="true"
+                  :initial-path="cwdSession || props.cwd || '/'"
+                  :selected-path="cwdSession || props.cwd || ''"
+                  title="Select Per-Task Project Root"
+                  :enable-recent-history="true"
+                  @select="selectCwd"
+                />
+              </div>
+            </div>
+
+            <!-- Profile picker (create mode only). Same chip-style
+                     trigger as the cwd picker so they read as siblings. -->
+            <div v-if="isCreateMode" ref="profilePickerRef">
+              <button
+                type="button"
+                @click.stop="toggleProfilePicker"
+                class="ktd-picker w-full text-dense flex items-center gap-1.5 transition-opacity duration-200"
+                style="
+                  background-color: var(--semantic-sidebar-bg);
+                  border: 1px solid var(--color-border);
+                  color: var(--semantic-text);
+                "
+                :title="
+                  selectedProfile
+                    ? `Using profile: ${selectedProfile}`
+                    : 'Using default (top-level config)'
+                "
+                data-testid="kanban-task-detail-profile-picker"
+              >
+                <UiIcon name="robot" />
+                <span class="font-medium">Profile</span>
+                <span style="color: var(--semantic-text-muted)">{{
+                  selectedProfile || 'Default'
+                }}</span>
+                <span class="text-micro shrink-0" style="color: var(--semantic-text-dim)">▾</span>
+              </button>
+              <div
+                v-if="isProfilePickerOpen"
+                class="ktd-list mt-1"
+                data-testid="kanban-task-detail-profile-picker-dropdown"
+                @click.stop
+              >
+                <button
+                  type="button"
+                  @click="selectProfile('')"
+                  class="w-full text-left px-3 py-2 text-dense hover:opacity-80 flex items-center justify-between"
+                  style="color: var(--semantic-text)"
+                  data-testid="kanban-task-detail-profile-picker-item"
+                >
+                  <span class="font-medium">Default (top-level config)</span>
+                  <span v-if="selectedProfile === ''">✓</span>
+                </button>
+                <button
+                  v-for="p in availableProfiles"
+                  :key="p.name"
+                  type="button"
+                  @click="selectProfile(p.name)"
+                  class="w-full text-left px-3 py-2 text-dense hover:opacity-80"
+                  style="color: var(--semantic-text); border-top: 1px solid var(--color-border)"
+                  data-testid="kanban-task-detail-profile-picker-item"
+                >
+                  <div class="flex items-center justify-between">
+                    <span class="font-medium">{{ p.name }}</span>
+                    <span v-if="selectedProfile === p.name">✓</span>
+                  </div>
+                  <div class="text-micro mt-0.5" style="color: var(--semantic-text-muted)">
+                    {{ p.model }} · {{ p.base_url }}
+                  </div>
+                </button>
+                <div
+                  v-if="!profilesLoading && availableProfiles.length === 0"
+                  class="px-3 py-2 text-dense"
+                  style="color: var(--semantic-text-muted)"
+                  data-testid="kanban-task-detail-profile-picker-empty"
+                >
+                  No profiles configured. Add one in Settings.
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-          <div v-if="isCreateMode" ref="skillPickerRef" class="relative shrink-0">
+          <div v-if="isCreateMode" ref="skillPickerRef">
             <button
               type="button"
               @click.stop="toggleSkillPicker"
-              class="px-2.5 py-1 rounded-md text-dense hover:opacity-80 inline-flex items-center gap-1.5 transition-opacity duration-200"
+              class="ktd-picker w-full text-dense flex items-center gap-1.5 transition-opacity duration-200"
               style="
                 background-color: var(--semantic-sidebar-bg);
                 border: 1px solid var(--color-border);
@@ -1558,15 +1417,13 @@ const isMediaLoading = computed<boolean>(() => {
                 data-testid="kanban-task-detail-skill-picker-count"
                 >{{ selectedSkillCount }}</span
               >
-              <span class="text-micro shrink-0" style="color: var(--semantic-text-dim)">&#9662;</span>
+              <span class="text-micro shrink-0" style="color: var(--semantic-text-dim)"
+                >&#9662;</span
+              >
             </button>
             <div
               v-if="isSkillPickerOpen"
-              class="absolute top-full mt-1 left-0 min-w-[280px] max-w-[340px] rounded-lg shadow-lg z-20 overflow-hidden"
-              style="
-                background-color: var(--semantic-card-bg);
-                border: 1px solid var(--color-border);
-              "
+              class="ktd-list mt-1"
               data-testid="kanban-task-detail-skill-picker-dropdown"
               @click.stop
             >
@@ -1675,159 +1532,149 @@ const isMediaLoading = computed<boolean>(() => {
             </span>
           </div>
 
-        <!-- Row 2: Unattended mode toggle (always shown).
+          <!-- Row 2: Unattended mode toggle (always shown).
                    Separated from the pickers by a hairline divider so
                    the toggle reads as its own control, not "part of the
                    picker row". -->
-        <div
-          class="pt-3 flex items-center justify-between gap-3"
-          style="border-top: 1px solid var(--color-border)"
-          data-testid="kanban-task-detail-unattended"
-        >
-          <div class="flex-1 min-w-0">
-            <div class="text-dense font-medium" style="color: var(--semantic-text-dim)">
-              Unattended mode
+          <div class="ktd-switch-row" data-testid="kanban-task-detail-unattended">
+            <div class="ktd-switch-text">
+              <div class="text-dense font-medium" style="color: var(--semantic-text-muted)">
+                Unattended mode
+              </div>
+              <div class="text-meta" style="color: var(--semantic-text-muted)">
+                Keep retrying past the 10-error limit for overnight runs.
+              </div>
             </div>
-            <div class="text-meta mt-0.5" style="color: var(--semantic-text-dim)">
-              Keep retrying past the 10-error limit for overnight runs. Off = stop on
-              too-many-retries.
-            </div>
+            <label class="ktd-switch" :class="unattended === '1' ? 'is-on' : ''">
+              <input
+                type="checkbox"
+                :checked="unattended === '1'"
+                @change="handleUnattendedToggle"
+                class="sr-only peer"
+                data-testid="kanban-task-detail-unattended-toggle"
+              />
+              <span class="ktd-switch-word">{{ unattended === '1' ? 'On' : 'Off' }}</span>
+              <span class="ktd-switch-track"><span class="ktd-switch-knob" /></span>
+            </label>
           </div>
-          <label
-            class="relative inline-flex items-center cursor-pointer shrink-0"
-            style="color: var(--semantic-text)"
-          >
-            <input
-              type="checkbox"
-              :checked="unattended === '1'"
-              @change="handleUnattendedToggle"
-              class="sr-only peer"
-              data-testid="kanban-task-detail-unattended-toggle"
-            />
-            <div
-              class="w-11 h-6 rounded-full transition-colors duration-200"
-              style="background-color: var(--semantic-text-dim)"
-              :style="unattended === '1' ? { backgroundColor: '#f59e0b' } : {}"
-            />
-            <div
-              class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform duration-200"
-              style="background-color: white"
-              :class="unattended === '1' ? 'translate-x-5' : ''"
-            />
-          </label>
-        </div>
 
-        <!-- Use-git-worktree toggle (create mode only). Same switch
+          <!-- Use-git-worktree toggle (create mode only). Same switch
                    styling as the unattended row above. -->
-        <div
-          v-if="isCreateMode"
-          class="pt-3 flex items-center justify-between gap-3"
-          data-testid="kanban-task-detail-use-git-worktree"
-        >
-          <div class="flex-1 min-w-0">
-            <div class="text-dense font-medium" style="color: var(--semantic-text-dim)">
-              Use git worktree
-            </div>
-            <div class="text-meta mt-0.5" style="color: var(--semantic-text-dim)">
-              Run the agent in a fresh git worktree so its changes stay isolated from your working
-              tree.
-            </div>
-          </div>
-          <label
-            class="relative inline-flex items-center cursor-pointer shrink-0"
-            style="color: var(--semantic-text)"
+          <div
+            v-if="isCreateMode"
+            class="ktd-switch-row"
+            data-testid="kanban-task-detail-use-git-worktree"
           >
-            <input
-              type="checkbox"
-              :checked="useGitWorktree"
-              @change="handleUseGitWorktreeToggle"
-              class="sr-only peer"
-              data-testid="kanban-task-detail-use-git-worktree-toggle"
-            />
-            <div
-              class="w-11 h-6 rounded-full transition-colors duration-200"
-              style="background-color: var(--semantic-text-dim)"
-              :style="useGitWorktree ? { backgroundColor: '#f59e0b' } : {}"
-            />
-            <div
-              class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform duration-200"
-              style="background-color: white"
-              :class="useGitWorktree ? 'translate-x-5' : ''"
-            />
-          </label>
-        </div>
-        <!-- Worktree path input (create mode only, visible when the
+            <div class="ktd-switch-text">
+              <div class="text-dense font-medium" style="color: var(--semantic-text-muted)">
+                Use git worktree
+              </div>
+              <div class="text-meta" style="color: var(--semantic-text-muted)">
+                Run the agent in a fresh git worktree so its changes stay isolated from your working
+                tree.
+              </div>
+            </div>
+            <label class="ktd-switch" :class="useGitWorktree ? 'is-on' : ''">
+              <input
+                type="checkbox"
+                :checked="useGitWorktree"
+                @change="handleUseGitWorktreeToggle"
+                class="sr-only peer"
+                data-testid="kanban-task-detail-use-git-worktree-toggle"
+              />
+              <span class="ktd-switch-word">{{ useGitWorktree ? 'On' : 'Off' }}</span>
+              <span class="ktd-switch-track"><span class="ktd-switch-knob" /></span>
+            </label>
+          </div>
+          <!-- Worktree path input (create mode only, visible when the
                    toggle is ON). Baked as the `Path:` line after
                    `#Notes UseGitWorktree` in the queue_message. -->
-        <div
-          v-if="isCreateMode && useGitWorktree"
-          class="pt-2 flex flex-col gap-1"
-          data-testid="kanban-task-detail-use-git-worktree-path-wrap"
-        >
-          <label
-            class="text-dense font-medium"
-            style="color: var(--semantic-text-dim)"
-            for="kanban-worktree-path-input"
+          <div
+            v-if="isCreateMode && useGitWorktree"
+            class="pt-2 flex flex-col gap-1"
+            data-testid="kanban-task-detail-use-git-worktree-path-wrap"
           >
-            Worktree path
-          </label>
-          <input
-            id="kanban-worktree-path-input"
-            type="text"
-            v-model="worktreePath"
-            placeholder="/home/you/.config/pabrik/.worktrees/my-task-1757792000000"
-            class="w-full px-2 py-1.5 rounded-lg text-dense"
-            style="
-              background-color: var(--semantic-sidebar-bg);
-              border: 1px solid var(--color-border);
-              color: var(--semantic-text);
-            "
-            data-testid="kanban-task-detail-use-git-worktree-path"
-          />
-          <div class="text-meta" style="color: var(--semantic-text-dim)">
-            Default: $HOME/.config/pabrik/.worktrees/&lt;task-name&gt;-&lt;timestamp&gt;. Must be
-            absolute; the parent folder must exist.
+            <label
+              class="text-dense font-medium"
+              style="color: var(--semantic-text-dim)"
+              for="kanban-worktree-path-input"
+            >
+              Worktree path
+            </label>
+            <input
+              id="kanban-worktree-path-input"
+              type="text"
+              v-model="worktreePath"
+              placeholder="/home/you/.config/pabrik/.worktrees/my-task-1757792000000"
+              class="w-full px-2 py-1.5 rounded-lg text-dense"
+              style="
+                background-color: var(--semantic-sidebar-bg);
+                border: 1px solid var(--color-border);
+                color: var(--semantic-text);
+              "
+              data-testid="kanban-task-detail-use-git-worktree-path"
+            />
+            <div class="text-meta" style="color: var(--semantic-text-muted)">
+              Default: $HOME/.config/pabrik/.worktrees/&lt;task-name&gt;-&lt;timestamp&gt;. Must be
+              absolute; the parent folder must exist.
+            </div>
           </div>
-        </div>
-        <!-- Base-branch picker (create mode only, visible when the
+          <!-- Base-branch picker (create mode only, visible when the
                    toggle is ON). Baked as the `Base:` line right after
                    `Path:` in the queue_message, so the agent passes it to
                    `set_git_worktree`'s `base` argument and the worktree is
                    created FROM that ref. -->
-        <div
-          v-if="isCreateMode && useGitWorktree"
-          class="pt-2 flex flex-col gap-1 items-start"
-          data-testid="kanban-task-detail-use-git-worktree-base-wrap"
-        >
-          <GitBaseBranchSelect
-            v-model="worktreeBaseBranch"
-            :repo-path="cwdSession || cwd"
-            data-testid="kanban-task-detail-use-git-worktree-base"
-          />
-          <div class="text-meta" style="color: var(--semantic-text-dim)">
-            Optional but recommended. The new worktree's branch is created from this ref (e.g.
-            origin/main). "HEAD (default)" branches from whatever the repo currently has checked
-            out.
+          <div
+            v-if="isCreateMode && useGitWorktree"
+            class="pt-2 flex flex-col gap-1 items-start"
+            data-testid="kanban-task-detail-use-git-worktree-base-wrap"
+          >
+            <GitBaseBranchSelect
+              v-model="worktreeBaseBranch"
+              :repo-path="cwdSession || cwd"
+              data-testid="kanban-task-detail-use-git-worktree-base"
+            />
+            <div class="text-meta" style="color: var(--semantic-text-muted)">
+              Optional but recommended. The new worktree's branch is created from this ref (e.g.
+              origin/main). "HEAD (default)" branches from whatever the repo currently has checked
+              out.
+            </div>
           </div>
-        </div>
+          <div v-if="!isCreateMode" class="ktd-thread">
+            <span class="ktd-rail-label">Run the agent</span>
+            <button
+              type="button"
+              @click="handleStartAgent"
+              :disabled="isWorkerRunning"
+              :title="
+                isWorkerRunning
+                  ? 'A worker is already running on this task — wait for it to finish before starting a new agent.'
+                  : 'Trigger the agent on the existing chat context. No new message is queued — the agent resumes whatever context is already in the session.'
+              "
+              data-testid="kanban-task-detail-start-agent"
+              class="ktd-picker w-full text-dense flex items-center justify-center gap-1.5"
+            >
+              <span aria-hidden="true">▶</span>
+              <span>Start agent</span>
+              <WorkerElapsedChip
+                v-if="isWorkerRunning && props.task"
+                :session-id="props.task.id"
+                test-id="kanban-task-detail-elapsed"
+              />
+            </button>
+            <p class="text-meta ktd-note" style="color: var(--semantic-text-muted)">
+              Resumes this task's own chat context. No new message is queued.
+            </p>
+          </div>
+        </aside>
       </div>
     </div>
 
-    <!-- Actions — sticky so the commit row stays reachable on long
-         forms (the host cover container scrolls, not this card).
-
-         Cancel is a ghost button: a border on a button means "this is
-         one of the choices you make", and Cancel is the absence of
-         one. It must not compete with the commit action beside it.
-
-         The two commit actions are one split control. The left half is
-         the action we expect you to want; the caret menu holds the
-         alternative. Create mode's half is "▶ Create task & run
-         agent" — which is also what Enter on the name field does, so
-         the visual default and the keyboard default agree. Edit mode's
-         half is "Save" and the menu holds "▶ Start agent". -->
+    <!-- Actions — sticky so the commit row stays reachable. Cancel sits
+         on the far left, away from the commits; the two commits are flat
+         buttons: create, then create-and-run. -->
     <div
-      class="px-5 py-4 shrink-0 sticky bottom-0 z-10 flex flex-wrap justify-end gap-2"
+      class="px-5 py-4 shrink-0 sticky bottom-0 z-10 flex flex-wrap items-center gap-2"
       style="border-top: 1px solid var(--color-border); background-color: var(--semantic-card-bg)"
     >
       <button
@@ -1835,138 +1682,64 @@ const isMediaLoading = computed<boolean>(() => {
         @click="handleClose"
         data-testid="kanban-task-detail-cancel"
         class="px-3 py-1.5 rounded-lg text-body font-medium transition-all duration-200 hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[--color-blue]"
-        style="color: var(--semantic-text-dim)"
+        style="color: var(--semantic-text-muted)"
         title="Discard and close"
       >
         Cancel
       </button>
 
-      <div ref="commitMenuRef" class="relative shrink-0 flex">
-        <!-- Primary half. Gradient, rounded on the left, butted against
-             the caret with a hairline seam. -->
-        <button
-          v-if="isCreateMode"
-          type="button"
-          @mousedown="commitTagsDraftOnSaveMouseDown"
-          @click="handleRunAgent"
-          :disabled="!canCommitCreate"
-          data-testid="kanban-task-detail-create-and-run"
-          class="px-3 py-1.5 rounded-l-lg text-body font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:opacity-50 hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[--color-blue]"
-          style="
-            background: linear-gradient(135deg, var(--color-violet), var(--color-blue));
-            color: var(--color-bg);
-          "
-          title="Create the task and start the agent. The title + description becomes the first user message. (Enter)"
-        >
-          <span
-            v-if="isCreating"
-            aria-hidden="true"
-            class="inline-block w-3 h-3 rounded-full align-[-2px] mr-1.5"
-            style="
-              border: 2px solid rgba(24, 22, 22, 0.35);
-              border-top-color: var(--color-bg);
-              animation: ktd-spin 0.7s linear infinite;
-            "
-          ></span>
-          <template v-if="isCreating">{{ pendingCommitLabel }}</template>
-          <template v-else
-            ><span aria-hidden="true">▶</span
-            ><span class="ml-1">Create task &amp; run agent</span></template
-          >
-        </button>
-        <button
-          v-else
-          type="button"
-          @mousedown="commitTagsDraftOnSaveMouseDown"
-          @click="handleSave"
-          :disabled="!canSave"
-          data-testid="kanban-task-detail-save"
-          class="px-3 py-1.5 rounded-l-lg text-body font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:opacity-50 hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[--color-blue]"
-          style="
-            background: linear-gradient(135deg, var(--color-violet), var(--color-blue));
-            color: var(--color-bg);
-          "
-        >
-          Save
-        </button>
-        <button
-          type="button"
-          @click.stop="toggleCommitMenu"
-          :disabled="isCreateMode ? !canCommitCreate : !canSave"
-          data-testid="kanban-task-detail-commit-caret"
-          class="px-2 py-1.5 rounded-r-lg text-body font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:opacity-50 hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[--color-blue]"
-          style="
-            background: linear-gradient(135deg, var(--color-violet), var(--color-blue));
-            color: var(--color-bg);
-            border-left: 1px solid rgba(24, 22, 22, 0.25);
-          "
-          aria-haspopup="menu"
-          :aria-expanded="commitMenuOpen"
-          aria-label="More commit options"
-          title="More commit options"
-        >
-          <span aria-hidden="true" class="text-micro leading-none">{{
-            commitMenuOpen ? '▲' : '▼'
-          }}</span>
-        </button>
+      <span class="flex-1"></span>
 
-        <!-- Alternative commit. v-show, not v-if: display:none already
-             pulls the subtree out of the a11y tree and the tab order,
-             so a mounted-but-closed menu exposes nothing. -->
-        <div
-          v-show="commitMenuOpen"
-          role="menu"
-          data-testid="kanban-task-detail-commit-menu"
-          class="absolute bottom-full right-0 mb-2 z-20 py-1 rounded-lg shadow-lg min-w-[230px]"
-          style="background-color: var(--semantic-card-bg); border: 1px solid var(--color-border)"
+      <button
+        v-if="isCreateMode"
+        type="button"
+        @mousedown="commitTagsDraftOnSaveMouseDown"
+        @click="handleRunAgent"
+        :disabled="!canCommitCreate"
+        data-testid="kanban-task-detail-create-and-run"
+        class="ktd-btn-quiet px-3 py-1.5 rounded-lg text-body font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:opacity-50 hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[--color-blue]"
+        title="Create the task and start the agent. The title + description becomes the first user message. (Enter)"
+      >
+        <span
+          v-if="isCreating && pendingAction !== 'create'"
+          aria-hidden="true"
+          class="inline-block w-3 h-3 rounded-full align-[-2px] mr-1.5"
+          style="
+            border: 2px solid rgba(24, 22, 22, 0.35);
+            border-top-color: var(--color-bg);
+            animation: ktd-spin 0.7s linear infinite;
+          "
+        ></span>
+        <template v-if="isCreating && pendingAction !== 'create'">{{
+          pendingCommitLabel
+        }}</template>
+        <template v-else
+          ><span aria-hidden="true">▶</span
+          ><span class="ml-1">Create task &amp; run agent</span></template
         >
-          <button
-            v-if="isCreateMode"
-            type="button"
-            role="menuitem"
-            @mousedown="commitTagsDraftOnSaveMouseDown"
-            @click="runMenuAction(handleSave)"
-            :disabled="!canCommitCreate"
-            data-testid="kanban-task-detail-save"
-            class="w-full px-3 py-2 text-left text-body transition-opacity duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-[--color-blue]"
-            style="color: var(--semantic-text)"
-          >
-            <span>Create task only</span>
-            <span class="block text-meta mt-0.5" style="color: var(--semantic-text-dim)">
-              Add it to the board without starting a worker.
-            </span>
-          </button>
-          <button
-            v-else
-            type="button"
-            role="menuitem"
-            @click="runMenuAction(handleStartAgent)"
-            :disabled="isWorkerRunning"
-            :title="
-              isWorkerRunning
-                ? 'A worker is already running on this task — wait for it to finish before starting a new agent.'
-                : 'Trigger the agent on the existing chat context. No new message is queued — the agent resumes whatever context is already in the session.'
-            "
-            data-testid="kanban-task-detail-start-agent"
-            class="w-full px-3 py-2 text-left text-body transition-opacity duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-[--color-blue]"
-            style="color: var(--semantic-text)"
-          >
-            <span aria-hidden="true">▶</span>
-            <span class="ml-1">Start agent</span>
-            <!-- Why the button is disabled, without needing a hover: the
-                 elapsed chip states how long the current run has been
-                 going, so "wait for it to finish" has a number attached. -->
-            <WorkerElapsedChip
-              v-if="isWorkerRunning && props.task"
-              :session-id="props.task.id"
-              test-id="kanban-task-detail-elapsed"
-            />
-            <span class="block text-meta mt-0.5" style="color: var(--semantic-text-dim)">
-              Resume the agent on this task's existing chat context.
-            </span>
-          </button>
-        </div>
-      </div>
+      </button>
+      <button
+        v-if="isCreateMode"
+        type="button"
+        @mousedown="commitTagsDraftOnSaveMouseDown"
+        @click="handleSave"
+        :disabled="!canCommitCreate"
+        data-testid="kanban-task-detail-save"
+        class="ktd-btn-primary px-4 py-1.5 rounded-lg text-body font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:opacity-50 hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[--color-blue]"
+      >
+        {{ isCreating && pendingAction === 'create' ? pendingCommitLabel : 'Create task' }}
+      </button>
+      <button
+        v-else
+        type="button"
+        @mousedown="commitTagsDraftOnSaveMouseDown"
+        @click="handleSave"
+        :disabled="!canSave"
+        data-testid="kanban-task-detail-save"
+        class="ktd-btn-primary px-4 py-1.5 rounded-lg text-body font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:opacity-50 hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[--color-blue]"
+      >
+        Save
+      </button>
     </div>
   </div>
 
@@ -2019,21 +1792,190 @@ const isMediaLoading = computed<boolean>(() => {
 </template>
 
 <style scoped>
-.kanban-task-detail {
-  /* Inline side-panel: the host controls width + scroll. */
+.ktd-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 328px;
+  gap: 24px;
+  align-items: start;
 }
 
-/* The commit button's in-flight spinner. Declared here rather than as
-   a Tailwind `animate-spin` utility because the ring needs a
-   token-matched border colour to read against the violet→blue
-   gradient, and inline `style` on the element already carries it. */
+.ktd-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 10px;
+  background-color: var(--semantic-sidebar-bg);
+  border: 1px solid var(--color-border);
+}
+
+.ktd-rail-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ktd-rail-label {
+  display: block;
+  font-size: var(--text-dense);
+  font-weight: 600;
+  color: var(--semantic-text-muted);
+  margin-bottom: 5px;
+}
+
+.ktd-title {
+  font-size: var(--text-title);
+  font-weight: 600;
+  color: var(--semantic-text);
+  padding: 2px 0 8px;
+  border-bottom: 1px solid var(--color-border);
+  background-color: transparent;
+}
+
+.ktd-picker {
+  min-height: 30px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background-color: var(--semantic-card-bg);
+  border: 1px solid var(--color-border);
+  color: var(--semantic-text);
+}
+
+.ktd-list {
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: var(--semantic-card-bg);
+  border: 1px solid var(--color-border);
+}
+
+.ktd-list-row {
+  padding: 7px 10px;
+  border-top: 1px solid var(--color-border);
+}
+
+.ktd-list-row:first-child {
+  border-top: 0;
+}
+
+.ktd-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: var(--text-dense);
+  font-weight: 500;
+  background-color: var(--semantic-card-bg);
+  border: 1px solid var(--color-border);
+  color: var(--semantic-text-muted);
+}
+
+.ktd-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.ktd-switch-text {
+  min-width: 0;
+}
+
+.ktd-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.ktd-switch-word {
+  font-size: var(--text-meta);
+  font-weight: 500;
+  color: var(--semantic-text-muted);
+}
+
+.ktd-switch.is-on .ktd-switch-word {
+  color: var(--semantic-text);
+}
+
+.ktd-switch-track {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+  border-radius: 999px;
+  background-color: var(--color-border-light);
+  transition: background-color 200ms;
+}
+
+.ktd-switch.is-on .ktd-switch-track {
+  background-color: var(--color-yellow);
+}
+
+.ktd-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background-color: var(--semantic-text-muted);
+  transition:
+    left 200ms,
+    background-color 200ms;
+}
+
+.ktd-switch.is-on .ktd-switch-knob {
+  left: 20px;
+  background-color: var(--color-bg);
+}
+
+.ktd-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.ktd-note {
+  margin: 0;
+}
+
+.ktd-btn-primary {
+  background-color: var(--color-violet);
+  color: var(--color-bg);
+}
+
+.ktd-btn-quiet {
+  background-color: var(--semantic-sidebar-bg);
+  border: 1px solid var(--color-border);
+  color: var(--semantic-text);
+}
+
 @keyframes ktd-spin {
   to {
     transform: rotate(360deg);
   }
 }
 
+@media (max-width: 1023px) {
+  .ktd-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .ktd-switch-track,
+  .ktd-switch-knob {
+    transition: none;
+  }
+
   [style*='ktd-spin'] {
     animation: none !important;
   }

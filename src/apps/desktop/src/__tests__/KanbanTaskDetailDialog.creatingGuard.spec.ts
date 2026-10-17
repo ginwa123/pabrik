@@ -63,22 +63,22 @@ describe('KanbanTaskDetailDialog — creating prop (double-click guard)', () => 
     expect(runBtn?.disabled).toBe(true)
   })
 
-  it('narrates the in-flight state on the primary half only', async () => {
+  it('narrates the in-flight state on one button only', async () => {
     mountDialog({ creating: true })
     await flushPromises()
     await typeName('My task')
 
-    // Create mode's primary half is the run action. The "Create task only" menu row keeps its own
-    // label — the two used to read "Creating…" side by side, so the footer could not say which
-    // commit the user had actually pressed.
+    // With no click there is nothing to attribute, so the neutral wording lands on the run action.
+    // The flat "Create task" button keeps its own label — the two used to read "Creating…" side by
+    // side, so the footer could not say which commit the user had actually pressed.
     const runBtn = findInDom<HTMLButtonElement>(
       '[data-testid="kanban-task-detail-create-and-run"]',
     )
-    const saveMenuItem = findInDom<HTMLButtonElement>(
+    const saveBtn = findInDom<HTMLButtonElement>(
       '[data-testid="kanban-task-detail-save"]',
     )
     expect(runBtn?.textContent?.trim()).toBe('Creating…')
-    expect(saveMenuItem?.textContent).toContain('Create task only')
+    expect(saveBtn?.textContent?.trim()).toBe('Create task')
   })
 
   it('does NOT emit create when the save button is clicked while creating=true', async () => {
@@ -120,7 +120,7 @@ describe('KanbanTaskDetailDialog — creating prop (double-click guard)', () => 
     )
     expect(saveBtn?.disabled).toBe(false)
     expect(runBtn?.disabled).toBe(false)
-    expect(saveBtn?.textContent).toContain('Create task only')
+    expect(saveBtn?.textContent?.trim()).toBe('Create task')
     expect(runBtn?.textContent).toContain('Create task & run agent')
   })
 
@@ -144,7 +144,7 @@ describe('KanbanTaskDetailDialog — creating prop (double-click guard)', () => 
     )
     expect(saveBtn?.disabled).toBe(false)
     expect(runBtn?.disabled).toBe(false)
-    expect(saveBtn?.textContent).toContain('Create task only')
+    expect(saveBtn?.textContent?.trim()).toBe('Create task')
     expect(runBtn?.textContent).toContain('Create task & run agent')
   })
 
