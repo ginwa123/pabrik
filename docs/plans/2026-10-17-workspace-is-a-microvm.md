@@ -897,3 +897,45 @@ Three findings, all of which the daemon has to respect:
 
 Reproduce: `FC_BIN=<firecracker> scripts/vmd-smoke.sh` (needs `/dev/kvm`; no root, no tap, no sudo).
 
+---
+
+## 23. Where to pick up (handoff brief)
+
+**State.** P0, P1 and P2a have landed on
+`worktree/workspace-is-a-vm-from-microvm-1792245526062` (PR #983, 9 commits, base `main`).
+Everything below was verified on this box; nothing else is claimed.
+
+**Read first.** §15 (phases + exit criteria), §19–§22 (what each phase proved and the findings),
+then `load_memory` — the session notes hold the details that are expensive to rediscover
+(hybrid-vsock handshake order, the missing `devtmpfs`, journal replay, the three §22 traps,
+`zig test -lc`, the 3-line comment ceiling).
+
+**Reproduce both proofs, one command each** (needs `/dev/kvm`; no root, no tap, no iptables):
+
+```bash
+FC_BIN=$HOME/firecracker-demo/firecracker scripts/vm-guest-smoke.sh   # 13/13: image, boot, exec protocol
+FC_BIN=$HOME/firecracker-demo/firecracker scripts/vmd-smoke.sh        #  5/5: the Zig client, end to end
+```
+
+**Next three cards** on the board (ids are session ids): P2b — the daemon with `SO_PEERCRED` and a
+`workspace_id`-only RPC (`task_1792253347120470076`); P2c — route `command` into the VM
+(`task_1792253361415403777`, blocked by P2b); the CI/image card
+(`task_1792253361427014458`) for the self-hosted runner, the root image build and the `apk` dev
+layer. P3 (`task_1792253371122659109`, blocked by P2c) is the rest.
+
+**Decisions only a human can make** (they gate P3, not P2b/P2c): the per-tier package set for the
+guest image; the tenant model (user / org / workspace owner) and quota-vs-one-box; who may run
+`pabrik create-admin` in SaaS mode; and whether `shared`/virtiofs is wanted at all (if not, Cloud
+Hypervisor and `virtiofsd` leave the design).
+
+**One process note.** PR #983 still bundles the §2.2 git hardening — a live RCE-class bug in *local*
+mode — with the VM phases. Splitting it lets the fix land on its own
+(`task_1792251191827552698`).
+
+**Traps that cost time here, so they do not cost it again:** hybrid vsock needs the `OK` line
+consumed before the first frame; `devtmpfs` is absent from the stock kernel (the agent `mknod`s);
+a hard VM stop leaves ext4 unclean (replay with `e2fsck -fy` before any offline read); the CI kernel
+cannot power the VM off, so stopping is the manager's job; Firecracker refuses to rebind a stale
+`api.sock`; the VMM must not share the manager's stdout; `zginlint` counts files *with* findings, and
+a `//!` header over three lines fails CI.
+
