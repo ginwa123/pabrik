@@ -156,8 +156,6 @@ fn canonicalMissing(io: Io, allocator: Allocator, path: []const u8) ![]u8 {
 /// Lower-case an OWNED path in place on Windows (`C:\Tmp` and `c:\tmp` are
 /// the same directory there, and the safety gates compare prefixes). Takes
 /// `[]u8`, not `[]const u8`: it rewrites the buffer, and a const slice
-/// would make `c.* += 32` a compile error on EVERY host, including the ones
-/// where the loop below never runs.
 fn normcaseSlice(s: []u8) []u8 {
     if (!is_windows) return s;
     for (s) |*c| {
@@ -628,7 +626,6 @@ pub const Harness = struct {
         // `child.id` is a process HANDLE on Windows, not a pid. Everything
         // downstream of `child_pid` is POSIX-shaped — `pidAlive()` is
         // hardcoded true there and `reapOrphanTestPids` never signals on
-        // Windows — so Windows records 0 rather than inventing an integer.
         const child_pid: u32 = if (is_windows) 0 else @intCast(child.id.?);
 
         // 11. Record pids so a subsequent boot can reap us if we die.
@@ -646,7 +643,6 @@ pub const Harness = struct {
             // `kill` clears `id` on Windows (it closes the process handle),
             // and `Child.wait` ASSERTS that it is set — so a slow boot would
             // turn into an unreachable-code panic instead of the NotReady
-            // the caller is asking for. Only wait where the id survives.
             if (child.id != null) _ = child.wait(io) catch {};
             return err;
         };
@@ -1198,7 +1194,6 @@ pub fn reapOrphanTestPids(io: Io, gpa: Allocator) !usize {
         // Harness is dead. Kill the `pabrik` child if alive — POSIX only:
         // Windows has no `kill(pid)` by number, `pidAlive` is always true
         // there (so the scan above never reaches this line), and
-        // `signalGroup` is the one place that knows both facts.
         if (!is_windows) {
             const self_pid: u32 = @intCast(std.os.linux.getpid());
             if (pabrik_pid != 0 and pabrik_pid != self_pid) {

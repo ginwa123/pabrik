@@ -104,7 +104,6 @@ fn createTerminal(h: *Harness, cookie: ?[]const u8) ![]u8 {
     // `std.json.Stringify`, never a hand-built template: a Windows cwd is
     // full of backslashes and `{"cwd":"C:\Users\..."}` is NOT JSON, so the
     // server answers 400 "Invalid JSON body" and the failure reads like a
-    // terminal bug.
     const body = try std.json.Stringify.valueAlloc(gpa, .{ .cwd = cwd }, .{});
     defer gpa.free(body);
 

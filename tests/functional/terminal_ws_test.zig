@@ -375,8 +375,6 @@ fn createSession(h: *Harness) ![]u8 {
     // `std.json.Stringify`, never a hand-built template: `h.temp_dir` is a
     // Windows path full of backslashes, and `{"cwd":"C:\Users\..."}` is not
     // JSON — the server answers 400 and the failure looks like a terminal
-    // bug. The shell is the platform's own; `/bin/sh` does not exist on
-    // Windows and `validateShell` rejects a shell that cannot be spawned.
     const body = try std.json.Stringify.valueAlloc(gpa, .{ .cwd = h.temp_dir, .shell = SHELL }, .{});
     defer gpa.free(body);
 

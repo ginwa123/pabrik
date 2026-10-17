@@ -10,9 +10,6 @@ const ws_frames = gserverz.ws_frames;
 /// How long one pump tick blocks waiting for activity. This is the
 /// websocket's latency floor, and the one number the two hosts disagree
 /// on: POSIX `poll(2)` wakes the instant the shell writes, so it can
-/// afford to block for a while; a ConPTY host has no waitable console
-/// handle (`terminal_session.waitReadable` says why) and has to re-check
-/// the console on a tick, so its tick is short.
 const pump_tick_ms: c_int = if (terminal_session.pty_backend == .conpty) 20 else 100;
 
 /// Max buffered client bytes before a complete frame must arrive.
@@ -156,7 +153,6 @@ pub fn terminalWsHandler(
     // No PTY backend on this host: the close handshake runs on return.
     // Both real backends pump through the SAME loop below — POSIX forkpty
     // and Windows ConPTY differ only in `waitReadable`, which picks the
-    // host's readiness primitive (poll(2) vs WSAPoll + PeekNamedPipe).
     if (comptime terminal_session.is_pty_os) {
         return pump(server, allocator, client_fd, id, session);
     } else {

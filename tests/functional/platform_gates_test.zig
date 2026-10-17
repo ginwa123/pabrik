@@ -54,12 +54,6 @@ pub const GATES = [_]Gate{
     // ── Product gate: no pty backend on Windows ──────────────────────────
     // DELETED 2026-10-17. Every row here said "no pty backend on Windows:
     // terminal_session.zig sets is_pty_os = linux || macos", and that is no
-    // longer true: the terminal API ships a Windows backend (ConPTY, with a
-    // pipe fallback for a host whose pseudoconsole cannot start a client),
-    // and the four `terminal_*` suites run — and pass — on Windows with a
-    // `cmd.exe` instead of the `/bin/sh` they used to pass. A gate whose
-    // subject has been fixed is a gate that hides the next regression, so
-    // the rows are gone rather than kept as belt and braces.
     .{
         .platform = "win32",
         .module = "terminal_sidebar_ui_test",

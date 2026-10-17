@@ -31,8 +31,6 @@ pub const TerminalCreateResponse = struct {
     /// Which console this session actually got — `"posix-pty"` on Linux and
     /// macOS, `"conpty"` for a real Windows pseudoconsole, `"pipe"` for the
     /// degraded Windows fallback (no prompt echo, no ANSI, no resize). The
-    /// frontend ignores it; a client that cares about full fidelity can
-    /// refuse to stay silent about a downgrade it did not ask for.
     backend: []const u8,
 };
 

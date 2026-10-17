@@ -6,12 +6,6 @@ const builtin = @import("builtin");
 /// Which pseudo-terminal backend this host has.
 ///
 ///   * `posix_pty` — `forkpty(3)`: Linux and macOS.
-///   * `conpty`    — the Win32 `CreatePseudoConsole` API (`kernel32`,
-///     Windows 10 1809+): Windows.
-///   * `none`      — anything else. There is no third silent branch: the
-///     enum is exhaustive and each op below branches on it with a
-///     `comptime` test, so a new host fails at compile time rather than
-///     at 3am.
 pub const PtyBackend = enum { posix_pty, conpty, none };
 
 pub const pty_backend: PtyBackend = switch (builtin.os.tag) {
@@ -117,13 +111,6 @@ const Timespec = extern struct {
 // ---------------------------------------------------------------------
 // Win32 ConPTY surface (extern "kernel32" / "ws2_32" — no @cImport)
 //
-// Zig 0.16's `std.os.windows` exposes neither the pseudoconsole API
-// (`CreatePseudoConsole` et al.) nor the pipe and process calls the
-// drain needs, so the declarations live here beside the libc ones, with
-// the same "declare only what we call" discipline. They cost nothing on
-// a POSIX host: Zig resolves an `extern` only when it is referenced, and
-// every use below sits behind a `comptime` branch.
-// ---------------------------------------------------------------------
 
 /// `HANDLE` — an opaque kernel object handle (pointer-sized). Absence is
 /// modelled as `null`, never as `INVALID_HANDLE_VALUE`.
@@ -191,8 +178,6 @@ const HANDLE_FLAG_INHERIT: DWORD = 0x00000001;
 /// `STARTF_USESTDHANDLES` — "the hStd* fields are the child's standard
 /// handles, use THEM". Load-bearing on both Windows backends: without it the
 /// OS quietly duplicates the CALLER's standard handles into a console-flagged
-/// child, so a service with redirected stdio hands its own pipes to the
-/// shell instead of a console (microsoft/terminal#11276).
 const STARTF_USESTDHANDLES: DWORD = 0x00000100;
 /// `WaitForSingleObject`'s "signaled" result.
 const WAIT_OBJECT_0: DWORD = 0;
@@ -230,7 +215,6 @@ extern "kernel32" fn CreateProcessW(
 /// `WSAPOLLFD` — Winsock's poll record. `fd` is POINTER-sized (`SOCKET`
 /// is `UINT_PTR`), unlike POSIX `struct pollfd`, so the `PollFd` above
 /// cannot be reused: a 4-byte `fd` would put `events` four bytes early
-/// and `WSAPoll` would read a garbage mask.
 const WsaPollFd = extern struct { fd: usize, events: i16, revents: i16 };
 /// `POLLRDNORM` — Winsock's "readable" bit. It is 0x0100, NOT POSIX
 /// `POLLIN`'s 0x001; the two spaces do not overlap.
@@ -240,7 +224,6 @@ extern "ws2_32" fn WSAPoll(fdarray: [*]WsaPollFd, nfds: c_ulong, timeout: c_int)
 /// Widen kabelweb's `i32` SOCKET value to the pointer-sized `SOCKET`
 /// `WSAPOLLFD.fd` wants. Sign-preserving on purpose: `-1`
 /// (`INVALID_SOCKET`) must widen to the all-ones pattern `WSAPoll`
-/// rejects, not to a small positive number that looks like a live fd.
 fn socketToUsize(sock: i32) usize {
     return @as(usize, @bitCast(@as(isize, sock)));
 }
@@ -251,13 +234,6 @@ pub const Readiness = struct { pty: bool, sock: bool };
 /// Block until the session has console output or the client socket is
 /// readable, or `timeout_ms` elapses. One call site (`terminal_ws.zig`),
 /// so neither backend's readiness vocabulary leaks upward.
-///
-/// `pty` means "call `readOutput`" — on a ConPTY host there is no fd to
-/// wait on (a pseudoconsole is a HANDLE plus two pipes, none of which
-/// `WSAPoll` accepts), so this reports ready every tick and the caller
-/// drains with `PeekNamedPipe`, which does not block. That is the whole
-/// reason the ConPTY host runs a short tick where POSIX can afford a long
-/// one: correctness is identical, only the latency floor differs.
 pub fn waitReadable(s: *Session, client_fd: i32, timeout_ms: c_int) Readiness {
     if (comptime pty_backend == .conpty) {
         var fds = [_]WsaPollFd{.{ .fd = socketToUsize(client_fd), .events = POLLRDNORM, .revents = 0 }};
@@ -276,21 +252,11 @@ pub fn waitReadable(s: *Session, client_fd: i32, timeout_ms: c_int) Readiness {
 /// Which Windows mechanism is BEHIND a session's handle set. Both feed the
 /// same ring buffer, so only two things read this: `resizeSession` (a pipe
 /// has no window size to set) and the create response, which reports it so
-/// a degraded session can never be mistaken for a full one.
 pub const WinBackend = enum { conpty, pipe };
 
 /// The ConPTY handle set. Four kernel objects per session, all owned by
 /// the session and all released by `reapSession`:
 ///
-///   * `pc`       — the pseudoconsole itself (`ClosePseudoConsole`). Null
-///     for the pipe backend, which has no console at all.
-///   * `in_write`  — OUR end of the input pipe: keystrokes go here.
-///   * `out_read`  — OUR end of the output pipe: the child's screen comes
-///     back from here (drained with `PeekNamedPipe` + `ReadFile`).
-///   * `proc`/`thread` — the shell process and its main thread, for the
-///     exit code and the teardown.
-///
-/// Null on every non-ConPTY host, and on a sessionless test session.
 pub const WinPty = struct {
     kind: WinBackend = .conpty,
     pc: ?HANDLE = null,
@@ -626,8 +592,6 @@ pub const SessionInfo = struct {
     /// Which console this session ACTUALLY got, as a wire string. On Linux
     /// and macOS that is always "posix-pty". On Windows it is "conpty" for a
     /// real pseudoconsole and "pipe" for the degraded fallback, and the
-    /// create response reports it so a caller never has to guess which one
-    /// it is talking to.
     backend: []const u8,
 };
 
@@ -643,8 +607,6 @@ pub fn createSession(io: std.Io, cwd: []const u8, shell: ?[]const u8, cols: ?u16
     // `if (comptime ...) { } else { }` rather than two early returns: Zig
     // elides the NOT-taken branch of a comptime-known condition, and only
     // the taken one is analyzed. That is what lets one file hold both
-    // backends — the POSIX body never has to type-check or link on Windows
-    // (no `forkpty`) and the ConPTY body never has to on Linux.
     if (comptime pty_backend == .conpty) {
         return createSessionWin(io, cwd, shell, cols, rows, owner);
     } else if (comptime pty_backend == .posix_pty) {
@@ -682,7 +644,6 @@ fn allocId() SessionError![]u8 {
 /// The default shell for this host. POSIX: `$SHELL`, then `/bin/bash`.
 /// Windows: `%COMSPEC%`, then the System32 path a machine that has no
 /// COMSPEC still has one at. UTF-8 in, UTF-8 out — the create path
-/// converts to UTF-16 where the Win32 call needs it.
 fn defaultShell() []const u8 {
     if (comptime pty_backend == .conpty) {
         // `cmd.exe` is what a Windows console gives you, and COMSPEC is
@@ -811,44 +772,10 @@ fn childMain(cwd: []const u8, shell_path: []const u8) noreturn {
 // ---------------------------------------------------------------------
 // Windows ConPTY backend
 //
-// ConPTY (Windows 10 1809+) is a real pseudo-terminal, not a pipe
-// fallback: the shell gets a console device, so it prints a prompt,
-// echoes, colours its output and honours window-size changes — the same
-// four things the POSIX path gets from `forkpty`. The shape is:
-//
-//   our pipes ──▶ CreatePseudoConsole ──▶ CreateProcessW(attribute) ──▶ shell
-//   and then: Win32 pipe reads feed the SAME ring buffer the POSIX
-//   master fd feeds, so every layer above (the registry, the HTTP
-//   handlers, the websocket pump) is host-agnostic.
-//
-// Two deliberate differences from the POSIX path, both forced by the API:
-//   * there is no fd, so readiness is `PeekNamedPipe` (a non-blocking
-//     "how many bytes are waiting") instead of `poll(2)`, and the
-//     websocket pump drives it on a short tick;
-//   * `WriteFile` on the input pipe has no timeout analogue, so a paste
-//     larger than the console's input buffer can block its request
-//     thread. POSIX bounds that with a 1 s `poll(POLLOUT)`.
-//
-// AND A SECOND BACKEND, because a pseudoconsole is not always DELIVERED.
-// Measured on Windows 11 (build 26200) with every call succeeding:
-// `CreatePseudoConsole` returns S_OK and spawns its conhost, the
-// pseudoconsole attribute is applied — the child stops inheriting the
-// caller's redirected std handles — and yet nothing ever arrives on the
-// output pipe, nothing reaches the input pipe, and the client itself dies
-// with STATUS_DLL_INIT_FAILED (0xC0000142) before `main`. Reproduced with
-// Microsoft's own EchoCon sample and with every documented variation
-// (`bInheritHandles` 0/1, inheritable/non-inheritable pipes,
-// STARTF_USESTDHANDLES with NULL handles — the microsoft/terminal#11276
-// mitigation — and `FreeConsole` first): the byte count stays 0. A session
-// built on such a console accepts a command and can never answer, which is
-// strictly worse than a session that says it is degraded, so
-// `pseudoconsoleIsLive` refuses it and the pipe backend below takes over.
-// ---------------------------------------------------------------------
 
 /// Copy `src` into `dst` as NUL-terminated UTF-16LE. Returns the slice
 /// WITHOUT the terminator (the terminator is what the `W` calls read).
 /// A path longer than `dst` fails closed: truncating here would spawn the
-/// shell in a DIFFERENT directory rather than report an error.
 fn utf8ToWide(dst: []u16, src: []const u8) SessionError![:0]u16 {
     if (dst.len == 0) return error.SpawnFailed;
     const n = std.unicode.utf8ToUtf16Le(dst[0 .. dst.len - 1], src) catch return error.SpawnFailed;
@@ -865,13 +792,6 @@ const WinSpawn = struct {
 /// Windows create. Validates once, then spawns on the best backend this
 /// host can actually deliver.
 ///
-/// ConPTY comes first because it is a REAL console: the shell prompts,
-/// echoes, colours and resizes exactly as it does on Linux. It is refused
-/// for exactly one reason — `error.PseudoConsoleUnusable`, raised only when
-/// the pseudoconsole was created but its client never came up — never as a
-/// preference. When it is refused, the session degrades to a plain pipe
-/// shell, which is a lesser terminal AND says so in its create response
-/// (`"backend": "pipe"`), so the degradation is never silent.
 fn createSessionWin(io: std.Io, cwd: []const u8, shell: ?[]const u8, cols: ?u16, rows: ?u16, owner: []const u8) SessionError!SessionInfo {
     // Empty cwd (fresh standalone chats have no session cwd yet): fall back
     // to the server process cwd, mirroring the POSIX path exactly.
@@ -1006,11 +926,6 @@ fn createSessionConPty(eff_cwd: []const u8, dims: Dims, shell_path: []const u8) 
     // ---- pipes -------------------------------------------------------
     // `bInheritHandle` is 1 only so the console can pick them up; every
     // flag is cleared again below. A null HANDLE is "absent", so the
-    // cleanup is expressed with optionals and ownership transfer is a
-    // single assignment instead of a double-close waiting to happen.
-    // `var`, not `const`: `CreatePipe` takes `LPSECURITY_ATTRIBUTES`
-    // (non-const), and a const local would fail the call by discarding the
-    // qualifier — the struct is never written through.
     var sa = SecurityAttributes{
         .nLength = @sizeOf(SecurityAttributes),
         .lpSecurityDescriptor = null,
@@ -1085,8 +1000,6 @@ fn createSessionConPty(eff_cwd: []const u8, dims: Dims, shell_path: []const u8) 
         // The attribute VALUE is the HPCON itself, so the pointer we hand
         // over must address a plain HANDLE — `&pc_h` would be a pointer to
         // an OPTIONAL, and `&pc_value` is a pointer to a pointer, since
-        // `HANDLE` is already `*anyopaque`. `@ptrCast` states the erasure
-        // the Win32 signature (`LPVOID`) has always implied.
         const pc_value: HANDLE = pc_h.?;
         if (UpdateProcThreadAttribute(attr_buf.ptr, 0, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, @ptrCast(&pc_value), @sizeOf(HANDLE), null, null) == 0) return error.SpawnFailed;
 
@@ -1111,9 +1024,6 @@ fn createSessionConPty(eff_cwd: []const u8, dims: Dims, shell_path: []const u8) 
     // ---- is the pseudoconsole actually SERVICING this client? --------
     // A console that works puts the shell's prompt on OUR output pipe
     // within milliseconds. A console whose client dies during DLL
-    // initialization puts nothing there, ever — and every session built on
-    // it is a corpse that answers 201/200 with silence. See
-    // `pseudoconsoleIsLive`.
     if (!pseudoconsoleIsLive(out_read_h.?, child.?.hProcess)) return error.PseudoConsoleUnusable;
 
     // The console owns its pipe ends from here on; ours are closed so the
@@ -1147,20 +1057,6 @@ const conpty_probe_step_ms: usize = 25;
 /// Does this pseudoconsole actually work?
 ///
 /// A console that works puts the shell's prompt on OUR output pipe within
-/// milliseconds — measured, a working `cmd.exe` prompt lands in well under
-/// 100 ms. A console whose client dies during DLL initialization puts
-/// nothing there, ever: measured on a host where `CreatePseudoConsole`
-/// returns S_OK, spawns a conhost, and the client still dies with
-/// STATUS_DLL_INIT_FAILED (0xC0000142) before reaching `main`. Every session
-/// built on such a console answers 201 then silence forever, which is worse
-/// than any error: a client cannot tell it apart from a very slow shell.
-///
-/// So this is deliberately STRICT: bytes or nothing. A client that is alive
-/// and merely quiet for the whole window is treated as unusable too. That
-/// costs a harmless downgrade for a shell that legitimately prints nothing
-/// at startup (`cat`, a bare REPL) — the pipe backend still delivers its
-/// output when it writes — and it buys the guarantee that a session which
-/// says nothing is a KNOWN, reported degradation rather than a mystery.
 fn pseudoconsoleIsLive(out_read: HANDLE, proc: HANDLE) bool {
     var waited: usize = 0;
     while (waited < conpty_probe_ms) : (waited += conpty_probe_step_ms) {
@@ -1176,14 +1072,6 @@ fn pseudoconsoleIsLive(out_read: HANDLE, proc: HANDLE) bool {
 // ---------------------------------------------------------------------
 // Windows pipe backend — the fallback behind `error.PseudoConsoleUnusable`
 //
-// No console at all: the shell's stdin, stdout and stderr are OUR pipes.
-// That is a lesser terminal — the shell paints no prompt, does no line
-// echo, renders no ANSI, and a resize has nothing to resize — but create,
-// input, output, exit codes and delete all work, which is strictly better
-// than a session that accepts a command and can never answer. The kind is
-// recorded on the session (`win.kind`) and reported in the create response,
-// so a degraded session can never be mistaken for the real thing.
-// ---------------------------------------------------------------------
 
 /// Returns the PLAIN `SessionError`: unlike the pseudoconsole path there is
 /// nothing to fall back FROM, so `PseudoConsoleUnusable` is not in its set
@@ -1286,12 +1174,6 @@ fn createSessionPipeWin(eff_cwd: []const u8, dims: Dims, shell_path: []const u8)
 /// Release a Windows handle set whose owner has already cleared its copy:
 /// close OUR input write end (the shell sees end-of-input and leaves), close
 /// the pseudoconsole when there is one, wait briefly for the shell, kill it
-/// if it outlives that, then close what is left.
-///
-/// Taking the set BY VALUE is the point: "close exactly once" becomes a
-/// property of the caller's assignment instead of something this function
-/// has to guess, and a stale handle number — which another thread's
-/// `CreatePipe` can recycle — is closed once and never again.
 fn closeWinHandles(win: WinPty, already_exited: bool) void {
     if (win.in_write) |h| _ = CloseHandle(h);
     if (win.pc) |h| ClosePseudoConsole(h);
@@ -1321,12 +1203,10 @@ pub fn drainSession(s: *Session) void {
 /// Host dispatch for the drain. Both backends append into the SAME ring
 /// buffer through `appendLocked`, which is why every layer above this
 /// point (`sliceOutput` / `readOutput` / `readOutputAlloc` / the websocket
-/// pump) is host-agnostic.
 fn drainLocked(s: *Session) void {
     // if/else, not two early returns: only the taken branch of a
     // comptime-known condition is analyzed, and a statement FOLLOWING such
     // an `if` still is. That distinction is what keeps `poll(2)`/`read(2)`
-    // off a Windows link and `PeekNamedPipe` off a POSIX one.
     if (comptime pty_backend == .conpty) {
         drainLockedWin(s);
     } else {
@@ -1337,10 +1217,6 @@ fn drainLocked(s: *Session) void {
 /// Win32 drain, for BOTH Windows backends (a pseudoconsole's output pipe and
 /// the pipe fallback's stdout pipe are the same kind of object to us):
 /// `PeekNamedPipe` is the non-blocking readiness probe — it
-/// reports how many bytes are waiting WITHOUT consuming one, which is what
-/// `poll(2)` gives the POSIX path — then a bounded `ReadFile` of exactly
-/// those bytes. Same read budget as the POSIX loop, so one poll can never
-/// spin forever on a shell that is writing faster than we drain.
 fn drainLockedWin(s: *Session) void {
     // A null handle means no ConPTY to drain (a sessionless test row, or a
     // session already reaped).
@@ -1450,8 +1326,6 @@ fn pollExitLocked(s: *Session) void {
 /// Win32 exit check, for both backends (the process handle is the process
 /// handle). `WaitForSingleObject(..., 0)` is the non-blocking "has it
 /// finished" probe — `waitpid(WNOHANG)`'s counterpart — and the
-/// code comes from the process handle. Nothing here can block or reap a
-/// child that is not ours, so it needs no pid-zero guard.
 fn pollExitLockedWin(s: *Session) void {
     const h = s.win.proc orelse return;
     if (WaitForSingleObject(h, 0) != WAIT_OBJECT_0) return;
@@ -1506,9 +1380,6 @@ pub fn writeInput(s: *Session, data: []const u8) SessionError!usize {
 /// Win32 write, for both backends: straight into the console's input pipe (or
 /// the shell's stdin pipe). There is no `POLLOUT` equivalent, so — unlike the
 /// POSIX loop, which bounds a stuck write with a 1 s `poll` — a paste larger
-/// than the pipe's buffer can park this thread until the shell drains it.
-/// That is the one behavioural difference between the backends, and it is
-/// called out in the ConPTY section header rather than hidden here.
 fn writeInputWin(s: *Session, data: []const u8) SessionError!usize {
     const h = s.win.in_write orelse return error.WriteFailed;
     var off: usize = 0;
@@ -1650,9 +1521,6 @@ pub fn resizeSession(s: *Session, cols: u16, rows: u16) SessionError!void {
         // A pipe has no console and so no window size. The new dims are
         // recorded and the call SUCCEEDS: the frontend reflows its own
         // viewport, and "resize a terminal that has nothing to resize" is
-        // not an error the caller could act on. The session reported
-        // `backend: "pipe"` when it was created, so this is a known
-        // degradation rather than a silent one.
     } else {
         var win = Winsize{ .ws_row = rows, .ws_col = cols, .ws_xpixel = 0, .ws_ypixel = 0 };
         if (ioctl(s.master_fd, TIOCSWINSZ, &win) != 0) return error.ResizeFailed;
@@ -1734,22 +1602,6 @@ fn reapSessionPosix(s: *Session) void {
 /// Tear down a Windows session, either backend.
 ///
 /// The order matters and is the one the API demands:
-///
-///   1. close OUR input write end — the shell sees end-of-input and leaves
-///      by itself, which is what makes a `DELETE` graceful rather than a
-///      kill (the POSIX side's `SIGKILL` is only reached there because a
-///      forkpty child has no such channel);
-///   2. `ClosePseudoConsole` when there is one — it releases the conhost
-///      and the pipe ends it owns, and it must never run twice for the
-///      same HPCON;
-///   3. wait (bounded) for the shell, and `TerminateProcess` only if it is
-///      still there;
-///   4. close what is left.
-///
-/// The handle set is moved out of the session FIRST, so a second call is a
-/// no-op instead of a double close (a closed handle number can be recycled
-/// by another thread's `CreatePipe`, and closing that one would be a
-/// silent, remote bug).
 fn reapSessionWin(s: *Session) void {
     const win = s.win;
     s.win = .{};
@@ -1951,7 +1803,6 @@ test "max sessions cap rejects over the limit" {
         // Empty cwd resolves to the SERVER's cwd, which exists on every
         // host. The literal "/tmp" this used to pass would be a CwdNotDir
         // 404 on Windows, and the assertion below would then pass for
-        // entirely the wrong reason.
         try testing.expectError(error.TooManySessions, createSession(testing.io, "", null, 80, 24, "user_test"));
     }
 
@@ -1963,8 +1814,6 @@ test "max sessions cap rejects over the limit" {
 /// Poll `readOutput` for `marker` until it appears or `ticks` run out.
 /// ONE body for every backend: what the console hands back is a byte
 /// stream, and ConPTY wraps it in cursor/colour escapes exactly like a
-/// real terminal — so the assertion is "the marker came through", which is
-/// the same contract the POSIX path has always had.
 fn expectMarker(s: *Session, marker: []const u8, ticks: usize) !void {
     var found = false;
     var cursor: u64 = 0;
@@ -2001,15 +1850,6 @@ test "spawned shell echoes input" {
             // The Windows parity assertion, end to end on ONE live shell:
             // a Windows session answers the same operations the POSIX one
             // does — create, input, echo, resize, and an observed process
-            // exit with its code. Anything less would let "create works"
-            // be true while the rest of the feature is not.
-            //
-            // This runs on EITHER Windows backend: on a host whose
-            // pseudoconsole works that is ConPTY, and on a host whose
-            // pseudoconsole cannot start a client it is the pipe shell —
-            // and the observable behaviour below is the same for both,
-            // which is the point. `info.backend` says which one the host
-            // delivered; both are acceptable here, a THIRD value is not.
             const info = try createSession(testing.io, "", null, 80, 24, "user_test");
             defer destroySession(info.id) catch {};
             try testing.expect(info.pid > 0);
@@ -2021,8 +1861,6 @@ test "spawned shell echoes input" {
             // cmd.exe reads in cooked mode: CR commits the line, so the
             // input ends CRLF (a bare LF works on most builds, but not by
             // contract). On the pipe backend the shell never echoes, so the
-            // marker we look for is the command's OUTPUT, not its echo —
-            // which is the same thing the POSIX assertion waits for.
             _ = try writeInput(s, "echo MARKER-7f3a9c\r\n");
             try expectMarker(s, "MARKER-7f3a9c", 100);
 
