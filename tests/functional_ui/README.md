@@ -313,13 +313,14 @@ null origin). Plan:
 5. unclosed `<html>` (mid-stream shape) degrades safely: raw text
    shows through the legacy path, no iframe, no page errors
 
-### `<mermaid>` wrapper-tag tests (`chatview_mermaid_ui_test.py`, 5 tests)
+### `<mermaid>` wrapper-tag tests (`chatview_mermaid_ui_test.py`, 6 tests)
 
 The LLM can wrap Mermaid source in `<mermaid>...</mermaid>` (the
 `ResponseFormatting` prompt offers it); the chatview renders each block
 as a live SVG diagram (`components/chat/MermaidDiagram.vue`, mermaid
 imported lazily and themed from the app's CSS variables). A
-```` ```mermaid ```` fence renders the same way.
+```` ```mermaid ```` fence renders the same way. Clicking a diagram
+opens a full-screen preview; the copy button hands back the source.
 
 1. a `<mermaid>` block → a laid-out `<svg>` with both nodes and labels,
    drawn in the APP palette (node fill `rgb(40,39,39)`, label ink
@@ -330,6 +331,11 @@ imported lazily and themed from the app's CSS variables). A
 4. a diagram that does not PARSE falls back to its own source (no svg,
    the reason in `[data-testid="chat-mermaid-error"]`, no page errors)
 5. legacy markdown messages are untouched — zero diagram containers
+6. click → a preview SVG genuinely BIGGER than the inline one
+   (`168x136` → `896x725`), the transcript's scroll locked while it is
+   open and released on Escape; the copy button writes the block's
+   source to the clipboard (`navigator.clipboard.writeText` is spied at
+   page init, so the assertion does not depend on the OS clipboard)
 
 The `present_files` card draws presented diagrams too:
 `chatview_present_files_ui_test.py::test_present_files_markdown_and_mmd_render_diagrams`

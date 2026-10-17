@@ -531,10 +531,14 @@ def test_present_files_markdown_and_mmd_render_diagrams(
     # 2. A whole-file `.mmd` (no fence) is all diagram.
     mmd_box = page.locator('[data-testid="present-files-inline-text-1"]')
     mmd_box.wait_for(timeout=15000)
-    mmd_box.locator('[data-testid="preview-mermaid"] svg').wait_for(timeout=20000)
+    # Scoped to the drawing's own testid: the card's copy affordance is an
+    # <svg> icon too, so a bare `svg` matches two elements.
+    mmd_box.locator('[data-testid="preview-mermaid"] [data-testid="chat-mermaid-svg"] svg').wait_for(
+        timeout=20000
+    )
     m = mmd_box.evaluate(
         """el => {
-            const svg = el.querySelector('svg');
+            const svg = el.querySelector('[data-testid="chat-mermaid-svg"] svg');
             const r = svg.getBoundingClientRect();
             const node = svg.querySelector('g.node rect, g.node polygon, g.node circle');
             return {
