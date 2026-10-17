@@ -908,12 +908,20 @@ jobs:
           # That is infrastructure, not a test result: retry once with the tmp
           # dir cleared, and ONLY for that exact message, so that a real test
           # failure still fails here.
+          #
+          # `set +e` is load-bearing: the runner invokes this script as
+          # `bash -e`, which aborts on the failed pipeline below BEFORE the
+          # `status=$?` line, so the loop never retried (CI run 39001590245).
+          set +e
           for attempt in 1 2; do
             zig build test --summary all -Dno-webapp-rebuild 2>&1 \
               | tee "$RUNNER_TEMP/zig-test/summary.log"
             status=$?
             if [[ "$status" -ne 0 ]] && grep -q "unable to read results of configure phase" "$RUNNER_TEMP/zig-test/summary.log"; then
               echo "zig build test: a configure-phase result vanished (attempt $attempt); clearing .zig-cache/tmp and retrying"
+              # Evidence for the next log: a test binary that exists but never
+              # wrote its handshake points at the child failing to start.
+              ls -l .zig-cache/o/*/test* 2>/dev/null | head -n 5 || true
               rm -rf .zig-cache/tmp
               continue
             fi
