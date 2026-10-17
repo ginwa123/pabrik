@@ -12,6 +12,7 @@ const event_bus_mod = pabrikcore.event_bus;
 // same pattern as cleanup_stale_worker.zig's
 const bg_proc = pabrikcore.ai_mod.background_process;
 const ai_workflow = pabrikcore.ai_mod.ai_workflow;
+const guest_jobs = pabrikcore.ai_mod.guest_jobs;
 // `migration.zig` lives in `src/migrations/` — one `..` up from
 // `src/schedulers/`.
 const migration = @import("../migrations/migration.zig");
@@ -65,6 +66,15 @@ pub const NotifySingleBackgroundCompletionArgs = struct {
     pid_str: []const u8,
     command: []const u8,
     log_path: []const u8,
+    /// Bytes the CALLER already fetched, for a log the host cannot open (a
+    /// guest job's log lives inside its VM). Null keeps the host read.
+    log_content: ?[]const u8 = null,
+    /// That log's full size, so truncation is reported the same way.
+    log_total_bytes: ?usize = null,
+    /// Where the pid lives: this host, or a workspace VM.
+    home: bg_proc.JobHome = .{},
+    /// One extra sentence for the envelope, e.g. that the VM stopped.
+    note: []const u8 = "",
 };
 
 /// Notify one dead background pair: read the log (capped), build the
@@ -82,7 +92,11 @@ pub fn notifySingleBackgroundCompletion(args: NotifySingleBackgroundCompletionAr
     var log_content: []const u8 = "";
     var was_truncated: bool = false;
     var total_bytes: usize = 0;
-    if (bg_proc.readLogTruncated(allocator, io, args.log_path, bg_proc.completion_log_cap_bytes)) |tlog| {
+    if (args.log_content) |fetched| {
+        log_content = fetched;
+        total_bytes = args.log_total_bytes orelse fetched.len;
+        was_truncated = total_bytes > fetched.len;
+    } else if (bg_proc.readLogTruncated(allocator, io, args.log_path, bg_proc.completion_log_cap_bytes)) |tlog| {
         // `tlog.content` is allocator-owned — no free (arena rule).
         log_content = tlog.content;
         was_truncated = tlog.truncated;
@@ -123,6 +137,8 @@ pub fn notifySingleBackgroundCompletion(args: NotifySingleBackgroundCompletionAr
         was_truncated,
         total_bytes,
         args.log_path,
+        args.home,
+        args.note,
     ) catch |err| {
         if (logger) |log| {
             log.errFmt(
@@ -249,6 +265,10 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
         pid_num: u32,
         command: []const u8,
         log_path: []const u8,
+        home: bg_proc.JobHome = .{},
+        note: []const u8 = "",
+        log_content: ?[]const u8 = null,
+        log_total_bytes: ?usize = null,
         notified: bool = false,
     };
     var dead: std.ArrayListUnmanaged(DeadPair) = .empty;
@@ -257,7 +277,7 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
     // `kind = 'job'` is not an optimization — it is the OTHER HALF of
     // `mode="background_persistence"`'s contract.
     const select_sql =
-        \\SELECT session_id, pid, command, log_path
+        \\SELECT session_id, pid, command, log_path, COALESCE(vm_id, ''), COALESCE(guest_pid, 0)
         \\FROM session_background_process
         \\WHERE kind = 'job'
     ;
@@ -273,6 +293,11 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
         const pid_str = row.values[1];
         const command = row.values[2];
         const log_path = row.values[3];
+        const vm_id = if (row.values.len > 4) row.values[4] else "";
+        const guest_pid = if (row.values.len > 5)
+            std.fmt.parseInt(u32, row.values[5], 10) catch 0
+        else
+            0;
 
         result.checked_count += 1;
 
@@ -280,10 +305,31 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
         // A row with a non-numeric PID is unrecoverable corruption.
         const pid = std.fmt.parseInt(i32, pid_str, 10) catch continue;
 
-        // The single source of truth: is the process actually alive?
-        // Cross-platform — uses kill(pid, 0) on POSIX, OpenProcess
-        // with QUERY_LIMITED on Windows.
-        if (process_status.isProcessRunning(pid)) {
+        var home = bg_proc.JobHome.host();
+        var note: []const u8 = "";
+        var log_content: ?[]const u8 = null;
+        var log_total: ?usize = null;
+
+        if (vm_id.len > 0) {
+            // A guest row's pid is the GUEST's: asking this host about it would
+            // answer a different question, and the log is not on this host at
+            // all.
+            home = bg_proc.JobHome.guest(vm_id, guest_pid);
+            const job = guest_jobs.GuestJob{ .vm_id = vm_id, .guest_pid = guest_pid };
+            const reading = guest_jobs.probe(a, job, null);
+            if (!guest_jobs.isFinished(reading.verdict)) {
+                result.kept_count += 1;
+                continue;
+            }
+            note = guest_jobs.noteFor(reading.verdict) orelse "";
+            if (guest_jobs.readDelta(a, job, log_path, 0, bg_proc.completion_log_cap_bytes)) |delta| {
+                log_content = delta.bytes;
+                log_total = @intCast(@max(delta.total_bytes, 0));
+            } else |_| {}
+        } else if (process_status.isProcessRunning(pid)) {
+            // The single source of truth: is the process actually alive?
+            // Cross-platform — uses kill(pid, 0) on POSIX, OpenProcess
+            // with QUERY_LIMITED on Windows.
             result.kept_count += 1;
             continue;
         }
@@ -332,6 +378,10 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
             .pid_num = @intCast(pid),
             .command = cmd_copy,
             .log_path = log_copy,
+            .home = home,
+            .note = note,
+            .log_content = log_content,
+            .log_total_bytes = log_total,
         }) catch |err| {
             if (logger) |log| {
                 log.errFmt(
@@ -359,6 +409,10 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
             .pid_str = pair.pid,
             .command = pair.command,
             .log_path = pair.log_path,
+            .log_content = pair.log_content,
+            .log_total_bytes = pair.log_total_bytes,
+            .home = pair.home,
+            .note = pair.note,
         })) {
             pair.notified = true;
             result.notified_count += 1;

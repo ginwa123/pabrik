@@ -66,6 +66,43 @@ pub const ExecRequest = struct {
     max_output_bytes: usize = rpc.default_max_output_bytes,
 };
 
+pub const SpawnRequest = struct {
+    workspace_id: []const u8,
+    argv: []const []const u8,
+    cwd_rel: []const u8 = "",
+    log_name: []const u8,
+};
+
+pub const SpawnOutcome = struct {
+    pid: i64,
+    log_path: []u8,
+
+    pub fn deinit(self: SpawnOutcome, allocator: std.mem.Allocator) void {
+        allocator.free(self.log_path);
+    }
+};
+
+pub const JobProbe = struct {
+    alive: bool,
+    state: []u8,
+    boot_pid: i64,
+
+    pub fn deinit(self: JobProbe, allocator: std.mem.Allocator) void {
+        allocator.free(self.state);
+    }
+};
+
+pub const LogChunk = struct {
+    bytes: []u8,
+    size: i64,
+    eof: bool,
+    missing: bool,
+
+    pub fn deinit(self: LogChunk, allocator: std.mem.Allocator) void {
+        allocator.free(self.bytes);
+    }
+};
+
 pub const Client = struct {
     allocator: std.mem.Allocator,
     socket_path: []const u8,
@@ -155,6 +192,93 @@ pub const Client = struct {
         };
         self.record(failure);
         return Error.ServerFailure;
+    }
+
+    /// Start a detached command in the workspace's VM. The pid that comes back
+    /// is the GUEST's, and `log_path` is a path inside the guest.
+    pub fn spawn(self: *Client, request: SpawnRequest) !SpawnOutcome {
+        var response = try self.call(.{
+            .action = .spawn,
+            .id = self.takeId(),
+            .workspace_id = request.workspace_id,
+            .argv = request.argv,
+            .cwd_rel = request.cwd_rel,
+            .log_name = request.log_name,
+        }, self.guard_ms);
+        defer response.deinit();
+        return switch (response.value) {
+            .spawned => |s| .{
+                .pid = s.pid,
+                .log_path = try self.allocator.dupe(u8, s.log_path),
+            },
+            .failure => |f| self.reportFailure(f),
+            else => Error.ProtocolViolation,
+        };
+    }
+
+    /// Whether a detached job is still there, and which boot of the VM answered.
+    pub fn probe(self: *Client, workspace_id: []const u8, pid: i64) !JobProbe {
+        var response = try self.call(.{
+            .action = .probe,
+            .id = self.takeId(),
+            .workspace_id = workspace_id,
+            .pid = pid,
+        }, self.guard_ms);
+        defer response.deinit();
+        return switch (response.value) {
+            .probe => |p| .{
+                .alive = p.alive,
+                .state = try self.allocator.dupe(u8, p.state),
+                .boot_pid = p.boot_pid,
+            },
+            .failure => |f| self.reportFailure(f),
+            else => Error.ProtocolViolation,
+        };
+    }
+
+    pub fn signal(self: *Client, workspace_id: []const u8, pid: i64, sig: i64) !void {
+        var response = try self.call(.{
+            .action = .signal,
+            .id = self.takeId(),
+            .workspace_id = workspace_id,
+            .pid = pid,
+            .sig = sig,
+        }, self.guard_ms);
+        defer response.deinit();
+        return switch (response.value) {
+            .ack => {},
+            .failure => |f| self.reportFailure(f),
+            else => Error.ProtocolViolation,
+        };
+    }
+
+    /// Bytes of a job's log from `offset`, read through the guest.
+    pub fn readLog(
+        self: *Client,
+        workspace_id: []const u8,
+        log_name: []const u8,
+        offset: i64,
+        max_bytes: usize,
+    ) !LogChunk {
+        var response = try self.call(.{
+            .action = .log,
+            .id = self.takeId(),
+            .workspace_id = workspace_id,
+            .log_name = log_name,
+            .offset = offset,
+            .max_bytes = max_bytes,
+        }, self.guard_ms);
+        defer response.deinit();
+        return switch (response.value) {
+            .log_chunk => |c| .{
+                .bytes = try self.allocator.dupe(u8, c.data),
+                .size = c.size,
+                .eof = c.eof,
+                .missing = c.missing,
+            },
+            .failure => |f| self.reportFailure(f),
+            else => Error.ProtocolViolation,
+        };
     }
 
     /// The daemon's reason for the last `ServerFailure`, or null when the last

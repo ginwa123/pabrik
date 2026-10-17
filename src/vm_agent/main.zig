@@ -17,6 +17,15 @@ const default_uid: u32 = 1000;
 const default_gid: u32 = 1000;
 const max_timeout_ms: u32 = 600_000;
 const default_budget: usize = 256 * 1024;
+/// `wait4`'s WNOHANG: probe must never block PID 1.
+const wno_hang: u32 = 1;
+/// Detached jobs log here, and a `read_log` reply carries at most this much of
+/// one: 16 KiB of bytes is ~22 KiB of base64, comfortably inside `max_frame`.
+const job_log_dir = "/tmp/pabrik";
+const log_read_chunk: usize = 16 * 1024;
+/// The reply formatter's buffer. A `log.chunk` reply is base64, so it is
+/// bigger than the bytes it carries.
+const reply_buf_bytes: usize = 64 * 1024;
 
 const hello_json = "{\"type\":\"hello\",\"agent\":\"pabrik-vm-agent\",\"version\":\"0.2\"}";
 const bye_json = "{\"type\":\"bye\"}";
@@ -66,7 +75,7 @@ fn writeFrame(fd: linux.fd_t, payload: []const u8) void {
 
 /// One reply frame built in a stack buffer, so no reply can outgrow the cap.
 fn reply(fd: linux.fd_t, comptime fmt: []const u8, args: anytype) void {
-    var buf: [16 * 1024]u8 = undefined;
+    var buf: [reply_buf_bytes]u8 = undefined;
     const text = std.fmt.bufPrint(&buf, fmt, args) catch {
         writeFrame(fd, "{\"type\":\"error\",\"message\":\"reply too large\"}");
         return;
@@ -273,11 +282,148 @@ fn runExec(conn_fd: linux.fd_t, req: *const ExecRequest) void {
     );
 }
 
+// ─── detached jobs ───────────────────────────────────────────────────────
+
+const SpawnRequest = struct {
+    id: i64 = 0,
+    argv: []const []const u8 = &.{},
+    cwd: []const u8 = "/workspace",
+    log_path: []const u8 = "",
+    uid: u32 = default_uid,
+    gid: u32 = default_gid,
+};
+
+/// The detached child: its own session (so a dead caller cannot take it down),
+/// the log on both output streams, and the caller's uid — never root.
+fn spawnChild(req: *const SpawnRequest, log_fd: linux.fd_t) noreturn {
+    var cwd_buf: [1024]u8 = undefined;
+    _ = linux.setsid();
+    if (cstr(req.cwd, &cwd_buf)) |cwd| _ = linux.chdir(cwd);
+    _ = linux.dup2(log_fd, 1);
+    _ = linux.dup2(log_fd, 2);
+    const devnull = linux.open("/dev/null", .{ .ACCMODE = .RDONLY }, 0);
+    if (linux.errno(devnull) == .SUCCESS) _ = linux.dup2(@intCast(devnull), 0);
+    if (log_fd > 2) _ = linux.close(log_fd);
+    _ = linux.setgroups(0, &[_]linux.gid_t{});
+    _ = linux.setgid(req.gid);
+    _ = linux.setuid(req.uid);
+    _ = linux.prctl(@intFromEnum(linux.PR.SET_NO_NEW_PRIVS), 1, 0, 0, 0);
+    const argv = buildArgv(req.argv);
+    if (argv == null) {
+        writeAll(2, "pabrik-vm-agent: argv too large\n");
+        linux.exit(126);
+    }
+    _ = linux.execve(@ptrCast(argv_ptrs[0].?), argv.?, &exec_env);
+    writeAll(2, "pabrik-vm-agent: spawn exec failed\n");
+    linux.exit(127);
+}
+
+/// Fork the job off and report its pid. The pid the caller is handed IS the
+/// job's process-group id, which is what makes a tree stop one syscall.
+fn runSpawn(conn_fd: linux.fd_t, req: *const SpawnRequest) void {
+    if (req.argv.len == 0 or req.log_path.len == 0) {
+        reply(conn_fd, "{{\"type\":\"spawn.error\",\"id\":{d},\"message\":\"argv and log_path are required\"}}", .{req.id});
+        return;
+    }
+    _ = linux.mkdir(job_log_dir, 0o755);
+    var log_buf: [1024]u8 = undefined;
+    const log_z = cstr(req.log_path, &log_buf) orelse {
+        reply(conn_fd, "{{\"type\":\"spawn.error\",\"id\":{d},\"message\":\"log path too long\"}}", .{req.id});
+        return;
+    };
+    const open_rc = linux.open(log_z, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o644);
+    if (linux.errno(open_rc) != .SUCCESS) {
+        reply(conn_fd, "{{\"type\":\"spawn.error\",\"id\":{d},\"message\":\"cannot open the log\"}}", .{req.id});
+        return;
+    }
+    const log_fd: linux.fd_t = @intCast(open_rc);
+
+    const fork_rc = linux.fork();
+    if (linux.errno(fork_rc) != .SUCCESS) {
+        closeIfOpen(log_fd);
+        reply(conn_fd, "{{\"type\":\"spawn.error\",\"id\":{d},\"message\":\"fork failed\"}}", .{req.id});
+        return;
+    }
+    if (fork_rc == 0) spawnChild(req, log_fd);
+    closeIfOpen(log_fd);
+    reply(conn_fd, "{{\"type\":\"spawn.result\",\"id\":{d},\"pid\":{d}}}", .{ req.id, fork_rc });
+}
+
+/// Signal 0 is the existence probe: `EPERM` also means "it is there". A job
+/// this agent forked is reaped FIRST, because a zombie still answers signal 0.
+fn runProbe(conn_fd: linux.fd_t, id: i64, pid: i64) void {
+    var status: u32 = 0;
+    const reaped = linux.wait4(@intCast(pid), &status, wno_hang, null);
+    const gone = linux.errno(reaped) == .SUCCESS and reaped != 0;
+    const err = linux.errno(linux.syscall2(.kill, @intCast(pid), 0));
+    const alive = !gone and (err == .SUCCESS or err == .PERM);
+    reply(conn_fd, "{{\"type\":\"probe.result\",\"id\":{d},\"alive\":{s}}}", .{ id, if (alive) "true" else "false" });
+}
+
+/// The job's process GROUP first, then the pid itself: a job that forked keeps
+/// its workers in the group, and killing only the leader leaves them running.
+fn runSignal(conn_fd: linux.fd_t, id: i64, pid: i64, sig: i64) void {
+    const pid_u: usize = @intCast(pid);
+    const group: usize = @bitCast(-@as(isize, @intCast(pid)));
+    var sent = linux.errno(linux.syscall2(.kill, group, @intCast(sig))) == .SUCCESS;
+    if (linux.errno(linux.syscall2(.kill, pid_u, @intCast(sig))) == .SUCCESS) sent = true;
+    reply(conn_fd, "{{\"type\":\"signal.result\",\"id\":{d},\"sent\":{s}}}", .{ id, if (sent) "true" else "false" });
+}
+
+fn logChunkMissing(conn_fd: linux.fd_t, id: i64) void {
+    reply(conn_fd, "{{\"type\":\"log.chunk\",\"id\":{d},\"missing\":true}}", .{id});
+}
+
+/// One positional read of a job's log. `eof` is derived from the file's own
+/// size, so the caller's cursor and the end of the file cannot disagree.
+fn runReadLog(conn_fd: linux.fd_t, id: i64, path: []const u8, offset: i64, max_bytes: usize) void {
+    var path_buf: [1024]u8 = undefined;
+    const path_z = cstr(path, &path_buf) orelse return logChunkMissing(conn_fd, id);
+    const open_rc = linux.open(path_z, .{ .ACCMODE = .RDONLY }, 0);
+    if (linux.errno(open_rc) != .SUCCESS) return logChunkMissing(conn_fd, id);
+    const fd: linux.fd_t = @intCast(open_rc);
+    defer _ = linux.close(fd);
+
+    // `lseek` to the end is the size: cheaper than a stat, and the fd is ours
+    // alone for the length of this request.
+    const end_rc = linux.lseek(fd, 0, linux.SEEK.END);
+    if (linux.errno(end_rc) != .SUCCESS) return logChunkMissing(conn_fd, id);
+    const size: i64 = @intCast(end_rc);
+    if (offset >= size) {
+        reply(conn_fd, "{{\"type\":\"log.chunk\",\"id\":{d},\"size\":{d},\"eof\":true,\"data_b64\":\"\"}}", .{ id, size });
+        return;
+    }
+
+    const want: usize = @intCast(@min(size - offset, @as(i64, @intCast(max_bytes))));
+    const want_capped: usize = @min(want, log_read_chunk);
+    var buf: [log_read_chunk]u8 = undefined;
+    const read_rc = linux.pread(fd, &buf, want_capped, offset);
+    if (linux.errno(read_rc) != .SUCCESS) return logChunkMissing(conn_fd, id);
+    const got = buf[0..read_rc];
+
+    var b64: [std.base64.standard.Encoder.calcSize(log_read_chunk)]u8 = undefined;
+    const encoded = std.base64.standard.Encoder.encode(&b64, got);
+    const at_end = offset + @as(i64, @intCast(got.len)) >= size;
+    reply(
+        conn_fd,
+        "{{\"type\":\"log.chunk\",\"id\":{d},\"size\":{d},\"eof\":{s},\"data_b64\":\"{s}\"}}",
+        .{ id, size, if (at_end) "true" else "false", encoded },
+    );
+}
+
 // ─── request dispatch ────────────────────────────────────────────────────
 
 fn asU32(value: std.json.Value, fallback: u32) u32 {
     return switch (value) {
         .integer => |i| @intCast(@max(i, 0)),
+        else => fallback,
+    };
+}
+
+fn asI64(value: std.json.Value, fallback: i64) i64 {
+    return switch (value) {
+        .integer => |i| i,
+        .float => |f| @intFromFloat(f),
         else => fallback,
     };
 }
@@ -348,6 +494,65 @@ fn serveRequest(conn_fd: linux.fd_t, text: []const u8) void {
             return;
         }
         runExec(conn_fd, &req);
+        return;
+    }
+    if (std.mem.eql(u8, kind, "spawn")) {
+        var req = SpawnRequest{};
+        if (obj.get("id")) |v| req.id = asI64(v, 0);
+        if (obj.get("uid")) |v| req.uid = asU32(v, req.uid);
+        if (obj.get("gid")) |v| req.gid = asU32(v, req.gid);
+        if (obj.get("cwd")) |v| {
+            if (v == .string) req.cwd = v.string;
+        }
+        if (obj.get("log_path")) |v| {
+            if (v == .string) req.log_path = v.string;
+        }
+        if (obj.get("argv")) |v| {
+            if (v == .array) {
+                var list: [max_argv][]const u8 = undefined;
+                var count: usize = 0;
+                for (v.array.items) |item| {
+                    if (item != .string or count == max_argv) break;
+                    list[count] = item.string;
+                    count += 1;
+                }
+                req.argv = list[0..count];
+            }
+        }
+        runSpawn(conn_fd, &req);
+        return;
+    }
+    if (std.mem.eql(u8, kind, "probe")) {
+        const id = if (obj.get("id")) |v| asI64(v, 0) else 0;
+        const pid = if (obj.get("pid")) |v| asI64(v, 0) else 0;
+        if (pid <= 0) {
+            reply(conn_fd, "{{\"type\":\"error\",\"message\":\"pid is required\"}}", .{});
+            return;
+        }
+        runProbe(conn_fd, id, pid);
+        return;
+    }
+    if (std.mem.eql(u8, kind, "signal")) {
+        const id = if (obj.get("id")) |v| asI64(v, 0) else 0;
+        const pid = if (obj.get("pid")) |v| asI64(v, 0) else 0;
+        const sig = if (obj.get("signal")) |v| asI64(v, 9) else 9;
+        if (pid <= 0 or sig <= 0 or sig > 64) {
+            reply(conn_fd, "{{\"type\":\"error\",\"message\":\"pid and signal are required\"}}", .{});
+            return;
+        }
+        runSignal(conn_fd, id, pid, sig);
+        return;
+    }
+    if (std.mem.eql(u8, kind, "read_log")) {
+        const id = if (obj.get("id")) |v| asI64(v, 0) else 0;
+        const path = if (obj.get("path")) |v| (if (v == .string) v.string else "") else "";
+        const offset = if (obj.get("offset")) |v| asI64(v, 0) else 0;
+        const max_bytes = if (obj.get("max_bytes")) |v| asUsize(v, log_read_chunk) else log_read_chunk;
+        if (path.len == 0 or offset < 0 or max_bytes == 0) {
+            reply(conn_fd, "{{\"type\":\"error\",\"message\":\"path, offset and max_bytes are required\"}}", .{});
+            return;
+        }
+        runReadLog(conn_fd, id, path, offset, max_bytes);
         return;
     }
     reply(conn_fd, "{{\"type\":\"error\",\"message\":\"unknown request\"}}", .{});

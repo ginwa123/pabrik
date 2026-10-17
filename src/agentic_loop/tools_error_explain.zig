@@ -712,10 +712,6 @@ pub fn explain(allocator: std.mem.Allocator, err: anyerror, context: ?[]const u8
             u8,
             "`cwd` is outside this session's workspace. In SaaS mode a workspace is its own VM, so a command can only run at or below the workspace root — send a `cwd` inside the workspace.",
         ),
-        error.GuestDetachedUnsupported => try allocator.dupe(
-            u8,
-            "Detached processes (`mode` = \"background\" / \"background_persistence\") are not available inside the workspace VM yet. Run the command in the foreground with a `timeout`, or report the blocker.",
-        ),
         error.GuestManagerUnavailable => try allocator.dupe(
             u8,
             "`pabrik-vmd`, the process that owns the workspace VMs, is not reachable. Start it (`pabrik-vmd serve`), or point PABRIK_VMD_SOCKET at its socket, then retry. Nothing was run on the host.",
@@ -723,6 +719,15 @@ pub fn explain(allocator: std.mem.Allocator, err: anyerror, context: ?[]const u8
         error.GuestManagerRefused => try allocator.dupe(
             u8,
             "The workspace VM manager refused the command (the VM failed to start, or the workspace is unavailable). Read `pabrik-vmd`'s log for the cause — the retry to try is a fresh `pabrik-vmd stop`/re-run, not the identical call.",
+        ),
+
+        error.GuestLogUnknown => try allocator.dupe(
+            u8,
+            "This job's log path is not one the workspace VM manager could have minted, so it cannot be read. Use action=\"list\" and start the command again.",
+        ),
+        error.GuestLogUnreadable => try allocator.dupe(
+            u8,
+            "The workspace VM could not read this job's log — the VM may have stopped, and stopping it ends its jobs. action=\"list\" shows what this session is still running.",
         ),
 
         // ── fallback ───────────────────────────────────────────────────

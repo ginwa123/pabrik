@@ -1,6 +1,6 @@
-//! The `--saas` substrate for a shell command: it resolves the session's
-//! workspace, maps the tool's host `cwd` onto the guest's `/workspace` tree and
-//! runs the command there through `pabrik-vmd`. Local mode installs nothing.
+//! The `--saas` substrate for a shell command: resolve the session's workspace,
+//! map the host `cwd` onto the guest's `/workspace`, and run there through
+//! `pabrik-vmd`. Local mode installs nothing.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -15,7 +15,6 @@ const policy = @import("../vmd/policy.zig");
 pub const Error = error{
     GuestWorkspaceUnknown,
     GuestCwdOutsideWorkspace,
-    GuestDetachedUnsupported,
     GuestManagerUnavailable,
     GuestManagerRefused,
 };
@@ -27,6 +26,28 @@ pub const GuestContext = struct {
     db: ?*sqlite.SqliteBackend,
     session_id: ?[]const u8,
 };
+
+/// True when this process runs a session's commands in a workspace VM.
+pub fn guestModeActive() bool {
+    return runtime_mode.vm_backend_available and runtime_mode.currentMode() == .saas;
+}
+
+/// The workspace a session's commands belong to, or null when it does not
+/// resolve to one. Under `--saas` this is also the VM they run in.
+pub fn workspaceIdFor(
+    allocator: std.mem.Allocator,
+    db: *sqlite.SqliteBackend,
+    session_id: []const u8,
+) !?[]u8 {
+    return workspace_scope.resolveWorkspaceId(allocator, db, session_id);
+}
+
+/// The name of a fresh job log. The manager owns the DIRECTORY and turns this
+/// into a path, so the only thing chosen here stays a name.
+pub fn jobLogName(allocator: std.mem.Allocator, io: std.Io) ![]u8 {
+    const ts: i64 = @intCast(@divTrunc(std.Io.Timestamp.now(io, .real).nanoseconds, 1_000_000));
+    return std.fmt.allocPrint(allocator, "bg_{d}.log", .{ts});
+}
 
 /// The executor for this process, or null when commands belong on the host.
 pub fn executorFor(ctx: *const GuestContext) ?shell.Executor {
@@ -42,7 +63,6 @@ fn runGuest(
     argv_prefix: []const []const u8,
     input: shell.ShellInput,
 ) anyerror!shell.ShellOutput {
-    _ = io;
     _ = argv_prefix;
     const ctx: *const GuestContext = @ptrCast(@alignCast(ctx_ptr));
 
@@ -51,14 +71,19 @@ fn runGuest(
     const cwd = input.cwd orelse return error.MandatoryCwdMissing;
     if (cwd.len == 0) return error.MandatoryCwdMissing;
     if (!std.fs.path.isAbsolute(cwd)) return error.CwdNotAbsolute;
-    if (shell.resolvedMode(input).isDetached()) return Error.GuestDetachedUnsupported;
-    const timeout_sec = input.timeout orelse return error.TimeoutMissing;
-    if (timeout_sec == 0) return error.TimeoutMissing;
-    if (timeout_sec > shell.MAX_TIMEOUT_SEC) return error.TimeoutTooLarge;
+    const mode = shell.resolvedMode(input);
+    // The host's deadline rule: required and bounded in the foreground, and
+    // never consulted by the detached modes.
+    var timeout_sec: u32 = 0;
+    if (!mode.isDetached()) {
+        timeout_sec = input.timeout orelse return error.TimeoutMissing;
+        if (timeout_sec == 0) return error.TimeoutMissing;
+        if (timeout_sec > shell.MAX_TIMEOUT_SEC) return error.TimeoutTooLarge;
+    }
 
-    const socket = runtime_mode.socketPath() orelse return Error.GuestManagerUnavailable;
-    // Fail closed: with no session or no database there is no workspace to
-    // place the command in, and running it on the host is not an option.
+    // Fail closed: no session or no database means there is nowhere to place
+    // the command, and running it on the host is not an option. Where it
+    // belongs is asked BEFORE whether a manager is up.
     const db = ctx.db orelse return Error.GuestWorkspaceUnknown;
     const session_id = ctx.session_id orelse return Error.GuestWorkspaceUnknown;
 
@@ -69,6 +94,12 @@ fn runGuest(
         return Error.GuestWorkspaceUnknown;
     defer allocator.free(root);
     const cwd_rel = policy.relativeToRoot(root, cwd) orelse return Error.GuestCwdOutsideWorkspace;
+
+    const socket = runtime_mode.socketPath() orelse return Error.GuestManagerUnavailable;
+
+    if (mode.isDetached()) {
+        return spawnGuestJob(allocator, io, input, socket, workspace_id, cwd_rel);
+    }
 
     const max_output = input.max_output orelse 20 * 1024;
     const max_lines = input.max_lines orelse 1000;
@@ -102,6 +133,55 @@ fn runGuest(
         .stdout_lines = stdout.lines,
         .stderr_lines = stderr.lines,
     };
+}
+
+/// Detach the command INSIDE the workspace's VM. The reply's shape is the host
+/// path's own — `PID: <guest pid>`, the guest's log path — so the tool records
+/// a job the same way in either substrate.
+fn spawnGuestJob(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    input: shell.ShellInput,
+    socket: []const u8,
+    workspace_id: []const u8,
+    cwd_rel: []const u8,
+) !shell.ShellOutput {
+    const log_name = try jobLogName(allocator, io);
+    defer allocator.free(log_name);
+
+    var client = vmd.Client.init(allocator, socket);
+    const spawned = client.spawn(.{
+        .workspace_id = workspace_id,
+        .argv = &.{ policy.guest_shell, "-c", input.command },
+        .cwd_rel = cwd_rel,
+        .log_name = log_name,
+    }) catch |err| return managerError(err);
+    defer spawned.deinit(allocator);
+
+    const stdout = try std.fmt.allocPrint(allocator, "PID: {d}\nLog: {s}", .{ spawned.pid, spawned.log_path });
+    errdefer allocator.free(stdout);
+    const stderr = try allocator.dupe(u8, "No errors.");
+    errdefer allocator.free(stderr);
+    const command = try copyCommandShaped(allocator, input.command);
+
+    return .{
+        .command = command,
+        .stdout = stdout,
+        .stderr = stderr,
+        .exit_code = 0,
+        .truncated = false,
+        .timeout = false,
+    };
+}
+
+/// The host path reports a detached command's text cut to 50 bytes, and the
+/// tool's payload shape must not depend on the substrate.
+fn copyCommandShaped(allocator: std.mem.Allocator, command: []const u8) ![]u8 {
+    if (command.len <= 50) return allocator.dupe(u8, command);
+    const cut = try allocator.alloc(u8, 53);
+    @memcpy(cut[0..50], command[0..50]);
+    @memcpy(cut[50..53], "...");
+    return cut;
 }
 
 fn managerError(err: anyerror) anyerror {
@@ -154,6 +234,93 @@ fn shapeCapture(
 // ============================================================================
 
 const testing = std.testing;
+
+const GuestTestCtx = struct {
+    db: sqlite.SqliteBackend,
+    threaded: std.Io.Threaded,
+
+    fn deinit(self: *GuestTestCtx) void {
+        self.db.deinit();
+        self.threaded.deinit();
+    }
+};
+
+/// The smallest database whose session resolves to a workspace: one item with a
+/// path, one task linked to it, one session.
+fn guestTestCtx() !GuestTestCtx {
+    var threaded = std.Io.Threaded.init(testing.allocator, .{});
+    errdefer threaded.deinit();
+    var db: sqlite.SqliteBackend = .{};
+    errdefer db.deinit();
+    try db.init(threaded.io(), ":memory:");
+
+    try db.exec(testing.allocator,
+        \\CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT NOT NULL, status TEXT, cwd TEXT, workspace_id TEXT)
+    , &.{});
+    try db.exec(testing.allocator,
+        \\CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT, name TEXT, path TEXT, position INTEGER)
+    , &.{});
+    try db.exec(testing.allocator,
+        \\CREATE TABLE workspace_item_tasks (id TEXT PRIMARY KEY, name TEXT NOT NULL, workspace_item_id TEXT NOT NULL)
+    , &.{});
+    try db.exec(testing.allocator,
+        \\INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position) VALUES ('i1','w1','kanban','A','/proj/a',1)
+    , &.{});
+    try db.exec(testing.allocator,
+        \\INSERT INTO workspace_item_tasks (id, name, workspace_item_id) VALUES ('s1','T1','i1')
+    , &.{});
+    try db.exec(testing.allocator,
+        \\INSERT INTO sessions (id, name, status, cwd) VALUES ('s1','Task one','active','/proj/a')
+    , &.{});
+
+    return .{ .db = db, .threaded = threaded };
+}
+
+test "jobLogName: every minted name is one the manager accepts" {
+    const name = try jobLogName(testing.allocator, testing.io);
+    defer testing.allocator.free(name);
+    try testing.expect(policy.logNameValid(name));
+    try testing.expect(std.mem.startsWith(u8, name, "bg_"));
+}
+
+test "runGuest: a detached call goes to the manager, not to an unsupported wall" {
+    runtime_mode.setCurrent(.saas);
+    defer runtime_mode.setCurrent(.local);
+    if (!runtime_mode.vm_backend_available) return;
+
+    // No database, so no workspace resolves — and the refusal must be THAT, not
+    // "detached commands are unsupported inside the VM".
+    const ctx = GuestContext{ .db = null, .session_id = "s" };
+    const executor = executorFor(&ctx).?;
+    const result = executor.run(executor.ctx, testing.allocator, testing.io, &.{}, .{
+        .command = "make -j4",
+        .cwd = "/tmp",
+        .mode = .background,
+    });
+    try testing.expectError(Error.GuestWorkspaceUnknown, result);
+}
+
+test "runGuest: a detached call in a real workspace asks for a guest job" {
+    runtime_mode.setCurrent(.saas);
+    defer runtime_mode.setCurrent(.local);
+    if (!runtime_mode.vm_backend_available) return;
+
+    var ctx = try guestTestCtx();
+    defer ctx.deinit();
+    runtime_mode.setManagerSocket(null);
+    defer runtime_mode.setManagerSocket(null);
+
+    const guest = GuestContext{ .db = &ctx.db, .session_id = "s1" };
+    const executor = executorFor(&guest).?;
+    // `mode=background` is a legal call now: the workspace resolves, so the
+    // only thing missing is the manager itself.
+    const result = executor.run(executor.ctx, testing.allocator, testing.io, &.{}, .{
+        .command = "make -j4",
+        .cwd = "/proj/a",
+        .mode = .background,
+    });
+    try testing.expectError(Error.GuestManagerUnavailable, result);
+}
 
 test "executorFor: local mode installs no executor at all" {
     try testing.expectEqual(runtime_mode.Mode.local, runtime_mode.currentMode());

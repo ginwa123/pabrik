@@ -177,6 +177,60 @@ kill -TERM "$bad_pid" 2>/dev/null || true
 wait "$bad_pid" 2>/dev/null || true
 say "ok  a missing base image -> failed(DiskCloneFailed) on disk, and a backoff on the next request"
 
+say "a detached command becomes a JOB in the guest, not a host process"
+marker="pabrik-detached-$$"
+out="$(client spawn --socket "$sock" --workspace-id "$ws" --log-name bg_smoke.log -- \
+  /bin/sh -c "echo $marker; sleep 300")"
+job_pid="${out#pid=}"; job_pid="${job_pid%% *}"
+job_log="${out#*log=}"
+[ -n "$job_pid" ] || fail "spawn did not report a pid: $out"
+[ "$job_log" = "/tmp/pabrik/bg_smoke.log" ] || fail "spawn reported log=$job_log, not the daemon's own path"
+say "ok  spawn -> pid=$job_pid log=$job_log"
+
+say "the host is not running that command (it is in the VM)"
+if ps -eo args | grep -F "$marker" | grep -v grep >/dev/null; then
+  fail "the detached command is on the host: $(ps -eo args | grep -F "$marker" | head -1)"
+fi
+say "ok  ps on the host shows no such command"
+
+say "probe answers for the job through its own VM"
+out="$(client probe --socket "$sock" --workspace-id "$ws" --pid "$job_pid")"
+case "$out" in alive=true\ state=ready\ boot_pid=*) ;; *) fail "probe did not report a live job: $out";; esac
+say "ok  probe -> $out"
+
+say "the job's log is read from inside the VM"
+for _ in $(seq 1 40); do
+  out="$(client log --socket "$sock" --workspace-id "$ws" --log-name bg_smoke.log 2>/dev/null || true)"
+  case "$out" in *"$marker"*) break;; esac
+  sleep 0.1
+done
+case "$out" in *"$marker"*) ;; *) fail "the job's log did not come back through the VM: $out";; esac
+say "ok  log -> $(printf '%s' "$out" | head -1)"
+
+say "stopping the job reaches its whole tree inside the VM"
+client signal --socket "$sock" --workspace-id "$ws" --pid "$job_pid" >/dev/null
+for _ in $(seq 1 40); do
+  out="$(client probe --socket "$sock" --workspace-id "$ws" --pid "$job_pid")"
+  case "$out" in alive=false\ state=ready*) break;; esac
+  sleep 0.1
+done
+case "$out" in alive=false\ state=ready*) ;; *) fail "the job survived its own kill: $out";; esac
+say "ok  signal -> $out"
+
+say "a stopped VM ends its jobs, and the manager says so"
+out="$(client spawn --socket "$sock" --workspace-id "$ws" --log-name bg_stop.log -- /bin/sh -c 'sleep 300')"
+stop_pid="${out#pid=}"; stop_pid="${stop_pid%% *}"
+[ -n "$stop_pid" ] || fail "the second spawn did not report a pid: $out"
+client stop --socket "$sock" --workspace-id "$ws" >/dev/null
+out="$(client probe --socket "$sock" --workspace-id "$ws" --pid "$stop_pid")"
+case "$out" in alive=false\ state=absent*) ;; *) fail "a stopped VM still vouched for its job: $out";; esac
+rc=0
+client log --socket "$sock" --workspace-id "$ws" --log-name bg_stop.log >/dev/null 2>"$work/job-log.txt" || rc=$?
+[ "$rc" -ne 0 ] || fail "a stopped VM still served its job's log"
+grep -q "refused: vm_unavailable" "$work/job-log.txt" ||
+  fail "the log refusal did not name vm_unavailable: $(cat "$work/job-log.txt")"
+say "ok  a stopped VM reports its job as ended (state=absent) and cannot serve its log"
+
 say "a peer the daemon does not expect is refused"
 stop_daemon
 foreign_uid=$(( $(id -u) + 1 ))
@@ -188,4 +242,4 @@ grep -q "refused: forbidden_peer" "$work/forged.txt" || fail "refusal did not na
 grep -q "refused uid=$(id -u) " "$work/vmd.log" || fail "the daemon did not log who it refused"
 say "ok  uid $(id -u) was refused by a daemon expecting uid $foreign_uid (SO_PEERCRED, not a claim)"
 
-say "OK - daemon auth, exec in the VM, derived paths, adoption, stop, and the reconciler"
+say "OK - daemon auth, exec in the VM, derived paths, adoption, stop, detached jobs, and the reconciler"

@@ -9,9 +9,16 @@ pub const version = "0.1";
 pub const max_frame: usize = 4 * 1024 * 1024;
 pub const default_timeout_ms: u32 = 10_000;
 pub const default_max_output_bytes: usize = 256 * 1024;
+/// One `log` reply's default and ceiling. A detached job's log is read in
+/// pieces, so the default matches the `process` tool's own read cap.
+pub const default_max_log_bytes: usize = 16 * 1024;
 /// A base64 frame costs 4 bytes per 3, so the reply budget has to stay well
 /// under `max_frame` or a legal command produces an illegal response.
 pub const max_output_bytes_limit: usize = 1024 * 1024;
+pub const max_log_bytes_limit: usize = 1024 * 1024;
+/// A signal number a caller may ask for. SIGKILL and SIGTERM are the two the
+/// tool sends; the range stops a request from naming a real-time signal.
+pub const max_signal: i64 = 64;
 
 pub const Error = error{
     BadRequest,
@@ -22,7 +29,7 @@ pub const Error = error{
     InvalidBase64,
 };
 
-pub const Action = enum { ping, exec, stop, status };
+pub const Action = enum { ping, exec, stop, status, spawn, probe, signal, log };
 
 pub const Request = struct {
     id: i64 = 0,
@@ -32,6 +39,15 @@ pub const Request = struct {
     cwd_rel: []const u8 = "",
     timeout_ms: u32 = default_timeout_ms,
     max_output_bytes: usize = default_max_output_bytes,
+    /// `spawn` and `log`: the detached job's log NAME, never its path.
+    log_name: []const u8 = "",
+    /// `probe` and `signal`: the pid the guest reported for a detached job.
+    pid: i64 = 0,
+    /// `signal`: the signal number to send.
+    sig: i64 = 9,
+    /// `log`: where the caller's cursor is, and how much it will take.
+    offset: i64 = 0,
+    max_bytes: usize = default_max_log_bytes,
 };
 
 pub const FailureCode = enum {
@@ -63,11 +79,39 @@ pub const ExecResult = struct {
     stderr: []const u8,
 };
 
+/// A detached job's identity: the pid the GUEST gave it, and the log the guest
+/// writes. Neither is a host path or a host pid.
+pub const Spawned = struct {
+    pid: i64,
+    log_path: []const u8,
+};
+
+/// Whether a detached job is still there, and which VM boot answered.
+pub const Probe = struct {
+    alive: bool,
+    state: []const u8,
+    /// The VMM pid of the boot that answered. A different one means the VM was
+    /// restarted, so a job from an earlier boot is gone however the pid reads.
+    boot_pid: i64,
+};
+
+/// One piece of a guest log. `missing` is its own answer: "the command never
+/// started" is not "the command said nothing".
+pub const LogChunk = struct {
+    data: []const u8,
+    size: i64,
+    eof: bool,
+    missing: bool,
+};
+
 pub const Response = union(enum) {
     pong: struct { version: []const u8 },
     ack,
     status: struct { state: []const u8, pid: i64, last_error: []const u8 },
     exec_result: ExecResult,
+    spawned: Spawned,
+    probe: Probe,
+    log_chunk: LogChunk,
     failure: struct { code: FailureCode, message: []const u8 },
 };
 
@@ -192,11 +236,26 @@ pub fn encodeRequest(allocator: std.mem.Allocator, request: Request) ![]u8 {
     try out.intField(allocator, "id", request.id);
     if (request.action == .ping) return out.finish(allocator);
     try out.strField(allocator, "workspace_id", request.workspace_id);
-    if (request.action == .exec) {
+    if (request.action == .exec or request.action == .spawn) {
         try out.strArrayField(allocator, "argv", request.argv);
         try out.strField(allocator, "cwd_rel", request.cwd_rel);
+    }
+    if (request.action == .exec) {
         try out.intField(allocator, "timeout_ms", @intCast(request.timeout_ms));
         try out.intField(allocator, "max_output_bytes", @intCast(request.max_output_bytes));
+    }
+    if (request.action == .spawn or request.action == .log) {
+        try out.strField(allocator, "log_name", request.log_name);
+    }
+    if (request.action == .probe or request.action == .signal) {
+        try out.intField(allocator, "pid", request.pid);
+    }
+    if (request.action == .signal) {
+        try out.intField(allocator, "signal", request.sig);
+    }
+    if (request.action == .log) {
+        try out.intField(allocator, "offset", request.offset);
+        try out.intField(allocator, "max_bytes", @intCast(request.max_bytes));
     }
     return out.finish(allocator);
 }
@@ -227,6 +286,11 @@ pub fn decodeRequest(allocator: std.mem.Allocator, json: []const u8) !OwnedReque
     const workspace_id = stringField(object, "workspace_id") orelse return Error.BadRequest;
     if (!policy.workspaceIdValid(workspace_id)) return Error.BadRequest;
     request.workspace_id = workspace_id;
+
+    if (action == .spawn or action == .probe or action == .signal or action == .log) {
+        try decodeJobAction(object, aa, action, &request);
+        return .{ .arena = arena, .value = request };
+    }
 
     if (action == .exec) {
         const argv_value = object.get("argv") orelse return Error.BadRequest;
@@ -259,6 +323,61 @@ pub fn decodeRequest(allocator: std.mem.Allocator, json: []const u8) !OwnedReque
     }
 
     return .{ .arena = arena, .value = request };
+}
+
+/// The four actions a detached job needs — and nothing about them may name a
+/// path: `log_name` is a token the daemon turns into a path it owns.
+fn decodeJobAction(
+    object: std.json.ObjectMap,
+    allocator: std.mem.Allocator,
+    action: Action,
+    request: *Request,
+) !void {
+    if (action == .spawn) {
+        const argv_value = object.get("argv") orelse return Error.BadRequest;
+        const items = switch (argv_value) {
+            .array => |a| a,
+            else => return Error.BadRequest,
+        };
+        if (items.items.len == 0) return Error.BadRequest;
+        const argv = try allocator.alloc([]const u8, items.items.len);
+        for (items.items, 0..) |item, i| {
+            argv[i] = switch (item) {
+                .string => |t| t,
+                else => return Error.BadRequest,
+            };
+        }
+        request.argv = argv;
+        const cwd_rel = stringField(object, "cwd_rel") orelse return Error.BadRequest;
+        if (!policy.cwdRelValid(cwd_rel)) return Error.BadRequest;
+        request.cwd_rel = cwd_rel;
+    }
+    if (action == .probe or action == .signal) {
+        const pid = integerField(object, "pid") orelse return Error.BadRequest;
+        if (pid <= 0) return Error.BadRequest;
+        request.pid = pid;
+    }
+    if (action == .signal) {
+        if (integerField(object, "signal")) |sig| {
+            if (sig <= 0 or sig > max_signal) return Error.BadRequest;
+            request.sig = sig;
+        }
+    }
+    if (action == .spawn or action == .log) {
+        const log_name = stringField(object, "log_name") orelse return Error.BadRequest;
+        if (!policy.logNameValid(log_name)) return Error.BadRequest;
+        request.log_name = log_name;
+    }
+    if (action == .log) {
+        if (integerField(object, "offset")) |offset| {
+            if (offset < 0) return Error.BadRequest;
+            request.offset = offset;
+        }
+        if (integerField(object, "max_bytes")) |bytes| {
+            if (bytes <= 0 or bytes > max_log_bytes_limit) return Error.BadRequest;
+            request.max_bytes = @intCast(bytes);
+        }
+    }
 }
 
 fn stringField(object: std.json.ObjectMap, key: []const u8) ?[]const u8 {
@@ -348,6 +467,52 @@ pub fn encodeExecResult(
     return out.finish(allocator);
 }
 
+pub fn encodeSpawned(allocator: std.mem.Allocator, id: i64, pid: i64, log_path: []const u8) ![]u8 {
+    var out = try ObjectWriter.init(allocator);
+    errdefer out.list.deinit(allocator);
+    try out.strField(allocator, "type", "spawn.result");
+    try out.intField(allocator, "id", id);
+    try out.intField(allocator, "pid", pid);
+    try out.strField(allocator, "log_path", log_path);
+    return out.finish(allocator);
+}
+
+pub fn encodeProbe(
+    allocator: std.mem.Allocator,
+    id: i64,
+    alive: bool,
+    state: []const u8,
+    boot_pid: i64,
+) ![]u8 {
+    var out = try ObjectWriter.init(allocator);
+    errdefer out.list.deinit(allocator);
+    try out.strField(allocator, "type", "probe.result");
+    try out.intField(allocator, "id", id);
+    try out.boolField(allocator, "alive", alive);
+    try out.strField(allocator, "state", state);
+    try out.intField(allocator, "boot_pid", boot_pid);
+    return out.finish(allocator);
+}
+
+pub fn encodeLogChunk(allocator: std.mem.Allocator, id: i64, chunk: LogChunk) ![]u8 {
+    var out = try ObjectWriter.init(allocator);
+    errdefer out.list.deinit(allocator);
+    try out.strField(allocator, "type", "log.chunk");
+    try out.intField(allocator, "id", id);
+    if (chunk.missing) {
+        try out.boolField(allocator, "missing", true);
+        return out.finish(allocator);
+    }
+    const encoder = std.base64.standard.Encoder;
+    const encoded = try allocator.alloc(u8, encoder.calcSize(chunk.data.len));
+    defer allocator.free(encoded);
+    _ = encoder.encode(encoded, chunk.data);
+    try out.strField(allocator, "data_b64", encoded);
+    try out.intField(allocator, "size", chunk.size);
+    try out.boolField(allocator, "eof", chunk.eof);
+    return out.finish(allocator);
+}
+
 pub fn decodeResponse(
     allocator: std.mem.Allocator,
     json: []const u8,
@@ -382,6 +547,36 @@ pub fn decodeResponse(
         return .{ .arena = arena, .value = .{ .failure = .{
             .code = code,
             .message = stringField(object, "message") orelse "",
+        } } };
+    }
+    if (std.mem.eql(u8, kind, "spawn.result")) {
+        return .{ .arena = arena, .value = .{ .spawned = .{
+            .pid = integerField(object, "pid") orelse -1,
+            .log_path = stringField(object, "log_path") orelse "",
+        } } };
+    }
+    if (std.mem.eql(u8, kind, "probe.result")) {
+        return .{ .arena = arena, .value = .{ .probe = .{
+            .alive = boolField(object, "alive"),
+            .state = stringField(object, "state") orelse "",
+            .boot_pid = integerField(object, "boot_pid") orelse 0,
+        } } };
+    }
+    if (std.mem.eql(u8, kind, "log.chunk")) {
+        if (boolField(object, "missing")) {
+            return .{ .arena = arena, .value = .{ .log_chunk = .{
+                .data = "",
+                .size = 0,
+                .eof = true,
+                .missing = true,
+            } } };
+        }
+        const data = try decodeBase64Field(aa, object, "data_b64");
+        return .{ .arena = arena, .value = .{ .log_chunk = .{
+            .data = data,
+            .size = integerField(object, "size") orelse @intCast(data.len),
+            .eof = boolField(object, "eof"),
+            .missing = false,
         } } };
     }
     if (std.mem.eql(u8, kind, "exec.result")) {
@@ -520,6 +715,159 @@ test "rpc: malformed and unknown requests are refused with a nameable error" {
     try testing.expectError(Error.BadRequest, decodeRequest(allocator,
         \\{"type":"request","action":"exec","workspace_id":"ws_1","argv":["sh"],"cwd_rel":"","timeout_ms":0}
     ));
+}
+
+test "rpc: a spawn request carries argv, cwd and a log NAME — never a path" {
+    const allocator = testing.allocator;
+    const encoded = try encodeRequest(allocator, .{
+        .action = .spawn,
+        .id = 11,
+        .workspace_id = "ws_1",
+        .argv = &.{ "/bin/sh", "-c", "make -j4" },
+        .cwd_rel = "src",
+        .log_name = "bg_1712345678901.log",
+    });
+    defer allocator.free(encoded);
+
+    var owned = try decodeRequest(allocator, encoded);
+    defer owned.deinit();
+    try testing.expectEqual(Action.spawn, owned.value.action);
+    try testing.expectEqualStrings("bg_1712345678901.log", owned.value.log_name);
+    try testing.expectEqualStrings("src", owned.value.cwd_rel);
+    try testing.expectEqual(@as(usize, 3), owned.value.argv.len);
+    // The name is a token; the recoder never emits a directory.
+    try testing.expect(std.mem.indexOf(u8, encoded, "/tmp/pabrik") == null);
+    try testing.expect(std.mem.indexOf(u8, encoded, "log_path") == null);
+}
+
+test "rpc: a job request that names a path, or a pid that is not one, is refused" {
+    const allocator = testing.allocator;
+    const hostile = [_][]const u8{
+        \\{"type":"request","action":"spawn","id":1,"workspace_id":"ws_1",\\
+        \\ "argv":["/bin/sh"],"cwd_rel":"","log_name":"../../etc/passwd"}
+        ,
+        \\{"type":"request","action":"spawn","id":1,"workspace_id":"ws_1",\\
+        \\ "argv":["/bin/sh"],"cwd_rel":"","log_name":"/tmp/pabrik/x.log"}
+        ,
+        \\{"type":"request","action":"spawn","id":1,"workspace_id":"ws_1",\\
+        \\ "argv":["/bin/sh"],"cwd_rel":"","log_name":"ok.log","log_path":"/etc/shadow"}
+        ,
+        \\{"type":"request","action":"log","id":1,"workspace_id":"ws_1","log_name":"ok.log","offset":-1}
+        ,
+        \\{"type":"request","action":"log","id":1,"workspace_id":"ws_1","log_name":"ok.log","max_bytes":0}
+        ,
+        \\{"type":"request","action":"probe","id":1,"workspace_id":"ws_1","pid":0}
+        ,
+        \\{"type":"request","action":"signal","id":1,"workspace_id":"ws_1","pid":7,"signal":9999}
+    };
+    for (hostile) |text| {
+        try testing.expectError(Error.BadRequest, decodeRequest(allocator, text));
+    }
+}
+
+test "rpc: probe, signal and log requests round-trip their own fields" {
+    const allocator = testing.allocator;
+
+    const probe_frame = try encodeRequest(allocator, .{
+        .action = .probe,
+        .id = 2,
+        .workspace_id = "ws_1",
+        .pid = 4242,
+    });
+    defer allocator.free(probe_frame);
+    var probe = try decodeRequest(allocator, probe_frame);
+    defer probe.deinit();
+    try testing.expectEqual(@as(i64, 4242), probe.value.pid);
+
+    const signal_frame = try encodeRequest(allocator, .{
+        .action = .signal,
+        .id = 3,
+        .workspace_id = "ws_1",
+        .pid = 4242,
+        .sig = 15,
+    });
+    defer allocator.free(signal_frame);
+    var signal = try decodeRequest(allocator, signal_frame);
+    defer signal.deinit();
+    try testing.expectEqual(@as(i64, 15), signal.value.sig);
+
+    const log_frame = try encodeRequest(allocator, .{
+        .action = .log,
+        .id = 4,
+        .workspace_id = "ws_1",
+        .log_name = "bg_1.log",
+        .offset = 4096,
+        .max_bytes = 1024,
+    });
+    defer allocator.free(log_frame);
+    var log = try decodeRequest(allocator, log_frame);
+    defer log.deinit();
+    try testing.expectEqual(@as(i64, 4096), log.value.offset);
+    try testing.expectEqual(@as(usize, 1024), log.value.max_bytes);
+}
+
+test "rpc: a spawn, probe and log reply decode to their own shape" {
+    const allocator = testing.allocator;
+
+    const spawned = try encodeSpawned(allocator, 1, 77, "/tmp/pabrik/bg_1.log");
+    defer allocator.free(spawned);
+    var own_spawn = try decodeResponse(allocator, spawned);
+    defer own_spawn.deinit();
+    switch (own_spawn.value) {
+        .spawned => |s| {
+            try testing.expectEqual(@as(i64, 77), s.pid);
+            try testing.expectEqualStrings("/tmp/pabrik/bg_1.log", s.log_path);
+        },
+        else => return error.TestExpectedSpawned,
+    }
+
+    const probed = try encodeProbe(allocator, 1, false, "ready", 908967);
+    defer allocator.free(probed);
+    var own_probe = try decodeResponse(allocator, probed);
+    defer own_probe.deinit();
+    switch (own_probe.value) {
+        .probe => |p| {
+            try testing.expect(!p.alive);
+            try testing.expectEqualStrings("ready", p.state);
+            try testing.expectEqual(@as(i64, 908967), p.boot_pid);
+        },
+        else => return error.TestExpectedProbe,
+    }
+
+    const chunk = try encodeLogChunk(allocator, 1, .{
+        .data = "build ok\n",
+        .size = 9,
+        .eof = true,
+        .missing = false,
+    });
+    defer allocator.free(chunk);
+    var own_chunk = try decodeResponse(allocator, chunk);
+    defer own_chunk.deinit();
+    switch (own_chunk.value) {
+        .log_chunk => |c| {
+            try testing.expectEqualStrings("build ok\n", c.data);
+            try testing.expectEqual(@as(i64, 9), c.size);
+            try testing.expect(c.eof);
+            try testing.expect(!c.missing);
+        },
+        else => return error.TestExpectedLogChunk,
+    }
+
+    // A missing log is its own answer, and carries no bytes to mistake for
+    // empty output.
+    const missing = try encodeLogChunk(allocator, 1, .{
+        .data = "",
+        .size = 0,
+        .eof = true,
+        .missing = true,
+    });
+    defer allocator.free(missing);
+    var own_missing = try decodeResponse(allocator, missing);
+    defer own_missing.deinit();
+    switch (own_missing.value) {
+        .log_chunk => |c| try testing.expect(c.missing),
+        else => return error.TestExpectedLogChunk,
+    }
 }
 
 test "rpc: frame length is refused before anything is allocated" {

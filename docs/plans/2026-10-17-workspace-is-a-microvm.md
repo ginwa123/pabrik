@@ -1004,10 +1004,11 @@ a `//!` header over three lines fails CI.
 
 ### What this does NOT yet do (stated, not implied)
 
-- **Detached commands are refused under `--saas`** with a named error: `mode` in the guest
+- ~~**Detached commands are refused under `--saas`** with a named error: `mode` in the guest
   is a P3 item, and pretending otherwise would silently change `command`'s contract. So is
   `§10.5`'s `vm_id`/`guest_pid` accounting — `session_background_process` has no guest
-  columns yet.
+  columns yet.~~ §26 closed both: a detached command is a job IN the guest, and the row
+  carries `vm_id` + `guest_pid`.
 - **No cgroup scope per VM.** `§10.2`'s limits are not applied by the daemon; the VM has
   its `mem_size_mib`/`vcpu_count` and nothing else. That is the next card, not a claim here.
 - **The routing is proven without an LLM.** The tool envelope, the executor selection, the
@@ -1100,3 +1101,83 @@ and main's `zglint` dependency, and `workspace_scope.zig` keeps both test sets.
   policy and a `busy` counter, neither of which exists yet.
 - **No cgroup scope and no supervisor.** §10.2's limits and a unit file are untouched —
   `pabrik-vmd` is still started by hand.
+
+---
+
+## 26. P2c's second half — a detached command is a job in the guest
+
+§24 routed `command` into the VM and then refused the detached modes, because a
+detached job's *pid* and *log* are the guest's, and the accounting row could not
+say so. This is the rest of P2c: `§10.5`'s accounting, the guest side of a
+detached job, and the visible ending a stopped VM owes its jobs.
+
+| item | where | proof |
+|---|---|---|
+| the guest forks a job: own session, log on both streams, caller's uid | `src/vm_agent/main.zig` (`spawn`, `spawnChild`) | daemon smoke: `spawn -> pid=605 log=/tmp/pabrik/bg_smoke.log` |
+| the pid is the job's process-GROUP id, so a tree stop is one syscall | same | smoke: `signal -> alive=false` |
+| probe reaps before it asks: a zombie still answers `kill(pid, 0)` | `runProbe` | smoke (this is the bug the smoke caught: the job was dead and reported alive) |
+| one positional read of a job's log, inside the guest | `runReadLog` | smoke: `log -> pabrik-detached-<pid>` |
+| four new RPC actions (`spawn`, `probe`, `signal`, `log`), `log_name` only | `src/vmd/rpc.zig` | unit: round-trips + a hostile `log_name`/`pid`/`signal` refused |
+| the daemon derives the log path; the caller names a token, never a path | `policy.logNameValid` / `guestJobLogPath` | unit: `../../etc/passwd` and `/etc/shadow` refused |
+| `vm_id` + `guest_pid` on the row (migration 113) | `src/migrations/migration_113.zig` | unit: round-trip + host rows keep the default |
+| the liveness decision, as a pure function of the manager's answer | `src/agentic_loop/guest_jobs.zig` | 8 unit tests, no VM, no manager |
+| the guest watcher: poll through the manager, note the ending | `background_watcher.watchGuestJob` | 4 unit tests with an injected probe |
+| `process` resolves through the guest (read, stop, liveness) | `src/modules/agent/tools/process.zig` | unit + the smoke's log/probe/signal assertions |
+| the cron handles guest rows too, instead of asking the HOST about a guest pid | `cleanup_stale_background_process` | same probe/read helpers |
+
+```
+[vmd-daemon-smoke] ok  spawn -> pid=605 log=/tmp/pabrik/bg_smoke.log
+[vmd-daemon-smoke] ok  ps on the host shows no such command
+[vmd-daemon-smoke] ok  probe -> alive=true state=ready boot_pid=1174976
+[vmd-daemon-smoke] ok  log -> pabrik-detached-1173864
+[vmd-daemon-smoke] ok  signal -> alive=false state=ready boot_pid=1174976
+[vmd-daemon-smoke] ok  a stopped VM reports its job as ended (state=absent) and cannot serve its log
+```
+
+### The decisions this phase turned into code
+
+1. **The reply has the host path's shape.** A detached guest command returns
+   `PID: <guest pid>\nLog: <guest path>`, exactly the two lines the host's
+   `nohup` path returns. The tool parses one format, and `vm_id` is what tells
+   the two apart — never the shape of the output.
+2. **Only `spawn` boots a VM.** `probe`, `signal` and `log` ask a VM that is
+   *already* running (`readyLayout`), because booting one to answer a question
+   about a job it no longer holds is a side effect, not an answer. It is also
+   what makes a stopped VM's answer honest: `absent`/`failed`, not a fresh VM
+   that happens to have the old log on its disk.
+3. **`unknown` is not an ending.** A manager that cannot be reached, or a VM
+   still starting, is *not* evidence that a job died — `pabrik-vmd` adopts the
+   VMs it finds, so a restarted manager must not turn into a false completion
+   message. Only the manager saying `absent`/`failed` (or a changed VMM pid)
+   ends a job. The cron keeps the row in the `unknown` case, and the watcher
+   keeps polling.
+4. **A restarted VM cannot vouch for an old pid.** The guest recycles pids
+   (it is PID 1 plus a handful of jobs), so the probe reply carries the VMM pid
+   of the boot that answered; a different one means the job's VM is gone,
+   however its pid reads.
+5. **The host never opens a tenant log.** The bytes come through the guest
+   (`read_log`), and the cursor (`last_read_offset`, migration 108) still
+   belongs to the host's row — so `process read` keeps its "only what is new"
+   contract across substrates.
+6. **A guest log is fetched where it can be read.** The completion notification
+   reads a HOST file, so the guest watcher fetches the log first and hands the
+   bytes over (`log_content`); the envelope's `note` — `VM stopped - job ended`
+   — is what makes the ending visible in the chat.
+7. **The zombie is reaped by the probe.** The guest agent is PID 1 and never
+   waits on its jobs, so a killed job stays a zombie that answers signal 0.
+   `runProbe` reaps with `wait4(WNOHANG)` first — the same lesson the host's
+   `reap_pid_nohang` learned.
+
+### What this still does NOT do (stated, not implied)
+
+- **A guest job's log needs a running VM.** Stopping the VM makes the log
+  unreadable (`vm_unavailable`) rather than rebooting to fetch it — the file is
+  still on the workspace disk, and a `pabrik-vmd` that boots the VM again will
+  serve it.
+- **No cgroup scope, no supervisor** (§10.2, and the sweep still reclaims
+  without stopping). Unchanged from §25.
+- **`do_encoding` and the forbidden-command guard are host-side.** In the guest
+  the command is the tenant's own shell line; `command`'s argument validation
+  (`cwd`, `timeout`, `mode`) is the part that is enforced on both substrates.
+- **No suspend/resume, and no `busy`/`idle` counter.** A job does not hold the
+  VM awake; nothing stops an idle VM yet, and nothing keeps one alive either.

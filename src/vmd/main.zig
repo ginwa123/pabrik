@@ -20,6 +20,10 @@ const usage =
     \\  exec    --socket PATH --workspace-id ID [--cwd-rel R] [--timeout-ms N] -- <argv...>
     \\  status  --socket PATH --workspace-id ID
     \\  stop    --socket PATH --workspace-id ID
+    \\  spawn   --socket PATH --workspace-id ID [--cwd-rel R] [--log-name NAME] -- <argv...>
+    \\  probe   --socket PATH --workspace-id ID --pid N
+    \\  signal  --socket PATH --workspace-id ID --pid N [--signal N]
+    \\  log     --socket PATH --workspace-id ID --log-name NAME [--offset N] [--max-bytes N]
     \\
     \\  --workspace-id ID    the only identifier the manager takes; every path for
     \\                       this workspace is derived from it
@@ -36,6 +40,11 @@ const usage =
     \\  --cwd-rel R          workspace-relative directory for `exec` (default: the root)
     \\  --timeout-ms N       per-command deadline (default 10000)
     \\  --max-output-bytes N captured bytes per stream (default 256 KiB)
+    \\  --log-name NAME      a detached job's log NAME (the daemon owns the path)
+    \\  --pid N              the guest pid a `spawn` reported
+    \\  --signal N           signal number for `signal` (default 9)
+    \\  --offset N           byte offset for `log` (default 0)
+    \\  --max-bytes N        bytes for `log` to return (default 16 KiB)
     \\
 ;
 
@@ -54,6 +63,11 @@ const Options = struct {
     max_output_bytes: usize = rpc.default_max_output_bytes,
     sweep_interval_ms: u32 = reconciler.default_sweep_interval_ms,
     backoff_base_ms: i64 = reconciler.default_backoff_base_ms,
+    log_name: []const u8 = "",
+    pid: i64 = 0,
+    sig: i64 = 9,
+    offset: i64 = 0,
+    max_bytes: usize = rpc.default_max_log_bytes,
     command: []const []const u8 = &.{},
 };
 
@@ -135,6 +149,21 @@ fn parse(args: []const []const u8, options: *Options) void {
         } else if (std.mem.eql(u8, arg, "--sweep-interval-ms")) {
             options.sweep_interval_ms = number(u32, "--sweep-interval-ms", valueAt(args, i));
             i += 1;
+        } else if (std.mem.eql(u8, arg, "--log-name")) {
+            options.log_name = valueAt(args, i);
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--pid")) {
+            options.pid = number(i64, "--pid", valueAt(args, i));
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--signal")) {
+            options.sig = number(i64, "--signal", valueAt(args, i));
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--offset")) {
+            options.offset = number(i64, "--offset", valueAt(args, i));
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--max-bytes")) {
+            options.max_bytes = number(usize, "--max-bytes", valueAt(args, i));
+            i += 1;
         } else if (std.mem.eql(u8, arg, "--backoff-base-ms")) {
             options.backoff_base_ms = number(i64, "--backoff-base-ms", valueAt(args, i));
             i += 1;
@@ -205,6 +234,10 @@ pub fn main(init: std.process.Init) !void {
     if (std.mem.eql(u8, command, "exec")) return execCommand(init, aa, &options);
     if (std.mem.eql(u8, command, "status")) return statusCommand(init, aa, &options);
     if (std.mem.eql(u8, command, "stop")) return stopCommand(init, aa, &options);
+    if (std.mem.eql(u8, command, "spawn")) return spawnCommand(init, aa, &options);
+    if (std.mem.eql(u8, command, "probe")) return probeCommand(init, aa, &options);
+    if (std.mem.eql(u8, command, "signal")) return signalCommand(init, aa, &options);
+    if (std.mem.eql(u8, command, "log")) return logCommand(init, aa, &options);
     fail("unknown command: {s}\n{s}", .{ command, usage });
 }
 
@@ -325,6 +358,83 @@ fn stopCommand(init: std.process.Init, arena: std.mem.Allocator, options: *Optio
     var client = vmd_client.Client.init(init.gpa, options.socket);
     client.stop(options.workspace_id) catch reportClientError(&client);
     emit(1, "stopped {s}\n", .{options.workspace_id});
+}
+
+/// `spawn` needs a log name; the daemon derives the path from it.
+fn requireLogName(options: *const Options) void {
+    if (options.log_name.len == 0) fail("--log-name is required", .{});
+    if (!policy.logNameValid(options.log_name)) {
+        fail("--log-name is not a log name: {s}", .{options.log_name});
+    }
+}
+
+fn spawnCommand(init: std.process.Init, arena: std.mem.Allocator, options: *Options) !void {
+    _ = arena;
+    resolveSocket(init, options);
+    requireWorkspace(options);
+    requireLogName(options);
+    if (options.command.len == 0) fail("no command given (put it after --)", .{});
+
+    var client = vmd_client.Client.init(init.gpa, options.socket);
+    const spawned = client.spawn(.{
+        .workspace_id = options.workspace_id,
+        .argv = options.command,
+        .cwd_rel = options.cwd_rel,
+        .log_name = options.log_name,
+    }) catch reportClientError(&client);
+    defer spawned.deinit(init.gpa);
+    emit(1, "pid={d} log={s}\n", .{ spawned.pid, spawned.log_path });
+}
+
+fn probeCommand(init: std.process.Init, arena: std.mem.Allocator, options: *Options) !void {
+    _ = arena;
+    resolveSocket(init, options);
+    requireWorkspace(options);
+    if (options.pid <= 0) fail("--pid is required", .{});
+
+    var client = vmd_client.Client.init(init.gpa, options.socket);
+    const probed = client.probe(options.workspace_id, options.pid) catch reportClientError(&client);
+    defer probed.deinit(init.gpa);
+    emit(1, "alive={s} state={s} boot_pid={d}\n", .{
+        if (probed.alive) "true" else "false",
+        probed.state,
+        probed.boot_pid,
+    });
+}
+
+fn signalCommand(init: std.process.Init, arena: std.mem.Allocator, options: *Options) !void {
+    _ = arena;
+    resolveSocket(init, options);
+    requireWorkspace(options);
+    if (options.pid <= 0) fail("--pid is required", .{});
+
+    var client = vmd_client.Client.init(init.gpa, options.socket);
+    client.signal(options.workspace_id, options.pid, options.sig) catch reportClientError(&client);
+    emit(1, "signalled pid={d} signal={d}\n", .{ options.pid, options.sig });
+}
+
+fn logCommand(init: std.process.Init, arena: std.mem.Allocator, options: *Options) !void {
+    _ = arena;
+    resolveSocket(init, options);
+    requireWorkspace(options);
+    requireLogName(options);
+
+    var client = vmd_client.Client.init(init.gpa, options.socket);
+    const chunk = client.readLog(
+        options.workspace_id,
+        options.log_name,
+        options.offset,
+        options.max_bytes,
+    ) catch reportClientError(&client);
+    defer chunk.deinit(init.gpa);
+
+    writeRaw(1, chunk.bytes);
+    emit(2, "pabrik-vmd: bytes={d} size={d} eof={} missing={}\n", .{
+        chunk.bytes.len,
+        chunk.size,
+        chunk.eof,
+        chunk.missing,
+    });
 }
 
 fn execCommand(init: std.process.Init, arena: std.mem.Allocator, options: *Options) !void {

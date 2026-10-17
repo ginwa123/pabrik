@@ -319,7 +319,126 @@ fn dispatch(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request
                 .stderr = result.stderr,
             });
         },
+        .spawn => return dispatchSpawn(manager, allocator, request),
+        .probe => return dispatchProbe(manager, allocator, request),
+        .signal => return dispatchSignal(manager, allocator, request),
+        .log => return dispatchLog(manager, allocator, request),
     }
+}
+
+/// A detached job runs in the workspace's VM, so the pid the caller gets back
+/// is the guest's — and the log it writes is a guest path.
+fn dispatchSpawn(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request) ![]u8 {
+    const layout = manager.ensure(allocator, request.workspace_id) catch |err| {
+        log("workspace {s} has no usable VM for a job: {s}", .{ request.workspace_id, @errorName(err) });
+        return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+    };
+    const cwd = try policy.guestCwd(allocator, policy.guest_root, request.cwd_rel);
+    const log_path = policy.guestJobLogPath(allocator, request.log_name) catch |err| {
+        return rpc.encodeFailure(allocator, request.id, .bad_request, @errorName(err));
+    };
+    const spawned = vm_client.spawn(allocator, layout, .{
+        .argv = request.argv,
+        .cwd = cwd,
+        .log_path = log_path,
+    }) catch |err| {
+        log("spawn in workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
+        return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+    };
+    return rpc.encodeSpawned(allocator, request.id, spawned.pid, log_path);
+}
+
+/// `observe`, never `ensure`: a probe must not BOOT the VM it is asking about,
+/// or a job from before a stop would be reported as merely exited.
+fn dispatchProbe(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request) ![]u8 {
+    const state = try manager.state(allocator, request.workspace_id);
+    defer state.deinit(allocator);
+    if (!std.mem.eql(u8, state.label, "ready")) {
+        return rpc.encodeProbe(allocator, request.id, false, state.label, 0);
+    }
+    const layout = readyLayout(manager, allocator, request.workspace_id) catch |err| {
+        log("workspace {s} has no layout: {s}", .{ request.workspace_id, @errorName(err) });
+        return rpc.encodeProbe(allocator, request.id, false, "unavailable", 0);
+    };
+    const probed = vm_client.probe(allocator, layout, request.pid) catch |err| {
+        log("probe in workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
+        // A guest that will not answer is not evidence that the job lives.
+        return rpc.encodeProbe(allocator, request.id, false, "unresponsive", state.pid);
+    };
+    return rpc.encodeProbe(allocator, request.id, probed.alive, state.label, state.pid);
+}
+
+/// The layout of a VM that is ALREADY running. Booting one to answer a question
+/// about a job that VM no longer holds would be a side effect, not an answer.
+fn readyLayout(manager: Manager, allocator: std.mem.Allocator, workspace_id: []const u8) !vm_client.Layout {
+    const state = try manager.state(allocator, workspace_id);
+    defer state.deinit(allocator);
+    if (!std.mem.eql(u8, state.label, "ready")) return error.VmNotRunning;
+    return manager.layoutFor(allocator, workspace_id);
+}
+
+fn dispatchSignal(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request) ![]u8 {
+    const layout = readyLayout(manager, allocator, request.workspace_id) catch |err| {
+        log("workspace {s} has no running VM to signal: {s}", .{ request.workspace_id, @errorName(err) });
+        return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+    };
+    _ = vm_client.signal(allocator, layout, request.pid, request.sig) catch |err| {
+        log("signal in workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
+        return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+    };
+    return rpc.encodeAck(allocator, request.id);
+}
+
+/// Read a job's log through the guest, filling the caller's budget from as many
+/// guest chunks as it takes. The host never opens the file.
+fn dispatchLog(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request) ![]u8 {
+    const layout = readyLayout(manager, allocator, request.workspace_id) catch |err| {
+        log("workspace {s} has no running VM to read a log from: {s}", .{ request.workspace_id, @errorName(err) });
+        return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+    };
+    const log_path = policy.guestJobLogPath(allocator, request.log_name) catch |err| {
+        return rpc.encodeFailure(allocator, request.id, .bad_request, @errorName(err));
+    };
+
+    var data = std.ArrayList(u8).empty;
+    defer data.deinit(allocator);
+    var offset = request.offset;
+    var size: i64 = 0;
+    var eof = false;
+    while (data.items.len < request.max_bytes) {
+        const want = request.max_bytes - data.items.len;
+        const chunk = vm_client.readLogChunk(allocator, layout, log_path, offset, want) catch |err| {
+            log("log read in workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
+            if (data.items.len == 0) {
+                return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+            }
+            break;
+        };
+        defer chunk.deinit(allocator);
+        if (chunk.missing) {
+            if (data.items.len == 0) {
+                return rpc.encodeLogChunk(allocator, request.id, .{
+                    .data = "",
+                    .size = 0,
+                    .eof = true,
+                    .missing = true,
+                });
+            }
+            break;
+        }
+        size = chunk.size;
+        eof = chunk.eof;
+        if (chunk.data.len == 0) break;
+        try data.appendSlice(allocator, chunk.data);
+        offset += @intCast(chunk.data.len);
+        if (eof) break;
+    }
+    return rpc.encodeLogChunk(allocator, request.id, .{
+        .data = data.items,
+        .size = size,
+        .eof = eof,
+        .missing = false,
+    });
 }
 
 fn reply(fd: linux.fd_t, allocator: std.mem.Allocator, payload: []u8) void {

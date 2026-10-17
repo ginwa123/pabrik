@@ -36,6 +36,11 @@ pub const process_tool_system_prompt =
     \\A `service` is never going to tell you it crashed: read it when you doubt it, and stop it when
     \\you are done with it — nothing else will.
     \\
+    \\On a SaaS workspace every command runs inside the workspace's own VM, so a detached command's
+    \\`pid` is a pid INSIDE that VM (the row carries `vm_id`), its log lives there too, and this tool
+    \\reads and stops it through the VM. Stopping that VM ends all of its jobs: the ones you would be
+    \\messaged about arrive with a note saying so.
+    \\
 ;
 
 pub const process_tool = AgentTool{
@@ -53,6 +58,9 @@ pub const process_tool = AgentTool{
         \\## kind
         \\- `job` — a bounded command; you ARE messaged when it exits, so do not poll it.
         \\- `service` — a dev server or watcher, SILENT: no message will ever arrive, so nothing but this tool will tell you it crashed, and nothing but `stop` (or pabrik shutting down) will end it.
+        \\
+        \\## Where the process runs
+        \\On a SaaS workspace the command ran inside that workspace's VM: the `pid` is a guest pid, `vm_id` names the VM it belongs to, and the log is read from inside the VM. Stopping the VM ends its jobs — a `job`'s completion message says `VM stopped - job ended`.
         ,
         .parameters = .{
             .type = "object",
@@ -144,6 +152,7 @@ const ToolExecResult = tools.ToolExecResult;
 const agent = pabrikcore.agent;
 const process_tool_mod = pabrikcore.process_tool;
 const background_process = @import("../../../agentic_loop/background_process.zig");
+const guest_jobs = @import("../../../agentic_loop/guest_jobs.zig");
 const shell_tool = pabrikcore.shell_tool;
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
@@ -293,20 +302,31 @@ const Entry = struct {
     status: []const u8,
     running: bool,
     log_path: []const u8,
+    /// Set for a job that ran in a workspace VM, so the model can tell a guest
+    /// pid from a host one. Omitted entirely for a host job.
+    vm_id: ?[]const u8 = null,
 };
 
 fn entryFor(allocator: std.mem.Allocator, p: background_process.ProcessInfo) !Entry {
-    _ = allocator;
     return .{
         .pid = p.pid,
         .command = p.command,
         .kind = p.kind,
         .status = p.status,
-        // `isAlive`, not a plain probe: it reaps first, so a process that just
-        // exited is not reported as running.
-        .running = background_process.isAlive(p.pid),
+        .running = if (p.vm_id.len > 0)
+            guest_jobs.probe(allocator, guestJobOf(p), null).verdict == .alive
+        else
+            // `isAlive`, not a plain probe: it reaps first, so a process that
+            // just exited is not reported as running.
+            background_process.isAlive(p.pid),
         .log_path = p.log_path,
+        .vm_id = if (p.vm_id.len > 0) p.vm_id else null,
     };
+}
+
+/// The row's guest identity, as the module that asks the manager wants it.
+fn guestJobOf(p: background_process.ProcessInfo) guest_jobs.GuestJob {
+    return .{ .vm_id = p.vm_id, .guest_pid = p.guest_pid };
 }
 
 fn listProcesses(
@@ -327,7 +347,7 @@ fn listProcesses(
         .ok = true,
         .count = entries.items.len,
         .processes = entries.items,
-    }, .{});
+    }, .{ .emit_null_optional_fields = false });
 }
 
 fn readProcess(
@@ -349,6 +369,7 @@ fn readProcess(
     defer background_process.freeProcessInfo(allocator, row);
 
     const cap: usize = if (args.max_bytes) |m| @min(m, 1 << 20) else default_max_bytes;
+    if (row.vm_id.len > 0) return readGuestProcess(allocator, db, session_id, pid, row, cap);
     const delta = try background_process.readDelta(allocator, io, db, session_id, pid, row.log_path, row.last_read_offset, cap);
     defer delta.free(allocator);
 
@@ -375,6 +396,62 @@ fn readProcess(
     }, .{});
 }
 
+/// `read` for a job that ran in a workspace VM: the log is inside the VM, so
+/// the bytes come through the manager and the cursor is persisted here.
+fn readGuestProcess(
+    allocator: std.mem.Allocator,
+    db: *sqlite.SqliteBackend,
+    session_id: []const u8,
+    pid: u32,
+    row: background_process.ProcessInfo,
+    cap: usize,
+) ![]const u8 {
+    const delta = guest_jobs.readDelta(
+        allocator,
+        guestJobOf(row),
+        row.log_path,
+        row.last_read_offset,
+        cap,
+    ) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return buildError(allocator, guestReadFailure(err)),
+    };
+
+    defer delta.free(allocator);
+    if (!delta.missing) {
+        background_process.setLastReadOffset(db, allocator, session_id, pid, delta.next_offset) catch {};
+    }
+
+    const clean = try @import("helpers").sanitize_control_chars(allocator, delta.bytes);
+    defer allocator.free(clean);
+
+    return std.json.Stringify.valueAlloc(allocator, .{
+        .ok = true,
+        .pid = pid,
+        .command = row.command,
+        .kind = row.kind,
+        .status = row.status,
+        .vm_id = row.vm_id,
+        .running = guest_jobs.probe(allocator, guestJobOf(row), null).verdict == .alive,
+        .output = clean,
+        .new_bytes = clean.len,
+        .total_bytes = delta.total_bytes,
+        .more_pending = delta.more_pending,
+        .log_missing = delta.missing,
+    }, .{});
+}
+
+/// A guest read that fails needs a sentence the model can act on, not an error
+/// name — and the reason is never "your pid is wrong".
+fn guestReadFailure(err: guest_jobs.Error) []const u8 {
+    return switch (err) {
+        error.OutOfMemory => "there was not enough memory to read this job's log. Retry with a smaller `max_bytes`.",
+        error.GuestManagerUnavailable => "the workspace VM manager is not reachable, so this job's log cannot be read right now. Start `pabrik-vmd serve` (or fix PABRIK_VMD_SOCKET) and read again — the log is still inside the VM.",
+        error.GuestLogUnknown => "this job's log path is not one the workspace VM manager could have minted, so it cannot be read. Use action=\"list\" and start the command again.",
+        error.GuestLogUnreadable => "the workspace VM could not read this job's log — the VM may have stopped, which ends its jobs. action=\"list\" shows whether the VM is still running it.",
+    };
+}
+
 fn stopProcess(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -393,11 +470,18 @@ fn stopProcess(
     );
     defer background_process.freeProcessInfo(allocator, row);
 
-    const was_alive = background_process.isAlive(pid);
+    const guest = row.vm_id.len > 0;
+    const was_alive = if (guest)
+        guest_jobs.probe(allocator, guestJobOf(row), null).verdict == .alive
+    else
+        background_process.isAlive(pid);
     // The TREE, not the pid: a dev server forks its workers, and killing only
-    // the parent leaves them holding the port — which is precisely how "stop
-    // the dev server" used to fail.
-    const signalled = shell_tool.stopDetachedProcess(allocator, io, pid);
+    // the parent leaves them holding the port. A guest job's tree lives in the
+    // VM, so the kill has to happen there.
+    const signalled = if (guest)
+        guest_jobs.stop(allocator, guestJobOf(row))
+    else
+        shell_tool.stopDetachedProcess(allocator, io, pid);
     background_process.updateStatus(db, allocator, session_id, pid, "killed") catch {};
 
     return std.json.Stringify.valueAlloc(allocator, .{
@@ -405,12 +489,13 @@ fn stopProcess(
         .pid = pid,
         .command = row.command,
         .kind = row.kind,
+        .vm_id = if (guest) row.vm_id else null,
         .signalled = signalled,
         // Reported so the model can tell "I stopped it" from "it was already
         // gone", which are different situations for a `service` it expected to
         // be running.
         .was_running = was_alive,
-    }, .{});
+    }, .{ .emit_null_optional_fields = false });
 }
 
 pub fn execProcess(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {

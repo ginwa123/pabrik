@@ -14,6 +14,10 @@ pub const boot_timeout_ms: u32 = 20_000;
 /// daemon's sweeper holds a workspace lock while it probes.
 pub const hello_probe_ms: u32 = 2_000;
 pub const poll_slice_ms: i32 = 200;
+/// Guards for the single-round-trip job calls: they do no work in the guest,
+/// so anything approaching these means the guest is wedged.
+pub const job_call_guard_ms: u32 = 10_000;
+pub const spawn_guard_ms: u32 = 10_000;
 
 const unix_af: u32 = 1;
 const sock_stream: u32 = 1;
@@ -635,6 +639,222 @@ pub fn exec(allocator: std.mem.Allocator, layout: Layout, request: ExecRequest) 
         .code = state.code,
         .timed_out = state.timed_out,
         .truncated = state.truncated,
+    };
+}
+
+// ─── detached jobs: spawn, probe, signal, read a log ─────────────────────
+
+/// One request frame in, one reply frame out. `exec` is the only multi-frame
+/// conversation the guest has; everything here is a single round trip.
+fn oneShot(allocator: std.mem.Allocator, layout: Layout, payload: []const u8, guard_ms: u32) ![]const u8 {
+    const fd = try connectUnix(layout.vsock_sock);
+    defer _ = linux.close(fd);
+    try handshake(fd, agent_port);
+    try sendFrame(fd, payload);
+
+    var waited_ms: u32 = 0;
+    while (true) {
+        var pfd = [_]linux.pollfd{.{ .fd = fd, .events = linux.POLL.IN, .revents = 0 }};
+        const rc = linux.poll(&pfd, pfd.len, poll_slice_ms);
+        if (linux.errno(rc) != .SUCCESS) return Error.SocketFailed;
+        if (rc > 0) break;
+        waited_ms += @intCast(poll_slice_ms);
+        if (waited_ms >= guard_ms) return Error.Timeout;
+    }
+    var buf: [max_frame]u8 = undefined;
+    const text = try readFrame(fd, &buf);
+    return allocator.dupe(u8, text);
+}
+
+fn parseObject(allocator: std.mem.Allocator, text: []const u8) !std.json.Parsed(std.json.Value) {
+    const parsed = std.json.parseFromSlice(std.json.Value, allocator, text, .{}) catch
+        return Error.ProtocolViolation;
+    switch (parsed.value) {
+        .object => return parsed,
+        else => {
+            parsed.deinit();
+            return Error.ProtocolViolation;
+        },
+    }
+}
+
+fn jsonStringField(object: std.json.ObjectMap, key: []const u8) ?[]const u8 {
+    const value = object.get(key) orelse return null;
+    return switch (value) {
+        .string => |text| text,
+        else => null,
+    };
+}
+
+fn jsonBoolField(object: std.json.ObjectMap, key: []const u8) bool {
+    const value = object.get(key) orelse return false;
+    return switch (value) {
+        .bool => |flag| flag,
+        else => false,
+    };
+}
+
+fn jsonIntField(object: std.json.ObjectMap, key: []const u8) ?i64 {
+    const value = object.get(key) orelse return null;
+    return switch (value) {
+        .integer => |n| n,
+        else => null,
+    };
+}
+
+pub const SpawnRequest = struct {
+    argv: []const []const u8,
+    cwd: []const u8 = "/workspace",
+    log_path: []const u8,
+    uid: u32 = 1000,
+    gid: u32 = 1000,
+    id: i64 = 1,
+};
+
+pub const SpawnResult = struct {
+    pid: i64,
+};
+
+fn buildSpawnFrame(buf: []u8, request: SpawnRequest) ![]const u8 {
+    var head_buf: [1024]u8 = undefined;
+    const head = try std.fmt.bufPrint(
+        &head_buf,
+        "{{\"type\":\"spawn\",\"id\":{d},\"uid\":{d},\"gid\":{d},\"cwd\":",
+        .{ request.id, request.uid, request.gid },
+    );
+    @memcpy(buf[0..head.len], head);
+    var off: usize = head.len;
+    try appendJsonString(buf, &off, request.cwd);
+    const mid = ",\"log_path\":";
+    @memcpy(buf[off..][0..mid.len], mid);
+    off += mid.len;
+    try appendJsonString(buf, &off, request.log_path);
+    const argv_head = ",\"argv\":[";
+    @memcpy(buf[off..][0..argv_head.len], argv_head);
+    off += argv_head.len;
+    for (request.argv, 0..) |arg, i| {
+        if (i != 0) {
+            buf[off] = ',';
+            off += 1;
+        }
+        try appendJsonString(buf, &off, arg);
+    }
+    const tail = "]}";
+    @memcpy(buf[off..][0..tail.len], tail);
+    off += tail.len;
+    return buf[0..off];
+}
+
+/// Fork a detached job in the guest and return the pid it was given. The pid
+/// is the guest's, and it leads its own process group there.
+pub fn spawn(allocator: std.mem.Allocator, layout: Layout, request: SpawnRequest) !SpawnResult {
+    var frame_buf: [16 * 1024]u8 = undefined;
+    const frame = try buildSpawnFrame(&frame_buf, request);
+    const text = try oneShot(allocator, layout, frame, spawn_guard_ms);
+    defer allocator.free(text);
+
+    var parsed = try parseObject(allocator, text);
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+    if (jsonStringField(obj, "type")) |kind| {
+        if (std.mem.eql(u8, kind, "spawn.error")) return Error.SpawnFailed;
+    }
+    const pid = jsonIntField(obj, "pid") orelse return Error.ProtocolViolation;
+    if (pid <= 0) return Error.SpawnFailed;
+    return .{ .pid = pid };
+}
+
+pub const ProbeResult = struct {
+    alive: bool,
+};
+
+/// Is the job still there? Asks the guest, so a pid the HOST also happens to
+/// have says nothing about this answer.
+pub fn probe(allocator: std.mem.Allocator, layout: Layout, pid: i64) !ProbeResult {
+    var frame_buf: [256]u8 = undefined;
+    const frame = try std.fmt.bufPrint(
+        &frame_buf,
+        "{{\"type\":\"probe\",\"id\":1,\"pid\":{d}}}",
+        .{pid},
+    );
+    const text = try oneShot(allocator, layout, frame, job_call_guard_ms);
+    defer allocator.free(text);
+
+    var parsed = try parseObject(allocator, text);
+    defer parsed.deinit();
+    return .{ .alive = jsonBoolField(parsed.value.object, "alive") };
+}
+
+/// Signal the job's whole group, then the pid itself. `false` means neither
+/// reached anything, which is what a job that already exited reports.
+pub fn signal(allocator: std.mem.Allocator, layout: Layout, pid: i64, sig: i64) !bool {
+    var frame_buf: [256]u8 = undefined;
+    const frame = try std.fmt.bufPrint(
+        &frame_buf,
+        "{{\"type\":\"signal\",\"id\":1,\"pid\":{d},\"signal\":{d}}}",
+        .{ pid, sig },
+    );
+    const text = try oneShot(allocator, layout, frame, job_call_guard_ms);
+    defer allocator.free(text);
+
+    var parsed = try parseObject(allocator, text);
+    defer parsed.deinit();
+    return jsonBoolField(parsed.value.object, "sent");
+}
+
+pub const LogChunk = struct {
+    data: []u8,
+    size: i64,
+    eof: bool,
+    missing: bool,
+
+    pub fn deinit(self: LogChunk, allocator: std.mem.Allocator) void {
+        allocator.free(self.data);
+    }
+};
+
+/// One positional read of a job's log, from inside the guest. The host never
+/// opens the file: a tenant log is not a host path.
+pub fn readLogChunk(
+    allocator: std.mem.Allocator,
+    layout: Layout,
+    log_path: []const u8,
+    offset: i64,
+    max_bytes: usize,
+) !LogChunk {
+    var frame_buf: [16 * 1024]u8 = undefined;
+    // `bufPrint` writes INTO `frame_buf`, so the cursor starts where it stopped
+    // — copying the head onto itself would be an aliased `memcpy`.
+    const head = try std.fmt.bufPrint(
+        &frame_buf,
+        "{{\"type\":\"read_log\",\"id\":1,\"offset\":{d},\"max_bytes\":{d},\"path\":",
+        .{ offset, max_bytes },
+    );
+    var off: usize = head.len;
+    try appendJsonString(&frame_buf, &off, log_path);
+    frame_buf[off] = '}';
+    off += 1;
+
+    const text = try oneShot(allocator, layout, frame_buf[0..off], job_call_guard_ms);
+    defer allocator.free(text);
+
+    var parsed = try parseObject(allocator, text);
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+    if (jsonBoolField(obj, "missing")) {
+        return .{ .data = try allocator.alloc(u8, 0), .size = 0, .eof = true, .missing = true };
+    }
+    const b64 = jsonStringField(obj, "data_b64") orelse return Error.ProtocolViolation;
+    const decoder = std.base64.standard.Decoder;
+    const size = decoder.calcSizeForSlice(b64) catch return Error.ProtocolViolation;
+    const data = try allocator.alloc(u8, size);
+    errdefer allocator.free(data);
+    decoder.decode(data, b64) catch return Error.ProtocolViolation;
+    return .{
+        .data = data,
+        .size = jsonIntField(obj, "size") orelse @intCast(data.len),
+        .eof = jsonBoolField(obj, "eof"),
+        .missing = false,
     };
 }
 

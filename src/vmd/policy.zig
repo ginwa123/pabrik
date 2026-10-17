@@ -46,6 +46,41 @@ pub fn guestCwd(allocator: std.mem.Allocator, root: []const u8, rel: []const u8)
     return std.fmt.allocPrint(allocator, "{s}/{s}", .{ root, rel });
 }
 
+/// The guest directory detached jobs log into. Outside `/workspace`, because a
+/// job's log is not part of the tenant's tree.
+pub const guest_job_log_dir = "/tmp/pabrik";
+pub const max_log_name_len = 64;
+
+/// A job's log NAME, not its path: the daemon derives the directory, so the
+/// caller can only name a file inside `guestJobLogDir`.
+pub fn logNameValid(name: []const u8) bool {
+    if (name.len == 0 or name.len > max_log_name_len) return false;
+    if (!std.ascii.isAlphanumeric(name[0])) return false;
+    for (name) |c| {
+        const ok = std.ascii.isAlphanumeric(c) or c == '_' or c == '-' or c == '.';
+        if (!ok) return false;
+    }
+    if (std.mem.indexOf(u8, name, "..") != null) return false;
+    return true;
+}
+
+/// `<dir>/<name>` in the guest. Errors rather than guessing when `name` is not
+/// a legal log name.
+pub fn guestJobLogPath(allocator: std.mem.Allocator, name: []const u8) ![]u8 {
+    if (!logNameValid(name)) return error.InvalidLogName;
+    return std.fmt.allocPrint(allocator, "{s}/{s}", .{ guest_job_log_dir, name });
+}
+
+/// The name half of a guest log path a previous `spawn` reported, or null when
+/// the path is not one this daemon could have minted.
+pub fn logNameFromPath(path: []const u8) ?[]const u8 {
+    const prefix = guest_job_log_dir ++ "/";
+    if (!std.mem.startsWith(u8, path, prefix)) return null;
+    const name = path[prefix.len..];
+    if (!logNameValid(name)) return null;
+    return name;
+}
+
 /// The host-side half of the same rule: `cwd` must sit at or under the
 /// workspace's root, and the result is what crosses the RPC. A `cwd` outside it
 /// is refused rather than silently rewritten to the root.
@@ -84,6 +119,41 @@ pub fn shellArgv(allocator: std.mem.Allocator, command: []const u8) ![]const []c
 }
 
 const testing = std.testing;
+
+test "logNameValid: a minted name passes, a path or a traversal fails" {
+    try testing.expect(logNameValid("bg_1712345678901.log"));
+    try testing.expect(logNameValid("a"));
+    try testing.expect(logNameValid("job-1.log"));
+
+    try testing.expect(!logNameValid(""));
+    try testing.expect(!logNameValid("."));
+    try testing.expect(!logNameValid(".."));
+    try testing.expect(!logNameValid("../../etc/shadow"));
+    try testing.expect(!logNameValid("sub/bg.log"));
+    try testing.expect(!logNameValid(".hidden"));
+    try testing.expect(!logNameValid("bg..log"));
+    try testing.expect(!logNameValid("bg log"));
+    try testing.expect(!logNameValid(&[_]u8{'a'} ** (max_log_name_len + 1)));
+}
+
+test "guestJobLogPath: the name alone places the file, and nothing escapes the dir" {
+    const allocator = testing.allocator;
+    const path = try guestJobLogPath(allocator, "bg_7.log");
+    defer allocator.free(path);
+    try testing.expectEqualStrings("/tmp/pabrik/bg_7.log", path);
+
+    try testing.expectError(error.InvalidLogName, guestJobLogPath(allocator, "../../etc/passwd"));
+    try testing.expectError(error.InvalidLogName, guestJobLogPath(allocator, "/etc/shadow"));
+}
+
+test "logNameFromPath: only a path this daemon could have minted yields a name" {
+    try testing.expectEqualStrings("bg_7.log", logNameFromPath("/tmp/pabrik/bg_7.log").?);
+    try testing.expect(logNameFromPath("/tmp/pabrik") == null);
+    try testing.expect(logNameFromPath("/tmp/pabrik/sub/bg.log") == null);
+    try testing.expect(logNameFromPath("/tmp/pabrik/../etc/shadow") == null);
+    try testing.expect(logNameFromPath("/workspace/bg_7.log") == null);
+    try testing.expect(logNameFromPath("/tmp/pabrik/") == null);
+}
 
 test "workspaceIdValid: real ids pass, anything path-shaped fails" {
     try testing.expect(workspaceIdValid("demo"));

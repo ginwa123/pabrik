@@ -510,18 +510,32 @@ pub fn runWithContext(
     // The substrate decision: under `--saas` the executor runs this command in
     // the session's workspace VM, and no host shell is ever spawned for it.
     var guest = vm_runtime.GuestContext{ .db = db, .session_id = session_id };
+    const executor = vm_runtime.executorFor(&guest);
     const command_output = try command_tool_mod.execute_command_with(
         allocator,
         io,
         input,
-        vm_runtime.executorFor(&guest),
+        executor,
     );
+    // A detached command that ran in a guest leaves a GUEST pid behind, and the
+    // accounting row has to say which VM it belongs to.
+    const ran_in_guest = executor != null;
 
     // Record a detached process so it can be listed, read, and stopped later.
     // `kind` decides whether it is ever NOTIFIED about — see migration 107.
     if (mode.isDetached() and db != null and session_id != null) {
         const db_ptr = db.?;
         const sess_id = session_id.?;
+
+        // The VM is per-workspace, so its identity is the workspace id the
+        // executor resolved. Null means the row cannot be written honestly, so
+        // nothing is recorded.
+        const vm_id: ?[]u8 = if (ran_in_guest)
+            try vm_runtime.workspaceIdFor(allocator, db_ptr, sess_id)
+        else
+            null;
+        defer if (vm_id) |id| allocator.free(id);
+        const accountable = !ran_in_guest or vm_id != null;
 
         // Parse PID from command output (format: "PID: {pid}\nLog: {path}")
         const stdout = command_output.stdout;
@@ -551,9 +565,15 @@ pub fn runWithContext(
                         // Save to database
                         const ts = std.Io.Clock.now(.real, io);
                         const started_at: i64 = ts.toSeconds();
-                        background_process.save(db_ptr, allocator, sess_id, pid, input.command, log_path, started_at, mode.kindFor()) catch {
-                            // Log error but don't fail the tool execution
-                        };
+                        const home: background_process.JobHome = if (vm_id) |id|
+                            background_process.JobHome.guest(id, pid)
+                        else
+                            background_process.JobHome.host();
+                        if (accountable) {
+                            background_process.save(db_ptr, allocator, sess_id, pid, input.command, log_path, started_at, mode.kindFor(), home) catch {
+                                // Log error but don't fail the tool execution
+                            };
+                        }
                         // Immediate watcher: poll the PID every 2s and queue
                         // the completion the moment it exits (no cron wait).
                         if (pabrikcore.getSingleton() catch null) |di| {
@@ -561,7 +581,13 @@ pub fn runWithContext(
                             // The two detached modes differ in ONE
                             // obligation: whether the agent is told when the
                             // process exits.
-                            if (mode == .background) {
+                            const notify = mode == .background;
+                            if (vm_id) |id| {
+                                background_watcher.spawnGuestWatcher(di, sess_id, .{
+                                    .vm_id = id,
+                                    .guest_pid = pid,
+                                }, input.command, log_path, notify);
+                            } else if (notify) {
                                 background_watcher.spawnCompletionWatcher(di, sess_id, pid, input.command, log_path);
                             } else {
                                 background_watcher.spawnServiceReaper(di, sess_id, pid, input.command, log_path);
