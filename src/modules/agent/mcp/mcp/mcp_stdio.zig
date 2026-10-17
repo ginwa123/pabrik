@@ -103,17 +103,18 @@ fn waitReadableWindows(
     };
     const has_deadline = deadline_ns != 0;
     while (true) {
+        // Probe BEFORE consulting the hook: a handle that is not a pipe (a
+        // regular file, the shape main's readFramed test uses) is always
+        // ready, and polling the caller's hook for it would be one callback
+        // per byte of input — the very regression that test pins.
+        var avail: std.os.windows.ULONG = 0;
+        if (!kernel32.PeekNamedPipe(file.handle, null, 0, null, &avail, null).toBool()) return true;
+        if (avail > 0) return true;
+        // Nothing to read yet, so only NOW do we wait: the hook and the
+        // deadline are consulted once per ≤100 ms slice while waiting.
         if (is_cancelled) |cb| if (cb()) return false;
         const now_ns = std.Io.Timestamp.now(io, .real).nanoseconds;
         if (has_deadline and now_ns >= deadline_abs) return false;
-        var avail: std.os.windows.ULONG = 0;
-        // A failed peek means the child's end is gone (BROKEN_PIPE) or the
-        // handle is no longer a pipe: report readiness and let the read
-        // surface the real EOF, exactly like the POSIX poll-error path.
-        if (!kernel32.PeekNamedPipe(file.handle, null, 0, null, &avail, null).toBool()) return true;
-        if (avail > 0) return true;
-        // Same ≤100ms slice as the POSIX branch: short enough that the cancel
-        // callback and the deadline stay responsive.
         const rem_ms: i128 = if (has_deadline) @divTrunc(deadline_abs - now_ns, std.time.ns_per_ms) else 100;
         const slice_ms: u64 = @intCast(@min(@max(rem_ms, 1), 100));
         std.Io.sleep(io, .{ .nanoseconds = slice_ms * std.time.ns_per_ms }, .real) catch {};
