@@ -31,17 +31,15 @@ pub const view_session_tool = AgentTool{
     .function = .{
         .name = "view_session",
         .description =
-        \\Show ONE session's detail — where it runs and what it is doing — as read-only metadata. It does NOT return messages or transcripts (use `read_workspace_session` for those).
+        \\Show ONE session's detail — where it runs and what it is doing. Read-only metadata, NOT messages (use `read_workspace_session` for those).
         \\
-        \\DEFAULT IS YOUR OWN SESSION: call it with no arguments to answer "what working directory am I in, is there a git worktree, which task/workspace is this, which profile, is a run in flight right now".
+        \\No arguments: YOUR OWN session (works outside any workspace). `session_id`: a peer in YOUR workspace.
         \\
-        \\WHAT YOU GET (JSON): `session_id`, `name`, `status`; `workspace` (`id`, `name`); `task` (`id`, `name`, `cwd`, `item_id`, `item_type`, `item_name`) or null when the session is a plain chat rather than a task chat; `cwd`; `git_worktree_cwd` (empty when none is bound); `selected_profile_model`; `is_auto_retry_until_stop`; `last_finish_reason`; `pr` (`url`, `provider`) or null; `parent_session_id`; `sub_agent_name`; `is_pinned`; `user_id`; `created_at`; `updated_at`; `last_human_touched_at_nano`; `is_running` (a worker row exists, i.e. a turn is executing NOW); `worker` (`working_directory`, `last_activity`, `last_activity_description`) or null; `queued_messages` (messages waiting behind the running turn); `has_pending_question` (an unanswered `ask_user` is blocking the session); `message_count`; `last_message_at`; `is_current_session`.
+        \\Fields: `session_id`, `name`, `status`; `workspace` (`id`, `name`); `task` (`id`, `name`, `cwd`, `item_id`, `item_type`, `item_name`) or null when it is a plain chat; `cwd`; `git_worktree_cwd` (empty when none is bound); `selected_profile_model`; `is_auto_retry_until_stop`; `last_finish_reason`; `pr` (`url`, `provider`) or null; `parent_session_id`; `sub_agent_name`; `is_pinned`; `user_id`; `created_at`; `updated_at`; `last_human_touched_at_nano`; `is_running`; `worker` (`working_directory`, `last_activity`, `last_activity_description`) or null; `queued_messages`; `has_pending_question`; `message_count`; `last_message_at`; `is_current_session`.
         \\
-        \\SCOPE: your own session always. A `session_id` must belong to YOUR workspace — another workspace's session answers `denied: true` with no fields, exactly like `read_workspace_session`. An unknown id returns `session_not_found`.
+        \\`is_running` and `worker` come from the same row, so they cannot disagree. Use them to follow a run you started with `run_session`: still going, finished (`last_finish_reason`), waiting behind another turn (`queued_messages`), or blocked on `ask_user` (`has_pending_question`).
         \\
-        \\WHY THE RUNNING FIELDS MATTER: `run_session` schedules a run and returns immediately, so `is_running`, `last_finish_reason` and `queued_messages` are how you tell whether it is still going, finished, or waiting behind another turn.
-        \\
-        \\Examples: {} my own session · {"session_id": "sess_42"} a peer in my workspace.
+        \\A `session_id` outside your workspace answers `denied: true` with no other field; an unknown id returns `session_not_found`.
         ,
         .parameters = .{
             .type = "object",
@@ -783,7 +781,7 @@ test "view_session: is_running comes from the same worker row as the detail" {
 test "view_session: the schema and prompt teach own-session default and the denial" {
     const tool = view_session_tool.function;
     try testing.expectEqualStrings("view_session", tool.name);
-    try testing.expect(std.mem.indexOf(u8, tool.description, "DEFAULT IS YOUR OWN SESSION") != null);
+    try testing.expect(std.mem.indexOf(u8, tool.description, "YOUR OWN session") != null);
     try testing.expect(std.mem.indexOf(u8, tool.description, "denied") != null);
     try testing.expect(std.mem.indexOf(u8, tool.description, "read_workspace_session") != null);
     try testing.expect(std.mem.indexOf(u8, view_session_tool_system_prompt, "DENIED") != null);
@@ -792,6 +790,12 @@ test "view_session: the schema and prompt teach own-session default and the deni
     // Optional, and the description must say what omitting it means.
     try testing.expectEqual(@as(usize, 0), tool.parameters.required.len);
     try testing.expect(std.mem.indexOf(u8, tool.parameters.properties[0].description, "your own session") != null);
+
+    // The field list is the contract, so it is asserted by name; the budget
+    // keeps the surrounding prose from growing back around it.
+    try testing.expect(std.mem.indexOf(u8, tool.description, "git_worktree_cwd") != null);
+    try testing.expect(std.mem.indexOf(u8, tool.description, "item_type") != null);
+    try testing.expect(tool.description.len <= 1350);
 }
 
 // Exec adapter — the tool definition and its executor live in ONE file.

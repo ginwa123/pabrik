@@ -10,25 +10,21 @@ const sanitize = helpers.sanitize_control_chars;
 const is_worker_running = @import("../../../agentic_loop/is_worker_running.zig");
 
 /// Input for run_session. `message` alone starts a NEW session; `session_id`
-/// runs an EXISTING one (with `message` it is queued onto it instead).
+/// runs an EXISTING one (with `message` it is queued onto it instead). The
+/// workspace is never an input — it is the caller's own, resolved server-side.
 pub const RunSessionInput = struct {
     /// Prompt for a NEW session, or a message to queue onto `session_id`.
     message: []const u8 = "",
     /// An existing session to run. Alone it resumes the agent with no new
     /// user turn.
     session_id: []const u8 = "",
-    /// Your OWN workspace, for a NEW session. Accepted only as a restatement
-    /// of it — naming any other workspace is a refusal.
-    workspace_id: []const u8 = "",
-    /// Case-insensitive alternative to `workspace_id`.
-    workspace_name: []const u8 = "",
     /// Name of a NEW session. Default: derived from `message`.
     name: []const u8 = "",
     /// Absolute working directory for a NEW session. Default: the caller's
     /// workspace project path.
     cwd: []const u8 = "",
-    /// LLM profile for a NEW session. Default: the target workspace's active
-    /// profile — the loop resolves it from the session's own config scope.
+    /// LLM profile for a NEW session. Default: the caller's workspace's
+    /// active profile — the loop resolves it from the session's config scope.
     profile: []const u8 = "",
     /// CSV allowlist for a NEW session. Empty = every equipped tool.
     allowed_tools: []const u8 = "",
@@ -42,19 +38,14 @@ pub const RunMode = enum { started, sent, resumed };
 pub const RunSessionError = error{
     /// Neither `message` nor `session_id`.
     NothingToRun,
-    /// Both `workspace_id` and `workspace_name`.
-    AmbiguousWorkspace,
-    /// A workspace target paired with an existing `session_id` — the session
-    /// already has a workspace, so the target is a contradiction.
-    WorkspaceTargetWithExistingSession,
-    /// The target is outside the caller's own workspace: either another
-    /// workspace named in a workspace selector, or a `session_id` that
-    /// resolves to one.
+    /// The target session lives outside the caller's workspace — the
+    /// workspace is never selectable, so this is the one scope refusal.
     CrossWorkspaceForbidden,
     SessionNotFound,
     WorkerAlreadyRunning,
-    WorkspaceNotFound,
     WorkspaceHasNoPath,
+    /// The caller's session is not linked to any workspace, so there is no
+    /// workspace to run in.
     NoWorkspace,
     CwdNotAbsolute,
 };
@@ -92,10 +83,8 @@ pub const run_session_tool_system_prompt =
     \\- `message` alone → START a new session in your workspace and run it on that prompt.
     \\- `session_id` alone → RESUME that session's agent with no new user turn.
     \\- `session_id` + `message` → send the message to that existing session and run it.
-    \\- Your workspace is the only reachable one: a `session_id` that belongs to another workspace,
-    \\  or a `workspace_id`/`workspace_name` that is not your own, is REFUSED.
-    \\- The run is ASYNCHRONOUS: the call returns as soon as the run is scheduled, not when it ends.
-    \\- A session that already has a worker running is REFUSED — never retried in a loop.
+    \\- The workspace is never an input, and another workspace's session is REFUSED.
+    \\- ASYNCHRONOUS: the call returns when the run is scheduled, not when it ends.
     \\
 ;
 
@@ -104,34 +93,31 @@ pub const run_session_tool = AgentTool{
     .function = .{
         .name = "run_session",
         .description =
-        \\Start or resume an agent session, and return immediately.
+        \\Start or resume an agent session IN YOUR OWN WORKSPACE, and return immediately. The workspace is never an input — it is resolved from your session.
         \\
-        \\THREE BEHAVIORS (pick by params):
-        \\- START (`message`, no `session_id`): create a NEW session in the target workspace and run it with `message` as the first user turn.
-        \\- SEND (`session_id` + `message`): queue `message` onto that existing session and run it.
-        \\- RESUME (`session_id` alone): run that existing session's agent with NO new user message.
+        \\- `message` alone: START a new session in your workspace and run it on that prompt.
+        \\- `session_id` alone: RESUME that session with no new user message.
+        \\- `session_id` + `message`: queue the message onto that session and run it.
         \\
-        \\SAME WORKSPACE ONLY: the target is always YOUR workspace. A NEW session is created in it and runs in that workspace's project directory with its config, skills and secrets. `workspace_id`/`workspace_name` are accepted only as a restatement of your own workspace — naming another one is refused, and so is a `session_id` that lives in another workspace. Another workspace's session can never be reached or run from here. A workspace target is also refused alongside `session_id`: an existing session already has a workspace.
+        \\A `session_id` from another workspace is REFUSED, never run.
         \\
-        \\ASYNCHRONOUS: the run is scheduled, not awaited. This call returns as soon as the run is queued — it does NOT wait for the agent to finish, and it does not report the result. Follow the run by reading the session later.
+        \\ASYNCHRONOUS: the run is scheduled, not awaited. Use `view_session` to follow it.
         \\
-        \\REFUSALS (`success:false`, nothing started): a `session_id` or workspace target OUTSIDE your workspace; a session whose worker is already running (started, and NOT silently queued); an unknown `session_id`, `workspace_id` or `workspace_name`; a relative `cwd`; a workspace that owns no directory; a caller with no resolvable workspace; and both `workspace_id` and `workspace_name` at once.
+        \\REFUSED (`success:false`, nothing started): a `session_id` that is unknown or outside your workspace; a session whose worker is already running (NOT silently queued); a relative `cwd`; a workspace with no project directory; a caller with no workspace.
         \\
         \\MAIN-AGENT-ONLY: never available to a sub-agent.
         \\
-        \\Examples: {"message": "run the test suite and report failures"} · {"message": "fix the failing spec", "cwd": "/abs/path"} · {"session_id": "sess_42"} resume · {"session_id": "sess_42", "message": "also update the docs"} send.
+        \\Example: {"message": "run the test suite and report failures"}
         ,
         .parameters = .{
             .type = "object",
             .properties = &.{
                 .{ .name = "message", .type = "string", .description = "Prompt for a NEW session (START), or a message to queue onto `session_id` (SEND)." },
-                .{ .name = "session_id", .type = "string", .description = "Existing session to run. Must be in YOUR workspace or the call is refused. Alone it resumes with no new user turn." },
-                .{ .name = "workspace_id", .type = "string", .description = "Your OWN workspace, for a NEW session. Naming any OTHER workspace is refused. Mutually exclusive with workspace_name and with session_id." },
-                .{ .name = "workspace_name", .type = "string", .description = "Case-insensitive alternative to workspace_id; must also be your own workspace. Mutually exclusive with workspace_id and with session_id." },
-                .{ .name = "name", .type = "string", .description = "Name for a NEW session. Default: derived from the first line of `message`." },
+                .{ .name = "session_id", .type = "string", .description = "Existing session to run; must be in YOUR workspace. Alone it resumes with no new user turn." },
+                .{ .name = "name", .type = "string", .description = "Name for a NEW session. Default: the first line of `message`." },
                 .{ .name = "cwd", .type = "string", .description = "ABSOLUTE working directory for a NEW session. Default: your workspace's project path." },
-                .{ .name = "profile", .type = "string", .description = "LLM profile name for a NEW session. Default: your workspace's active profile." },
-                .{ .name = "allowed_tools", .type = "string", .description = "CSV allowlist for a NEW session. Omit or leave empty for every equipped tool." },
+                .{ .name = "profile", .type = "string", .description = "LLM profile for a NEW session. Default: your workspace's active profile." },
+                .{ .name = "allowed_tools", .type = "string", .description = "CSV allowlist for a NEW session. Empty = every equipped tool." },
             },
             .required = &.{},
         },
@@ -159,32 +145,6 @@ fn sessionExists(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, sessio
         return true;
     }
     return false;
-}
-
-fn workspaceExists(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, workspace_id: []const u8) !bool {
-    var rows = try db.query(allocator, "SELECT 1 FROM workspaces WHERE id = ? LIMIT 1", &.{workspace_id});
-    defer rows.deinit();
-    if (try rows.next()) |row| {
-        defer row.deinit(allocator);
-        return true;
-    }
-    return false;
-}
-
-fn workspaceIdByName(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, name: []const u8) !?[]u8 {
-    const trimmed = std.mem.trim(u8, name, " \t");
-    if (trimmed.len == 0) return null;
-    var rows = try db.query(
-        allocator,
-        "SELECT id FROM workspaces WHERE name = ? COLLATE NOCASE ORDER BY id ASC LIMIT 1",
-        &.{trimmed},
-    );
-    defer rows.deinit();
-    if (try rows.next()) |row| {
-        defer row.deinit(allocator);
-        if (row.values[0].len > 0) return try allocator.dupe(u8, row.values[0]);
-    }
-    return null;
 }
 
 fn workspaceName(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, workspace_id: []const u8) ![]u8 {
@@ -283,8 +243,6 @@ pub fn planRunSession(
     caller_cwd: []const u8,
     input: RunSessionInput,
 ) !RunPlan {
-    if (input.workspace_id.len > 0 and input.workspace_name.len > 0) return error.AmbiguousWorkspace;
-
     const has_message = input.message.len > 0;
     const has_session = input.session_id.len > 0;
     if (!has_message and !has_session) return error.NothingToRun;
@@ -300,9 +258,6 @@ fn planExistingSession(
     input: RunSessionInput,
     has_message: bool,
 ) !RunPlan {
-    if (input.workspace_id.len > 0 or input.workspace_name.len > 0) {
-        return error.WorkspaceTargetWithExistingSession;
-    }
     if (!try sessionExists(allocator, db, input.session_id)) return error.SessionNotFound;
     if (is_worker_running.isWorkerRunning(allocator, db, input.session_id)) return error.WorkerAlreadyRunning;
     // The same gate `read_workspace_session` uses: a session outside the
@@ -353,23 +308,10 @@ fn planNewSession(
     caller_cwd: []const u8,
     input: RunSessionInput,
 ) !RunPlan {
-    const caller_workspace = try workspace_scope.resolveWorkspaceId(allocator, db, caller_session_id);
-    defer if (caller_workspace) |w| allocator.free(w);
-    const own = caller_workspace orelse return error.NoWorkspace;
-
-    // A workspace selector is a restatement of the caller's own workspace.
-    // Naming a DIFFERENT one is the cross-workspace refusal.
-    if (input.workspace_id.len > 0) {
-        if (!try workspaceExists(allocator, db, input.workspace_id)) return error.WorkspaceNotFound;
-        if (!std.mem.eql(u8, input.workspace_id, own)) return error.CrossWorkspaceForbidden;
-    } else if (input.workspace_name.len > 0) {
-        const named = (try workspaceIdByName(allocator, db, input.workspace_name)) orelse
-            return error.WorkspaceNotFound;
-        defer allocator.free(named);
-        if (!std.mem.eql(u8, named, own)) return error.CrossWorkspaceForbidden;
-    }
-
-    const target_workspace_id = try allocator.dupe(u8, own);
+    // The workspace is never an input: it is the caller's own, resolved from
+    // the calling session. No resolution, no run.
+    const target_workspace_id = (try workspace_scope.resolveWorkspaceId(allocator, db, caller_session_id)) orelse
+        return error.NoWorkspace;
     errdefer allocator.free(target_workspace_id);
 
     const cwd = try resolveCwd(allocator, db, input.cwd, caller_cwd, target_workspace_id);
@@ -402,14 +344,12 @@ fn planNewSession(
 
 /// The refusal code the LLM reads, plus one actionable sentence.
 fn refusalMessage(code: []const u8) []const u8 {
-    if (std.mem.eql(u8, code, "nothing_to_run")) return "Provide `message` to start a new session, or `session_id` to run an existing one.";    if (std.mem.eql(u8, code, "ambiguous_workspace")) return "Pass `workspace_id` OR `workspace_name`, not both.";
-    if (std.mem.eql(u8, code, "cross_workspace_forbidden")) return "That target is outside YOUR workspace. `run_session` only reaches your own workspace — start or resume sessions in the workspace you are in.";
-    if (std.mem.eql(u8, code, "workspace_target_with_existing_session")) return "`workspace_id`/`workspace_name` only restate your own workspace for a NEW session — drop them when you pass `session_id`.";
+    if (std.mem.eql(u8, code, "nothing_to_run")) return "Provide `message` to start a new session, or `session_id` to run an existing one.";
+    if (std.mem.eql(u8, code, "cross_workspace_forbidden")) return "That session is outside YOUR workspace. `run_session` only reaches the workspace you are in.";
     if (std.mem.eql(u8, code, "session_not_found")) return "No session with that `session_id`.";
     if (std.mem.eql(u8, code, "worker_already_running")) return "That session is already running. Do not retry in a loop — wait for it, or start a different session.";
-    if (std.mem.eql(u8, code, "workspace_not_found")) return "No workspace matches that id or name.";
-    if (std.mem.eql(u8, code, "workspace_has_no_path")) return "That workspace owns no project directory, so there is no directory to run in. Pass an absolute `cwd`.";
-    if (std.mem.eql(u8, code, "no_workspace")) return "Your session is not linked to any workspace — pass an explicit `workspace_id` or `cwd`.";
+    if (std.mem.eql(u8, code, "workspace_has_no_path")) return "Your workspace owns no project directory, so there is no directory to run in. Pass an absolute `cwd`.";
+    if (std.mem.eql(u8, code, "no_workspace")) return "Your session is not linked to any workspace, so there is nowhere to run a new session.";
     if (std.mem.eql(u8, code, "cwd_not_absolute")) return "`cwd` must be an absolute path.";
     if (std.mem.eql(u8, code, "server_not_initialized")) return "The server singleton is unavailable, so no run can be scheduled right now.";
     return "Invalid run_session input.";
@@ -419,12 +359,9 @@ fn refusalMessage(code: []const u8) []const u8 {
 pub fn refusalCode(err: anyerror) []const u8 {
     return switch (err) {
         error.NothingToRun => "nothing_to_run",
-        error.AmbiguousWorkspace => "ambiguous_workspace",
-        error.WorkspaceTargetWithExistingSession => "workspace_target_with_existing_session",
         error.CrossWorkspaceForbidden => "cross_workspace_forbidden",
         error.SessionNotFound => "session_not_found",
         error.WorkerAlreadyRunning => "worker_already_running",
-        error.WorkspaceNotFound => "workspace_not_found",
         error.WorkspaceHasNoPath => "workspace_has_no_path",
         error.NoWorkspace => "no_workspace",
         error.CwdNotAbsolute => "cwd_not_absolute",
@@ -631,80 +568,6 @@ test "run_session: a bare message starts a new session in the caller's own works
     try testing.expect(!plan.skip_initial_queue_message);
 }
 
-test "run_session: naming your OWN workspace explicitly is accepted" {
-    var s = try setupDb();
-    defer teardown(&s);
-    const alloc = testing.allocator;
-
-    var plan = try planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
-        .message = "run the suite",
-        .workspace_id = "ws_a",
-    });
-    defer plan.deinit(alloc);
-
-    try testing.expectEqual(RunMode.started, plan.mode);
-    try testing.expectEqualStrings("ws_a", plan.workspace_id);
-    try testing.expectEqualStrings("/repos/alpha", plan.cwd);
-}
-
-test "run_session: another workspace's id or name is refused" {
-    var s = try setupDb();
-    defer teardown(&s);
-    const alloc = testing.allocator;
-
-    try testing.expectError(error.CrossWorkspaceForbidden, planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
-        .message = "x",
-        .workspace_id = "ws_b",
-    }));
-    try testing.expectError(error.CrossWorkspaceForbidden, planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
-        .message = "x",
-        .workspace_name = "kabelweb",
-    }));
-}
-
-test "run_session: workspace_name resolves your own workspace case-insensitively" {
-    var s = try setupDb();
-    defer teardown(&s);
-    const alloc = testing.allocator;
-
-    // Stored as "Alpha"; the caller may write it any way it likes.
-    var plan = try planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
-        .message = "bump the pin",
-        .workspace_name = "alpha",
-    });
-    defer plan.deinit(alloc);
-
-    try testing.expectEqualStrings("ws_a", plan.workspace_id);
-    try testing.expectEqualStrings("/repos/alpha", plan.cwd);
-}
-
-test "run_session: an unknown workspace is refused rather than retargeted" {
-    var s = try setupDb();
-    defer teardown(&s);
-    const alloc = testing.allocator;
-
-    try testing.expectError(error.WorkspaceNotFound, planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
-        .message = "x",
-        .workspace_name = "nope",
-    }));
-    try testing.expectError(error.WorkspaceNotFound, planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
-        .message = "x",
-        .workspace_id = "ws_ghost",
-    }));
-}
-
-test "run_session: both workspace selectors at once is refused" {
-    var s = try setupDb();
-    defer teardown(&s);
-    const alloc = testing.allocator;
-
-    try testing.expectError(error.AmbiguousWorkspace, planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
-        .message = "x",
-        .workspace_id = "ws_a",
-        .workspace_name = "Alpha",
-    }));
-}
-
 test "run_session: neither message nor session_id is refused" {
     var s = try setupDb();
     defer teardown(&s);
@@ -810,21 +673,6 @@ test "run_session: a busy worker is refused instead of silently queueing" {
     }));
 }
 
-test "run_session: a workspace target alongside a session_id is refused" {
-    var s = try setupDb();
-    defer teardown(&s);
-    const alloc = testing.allocator;
-
-    try testing.expectError(error.WorkspaceTargetWithExistingSession, planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
-        .session_id = "mate",
-        .workspace_id = "ws_a",
-    }));
-    try testing.expectError(error.WorkspaceTargetWithExistingSession, planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
-        .session_id = "mate",
-        .workspace_name = "Alpha",
-    }));
-}
-
 test "run_session: a relative cwd is refused, an absolute one wins over the workspace default" {
     var s = try setupDb();
     defer teardown(&s);
@@ -835,13 +683,13 @@ test "run_session: a relative cwd is refused, an absolute one wins over the work
         .cwd = "relative/dir",
     }));
 
-    var plan = try planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
+    // An explicit absolute cwd wins over the workspace's project path.
+    var explicit = try planRunSession(alloc, &s.db, "caller", "/repos/alpha", .{
         .message = "x",
-        .workspace_id = "ws_a",
         .cwd = "/tmp/elsewhere",
     });
-    defer plan.deinit(alloc);
-    try testing.expectEqualStrings("/tmp/elsewhere", plan.cwd);
+    defer explicit.deinit(alloc);
+    try testing.expectEqualStrings("/tmp/elsewhere", explicit.cwd);
 }
 
 test "run_session: two starts in the same instant get distinct session ids" {
@@ -961,28 +809,28 @@ test "run_session: a refusal renders the code and an actionable sentence" {
     try testing.expect(std.mem.indexOf(u8, parsed.value.object.get("message").?.string, "already running") != null);
 }
 
-test "run_session: the schema and prompt teach the same-workspace rule" {
+test "run_session: the schema takes no workspace and the prompt states the rule" {
     const tool = run_session_tool.function;
     try testing.expectEqualStrings("run_session", tool.name);
-    try testing.expect(std.mem.indexOf(u8, tool.description, "SAME WORKSPACE ONLY") != null);
+    try testing.expect(std.mem.indexOf(u8, tool.description, "YOUR OWN WORKSPACE") != null);
     try testing.expect(std.mem.indexOf(u8, tool.description, "ASYNCHRONOUS") != null);
+    try testing.expect(std.mem.indexOf(u8, tool.description, "MAIN-AGENT-ONLY") != null);
+    try testing.expect(std.mem.indexOf(u8, tool.description, "REFUSED") != null);
     try testing.expect(std.mem.indexOf(u8, run_session_tool_system_prompt, "IN YOUR OWN WORKSPACE") != null);
 
-    var saw_id = false;
-    var saw_name = false;
-    for (tool.parameters.properties) |p| {
-        if (std.mem.eql(u8, p.name, "workspace_id")) {
-            saw_id = true;
-            // The refusal is only discoverable if the parameter says so.
-            try testing.expect(std.mem.indexOf(u8, p.description, "refused") != null);
-        }
-        if (std.mem.eql(u8, p.name, "workspace_name")) saw_name = true;
-        if (std.mem.eql(u8, p.name, "session_id")) {
-            try testing.expect(std.mem.indexOf(u8, p.description, "YOUR workspace") != null);
-        }
+    // The workspace is NEVER a parameter: it comes from the calling session,
+    // so the schema is exactly these six names, in this order.
+    const expected = [_][]const u8{ "message", "session_id", "name", "cwd", "profile", "allowed_tools" };
+    try testing.expectEqual(expected.len, tool.parameters.properties.len);
+    for (tool.parameters.properties, 0..) |p, i| {
+        try testing.expectEqualStrings(expected[i], p.name);
+        try testing.expect(p.description.len > 0);
     }
-    try testing.expect(saw_id);
-    try testing.expect(saw_name);
-    // Optional on purpose: a session_id-only call must still be a legal body.
+    try testing.expect(std.mem.indexOf(u8, tool.parameters.properties[1].description, "YOUR workspace") != null);
+    // Every parameter optional: a `session_id`-only body must be legal.
     try testing.expectEqual(@as(usize, 0), tool.parameters.required.len);
+
+    // A budget on the tool-level text, which the model pays for on EVERY
+    // request: this description was rewritten once already for being too long.
+    try testing.expect(tool.description.len <= 900);
 }
