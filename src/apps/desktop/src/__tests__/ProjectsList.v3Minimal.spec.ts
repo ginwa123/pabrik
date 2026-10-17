@@ -89,16 +89,16 @@ describe('ProjectsList v2 — count, no search, compact indent', () => {
     wrapper.unmount()
   })
 
-  // The list used to carry a 12px left margin and a 1px rail, which inset every project row by 13px
-  // against a flush RECENT row: the strip the sidebar review found. jsdom resolves no Tailwind, so the
-  // witness here is the class list; the measured box lives in the functional UI suite.
-
   it('nests no control inside the section header', async () => {
     const wrapper = mountList()
     await nextTick()
     expect(wrapper.findAll('button button')).toHaveLength(0)
     wrapper.unmount()
   })
+
+  // The list carried a 12px left margin and a 1px rail, which inset every project row by 13px against
+  // a flush RECENT row. jsdom resolves no Tailwind, so the witness is the class list; the measured box
+  // lives in the functional UI suite.
   it('renders the project list flush, with no indent and no rail', async () => {
     const wrapper = mountList()
     await nextTick()
