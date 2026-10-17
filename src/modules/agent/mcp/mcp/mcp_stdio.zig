@@ -174,10 +174,12 @@ fn readFramedWithReader(
         var len: usize = 1; // already read '{'
         body[0] = first[0];
         while (true) {
-            // Same silent-child guard as the first byte: only poll when
-            // the reader buffer is drained, otherwise buffered bytes
-            // would sit unread while we wait on an empty fd.
+            // The only cancel/clock poll: once per reader-buffer refill,
+            // never per byte — a per-byte poll multiplied a caller's
+            // SQLite-query hook into millions of calls and blew the budget.
             if (iface.bufferedLen() == 0 and (deadline_ns != 0 or is_cancelled != null)) {
+                // Only poll once the buffer is drained, or buffered bytes
+                // would sit unread while we wait on an empty fd.
                 if (!waitReadable(io, file, deadline_abs, deadline_ns, is_cancelled)) return StdioError.RecvTimeout;
             }
             var b: [1]u8 = undefined;
@@ -186,11 +188,6 @@ fn readFramedWithReader(
             // read failure (EBADF on a killed child, EIO, ...).
             const n_byte = iface.readSliceShort(&b) catch return StdioError.UnexpectedEof;
             if (n_byte == 0) break;
-            // Check deadline / cancel between bytes.
-            if (deadline_ns != 0 or is_cancelled != null) {
-                const now_ns = std.Io.Timestamp.now(io, .real).nanoseconds;
-                if (checkDeadlineOrCancel(now_ns, deadline_abs, is_cancelled).err) |e| return e;
-            }
             if (b[0] == '\n') {
                 // Trim trailing \r if present.
                 const trimmed_len = if (len > 0 and body[len - 1] == '\r') len - 1 else len;
@@ -229,18 +226,14 @@ fn readFramedWithReader(
         if (header_len >= header_buf.len) return StdioError.InvalidFrame;
         header_buf[header_len] = byte[0];
         header_len += 1;
-        if (deadline_ns != 0 or is_cancelled != null) {
-            const now_ns = std.Io.Timestamp.now(io, .real).nanoseconds;
-            if (checkDeadlineOrCancel(now_ns, deadline_abs, is_cancelled).err) |e| return e;
-        }
         if (header_len >= 4 and std.mem.eql(u8, header_buf[header_len - 4 ..][0..4], "\r\n\r\n")) {
             found_blank = true;
         } else if (header_len >= 2 and std.mem.eql(u8, header_buf[header_len - 2 ..][0..2], "\n\n")) {
             found_blank = true;
         } else if (byte[0] == '\n') {
             // A completed line inside the header block that carries no ':'
-            // cannot be an HTTP-style header, so this is not a Content-Length
-            // frame at all — most likely a server that leaked a log line onto
+            // cannot be an HTTP-style header: this is a log line leaked onto
+            // stdout, not a Content-Length frame.
             const line = std.mem.trim(u8, header_buf[line_start .. header_len - 1], "\r ");
             if (line.len > 0 and std.mem.indexOfScalar(u8, line, ':') == null) {
                 return StdioError.InvalidFrame;
@@ -267,7 +260,7 @@ fn readFramedWithReader(
     const body = allocator.alloc(u8, content_length) catch return StdioError.OutOfMemory;
     // Chunked body read (NOT a single `readSliceAll`): each chunk is guarded
     // by `waitReadable` so a child that stalls mid-body — header promised N
-    // bytes but the bytes never arrive — surfaces as `RecvTimeout` instead of
+    // bytes but the bytes never arrive — surfaces as `RecvTimeout`, never a hang.
     var off: usize = 0;
     while (off < body.len) {
         if (iface.bufferedLen() == 0 and (deadline_ns != 0 or is_cancelled != null)) {
@@ -398,6 +391,42 @@ fn writeFramed(io: std.Io, file: std.Io.File, body: []const u8, deadline_ns: u64
 // SECTION B — StdioClient (spawn child, framed read/write)
 // ============================================================================
 
+/// How long a killed MCP child (and its process group) gets to be reaped
+/// before the wait is abandoned. A process stuck in D state must never hold a
+/// session thread — nothing downstream needs the exit status.
+const REAP_GRACE_PERIOD_NS: u64 = 2 * std.time.ns_per_s;
+
+fn killBounded(io: std.Io, child: *std.process.Child, grace_ns: u64) void {
+    if (comptime builtin.os.tag == .windows) {
+        // TerminateProcess is unconditional, so there is no ignorable signal to
+        // sit on; `Child.kill` stays because it also closes its handles.
+        child.kill(io);
+        return;
+    }
+    const pid: c_int = @intCast(child.id orelse return);
+    // `-pid` reaches the group: an npm wrapper AND the server it wraps.
+    // SIGTERM is ignored by a wrapper blocked on an undrained stdout pipe;
+    // SIGKILL is not.
+    std.posix.kill(-pid, .KILL) catch {};
+    reapBoundedPosix(io, pid, grace_ns);
+}
+
+/// BOUNDED on purpose — the twin `wait_pid_bounded` in shell.zig fixed the
+/// same defect; keep the two in step.
+fn reapBoundedPosix(io: std.Io, pid: c_int, grace_ns: u64) void {
+    const deadline: i128 = std.Io.Timestamp.now(io, .real).nanoseconds + @as(i128, @intCast(grace_ns));
+    while (true) {
+        var status: c_int = 0;
+        const rc = std.c.waitpid(pid, &status, std.c.W.NOHANG);
+        if (rc == pid or rc < 0) return;
+        if (std.Io.Timestamp.now(io, .real).nanoseconds >= deadline) return;
+        std.Io.Clock.Duration.sleep(
+            .{ .raw = std.Io.Duration.fromMilliseconds(10), .clock = .real },
+            io,
+        ) catch {};
+    }
+}
+
 pub const StdioClient = struct {
     /// Allocator for response bodies.
     arena: std.heap.ArenaAllocator,
@@ -432,6 +461,9 @@ pub const StdioClient = struct {
             .stdin = .pipe,
             .stdout = .pipe,
             .stderr = .pipe,
+            // Own process group (POSIX) so `killBounded`'s group kill reaches
+            // a wrapper AND the server it spawns; Windows has no pgid.
+            .pgid = if (comptime builtin.os.tag == .windows) null else @as(?std.posix.pid_t, 0),
         }) catch return StdioError.ChildSpawnFailed;
 
         return .{
@@ -529,23 +561,28 @@ pub const StdioClient = struct {
         }
     }
 
-    /// Kill the child immediately (SIGKILL on POSIX, TerminateProcess on
-    /// Windows). Idempotent — safe to call from `defer` and from
-    /// StdioRegistry.deinit.
+    /// Kill the child and reap it with a bounded wait — never blocking, so a
+    /// child that ignores SIGTERM cannot pin the caller. Idempotent: safe from
+    /// `defer` and from StdioRegistry.deinit.
     pub fn deinit(self: *StdioClient) void {
         if (self.is_dead) return;
         self.is_dead = true;
         self.reader = null;
         // Release the per-client arena now rather than letting it ride along
         // with the registry arena: a registry that respawns a server
-        // repeatedly (every timeout marks it stale) would otherwise hold the
+        // repeatedly (every timeout marks it stale) would leak it outright.
         self.arena.deinit();
-        self.child.kill(self.io);
-        // `child.kill` closed the pipes but the cached handles still hold
-        // those fd NUMBERS.
+        // Close the pipes BEFORE the kill: a child blocked writing to a pipe
+        // nobody drains only unwinds once no reader holds it, and a wrapper
+        // waiting for that child would then never exit — see `killBounded`.
+        if (self.stdin) |f| f.close(self.io);
+        if (self.stdout) |f| f.close(self.io);
+        if (self.stderr) |f| f.close(self.io);
         self.stdin = null;
         self.stdout = null;
         self.stderr = null;
+        killBounded(self.io, &self.child, REAP_GRACE_PERIOD_NS);
+        self.child.id = null;
     }
 };
 
@@ -1035,6 +1072,42 @@ test "readFramed handles CRLF terminator on newline-delimited JSON" {
     try testing.expectEqualStrings("{\"json\":\"rpc\"}", body);
 }
 
+test "readFramed polls the cancel hook once per reader buffer, not once per byte" {
+    // `is_cancelled` is a caller hook, and workflow.zig's runs a SQLite query
+    // per call — so a per-byte poll turns one multi-megabyte frame into
+    // millions of queries.
+    const payload_len: usize = 512 * 1024;
+    const payload = try testing.allocator.alloc(u8, payload_len + 2);
+    defer testing.allocator.free(payload);
+    payload[0] = '{';
+    @memset(payload[1 .. payload_len + 1], 'x');
+    payload[payload_len + 1] = '\n';
+
+    var input = try framedInput("one_big_line.txt", payload);
+    defer input.deinit();
+
+    const Hook = struct {
+        var calls: usize = 0;
+        fn call() bool {
+            calls += 1;
+            return false;
+        }
+    };
+    Hook.calls = 0;
+    const body = try readFramed(
+        testing.allocator,
+        testing.io,
+        input.file,
+        60 * std.time.ns_per_s,
+        &Hook.call,
+    );
+    defer testing.allocator.free(body);
+
+    try testing.expectEqual(payload_len + 1, body.len);
+    // A per-byte poll would be payload_len calls; refills are payload/4096.
+    try testing.expect(Hook.calls * 64 < payload_len);
+}
+
 // ── StdioClient tests (real child process) ────────────────────────────────
 // Cross-platform: use `cat` on POSIX, `cmd.exe /C more` on Windows.
 
@@ -1071,6 +1144,38 @@ test "StdioClient.send writes framed bytes to child stdin" {
         if (err == error.ChildSpawnFailed) return;
         return err;
     };
+}
+
+/// Argv for a child that IGNORES SIGTERM and outlives the test — the shape
+/// that wedged `StdioClient.deinit`: `Child.kill` sends SIGTERM and then
+/// blocks in `wait4` with no deadline. Host table (CODING_STANDARDS.md §2).
+fn sigtermIgnoringArgv() []const []const u8 {
+    return switch (builtin.os.tag) {
+        .windows => &.{ "cmd.exe", "/C", "ping", "-n", "30", "127.0.0.1" },
+        .linux, .macos => &.{ "/bin/sh", "-c", "trap '' TERM; while :; do sleep 1; done" },
+        else => &.{"pabrik-no-such-child"},
+    };
+}
+
+test "StdioClient.deinit reaps a SIGTERM-ignoring child instead of blocking forever" {
+    var client = try StdioClient.init(testing.allocator, testing.io, sigtermIgnoringArgv());
+    const pid = client.child.id.?;
+    const start = std.Io.Timestamp.now(testing.io, .real).nanoseconds;
+
+    client.deinit();
+
+    const elapsed_ms: u64 = @intCast(@divTrunc(
+        std.Io.Timestamp.now(testing.io, .real).nanoseconds - start,
+        std.time.ns_per_ms,
+    ));
+    // A hang guard, not a budget check: pre-fix this call never returned at
+    // all, so the bound has to clear the 2 s reap budget on a loaded runner.
+    try testing.expect(elapsed_ms < 10_000);
+    if (comptime builtin.os.tag != .windows) {
+        // A zombie still accepts a signal, so ProcessNotFound proves the
+        // reap, not merely the exit.
+        try testing.expectError(error.ProcessNotFound, std.posix.kill(pid, .TERM));
+    }
 }
 
 test "StdioClient.init returns ChildSpawnFailed for missing binary" {
@@ -1308,9 +1413,9 @@ test "recv aborts immediately when cancel callback returns true" {
         std.Io.Timestamp.now(testing.io, .real).nanoseconds - start,
         std.time.ns_per_ms,
     ));
-    // The cancel-callback is consulted between bytes, so any error that
-    // indicates the recv is bounded (RecvTimeout) is acceptable. We just want
-    // to prove the recv doesn't hang past the deadline.
+    // The cancel-callback is consulted before the first byte, so any error
+    // that indicates the recv is bounded (RecvTimeout) is acceptable. We just
+    // want to prove the recv doesn't hang past the deadline.
     try testing.expect(result == error.RecvTimeout or result == error.BrokenPipe);
     // Should be effectively instant after the first byte reads.
     // 200ms slack for slow CI runners + Threaded io overhead.
