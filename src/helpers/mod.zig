@@ -17,6 +17,7 @@ pub const test_path = @import("test_path.zig");
 pub const host_fixture = @import("host_fixture.zig");
 pub const open_descriptors = @import("open_descriptors.zig");
 pub const git_env_guard = @import("git_env_guard.zig");
+pub const git_hardening = @import("git_hardening.zig");
 pub const xmlUnescape = @import("xml_unescape.zig").xmlUnescape;
 
 const std = @import("std");

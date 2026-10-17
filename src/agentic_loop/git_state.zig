@@ -5,6 +5,7 @@
 const std = @import("std");
 const run_captured = @import("helpers").run_captured;
 const xml_escape = @import("helpers").xml_escape;
+const git_hardening = @import("helpers").git_hardening;
 
 pub const MAX_DIRTY_FILES: usize = 20;
 pub const DETACHED_BRANCH = "(detached)";
@@ -54,7 +55,7 @@ pub fn runGit(allocator: std.mem.Allocator, io: std.Io, dir: []const u8, args: [
 
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(allocator);
-    argv.append(allocator, "git") catch return null;
+    git_hardening.appendGit(&argv, allocator) catch return null;
     argv.append(allocator, "-C") catch return null;
     argv.append(allocator, dir) catch return null;
     argv.appendSlice(allocator, args) catch return null;
