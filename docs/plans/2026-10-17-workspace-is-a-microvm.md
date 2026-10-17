@@ -720,3 +720,38 @@ The environment-variable half of the hardening (`GIT_CONFIG_NOSYSTEM`,
 `env_map` parameter, so it needs a signature change across its call sites. The `-c` layer is the
 load-bearing one (command-line config outranks every config file), so the env layer is a follow-up,
 not a gap in the current policy.
+
+---
+
+## 19. P1 status (step 1 landed)
+
+`scripts/vm-guest-smoke.sh` boots a guest image on Firecracker **without root and without a NIC**
+(vsock + block + serial only) and completes a framed `hello` round-trip. `scripts/vm-vsock-hello.py`
+is the host-side client.
+
+| item | how | result |
+|---|---|---|
+| guest agent | `src/vm_agent/main.zig`, static `x86_64-linux-musl` | **4912 bytes**, PID 1, raw syscalls only |
+| image | `truncate` + `mkfs.ext4 -d` + `e2fsck -fn` | 32 MiB ext4, clean, **no root, no loop mount** |
+| boot | `firecracker --api-sock … --enable-pci`, no tap, no iptables | kernel reached `/init` at **0.725 s** (guest clock); agent listening within ~50 ms |
+| transport | hybrid vsock: host connects to `uds_path`, sends `CONNECT 5000\n` | `{"type":"hello","agent":"pabrik-vm-agent","version":"0.1"}` |
+| shutdown | `{"type":"shutdown"}` → `{"type":"bye"}` + guest log ack | asserted in the smoke run |
+
+Four findings that change P2:
+
+1. **Hybrid vsock has a text handshake.** The host must read one `OK <port>\n` line after `CONNECT`
+   before any frame arrives; a client that reads a frame first sees the handshake bytes as a length
+   prefix (this cost a debugging cycle). The muxer's `ERR` form must be handled too.
+2. **The guest cannot make Firecracker exit.** `reboot(LINUX_REBOOT_CMD_POWER_OFF)` logs
+   *"Power off not available: System halted instead"* on the CI kernel — no ACPI power path. So the
+   `shutdown` frame is only an acknowledgement; **stopping the VM is `pabrik-vmd`'s job** (P2), and
+   the smoke test asserts the ack plus stops the VM from the host instead of waiting for an exit.
+3. **`devtmpfs` is missing from the stock CI kernel.** `proc` and `sysfs` mount; `devtmpfs` does not,
+   so the guest has no `/dev` — which P2 needs for PTYs. Either build our own guest kernel with
+   `CONFIG_DEVTMPFS` + `CONFIG_DEVPTS` (rev 1 planned this; rev 3 deferred it, which this partially
+   reverses) or have the agent `mknod` its own nodes as root-in-guest. Decide in P2.
+4. **Firecracker warns `Cannot acknowledge unknown features page: 2/3`** on every boot with this
+   kernel — cosmetic noise, not a failure, but it should not be mistaken for one in a CI log.
+
+Reproduce: `FC_BIN=<firecracker> scripts/vm-guest-smoke.sh`.
+
