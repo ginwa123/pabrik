@@ -1,0 +1,1220 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The sidebar's row grammar (wireframe)</title>
+    <style>
+      :root {
+        --bg: #181616;
+        --sb-bg: #12120f;
+        --card: #1d1c19;
+        --border: #282727;
+        --fg: #c5c9c5;
+        --muted: #a6a69c;
+        --dim: #7a8382;
+        --violet: #8992a7;
+        --aqua: #8ea4a2;
+        --yellow: #c4b28a;
+        --green: #87a987;
+        --orange: #b6927b;
+        --red: #c4746e;
+        --active-bg: #282727;
+        --active-fg: #c5c9c5;
+        --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: var(--font);
+        font-size: 16px;
+        line-height: 1.6;
+      }
+
+      body > header,
+      main {
+        display: block;
+        max-width: 74rem;
+        margin: 0 auto;
+        padding: 0 2rem;
+      }
+
+      body > header {
+        padding-top: 4rem;
+        padding-bottom: 2rem;
+      }
+
+      h1 {
+        font-size: 2rem;
+        line-height: 1.15;
+        letter-spacing: -0.02em;
+        margin: 0 0 0.75rem;
+        max-width: 18ch;
+      }
+
+      h2 {
+        font-size: 1.375rem;
+        letter-spacing: -0.01em;
+        margin: 3.5rem 0 0.75rem;
+      }
+
+      h3 {
+        font-size: 1.0625rem;
+        margin: 2.25rem 0 0.5rem;
+      }
+
+      p,
+      li {
+        color: var(--muted);
+        max-width: 62ch;
+      }
+
+      strong {
+        color: var(--fg);
+        font-weight: 600;
+      }
+
+      a {
+        color: #8ba4b0;
+      }
+
+      code {
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 0.875em;
+        overflow-wrap: anywhere;
+        color: var(--fg);
+      }
+
+      .meta {
+        color: var(--dim);
+        font-size: 0.9375rem;
+      }
+
+      .lede {
+        font-size: 1.125rem;
+        color: var(--fg);
+        max-width: 58ch;
+      }
+
+      .panel {
+        background: var(--card);
+        padding: 1.5rem 1.75rem;
+        border-radius: 2px;
+        margin: 1.5rem 0;
+      }
+
+      .panel > :first-child {
+        margin-top: 0;
+      }
+
+      .panel > :last-child {
+        margin-bottom: 0;
+      }
+
+      @media (max-width: 520px) {
+        body > header,
+        main {
+          padding: 0 1rem;
+        }
+
+        body > header {
+          padding-top: 2.5rem;
+        }
+
+        h1 {
+          font-size: 1.75rem;
+        }
+      }
+
+      /* Every sidebar mock is a crop: the 288px panel the app renders, plus the
+         content edge it sits against. All rules are scoped to [data-ui] so both
+         scanners read the subtree as a faithful interface fragment. */
+      [data-ui] {
+        display: block;
+        margin: 0;
+        background: var(--bg);
+        color: var(--muted);
+        font-family: var(--font);
+        width: 320px;
+        max-width: 100%;
+      }
+
+      [data-ui] .panel-mock {
+        width: 288px;
+        background: var(--sb-bg);
+        padding-bottom: 6px;
+      }
+
+      [data-ui] .edge {
+        flex: 1;
+        align-self: stretch;
+        background: var(--bg);
+        border-left: 1px solid var(--border);
+      }
+
+      [data-ui] .crop {
+        display: flex;
+        align-items: stretch;
+      }
+
+      [data-ui] .cap {
+        font-size: 12px;
+        color: var(--dim);
+        padding: 0 0 8px;
+      }
+
+      [data-ui] .hdr {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 48px;
+        padding: 0 12px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      [data-ui] .ws {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--fg);
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      [data-ui] .hdrlinks {
+        margin-left: auto;
+        display: flex;
+        gap: 12px;
+      }
+
+      [data-ui] .hdrlinks span {
+        font-size: 10px;
+        font-weight: 500;
+        color: var(--dim);
+      }
+
+      [data-ui] .newchat {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 40px;
+        padding: 0 12px;
+        border-bottom: 1px solid var(--border);
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--dim);
+      }
+
+      [data-ui] .glyph24 {
+        width: 24px;
+        display: inline-flex;
+        justify-content: center;
+      }
+
+      [data-ui] .glyph16 {
+        width: 16px;
+        display: inline-flex;
+        justify-content: center;
+      }
+
+      /* The mark column. Every row carries this one 16px slot at the gutter,
+         holding at most one mark: a disclosure chevron, a branch badge, a
+         status glyph, or nothing. It is what keeps every label on one edge. */
+      [data-ui] .mark-col {
+        width: 16px;
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+      }
+
+      [data-ui] .sect {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 28px;
+        padding: 0 12px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      [data-ui] .sect.norule {
+        border-bottom: 0;
+      }
+
+      [data-ui] .chev {
+        font-size: 11px;
+        color: var(--dim);
+        display: inline-block;
+      }
+
+      [data-ui] .chev.box16 {
+        width: 16px;
+      }
+
+      [data-ui] .stitle {
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--dim);
+      }
+
+      [data-ui] .scount {
+        font-size: 10px;
+        color: var(--dim);
+        opacity: 0.7;
+        font-variant-numeric: tabular-nums;
+      }
+
+      [data-ui] .scount.dim60 {
+        opacity: 0.6;
+      }
+
+      [data-ui] .sact {
+        width: 24px;
+        height: 24px;
+        font-size: 11px;
+        color: var(--dim);
+        opacity: 0.7;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      [data-ui] .sact.first {
+        margin-left: auto;
+      }
+
+      [data-ui] .runind {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 10px;
+        color: var(--dim);
+        opacity: 0.7;
+        font-variant-numeric: tabular-nums;
+      }
+
+      [data-ui] .runind i {
+        width: 6px;
+        height: 6px;
+        background: var(--yellow);
+        display: inline-block;
+      }
+
+      [data-ui] .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 32px;
+        padding: 0 12px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      [data-ui] .row.sel {
+        background: var(--active-bg);
+        color: var(--active-fg);
+      }
+
+      [data-ui] .row.hardsel {
+        background: #2e2d29;
+        color: #fff;
+      }
+
+      [data-ui] .trunc {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+
+      [data-ui] .label {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+
+      [data-ui] .label .branch {
+        display: inline-flex;
+        vertical-align: middle;
+        margin-right: 4px;
+        color: var(--violet);
+      }
+
+      [data-ui] .label .subagent {
+        margin-left: 4px;
+        font-family: ui-monospace, "SF Mono", Menlo, monospace; /* taste-skill-ignore: the before crop reproduces the current monospace sub-agent label on purpose */
+        font-size: 10px;
+        color: var(--violet);
+      }
+
+      [data-ui] .mark {
+        display: inline-flex;
+        vertical-align: middle;
+        margin-left: 4px;
+      }
+
+      [data-ui] .meta {
+        margin-left: auto;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 10px;
+        opacity: 0.6;
+        font-variant-numeric: tabular-nums;
+      }
+
+      [data-ui] .meta.flat {
+        opacity: 0.7;
+      }
+
+      [data-ui] .chip {
+        font-size: 10px;
+        font-weight: 600;
+        padding: 1px 6px;
+        border-radius: 999px;
+        background: rgba(196, 178, 138, 0.16);
+        color: var(--yellow);
+        opacity: 1;
+      }
+
+      [data-ui] .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--orange);
+        display: inline-block;
+      }
+
+      [data-ui] .staledot {
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: var(--yellow);
+        display: inline-block;
+      }
+
+      [data-ui] .prow {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 32px;
+        padding: 0 12px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      /* Today: the list itself carries a 12px left margin and a 1px rail, on top
+         of the row's own 12px gutter, so a project row's box starts at 13 and its
+         chevron lands at 25. The block also pads 8px under its last row, and its
+         first row is pushed down 6px. */
+      [data-ui] .rail-old {
+        position: relative;
+        margin-left: 12px;
+        border-left: 1px solid var(--border);
+        padding-bottom: 8px;
+      }
+
+      /* The documents list carries the same 12px margin and rail as projects, so
+         its rows are inset to 13 and their titles land at 25. */
+      [data-ui] .rail-doc {
+        position: relative;
+        margin-left: 12px;
+        border-left: 1px solid var(--border);
+      }
+
+      [data-ui] .docrow {
+        display: flex;
+        align-items: center;
+        height: 32px;
+        padding: 0 12px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      /* The hardcoded selected pair a project row uses today. */
+      [data-ui] .prow.sel-hc {
+        background: #2e2d29;
+        color: #fff;
+      }
+
+      /* Declared after .sect / .row / .newchat so it wins the gap. */
+      [data-ui] .tight {
+        gap: 0;
+      }
+
+      [data-ui] .empty {
+        padding: 8px 12px;
+        font-size: 11px;
+        color: var(--dim);
+        opacity: 0.7;
+      }
+
+      [data-ui] .ruler {
+        position: relative;
+        height: 20px;
+        margin-top: 4px;
+      }
+
+      [data-ui] .ruler span {
+        position: absolute;
+        transform: translateX(-50%);
+        font-size: 10px;
+        color: var(--violet);
+      }
+
+      [data-ui] .ruler::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 9px;
+        height: 1px;
+        background: var(--border);
+      }
+
+      [data-ui] .split {
+        font-size: 11px;
+        color: var(--dim);
+        padding: 10px 0 2px;
+      }
+
+      .cols {
+        display: flex;
+        gap: 3rem;
+        align-items: flex-start;
+        flex-wrap: wrap;
+      }
+
+      ol.findings {
+        padding-left: 1.4rem;
+      }
+
+      ol.findings li {
+        margin-bottom: 0.75rem;
+      }
+
+      .num {
+        color: var(--fg);
+        font-weight: 600;
+      }
+
+      dl.decisions {
+        margin: 0;
+      }
+
+      dl.decisions dt {
+        color: var(--fg);
+        font-weight: 600;
+        margin-top: 1.25rem;
+      }
+
+      dl.decisions dd {
+        margin: 0.25rem 0 0;
+        color: var(--muted);
+        max-width: 62ch;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>The sidebar's row grammar</h1>
+      <p class="lede">
+        A wireframe for the left panel in the screenshot. Four section headers answer the same three
+        questions in three ways, and a row's label, status and time move from row to row. Nothing here is
+        implemented.
+      </p>
+      <p class="meta">
+        Task <code>task_1792178616511_2</code>, board <code>item_1791124015994038629</code>. Branch
+        <code>worktree/fix-the-inconsistent-ui-1792178575766</code>, base <code>71ebc364c</code>. Written
+        2026-10-16.
+      </p>
+    </header>
+
+    <main>
+      <h2>What was measured, and what was not</h2>
+      <p>
+        I booted a second pabrik instance from the same binary and the same
+        <code>src/apps/desktop/dist/</code> build the server on port 8081 serves, on port 8080, with the
+        auth gate off, and read the rendered DOM with <code>agent-browser</code>. Port 8081 was never
+        touched. Every number below comes from that reading unless it is marked as read from source.
+      </p>
+      <p>
+        Two limits, stated up front. The anonymous scope that instance runs under had no sessions of its
+        own, so <strong>no RECENT row with data was in front of me</strong>: the chat-row findings are read
+        from <code>ChatsList.vue</code> and cross-checked against the screenshot, not measured. And the
+        workspace I measured belongs to a sibling session's debug loop, so the rows are not the user's
+        rows. The container, the tokens, the four headers, the project tree and the nesting count are real
+        measurements.
+      </p>
+      <div class="panel">
+        <h3 style="margin-top: 0">Rendered values, at a 1280x900 viewport</h3>
+        <ul>
+          <li>Sidebar container 288px. Tokens resolve exactly as declared: gutter 12, row 32, indent 12, hit 24.</li>
+          <li>App header 48px tall, bottom border 1px <code>#282727</code>.</li>
+          <li>New Chat row 40px tall, gutter 12. Its pencil glyph is centred in a 24px hit box, so the ink lands at x=19.4.</li>
+          <li>Section headers all 28px tall, gutter 12, chevron ink at x=10.5, title at x=28.5, <code>text-micro</code> 10px.</li>
+          <li>Trailing header controls: sort, projects plus and documents plus are each 24x24 at x=251, right edge 275.</li>
+          <li>Counts: projects and documents at opacity 0.7, pinned at 0.6. Pinned has no trailing control at all.</li>
+          <li>Project row 32px tall, x=13, width 274, chevron at x=25, name at x=41.5.</li>
+          <li><strong>Nested buttons: 3.</strong> The sort toggle, the projects plus and the documents plus each sit inside a header button.</li>
+        </ul>
+      </div>
+
+      <h2>Implemented, measured on the built app</h2>
+      <p>
+        The fix is on this branch. I rebuilt the frontend, served the worktree's own <code>dist/</code> on a
+        private port and read the rendered panel with <code>agent-browser</code>. These numbers are from the
+        running app, not from the crop below.
+      </p>
+      <div class="panel">
+        <ul>
+          <li>Project row box <code>[13..287]</code> to <code>[0..287]</code>, and its label <code>41</code> to <code>28</code>.</li>
+          <li>A task inside an expanded project: box <code>[0..287]</code>, label <code>28</code>. The same two numbers as a project row, which is what flat means here.</li>
+          <li>The New Chat label <code>44</code> to <code>28</code>.</li>
+          <li>The four headers now all sit at the gutter, 28px tall, each with a count. Pinned and Recent had none of those three, and Recent had no count at all.</li>
+          <li>Buttons nested inside a button: <code>3</code> to <code>0</code>.</li>
+          <li>Vertical rules inside the panel: <code>2</code> to <code>1</code>, and the one left is the panel's own right edge.</li>
+          <li>No list carries a left margin or a left border any more.</li>
+        </ul>
+      </div>
+
+      <h2>Before: the panel as it renders today</h2>
+      <p>
+        Each numbered callout is a deviation with a file and a line. The strip under the crop pins the
+        measured columns, so the disagreement is visible rather than asserted.
+      </p>
+
+      <div class="cols">
+        <figure data-ui>
+          <div class="cap">agentic coding, as it renders today: the empty strip and the rail, marked above</div>
+          <div class="crop">
+            <div class="panel-mock">
+              <div class="hdr">
+                <span class="ws">agentic coding <span style="font-size: 10px">&#9662;</span></span>
+                <span class="hdrlinks"><span>Settings</span><span>Logout</span></span>
+              </div>
+              <div class="newchat">
+                <span class="glyph24">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 20h4L20 8l-4-4L4 16v4z" />
+                  </svg>
+                </span>
+                <span>New Chat</span>
+              </div>
+
+              <div class="sect norule">
+                <span class="chev">&#9654;</span><span class="stitle">Pinned</span>
+                <span class="scount dim60">1</span>
+              </div>
+              <div class="row">
+                <span class="label">check-memory-usage-pabrik</span>
+                <span class="meta">21m</span>
+              </div>
+
+              <div class="sect">
+                <span class="chev">&#9654;</span><span class="stitle">Recent</span>
+                <span class="sact first">&#9660;</span>
+              </div>
+              <div class="row">
+                <span class="label"
+                  ><span class="branch"
+                    ><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 3v12M18 9a3 3 0 100-6 3 3 0 000 6zM6 21a3 3 0 100-6 3 3 0 000 6zM18 9a9 9 0 01-9 9" /></svg></span
+                  >Simplify feature Compaction</span
+                >
+                <span class="meta"><span class="chip">22m 46s</span></span>
+              </div>
+              <div class="row sel">
+                <span class="label"
+                  ><span class="branch"
+                    ><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 3v12M18 9a3 3 0 100-6 3 3 0 000 6zM6 21a3 3 0 100-6 3 3 0 000 6zM18 9a9 9 0 01-9 9" /></svg></span
+                  >workflow.zig stuck its hanging, when use that rea mcp</span
+                >
+                <span class="meta"><span class="chip">23m 00s</span></span>
+              </div>
+              <div class="row">
+                <span class="label">greeting<span class="mark"><span class="dot"></span></span></span>
+                <span class="meta">21m</span>
+              </div>
+              <div class="row hardsel">
+                <span class="label">windows can have system tray, in linux and mac</span>
+                <span class="meta">14m</span>
+              </div>
+              <div class="row">
+                <span class="label">Enhance kanban task add<span class="subagent">tools kimi</span></span>
+                <span class="meta"><span class="staledot"></span>35m</span>
+              </div>
+              <div class="row">
+                <span class="label">scope the config db for better q</span>
+                <span class="meta">4h</span>
+              </div>
+
+              <div class="sect">
+                <span class="chev">&#9654;</span><span class="stitle">Projects</span>
+                <span class="scount">15</span>
+                <span class="runind"><i></i>3 running</span>
+                <span class="sact first">+</span>
+              </div>
+              <div class="rail-old" data-rail="today">
+                <div class="prow sel-hc" style="margin-top: 6px">
+                  <span class="chev">&#9660;</span><span class="label">pabrik</span>
+                  <span class="meta"><span class="chip">22m 46s</span></span>
+                </div>
+                <div class="prow"><span class="chev">&#9654;</span><span class="label">kabelweb</span><span class="meta flat">10</span></div>
+                <div class="prow"><span class="chev">&#9654;</span><span class="label">website pabrik</span><span class="meta flat">8</span></div>
+                <div class="prow"><span class="chev">&#9654;</span><span class="label">ruangsql</span><span class="meta flat">1</span></div>
+              </div>
+
+              <div class="sect">
+                <span class="chev">&#9654;</span><span class="stitle">Documents</span>
+                <span class="scount">4</span>
+                <span class="sact first">+</span>
+              </div>
+              <div class="rail-doc">
+                <div class="docrow"><span class="trunc">models.dev catalog + profile editor</span></div>
+                <div class="docrow"><span class="trunc">Plan: simplify the Settings editor</span></div>
+                <div class="docrow"><span class="trunc">Plan: move Profiles into Workspace sett&#8230;</span></div>
+                <div class="docrow"><span class="trunc">Markdown</span></div>
+              </div>
+
+              <div class="ruler"><span style="left: 12px">12</span><span style="left: 28.5px">28.5</span><span style="left: 41.5px">41.5</span><span style="left: 44px">44</span></div>
+            </div>
+            <div class="edge" aria-hidden="true"></div>
+          </div>
+        </figure>
+
+        <div>
+          <ol class="findings">
+            <li>
+              <span class="num">&#9312;</span> The New Chat glyph is centred in a 24px hit box, so its ink
+              sits at x=19.4 while a section chevron's ink sits at 10.5 and a chat label starts at 12. Three
+              left edges in the first 50px, and the New Chat label lands at 44.
+              <code>Sidebar.vue:1155</code>.
+            </li>
+            <li>
+              <span class="num">&#9313;</span> Pinned is the only header with no trailing control, and its
+              count is <code>opacity-60</code> where projects and documents render 0.7.
+              <code>ChatsList.vue:1116</code>, <code>ProjectsList.vue:315</code>,
+              <code>DocumentsList.vue:130</code>. Measured: 0.6 against 0.7.
+            </li>
+            <li>
+              <span class="num">&#9314;</span> Recent is the only header with no count, and one of three
+              that owns a trailing control. Three headers, three grammars.
+              <code>ChatsList.vue:1274</code>.
+            </li>
+            <li>
+              <span class="num">&#9315;</span> The sort control is a <code>&lt;button&gt;</code> inside the
+              header <code>&lt;button&gt;</code>, and so are the projects plus and the documents plus.
+              Measured nested buttons: 3. <code>ChatsList.vue:1274</code> and <code>1291</code>,
+              <code>ProjectsList.vue:295</code> and <code>338</code>, <code>DocumentsList.vue:108</code> and
+              <code>134</code>.
+            </li>
+            <li>
+              <span class="num">&#9316;</span> The branch badge lives inside the truncating title span, so a
+              chat with a change request starts its label about 20px right of one without: rows 1 and 2 of
+              the crop against rows 4 and 5. <code>ChatsList.vue:1152</code> and <code>1338</code>.
+            </li>
+            <li>
+              <span class="num">&#9317;</span> The same trailing slot is a filled pill on a running row and
+              bare 60% text on an idle one. <code>ChatsList.vue:1231</code> against
+              <code>WorkerElapsedChip.vue:118</code>.
+            </li>
+            <li>
+              <span class="num">&#9318;</span> The status mark is a second trailing slot: it sits inline in
+              the label flow, so its x moves with the label length, while the time is right-aligned.
+              <code>ChatsList.vue:1179</code>.
+            </li>
+            <li>
+              <span class="num">&#9319;</span> A sub-agent suffix is rendered monospace, which the app's own
+              type system reserves for code. <code>ChatsList.vue:1222</code> and <code>1414</code>.
+            </li>
+            <li>
+              <span class="num">&#9320;</span> The pinned and the recent rows are two copies of one block of
+              markup, and they have already drifted: the elapsed chip's test id is
+              <code>chat-elapsed-chip</code> in one copy and <code>chat-nav-elapsed-chip</code> in the
+              other. <code>ChatsList.vue:1257</code> against <code>1458</code>.
+            </li>
+            <li>
+              <span class="num">&#9321;</span> Two selected-row treatments. A project row hardcodes
+              <code>#2e2d29</code> on <code>#fff</code>; a chat or document row uses
+              <code>--semantic-active-bg</code> on <code>--semantic-active-text</code>, measured as
+              <code>#282727</code> on <code>#c5c9c5</code>. <code>WorkspaceItem.vue:498</code> against
+              <code>ChatsList.vue:1143</code>.
+            </li>
+            <li>
+              <span class="num">&#9322;</span> The project label sits at 41.5, not with the section titles at
+              28.5: the list adds a 12px margin and a 1px rail on top of the row's own 12px gutter, which
+              the comment promising the alignment does not count. <code>ProjectsList.vue:449</code> against
+              <code>WorkspaceItem.vue:510</code>.
+            </li>
+            <li>
+              <span class="num">&#9323;</span> Pinned draws its separating rule under its rows, so the rule
+              moves when the section expands, where the other three draw it under the header.
+              <code>ChatsList.vue:1096</code> against <code>1274</code>. The spacing spec pins Recent,
+              Projects and Documents, so Pinned is the one header nothing guards.
+              <code>Sidebar.spacing.spec.ts:113</code>.
+            </li>
+            <li>
+              <span class="num">&#9325;</span> The projects list and the documents list each sit on a 12px
+              left margin, so every row inside them starts at <code>13</code> while a RECENT row starts at
+              <code>0</code>. Measured in the crops: project and document rows <code>[13..288]</code>,
+              RECENT rows <code>[0..288]</code>. That 13px strip runs the whole height of both sections and
+              stops dead at RECENT, which is why it reads as a margin that appears halfway down the panel.
+              Select a project and the inset shows again in its highlight, because the background stops
+              where the margin starts. <code>ProjectsList.vue:449</code>,
+              <code>DocumentsList.vue:194</code>.
+            </li>
+            <li>
+              <span class="num">&#9326;</span> The same two lists draw a 1px rule down their left edge, from
+              the first row to the last, which is the hairline divider the app's own house style bans
+              outright and the second half of why the strip reads as its own column. It is a left border on
+              the list element, not on a row. A project's task list does it a third time at
+              <code>WorkspaceItem.vue:613</code>.
+            </li>
+          </ol>
+        </div>
+      </div>
+
+      <h2>After: one grammar for every line in the panel</h2>
+      <p>
+        One mark column and one label column, for the whole panel. Every row puts its label at 28 and keeps
+        the 16px slot at the gutter for at most one mark: a disclosure chevron, a branch badge, a status
+        glyph, or nothing at all. The projects list has no indent of its own, so nothing opens an empty strip
+        beside the gutter. Only a third level, a task under a project, takes one step more, at 44.
+      </p>
+
+      <div class="cols">
+        <div>
+          <figure data-ui>
+            <div class="cap">agentic coding, proposed: no indent, no rail, every label at 28</div>
+            <div class="crop">
+              <div class="panel-mock">
+                <div class="hdr">
+                  <span class="ws">agentic coding <span style="font-size: 10px">&#9662;</span></span>
+                  <span class="hdrlinks"><span>Settings</span><span>Logout</span></span>
+                </div>
+                <div class="newchat tight">
+                  <span class="mark-col">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M4 20h4L20 8l-4-4L4 16v4z" />
+                    </svg>
+                  </span>
+                  <span>New Chat</span>
+                </div>
+
+                <div class="sect tight">
+                  <span class="chev box16">&#9654;</span><span class="stitle">Pinned</span>
+                  <span class="scount">1</span>
+                </div>
+                <div class="row tight">
+                  <span class="mark-col" aria-hidden="true"></span>
+                  <span class="label">check-memory-usage-pabrik</span>
+                  <span class="meta flat">21m</span>
+                </div>
+
+                <div class="sect tight">
+                  <span class="chev box16">&#9654;</span><span class="stitle">Recent</span>
+                  <span class="scount">18</span>
+                  <span class="sact first">&#9660;</span>
+                </div>
+                <div class="row tight">
+                  <span class="mark-col"
+                    ><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true" style="color: var(--violet)">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 3v12M18 9a3 3 0 100-6 3 3 0 000 6zM6 21a3 3 0 100-6 3 3 0 000 6zM18 9a9 9 0 01-9 9" /></svg
+                  ></span>
+                  <span class="label">Simplify feature Compaction</span>
+                  <span class="meta flat"><span style="color: var(--yellow)">22m 46s</span></span>
+                </div>
+                <div class="row sel tight">
+                  <span class="mark-col"
+                    ><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true" style="color: var(--violet)">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 3v12M18 9a3 3 0 100-6 3 3 0 000 6zM6 21a3 3 0 100-6 3 3 0 000 6zM18 9a9 9 0 01-9 9" /></svg
+                  ></span>
+                  <span class="label">workflow.zig stuck its hanging, when use that rea mcp</span>
+                  <span class="meta flat"><span style="color: var(--yellow)">23m 00s</span></span>
+                </div>
+                <div class="row tight">
+                  <span class="mark-col" aria-hidden="true"></span>
+                  <span class="label">greeting</span>
+                  <span class="meta flat"><span class="dot"></span>21m</span>
+                </div>
+                <div class="row tight">
+                  <span class="mark-col" aria-hidden="true"></span>
+                  <span class="label">windows can have system tray, in linux and mac</span>
+                  <span class="meta flat">14m</span>
+                </div>
+                <div class="row tight">
+                  <span class="mark-col"
+                    ><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true" style="color: var(--violet)">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M5 8l7-5 7 5M12 3v18" /></svg
+                  ></span>
+                  <span class="label">Enhance kanban task add</span>
+                  <span class="meta flat"><span class="staledot"></span>35m</span>
+                </div>
+                <div class="row tight">
+                  <span class="mark-col" aria-hidden="true"></span>
+                  <span class="label">scope the config db for better q</span>
+                  <span class="meta flat">4h</span>
+                </div>
+
+                <div class="sect tight">
+                  <span class="chev box16">&#9654;</span><span class="stitle">Projects</span>
+                  <span class="scount">15</span>
+                  <span class="runind" style="margin-left: auto"><i></i>3 running</span>
+                  <span class="sact">+</span>
+                </div>
+                <div class="row tight sel">
+                  <span class="mark-col chev box16">&#9660;</span><span class="label">pabrik</span>
+                  <span class="meta flat"><span style="color: var(--yellow)">22m 46s</span></span>
+                </div>
+                <div class="row tight">
+                  <span class="mark-col"><span class="dot" style="background: var(--aqua)"></span></span>
+                  <span class="label">wear one row grammar</span>
+                  <span class="meta flat">3</span>
+                </div>
+                <div class="row tight">
+                  <span class="mark-col chev box16">&#9654;</span><span class="label">the left edge is the gutter, nothing else</span>
+                  <span class="meta flat">0</span>
+                </div>
+                <div class="row tight">
+                  <span class="mark-col chev box16">&#9654;</span><span class="label">kabelweb</span><span class="meta flat">10</span>
+                </div>
+                <div class="row tight">
+                  <span class="mark-col chev box16">&#9654;</span><span class="label">website pabrik</span><span class="meta flat">8</span>
+                </div>
+                <div class="row tight">
+                  <span class="mark-col chev box16">&#9654;</span><span class="label">ruangsql</span><span class="meta flat">1</span>
+                </div>
+
+                <div class="sect tight">
+                  <span class="chev box16">&#9654;</span><span class="stitle">Documents</span>
+                  <span class="scount">4</span>
+                  <span class="sact first">+</span>
+                </div>
+                <div class="row tight">
+                  <span class="mark-col" aria-hidden="true"></span>
+                  <span class="label">models.dev catalog + profile editor</span>
+                </div>
+                <div class="row tight">
+                  <span class="mark-col" aria-hidden="true"></span>
+                  <span class="label">Plan: simplify the Settings editor</span>
+                </div>
+                <div class="row tight">
+                  <span class="mark-col" aria-hidden="true"></span>
+                  <span class="label">Plan: move Profiles into Workspace sett&#8230;</span>
+                </div>
+                <div class="row tight">
+                  <span class="mark-col" aria-hidden="true"></span>
+                  <span class="label">Markdown</span>
+                </div>
+
+                <div class="ruler"><span style="left: 12px">mark 12</span><span style="left: 28px">label 28</span></div>
+              </div>
+              <div class="edge" aria-hidden="true"></div>
+            </div>
+          </figure>
+
+          <figure data-ui>
+            <div class="cap">The trailing slot, before and after</div>
+            <div class="crop">
+              <div class="panel-mock">
+                <div class="split">today: a pill on one row, bare text on the next</div>
+                <div class="row">
+                  <span class="label">no catalog yet, why</span>
+                  <span class="meta"><span class="chip">22m 46s</span></span>
+                </div>
+                <div class="row">
+                  <span class="label">hanging when the rea mcp is used</span>
+                  <span class="meta">23m</span>
+                </div>
+                <div class="split">proposed: one weight, colour carries the state</div>
+                <div class="row">
+                  <span class="label">no catalog yet, why</span>
+                  <span class="meta flat"><span style="color: var(--yellow)">22m 46s</span></span>
+                </div>
+                <div class="row">
+                  <span class="label">hanging when the rea mcp is used</span>
+                  <span class="meta flat">23m</span>
+                </div>
+                <div class="row">
+                  <span class="label">Enhance kanban task add</span>
+                  <span class="meta flat"
+                    ><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true" style="color: var(--violet)">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M5 8l7-5 7 5M12 3v18" /></svg
+                    ><span class="dot"></span>35m</span
+                  >
+                </div>
+                <div class="row sel">
+                  <span class="label">every label starts at the same x</span>
+                  <span class="meta flat"
+                    ><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true" style="color: var(--violet)">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 3v12M18 9a3 3 0 100-6 3 3 0 000 6zM6 21a3 3 0 100-6 3 3 0 000 6zM18 9a9 9 0 01-9 9" /></svg
+                    ><span style="color: var(--yellow)">23m 00s</span></span
+                  >
+                </div>
+              </div>
+              <div class="edge" aria-hidden="true"></div>
+            </div>
+          </figure>
+        </div>
+
+        <div>
+          <figure data-ui>
+            <div class="cap">The four headers, before and after</div>
+            <div class="crop">
+              <div class="panel-mock">
+                <div class="split">today: no count, no action, a sentence, two opacities</div>
+                <div class="sect norule">
+                  <span class="chev">&#9654;</span><span class="stitle">Pinned</span>
+                  <span class="scount dim60">1</span>
+                </div>
+                <div class="sect">
+                  <span class="chev">&#9654;</span><span class="stitle">Recent</span>
+                  <span class="sact first">&#9660;</span>
+                </div>
+                <div class="sect">
+                  <span class="chev">&#9654;</span><span class="stitle">Projects</span>
+                  <span class="scount">15</span>
+                  <span class="runind"><i></i>3 running</span>
+                  <span class="sact first">+</span>
+                </div>
+                <div class="sect">
+                  <span class="chev">&#9654;</span><span class="stitle">Documents</span>
+                  <span class="scount">0</span>
+                  <span class="sact first">+</span>
+                </div>
+                <div class="split">proposed: title, count, then one action pushed right</div>
+                <div class="sect tight">
+                  <span class="chev box16">&#9654;</span><span class="stitle">Pinned</span>
+                  <span class="scount">1</span>
+                </div>
+                <div class="sect tight">
+                  <span class="chev box16">&#9654;</span><span class="stitle">Recent</span>
+                  <span class="scount">18</span>
+                  <span class="sact first">&#9660;</span>
+                </div>
+                <div class="sect tight">
+                  <span class="chev box16">&#9654;</span><span class="stitle">Projects</span>
+                  <span class="scount">15</span>
+                  <span class="runind" style="margin-left: auto"><i></i>3 running</span>
+                  <span class="sact">+</span>
+                </div>
+                <div class="sect tight">
+                  <span class="chev box16">&#9654;</span><span class="stitle">Documents</span>
+                  <span class="scount">0</span>
+                  <span class="sact first">+</span>
+                </div>
+              </div>
+              <div class="edge" aria-hidden="true"></div>
+            </div>
+          </figure>
+
+          <h3>Everything the row knows, in one right-aligned group</h3>
+          <p>
+            The mark column is on the left, one slot for one mark, and the trailing group is right-aligned
+            in a fixed order: status mark, then time. The branch badge leaves the label for the mark column,
+            so a chat with a pull request keeps the same label edge as one without. The status mark keeps its
+            meaning and loses its roam. The time is always <code>text-micro</code> and tabular, so the column
+            right of the label is one width no matter what the row has to say.
+          </p>
+
+          <h3>One time treatment</h3>
+          <p>
+            Idle shows a bare duration at 70% in <code>--semantic-text-dim</code>. Running shows the same
+            bare duration at full opacity in <code>--color-yellow</code>, with seconds. Stale shows the same
+            value in <code>--color-orange</code>. Colour and precision carry the state, so the slot keeps one
+            weight and the pill stops competing with the pulsing orange dot, which is the app's only other
+            filled mark.
+          </p>
+
+          <h3>One selected row</h3>
+          <p>
+            <code>--semantic-active-bg</code> on <code>--semantic-active-text</code> with a 2px inset violet
+            bar, on every kind of row. The hardcoded pair goes.
+          </p>
+
+          <h3>One set of columns</h3>
+          <p>
+            Two columns, at every depth, with no step between them. The mark column is 16px at the gutter,
+            so it runs 12 to 28, and every label in the panel starts at 28: a section title, a chat, a
+            document, a project, and a task under a project. Nothing indents, so nothing opens a strip, and
+            the panel reads as one list rather than as four that happen to share an edge. What nesting there
+            is, is carried by order and by the header a row sits under. No vertical rule is drawn anywhere:
+            a line down the left of a list is the hairline divider the app's house style bans.
+          </p>
+        </div>
+      </div>
+
+      <h2>Margins and rules removed</h2>
+      <p>
+        Read off the two crops, in pixels, at the panel's left edge. The row box is the clickable box, so
+        this is also where a hover or selected background begins and ends.
+      </p>
+      <div class="panel">
+        <ul>
+          <li>
+            <strong>12px left margin on the list</strong> (<code>ProjectsList.vue:449</code>,
+            <code>DocumentsList.vue:194</code>). Measured: a project or document row's box is
+            <code>[13..288]</code> while a RECENT row's is <code>[0..288]</code>. Removed: every row's box
+            becomes <code>[0..288]</code>, and a selected row's background spans the panel.
+          </li>
+          <li>
+            <strong>1px left border on the same two lists</strong> (<code>ProjectsList.vue:449</code>,
+            <code>DocumentsList.vue:194</code>, and a project's task list at
+            <code>WorkspaceItem.vue:613</code>). Measured: one vertical rule in the panel. Removed: zero.
+          </li>
+          <li>
+            <strong>8px of padding under the last project row</strong>
+            (<code>ProjectsList.vue:435</code>). Measured: 8px between the last row's box and the block's
+            end. Removed, so the section's rhythm is the header's 28px and the row's 32px alone.
+          </li>
+          <li>
+            <strong>6px of top margin on the first project row</strong>
+            (<code>ProjectsList.vue:466</code>). Removed for the same reason.
+          </li>
+          <li>
+            <strong>The same pattern a level down</strong> (<code>WorkspaceItem.vue:613</code> and
+            <code>:725</code>): a 12px left margin, a 12px left padding and a 1px rule on a project's task
+            and design-page lists. Measured in the crop: a nested task's mark sits at <code>12</code> and
+            its label at <code>28</code>, the same two columns as every other row. Removed: the margin and
+            the rule, and no step replaces them.
+          </li>
+        </ul>
+      </div>
+
+      <h2>Decisions a reviewer can flip</h2>
+      <dl class="decisions">
+        <dt>Nothing indents. Not a project, not a task under a project, not a document.</dt>
+        <dd>
+          The first cut indented the projects list by a step and a rail, which put the project chevron at 28
+          and the name at 44 and opened a 24px empty strip down the left of the tree. The second kept one
+          step for a task inside a project. Both are gone: every row in the panel shares the same two
+          columns, so the only thing that changes from row to row is the label. The cost is 16px of label
+          width on the chat and document rows, which used to start at 12, and any visible step between a
+          project and the tasks inside it, which now have to be read from their order under it. Flip this if
+          nesting needs a visible step more than flatness is worth.
+        </dd>
+        <dt>The branch badge goes in the mark column, not the trailing group.</dt>
+        <dd>
+          Once the mark column exists, the badge belongs there: it is the row's one mark and the column is
+          what stops it from moving the label. Putting it in the trailing group instead would leave the mark
+          column to the chevrons alone and let the chat and document labels sit at 12, which spends 16px less
+          on a mark column most chat rows do not use, at the price of two label edges in the panel instead of
+          one.
+        </dd>
+        <dt>New Chat stays 40px but takes the shared columns.</dt>
+        <dd>
+          Shrinking it to the 32px row would make it recede, and it is the one action that always works. It
+          keeps its height and its bare-text treatment, and puts its glyph at 12 and its label at 28, so the
+          left rail runs unbroken from the header to the last document.
+        </dd>
+        <dt>The running indicator keeps the words and moves beside the action.</dt>
+        <dd>
+          A dot alone would be shorter, but the number of running workers is information. It moves out of the
+          count position, where it read as part of the project total, into the trailing group beside the
+          plus.
+        </dd>
+      </dl>
+
+      <h2>Where the fix should be guarded</h2>
+      <p>
+        <code>Sidebar.spacing.spec.ts</code> is a source scanner: it reads class strings and asserts that
+        they contain a token. That is why it missed all of this. It cannot see nesting, it cannot see that
+        two files hardcode two different greys, and it never looked at Pinned at all.
+      </p>
+      <p>
+        A rendered assertion would have caught every finding above. Mount the sidebar against a fixture with
+        one pinned chat, one running chat, one chat with a branch, one project with a task and one document,
+        then assert observable geometry: every row's height equals the row token, every label's left offset
+        is one of the three documented columns, every header's count and action are present and aligned, no
+        button contains a button, and a selected chat row and a selected project row share one background.
+        That is a behaviour test of the contract rather than a grep of its spelling: it stays green through a
+        rename or a class reshuffle, and goes red the moment a row drifts.
+      </p>
+
+      <h2>Gate readings</h2>
+      <div class="panel" id="gate-readings">
+        <h3 style="margin-top: 0">Source scanner</h3>
+        <p>
+          <code>lint.mjs</code>: <strong>0 FAIL, 0 WARN</strong>. One line carries an explicit
+          <code>taste-skill-ignore</code>: the before crop reproduces the current monospace sub-agent
+          label, so the mock has to be monospace exactly there, and nowhere else.
+        </p>
+
+        <h3>Inspector</h3>
+        <p>
+          <code>inspect.mjs</code> at 1440, 768 and 390: <strong>4 interface fragments</strong>, each
+          measured at 320 by 284 to 675, so all four count toward the picture floor. The panel inside each
+          crop measures exactly 288px. Body 16px at 1.6 leading, headline 2 lines at every width, no
+          horizontal overflow, 9.3 screens.
+        </p>
+        <p><strong>Result: 1 FAIL, 3 WARN.</strong> All four are in the class a spec document cannot honestly satisfy, and each is answered below rather than hidden from the meter.</p>
+        <ul>
+          <li>
+            <strong>still-page</strong> (FAIL, motion floor of 8 moving elements). A wireframe whose subject
+            is a static row rhythm has nothing to move. Adding entrance animations would make the document
+            perform the very thing it describes as absent, and the mock's rows are the evidence, so they
+            stay still.
+          </li>
+          <li>
+            <strong>no-real-pictures</strong> and <strong>no-footage</strong>. The subject is a 288px
+            interface panel. There is no photograph of a sidebar's label column, and the only honest
+            imagery is the interface itself, which the four fragments are.
+          </li>
+          <li>
+            <strong>first-action</strong>. The first screen is a title and a measurement table. The action
+            this document asks for is a human review, which is a reply, not a button.
+          </li>
+        </ul>
+        <p class="meta">
+          I cannot look at the inspector's screenshots: reading a jpg returns bytes, not an image. The
+          witness is the DOM assertion below, not a claim that I looked.
+        </p>
+
+        <h3>The DOM assertion, which is what proves the crop encodes the fix</h3>
+        <p>
+          Loaded over <code>file://</code> and measured with <code>agent-browser eval</code>. Every number is
+          a left edge in px, relative to the crop's own left edge.
+        </p>
+        <ul>
+          <li>
+            Before, chat labels: <code>12, 32, 32, 12, 12, 12, 12</code>. The two rows carrying a branch
+            badge start 20px further right than the five that do not, which is the jitter, measured.
+          </li>
+          <li>
+            After, every label in the crop: <code>28</code>, every one of them. The branch badge moved into
+            the mark column, the indent is gone, and the jitter with it.
+          </li>
+          <li>Before, project name <code>41.5</code> and section title <code>28.5</code>: exactly what the live app renders. After: <code>28</code> for a project name, a document title, a section title, a chat and a nested task alike.</li>
+          <li>Row boxes, before: project rows <code>[13..288]</code>, document rows <code>[13..288]</code>, RECENT rows <code>[0..288]</code>. After: all seventeen rows <code>[0..288]</code> with a left margin of <code>0</code>.</li>
+          <li>The selected row's background, before: <code>[13..288]</code> in <code>rgb(46, 45, 41)</code>, the hardcoded pair. After: <code>[0..288]</code> in <code>rgb(40, 39, 39)</code>, <code>--semantic-active-bg</code>.</li>
+          <li>Marks that exist in the proposed panel, by x: <code>12</code>, all nine of them, the nested task's included. Marks are the only thing in that column; a row without one leaves it empty, which is what buys the single label edge.</li>
+          <li>After, every row in the crop measures <code>32</code>px, the row token, at every depth, with its label at <code>28</code>.</li>
+          <li>Vertical rules inside the panel: <code>1</code> today, the projects list's rail, and <code>0</code> proposed. Every element in the proposed crop measures a zero left and right border.</li>
+          <li>Before, the New Chat label lands at <code>44</code>. After, at <code>28</code>, on the section title's edge.</li>
+          <li>Nested buttons in the wireframe: <code>0</code>. The header's own control count is unchanged at three.</li>
+        </ul>
+      </div>
+
+      <h2>Not in this wireframe</h2>
+      <ul>
+        <li>The kanban board, the right sidebar and the chat transcript. This is the left panel only.</li>
+        <li>The chat list's virtualiser, paging and drag reorder, which stay as they are.</li>
+        <li>Whether Projects should stop being a single-workspace tree. The screenshot's 15 projects all
+          belong to one workspace, which is a separate question from row grammar.</li>
+      </ul>
+    </main>
+  </body>
+</html>

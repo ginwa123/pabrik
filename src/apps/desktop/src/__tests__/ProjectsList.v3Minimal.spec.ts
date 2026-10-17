@@ -89,16 +89,26 @@ describe('ProjectsList v2 — count, no search, compact indent', () => {
     wrapper.unmount()
   })
 
-  // Was: `ul.ml-1.pl-2` — a class-string grep. That locked in the hand-rolled 4px + 8px indent, one
-  // of the four inconsistent left edges in the panel. The indent is a token now, so the assertion
-  // is on the token. The full row contract lives in Sidebar.spacing.spec.ts.
-  it('indents the project list by one --sb-indent step', async () => {
+  it('nests no control inside the section header', async () => {
     const wrapper = mountList()
     await nextTick()
-    const ul = wrapper.find('ul.ml-\\[var\\(--sb-indent\\)\\]')
+    expect(wrapper.findAll('button button')).toHaveLength(0)
+    wrapper.unmount()
+  })
+
+  // The list carried a 12px left margin and a 1px rail, which inset every project row by 13px against
+  // a flush RECENT row. jsdom resolves no Tailwind, so the witness is the class list; the measured box
+  // lives in the functional UI suite.
+  it('renders the project list flush, with no indent and no rail', async () => {
+    const wrapper = mountList()
+    await nextTick()
+    const ul = wrapper.find('ul')
     expect(ul.exists()).toBe(true)
-    // The row supplies its own gutter, so the guide never double-counts.
-    expect(ul.classes()).not.toContain('pl-2')
+    expect(ul.classes().filter((c) => /(^|:)ml-|(^|:)pl-|border-l/.test(c))).toEqual([])
+    // Not vacuous: the rows are still there and still selectable.
+    expect(wrapper.html()).toContain('item_a')
+    expect(wrapper.html()).toContain('item_b')
+    expect(wrapper.find('ul').classes()).toContain('space-y-0')
     wrapper.unmount()
   })
 })

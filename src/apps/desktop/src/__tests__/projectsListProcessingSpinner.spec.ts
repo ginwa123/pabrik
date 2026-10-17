@@ -156,7 +156,7 @@ describe('ProjectsList section-header running indicator', () => {
     await nextTick()
     setBusy(['task_a'])
     await nextTick()
-    const header = wrapper.findAll('button').find((b) => b.text().includes('Projects'))!
+    const header = wrapper.find('[data-testid="projects-section-header"]')
     const html = header.html()
     const chevronIdx = html.indexOf('▶')
     const indIdx = html.indexOf('workspace-running-indicator')
