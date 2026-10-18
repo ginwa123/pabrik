@@ -478,6 +478,7 @@ fn reportClientError(client: *const vmd_client.Client) noreturn {
 // `zig test` only reaches a file's `test` blocks through a reference from the
 // test root, and this binary is the root of the vmd suite.
 test {
+    _ = @import("egress.zig");
     _ = @import("policy.zig");
     _ = @import("reconciler.zig");
     _ = @import("rpc.zig");
