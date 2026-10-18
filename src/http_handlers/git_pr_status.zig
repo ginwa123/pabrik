@@ -5,6 +5,72 @@ const gserverz = pabrik_core.gserverz;
 const pr_provider = pabrik_core.pr_provider;
 const pr_cli = pabrik_core.pr_cli;
 const run_captured = @import("helpers").run_captured;
+const workspace_fs = @import("../agentic_loop/workspace_fs.zig");
+const runtime_mode = @import("../runtime_mode.zig");
+
+/// The guest git budget, matching the host spawns this module replaced.
+const git_timeout_ms: u32 = 20_000;
+const git_output_bytes: usize = 256 * 1024;
+
+/// Which git may answer about `path`, decided by the process's own database in
+/// `--saas` and by nothing at all in local mode.
+fn routeForPath(allocator: std.mem.Allocator, path: []const u8) workspace_fs.Route {
+    const di = pabrik_core.getSingleton() catch null;
+    return workspace_fs.routeForPath(allocator, if (di) |d| d.db else null, path);
+}
+
+/// Is `path` a work tree? In `--saas` the question goes to the workspace's VM,
+/// and a VM that cannot answer says no — never "let the host's git look".
+fn isGitRepository(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    route: *workspace_fs.Route,
+    path: []const u8,
+) bool {
+    if (route.guestFs()) |fs| {
+        const exec = fs.runGit(path, &.{ "rev-parse", "--git-dir" }, git_timeout_ms, git_output_bytes) catch return false;
+        defer exec.deinit(allocator);
+        return !exec.timed_out and exec.code == 0;
+    }
+    if (route.* == .unavailable) return false;
+    const check = std.process.run(allocator, io, .{ .argv = &.{ "git", "-C", path, "rev-parse", "--git-dir" } }) catch return false;
+    defer {
+        allocator.free(check.stdout);
+        allocator.free(check.stderr);
+    }
+    return check.term.exited == 0;
+}
+
+/// `git remote get-url origin` in `path`, from whichever side may answer.
+fn remoteOriginUrl(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    route: *workspace_fs.Route,
+    path: []const u8,
+) ?[]u8 {
+    if (route.guestFs()) |fs| {
+        const exec = fs.runGit(path, &.{ "remote", "get-url", "origin" }, git_timeout_ms, git_output_bytes) catch return null;
+        defer exec.deinit(allocator);
+        if (exec.timed_out or exec.code != 0) return null;
+        return dupeTrimmed(allocator, exec.stdout);
+    }
+    if (route.* == .unavailable) return null;
+    const res = std.process.run(allocator, io, .{
+        .argv = &.{ "git", "-C", path, "remote", "get-url", "origin" },
+    }) catch return null;
+    defer {
+        allocator.free(res.stdout);
+        allocator.free(res.stderr);
+    }
+    if (res.term.exited != 0) return null;
+    return dupeTrimmed(allocator, res.stdout);
+}
+
+fn dupeTrimmed(allocator: std.mem.Allocator, raw: []const u8) ?[]u8 {
+    const url = std.mem.trim(u8, raw, " \n\r");
+    if (url.len == 0) return null;
+    return allocator.dupe(u8, url) catch null;
+}
 
 /// Fields requested from `gh pr view --json`. The list itself now lives
 /// in `pr_cli` so the argv builder and its parser cannot drift; re-exported
@@ -262,20 +328,17 @@ pub fn useCaseWithPrograms(
     provider_override: ?[]const u8,
     fetch_detail: *?[]u8,
 ) !http_response.GitPrStatusResponse {
-    // 1) Must be a git repo.
-    {
-        const check = std.process.run(allocator, io, .{ .argv = &.{ "git", "-C", path, "rev-parse", "--git-dir" } }) catch return error.NotARepository;
-        defer {
-            allocator.free(check.stdout);
-            allocator.free(check.stderr);
-        }
-        if (check.term.exited != 0) return error.NotARepository;
-    }
+    // 1) Must be a git repo. Under `--saas` only the workspace's VM may say
+    // so: a path no workspace owns, or a VM that is not answering, is not a
+    // repository rather than an invitation to the host's git.
+    var route = routeForPath(allocator, path);
+    defer route.deinit();
+    if (!isGitRepository(allocator, io, &route, path)) return error.NotARepository;
 
     // 2) Resolve which forge to ask. Precedence, most explicit first:
     // explicit `provider` param > a URL-shaped `pr` arg > the repository's
     // own `origin` remote.
-    const provider = resolveProvider(allocator, io, path, pr_arg, provider_override) catch |err| {
+    const provider = resolveProviderVia(allocator, io, &route, path, pr_arg, provider_override) catch |err| {
         switch (err) {
             error.UnknownProvider => setFetchDetail(allocator, fetch_detail, "unknown provider (expected github, gitlab, or generic)"),
             error.UnsupportedProvider => setFetchDetail(allocator, fetch_detail, "the generic provider has no forge CLI, so PR/MR status cannot be resolved (pass provider=github or provider=gitlab)"),
@@ -302,10 +365,25 @@ pub fn useCaseWithPrograms(
     };
 }
 
-/// Which forge to ask, or the reason we cannot ask one.
+/// Which forge to ask, or the reason we cannot ask one. Resolves its own
+/// route, so the callers that only want the provider are unchanged.
 pub fn resolveProvider(
     allocator: std.mem.Allocator,
     io: std.Io,
+    path: []const u8,
+    pr_arg: []const u8,
+    provider_override: ?[]const u8,
+) !pr_provider.PrProvider {
+    var route = routeForPath(allocator, path);
+    defer route.deinit();
+    return resolveProviderVia(allocator, io, &route, path, pr_arg, provider_override);
+}
+
+/// `resolveProvider` for a caller that already resolved the route.
+pub fn resolveProviderVia(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    route: *workspace_fs.Route,
     path: []const u8,
     pr_arg: []const u8,
     provider_override: ?[]const u8,
@@ -328,7 +406,7 @@ pub fn resolveProvider(
             if (detected != .generic) return detected;
         }
     }
-    if (detectProviderFromOrigin(allocator, io, path)) |p| return p;
+    if (detectProviderFromOrigin(allocator, io, route, path)) |p| return p;
     // No forge we can name: default to GitHub, which is what this
     // endpoint did before GitLab support existed.
     return .github;
@@ -336,17 +414,14 @@ pub fn resolveProvider(
 
 /// `git -C <path> remote get-url origin` → provider, or null when there
 /// is no origin, no remote, or git cannot be asked.
-fn detectProviderFromOrigin(allocator: std.mem.Allocator, io: std.Io, path: []const u8) ?pr_provider.PrProvider {
-    const res = std.process.run(allocator, io, .{
-        .argv = &.{ "git", "-C", path, "remote", "get-url", "origin" },
-    }) catch return null;
-    defer {
-        allocator.free(res.stdout);
-        allocator.free(res.stderr);
-    }
-    if (res.term.exited != 0) return null;
-    const url = std.mem.trim(u8, res.stdout, " \n\r");
-    if (url.len == 0) return null;
+fn detectProviderFromOrigin(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    route: *workspace_fs.Route,
+    path: []const u8,
+) ?pr_provider.PrProvider {
+    const url = remoteOriginUrl(allocator, io, route, path) orelse return null;
+    defer allocator.free(url);
     const p = pr_provider.detectProviderFromRemote(url);
     if (p == .generic) return null;
     return p;
@@ -361,7 +436,9 @@ fn handlerProvider(
     pr_arg: []const u8,
     provider_override: ?[]const u8,
 ) ?pr_provider.PrProvider {
-    const p = resolveProvider(allocator, io, path, pr_arg, provider_override) catch return null;
+    var route = routeForPath(allocator, path);
+    defer route.deinit();
+    const p = resolveProviderVia(allocator, io, &route, path, pr_arg, provider_override) catch return null;
     if (!pr_cli.hasCli(p)) return null;
     return p;
 }
@@ -1442,3 +1519,33 @@ test "isNotFoundStderr separates a missing MR from an auth failure" {
 }
 
 // ─────────── source-contract guard against the regression ───────────
+
+test "useCaseWithPrograms: --saas refuses a real repository rather than asking the host's git" {
+    const allocator = testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const path_len = try tmp.dir.realPath(std.testing.io, &buf);
+    const repo = try allocator.dupe(u8, buf[0..path_len]);
+    defer allocator.free(repo);
+
+    var init = run_captured.run(allocator, std.testing.io, &.{ "git", "init", "-q", repo }, .{ .timeout_ms = 30_000 }) catch
+        return error.SkipZigTest;
+    defer init.deinit(allocator);
+    if (init.term.exited != 0) return error.SkipZigTest;
+
+    var detail: ?[]u8 = null;
+    defer if (detail) |d| allocator.free(d);
+
+    runtime_mode.setCurrent(.saas);
+    defer runtime_mode.setCurrent(.local);
+    if (!runtime_mode.vm_backend_available) return;
+
+    // The repository is right here on the host. With a workspace configured
+    // and no VM answering, the endpoint says "not a git repository" instead
+    // of letting the host's git look at a tenant's tree.
+    try testing.expectError(
+        error.NotARepository,
+        useCaseWithPrograms(allocator, std.testing.io, .{}, repo, "", null, &detail),
+    );
+}

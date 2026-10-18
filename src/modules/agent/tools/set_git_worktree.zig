@@ -8,6 +8,13 @@ const AgentTool = schemas.AgentTool;
 const pabrik = @import("pabrikcore");
 const sqlite = pabrik.sqlite;
 const git_hardening = @import("helpers").git_hardening;
+const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
+const runtime_mode = @import("../../../runtime_mode.zig");
+
+/// The guest git budget: `worktree add` is sub-second on the host, and the
+/// listing can legitimately carry megabytes.
+const git_timeout_ms: u32 = 60_000;
+const git_output_bytes: usize = 4 * 1024 * 1024;
 
 /// Input structure for set_git_worktree tool
 pub const SetGitWorktreeInput = struct {
@@ -221,10 +228,12 @@ pub const PathState = union(enum) {
 };
 
 /// Classify the state of `target` relative to the git worktree system rooted
-/// at `repo_root`. Pure (no side effects beyond the returned allocations).
+/// at `repo_root`. A non-null `guest` sends the worktree listing to the
+/// workspace's VM; the disk probes around it stay on the host.
 pub fn classifyPath(
     allocator: std.mem.Allocator,
     io: std.Io,
+    guest: ?*const workspace_fs.Fs,
     repo_root: []const u8,
     target: []const u8,
 ) !PathState {
@@ -305,7 +314,7 @@ pub fn classifyPath(
 
     // ── 4. A `.git` file that points elsewhere (a submodule gitlink) ────
     //    Ask git — but only a COMPLETE listing can settle it.
-    var list = runGitWorktreeList(allocator, io, repo_root) catch |err| {
+    var list = runGitWorktreeList(allocator, io, guest, repo_root) catch |err| {
         return .{ .unverified_worktree = .{
             .gitdir = try allocator.dupe(u8, gitdir),
             .reason = try std.fmt.allocPrint(
@@ -578,8 +587,10 @@ pub const max_worktree_list_bytes = 4 * 1024 * 1024;
 fn runGitWorktreeList(
     allocator: std.mem.Allocator,
     io: std.Io,
+    guest: ?*const workspace_fs.Fs,
     repo_root: []const u8,
 ) !WorktreeList {
+    if (guest) |fs| return guestWorktreeList(allocator, fs, repo_root);
     if (repo_root.len == 0) {
         // `sessions.cwd` is legitimately "" for a kanban task that never
         // resolved a working directory. Spawning git with an empty cwd
@@ -674,6 +685,41 @@ fn runGitWorktreeList(
     else
         try allocator.dupe(u8, "");
     return .{ .health = health, .stdout = stdout, .reason = reason };
+}
+
+/// `git worktree list --porcelain` asked of the workspace's VM. The whole
+/// listing crosses in one reply, bounded by `git_output_bytes` like the host
+/// path's own read cap.
+fn guestWorktreeList(
+    allocator: std.mem.Allocator,
+    fs: *const workspace_fs.Fs,
+    repo_root: []const u8,
+) !WorktreeList {
+    if (repo_root.len == 0) {
+        return unavailable(
+            allocator,
+            "the session has no working directory, so `git worktree list` could not be run",
+        );
+    }
+    const exec = fs.runGit(repo_root, &.{ "worktree", "list", "--porcelain" }, git_timeout_ms, git_output_bytes) catch |err| {
+        return unavailable(
+            allocator,
+            try std.fmt.allocPrint(allocator, "`git worktree list` could not be run in the workspace VM: {s}", .{@errorName(err)}),
+        );
+    };
+    defer exec.deinit(allocator);
+    if (exec.timed_out) return failed(allocator, "git worktree list timed out in the workspace VM", .{});
+    if (exec.code != 0) return failed(allocator, "git worktree list exited with code {d} in the workspace VM", .{exec.code});
+    const health: ListHealth = if (exec.truncated) .truncated else .complete;
+    const reason = if (exec.truncated)
+        try std.fmt.allocPrint(
+            allocator,
+            "the worktree listing exceeded the {d} byte read cap, so it is incomplete",
+            .{git_output_bytes},
+        )
+    else
+        try allocator.dupe(u8, "");
+    return .{ .health = health, .stdout = try allocator.dupe(u8, exec.stdout), .reason = reason };
 }
 
 /// A `.unavailable` result. Takes a `[]const u8` and owns a copy, so
@@ -805,16 +851,69 @@ pub fn resolveRepoRoot(
     return try allocator.dupe(u8, session_cwd);
 }
 
-/// Run `git worktree add -b <branch> <worktree_path> [<base>]` in the given
-/// repository root. On success, returns an empty string.
-fn runGitWorktreeAdd(
+/// `git worktree add` INSIDE the workspace's VM, where the repo is the working
+/// directory and the new worktree is named by its GUEST path. Answers git's
+/// stderr on failure, empty on success — the host path's own contract.
+fn guestWorktreeAdd(
     allocator: std.mem.Allocator,
-    io: std.Io,
+    fs: *const workspace_fs.Fs,
     repo_root: ?[]const u8,
     worktree_path: []const u8,
     branch: []const u8,
     base: []const u8,
 ) ![]u8 {
+    const repo = repo_root orelse fs.root;
+    const at = fs.guestAbs(worktree_path) catch
+        return allocator.dupe(u8, "the worktree directory is outside this workspace, so the workspace's VM cannot create it there");
+    defer allocator.free(at);
+
+    var args: std.ArrayList([]const u8) = .empty;
+    defer args.deinit(allocator);
+    try args.appendSlice(allocator, &.{ "worktree", "add", "-b", branch, at });
+    if (base.len > 0) try args.append(allocator, base);
+
+    const exec = fs.runGit(repo, args.items, git_timeout_ms, git_output_bytes) catch |err| {
+        return std.fmt.allocPrint(allocator, "git could not be run in the workspace VM: {s}", .{@errorName(err)});
+    };
+    defer exec.deinit(allocator);
+    if (exec.timed_out) return allocator.dupe(u8, "git worktree add timed out in the workspace VM");
+    if (exec.code == 0) return allocator.dupe(u8, "");
+    const stderr_text = std.mem.trim(u8, exec.stderr, " \t\r\n");
+    if (stderr_text.len == 0) {
+        return std.fmt.allocPrint(allocator, "git worktree add exited with code {d} in the workspace VM", .{exec.code});
+    }
+    return allocator.dupe(u8, stderr_text);
+}
+
+/// `git worktree remove --force` INSIDE the workspace's VM, run from the repo
+/// the worktree belongs to rather than from the host's own working directory.
+fn guestWorktreeRemove(
+    allocator: std.mem.Allocator,
+    fs: *const workspace_fs.Fs,
+    repo_root: ?[]const u8,
+    worktree_path: []const u8,
+) !void {
+    const repo = repo_root orelse fs.root;
+    const at = fs.guestAbs(worktree_path) catch return error.GitRemoveFailed;
+    defer allocator.free(at);
+    const exec = fs.runGit(repo, &.{ "worktree", "remove", "--force", at }, git_timeout_ms, git_output_bytes) catch
+        return error.GitRemoveFailed;
+    defer exec.deinit(allocator);
+    if (exec.timed_out or exec.code != 0) return error.GitRemoveFailed;
+}
+
+/// Run `git worktree add -b <branch> <worktree_path> [<base>]` in the given
+/// repository root. On success, returns an empty string.
+fn runGitWorktreeAdd(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    guest: ?*const workspace_fs.Fs,
+    repo_root: ?[]const u8,
+    worktree_path: []const u8,
+    branch: []const u8,
+    base: []const u8,
+) ![]u8 {
+    if (guest) |fs| return guestWorktreeAdd(allocator, fs, repo_root, worktree_path, branch, base);
     const argv = try buildWorktreeAddArgv(allocator, branch, worktree_path, base);
     defer allocator.free(argv);
 
@@ -904,8 +1003,11 @@ fn runGitWorktreeAdd(
 fn runGitWorktreeRemove(
     allocator: std.mem.Allocator,
     io: std.Io,
+    guest: ?*const workspace_fs.Fs,
+    repo_root: ?[]const u8,
     worktree_path: []const u8,
 ) !void {
+    if (guest) |fs| return guestWorktreeRemove(allocator, fs, repo_root, worktree_path);
     var child = std.process.spawn(io, .{
         .argv = &.{
             "git", "worktree", "remove", "--force", worktree_path,
@@ -969,12 +1071,30 @@ pub fn executeSetGitWorktreeToString(
 ) ![]const u8 {
     if (session_id.len == 0) return xmlErrorEmpty(allocator, "session_id is required");
 
+    // Which git may work on this session's tree. Under `--saas` it is the
+    // workspace's VM or nobody: a worktree is a tenant tree, so the host's git
+    // is not the fallback when the VM is unreachable.
+    var route = workspace_fs.routeForSession(allocator, db, session_id);
+    defer route.deinit();
+    switch (route) {
+        .host => {},
+        .guest => {},
+        .unavailable => return xmlError(
+            allocator,
+            session_id,
+            "the workspace's VM is not answering, so git cannot be run on this workspace (the host never runs git on a tenant tree)",
+        ),
+    }
+    const guest: ?*const workspace_fs.Fs = route.guestFs();
+
     // CLEAR PATH — remove the currently-bound worktree, if any.
     if (input.clear) {
         const existing = try readExistingWorktreeCwd(allocator, db, session_id);
         defer allocator.free(existing);
         if (existing.len > 0) {
-            runGitWorktreeRemove(allocator, io, existing) catch |err| {
+            const repo = try resolveRepoRoot(allocator, cwd);
+            defer if (repo) |r| allocator.free(r);
+            runGitWorktreeRemove(allocator, io, guest, repo, existing) catch |err| {
                 const msg = @errorName(err);
                 std.debug.print("set_git_worktree clear: remove failed: {s}\n", .{msg});
                 return xmlError(allocator, session_id, "failed to remove existing worktree");
@@ -1016,7 +1136,7 @@ pub fn executeSetGitWorktreeToString(
     // Avoids the "fatal: '...' already exists" raw stderr the LLM has to
     // guess about.
     {
-        const state = classifyPath(allocator, io, cwd, worktree_path) catch |err| blk: {
+        const state = classifyPath(allocator, io, guest, cwd, worktree_path) catch |err| blk: {
             // classifyPath only fails on alloc; fall through to git and
             // let it produce a normal error.
             std.debug.print("set_git_worktree: classifyPath failed: {s}\n", .{@errorName(err)});
@@ -1074,7 +1194,7 @@ pub fn executeSetGitWorktreeToString(
 
     // runGitWorktreeAdd returns the captured git stderr on failure (or a
     // descriptive fallback including the exit code). Empty string = success.
-    const git_detail = runGitWorktreeAdd(allocator, io, resolved_repo_root, worktree_path, branch, base) catch |err| {
+    const git_detail = runGitWorktreeAdd(allocator, io, guest, resolved_repo_root, worktree_path, branch, base) catch |err| {
         // Alloc failure inside runGitWorktreeAdd — extremely rare.
         std.debug.print("set_git_worktree add dispatch failed: {s}\n", .{@errorName(err)});
         return xmlError(allocator, session_id, @errorName(err));
@@ -1821,7 +1941,7 @@ test "classifyPath: an empty session cwd still recognises a REGISTERED worktree 
 
     // `repo_root` is what `executeSetGitWorktreeToString` forwards as
     // `ctx.cwd`. The failing session had `sessions.cwd = ''`.
-    const state = try classifyPath(allocator, std.testing.io, "", wt);
+    const state = try classifyPath(allocator, std.testing.io, null, "", wt);
     defer freePathState(allocator, state);
 
     switch (state) {
@@ -1843,9 +1963,9 @@ test "classifyPath: a registered worktree classifies the same with an empty repo
     const wt = try fx.makeRegisteredDirectory("wt");
     defer allocator.free(wt);
 
-    const with_root = try classifyPath(allocator, std.testing.io, fx.repo, wt);
+    const with_root = try classifyPath(allocator, std.testing.io, null, fx.repo, wt);
     defer freePathState(allocator, with_root);
-    const without_root = try classifyPath(allocator, std.testing.io, "", wt);
+    const without_root = try classifyPath(allocator, std.testing.io, null, "", wt);
     defer freePathState(allocator, without_root);
 
     try testing.expectEqual(@as(std.meta.Tag(PathState), .registered_worktree), @as(std.meta.Tag(PathState), std.meta.activeTag(with_root)));
@@ -1863,7 +1983,7 @@ test "classifyPath: a worktree whose admin dir is gone IS an orphan (proven, not
     const wt = try fx.makeOrphanDirectory("pruned");
     defer allocator.free(wt);
 
-    const state = try classifyPath(allocator, std.testing.io, "", wt);
+    const state = try classifyPath(allocator, std.testing.io, null, "", wt);
     defer freePathState(allocator, state);
     switch (state) {
         .orphaned_worktree => |gitdir| {
@@ -1892,7 +2012,7 @@ test "classifyPath: a REAL git worktree registers, and deleting its admin dir or
     // Freed exactly once, here. An earlier version freed inside a `defer`
     // in the switch arm AND again after the switch — a double free, which
     // segfaults (exit 139) rather than failing cleanly.
-    const registered = try classifyPath(allocator, std.testing.io, "", wt);
+    const registered = try classifyPath(allocator, std.testing.io, null, "", wt);
     if (registered == .registered_worktree) {
         switch (registered) {
             .registered_worktree => |rwt| try testing.expectEqualStrings("worktree/wt", rwt.branch),
@@ -1913,7 +2033,7 @@ test "classifyPath: a REAL git worktree registers, and deleting its admin dir or
         return error.AdminDirDeleteFailed;
     };
 
-    const state = try classifyPath(allocator, std.testing.io, "", wt);
+    const state = try classifyPath(allocator, std.testing.io, null, "", wt);
     defer freePathState(allocator, state);
     switch (state) {
         .orphaned_worktree => |gitdir| try testing.expectEqualStrings(admin, gitdir),
@@ -1931,7 +2051,7 @@ test "classifyPath: the orphan gitdir carries no trailing newline from the .git 
     const wt = try fx.makeOrphanDirectory("pruned");
     defer allocator.free(wt);
 
-    const state = try classifyPath(allocator, std.testing.io, "", wt);
+    const state = try classifyPath(allocator, std.testing.io, null, "", wt);
     defer freePathState(allocator, state);
     const gitdir = switch (state) {
         .orphaned_worktree => |g| g,
@@ -1953,7 +2073,7 @@ test "classifyPath: a plain directory is still a plain directory with an empty r
     defer allocator.free(plain);
     std.Io.Dir.cwd().createDirPath(std.testing.io, plain) catch return error.MkdirFailed;
 
-    const state = try classifyPath(allocator, std.testing.io, "", plain);
+    const state = try classifyPath(allocator, std.testing.io, null, "", plain);
     defer freePathState(allocator, state);
     try testing.expectEqual(
         @as(std.meta.Tag(PathState), .plain_directory),
@@ -1970,7 +2090,7 @@ test "classifyPath: a path that does not exist is not_found regardless of repo_r
     defer allocator.free(missing);
 
     for ([_][]const u8{ "", fx.repo }) |root| {
-        const state = try classifyPath(allocator, std.testing.io, root, missing);
+        const state = try classifyPath(allocator, std.testing.io, null, root, missing);
         defer freePathState(allocator, state);
         try testing.expectEqual(
             @as(std.meta.Tag(PathState), .not_found),
@@ -2285,3 +2405,117 @@ fn extractJsonPath(allocator: std.mem.Allocator, inner: []const u8) ?[]u8 {
     }
 }
 
+
+// ─── Criterion 9: the worktree, and the tenant's post-checkout hook ────────
+
+/// A database whose session `s1` resolves to `root`'s workspace, so the route
+/// has something to answer from. Local mode never reads it.
+const SessionDb = struct {
+    db: sqlite.SqliteBackend,
+    threaded: std.Io.Threaded,
+
+    fn deinit(self: *SessionDb) void {
+        self.threaded.deinit();
+        self.db.deinit();
+    }
+};
+
+fn sessionDb(allocator: std.mem.Allocator, root: []const u8) !SessionDb {
+    var threaded = std.Io.Threaded.init(allocator, .{});
+    errdefer threaded.deinit();
+    var db: sqlite.SqliteBackend = .{};
+    errdefer db.deinit();
+    try db.init(threaded.io(), ":memory:");
+
+    try db.exec(allocator, "CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT NOT NULL, status TEXT, cwd TEXT, workspace_id TEXT)", &.{});
+    try db.exec(allocator, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT, name TEXT, path TEXT, position INTEGER)", &.{});
+    try db.exec(allocator, "CREATE TABLE workspace_item_tasks (id TEXT PRIMARY KEY, name TEXT NOT NULL, workspace_item_id TEXT NOT NULL)", &.{});
+    const item = try std.fmt.allocPrint(allocator, "INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position) VALUES ('i1','w1','kanban','A','{s}',1)", .{root});
+    defer allocator.free(item);
+    try db.exec(allocator, item, &.{});
+    try db.exec(allocator, "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) VALUES ('s1','T1','i1')", &.{});
+    const sess = try std.fmt.allocPrint(allocator, "INSERT INTO sessions (id, name, status, cwd) VALUES ('s1','T1','active','{s}')", .{root});
+    defer allocator.free(sess);
+    try db.exec(allocator, sess, &.{});
+
+    return .{ .db = db, .threaded = threaded };
+}
+
+fn pathExists(path: []const u8) bool {
+    return if (std.Io.Dir.cwd().access(testing.io, path, .{})) |_| true else |_| false;
+}
+
+test "set_git_worktree: --saas refuses rather than running the tenant's hook on the host" {
+    try requireGit();
+    const allocator = testing.allocator;
+    var fx = try GitFixture.init(allocator);
+    defer fx.deinit();
+
+    const hooks = try fx.join(&.{ fx.root, "hooks" });
+    defer allocator.free(hooks);
+    try std.Io.Dir.cwd().createDirPath(testing.io, hooks);
+    const sentinel = try fx.join(&.{ fx.root, "HOOK-RAN" });
+    defer allocator.free(sentinel);
+    const hook = try fx.join(&.{ hooks, "post-checkout" });
+    defer allocator.free(hook);
+    const body = try std.fmt.allocPrint(allocator, "#!/bin/sh\n: > '{s}'\nexit 0\n", .{sentinel});
+    defer allocator.free(body);
+    try std.Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = hook, .data = body });
+    try std.Io.Dir.cwd().setFilePermissions(testing.io, hook, .executable_file, .{});
+    try fx.git(&.{ "-C", fx.repo, "config", "core.hooksPath", hooks });
+
+    var db = try sessionDb(allocator, fx.repo);
+    defer db.deinit();
+
+    const local_path = try fx.join(&.{ fx.root, "wt-local" });
+    defer allocator.free(local_path);
+    const local = try executeSetGitWorktreeToString(
+        allocator,
+        testing.io,
+        &db.db,
+        fx.repo,
+        "s1",
+        .{ .path = local_path, .cwd = fx.repo },
+    );
+    defer allocator.free(local);
+    const local_parsed = try std.json.parseFromSlice(std.json.Value, allocator, local, .{});
+    defer local_parsed.deinit();
+    try testing.expect(local_parsed.value.object.get("created").?.bool);
+    try testing.expect(pathExists(local_path));
+    // The prefix every host invocation carries is what keeps the tenant's hook
+    // from running here; a hook that had fired would have made the sentinel.
+    try testing.expect(!pathExists(sentinel));
+
+    runtime_mode.setCurrent(.saas);
+    defer runtime_mode.setCurrent(.local);
+    if (!runtime_mode.vm_backend_available) return;
+    runtime_mode.setManagerSocket(null);
+    defer runtime_mode.setManagerSocket(null);
+
+    const saas_path = try fx.join(&.{ fx.root, "wt-saas" });
+    defer allocator.free(saas_path);
+    const out = try executeSetGitWorktreeToString(
+        allocator,
+        testing.io,
+        &db.db,
+        fx.repo,
+        "s1",
+        .{ .path = saas_path, .cwd = fx.repo },
+    );
+    defer allocator.free(out);
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, out, .{});
+    defer parsed.deinit();
+    try testing.expect(!parsed.value.object.get("created").?.bool);
+    try testing.expect(parsed.value.object.get("error").? != .null);
+    try testing.expect(!pathExists(saas_path));
+    try testing.expect(!pathExists(sentinel));
+
+    // The control that makes those absences mean something: a PLAIN `git
+    // worktree add` on this host — no prefix — really does run the hook.
+    if (builtin.os.tag != .windows) {
+        const plain_path = try fx.join(&.{ fx.root, "wt-plain" });
+        defer allocator.free(plain_path);
+        try fx.git(&.{ "-C", fx.repo, "worktree", "add", "-b", "worktree/wt-plain", plain_path });
+        try testing.expect(pathExists(sentinel));
+    }
+}

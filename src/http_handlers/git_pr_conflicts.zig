@@ -6,6 +6,8 @@ const gserverz = pabrik_core.gserverz;
 const pr_provider = pabrik_core.pr_provider;
 const run_captured = @import("helpers").run_captured;
 const host_fixture = @import("helpers").host_fixture;
+const workspace_fs = @import("../agentic_loop/workspace_fs.zig");
+const runtime_mode = @import("../runtime_mode.zig");
 
 // ── What this is for ──────────────────────────────────────────────────────
 // The PR tab knows a PR is `mergeable=CONFLICTING` but nothing about *which*
@@ -66,13 +68,42 @@ const GitRun = struct {
     }
 };
 
+/// The guest's exit code as the `u8` the host's own term reports. A signal
+/// (negative) is not 0 or 1, so every caller above still sees a git error.
+fn exitByte(code: i64) u8 {
+    if (code < 0) return 255;
+    if (code > 255) return 255;
+    return @intCast(code);
+}
+
+/// Which git may answer about `path`, decided by the process's own database in
+/// `--saas` and by nothing at all in local mode.
+fn routeForPath(allocator: std.mem.Allocator, path: []const u8) workspace_fs.Route {
+    const di = pabrik_core.getSingleton() catch null;
+    return workspace_fs.routeForPath(allocator, if (di) |d| d.db else null, path);
+}
+
 /// Run one `git -C <path> …` and hand back its streams.
 fn runGit(
     allocator: std.mem.Allocator,
     io: std.Io,
+    route: *workspace_fs.Route,
     path: []const u8,
     args: []const []const u8,
 ) !GitRun {
+    // Under `--saas` the merge is computed by the workspace's VM. Its streams
+    // are the host path's own, so every caller above needs no other change.
+    if (route.guestFs()) |fs| {
+        const exec = fs.runGit(path, args, GIT_TIMEOUT_MS, MAX_OUTPUT_BYTES) catch return error.MergeTreeFailed;
+        if (exec.timed_out) {
+            var owned = exec;
+            owned.deinit(allocator);
+            return error.MergeTreeFailed;
+        }
+        return .{ .code = exitByte(exec.code), .stdout = exec.stdout, .stderr = exec.stderr };
+    }
+    if (route.* == .unavailable) return error.MergeTreeFailed;
+
     var argv = std.ArrayList([]const u8).empty;
     defer argv.deinit(allocator);
     try argv.appendSlice(allocator, &.{ "git", "-C", path });
@@ -104,10 +135,16 @@ fn runGit(
 
 /// Does `<ref>^{commit}` resolve in this repo? `rev-parse --verify --quiet`
 /// exits 1 (printing nothing) for a missing ref, so the stderr is irrelevant.
-fn refExists(allocator: std.mem.Allocator, io: std.Io, path: []const u8, ref: []const u8) bool {
+fn refExists(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    route: *workspace_fs.Route,
+    path: []const u8,
+    ref: []const u8,
+) bool {
     const commitish = std.fmt.allocPrint(allocator, "{s}^{{commit}}", .{ref}) catch return false;
     defer allocator.free(commitish);
-    const run = runGit(allocator, io, path, &.{ "rev-parse", "--verify", "--quiet", commitish }) catch return false;
+    const run = runGit(allocator, io, route, path, &.{ "rev-parse", "--verify", "--quiet", commitish }) catch return false;
     defer run.deinit(allocator);
     return run.code == 0;
 }
@@ -116,6 +153,7 @@ fn refExists(allocator: std.mem.Allocator, io: std.Io, path: []const u8, ref: []
 fn resolveBaseRef(
     allocator: std.mem.Allocator,
     io: std.Io,
+    route: *workspace_fs.Route,
     path: []const u8,
     requested: ?[]const u8,
 ) ![]u8 {
@@ -124,26 +162,32 @@ fn resolveBaseRef(
     if (requested) |b| {
         if (b.len == 0) return error.BaseRefNotFound;
         const remote = std.fmt.bufPrint(&buf, "refs/remotes/origin/{s}", .{b}) catch return error.BaseRefNotFound;
-        if (refExists(allocator, io, path, remote)) return allocator.dupe(u8, remote) catch error.MergeTreeFailed;
-        if (refExists(allocator, io, path, b)) return allocator.dupe(u8, b) catch error.MergeTreeFailed;
+        if (refExists(allocator, io, route, path, remote)) return allocator.dupe(u8, remote) catch error.MergeTreeFailed;
+        if (refExists(allocator, io, route, path, b)) return allocator.dupe(u8, b) catch error.MergeTreeFailed;
         return error.BaseRefNotFound;
     }
 
     const names = [_][]const u8{ "main", "master", "develop" };
     for (names) |n| {
         const remote = std.fmt.bufPrint(&buf, "refs/remotes/origin/{s}", .{n}) catch continue;
-        if (refExists(allocator, io, path, remote)) return allocator.dupe(u8, remote) catch error.MergeTreeFailed;
-        if (refExists(allocator, io, path, n)) return allocator.dupe(u8, n) catch error.MergeTreeFailed;
+        if (refExists(allocator, io, route, path, remote)) return allocator.dupe(u8, remote) catch error.MergeTreeFailed;
+        if (refExists(allocator, io, route, path, n)) return allocator.dupe(u8, n) catch error.MergeTreeFailed;
     }
     return error.BaseRefNotFound;
 }
 
 /// Short (10-hex) commit a ref points at, for the response's provenance line.
 /// Best effort: an empty string is cosmetic, never a failure.
-fn revParseShort(allocator: std.mem.Allocator, io: std.Io, path: []const u8, ref: []const u8) ?[]u8 {
+fn revParseShort(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    route: *workspace_fs.Route,
+    path: []const u8,
+    ref: []const u8,
+) ?[]u8 {
     const commitish = std.fmt.allocPrint(allocator, "{s}^{{commit}}", .{ref}) catch return null;
     defer allocator.free(commitish);
-    const run = runGit(allocator, io, path, &.{ "rev-parse", "--short=10", commitish }) catch return null;
+    const run = runGit(allocator, io, route, path, &.{ "rev-parse", "--short=10", commitish }) catch return null;
     defer run.deinit(allocator);
     if (run.code != 0) return null;
     const out = std.mem.trim(u8, run.stdout, " \n\r\t");
@@ -203,23 +247,37 @@ pub fn useCase(
     head_override: ?[]const u8,
     detail: *?[]u8,
 ) !PrConflictsResult {
+    var route = routeForPath(allocator, path);
+    defer route.deinit();
+    return useCaseVia(allocator, io, &route, path, base_override, head_override, detail);
+}
+
+fn useCaseVia(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    route: *workspace_fs.Route,
+    path: []const u8,
+    base_override: ?[]const u8,
+    head_override: ?[]const u8,
+    detail: *?[]u8,
+) !PrConflictsResult {
     // 1) Must be a git work tree. Probed first so every later failure can be
     // reported as a ref problem rather than a missing-repo 404.
     {
-        const check = runGit(allocator, io, path, &.{ "rev-parse", "--git-dir" }) catch return error.NotARepository;
+        const check = runGit(allocator, io, route, path, &.{ "rev-parse", "--git-dir" }) catch return error.NotARepository;
         defer check.deinit(allocator);
         if (check.code != 0) return error.NotARepository;
     }
 
     // 2) Resolve the two refs the merge runs over.
-    const base_ref = try resolveBaseRef(allocator, io, path, base_override);
+    const base_ref = try resolveBaseRef(allocator, io, route, path, base_override);
     // The panel is bound to the PR's own worktree, so the local HEAD is the
     // actionable answer: "what would conflict if I merged what I have right
     // now", which stays correct while the user is mid-resolution.
     const head: []const u8 = if (head_override) |h| (if (h.len > 0) h else "HEAD") else "HEAD";
 
     // 3) The three-way merge. This is the whole feature.
-    const merge = runGit(allocator, io, path, &.{
+    const merge = runGit(allocator, io, route, path, &.{
         "merge-tree",
         "-z",
         "--write-tree",
@@ -242,7 +300,7 @@ pub fn useCase(
     }
 
     const parsed = try parseConflictPaths(allocator, merge.stdout);
-    const base_commit = revParseShort(allocator, io, path, base_ref);
+    const base_commit = revParseShort(allocator, io, route, path, base_ref);
 
     return .{
         .base_ref = base_ref,
@@ -687,5 +745,31 @@ test "useCase reports NotARepository for a path that does not exist" {
     try testing.expectError(
         error.NotARepository,
         useCase(allocator, testing.io, missing, null, null, &detail),
+    );
+}
+
+test "useCase: --saas answers NotARepository rather than asking the host's git" {
+    const allocator = testing.allocator;
+    var fx = try makeFixtureDir(allocator);
+    defer fx.deinit();
+    _ = try makeRepo(&fx);
+
+    var detail: ?[]u8 = null;
+    defer if (detail) |d| allocator.free(d);
+
+    // Local mode reads the repository the fixture just built — the control
+    // that makes the refusal below about the substrate, not the fixture.
+    const local = try useCase(allocator, testing.io, fx.path, null, null, &detail);
+    deinitResult(allocator, local);
+
+    runtime_mode.setCurrent(.saas);
+    defer runtime_mode.setCurrent(.local);
+    if (!runtime_mode.vm_backend_available) return;
+
+    // The same tree, on the same disk: with no VM answering, "not a
+    // repository" is the honest answer and the host's git is not the fallback.
+    try testing.expectError(
+        error.NotARepository,
+        useCase(allocator, testing.io, fx.path, null, null, &detail),
     );
 }

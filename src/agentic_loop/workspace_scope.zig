@@ -206,6 +206,18 @@ pub fn resolveWorkspaceRoot(
     return match.root;
 }
 
+/// The workspace an absolute directory belongs to, for a caller that has a
+/// path and no session — the HTTP handlers. Same longest-prefix rule as a
+/// session's cwd, and the same fail-closed answer when nothing matches.
+pub fn resolveWorkspaceForPath(
+    allocator: std.mem.Allocator,
+    db: *sqlite.SqliteBackend,
+    abs_path: []const u8,
+) !?WorkspaceMatch {
+    if (abs_path.len == 0) return null;
+    return matchWorkspaceByPath(allocator, db, abs_path);
+}
+
 /// Longest-prefix match of `cwd` against `workspace_items.path`. A path
 /// matches when it equals `cwd` or is a `/`-bounded prefix of it.
 fn matchWorkspaceByPath(
@@ -466,6 +478,26 @@ test "resolveWorkspaceRoot: a session with no workspace, and a workspace with no
         \\VALUES ('s9', 'T9', 'i9')
     , &.{});
     try testing.expect(try resolveWorkspaceRoot(alloc, &ctx.db, "s9") == null);
+}
+
+test "resolveWorkspaceForPath: a directory's owner is found without a session" {
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+    const alloc = testing.allocator;
+
+    const nested = (try resolveWorkspaceForPath(alloc, &ctx.db, "/proj/a/src/deep")).?;
+    defer nested.deinit(alloc);
+    try testing.expectEqualStrings("w1", nested.workspace_id);
+    try testing.expectEqualStrings("/proj/a", nested.root);
+
+    const at_root = (try resolveWorkspaceForPath(alloc, &ctx.db, "/proj/b")).?;
+    defer at_root.deinit(alloc);
+    try testing.expectEqualStrings("w2", at_root.workspace_id);
+
+    // /proj/abc is nobody's, exactly as it is for a session's cwd.
+    try testing.expect(try resolveWorkspaceForPath(alloc, &ctx.db, "/proj/abc") == null);
+    try testing.expect(try resolveWorkspaceForPath(alloc, &ctx.db, "/elsewhere") == null);
+    try testing.expect(try resolveWorkspaceForPath(alloc, &ctx.db, "") == null);
 }
 
 test "resolveWorkspaceId: a stamped workspace_id overrides the cwd heuristic" {
