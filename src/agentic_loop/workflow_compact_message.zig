@@ -647,7 +647,7 @@ pub fn maybeCompactMessagesNew(
     defer allocator.free(git_worktree_cwd);
 
     const active_dir = if (git_worktree_cwd.len > 0) git_worktree_cwd else cwd;
-    const git_state_row = git_state_mod.fetchGitState(allocator, io, active_dir) catch |err| blk: {
+    const git_state_row = git_state_mod.fetchGitStateFor(allocator, io, db, session_id, active_dir) catch |err| blk: {
         logger.warnFmt("[COMPACTION] fetchGitState failed: {s}", .{@errorName(err)});
         break :blk null;
     };
