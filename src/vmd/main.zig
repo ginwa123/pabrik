@@ -5,6 +5,7 @@
 const std = @import("std");
 const linux = std.os.linux;
 const vm_client = @import("vm_client.zig");
+const egress_proxy = @import("egress_proxy.zig");
 const vmd_client = @import("vmd_client.zig");
 const daemon = @import("daemon.zig");
 const policy = @import("policy.zig");
@@ -223,6 +224,23 @@ fn resolveRoot(init: std.process.Init, options: *Options, arena: std.mem.Allocat
         fail("out of memory", .{});
 }
 
+/// The ports no workspace may dial. `PABRIK_EGRESS_DENY_PORTS` names the rest,
+/// because only the operator knows what else listens here; 8081, the control
+/// plane, is refused whether or not the variable is set.
+fn resolveDeniedPorts(init: std.process.Init, arena: std.mem.Allocator) []const u16 {
+    const text = init.environ_map.get("PABRIK_EGRESS_DENY_PORTS") orelse return &.{8081};
+    const parsed = egress_proxy.parsePortList(arena, text) catch {
+        fail("PABRIK_EGRESS_DENY_PORTS is not a port list: {s}", .{text});
+    };
+    var out: std.ArrayList(u16) = .empty;
+    out.append(arena, 8081) catch fail("out of memory", .{});
+    for (parsed) |port| {
+        if (port == 8081) continue;
+        out.append(arena, port) catch fail("out of memory", .{});
+    }
+    return out.toOwnedSlice(arena) catch fail("out of memory", .{});
+}
+
 fn resolveSocket(init: std.process.Init, options: *Options) void {
     if (options.socket.len > 0) return;
     options.socket = init.environ_map.get("PABRIK_VMD_SOCKET") orelse
@@ -331,8 +349,10 @@ fn serve(init: std.process.Init, arena: std.mem.Allocator, options: *Options) !v
     resolveRoot(init, options, arena);
     resolveSocket(init, options);
 
+    const denied_ports = resolveDeniedPorts(init, arena);
     emit(2, "pabrik-vmd: serving on {s} (root={s})\n", .{ options.socket, options.root });
     daemon.serve(init.gpa, .{
+        .host_listeners = denied_ports,
         .socket_path = options.socket,
         .base_image = options.base_image,
         .kernel = options.kernel,
@@ -548,6 +568,9 @@ fn reportClientError(client: *const vmd_client.Client) noreturn {
 // test root, and this binary is the root of the vmd suite.
 test {
     _ = @import("egress.zig");
+    _ = @import("egress_proxy.zig");
+    _ = @import("proxy_rpc.zig");
+    _ = @import("tap.zig");
     _ = @import("fs_policy.zig");
     _ = @import("policy.zig");
     _ = @import("reconciler.zig");

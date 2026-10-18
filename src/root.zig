@@ -351,6 +351,7 @@ test {
     // file_sandbox rule (docs/plans/2026-09-29-present-files-sandbox-parity.md).
     _ = @import("http_handlers/files_download.zig");
     _ = @import("http_handlers/preview_origin.zig");
+_ = @import("http_handlers/preview_proxy.zig");
     // schedulers/cleanup_stale_background_process.zig has inline tests
     // (mirrors cleanup_stale_worker pattern). Re-imported here for the
     // same reason — see plan 2026-08-19-cleanup-stale-background-process.

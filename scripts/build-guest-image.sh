@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Assemble the guest rootfs image: pinned artifacts from guest-image.manifest,
-# plus `pabrik-vm-agent` as /init and (optionally) the protocol probe fixture.
+# plus `pabrik-vm-agent` as /init, the in-guest network forwarder, and
+# (optionally) the protocol probe fixture.
 #
 # Nothing here compiles Zig. `zig build vm` produces the two binaries and this
 # script refuses to invent its own command line for them, so the image hash
@@ -12,7 +13,8 @@
 # the script says so.
 #
 # Usage: scripts/build-guest-image.sh --out IMG [--tier base|dev]
-#                                     [--agent BIN] [--probe BIN] [--size SIZE]
+#                                     [--agent BIN] [--probe BIN] [--netd BIN]
+#                                     [--size SIZE]
 #                                     [--payload DIR] [--cache DIR]
 #                                     [--in-container] [--selftest]
 
@@ -26,6 +28,8 @@ tier="base"
 agent_bin=""
 probe_bin=""
 probe_given=0
+netd_bin=""
+netd_given=0
 payload=""
 
 # The uid and gid the guest agent runs a workload as (src/vm_agent/main.zig,
@@ -211,6 +215,7 @@ while [ $# -gt 0 ]; do
     --tier) tier="$2"; shift 2 ;;
     --agent) agent_bin="$2"; shift 2 ;;
     --probe) probe_bin="$2"; probe_given=1; shift 2 ;;
+    --netd) netd_bin="$2"; netd_given=1; shift 2 ;;
     --payload) payload="$2"; shift 2 ;;
     --size) size="$2"; shift 2 ;;
     --cache) cache="$2"; shift 2 ;;
@@ -228,6 +233,7 @@ case "$tier" in base|dev) ;; *) fail "--tier must be base or dev, not $tier" ;; 
 abs() { case "$1" in /*) printf '%s\n' "$1" ;; *) printf '%s/%s\n' "$PWD" "$1" ;; esac; }
 [ -z "$agent_bin" ] || agent_bin="$(abs "$agent_bin")"
 [ -z "$probe_bin" ] || probe_bin="$(abs "$probe_bin")"
+[ -z "$netd_bin" ] || netd_bin="$(abs "$netd_bin")"
 [ -z "$out" ] || out="$(abs "$out")"
 [ -z "$payload" ] || payload="$(abs "$payload")"
 [ -n "$out" ] || fail "--out IMG is required"
@@ -249,6 +255,7 @@ if [ "$in_container" = 1 ] && [ "$(id -u)" != 0 ]; then
   args=(--out "$out" --tier "$tier" --size "$size" --cache "$cache")
   [ -z "$agent_bin" ] || args+=(--agent "$agent_bin")
   [ -z "$probe_bin" ] || args+=(--probe "$probe_bin")
+  [ -z "$netd_bin" ] || args+=(--netd "$netd_bin")
   [ -z "$payload" ] || args+=(--payload "$payload")
   quoted=""
   for a in "${args[@]}"; do quoted+=" $(printf '%q' "$a")"; done
@@ -263,6 +270,8 @@ fi
 [ -n "$out" ] || fail "--out IMG is required"
 [ -n "$agent_bin" ] || agent_bin="$repo_root/zig-out/bin/pabrik-vm-agent"
 [ -n "$probe_bin" ] || probe_bin="$repo_root/zig-out/bin/pabrik-probe"
+[ -n "$netd_bin" ] || netd_bin="$repo_root/zig-out/bin/pabrik-vm-netd"
+[ "$netd_given" = 0 ] || [ -f "$netd_bin" ] || fail "no forwarder at $netd_bin"
 [ "$probe_given" = 0 ] || [ -f "$probe_bin" ] || fail "no probe fixture at $probe_bin"
 
 command -v mkfs.ext4 >/dev/null || fail "mkfs.ext4 missing (e2fsprogs)"
@@ -328,6 +337,16 @@ fi
 # ─── our own side ────────────────────────────────────────────────────────
 cp "$agent_bin" "$work/init"
 chmod +x "$work/init"
+if [ -f "$netd_bin" ]; then
+  mkdir -p "$work/usr/bin"
+  cp "$netd_bin" "$work/usr/bin/pabrik-vm-netd"
+  chmod +x "$work/usr/bin/pabrik-vm-netd"
+elif [ "$netd_given" = 1 ]; then
+  fail "the forwarder was named but is not there: $netd_bin"
+else
+  say "no forwarder: $netd_bin is absent, so the guest has no egress and no resolver"
+fi
+
 if [ -f "$probe_bin" ]; then
   cp "$probe_bin" "$work/bin/pabrik-probe"
   chmod +x "$work/bin/pabrik-probe"

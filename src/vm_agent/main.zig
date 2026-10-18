@@ -6,6 +6,7 @@ const std = @import("std");
 const linux = std.os.linux;
 
 const vsock_af: u32 = 40;
+const af_inet: u32 = 2;
 const sock_stream: u32 = 1;
 const cid_any: u32 = 0xFFFF_FFFF;
 const agent_port: u32 = 5000;
@@ -27,6 +28,15 @@ const log_read_chunk: usize = 16 * 1024;
 /// is bigger than the bytes it carries — 64 KiB of bytes needs 88 KiB of text.
 const reply_buf_bytes: usize = 128 * 1024;
 
+/// The in-guest network forwarder: loopback, the resolver config, and the two
+/// proxies the tenant's traffic leaves through.
+const netd_path = "/usr/bin/pabrik-vm-netd";
+/// `port.forward` carries one HTTP request in and one response out, in pieces.
+const port_forward_chunk: usize = 32 * 1024;
+const port_forward_cap: usize = 1024 * 1024;
+/// A guest dev server that answers nothing must not hold PID 1 for long.
+const port_forward_timeout = linux.timeval{ .sec = 5, .usec = 0 };
+
 const hello_json = "{\"type\":\"hello\",\"agent\":\"pabrik-vm-agent\",\"version\":\"0.2\"}";
 const bye_json = "{\"type\":\"bye\"}";
 
@@ -42,12 +52,17 @@ const SockaddrVm = extern struct {
 // ─── transport ───────────────────────────────────────────────────────────
 
 fn writeAll(fd: linux.fd_t, bytes: []const u8) void {
+    _ = writeBytes(fd, bytes);
+}
+
+fn writeBytes(fd: linux.fd_t, bytes: []const u8) bool {
     var off: usize = 0;
     while (off < bytes.len) {
         const rc = linux.write(fd, bytes.ptr + off, bytes.len - off);
-        if (linux.errno(rc) != .SUCCESS or rc == 0) return;
+        if (linux.errno(rc) != .SUCCESS or rc == 0) return false;
         off += rc;
     }
+    return true;
 }
 
 fn logLine(bytes: []const u8) void {
@@ -1150,6 +1165,17 @@ fn serveRequest(conn_fd: linux.fd_t, text: []const u8) void {
         }
         return runFsRead(conn_fd, id, path, offset, max_bytes);
     }
+    if (std.mem.eql(u8, kind, "port.forward")) {
+        const id = if (obj.get("id")) |v| asI64(v, 0) else 0;
+        const port_int = if (obj.get("port")) |v| asI64(v, 0) else 0;
+        const data_b64 = if (obj.get("data_b64")) |v| (if (v == .string) v.string else "") else "";
+        const max_bytes = if (obj.get("max_bytes")) |v| asUsize(v, port_forward_cap) else port_forward_cap;
+        if (port_int <= 0 or port_int > 65535 or data_b64.len == 0) {
+            reply(conn_fd, "{{\"type\":\"port.forward.error\",\"id\":{d},\"message\":\"port and data are required\"}}", .{id});
+            return;
+        }
+        return runPortForward(conn_fd, id, @intCast(port_int), data_b64, @min(max_bytes, port_forward_cap));
+    }
     if (std.mem.eql(u8, kind, "read_log")) {
         const id = if (obj.get("id")) |v| asI64(v, 0) else 0;
         const path = if (obj.get("path")) |v| (if (v == .string) v.string else "") else "";
@@ -1163,6 +1189,108 @@ fn serveRequest(conn_fd: linux.fd_t, text: []const u8) void {
         return;
     }
     reply(conn_fd, "{{\"type\":\"error\",\"message\":\"unknown request\"}}", .{});
+}
+
+// ─── the preview tunnel ─────────────────────────────────────────────────
+
+/// One request forwarded to a guest loopback port, answered in pieces. The
+/// guest is the only place a tenant's dev server listens, so this is the only
+/// way a browser reaches it.
+fn runPortForward(conn_fd: linux.fd_t, id: i64, port: u16, data_b64: []const u8, max_bytes: usize) void {
+    const size = std.base64.standard.Decoder.calcSizeForSlice(data_b64) catch {
+        reply(conn_fd, "{{\"type\":\"port.forward.error\",\"id\":{d},\"message\":\"body is not base64\"}}", .{id});
+        return;
+    };
+    if (size > port_forward_chunk or size > max_bytes) {
+        reply(conn_fd, "{{\"type\":\"port.forward.error\",\"id\":{d},\"message\":\"body is too large\"}}", .{id});
+        return;
+    }
+    var body: [port_forward_chunk]u8 = undefined;
+    std.base64.standard.Decoder.decode(body[0..size], data_b64) catch {
+        reply(conn_fd, "{{\"type\":\"port.forward.error\",\"id\":{d},\"message\":\"body is not base64\"}}", .{id});
+        return;
+    };
+    if (port == 0) {
+        reply(conn_fd, "{{\"type\":\"port.forward.error\",\"id\":{d},\"message\":\"port is required\"}}", .{id});
+        return;
+    }
+
+    const fd = connectLoopback(port) orelse {
+        reply(conn_fd, "{{\"type\":\"port.forward.error\",\"id\":{d},\"message\":\"no listener on 127.0.0.1:{d}\"}}", .{ id, port });
+        return;
+    };
+    defer _ = linux.close(fd);
+    if (!writeBytes(fd, body[0..size])) {
+        reply(conn_fd, "{{\"type\":\"port.forward.error\",\"id\":{d},\"message\":\"the guest port closed the request\"}}", .{id});
+        return;
+    }
+    // Half-close: the dev server reads the request through to the end of it.
+    _ = linux.shutdown(fd, 1);
+
+    var chunk: [port_forward_chunk]u8 = undefined;
+    var encoded: [std.base64.standard.Encoder.calcSize(port_forward_chunk)]u8 = undefined;
+    var total: usize = 0;
+    var truncated = false;
+    while (true) {
+        const rc = linux.read(fd, &chunk, chunk.len);
+        const err = linux.errno(rc);
+        if (err == .INTR) continue;
+        if (err != .SUCCESS or rc == 0) break;
+        if (total + rc > port_forward_cap) {
+            truncated = true;
+            break;
+        }
+        total += rc;
+        const text = std.base64.standard.Encoder.encode(&encoded, chunk[0..rc]);
+        reply(conn_fd, "{{\"type\":\"port.forward.data\",\"id\":{d},\"data_b64\":\"{s}\"}}", .{ id, text });
+    }
+    reply(conn_fd, "{{\"type\":\"port.forward.done\",\"id\":{d},\"size\":{d},\"truncated\":{s}}}", .{
+        id,
+        total,
+        if (truncated) "true" else "false",
+    });
+}
+
+/// A blocking TCP connect to the guest's own loopback, with deadlines, because
+/// a dev server that never answers must not stall the agent's frame loop.
+fn connectLoopback(port: u16) ?linux.fd_t {
+    const rc = linux.socket(af_inet, sock_stream, 0);
+    if (linux.errno(rc) != .SUCCESS) return null;
+    const fd: linux.fd_t = @intCast(rc);
+    _ = linux.setsockopt(fd, linux.SOL.SOCKET, linux.SO.RCVTIMEO, @ptrCast(&port_forward_timeout), @sizeOf(linux.timeval));
+    _ = linux.setsockopt(fd, linux.SOL.SOCKET, linux.SO.SNDTIMEO, @ptrCast(&port_forward_timeout), @sizeOf(linux.timeval));
+    var addr = linux.sockaddr.in{ .port = std.mem.nativeToBig(u16, port), .addr = 0x0100007F };
+    if (linux.errno(linux.connect(fd, @ptrCast(&addr), @sizeOf(linux.sockaddr.in))) != .SUCCESS) {
+        _ = linux.close(fd);
+        return null;
+    }
+    return fd;
+}
+
+/// Start the in-guest network forwarder. The image ships it; without it the
+/// tenant has no way out of the VM and no resolver, and that is logged rather
+/// than guessed at.
+fn startNetd() void {
+    var path_buf: [64]u8 = undefined;
+    const path = cstr(netd_path, &path_buf) orelse return;
+    const fork_rc = linux.fork();
+    if (linux.errno(fork_rc) != .SUCCESS) {
+        logLine("MISSING netd: fork failed");
+        return;
+    }
+    if (fork_rc != 0) {
+        logLine("netd started");
+        return;
+    }
+    _ = linux.setsid();
+    const null_rc = linux.open("/dev/null", .{ .ACCMODE = .RDONLY }, 0);
+    if (linux.errno(null_rc) == .SUCCESS) {
+        _ = linux.dup2(@intCast(null_rc), 0);
+    }
+    const argv = [_:null]?[*:0]const u8{ path, null };
+    _ = linux.execve(path, &argv, &exec_env);
+    logLine("MISSING netd: exec failed");
+    linux.exit(127);
 }
 
 /// Framed requests until `shutdown`.
@@ -1184,6 +1312,7 @@ pub fn main() void {
     logLine(if (mountPseudo("sysfs", "/sys")) "mounted sysfs" else "MISSING sysfs");
     logLine(if (mountPseudo("devtmpfs", "/dev")) "mounted devtmpfs" else "MISSING devtmpfs");
     ensureDev();
+    startNetd();
 
     const sock_rc = linux.socket(vsock_af, sock_stream, 0);
     if (linux.errno(sock_rc) != .SUCCESS) {

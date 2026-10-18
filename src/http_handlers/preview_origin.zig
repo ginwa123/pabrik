@@ -120,6 +120,51 @@ pub fn originVerdict(origin: ?[]const u8, allowed: []const []const u8) OriginVer
     return .foreign;
 }
 
+/// The origins this deployment serves, in the form the engine's pre-gate
+/// compares: a host and a port, never a scheme. Hosts from
+/// `PABRIK_ALLOWED_ORIGINS` are added for a deployment behind a proxy.
+pub fn allowedFor(
+    allocator: std.mem.Allocator,
+    env: ?*const std.process.Environ.Map,
+    port: u16,
+) ![]const []const u8 {
+    var out: std.ArrayList([]const u8) = .empty;
+    errdefer out.deinit(allocator);
+    try out.append(allocator, try std.fmt.allocPrint(allocator, "127.0.0.1:{d}", .{port}));
+    try out.append(allocator, try std.fmt.allocPrint(allocator, "localhost:{d}", .{port}));
+    if (env) |map| {
+        if (map.get("PABRIK_ALLOWED_ORIGINS")) |list| {
+            var parts = std.mem.tokenizeAny(u8, list, ", ");
+            while (parts.next()) |part| try out.append(allocator, try allocator.dupe(u8, part));
+        }
+    }
+    return out.toOwnedSlice(allocator);
+}
+
+/// The rule the engine applies to those entries: the host (with its port) of
+/// an `Origin`, matched case-insensitively. An absent `Origin` is not foreign
+/// — a CLI and a same-origin form post send none.
+pub fn originHostAllowed(origin: ?[]const u8, allowed: []const []const u8) bool {
+    const value = origin orelse return true;
+    const trimmed = std.mem.trim(u8, value, " ");
+    if (trimmed.len == 0) return true;
+    const host = originHost(trimmed);
+    for (allowed) |candidate| {
+        if (std.ascii.eqlIgnoreCase(candidate, host)) return true;
+    }
+    return false;
+}
+
+/// `https://a.b:8443` → `a.b:8443`. Same shape as the engine's `extractHost`.
+pub fn originHost(origin: []const u8) []const u8 {
+    const scheme = std.mem.indexOf(u8, origin, "://") orelse return origin;
+    const rest = origin[scheme + 3 ..];
+    for (rest, 0..) |c, i| {
+        if (c == '/' or c == '?' or c == '#') return rest[0..i];
+    }
+    return rest;
+}
+
 pub fn isMutatingMethod(method: []const u8) bool {
     const m = std.mem.trim(u8, method, " ");
     return std.ascii.eqlIgnoreCase(m, "POST") or
@@ -220,6 +265,27 @@ test "originVerdict: only a foreign origin is refused, and only mutation consult
     try testing.expect(isMutatingMethod("delete"));
     try testing.expect(!isMutatingMethod("GET"));
     try testing.expect(!isMutatingMethod("HEAD"));
+}
+
+test "the deployment serves its own origin on the port it bound, and what the operator adds" {
+    const allocator = testing.allocator;
+    var env = std.process.Environ.Map.init(allocator);
+    defer env.deinit();
+    try env.put("PABRIK_ALLOWED_ORIGINS", "pabrik.example.com, [::1]:8443");
+
+    const allowed = try allowedFor(allocator, &env, 8081);
+    defer {
+        for (allowed) |entry| allocator.free(entry);
+        allocator.free(allowed);
+    }
+    try testing.expect(originHostAllowed("http://127.0.0.1:8081", allowed));
+    try testing.expect(originHostAllowed("http://localhost:8081", allowed));
+    try testing.expect(originHostAllowed("https://pabrik.example.com", allowed));
+    try testing.expect(originHostAllowed("https://[::1]:8443", allowed));
+    try testing.expect(originHostAllowed(null, allowed));
+    try testing.expect(!originHostAllowed("https://evil.example", allowed));
+    try testing.expect(!originHostAllowed("null", allowed));
+    try testing.expect(!originHostAllowed("http://127.0.0.1:9999", allowed));
 }
 
 test "the preview policy pins framing and connection targets" {

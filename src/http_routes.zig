@@ -45,6 +45,7 @@ pub fn registerAllOn(router: *gserverz.router.Router) !void {
     try registerKanbanRoutes(&authed);
     try registerDesignRoutes(&authed);
     try registerTestRoutes(&authed);
+    try registerPreviewRoutes(&authed);
 }
 
 fn registerAuthRoutes(router: *gserverz.router.Router) !void {
@@ -459,6 +460,16 @@ fn registerDesignRoutes(authed: *Group) !void {
     // Cross-page element relocate. Changes the element's `page_id` from
     // `:page_id` (path) to a target page in the body.
     try authed.post("/api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/move-to-page", ai_mod.http_handlers.designElementsMoveToPageHandler);
+}
+
+/// The preview proxy: the ONE route that reaches a port inside a workspace's
+/// VM. It is a mutation-capable endpoint on purpose (a tenant dev server sees
+/// POSTs), so it sits on `authed` like every other `/api` route.
+fn registerPreviewRoutes(authed: *Group) !void {
+    try authed.get("/api/preview", ai_mod.http_handlers.previewProxyHandler);
+    try authed.post("/api/preview", ai_mod.http_handlers.previewProxyHandler);
+    try authed.put("/api/preview", ai_mod.http_handlers.previewProxyHandler);
+    try authed.delete("/api/preview", ai_mod.http_handlers.previewProxyHandler);
 }
 
 fn registerTestRoutes(authed: *Group) !void {
