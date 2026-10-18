@@ -50,10 +50,6 @@ pub const EmitRunAgentInput = struct {
     /// Owning user id for the session row this run creates (plan 2026-09-25,
     /// W1).
     user_id: []const u8 = "",
-    /// Workspace this session row is PINNED to at INSERT time. Empty means
-    /// "resolve it the old way" (task link, then the cwd heuristic) — only
-    /// `run_session` sets it, and only to reach ANOTHER workspace.
-    workspace_id: []const u8 = "",
 };
 
 /// The application singleton.
@@ -128,8 +124,6 @@ pub const App = struct {
         // owner is the only source. Empty when auth is off.
         const owned_user_id = try self.allocator.dupe(u8, obj.user_id);
         errdefer self.allocator.free(owned_user_id);
-        const owned_workspace_id = try self.allocator.dupe(u8, obj.workspace_id);
-        errdefer self.allocator.free(owned_workspace_id);
         // NEW (plan: 2026-08-18-kanban-task-detail-start-agent). The
         // flag is a `bool` (no string dupe needed) — pass through the
         // Io group directly.
@@ -166,12 +160,10 @@ pub const App = struct {
                     iaur: []const u8,
                     siqm: bool,
                     uid: []const u8,
-                    wsid: []const u8,
                 ) void {
                     // These slices are owned by the Io task lifetime — they
                     // were duped synchronously by `emit_run_agent` into
                     // `di_inner.allocator` (which lives forever).
-                    defer di_inner.allocator.free(wsid);
                     defer di_inner.allocator.free(uid);
                     defer di_inner.allocator.free(iaur);
                     defer di_inner.allocator.free(spm);
@@ -198,7 +190,6 @@ pub const App = struct {
                         .selected_profile_model = spm,
                         .is_auto_retry_until_stop = iaur,
                         .user_id = uid,
-                        .workspace_id = wsid,
                     }) catch @panic("allocPrint failed building the ai_worker_flow RunParamsNew event");
 
                     event_buss.emit(agentic_loop_mod.RunParamsNew, "ai_worker_flow", .{
@@ -218,7 +209,7 @@ pub const App = struct {
                     });
                 }
             }.run,
-            .{ self, owned_session_id, owned_session_name, owned_queue_message, owned_cwd, owned_body_message, owned_allowed_tools, owned_image_urls, owned_video_urls, owned_selected_profile_model, owned_is_auto_retry_until_stop, obj.skip_initial_queue_message, owned_user_id, owned_workspace_id },
+            .{ self, owned_session_id, owned_session_name, owned_queue_message, owned_cwd, owned_body_message, owned_allowed_tools, owned_image_urls, owned_video_urls, owned_selected_profile_model, owned_is_auto_retry_until_stop, obj.skip_initial_queue_message, owned_user_id },
         );
     }
 
@@ -234,20 +225,17 @@ pub const App = struct {
 
         // (no debug log — production code)
 
-        const session_sql = "INSERT OR IGNORE INTO sessions (id, name, status, cwd, created_at, updated_at, selected_profile_model, is_auto_retry_until_stop, user_id, workspace_id) " ++
-            "VALUES (?, ?, 'active', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?, ?)";
+        const session_sql = "INSERT OR IGNORE INTO sessions (id, name, status, cwd, created_at, updated_at, selected_profile_model, is_auto_retry_until_stop, user_id) " ++
+            "VALUES (?, ?, 'active', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?)";
         const copy_session_name = try allocator.dupe(u8, session_name);
         const copy_cwd = try allocator.dupe(u8, effective_cwd);
         const copy_profile = if (effective_profile.len > 0) try allocator.dupe(u8, effective_profile) else "";
         // Owner stamped at INSERT time (plan 2026-09-25, W1).
         const copy_user_id = if (parsed.user_id.len > 0) try allocator.dupe(u8, parsed.user_id) else "";
-        // An empty workspace binds as SQL NULL — the column's state for every
-        // row written before it was populated, so the resolvers fall through
-        // exactly as they did.
         try self.db.exec(
             allocator,
             session_sql,
-            &.{ session_id, copy_session_name, copy_cwd, copy_profile, effective_auto_retry, copy_user_id, parsed.workspace_id },
+            &.{ session_id, copy_session_name, copy_cwd, copy_profile, effective_auto_retry, copy_user_id },
         );
 
         // `INSERT OR IGNORE` is a no-op when the row already exists — which
@@ -440,7 +428,7 @@ pub fn registerSessionClient(session_id: []const u8, client_id: [16]u8, is_use_l
     }
 
     // New session — build list first
-    var list = std.ArrayList([16]u8).empty;
+    var list = std.ArrayListUnmanaged([16]u8).empty;
     try list.append(allocator, client_id);
 
     const result = try di.session_to_client_ids.getOrPut(allocator, session_id);
