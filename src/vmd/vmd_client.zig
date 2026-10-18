@@ -519,6 +519,10 @@ const SockaddrUn = extern struct {
 };
 
 fn connectUnix(path: []const u8) !linux.fd_t {
+    // No pabrik-vmd exists off Linux (the VM runtime is Linux-only) and the raw
+    // `std.os.linux` syscalls below are meaningless on another kernel: issuing
+    // them there is signal SYS, not a failed connect.
+    if (comptime @import("builtin").os.tag != .linux) return Error.ConnectFailed;
     if (path.len + 1 > 108) return Error.ConnectFailed;
     const rc = linux.socket(unix_af, sock_stream | linux.SOCK.CLOEXEC, 0);
     if (linux.errno(rc) != .SUCCESS) return Error.SocketFailed;
