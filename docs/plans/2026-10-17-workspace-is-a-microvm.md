@@ -1337,5 +1337,12 @@ default rather than to an empty path.
   keyed on the manifest and why a re-pin is a reviewed edit.
 - **The image hash is a version, not a checksum.** `mkfs.ext4` stamps a fresh
   UUID, so the same inputs produce a different image sha256 every run.
+- **No CI cell runs plain `zig build` on macOS or Windows**, so hooking the trio
+  into `build:all` is proven on Linux only. The backend cells run `zig build
+  test` / `pabrik-desktop` / `check:desktop-cross`, and the install cells
+  download a prebuilt binary, so none of them touches `build:all`. Zig's musl
+  target is host-independent by construction and the agent's source is std-only,
+  but that is an argument, not a run — the first macOS or Windows `zig build`
+  will be the measurement.
 - **`crash_handler_smoke.sh` still calls `zig build-exe`.** Unrelated to the VM
   trio, so it was left alone.
