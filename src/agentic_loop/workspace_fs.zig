@@ -10,6 +10,7 @@ const workspace_scope = @import("workspace_scope.zig");
 const vmd = @import("../vmd/vmd_client.zig");
 const policy = @import("../vmd/policy.zig");
 const fs_policy = @import("../vmd/fs_policy.zig");
+const git_hardening = @import("helpers").git_hardening;
 
 pub const Error = error{
     GuestWorkspaceUnknown,
@@ -17,7 +18,70 @@ pub const Error = error{
     GuestManagerUnavailable,
     GuestManagerRefused,
     GuestFileMissing,
+    GuestNotDirectory,
+    GuestWriteFailed,
+    GuestWriteTooLarge,
+    GuestWalkTruncated,
+    GuestWorkspaceRoot,
 };
+
+/// What a walk said a path is. The guest names four kinds; nothing above this
+/// seam has to know which syscall told it.
+pub const Kind = enum { file, dir, link, other };
+
+fn kindFromGuest(text: []const u8) Kind {
+    if (std.mem.eql(u8, text, "dir")) return .dir;
+    if (std.mem.eql(u8, text, "file")) return .file;
+    if (std.mem.eql(u8, text, "link")) return .link;
+    return .other;
+}
+
+/// One path the guest reported, named the way the caller names paths: absolute,
+/// under the workspace root. There is still no host filesystem behind it — the
+/// string is a key for this seam, not a file the host may open.
+pub const Entry = struct {
+    abs: []u8,
+    kind: Kind,
+};
+
+/// A bounded walk. `truncated` is the guest saying the tree was larger than
+/// the ceilings allowed, which is not the same as a tree that ended.
+pub const Walk = struct {
+    allocator: std.mem.Allocator,
+    entries: []Entry,
+    truncated: bool,
+
+    pub fn deinit(self: Walk) void {
+        for (self.entries) |entry| self.allocator.free(entry.abs);
+        self.allocator.free(self.entries);
+    }
+};
+
+/// One path's kind and size, as the guest sees it.
+pub const Stat = struct {
+    kind: Kind,
+    size: i64,
+    missing: bool,
+};
+
+/// A program's answer from inside the guest. The host spawned nothing: this is
+/// the only way a scan or a git check runs against a tenant tree.
+pub const Exec = struct {
+    code: i64,
+    timed_out: bool,
+    truncated: bool,
+    stdout: []u8,
+    stderr: []u8,
+
+    pub fn deinit(self: Exec, allocator: std.mem.Allocator) void {
+        allocator.free(self.stdout);
+        allocator.free(self.stderr);
+    }
+};
+
+/// How long a guest `git check-ignore` may take, and how much of it is kept.
+const git_check_timeout_ms: u32 = 20_000;
+const git_check_output_bytes: usize = 64 * 1024;
 
 /// Which guest file an absolute host path names. There is no host filesystem
 /// behind this: `root` is only the string the DB records, and every byte comes
@@ -65,12 +129,212 @@ pub const Fs = struct {
         return out.toOwnedSlice(self.allocator);
     }
 
-    /// One file, or one empty directory. A missing path is an error, not a
-    /// silent success: the tool reports "nothing there" from its own answer.
+    /// The directory form of `relative`: a listing or a walk may start at the
+    /// workspace root, which is the one path no file op may name.
+    pub fn relativeDir(self: *const Fs, abs: []const u8) ?[]const u8 {
+        const rel = policy.relativeToRoot(self.root, abs) orelse return null;
+        if (!fs_policy.dirRelValid(rel)) return null;
+        return rel;
+    }
+
+    /// The absolute path a guest-relative one names, in the caller's own
+    /// vocabulary. The reverse of `relative`, and the only place a walk's
+    /// relative answer becomes a path a tool can hand back to a model.
+    pub fn hostPath(self: *const Fs, rel: []const u8) ![]u8 {
+        if (!fs_policy.dirRelValid(rel)) return Error.GuestPathOutsideWorkspace;
+        const root = std.mem.trimEnd(u8, self.root, "/");
+        if (rel.len == 0) return self.allocator.dupe(u8, root);
+        return std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ root, rel });
+    }
+
+    /// The kind and size of one path, as the guest sees it. The workspace root
+    /// itself has no stat: a caller that needs it should list, or walk, there.
+    pub fn stat(self: *const Fs, abs: []const u8) !Stat {
+        const rel = self.relative(abs) orelse return Error.GuestPathOutsideWorkspace;
+        var client = vmd.Client.init(self.allocator, self.socket);
+        const answer = client.statFile(self.workspace_id, rel) catch |err| return managerError(err);
+        defer answer.deinit(self.allocator);
+        return .{
+            .kind = kindFromGuest(answer.kind),
+            .size = answer.size,
+            .missing = answer.missing,
+        };
+    }
+
+    /// The whole file, written BY THE GUEST. The bytes are the caller's and the
+    /// file is the guest's; the host creates nothing and opens nothing, which
+    /// is what makes the guest the only writer.
+    pub fn writeAll(self: *const Fs, abs: []const u8, bytes: []const u8, create_dirs: bool) !void {
+        const rel = self.relative(abs) orelse return Error.GuestPathOutsideWorkspace;
+        if (bytes.len > fs_policy.max_write_bytes) return Error.GuestWriteTooLarge;
+        var client = vmd.Client.init(self.allocator, self.socket);
+        client.writeFile(self.workspace_id, rel, bytes, create_dirs) catch |err| {
+            if (refusedByRequest(&client)) {
+                // The tools tell "the directory is not there" apart from every
+                // other write failure, so one ask — and only after a refusal —
+                // decides which of the two this was.
+                if (!create_dirs and self.parentMissing(abs)) return error.PathNotFound;
+                return Error.GuestWriteFailed;
+            }
+            return managerError(err);
+        };
+    }
+
+    /// A bounded walk of the workspace beneath `abs`. `max_depth` 1 is one
+    /// directory's own entries; the guest enforces both ceilings, and a walk it
+    /// had to cut short says so.
+    pub fn walkAll(self: *const Fs, abs: []const u8, max_depth: u32) !Walk {
+        const rel = self.relativeDir(abs) orelse return Error.GuestPathOutsideWorkspace;
+        var client = vmd.Client.init(self.allocator, self.socket);
+        var walked = client.walk(self.workspace_id, rel, max_depth, fs_policy.max_walk_entries) catch |err| {
+            if (refusedByRequest(&client)) return Error.GuestNotDirectory;
+            return managerError(err);
+        };
+        defer walked.deinit(self.allocator);
+
+        const entries = try self.allocator.alloc(Entry, walked.entries.len);
+        var filled: usize = 0;
+        errdefer {
+            for (entries[0..filled]) |entry| self.allocator.free(entry.abs);
+            self.allocator.free(entries);
+        }
+        for (walked.entries, 0..) |entry, i| {
+            entries[i] = .{
+                .abs = try self.hostPath(entry.path),
+                .kind = kindFromGuest(entry.kind),
+            };
+            filled = i + 1;
+        }
+        return .{
+            .allocator = self.allocator,
+            .entries = entries,
+            .truncated = walked.truncated,
+        };
+    }
+
+    /// One directory's own entries — a walk of depth one, named for what it is.
+    pub fn listDir(self: *const Fs, abs: []const u8) !Walk {
+        return self.walkAll(abs, 1);
+    }
+
+    /// Remove one file, or one empty directory. A missing path is an error, not
+    /// a silent success: the tool reports "nothing there" from its own answer.
     pub fn remove(self: *const Fs, abs: []const u8) !void {
         const rel = self.relative(abs) orelse return Error.GuestPathOutsideWorkspace;
         var client = vmd.Client.init(self.allocator, self.socket);
         client.removeFile(self.workspace_id, rel) catch |err| return managerError(err);
+    }
+
+    /// Remove a directory and everything under it, leaves first. The guest's
+    /// `fs.remove` takes one entry by design, so the loop is here — and a tree
+    /// the walk had to cut short is refused rather than half deleted.
+    pub fn removeAll(self: *const Fs, abs: []const u8) !void {
+        const rel = self.relativeDir(abs) orelse return Error.GuestPathOutsideWorkspace;
+        // The workspace itself is not a caller's to delete: everything the
+        // tenant owns lives under it.
+        if (rel.len == 0) return Error.GuestWorkspaceRoot;
+
+        var walked = try self.walkAll(abs, fs_policy.max_walk_depth);
+        defer walked.deinit();
+        if (walked.truncated) return Error.GuestWalkTruncated;
+
+        const order = try self.allocator.alloc(usize, walked.entries.len);
+        defer self.allocator.free(order);
+        for (order, 0..) |*slot, i| slot.* = i;
+        // Deepest first: a directory can only go once its children have.
+        std.mem.sort(usize, order, walked.entries, struct {
+            fn less(entries: []const Entry, a: usize, b: usize) bool {
+                const depth_a = std.mem.count(u8, entries[a].abs, "/");
+                const depth_b = std.mem.count(u8, entries[b].abs, "/");
+                if (depth_a != depth_b) return depth_a > depth_b;
+                return entries[a].abs.len > entries[b].abs.len;
+            }
+        }.less);
+
+        for (order) |i| try self.remove(walked.entries[i].abs);
+        try self.remove(abs);
+    }
+
+    /// Run a program inside the guest, in a directory of the workspace. No
+    /// shell is involved: the argv is the caller's.
+    pub fn run(
+        self: *const Fs,
+        argv: []const []const u8,
+        abs_cwd: []const u8,
+        timeout_ms: u32,
+        max_output_bytes: usize,
+    ) !Exec {
+        const cwd_rel = self.relativeDir(abs_cwd) orelse return Error.GuestPathOutsideWorkspace;
+        var client = vmd.Client.init(self.allocator, self.socket);
+        const outcome = client.exec(.{
+            .workspace_id = self.workspace_id,
+            .argv = argv,
+            .cwd_rel = cwd_rel,
+            .timeout_ms = timeout_ms,
+            .max_output_bytes = max_output_bytes,
+        }) catch |err| return managerError(err);
+        return .{
+            .code = outcome.code,
+            .timed_out = outcome.timed_out,
+            .truncated = outcome.truncated,
+            .stdout = outcome.stdout,
+            .stderr = outcome.stderr,
+        };
+    }
+
+    /// Which of `names` git ignores in `abs_dir`, answered by the GUEST's git
+    /// under the same hardening prefix the host uses. A git that cannot answer
+    /// leaves every name unignored, which is what the host's check does too.
+    pub fn gitCheckIgnore(
+        self: *const Fs,
+        abs_dir: []const u8,
+        names: []const []const u8,
+    ) ![]bool {
+        const ignored = try self.allocator.alloc(bool, names.len);
+        errdefer self.allocator.free(ignored);
+        @memset(ignored, false);
+        if (names.len == 0) return ignored;
+
+        const argv = try self.allocator.alloc([]const u8, git_hardening.CONFIG_ARGS.len + 4 + names.len);
+        defer self.allocator.free(argv);
+        var at: usize = 0;
+        argv[at] = policy.guest_git;
+        at += 1;
+        for (git_hardening.CONFIG_ARGS) |arg| {
+            argv[at] = arg;
+            at += 1;
+        }
+        argv[at] = "check-ignore";
+        at += 1;
+        argv[at] = "--";
+        at += 1;
+        for (names) |name| {
+            argv[at] = name;
+            at += 1;
+        }
+
+        const exec = try self.run(argv[0..at], abs_dir, git_check_timeout_ms, git_check_output_bytes);
+        defer exec.deinit(self.allocator);
+        // Exit 0 means at least one name was ignored, 1 means none was, and
+        // anything else is not an answer this seam may invent one for.
+        if (exec.code != 0) return ignored;
+        var lines = std.mem.splitScalar(u8, exec.stdout, '\n');
+        while (lines.next()) |line| {
+            const named = std.mem.trimEnd(u8, line, "\r");
+            if (named.len == 0) continue;
+            for (names, 0..) |name, i| {
+                if (std.mem.eql(u8, named, name)) ignored[i] = true;
+            }
+        }
+        return ignored;
+    }
+
+    /// Whether the directory a path's parent names is there. Only asked after a
+    /// write was refused, so a successful write never pays for it.
+    fn parentMissing(self: *const Fs, abs: []const u8) bool {
+        const parent = std.fs.path.dirname(abs) orelse return false;
+        const answer = self.stat(parent) catch return false;
+        return answer.missing or answer.kind != .dir;
     }
 };
 
@@ -103,6 +367,14 @@ pub fn forSession(
         .root = root,
         .socket = socket_copy,
     };
+}
+
+/// Whether the manager refused the CALLER'S OWN request — a path it will not
+/// open, a directory it will not enter — rather than failing because the
+/// workspace or the VM is not there. Only the first is the tool's to explain.
+fn refusedByRequest(client: *const vmd.Client) bool {
+    const failure = client.lastFailure() orelse return false;
+    return failure.code == .bad_request;
 }
 
 fn managerError(err: anyerror) anyerror {
@@ -218,4 +490,59 @@ test "readAll: a path outside the workspace is refused before any RPC" {
     const fs = testFs("/proj/a");
     try testing.expectError(Error.GuestPathOutsideWorkspace, fs.readAll("/etc/passwd"));
     try testing.expectError(Error.GuestPathOutsideWorkspace, fs.remove("/etc/passwd"));
+}
+
+test "every op refuses a path outside the workspace before any RPC" {
+    const fs = testFs("/proj/a");
+    try testing.expectError(Error.GuestPathOutsideWorkspace, fs.writeAll("/etc/passwd", "x", false));
+    try testing.expectError(Error.GuestPathOutsideWorkspace, fs.stat("/etc/passwd"));
+    try testing.expectError(Error.GuestPathOutsideWorkspace, fs.walkAll("/etc", 2));
+    try testing.expectError(Error.GuestPathOutsideWorkspace, fs.listDir("/etc"));
+    try testing.expectError(Error.GuestPathOutsideWorkspace, fs.removeAll("/etc"));
+    try testing.expectError(
+        Error.GuestPathOutsideWorkspace,
+        fs.run(&.{"rg"}, "/etc", 1000, 4096),
+    );
+    // The root's parent is outside it too, so the escape is refused on the way
+    // out as well as on the way in.
+    try testing.expectError(Error.GuestPathOutsideWorkspace, fs.listDir("/proj"));
+    try testing.expect(fs.relativeDir("/proj/a") != null);
+    try testing.expect(fs.relativeDir("/proj") == null);
+}
+
+test "hostPath: a walk's answer comes back in the caller's own vocabulary" {
+    const fs = testFs("/proj/a");
+    const at_root = try fs.hostPath("");
+    defer testing.allocator.free(at_root);
+    try testing.expectEqualStrings("/proj/a", at_root);
+
+    const nested = try fs.hostPath("src/main.zig");
+    defer testing.allocator.free(nested);
+    try testing.expectEqualStrings("/proj/a/src/main.zig", nested);
+
+    // A trailing slash in the recorded root must not double.
+    const trailing = testFs("/proj/a/");
+    const joined = try trailing.hostPath("x");
+    defer testing.allocator.free(joined);
+    try testing.expectEqualStrings("/proj/a/x", joined);
+
+    try testing.expectError(Error.GuestPathOutsideWorkspace, fs.hostPath("../etc"));
+    try testing.expectError(Error.GuestPathOutsideWorkspace, fs.hostPath("/etc"));
+}
+
+test "writeAll: a body the frame could not carry is refused, not truncated" {
+    const fs = testFs("/proj/a");
+    // One byte over the RPC's own ceiling, so the refusal comes from the seam
+    // rather than from a half-written file in the guest.
+    const big = try testing.allocator.alloc(u8, fs_policy.max_write_bytes + 1);
+    defer testing.allocator.free(big);
+    @memset(big, 'x');
+    try testing.expectError(Error.GuestWriteTooLarge, fs.writeAll("/proj/a/big.txt", big, false));
+}
+
+test "gitCheckIgnore: naming nothing asks the guest nothing" {
+    const fs = testFs("/proj/a");
+    const none = try fs.gitCheckIgnore("/proj/a", &.{});
+    defer testing.allocator.free(none);
+    try testing.expectEqual(@as(usize, 0), none.len);
 }

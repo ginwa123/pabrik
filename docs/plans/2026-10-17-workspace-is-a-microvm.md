@@ -1620,3 +1620,143 @@ The §2.2 git hardening — a live RCE-class bug in **local** mode (`core.fsmoni
 drivers running on the host from an untrusted repo) — is inside this branch, so it ships with the
 feature and not before. `task_1792251191827552698` exists to split it if that changes.
 
+
+---
+
+## 31. P3b — `fs.write` + `fs.walk`, and the six file tools behind the seam
+
+The card was `task_1792319132618120369`, and §29 named it as the first item on its
+"What this does NOT do" list. This section is what landed, what it cost, and what
+is still open. The rule from §30 held: nothing merges partially, so this is all on
+`worktree/workspace-is-a-vm-from-microvm-1792245526062` (PR #983).
+
+### The two new guest ops
+
+| op | request | reply | containment |
+|---|---|---|---|
+| `fs.write` | `{path, offset, data_b64, create_dirs?, truncate?}` | `fs.write.ok {size, offset}` | `openat2` + `RESOLVE_BENEATH` under a `/workspace` fd, `O_WRONLY\|O_CREAT\|O_TRUNC` on the first piece |
+| `fs.walk` | `{path, max_depth?, max_entries?}` | a STREAM of `fs.walk` frames, the last one `done:true` | every directory entered the same way; every reported path is a workspace-relative join of names the kernel returned |
+
+Three shapes the protocol had to choose, and why:
+
+- **A write is paged.** A frame is 64 KiB and base64 costs 4 bytes per 3, so one
+  `fs.write` piece carries `fs_write_chunk` = 32 KiB. `vm_client.writeFile` splits a
+  body across pieces (`offset` 0 creates, the rest extend); the app-side RPC carries
+  the whole body, capped at `fs_policy.max_write_bytes` = 1 MiB. A `write_file`
+  above that cap is refused with a message rather than truncated.
+- **A walk is streamed, not paged.** The agent has no allocator, so one reply's
+  ceiling is a stack buffer (56 KiB, ≤48 entries). The client reads frames until
+  `done`, and the daemon reassembles them into one reply (so one app-side walk is
+  ≤ `fs_policy.max_walk_entries` = 20 000 entries). A walk the ceiling cut short
+  says `truncated` — that is not a tree that ended.
+- **Entries carry a kind, not a size.** Everything the six tools ask of a listing
+  is "is this something to descend into"; a size is what `fs.stat` is for. A
+  `walk` also needs no `stat` per entry, so it is `openat2` + `getdents64` and
+  nothing else.
+
+`ensureParents` is the one place a write creates anything, and it does it segment
+by segment: `openat2` beneath the fd it already has, or `mkdirat` on a single
+segment under that fd. A symlinked segment is `EXDEV`, never a directory made
+somewhere else.
+
+### The six tools, and what each now asks the seam for
+
+| tool | seam call | what did NOT change |
+|---|---|---|
+| `write_file` | `writeAll(path, content, create_with_dir)` | the JSON envelope, and `error.PathNotFound` for a missing parent (one extra `stat`, only after the guest refused) |
+| `text_replace` | `readAll` → `applyTextReplace` (new, pure) → `writeAll` | the CRLF contract, the diff view, every error message |
+| `remove_file` | `stat` → `remove` / `removeAll` (bottom-up) | the XML envelope; a `recursive=false` directory is refused with the same sentence |
+| `list_directory` | `listDir` + `gitCheckIgnore` | the sort (dirs first), the hidden rule, absolute paths in the payload |
+| `glob` | a `DirSource` the walk's listings and `.gitignore` reads come through | the whole pattern engine — prefix consumption, negation, depth — and the local byte-identical host path |
+| `search` | the same ripgrep argv, run by the guest through the exec RPC | the `rg --json` parser, the row cap, head/tail, snippets, the error table |
+
+Two choices worth stating explicitly:
+
+- **`list_directory` asks the ignore question ONCE per directory.** The host path
+  spawns `git -C <dir> check-ignore <name>` per entry; the guest path hands the
+  whole candidate list to one `git check-ignore -- …` in the guest. Same answer
+  from the same program, one process instead of N — and the git is the guest's,
+  because a tenant tree is not the host's to run git on.
+- **`glob` keeps its own walk.** A flat "walk everything, match in memory" would
+  have meant re-deriving the prefix-consumption and negation semantics of a
+  1 000-line walker. Swapping only the listing source is exact by construction:
+  with no source the host path is the code that shipped before this card, byte for
+  byte, which is what the 40-odd existing glob tests pin.
+
+### Verification
+
+```
+zig build test          → exit 0 (4853 scanned test names, 8 shards)
+zig build test:vmd      → exit 0
+./zig-out/bin/zginlint src build.zig → 0 finding(s) in 0 file(s)
+FC_BIN=$HOME/firecracker-demo/firecracker scripts/vm-guest-smoke.sh   → exit 0
+FC_BIN=$HOME/firecracker-demo/firecracker scripts/vmd-daemon-smoke.sh → exit 0
+```
+
+The guest smoke grew 18 assertions: `fs.write` creates a file and its directories,
+pages a 40 KiB body over two frames, refuses `../escape.txt`, `/etc/passwd`, a
+non-base64 body, an oversized piece and a missing parent without `create_dirs`;
+`fs.walk` descends, names file vs dir, reports only relative paths, stops at depth
+1 and at an entry ceiling, and refuses to walk a file or an escaping path. Its
+offline read of the sealed image now also proves the **`fs.write` bytes** are on
+the disk (`debugfs -R 'cat /workspace/seam/deep/note.txt'`). The daemon smoke drives
+`vmd fs-write` / `vmd fs-walk` through the CLI, reads the bytes back from inside the
+guest with `cat`, and pins three refusals as `bad_request`: `../escape.txt`, a
+missing parent, and a file named as a directory.
+
+### What this does NOT do
+
+- **`search` has no scan engine in the image.** The route is in place — the same
+  argv, the guest's `/usr/bin/rg`, the guest's `cwd_rel` — but §9.2's fat image
+  lists ripgrep and the **dev tier does not ship it** (the `dev` set is the resolved
+  closure of git/nodejs/npm/python3/rust/cargo/zig). So a `--saas` `search` fails
+  with `RgNotFound`, which is the *fail-closed* answer (it never scans the host),
+  and it is the honest one until the package set changes. That is a human decision
+  per §23 and it needs the live apk index (`scripts/resolve-guest-packages.sh`), so
+  it is not this card's to make. The same is true of the guest's git: it works
+  because `/usr/bin/git` is already pinned.
+- **The host still runs `git` on a tenant tree.** Appendix C's seven sites are
+  untouched, so criterion 9 is still open — this card moved the *file* tools, not
+  the git ones.
+- **`present_files`' source, `diff`, semantic indexing and the working-directory
+  context prompt** still read the host. §8.3's matrix lists them; they were not in
+  this card's six.
+- **`fs.walk` reports no size, and no `truncated` reasoning is shared** with
+  `search`: an exec capture truncates on one number for both streams, so a guest
+  search whose *stderr* hit the cap is reported as a capped stdout, not as the
+  host path's `StderrTooLong`.
+- **No `PABRIK_VM_TEST=1` L3 run.** Everything above is L1 (pure) plus the two
+  smokes on this box; no CI cell runs them (§30).
+- **`removeAll` refuses the workspace root** where the host's Linux path would
+  happily `deleteTree` it. That is a deliberate asymmetry, stated here because it
+  is a behaviour difference and not an accident.
+
+### Traps that cost time on this card
+
+- **`openat2` with an empty path is `ENOENT`.** The workspace root has to be named
+  `"."` inside the agent (`walkPathZ`), or a walk of the root is "no such
+  directory". Cost one smoke run.
+- **A guest write needs a `sync` before a hard VMM kill.** The guest smoke stops
+  the VM with `kill`, so a file written seconds earlier sits in the page cache: the
+  offline `debugfs` read of it came back empty until the probe ran `sync`. Cost one
+  smoke run. (The daemon smoke's long-standing `…; sync` line is the same fact.)
+- **32 KiB is the agent's own per-frame write ceiling.** A 40 KiB single-frame
+  write is refused — the client pages it. A probe that does not page is testing the
+  ceiling, not the write.
+- **`catch |err| switch (err)` only sees the destination's error set.** A switch
+  prong naming an error that lives in another module's set does not coerce; compare
+  values (`err == vmd.Error.WriteFailed`) or move the distinction into the failure
+  code the daemon returns. The daemon now answers `bad_request` when the *guest*
+  refused the caller's request (a path it will not open, a directory it will not
+  enter) and `vm_unavailable` for everything else — which is what lets the seam tell
+  "the parent is not there" from "the VM is not there".
+- **A doc comment cannot be attached to a `test` block.** Zig 0.16 rejects `///`
+  above `test "…"` ("documentation comments cannot be attached to tests"); use `//`.
+- **`std.mem.trimRight` does not exist in Zig 0.16** — it is `trimEnd`.
+- **`zig build test:shard:0` type-checks only what that shard reaches.** A `[]u8`
+  vs `[]const u8` mismatch and a two-value enum read as a three-value one both
+  compiled in a shard and failed the full build. Run `zig build test` before
+  believing a shard.
+- **The `mod_tests` step prints `failed command: …/test --listen=-` on a GREEN
+  run.** The gate is `zig build test`'s exit code (0), not that line — reading it
+  as a failure cost a false alarm.

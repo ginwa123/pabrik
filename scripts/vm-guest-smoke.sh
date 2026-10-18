@@ -114,4 +114,10 @@ persisted="$(debugfs -R 'cat /workspace/hello.txt' "$image" 2>/dev/null | head -
 [ "$persisted" = "persisted" ] || fail "expected /workspace/hello.txt to contain 'persisted', got '$persisted'"
 say "image /workspace/hello.txt = $persisted"
 
+# The write went over `fs.write`, not through a shell: the bytes are in the
+# sealed disk's own directory tree, so the protocol's writer is the disk's.
+seam="$(debugfs -R 'cat /workspace/seam/deep/note.txt' "$image" 2>/dev/null | head -1)"
+[ "$seam" = "written by the protocol" ] || fail "expected the fs.write file in the image, got '$seam'"
+say "image /workspace/seam/deep/note.txt = $seam"
+
 say "OK - image, rootless boot, exec protocol, shutdown ack, persisted file (serial: $serial_log)"

@@ -598,18 +598,20 @@ pub const GitignoreContext = struct {
     }
 
     /// Load .gitignore from a directory and add its entries
-    pub fn loadGitignoreForDir(self: *@This(), allocator: std.mem.Allocator, io: std.Io, dir_path: []const u8) void {
+    pub fn loadGitignoreForDir(
+        self: *@This(),
+        allocator: std.mem.Allocator,
+        io: std.Io,
+        dir_path: []const u8,
+        source: ?DirSource,
+    ) void {
         const gitignore_path = std.fs.path.join(allocator, &.{ dir_path, ".gitignore" }) catch return;
         defer allocator.free(gitignore_path);
 
-        // Open file - use openFileAbsolute only for absolute paths
-        const file: std.Io.File = if (std.fs.path.isAbsolute(gitignore_path))
-            std.Io.Dir.openFileAbsolute(io, gitignore_path, .{}) catch return
+        const content = if (source) |src|
+            (src.readFn(src.ctx, allocator, io, gitignore_path) catch return) orelse return
         else
-            std.Io.Dir.cwd().openFile(io, gitignore_path, .{}) catch return;
-        defer file.close(io);
-
-        const content = std.Io.Dir.cwd().readFileAlloc(io, gitignore_path, allocator, std.Io.Limit.limited(1024 * 64)) catch return;
+            readHostGitignore(allocator, io, gitignore_path) orelse return;
 
         var line_start: usize = 0;
         while (line_start < content.len) {
@@ -656,6 +658,85 @@ pub const GitignoreContext = struct {
     }
 };
 
+/// One directory's entries, as whichever substrate produced them. The walk
+/// only ever asks one question of them — is this something to descend into —
+/// so this is the whole shape it needs.
+pub const Listed = struct {
+    name: []const u8,
+    kind: ListKind,
+};
+
+pub const ListKind = enum { file, dir };
+
+/// Where a walk's listings and its `.gitignore` reads come from: the host's
+/// own filesystem, or the guest under `--saas`. Nothing else about the walk
+/// changes with the answer.
+pub const DirSource = struct {
+    ctx: *const anyopaque,
+    listFn: *const fn (
+        ctx: *const anyopaque,
+        allocator: std.mem.Allocator,
+        io: std.Io,
+        dir_abs: []const u8,
+    ) anyerror![]Listed,
+    /// The file's bytes, or null when it cannot be read — a directory with no
+    /// readable `.gitignore` is not a failure, it just has no rules.
+    readFn: *const fn (
+        ctx: *const anyopaque,
+        allocator: std.mem.Allocator,
+        io: std.Io,
+        abs: []const u8,
+    ) anyerror!?[]u8,
+};
+
+fn freeListed(allocator: std.mem.Allocator, listed: []Listed) void {
+    for (listed) |entry| allocator.free(entry.name);
+    allocator.free(listed);
+}
+
+/// The host's own listing, in the same shape a guest listing arrives in.
+fn listHostDir(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    dir_path: []const u8,
+    follow: bool,
+) ![]Listed {
+    var dir: std.Io.Dir = if (std.fs.path.isAbsolute(dir_path))
+        std.Io.Dir.openDirAbsolute(io, dir_path, .{ .iterate = true, .follow_symlinks = follow }) catch return error.PathDoesNotExist
+    else
+        std.Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true, .follow_symlinks = follow }) catch return error.PathDoesNotExist;
+    defer std.Io.Dir.close(dir, io);
+
+    var out: std.ArrayList(Listed) = .empty;
+    errdefer freeListed(allocator, out.items);
+    var iter = dir.iterate();
+    while (true) {
+        const entry = iter.next(io) catch break orelse break;
+        const owned = try allocator.dupe(u8, entry.name);
+        try out.append(allocator, .{
+            .name = owned,
+            .kind = if (entry.kind == .directory) .dir else .file,
+        });
+    }
+    return out.toOwnedSlice(allocator);
+}
+
+/// A `.gitignore`'s bytes from the host, or null when there is not one to
+/// read. A directory with no rules and a directory whose rules cannot be read
+/// walk the same way.
+fn readHostGitignore(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    gitignore_path: []const u8,
+) ?[]u8 {
+    const file: std.Io.File = if (std.fs.path.isAbsolute(gitignore_path))
+        std.Io.Dir.openFileAbsolute(io, gitignore_path, .{}) catch return null
+    else
+        std.Io.Dir.cwd().openFile(io, gitignore_path, .{}) catch return null;
+    defer file.close(io);
+    return std.Io.Dir.cwd().readFileAlloc(io, gitignore_path, allocator, std.Io.Limit.limited(1024 * 64)) catch null;
+}
+
 fn walkDir(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -665,17 +746,21 @@ fn walkDir(
     results: *std.ArrayListUnmanaged([]const u8),
     depth: usize,
     gitignore_ctx: ?*GitignoreContext,
+    source: ?DirSource,
 ) void {
     if (opts.max_depth) |max| if (depth >= max) return;
 
-    var dir: std.Io.Dir = if (std.fs.path.isAbsolute(dir_path))
-        std.Io.Dir.openDirAbsolute(io, dir_path, .{ .iterate = true, .follow_symlinks = opts.follow }) catch return
+    // One listing, whatever answered it: the loop below cannot tell the two
+    // substrates apart, which is the whole point of the seam.
+    const listed = if (source) |src|
+        src.listFn(src.ctx, allocator, io, dir_path) catch return
     else
-        std.Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true, .follow_symlinks = opts.follow }) catch return;
+        listHostDir(allocator, io, dir_path, opts.follow) catch return;
+    defer freeListed(allocator, listed);
 
     // Load .gitignore for this directory if we have a gitignore context
     if (gitignore_ctx) |ctx| {
-        ctx.loadGitignoreForDir(allocator, io, dir_path);
+        ctx.loadGitignoreForDir(allocator, io, dir_path, source);
     }
 
     // Separate regular patterns from negation patterns
@@ -692,21 +777,19 @@ fn walkDir(
         }
     }
 
-    var iter = dir.iterate();
-    while (true) {
-        const entry = iter.next(io) catch break orelse break;
+    for (listed) |entry| {
         const name = entry.name;
         if (!opts.dot and name.len > 0 and name[0] == '.') continue;
 
         // Always skip the `.git` directory regardless of `opts.dot`. Walking
         // into `.git/objects/...` returns thousands of pack files that no LLM
         // caller wants.
-        if (entry.kind == .directory and std.mem.eql(u8, name, ".git")) continue;
+        if (entry.kind == .dir and std.mem.eql(u8, name, ".git")) continue;
 
         const full_path = joinPath(allocator, dir_path, name) catch continue;
 
         // Check gitignore first
-        const is_dir = entry.kind == .directory;
+        const is_dir = entry.kind == .dir;
         if (gitignore_ctx) |ctx| {
             if (ctx.isIgnored(full_path)) {
                 allocator.free(full_path);
@@ -806,13 +889,13 @@ fn walkDir(
 
                                 var new_patterns: std.ArrayListUnmanaged([]const u8) = .empty;
                                 new_patterns.append(allocator, inner_pattern) catch break;
-                                walkDir(allocator, io, full_path, new_patterns.items, opts, results, depth + 1, gitignore_ctx);
+                                walkDir(allocator, io, full_path, new_patterns.items, opts, results, depth + 1, gitignore_ctx, source);
                                 new_patterns.deinit(allocator);
                             } else {
                                 // Non-recursive suffix — recurse with it.
                                 var new_patterns: std.ArrayListUnmanaged([]const u8) = .empty;
                                 new_patterns.append(allocator, remaining_pattern) catch break;
-                                walkDir(allocator, io, full_path, new_patterns.items, opts, results, depth + 1, gitignore_ctx);
+                                walkDir(allocator, io, full_path, new_patterns.items, opts, results, depth + 1, gitignore_ctx, source);
                                 new_patterns.deinit(allocator);
                             }
                         } else {
@@ -820,7 +903,7 @@ fn walkDir(
                             // this directory itself matches; recurse to
                             // check children.
                             if (pat[pat_idx + slash_idx - 1] != '*') {
-                                walkDir(allocator, io, full_path, patterns, opts, results, depth + 1, gitignore_ctx);
+                                walkDir(allocator, io, full_path, patterns, opts, results, depth + 1, gitignore_ctx, source);
                             }
                         }
                         consumed = true;
@@ -846,12 +929,11 @@ fn walkDir(
             // Fallback recursion with the unconsumed patterns only. This is
             // the single recursion path that PASSES PATTERNS DOWN.
             if (unconsumed.items.len > 0) {
-                walkDir(allocator, io, full_path, unconsumed.items, opts, results, depth + 1, gitignore_ctx);
+                walkDir(allocator, io, full_path, unconsumed.items, opts, results, depth + 1, gitignore_ctx, source);
             }
         }
         allocator.free(full_path);
     }
-    std.Io.Dir.close(dir, io);
 }
 
 // ============================================================================
@@ -872,6 +954,18 @@ pub const GlobOptions = struct {
 // ============================================================================
 
 pub fn executeGlob(allocator: std.mem.Allocator, io: std.Io, input: GlobInput) !GlobResult {
+    return executeGlobWith(allocator, io, input, null);
+}
+
+/// The same walk, with the substrate that answers its listings chosen by the
+/// caller. A null source is the host's own filesystem, which is what every
+/// mode but `--saas` uses.
+pub fn executeGlobWith(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    input: GlobInput,
+    source: ?DirSource,
+) !GlobResult {
     // ---- Up-front input validation (BEFORE expandBraces / walk) ----
     // Rationale: most "glob found nothing" results today are actually caller
     // bugs.
@@ -904,7 +998,12 @@ pub fn executeGlob(allocator: std.mem.Allocator, io: std.Io, input: GlobInput) !
 
     // Path existence + dir check. The cross-platform approach: try to open it
     // as a directory. If the open succeeds, path exists and is a directory.
-    {
+    if (source) |src| {
+        // Asking the guest for the listing IS the existence check there: the
+        // walk would otherwise find out only after the patterns were built.
+        const probe = src.listFn(src.ctx, allocator, io, input.path) catch return error.PathDoesNotExist;
+        freeListed(allocator, probe);
+    } else {
         const verify_dir: std.Io.Dir = if (std.fs.path.isAbsolute(input.path))
             std.Io.Dir.openDirAbsolute(io, input.path, .{}) catch return error.PathDoesNotExist
         else
@@ -961,7 +1060,7 @@ pub fn executeGlob(allocator: std.mem.Allocator, io: std.Io, input: GlobInput) !
     defer if (gitignore_ctx_holder) |*c| c.deinit(allocator);
     const gitignore_ctx: ?*GitignoreContext = if (gitignore_ctx_holder) |*c| c else null;
 
-    walkDir(allocator, io, input.path, expanded, opts, &results, 0, gitignore_ctx);
+    walkDir(allocator, io, input.path, expanded, opts, &results, 0, gitignore_ctx, source);
 
     // Apply offset and limit. PRE-EXISTING BUG FIX: The dups in
     // `results.items` are owned by SOMEONE.
@@ -1249,7 +1348,7 @@ test "loadGitignoreForDir with relative path does not crash" {
 
     // This should NOT crash even though subdir_path is relative
     // The function should gracefully handle missing .gitignore or use proper file opening
-    ctx.loadGitignoreForDir(allocator, std.testing.io, subdir_path);
+    ctx.loadGitignoreForDir(allocator, std.testing.io, subdir_path, null);
 
     // If we get here without crashing, the test passes
     try std.testing.expect(true);
@@ -1271,7 +1370,7 @@ test "loadGitignoreForDir with absolute path and existing gitignore" {
     defer ctx.deinit(allocator);
 
     // This should load the gitignore entries without crashing
-    ctx.loadGitignoreForDir(allocator, std.testing.io, tmp_dir_path);
+    ctx.loadGitignoreForDir(allocator, std.testing.io, tmp_dir_path, null);
 
     // Just verify it didn't crash - number of entries depends on whether .gitignore exists
     try std.testing.expect(true);
@@ -2019,6 +2118,73 @@ const glob_tool_mod = exec_pabrikcore.glob_tool;
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
 const exec_path_validate = @import("helpers").path_validate;
+const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
+
+/// The guest as the walk's directory source: listings and `.gitignore` reads
+/// both come from the agent, so the host opens nothing inside the tenant tree.
+const GuestSource = struct {
+    fs: *workspace_fs.Fs,
+
+    fn list(
+        ctx: *const anyopaque,
+        allocator: std.mem.Allocator,
+        io: std.Io,
+        dir_abs: []const u8,
+    ) anyerror![]glob_tool_mod.Listed {
+        _ = io;
+        const self: *const GuestSource = @ptrCast(@alignCast(ctx));
+        var walked = self.fs.listDir(dir_abs) catch |err| switch (err) {
+            workspace_fs.Error.GuestNotDirectory, workspace_fs.Error.GuestPathOutsideWorkspace => return error.PathDoesNotExist,
+            else => return err,
+        };
+        defer walked.deinit();
+
+        const listed = try allocator.alloc(glob_tool_mod.Listed, walked.entries.len);
+        var filled: usize = 0;
+        errdefer {
+            for (listed[0..filled]) |entry| allocator.free(entry.name);
+            allocator.free(listed);
+        }
+        for (walked.entries, 0..) |entry, i| {
+            listed[i] = .{
+                .name = try allocator.dupe(u8, std.fs.path.basename(entry.abs)),
+                .kind = if (entry.kind == .dir) .dir else .file,
+            };
+            filled = i + 1;
+        }
+        return listed;
+    }
+
+    fn read(
+        ctx: *const anyopaque,
+        allocator: std.mem.Allocator,
+        io: std.Io,
+        abs: []const u8,
+    ) anyerror!?[]u8 {
+        _ = io;
+        _ = allocator;
+        const self: *const GuestSource = @ptrCast(@alignCast(ctx));
+        // An unreadable `.gitignore` is a directory with no rules, exactly as
+        // it is on the host.
+        return self.fs.readAll(abs) catch null;
+    }
+};
+
+/// The walk, against the substrate that owns the tree.
+fn executeGlobThrough(ctx: ToolExecContext, input: glob_tool_mod.GlobInput) !glob_tool_mod.GlobResult {
+    var holder = try workspace_fs.forSession(ctx.allocator, ctx.db, ctx.session_id);
+    defer if (holder) |*fs| fs.deinit();
+    if (holder) |*fs| {
+        var guest_source = GuestSource{ .fs = fs };
+        return glob_tool_mod.executeGlobWith(ctx.allocator, ctx.io, input, .{
+            .ctx = &guest_source,
+            .listFn = GuestSource.list,
+            .readFn = GuestSource.read,
+        });
+    }
+    return glob_tool_mod.executeGlob(ctx.allocator, ctx.io, input);
+}
+
 pub fn execGlob(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     const args = tc.function.arguments;
     const args_to_parse: []const u8 = if (args.len == 0) "{}" else args;
@@ -2053,7 +2219,7 @@ pub fn execGlob(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     var input = parsed.value;
     input.path = path_abs;
 
-    var glob_result = glob_tool_mod.executeGlob(ctx.allocator, ctx.io, input) catch |err| {
+    var glob_result = executeGlobThrough(ctx, input) catch |err| {
         // Map the new domain errors to LLM-friendly messages. Each one
         // names the fix the LLM can try (different pattern, narrower
         // path, smaller max_results, etc).

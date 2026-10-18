@@ -23,6 +23,9 @@ const poll_slice_ms: i32 = 200;
 pub const reply_guard_ms: u32 = 15_000;
 
 pub const failure_message_max = 256;
+/// A write is many guest round-trips and a walk is many frames, so both get a
+/// longer deadline than a call that does no work in the guest.
+pub const long_call_guard_ms: u32 = 120_000;
 
 pub const Failure = struct {
     code: rpc.FailureCode,
@@ -121,6 +124,25 @@ pub const FsChunk = struct {
 
     pub fn deinit(self: FsChunk, allocator: std.mem.Allocator) void {
         allocator.free(self.bytes);
+    }
+};
+
+pub const WalkEntry = struct {
+    path: []u8,
+    kind: []u8,
+};
+
+pub const WalkResult = struct {
+    entries: []WalkEntry,
+    count: usize,
+    truncated: bool,
+
+    pub fn deinit(self: WalkResult, allocator: std.mem.Allocator) void {
+        for (self.entries) |entry| {
+            allocator.free(entry.path);
+            allocator.free(entry.kind);
+        }
+        allocator.free(self.entries);
     }
 };
 
@@ -239,6 +261,77 @@ pub const Client = struct {
         defer response.deinit();
         return switch (response.value) {
             .ack => {},
+            .failure => |f| self.reportFailure(f),
+            else => Error.ProtocolViolation,
+        };
+    }
+
+    /// Write a whole file into the guest. The daemon pages it, so the body
+    /// this call carries is the only ceiling.
+    pub fn writeFile(
+        self: *Client,
+        workspace_id: []const u8,
+        path: []const u8,
+        data: []const u8,
+        create_dirs: bool,
+    ) !void {
+        var response = try self.call(.{
+            .action = .fs_write,
+            .id = self.takeId(),
+            .workspace_id = workspace_id,
+            .path = path,
+            .data = data,
+            .create_dirs = create_dirs,
+        }, long_call_guard_ms);
+        defer response.deinit();
+        return switch (response.value) {
+            .ack => {},
+            .failure => |f| self.reportFailure(f),
+            else => Error.ProtocolViolation,
+        };
+    }
+
+    /// A bounded walk of the workspace, as the guest saw it.
+    pub fn walk(
+        self: *Client,
+        workspace_id: []const u8,
+        path: []const u8,
+        max_depth: u32,
+        max_entries: usize,
+    ) !WalkResult {
+        var response = try self.call(.{
+            .action = .fs_walk,
+            .id = self.takeId(),
+            .workspace_id = workspace_id,
+            .path = path,
+            .max_depth = max_depth,
+            .max_entries = max_entries,
+        }, long_call_guard_ms);
+        defer response.deinit();
+        return switch (response.value) {
+            .fs_walk => |walked| blk: {
+                const entries = try self.allocator.alloc(WalkEntry, walked.entries.len);
+                var filled: usize = 0;
+                errdefer {
+                    for (entries[0..filled]) |entry| {
+                        self.allocator.free(entry.path);
+                        self.allocator.free(entry.kind);
+                    }
+                    self.allocator.free(entries);
+                }
+                for (walked.entries, 0..) |entry, i| {
+                    entries[i] = .{
+                        .path = try self.allocator.dupe(u8, entry.path),
+                        .kind = try self.allocator.dupe(u8, entry.kind),
+                    };
+                    filled = i + 1;
+                }
+                break :blk .{
+                    .entries = entries,
+                    .count = walked.count,
+                    .truncated = walked.truncated,
+                };
+            },
             .failure => |f| self.reportFailure(f),
             else => Error.ProtocolViolation,
         };

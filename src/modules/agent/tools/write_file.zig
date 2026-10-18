@@ -105,6 +105,7 @@ pub fn toJSONError(allocator: std.mem.Allocator, err: anyerror, path: []const u8
     const message: []const u8 = switch (err) {
         error.PathNotFound => try std.fmt.allocPrint(allocator, "Directory for path '{s}' not found. Check if the parent directory exists.", .{path}),
         error.InputOutput => try std.fmt.allocPrint(allocator, "Failed to write file '{s}'. Check write permissions.", .{path}),
+        error.FileTooBig => try std.fmt.allocPrint(allocator, "File '{s}' is larger than one write request can carry. Write it in pieces.", .{path}),
         else => try std.fmt.allocPrint(allocator, "Unexpected error: {s}", .{@errorName(err)}),
     };
     defer allocator.free(message);
@@ -1458,6 +1459,25 @@ const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
 const exec_path_validate = @import("helpers").path_validate;
 const exec_testing = std.testing;
+const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
+
+/// The file's bytes land wherever the workspace lives. Under `--saas` that is
+/// the guest, which creates and extends the file itself; in every other mode
+/// `forSession` installs nothing and this is the host write it always was.
+fn writeThrough(ctx: ToolExecContext, input: WriteFileInput) !WriteFileResult {
+    const guest = try workspace_fs.forSession(ctx.allocator, ctx.db, ctx.session_id);
+    if (guest) |handle| {
+        var fs = handle;
+        defer fs.deinit();
+        fs.writeAll(input.path, input.content, input.create_with_dir) catch |err| switch (err) {
+            workspace_fs.Error.GuestWriteFailed => return error.InputOutput,
+            workspace_fs.Error.GuestPathOutsideWorkspace => return error.InvalidPathReason,
+            else => return err,
+        };
+        return WriteFileResult{ .path = try ctx.allocator.dupe(u8, input.path) };
+    }
+    return writeFile(ctx.allocator, ctx.io, input);
+}
 pub fn execWriteFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     const parsed = std.json.parseFromSlice(
         WriteFileInput,
@@ -1490,7 +1510,7 @@ pub fn execWriteFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     var input = parsed.value;
     input.path = path_abs;
 
-    const write_result = writeFile(ctx.allocator, ctx.io, input) catch |err| {
+    const write_result = writeThrough(ctx, input) catch |err| {
         const inner = try toJSONError(ctx.allocator, err, path_abs);
         const err_msg = try error_explain.explain(ctx.allocator, err, path_abs);
         defer ctx.allocator.free(err_msg);
@@ -1501,6 +1521,30 @@ pub fn execWriteFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     write_result.deinit(ctx.allocator);
     const output = try wrapToolOutput(ctx.allocator, "write_file", tc.function.arguments, true, null, inner);
     return ToolExecResult{ .output = output, .output_allocated = true };
+}
+
+// The seam is inert without `--saas`: the bytes still land, written by the
+// host, which is what every mode but `--saas` has always done.
+test "writeThrough: local mode writes the file the host way" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(std.testing.io, &path_buf);
+    const target = try std.fs.path.join(std.testing.allocator, &.{ path_buf[0..n], "seam.txt" });
+    defer std.testing.allocator.free(target);
+
+    const ctx = minimalCtx(std.testing.allocator);
+    var result = try writeThrough(ctx, .{ .path = target, .content = "through the seam" });
+    defer result.deinit(std.testing.allocator);
+
+    const read = try std.Io.Dir.cwd().readFileAlloc(
+        std.testing.io,
+        target,
+        std.testing.allocator,
+        std.Io.Limit.limited(1 << 16),
+    );
+    defer std.testing.allocator.free(read);
+    try std.testing.expectEqualStrings("through the seam", read);
 }
 
 // ---------------------------------------------------------------------------

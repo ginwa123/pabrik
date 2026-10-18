@@ -24,6 +24,8 @@ const usage =
     \\  probe   --socket PATH --workspace-id ID --pid N
     \\  signal  --socket PATH --workspace-id ID --pid N [--signal N]
     \\  log     --socket PATH --workspace-id ID --log-name NAME [--offset N] [--max-bytes N]
+    \\  fs-write --socket PATH --workspace-id ID --path REL [--data STRING] [--create-dirs]
+    \\  fs-walk  --socket PATH --workspace-id ID [--path REL] [--max-depth N] [--max-entries N]
     \\
     \\  --workspace-id ID    the only identifier the manager takes; every path for
     \\                       this workspace is derived from it
@@ -45,6 +47,11 @@ const usage =
     \\  --signal N           signal number for `signal` (default 9)
     \\  --offset N           byte offset for `log` (default 0)
     \\  --max-bytes N        bytes for `log` to return (default 16 KiB)
+    \\  --path REL           workspace-relative path for `fs-write` / `fs-walk`
+    \\  --data STRING        the body `fs-write` writes
+    \\  --create-dirs        let `fs-write` create the parent directories
+    \\  --max-depth N        how deep `fs-walk` descends (default 32)
+    \\  --max-entries N      how many entries `fs-walk` reports (default 20000)
     \\
 ;
 
@@ -68,6 +75,11 @@ const Options = struct {
     sig: i64 = 9,
     offset: i64 = 0,
     max_bytes: usize = rpc.default_max_log_bytes,
+    path: []const u8 = "",
+    data: []const u8 = "",
+    create_dirs: bool = false,
+    max_depth: u32 = rpc.default_walk_depth,
+    max_entries: usize = rpc.default_walk_entries,
     command: []const []const u8 = &.{},
 };
 
@@ -161,6 +173,20 @@ fn parse(args: []const []const u8, options: *Options) void {
         } else if (std.mem.eql(u8, arg, "--offset")) {
             options.offset = number(i64, "--offset", valueAt(args, i));
             i += 1;
+        } else if (std.mem.eql(u8, arg, "--path")) {
+            options.path = valueAt(args, i);
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--data")) {
+            options.data = valueAt(args, i);
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--create-dirs")) {
+            options.create_dirs = true;
+        } else if (std.mem.eql(u8, arg, "--max-depth")) {
+            options.max_depth = number(u32, arg, valueAt(args, i));
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--max-entries")) {
+            options.max_entries = number(usize, arg, valueAt(args, i));
+            i += 1;
         } else if (std.mem.eql(u8, arg, "--max-bytes")) {
             options.max_bytes = number(usize, "--max-bytes", valueAt(args, i));
             i += 1;
@@ -238,6 +264,8 @@ pub fn main(init: std.process.Init) !void {
     if (std.mem.eql(u8, command, "probe")) return probeCommand(init, aa, &options);
     if (std.mem.eql(u8, command, "signal")) return signalCommand(init, aa, &options);
     if (std.mem.eql(u8, command, "log")) return logCommand(init, aa, &options);
+    if (std.mem.eql(u8, command, "fs-write")) return fsWriteCommand(init, aa, &options);
+    if (std.mem.eql(u8, command, "fs-walk")) return fsWalkCommand(init, aa, &options);
     fail("unknown command: {s}\n{s}", .{ command, usage });
 }
 
@@ -434,6 +462,47 @@ fn logCommand(init: std.process.Init, arena: std.mem.Allocator, options: *Option
         chunk.size,
         chunk.eof,
         chunk.missing,
+    });
+}
+
+/// Write a body into the workspace's VM. The bytes are the caller's; the
+/// file is the guest's.
+fn fsWriteCommand(init: std.process.Init, arena: std.mem.Allocator, options: *Options) !void {
+    _ = arena;
+    resolveSocket(init, options);
+    requireWorkspace(options);
+    if (options.path.len == 0) fail("--path is required", .{});
+
+    var client = vmd_client.Client.init(init.gpa, options.socket);
+    client.writeFile(options.workspace_id, options.path, options.data, options.create_dirs) catch reportClientError(&client);
+    emit(1, "wrote {d} bytes to {s}\n", .{ options.data.len, options.path });
+}
+
+/// List the workspace's VM, one `path kind` line per entry.
+fn fsWalkCommand(init: std.process.Init, arena: std.mem.Allocator, options: *Options) !void {
+    _ = arena;
+    resolveSocket(init, options);
+    requireWorkspace(options);
+
+    var client = vmd_client.Client.init(init.gpa, options.socket);
+    const walked = client.walk(
+        options.workspace_id,
+        options.path,
+        options.max_depth,
+        options.max_entries,
+    ) catch reportClientError(&client);
+    defer walked.deinit(init.gpa);
+
+    for (walked.entries) |entry| {
+        writeRaw(1, entry.path);
+        writeRaw(1, " ");
+        writeRaw(1, entry.kind);
+        writeRaw(1, "\n");
+    }
+    emit(2, "pabrik-vmd: entries={d} count={d} truncated={}\n", .{
+        walked.entries.len,
+        walked.count,
+        walked.truncated,
     });
 }
 

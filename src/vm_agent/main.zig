@@ -423,6 +423,25 @@ const resolve_beneath: u64 = 0x08;
 const o_directory: u64 = 0o200000;
 /// `AT_REMOVEDIR`: `unlinkat`'s "this is a directory" flag.
 const at_removedir: u64 = 0x200;
+/// One `fs.write` frame's bytes. A frame is 64 KiB and base64 costs 4 bytes
+/// per 3, so the envelope has room; the caller pages a file through this.
+const fs_write_chunk: usize = 32 * 1024;
+const o_wronly: u64 = 0o1;
+const o_creat: u64 = 0o100;
+const o_trunc: u64 = 0o1000;
+/// What the guest creates: uid 1000 owns the tree it works in.
+const fs_file_mode: u64 = 0o644;
+/// A walk is bounded in both directions — how deep it goes and how many
+/// entries it reports — so no tree can be walked into an endless reply.
+const max_walk_depth: u32 = 32;
+const max_walk_entries: usize = 20_000;
+/// Entries per `fs.walk` reply frame. The reply is streamed: the caller keeps
+/// reading until a frame says `done`.
+const fs_walk_frame_entries: usize = 48;
+/// `getdents64`'s d_type for the three kinds a walk names.
+const dt_dir: u8 = 4;
+const dt_reg: u8 = 8;
+const dt_lnk: u8 = 10;
 
 const OpenHow = extern struct {
     flags: u64,
@@ -453,7 +472,13 @@ fn openWorkspaceRoot() ?linux.fd_t {
 }
 
 fn openBeneath(root_fd: linux.fd_t, path: [*:0]const u8, flags: u64) ?linux.fd_t {
-    var how = OpenHow{ .flags = flags, .mode = 0, .resolve = resolve_beneath };
+    return openBeneathMode(root_fd, path, flags, 0);
+}
+
+/// The same open, with the `mode` an `O_CREAT` open requires. Kept apart so a
+/// creation and a read cannot be spelled by accident.
+fn openBeneathMode(root_fd: linux.fd_t, path: [*:0]const u8, flags: u64, mode: u64) ?linux.fd_t {
+    var how = OpenHow{ .flags = flags, .mode = mode, .resolve = resolve_beneath };
     const rc = linux.syscall6(
         .openat2,
         @as(usize, @bitCast(@as(isize, root_fd))),
@@ -597,6 +622,356 @@ fn runFsRemove(conn_fd: linux.fd_t, id: i64, path: []const u8) void {
     reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"cannot remove\"}}", .{id});
 }
 
+
+/// Every parent directory a write's path needs, each made under a fd the
+/// kernel already resolved BENEATH the workspace: a symlinked segment is
+/// `EXDEV`, never a directory somewhere else. Returns the deepest parent.
+fn ensureParents(root_fd: linux.fd_t, path: []const u8) ?linux.fd_t {
+    var current = root_fd;
+    var owned = false;
+    var start: usize = 0;
+    while (std.mem.indexOfScalarPos(u8, path, start, '/')) |slash| {
+        const segment = path[start..slash];
+        var seg_buf: [256]u8 = undefined;
+        const seg_z = cstr(segment, &seg_buf) orelse return null;
+        const child = openBeneath(current, seg_z, o_directory) orelse blk: {
+            const made = linux.mkdirat(@intCast(current), seg_z, 0o755);
+            const err = linux.errno(made);
+            if (err != .SUCCESS and err != .EXIST) return null;
+            break :blk openBeneath(current, seg_z, o_directory) orelse return null;
+        };
+        if (owned) _ = linux.close(current);
+        current = child;
+        owned = true;
+        start = slash + 1;
+    }
+    return current;
+}
+
+/// `fs.write`: one positional piece of a file, CREATED by the first piece and
+/// extended by the rest. The bytes are decoded before anything is opened, so a
+/// bad payload cannot leave a truncated file behind.
+fn runFsWrite(
+    conn_fd: linux.fd_t,
+    id: i64,
+    path: []const u8,
+    offset: i64,
+    data_b64: []const u8,
+    create_dirs: bool,
+    truncate: bool,
+) void {
+    if (!relPathOk(path)) {
+        reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"path is not relative to the workspace\"}}", .{id});
+        return;
+    }
+    if (offset < 0) {
+        reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"offset must not be negative\"}}", .{id});
+        return;
+    }
+    var path_buf: [max_fs_path + 1]u8 = undefined;
+    const path_z = cstr(path, &path_buf) orelse {
+        reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"path too long\"}}", .{id});
+        return;
+    };
+
+    var data_buf: [fs_write_chunk]u8 = undefined;
+    const decoder = std.base64.standard.Decoder;
+    const data_len = decoder.calcSizeForSlice(data_b64) catch {
+        reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"data is not base64\"}}", .{id});
+        return;
+    };
+    if (data_len > fs_write_chunk) {
+        reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"one write piece is too large\"}}", .{id});
+        return;
+    }
+    decoder.decode(data_buf[0..data_len], data_b64) catch {
+        reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"data is not base64\"}}", .{id});
+        return;
+    };
+
+    const root = openWorkspaceRoot() orelse {
+        reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"the workspace is not mounted\"}}", .{id});
+        return;
+    };
+    defer _ = linux.close(root);
+
+    if (create_dirs) {
+        const parents = ensureParents(root, path) orelse {
+            reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"cannot create the parent directory\"}}", .{id});
+            return;
+        };
+        if (parents != root) _ = linux.close(parents);
+    }
+
+    var flags = o_wronly | o_creat;
+    if (offset == 0 and truncate) flags |= o_trunc;
+    const file = openBeneathMode(root, path_z, flags, fs_file_mode) orelse {
+        reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"cannot open the file for writing\"}}", .{id});
+        return;
+    };
+    defer _ = linux.close(file);
+
+    if (data_len > 0) {
+        const written = linux.pwrite(file, data_buf[0..data_len].ptr, data_len, offset);
+        if (linux.errno(written) != .SUCCESS or written != data_len) {
+            reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"cannot write the file\"}}", .{id});
+            return;
+        }
+    }
+    reply(
+        conn_fd,
+        "{{\"type\":\"fs.write.ok\",\"id\":{d},\"size\":{d},\"offset\":{d}}}",
+        .{ id, data_len, offset + @as(i64, @intCast(data_len)) },
+    );
+}
+
+/// One directory the walk has still to enter: its workspace-relative path and
+/// how deep it sits. The whole walk's state is this array.
+const WalkDir = struct {
+    len: usize = 0,
+    depth: u32 = 0,
+    buf: [max_fs_path]u8 = undefined,
+
+    fn path(self: *const WalkDir) []const u8 {
+        return self.buf[0..self.len];
+    }
+};
+
+/// The frame a streamed walk reply is built in, by hand: the agent has no
+/// allocator, so the reply's ceiling is this buffer's.
+const walk_frame_bytes: usize = 56 * 1024;
+
+/// A streamed `fs.walk` reply. Entries are appended until the frame is full or
+/// the per-frame cap is reached, then the frame is written and a fresh one
+/// starts — the last one is the caller's `done`.
+const WalkOut = struct {
+    conn_fd: linux.fd_t,
+    id: i64,
+    frame: [walk_frame_bytes]u8 = undefined,
+    off: usize = 0,
+    in_frame: usize = 0,
+
+    fn start(self: *WalkOut) void {
+        var header: [96]u8 = undefined;
+        const text = std.fmt.bufPrint(
+            &header,
+            "{{\"type\":\"fs.walk\",\"id\":{d},\"done\":false,\"entries\":[",
+            .{self.id},
+        ) catch return;
+        @memcpy(self.frame[0..text.len], text);
+        self.off = text.len;
+        self.in_frame = 0;
+    }
+
+    fn full(self: *const WalkOut, path_len: usize) bool {
+        // A worst case of six bytes per path byte leaves room for escaping.
+        return self.in_frame == fs_walk_frame_entries or self.off + path_len * 6 + 64 >= self.frame.len;
+    }
+
+    /// What has been appended so far, as one complete frame.
+    fn flush(self: *WalkOut) void {
+        if (self.in_frame == 0) return;
+        self.frame[self.off] = ']';
+        self.frame[self.off + 1] = '}';
+        writeFrame(self.conn_fd, self.frame[0 .. self.off + 2]);
+        self.start();
+    }
+
+    fn append(self: *WalkOut, path: []const u8, kind: []const u8) bool {
+        if (self.full(path.len)) return false;
+        if (self.in_frame > 0) {
+            self.frame[self.off] = ',';
+            self.off += 1;
+        }
+        const prefix = "{\"path\":";
+        @memcpy(self.frame[self.off..][0..prefix.len], prefix);
+        self.off += prefix.len;
+        if (!appendJsonString(&self.frame, &self.off, path)) return false;
+        const kind_prefix = ",\"kind\":\"";
+        @memcpy(self.frame[self.off..][0..kind_prefix.len], kind_prefix);
+        self.off += kind_prefix.len;
+        @memcpy(self.frame[self.off..][0..kind.len], kind);
+        self.off += kind.len;
+        self.frame[self.off] = '"';
+        self.frame[self.off + 1] = '}';
+        self.off += 2;
+        self.in_frame += 1;
+        return true;
+    }
+
+    /// The frame that ends the stream, whatever it carries.
+    fn done(self: *WalkOut, count: usize, truncated: bool) void {
+        reply(
+            self.conn_fd,
+            "{{\"type\":\"fs.walk\",\"id\":{d},\"done\":true,\"entries\":[],\"count\":{d},\"truncated\":{s}}}",
+            .{ self.id, count, if (truncated) "true" else "false" },
+        );
+    }
+};
+
+fn kindName(dtype: u8) []const u8 {
+    return switch (dtype) {
+        dt_dir => "dir",
+        dt_reg => "file",
+        dt_lnk => "link",
+        else => "other",
+    };
+}
+
+/// A quoted JSON string, escaped, into `dst` at `off`. False when it does not
+/// fit: the caller then flushes the frame and appends again.
+fn appendJsonString(dst: []u8, off: *usize, text: []const u8) bool {
+    if (off.* + 1 > dst.len) return false;
+    dst[off.*] = '"';
+    off.* += 1;
+    for (text) |byte| {
+        const escape: ?[]const u8 = switch (byte) {
+            '"' => "\\\"",
+            '\\' => "\\\\",
+            '\n' => "\\n",
+            '\r' => "\\r",
+            '\t' => "\\t",
+            else => null,
+        };
+        if (escape) |escaped| {
+            if (off.* + escaped.len > dst.len) return false;
+            @memcpy(dst[off.*..][0..escaped.len], escaped);
+            off.* += escaped.len;
+        } else if (byte < 0x20) {
+            if (off.* + 6 > dst.len) return false;
+            const hex = "0123456789abcdef";
+            dst[off.*] = '\\';
+            dst[off.* + 1] = 'u';
+            dst[off.* + 2] = '0';
+            dst[off.* + 3] = '0';
+            dst[off.* + 4] = hex[byte >> 4];
+            dst[off.* + 5] = hex[byte & 0x0f];
+            off.* += 6;
+        } else {
+            if (off.* + 1 > dst.len) return false;
+            dst[off.*] = byte;
+            off.* += 1;
+        }
+    }
+    if (off.* + 1 > dst.len) return false;
+    dst[off.*] = '"';
+    off.* += 1;
+    return true;
+}
+
+/// The path an openat2 call is given: the workspace root itself is named "."
+/// on the wire, because an empty path is a missing one to the kernel.
+fn walkPathZ(path: []const u8, buf: []u8) ?[*:0]const u8 {
+    return cstr(if (path.len == 0) "." else path, buf);
+}
+
+/// `fs.walk`: a bounded, depth-first listing of the workspace beneath `path`,
+/// streamed one frame at a time. Each entry names a path RELATIVE to the
+/// workspace and its kind; a size is what `fs.stat` is for.
+fn runFsWalk(conn_fd: linux.fd_t, id: i64, path: []const u8, max_depth: u32, max_entries: usize) void {
+    if (path.len > 0 and !relPathOk(path)) {
+        reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"path is not relative to the workspace\"}}", .{id});
+        return;
+    }
+    const root = openWorkspaceRoot() orelse {
+        reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"the workspace is not mounted\"}}", .{id});
+        return;
+    };
+    defer _ = linux.close(root);
+
+    // The starting directory must be one the walk can enter: a file or a
+    // missing path is an error, not an empty listing.
+    {
+        var root_rel_buf: [max_fs_path + 1]u8 = undefined;
+        const path_z = walkPathZ(path, &root_rel_buf) orelse return;
+        const opened = openBeneath(root, path_z, o_directory) orelse {
+            reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"missing\":true,\"message\":\"no such directory\"}}", .{id});
+            return;
+        };
+        _ = linux.close(opened);
+    }
+
+    var out = WalkOut{ .conn_fd = conn_fd, .id = id };
+    out.start();
+
+    var stack: [max_walk_depth + 1]WalkDir = undefined;
+    var top: usize = 1;
+    stack[0] = .{ .depth = 0, .len = path.len };
+    @memcpy(stack[0].buf[0..path.len], path);
+
+    var scratch: [max_fs_path + 1]u8 = undefined;
+    var dirent_buf: [16 * 1024]u8 = undefined;
+    var child_buf: [max_fs_path]u8 = undefined;
+    var emitted: usize = 0;
+    var truncated = false;
+    var gave_up = false;
+
+    walk: while (top > 0) {
+        top -= 1;
+        // The slot just popped is reused by the next push, so the directory
+        // being scanned is copied out of the stack first.
+        const current = stack[top];
+        const dir_rel = current.path();
+        const dir_z = walkPathZ(dir_rel, &scratch) orelse continue;
+        const dir_fd = openBeneath(root, dir_z, o_directory) orelse continue;
+        defer _ = linux.close(dir_fd);
+
+        read_dir: while (true) {
+            const n = linux.getdents64(dir_fd, &dirent_buf, dirent_buf.len);
+            if (linux.errno(n) != .SUCCESS or n == 0) break :read_dir;
+            var at: usize = 0;
+            while (at < n) {
+                const entry: *align(1) const linux.dirent64 = @ptrCast(&dirent_buf[at]);
+                const reclen = entry.reclen;
+                if (reclen == 0) break :read_dir;
+                const name = std.mem.sliceTo(@as([*:0]const u8, @ptrCast(&entry.name)), 0);
+                at += reclen;
+                if (std.mem.eql(u8, name, ".") or std.mem.eql(u8, name, "..")) continue;
+                if (emitted == max_entries) {
+                    truncated = true;
+                    break :walk;
+                }
+                const child_len = if (dir_rel.len == 0) name.len else dir_rel.len + 1 + name.len;
+                if (child_len > max_fs_path) continue;
+                var child: []const u8 = undefined;
+                if (dir_rel.len == 0) {
+                    @memcpy(child_buf[0..name.len], name);
+                    child = child_buf[0..name.len];
+                } else {
+                    @memcpy(child_buf[0..dir_rel.len], dir_rel);
+                    child_buf[dir_rel.len] = '/';
+                    @memcpy(child_buf[dir_rel.len + 1 ..][0..name.len], name);
+                    child = child_buf[0 .. dir_rel.len + 1 + name.len];
+                }
+                const kind = kindName(entry.type);
+                if (!out.append(child, kind)) {
+                    out.flush();
+                    if (!out.append(child, kind)) {
+                        // A path that cannot fit a frame on its own: drop it
+                        // rather than spin on it forever.
+                        continue;
+                    }
+                }
+                emitted += 1;
+                if (entry.type == dt_dir and current.depth + 1 < max_depth) {
+                    if (top >= stack.len) {
+                        // Depth and stack travel together; this is belt and
+                        // braces so a bad depth cannot write past the array.
+                        gave_up = true;
+                        break :walk;
+                    }
+                    stack[top] = .{ .depth = current.depth + 1, .len = child_len };
+                    @memcpy(stack[top].buf[0..child_len], child);
+                    top += 1;
+                }
+            }
+        }
+    }
+
+    out.flush();
+    out.done(emitted, truncated or gave_up);
+}
+
 // ─── request dispatch ────────────────────────────────────────────────────
 
 fn asU32(value: std.json.Value, fallback: u32) u32 {
@@ -728,6 +1103,35 @@ fn serveRequest(conn_fd: linux.fd_t, text: []const u8) void {
         }
         runSignal(conn_fd, id, pid, sig);
         return;
+    }
+    if (std.mem.eql(u8, kind, "fs.write")) {
+        const id = if (obj.get("id")) |v| asI64(v, 0) else 0;
+        const path = if (obj.get("path")) |v| (if (v == .string) v.string else "") else "";
+        const data_b64 = if (obj.get("data_b64")) |v| (if (v == .string) v.string else "") else "";
+        if (path.len == 0) {
+            reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"path is required\"}}", .{id});
+            return;
+        }
+        const offset = if (obj.get("offset")) |v| asI64(v, 0) else 0;
+        const create_dirs = if (obj.get("create_dirs")) |v| (v == .bool and v.bool) else false;
+        // A request that does not say otherwise truncates at the start.
+        const truncate = if (obj.get("truncate")) |v| (v == .bool and v.bool) else (offset == 0);
+        return runFsWrite(conn_fd, id, path, offset, data_b64, create_dirs, truncate);
+    }
+    if (std.mem.eql(u8, kind, "fs.walk")) {
+        const id = if (obj.get("id")) |v| asI64(v, 0) else 0;
+        // The workspace root itself is a legal start, so an empty path is not
+        // a missing one here the way it is for a file.
+        const path = if (obj.get("path")) |v| (if (v == .string) v.string else "") else "";
+        const asked_depth = if (obj.get("max_depth")) |v| asUsize(v, max_walk_depth) else max_walk_depth;
+        const asked_entries = if (obj.get("max_entries")) |v| asUsize(v, max_walk_entries) else max_walk_entries;
+        const depth: u32 = @intCast(@min(asked_depth, max_walk_depth));
+        const entries: usize = @min(asked_entries, max_walk_entries);
+        if (entries == 0 or depth == 0) {
+            reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"depth and max_entries are required\"}}", .{id});
+            return;
+        }
+        return runFsWalk(conn_fd, id, path, depth, entries);
     }
     if (std.mem.eql(u8, kind, "fs.stat") or std.mem.eql(u8, kind, "fs.read") or std.mem.eql(u8, kind, "fs.remove")) {
         const id = if (obj.get("id")) |v| asI64(v, 0) else 0;

@@ -142,6 +142,41 @@ revived_pid="$(tr -d '[:space:]' < "$vms/workspaces/$ws/fc.pid")"
 [ "$revived_pid" != "$live_pid" ] || fail "the killed VMM's pid came back"
 say "ok  kill -9 left pid=$live_pid dead and its sockets behind; the next command reclaimed them and booted pid=$revived_pid"
 
+say "a file is written, read and walked inside the VM, through the daemon"
+client fs-write --socket "$sock" --workspace-id "$ws" --path seam/deep/note.txt \
+  --data "written through vmd" --create-dirs >"$work/fs-write.txt" 2>&1 ||
+  fail "fs-write failed: $(cat "$work/fs-write.txt")"
+out="$(client fs-walk --socket "$sock" --workspace-id "$ws" --path seam)"
+case "$out" in
+  *"seam/deep/note.txt file"*) ;;
+  *) fail "the written file is not in the walk: $out";;
+esac
+case "$out" in
+  *"seam/deep dir"*) ;;
+  *) fail "the walk did not report the directory: $out";;
+esac
+say "ok  fs-write + fs-walk -> $(printf '%s' "$out" | tr '\n' ' ')"
+
+say "the bytes really landed in the guest, not on a host path"
+out="$(exec_in --timeout-ms 20000 -- /bin/sh -c 'cat /workspace/seam/deep/note.txt')"
+[ "$out" = "written through vmd" ] || fail "the guest does not have the written bytes: $out"
+say "ok  the guest reads back what fs-write wrote"
+
+say "a write the guest would refuse is refused, and named as the caller's own"
+if client fs-write --socket "$sock" --workspace-id "$ws" --path ../escape.txt --data x >/dev/null 2>"$work/err.txt"; then
+  fail "a path-shaped fs-write path was accepted"
+fi
+grep -q "refused: bad_request" "$work/err.txt" || fail "the write refusal was not bad_request: $(cat "$work/err.txt")"
+if client fs-write --socket "$sock" --workspace-id "$ws" --path seam/absent/note.txt --data x >/dev/null 2>"$work/err.txt"; then
+  fail "a write with a missing parent was accepted without --create-dirs"
+fi
+grep -q "refused: bad_request" "$work/err.txt" || fail "the missing parent was not bad_request: $(cat "$work/err.txt")"
+if client fs-walk --socket "$sock" --workspace-id "$ws" --path seam/deep/note.txt >/dev/null 2>"$work/err.txt"; then
+  fail "walking a file was accepted"
+fi
+grep -q "refused: bad_request" "$work/err.txt" || fail "walking a file was not bad_request: $(cat "$work/err.txt")"
+say "ok  ../escape.txt, a missing parent and a file-as-directory were all refused as bad_request"
+
 say "a socket a VMM nobody recorded owns is refused, never unlinked"
 mv "$vms/workspaces/$ws/fc.pid" "$vms/workspaces/$ws/fc.pid.hidden"
 out="$(status_of)"

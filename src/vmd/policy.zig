@@ -8,6 +8,10 @@ pub const max_workspace_id_len = 64;
 pub const max_cwd_rel_len = 1024;
 pub const guest_root = "/workspace";
 pub const guest_shell = "/bin/sh";
+/// The git and ripgrep the sealed image ships. `execve` searches no PATH, so
+/// a guest program is named by its absolute path or not at all.
+pub const guest_git = "/usr/bin/git";
+pub const guest_rg = "/usr/bin/rg";
 
 /// The id arrives from outside and is the ONLY input that reaches a path, so it
 /// must be inert: letters, digits, `_` and `-`, and never `.` or `..`.

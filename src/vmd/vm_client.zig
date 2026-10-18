@@ -7,6 +7,10 @@ const linux = std.os.linux;
 
 pub const agent_port: u32 = 5000;
 pub const max_frame: usize = 64 * 1024;
+/// One `fs.write` frame's bytes. The agent refuses more than this, and a
+/// 64 KiB frame cannot hold much more once base64 and the envelope are paid
+/// for, so the two ends agree on one number.
+pub const fs_write_chunk: usize = 32 * 1024;
 pub const default_mem_mib: u32 = 512;
 pub const default_vcpus: u32 = 1;
 pub const boot_timeout_ms: u32 = 20_000;
@@ -35,6 +39,10 @@ pub const Error = error{
     ReplyTooLarge,
     Timeout,
     OutOfMemory,
+    WriteFailed,
+    /// The guest was asked to walk something that is not a directory it will
+    /// enter. Not the same as an empty one, and not this client's to guess at.
+    WalkNotADirectory,
 };
 
 // ─── layout: the only place a path is decided ────────────────────────────
@@ -965,6 +973,190 @@ pub fn removeFile(allocator: std.mem.Allocator, layout: Layout, path: []const u8
     const kind = jsonStringField(obj, "type") orelse return Error.ProtocolViolation;
     if (!std.mem.eql(u8, kind, "fs.remove.ok")) return Error.ProtocolViolation;
     return true;
+}
+
+pub const WriteOutcome = struct {
+    bytes: usize,
+};
+
+pub const WalkEntry = struct {
+    path: []u8,
+    kind: []u8,
+};
+
+/// A walk's answer: every entry the guest reported, and whether its own
+/// ceilings cut the tree short.
+pub const WalkResult = struct {
+    entries: []WalkEntry,
+    count: usize,
+    truncated: bool,
+
+    pub fn deinit(self: WalkResult, allocator: std.mem.Allocator) void {
+        for (self.entries) |entry| {
+            allocator.free(entry.path);
+            allocator.free(entry.kind);
+        }
+        allocator.free(self.entries);
+    }
+};
+
+fn buildWriteFrame(
+    buf: []u8,
+    path: []const u8,
+    offset: i64,
+    data: []const u8,
+    create_dirs: bool,
+) ![]const u8 {
+    var head_buf: [256]u8 = undefined;
+    // `truncate` is the first piece's business: the pieces after it extend a
+    // file that is already the right length.
+    const head = try std.fmt.bufPrint(
+        &head_buf,
+        "{{\"type\":\"fs.write\",\"id\":1,\"offset\":{d},\"truncate\":{s},\"create_dirs\":{s},\"data_b64\":\"",
+        .{
+            offset,
+            if (offset == 0) "true" else "false",
+            if (create_dirs) "true" else "false",
+        },
+    );
+    @memcpy(buf[0..head.len], head);
+    var off: usize = head.len;
+    const encoder = std.base64.standard.Encoder;
+    const size = encoder.calcSize(data.len);
+    if (off + size + path.len * 6 + 64 > buf.len) return Error.ReplyTooLarge;
+    _ = encoder.encode(buf[off .. off + size], data);
+    off += size;
+    const mid = "\",\"path\":";
+    @memcpy(buf[off..][0..mid.len], mid);
+    off += mid.len;
+    try appendJsonString(buf, &off, path);
+    buf[off] = '}';
+    off += 1;
+    return buf[0..off];
+}
+
+/// Write `data` to `path` inside the guest, in frame-sized pieces: the first
+/// piece creates the file and the directories it needs, the rest extend it.
+/// The host writes nothing — this is the only path a tenant file is created on.
+pub fn writeFile(
+    allocator: std.mem.Allocator,
+    layout: Layout,
+    path: []const u8,
+    data: []const u8,
+    create_dirs: bool,
+) !WriteOutcome {
+    const fd = try connectUnix(layout.vsock_sock);
+    defer _ = linux.close(fd);
+    try handshake(fd, agent_port);
+
+    var frame_buf: [64 * 1024]u8 = undefined;
+    var reply_buf: [max_frame]u8 = undefined;
+    var offset: i64 = 0;
+    var sent: usize = 0;
+    while (true) {
+        const piece = @min(fs_write_chunk, data.len - sent);
+        const frame = try buildWriteFrame(&frame_buf, path, offset, data[sent .. sent + piece], create_dirs);
+        try sendFrame(fd, frame);
+
+        const text = try readFrame(fd, &reply_buf);
+        var parsed = try parseObject(allocator, text);
+        defer parsed.deinit();
+        const obj = parsed.value.object;
+        const kind = jsonStringField(obj, "type") orelse return Error.ProtocolViolation;
+        // The guest refused: a path it will not open, or a parent that is not
+        // there. Its reason is not this client's to invent.
+        if (std.mem.eql(u8, kind, "fs.error")) return Error.WriteFailed;
+        if (!std.mem.eql(u8, kind, "fs.write.ok")) return Error.ProtocolViolation;
+        // The guest's own count is the only evidence the bytes landed.
+        const landed = jsonIntField(obj, "size") orelse return Error.ProtocolViolation;
+        if (landed != @as(i64, @intCast(piece))) return Error.ProtocolViolation;
+
+        sent += piece;
+        offset += @intCast(piece);
+        if (sent >= data.len) break;
+    }
+    return .{ .bytes = sent };
+}
+
+/// A bounded walk of the guest, STREAMED: the agent sends one frame per batch
+/// of entries and the last one carries `done`. Nothing outside the guest tree
+/// is ever named, because every path in the reply is relative to it.
+pub fn walk(
+    allocator: std.mem.Allocator,
+    layout: Layout,
+    path: []const u8,
+    max_depth: u32,
+    max_entries: usize,
+) !WalkResult {
+    const fd = try connectUnix(layout.vsock_sock);
+    defer _ = linux.close(fd);
+    try handshake(fd, agent_port);
+
+    var request_buf: [4096]u8 = undefined;
+    const head = try std.fmt.bufPrint(
+        &request_buf,
+        "{{\"type\":\"fs.walk\",\"id\":1,\"max_depth\":{d},\"max_entries\":{d},\"path\":",
+        .{ max_depth, max_entries },
+    );
+    var off: usize = head.len;
+    try appendJsonString(&request_buf, &off, path);
+    request_buf[off] = '}';
+    off += 1;
+    try sendFrame(fd, request_buf[0..off]);
+
+    var out: std.ArrayList(WalkEntry) = .empty;
+    errdefer {
+        for (out.items) |entry| {
+            allocator.free(entry.path);
+            allocator.free(entry.kind);
+        }
+        out.deinit(allocator);
+    }
+
+    var reply_buf: [max_frame]u8 = undefined;
+    var count: usize = 0;
+    var truncated = false;
+    while (true) {
+        const text = try readFrame(fd, &reply_buf);
+        var parsed = try parseObject(allocator, text);
+        defer parsed.deinit();
+        const obj = parsed.value.object;
+        const kind = jsonStringField(obj, "type") orelse return Error.ProtocolViolation;
+        if (std.mem.eql(u8, kind, "fs.error")) return Error.WalkNotADirectory;
+        if (!std.mem.eql(u8, kind, "fs.walk")) return Error.ProtocolViolation;
+
+        if (obj.get("entries")) |value| {
+            const items = switch (value) {
+                .array => |a| a.items,
+                else => return Error.ProtocolViolation,
+            };
+            for (items) |item| {
+                const entry = switch (item) {
+                    .object => |o| o,
+                    else => return Error.ProtocolViolation,
+                };
+                const entry_path = jsonStringField(entry, "path") orelse return Error.ProtocolViolation;
+                const entry_kind = jsonStringField(entry, "kind") orelse return Error.ProtocolViolation;
+                // Entries are bounded by what was asked for: a guest that
+                // reports more than its ceiling is not answering this call.
+                if (out.items.len >= max_entries) return Error.ProtocolViolation;
+                try out.append(allocator, .{
+                    .path = try allocator.dupe(u8, entry_path),
+                    .kind = try allocator.dupe(u8, entry_kind),
+                });
+            }
+        }
+
+        if (jsonBoolField(obj, "done")) {
+            count = @intCast(jsonIntField(obj, "count") orelse @as(i64, @intCast(out.items.len)));
+            truncated = jsonBoolField(obj, "truncated");
+            break;
+        }
+    }
+    // The guest counted what it sent; a stream that disagrees with its own
+    // count was cut somewhere, and half a listing is worse than a refusal.
+    if (count != out.items.len) return Error.ProtocolViolation;
+    return .{ .entries = try out.toOwnedSlice(allocator), .count = count, .truncated = truncated };
 }
 
 pub fn readSerialExcerpt(allocator: std.mem.Allocator, layout: Layout, max_bytes: usize) ![]u8 {

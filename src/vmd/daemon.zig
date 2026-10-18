@@ -326,6 +326,8 @@ fn dispatch(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request
         .fs_stat => return dispatchFsStat(manager, allocator, request),
         .fs_read => return dispatchFsRead(manager, allocator, request),
         .fs_remove => return dispatchFsRemove(manager, allocator, request),
+        .fs_write => return dispatchFsWrite(manager, allocator, request),
+        .fs_walk => return dispatchFsWalk(manager, allocator, request),
     }
 }
 
@@ -378,6 +380,51 @@ fn dispatchFsRemove(manager: Manager, allocator: std.mem.Allocator, request: rpc
     };
     if (!removed) return rpc.encodeFailure(allocator, request.id, .bad_request, "no such file");
     return rpc.encodeAck(allocator, request.id);
+}
+
+/// The bytes come from the caller and land in the guest. The daemon opens
+/// nothing: it is the guest that creates and extends the file.
+fn dispatchFsWrite(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request) ![]u8 {
+    const layout = manager.ensure(allocator, request.workspace_id) catch |err| {
+        log("workspace {s} has no usable VM for a write: {s}", .{ request.workspace_id, @errorName(err) });
+        return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+    };
+    _ = vm_client.writeFile(allocator, layout, request.path, request.data, request.create_dirs) catch |err| {
+        log("write in workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
+        // A write the GUEST refused is the caller's own request; anything else
+        // is the workspace not being usable. They are not the same failure.
+        if (err == vm_client.Error.WriteFailed) {
+            return rpc.encodeFailure(allocator, request.id, .bad_request, @errorName(err));
+        }
+        return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+    };
+    return rpc.encodeAck(allocator, request.id);
+}
+
+/// A walk's entries cross as the guest reported them — relative paths and a
+/// kind — and the daemon adds nothing to them.
+fn dispatchFsWalk(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request) ![]u8 {
+    const layout = manager.ensure(allocator, request.workspace_id) catch |err| {
+        log("workspace {s} has no usable VM for a walk: {s}", .{ request.workspace_id, @errorName(err) });
+        return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+    };
+    const walked = vm_client.walk(allocator, layout, request.path, request.max_depth, request.max_entries) catch |err| {
+        log("walk in workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
+        if (err == vm_client.Error.WalkNotADirectory) {
+            return rpc.encodeFailure(allocator, request.id, .bad_request, @errorName(err));
+        }
+        return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+    };
+    defer walked.deinit(allocator);
+    const entries = try allocator.alloc(rpc.WalkEntry, walked.entries.len);
+    for (walked.entries, 0..) |entry, i| {
+        entries[i] = .{ .path = entry.path, .kind = entry.kind };
+    }
+    return rpc.encodeFsWalk(allocator, request.id, .{
+        .entries = entries,
+        .count = walked.count,
+        .truncated = walked.truncated,
+    });
 }
 
 /// A detached job runs in the workspace's VM, so the pid the caller gets back

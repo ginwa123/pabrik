@@ -24,6 +24,10 @@ pub const max_fs_read_bytes: usize = 1024 * 1024;
 /// A signal number a caller may ask for. SIGKILL and SIGTERM are the two the
 /// tool sends; the range stops a request from naming a real-time signal.
 pub const max_signal: i64 = 64;
+/// A walk's default and ceiling. Both are the guest's own, so the daemon and
+/// the agent bound the same walk the same way.
+pub const default_walk_depth: u32 = fs_policy.max_walk_depth;
+pub const default_walk_entries: usize = fs_policy.max_walk_entries;
 
 pub const Error = error{
     BadRequest,
@@ -34,7 +38,7 @@ pub const Error = error{
     InvalidBase64,
 };
 
-pub const Action = enum { ping, exec, stop, status, spawn, probe, signal, log, fs_stat, fs_read, fs_remove };
+pub const Action = enum { ping, exec, stop, status, spawn, probe, signal, log, fs_stat, fs_read, fs_remove, fs_write, fs_walk };
 
 pub const Request = struct {
     id: i64 = 0,
@@ -56,6 +60,13 @@ pub const Request = struct {
     /// `fs_*`: the path RELATIVE to the workspace root. Never a host path, and
     /// never an absolute one — the daemon joins it under `/workspace`.
     path: []const u8 = "",
+    /// `fs_write`: the whole body. The daemon pages it to the guest.
+    data: []const u8 = "",
+    /// `fs_write`: create the directories the path needs.
+    create_dirs: bool = false,
+    /// `fs_walk`: how deep to descend, and how many entries to report.
+    max_depth: u32 = default_walk_depth,
+    max_entries: usize = default_walk_entries,
 };
 
 pub const FailureCode = enum {
@@ -128,6 +139,20 @@ pub const FsChunk = struct {
     missing: bool,
 };
 
+/// One entry of a walk: a path RELATIVE to the workspace, and what it is.
+pub const WalkEntry = struct {
+    path: []const u8,
+    kind: []const u8,
+};
+
+/// A walk's answer. `truncated` is the guest saying the tree was bigger than
+/// the ceilings allowed, which is not the same as a tree that ended.
+pub const FsWalk = struct {
+    entries: []WalkEntry,
+    count: usize,
+    truncated: bool,
+};
+
 pub const Response = union(enum) {
     pong: struct { version: []const u8 },
     ack,
@@ -138,6 +163,7 @@ pub const Response = union(enum) {
     log_chunk: LogChunk,
     fs_stat: FsStat,
     fs_read: FsChunk,
+    fs_walk: FsWalk,
     failure: struct { code: FailureCode, message: []const u8 },
 };
 
@@ -225,6 +251,40 @@ const ObjectWriter = struct {
         try self.list.append(allocator, ']');
     }
 
+    /// A byte string as base64. The body of a write is not text, so it does
+    /// not go through `writeQuoted`'s byte-by-byte escaping.
+    fn base64Field(
+        self: *ObjectWriter,
+        allocator: std.mem.Allocator,
+        key: []const u8,
+        bytes: []const u8,
+    ) !void {
+        const encoder = std.base64.standard.Encoder;
+        const encoded = try allocator.alloc(u8, encoder.calcSize(bytes.len));
+        defer allocator.free(encoded);
+        _ = encoder.encode(encoded, bytes);
+        try self.strField(allocator, key, encoded);
+    }
+
+    fn walkEntriesField(
+        self: *ObjectWriter,
+        allocator: std.mem.Allocator,
+        key: []const u8,
+        entries: []const WalkEntry,
+    ) !void {
+        try self.open(allocator, key);
+        try self.list.append(allocator, '[');
+        for (entries, 0..) |entry, i| {
+            if (i > 0) try self.list.append(allocator, ',');
+            try self.list.appendSlice(allocator, "{\"path\":");
+            try self.writeQuoted(allocator, entry.path);
+            try self.list.appendSlice(allocator, ",\"kind\":");
+            try self.writeQuoted(allocator, entry.kind);
+            try self.list.append(allocator, '}');
+        }
+        try self.list.append(allocator, ']');
+    }
+
     fn finish(self: *ObjectWriter, allocator: std.mem.Allocator) ![]u8 {
         try self.list.append(allocator, '}');
         return self.list.toOwnedSlice(allocator);
@@ -283,12 +343,22 @@ pub fn encodeRequest(allocator: std.mem.Allocator, request: Request) ![]u8 {
         try out.intField(allocator, "offset", request.offset);
         try out.intField(allocator, "max_bytes", @intCast(request.max_bytes));
     }
-    if (request.action == .fs_stat or request.action == .fs_read or request.action == .fs_remove) {
+    if (request.action == .fs_stat or request.action == .fs_read or request.action == .fs_remove or
+        request.action == .fs_write or request.action == .fs_walk)
+    {
         try out.strField(allocator, "path", request.path);
     }
     if (request.action == .fs_read) {
         try out.intField(allocator, "offset", request.offset);
         try out.intField(allocator, "max_bytes", @intCast(request.max_bytes));
+    }
+    if (request.action == .fs_write) {
+        try out.base64Field(allocator, "data_b64", request.data);
+        try out.boolField(allocator, "create_dirs", request.create_dirs);
+    }
+    if (request.action == .fs_walk) {
+        try out.intField(allocator, "max_depth", @intCast(request.max_depth));
+        try out.intField(allocator, "max_entries", @intCast(request.max_entries));
     }
     return out.finish(allocator);
 }
@@ -327,6 +397,11 @@ pub fn decodeRequest(allocator: std.mem.Allocator, json: []const u8) !OwnedReque
 
     if (action == .fs_stat or action == .fs_read or action == .fs_remove) {
         try decodeFsAction(object, action, &request);
+        return .{ .arena = arena, .value = request };
+    }
+
+    if (action == .fs_write or action == .fs_walk) {
+        try decodeFsWriteWalk(object, aa, action, &request);
         return .{ .arena = arena, .value = request };
     }
 
@@ -441,6 +516,44 @@ fn decodeFsAction(
     } else {
         request.max_bytes = default_fs_read_bytes;
     }
+}
+
+/// The two actions that carry more than a path. A write's body is bounded by
+/// the frame it has to fit, and refused here rather than at the agent, which
+/// would have to spell the same refusal out.
+fn decodeFsWriteWalk(
+    object: std.json.ObjectMap,
+    allocator: std.mem.Allocator,
+    action: Action,
+    request: *Request,
+) !void {
+    const path = stringField(object, "path") orelse return Error.BadRequest;
+    request.path = path;
+
+    if (action == .fs_walk) {
+        // A walk may start at the workspace root, which is the one path a
+        // file op may not name.
+        if (!fs_policy.dirRelValid(path)) return Error.BadRequest;
+        if (integerField(object, "max_depth")) |depth| {
+            if (depth <= 0 or depth > fs_policy.max_walk_depth) return Error.BadRequest;
+            request.max_depth = @intCast(depth);
+        }
+        if (integerField(object, "max_entries")) |entries| {
+            if (entries <= 0 or entries > fs_policy.max_walk_entries) return Error.BadRequest;
+            request.max_entries = @intCast(entries);
+        }
+        return;
+    }
+
+    if (!fs_policy.pathRelValid(path)) return Error.BadRequest;
+    request.create_dirs = boolField(object, "create_dirs");
+    const body = stringField(object, "data_b64") orelse return Error.BadRequest;
+    const decoder = std.base64.standard.Decoder;
+    const size = decoder.calcSizeForSlice(body) catch return Error.InvalidBase64;
+    if (size > fs_policy.max_write_bytes) return Error.BadRequest;
+    const data = try allocator.alloc(u8, size);
+    decoder.decode(data, body) catch return Error.InvalidBase64;
+    request.data = data;
 }
 
 fn stringField(object: std.json.ObjectMap, key: []const u8) ?[]const u8 {
@@ -609,6 +722,17 @@ pub fn encodeFsRead(allocator: std.mem.Allocator, id: i64, chunk: FsChunk) ![]u8
     return out.finish(allocator);
 }
 
+pub fn encodeFsWalk(allocator: std.mem.Allocator, id: i64, walk: FsWalk) ![]u8 {
+    var out = try ObjectWriter.init(allocator);
+    errdefer out.list.deinit(allocator);
+    try out.strField(allocator, "type", "fs.walk");
+    try out.intField(allocator, "id", id);
+    try out.boolField(allocator, "truncated", walk.truncated);
+    try out.intField(allocator, "count", @intCast(walk.count));
+    try out.walkEntriesField(allocator, "entries", walk.entries);
+    return out.finish(allocator);
+}
+
 pub fn decodeResponse(
     allocator: std.mem.Allocator,
     json: []const u8,
@@ -700,6 +824,31 @@ pub fn decodeResponse(
             .size = integerField(object, "size") orelse @intCast(data.len),
             .eof = boolField(object, "eof"),
             .missing = false,
+        } } };
+    }
+    if (std.mem.eql(u8, kind, "fs.walk")) {
+        const items = blk: {
+            const value = object.get("entries") orelse break :blk &[_]std.json.Value{};
+            break :blk switch (value) {
+                .array => |a| a.items,
+                else => return Error.BadRequest,
+            };
+        };
+        const entries = try aa.alloc(WalkEntry, items.len);
+        for (items, 0..) |item, i| {
+            const entry = switch (item) {
+                .object => |o| o,
+                else => return Error.BadRequest,
+            };
+            entries[i] = .{
+                .path = stringField(entry, "path") orelse return Error.BadRequest,
+                .kind = stringField(entry, "kind") orelse return Error.BadRequest,
+            };
+        }
+        return .{ .arena = arena, .value = .{ .fs_walk = .{
+            .entries = entries,
+            .count = @intCast(integerField(object, "count") orelse @as(i64, @intCast(entries.len))),
+            .truncated = boolField(object, "truncated"),
         } } };
     }
     if (std.mem.eql(u8, kind, "exec.result")) {
@@ -1102,6 +1251,112 @@ test "fs actions: a relative path crosses whole, with its offset and ceiling" {
     try testing.expectEqualStrings("src/main.zig", decoded.value.path);
     try testing.expectEqual(@as(i64, 10), decoded.value.offset);
     try testing.expectEqual(@as(usize, 4096), decoded.value.max_bytes);
+}
+
+test "fs_write: a body crosses base64, and one over the ceiling is refused" {
+    const allocator = testing.allocator;
+    const encoded = try encodeRequest(allocator, .{
+        .action = .fs_write,
+        .id = 9,
+        .workspace_id = "ws_1",
+        .path = "src/main.zig",
+        .data = "hello\n",
+        .create_dirs = true,
+    });
+    defer allocator.free(encoded);
+    // The body is bytes on the wire, so it is base64 there.
+    try testing.expect(std.mem.indexOf(u8, encoded, "aGVsbG8K") != null);
+
+    var decoded = try decodeRequest(allocator, encoded);
+    defer decoded.deinit();
+    try testing.expectEqual(Action.fs_write, decoded.value.action);
+    try testing.expectEqualStrings("src/main.zig", decoded.value.path);
+    try testing.expectEqualStrings("hello\n", decoded.value.data);
+    try testing.expect(decoded.value.create_dirs);
+
+    // A body the frame could not hold is refused before the guest is asked.
+    const big = try allocator.alloc(u8, fs_policy.max_write_bytes + 1);
+    defer allocator.free(big);
+    @memset(big, 'x');
+    const over = try encodeRequest(allocator, .{
+        .action = .fs_write,
+        .id = 9,
+        .workspace_id = "ws_1",
+        .path = "a.txt",
+        .data = big,
+    });
+    defer allocator.free(over);
+    try testing.expectError(Error.BadRequest, decodeRequest(allocator, over));
+}
+
+test "fs_write: a body that is not base64 is refused, not written" {
+    const allocator = testing.allocator;
+    try testing.expectError(Error.InvalidBase64, decodeRequest(allocator,
+        \\{"action":"fs_write","id":1,"workspace_id":"ws_1","path":"a.txt","data_b64":"not base64!"}
+    ));
+    // A write with no body at all is a caller bug, not an empty file.
+    try testing.expectError(Error.BadRequest, decodeRequest(allocator,
+        \\{"action":"fs_write","id":1,"workspace_id":"ws_1","path":"a.txt"}
+    ));
+}
+
+test "fs_walk: the root is a legal start, an escape is not, and depth is bounded" {
+    const allocator = testing.allocator;
+    var at_root = try decodeRequest(allocator,
+        \\{"action":"fs_walk","id":3,"workspace_id":"ws_1","path":"","max_depth":4,"max_entries":100}
+    );
+    defer at_root.deinit();
+    try testing.expectEqual(@as(u32, 4), at_root.value.max_depth);
+    try testing.expectEqual(@as(usize, 100), at_root.value.max_entries);
+    // No ceilings on the wire means the guest's own, not none.
+    var defaults = try decodeRequest(allocator,
+        \\{"action":"fs_walk","id":3,"workspace_id":"ws_1","path":""}
+    );
+    defer defaults.deinit();
+    try testing.expectEqual(default_walk_depth, defaults.value.max_depth);
+    try testing.expectEqual(default_walk_entries, defaults.value.max_entries);
+
+    for ([_][]const u8{
+        \\{"action":"fs_walk","id":3,"workspace_id":"ws_1","path":"../etc"}
+        ,
+        \\{"action":"fs_walk","id":3,"workspace_id":"ws_1","path":"/etc"}
+        ,
+        \\{"action":"fs_walk","id":3,"workspace_id":"ws_1","path":"","max_depth":0}
+        ,
+        \\{"action":"fs_walk","id":3,"workspace_id":"ws_1","path":"","max_depth":9999}
+        ,
+        \\{"action":"fs_walk","id":3,"workspace_id":"ws_1","path":"","max_entries":0}
+        ,
+        \\{"action":"fs_walk","id":3,"workspace_id":"ws_1","path":"","max_entries":1000000}
+    }) |hostile| {
+        try testing.expectError(Error.BadRequest, decodeRequest(allocator, hostile));
+    }
+}
+
+test "fs_walk: a walk's entries and its truncation round-trip" {
+    const allocator = testing.allocator;
+    var entries = [_]WalkEntry{
+        .{ .path = "src/main.zig", .kind = "file" },
+        .{ .path = "src", .kind = "dir" },
+    };
+    const encoded = try encodeFsWalk(allocator, 4, .{
+        .entries = entries[0..],
+        .count = 2,
+        .truncated = true,
+    });
+    defer allocator.free(encoded);
+
+    var owned = try decodeResponse(allocator, encoded);
+    defer owned.deinit();
+    const walked = switch (owned.value) {
+        .fs_walk => |w| w,
+        else => return error.TestExpectedFsWalk,
+    };
+    try testing.expectEqual(@as(usize, 2), walked.count);
+    try testing.expect(walked.truncated);
+    try testing.expectEqual(@as(usize, 2), walked.entries.len);
+    try testing.expectEqualStrings("src/main.zig", walked.entries[0].path);
+    try testing.expectEqualStrings("dir", walked.entries[1].kind);
 }
 
 test "fs actions: a path that leaves the workspace never reaches the agent" {

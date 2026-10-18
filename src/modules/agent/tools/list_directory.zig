@@ -543,6 +543,100 @@ const ListDirectoryInput = struct {
     cwd: []const u8 = "",
 };
 
+const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
+
+/// The listing, from whichever substrate owns the directory. Under `--saas`
+/// the guest lists it AND answers the ignore question — the host runs no git
+/// against a tenant tree — and every other mode is today's host listing.
+fn listThrough(
+    ctx: ToolExecContext,
+    dir_abs: []const u8,
+    hidden: bool,
+    respect_ignore_files: bool,
+) ![]Entry {
+    const guest = try workspace_fs.forSession(ctx.allocator, ctx.db, ctx.session_id);
+    if (guest == null) {
+        return execute_list_directory(ctx.allocator, ctx.io, dir_abs, hidden, respect_ignore_files);
+    }
+    var fs = guest.?;
+    defer fs.deinit();
+
+    var walked = fs.listDir(dir_abs) catch |err| switch (err) {
+        workspace_fs.Error.GuestNotDirectory, workspace_fs.Error.GuestPathOutsideWorkspace => return error.PathNotFound,
+        else => return err,
+    };
+    defer walked.deinit();
+
+    // The candidates come first, in the guest's own order: the ignore question
+    // is asked once for the whole directory rather than once per entry.
+    var names: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (names.items) |name| ctx.allocator.free(name);
+        names.deinit(ctx.allocator);
+    }
+    var paths: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (paths.items) |path| ctx.allocator.free(path);
+        paths.deinit(ctx.allocator);
+    }
+    var dirs: std.ArrayList(bool) = .empty;
+    defer dirs.deinit(ctx.allocator);
+
+    for (walked.entries) |entry| {
+        const name = std.fs.path.basename(entry.abs);
+        if (!hidden and name.len > 0 and name[0] == '.') continue;
+        // The host's reader shows files and directories and drops every other
+        // kind, so a link the guest reported must not appear here either.
+        if (entry.kind != .dir and entry.kind != .file) continue;
+        const owned_name = try ctx.allocator.dupe(u8, name);
+        errdefer ctx.allocator.free(owned_name);
+        try names.append(ctx.allocator, owned_name);
+        const owned_path = try ctx.allocator.dupe(u8, entry.abs);
+        errdefer ctx.allocator.free(owned_path);
+        try paths.append(ctx.allocator, owned_path);
+        try dirs.append(ctx.allocator, entry.kind == .dir);
+    }
+
+    const ignored = if (respect_ignore_files)
+        try fs.gitCheckIgnore(dir_abs, names.items)
+    else
+        try ctx.allocator.alloc(bool, names.items.len);
+    defer ctx.allocator.free(ignored);
+    if (!respect_ignore_files) @memset(ignored, false);
+
+    var entries = std.ArrayList(Entry).empty;
+    errdefer {
+        for (entries.items) |e| {
+            ctx.allocator.free(e.name);
+            ctx.allocator.free(e.path);
+        }
+        entries.deinit(ctx.allocator);
+    }
+    for (names.items, 0..) |name, i| {
+        if (ignored[i]) continue;
+        const owned_name = try ctx.allocator.dupe(u8, name);
+        errdefer ctx.allocator.free(owned_name);
+        const owned_path = try ctx.allocator.dupe(u8, paths.items[i]);
+        errdefer ctx.allocator.free(owned_path);
+        try entries.append(ctx.allocator, .{
+            .name = owned_name,
+            .path = owned_path,
+            .is_directory = dirs.items[i],
+            .is_symlink = false,
+        });
+    }
+
+    // The same order the host's listing is in, so the payload does not depend
+    // on which substrate answered.
+    std.mem.sort(Entry, entries.items, {}, struct {
+        fn less(_: void, a: Entry, b: Entry) bool {
+            if (a.is_directory != b.is_directory) return a.is_directory;
+            return std.ascii.lessThanIgnoreCase(a.name, b.name);
+        }
+    }.less);
+    return entries.toOwnedSlice(ctx.allocator);
+}
+
 pub fn execListDirectory(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     // 1. Parse JSON (path/hidden/respect_ignore_files; all optional).
     const parsed = std.json.parseFromSlice(
@@ -572,9 +666,8 @@ pub fn execListDirectory(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResu
     defer ctx.allocator.free(dir_path_abs);
 
     // 3. Execute the listing.
-    const entries = execute_list_directory(
-        ctx.allocator,
-        ctx.io,
+    const entries = listThrough(
+        ctx,
         dir_path_abs,
         parsed.value.hidden,
         parsed.value.respect_ignore_files,
