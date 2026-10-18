@@ -1536,8 +1536,8 @@ found one.
 | no tenant document inline on the app origin | `src/http_handlers/files_download.zig` | `nosniff` unconditional; inline only for raster/pdf/media, so `.html` and `.svg` are attachments however they are asked for |
 
 ```
-zig build test          → 4734/4738 pass, 4 skipped (the pinned Linux ceiling)
-zig build test:vmd      → 55/55
+zig build test          → 4730/4734 pass, 4 skipped (the pinned Linux ceiling)
+zig build test:vmd      → 53/53
 ./zig-out/bin/zginlint src build.zig → 0 findings
 ```
 

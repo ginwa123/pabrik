@@ -467,8 +467,8 @@ fn openBeneath(root_fd: linux.fd_t, path: [*:0]const u8, flags: u64) ?linux.fd_t
     return @intCast(rc);
 }
 
-/// The bytes a `fs.read`/`fs.write` path was opened through, or null with the
-/// refusal already sent. Both ops begin the same way, so both begin here.
+/// The file descriptor a `fs.read` path was opened through, or null with the
+/// refusal already sent.
 fn fsOpen(conn_fd: linux.fd_t, id: i64, path: []const u8, flags: u64) ?struct { root: linux.fd_t, file: linux.fd_t } {
     if (!relPathOk(path)) {
         reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"path is not relative to the workspace\"}}", .{id});
