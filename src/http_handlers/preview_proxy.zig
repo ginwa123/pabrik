@@ -354,6 +354,7 @@ test "the workspace's preview domain is not a subdomain of the app's" {
     defer env.deinit();
     try env.put("PABRIK_PREVIEW_BASE", "preview.example.net");
     const host = previewHostFor(allocator, &env, "ws_1").?;
+    defer allocator.free(host);
     try testing.expectEqualStrings("ws_1.preview.preview.example.net", host);
     try testing.expect(!preview_origin.isSubdomainOf("pabrik.example.com", host));
     try testing.expect(previewHostFor(allocator, null, "ws_1") == null);
