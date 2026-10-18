@@ -1511,3 +1511,64 @@ measures the guest.
   **`--payload` is exercised only here**, on a box with `/dev/kvm`.
 - The image hash is still a version rather than a checksum (§27): `mkfs.ext4` stamps a fresh
   UUID, so two identical runs produce two different image sha256s.
+
+---
+
+## 29. P3 status — the guest file RPC, and the network's policy layer
+
+The card was `task_1792253371122659109`, and §28 had already answered the
+question it was blocked on: the layout is **sealed ext4, native**, and the
+numbers say why (`git status` 0.71–0.74×, boot 0.90 s, `cp --reflink=auto`
+< 0.01 s). Nothing in this section needed a shared filesystem, and nothing
+found one.
+
+| item | where | proof |
+|---|---|---|
+| the guest file ops: `fs.stat`, `fs.read`, `fs.remove`, each resolved under a `/workspace` fd | `src/vm_agent/main.zig` | `zig build vm`; the agent carries its own relative-path rule because it imports nothing but std |
+| the containment: `openat2` + `RESOLVE_BENEATH`, so a symlink out of the workspace is `EXDEV` | same | the kernel's answer, not a string check — a `..`-free path alone is not enough |
+| the path crosses RELATIVE, and is refused at both ends | `src/vmd/fs_policy.zig`, `rpc.zig` (`decodeFsAction`), `daemon.zig` | vmd suite: `/etc/passwd`, `../etc/passwd`, `a/../../b`, `src/` all `BadRequest` before the agent is asked |
+| the reply ceiling is the frame's, and `missing` is its own answer | `rpc.zig` (`encodeFsRead`/`encodeFsStat`) | vmd suite: `max_fs_read_bytes + 1` refused, `missing` round-trips |
+| the host side: absolute host path → guest `/workspace`, bytes back in bounded pieces | `src/agentic_loop/workspace_fs.zig` | 6 tests, no VM; fails closed with no resolvable workspace |
+| **`read_file` routed through it** | `src/modules/agent/tools/read_file.zig` (`readThrough`, `shapeContent`) | `shapeContent` is shared by the host read and the guest read, so both answer with one shape; 2 tests pin it without a VM |
+| the egress deny list, as one pure table | `src/vmd/egress.zig` | 8 table-driven tests: `127.0.0.1`, `::1`, `::ffff:127.0.0.1`, `0.0.0.0`, `::`, RFC1918, CGNAT `100.64.0.1`, `169.254.169.254`, multicast/broadcast, and a `:8081` host-listener probe |
+| the resolver's half of the same policy | same (`answerDenied`, `queryNameValid`, `resolver_response_cap`) | a rebinding name is not a way around the proxy |
+| the preview origin's rules | `src/http_handlers/preview_origin.zig` | 9 tests: separate registrable domain, `Cookie`/`Authorization`/`Proxy-Authorization` stripped, hop-by-hop neither way, a foreign `Origin` refused on a mutation |
+| no tenant document inline on the app origin | `src/http_handlers/files_download.zig` | `nosniff` unconditional; inline only for raster/pdf/media, so `.html` and `.svg` are attachments however they are asked for |
+
+```
+zig build test          → 4734/4738 pass, 4 skipped (the pinned Linux ceiling)
+zig build test:vmd      → 55/55
+./zig-out/bin/zginlint src build.zig → 0 findings
+```
+
+### What this does NOT do (stated, not implied)
+
+- **Six of the seven file tools are still host reads.** `write_file`,
+  `text_replace`, `remove_file`, `list_directory`, `glob` and `search` are
+  unchanged, so criterion 8 is **not** met yet — `read_file` is the one tool
+  that routes, and the seam (`workspace_fs.forSession`) is what the other six
+  need. They are not small: `search` is 4,190 lines and `glob` 2,085, and both
+  scan the tree, so they need a guest walk (`fs.walk`), not just `fs.read`.
+  `write_file` needs an `fs.write`; the agent has no write op yet.
+- **The host still runs `git` on a tenant tree.** §2.1's seven call sites and
+  Appendix C are untouched, so criterion 9 is not met. The route is the
+  `exec` RPC the `command` tool already uses (`policy.shellArgv` +
+  `cwd_rel`), so it is plumbing rather than new protocol — but it is not done.
+- **There is no egress proxy, because there is no network device.** The VM
+  boots with no NIC (§28's bench uses none), so `egress.zig` is policy with no
+  caller yet: nothing dials, so nothing is refused. §11.4's privileged
+  tap-based mode is the missing prerequisite, and that is P4.
+- **There is no in-guest resolver.** §11.1's "the resolver is a channel too"
+  is a rule (`answerDenied`) with no `resolv.conf` writer and no forwarding
+  proxy behind it.
+- **There is no preview proxy.** `preview_origin.zig` is the policy a proxy
+  would apply — the domain, the stripped headers, the `Origin` check, the CSP.
+  Nothing forwards a request to a guest port yet, so nothing is stripped yet.
+- **The `Origin` allowlist is not wired into the routes.** There is no
+  CSRF/`Origin` check anywhere in the server today, so the allowlist is a
+  function the mutation seam will call when that seam exists.
+- **`fs.write` does not exist**, so the guest is not yet "the only writer"
+  (§8.3 V1). `read_file` reads through the guest; the writing half is open.
+- **No `PABRIK_VM_TEST=1` L3 run.** Everything above is L1 (pure) plus the
+  existing smokes; the file RPC has not been driven against a live VM by CI,
+  and `scripts/vmd-daemon-smoke.sh` does not exercise `fs.*` yet.
