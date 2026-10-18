@@ -13,7 +13,8 @@
 #
 # Usage: scripts/build-guest-image.sh --out IMG [--tier base|dev]
 #                                     [--agent BIN] [--probe BIN] [--size SIZE]
-#                                     [--cache DIR] [--in-container] [--selftest]
+#                                     [--payload DIR] [--cache DIR]
+#                                     [--in-container] [--selftest]
 
 set -euo pipefail
 
@@ -25,6 +26,13 @@ tier="base"
 agent_bin=""
 probe_bin=""
 probe_given=0
+payload=""
+
+# The uid and gid the guest agent runs a workload as (src/vm_agent/main.zig,
+# `default_uid`). /workspace is that workload's $HOME and the directory whose
+# contents persist, so a root build has to hand it over (plan §28).
+guest_uid=1000
+guest_gid=1000
 size=""
 cache="${PABRIK_VM_CACHE:-$HOME/.cache/pabrik-vm}"
 in_container=0
@@ -40,6 +48,27 @@ default_size() {
     dev) printf '2048M\n' ;;
     *) printf '128M\n' ;;
   esac
+}
+
+# The bind mounts the container hop needs, one argument per line. A payload
+# outside the repo gets its own read-only mount; one inside it is already
+# covered, and docker refuses a duplicate mount point.
+container_mounts() { # <repo_root> <cache> <out_dir> [<payload>]
+  printf '%s\n' -v "$1:$1:ro" -v "$2:$2" -v "$3:$3"
+  case "${4:-}" in
+    "" | "$1" | "$1"/*) return 0 ;;
+  esac
+  printf '%s\n' -v "$4:$4:ro"
+}
+
+# A payload that is not a directory would silently ship no fixtures, and the
+# benchmark that reads them would be measuring an empty rootfs instead.
+payload_dir() { # <path> -> the path, or a build stop
+  if [ -n "$1" ] && [ ! -d "$1" ]; then
+    printf 'payload: %s is not a directory\n' "$1" >&2
+    return 1
+  fi
+  [ -z "$1" ] || printf '%s\n' "$1"
 }
 
 # The manifest, as a plan: one `role hash url` line per artifact that this tier
@@ -122,6 +151,15 @@ run_selftest() {
     fi
   }
 
+  refuses_path() { # <what> <path>
+    if payload_dir "$2" >/dev/null 2>&1; then
+      bad=$((bad + 1))
+      printf '  FAIL %s was accepted\n' "$1"
+    else
+      ok=$((ok + 1))
+      printf '  ok   %s is refused\n' "$1"
+    fi
+  }
   check "the base tier takes the extracted rootfs artifact" \
     "rootfs $h1 $u1" "$(manifest_plan "$tmp/good" base)"
   check "the dev tier adds the pinned package" \
@@ -136,6 +174,23 @@ run_selftest() {
   rejects "an entry with no URL" "$tmp/no-url" base
   check "the base image default size" "128M" "$(default_size base)"
   check "the dev image default size" "2048M" "$(default_size dev)"
+
+  mkdir -p "$tmp/payload"
+  printf 'x\n' >"$tmp/not-a-dir"
+  check "no payload is not a payload" "" "$(payload_dir "")"
+  check "a payload directory is passed through" "$tmp/payload" "$(payload_dir "$tmp/payload")"
+  refuses_path "a payload that is a file" "$tmp/not-a-dir"
+  refuses_path "a payload that does not exist" "$tmp/nope"
+
+  check "the container hop mounts the repo, the cache and the output directory" \
+    "-v /r:/r:ro -v /c:/c -v /o:/o" \
+    "$(container_mounts /r /c /o | tr '\n' ' ' | sed 's/ $//')"
+  check "a payload outside the repo is mounted read-only as well" \
+    "-v /r:/r:ro -v /c:/c -v /o:/o -v /p:/p:ro" \
+    "$(container_mounts /r /c /o /p | tr '\n' ' ' | sed 's/ $//')"
+  check "a payload inside the repo is not mounted twice" \
+    "-v /r:/r:ro -v /c:/c -v /o:/o" \
+    "$(container_mounts /r /c /o /r/payload | tr '\n' ' ' | sed 's/ $//')"
 
   check "the committed manifest pins exactly one extracted base" "1" \
     "$(manifest_plan "$manifest" dev | grep -c '^rootfs ')"
@@ -156,6 +211,7 @@ while [ $# -gt 0 ]; do
     --tier) tier="$2"; shift 2 ;;
     --agent) agent_bin="$2"; shift 2 ;;
     --probe) probe_bin="$2"; probe_given=1; shift 2 ;;
+    --payload) payload="$2"; shift 2 ;;
     --size) size="$2"; shift 2 ;;
     --cache) cache="$2"; shift 2 ;;
     --in-container) in_container=1; shift ;;
@@ -173,6 +229,7 @@ abs() { case "$1" in /*) printf '%s\n' "$1" ;; *) printf '%s/%s\n' "$PWD" "$1" ;
 [ -z "$agent_bin" ] || agent_bin="$(abs "$agent_bin")"
 [ -z "$probe_bin" ] || probe_bin="$(abs "$probe_bin")"
 [ -z "$out" ] || out="$(abs "$out")"
+[ -z "$payload" ] || payload="$(abs "$payload")"
 [ -n "$out" ] || fail "--out IMG is required"
 
 if [ "$in_container" = 1 ] && [ "$(id -u)" != 0 ]; then
@@ -192,12 +249,13 @@ if [ "$in_container" = 1 ] && [ "$(id -u)" != 0 ]; then
   args=(--out "$out" --tier "$tier" --size "$size" --cache "$cache")
   [ -z "$agent_bin" ] || args+=(--agent "$agent_bin")
   [ -z "$probe_bin" ] || args+=(--probe "$probe_bin")
+  [ -z "$payload" ] || args+=(--payload "$payload")
   quoted=""
   for a in "${args[@]}"; do quoted+=" $(printf '%q' "$a")"; done
-  exec "$engine" run --rm \
-    -v "$repo_root:$repo_root:ro" \
-    -v "$cache:$cache" \
-    -v "$out_dir:$out_dir" \
+  mounts=()
+  while IFS= read -r mount; do mounts+=("$mount"); done \
+    < <(container_mounts "$repo_root" "$cache" "$out_dir" "$payload")
+  exec "$engine" run --rm "${mounts[@]}" \
     "$builder_image" \
     sh -euc "apk add --no-cache $builder_packages >/dev/null && exec bash $self_path$quoted"
 fi
@@ -217,6 +275,7 @@ if [ "$tier" = dev ]; then
   [ "$(id -u)" = 0 ] || fail "the dev tier needs root to set package ownership in the rootfs; run with --in-container"
 fi
 
+payload="$(payload_dir "$payload")" || fail "the payload above is not usable"
 plan="$(manifest_plan "$manifest" "$tier")" || fail "the manifest above is not usable for tier $tier"
 
 work="$(dirname "$out")/rootfs"
@@ -278,16 +337,33 @@ else
   say "no probe fixture: $probe_bin is absent, so /bin/pabrik-probe is not in this image"
 fi
 
+if [ -n "$payload" ]; then
+  mkdir -p "$work/opt/bench"
+  cp -a "$payload/." "$work/opt/bench/"
+  say "payload $(find "$work/opt/bench" -mindepth 1 | wc -l) filesystem objects in /opt/bench from $payload"
+fi
+
 mkdir -p "$work/workspace" "$work/proc" "$work/sys" "$work/dev" "$work/tmp"
 
 # ─── assemble ────────────────────────────────────────────────────────────
 if [ "$(id -u)" = 0 ]; then
+  # `cp -a` keeps the payload's owner, which is the caller, so a root build
+  # has to hand /opt/bench back to root the same way it asserts the base.
+  if [ -n "$payload" ]; then
+    chown -R 0:0 "$work/opt/bench"
+    [ "$(stat -c '%u:%g' "$work/opt/bench")" = "0:0" ] \
+      || fail "a root build must own /opt/bench as 0:0, and it is $(stat -c '%u:%g' "$work/opt/bench")"
+  fi
   [ "$(stat -c '%u:%g' "$work/bin/busybox")" = "0:0" ] \
     || fail "a root build must own the base as 0:0, and /bin/busybox is $(stat -c '%u:%g' "$work/bin/busybox")"
+  chown "$guest_uid:$guest_gid" "$work/workspace"
+  [ "$(stat -c '%u:%g' "$work/workspace")" = "$guest_uid:$guest_gid" ] \
+    || fail "a root build must own /workspace as $guest_uid:$guest_gid, and it is $(stat -c '%u:%g' "$work/workspace")"
   [ "$(stat -c '%u:%g' "$work/init")" = "0:0" ] \
     || fail "a root build must own /init as 0:0"
   say "base owned by 0:0, as a shippable image requires"
 else
+  say "WARNING /workspace will be owned by uid $(id -u), and the guest workload is uid $guest_uid"
   say "WARNING built unprivileged: base files are owned by uid $(id -u), so a"
   say "WARNING uid-$(id -u) workload inside the guest can rewrite the base. Use --in-container."
 fi

@@ -1,82 +1,16 @@
 #!/usr/bin/env python3
-"""Drive the guest agent's protocol from the host, over hybrid vsock.
-
-Firecracker's vsock is host-initiated through the unix socket at the VM's
-`uds_path`: connect, send `CONNECT <port>\\n`, read one `OK <port>\\n` line, then
-frames (4-byte big-endian length + payload). Getting that handshake order wrong
-makes the first frame read look like a corrupt length.
+"""Assert the behaviours the guest agent's protocol owes its callers: `hello`,
+`exec` (argv, exit code, non-root uid, timeout, output budget), `shutdown`. The
+framing itself lives in `vm_guest_client.py`.
 
 Usage: vm-guest-probe.py <uds_path> [port]
+       vm-guest-probe.py <uds_path> -- <argv...>    # run one command and show it
 Exit 0 = every assertion held.
 """
 
-import base64
-import json
-import socket
-import struct
 import sys
 
-MAX_FRAME = 64 * 1024
-
-
-class Client:
-    def __init__(self, uds, port):
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.sock.settimeout(20)
-        self.sock.connect(uds)
-        self.sock.sendall(("CONNECT %s\n" % port).encode())
-        self.handshake = self._read_line()
-
-    def _read_exact(self, n):
-        buf = b""
-        while len(buf) < n:
-            chunk = self.sock.recv(n - len(buf))
-            if not chunk:
-                raise SystemExit("connection closed mid-frame")
-            buf += chunk
-        return buf
-
-    def _read_line(self):
-        line = b""
-        while not line.endswith(b"\n"):
-            byte = self.sock.recv(1)
-            if not byte:
-                raise SystemExit("connection closed during the handshake")
-            line += byte
-        return line.decode().strip()
-
-    def send(self, payload):
-        body = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
-        self.sock.sendall(struct.pack(">I", len(body)) + body)
-
-    def recv(self):
-        (length,) = struct.unpack(">I", self._read_exact(4))
-        if length == 0 or length > MAX_FRAME:
-            raise SystemExit("bad frame length: %d" % length)
-        return json.loads(self._read_exact(length).decode())
-
-    def request(self, frame):
-        """Send one request and collect every reply up to exec.exit/timeout."""
-        self.send(frame)
-        chunks = {b"stdout": [], b"stderr": []}
-        timed_out = False
-        while True:
-            msg = self.recv()
-            kind = msg.get("type")
-            if kind in ("exec.stdout", "exec.stderr"):
-                chunks[kind.split(".", 1)[1].encode()].append(base64.b64decode(msg["data_b64"]))
-                continue
-            if kind == "exec.timeout":
-                timed_out = True
-                continue
-            if kind == "exec.exit":
-                return (
-                    b"".join(chunks[b"stdout"]),
-                    b"".join(chunks[b"stderr"]),
-                    msg,
-                    timed_out,
-                )
-            raise SystemExit("unexpected frame: %r" % (msg,))
+from vm_guest_client import WireError, connect
 
 
 def check(label, condition, detail=""):
@@ -87,7 +21,8 @@ def check(label, condition, detail=""):
 
 
 def main(argv):
-    client = Client(argv[1], argv[2] if len(argv) > 2 else "5000")
+    separator = argv.index("--") if "--" in argv else len(argv)
+    client = connect(argv[1], argv[2] if separator > 2 else "5000")
     check("vsock muxer handshake", client.handshake.startswith("OK"), client.handshake)
 
     if "--" in argv:
@@ -168,4 +103,7 @@ def main(argv):
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         raise SystemExit(__doc__)
-    raise SystemExit(main(sys.argv))
+    try:
+        raise SystemExit(main(sys.argv))
+    except WireError as exc:
+        raise SystemExit("[vm-smoke] FAIL %s" % exc)

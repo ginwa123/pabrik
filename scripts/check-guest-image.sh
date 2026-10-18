@@ -113,6 +113,8 @@ expect /init regular 0:0
 [ "$stat_mode" = 0755 ] || fail "/init is mode $stat_mode, and the kernel needs 0755"
 expect /bin/busybox regular 0:0
 expect /bin/sh symlink 0:0
+# A root build that never hands the tenant's own directory over leaves it 0:0.
+expect /workspace directory 1000:1000
 
 for path in "${payload[@]}"; do
   [ -n "$path" ] || continue

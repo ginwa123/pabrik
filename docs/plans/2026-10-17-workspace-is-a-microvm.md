@@ -1346,3 +1346,168 @@ default rather than to an empty path.
   will be the measurement.
 - **`crash_handler_smoke.sh` still calls `zig build-exe`.** Unrelated to the VM
   trio, so it was left alone.
+---
+
+## 28. P3 step 0 — the sealed VM, measured before the filesystem work depends on it
+
+The card was `task_1792251191834068607`, and its stated blocker was **stale**: it read
+"blocked on the dev-toolchain image layer … and that needs the per-tier package-set
+decision", which §27 had already shipped (66 `dev` entries, git/nodejs/npm/python3/rust/
+cargo/zig pinned, `/usr/bin/git` owned `0:0` in the sealed image). Step 0 was therefore
+measurable, and this section is the measurement rather than the estimate P1's exit
+criteria were dropped for.
+
+```
+FC_BIN=$HOME/firecracker-demo/firecracker scripts/vm-guest-bench.sh
+```
+
+### The harness
+
+Three new files, and one flag on the image builder:
+
+| file | what it is |
+|---|---|
+| `scripts/vm_guest_client.py` | the protocol client — the muxer handshake, the frames, the exec reply loop |
+| `scripts/vm-guest-bench.py` | the deterministic fixtures, the timed drive and the report |
+| `scripts/vm-guest-bench.sh` | the harness: dev-tier image, one vCPU boot, both arms |
+| `build-guest-image.sh --payload DIR` | the fixtures ride **inside** the image |
+
+The payload flag is what makes the read numbers real: `/opt/bench/big.tar` is bytes in the
+sealed ext4, not a file the harness copied in after boot. `vm-guest-probe.py` now imports
+the same client (its own copy of the framing is gone), and `BENCH_ONLY=<substring>` narrows
+a run to the rows whose name contains it, which is how a failing workload gets iterated on
+without paying for the suite.
+
+**Two arms, one plan.** Every workload is a shell line and a timed argv; `guest` runs it
+over the exec protocol against the sealed disk, `host` runs the identical line on the host
+filesystem — the control arm for the `shared` mode the design demoted to opt-in — and the
+report
+prints the ratio. Both are pinned to one CPU (the guest has one vCPU; the host arm gets
+`taskset -c 0`).
+
+Before each cold row the host's page cache is dropped for the file that backs it
+(`posix_fadvise(POSIX_FADV_DONTNEED)`, unprivileged), so "cold" means the device on both
+sides. The guest's **own** page cache is deliberately not dropped — it is the thing being
+measured, and it is why the row order in the table below matters.
+
+### What is measured, and at what
+
+Fixtures are generated from one seed with no network (`fixtures` subcommand; sizes are
+exact, and the tarball's 500 MiB is asserted by arithmetic *and* by a real tar reader):
+
+| fixture | shape |
+|---|---|
+| `big.tar` | **524,288,000 B = exactly 500 MiB**, 100 files |
+| `repo` | a real git repo, **25,000 tracked objects** in 250 directories, `HEAD cb675b80` |
+| `npm` | 12 offline package tarballs, 800 files × 2048 B each |
+| `zigproj` | 24 modules behind `build.zig` |
+| `cargoproj` | 40 modules, no registry dependency |
+
+The VM is the dev tier (2048 MiB of packages, 4096 MiB image), **1 vCPU, 1024 MiB**, no NIC.
+
+### The numbers
+
+One run, 2026-10-18, on the box of Appendix A (`/dev/kvm`, firecracker 1.17.0, kernel
+6.18.51):
+
+| workload | guest | host | guest/host |
+|---|---|---|---|
+| boot · `InstanceStart` → agent banner | **0.90 s** | — | — |
+| image clone · `cp --reflink=auto` | — | **< 0.01 s** | — |
+| `git status` · 25,000 files, clean | 0.25 s | 0.34 s | **0.74×** |
+| `git status` · 20 files touched | 0.23 s | 0.33 s | **0.71×** |
+| `npm install` · 12 local packages | 5.88 s | 5.01 s | 1.17× |
+| `zig build` · cold cache | 21.77 s | 12.81 s | 1.70× |
+| `zig build` · warm cache | 0.06 s | 0.06 s | 1.03× |
+| `cargo build` · cold cache | 0.64 s | 0.39 s | 1.66× |
+| `cargo build` · warm cache | 0.02 s | 0.01 s | 1.13× |
+| `dd` read · 500 MiB, cold | 0.49 s | 0.15 s | 3.31× |
+| `dd` read · 500 MiB, warm | 0.44 s | 0.03 s | 16.50× |
+| `tar -xf` · 500 MiB | 0.95 s | 0.61 s | 1.56× |
+| `dd` write · 256 MiB `conv=fsync` | 0.33 s | 0.08 s | 4.19× |
+
+| rate (MiB/s) | guest | host |
+|---|---|---|
+| read 500 MiB, cold | 1,029 | 3,409 |
+| read 500 MiB, warm | 1,125 | 18,558 |
+| `tar -xf` 500 MiB | 528 | 823 |
+| write 256 MiB + fsync | 770 | 3,227 |
+
+### What it settles
+
+- **§9.3's "native ext4 means `npm install` / `cargo build` / `zig build` run at local
+  speed" is now measured, and it holds where it matters.** Metadata-heavy small-file work
+  is at parity or *faster* in the guest (`git status` 0.71–0.74×: the guest starts with a
+  clean ext4 and its own cache, while the host arm starts with the cache dropped and btrfs
+  metadata to walk). Compilation costs 1.66–1.70× on a cold cache and ~1.0× on a warm one.
+  Nothing here argues against the sealed default, and nothing here needs a shared
+  filesystem.
+- **The dev-tier package set is decided: `gcc`, `binutils` and `musl-dev` stay, on
+  purpose.** §27 left this open because `rust`'s closure had delivered them, and asked
+  whether a tenant gets a C compiler "on purpose or by accident". All three are already
+  *individual pinned manifest entries*, and `cargo build` was measured linking a binary
+  inside the guest — so the tier is defined by what it was measured to do, not by a
+  transitive accident. **No manifest change**; this paragraph is the record.
+- **A new input to §10.2 (`mem_size_mib`).** At **1024 MiB**, a 500 MiB working set does
+  not stay resident once the builds have run: the two read rows are 3.31× and 16.50× in the
+  suite and 1.53× and 1.01× in isolation (below). The default has to be chosen against the
+  workspace's working set, not against the image size.
+
+### The isolated re-run, and why it differs
+
+`BENCH_ONLY="dd read"` runs the same two rows with nothing before them:
+
+| workload | guest | host | guest/host | guest MiB/s | host MiB/s |
+|---|---|---|---|---|---|
+| read 500 MiB, cold | 0.31 s | 0.20 s | **1.53×** | 1,619 | 2,470 |
+| read 500 MiB, warm | 0.04 s | 0.04 s | **1.01×** | 11,801 | 11,928 |
+
+A hand-booted guest reading the same file four times, with `dd`'s own timing: 0.297 s
+(1.6 GB/s, cold), then 0.029 s and 0.031 s (16.7 / 15.7 GB/s), with `/proc/meminfo` showing
+`MemTotal: 1008400 kB` and `Cached: 513448 kB` — the file *is* resident, and it is the same
+speed as the host's cache. The host's cold read is 3.5 GB/s, so the sealed path costs
+**~2× on a cold sequential read and nothing at all once the guest's own cache holds it**.
+
+So the suite's 3.31×/16.50× are not the read path: they are what happens when 1024 MiB of
+guest RAM is asked to hold a 500 MiB file *and* two build caches. Both tables are true, and
+the pair is more useful than either — the isolated one measures the disk, the suite one
+measures the guest.
+
+### What measuring found that the smokes could not
+
+1. **`/workspace` shipped unwritable.** In a `--in-container` (root) build it was
+   `0755 root:root`, so the uid-1000 guest workload — for whom `/workspace` is `$HOME` —
+   could not write in its own home. Every P2 smoke builds its image **rootless**, which is
+   exactly why none of them saw it; the one card that made the root build the shipping path
+   (§27) only asserted `/init`, `/bin/busybox` and the tier binaries. Fixed in
+   `build-guest-image.sh` (hand `/workspace` to 1000:1000) and asserted in
+   `check-guest-image.sh`, which now fails the old image with
+   `FAIL /workspace is owned by 0:0, expected 1000:1000`.
+2. **`vm-guest-probe.py`'s debug mode read `--` as the port.** `vm-guest-probe.py <uds> --
+   <argv>` sent `CONNECT --` and the muxer closed the connection; the smoke never used that
+   mode. Fixed to only take `argv[2]` as a port when it precedes the separator.
+3. **Readiness is an answered `hello`, and the socket deadline has to outlast the agent's.**
+   §22's finding 1 (`the muxer accepts a CONNECT before the guest's listener exists`) bit the
+   harness twice, so `connect_ready()` now retries a `hello`. And a 20 s read deadline turned
+   a silently-compiling `zig build` into a Python traceback — the client now takes a deadline
+   that outlasts `TIMEOUT_MS` and reports silence as a named error.
+4. **The agent calls `execve`, which searches no `PATH`.** `argv[0]` must be absolute or the
+   child dies 127 with the agent's "exec failed". Not a product bug — `policy.zig:112`
+   `shellArgv()` already wraps every tenant command as `["/bin/sh", "-c", cmd]` — but it is a
+   trap for anything else that speaks the protocol, so the bench adopted the same shape.
+
+### What this does NOT establish
+
+- The host arm is **this box's btrfs**, one CPU, not `virtiofs`/9p. It is a proxy for the
+  `shared` mode the design demoted to opt-in, and what it measures is "sealed ext4 +
+  virtio-blk versus the host filesystem", not a mode that was never built.
+- Tool versions are close but not identical: host npm 12.1.0 / node 26.10.0 / cargo 1.98.1 /
+  git 2.55.0 against guest 11.12.1 / 24.18.1 / 1.96.1 / 2.54.0. `zig` is 0.16.0 on both.
+  Single-digit percentages in those rows are not attributable to the VM.
+- **One run, no repeats.** Run-to-run spread is unmeasured; treat the ratios as
+  order-of-magnitude, not as calibrated.
+- `--in-container` needs podman or docker, so this runs on a KVM box. Hosted CI exercises
+  the five selftest suites (58 assertions: 21 + 6 + 3 + 11 + 17) and the image build;
+  **`--payload` is exercised only here**, on a box with `/dev/kvm`.
+- The image hash is still a version rather than a checksum (§27): `mkfs.ext4` stamps a fresh
+  UUID, so two identical runs produce two different image sha256s.

@@ -22,6 +22,9 @@ on:
       - 'scripts/build-guest-image.sh'
       - 'scripts/check-guest-image.sh'
       - 'scripts/resolve-guest-packages.sh'
+      - 'scripts/vm_guest_client.py'
+      - 'scripts/vm-guest-bench.py'
+      - 'scripts/vm-guest-probe.py'
       - 'src/vm_agent/**'
       - 'src/vmd/**'
       - 'build.zig'
@@ -33,6 +36,9 @@ on:
       - 'scripts/build-guest-image.sh'
       - 'scripts/check-guest-image.sh'
       - 'scripts/resolve-guest-packages.sh'
+      - 'scripts/vm_guest_client.py'
+      - 'scripts/vm-guest-bench.py'
+      - 'scripts/vm-guest-probe.py'
       - 'src/vm_agent/**'
       - 'src/vmd/**'
       - 'build.zig'
@@ -69,6 +75,12 @@ jobs:
 
       - name: The inode-field parse behind the ownership check
         run: scripts/check-guest-image.sh --selftest
+
+      - name: The vsock framing and the exec reply loop
+        run: scripts/vm_guest_client.py --selftest
+
+      - name: The tarball arithmetic, the plan and the report
+        run: scripts/vm-guest-bench.py --selftest
 
   guest-image:
     name: guest image (${{ matrix.tier }}, root in a container)
