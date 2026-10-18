@@ -92,22 +92,149 @@ const EnvShadow = struct {
     }
 };
 
-/// Stage copies of the just-built binaries as fake release assets, run
-/// install.sh against them, and return the bindir holding the installed
-/// copies plus the isolated HOME the install ran under.
-const InstallDirs = struct { bindir: []u8, home: []u8, base_url: []u8 };
+/// A staged fake release: the two built binaries under their asset names,
+/// plus the shipped-UI tarball when the scenario publishes one.
+const Release = struct {
+    stage: []u8,
+    base_url: []u8,
+};
 
-fn installToIsolatedBindir(scratch: []const u8, triple: []const u8) !InstallDirs {
+/// An installed pabrik under an isolated HOME, plus the release it came from
+/// (so a test can republish an asset and install again).
+const Install = struct {
+    bindir: []u8,
+    home: []u8,
+    release: Release,
+
+    fn deinit(self: Install) void {
+        gpa.free(self.bindir);
+        gpa.free(self.home);
+        gpa.free(self.release.stage);
+        gpa.free(self.release.base_url);
+    }
+};
+
+/// The desktop app's runtime webapp cache under an isolated HOME. install.sh
+/// resolves it as `${XDG_DATA_HOME:-$HOME/.local/share}/pabrik/desktop-webapp`
+/// — the same path src/apps/desktop_app/extraction.zig materialises into.
+fn webappCacheDir(alloc: Allocator, home: []const u8) ![]u8 {
+    return std.fs.path.join(alloc, &.{ home, ".local", "share", "pabrik", "desktop-webapp" });
+}
+
+fn pathExists(path: []const u8) bool {
+    Io.Dir.cwd().access(io, path, .{}) catch return false;
+    return true;
+}
+
+/// install.sh extracts the shipped UI with the system `tar`, and the fixture
+/// builds the tarball with it: a host without tar has nothing to exercise.
+fn requireTar() !void {
+    switch (try runChild(&.{ "tar", "--version" }, &.{})) {
+        .exited => |code| if (code == 0) return,
+        else => {},
+    }
+    std.debug.print("tar is not available -- skipping the shipped-UI scenarios\n", .{});
+    return error.SkipZigTest;
+}
+
+/// The env install.sh runs under here: an isolated HOME plus its matching
+/// XDG_DATA_HOME (so no assertion can reach the developer's real cache) and
+/// no .desktop fetch.
+fn installEnv(home: []const u8, xdg_data_home: []const u8, base_url: []const u8) [4][2][]const u8 {
+    return .{
+        .{ "HOME", home },
+        .{ "XDG_DATA_HOME", xdg_data_home },
+        .{ "PABRIK_BASE_URL", base_url },
+        .{ "PABRIK_SKIP_DESKTOP_ENTRY", "1" },
+    };
+}
+
+/// Run the installer against a staged release — what the user does when they
+/// pipe install.sh into bash a second time.
+fn runInstallSh(alloc: Allocator, bindir: []const u8, home: []const u8, base_url: []const u8) !void {
+    const xdg_data_home = try std.fs.path.join(alloc, &.{ home, ".local", "share" });
+    defer alloc.free(xdg_data_home);
+    const env = installEnv(home, xdg_data_home, base_url);
+    try expectExitZero(
+        try runChild(&.{ "bash", "install.sh", "--dir", bindir }, &env),
+        "install.sh",
+    );
+}
+
+/// Path of the shipped-UI asset inside a staged release.
+fn shippedUiTarball(alloc: Allocator, stage: []const u8, triple: []const u8) ![]u8 {
+    return std.fmt.allocPrint(alloc, "{s}/pabrik-html-{s}.tar.gz", .{ stage, triple });
+}
+
+/// Publish the shipped-UI asset holding `body` as `html/index.html` — the
+/// top-level `html/` layout install.sh untars into $BINDIR.
+fn publishShippedUi(alloc: Allocator, stage: []const u8, triple: []const u8, body: []const u8) !void {
+    const src_root = try std.fs.path.join(alloc, &.{ stage, "html-src" });
+    defer alloc.free(src_root);
+    const html_dir = try std.fs.path.join(alloc, &.{ src_root, "html" });
+    defer alloc.free(html_dir);
+    try Io.Dir.cwd().createDirPath(io, html_dir);
+    const index = try std.fs.path.join(alloc, &.{ html_dir, "index.html" });
+    defer alloc.free(index);
+    var f = try Io.Dir.cwd().createFile(io, index, .{});
+    defer f.close(io);
+    try f.writeStreamingAll(io, body);
+
+    const tarball = try shippedUiTarball(alloc, stage, triple);
+    defer alloc.free(tarball);
+    try expectExitZero(
+        try runChild(&.{ "tar", "-czf", tarball, "-C", src_root, "html" }, &.{}),
+        "tar the shipped UI",
+    );
+}
+
+/// Rewrite `pabrik-<triple>` with different bytes, so the next install.sh run
+/// sees changed binaries and takes the real-install path instead of the
+/// up-to-date fast path.
+fn republishChangedBinaries(alloc: Allocator, stage: []const u8, triple: []const u8) !void {
+    const path = try std.fmt.allocPrint(alloc, "{s}/pabrik-{s}", .{ stage, triple });
+    defer alloc.free(path);
+    var f = try Io.Dir.cwd().createFile(io, path, .{});
+    defer f.close(io);
+    try f.writeStreamingAll(io, "#!/bin/sh\necho 'a later build'\n");
+}
+
+/// The shell a bare `pabrik` serves ($BINDIR/html/index.html), or null when
+/// the install left none.
+fn installedShell(alloc: Allocator, bindir: []const u8) !?[]u8 {
+    const path = try std.fs.path.join(alloc, &.{ bindir, "html", "index.html" });
+    defer alloc.free(path);
+    return Io.Dir.cwd().readFileAlloc(io, path, alloc, .limited(1 << 20)) catch null;
+}
+
+/// Leave a runtime webapp cache behind, the way a desktop run from an earlier
+/// build does: a `<hash>` dir holding an index.html.
+fn seedWebappCache(cache: []const u8) !void {
+    try Io.Dir.cwd().createDirPath(io, cache);
+    const hash_dir = try std.fs.path.join(gpa, &.{ cache, "stalehash0000" });
+    defer gpa.free(hash_dir);
+    try Io.Dir.cwd().createDirPath(io, hash_dir);
+    const index = try std.fs.path.join(gpa, &.{ hash_dir, "index.html" });
+    defer gpa.free(index);
+    var f = try Io.Dir.cwd().createFile(io, index, .{});
+    defer f.close(io);
+    try f.writeStreamingAll(io, "<html>stale webapp</html>");
+}
+
+/// Stage the just-built binaries (plus the shipped UI when `ui_body` is given)
+/// as fake release assets, then run the REAL install.sh against them into an
+/// isolated bindir + HOME, from the repo root — the user's `curl … | bash`.
+fn installFromFreshRelease(scratch: []const u8, triple: []const u8, ui_body: ?[]const u8) !Install {
     const stage = try harness.harnessPath(gpa, scratch, &.{"release-stage"});
-    defer gpa.free(stage);
+    errdefer gpa.free(stage);
     try Io.Dir.cwd().createDirPath(io, stage);
 
     const bindir = try harness.harnessPath(gpa, scratch, &.{"bin"});
     errdefer gpa.free(bindir);
 
     // Isolated HOME with a pre-existing .bashrc: install.sh only appends its
-    // PATH export to rc files that already exist (never creates them), and
-    // the isolated HOME keeps the test from touching the developer's real
+    // PATH export to rc files that already exist, and the isolated HOME keeps
+    // the test off the developer's real ~/.local/bin and ~/.local/share.
     const home = try harness.harnessPath(gpa, scratch, &.{"home"});
     errdefer gpa.free(home);
     try Io.Dir.cwd().createDirPath(io, home);
@@ -127,7 +254,7 @@ fn installToIsolatedBindir(scratch: []const u8, triple: []const u8) !InstallDirs
     });
     defer gpa.free(real_desktop);
 
-    // The "release assets": exact names install.sh downloads.
+    // The "release assets": the exact names install.sh downloads.
     for ([_]struct { src: []const u8, name: []const u8 }{
         .{ .src = real_bin, .name = try std.fmt.allocPrint(gpa, "pabrik-{s}", .{triple}) },
         .{ .src = real_desktop, .name = try std.fmt.allocPrint(gpa, "pabrik-desktop-{s}", .{triple}) },
@@ -140,29 +267,21 @@ fn installToIsolatedBindir(scratch: []const u8, triple: []const u8) !InstallDirs
             "cp release asset",
         );
     }
+    if (ui_body) |body| try publishShippedUi(gpa, stage, triple, body);
 
     const base_url = try std.fmt.allocPrint(gpa, "file://{s}", .{stage});
     errdefer gpa.free(base_url);
 
-    // The user flow: pipe install.sh into a shell against the staged
-    // "release".
-    try expectExitZero(
-        try runChild(
-            &.{ "bash", "install.sh", "--dir", bindir },
-            &.{
-                .{ "PABRIK_BASE_URL", base_url },
-                .{ "PABRIK_SKIP_DESKTOP_ENTRY", "1" },
-                .{ "HOME", home },
-            },
-        ),
-        "install.sh",
-    );
-    return .{ .bindir = bindir, .home = home, .base_url = base_url };
+    try runInstallSh(gpa, bindir, home, base_url);
+    return .{
+        .bindir = bindir,
+        .home = home,
+        .release = .{ .stage = stage, .base_url = base_url },
+    };
 }
 
-// install.sh exits 0, drops runnable binaries into an isolated bindir,
-// and appends the bindir to PATH in the (isolated) shell rc file.
-test "install_sh installs runnable pabrik binaries" {
+// A fresh install drops both binaries into the bindir and they run from there.
+test "a fresh install drops runnable pabrik binaries into the bindir" {
     const triple = try installTriple();
     try harness.requirePabrikBin(io, gpa);
 
@@ -170,11 +289,9 @@ test "install_sh installs runnable pabrik binaries" {
     defer gpa.free(scratch);
     defer harness.cleanupExtraDir(io, gpa, scratch);
 
-    const dirs = try installToIsolatedBindir(scratch, triple);
-    defer gpa.free(dirs.bindir);
-    defer gpa.free(dirs.home);
-    defer gpa.free(dirs.base_url);
-    const bindir = dirs.bindir;
+    const install = try installFromFreshRelease(scratch, triple, null);
+    defer install.deinit();
+    const bindir = install.bindir;
 
     const installed = try std.fs.path.join(gpa, &.{ bindir, "pabrik" });
     defer gpa.free(installed);
@@ -196,45 +313,218 @@ test "install_sh installs runnable pabrik binaries" {
         try runChild(&.{ installed, "--help" }, &.{}),
         "installed pabrik --help",
     );
+}
 
-    // Re-running against identical content exits 0 via the up-to-date
-    // path (no reinstall, no duplicate rc lines) — the "user updates"
-    // flow when there is nothing new.
+// Installing twice must not duplicate the PATH export in the shell rc file.
+test "installing twice exports the bindir to PATH exactly once" {
+    const triple = try installTriple();
+    try harness.requirePabrikBin(io, gpa);
+
+    const scratch = try harness.makeScratchDir(gpa);
+    defer gpa.free(scratch);
+    defer harness.cleanupExtraDir(io, gpa, scratch);
+
+    const install = try installFromFreshRelease(scratch, triple, null);
+    defer install.deinit();
+
+    try runInstallSh(gpa, install.bindir, install.home, install.release.base_url);
+
+    const rc = try std.fs.path.join(gpa, &.{ install.home, ".bashrc" });
+    defer gpa.free(rc);
+    const body = try Io.Dir.cwd().readFileAlloc(io, rc, gpa, .limited(1 << 20));
+    defer gpa.free(body);
+    if (std.mem.indexOf(u8, body, "# Added by pabrik installer") == null) {
+        std.debug.print("rc file missing the installer marker:\n{s}\n", .{body});
+        return error.TestUnexpectedResult;
+    }
+    if (std.mem.indexOf(u8, body, install.bindir) == null) {
+        std.debug.print("rc file missing the bindir export:\n{s}\n", .{body});
+        return error.TestUnexpectedResult;
+    }
+    var count: usize = 0;
+    var idx: usize = 0;
+    const marker = "# Added by pabrik installer";
+    while (std.mem.indexOfPos(u8, body, idx, marker)) |pos| {
+        count += 1;
+        idx = pos + marker.len;
+    }
+    try testing.expectEqual(@as(usize, 1), count);
+}
+
+// The shipped UI lands in `$BINDIR/html` — the directory a bare `pabrik`
+// discovers next to its own executable and serves at /.
+test "a fresh install puts the shipped UI next to the binaries" {
+    const triple = try installTriple();
+    try harness.requirePabrikBin(io, gpa);
+    try requireTar();
+
+    const scratch = try harness.makeScratchDir(gpa);
+    defer gpa.free(scratch);
+    defer harness.cleanupExtraDir(io, gpa, scratch);
+
+    const install = try installFromFreshRelease(scratch, triple, "<html>shipped ui v1</html>");
+    defer install.deinit();
+
+    const shell = (try installedShell(gpa, install.bindir)) orelse {
+        std.debug.print("no shipped UI at {s}/html/index.html\n", .{install.bindir});
+        return error.TestUnexpectedResult;
+    };
+    defer gpa.free(shell);
+    try testing.expectEqualStrings("<html>shipped ui v1</html>", shell);
+}
+
+// THE REPORTED BUG: the UI ships as its own release asset, so it can be
+// republished while the binaries stay byte-identical. A re-run must pick the
+// new UI up instead of reporting "already up to date" and leaving the old one.
+test "a re-run replaces a republished shipped UI without a binary change" {
+    const triple = try installTriple();
+    try harness.requirePabrikBin(io, gpa);
+    try requireTar();
+
+    const scratch = try harness.makeScratchDir(gpa);
+    defer gpa.free(scratch);
+    defer harness.cleanupExtraDir(io, gpa, scratch);
+
+    const install = try installFromFreshRelease(scratch, triple, "<html>shipped ui v1</html>");
+    defer install.deinit();
+    {
+        const shell = (try installedShell(gpa, install.bindir)) orelse return error.TestUnexpectedResult;
+        defer gpa.free(shell);
+        try testing.expectEqualStrings("<html>shipped ui v1</html>", shell);
+    }
+
+    // The release republishes ONLY the UI tarball; the binaries are untouched,
+    // so the next run takes the up-to-date fast path.
+    try publishShippedUi(gpa, install.release.stage, triple, "<html>shipped ui v2</html>");
+    try runInstallSh(gpa, install.bindir, install.home, install.release.base_url);
+
+    const shell = (try installedShell(gpa, install.bindir)) orelse {
+        std.debug.print("the re-run left no shipped UI at {s}/html\n", .{install.bindir});
+        return error.TestUnexpectedResult;
+    };
+    defer gpa.free(shell);
+    if (!std.mem.eql(u8, shell, "<html>shipped ui v2</html>")) {
+        std.debug.print("the re-run kept the old shipped UI: {s}\n", .{shell});
+        return error.TestUnexpectedResult;
+    }
+}
+
+// A release without the UI asset must not take the working UI away: the
+// install still succeeds and `$BINDIR/html` keeps serving what is there.
+test "an install without a shipped UI asset keeps the UI already installed" {
+    const triple = try installTriple();
+    try harness.requirePabrikBin(io, gpa);
+    try requireTar();
+
+    const scratch = try harness.makeScratchDir(gpa);
+    defer gpa.free(scratch);
+    defer harness.cleanupExtraDir(io, gpa, scratch);
+
+    const install = try installFromFreshRelease(scratch, triple, "<html>shipped ui v1</html>");
+    defer install.deinit();
+
+    const tarball = try shippedUiTarball(gpa, install.release.stage, triple);
+    defer gpa.free(tarball);
+    try Io.Dir.cwd().deleteFile(io, tarball);
+
+    try runInstallSh(gpa, install.bindir, install.home, install.release.base_url);
+
+    const shell = (try installedShell(gpa, install.bindir)) orelse {
+        std.debug.print("the install removed the working UI at {s}/html\n", .{install.bindir});
+        return error.TestUnexpectedResult;
+    };
+    defer gpa.free(shell);
+    try testing.expectEqualStrings("<html>shipped ui v1</html>", shell);
+}
+
+// An update (the binaries changed) drops the desktop app's runtime webapp
+// cache, so the next launch re-extracts THIS build's assets.
+test "an update clears the desktop webapp cache" {
+    const triple = try installTriple();
+    try harness.requirePabrikBin(io, gpa);
+
+    const scratch = try harness.makeScratchDir(gpa);
+    defer gpa.free(scratch);
+    defer harness.cleanupExtraDir(io, gpa, scratch);
+
+    const install = try installFromFreshRelease(scratch, triple, null);
+    defer install.deinit();
+
+    const cache = try webappCacheDir(gpa, install.home);
+    defer gpa.free(cache);
+    try seedWebappCache(cache);
+
+    try republishChangedBinaries(gpa, install.release.stage, triple);
+    try runInstallSh(gpa, install.bindir, install.home, install.release.base_url);
+
+    if (pathExists(cache)) {
+        std.debug.print("the update left the webapp cache behind: {s}\n", .{cache});
+        return error.TestUnexpectedResult;
+    }
+}
+
+// A re-run whose binaries are unchanged touches nothing-but-the-UI: the
+// desktop cache is keyed to the binary's own assets, so clearing it would
+// only break a daemon that is serving it right now.
+test "an up-to-date re-run keeps the desktop webapp cache" {
+    const triple = try installTriple();
+    try harness.requirePabrikBin(io, gpa);
+
+    const scratch = try harness.makeScratchDir(gpa);
+    defer gpa.free(scratch);
+    defer harness.cleanupExtraDir(io, gpa, scratch);
+
+    const install = try installFromFreshRelease(scratch, triple, null);
+    defer install.deinit();
+
+    const cache = try webappCacheDir(gpa, install.home);
+    defer gpa.free(cache);
+    try seedWebappCache(cache);
+
+    try runInstallSh(gpa, install.bindir, install.home, install.release.base_url);
+
+    if (!pathExists(cache)) {
+        std.debug.print("the up-to-date re-run cleared the cache at {s}\n", .{cache});
+        return error.TestUnexpectedResult;
+    }
+}
+
+// Uninstalling takes the binaries, the shipped UI and the runtime webapp
+// cache away: nothing of the pabrik webapp is left behind.
+test "--uninstall removes the binaries, the shipped UI and the webapp cache" {
+    const triple = try installTriple();
+    try harness.requirePabrikBin(io, gpa);
+    try requireTar();
+
+    const scratch = try harness.makeScratchDir(gpa);
+    defer gpa.free(scratch);
+    defer harness.cleanupExtraDir(io, gpa, scratch);
+
+    const install = try installFromFreshRelease(scratch, triple, "<html>shipped ui</html>");
+    defer install.deinit();
+
+    const cache = try webappCacheDir(gpa, install.home);
+    defer gpa.free(cache);
+    try seedWebappCache(cache);
+
+    const xdg_data_home = try std.fs.path.join(gpa, &.{ install.home, ".local", "share" });
+    defer gpa.free(xdg_data_home);
+    const env = installEnv(install.home, xdg_data_home, install.release.base_url);
     try expectExitZero(
-        try runChild(
-            &.{ "bash", "install.sh", "--dir", bindir },
-            &.{
-                .{ "PABRIK_BASE_URL", dirs.base_url },
-                .{ "PABRIK_SKIP_DESKTOP_ENTRY", "1" },
-                .{ "HOME", dirs.home },
-            },
-        ),
-        "install.sh re-run",
+        try runChild(&.{ "bash", "install.sh", "--dir", install.bindir, "--uninstall" }, &env),
+        "install.sh --uninstall",
     );
 
-    // And the bindir was exported to PATH in the isolated rc file
-    // (marker once — re-running the installer never duplicates it).
-    {
-        const rc = try std.fs.path.join(gpa, &.{ dirs.home, ".bashrc" });
-        defer gpa.free(rc);
-        const body = try Io.Dir.cwd().readFileAlloc(io, rc, gpa, .limited(1 << 20));
-        defer gpa.free(body);
-        if (std.mem.indexOf(u8, body, "# Added by pabrik installer") == null) {
-            std.debug.print("rc file missing the installer marker:\n{s}\n", .{body});
-            return error.TestUnexpectedResult;
-        }
-        if (std.mem.indexOf(u8, body, bindir) == null) {
-            std.debug.print("rc file missing the bindir export:\n{s}\n", .{body});
-            return error.TestUnexpectedResult;
-        }
-        var count: usize = 0;
-        var idx: usize = 0;
-        const marker = "# Added by pabrik installer";
-        while (std.mem.indexOfPos(u8, body, idx, marker)) |pos| {
-            count += 1;
-            idx = pos + marker.len;
-        }
-        try testing.expectEqual(@as(usize, 1), count);
+    const installed = try std.fs.path.join(gpa, &.{ install.bindir, "pabrik" });
+    defer gpa.free(installed);
+    const html_dir = try std.fs.path.join(gpa, &.{ install.bindir, "html" });
+    defer gpa.free(html_dir);
+    if (pathExists(installed) or pathExists(html_dir) or pathExists(cache)) {
+        std.debug.print(
+            "--uninstall left something behind: bin={} html={} cache={}\n",
+            .{ pathExists(installed), pathExists(html_dir), pathExists(cache) },
+        );
+        return error.TestUnexpectedResult;
     }
 }
 
@@ -248,11 +538,9 @@ test "installed pabrik serves the browser url" {
     defer gpa.free(scratch);
     defer harness.cleanupExtraDir(io, gpa, scratch);
 
-    const dirs = try installToIsolatedBindir(scratch, triple);
-    defer gpa.free(dirs.bindir);
-    defer gpa.free(dirs.home);
-    defer gpa.free(dirs.base_url);
-    const bindir = dirs.bindir;
+    const install = try installFromFreshRelease(scratch, triple, null);
+    defer install.deinit();
+    const bindir = install.bindir;
 
     const installed = try std.fs.path.join(gpa, &.{ bindir, "pabrik" });
     defer gpa.free(installed);
@@ -308,11 +596,9 @@ test "installed pabrik serves the app from its bundled html dir" {
     defer gpa.free(scratch);
     defer harness.cleanupExtraDir(io, gpa, scratch);
 
-    const dirs = try installToIsolatedBindir(scratch, triple);
-    defer gpa.free(dirs.bindir);
-    defer gpa.free(dirs.home);
-    defer gpa.free(dirs.base_url);
-    const bindir = dirs.bindir;
+    const install = try installFromFreshRelease(scratch, triple, null);
+    defer install.deinit();
+    const bindir = install.bindir;
 
     // Fixture UI at <bindir>/html/index.html — the exact layout install.sh
     // produces and the server's next-to-exe probe reads.
@@ -334,7 +620,7 @@ test "installed pabrik serves the app from its bundled html dir" {
     // — so argv[0] has no directory at all.
     var env_map = try std.process.Environ.createMap(std.testing.environ, gpa);
     defer env_map.deinit();
-    try env_map.put("HOME", dirs.home);
+    try env_map.put("HOME", install.home);
     const path_val = try std.fmt.allocPrint(gpa, "{s}{c}{s}", .{
         bindir,
         std.fs.path.delimiter,

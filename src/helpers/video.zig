@@ -6,7 +6,7 @@ pub fn extractBase64VideoUrls(message: []const u8, allocator: std.mem.Allocator)
     const prefix = "data:video/";
     const base64_marker = ";base64,";
 
-    var results = std.ArrayListUnmanaged([]const u8).empty;
+    var results = std.ArrayList([]const u8).empty;
     errdefer {
         for (results.items) |item| allocator.free(item);
         results.deinit(allocator);

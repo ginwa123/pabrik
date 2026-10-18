@@ -1382,9 +1382,18 @@ jobs:
           # pre-clean step) with a top-level html/ dir, so install.sh
           # extracts it straight into $BINDIR and the server's
           # next-to-exe probe finds it.
+          #
+          # FAILS LOUDLY when it is missing. Skipping silently here is how the
+          # release kept a week-old pabrik-html-$TARGET.tar.gz for days while
+          # the binaries moved on: install.sh then installs a fresh binary
+          # next to an old UI ("I installed it and it still shows the old
+          # app"). A missing dist/ is a build failure, not a warning.
           if [ -f "zig-out/bin/html/index.html" ]; then
             tar -czf "$stage/pabrik-html-$TARGET.tar.gz" -C zig-out/bin html
             echo "→ staged $stage/pabrik-html-$TARGET.tar.gz"
+          else
+            echo "✗ zig-out/bin/html/index.html missing for $TARGET — publishing would keep the PREVIOUS pabrik-html-$TARGET.tar.gz (stale UI on every install)" >&2
+            exit 1
           fi
 
       - name: Bundle macOS Pabrik.app into a zip

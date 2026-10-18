@@ -1170,7 +1170,7 @@ defineExpose({
               @contextmenu.prevent.stop="onGitIconContextMenu($event, item)"
             >
               <svg
-                class="w-4 h-4 shrink-0"
+                class="w-3 h-3 shrink-0"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -1373,7 +1373,7 @@ defineExpose({
                 @contextmenu.prevent.stop="onGitIconContextMenu($event, item)"
               >
                 <svg
-                  class="w-4 h-4 shrink-0"
+                  class="w-3 h-3 shrink-0"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"

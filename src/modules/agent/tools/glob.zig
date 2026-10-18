@@ -513,7 +513,7 @@ fn expandBraces(pattern: []const u8, allocator: std.mem.Allocator) ![]const []co
                     // Check for negation pattern {![pattern]}
                     if (inner.len > 1 and inner[0] == '!') {
                         const negated_content = inner[1..];
-                        var results: std.ArrayListUnmanaged([]const u8) = .empty;
+                        var results: std.ArrayList([]const u8) = .empty;
                         errdefer results.deinit(allocator);
 
                         // Return the negated pattern marker
@@ -527,7 +527,7 @@ fn expandBraces(pattern: []const u8, allocator: std.mem.Allocator) ![]const []co
                         const before = inner[0..idx];
                         const after = inner[idx + 2 ..];
                         if (isNumeric(before) and isNumeric(after)) {
-                            var results: std.ArrayListUnmanaged([]const u8) = .empty;
+                            var results: std.ArrayList([]const u8) = .empty;
                             errdefer results.deinit(allocator);
 
                             const start_num = std.fmt.parseInt(i64, before, 10) catch 0;
@@ -547,7 +547,7 @@ fn expandBraces(pattern: []const u8, allocator: std.mem.Allocator) ![]const []co
                     }
 
                     // Parse comma-separated
-                    var results: std.ArrayListUnmanaged([]const u8) = .empty;
+                    var results: std.ArrayList([]const u8) = .empty;
                     errdefer results.deinit(allocator);
 
                     var seg_start: usize = 0;
@@ -582,7 +582,7 @@ fn expandBraces(pattern: []const u8, allocator: std.mem.Allocator) ![]const []co
 
 /// Gitignore context that tracks rules from all visited directories
 pub const GitignoreContext = struct {
-    entries: std.ArrayListUnmanaged(GitignoreEntry),
+    entries: std.ArrayList(GitignoreEntry),
     root_cwd: []const u8,
 
     pub fn init(root_cwd: []const u8) @This() {
@@ -743,7 +743,7 @@ fn walkDir(
     dir_path: []const u8,
     patterns: []const []const u8,
     opts: GlobOptions,
-    results: *std.ArrayListUnmanaged([]const u8),
+    results: *std.ArrayList([]const u8),
     depth: usize,
     gitignore_ctx: ?*GitignoreContext,
     source: ?DirSource,
@@ -764,8 +764,8 @@ fn walkDir(
     }
 
     // Separate regular patterns from negation patterns
-    var negation_patterns: std.ArrayListUnmanaged([]const u8) = .empty;
-    var regular_patterns: std.ArrayListUnmanaged([]const u8) = .empty;
+    var negation_patterns: std.ArrayList([]const u8) = .empty;
+    var regular_patterns: std.ArrayList([]const u8) = .empty;
     defer negation_patterns.deinit(allocator);
     defer regular_patterns.deinit(allocator);
 
@@ -838,7 +838,7 @@ fn walkDir(
         if (is_dir) {
             // Build the list of patterns that the "normal recursive descent"
             // will pass down.
-            var unconsumed: std.ArrayListUnmanaged([]const u8) = .empty;
+            var unconsumed: std.ArrayList([]const u8) = .empty;
             defer unconsumed.deinit(allocator);
 
             for (regular_patterns.items) |pat| {
@@ -887,13 +887,13 @@ fn walkDir(
                                     else
                                         "*";
 
-                                var new_patterns: std.ArrayListUnmanaged([]const u8) = .empty;
+                                var new_patterns: std.ArrayList([]const u8) = .empty;
                                 new_patterns.append(allocator, inner_pattern) catch break;
                                 walkDir(allocator, io, full_path, new_patterns.items, opts, results, depth + 1, gitignore_ctx, source);
                                 new_patterns.deinit(allocator);
                             } else {
                                 // Non-recursive suffix — recurse with it.
-                                var new_patterns: std.ArrayListUnmanaged([]const u8) = .empty;
+                                var new_patterns: std.ArrayList([]const u8) = .empty;
                                 new_patterns.append(allocator, remaining_pattern) catch break;
                                 walkDir(allocator, io, full_path, new_patterns.items, opts, results, depth + 1, gitignore_ctx, source);
                                 new_patterns.deinit(allocator);
@@ -1042,7 +1042,7 @@ pub fn executeGlobWith(
     };
 
     // Walk directory
-    var results: std.ArrayListUnmanaged([]const u8) = .empty;
+    var results: std.ArrayList([]const u8) = .empty;
     // Free the ArrayList's backing slice on BOTH error and success. The
     // `defer` fires in both paths (defer runs even on error in Zig).
     errdefer {

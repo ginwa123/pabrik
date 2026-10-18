@@ -637,7 +637,7 @@ var singleton: ?*Catalog = null;
 /// Retired catalogs are deliberately NOT freed on swap: a refresh handler
 /// swaps the pointer while a workflow thread may still be reading through the
 /// old one, and a use-after-free is not worth a bounded-memory win.
-var retired: std.ArrayListUnmanaged(*Catalog) = .empty;
+var retired: std.ArrayList(*Catalog) = .empty;
 var retired_owner: ?Allocator = null;
 
 pub fn getSingleton() ?*const Catalog {

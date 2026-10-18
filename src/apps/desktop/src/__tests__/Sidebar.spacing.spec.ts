@@ -191,4 +191,11 @@ describe('sidebar spacing + type scale', () => {
     // repo-wide search for "sidebarSpacing" returned only the comment.
     expect(read('components/views/ChatsList.vue')).not.toContain('sidebarSpacing.spec.ts')
   })
+
+  it('leaves air between a row mark and the label it sits before', () => {
+    // The mark column is 16px and the label starts at 28, so a glyph that
+    // fills the column touches the label. The branch badge did, at 16px.
+    const offenders = ROW_FILES.filter((f) => /w-4 h-4/.test(read(f)))
+    expect(offenders).toEqual([])
+  })
 })

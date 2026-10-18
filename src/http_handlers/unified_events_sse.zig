@@ -157,7 +157,7 @@ pub fn parseChannels(allocator: std.mem.Allocator, raw: []const u8) ChannelParse
     const trimmed = std.mem.trim(u8, raw, " \t");
     if (trimmed.len == 0) return error.MissingChannels;
 
-    var routing_keys: std.ArrayListUnmanaged([]const u8) = .empty;
+    var routing_keys: std.ArrayList([]const u8) = .empty;
     errdefer {
         for (routing_keys.items) |k| allocator.free(k);
         routing_keys.deinit(allocator);
