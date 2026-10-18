@@ -282,6 +282,32 @@ pub const Fs = struct {
         };
     }
 
+    /// `git`, with the same hardening prefix the host uses, running INSIDE the
+    /// guest with `abs_dir` as its working directory. No `-C` is passed: the
+    /// host path never crosses, so no tenant path is named to the guest's git.
+    pub fn runGit(
+        self: *const Fs,
+        abs_dir: []const u8,
+        args: []const []const u8,
+        timeout_ms: u32,
+        max_output_bytes: usize,
+    ) !Exec {
+        var argv: std.ArrayList([]const u8) = .empty;
+        defer argv.deinit(self.allocator);
+        try argv.append(self.allocator, policy.guest_git);
+        try argv.appendSlice(self.allocator, &git_hardening.CONFIG_ARGS);
+        try argv.appendSlice(self.allocator, args);
+        return self.run(argv.items, abs_dir, timeout_ms, max_output_bytes);
+    }
+
+    /// The absolute path a host path names inside the guest — the guest's own
+    /// vocabulary, for the argv of a program that will run there. The reverse
+    /// of `relative`, and a refusal for anything outside the workspace.
+    pub fn guestAbs(self: *const Fs, abs: []const u8) ![]u8 {
+        const rel = self.relativeDir(abs) orelse return Error.GuestPathOutsideWorkspace;
+        return policy.guestCwd(self.allocator, policy.guest_root, rel);
+    }
+
     /// Which of `names` git ignores in `abs_dir`, answered by the GUEST's git
     /// under the same hardening prefix the host uses. A git that cannot answer
     /// leaves every name unignored, which is what the host's check does too.
@@ -295,25 +321,13 @@ pub const Fs = struct {
         @memset(ignored, false);
         if (names.len == 0) return ignored;
 
-        const argv = try self.allocator.alloc([]const u8, git_hardening.CONFIG_ARGS.len + 4 + names.len);
-        defer self.allocator.free(argv);
-        var at: usize = 0;
-        argv[at] = policy.guest_git;
-        at += 1;
-        for (git_hardening.CONFIG_ARGS) |arg| {
-            argv[at] = arg;
-            at += 1;
-        }
-        argv[at] = "check-ignore";
-        at += 1;
-        argv[at] = "--";
-        at += 1;
-        for (names) |name| {
-            argv[at] = name;
-            at += 1;
-        }
+        const args = try self.allocator.alloc([]const u8, 2 + names.len);
+        defer self.allocator.free(args);
+        args[0] = "check-ignore";
+        args[1] = "--";
+        @memcpy(args[2..], names);
 
-        const exec = try self.run(argv[0..at], abs_dir, git_check_timeout_ms, git_check_output_bytes);
+        const exec = try self.runGit(abs_dir, args, git_check_timeout_ms, git_check_output_bytes);
         defer exec.deinit(self.allocator);
         // Exit 0 means at least one name was ignored, 1 means none was, and
         // anything else is not an answer this seam may invent one for.
@@ -367,6 +381,85 @@ pub fn forSession(
         .root = root,
         .socket = socket_copy,
     };
+}
+
+/// The guest filesystem for a directory named by an ABSOLUTE host path: the
+/// call sites that have a path and no session. Same contract as `forSession`,
+/// and the same failure — `--saas` with an unowned path is an error, never the host.
+pub fn forPath(
+    allocator: std.mem.Allocator,
+    db: ?*sqlite.SqliteBackend,
+    abs_path: []const u8,
+) !?Fs {
+    if (!runtime_mode.vm_backend_available) return null;
+    if (runtime_mode.currentMode() != .saas) return null;
+
+    const database = db orelse return Error.GuestWorkspaceUnknown;
+    const match = (try workspace_scope.resolveWorkspaceForPath(allocator, database, abs_path)) orelse
+        return Error.GuestWorkspaceUnknown;
+    const socket = runtime_mode.socketPath() orelse {
+        var owned = match;
+        owned.deinit(allocator);
+        return Error.GuestManagerUnavailable;
+    };
+    const socket_copy = try allocator.dupe(u8, socket);
+    return .{
+        .allocator = allocator,
+        .workspace_id = match.workspace_id,
+        .root = match.root,
+        .socket = socket_copy,
+    };
+}
+
+/// Who may touch a session's tree: the GUEST under `--saas`, the host in local
+/// mode, or nobody at all when `--saas` cannot reach the workspace's VM. There
+/// is no fourth answer: `unavailable` is never the host.
+pub const Route = union(enum) {
+    host,
+    guest: Fs,
+    unavailable: anyerror,
+
+    pub fn deinit(self: *Route) void {
+        switch (self.*) {
+            .guest => |*fs| fs.deinit(),
+            else => {},
+        }
+    }
+
+    /// The guest to ask, or null when the host is the answer. A caller that
+    /// must fail closed matches `unavailable` FIRST — see `fetchGitStateFor`.
+    pub fn guestFs(self: *Route) ?*const Fs {
+        return switch (self.*) {
+            .guest => |*fs| fs,
+            else => null,
+        };
+    }
+};
+
+/// The route for a session's tree. Local mode is the host, byte-identical to
+/// the days before the seam existed; `--saas` is the guest or a refusal.
+pub fn routeForSession(
+    allocator: std.mem.Allocator,
+    db: *sqlite.SqliteBackend,
+    session_id: []const u8,
+) Route {
+    if (!runtime_mode.vm_backend_available) return .host;
+    if (runtime_mode.currentMode() != .saas) return .host;
+    const found = forSession(allocator, db, session_id) catch |err| return .{ .unavailable = err };
+    return .{ .guest = found orelse return .{ .unavailable = Error.GuestWorkspaceUnknown } };
+}
+
+/// The route for a directory named by absolute host path, for the call sites
+/// that have a path and no session.
+pub fn routeForPath(
+    allocator: std.mem.Allocator,
+    db: ?*sqlite.SqliteBackend,
+    abs_path: []const u8,
+) Route {
+    if (!runtime_mode.vm_backend_available) return .host;
+    if (runtime_mode.currentMode() != .saas) return .host;
+    const found = forPath(allocator, db, abs_path) catch |err| return .{ .unavailable = err };
+    return .{ .guest = found orelse return .{ .unavailable = Error.GuestWorkspaceUnknown } };
 }
 
 /// Whether the manager refused the CALLER'S OWN request — a path it will not
@@ -545,4 +638,63 @@ test "gitCheckIgnore: naming nothing asks the guest nothing" {
     const none = try fs.gitCheckIgnore("/proj/a", &.{});
     defer testing.allocator.free(none);
     try testing.expectEqual(@as(usize, 0), none.len);
+}
+
+test "guestAbs: a host path becomes the guest's own, and nothing else does" {
+    const fs = testFs("/proj/a");
+    const at_root = try fs.guestAbs("/proj/a");
+    defer testing.allocator.free(at_root);
+    try testing.expectEqualStrings("/workspace", at_root);
+
+    const nested = try fs.guestAbs("/proj/a/src/main.zig");
+    defer testing.allocator.free(nested);
+    try testing.expectEqualStrings("/workspace/src/main.zig", nested);
+
+    // The guest's own vocabulary: no host path crosses whole.
+    try testing.expect(std.mem.indexOf(u8, nested, "proj") == null);
+
+    try testing.expectError(Error.GuestPathOutsideWorkspace, fs.guestAbs("/etc/passwd"));
+    try testing.expectError(Error.GuestPathOutsideWorkspace, fs.guestAbs("/proj/ab"));
+}
+
+test "runGit: an outside directory is refused before any RPC" {
+    const fs = testFs("/proj/a");
+    try testing.expectError(
+        Error.GuestPathOutsideWorkspace,
+        fs.runGit("/etc", &.{"status"}, 1000, 4096),
+    );
+}
+
+test "forPath: local mode installs no guest for a path either" {
+    try testing.expectEqual(runtime_mode.Mode.local, runtime_mode.currentMode());
+    var ctx = try guestTestCtx();
+    defer ctx.deinit();
+    try testing.expect((try forPath(testing.allocator, &ctx.db, "/proj/a/src")) == null);
+}
+
+test "forPath: saas refuses a path no workspace owns, and one with no manager" {
+    runtime_mode.setCurrent(.saas);
+    defer runtime_mode.setCurrent(.local);
+    if (!runtime_mode.vm_backend_available) return;
+
+    var ctx = try guestTestCtx();
+    defer ctx.deinit();
+
+    // A path under no recorded root is NOT an invitation to run on the host.
+    try testing.expectError(
+        Error.GuestWorkspaceUnknown,
+        forPath(testing.allocator, &ctx.db, "/etc"),
+    );
+    // No database at all is the same answer, not a host fall back.
+    try testing.expectError(
+        Error.GuestWorkspaceUnknown,
+        forPath(testing.allocator, null, "/proj/a"),
+    );
+    // The workspace resolves, so the only thing missing is the manager.
+    runtime_mode.setManagerSocket(null);
+    defer runtime_mode.setManagerSocket(null);
+    try testing.expectError(
+        Error.GuestManagerUnavailable,
+        forPath(testing.allocator, &ctx.db, "/proj/a/src"),
+    );
 }
