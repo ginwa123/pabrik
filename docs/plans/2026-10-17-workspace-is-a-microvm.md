@@ -1760,3 +1760,31 @@ missing parent, and a file named as a directory.
 - **The `mod_tests` step prints `failed command: …/test --listen=-` on a GREEN
   run.** The gate is `zig build test`'s exit code (0), not that line — reading it
   as a failure cost a false alarm.
+
+---
+
+## 31. Integration status after the three parallel slices
+
+Three sessions ran in parallel, each in its own worktree, and their slices are now on the feature
+branch (`925aa00a6`, all three merged through their own PRs into *this* branch — `main` is untouched):
+
+| slice | landed as | what it added |
+|---|---|---|
+| fs.write + fs.walk | `7baf478d4` | `fs.write` in the guest, `fs.walk`, and the six remaining file tools behind `workspace_fs` |
+| git in the guest | `8654a7014` (#995) | §2.1's host call sites routed through the exec RPC |
+| P4 network | `925aa00a6` (#996) | egress proxy, in-guest resolver, preview proxy, the `Origin` check, the tap helper |
+
+Verified on the integrated tree (by hand, 2026-10-18):
+
+```
+zig build test:vmd        → green
+./zig-out/bin/zginlint .. → 0 findings
+scripts/vm-guest-smoke.sh → 34/34 ok, including "seam/deep/note.txt = written by the protocol"
+scripts/vmd-smoke.sh      →  5/5 ok
+```
+
+**The evidence gap that has to close before this is called done:** the two slice PRs each ran **one**
+status check (not the 24-job matrix), and PR #983's new head `925aa00a6` currently reports **zero**
+checks — so the integration has no full-matrix CI run behind it. §30 condition 5 is therefore not met
+yet. Next: force CI on this head, run `zig build test` in full, run the daemon smoke, then P5.
+
