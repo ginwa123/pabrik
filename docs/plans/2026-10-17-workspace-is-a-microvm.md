@@ -1572,3 +1572,51 @@ zig build test:vmd      → 53/53
 - **No `PABRIK_VM_TEST=1` L3 run.** Everything above is L1 (pure) plus the
   existing smokes; the file RPC has not been driven against a live VM by CI,
   and `scripts/vmd-daemon-smoke.sh` does not exercise `fs.*` yet.
+
+---
+
+## 30. Definition of done for this branch, and how to keep it alive
+
+**The rule (human, 2026-10-17): this feature reaches `main` in one go, when it is done.** Nothing
+merges partially, so the branch is long-lived: ~22 commits and counting, and P0–P3a are on it while
+`origin/main` has none of it.
+
+### The checkable finish line
+
+"Done" means all five, not "it feels finished":
+
+1. **§3 criteria 1–12 pass**, each with a test or a smoke assertion. Today: 8 (host opens no tenant
+   file) and 9 (host never runs tenant git) are the open two.
+2. **§29's "What this does NOT do" list is empty** — `fs.write` + `fs.walk`, the six file tools
+   routed, git in the guest, and the network policies given a caller.
+3. **P4 done**: the privileged tap helper, the egress proxy, the in-guest resolver, the preview proxy
+   and the `Origin` wiring — `egress.zig` and `preview_origin.zig` are policy with no caller until
+   then.
+4. **P5's security review** walks the §5 threat model against criteria 8–14 with no open
+   high-severity finding.
+5. **Green on the final commit**: `zig build test`, `zig build test:vmd`, `./zig-out/bin/zginlint src
+   build.zig`, and both smokes on a KVM box (`scripts/vm-guest-smoke.sh`,
+   `scripts/vmd-smoke.sh`).
+
+P6 (the Cloud Hypervisor backend) is a *later* item and is **not** part of the gate.
+
+### Keeping a long-lived branch mergeable
+
+- **Merge `origin/main` into the branch whenever it moves** — done once already (`67d5adfd6`). CI
+  after each merge is the only drift detector that exists here; a green run on a stale base means
+  nothing.
+- **Re-run both smokes before pushing anything that touches `src/vm_agent`, `src/vmd` or the image
+  scripts.** No CI cell can run them (Firecracker needs `/dev/kvm`), so a regression there is
+  invisible until someone boots a VM by hand.
+- **Never put a card in `merged` while the code is branch-only.** This board's `merged` column reads
+  "already merged in main branch", and the dependency gate treats a card there as *unfinished* when
+  the column carries no completion flag — so `P2c` and `P3` **cannot be moved** while their blocker
+  sits there (attempted; it refused). Either flip that column's "completes work" flag in the column
+  editor, or read `merged` on this board as "done on the branch".
+
+### One accepted cost, stated once
+
+The §2.2 git hardening — a live RCE-class bug in **local** mode (`core.fsmonitor`, hooks, `textconv`
+drivers running on the host from an untrusted repo) — is inside this branch, so it ships with the
+feature and not before. `task_1792251191827552698` exists to split it if that changes.
+
