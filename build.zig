@@ -2513,11 +2513,44 @@ pub fn build(b: *std.Build) void {
     b.step("test:helpers:git_env_guard", "Run git_env_guard helper tests")
         .dependOn(&run_git_env_guard_tests.step);
 
+    // === The VM trio: the guest agent (installed as /init), the probe
+    // fixture, and the manager. All three come out of `zig build`, so no
+    // script needs to know how to invoke the compiler on their behalf.
+    const vm_step = b.step("vm", "Build pabrik-vm-agent + pabrik-probe, and pabrik-vmd on Linux");
+    const guest_target = b.resolveTargetQuery(.{
+        .cpu_arch = .x86_64,
+        .os_tag = .linux,
+        .abi = .musl,
+    });
+    const vm_agent_exe = b.addExecutable(.{
+        .name = "pabrik-vm-agent",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/vm_agent/main.zig"),
+            .target = guest_target,
+            .optimize = optimize,
+        }),
+    });
+    const vm_probe_exe = b.addExecutable(.{
+        .name = "pabrik-probe",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/vm_agent/probe.zig"),
+            .target = guest_target,
+            .optimize = optimize,
+        }),
+    });
+    const install_vm_agent = b.addInstallArtifact(vm_agent_exe, .{});
+    const install_vm_probe = b.addInstallArtifact(vm_probe_exe, .{});
+    vm_step.dependOn(&install_vm_agent.step);
+    vm_step.dependOn(&install_vm_probe.step);
+    b.getInstallStep().dependOn(&install_vm_agent.step);
+    b.getInstallStep().dependOn(&install_vm_probe.step);
+
     // === pabrik-vmd (src/vmd/main.zig) — the workspace VM manager ===
     // Linux-only: it speaks to a unix socket and forks a VMM, and the tests
     // that drive it need /dev/kvm (scripts/vmd-smoke.sh, scripts/vmd-daemon-smoke.sh).
     const vmd_step = b.step("vmd", "Build pabrik-vmd into zig-out/bin/pabrik-vmd");
     const vmd_test_step = b.step("test:vmd", "Run the pabrik-vmd unit tests");
+    var vmd_install: ?*std.Build.Step = null;
     if (target.result.os.tag == .linux) {
         const vmd_exe = b.addExecutable(.{
             .name = "pabrik-vmd",
@@ -2529,6 +2562,9 @@ pub fn build(b: *std.Build) void {
         });
         const install_vmd = b.addInstallArtifact(vmd_exe, .{});
         vmd_step.dependOn(&install_vmd.step);
+        vm_step.dependOn(&install_vmd.step);
+        b.getInstallStep().dependOn(&install_vmd.step);
+        vmd_install = &install_vmd.step;
 
         const vmd_tests = b.addTest(.{
             .root_module = b.createModule(.{
@@ -3115,6 +3151,12 @@ pub fn build(b: *std.Build) void {
         build_all_step.dependOn(&tui_install.step);
     }
     build_all_step.dependOn(&build_banner.step);
+    // `build:all` is a step of its own, so hooking only `install` left
+    // `zig build` producing none of the trio. The agent and the probe are
+    // fixed-target musl, so every host compiles them; `pabrik-vmd` is Linux-only.
+    build_all_step.dependOn(&install_vm_agent.step);
+    build_all_step.dependOn(&install_vm_probe.step);
+    if (vmd_install) |step| build_all_step.dependOn(step);
     // Make `zig build` (default) auto-fetch the vendored curl archive
     // when missing. The fetch script is idempotent — re-running on a
     // populated vendor/ is a fast no-op.

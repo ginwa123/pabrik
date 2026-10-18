@@ -12,7 +12,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fc_bin="${FC_BIN:-firecracker}"
 guest_kernel="${GUEST_KERNEL:-$HOME/firecracker-demo/vmlinux-6.18.51}"
 work="${PABRIK_VM_WORKDIR:-${TMPDIR:-/tmp}/pabrik-vmd-smoke}"
-vmd="$work/pabrik-vmd"
+vmd="$repo_root/zig-out/bin/pabrik-vmd"
 vms="$work/vms"
 ws="demo"
 
@@ -26,8 +26,9 @@ command -v "$fc_bin" >/dev/null || fail "firecracker not found: $fc_bin"
 rm -rf "$work"
 mkdir -p "$work"
 
-say "building pabrik-vmd (host target)"
-zig build-exe "$repo_root/src/vmd/main.zig" -O ReleaseSafe -femit-bin="$vmd"
+say "building pabrik-vmd (zig build vmd)"
+(cd "$repo_root" && zig build vmd -Doptimize=ReleaseSafe)
+[ -x "$vmd" ] || fail "zig build vmd left no $vmd"
 say "pabrik-vmd bytes=$(stat -c %s "$vmd")"
 
 say "assembling the guest image"

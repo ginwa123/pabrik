@@ -45,14 +45,19 @@ rm -rf "$work"
 mkdir -p "$work"
 say "kernel  $guest_kernel sha256=$(sha256sum "$guest_kernel" | cut -c1-16)"
 
-say "building the probe fixture (static x86_64-linux-musl)"
-zig build-exe "$repo_root/src/vm_agent/probe.zig" \
-  -target x86_64-linux-musl -O ReleaseSmall -femit-bin="$work/pabrik-probe"
-say "probe   bytes=$(stat -c %s "$work/pabrik-probe")"
+say "building the agent and the probe fixture (zig build vm)"
+(cd "$repo_root" && zig build vm -Doptimize=ReleaseSmall)
+agent_bin="$repo_root/zig-out/bin/pabrik-vm-agent"
+probe_bin="$repo_root/zig-out/bin/pabrik-probe"
+[ -x "$agent_bin" ] || fail "zig build vm left no $agent_bin"
+[ -x "$probe_bin" ] || fail "zig build vm left no $probe_bin"
+say "agent   bytes=$(stat -c %s "$agent_bin")"
+say "probe   bytes=$(stat -c %s "$probe_bin")"
 
 say "assembling the guest image from the pinned manifest"
 PABRIK_VM_CACHE="${PABRIK_VM_CACHE:-$HOME/.cache/pabrik-vm}" \
-  "$repo_root/scripts/build-guest-image.sh" --out "$image" --probe "$work/pabrik-probe"
+  "$repo_root/scripts/build-guest-image.sh" --out "$image" \
+  --agent "$agent_bin" --probe "$probe_bin"
 
 say "starting firecracker (unprivileged, no NIC)"
 "$fc_bin" --api-sock "$api_sock" --enable-pci >"$work/fc.stdout" 2>&1 &

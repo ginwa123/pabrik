@@ -1181,3 +1181,161 @@ detached job, and the visible ending a stopped VM owes its jobs.
   (`cwd`, `timeout`, `mode`) is the part that is enforced on both substrates.
 - **No suspend/resume, and no `busy`/`idle` counter.** A job does not hold the
   VM awake; nothing stops an idle VM yet, and nothing keeps one alive either.
+
+---
+
+## 27. The CI gate for the VM — the image builds as root, the boot stays on a KVM box
+
+§20 finding 5 and §21's two caveats were the two CI gaps, and both are now code
+that CI runs. The card was `task_1792253361427014458`.
+
+### `zig build` builds the whole VM trio
+
+| step | artifact | notes |
+|---|---|---|
+| `zig build vm` | `pabrik-vm-agent`, `pabrik-probe`, and `pabrik-vmd` on Linux | the three at once |
+| `zig build vmd` | `zig-out/bin/pabrik-vmd` | unchanged, still in `zig build test` |
+| `zig build` | all of the above | `build:all` is a step of its own, so hooking only `install` produced none of them |
+
+The agent and the probe are `x86_64-linux-musl` with a FIXED target, so a macOS
+or Windows host builds the guest's binaries too — which is the point, since the
+guest image is assembled on whatever machine has the repo. `pabrik-vmd` stays
+Linux-only (unix sockets, a forked VMM).
+
+`scripts/vm-guest-smoke.sh`, `vmd-smoke.sh` and `vmd-daemon-smoke.sh` lost their
+`zig build-exe` lines: they run `zig build vm -Doptimize=ReleaseSmall` /
+`zig build vmd -Doptimize=ReleaseSafe` and read `zig-out/bin`. The agent is
+78,640 bytes and the probe 9,008 at `ReleaseSmall`; a default `zig build` leaves
+Debug copies there (12.9 MB), which is why the scripts and CI name the optimize
+mode instead of inheriting it.
+
+### The image: three roles in one manifest, two tiers, built as root
+
+`scripts/guest-image.manifest` is still one `<sha256>  <url>` line per artifact,
+now with a role column: `rootfs` (extracted, both tiers) and `dev` (an `.apk`
+installed with `apk add --root`, dev tier only). One parse, one fetcher, one
+place where a hash is checked.
+
+The `dev` set is real and it is a **closure**: the resolved closure of
+`git nodejs npm python3 rust cargo zig` — **65 packages, 397 MiB of downloads,
+1188.2 MiB installed**, each an entry with its own 64-char sha256. apk resolves
+dependencies across the whole set, so carrying only the six names would leave 59
+unresolved; that is why the manifest is long. Re-pin with
+`scripts/resolve-guest-packages.sh` in the builder container, which fetches the
+closure, maps every file back to the repository that publishes it (apk 3's
+APKINDEX has no `F:` field, so the file name is `<name>-<version>.apk`) and prints
+the lines to review. The image hash is the image version: a re-pin is a new
+image, never a mutation.
+
+```
+apk add --root ROOT --repositories-file /dev/null --no-network \
+        --force-non-repository <the pinned files>
+```
+
+Four properties, each load-bearing: **no repository exists**, so the pinned files
+are the only source apk may pick from; `--no-network` means no fetch could happen
+even if one did; `--force-non-repository` is apk's own way of being told "yes,
+install files that no repository backs"; and the Alpine **package signature still
+verifies** against the keyring in the builder image, so the manifest's hash and
+Alpine's signature are both checked.
+
+Two tiers, because the toolchain is 1.2 GiB and a workspace that only needs `sh`
+should not pay for `zig`: `--tier base` (128M default) and `--tier dev` (2048M).
+
+`--in-container` is how §21's ownership caveat dies. Restoring root ownership
+needs root, so the flag re-runs the script inside a builder image pinned by
+digest (`alpine:3.24.2@sha256:294b683c…`, plus `bash=5.3.9-r1` and
+`e2fsprogs=1.47.4-r0`) with the repo read-only and the cache and output
+directory writable, and asserts before `mkfs.ext4` that `/bin/busybox` and
+`/init` are owned by `0:0`. Without the flag the build still works, but says
+which uid the base belongs to and that a workload of that uid can rewrite it.
+The other half is subtraction: the extract no longer ends in `2>/dev/null ||
+true`, which is what hid the chown failures a rootless tar reports — rootless it
+passes `--no-same-owner`, as root it does not, and a real failure now stops the
+build instead of shipping half a rootfs.
+
+### `scripts/check-guest-image.sh` — reading the shipped bytes back
+
+Nothing before this looked at the finished image from outside. This does, with
+`debugfs` alone: no root, no loop mount, no VM.
+
+```
+[check-image] ok  /init regular 0755 0:0
+[check-image] ok  /bin/busybox regular 0755 0:0
+[check-image] ok  /bin/sh symlink 0777 0:0
+[check-image] ok  /usr/bin/git regular 0755 0:0
+[check-image] ok  /usr/bin/node regular 0755 0:0
+[check-image] ok  /usr/bin/python3 symlink 0777 0:0
+[check-image] ok  /usr/bin/cargo regular 0755 0:0
+[check-image] ok  /usr/bin/zig regular 0755 0:0
+```
+
+That third-from-last line is the whole card: `/usr/bin/git` inside the SEALED
+image is owned by `0:0`, which a rootless build cannot produce. It also asserts
+`/init` is mode 0755 and takes `--require PATH` for extra payload
+(`/bin/pabrik-probe`).
+
+### `.github/workflows/ci-vm-image.yml` — hosted, no KVM needed
+
+`selftest` runs the three scripts' pure logic — 14 + 6 + 3 assertions over the
+manifest parse, the tier split, every refusal rule, the APKINDEX parse and the
+inode-field parse — with no network, no root and no container, so it cannot be
+flaky. `guest-image` builds BOTH tiers as root in the builder container on
+`ubuntu-24.04`, caches `~/.cache/pabrik-vm` by
+`hashFiles('scripts/guest-image.manifest')` (the manifest IS the artifact list,
+so an unchanged manifest can never need a different byte), then runs
+`check-guest-image.sh` over the result. Path-filtered, so it runs only when the
+manifest, a builder script, the agent or `build.zig` move.
+
+It is deliberately **not** in `ci.yml`'s `ci-ok`: `ci-ok` is the one required
+check, and a new heavy job there blocks every merge the day it flakes. It reports
+its own status and can be promoted into branch protection once it has history.
+
+### `.github/workflows/ci-vm-smoke.yml` — the /dev/kvm job, and the manual gate
+
+The four smokes cannot run on a hosted runner (§20 finding 5: Firecracker needs
+`/dev/kvm`). This workflow runs them on `[self-hosted, linux, x64, kvm]` behind a
+`preflight` job that fails with a named reason — no `/dev/kvm`, no `firecracker`,
+no kernel, a missing tool — before any VM starts, and it prints the kernel's
+sha256 so a red run is attributable.
+
+**No such runner is registered today**, so the PR trigger is behind the
+`PABRIK_KVM_RUNNER` repository variable: set it to `true` once a Linux runner
+with `/dev/kvm` is online and the gate becomes live. `workflow_dispatch` runs it
+by hand meanwhile. A job that waits for a runner nobody has registered queues
+forever, which is why this is a variable and not a label.
+
+**The manual gate** — one command per suite, on a box with `/dev/kvm` (all four
+verified locally on 2026-10-18: 13/13, 5/5, 8/8, 3/3):
+
+```bash
+FC_BIN=$HOME/firecracker-demo/firecracker scripts/vm-guest-smoke.sh     # 13/13 image, boot, exec protocol
+FC_BIN=$HOME/firecracker-demo/firecracker scripts/vmd-smoke.sh          #  5/5 the Zig client
+FC_BIN=$HOME/firecracker-demo/firecracker scripts/vmd-daemon-smoke.sh   #  8/8 the daemon + reconciler
+zig build && FC_BIN=$HOME/firecracker-demo/firecracker scripts/vmd-saas-smoke.sh  #  3/3 the boot decision
+```
+
+The runner provides `firecracker` and the kernel; the repo vendors neither.
+`PABRIK_FC_BIN` and `PABRIK_GUEST_KERNEL` (repository variables) override the
+paths the smokes default to, and an empty value falls back to the script's own
+default rather than to an empty path.
+
+### What is still open (stated, not implied)
+
+- **The guest kernel is not pinned by hash.** The smokes default to
+  `$HOME/firecracker-demo/vmlinux-6.18.51` and log its sha256, but nothing
+  asserts it. §19's "pin the CI kernel by hash" is exactly the item it was, and
+  it is the one thing that makes a red smoke attributable to the code rather than
+  to a newer kernel.
+- **The dev tier's package set is still a human decision.** §21 left it open and
+  this card pinned the six tools it named. `build-base` is NOT in the set, but
+  `rust`'s closure already brings `gcc`, `binutils` and `musl-dev`, so `cargo
+  build` can link — whether a tenant gets `gcc` on purpose or by accident is the
+  decision that is still open.
+- **The dev tier is heavy** (397 MiB download, 1188.2 MiB installed, a 2 GiB
+  image) and its cold cache dominates the image job. That is why the cache is
+  keyed on the manifest and why a re-pin is a reviewed edit.
+- **The image hash is a version, not a checksum.** `mkfs.ext4` stamps a fresh
+  UUID, so the same inputs produce a different image sha256 every run.
+- **`crash_handler_smoke.sh` still calls `zig build-exe`.** Unrelated to the VM
+  trio, so it was left alone.
