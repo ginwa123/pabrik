@@ -2096,10 +2096,11 @@ pub fn build(b: *std.Build) void {
     // double-click works with a clean PATH (see installVcpkgDlls doc).
     installVcpkgDlls(b, &desktop_install.step);
     installVcpkgDlls(b, b.getInstallStep());
-    // Windows-only shipped webapp (persistent, no temp extraction): copy
-    // src/apps/desktop/dist → zig-out/bin/html so the Windows release zip can
-    // bundle it and Install-Pabrik.ps1 can install it to
-    if (fileExists("src/apps/desktop/dist/index.html")) {
+    // Shipped webapp staging: src/apps/desktop/dist → zig-out/bin/html, which
+    // the release tarball `pabrik-html-<triple>.tar.gz` is built from. Do NOT
+    // gate this on the dist probe alone — it runs before the chain builds dist.
+    const dist_present = fileExists("src/apps/desktop/dist/index.html");
+    if (dist_present or !no_webapp_rebuild) {
         const webapp_dir_install = b.addInstallDirectory(.{
             .source_dir = b.path("src/apps/desktop/dist"),
             .install_dir = .bin,
@@ -2110,7 +2111,11 @@ pub fn build(b: *std.Build) void {
         }
         desktop_install.step.dependOn(&webapp_dir_install.step);
     } else {
-        std.log.warn("webapp dist/index.html missing -- skipping zig-out/bin/html (desktop falls back to embedded extraction)", .{});
+        // -Dno-webapp-rebuild: dist/ has to be prebuilt, so it stays gated.
+        std.log.warn(
+            "webapp dist/index.html missing and -Dno-webapp-rebuild set -- skipping zig-out/bin/html (desktop falls back to embedded extraction)",
+            .{},
+        );
     }
     // Late alias kept for comment continuity — actual flag is defined
     // early (near target/optimize) so mcp/webapp sections could be gated.
