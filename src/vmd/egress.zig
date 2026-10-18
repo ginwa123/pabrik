@@ -88,6 +88,24 @@ pub fn classifyV4(addr: [4]u8) Verdict {
     return .allow;
 }
 
+/// `::a.b.c.d` with a non-zero tail: the deprecated v4-compatible form, which
+/// is an IPv4 address wearing an IPv6 header. `::` and `::1` never reach here.
+fn compatibleV4(addr: [16]u8) ?[4]u8 {
+    for (addr[0..12]) |byte| {
+        if (byte != 0) return null;
+    }
+    if (addr[12] == 0 and addr[13] == 0 and addr[14] == 0 and addr[15] <= 1) return null;
+    return .{ addr[12], addr[13], addr[14], addr[15] };
+}
+
+/// The prefixes that embed an IPv4 address one hop away: NAT64, 6to4, Teredo.
+fn isNestedV4(addr: [16]u8) bool {
+    const nat64 = addr[0] == 0x00 and addr[1] == 0x64 and addr[2] == 0xff and addr[3] == 0x9b;
+    const six_to_four = addr[0] == 0x20 and addr[1] == 0x02;
+    const teredo = addr[0] == 0x20 and addr[1] == 0x01 and addr[2] == 0x00 and addr[3] == 0x00;
+    return nat64 or six_to_four or teredo;
+}
+
 pub fn classifyV6(addr: [16]u8) Verdict {
     if (mappedV4(addr)) |v4| return classifyV4(v4);
     var all_zero = true;
@@ -96,6 +114,12 @@ pub fn classifyV6(addr: [16]u8) Verdict {
     }
     if (all_zero and addr[15] == 1) return .loopback;
     if (all_zero and addr[15] == 0) return .unspecified;
+    // `::a.b.c.d` (IPv4-compatible), NAT64, 6to4 and Teredo all carry an IPv4
+    // address a routing configuration may deliver, so the table refuses them
+    // rather than trusting this host's routes to keep the promise.
+    if (all_zero) return .reserved;
+    if (compatibleV4(addr)) |v4| return classifyV4(v4);
+    if (isNestedV4(addr)) return .reserved;
     if (addr[0] == 0xfe and (addr[1] & 0xc0) == 0x80) return .link_local;
     if (addr[0] == 0xff) return .multicast;
     if (addr[0] == 0xfc or addr[0] == 0xfd) return .private;
@@ -221,6 +245,13 @@ test "classifyText: the deny table, address by address" {
         .{ .text = "192.169.0.1", .want = .allow },
         .{ .text = "2606:4700::1111", .want = .allow },
         .{ .text = "[::1]", .want = .loopback },
+        .{ .text = "0000:0000:0000:0000:0000:0000:a9fe:a9fe", .want = .metadata },
+        .{ .text = "0000:0000:0000:0000:0000:0000:7f00:0002", .want = .loopback },
+        .{ .text = "0000:0000:0000:0000:0000:0000:0a00:0001", .want = .private },
+        .{ .text = "0000:0000:0000:0000:0000:0000:0808:0808", .want = .allow },
+        .{ .text = "0064:ff9b:0000:0000:0000:0000:7f00:0001", .want = .reserved },
+        .{ .text = "2002:7f00:0001:0000:0000:0000:0000:0001", .want = .reserved },
+        .{ .text = "2001:0000:1234:0000:0000:0000:0000:0001", .want = .reserved },
     };
     for (cases) |case| {
         const got = classifyText(case.text) orelse {

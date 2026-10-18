@@ -8,6 +8,7 @@ const sqlite = pabrikcore.sqlite;
 const runtime_mode = @import("../runtime_mode.zig");
 const workspace_scope = @import("workspace_scope.zig");
 const vmd = @import("../vmd/vmd_client.zig");
+const proxy_rpc = @import("../vmd/proxy_rpc.zig");
 const policy = @import("../vmd/policy.zig");
 const fs_policy = @import("../vmd/fs_policy.zig");
 const git_hardening = @import("helpers").git_hardening;
@@ -367,6 +368,21 @@ pub fn forSession(
         .root = root,
         .socket = socket_copy,
     };
+}
+
+/// One preview exchange through the manager, for the route that reaches a
+/// tenant's dev server. Local mode has no guest to reach, so it fails closed
+/// exactly like every other guest call here.
+pub fn previewExchange(
+    allocator: std.mem.Allocator,
+    workspace_id: []const u8,
+    port: u16,
+    request_bytes: []const u8,
+) !proxy_rpc.Reply {
+    if (!runtime_mode.vm_backend_available) return Error.GuestManagerUnavailable;
+    if (runtime_mode.currentMode() != .saas) return Error.GuestManagerUnavailable;
+    const socket = runtime_mode.socketPath() orelse return Error.GuestManagerUnavailable;
+    return proxy_rpc.exchange(allocator, socket, workspace_id, port, request_bytes);
 }
 
 /// Whether the manager refused the CALLER'S OWN request — a path it will not

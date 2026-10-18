@@ -290,6 +290,12 @@ pub fn main(init: std.process.Init) !void {
     defer gs.deinit();
     gs.enable_h2c = cli.enable_h2c;
 
+    // The first cross-site check this server has ever had: the engine's
+    // pre-gate refuses a state-changing request whose `Origin` this deployment
+    // does not serve, because same-site is not same-origin.
+    const allowed_origins = try ai_mod.http_handlers.preview_origin.allowedFor(allocator, environment, address.port);
+    gs.cors = .{ .enabled = true, .allowed_origins = allowed_origins };
+
     // SIGINT/SIGTERM close the listener via shutdown(), unblocking listen()
     // so the post-listen block below runs. Second signal force-exits (130).
     shutdown.setServer(gs);

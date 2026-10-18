@@ -2538,12 +2538,23 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
+    const vm_netd_exe = b.addExecutable(.{
+        .name = "pabrik-vm-netd",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/vm_agent/netd.zig"),
+            .target = guest_target,
+            .optimize = optimize,
+        }),
+    });
+    const install_vm_netd = b.addInstallArtifact(vm_netd_exe, .{});
     const install_vm_agent = b.addInstallArtifact(vm_agent_exe, .{});
     const install_vm_probe = b.addInstallArtifact(vm_probe_exe, .{});
     vm_step.dependOn(&install_vm_agent.step);
     vm_step.dependOn(&install_vm_probe.step);
     b.getInstallStep().dependOn(&install_vm_agent.step);
     b.getInstallStep().dependOn(&install_vm_probe.step);
+    vm_step.dependOn(&install_vm_netd.step);
+    b.getInstallStep().dependOn(&install_vm_netd.step);
 
     // === pabrik-vmd (src/vmd/main.zig) — the workspace VM manager ===
     // Linux-only: it speaks to a unix socket and forks a VMM, and the tests
@@ -2551,6 +2562,7 @@ pub fn build(b: *std.Build) void {
     const vmd_step = b.step("vmd", "Build pabrik-vmd into zig-out/bin/pabrik-vmd");
     const vmd_test_step = b.step("test:vmd", "Run the pabrik-vmd unit tests");
     var vmd_install: ?*std.Build.Step = null;
+    var tap_install: ?*std.Build.Step = null;
     if (target.result.os.tag == .linux) {
         const vmd_exe = b.addExecutable(.{
             .name = "pabrik-vmd",
@@ -2565,6 +2577,19 @@ pub fn build(b: *std.Build) void {
         vm_step.dependOn(&install_vmd.step);
         b.getInstallStep().dependOn(&install_vmd.step);
         vmd_install = &install_vmd.step;
+
+        const tap_exe = b.addExecutable(.{
+            .name = "pabrik-vm-tap",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("src/vmd/tap.zig"),
+                .target = target,
+                .optimize = optimize,
+            }),
+        });
+        const install_tap = b.addInstallArtifact(tap_exe, .{});
+        vm_step.dependOn(&install_tap.step);
+        b.getInstallStep().dependOn(&install_tap.step);
+        tap_install = &install_tap.step;
 
         const vmd_tests = b.addTest(.{
             .root_module = b.createModule(.{
@@ -3156,6 +3181,8 @@ pub fn build(b: *std.Build) void {
     // fixed-target musl, so every host compiles them; `pabrik-vmd` is Linux-only.
     build_all_step.dependOn(&install_vm_agent.step);
     build_all_step.dependOn(&install_vm_probe.step);
+build_all_step.dependOn(&install_vm_netd.step);
+if (tap_install) |step| build_all_step.dependOn(step);
     if (vmd_install) |step| build_all_step.dependOn(step);
     // Make `zig build` (default) auto-fetch the vendored curl archive
     // when missing. The fetch script is idempotent — re-running on a

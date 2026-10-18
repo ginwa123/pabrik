@@ -8,6 +8,8 @@ const rpc = @import("rpc.zig");
 const policy = @import("policy.zig");
 const vm_client = @import("vm_client.zig");
 const reconciler_mod = @import("reconciler.zig");
+const egress_proxy = @import("egress_proxy.zig");
+const proxy_rpc = @import("proxy_rpc.zig");
 
 pub const Error = error{
     SocketFailed,
@@ -36,6 +38,9 @@ pub const Config = struct {
     sweep_interval_ms: u32 = reconciler_mod.default_sweep_interval_ms,
     /// The first retry delay after a failed attempt; doubles up to a minute.
     backoff_base_ms: i64 = reconciler_mod.default_backoff_base_ms,
+    /// The host's own TCP ports, refused to every workspace's egress whatever
+    /// address is used to reach them.
+    host_listeners: []const u16 = &.{8081},
 };
 
 pub const State = struct {
@@ -98,7 +103,12 @@ pub const Manager = struct {
             log("workspace {s} is {s}: {s}", .{ workspace_id, record.state.name(), record.last_error });
             return error.VmUnavailable;
         }
-        return self.layoutFor(allocator, workspace_id);
+        const layout = try self.layoutFor(allocator, workspace_id);
+        // Bound before the first guest op. The listeners and their accept
+        // threads outlive this request, so they are allocated from the daemon's
+        // allocator and never from the caller's arena.
+        egress_proxy.ensure(self.allocator, layout, self.config.host_listeners);
+        return layout;
     }
 
     pub fn state(self: *const Manager, allocator: std.mem.Allocator, workspace_id: []const u8) !State {
@@ -114,6 +124,10 @@ pub const Manager = struct {
     /// `false` means nothing was running, or that a VMM this daemon cannot
     /// account for still owns the workspace.
     pub fn stopWorkspace(self: *const Manager, allocator: std.mem.Allocator, workspace_id: []const u8) bool {
+        if (self.layoutFor(allocator, workspace_id)) |layout| {
+            egress_proxy.release(layout);
+            layout.deinit(allocator);
+        } else |_| {}
         const record = self.reconciler().stop(allocator, workspace_id) catch return false;
         defer record.deinit(allocator);
         return record.state == .absent;
@@ -269,6 +283,17 @@ fn serveConnection(manager: Manager, conn: linux.fd_t) void {
         log("could not read a request frame: {s}", .{@errorName(err)});
         return;
     };
+
+    // The proxy's frames carry their own types, so they are answered before
+    // `rpc.decodeRequest` ever sees an action it does not know.
+    if (proxy_rpc.isProxyFrame(body)) {
+        const payload = proxy_rpc.serve(manager, aa, body) catch |err| blk: {
+            log("proxy request failed: {s}", .{@errorName(err)});
+            break :blk rpc.encodeFailure(aa, 0, .internal, @errorName(err)) catch return;
+        };
+        reply(conn, aa, payload);
+        return;
+    }
 
     var request = rpc.decodeRequest(aa, body) catch |err| {
         log("refused a malformed request: {s}", .{@errorName(err)});

@@ -105,6 +105,8 @@ payload=()
 if [ "$tier" = dev ]; then
   payload+=(/usr/bin/git /usr/bin/node /usr/bin/python3 /usr/bin/cargo /usr/bin/zig)
 fi
+# The in-guest network forwarder is the guest's only way out of the VM.
+payload+=(/usr/bin/pabrik-vm-netd)
 payload+=("${extra[@]:-}")
 
 say "image $image sha256=$(sha256sum "$image" | cut -d' ' -f1)"
