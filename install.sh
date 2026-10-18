@@ -23,15 +23,16 @@
 #
 # Flags: --help | --version TAG | --dir DIR | --system | --no-desktop | --uninstall
 #
-# Webapp cache: a real install and --uninstall clear the desktop app's
-# runtime UI cache -- `$HOME/.local/share/pabrik/desktop-webapp` on Linux
-# (`$XDG_DATA_HOME`) and `$HOME/Library/Application Support/pabrik/
+# Webapp cache: EVERY run refreshes the shipped UI a bare `pabrik` serves
+# (`$BINDIR/html`) from the `pabrik-html-<triple>.tar.gz` release asset --
+# including a re-run whose binaries already match, because the UI is a
+# separate asset that a release can republish without touching the binaries.
+# A real install (binaries differ) and --uninstall additionally clear the
+# desktop app's runtime UI cache -- `$HOME/.local/share/pabrik/desktop-webapp`
+# on Linux (`$XDG_DATA_HOME`) and `$HOME/Library/Application Support/pabrik/
 # desktop-webapp` on macOS. It holds one `<hash>` dir per build plus a
 # `current` symlink, and nothing else ever prunes it, so the next launch
-# re-extracts the assets of the build just installed. The shipped UI a bare
-# `pabrik` serves (`$BINDIR/html`) is replaced on every real install and
-# removed on --uninstall. A re-run whose binaries already match exits
-# before touching either (see the up-to-date fast path below).
+# re-extracts the assets of the build just installed.
 #
 # Windows users: this script does not run on Windows. In PowerShell run:
 #   irm https://raw.githubusercontent.com/ginwa123/pabrik/main/install.ps1 | iex
@@ -191,6 +192,33 @@ download() {
     return 0
 }
 
+# Shipped UI (serves /app): the server auto-discovers "${BINDIR}/html"
+# (same portable layout as zig-out/bin/html in a checkout), so a bare
+# `pabrik` opens the app with no --static-dir flag. Best-effort: a missing
+# tar binary or a release without the asset degrades to API-only, never
+# fails the install.
+#
+# Called on EVERY run, the up-to-date path included: the UI ships as its own
+# asset and a release can republish it without touching the binaries, so
+# skipping it there left an existing install showing the previous release's
+# UI (observed live: fresh binaries from Oct 18 next to an Oct 11 tarball).
+install_shipped_ui() {
+    if ! have_cmd tar; then
+        echo "warning: tar not found -- skipping shipped UI (serves API-only)" >&2
+        return 0
+    fi
+    if ! download "${BASE_URL}/pabrik-html-${TRIPLE}.tar.gz" "${TMPDIR}/html.tar.gz" 2>/dev/null; then
+        echo "warning: no shipped UI asset for ${TRIPLE} -- keeping any existing ${BINDIR}/html" >&2
+        return 0
+    fi
+    rm -rf "${BINDIR}/html"
+    if tar -xzf "${TMPDIR}/html.tar.gz" -C "${BINDIR}"; then
+        echo "Installed the shipped UI into ${BINDIR}/html."
+    else
+        echo "warning: could not extract the shipped UI (serves API-only)" >&2
+    fi
+}
+
 mkdir -p "$BINDIR"
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
@@ -220,6 +248,9 @@ if have_cmd cmp && [[ -f "$BIN_PABRIK" ]]; then
     fi
     if [[ "$up_to_date" -eq 1 ]]; then
         echo "pabrik is already up to date (${TAG})."
+        # Refresh the shipped UI anyway: it is a separate asset, and a
+        # release can republish it while the binaries stay byte-identical.
+        install_shipped_ui
         exit 0
     fi
 fi
@@ -237,21 +268,8 @@ fi
 # instead of reusing a stale copy next to it.
 clear_webapp_cache
 
-# Shipped UI (serves /app): the server auto-discovers "${BINDIR}/html"
-# (same portable layout as zig-out/bin/html in a checkout), so a bare
-# `pabrik` opens the app with no --static-dir flag. Best-effort: a
-# missing tar binary or a release without the asset degrades to
-# API-only, never fails the install.
-if have_cmd tar; then
-    if download "${BASE_URL}/pabrik-html-${TRIPLE}.tar.gz" "${TMPDIR}/html.tar.gz" 2>/dev/null; then
-        rm -rf "${BINDIR}/html"
-        tar -xzf "${TMPDIR}/html.tar.gz" -C "${BINDIR}" || echo "warning: could not extract shipped UI (serves API-only)" >&2
-    else
-        echo "warning: no shipped UI asset for ${TRIPLE} (serves API-only)" >&2
-    fi
-else
-    echo "warning: tar not found -- skipping shipped UI (serves API-only)" >&2
-fi
+# Shipped UI for a bare `pabrik` (see install_shipped_ui).
+install_shipped_ui
 
 # Linux desktop launchers (best-effort): fetch the .desktop files shipped in
 # packaging/linux so Pabrik shows up in GNOME/KDE search. User-local when
