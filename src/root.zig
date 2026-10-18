@@ -286,6 +286,7 @@ test {
     // makes their inline `test` blocks discoverable by `zig build test`.
     _ = @import("agentic_loop/agent_tools_allowed.zig");
     _ = @import("agentic_loop/model_catalog.zig");
+    _ = @import("agentic_loop/workspace_fs.zig");
     _ = @import("agentic_loop/prompts_make_agent_knowledge.zig");
     _ = @import("agentic_loop/prompts_make_agent_system_prompt.zig");
     // Agent-Kanbans mirror (Migration 081): impl + tests in one file.

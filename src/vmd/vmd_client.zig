@@ -103,6 +103,27 @@ pub const LogChunk = struct {
     }
 };
 
+pub const FsStat = struct {
+    kind: []u8,
+    size: i64,
+    missing: bool,
+
+    pub fn deinit(self: FsStat, allocator: std.mem.Allocator) void {
+        allocator.free(self.kind);
+    }
+};
+
+pub const FsChunk = struct {
+    bytes: []u8,
+    size: i64,
+    eof: bool,
+    missing: bool,
+
+    pub fn deinit(self: FsChunk, allocator: std.mem.Allocator) void {
+        allocator.free(self.bytes);
+    }
+};
+
 pub const Client = struct {
     allocator: std.mem.Allocator,
     socket_path: []const u8,
@@ -152,6 +173,68 @@ pub const Client = struct {
             .action = .stop,
             .id = self.takeId(),
             .workspace_id = workspace_id,
+        }, self.guard_ms);
+        defer response.deinit();
+        return switch (response.value) {
+            .ack => {},
+            .failure => |f| self.reportFailure(f),
+            else => Error.ProtocolViolation,
+        };
+    }
+
+    pub fn statFile(self: *Client, workspace_id: []const u8, path: []const u8) !FsStat {
+        var response = try self.call(.{
+            .action = .fs_stat,
+            .id = self.takeId(),
+            .workspace_id = workspace_id,
+            .path = path,
+        }, self.guard_ms);
+        defer response.deinit();
+        return switch (response.value) {
+            .fs_stat => |st| .{
+                .kind = try self.allocator.dupe(u8, st.kind),
+                .size = st.size,
+                .missing = st.missing,
+            },
+            .failure => |f| self.reportFailure(f),
+            else => Error.ProtocolViolation,
+        };
+    }
+
+    pub fn readFile(
+        self: *Client,
+        workspace_id: []const u8,
+        path: []const u8,
+        offset: i64,
+        max_bytes: usize,
+    ) !FsChunk {
+        var response = try self.call(.{
+            .action = .fs_read,
+            .id = self.takeId(),
+            .workspace_id = workspace_id,
+            .path = path,
+            .offset = offset,
+            .max_bytes = max_bytes,
+        }, self.guard_ms);
+        defer response.deinit();
+        return switch (response.value) {
+            .fs_read => |chunk| .{
+                .bytes = try self.allocator.dupe(u8, chunk.data),
+                .size = chunk.size,
+                .eof = chunk.eof,
+                .missing = chunk.missing,
+            },
+            .failure => |f| self.reportFailure(f),
+            else => Error.ProtocolViolation,
+        };
+    }
+
+    pub fn removeFile(self: *Client, workspace_id: []const u8, path: []const u8) !void {
+        var response = try self.call(.{
+            .action = .fs_remove,
+            .id = self.takeId(),
+            .workspace_id = workspace_id,
+            .path = path,
         }, self.guard_ms);
         defer response.deinit();
         return switch (response.value) {

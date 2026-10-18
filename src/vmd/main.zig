@@ -479,6 +479,7 @@ fn reportClientError(client: *const vmd_client.Client) noreturn {
 // test root, and this binary is the root of the vmd suite.
 test {
     _ = @import("egress.zig");
+    _ = @import("fs_policy.zig");
     _ = @import("policy.zig");
     _ = @import("reconciler.zig");
     _ = @import("rpc.zig");

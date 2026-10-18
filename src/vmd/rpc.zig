@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const policy = @import("policy.zig");
+const fs_policy = @import("fs_policy.zig");
 
 pub const version = "0.1";
 pub const max_frame: usize = 4 * 1024 * 1024;
@@ -16,6 +17,10 @@ pub const default_max_log_bytes: usize = 16 * 1024;
 /// under `max_frame` or a legal command produces an illegal response.
 pub const max_output_bytes_limit: usize = 1024 * 1024;
 pub const max_log_bytes_limit: usize = 1024 * 1024;
+/// One `fs.read` reply's default and ceiling. A reply is base64, so the ceiling
+/// is what keeps a legal request from producing an illegal frame.
+pub const default_fs_read_bytes: usize = 64 * 1024;
+pub const max_fs_read_bytes: usize = 1024 * 1024;
 /// A signal number a caller may ask for. SIGKILL and SIGTERM are the two the
 /// tool sends; the range stops a request from naming a real-time signal.
 pub const max_signal: i64 = 64;
@@ -29,7 +34,7 @@ pub const Error = error{
     InvalidBase64,
 };
 
-pub const Action = enum { ping, exec, stop, status, spawn, probe, signal, log };
+pub const Action = enum { ping, exec, stop, status, spawn, probe, signal, log, fs_stat, fs_read, fs_remove };
 
 pub const Request = struct {
     id: i64 = 0,
@@ -48,6 +53,9 @@ pub const Request = struct {
     /// `log`: where the caller's cursor is, and how much it will take.
     offset: i64 = 0,
     max_bytes: usize = default_max_log_bytes,
+    /// `fs_*`: the path RELATIVE to the workspace root. Never a host path, and
+    /// never an absolute one — the daemon joins it under `/workspace`.
+    path: []const u8 = "",
 };
 
 pub const FailureCode = enum {
@@ -104,6 +112,22 @@ pub const LogChunk = struct {
     missing: bool,
 };
 
+/// One path's kind and size, as the guest sees it.
+pub const FsStat = struct {
+    kind: []const u8,
+    size: i64,
+    missing: bool,
+};
+
+/// One piece of a guest file. `missing` is its own answer: "the path is not
+/// there" is not "the file is empty".
+pub const FsChunk = struct {
+    data: []const u8,
+    size: i64,
+    eof: bool,
+    missing: bool,
+};
+
 pub const Response = union(enum) {
     pong: struct { version: []const u8 },
     ack,
@@ -112,6 +136,8 @@ pub const Response = union(enum) {
     spawned: Spawned,
     probe: Probe,
     log_chunk: LogChunk,
+    fs_stat: FsStat,
+    fs_read: FsChunk,
     failure: struct { code: FailureCode, message: []const u8 },
 };
 
@@ -257,6 +283,13 @@ pub fn encodeRequest(allocator: std.mem.Allocator, request: Request) ![]u8 {
         try out.intField(allocator, "offset", request.offset);
         try out.intField(allocator, "max_bytes", @intCast(request.max_bytes));
     }
+    if (request.action == .fs_stat or request.action == .fs_read or request.action == .fs_remove) {
+        try out.strField(allocator, "path", request.path);
+    }
+    if (request.action == .fs_read) {
+        try out.intField(allocator, "offset", request.offset);
+        try out.intField(allocator, "max_bytes", @intCast(request.max_bytes));
+    }
     return out.finish(allocator);
 }
 
@@ -289,6 +322,11 @@ pub fn decodeRequest(allocator: std.mem.Allocator, json: []const u8) !OwnedReque
 
     if (action == .spawn or action == .probe or action == .signal or action == .log) {
         try decodeJobAction(object, aa, action, &request);
+        return .{ .arena = arena, .value = request };
+    }
+
+    if (action == .fs_stat or action == .fs_read or action == .fs_remove) {
+        try decodeFsAction(object, action, &request);
         return .{ .arena = arena, .value = request };
     }
 
@@ -377,6 +415,31 @@ fn decodeJobAction(
             if (bytes <= 0 or bytes > max_log_bytes_limit) return Error.BadRequest;
             request.max_bytes = @intCast(bytes);
         }
+    }
+}
+
+/// The three file actions. The path is relative to the workspace and is checked
+/// here as well as in the guest: a refusal the daemon can name beats one the
+/// agent has to spell out.
+fn decodeFsAction(
+    object: std.json.ObjectMap,
+    action: Action,
+    request: *Request,
+) !void {
+    const path = stringField(object, "path") orelse return Error.BadRequest;
+    if (!fs_policy.pathRelValid(path)) return Error.BadRequest;
+    request.path = path;
+
+    if (action != .fs_read) return;
+    if (integerField(object, "offset")) |offset| {
+        if (offset < 0) return Error.BadRequest;
+        request.offset = offset;
+    }
+    if (integerField(object, "max_bytes")) |bytes| {
+        if (bytes <= 0 or bytes > max_fs_read_bytes) return Error.BadRequest;
+        request.max_bytes = @intCast(bytes);
+    } else {
+        request.max_bytes = default_fs_read_bytes;
     }
 }
 
@@ -513,6 +576,39 @@ pub fn encodeLogChunk(allocator: std.mem.Allocator, id: i64, chunk: LogChunk) ![
     return out.finish(allocator);
 }
 
+pub fn encodeFsStat(allocator: std.mem.Allocator, id: i64, stat: FsStat) ![]u8 {
+    var out = try ObjectWriter.init(allocator);
+    errdefer out.list.deinit(allocator);
+    try out.strField(allocator, "type", "fs.stat");
+    try out.intField(allocator, "id", id);
+    if (stat.missing) {
+        try out.boolField(allocator, "missing", true);
+        return out.finish(allocator);
+    }
+    try out.strField(allocator, "kind", stat.kind);
+    try out.intField(allocator, "size", stat.size);
+    return out.finish(allocator);
+}
+
+pub fn encodeFsRead(allocator: std.mem.Allocator, id: i64, chunk: FsChunk) ![]u8 {
+    var out = try ObjectWriter.init(allocator);
+    errdefer out.list.deinit(allocator);
+    try out.strField(allocator, "type", "fs.read");
+    try out.intField(allocator, "id", id);
+    if (chunk.missing) {
+        try out.boolField(allocator, "missing", true);
+        return out.finish(allocator);
+    }
+    const encoder = std.base64.standard.Encoder;
+    const encoded = try allocator.alloc(u8, encoder.calcSize(chunk.data.len));
+    defer allocator.free(encoded);
+    _ = encoder.encode(encoded, chunk.data);
+    try out.strField(allocator, "data_b64", encoded);
+    try out.intField(allocator, "size", chunk.size);
+    try out.boolField(allocator, "eof", chunk.eof);
+    return out.finish(allocator);
+}
+
 pub fn decodeResponse(
     allocator: std.mem.Allocator,
     json: []const u8,
@@ -573,6 +669,33 @@ pub fn decodeResponse(
         }
         const data = try decodeBase64Field(aa, object, "data_b64");
         return .{ .arena = arena, .value = .{ .log_chunk = .{
+            .data = data,
+            .size = integerField(object, "size") orelse @intCast(data.len),
+            .eof = boolField(object, "eof"),
+            .missing = false,
+        } } };
+    }
+    if (std.mem.eql(u8, kind, "fs.stat")) {
+        if (boolField(object, "missing")) {
+            return .{ .arena = arena, .value = .{ .fs_stat = .{ .kind = "", .size = 0, .missing = true } } };
+        }
+        return .{ .arena = arena, .value = .{ .fs_stat = .{
+            .kind = stringField(object, "kind") orelse "file",
+            .size = integerField(object, "size") orelse 0,
+            .missing = false,
+        } } };
+    }
+    if (std.mem.eql(u8, kind, "fs.read")) {
+        if (boolField(object, "missing")) {
+            return .{ .arena = arena, .value = .{ .fs_read = .{
+                .data = "",
+                .size = 0,
+                .eof = true,
+                .missing = true,
+            } } };
+        }
+        const data = try decodeBase64Field(aa, object, "data_b64");
+        return .{ .arena = arena, .value = .{ .fs_read = .{
             .data = data,
             .size = integerField(object, "size") orelse @intCast(data.len),
             .eof = boolField(object, "eof"),
@@ -960,4 +1083,94 @@ test "rpc: pong and status decode to their own shape" {
         },
         else => return error.TestExpectedStatus,
     }
+}
+
+test "fs actions: a relative path crosses whole, with its offset and ceiling" {
+    const allocator = testing.allocator;
+    const encoded = try encodeRequest(allocator, .{
+        .action = .fs_read,
+        .id = 7,
+        .workspace_id = "ws_1",
+        .path = "src/main.zig",
+        .offset = 10,
+        .max_bytes = 4096,
+    });
+    defer allocator.free(encoded);
+    var decoded = try decodeRequest(allocator, encoded);
+    defer decoded.deinit();
+    try testing.expectEqual(Action.fs_read, decoded.value.action);
+    try testing.expectEqualStrings("src/main.zig", decoded.value.path);
+    try testing.expectEqual(@as(i64, 10), decoded.value.offset);
+    try testing.expectEqual(@as(usize, 4096), decoded.value.max_bytes);
+}
+
+test "fs actions: a path that leaves the workspace never reaches the agent" {
+    const allocator = testing.allocator;
+    const refused = [_][]const u8{ "/etc/passwd", "../etc/passwd", "a/../../b", "src/", "a\\b" };
+    for (refused) |path| {
+        const encoded = try encodeRequest(allocator, .{
+            .action = .fs_stat,
+            .id = 1,
+            .workspace_id = "ws_1",
+            .path = path,
+        });
+        defer allocator.free(encoded);
+        try testing.expectError(Error.BadRequest, decodeRequest(allocator, encoded));
+    }
+}
+
+test "fs_read: the reply ceiling is the frame's, and a zero ask is refused" {
+    const allocator = testing.allocator;
+    const too_much = try encodeRequest(allocator, .{
+        .action = .fs_read,
+        .id = 1,
+        .workspace_id = "ws_1",
+        .path = "a.txt",
+        .max_bytes = max_fs_read_bytes + 1,
+    });
+    defer allocator.free(too_much);
+    try testing.expectError(Error.BadRequest, decodeRequest(allocator, too_much));
+
+    const zero = try encodeRequest(allocator, .{
+        .action = .fs_read,
+        .id = 1,
+        .workspace_id = "ws_1",
+        .path = "a.txt",
+        .max_bytes = 0,
+    });
+    defer allocator.free(zero);
+    try testing.expectError(Error.BadRequest, decodeRequest(allocator, zero));
+
+    // A frame that asks for no ceiling at all gets the file default — which is
+    // not the log default, so the two actions cannot silently share one.
+    var defaulted = try decodeRequest(
+        allocator,
+        \\{"action":"fs_read","id":1,"workspace_id":"ws_1","path":"a.txt"}
+    );
+    defer defaulted.deinit();
+    try testing.expectEqual(default_fs_read_bytes, defaulted.value.max_bytes);
+}
+
+test "fs_stat and fs_read: missing is its own answer, not an empty one" {
+    const allocator = testing.allocator;
+
+    const stat_missing = try encodeFsStat(allocator, 3, .{ .kind = "", .size = 0, .missing = true });
+    defer allocator.free(stat_missing);
+    var stat = try decodeResponse(allocator, stat_missing);
+    defer stat.deinit();
+    try testing.expect(stat.value.fs_stat.missing);
+
+    const chunk_missing = try encodeFsRead(allocator, 4, .{ .data = "", .size = 0, .eof = true, .missing = true });
+    defer allocator.free(chunk_missing);
+    var gone = try decodeResponse(allocator, chunk_missing);
+    defer gone.deinit();
+    try testing.expect(gone.value.fs_read.missing);
+
+    const chunk = try encodeFsRead(allocator, 5, .{ .data = "hello", .size = 5, .eof = true, .missing = false });
+    defer allocator.free(chunk);
+    var read = try decodeResponse(allocator, chunk);
+    defer read.deinit();
+    try testing.expectEqualStrings("hello", read.value.fs_read.data);
+    try testing.expect(read.value.fs_read.eof);
+    try testing.expect(!read.value.fs_read.missing);
 }

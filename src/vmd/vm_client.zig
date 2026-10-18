@@ -858,6 +858,115 @@ pub fn readLogChunk(
     };
 }
 
+pub const FsKind = enum { file, dir };
+
+pub const FsStat = struct {
+    kind: FsKind,
+    size: i64,
+    missing: bool,
+};
+
+/// One path's kind and size, asked of the guest. `missing` is the guest saying
+/// the path is not there, which is not the same as a size of zero.
+pub fn statFile(allocator: std.mem.Allocator, layout: Layout, path: []const u8) !FsStat {
+    var frame_buf: [8 * 1024]u8 = undefined;
+    const head = try std.fmt.bufPrint(&frame_buf, "{{\"type\":\"fs.stat\",\"id\":1,\"path\":", .{});
+    var off: usize = head.len;
+    try appendJsonString(&frame_buf, &off, path);
+    frame_buf[off] = '}';
+    off += 1;
+
+    const text = try oneShot(allocator, layout, frame_buf[0..off], job_call_guard_ms);
+    defer allocator.free(text);
+
+    var parsed = try parseObject(allocator, text);
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+    if (jsonBoolField(obj, "missing")) return .{ .kind = .file, .size = 0, .missing = true };
+    const kind_text = jsonStringField(obj, "kind") orelse return Error.ProtocolViolation;
+    return .{
+        .kind = if (std.mem.eql(u8, kind_text, "dir")) .dir else .file,
+        .size = jsonIntField(obj, "size") orelse 0,
+        .missing = false,
+    };
+}
+
+pub const FsChunk = struct {
+    data: []u8,
+    size: i64,
+    eof: bool,
+    missing: bool,
+
+    pub fn deinit(self: FsChunk, allocator: std.mem.Allocator) void {
+        allocator.free(self.data);
+    }
+};
+
+/// One positional read of a file, from inside the guest. A caller that wants a
+/// whole file loops until `eof`; each reply is bounded by `max_bytes`.
+pub fn readFile(
+    allocator: std.mem.Allocator,
+    layout: Layout,
+    path: []const u8,
+    offset: i64,
+    max_bytes: usize,
+) !FsChunk {
+    var frame_buf: [8 * 1024]u8 = undefined;
+    const head = try std.fmt.bufPrint(
+        &frame_buf,
+        "{{\"type\":\"fs.read\",\"id\":1,\"offset\":{d},\"max_bytes\":{d},\"path\":",
+        .{ offset, max_bytes },
+    );
+    var off: usize = head.len;
+    try appendJsonString(&frame_buf, &off, path);
+    frame_buf[off] = '}';
+    off += 1;
+
+    const text = try oneShot(allocator, layout, frame_buf[0..off], job_call_guard_ms);
+    defer allocator.free(text);
+
+    var parsed = try parseObject(allocator, text);
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+    if (jsonBoolField(obj, "missing")) {
+        return .{ .data = try allocator.alloc(u8, 0), .size = 0, .eof = true, .missing = true };
+    }
+    const b64 = jsonStringField(obj, "data_b64") orelse return Error.ProtocolViolation;
+    const decoder = std.base64.standard.Decoder;
+    const size = decoder.calcSizeForSlice(b64) catch return Error.ProtocolViolation;
+    const data = try allocator.alloc(u8, size);
+    errdefer allocator.free(data);
+    decoder.decode(data, b64) catch return Error.ProtocolViolation;
+    return .{
+        .data = data,
+        .size = jsonIntField(obj, "size") orelse @intCast(data.len),
+        .eof = jsonBoolField(obj, "eof"),
+        .missing = false,
+    };
+}
+
+/// Remove one file (or one empty directory) inside the guest. `false` is the
+/// guest saying there was nothing there.
+pub fn removeFile(allocator: std.mem.Allocator, layout: Layout, path: []const u8) !bool {
+    var frame_buf: [8 * 1024]u8 = undefined;
+    const head = try std.fmt.bufPrint(&frame_buf, "{{\"type\":\"fs.remove\",\"id\":1,\"path\":", .{});
+    var off: usize = head.len;
+    try appendJsonString(&frame_buf, &off, path);
+    frame_buf[off] = '}';
+    off += 1;
+
+    const text = try oneShot(allocator, layout, frame_buf[0..off], job_call_guard_ms);
+    defer allocator.free(text);
+
+    var parsed = try parseObject(allocator, text);
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+    if (jsonBoolField(obj, "missing")) return false;
+    const kind = jsonStringField(obj, "type") orelse return Error.ProtocolViolation;
+    if (!std.mem.eql(u8, kind, "fs.remove.ok")) return Error.ProtocolViolation;
+    return true;
+}
+
 pub fn readSerialExcerpt(allocator: std.mem.Allocator, layout: Layout, max_bytes: usize) ![]u8 {
     var buf: [4096]u8 = undefined;
     const z = cstr(layout.serial_log, &buf) orelse return Error.OutOfMemory;

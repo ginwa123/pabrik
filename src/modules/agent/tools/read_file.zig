@@ -47,6 +47,13 @@ pub fn readFile(
     const on_disk = try std.Io.Dir.cwd().readFileAlloc(io, path, allocator, std.Io.Limit.limited(std.math.maxInt(usize)));
     defer allocator.free(on_disk);
 
+    return shapeContent(allocator, on_disk, opts);
+}
+
+/// The file's bytes, shaped into the paginated result. Shared by the host read
+/// above and the guest read in `execReadFile`, so a read answers with the same
+/// shape whichever substrate produced the bytes.
+pub fn shapeContent(allocator: std.mem.Allocator, on_disk: []const u8, opts: ReadFileOptions) !ReadFileResult {
     // Hand the model the LF form.
     const normalized = if (std.mem.indexOf(u8, on_disk, "\r\n") != null)
         try normalizeLineEndings(allocator, on_disk)
@@ -334,6 +341,21 @@ test "toJSONSuccess payload carries raw content and line range" {
     try std.testing.expectEqual(@as(i64, 1), obj.get("end_line").?.integer);
 }
 
+/// The bytes of `path_abs`, shaped into the tool's result. Under `--saas` they
+/// come from the guest agent and the host opens no tenant file at all; every
+/// other mode keeps today's read, because `forSession` installs nothing.
+fn readThrough(ctx: ToolExecContext, path_abs: []const u8, opts: ReadFileOptions) !ReadFileResult {
+    const guest = try workspace_fs.forSession(ctx.allocator, ctx.db, ctx.session_id);
+    if (guest) |handle| {
+        var fs = handle;
+        defer fs.deinit();
+        const bytes = try fs.readAll(path_abs);
+        defer ctx.allocator.free(bytes);
+        return shapeContent(ctx.allocator, bytes, opts);
+    }
+    return exec_readFile(ctx.allocator, ctx.io, path_abs, opts);
+}
+
 // Exec adapter — merged from `read_file.zig` (2026-10-14, task_1791993404141_2).
 // The tool definition above and its executor below live in ONE file.
 
@@ -348,6 +370,7 @@ const exec_readFile = pabrikcore.read_file.readFile;
 const exec_toJSONSuccess = pabrikcore.read_file.toJSONSuccess;
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
 const exec_path_validate = @import("helpers").path_validate;
 pub fn execReadFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     _ = ctx.db;
@@ -384,7 +407,7 @@ pub fn execReadFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
         .limit = parsed.value.limit,
     };
 
-    const read_result = exec_readFile(ctx.allocator, ctx.io, path_abs, read_opts) catch |err| {
+    const read_result = readThrough(ctx, path_abs, read_opts) catch |err| {
         // The path is the one thing the model can act on here, so it is
         // passed as the explanation's context.
         const err_msg = try error_explain.explain(ctx.allocator, err, path_abs);
@@ -400,3 +423,20 @@ pub fn execReadFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     return ToolExecResult{ .output = output, .output_allocated = true };
 }
 
+
+test "shapeContent: the guest read and the host read answer with one shape" {
+    const allocator = std.testing.allocator;
+    // Whatever produced the bytes — a host open or a guest RPC — the tool's
+    // contract is the same: LF, raw, no prefixes, absolute 1-indexed lines.
+    const shaped = try shapeContent(allocator, "l1\r\nl2\r\nl3\r\n", .{ .offset = 1, .limit = 1 });
+    defer shaped.deinit(allocator);
+    try std.testing.expectEqualStrings("l2\n", shaped.content);
+    try std.testing.expectEqual(@as(usize, 3), shaped.total_lines);
+    try std.testing.expectEqual(@as(usize, 1), shaped.start_line);
+    try std.testing.expectEqual(@as(usize, 1), shaped.end_line);
+}
+
+test "shapeContent: an offset past the end is refused, not answered empty" {
+    const allocator = std.testing.allocator;
+    try std.testing.expectError(error.OffsetOutOfRange, shapeContent(allocator, "one\ntwo\n", .{ .offset = 9 }));
+}

@@ -1,6 +1,6 @@
 //! `pabrik-vm-agent` — guest PID 1: mount the pseudo filesystems, create the
 //! device nodes this kernel lacks, then serve framed JSON over vsock (`hello`,
-//! `exec`, `shutdown`). File RPC and port forwarding land in P2/P3.
+//! `exec`, `spawn`, `fs.*`, `shutdown`). Port forwarding is the piece still open.
 
 const std = @import("std");
 const linux = std.os.linux;
@@ -23,9 +23,9 @@ const wno_hang: u32 = 1;
 /// one: 16 KiB of bytes is ~22 KiB of base64, comfortably inside `max_frame`.
 const job_log_dir = "/tmp/pabrik";
 const log_read_chunk: usize = 16 * 1024;
-/// The reply formatter's buffer. A `log.chunk` reply is base64, so it is
-/// bigger than the bytes it carries.
-const reply_buf_bytes: usize = 64 * 1024;
+/// The reply formatter's buffer. A `log.chunk`/`fs.read` reply is base64, so it
+/// is bigger than the bytes it carries — 64 KiB of bytes needs 88 KiB of text.
+const reply_buf_bytes: usize = 128 * 1024;
 
 const hello_json = "{\"type\":\"hello\",\"agent\":\"pabrik-vm-agent\",\"version\":\"0.2\"}";
 const bye_json = "{\"type\":\"bye\"}";
@@ -411,6 +411,192 @@ fn runReadLog(conn_fd: linux.fd_t, id: i64, path: []const u8, offset: i64, max_b
     );
 }
 
+// ─── file RPC ────────────────────────────────────────────────────────────
+
+const workspace_root = "/workspace";
+const fs_read_chunk: usize = 64 * 1024;
+const max_fs_path: usize = 1024;
+/// `RESOLVE_BENEATH`: every component is resolved under the workspace fd, so a
+/// symlink that leaves the workspace is `EXDEV` rather than a read of something
+/// else. The kernel's answer, not a string check, is what contains the path.
+const resolve_beneath: u64 = 0x08;
+const o_directory: u64 = 0o200000;
+/// `AT_REMOVEDIR`: `unlinkat`'s "this is a directory" flag.
+const at_removedir: u64 = 0x200;
+
+const OpenHow = extern struct {
+    flags: u64,
+    mode: u64,
+    resolve: u64,
+};
+
+/// The agent's own containment rule, carried here because this binary imports
+/// nothing but std: no absolute path, no `.`/`..` segment, no NUL.
+fn relPathOk(path: []const u8) bool {
+    if (path.len == 0 or path.len > max_fs_path) return false;
+    if (path[0] == '/') return false;
+    var it = std.mem.splitScalar(u8, path, '/');
+    while (it.next()) |segment| {
+        if (segment.len == 0 or segment.len > 255) return false;
+        if (std.mem.eql(u8, segment, ".") or std.mem.eql(u8, segment, "..")) return false;
+        for (segment) |c| {
+            if (c == 0 or c == '\\') return false;
+        }
+    }
+    return true;
+}
+
+fn openWorkspaceRoot() ?linux.fd_t {
+    const rc = linux.open(workspace_root, .{ .ACCMODE = .RDONLY, .DIRECTORY = true }, 0);
+    if (linux.errno(rc) != .SUCCESS) return null;
+    return @intCast(rc);
+}
+
+fn openBeneath(root_fd: linux.fd_t, path: [*:0]const u8, flags: u64) ?linux.fd_t {
+    var how = OpenHow{ .flags = flags, .mode = 0, .resolve = resolve_beneath };
+    const rc = linux.syscall6(
+        .openat2,
+        @as(usize, @bitCast(@as(isize, root_fd))),
+        @intFromPtr(path),
+        @intFromPtr(&how),
+        @sizeOf(OpenHow),
+        0,
+        0,
+    );
+    if (linux.errno(rc) != .SUCCESS) return null;
+    return @intCast(rc);
+}
+
+/// The bytes a `fs.read`/`fs.write` path was opened through, or null with the
+/// refusal already sent. Both ops begin the same way, so both begin here.
+fn fsOpen(conn_fd: linux.fd_t, id: i64, path: []const u8, flags: u64) ?struct { root: linux.fd_t, file: linux.fd_t } {
+    if (!relPathOk(path)) {
+        reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"path is not relative to the workspace\"}}", .{id});
+        return null;
+    }
+    var path_buf: [max_fs_path + 1]u8 = undefined;
+    const path_z = cstr(path, &path_buf) orelse {
+        reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"path too long\"}}", .{id});
+        return null;
+    };
+    const root = openWorkspaceRoot() orelse {
+        reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"the workspace is not mounted\"}}", .{id});
+        return null;
+    };
+    const file = openBeneath(root, path_z, flags) orelse {
+        _ = linux.close(root);
+        reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"missing\":true,\"message\":\"no such file\"}}", .{id});
+        return null;
+    };
+    return .{ .root = root, .file = file };
+}
+
+/// `fs.stat`: the kind and size of one path, resolved beneath the workspace.
+/// "Is it a directory" is asked by opening it as one, which needs no stat
+/// structure and cannot disagree with what the read would then do.
+fn runFsStat(conn_fd: linux.fd_t, id: i64, path: []const u8) void {
+    if (!relPathOk(path)) {
+        reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"path is not relative to the workspace\"}}", .{id});
+        return;
+    }
+    var path_buf: [max_fs_path + 1]u8 = undefined;
+    const path_z = cstr(path, &path_buf) orelse return;
+    const root = openWorkspaceRoot() orelse {
+        reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"the workspace is not mounted\"}}", .{id});
+        return;
+    };
+    defer _ = linux.close(root);
+
+    if (openBeneath(root, path_z, o_directory)) |dir| {
+        _ = linux.close(dir);
+        reply(conn_fd, "{{\"type\":\"fs.stat\",\"id\":{d},\"kind\":\"dir\",\"size\":0}}", .{id});
+        return;
+    }
+    const file = openBeneath(root, path_z, 0) orelse {
+        reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"missing\":true,\"message\":\"no such file\"}}", .{id});
+        return;
+    };
+    defer _ = linux.close(file);
+    const end_rc = linux.lseek(file, 0, linux.SEEK.END);
+    const size: i64 = if (linux.errno(end_rc) == .SUCCESS) @intCast(end_rc) else 0;
+    reply(conn_fd, "{{\"type\":\"fs.stat\",\"id\":{d},\"kind\":\"file\",\"size\":{d}}}", .{ id, size });
+}
+
+/// `fs.read`: one positional piece of a file, base64 in the reply. `eof` is
+/// derived from the file's own size, so a cursor and the end cannot disagree.
+fn runFsRead(conn_fd: linux.fd_t, id: i64, path: []const u8, offset: i64, max_bytes: usize) void {
+    const opened = fsOpen(conn_fd, id, path, 0) orelse return;
+    defer _ = linux.close(opened.root);
+    defer _ = linux.close(opened.file);
+
+    const end_rc = linux.lseek(opened.file, 0, linux.SEEK.END);
+    if (linux.errno(end_rc) != .SUCCESS) {
+        reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"cannot size the file\"}}", .{id});
+        return;
+    }
+    const size: i64 = @intCast(end_rc);
+    if (offset >= size) {
+        reply(conn_fd, "{{\"type\":\"fs.read\",\"id\":{d},\"size\":{d},\"eof\":true,\"data_b64\":\"\"}}", .{ id, size });
+        return;
+    }
+
+    const want: usize = @intCast(@min(size - offset, @as(i64, @intCast(max_bytes))));
+    const capped: usize = @min(want, fs_read_chunk);
+    var buf: [fs_read_chunk]u8 = undefined;
+    const read_rc = linux.pread(opened.file, &buf, capped, offset);
+    if (linux.errno(read_rc) != .SUCCESS) {
+        reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"cannot read the file\"}}", .{id});
+        return;
+    }
+    const got = buf[0..read_rc];
+    var b64: [std.base64.standard.Encoder.calcSize(fs_read_chunk)]u8 = undefined;
+    const encoded = std.base64.standard.Encoder.encode(&b64, got);
+    const at_end = offset + @as(i64, @intCast(got.len)) >= size;
+    reply(
+        conn_fd,
+        "{{\"type\":\"fs.read\",\"id\":{d},\"size\":{d},\"eof\":{s},\"data_b64\":\"{s}\"}}",
+        .{ id, size, if (at_end) "true" else "false", encoded },
+    );
+}
+
+/// `fs.remove`: one file, or one EMPTY directory. A recursive delete is the
+/// caller's loop, so a mistake here cannot take a tree with it. The kernel says
+/// which it is: `EISDIR` is the answer to "this was a directory after all".
+fn runFsRemove(conn_fd: linux.fd_t, id: i64, path: []const u8) void {
+    if (!relPathOk(path)) {
+        reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"path is not relative to the workspace\"}}", .{id});
+        return;
+    }
+    var path_buf: [max_fs_path + 1]u8 = undefined;
+    const path_z = cstr(path, &path_buf) orelse return;
+    const root = openWorkspaceRoot() orelse {
+        reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"the workspace is not mounted\"}}", .{id});
+        return;
+    };
+    defer _ = linux.close(root);
+
+    const dirfd: usize = @bitCast(@as(isize, root));
+    const as_file = linux.errno(linux.syscall3(.unlinkat, dirfd, @intFromPtr(path_z), 0));
+    if (as_file == .SUCCESS) {
+        reply(conn_fd, "{{\"type\":\"fs.remove.ok\",\"id\":{d}}}", .{id});
+        return;
+    }
+    if (as_file == .ISDIR) {
+        const as_dir = linux.errno(linux.syscall3(.unlinkat, dirfd, @intFromPtr(path_z), at_removedir));
+        if (as_dir == .SUCCESS) {
+            reply(conn_fd, "{{\"type\":\"fs.remove.ok\",\"id\":{d}}}", .{id});
+            return;
+        }
+        reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"the directory is not empty\"}}", .{id});
+        return;
+    }
+    if (as_file == .NOENT or as_file == .NOTDIR) {
+        reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"missing\":true,\"message\":\"no such file\"}}", .{id});
+        return;
+    }
+    reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"cannot remove\"}}", .{id});
+}
+
 // ─── request dispatch ────────────────────────────────────────────────────
 
 fn asU32(value: std.json.Value, fallback: u32) u32 {
@@ -542,6 +728,23 @@ fn serveRequest(conn_fd: linux.fd_t, text: []const u8) void {
         }
         runSignal(conn_fd, id, pid, sig);
         return;
+    }
+    if (std.mem.eql(u8, kind, "fs.stat") or std.mem.eql(u8, kind, "fs.read") or std.mem.eql(u8, kind, "fs.remove")) {
+        const id = if (obj.get("id")) |v| asI64(v, 0) else 0;
+        const path = if (obj.get("path")) |v| (if (v == .string) v.string else "") else "";
+        if (path.len == 0) {
+            reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"path is required\"}}", .{id});
+            return;
+        }
+        if (std.mem.eql(u8, kind, "fs.stat")) return runFsStat(conn_fd, id, path);
+        if (std.mem.eql(u8, kind, "fs.remove")) return runFsRemove(conn_fd, id, path);
+        const offset = if (obj.get("offset")) |v| asI64(v, 0) else 0;
+        const max_bytes = if (obj.get("max_bytes")) |v| asUsize(v, fs_read_chunk) else fs_read_chunk;
+        if (offset < 0 or max_bytes == 0) {
+            reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"offset and max_bytes are required\"}}", .{id});
+            return;
+        }
+        return runFsRead(conn_fd, id, path, offset, max_bytes);
     }
     if (std.mem.eql(u8, kind, "read_log")) {
         const id = if (obj.get("id")) |v| asI64(v, 0) else 0;

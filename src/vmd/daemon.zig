@@ -323,7 +323,61 @@ fn dispatch(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request
         .probe => return dispatchProbe(manager, allocator, request),
         .signal => return dispatchSignal(manager, allocator, request),
         .log => return dispatchLog(manager, allocator, request),
+        .fs_stat => return dispatchFsStat(manager, allocator, request),
+        .fs_read => return dispatchFsRead(manager, allocator, request),
+        .fs_remove => return dispatchFsRemove(manager, allocator, request),
     }
+}
+
+/// A file RPC runs against a READY VM, like `exec`: the caller asked for a
+/// tool's worth of work, so a cold workspace boots rather than refuses.
+fn dispatchFsStat(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request) ![]u8 {
+    const layout = manager.ensure(allocator, request.workspace_id) catch |err| {
+        log("workspace {s} has no usable VM for a stat: {s}", .{ request.workspace_id, @errorName(err) });
+        return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+    };
+    const stat = vm_client.statFile(allocator, layout, request.path) catch |err| {
+        log("stat in workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
+        return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+    };
+    return rpc.encodeFsStat(allocator, request.id, .{
+        .kind = @tagName(stat.kind),
+        .size = stat.size,
+        .missing = stat.missing,
+    });
+}
+
+/// The bytes come from the guest; the host never opens the file. That is the
+/// whole point of the op, so there is no host fallback to reach for.
+fn dispatchFsRead(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request) ![]u8 {
+    const layout = manager.ensure(allocator, request.workspace_id) catch |err| {
+        log("workspace {s} has no usable VM for a read: {s}", .{ request.workspace_id, @errorName(err) });
+        return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+    };
+    const chunk = vm_client.readFile(allocator, layout, request.path, request.offset, request.max_bytes) catch |err| {
+        log("read in workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
+        return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+    };
+    defer chunk.deinit(allocator);
+    return rpc.encodeFsRead(allocator, request.id, .{
+        .data = chunk.data,
+        .size = chunk.size,
+        .eof = chunk.eof,
+        .missing = chunk.missing,
+    });
+}
+
+fn dispatchFsRemove(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request) ![]u8 {
+    const layout = manager.ensure(allocator, request.workspace_id) catch |err| {
+        log("workspace {s} has no usable VM for a remove: {s}", .{ request.workspace_id, @errorName(err) });
+        return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+    };
+    const removed = vm_client.removeFile(allocator, layout, request.path) catch |err| {
+        log("remove in workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
+        return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+    };
+    if (!removed) return rpc.encodeFailure(allocator, request.id, .bad_request, "no such file");
+    return rpc.encodeAck(allocator, request.id);
 }
 
 /// A detached job runs in the workspace's VM, so the pid the caller gets back
