@@ -2461,7 +2461,11 @@ test "set_git_worktree: --saas refuses rather than running the tenant's hook on 
     const body = try std.fmt.allocPrint(allocator, "#!/bin/sh\n: > '{s}'\nexit 0\n", .{sentinel});
     defer allocator.free(body);
     try std.Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = hook, .data = body });
-    try std.Io.Dir.cwd().setFilePermissions(testing.io, hook, .executable_file, .{});
+    // POSIX hosts need the exec bit; Windows has none to set (this call is a
+    // TODO panic in std there), and the assertions below never rely on it.
+    if (comptime builtin.os.tag != .windows) {
+        try std.Io.Dir.cwd().setFilePermissions(testing.io, hook, .executable_file, .{});
+    }
     try fx.git(&.{ "-C", fx.repo, "config", "core.hooksPath", hooks });
 
     var db = try sessionDb(allocator, fx.repo);
@@ -2488,7 +2492,6 @@ test "set_git_worktree: --saas refuses rather than running the tenant's hook on 
 
     runtime_mode.setCurrent(.saas);
     defer runtime_mode.setCurrent(.local);
-    if (!runtime_mode.vm_backend_available) return;
     runtime_mode.setManagerSocket(null);
     defer runtime_mode.setManagerSocket(null);
 
