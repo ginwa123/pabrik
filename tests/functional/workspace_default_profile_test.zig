@@ -452,9 +452,8 @@ test "a chat's default model is its workspace's active profile" {
     defer gpa.free(kanban_id);
 
     // 3. THE SETTING UNDER TEST — Settings -> Workspace -> "Set active", which
-    //    is what writes the workspace's own copy. The exact body the settings
-    //    page PUTs: the whole workspace-scoped config it loaded (the profiles
-    //    this workspace owns) with `active_profile` moved.
+    //    writes the workspace's own copy. The exact body the settings page PUTs:
+    //    the whole workspace-scoped config it loaded, `active_profile` moved.
     {
         const body = try std.fmt.allocPrint(
             gpa,

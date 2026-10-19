@@ -18,9 +18,8 @@ const UserConfigHolder = struct {
 };
 
 /// The providers in force for `session_id`, read from the session's workspace
-/// row. `null` means the singleton in `ctx.config` is authoritative — either
-/// because the run is not in auth mode, the session has no workspace, or the
-/// workspace saved no providers.
+/// row. `null` means the singleton in `ctx.config` is authoritative: no auth,
+/// no workspace, or a workspace that saved none.
 pub fn resolve(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
