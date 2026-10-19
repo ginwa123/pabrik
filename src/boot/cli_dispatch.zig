@@ -7,6 +7,8 @@ const helpers = @import("helpers");
 const database = @import("databases").database;
 const migration = @import("../migrations/mod.zig").migration;
 const db_config = @import("db_config.zig");
+const cli_parse = @import("../cli/parse.zig");
+const cli_flags = @import("../cli/flags.zig");
 const service_mod = @import("../service/mod.zig");
 
 const state_file = service_mod.state_file;
@@ -52,10 +54,7 @@ pub fn dispatchServiceSubcommand(
         error.UnknownSubcommand => {
             std.log.err("unknown subcommand: {s}", .{if (rest.items.len > 0) rest.items[0] else "(none)"});
             std.log.err("usage: pabrik service {{start|stop|status|restart}} [flags]", .{});
-            std.log.err("  start    [--port PORT] [--static-dir DIR] [--no-static-dir]  (PORT 0 = random free port)", .{});
-            std.log.err("  stop     [--graceful-timeout-ms MS]", .{});
-            std.log.err("  status", .{});
-            std.log.err("  restart  [--port PORT] [--graceful-timeout-ms MS] [--static-dir DIR]", .{});
+            std.log.err("{s}", .{cli_flags.usageBlock(.service, "")});
             return err;
         },
         error.MissingValue => {
@@ -130,6 +129,16 @@ pub fn dispatchServiceSubcommand(
     return true;
 }
 
+/// The fields `create-admin` reads. The flag names, their values and the help
+/// line come from `cli/flags.zig`.
+const CreateAdminFlags = struct {
+    email: ?[]const u8 = null,
+    password: ?[]const u8 = null,
+    name: []const u8 = "",
+    force: bool = false,
+    help_requested: bool = false,
+};
+
 /// `pabrik create-admin --email E [--password P] [--name N] [--force]`.
 pub fn dispatchCreateAdmin(
     allocator: std.mem.Allocator,
@@ -144,37 +153,24 @@ pub fn dispatchCreateAdmin(
     const arg1 = it.next() orelse return false;
     if (!std.mem.eql(u8, arg1, "create-admin")) return false;
 
-    var email: ?[]const u8 = null;
-    var password: ?[]const u8 = null;
-    var name: []const u8 = "";
-    var force = false;
-    while (it.next()) |a| {
-        if (std.mem.eql(u8, a, "--email")) {
-            email = it.next() orelse {
-                std.log.err("create-admin: --email requires a value", .{});
-                return error.InvalidArgs;
-            };
-        } else if (std.mem.eql(u8, a, "--password")) {
-            password = it.next() orelse {
-                std.log.err("create-admin: --password requires a value", .{});
-                return error.InvalidArgs;
-            };
-        } else if (std.mem.eql(u8, a, "--name")) {
-            name = it.next() orelse {
-                std.log.err("create-admin: --name requires a value", .{});
-                return error.InvalidArgs;
-            };
-        } else if (std.mem.eql(u8, a, "--force")) {
-            force = true;
-        } else if (std.mem.eql(u8, a, "-h") or std.mem.eql(u8, a, "--help")) {
-            std.debug.print("Usage: pabrik create-admin --email E [--password P] [--name N] [--force]\n", .{});
-            return true;
-        } else {
-            std.log.err("create-admin: unknown flag '{s}'", .{a});
-            return error.InvalidArgs;
+    var rest: std.ArrayList([]const u8) = .empty;
+    defer rest.deinit(allocator);
+    while (it.next()) |a| try rest.append(allocator, a);
+
+    var got: CreateAdminFlags = .{};
+    if (try cli_parse.parse(CreateAdminFlags, .{ .scope = .create_admin }, null, rest.items, &got, null)) |failure| {
+        switch (failure.kind) {
+            .missing_value => std.log.err("create-admin: {s} requires a value", .{failure.flag}),
+            .invalid_value => std.log.err("create-admin: {s}: not a valid value", .{failure.flag}),
+            .unknown_flag => std.log.err("create-admin: unknown flag '{s}'", .{failure.flag}),
         }
+        return error.InvalidArgs;
     }
-    const email_v = email orelse {
+    if (got.help_requested) {
+        std.debug.print("Usage: pabrik create-admin [flags]\n{s}", .{cli_flags.usageBlock(.create_admin, "")});
+        return true;
+    }
+    const email_v = got.email orelse {
         std.log.err("create-admin: --email is required", .{});
         return error.InvalidArgs;
     };
@@ -182,7 +178,7 @@ pub fn dispatchCreateAdmin(
         std.log.err("create-admin: --email must contain '@'", .{});
         return error.InvalidArgs;
     }
-    const password_v = password orelse {
+    const password_v = got.password orelse {
         std.log.err("create-admin: --password is required (pass via env in scripts)", .{});
         return error.InvalidArgs;
     };
@@ -201,7 +197,7 @@ pub fn dispatchCreateAdmin(
     try migration.registerAllMigrations(&mm);
     try mm.runMigrations();
 
-    if (!force) {
+    if (!got.force) {
         var q = try dbSqlite.query(allocator, "SELECT 1 FROM users WHERE role = 'admin' AND is_active = 1 LIMIT 1", &.{});
         defer q.deinit();
         if ((try q.next()) != null) {
@@ -224,7 +220,7 @@ pub fn dispatchCreateAdmin(
     dbSqlite.exec(
         allocator,
         "INSERT INTO users (id, email, name, password_hash, role, is_active) VALUES (?, ?, COALESCE(?, ''), ?, 'admin', 1)",
-        &[_][]const u8{ id, email_v, name, hash_slice },
+        &[_][]const u8{ id, email_v, got.name, hash_slice },
     ) catch {
         std.log.err("create-admin: insert failed (email may already exist)", .{});
         return error.InvalidArgs;

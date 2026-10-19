@@ -1,8 +1,11 @@
-// src/cli_args.zig Parses the TOP-LEVEL `pabrik` command-line flags: --port,
-// --static-dir, --http2, --tls, --tls-selfsigned, --auth and -h/--help.
+// src/cli_args.zig Types the TOP-LEVEL `pabrik` command-line flags. The flag
+// list, the values they take and the `--help` text live in `cli/flags.zig`;
+// this file only types what the caller consumes.
 
 const std = @import("std");
 const logger_mod = @import("modules/logger/Logger.zig");
+const cli_flags = @import("cli/flags.zig");
+const cli_parse = @import("cli/parse.zig");
 
 pub const CliArgs = struct {
     /// `--port`. Stays null unless the user passed it explicitly, so the
@@ -67,63 +70,34 @@ pub fn parse(
     args: []const []const u8,
     out: *CliArgs,
 ) ParseError!?Failure {
-    out.* = .{};
-    var i: usize = 0;
-    while (i < args.len) : (i += 1) {
-        const arg = args[i];
-        if (std.mem.eql(u8, arg, "--port")) {
-            i += 1;
-            if (i >= args.len) return .{ .kind = .missing_port_value };
-            out.port = std.fmt.parseInt(u16, args[i], 10) catch
-                return .{ .kind = .invalid_port_value };
-        } else if (std.mem.eql(u8, arg, "--static-dir")) {
-            i += 1;
-            if (i >= args.len) return .{ .kind = .missing_static_dir_value };
-            out.static_dir = try allocator.dupe(u8, args[i]);
-        } else if (std.mem.eql(u8, arg, "--no-static-dir")) {
-            out.no_static_dir = true;
-        } else if (std.mem.eql(u8, arg, "--http2")) {
-            // `--http2` on its own means h2c; an explicit value keeps room
-            // for future modes (e.g. `--http2=off`).
-            i += 1;
-            if (i < args.len) {
-                if (std.mem.eql(u8, args[i], "h2c")) {
-                    out.enable_h2c = true;
-                } else if (std.mem.eql(u8, args[i], "off")) {
-                    out.enable_h2c = false;
-                } else {
-                    return .{ .kind = .invalid_http2_mode, .value = args[i] };
-                }
-            } else {
-                out.enable_h2c = true;
-            }
-        } else if (std.mem.eql(u8, arg, "--tls")) {
-            // TWO values, consumed positionally: `--tls CERT KEY`.
-            i += 1;
-            if (i >= args.len) return .{ .kind = .missing_tls_cert_path };
-            const cert_arg = args[i];
-            i += 1;
-            if (i >= args.len) {
-                return .{ .kind = .missing_tls_key_path, .value = cert_arg };
-            }
-            out.tls_cert_path = try allocator.dupe(u8, cert_arg);
-            out.tls_key_path = try allocator.dupe(u8, args[i]);
-        } else if (std.mem.eql(u8, arg, "--tls-selfsigned")) {
-            out.tls_selfsigned = true;
-        } else if (std.mem.eql(u8, arg, "--auth")) {
-            out.auth_enabled = true;
-        } else if (std.mem.eql(u8, arg, "--saas")) {
-            out.saas = true;
-        } else if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
-            // Help wins over everything to its right, exactly as it did when
-            // this block was inline in `main`: `pabrik --help --port abc`
-            // prints usage and exits 0 rather than failing on the bad port.
-            printUsage();
-            out.help_requested = true;
-            return null;
-        }
-    }
-    return null;
+    const opts: cli_parse.Options = .{
+        .scope = .global,
+        .reject_unknown = false,
+        .dupe_text = true,
+    };
+    const failure = (try cli_parse.parse(CliArgs, opts, allocator, args, out, null)) orelse {
+        // Help wins over everything to its right, exactly as it did when the
+        // scan was inline here: `pabrik --help --port abc` prints usage and
+        // exits 0 rather than failing on the bad port.
+        if (out.help_requested) printUsage();
+        return null;
+    };
+    return switch (failure.kind) {
+        .missing_value => .{ .kind = missingKind(failure.field), .value = failure.value },
+        .invalid_value => .{
+            .kind = if (std.mem.eql(u8, failure.field, "port")) .invalid_port_value else .invalid_http2_mode,
+            .value = failure.value,
+        },
+        .unknown_flag => .{ .kind = .invalid_port_value },
+    };
+}
+
+/// The sentence a missing value needs depends on which flag wanted it.
+fn missingKind(field: []const u8) FailureKind {
+    if (std.mem.eql(u8, field, "port")) return .missing_port_value;
+    if (std.mem.eql(u8, field, "tls_cert_path")) return .missing_tls_cert_path;
+    if (std.mem.eql(u8, field, "tls_key_path")) return .missing_tls_key_path;
+    return .missing_static_dir_value;
 }
 
 /// Print the user-facing message for a `Failure`.
@@ -139,22 +113,10 @@ pub fn reportFailure(f: Failure) void {
 }
 
 pub fn printUsage() void {
-    logger_mod.debugPrint("Usage: pabrik [--port PORT] [--static-dir DIR] [--http2 h2c|off] [--tls CERT KEY | --tls-selfsigned] [--auth] [--saas]\n", .{});
-    logger_mod.debugPrint("  --port PORT          Port to run the HTTP server on (0 = pick a random free port; default: 8081, or random when web_launch_enabled is on)\n", .{});
-    logger_mod.debugPrint("  --static-dir DIR     Serve files from DIR at HTTP / (e.g. for a webapp)\n", .{});
-    logger_mod.debugPrint("  --no-static-dir      API only: serve no static files at / (overrides --static-dir)\n", .{});
-    logger_mod.debugPrint("  --http2 h2c|off      Also accept HTTP/2 cleartext (h2c) clients on the same port (default: off)\n", .{});
-    logger_mod.debugPrint("  --auth               Require login (session cookie + middleware). When off, all endpoints are open.\n", .{});
-    logger_mod.debugPrint("  --saas               Run each workspace in its own microVM (Linux + KVM only; implies --auth).\n", .{});
+    logger_mod.debugPrint("Usage: pabrik [flags]\n", .{});
+    logger_mod.debugPrint("{s}", .{cli_flags.usageBlock(.global, "")});
     logger_mod.debugPrint("Database policy (defaults are tuned for low RAM; override to trade RAM for throughput):\n", .{});
-    logger_mod.debugPrint("  --db-read-conns=N              Readers opened at boot (warm floor)\n", .{});
-    logger_mod.debugPrint("  --db-max-read-conns=N          Ceiling on pooled readers (0 = uncapped)\n", .{});
-    logger_mod.debugPrint("  --db-cache-size-kb=N           Page cache PER connection, in KiB\n", .{});
-    logger_mod.debugPrint("  --db-mmap-size-bytes=N         mmap window per connection (0 = off)\n", .{});
-    logger_mod.debugPrint("  --db-journal-size-limit-bytes=N  WAL/journal size cap\n", .{});
-    logger_mod.debugPrint("  --db-wal-autocheckpoint-pages=N Pages between WAL checkpoints\n", .{});
-    logger_mod.debugPrint("  --db-busy-timeout-ms=N         How long SQLite waits for a lock\n", .{});
-    logger_mod.debugPrint("  --db-max-idle-time-ms=N        How long an idle reader is kept before it is closed\n", .{});
+    logger_mod.debugPrint("{s}", .{cli_flags.usageBlock(.db, "")});
 }
 
 const testing = std.testing;

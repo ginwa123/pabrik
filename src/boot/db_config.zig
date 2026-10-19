@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const databases = @import("databases");
+const cli_flags = @import("../cli/flags.zig");
 
 /// The measured-best sqlite policy for pabrik's agent database. The numbers
 /// are measured against the real 4.6 GB agent.db; the reasoning for each one
@@ -83,36 +84,20 @@ pub const OverrideError = error{
     OutOfMemory,
 };
 
-/// The flag name for a knob, without the leading `--`.
+/// The flag name for a knob, without the leading `--`. It comes from the one
+/// table, so a knob cannot exist without its flag.
 pub fn flagName(knob: Knob) []const u8 {
     return switch (knob) {
-        .read_conns => "db-read-conns",
-        .max_read_conns => "db-max-read-conns",
-        .cache_size_kb => "db-cache-size-kb",
-        .mmap_size_bytes => "db-mmap-size-bytes",
-        .journal_size_limit_bytes => "db-journal-size-limit-bytes",
-        .wal_autocheckpoint_pages => "db-wal-autocheckpoint-pages",
-        .busy_timeout_ms => "db-busy-timeout-ms",
-        .max_idle_time_ms => "db-max-idle-time-ms",
+        inline else => |k| cli_flags.dbFlagName(@tagName(k)),
     };
 }
 
 /// The knob a flag names, or null when the name is not one of ours. Accepts
 /// both `db-read-conns` and `db_read_conns`; the dashed one is canonical.
 pub fn knobForFlag(flag: []const u8) ?Knob {
-    const bare = if (std.mem.startsWith(u8, flag, "--")) flag[2..] else flag;
-    // Every canonical name is shorter than this, so the underscore copy
-    // below always fits; the length is comptime-known per field.
-    var buf: [64]u8 = undefined;
+    const tag = cli_flags.dbKnobTag(flag) orelse return null;
     inline for (@typeInfo(Knob).@"enum".fields) |f| {
-        const canonical = flagName(@field(Knob, f.name));
-        if (std.mem.eql(u8, bare, canonical)) return @field(Knob, f.name);
-        // The underscore spelling of the same knob.
-        @memcpy(buf[0..canonical.len], canonical);
-        for (buf[0..canonical.len]) |*c| {
-            if (c.* == '-') c.* = '_';
-        }
-        if (std.mem.eql(u8, bare, buf[0..canonical.len])) return @field(Knob, f.name);
+        if (std.mem.eql(u8, f.name, tag)) return @field(Knob, f.name);
     }
     return null;
 }
@@ -189,15 +174,6 @@ pub fn reportOverrideError(arg: []const u8, err: OverrideError) void {
             .{arg},
         ),
         error.OutOfMemory => std.log.err("Error: out of memory parsing {s}", .{arg}),
-    }
-}
-
-/// One line per knob for `--help`, so the flags are discoverable without
-/// reading this file.
-pub fn printOverrideUsage() void {
-    inline for (@typeInfo(Knob).@"enum".fields) |f| {
-        const knob: Knob = @field(Knob, f.name);
-        std.log.info("  --{s}=N", .{flagName(knob)});
     }
 }
 
