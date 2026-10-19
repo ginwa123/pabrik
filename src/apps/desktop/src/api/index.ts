@@ -3168,6 +3168,15 @@ export interface KanbanTaskEvent {
   needs_human_review?: boolean | null
 }
 
+export interface DocumentEvent {
+  // Backend's action enum (src/agentic_loop/document_events.zig).
+  action: 'created' | 'updated' | 'deleted'
+  workspace_id: string
+  document_id: string
+  // The title AFTER the mutation; `''` when the mutation did not read the row back.
+  title: string
+}
+
 /** Unified SSE channel options. Each property is a per-channel callback. Only the keys present in
  * `channels` are subscribed on the backend (passed as the `?channels=` query param). */
 export interface UnifiedChannels {
@@ -3188,6 +3197,10 @@ export interface UnifiedChannels {
   gitFileStage?: (event: GitFileStageEvent) => void
   /** Subscribe to change-request state events. */
   gitPrState?: (event: GitPrStateEvent) => void
+  /** Subscribe to document mutations. The backend emits three granular names (`document_created`,
+   * `document_updated`, `document_deleted`) sharing one `DocumentEvent` payload. Only an agent tool
+   * emits these, so a tab never receives an echo of its own UI edit. */
+  documents?: (event: DocumentEvent) => void
   /** Subscribe to design-mode element mutations. The backend emits three granular event names
    * (`design_element_created`, `design_element_updated`, `design_element_deleted`) that share the
    * same `DesignElementEvent` payload (the `action` discriminator tells them apart). */
@@ -3224,6 +3237,7 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
   if (opts.channels.skillEvals) tokens.push('skill_evals')
   if (opts.channels.gitFileStage) tokens.push('git_file_stage')
   if (opts.channels.gitPrState) tokens.push('git_pr_state')
+  if (opts.channels.documents) tokens.push('documents')
 
   // Empty subscriptions are meaningless; the backend would 400 anyway. Throw early with a
   // developer-friendly message.
@@ -3294,6 +3308,11 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
       // share one payload; both route on the central `git_pr_state` key.
       'git_pr_state_merged',
       'git_pr_state_closed',
+      // Document mutations (see src/agentic_loop/document_events.zig). Three granular names share
+      // one payload; all route on the central `documents` key.
+      'document_created',
+      'document_updated',
+      'document_deleted',
     ],
     // Default heartbeat filter (matches backend sse_manager.sendHeartbeat).
     heartbeatData: 'ping',
@@ -3341,6 +3360,34 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
           opts.channels.queue.onEvent(data as QueueMessageEvent)
         } catch (err) {
           console.error('[unifiedSSE] queue event parse failed:', err, raw)
+        }
+        return
+      }
+
+      // Document mutations (agent tools only — `add_document` / `edit_document` /
+      // `delete_document`). All three granular names share one `DocumentEvent` payload.
+      if (
+        eventType === 'document_created' ||
+        eventType === 'document_updated' ||
+        eventType === 'document_deleted'
+      ) {
+        if (!opts.channels.documents) return
+        const frame = Effect.runSyncExit(
+          Effect.try({
+            try: () => JSON.parse(raw) as DocumentEvent,
+            catch: (cause) =>
+              new SseFrameError({ eventType, reason: describeCause(Cause.fail(cause)) }),
+          }),
+        )
+        if (Exit.isSuccess(frame)) {
+          opts.channels.documents(frame.value)
+        } else {
+          const failed = Option.getOrUndefined(Cause.failureOption(frame.cause))
+          console.error(
+            `[unifiedSSE] ${eventType} event parse failed:`,
+            failed instanceof SseFrameError ? failed.reason : describeCause(frame.cause),
+            raw,
+          )
         }
         return
       }

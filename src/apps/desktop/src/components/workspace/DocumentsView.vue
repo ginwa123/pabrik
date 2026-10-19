@@ -52,13 +52,48 @@ async function loadForDocument(id: string) {
 }
 
 let prevDocumentId = props.documentId
+
+// True once the store has held a row for this id, so a later absence means "deleted", not
+// "the list has not loaded yet".
+let hadDocumentRow = false
+
+/** Adopt a row that changed underneath us — an agent `edit_document` reaches this view as an SSE
+ * refresh. Unsaved edits win: the draft is kept and only the saved baseline moves, so Save still
+ * sends just the user's own fields. */
+function syncFromStore() {
+  const row = document_.value
+  if (!row) {
+    if (!hadDocumentRow || !documentsStore.loaded) return
+    // The open document is gone from a fully-loaded list — an agent `delete_document` removed it.
+    // Staying would render "Loading document…" forever.
+    hadDocumentRow = false
+    router.replace(buildAppUrl({ workspaceId: workspaceId.value ?? '' })).catch(() => {
+      // Nothing to recover: a rejected duplicate navigation already means the URL is what the
+      // user asked for.
+    })
+    return
+  }
+  hadDocumentRow = true
+  if (row.title === savedTitle.value && row.content === savedContent.value) return
+  const dirty = isDirty.value
+  savedTitle.value = row.title
+  savedContent.value = row.content
+  if (dirty) return
+  draftTitle.value = row.title
+  draftContent.value = row.content
+}
+
 onMounted(() => {
   void loadForDocument(props.documentId)
 })
 onUpdated(() => {
-  if (props.documentId === prevDocumentId) return
-  prevDocumentId = props.documentId
-  void loadForDocument(props.documentId)
+  if (props.documentId !== prevDocumentId) {
+    prevDocumentId = props.documentId
+    hadDocumentRow = false
+    void loadForDocument(props.documentId)
+    return
+  }
+  syncFromStore()
 })
 
 const startEditing = () => {

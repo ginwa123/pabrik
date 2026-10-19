@@ -133,6 +133,10 @@ pub const ToolExecContext = struct {
     /// The `llm_history` tool-result row this dispatch belongs to (set by
     /// `handle_tool` Phase 3 from its placeholder list).
     llm_history_id: []const u8 = "",
+    /// The SSE bus a tool broadcasts a mutation on (today only the document
+    /// tools — see `document_events.zig`). Null in tests and in any host that
+    /// has no bus, which makes the emit a no-op.
+    event_bus: ?*pabrikcore.event_bus.EventBus = null,
 };
 
 /// Set by `use_tool` when it actually INSERTed a `session_progressive_tool`

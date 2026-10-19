@@ -36,6 +36,7 @@ import { useWorkspacesStore, type Task as TaskType } from '../stores/workspaces'
 import { useSidebarStore } from '../stores/sidebar'
 import { useKanbanSseStore } from '../stores/kanbanSse'
 import { useDesignSseStore } from '../stores/designSse'
+import { useDocumentsSseStore } from '../stores/documentsSse'
 import * as api from '../api'
 import type { DesignElement as DesignElementApi } from '../api'
 import { buildToggle } from '../stores/agentToolToggle'
@@ -538,6 +539,8 @@ const syncItemToUrl = (oldItemId: string | null) => {
 // ─── Design SSE — mirror the kanban pattern ───────────────────────────── Bus-backed design-event
 // subscription (Chunk 6 of design-mode-redesign plan).
 const designSseStore = useDesignSseStore()
+// Document mutations, from the AGENT TOOLS only (agentic_loop/document_events.zig).
+const documentsSseStore = useDocumentsSseStore()
 // Merged SSE init (replaces the old kanban + design activeWorkspaceId
 // watchers): ONE connection pair for the app lifetime, filter updates on
 // workspace switches. Runs from onMounted + the store subscription pump.
@@ -548,9 +551,11 @@ const initSseStores = async (newId: string) => {
     didInitSse = true
     await kanbanSseStore.initKanbanSse(newId)
     await designSseStore.initDesignSse(newId)
+    await documentsSseStore.initDocumentsSse(newId)
   } else {
     await kanbanSseStore.setActiveWorkspaceId(newId)
     await designSseStore.setActiveWorkspaceId(newId)
+    await documentsSseStore.setActiveWorkspaceId(newId)
   }
 }
 
@@ -561,6 +566,7 @@ const designHandlers = useDesignHandlers()
 onUnmounted(() => {
   kanbanSseStore.closeKanbanSse()
   designSseStore.closeDesignSse()
+  documentsSseStore.closeDocumentsSse()
 })
 
 // Computed refs from store

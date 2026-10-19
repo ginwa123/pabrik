@@ -474,6 +474,9 @@ fn dispatchFromRegistry(ctx: ToolContext, tool_call: agent.ToolCall, exec: tools
         // The Phase-1 placeholder row this result will be written into.
         // Tools that rewrite their own result later (ask_user) need it.
         .llm_history_id = ctx.llm_history_id,
+        // The document tools broadcast their mutations over SSE on this bus.
+        // A host without one (unit tests) leaves it null and the emit no-ops.
+        .event_bus = if (pabrik.getSingleton()) |di| di.event_bus else |_| null,
     };
     const exec_result = try exec(ctx_local, tool_call);
 

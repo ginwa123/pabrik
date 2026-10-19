@@ -140,7 +140,7 @@ pub const ChannelList = struct {
     }
 };
 
-/// Parse `?channels=workers,sessions,kanban,llm,queue`.
+/// Parse `?channels=workers,sessions,kanban,llm,queue,documents`.
 /// Returns the list of routing keys to subscribe + register. Returns
 /// ChannelParseError on missing/empty/unknown channel tokens.
 pub const ChannelParseError = error{
@@ -202,6 +202,11 @@ pub fn parseChannels(allocator: std.mem.Allocator, raw: []const u8) ChannelParse
         } else if (std.mem.eql(u8, token, "design_element")) {
             // Design-mode element mutations.
             try routing_keys.append(allocator, try allocator.dupe(u8, "design_element"));
+        } else if (std.mem.eql(u8, token, "documents")) {
+            // Document mutations (`document_created` / `document_updated` /
+            // `document_deleted` on the central "documents" key — see
+            // agentic_loop/document_events.zig).
+            try routing_keys.append(allocator, try allocator.dupe(u8, "documents"));
         } else {
             return error.UnknownChannel;
         }
@@ -296,6 +301,15 @@ pub const CallbackUnifiedGitFileStageStream = struct {
 pub const CallbackUnifiedGitPrStateStream = struct {
     pub fn callback(data: ai_mod.on_event_sent.SseEvent) void {
         forwardToClients("git_pr_state", data);
+    }
+};
+
+/// Callback for the central "documents" routing key. Fires when an agent tool
+/// creates, rewrites or removes a document — the sidebar's Documents list and
+/// an editor open on that document refresh from it.
+pub const CallbackUnifiedDocumentsStream = struct {
+    pub fn callback(data: ai_mod.on_event_sent.SseEvent) void {
+        forwardToClients("documents", data);
     }
 };
 
@@ -426,6 +440,8 @@ pub fn unifiedEventsStreamHandler(
                 event_bus.subscribe(ai_mod.on_event_sent.SseEvent, rk, CallbackUnifiedGitFileStageStream.callback) catch {};
             } else if (std.mem.eql(u8, rk, "git_pr_state")) {
                 event_bus.subscribe(ai_mod.on_event_sent.SseEvent, rk, CallbackUnifiedGitPrStateStream.callback) catch {};
+            } else if (std.mem.eql(u8, rk, "documents")) {
+                event_bus.subscribe(ai_mod.on_event_sent.SseEvent, rk, CallbackUnifiedDocumentsStream.callback) catch {};
             }
         }
 
@@ -531,6 +547,14 @@ test "parseChannels: bare 'git_file_stage' → central 'git_file_stage' routing 
     defer list.deinit(allocator);
     try testing.expectEqual(@as(usize, 1), list.routing_keys.len);
     try testing.expectEqualStrings("git_file_stage", list.routing_keys[0]);
+}
+
+test "parseChannels: bare 'documents' → central 'documents' routing key" {
+    const allocator = testing.allocator;
+    const list = try parseChannels(allocator, "documents");
+    defer list.deinit(allocator);
+    try testing.expectEqual(@as(usize, 1), list.routing_keys.len);
+    try testing.expectEqualStrings("documents", list.routing_keys[0]);
 }
 
 test "parseChannels: empty string → error.MissingChannels" {
