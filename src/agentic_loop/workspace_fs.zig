@@ -357,16 +357,31 @@ pub const Fs = struct {
 /// asking for more does not simply get refused.
 const vmd_read_chunk: usize = 64 * 1024;
 
+/// The substrate a workspace tree has on this build. A `--saas` process runs a
+/// tenant tree in its VM or not at all: a host with no VM backend compiled in
+/// has no third answer (`runtime_mode.vm_backend_available`).
+pub const Substrate = enum { host, guest, none };
+
+/// Pure, so every platform can test the `--saas` refusal without a VM — the
+/// seam `runtime_mode.decide` takes a `Probe` for.
+pub fn substrate(mode: runtime_mode.Mode, backend_available: bool) Substrate {
+    if (mode != .saas) return .host;
+    return if (backend_available) .guest else .none;
+}
+
 /// The guest filesystem for a session, or null when files belong on the host.
-/// Fails closed: `--saas` with no resolvable workspace is an error, never a
-/// quiet fall back to reading the host.
+/// Fails closed: `--saas` is a guest or an error, never a quiet fall back to
+/// reading the host — including when this build has no VM backend at all.
 pub fn forSession(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
     session_id: []const u8,
 ) !?Fs {
-    if (!runtime_mode.vm_backend_available) return null;
-    if (runtime_mode.currentMode() != .saas) return null;
+    switch (substrate(runtime_mode.currentMode(), runtime_mode.vm_backend_available)) {
+        .host => return null,
+        .none => return Error.GuestManagerUnavailable,
+        .guest => {},
+    }
 
     const workspace_id = (try workspace_scope.resolveWorkspaceId(allocator, db, session_id)) orelse
         return Error.GuestWorkspaceUnknown;
@@ -392,8 +407,11 @@ pub fn forPath(
     db: ?*sqlite.SqliteBackend,
     abs_path: []const u8,
 ) !?Fs {
-    if (!runtime_mode.vm_backend_available) return null;
-    if (runtime_mode.currentMode() != .saas) return null;
+    switch (substrate(runtime_mode.currentMode(), runtime_mode.vm_backend_available)) {
+        .host => return null,
+        .none => return Error.GuestManagerUnavailable,
+        .guest => {},
+    }
 
     const database = db orelse return Error.GuestWorkspaceUnknown;
     const match = (try workspace_scope.resolveWorkspaceForPath(allocator, database, abs_path)) orelse
@@ -444,7 +462,6 @@ pub fn routeForSession(
     db: *sqlite.SqliteBackend,
     session_id: []const u8,
 ) Route {
-    if (!runtime_mode.vm_backend_available) return .host;
     if (runtime_mode.currentMode() != .saas) return .host;
     const found = forSession(allocator, db, session_id) catch |err| return .{ .unavailable = err };
     return .{ .guest = found orelse return .{ .unavailable = Error.GuestWorkspaceUnknown } };
@@ -457,7 +474,6 @@ pub fn routeForPath(
     db: ?*sqlite.SqliteBackend,
     abs_path: []const u8,
 ) Route {
-    if (!runtime_mode.vm_backend_available) return .host;
     if (runtime_mode.currentMode() != .saas) return .host;
     const found = forPath(allocator, db, abs_path) catch |err| return .{ .unavailable = err };
     return .{ .guest = found orelse return .{ .unavailable = Error.GuestWorkspaceUnknown } };
@@ -566,6 +582,13 @@ test "relative: a host path is never handed to the guest absolute" {
     try testing.expect(std.mem.indexOf(u8, rel, "proj") == null);
 }
 
+test "substrate: local is the host, --saas is the guest or nobody" {
+    try testing.expectEqual(Substrate.host, substrate(.local, true));
+    try testing.expectEqual(Substrate.host, substrate(.local, false));
+    try testing.expectEqual(Substrate.guest, substrate(.saas, true));
+    try testing.expectEqual(Substrate.none, substrate(.saas, false));
+}
+
 test "forSession: local mode installs no guest filesystem at all" {
     try testing.expectEqual(runtime_mode.Mode.local, runtime_mode.currentMode());
     var ctx = try guestTestCtx();
@@ -576,8 +599,6 @@ test "forSession: local mode installs no guest filesystem at all" {
 test "forSession: saas with a workspace but no manager refuses rather than falls back" {
     runtime_mode.setCurrent(.saas);
     defer runtime_mode.setCurrent(.local);
-    if (!runtime_mode.vm_backend_available) return;
-
     var ctx = try guestTestCtx();
     defer ctx.deinit();
     runtime_mode.setManagerSocket(null);
