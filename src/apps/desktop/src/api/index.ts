@@ -1308,6 +1308,7 @@ export async function sendChatMessage(
   selectedProfile?: string,
   isAutoRetryUntilStop?: string,
   videoUrls?: string[],
+  workspaceId?: string,
 ): Promise<{ status: string }> {
   // Migration 090 — split data:video/... out to video_urls so a pasted
   // clip never hits the image-only validator (400).
@@ -1326,6 +1327,7 @@ export async function sendChatMessage(
         queue_message: message,
         allowed_tools: DEFAULT_CHAT_TOOLS,
         cwd_session: cwdSession,
+        workspace_id: workspaceId ?? '',
         image_urls: imageUrlsStr,
         video_urls: videoUrlsStr,
         selected_profile_model: selectedProfile || '',

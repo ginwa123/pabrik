@@ -1192,6 +1192,9 @@ const onWorktreeMenuClear = async () => {
       sessionCwd.value,
       [],
       selectedProfile.value ?? undefined,
+      '',
+      [],
+      workspacesStore.activeWorkspace?.id,
     )
   } catch (err) {
     console.error('Failed to send clear-worktree message:', err)
@@ -1229,6 +1232,9 @@ const onCreateWorktree = async (path: string) => {
       sessionCwd.value,
       [],
       selectedProfile.value ?? undefined,
+      '',
+      [],
+      workspacesStore.activeWorkspace?.id,
     )
   } catch (err) {
     console.error('Failed to send create-worktree message:', err)
@@ -3549,6 +3555,9 @@ const handleFileInputSubmit = async (userMessage: string, files?: File[]) => {
       sessionCwd.value,
       imageUrls,
       selectedProfile.value ?? undefined,
+      '',
+      [],
+      workspacesStore.activeWorkspace?.id,
     )
   } catch (err) {
     console.error('Failed to send message:', err)

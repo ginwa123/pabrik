@@ -61,6 +61,7 @@ pub const RequestSession = struct {
     session_name: []const u8 = "",
     queue_message: []const u8 = "",
     cwd_session: []const u8 = "",
+    workspace_id: []const u8 = "",
     allowed_tools: []const u8 = "",
     body_message: []const u8 = "",
     image_urls: []const u8 = "",
@@ -247,12 +248,29 @@ pub fn useCase(alloc: std.mem.Allocator, io: std.Io, di: *pabrikcore.App, parsed
         }
     }
 
-    // Under `--saas` a session that already belongs to a workspace runs in that
-    // workspace's VM, whose tree IS `/workspace`. Only the task link is
-    // consulted here: the row a chat session gets is written later.
     if (runtime_mode.currentMode() == .saas) {
-        if (workspace_scope.taskWorkspaceId(alloc, di.db, session_id) catch null) |_| {
+        const workspace_id: ?[]const u8 = blk: {
+            if (parsed.workspace_id.len > 0 and vmd_policy.workspaceIdValid(parsed.workspace_id)) {
+                break :blk try alloc.dupe(u8, parsed.workspace_id);
+            }
+            if (workspace_scope.taskWorkspaceId(alloc, di.db, session_id) catch null) |linked| break :blk linked;
+            if (cwd_session.len > 0) {
+                if (workspace_scope.resolveWorkspaceForPath(alloc, di.db, cwd_session) catch null) |found| {
+                    var match = found;
+                    defer match.deinit(alloc);
+                    break :blk try alloc.dupe(u8, match.workspace_id);
+                }
+            }
+            break :blk null;
+        };
+        if (workspace_id) |id| {
             effective_cwd = vmd_policy.guest_root;
+            di.db.exec(alloc, "INSERT OR IGNORE INTO sessions (id, name, status, cwd, workspace_id) VALUES (?, ?, 'active', ?, ?)", &.{ session_id, session_name, effective_cwd, id }) catch |err| {
+                std.log.warn("session_create: workspace stamp insert failed (non-fatal): {s}", .{@errorName(err)});
+            };
+            di.db.exec(alloc, "UPDATE sessions SET cwd = ?, workspace_id = ? WHERE id = ?", &.{ effective_cwd, id, session_id }) catch |err| {
+                std.log.warn("session_create: workspace stamp update failed (non-fatal): {s}", .{@errorName(err)});
+            };
         }
     }
 
