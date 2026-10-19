@@ -1788,3 +1788,27 @@ status check (not the 24-job matrix), and PR #983's new head `925aa00a6` current
 checks — so the integration has no full-matrix CI run behind it. §30 condition 5 is therefore not met
 yet. Next: force CI on this head, run `zig build test` in full, run the daemon smoke, then P5.
 
+---
+
+## 32. What CI found, and what it cost to make it green
+
+Five real defects, all in the slices this branch added — none of them flakes, and each one fixed at
+its cause rather than by loosening a test:
+
+| symptom | cause | fix |
+|---|---|---|
+| PR `CONFLICTING` | main (#994) deleted `stampedWorkspaceId` + four stamp tests; our branch had appended tests at the same tail | `7cafc8c88`: take main's removal, keep our `resolveWorkspaceRoot`/`resolveWorkspaceForPath` tests |
+| `backend (Linux)` + `(macOS)`: `leaked 1 allocations` | `previewHostFor` returns an owned slice and its test never freed it | `243f71ed5`: one `defer allocator.free` |
+| `backend (macOS)`: `signal SYS` | the host tower imports the vmd client, whose `connectUnix` issued raw `std.os.linux` socket syscalls; on Darwin those numbers mean something else | `bcc018dc2`: comptime gate — off Linux, `Error.ConnectFailed` (fail closed, no skips) |
+| `backend (Windows)`: `panic: TODO implement dirSetFilePermissions windows` | a test chmod-ed a fake git hook | `1564d5618`: POSIX-only chmod (comptime), and dropped a `return` that made the `--saas` half vacuous everywhere |
+| **all six functional shards, both platforms**: `403` on `PUT /api/workspaces/tasks/:id`, then renames/deletes/toggles/creates failing | the engine's cross-site pre-gate was enabled for **every** deployment: `gs.cors = .{ .enabled = true, … }`. The UI is served from the **Vite dev origin** (the harness pins a port range), which the allowlist does not contain, so every state-changing request was refused | `boot_mode == .saas` — the check is a *tenant* defence (§11.2), not a local-mode one |
+
+Two lessons worth keeping:
+
+1. **A `std.os.linux` call in code the cross-platform tower imports is a macOS/Windows bug waiting
+   for a test to touch it.** The gate now makes it a failed connect instead of SIGSYS; a
+   compile-time transport stub would be better still (logged as a follow-up).
+2. **A security gate shipped as "always on" is a functional regression until its allowlist matches
+   every way the app is served.** The local UI answers a different origin than the API's own port,
+   and CI said so on six shards at once.
+
