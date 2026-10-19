@@ -76,6 +76,7 @@ fn appendMergedObject(
     while (overlay_it.next()) |entry| {
         // Already emitted above, in the base's position.
         if (base.contains(entry.key_ptr.*)) continue;
+        if (std.mem.eql(u8, entry.key_ptr.*, removed_profiles_key)) continue;
         if (!first) try out.append(allocator, ',');
         first = false;
         try appendKeyJson(allocator, out, entry.key_ptr.*);
@@ -282,8 +283,8 @@ fn seedOwner(
 }
 
 /// Give every UNDECIDED workspace a copy of the user-level config.
-/// "Undecided" is `workspace_settings_store.hasRow`, not `hasOverlay`: a
-/// workspace whose row exists with an empty body was deliberately reset to
+/// "Undecided" is `workspace_settings_store.hasRow`, not `hasOverlay`: a row
+/// with an empty body is an explicit reset and is left alone.
 pub fn seedWorkspaces(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -357,7 +358,12 @@ pub fn seedNewWorkspace(
     defer allocator.free(base);
     const overlay = workspaceScopedOverlay(allocator, base) catch return;
     defer allocator.free(overlay);
-    settings_store.saveRaw(allocator, db, owner, workspace_id, overlay) catch return;
+    // Nothing to copy: an empty body is the explicit-RESET sentinel, which
+    // would pin the workspace to "no scoped settings" for good. Leave it
+    // undecided so its first read adopts whatever the user has by then.
+    if (std.mem.eql(u8, overlay, "{}")) return;
+    const key = settings_store.ownerKey(auth_enabled, owner);
+    settings_store.saveRaw(allocator, db, key, workspace_id, overlay) catch return;
 }
 
 /// The user-level config TEXT that a workspace overlay is layered over. *
@@ -403,6 +409,227 @@ pub fn scopedBaseConfigText(
     const stripped = withoutScopedKeys(allocator, base) catch null;
     allocator.free(base);
     return stripped;
+}
+
+/// Is this value an EMPTY container - the shape a COPY of "the user has none"
+/// takes, rather than a decision about this workspace? `null` is a real value
+/// (an explicitly cleared `active_profile`), so it is not empty.
+fn isEmptyContainer(value: std.json.Value) bool {
+    return switch (value) {
+        .object => |obj| obj.count() == 0,
+        .array => |arr| arr.items.len == 0,
+        else => false,
+    };
+}
+
+/// The overlay key that records profile names this workspace removed. It is
+/// bookkeeping, not config: it is never merged into a config document.
+pub const removed_profiles_key = "removed_profiles";
+
+fn isRemoved(name: []const u8, removed: []const []const u8) bool {
+    for (removed) |gone| {
+        if (std.mem.eql(u8, name, gone)) return true;
+    }
+    return false;
+}
+
+/// The names `obj[removed_profiles_key]` lists, borrowed from the parsed
+/// document. An absent or malformed list is "nothing was removed here".
+fn removedNames(allocator: std.mem.Allocator, obj: std.json.ObjectMap) ![]const []const u8 {
+    const value = obj.get(removed_profiles_key) orelse return &.{};
+    if (value != .array) return &.{};
+    var names: std.ArrayList([]const u8) = .empty;
+    errdefer names.deinit(allocator);
+    for (value.array.items) |item| {
+        if (item == .string) try names.append(allocator, item.string);
+    }
+    return names.toOwnedSlice(allocator);
+}
+
+/// `value` as JSON, minus every profile name in `removed`.
+fn appendProfilesJson(
+    allocator: std.mem.Allocator,
+    out: *std.ArrayList(u8),
+    value: std.json.Value,
+    removed: []const []const u8,
+) AppendError!void {
+    if (value != .object or removed.len == 0) return appendValueJson(allocator, out, value);
+    try out.append(allocator, '{');
+    var first = true;
+    var it = value.object.iterator();
+    while (it.next()) |entry| {
+        if (isRemoved(entry.key_ptr.*, removed)) continue;
+        if (!first) try out.append(allocator, ',');
+        first = false;
+        try appendKeyJson(allocator, out, entry.key_ptr.*);
+        try out.append(allocator, ':');
+        try appendValueJson(allocator, out, entry.value_ptr.*);
+    }
+    try out.append(allocator, '}');
+}
+
+/// `overlay_json` with `name` recorded as removed from this workspace, so the
+/// user document cannot hand the profile back over a later read.
+pub fn withRemovedProfile(
+    allocator: std.mem.Allocator,
+    overlay_json: []const u8,
+    name: []const u8,
+) ![]u8 {
+    const parsed = std.json.parseFromSlice(std.json.Value, allocator, overlay_json, .{}) catch
+        return allocator.dupe(u8, overlay_json);
+    defer parsed.deinit();
+    const obj = switch (parsed.value) {
+        .object => |o| o,
+        else => return allocator.dupe(u8, overlay_json),
+    };
+
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+    try out.append(allocator, '{');
+    var first = true;
+    var it = obj.iterator();
+    while (it.next()) |entry| {
+        if (std.mem.eql(u8, entry.key_ptr.*, removed_profiles_key)) continue;
+        if (!first) try out.append(allocator, ',');
+        first = false;
+        try appendKeyJson(allocator, &out, entry.key_ptr.*);
+        try out.append(allocator, ':');
+        try appendValueJson(allocator, &out, entry.value_ptr.*);
+    }
+    if (!first) try out.append(allocator, ',');
+    try appendKeyJson(allocator, &out, removed_profiles_key);
+    try out.append(allocator, ':');
+    try out.append(allocator, '[');
+    var first_name = true;
+    if (obj.get(removed_profiles_key)) |existing| {
+        if (existing == .array) for (existing.array.items) |item| {
+            if (item != .string) continue;
+            if (std.mem.eql(u8, item.string, name)) continue;
+            if (!first_name) try out.append(allocator, ',');
+            first_name = false;
+            try appendValueJson(allocator, &out, item);
+        };
+    }
+    if (!first_name) try out.append(allocator, ',');
+    try appendValueJson(allocator, &out, .{ .string = name });
+    try out.append(allocator, ']');
+    try out.append(allocator, '}');
+    return out.toOwnedSlice(allocator);
+}
+
+/// `stored_json` with every scoped key it leaves empty - or never mentions -
+/// filled from `user_slice_json`. The names in `removed_profiles` are not
+/// filled: those are the profiles this workspace deleted on purpose.
+pub fn completeScopedCopy(
+    allocator: std.mem.Allocator,
+    stored_json: []const u8,
+    user_slice_json: []const u8,
+) ![]u8 {
+    const stored_parsed = std.json.parseFromSlice(std.json.Value, allocator, stored_json, .{}) catch
+        return allocator.dupe(u8, stored_json);
+    defer stored_parsed.deinit();
+    const stored = switch (stored_parsed.value) {
+        .object => |obj| obj,
+        else => return allocator.dupe(u8, stored_json),
+    };
+    const user_parsed = std.json.parseFromSlice(std.json.Value, allocator, user_slice_json, .{}) catch
+        return allocator.dupe(u8, stored_json);
+    defer user_parsed.deinit();
+    const user = switch (user_parsed.value) {
+        .object => |obj| obj,
+        else => return allocator.dupe(u8, stored_json),
+    };
+
+    const removed = try removedNames(allocator, stored);
+    defer if (removed.len > 0) allocator.free(removed);
+
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+    try out.append(allocator, '{');
+    var first = true;
+
+    var stored_it = stored.iterator();
+    while (stored_it.next()) |entry| {
+        if (std.mem.eql(u8, entry.key_ptr.*, removed_profiles_key)) continue;
+        const own = entry.value_ptr.*;
+        const fills = isEmptyContainer(own);
+        const value = if (fills) user.get(entry.key_ptr.*) orelse own else own;
+        if (!first) try out.append(allocator, ',');
+        first = false;
+        try appendKeyJson(allocator, &out, entry.key_ptr.*);
+        try out.append(allocator, ':');
+        if (std.mem.eql(u8, entry.key_ptr.*, "profiles_models") and fills) {
+            try appendProfilesJson(allocator, &out, value, removed);
+        } else {
+            try appendValueJson(allocator, &out, value);
+        }
+    }
+
+    var user_it = user.iterator();
+    while (user_it.next()) |entry| {
+        if (stored.contains(entry.key_ptr.*)) continue;
+        if (std.mem.eql(u8, entry.key_ptr.*, removed_profiles_key)) continue;
+        const filled = entry.value_ptr.*;
+        if (isEmptyContainer(filled)) continue;
+        if (!first) try out.append(allocator, ',');
+        first = false;
+        try appendKeyJson(allocator, &out, entry.key_ptr.*);
+        try out.append(allocator, ':');
+        if (std.mem.eql(u8, entry.key_ptr.*, "profiles_models")) {
+            try appendProfilesJson(allocator, &out, filled, removed);
+        } else {
+            try appendValueJson(allocator, &out, filled);
+        }
+    }
+
+    try out.append(allocator, '}');
+    return out.toOwnedSlice(allocator);
+}
+
+/// The user document's workspace-scoped slice, as overlay JSON.
+fn userScopedSlice(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    db: *sqlite.SqliteBackend,
+    environment: ?*const std.process.Environ.Map,
+    auth_enabled: bool,
+    owner: []const u8,
+) ?[]u8 {
+    const base = baseConfigText(allocator, io, db, environment, auth_enabled, owner) orelse return null;
+    defer allocator.free(base);
+    return workspaceScopedOverlay(allocator, base) catch null;
+}
+
+/// The overlay a read layers over `scopedBaseConfigText`: the workspace's own
+/// row, plus the user document's entries for any scoped key the row has none
+/// for. `null` = nothing scoped either side, or an explicitly reset row.
+pub fn workspaceOverlay(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    db: *sqlite.SqliteBackend,
+    environment: ?*const std.process.Environ.Map,
+    auth_enabled: bool,
+    owner: []const u8,
+    workspace_id: []const u8,
+) ?[]u8 {
+    if (workspace_id.len == 0) return null;
+    const key = settings_store.ownerKey(auth_enabled, owner);
+
+    const decided = settings_store.hasRow(allocator, db, key, workspace_id) catch false;
+    const stored = settings_store.loadRaw(allocator, db, key, workspace_id) catch null;
+    defer if (stored) |body| allocator.free(body);
+    if (decided and stored == null) return null;
+
+    const user_slice = userScopedSlice(allocator, io, db, environment, auth_enabled, owner);
+    defer if (user_slice) |slice| allocator.free(slice);
+    const adoptable = if (user_slice) |slice| !std.mem.eql(u8, slice, "{}") else false;
+
+    if (stored) |body| {
+        if (!adoptable) return allocator.dupe(u8, body) catch null;
+        return completeScopedCopy(allocator, body, user_slice.?) catch null;
+    }
+    if (!adoptable) return null;
+    return allocator.dupe(u8, user_slice.?) catch null;
 }
 
 // ===================================================================== Tests
@@ -826,6 +1053,92 @@ test "a new workspace added later is seeded by the next boot" {
     const report = try seedWorkspaces(alloc, &ctx.db, USER_CONFIG);
     try testing.expectEqual(@as(usize, 1), report.seeded);
     try testing.expect(try hasSettingsRow(&ctx, "ws_new"));
+}
+
+// ─── What a workspace's own copy still inherits, and what it removed ────────
+
+const USER_SLICE =
+    \\{"profiles_models":{"mine":{"model":"opus"}},
+    \\ "tools":["read_file"],
+    \\ "mcp_servers":{}}
+;
+
+test "a scoped key with no entries takes the user document's entries" {
+    const alloc = testing.allocator;
+    const stored = "{\"profiles_models\":{},\"skill_evals\":{\"enabled\":true}}";
+    const completed = try completeScopedCopy(alloc, stored, USER_SLICE);
+    defer alloc.free(completed);
+
+    var parsed = try parse(alloc, completed);
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+
+    const profiles = obj.get("profiles_models").?.object;
+    try testing.expectEqual(@as(usize, 1), profiles.count());
+    try testing.expectEqualStrings("opus", profiles.get("mine").?.object.get("model").?.string);
+    try testing.expectEqual(true, obj.get("skill_evals").?.object.get("enabled").?.bool);
+}
+
+test "a scoped key with entries keeps its own and gains nothing" {
+    const alloc = testing.allocator;
+    const stored = "{\"profiles_models\":{\"own\":{\"model\":\"sonnet\"}}}";
+    const completed = try completeScopedCopy(alloc, stored, USER_SLICE);
+    defer alloc.free(completed);
+
+    var parsed = try parse(alloc, completed);
+    defer parsed.deinit();
+    const profiles = parsed.value.object.get("profiles_models").?.object;
+    try testing.expectEqual(@as(usize, 1), profiles.count());
+    try testing.expect(profiles.get("own") != null);
+    try testing.expect(profiles.get("mine") == null);
+}
+
+test "a save that never mentioned profiles takes the user document's" {
+    const alloc = testing.allocator;
+    const completed = try completeScopedCopy(alloc, "{\"tools\":[\"read_file\"]}", USER_SLICE);
+    defer alloc.free(completed);
+
+    var parsed = try parse(alloc, completed);
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+    // Tools are this workspace's own; profiles it never spoke about are not a
+    // decision against the user's.
+    try testing.expectEqual(@as(usize, 1), obj.get("tools").?.array.items.len);
+    try testing.expect(obj.get("profiles_models").?.object.get("mine") != null);
+}
+
+test "a removed profile name is recorded once" {
+    const alloc = testing.allocator;
+    const once = try withRemovedProfile(alloc, "{\"profiles_models\":{}}", "gone");
+    defer alloc.free(once);
+    const twice = try withRemovedProfile(alloc, once, "gone");
+    defer alloc.free(twice);
+
+    var parsed = try parse(alloc, twice);
+    defer parsed.deinit();
+    const names = parsed.value.object.get(removed_profiles_key).?.array;
+    try testing.expectEqual(@as(usize, 1), names.items.len);
+    try testing.expectEqualStrings("gone", names.items[0].string);
+}
+
+test "a fill skips the names this workspace removed" {
+    const alloc = testing.allocator;
+    const stored = "{\"profiles_models\":{},\"removed_profiles\":[\"mine\"]}";
+    const completed = try completeScopedCopy(alloc, stored, USER_SLICE);
+    defer alloc.free(completed);
+
+    var parsed = try parse(alloc, completed);
+    defer parsed.deinit();
+    try testing.expect(parsed.value.object.get("profiles_models").?.object.count() == 0);
+    // The bookkeeping key itself never reaches a config document.
+    try testing.expect(parsed.value.object.get(removed_profiles_key) == null);
+}
+
+test "an overlay that is not an object is left as it is" {
+    const alloc = testing.allocator;
+    const completed = try completeScopedCopy(alloc, "[1,2]", USER_SLICE);
+    defer alloc.free(completed);
+    try testing.expectEqualStrings("[1,2]", completed);
 }
 
 // ─── The user document a workspace still shares ─────────────────────────────

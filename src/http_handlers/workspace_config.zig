@@ -89,8 +89,9 @@ fn ownerForRequest(
     di: *pabrikcore.App,
     req: gserverz.HttpRequest,
 ) ?[]const u8 {
-    if (!di.auth_enabled) return allocator.dupe(u8, store.FILE_MODE_OWNER) catch null;
-    return auth_common.resolveRequestUserId(allocator, di.db, di.auth_enabled, req.headers) catch null;
+    const user_id = auth_common.resolveRequestUserId(allocator, di.db, di.auth_enabled, req.headers) catch return null;
+    defer allocator.free(user_id);
+    return allocator.dupe(u8, store.ownerKey(di.auth_enabled, user_id)) catch null;
 }
 
 /// A minimal success body. Shaped like the other write handlers' responses
@@ -122,8 +123,15 @@ fn loadOverlay(
     owner: []const u8,
     workspace_id: []const u8,
 ) ?[]u8 {
-    if (workspace_id.len == 0) return null;
-    return store.loadRaw(allocator, di.db, owner, workspace_id) catch null;
+    return workspace_config.workspaceOverlay(
+        allocator,
+        di.io,
+        di.db,
+        di.environment,
+        di.auth_enabled,
+        owner,
+        workspace_id,
+    );
 }
 
 fn errorResponse(
@@ -250,10 +258,11 @@ pub fn workspaceConfigProfileDeleteHandler(
     // nothing here to remove either - not a new failure.
     var active_cleared = false;
     var removed = false;
-    if (store.loadRaw(allocator, di.db, owner, workspace_id) catch null) |overlay| {
+    if (loadOverlay(allocator, di, owner, workspace_id)) |overlay| {
         if (profile_delete.removeProfileFromDocument(allocator, overlay, name) catch null) |r| {
             if (r.outcome.removed) {
-                store.saveRaw(allocator, di.db, owner, workspace_id, r.document) catch
+                const saved = workspace_config.withRemovedProfile(allocator, r.document, name) catch r.document;
+                store.saveRaw(allocator, di.db, owner, workspace_id, saved) catch
                     return profile_delete.makeErrorResponse(allocator, res, 500, name, "Failed to save the workspace config");
                 removed = true;
                 active_cleared = r.outcome.active_cleared;

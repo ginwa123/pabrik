@@ -73,6 +73,13 @@ fn deleteWorkspaceProfile(
     return h.http(io, .DELETE, path, .{ .expect = expect });
 }
 
+/// Remove the profile the boot's stub config carries, so a workspace created
+/// next takes a copy with no profiles in it.
+fn clearUserProfiles(h: *Harness) !void {
+    var r = try h.http(io, .DELETE, "/api/config/pabrik/profiles/stub", .{ .expect = &.{200} });
+    r.deinit();
+}
+
 /// The user-level `config.json` as stored (file mode: `--auth` off). The GET
 /// response masks the web_search key, so only the file proves it survived.
 fn readUserConfigFile(h: *Harness) ![]u8 {
@@ -86,20 +93,17 @@ fn readUserConfigFile(h: *Harness) ![]u8 {
     return try reader.interface.allocRemaining(gpa, .limited(1024 * 1024));
 }
 
-/// GET a workspace's effective config. `profiles` being PRESENT is also the
-/// route-order probe: a request captured by another `/api/workspaces/:id/...`
-/// route would not answer with the config shape at all.
+/// GET a workspace's effective config. `retry_delay_ms` being present is also
+/// the route-order probe: no sibling `/api/workspaces/:id/...` route answers
+/// with the config shape.
 fn getWorkspaceConfig(h: *Harness, workspace_id: []const u8) !struct { r: harness.Response, doc: harness.Json } {
     const path = try wsPath(gpa, workspace_id, "");
     defer gpa.free(path);
     var r = try h.http(io, .GET, path, .{ .expect = &.{200} });
     errdefer r.deinit();
     var doc = try r.json();
-    if (doc.object("profiles") == null) {
-        doc.deinit();
-        r.deinit();
-        return error.NotTheConfigShape;
-    }
+    errdefer doc.deinit();
+    if (doc.int("retry_delay_ms") == null) return error.NotTheConfigShape;
     return .{ .r = r, .doc = doc };
 }
 
@@ -349,7 +353,8 @@ test "workspace_config_put_with_an_empty_body_leaves_no_scoped_settings" {
         const tools = try toolNames(&got.doc);
         defer gpa.free(tools);
         try testing.expectEqual(@as(usize, 0), tools.len);
-        try testing.expectEqual(@as(usize, 0), got.doc.object("profiles").?.count());
+        const profiles = got.doc.object("profiles");
+        try testing.expect(profiles == null or profiles.?.count() == 0);
         // General is still the user's.
         try testing.expectEqual(@as(i64, 1234), got.doc.int("retry_delay_ms").?);
     }
@@ -425,7 +430,7 @@ test "workspace_config_masks_the_web_search_key" {
 // The profile picker's premise: a workspace-only profile is in the WORKSPACE
 // config and NOT in the user config
 
-test "a profile added to a workspace overlay is absent from the user-scope config" {
+test "a profile saved in a workspace is absent from the user-scope config" {
     // Why this is a wire fact and not a unit test: the two endpoints are the
     // two possible sources for ChatView's profile picker, and the bug was
     // asking the WRONG one.
@@ -448,9 +453,8 @@ test "a profile added to a workspace overlay is absent from the user-scope confi
         defer r.deinit();
     }
 
-    // Workspace scope: the new profile AND the user's own, because the overlay
-    // is layered over the user config rather than swapped in. This is what the
-    // picker must offer.
+    // Workspace scope: the profile this workspace just saved. Profiles are
+    // workspace-scoped, so its own list is the list a run here resolves.
     {
         var got = try getWorkspaceConfig(&h, id);
         defer got.doc.deinit();
@@ -462,12 +466,11 @@ test "a profile added to a workspace overlay is absent from the user-scope confi
             "nvidia/nemotron-3-super-120b-a12b:free",
             profiles.get("kilo").?.object.get("model").?.string,
         );
-        // Positive control for the user half of the merge.
-        try testing.expect(profiles.get("stub") != null);
+        try testing.expect(profiles.count() == 1);
     }
 
     // User scope: the picker's OLD source. The user's profiles are here (the
-    // positive control), and the overlay-only profile is not.
+    // positive control), and the workspace-only profile is not.
     {
         var r = try h.http(io, .GET, "/api/config/pabrik", .{ .expect = &.{200} });
         defer r.deinit();
@@ -638,4 +641,105 @@ test "workspace_profile_delete_leaves_another_workspaces_own_profile_alone" {
         const profiles = b.doc.object("profiles") orelse return error.NoProfiles;
         try testing.expect(profiles.get("mine") != null);
     }
+}
+
+// ============================================================================
+// A workspace created before the user had profiles shows them once they exist
+// ============================================================================
+
+test "workspace_config_shows_the_user_profiles_a_workspace_was_created_without" {
+    var h = try boot();
+    defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
+
+    // The user has no profiles yet, so the copy this workspace takes is empty.
+    try clearUserProfiles(&h);
+    const id = try createWorkspace(&h, "Late Profiles");
+    defer gpa.free(id);
+
+    // Now they add some. The workspace's empty copy is not a decision, so the
+    // model picker and the Profiles list must offer them.
+    try putUserConfig(&h);
+
+    var got = try getWorkspaceConfig(&h, id);
+    defer got.doc.deinit();
+    defer got.r.deinit();
+
+    const profiles = got.doc.object("profiles") orelse return error.NoProfiles;
+    try testing.expect(profiles.get("stub") != null);
+    try testing.expect(profiles.get("extra") != null);
+    try testing.expectEqualStrings("extra", got.doc.str("active_profile").?);
+    // General keys keep coming from the user document.
+    try testing.expectEqual(true, got.doc.boolean("notify_on_complete").?);
+    try testing.expectEqual(@as(i64, 1234), got.doc.int("retry_delay_ms").?);
+}
+
+// ============================================================================
+// A profile a workspace only inherits is still deletable there
+// ============================================================================
+
+test "workspace_config_deletes_a_profile_the_workspace_only_inherits" {
+    var h = try boot();
+    defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
+
+    try clearUserProfiles(&h);
+    const inheriting = try createWorkspace(&h, "Inherits");
+    defer gpa.free(inheriting);
+    try putUserConfig(&h);
+
+    {
+        var before = try getWorkspaceConfig(&h, inheriting);
+        defer before.doc.deinit();
+        defer before.r.deinit();
+        const profiles = before.doc.object("profiles") orelse return error.NoProfiles;
+        try testing.expect(profiles.get("extra") != null);
+    }
+
+    // The list a read renders is the list the user must be able to edit.
+    var deleted = try deleteWorkspaceProfile(&h, inheriting, "extra", &.{200});
+    defer deleted.deinit();
+
+    {
+        var after = try getWorkspaceConfig(&h, inheriting);
+        defer after.doc.deinit();
+        defer after.r.deinit();
+        const profiles = after.doc.object("profiles") orelse return error.NoProfiles;
+        try testing.expect(profiles.get("extra") == null);
+        try testing.expect(profiles.get("stub") != null);
+    }
+
+    // ...and the user document did not move: a workspace created now still
+    // starts with both profiles.
+    const fresh = try createWorkspace(&h, "Fresh");
+    defer gpa.free(fresh);
+    var fresh_cfg = try getWorkspaceConfig(&h, fresh);
+    defer fresh_cfg.doc.deinit();
+    defer fresh_cfg.r.deinit();
+    const fresh_profiles = fresh_cfg.doc.object("profiles") orelse return error.NoProfiles;
+    try testing.expect(fresh_profiles.get("extra") != null);
+    try testing.expect(fresh_profiles.get("stub") != null);
+}
+
+test "workspace_config_keeps_the_last_profile_a_workspace_deleted_deleted" {
+    var h = try boot();
+    defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
+
+    // Exactly one profile, so the delete empties this workspace's list.
+    try clearUserProfiles(&h);
+    try putUserConfigBody(&h,
+        \\{"profiles":{"only":{"model":"only-model","base_url":"http://127.0.0.1:1","api_key":"only-key-not-real"}},
+        \\ "active_profile":"only"}
+    );
+    const id = try createWorkspace(&h, "Only Profile");
+    defer gpa.free(id);
+
+    var deleted = try deleteWorkspaceProfile(&h, id, "only", &.{200});
+    defer deleted.deinit();
+
+    var got = try getWorkspaceConfig(&h, id);
+    defer got.doc.deinit();
+    defer got.r.deinit();
+    // The user document still has `only`; this workspace must not re-adopt it.
+    const profiles = got.doc.object("profiles") orelse return error.NoProfiles;
+    try testing.expect(profiles.count() == 0);
+    try testing.expect(got.doc.str("active_profile") == null);
 }
