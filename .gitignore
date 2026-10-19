@@ -71,6 +71,9 @@ tests/functional_android/__pycache__/
 # and is imported by both suites' conftest.py — so its bytecode cache lands
 # in tests/__pycache__/, which the three lines above do not cover.
 tests/__pycache__/
+# scripts/vm_guest_client.py is imported by the probe and the benchmark, so
+# running either leaves this one behind.
+scripts/__pycache__/
 
 # === WebView2 NuGet headers + loader (downloaded by CI's
 # "Stage WebView2 + integrate vcpkg + install ripgrep (Windows)" step;

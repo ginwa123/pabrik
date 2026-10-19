@@ -575,7 +575,7 @@ fn captureStream(
 /// The empty / over-long policy the tool has always applied to a captured
 /// stream: no output at all reads as `empty_placeholder`, anything past
 /// `max_output` is cut.
-fn shapeCapture(
+pub fn shapeCapture(
     alloc: std.mem.Allocator,
     raw: []const u8,
     max_output: usize,
@@ -586,12 +586,39 @@ fn shapeCapture(
     return alloc.dupe(u8, raw);
 }
 
+/// An injected executor for the command a tool call asked for. Under `--saas`
+/// it runs the command in the workspace's microVM; in local mode nothing is
+/// injected and the host path runs, unchanged.
+pub const Executor = struct {
+    ctx: *const anyopaque,
+    run: *const fn (
+        ctx: *const anyopaque,
+        allocator: std.mem.Allocator,
+        io: std.Io,
+        argv_prefix: []const []const u8,
+        input: ShellInput,
+    ) anyerror!ShellOutput,
+};
+
 pub fn execute_shell(
     allocator: std.mem.Allocator,
     io: std.Io,
     argv_prefix: []const []const u8,
     input: ShellInput,
 ) !ShellOutput {
+    return execute_shell_with(allocator, io, argv_prefix, input, null);
+}
+
+/// `execute_shell` with the substrate made explicit: an executor replaces the
+/// host spawn, and null means "the host".
+pub fn execute_shell_with(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    argv_prefix: []const []const u8,
+    input: ShellInput,
+    executor: ?Executor,
+) !ShellOutput {
+    if (executor) |injected| return injected.run(injected.ctx, allocator, io, argv_prefix, input);
     return run_shell_command(allocator, io, argv_prefix, input);
 }
 
@@ -866,7 +893,7 @@ pub fn quotePwsh(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
 }
 
 /// The platform's own temp directory. The old code interpolated a literal
-/// `/tmp` into a path that was then handed to a Windows 
+/// `/tmp` into a path that was then handed to a Windows
 pub fn tempDirFor(allocator: std.mem.Allocator, os_tag: OsTag) ![]u8 {
     // `std.c.getenv` is the same accessor the rest of the codebase uses for
     // this (service/state_file.zig reads LOCALAPPDATA through it), and it
@@ -884,7 +911,7 @@ pub fn tempDirFor(allocator: std.mem.Allocator, os_tag: OsTag) ![]u8 {
 
 /// Last-resort temp directory when the environment is unreadable. The POSIX
 /// literal lives ONLY in the POSIX arm — the original bug was interpolating
-/// `/tmp` into a path that was then handed to a Windows 
+/// `/tmp` into a path that was then handed to a Windows
 pub fn defaultTempDir(os_tag: OsTag) []const u8 {
     return if (os_tag == .windows) "C:\\Windows\\Temp" else "/tmp";
 }

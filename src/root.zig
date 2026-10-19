@@ -208,6 +208,13 @@ pub const session_db = @import("agentic_loop/llm_history.zig");
 pub const llm_history = @import("agentic_loop/llm_history.zig");
 pub const llm_history_model_guard = @import("agentic_loop/llm_history_model_guard.zig");
 pub const workspace_scope = @import("agentic_loop/workspace_scope.zig");
+/// The `--saas` execution substrate for shell commands, and the manager client
+/// it speaks to. The wire protocol and its policy live under `src/vmd/` and are
+/// std-only, so the daemon, the server and the tests share one definition.
+pub const vm_runtime = @import("agentic_loop/vm_runtime.zig");
+pub const vmd_policy = @import("vmd/policy.zig");
+pub const vmd_rpc = @import("vmd/rpc.zig");
+pub const vmd_client = @import("vmd/vmd_client.zig");
 pub const agent_memories = @import("agentic_loop/agent_memories.zig");
 /// Workspace-scoped document storage (Migration 098).
 pub const documents_store = @import("agentic_loop/documents_store.zig");
@@ -280,6 +287,7 @@ test {
     // makes their inline `test` blocks discoverable by `zig build test`.
     _ = @import("agentic_loop/agent_tools_allowed.zig");
     _ = @import("agentic_loop/model_catalog.zig");
+    _ = @import("agentic_loop/workspace_fs.zig");
     _ = @import("agentic_loop/prompts_make_agent_knowledge.zig");
     _ = @import("agentic_loop/prompts_make_agent_system_prompt.zig");
     // Agent-Kanbans mirror (Migration 081): impl + tests in one file.
@@ -343,6 +351,8 @@ test {
     // status mapping tests plus the static checks that keep it on the shared
     // file_sandbox rule (docs/plans/2026-09-29-present-files-sandbox-parity.md).
     _ = @import("http_handlers/files_download.zig");
+    _ = @import("http_handlers/preview_origin.zig");
+_ = @import("http_handlers/preview_proxy.zig");
     // schedulers/cleanup_stale_background_process.zig has inline tests
     // (mirrors cleanup_stale_worker pattern). Re-imported here for the
     // same reason — see plan 2026-08-19-cleanup-stale-background-process.

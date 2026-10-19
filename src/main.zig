@@ -52,6 +52,9 @@ pub fn main(init: std.process.Init) !void {
 
     // `var` because --tls-selfsigned overwrites the parsed cert/key paths.
     var cli = (try server_boot.parseCliArgs(allocator, argv_flat.items)) orelse return;
+    // Before TLS and the config thread: a refused mode must exit cleanly.
+    const boot_mode = server_boot.enforceRuntimeMode(allocator, io, environment, &cli) orelse std.process.exit(2);
+    std.log.info("runtime mode: {s}", .{@tagName(boot_mode)});
     const tls_ctx = try server_boot.setupTlsCtx(allocator, environment, &cli);
 
     if (init.environ_map.get("HOME")) |home| {
@@ -286,6 +289,12 @@ pub fn main(init: std.process.Init) !void {
     const gs = try gserverz.GinwaServer.init(allocator, io, address);
     defer gs.deinit();
     gs.enable_h2c = cli.enable_h2c;
+
+    // The engine's cross-site pre-gate is a TENANT defence: on in --saas only.
+    // The local UI is served from the Vite dev origin, so enabling it for local
+    // mode would 403 every mutation the app makes.
+    const allowed_origins = try ai_mod.http_handlers.preview_origin.allowedFor(allocator, environment, address.port);
+    gs.cors = .{ .enabled = boot_mode == .saas, .allowed_origins = allowed_origins };
 
     // SIGINT/SIGTERM close the listener via shutdown(), unblocking listen()
     // so the post-listen block below runs. Second signal force-exits (130).

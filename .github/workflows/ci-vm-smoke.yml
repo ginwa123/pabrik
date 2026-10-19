@@ -1,0 +1,134 @@
+# The VM smokes boot a real Firecracker microVM, and Firecracker needs /dev/kvm,
+# which no GitHub-hosted runner exposes (docs/plans/2026-10-17-workspace-is-a-microvm.md
+# §20 finding 5). They therefore belong on a self-hosted Linux runner that has
+# /dev/kvm, a `firecracker` binary and a guest kernel.
+#
+# Two deliberate properties:
+#
+# 1. This workflow is NOT part of ci.yml's `ci-ok`. A job waiting for a runner
+#    nobody has registered would sit queued forever and hold every merge, so the
+#    PR trigger is behind the `PABRIK_KVM_RUNNER` repository variable: set it to
+#    `true` once such a runner is online and the gate becomes live. Until then
+#    `workflow_dispatch` runs it by hand, and the manual gate is written down in
+#    the plan's CI section.
+# 2. The runner provides the VMM and the kernel; this repository vendors
+#    neither. The `PABRIK_FC_BIN` and `PABRIK_GUEST_KERNEL` repository variables
+#    override the paths below, and an empty value falls back to the smoke
+#    script's own default rather than to an empty path.
+name: vm-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/guest-image.manifest'
+      - 'scripts/build-guest-image.sh'
+      - 'scripts/vm-guest-smoke.sh'
+      - 'scripts/vm-guest-probe.py'
+      - 'scripts/vmd-smoke.sh'
+      - 'scripts/vmd-daemon-smoke.sh'
+      - 'scripts/vmd-saas-smoke.sh'
+      - 'src/vm_agent/**'
+      - 'src/vmd/**'
+      - 'build.zig'
+      - '.github/workflows/ci-vm-smoke.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  ZIG_VERSION: 0.16.0
+  FC_BIN: ${{ vars.PABRIK_FC_BIN }}
+  GUEST_KERNEL: ${{ vars.PABRIK_GUEST_KERNEL }}
+
+jobs:
+  preflight:
+    name: runner has /dev/kvm, firecracker and a kernel
+    # See the header: without a registered runner this must not queue.
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.PABRIK_KVM_RUNNER == 'true' }}
+    runs-on: [self-hosted, linux, x64, kvm]
+    timeout-minutes: 5
+    steps:
+      - name: Probe what a microVM boot needs
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -r /dev/kvm ] || { echo "::error::/dev/kvm is not readable by the runner user"; exit 1; }
+          for tool in zig python3 mkfs.ext4 e2fsck debugfs curl; do
+            command -v "$tool" >/dev/null || { echo "::error::$tool is not on the runner"; exit 1; }
+          done
+          vmm="${FC_BIN:-firecracker}"
+          command -v "$vmm" >/dev/null || { echo "::error::firecracker not found: $vmm (set PABRIK_FC_BIN)"; exit 1; }
+          kernel="${GUEST_KERNEL:-$HOME/firecracker-demo/vmlinux-6.18.51}"
+          [ -f "$kernel" ] || { echo "::error::guest kernel not found: $kernel (set PABRIK_GUEST_KERNEL)"; exit 1; }
+          echo "ok  $(ls -l /dev/kvm | awk '{print $1}') /dev/kvm"
+          echo "ok  $("$vmm" --version 2>&1 | head -1) at $vmm"
+          echo "ok  kernel $kernel sha256=$(sha256sum "$kernel" | cut -c1-16)"
+          echo "ok  zig $(zig version)"
+
+  protocol:
+    name: guest boot and exec protocol
+    needs: preflight
+    runs-on: [self-hosted, linux, x64, kvm]
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Zig ${{ env.ZIG_VERSION }}
+        uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: Image, rootless boot, exec over vsock, exit codes, timeouts
+        run: scripts/vm-guest-smoke.sh
+
+      - name: 'The Zig client: boot, exec as uid 1000, persistence, derived paths'
+        run: scripts/vmd-smoke.sh
+
+      - name: 'The daemon: peer auth, adoption, stop, detached jobs, reconciler'
+        run: scripts/vmd-daemon-smoke.sh
+
+  saas:
+    name: --saas boots only with a live manager
+    needs: preflight
+    runs-on: [self-hosted, linux, x64, kvm]
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Zig ${{ env.ZIG_VERSION }}
+        uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: Check the server's link dependencies
+        # A self-hosted runner owns its own system packages, so this only
+        # reports what is missing and names the install script rather than
+        # assuming passwordless sudo.
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=""
+          for pc in sqlite3 openssl libpq libcurl; do
+            pkg-config --exists "$pc" 2>/dev/null || missing="$missing $pc"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::pkg-config cannot resolve:$missing - run scripts/ci-install-linux-deps.sh on the runner"
+            exit 1
+          fi
+          echo "ok  sqlite3, openssl, libpq and libcurl resolve through pkg-config"
+
+      - name: Build the server
+        # No webapp rebuild: this job boots the server, it does not ship a UI,
+        # so the node/pnpm chain has nothing to add here.
+        run: zig build -Dno-webapp-rebuild
+
+      - name: Local mode is unchanged, and --saas refuses without a manager
+        run: scripts/vmd-saas-smoke.sh

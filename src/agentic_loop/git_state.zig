@@ -3,8 +3,15 @@
 //! agent knows which checkout it is in without paying for an LLM summary.
 
 const std = @import("std");
+const builtin = @import("builtin");
+const pabrikcore = @import("pabrikcore");
+const sqlite = pabrikcore.sqlite;
 const run_captured = @import("helpers").run_captured;
+const host_fixture = @import("helpers").host_fixture;
 const xml_escape = @import("helpers").xml_escape;
+const git_hardening = @import("helpers").git_hardening;
+const workspace_fs = @import("workspace_fs.zig");
+const runtime_mode = @import("../runtime_mode.zig");
 
 pub const MAX_DIRTY_FILES: usize = 20;
 pub const DETACHED_BRANCH = "(detached)";
@@ -54,7 +61,7 @@ pub fn runGit(allocator: std.mem.Allocator, io: std.Io, dir: []const u8, args: [
 
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(allocator);
-    argv.append(allocator, "git") catch return null;
+    git_hardening.appendGit(&argv, allocator) catch return null;
     argv.append(allocator, "-C") catch return null;
     argv.append(allocator, dir) catch return null;
     argv.appendSlice(allocator, args) catch return null;
@@ -75,9 +82,62 @@ pub fn runGit(allocator: std.mem.Allocator, io: std.Io, dir: []const u8, args: [
     return allocator.dupe(u8, std.mem.trim(u8, result.stdout, " \t\r\n")) catch null;
 }
 
+/// One `git` invocation for the tree at `dir`, from whichever side of the seam
+/// this run is on: the guest's git over the exec RPC, the host's, or a test's
+/// fake. Every question this module asks goes through one of these.
+const Ask = struct {
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    guest: ?*const workspace_fs.Fs = null,
+    fake: ?GitRunner = null,
+
+    fn of(self: Ask, dir: []const u8, args: []const []const u8) ?[]u8 {
+        if (self.fake) |fake| return fake(self.allocator, self.io, dir, args);
+        if (self.guest) |fs| return guestRunGit(self.allocator, fs, dir, args);
+        return runGit(self.allocator, self.io, dir, args);
+    }
+};
+
+/// The guest's answer in the host runner's own shape: trimmed stdout, or null
+/// on any failure — a git that could not be asked is not a git that said no.
+fn guestRunGit(
+    allocator: std.mem.Allocator,
+    fs: *const workspace_fs.Fs,
+    dir: []const u8,
+    args: []const []const u8,
+) ?[]u8 {
+    const exec = fs.runGit(dir, args, GIT_TIMEOUT_MS, MAX_GIT_OUTPUT_BYTES) catch return null;
+    defer exec.deinit(allocator);
+    if (exec.timed_out or exec.truncated) return null;
+    if (exec.code != 0) return null;
+    return allocator.dupe(u8, std.mem.trim(u8, exec.stdout, " \t\r\n")) catch null;
+}
+
 /// Git facts for `dir`, or null when `dir` is not inside a repository.
 pub fn fetchGitState(allocator: std.mem.Allocator, io: std.Io, dir: []const u8) !?GitState {
     return fetchGitStateWith(allocator, io, dir, runGit);
+}
+
+/// Git facts for a session's directory. Under `--saas` the questions go to the
+/// workspace's VM, and a workspace whose VM cannot answer is an error — the
+/// host's git is never spawned on a tenant tree (criterion 9).
+pub fn fetchGitStateFor(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    db: *sqlite.SqliteBackend,
+    session_id: []const u8,
+    dir: []const u8,
+) !?GitState {
+    var route = workspace_fs.routeForSession(allocator, db, session_id);
+    defer route.deinit();
+    const guest: ?*const workspace_fs.Fs = switch (route) {
+        .guest => |*fs| fs,
+        // No VM to ask: the ask fails, and the caller's log says why. The
+        // host's git is emphatically not the fallback.
+        .unavailable => |err| return err,
+        .host => null,
+    };
+    return fetchGitStateAsk(allocator, dir, .{ .allocator = allocator, .io = io, .guest = guest });
 }
 
 pub fn fetchGitStateWith(
@@ -86,26 +146,34 @@ pub fn fetchGitStateWith(
     dir: []const u8,
     runner: GitRunner,
 ) !?GitState {
-    const toplevel_raw = runner(allocator, io, dir, &TOPLEVEL_ARGS) orelse return null;
+    return fetchGitStateAsk(allocator, dir, .{ .allocator = allocator, .io = io, .fake = runner });
+}
+
+fn fetchGitStateAsk(
+    allocator: std.mem.Allocator,
+    dir: []const u8,
+    ask: Ask,
+) !?GitState {
+    const toplevel_raw = ask.of(dir, &TOPLEVEL_ARGS) orelse return null;
     defer allocator.free(toplevel_raw);
     if (toplevel_raw.len == 0) return null;
 
-    const common_raw = runner(allocator, io, dir, &COMMON_DIR_ARGS);
+    const common_raw = ask.of(dir, &COMMON_DIR_ARGS);
     defer if (common_raw) |c| allocator.free(c);
     const repo_root_raw: []const u8 = if (common_raw) |c| std.fs.path.dirname(c) orelse toplevel_raw else toplevel_raw;
 
-    const head_raw = runner(allocator, io, dir, &HEAD_ARGS);
+    const head_raw = ask.of(dir, &HEAD_ARGS);
     defer if (head_raw) |h| allocator.free(h);
 
     const worktree_root = try allocator.dupe(u8, toplevel_raw);
     errdefer allocator.free(worktree_root);
     const repo_root = try allocator.dupe(u8, repo_root_raw);
     errdefer allocator.free(repo_root);
-    const branch = try fetchBranch(allocator, io, dir, runner);
+    const branch = try fetchBranch(allocator, dir, ask);
     errdefer allocator.free(branch);
     const head = try allocator.dupe(u8, head_raw orelse "");
     errdefer allocator.free(head);
-    const dirty = try fetchDirtyFiles(allocator, io, dir, runner);
+    const dirty = try fetchDirtyFiles(allocator, dir, ask);
     errdefer {
         for (dirty.files) |f| {
             allocator.free(f.status);
@@ -127,11 +195,10 @@ pub fn fetchGitStateWith(
 
 fn fetchBranch(
     allocator: std.mem.Allocator,
-    io: std.Io,
     dir: []const u8,
-    runner: GitRunner,
+    ask: Ask,
 ) ![]u8 {
-    const raw = runner(allocator, io, dir, &BRANCH_ARGS);
+    const raw = ask.of(dir, &BRANCH_ARGS);
     defer if (raw) |r| allocator.free(r);
     const branch = raw orelse "";
     if (branch.len > 0) return allocator.dupe(u8, branch);
@@ -145,11 +212,10 @@ const DirtyResult = struct {
 
 fn fetchDirtyFiles(
     allocator: std.mem.Allocator,
-    io: std.Io,
     dir: []const u8,
-    runner: GitRunner,
+    ask: Ask,
 ) !DirtyResult {
-    const raw = runner(allocator, io, dir, &STATUS_ARGS);
+    const raw = ask.of(dir, &STATUS_ARGS);
     defer if (raw) |r| allocator.free(r);
 
     var files: std.ArrayList(DirtyFile) = .empty;
@@ -443,4 +509,158 @@ test "appendWorkingDirectoryXml escapes xml specials in a branch name" {
     try appendWorkingDirectoryXml(alloc, &out, "/repo", "", state);
 
     try std.testing.expect(std.mem.indexOf(u8, out.items, "<branch>feat&lt;a&gt;&amp;b</branch>") != null);
+}
+
+// ─── Criterion 9: a tenant tree's git is the GUEST's ───────────────────────
+
+/// A throwaway repository whose `core.fsmonitor` runs a fixture program that
+/// creates a sentinel file. Anything on this host that runs `git status` in it
+/// makes the file appear — the fsmonitor RCE, as a test.
+const CanaryRepo = struct {
+    fx: host_fixture.Fixture,
+    repo: []u8,
+    sentinel: []u8,
+    db: sqlite.SqliteBackend,
+    threaded: std.Io.Threaded,
+
+    fn deinit(self: *CanaryRepo) void {
+        self.threaded.deinit();
+        self.db.deinit();
+        self.fx.allocator.free(self.sentinel);
+        self.fx.allocator.free(self.repo);
+        self.fx.deinit();
+    }
+
+    fn fired(self: *const CanaryRepo) bool {
+        std.Io.Dir.cwd().access(std.testing.io, self.sentinel, .{}) catch return false;
+        return true;
+    }
+
+    /// `git status` under the hardening the seam's own prefix applies.
+    fn statusHardened(self: *const CanaryRepo) !void {
+        const off = git_hardening.configValue("core.fsmonitor").?;
+        const setting = try std.fmt.allocPrint(std.testing.allocator, "core.fsmonitor={s}", .{off});
+        defer std.testing.allocator.free(setting);
+        try runGitOrFail(std.testing.allocator, &.{ "git", "-c", setting, "-C", self.repo, "status", "--porcelain" });
+    }
+
+    /// `git status` the way a tenant's own tooling would run it: no prefix.
+    fn statusPlain(self: *const CanaryRepo) !void {
+        try runGitOrFail(std.testing.allocator, &.{ "git", "-C", self.repo, "status", "--porcelain" });
+    }
+};
+
+fn runGitOrFail(allocator: std.mem.Allocator, argv: []const []const u8) !void {
+    var r = run_captured.run(allocator, std.testing.io, argv, .{ .timeout_ms = 30_000 }) catch
+        return error.GitUnavailable;
+    defer r.deinit(allocator);
+    if (r.term.exited != 0) return error.GitUnavailable;
+}
+
+/// The canary repository, registered as workspace `w1` / session `s1`, so the
+/// seam resolves it exactly as it would a real tenant's checkout.
+fn canaryRepo() !CanaryRepo {
+    const allocator = std.testing.allocator;
+    var fx = try host_fixture.Fixture.init(allocator);
+    errdefer fx.deinit();
+    const repo = try fx.subDir("repo");
+    errdefer allocator.free(repo);
+    const sentinel = try std.fmt.allocPrint(allocator, "{s}/SENTINEL", .{fx.root});
+    errdefer allocator.free(sentinel);
+    const canary = try fx.writeProgram("fsmonitor", .{ .touch_file = sentinel });
+    defer allocator.free(canary);
+
+    try runGitOrFail(allocator, &.{ "git", "init", "-q", repo });
+    try runGitOrFail(allocator, &.{ "git", "-C", repo, "config", "core.fsmonitor", canary });
+
+    var threaded = std.Io.Threaded.init(allocator, .{});
+    errdefer threaded.deinit();
+    var db: sqlite.SqliteBackend = .{};
+    errdefer db.deinit();
+    try db.init(threaded.io(), ":memory:");
+    try db.exec(allocator,
+        \\CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT NOT NULL, status TEXT, cwd TEXT, workspace_id TEXT)
+    , &.{});
+    try db.exec(allocator,
+        \\CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT, name TEXT, path TEXT, position INTEGER)
+    , &.{});
+    try db.exec(allocator,
+        \\CREATE TABLE workspace_item_tasks (id TEXT PRIMARY KEY, name TEXT NOT NULL, workspace_item_id TEXT NOT NULL)
+    , &.{});
+    const item = try std.fmt.allocPrint(allocator,
+        \\INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position)
+        \\VALUES ('i1','w1','kanban','A','{s}',1)
+    , .{repo});
+    defer allocator.free(item);
+    try db.exec(allocator, item, &.{});
+    try db.exec(allocator, "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) VALUES ('s1','T1','i1')", &.{});
+    const sess = try std.fmt.allocPrint(allocator,
+        \\INSERT INTO sessions (id, name, status, cwd) VALUES ('s1','T1','active','{s}')
+    , .{repo});
+    defer allocator.free(sess);
+    try db.exec(allocator, sess, &.{});
+
+    return .{ .fx = fx, .repo = repo, .sentinel = sentinel, .db = db, .threaded = threaded };
+}
+
+test "fetchGitStateFor: local mode asks the host's git, and the hardening keeps the hook out" {
+    var canary = try canaryRepo();
+    defer canary.deinit();
+    const allocator = std.testing.allocator;
+
+    // The prefix the seam's own git argv carries is what neutralises the repo.
+    try canary.statusHardened();
+    try std.testing.expect(!canary.fired());
+
+    try std.testing.expectEqual(runtime_mode.Mode.local, runtime_mode.currentMode());
+    const state = (try fetchGitStateFor(allocator, std.testing.io, &canary.db, "s1", canary.repo)).?;
+    defer state.deinit(allocator);
+    try std.testing.expect(std.mem.endsWith(u8, state.worktree_root, "repo"));
+    try std.testing.expect(!canary.fired());
+
+    // The control that makes those absences mean something: WITHOUT the
+    // prefix this host really does execute the repository's own command.
+    if (builtin.os.tag != .windows) {
+        try canary.statusPlain();
+        try std.testing.expect(canary.fired());
+    }
+}
+
+test "fetchGitStateFor: saas never spawns the host's git — the canary stays silent" {
+    var canary = try canaryRepo();
+    defer canary.deinit();
+    const allocator = std.testing.allocator;
+
+    runtime_mode.setCurrent(.saas);
+    defer runtime_mode.setCurrent(.local);
+    if (!runtime_mode.vm_backend_available) return;
+    runtime_mode.setManagerSocket(null);
+    defer runtime_mode.setManagerSocket(null);
+
+    // The tree is right there and the canary WOULD fire; the workspace's VM is
+    // not answering, and the ask fails closed rather than falling back.
+    try std.testing.expectError(
+        workspace_fs.Error.GuestManagerUnavailable,
+        fetchGitStateFor(allocator, std.testing.io, &canary.db, "s1", canary.repo),
+    );
+    try std.testing.expect(!canary.fired());
+}
+
+test "fetchGitStateFor: saas answers nothing outside the workspace, and runs nothing" {
+    var canary = try canaryRepo();
+    defer canary.deinit();
+    const allocator = std.testing.allocator;
+
+    runtime_mode.setCurrent(.saas);
+    defer runtime_mode.setCurrent(.local);
+    if (!runtime_mode.vm_backend_available) return;
+    runtime_mode.setManagerSocket("/nonexistent/pabrik-vmd.sock");
+    defer runtime_mode.setManagerSocket(null);
+
+    // A worktree the host keeps OUTSIDE the tenant's root (a session's own
+    // worktree lives there). It has no guest path, so there is no question to
+    // ask — and the host's git is still not the fallback.
+    const outside = (try fetchGitStateFor(allocator, std.testing.io, &canary.db, "s1", canary.fx.root));
+    try std.testing.expect(outside == null);
+    try std.testing.expect(!canary.fired());
 }

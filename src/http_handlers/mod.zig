@@ -54,6 +54,8 @@ pub const pingHandler = @import("ping.zig").pingHandler;
 pub const sessionCompactHandler = @import("session_compact.zig").sessionCompactHandler;
 pub const systemFolderHandler = @import("system_folder.zig").systemFolderHandler;
 pub const filesDownloadHandler = @import("files_download.zig").filesDownloadHandler;
+pub const previewProxyHandler = @import("preview_proxy.zig").previewProxyHandler;
+pub const preview_origin = @import("preview_origin.zig");
 pub const healthHandler = @import("health.zig").healthHandler;
 pub const shutdownHandler = @import("shutdown.zig").shutdownHandler;
 // Opt-in `--auth` (login page + session cookie + middleware).

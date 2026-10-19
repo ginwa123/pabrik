@@ -7,6 +7,7 @@ const logger_mod = pabrikcore.loggermod;
 const event_bus_mod = pabrikcore.event_bus;
 const bg_proc = pabrikcore.ai_mod.background_process;
 const cleanup = pabrikcore.cleanup_stale_background_process;
+const guest_jobs = @import("guest_jobs.zig");
 // NOTE: neither `process_status` nor `shell_tool` is imported here any more —
 // this module asks `bg_proc.isAlive`, which owns the reap-then-probe liveness
 // question for every caller (the watcher, the boot sweep, the `process`
@@ -29,6 +30,20 @@ fn stillRunning(pid: u32) bool {
     return bg_proc.isAlive(pid);
 }
 
+/// One liveness answer, in the shape the guest loop consumes.
+pub const GuestOutcome = struct {
+    verdict: guest_jobs.Verdict,
+    boot_pid: i64,
+};
+
+/// The guest probe, injectable so the loop below is proven without a manager.
+pub const GuestProbeFn = *const fn (std.mem.Allocator, guest_jobs.GuestJob, ?i64) GuestOutcome;
+
+fn defaultGuestProbe(allocator: std.mem.Allocator, job: guest_jobs.GuestJob, boot: ?i64) GuestOutcome {
+    const reading = guest_jobs.probe(allocator, job, boot);
+    return .{ .verdict = reading.verdict, .boot_pid = reading.boot_pid };
+}
+
 /// Testable core args — explicit handles (no singleton) so unit tests stay
 /// hermetic (own :memory: DB, event_bus=null).
 pub const WatchCoreArgs = struct {
@@ -47,19 +62,52 @@ pub const WatchCoreArgs = struct {
     /// true — `mode="background"`: queue the log and wake the session on
     /// exit. false — `mode="background_persistence"`: SILENT.
     notify: bool = true,
+    /// Set for a job that runs in a workspace VM: its pid and its log are the
+    /// guest's, so liveness is asked of the manager that owns that VM.
+    guest: ?guest_jobs.GuestJob = null,
+    /// Overrides the manager probe (test seam).
+    probe: ?GuestProbeFn = null,
 };
+
+/// Poll a job through the manager until it ends or the cap hits. `ended` is
+/// false only when the cap ran out — a job nobody could observe keeps its row.
+fn watchGuestJob(args: *const WatchCoreArgs, job: guest_jobs.GuestJob) struct { ended: bool, note: ?[]const u8 } {
+    const probe = args.probe orelse defaultGuestProbe;
+    var known_boot: ?i64 = null;
+    var i: usize = 0;
+    while (i < args.max_iters) : (i += 1) {
+        const outcome = probe(args.allocator, job, known_boot);
+        if (known_boot == null and outcome.boot_pid > 0) known_boot = outcome.boot_pid;
+        if (guest_jobs.isFinished(outcome.verdict)) {
+            return .{ .ended = true, .note = guest_jobs.noteFor(outcome.verdict) };
+        }
+        std.Io.sleep(args.io, .{ .nanoseconds = args.poll_interval_ns }, .real) catch {};
+    }
+    return .{ .ended = false, .note = null };
+}
+
+/// Poll a host pid until it dies or the cap hits.
+fn watchHostPid(args: *const WatchCoreArgs) bool {
+    var i: usize = 0;
+    while (i < args.max_iters) : (i += 1) {
+        if (!stillRunning(args.pid_num)) return true;
+        std.Io.sleep(args.io, .{ .nanoseconds = args.poll_interval_ns }, .real) catch {};
+    }
+    return !stillRunning(args.pid_num);
+}
 
 /// Poll until the PID dies (or the cap hits), then notify + delete. Returns
 /// true iff notified AND the row was deleted (caller wakes).
 pub fn watchAndNotify(args: WatchCoreArgs) bool {
-    var i: usize = 0;
-    while (i < args.max_iters) : (i += 1) {
-        if (!stillRunning(args.pid_num)) break;
-        std.Io.sleep(args.io, .{ .nanoseconds = args.poll_interval_ns }, .real) catch {};
-    }
+    var note: ?[]const u8 = null;
+    const ended = if (args.guest) |job| blk: {
+        const outcome = watchGuestJob(&args, job);
+        note = outcome.note;
+        break :blk outcome.ended;
+    } else watchHostPid(&args);
     // Cap hit with the process still alive — exit silently, cron covers it
     // (which only ever happens for a `job`; the service cap is unbounded).
-    if (stillRunning(args.pid_num)) return false;
+    if (!ended) return false;
 
     // ── silent service path ────────────────────────────────────────────────
     // The process exited.
@@ -91,6 +139,20 @@ pub fn watchAndNotify(args: WatchCoreArgs) bool {
     defer arena.deinit();
     const a = arena.allocator();
 
+    // A guest log is inside the VM, so it is fetched HERE: the notify helper
+    // reads a host file, and a tenant log is not one.
+    var log_override: ?[]const u8 = null;
+    var log_total: ?usize = null;
+    if (args.guest) |job| {
+        if (guest_jobs.readDelta(a, job, args.log_path, 0, bg_proc.completion_log_cap_bytes)) |delta| {
+            log_override = delta.bytes;
+            log_total = @intCast(@max(delta.total_bytes, 0));
+        } else |_| {
+            // Unreadable (the VM is gone, or the log with it): the note already
+            // says why the job ended, and the helper reports the missing log.
+        }
+    }
+
     const notified = cleanup.notifySingleBackgroundCompletion(.{
         .allocator = a,
         .io = args.io,
@@ -102,6 +164,10 @@ pub fn watchAndNotify(args: WatchCoreArgs) bool {
         .pid_str = args.pid_str,
         .command = args.command,
         .log_path = args.log_path,
+        .log_content = log_override,
+        .log_total_bytes = log_total,
+        .home = if (args.guest) |job| bg_proc.JobHome.guest(job.vm_id, job.guest_pid) else bg_proc.JobHome.host(),
+        .note = note orelse "",
     });
     if (!notified) return false;
 
@@ -130,6 +196,10 @@ const WatchArgs = struct {
     max_iters: usize,
     /// Mirrors `WatchCoreArgs.notify` — see that field.
     notify: bool,
+    /// Owned copy of the workspace VM id for a guest job, or null for a host
+    /// pid.
+    guest_vm_id: ?[]u8,
+    guest_pid: u32,
 };
 
 /// Io-task entry — owns the dupes, frees them on exit. Never panics.
@@ -142,6 +212,7 @@ fn watchFn(args: WatchArgs) void {
     defer gpa.free(args.pid_str);
     defer gpa.free(args.command);
     defer gpa.free(args.log_path);
+    defer if (args.guest_vm_id) |vm_id| gpa.free(vm_id);
 
     // Per-watch arena for the notify buffers (insertQueueMessage binds
     // synchronously, so arena lifetime covering the call is enough).
@@ -163,6 +234,10 @@ fn watchFn(args: WatchArgs) void {
         .poll_interval_ns = args.poll_interval_ns,
         .max_iters = args.max_iters,
         .notify = args.notify,
+        .guest = if (args.guest_vm_id) |vm_id| guest_jobs.GuestJob{
+            .vm_id = vm_id,
+            .guest_pid = args.guest_pid,
+        } else null,
     });
     // A service is deliberately silent, so there is nobody to wake: the loop
     // exists to reap the child and record that it exited.
@@ -178,7 +253,7 @@ pub fn spawnCompletionWatcher(
     command: []const u8,
     log_path: []const u8,
 ) void {
-    spawnWatcherWithPoll(di, session_id, pid, command, log_path, watcher_poll_interval_ns, watcher_max_iters, true);
+    spawnWatcherWithPoll(di, session_id, pid, command, log_path, watcher_poll_interval_ns, watcher_max_iters, true, null);
 }
 
 /// Schedule the SILENT reaper for a `mode="background_persistence"` process.
@@ -189,7 +264,21 @@ pub fn spawnServiceReaper(
     command: []const u8,
     log_path: []const u8,
 ) void {
-    spawnWatcherWithPoll(di, session_id, pid, command, log_path, watcher_poll_interval_ns, service_reaper_max_iters, false);
+    spawnWatcherWithPoll(di, session_id, pid, command, log_path, watcher_poll_interval_ns, service_reaper_max_iters, false, null);
+}
+
+/// Schedule the watcher for a job that runs in a workspace VM. `pid` is the
+/// GUEST pid, and the loop asks the manager about it — never the host.
+pub fn spawnGuestWatcher(
+    di: *pabrikcore.App,
+    session_id: []const u8,
+    guest: guest_jobs.GuestJob,
+    command: []const u8,
+    log_path: []const u8,
+    notify: bool,
+) void {
+    const max_iters = if (notify) watcher_max_iters else service_reaper_max_iters;
+    spawnWatcherWithPoll(di, session_id, guest.guest_pid, command, log_path, watcher_poll_interval_ns, max_iters, notify, guest);
 }
 
 /// Schedule with an explicit poll interval / cap (test hook; production passes
@@ -203,7 +292,7 @@ pub fn spawnCompletionWatcherWithPoll(
     poll_interval_ns: u64,
     max_iters: usize,
 ) void {
-    spawnWatcherWithPoll(di, session_id, pid, command, log_path, poll_interval_ns, max_iters, true);
+    spawnWatcherWithPoll(di, session_id, pid, command, log_path, poll_interval_ns, max_iters, true, null);
 }
 
 fn spawnWatcherWithPoll(
@@ -215,6 +304,7 @@ fn spawnWatcherWithPoll(
     poll_interval_ns: u64,
     max_iters: usize,
     notify: bool,
+    guest: ?guest_jobs.GuestJob,
 ) void {
     const gpa = di.allocator;
     const sid = gpa.dupe(u8, session_id) catch return;
@@ -225,6 +315,8 @@ fn spawnWatcherWithPoll(
     errdefer gpa.free(lp);
     const pid_str = std.fmt.allocPrint(gpa, "{d}", .{pid}) catch return;
     errdefer gpa.free(pid_str);
+    const guest_vm_id: ?[]u8 = if (guest) |job| (gpa.dupe(u8, job.vm_id) catch return) else null;
+    errdefer if (guest_vm_id) |vm_id| gpa.free(vm_id);
 
     const args = WatchArgs{
         .di = di,
@@ -236,6 +328,8 @@ fn spawnWatcherWithPoll(
         .poll_interval_ns = poll_interval_ns,
         .max_iters = max_iters,
         .notify = notify,
+        .guest_vm_id = guest_vm_id,
+        .guest_pid = if (guest) |job| job.guest_pid else 0,
     };
     // Fire-and-forget on the process-lifetime group (same as
     // `group_emit_session_create` — never awaited or cancelled).
@@ -244,6 +338,7 @@ fn spawnWatcherWithPoll(
         gpa.free(cmd);
         gpa.free(lp);
         gpa.free(pid_str);
+        if (guest_vm_id) |vm_id| gpa.free(vm_id);
         return;
     };
 }
@@ -297,7 +392,7 @@ test "watchAndNotify notifies a dead PID immediately then deletes the row" {
     // 999_999_999 is virtually guaranteed to NOT exist — the first
     // isProcessRunning check breaks immediately, no sleep.
     const dead_pid: u32 = 999_999_999;
-    try bg_proc.save(&ctx.db, testing.allocator, "s_watch", dead_pid, "sleep 30", log_path, 1, bg_proc.KIND_JOB);
+    try bg_proc.save(&ctx.db, testing.allocator, "s_watch", dead_pid, "sleep 30", log_path, 1, bg_proc.KIND_JOB, .{});
 
     const done = watchAndNotify(.{
         .allocator = testing.allocator,
@@ -349,7 +444,7 @@ test "watchAndNotify: notify=false writes NO queue message and marks the row exi
     defer testing.allocator.free(log_path);
 
     const dead_pid: u32 = 999_999_999;
-    try bg_proc.save(&ctx.db, testing.allocator, "s_svc", dead_pid, "pnpm run dev", log_path, 1, bg_proc.KIND_SERVICE);
+    try bg_proc.save(&ctx.db, testing.allocator, "s_svc", dead_pid, "pnpm run dev", log_path, 1, bg_proc.KIND_SERVICE, .{});
 
     const done = watchAndNotify(.{
         .allocator = testing.allocator,
@@ -403,7 +498,7 @@ test "watchAndNotify: the same run with notify=true DOES queue — the control" 
     defer testing.allocator.free(log_path);
 
     const dead_pid: u32 = 999_999_998;
-    try bg_proc.save(&ctx.db, testing.allocator, "s_job", dead_pid, "zig build", log_path, 1, bg_proc.KIND_JOB);
+    try bg_proc.save(&ctx.db, testing.allocator, "s_job", dead_pid, "zig build", log_path, 1, bg_proc.KIND_JOB, .{});
 
     const done = watchAndNotify(.{
         .allocator = testing.allocator,

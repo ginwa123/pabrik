@@ -759,6 +759,7 @@ test "execute run path surfaces an auth-failure stderr instead of not-found" {
 
 const pabrikcore = @import("pabrikcore");
 const tools = @import("../../../agentic_loop/tools.zig");
+const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = pabrikcore.agent;
@@ -766,6 +767,10 @@ const llm_history = pabrikcore.llm_history;
 const exec_pr_provider = pabrikcore.pr_provider;
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+/// The guest git budget: what the module's own host spawns spend, so a reply
+/// that would fit on the host fits over the RPC too.
+const git_timeout_ms: u32 = 20_000;
+const git_output_bytes: usize = 256 * 1024;
 fn payloadString(inner_parsed: ?std.json.Parsed(std.json.Value), field: []const u8) ?[]const u8 {
     const p = inner_parsed orelse return null;
     if (p.value != .object) return null;
@@ -775,10 +780,24 @@ fn payloadString(inner_parsed: ?std.json.Parsed(std.json.Value), field: []const 
     return v.string;
 }
 
-/// Best-effort provider sniff from the worktree's own `origin` remote.
-/// Returns null when there is no origin, git cannot be asked, or the remote
-/// names no known forge.
-fn providerFromOrigin(allocator: std.mem.Allocator, io: std.Io, worktree_path: []const u8) ?exec_pr_provider.PrProvider {
+/// Best-effort provider sniff from the worktree's own `origin` remote, or null
+/// when there is no origin, git cannot be asked, or the remote names no known
+/// forge. A non-null `guest` asks the workspace's VM, never the host.
+pub fn providerFromOrigin(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    worktree_path: []const u8,
+    guest: ?*const workspace_fs.Fs,
+) ?exec_pr_provider.PrProvider {
+    const url = if (guest) |fs| guestOriginUrl(allocator, fs, worktree_path) else hostOriginUrl(allocator, io, worktree_path);
+    const raw = url orelse return null;
+    defer allocator.free(raw);
+    const p = exec_pr_provider.detectProviderFromRemote(raw);
+    if (p == .generic) return null;
+    return p;
+}
+
+fn hostOriginUrl(allocator: std.mem.Allocator, io: std.Io, worktree_path: []const u8) ?[]u8 {
     const res = std.process.run(allocator, io, .{
         .argv = &.{ "git", "-C", worktree_path, "remote", "get-url", "origin" },
     }) catch return null;
@@ -789,9 +808,16 @@ fn providerFromOrigin(allocator: std.mem.Allocator, io: std.Io, worktree_path: [
     if (res.term.exited != 0) return null;
     const url = std.mem.trim(u8, res.stdout, " \n\r");
     if (url.len == 0) return null;
-    const p = exec_pr_provider.detectProviderFromRemote(url);
-    if (p == .generic) return null;
-    return p;
+    return allocator.dupe(u8, url) catch null;
+}
+
+fn guestOriginUrl(allocator: std.mem.Allocator, fs: *const workspace_fs.Fs, worktree_path: []const u8) ?[]u8 {
+    const exec = fs.runGit(worktree_path, &.{ "remote", "get-url", "origin" }, git_timeout_ms, git_output_bytes) catch return null;
+    defer exec.deinit(allocator);
+    if (exec.timed_out or exec.code != 0) return null;
+    const url = std.mem.trim(u8, exec.stdout, " \n\r");
+    if (url.len == 0) return null;
+    return allocator.dupe(u8, url) catch null;
 }
 
 pub fn execStatusPullRequest(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
@@ -817,6 +843,12 @@ pub fn execStatusPullRequest(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExec
     // otherwise the session's own directory. The forge CLIs resolve the
     // repo (and the current branch's PR/MR) from the cwd they run in.
     const worktree_path = ctx.cwd_override orelse ctx.cwd;
+
+    // Which git may be asked about this tree. Under `--saas` that is the
+    // workspace's VM or nobody: a workspace whose VM is down answers nothing.
+    var route = workspace_fs.routeForSession(ctx.allocator, ctx.db, ctx.session_id);
+    defer route.deinit();
+    const guest = route.guestFs();
 
     // Which PR/MR: explicit arg wins; otherwise the session binding from
     // `set_pull_request`. Neither means there is nothing to report on.
@@ -868,10 +900,10 @@ pub fn execStatusPullRequest(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExec
     } else if (owned_binding_provider) |bp| {
         if (bp.len > 0) {
             if (exec_pr_provider.PrProvider.fromString(bp)) |p| provider = p;
-        } else if (providerFromOrigin(ctx.allocator, ctx.io, worktree_path)) |p| {
+        } else if (providerFromOrigin(ctx.allocator, ctx.io, worktree_path, guest)) |p| {
             provider = p;
         }
-    } else if (providerFromOrigin(ctx.allocator, ctx.io, worktree_path)) |p| {
+    } else if (providerFromOrigin(ctx.allocator, ctx.io, worktree_path, guest)) |p| {
         provider = p;
     }
 
@@ -1028,4 +1060,46 @@ test "execStatusPullRequest: session binding supplies the PR when pr_url is empt
     // not, the error would say "no pull request bound" instead.
     try testing.expect(std.mem.indexOf(u8, err_text, "no pull request bound") == null);
     try testing.expect(std.mem.indexOf(u8, err_text, "generic") != null);
+}
+
+test "providerFromOrigin: a guest answers the question, and never the host's git" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const path_len = try tmp.dir.realPath(std.testing.io, &buf);
+    const repo = try allocator.dupe(u8, buf[0..path_len]);
+    defer allocator.free(repo);
+
+    const init = std.process.run(allocator, std.testing.io, .{ .argv = &.{ "git", "init", "-q", repo } }) catch
+        return error.SkipZigTest;
+    defer {
+        allocator.free(init.stdout);
+        allocator.free(init.stderr);
+    }
+    if (init.term.exited != 0) return error.SkipZigTest;
+    const remote = std.process.run(allocator, std.testing.io, .{
+        .argv = &.{ "git", "-C", repo, "remote", "add", "origin", "https://github.com/acme/app.git" },
+    }) catch return error.SkipZigTest;
+    defer {
+        allocator.free(remote.stdout);
+        allocator.free(remote.stderr);
+    }
+    if (remote.term.exited != 0) return error.SkipZigTest;
+
+    // No guest: the host's git reads the origin, as it always has.
+    try std.testing.expectEqual(
+        exec_pr_provider.PrProvider.github,
+        providerFromOrigin(allocator, std.testing.io, repo, null).?,
+    );
+
+    // With a guest that cannot answer, there is no provider — where the host's
+    // git, if it were asked, would have said github.
+    var fs = workspace_fs.Fs{
+        .allocator = allocator,
+        .workspace_id = @constCast("w1"),
+        .root = @constCast(repo),
+        .socket = @constCast("/nonexistent/pabrik-vmd.sock"),
+    };
+    try std.testing.expect(providerFromOrigin(allocator, std.testing.io, repo, &fs) == null);
 }

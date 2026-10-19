@@ -1,0 +1,142 @@
+# The guest rootfs image is a shipped artifact, and it is only correct when it
+# is built as ROOT: a rootless build cannot restore root ownership, so the whole
+# base lands owned by the builder's uid and a guest workload can rewrite
+# /bin/busybox (docs/plans/2026-10-17-workspace-is-a-microvm.md §21).
+#
+# So this job builds each tier inside the pinned builder container and then
+# asserts, by reading the sealed image, that /init, /bin/busybox and the tier's
+# payload are present and owned by 0:0. No /dev/kvm, no root on the runner, no
+# loop mount: everything a hosted runner can do, so it runs on every PR that
+# can change the image.
+#
+# It is a visible check, deliberately NOT part of ci.yml's `ci-ok`: `ci-ok` is
+# the one required check, and a new heavy job there blocks every merge the day
+# it flakes. Promote it into branch protection once it has a green history.
+name: vm-image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/guest-image.manifest'
+      - 'scripts/build-guest-image.sh'
+      - 'scripts/check-guest-image.sh'
+      - 'scripts/resolve-guest-packages.sh'
+      - 'scripts/vm_guest_client.py'
+      - 'scripts/vm-guest-bench.py'
+      - 'scripts/vm-guest-probe.py'
+      - 'src/vm_agent/**'
+      - 'src/vmd/**'
+      - 'build.zig'
+      - '.github/workflows/ci-vm-image.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/guest-image.manifest'
+      - 'scripts/build-guest-image.sh'
+      - 'scripts/check-guest-image.sh'
+      - 'scripts/resolve-guest-packages.sh'
+      - 'scripts/vm_guest_client.py'
+      - 'scripts/vm-guest-bench.py'
+      - 'scripts/vm-guest-probe.py'
+      - 'src/vm_agent/**'
+      - 'src/vmd/**'
+      - 'build.zig'
+      - '.github/workflows/ci-vm-image.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  ZIG_VERSION: 0.16.0
+
+jobs:
+  # The supply-chain parsers are the part of this pipeline a typo breaks, and
+  # they are pure: every assertion below runs with no network, no root and no
+  # container, so it cannot be flaky.
+  selftest:
+    name: image scripts (selftest)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: The manifest, the tiers and the refusal rules
+        run: scripts/build-guest-image.sh --selftest
+
+      - name: The APKINDEX parse and the package pin format
+        run: scripts/resolve-guest-packages.sh --selftest
+
+      - name: The inode-field parse behind the ownership check
+        run: scripts/check-guest-image.sh --selftest
+
+      - name: The vsock framing and the exec reply loop
+        run: scripts/vm_guest_client.py --selftest
+
+      - name: The tarball arithmetic, the plan and the report
+        run: scripts/vm-guest-bench.py --selftest
+
+  guest-image:
+    name: guest image (${{ matrix.tier }}, root in a container)
+    runs-on: ubuntu-24.04
+    # Cold cache: ~400 MB of pinned packages for dev, then a 2 GiB image.
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        tier: [base, dev]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Zig ${{ env.ZIG_VERSION }}
+        uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: Install e2fsprogs
+        # Only `debugfs` is needed on the runner: mkfs.ext4 and e2fsck run
+        # inside the builder container, and the assertions below read the
+        # finished image rather than mounting it.
+        run: sudo apt-get update && sudo apt-get install -y e2fsprogs
+
+      - name: Cache the pinned artefacts
+        # Keyed on the manifest, which IS the artifact list: an unchanged
+        # manifest can never need a different byte, and verification runs on
+        # every build whether the file came from the cache or the network.
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pabrik-vm
+          key: v1-pabrik-vm-${{ hashFiles('scripts/guest-image.manifest') }}
+
+      - name: Build the agent, the probe and the manager
+        run: zig build vm -Doptimize=ReleaseSmall
+
+      - name: Build the ${{ matrix.tier }} image as root in a container
+        run: |
+          scripts/build-guest-image.sh \
+            --out "$RUNNER_TEMP/${{ matrix.tier }}.ext4" \
+            --tier "${{ matrix.tier }}" \
+            --probe zig-out/bin/pabrik-probe \
+            --in-container
+
+      - name: Assert what the image ships
+        run: |
+          scripts/check-guest-image.sh \
+            --image "$RUNNER_TEMP/${{ matrix.tier }}.ext4" \
+            --tier "${{ matrix.tier }}" \
+            --require /bin/pabrik-probe
+
+      - name: Record the image hash
+        run: |
+          {
+            echo "### guest image: ${{ matrix.tier }}"
+            echo
+            echo "sha256 \`$(sha256sum "$RUNNER_TEMP/${{ matrix.tier }}.ext4" | cut -d' ' -f1)\`"
+          } >> "$GITHUB_STEP_SUMMARY"

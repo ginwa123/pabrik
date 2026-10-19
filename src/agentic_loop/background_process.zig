@@ -21,6 +21,11 @@ pub const ProcessInfo = struct {
     /// (migration 108). Without it every read would hand the model the same
     /// head of the file again.
     last_read_offset: i64 = 0,
+    /// The workspace VM this job ran in (migration 113). Empty means `pid` is a
+    /// pid on THIS host.
+    vm_id: []const u8 = "",
+    /// The job's pid INSIDE that VM. Meaningful only when `vm_id` is set.
+    guest_pid: u32 = 0,
 };
 
 /// The two `kind` values, as constants so no call site spells them inline.
@@ -46,30 +51,55 @@ pub fn freeProcessInfo(allocator: std.mem.Allocator, p: ProcessInfo) void {
     allocator.free(p.log_path);
     allocator.free(p.status);
     allocator.free(p.kind);
+    allocator.free(p.vm_id);
 }
 
 const SqliteBackend = sqlite.SqliteBackend;
 
+/// Where a detached job's pid lives: this host, or the VM of a workspace. The
+/// row's `pid` is the host pid for `.host()` and the guest pid for `.guest()`;
+/// `guest_pid` repeats it so a reader never has to guess.
+pub const JobHome = struct {
+    vm_id: []const u8 = "",
+    guest_pid: u32 = 0,
+
+    pub fn host() JobHome {
+        return .{};
+    }
+
+    pub fn guest(vm_id: []const u8, pid: u32) JobHome {
+        return .{ .vm_id = vm_id, .guest_pid = pid };
+    }
+
+    pub fn isGuest(self: JobHome) bool {
+        return self.vm_id.len > 0;
+    }
+};
+
 /// Save a new background process to the database. `kind` is `KIND_JOB` or
-/// `KIND_SERVICE` — see migration 107.
-pub fn save(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []const u8, pid: u32, command: []const u8, log_path: []const u8, started_at: i64, kind: []const u8) !void {
+/// `KIND_SERVICE` — see migration 107; `home` says whether the pid is this
+/// host's or a workspace VM's — see migration 113.
+pub fn save(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []const u8, pid: u32, command: []const u8, log_path: []const u8, started_at: i64, kind: []const u8, home: JobHome) !void {
     const pid_str = try std.fmt.allocPrint(allocator, "{}", .{pid});
     defer allocator.free(pid_str);
 
     const started_at_str = try std.fmt.allocPrint(allocator, "{}", .{started_at});
     defer allocator.free(started_at_str);
 
+    const guest_pid_str = try std.fmt.allocPrint(allocator, "{}", .{home.guest_pid});
+    defer allocator.free(guest_pid_str);
+
     const kind_value: []const u8 = if (kind.len == 0) KIND_JOB else kind;
 
     try db.exec(allocator,
-        \\INSERT OR REPLACE INTO session_background_process (session_id, pid, command, log_path, started_at, status, kind)
-        \\VALUES (?, ?, ?, ?, ?, 'running', ?)
-    , &.{ session_id, pid_str, command, log_path, started_at_str, kind_value });
+        \\INSERT OR REPLACE INTO session_background_process (session_id, pid, command, log_path, started_at, status, kind, vm_id, guest_pid)
+        \\VALUES (?, ?, ?, ?, ?, 'running', ?, ?, ?)
+    , &.{ session_id, pid_str, command, log_path, started_at_str, kind_value, home.vm_id, guest_pid_str });
 }
 
 /// Get all background processes for a session
 pub fn getBySession(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []const u8) ![]ProcessInfo {
-    var rows = try db.query(allocator, "SELECT pid, command, log_path, started_at, status, COALESCE(kind, 'job'), COALESCE(last_read_offset, 0) FROM session_background_process WHERE session_id = ?", &.{session_id});
+    var rows = try db.query(allocator, "SELECT pid, command, log_path, started_at, status, COALESCE(kind, 'job'), COALESCE(last_read_offset, 0), COALESCE(vm_id, ''), COALESCE(guest_pid, 0) FROM session_background_process WHERE session_id = ?", &.{session_id});
     defer rows.deinit();
 
     var processes = std.ArrayList(ProcessInfo).empty;
@@ -101,6 +131,8 @@ pub fn getBySession(db: *SqliteBackend, allocator: std.mem.Allocator, session_id
             .status = try allocator.dupe(u8, status),
             .kind = try allocator.dupe(u8, row.values[5]),
             .last_read_offset = std.fmt.parseInt(i64, row.values[6], 10) catch 0,
+            .vm_id = try allocator.dupe(u8, row.values[7]),
+            .guest_pid = std.fmt.parseInt(u32, row.values[8], 10) catch 0,
         });
     }
 
@@ -129,7 +161,7 @@ pub fn delete(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []co
 /// `mode="background_persistence"` created.
 pub fn getServices(db: *SqliteBackend, allocator: std.mem.Allocator) ![]ProcessInfo {
     var rows = try db.query(allocator,
-        \\SELECT session_id, pid, command, log_path, started_at, status, COALESCE(kind, 'job'), COALESCE(last_read_offset, 0)
+        \\SELECT session_id, pid, command, log_path, started_at, status, COALESCE(kind, 'job'), COALESCE(last_read_offset, 0), COALESCE(vm_id, ''), COALESCE(guest_pid, 0)
         \\FROM session_background_process
         \\WHERE kind = 'service'
     , &[_][]const u8{});
@@ -162,6 +194,8 @@ pub fn getServices(db: *SqliteBackend, allocator: std.mem.Allocator) ![]ProcessI
             .status = try allocator.dupe(u8, status),
             .kind = try allocator.dupe(u8, row.values[6]),
             .last_read_offset = std.fmt.parseInt(i64, row.values[7], 10) catch 0,
+            .vm_id = try allocator.dupe(u8, row.values[8]),
+            .guest_pid = std.fmt.parseInt(u32, row.values[9], 10) catch 0,
         });
     }
 
@@ -214,7 +248,7 @@ pub fn getByPid(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []
     defer allocator.free(pid_str);
 
     var rows = try db.query(allocator,
-        \\SELECT pid, command, log_path, started_at, status, COALESCE(kind, 'job'), COALESCE(last_read_offset, 0)
+        \\SELECT pid, command, log_path, started_at, status, COALESCE(kind, 'job'), COALESCE(last_read_offset, 0), COALESCE(vm_id, ''), COALESCE(guest_pid, 0)
         \\FROM session_background_process
         \\WHERE session_id = ? AND pid = ?
     , &.{ session_id, pid_str });
@@ -232,6 +266,8 @@ pub fn getByPid(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []
         .status = try allocator.dupe(u8, row.values[4]),
         .kind = try allocator.dupe(u8, row.values[5]),
         .last_read_offset = std.fmt.parseInt(i64, row.values[6], 10) catch 0,
+        .vm_id = try allocator.dupe(u8, row.values[7]),
+        .guest_pid = std.fmt.parseInt(u32, row.values[8], 10) catch 0,
     };
 }
 
@@ -486,7 +522,9 @@ pub fn readLogTruncated(
     };
 }
 
-/// Build the queue message payload for a finished background command.
+/// Build the queue message payload for a finished background command. `home`
+/// and `note` are what a guest job adds, and both are omitted when they say
+/// nothing: a host job's envelope is byte-for-byte what it was.
 pub fn buildCompletionMessage(
     allocator: std.mem.Allocator,
     command: []const u8,
@@ -495,6 +533,8 @@ pub fn buildCompletionMessage(
     was_truncated: bool,
     total_bytes: usize,
     log_path: []const u8,
+    home: JobHome,
+    note: []const u8,
 ) ![]u8 {
     const sanitize = @import("helpers").sanitize_control_chars;
     const inner: []const u8 = if (log_content_truncated.len == 0) "(empty output)" else log_content_truncated;
@@ -503,32 +543,43 @@ pub fn buildCompletionMessage(
     defer allocator.free(clean_command);
     const clean_stdout = try sanitize(allocator, inner);
     defer allocator.free(clean_stdout);
-
-    if (!was_truncated) {
-        return std.json.Stringify.valueAlloc(allocator, .{
-            .pid = pid,
-            .command = clean_command,
-            .stdout = clean_stdout,
-            .truncated = false,
-            .total_bytes = @as(?usize, null),
-            .log_path = @as(?[]const u8, null),
-        }, .{});
-    }
-
     const clean_log_path = try sanitize(allocator, log_path);
     defer allocator.free(clean_log_path);
-    return std.json.Stringify.valueAlloc(allocator, .{
-        .pid = pid,
-        .command = clean_command,
-        .stdout = clean_stdout,
-        .truncated = true,
-        .total_bytes = total_bytes,
-        .log_path = clean_log_path,
-    }, .{});
+    const clean_note = try sanitize(allocator, note);
+    defer allocator.free(clean_note);
+
+    var aw: std.Io.Writer.Allocating = .init(allocator);
+    errdefer aw.deinit();
+    var jw = std.json.Stringify{ .writer = &aw.writer };
+    try jw.beginObject();
+    try jw.objectField("pid");
+    try jw.write(pid);
+    try jw.objectField("command");
+    try jw.write(clean_command);
+    try jw.objectField("stdout");
+    try jw.write(clean_stdout);
+    try jw.objectField("truncated");
+    try jw.write(was_truncated);
+    try jw.objectField("total_bytes");
+    if (was_truncated) try jw.write(total_bytes) else try jw.write(null);
+    try jw.objectField("log_path");
+    if (was_truncated) try jw.write(clean_log_path) else try jw.write(null);
+    if (home.isGuest()) {
+        try jw.objectField("vm_id");
+        try jw.write(home.vm_id);
+        try jw.objectField("guest_pid");
+        try jw.write(home.guest_pid);
+    }
+    if (note.len > 0) {
+        try jw.objectField("note");
+        try jw.write(clean_note);
+    }
+    try jw.endObject();
+    return aw.toOwnedSlice();
 }
 
 test "buildCompletionMessage renders the JSON payload" {
-    const msg = try buildCompletionMessage(testing.allocator, "sleep 10", 1234, "hello\nworld", false, 11, "/tmp/x.log");
+    const msg = try buildCompletionMessage(testing.allocator, "sleep 10", 1234, "hello\nworld", false, 11, "/tmp/x.log", .{}, "");
     defer testing.allocator.free(msg);
     const parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, msg, .{});
     defer parsed.deinit();
@@ -542,7 +593,7 @@ test "buildCompletionMessage renders the JSON payload" {
 }
 
 test "buildCompletionMessage maps empty log content to (empty output)" {
-    const msg = try buildCompletionMessage(testing.allocator, "true", 42, "", false, 0, "/tmp/x.log");
+    const msg = try buildCompletionMessage(testing.allocator, "true", 42, "", false, 0, "/tmp/x.log", .{}, "");
     defer testing.allocator.free(msg);
     const parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, msg, .{});
     defer parsed.deinit();
@@ -550,7 +601,7 @@ test "buildCompletionMessage maps empty log content to (empty output)" {
 }
 
 test "buildCompletionMessage carries truncation fields when truncated" {
-    const msg = try buildCompletionMessage(testing.allocator, "make", 7, "partial", true, 99999, "/tmp/full.log");
+    const msg = try buildCompletionMessage(testing.allocator, "make", 7, "partial", true, 99999, "/tmp/full.log", .{}, "");
     defer testing.allocator.free(msg);
     const parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, msg, .{});
     defer parsed.deinit();
@@ -561,13 +612,63 @@ test "buildCompletionMessage carries truncation fields when truncated" {
 }
 
 test "buildCompletionMessage preserves metacharacters verbatim in JSON strings" {
-    const msg = try buildCompletionMessage(testing.allocator, "echo <a>&", 9, "it's \"done\"", false, 12, "/tmp/x.log");
+    const msg = try buildCompletionMessage(testing.allocator, "echo <a>&", 9, "it's \"done\"", false, 12, "/tmp/x.log", .{}, "");
     defer testing.allocator.free(msg);
     const parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, msg, .{});
     defer parsed.deinit();
     const obj = parsed.value.object;
     try testing.expectEqualStrings("echo <a>&", obj.get("command").?.string);
     try testing.expectEqualStrings("it's \"done\"", obj.get("stdout").?.string);
+}
+
+test "buildCompletionMessage: a host job's envelope is unchanged, with no guest fields" {
+    const msg = try buildCompletionMessage(testing.allocator, "zig build", 5, "ok", false, 2, "/tmp/x.log", .{}, "");
+    defer testing.allocator.free(msg);
+    // Byte-for-byte the shape every existing reader expects.
+    try testing.expectEqualStrings(
+        \\{"pid":5,"command":"zig build","stdout":"ok","truncated":false,"total_bytes":null,"log_path":null}
+    , msg);
+}
+
+test "buildCompletionMessage: a guest job names its VM and its guest pid" {
+    const msg = try buildCompletionMessage(
+        testing.allocator,
+        "zig build",
+        77,
+        "ok",
+        false,
+        2,
+        "/tmp/pabrik/bg_1.log",
+        JobHome.guest("ws_1", 77),
+        "",
+    );
+    defer testing.allocator.free(msg);
+    const parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, msg, .{});
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+    try testing.expectEqualStrings("ws_1", obj.get("vm_id").?.string);
+    try testing.expectEqual(@as(i64, 77), obj.get("guest_pid").?.integer);
+    // A host job would carry neither key, so a reader can tell them apart.
+    try testing.expect(obj.get("note") == null);
+}
+
+test "buildCompletionMessage: the note is what makes a VM stop visible" {
+    const msg = try buildCompletionMessage(
+        testing.allocator,
+        "zig build",
+        77,
+        "",
+        false,
+        0,
+        "/tmp/pabrik/bg_1.log",
+        JobHome.guest("ws_1", 77),
+        "VM stopped - job ended",
+    );
+    defer testing.allocator.free(msg);
+    const parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, msg, .{});
+    defer parsed.deinit();
+    try testing.expectEqualStrings("VM stopped - job ended", parsed.value.object.get("note").?.string);
+    try testing.expectEqualStrings("(empty output)", parsed.value.object.get("stdout").?.string);
 }
 
 test "readLogTruncated returns FileNotFound for a missing file" {
@@ -711,7 +812,7 @@ test "readDelta returns the whole log once, then only what is new" {
     defer testing.allocator.free(log_path);
 
     const pid: u32 = 4242;
-    try save(&ctx.db, testing.allocator, "s1", pid, "pnpm run dev", log_path, 1, KIND_SERVICE);
+    try save(&ctx.db, testing.allocator, "s1", pid, "pnpm run dev", log_path, 1, KIND_SERVICE, .{});
 
     // First read: the stored cursor is 0, so everything is new.
     const first = try readDelta(testing.allocator, io, &ctx.db, "s1", pid, log_path, 0, 4096);
@@ -761,7 +862,7 @@ test "readDelta caps one read and says more is waiting" {
     defer testing.allocator.free(log_path);
 
     const pid: u32 = 7;
-    try save(&ctx.db, testing.allocator, "s2", pid, "build", log_path, 1, KIND_JOB);
+    try save(&ctx.db, testing.allocator, "s2", pid, "build", log_path, 1, KIND_JOB, .{});
 
     const first = try readDelta(testing.allocator, io, &ctx.db, "s2", pid, log_path, 0, 10);
     defer first.free(testing.allocator);
@@ -788,7 +889,7 @@ test "readDelta recovers from a cursor past EOF instead of going silent for ever
     defer testing.allocator.free(log_path);
 
     const pid: u32 = 11;
-    try save(&ctx.db, testing.allocator, "s3", pid, "watch", log_path, 1, KIND_SERVICE);
+    try save(&ctx.db, testing.allocator, "s3", pid, "watch", log_path, 1, KIND_SERVICE, .{});
 
     const read = try readDelta(testing.allocator, io, &ctx.db, "s3", pid, log_path, 9999, 4096);
     defer read.free(testing.allocator);
@@ -805,7 +906,7 @@ test "readDelta reports a missing log as `missing`, not as empty output" {
     const io = ctx.threaded.io();
 
     const pid: u32 = 12;
-    try save(&ctx.db, testing.allocator, "s4", pid, "gone", "/tmp/pabrik-process-never-created.log", 1, KIND_JOB);
+    try save(&ctx.db, testing.allocator, "s4", pid, "gone", "/tmp/pabrik-process-never-created.log", 1, KIND_JOB, .{});
 
     const read = try readDelta(testing.allocator, io, &ctx.db, "s4", pid, "/tmp/pabrik-process-never-created.log", 0, 4096);
     defer read.free(testing.allocator);
@@ -820,9 +921,9 @@ test "getByPid refuses a pid that belongs to another session" {
     var ctx = try setupCtx();
     defer ctx.deinit();
 
-    try save(&ctx.db, testing.allocator, "owner", 99, "pnpm run dev", "/tmp/x.log", 1, KIND_SERVICE);
+    try save(&ctx.db, testing.allocator, "owner", 99, "pnpm run dev", "/tmp/x.log", 1, KIND_SERVICE, .{});
     // A second session that "knows" the pid.
-    try save(&ctx.db, testing.allocator, "intruder", 100, "other", "/tmp/y.log", 1, KIND_JOB);
+    try save(&ctx.db, testing.allocator, "intruder", 100, "other", "/tmp/y.log", 1, KIND_JOB, .{});
 
     // Every non-null answer owns its strings — free them, or the DebugAllocator
     // reports this test as a leak (which is how CI caught it).
@@ -838,6 +939,33 @@ test "getByPid refuses a pid that belongs to another session" {
     } else return error.TestUnexpectedResult;
 }
 
+test "save: a guest job records the VM and the pid inside it, and reads back" {
+    var ctx = try setupCtx();
+    defer ctx.deinit();
+
+    try save(&ctx.db, testing.allocator, "s_guest", 77, "zig build", "/tmp/pabrik/bg_1.log", 1, KIND_JOB, JobHome.guest("ws_1", 77));
+
+    const row = (try getByPid(&ctx.db, testing.allocator, "s_guest", 77)) orelse return error.RowMissing;
+    defer freeProcessInfo(testing.allocator, row);
+    try testing.expectEqualStrings("ws_1", row.vm_id);
+    try testing.expectEqual(@as(u32, 77), row.guest_pid);
+    // The host pid column carries the guest pid for a guest row, so `list` and
+    // `read` keep working off one number.
+    try testing.expectEqual(@as(u32, 77), row.pid);
+}
+
+test "save: a host job leaves the guest columns at their default" {
+    var ctx = try setupCtx();
+    defer ctx.deinit();
+
+    try save(&ctx.db, testing.allocator, "s_host", 4242, "zig build", "/tmp/bg_9.log", 1, KIND_JOB, JobHome.host());
+
+    const row = (try getByPid(&ctx.db, testing.allocator, "s_host", 4242)) orelse return error.RowMissing;
+    defer freeProcessInfo(testing.allocator, row);
+    try testing.expectEqualStrings("", row.vm_id);
+    try testing.expectEqual(@as(u32, 0), row.guest_pid);
+}
+
 test "killServicesForShutdown touches services only, never a job" {
     var ctx = try setupCtx();
     defer ctx.deinit();
@@ -846,8 +974,8 @@ test "killServicesForShutdown touches services only, never a job" {
     // Both PIDs are dead, so nothing is actually signalled and the test asserts
     // the SELECTION — which is the part that decides whether a user's build is
     // killed.
-    try save(&ctx.db, testing.allocator, "s_svc", 999_999_901, "pnpm run dev", "/tmp/a.log", 1, KIND_SERVICE);
-    try save(&ctx.db, testing.allocator, "s_job", 999_999_902, "zig build", "/tmp/b.log", 2, KIND_JOB);
+    try save(&ctx.db, testing.allocator, "s_svc", 999_999_901, "pnpm run dev", "/tmp/a.log", 1, KIND_SERVICE, .{});
+    try save(&ctx.db, testing.allocator, "s_job", 999_999_902, "zig build", "/tmp/b.log", 2, KIND_JOB, .{});
 
     _ = try killServicesForShutdown(&ctx.db, io, testing.allocator);
 

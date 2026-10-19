@@ -27,6 +27,37 @@ pub fn parseDisposition(raw: ?[]const u8) !Disposition {
     return error.InvalidDisposition;
 }
 
+/// The only media types a browser may render from the app origin. A tenant's
+/// `.html` or `.svg` is an active document, so neither is ever in here; the
+/// list is raster images, pdf and media.
+const inline_allowlist = [_][]const u8{
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+    "image/x-icon",
+    "application/pdf",
+    "audio/mpeg",
+    "video/mp4",
+};
+
+/// Whether a media type may be rendered inline, ignoring any `; charset=…`.
+pub fn inlineAllowed(mime: []const u8) bool {
+    const semi = std.mem.indexOfScalar(u8, mime, ';') orelse mime.len;
+    const media_type = std.mem.trim(u8, mime[0..semi], " ");
+    for (inline_allowlist) |candidate| {
+        if (std.ascii.eqlIgnoreCase(candidate, media_type)) return true;
+    }
+    return false;
+}
+
+/// Inline is a REQUEST, never a right: a type outside the allowlist is served
+/// as an attachment whatever the caller asked for.
+pub fn effectiveDisposition(requested: Disposition, mime: []const u8) Disposition {
+    if (requested == .attachment) return .attachment;
+    return if (inlineAllowed(mime)) .inline_preview else .attachment;
+}
+
 const MimeEntry = struct {
     ext: []const u8,
     mime: []const u8,
@@ -193,20 +224,23 @@ pub fn filesDownloadHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
 
     const mime = mimeForPath(canon);
     const basename = std.fs.path.basename(canon);
+    const effective = effectiveDisposition(disposition, mime);
     // `withHeader` stores the slice by reference (same as `setContentType`
     // and every `makeErrorResponse` payload in this codebase) — do NOT free
     // it; it lives in the per-request allocator like all other handler
-    const disp_value = switch (disposition) {
+    const disp_value = switch (effective) {
         .attachment => try std.fmt.allocPrint(allocator, "attachment; filename=\"{s}\"", .{basename}),
         .inline_preview => try std.fmt.allocPrint(allocator, "inline; filename=\"{s}\"", .{basename}),
     };
 
     // `withBody` sets Content-Length; `setContentType` sets Content-Type.
+    // `nosniff` is unconditional: the extension-derived type must never be
+    // re-interpreted by the browser into something renderable.
     var resp = gserverz.HttpResponse.init(200, "OK", allocator).withBody(bytes).setContentType(mime).withHeader(
         "Content-Disposition",
         disp_value,
-    );
-    if (disposition == .inline_preview) {
+    ).withHeader("X-Content-Type-Options", "nosniff");
+    if (effective == .inline_preview) {
         resp = resp.withHeader("Cache-Control", "private, max-age=3600");
     } else {
         resp = resp.withHeader("Cache-Control", "no-store");
@@ -231,6 +265,39 @@ test "mimeForPath maps common extensions and falls back to octet-stream" {
     try testing.expectEqualStrings("application/pdf", mimeForPath("/a/doc.pdf"));
     try testing.expectEqualStrings("application/octet-stream", mimeForPath("/a/noext"));
     try testing.expectEqualStrings("application/octet-stream", mimeForPath("/a/file.unknownext"));
+}
+
+test "inlineAllowed: active documents are not renderable types" {
+    try testing.expect(inlineAllowed("image/png"));
+    try testing.expect(inlineAllowed("image/jpeg"));
+    try testing.expect(inlineAllowed("application/pdf"));
+    try testing.expect(inlineAllowed("video/mp4"));
+    try testing.expect(inlineAllowed("image/png; charset=binary"));
+
+    try testing.expect(!inlineAllowed("text/html; charset=utf-8"));
+    try testing.expect(!inlineAllowed("text/html"));
+    try testing.expect(!inlineAllowed("image/svg+xml"));
+    try testing.expect(!inlineAllowed("text/plain; charset=utf-8"));
+    try testing.expect(!inlineAllowed("application/javascript; charset=utf-8"));
+    try testing.expect(!inlineAllowed("application/octet-stream"));
+}
+
+test "effectiveDisposition: an inline request for an active document downloads" {
+    try testing.expectEqual(Disposition.attachment, effectiveDisposition(.inline_preview, "text/html; charset=utf-8"));
+    try testing.expectEqual(Disposition.attachment, effectiveDisposition(.inline_preview, "image/svg+xml"));
+    try testing.expectEqual(Disposition.attachment, effectiveDisposition(.inline_preview, "application/octet-stream"));
+    try testing.expectEqual(Disposition.inline_preview, effectiveDisposition(.inline_preview, "image/png"));
+    try testing.expectEqual(Disposition.inline_preview, effectiveDisposition(.inline_preview, "application/pdf"));
+    try testing.expectEqual(Disposition.attachment, effectiveDisposition(.attachment, "image/png"));
+}
+
+test "every mime the table can produce is classified, never left undefined" {
+    // An uploaded `.svg` is the stored-XSS case: mimeForPath knows it, and the
+    // disposition rule must still refuse to render it.
+    try testing.expectEqualStrings("image/svg+xml", mimeForPath("/a/logo.svg"));
+    try testing.expectEqual(Disposition.attachment, effectiveDisposition(.inline_preview, mimeForPath("/a/logo.svg")));
+    try testing.expectEqual(Disposition.attachment, effectiveDisposition(.inline_preview, mimeForPath("/a/x.html")));
+    try testing.expectEqual(Disposition.inline_preview, effectiveDisposition(.inline_preview, mimeForPath("/a/x.png")));
 }
 
 test "the shared rule is the one this endpoint applies" {

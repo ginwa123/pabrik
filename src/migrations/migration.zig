@@ -123,6 +123,7 @@ const migration_109 = @import("migration_109.zig");
 const migration_110 = @import("migration_110.zig");
 const migration_111 = @import("migration_111.zig");
 const migration_112 = @import("migration_112.zig");
+const migration_113 = @import("migration_113.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -237,6 +238,7 @@ pub const Migration109AddSkillCanAutoImprove = migration_109.Migration109AddSkil
 pub const Migration110AddTaskSkillName = migration_110.Migration110AddTaskSkillName;
 pub const Migration111AddKanbanTaskDependencies = migration_111.Migration111AddKanbanTaskDependencies;
 pub const Migration112RenameTaskSkillNames = migration_112.Migration112RenameTaskSkillNames;
+pub const Migration113AddGuestJobColumns = migration_113.Migration113AddGuestJobColumns;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -448,6 +450,7 @@ pub const allMigrations: []const Migration = &.{
     // becomes `skill_names` (`||`-joined). A rename, so existing rows and
     // the column's position both survive.
     .{ .version = Migration112RenameTaskSkillNames.version, .name = Migration112RenameTaskSkillNames.name, .up = Migration112RenameTaskSkillNames.up },
+    .{ .version = Migration113AddGuestJobColumns.version, .name = Migration113AddGuestJobColumns.name, .up = Migration113AddGuestJobColumns.up },
 };
 
 /// Register all migrations with a MigrationManager

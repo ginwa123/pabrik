@@ -70,7 +70,7 @@ pub const DiffView = struct {
 };
 
 /// Normalize CRLF (\r\n) to LF (\n), always returns a new allocation
-pub fn normalizeLineEndings(allocator: std.mem.Allocator, content: []u8) ![]u8 {
+pub fn normalizeLineEndings(allocator: std.mem.Allocator, content: []const u8) ![]u8 {
     if (std.mem.indexOf(u8, content, "\r\n") == null) {
         // No CRLF found — still allocate so caller always owns the result
         return try allocator.dupe(u8, content);
@@ -96,7 +96,7 @@ pub fn normalizeLineEndings(allocator: std.mem.Allocator, content: []u8) ![]u8 {
 }
 
 /// Strip trailing whitespace from each line, returns new allocation if needed
-fn stripTrailingWhitespace(allocator: std.mem.Allocator, content: []u8, had_crlf: bool) ![]u8 {
+fn stripTrailingWhitespace(allocator: std.mem.Allocator, content: []const u8, had_crlf: bool) ![]const u8 {
     const newline_char: u8 = if (had_crlf) '\r' else '\n';
     const newline: []const u8 = if (had_crlf) "\r\n" else "\n";
 
@@ -342,16 +342,51 @@ pub fn executeTextReplace(
     const file = try std.Io.Dir.cwd().openFile(io, path, .{});
     defer std.Io.File.close(file, io);
 
-    var raw = try std.Io.Dir.cwd().readFileAlloc(io, path, allocator, std.Io.Limit.limited(std.math.maxInt(usize)));
-    defer allocator.free(raw);
+    const on_disk = try std.Io.Dir.cwd().readFileAlloc(io, path, allocator, std.Io.Limit.limited(std.math.maxInt(usize)));
+    defer allocator.free(on_disk);
 
-    // Detect and normalize line endings (CRLF -> LF)
-    const had_crlf = std.mem.indexOf(u8, raw, "\r\n") != null;
-    if (had_crlf) {
-        const normalized = try normalizeLineEndings(allocator, raw);
-        allocator.free(raw);
-        raw = normalized;
+    var applied = try applyTextReplace(allocator, on_disk, old_str, new_str);
+    errdefer applied.deinit(allocator);
+
+    // Write back to file
+    const file_write = try std.Io.Dir.cwd().createFile(io, path, .{});
+    defer std.Io.File.close(file_write, io);
+    std.Io.File.writeStreamingAll(file_write, io, applied.content) catch return error.WriteFailed;
+
+    allocator.free(applied.content);
+    return TextReplaceResult{ .ok = {}, .diff_view = applied.diff_view };
+}
+
+/// What a replace does to BYTES: the file after the change, and the diff that
+/// describes it. Pure — which substrate read those bytes, and which will write
+/// them back, is not this function's business.
+pub const Applied = struct {
+    content: []u8,
+    diff_view: DiffView,
+
+    pub fn deinit(self: Applied, allocator: std.mem.Allocator) void {
+        allocator.free(self.content);
+        allocator.free(self.diff_view.unified);
+        allocator.free(self.diff_view.before);
+        allocator.free(self.diff_view.after);
     }
+};
+
+pub fn applyTextReplace(
+    allocator: std.mem.Allocator,
+    on_disk: []const u8,
+    old_str: []const u8,
+    new_str: []const u8,
+) !Applied {
+    // Detect and normalize line endings (CRLF -> LF)
+    const had_crlf = std.mem.indexOf(u8, on_disk, "\r\n") != null;
+    var normalized: ?[]u8 = null;
+    defer if (normalized) |n| allocator.free(n);
+    const raw = if (had_crlf) blk: {
+        const converted = try normalizeLineEndings(allocator, on_disk);
+        normalized = converted;
+        break :blk converted;
+    } else on_disk;
 
     // Find first occurrence
     const first = std.mem.indexOf(u8, raw, old_str) orelse {
@@ -435,18 +470,7 @@ pub fn executeTextReplace(
         try content.appendSlice(allocator, raw[first + old_str.len ..]);
     }
 
-    // Write back to file
-    const file_write = try std.Io.Dir.cwd().createFile(io, path, .{});
-    defer std.Io.File.close(file_write, io);
-
-    std.Io.File.writeStreamingAll(file_write, io, content.items) catch {
-        content.deinit(allocator);
-        return error.WriteFailed;
-    };
-
-    content.deinit(allocator);
-
-    return TextReplaceResult{ .ok = {}, .diff_view = diff_view };
+    return .{ .content = try content.toOwnedSlice(allocator), .diff_view = diff_view };
 }
 
 /// JSON payloads mirror the old XML tags 1:1: `path` plus the `diff_view`
@@ -2147,6 +2171,67 @@ const args_repair = @import("../../../agentic_loop/tools_args_repair.zig");
 const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
 const exec_path_validate = @import("helpers").path_validate;
 const testing = std.testing;
+const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
+
+/// The read, the change and the write happen in one place: under `--saas`
+/// both ends are the guest, so the host never opens the file and never writes
+/// it. Every other mode keeps today's host read and host write.
+fn replaceThrough(
+    ctx: ToolExecContext,
+    path_abs: []const u8,
+    old_str: []const u8,
+    new_str: []const u8,
+) !text_replace_mod.TextReplaceResult {
+    const guest = try workspace_fs.forSession(ctx.allocator, ctx.db, ctx.session_id);
+    if (guest) |handle| {
+        var fs = handle;
+        defer fs.deinit();
+        const bytes = fs.readAll(path_abs) catch |err| switch (err) {
+            workspace_fs.Error.GuestFileMissing => return text_replace_mod.TextReplaceError.PathNotFound,
+            workspace_fs.Error.GuestPathOutsideWorkspace => return text_replace_mod.TextReplaceError.InvalidPath,
+            else => return err,
+        };
+        defer ctx.allocator.free(bytes);
+
+        const applied = text_replace_mod.applyTextReplace(ctx.allocator, bytes, old_str, new_str) catch |err| return err;
+        defer ctx.allocator.free(applied.content);
+        errdefer {
+            ctx.allocator.free(applied.diff_view.unified);
+            ctx.allocator.free(applied.diff_view.before);
+            ctx.allocator.free(applied.diff_view.after);
+        }
+        fs.writeAll(path_abs, applied.content, false) catch |err| switch (err) {
+            workspace_fs.Error.GuestWriteFailed => return text_replace_mod.TextReplaceError.WriteFailed,
+            workspace_fs.Error.GuestPathOutsideWorkspace => return text_replace_mod.TextReplaceError.InvalidPath,
+            error.PathNotFound => return text_replace_mod.TextReplaceError.PathNotFound,
+            else => return err,
+        };
+        return .{ .ok = {}, .diff_view = applied.diff_view };
+    }
+    return text_replace_mod.executeTextReplace(ctx.allocator, ctx.io, path_abs, old_str, new_str);
+}
+
+// The seam does not change the contract: a local-mode call still reads the
+// host file, changes it and writes it back.
+test "replaceThrough: local mode replaces the file the host way" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(testing.io, &path_buf);
+    const target = try std.fs.path.join(a, &.{ path_buf[0..n], "seam.txt" });
+    try std.Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = target, .data = "before\nafter\n" });
+
+    const ctx = minimalCtxTr(a);
+    var result = try replaceThrough(ctx, target, "before", "BEFORE");
+    defer result.deinit(a);
+
+    const read = try readAllTr(a, target);
+    try testing.expectEqualStrings("BEFORE\nafter\n", read);
+}
 const required_field_help = "text_replace takes exactly four fields: `path`, `old_str`, `new_str`, `cwd`.";
 /// Build the tool-facing message for arguments that did not decode into
 /// `TextReplaceInput`.
@@ -2257,9 +2342,8 @@ pub fn execTextReplace(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult
     const path_abs = try exec_path_validate.resolveAgainstCwd(ctx.allocator, cwd, path);
     defer ctx.allocator.free(path_abs);
 
-    var tr_result = text_replace_mod.executeTextReplace(
-        ctx.allocator,
-        ctx.io,
+    var tr_result = replaceThrough(
+        ctx,
         path_abs,
         parsed.value.old_str,
         parsed.value.new_str,

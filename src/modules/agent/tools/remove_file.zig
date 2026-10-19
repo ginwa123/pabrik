@@ -316,6 +316,64 @@ const agent = pabrikcore.agent;
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
 const exec_path_validate = @import("helpers").path_validate;
+const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
+
+/// Delete in whichever substrate owns the tree. Under `--saas` the guest does
+/// it — and the guest refuses to take the workspace root with it, which the
+/// host's own `deleteTree` has no reason to guard against.
+fn removeThrough(ctx: ToolExecContext, input: RemoveFileInput) ![]const u8 {
+    const guest = try workspace_fs.forSession(ctx.allocator, ctx.db, ctx.session_id);
+    if (guest) |handle| {
+        var fs = handle;
+        defer fs.deinit();
+        return removeInGuest(ctx.allocator, &fs, input);
+    }
+    return executeRemoveFileToString(ctx.allocator, ctx.io, input);
+}
+
+/// The answers the host path gives, asked of the guest: a directory without
+/// `recursive` is refused with the message that names the fix, and a path that
+/// is not there says so instead of succeeding quietly.
+fn removeInGuest(
+    allocator: std.mem.Allocator,
+    fs: *workspace_fs.Fs,
+    input: RemoveFileInput,
+) ![]const u8 {
+    const info = fs.stat(input.path) catch |err| switch (err) {
+        workspace_fs.Error.GuestFileMissing, workspace_fs.Error.GuestPathOutsideWorkspace => {
+            return xmlError(allocator, input.path, "Path not found");
+        },
+        else => return err,
+    };
+    if (info.missing) return xmlError(allocator, input.path, "Path not found");
+
+    if (info.kind != .dir) {
+        fs.remove(input.path) catch return xmlError(allocator, input.path, "Failed to delete file");
+        return std.fmt.allocPrint(allocator,
+            \\<path>{s}</path>
+            \\<deleted>true</deleted>
+        , .{input.path});
+    }
+
+    if (!input.recursive) {
+        return xmlError(allocator, input.path, "Path is a directory. Use recursive=true to delete directories with contents.");
+    }
+    fs.removeAll(input.path) catch |err| switch (err) {
+        workspace_fs.Error.GuestWorkspaceRoot => {
+            return xmlError(allocator, input.path, "refusing to delete the workspace root");
+        },
+        workspace_fs.Error.GuestWalkTruncated => {
+            return xmlError(allocator, input.path, "the tree is larger than one walk can list");
+        },
+        else => return xmlError(allocator, input.path, "Failed to delete directory"),
+    };
+    return std.fmt.allocPrint(allocator,
+        \\<path>{s}</path>
+        \\<deleted>true</deleted>
+        \\<recursive>true</recursive>
+    , .{input.path});
+}
+
 pub fn execRemoveFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     const parsed = std.json.parseFromSlice(
         RemoveFileInput,
@@ -347,7 +405,7 @@ pub fn execRemoveFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult 
     var input = parsed.value;
     input.path = path_abs;
 
-    const inner = executeRemoveFileToString(ctx.allocator, ctx.io, input) catch |err| {
+    const inner = removeThrough(ctx, input) catch |err| {
         const err_msg = try error_explain.explain(ctx.allocator, err, null);
         defer ctx.allocator.free(err_msg);
         const output = try wrapToolOutput(ctx.allocator, "remove_file", tc.function.arguments, false, err_msg, "");

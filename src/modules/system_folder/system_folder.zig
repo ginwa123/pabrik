@@ -4,6 +4,10 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const pabrikcore = @import("pabrikcore");
+const git_hardening = @import("helpers").git_hardening;
+const workspace_fs = @import("../../agentic_loop/workspace_fs.zig");
+const runtime_mode = @import("../../runtime_mode.zig");
 
 /// Error set for system folder operations
 pub const SystemFolderError = error{
@@ -251,6 +255,13 @@ pub const SystemFolder = struct {
         return false;
     }
 
+    /// Which git may answer for this directory. The workspace owns the path, so
+    /// no session is needed; local mode never reaches the database at all.
+    fn routeForDirectory(allocator: std.mem.Allocator, dir_path: []const u8) workspace_fs.Route {
+        const di = pabrikcore.getSingleton() catch null;
+        return workspace_fs.routeForPath(allocator, if (di) |d| d.db else null, dir_path);
+    }
+
     /// Batch `git check-ignore` for every entry name in ONE directory. Why
     /// batched: the old code spawned one `git -C <dir> check-ignore <name>`
     /// per ENTRY.
@@ -261,18 +272,39 @@ pub const SystemFolder = struct {
         names: []const []const u8,
     ) ?[][]const u8 {
         if (names.len == 0) return null;
+        var route = routeForDirectory(allocator, dir_path);
+        defer route.deinit();
+        // `--saas` with no VM answering: the filter reports nothing ignored
+        // rather than asking the host's git about a tenant's tree.
+        if (route == .unavailable) return null;
         var ignored = std.ArrayList([]const u8).empty;
         var offset: usize = 0;
         while (offset < names.len) {
             const end = @min(offset + 500, names.len);
             const chunk = names[offset..end];
             offset = end;
+            if (route.guestFs()) |fs| {
+                // The guest answers per NAME, so no output has to be matched
+                // back onto the input by string.
+                const flags = fs.gitCheckIgnore(dir_path, chunk) catch continue;
+                defer allocator.free(flags);
+                for (chunk, 0..) |name, i| {
+                    if (!flags[i]) continue;
+                    const dup = allocator.dupe(u8, name) catch continue;
+                    ignored.append(allocator, dup) catch {
+                        allocator.free(dup);
+                        continue;
+                    };
+                }
+                continue;
+            }
             var argv = std.ArrayList([]const u8).empty;
             defer argv.deinit(allocator);
             // `--` ends option parsing so names starting with `-` are treated
             // as paths (the old per-entry form had no `--` and mis-checked
             // such names as flags — this is strictly more correct, same
-            argv.appendSlice(allocator, &.{ "git", "-C", dir_path, "check-ignore", "--" }) catch break;
+            git_hardening.appendGit(&argv, allocator) catch break;
+            argv.appendSlice(allocator, &.{ "-C", dir_path, "check-ignore", "--" }) catch break;
             argv.appendSlice(allocator, chunk) catch break;
             const result = std.process.run(allocator, io, .{ .argv = argv.items }) catch continue;
             defer allocator.free(result.stdout);
@@ -1924,4 +1956,54 @@ test "getParentPath: a lower-case forward-slash spelling of home still returns n
         defer allocator.free(p);
         try testing.expectEqualStrings("c:/users", p);
     }
+}
+
+test "listDirectory: --saas reports nothing ignored rather than asking the host's git" {
+    const allocator = testing.allocator;
+    var tenv = try setupRootInTmp(allocator);
+    defer tenv.deinit(allocator);
+
+    // A repository whose `.gitignore` names one of the two entries: only git
+    // can filter the row out, and under `--saas` the host's git is not an
+    // option.
+    const init = std.process.run(allocator, testing.io, .{ .argv = &.{ "git", "init", "-q", tenv.root_abs } }) catch
+        return error.SkipZigTest;
+    defer {
+        allocator.free(init.stdout);
+        allocator.free(init.stderr);
+    }
+    if (init.term.exited != 0) return error.SkipZigTest;
+    try tenv.tmp_dir.dir.writeFile(testing.io, .{ .sub_path = ".gitignore", .data = "ignored.txt\n" });
+    try tenv.tmp_dir.dir.writeFile(testing.io, .{ .sub_path = "ignored.txt", .data = "x\n" });
+    try tenv.tmp_dir.dir.writeFile(testing.io, .{ .sub_path = "kept.txt", .data = "x\n" });
+
+    const local = try SystemFolder.listDirectory(allocator, testing.io, tenv.root_abs);
+    defer freeFolderEntries(allocator, local);
+    try testing.expect(!listsEntry(local, "ignored.txt"));
+    try testing.expect(listsEntry(local, "kept.txt"));
+
+    runtime_mode.setCurrent(.saas);
+    defer runtime_mode.setCurrent(.local);
+    if (!runtime_mode.vm_backend_available) return;
+
+    // With no VM answering, the filter has nothing to ask: the ignored row is
+    // listed, which is the honest answer — and the host's git did not run.
+    const saas = try SystemFolder.listDirectory(allocator, testing.io, tenv.root_abs);
+    defer freeFolderEntries(allocator, saas);
+    try testing.expect(listsEntry(saas, "ignored.txt"));
+}
+
+fn listsEntry(entries: []const FolderEntry, name: []const u8) bool {
+    for (entries) |entry| {
+        if (std.mem.eql(u8, entry.name, name)) return true;
+    }
+    return false;
+}
+
+fn freeFolderEntries(allocator: std.mem.Allocator, entries: []const FolderEntry) void {
+    for (entries) |entry| {
+        allocator.free(entry.name);
+        allocator.free(entry.path);
+    }
+    allocator.free(entries);
 }

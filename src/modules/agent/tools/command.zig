@@ -35,23 +35,34 @@ pub fn execute_command(
     io: std.Io,
     input: CommandInput,
 ) !CommandOutput {
+    return execute_command_with(allocator, io, input, null);
+}
+
+/// `execute_command` with the execution substrate made explicit. `executor`
+/// replaces the host shell spawn; null keeps the host path byte-identical.
+pub fn execute_command_with(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    input: CommandInput,
+    executor: ?shell.Executor,
+) !CommandOutput {
     if (builtin.os.tag == .windows) {
         // Phase 1 (cmd fallback) is foreground-only: background keeps the
         // historical pwsh path (spawn_background's nohup idiom + the D8
         // Start-Process TODO in shell.zig).
         if (input.background) {
-            return shell.execute_shell(allocator, io, COMMAND_PWSH_PREFIX, input);
+            return shell.execute_shell_with(allocator, io, COMMAND_PWSH_PREFIX, input, executor);
         }
-        const pwsh_out = shell.execute_shell(allocator, io, COMMAND_PWSH_PREFIX, input) catch |err| {
+        const pwsh_out = shell.execute_shell_with(allocator, io, COMMAND_PWSH_PREFIX, input, executor) catch |err| {
             // Retry ONLY on a missing binary. Any other error (timeout,
             // forbidden, spawn permission, …) propagates unchanged so real
             // failures are never masked as "try the other shell".
             if (err != error.FileNotFound) return err;
-            return try shell.execute_shell(allocator, io, COMMAND_CMD_PREFIX, input);
+            return try shell.execute_shell_with(allocator, io, COMMAND_CMD_PREFIX, input, executor);
         };
         return pwsh_out;
     } else {
-        return shell.execute_shell(allocator, io, COMMAND_BASH_PREFIX, input);
+        return shell.execute_shell_with(allocator, io, COMMAND_BASH_PREFIX, input, executor);
     }
 }
 
@@ -222,7 +233,7 @@ test "command_tool schema: no `timeout` prefix rule in the LLM-facing text" {
 
 test "command_tool schema: exactly ONE deadline param, and it is required" {
     // This test used to read "a `timeout` param must NOT exist" — it was the
-    // guard against the tool growing a second way to bound a 
+    // guard against the tool growing a second way to bound a
     const params = command_tool.function.parameters;
 
     var deadline_count: usize = 0;
@@ -446,6 +457,7 @@ const background_process_events = @import("../../../agentic_loop/background_proc
 const background_watcher = @import("../../../agentic_loop/background_watcher.zig");
 const wrapToolOutput = tools.wrapToolOutput;
 const bash_args = @import("exec_bash_args.zig");
+const vm_runtime = @import("../../../agentic_loop/vm_runtime.zig");
 const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
 /// What `runWithContext` hands back: the LLM-facing payload, plus the
 /// loop-control request parsed out of the same arguments.
@@ -495,13 +507,35 @@ pub fn runWithContext(
     // thing by the time they get here (the parser folds them).
     const mode = pabrikcore.shell_tool.resolvedMode(input);
 
-    const command_output = try command_tool_mod.execute_command(allocator, io, input);
+    // The substrate decision: under `--saas` the executor runs this command in
+    // the session's workspace VM, and no host shell is ever spawned for it.
+    var guest = vm_runtime.GuestContext{ .db = db, .session_id = session_id };
+    const executor = vm_runtime.executorFor(&guest);
+    const command_output = try command_tool_mod.execute_command_with(
+        allocator,
+        io,
+        input,
+        executor,
+    );
+    // A detached command that ran in a guest leaves a GUEST pid behind, and the
+    // accounting row has to say which VM it belongs to.
+    const ran_in_guest = executor != null;
 
     // Record a detached process so it can be listed, read, and stopped later.
     // `kind` decides whether it is ever NOTIFIED about — see migration 107.
     if (mode.isDetached() and db != null and session_id != null) {
         const db_ptr = db.?;
         const sess_id = session_id.?;
+
+        // The VM is per-workspace, so its identity is the workspace id the
+        // executor resolved. Null means the row cannot be written honestly, so
+        // nothing is recorded.
+        const vm_id: ?[]u8 = if (ran_in_guest)
+            try vm_runtime.workspaceIdFor(allocator, db_ptr, sess_id)
+        else
+            null;
+        defer if (vm_id) |id| allocator.free(id);
+        const accountable = !ran_in_guest or vm_id != null;
 
         // Parse PID from command output (format: "PID: {pid}\nLog: {path}")
         const stdout = command_output.stdout;
@@ -531,9 +565,15 @@ pub fn runWithContext(
                         // Save to database
                         const ts = std.Io.Clock.now(.real, io);
                         const started_at: i64 = ts.toSeconds();
-                        background_process.save(db_ptr, allocator, sess_id, pid, input.command, log_path, started_at, mode.kindFor()) catch {
-                            // Log error but don't fail the tool execution
-                        };
+                        const home: background_process.JobHome = if (vm_id) |id|
+                            background_process.JobHome.guest(id, pid)
+                        else
+                            background_process.JobHome.host();
+                        if (accountable) {
+                            background_process.save(db_ptr, allocator, sess_id, pid, input.command, log_path, started_at, mode.kindFor(), home) catch {
+                                // Log error but don't fail the tool execution
+                            };
+                        }
                         // Immediate watcher: poll the PID every 2s and queue
                         // the completion the moment it exits (no cron wait).
                         if (pabrikcore.getSingleton() catch null) |di| {
@@ -541,7 +581,13 @@ pub fn runWithContext(
                             // The two detached modes differ in ONE
                             // obligation: whether the agent is told when the
                             // process exits.
-                            if (mode == .background) {
+                            const notify = mode == .background;
+                            if (vm_id) |id| {
+                                background_watcher.spawnGuestWatcher(di, sess_id, .{
+                                    .vm_id = id,
+                                    .guest_pid = pid,
+                                }, input.command, log_path, notify);
+                            } else if (notify) {
                                 background_watcher.spawnCompletionWatcher(di, sess_id, pid, input.command, log_path);
                             } else {
                                 background_watcher.spawnServiceReaper(di, sess_id, pid, input.command, log_path);
@@ -808,3 +854,71 @@ test "execCommand: a well-formed call is not refused by the argument validator" 
     try exec_testing.expect(err_msg.?.len > 20);
 }
 
+// ============================================================================
+// Substrate seam — the P2c behaviour: an executor replaces the host spawn.
+// ============================================================================
+
+/// Stands in for the guest executor so the seam is proven without a VM.
+const FakeGuest = struct {
+    fn run(
+        ctx: *const anyopaque,
+        allocator: std.mem.Allocator,
+        io: std.Io,
+        argv_prefix: []const []const u8,
+        input: shell.ShellInput,
+    ) anyerror!shell.ShellOutput {
+        _ = ctx;
+        _ = io;
+        _ = argv_prefix;
+        return .{
+            .command = try allocator.dupe(u8, input.command),
+            .stdout = try std.fmt.allocPrint(allocator, "guest ran: {s}", .{input.command}),
+            .stderr = try allocator.dupe(u8, ""),
+            .exit_code = 0,
+            .truncated = false,
+            .timeout = false,
+        };
+    }
+};
+
+test "execute_command_with: an installed executor runs the command instead of the host shell" {
+    const allocator = testing.allocator;
+    var marker: u8 = 0;
+    const out = try execute_command_with(
+        allocator,
+        testing.io,
+        .{ .command = "echo hi", .cwd = "/tmp", .timeout = 5 },
+        .{ .ctx = @ptrCast(&marker), .run = FakeGuest.run },
+    );
+    defer {
+        allocator.free(out.command);
+        allocator.free(out.stdout);
+        allocator.free(out.stderr);
+    }
+
+    // The command reached the executor, and its answer is what the tool
+    // returned — not a host process's output.
+    try testing.expectEqualStrings("guest ran: echo hi", out.stdout);
+    try testing.expectEqualStrings("echo hi", out.command);
+    try testing.expectEqual(@as(i32, 0), out.exit_code);
+}
+
+test "execute_command: with no executor the host shell runs it, unchanged" {
+    if (builtin.os.tag == .windows) return;
+    if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
+    const allocator = testing.allocator;
+    const out = try execute_command(allocator, testing.io, .{
+        .command = "echo local-substrate",
+        .cwd = "/tmp",
+        .timeout = 5,
+    });
+    defer {
+        allocator.free(out.command);
+        allocator.free(out.stdout);
+        allocator.free(out.stderr);
+    }
+    try testing.expectEqual(@as(i32, 0), out.exit_code);
+    try testing.expect(std.mem.indexOf(u8, out.stdout, "local-substrate") != null);
+    // A host run, not a guest one.
+    try testing.expect(std.mem.indexOf(u8, out.stdout, "guest ran:") == null);
+}

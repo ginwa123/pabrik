@@ -367,124 +367,79 @@ fn windowSnippet(allocator: std.mem.Allocator, text: []const u8, offset: usize, 
     return try out.toOwnedSlice(allocator);
 }
 
-pub fn executeSearch(allocator: std.mem.Allocator, io: std.Io, cwd: []const u8, input: SearchInput) !SearchResult {
-    // === Up-front validation (no ripgrep invocation if any fail) ===
+/// Where ripgrep ran, and what came back. Under `--saas` the GUEST runs it —
+/// the scan happens where the files are, and the host opens none of them.
+pub const Runner = struct {
+    ctx: *const anyopaque,
+    runFn: *const fn (
+        ctx: *const anyopaque,
+        allocator: std.mem.Allocator,
+        io: std.Io,
+        cwd: []const u8,
+        argv: []const []const u8,
+        timeout_ms: u64,
+        max_output: usize,
+    ) anyerror!Run,
+};
 
-    // Validate head/tail are mutually exclusive
-    if (input.head != null and input.tail != null) {
-        return error.HeadAndTailMutuallyExclusive;
+pub const Run = struct {
+    stdout: []u8,
+    stderr: []u8,
+    code: i64,
+    timed_out: bool,
+    truncated: bool,
+
+    pub fn deinit(self: Run, allocator: std.mem.Allocator) void {
+        allocator.free(self.stdout);
+        allocator.free(self.stderr);
     }
+};
 
-    // head=0 / tail=0 select zero rows while still reporting success —
-    // indistinguishable from a real "no match", so reject them the same way
-    // max_results=0 is rejected.
-    if (input.head) |head_n| {
-        if (head_n == 0) return error.InvalidHeadTail;
+/// ripgrep's output, whichever substrate produced it.
+const Captured = struct {
+    stdout: []u8,
+    stderr: []u8,
+    /// The stdout cap cut the stream: a bounded partial result, not a failure.
+    capped: bool,
+    bytes: u64,
+    match_events: usize,
+
+    pub fn deinit(self: Captured, allocator: std.mem.Allocator) void {
+        allocator.free(self.stdout);
+        allocator.free(self.stderr);
     }
-    if (input.tail) |tail_n| {
-        if (tail_n == 0) return error.InvalidHeadTail;
+};
+
+/// The match events in a stream that arrived in one piece — the same count the
+/// host's reader thread makes while the bytes arrive.
+fn countMatchEvents(stdout: []const u8) usize {
+    var count: usize = 0;
+    var at: usize = 0;
+    while (at < stdout.len) {
+        const line_end = std.mem.indexOfScalarPos(u8, stdout, at, '\n') orelse stdout.len;
+        if (lineIsMatchEvent(stdout[at..line_end])) count += 1;
+        at = line_end + 1;
     }
+    return count;
+}
 
-    // Pattern must be non-empty. ripgrep accepts empty patterns but the
-    // result is meaningless — reject so the caller sees a clear error.
-    if (input.pattern.len == 0) return error.EmptyPattern;
-
-    // Reject patterns containing NUL bytes. ripgrep's C-string handling
-    // truncates at NUL, which would mean the LLM's intended pattern is
-    // silently mutated. Refuse the call entirely.
-    if (std.mem.indexOfScalar(u8, input.pattern, 0) != null) {
-        return error.PatternContainsNulByte;
-    }
-
-    // Same NUL hazard for the glob filter: rg copies argv into C strings,
-    // so anything after a NUL would be silently dropped from the filter.
-    if (input.glob) |glob_pattern| {
-        if (std.mem.indexOfScalar(u8, glob_pattern, 0) != null) {
-            return error.GlobContainsNulByte;
-        }
-    }
-
-    // Validate max_output bounds up-front. Zero is meaningless; over the
-    // hard ceiling risks OOM.
-    const max_output = input.max_output orelse 1024 * 1024;
-    if (max_output == 0) return error.InvalidMaxOutput;
-    if (max_output > max_output_hard_limit) return error.MaxOutputTooLarge;
-
-    // Validate max_results. Zero is indistinguishable from "no match" and
-    // is almost certainly a caller bug.
-    const max_results = input.max_results orelse 50;
-    if (max_results == 0) return error.InvalidMaxResults;
-
-    const snippet_max_chars = input.snippet_max_chars orelse default_snippet_max_chars;
-
-    const rg_binary = input.rg_binary orelse "rg";
-    const timeout_ms = input.timeout_ms orelse default_search_timeout_ms;
-    // Fail fast BEFORE spawning (also the deterministic hook for tests).
-    if (timeout_ms == 0) return error.Timeout;
-    // Clamp WITHOUT @min: `@min(u64, u64) * std.time.ns_per_ms` miscompiles
-    // on Zig 0.16.0 (compile error in isolation, phantom overflow at
-    // runtime). Plain u64 × u64 with an explicitly-typed constant is safe.
-    const clamped_ms: u64 = if (timeout_ms > max_search_timeout_ms) max_search_timeout_ms else timeout_ms;
-    const ns_per_ms_u64: u64 = std.time.ns_per_ms;
-    const timeout_ns: u64 = clamped_ms * ns_per_ms_u64;
-
-    // === Build ripgrep argv with flag-injection defense === We use `-e
-    // <pattern>` to tell ripgrep "next arg is the pattern", which means a
-    // pattern starting with `-` (e.g.
-    var args: std.ArrayList([]const u8) = .empty;
-    defer args.deinit(allocator);
-    // `--glob=<pattern>` is one argv element, so a value that starts with
-    // `-` cannot be reinterpreted as another flag.
-    var glob_arg: ?[]u8 = null;
-    defer if (glob_arg) |owned| allocator.free(owned);
-
-    try args.append(allocator, rg_binary);
-    try args.append(allocator, "--json");
-    try args.append(allocator, "--line-number");
-    try args.append(allocator, "--no-config");
-    try args.append(allocator, "--no-messages");
-    if (!input.respect_ignore_files) {
-        try args.append(allocator, "--no-ignore");
-    }
-    if (input.hidden) {
-        // rg skips dotfiles/dotdirs unless --hidden is passed. --no-ignore
-        // only disables ignore-FILE filtering, so without this flag
-        // `.github/workflows/…` stays invisible even with
-        try args.append(allocator, "--hidden");
-    }
-    if (input.glob) |glob_pattern| {
-        if (glob_pattern.len > 0) {
-            glob_arg = try std.fmt.allocPrint(allocator, "--glob={s}", .{glob_pattern});
-            try args.append(allocator, glob_arg.?);
-        }
-    }
-    if (input.word_boundary) {
-        // -w: only match whole words (word-boundary semantics). rg's default
-        // Unicode word rule treats underscore as a word char, so this matches
-        // what `-w` says, not what an English speaker might expect for
-        try args.append(allocator, "-w");
-    }
-    // Chunk 2: literal / -F flag. Treat the pattern as opaque bytes instead
-    // of a regex.
-    if (input.literal) {
-        try args.append(allocator, "-F");
-    }
-    if (input.only_matching) {
-        // -o / --only-matching: rg emits ONLY the matched substring per line
-        // (via data.submatches[]), NOT the full surrounding line.
-        try args.append(allocator, "-o");
-    }
-    try args.append(allocator, "-e");
-    try args.append(allocator, input.pattern);
-    try args.append(allocator, "--");
-    try args.append(allocator, input.path);
-
+/// Spawn ripgrep HERE and collect its streams. Everything the search does to
+/// its own host process lives in this function and nowhere else.
+fn spawnAndCollect(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    args: []const []const u8,
+    arg_cwd: []const u8,
+    rg_binary: []const u8,
+    max_output: usize,
+    timeout_ns: u64,
+) !Captured {
     var child = std.process.spawn(io, .{
-        .argv = args.items,
+        .argv = args,
         .stdin = .close,
         .stdout = .pipe,
         .stderr = .pipe,
-        .cwd = .{ .path = input.cwd orelse cwd },
+        .cwd = .{ .path = arg_cwd },
     }) catch |err| {
         // FileNotFound is ambiguous: missing rg binary vs missing cwd.
         // Probe the binary from an inherited cwd to disambiguate.
@@ -661,6 +616,176 @@ pub fn executeSearch(allocator: std.mem.Allocator, io: std.Io, cwd: []const u8, 
 
     // A capped stdout stream is a successful, bounded partial result.
     if (stderr_state == .output_truncated) return error.StderrTooLong;
+    return .{
+        .stdout = try stdout_data.toOwnedSlice(allocator),
+        .stderr = try stderr_data.toOwnedSlice(allocator),
+        .capped = stdout_state == .output_truncated,
+        .bytes = stdout_bytes,
+        .match_events = stdout_match_counter.count,
+    };
+}
+
+pub fn executeSearch(allocator: std.mem.Allocator, io: std.Io, cwd: []const u8, input: SearchInput) !SearchResult {
+    return executeSearchWith(allocator, io, cwd, input, null);
+}
+
+/// The same search, with the place ripgrep runs chosen by the caller: null
+/// spawns it here, and a runner is the guest's own scan.
+pub fn executeSearchWith(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    cwd: []const u8,
+    input: SearchInput,
+    runner: ?Runner,
+) !SearchResult {
+    // === Up-front validation (no ripgrep invocation if any fail) ===
+
+    // Validate head/tail are mutually exclusive
+    if (input.head != null and input.tail != null) {
+        return error.HeadAndTailMutuallyExclusive;
+    }
+
+    // head=0 / tail=0 select zero rows while still reporting success —
+    // indistinguishable from a real "no match", so reject them the same way
+    // max_results=0 is rejected.
+    if (input.head) |head_n| {
+        if (head_n == 0) return error.InvalidHeadTail;
+    }
+    if (input.tail) |tail_n| {
+        if (tail_n == 0) return error.InvalidHeadTail;
+    }
+
+    // Pattern must be non-empty. ripgrep accepts empty patterns but the
+    // result is meaningless — reject so the caller sees a clear error.
+    if (input.pattern.len == 0) return error.EmptyPattern;
+
+    // Reject patterns containing NUL bytes. ripgrep's C-string handling
+    // truncates at NUL, which would mean the LLM's intended pattern is
+    // silently mutated. Refuse the call entirely.
+    if (std.mem.indexOfScalar(u8, input.pattern, 0) != null) {
+        return error.PatternContainsNulByte;
+    }
+
+    // Same NUL hazard for the glob filter: rg copies argv into C strings,
+    // so anything after a NUL would be silently dropped from the filter.
+    if (input.glob) |glob_pattern| {
+        if (std.mem.indexOfScalar(u8, glob_pattern, 0) != null) {
+            return error.GlobContainsNulByte;
+        }
+    }
+
+    // Validate max_output bounds up-front. Zero is meaningless; over the
+    // hard ceiling risks OOM.
+    const max_output = input.max_output orelse 1024 * 1024;
+    if (max_output == 0) return error.InvalidMaxOutput;
+    if (max_output > max_output_hard_limit) return error.MaxOutputTooLarge;
+
+    // Validate max_results. Zero is indistinguishable from "no match" and
+    // is almost certainly a caller bug.
+    const max_results = input.max_results orelse 50;
+    if (max_results == 0) return error.InvalidMaxResults;
+
+    const snippet_max_chars = input.snippet_max_chars orelse default_snippet_max_chars;
+
+    const rg_binary = input.rg_binary orelse "rg";
+    const timeout_ms = input.timeout_ms orelse default_search_timeout_ms;
+    // Fail fast BEFORE spawning (also the deterministic hook for tests).
+    if (timeout_ms == 0) return error.Timeout;
+    // Clamp WITHOUT @min: `@min(u64, u64) * std.time.ns_per_ms` miscompiles
+    // on Zig 0.16.0 (compile error in isolation, phantom overflow at
+    // runtime). Plain u64 × u64 with an explicitly-typed constant is safe.
+    const clamped_ms: u64 = if (timeout_ms > max_search_timeout_ms) max_search_timeout_ms else timeout_ms;
+    const ns_per_ms_u64: u64 = std.time.ns_per_ms;
+    const timeout_ns: u64 = clamped_ms * ns_per_ms_u64;
+
+    // === Build ripgrep argv with flag-injection defense === We use `-e
+    // <pattern>` to tell ripgrep "next arg is the pattern", which means a
+    // pattern starting with `-` (e.g.
+    var args: std.ArrayList([]const u8) = .empty;
+    defer args.deinit(allocator);
+    // `--glob=<pattern>` is one argv element, so a value that starts with
+    // `-` cannot be reinterpreted as another flag.
+    var glob_arg: ?[]u8 = null;
+    defer if (glob_arg) |owned| allocator.free(owned);
+
+    try args.append(allocator, rg_binary);
+    try args.append(allocator, "--json");
+    try args.append(allocator, "--line-number");
+    try args.append(allocator, "--no-config");
+    try args.append(allocator, "--no-messages");
+    if (!input.respect_ignore_files) {
+        try args.append(allocator, "--no-ignore");
+    }
+    if (input.hidden) {
+        // rg skips dotfiles/dotdirs unless --hidden is passed. --no-ignore
+        // only disables ignore-FILE filtering, so without this flag
+        // `.github/workflows/…` stays invisible even with
+        try args.append(allocator, "--hidden");
+    }
+    if (input.glob) |glob_pattern| {
+        if (glob_pattern.len > 0) {
+            glob_arg = try std.fmt.allocPrint(allocator, "--glob={s}", .{glob_pattern});
+            try args.append(allocator, glob_arg.?);
+        }
+    }
+    if (input.word_boundary) {
+        // -w: only match whole words (word-boundary semantics). rg's default
+        // Unicode word rule treats underscore as a word char, so this matches
+        // what `-w` says, not what an English speaker might expect for
+        try args.append(allocator, "-w");
+    }
+    // Chunk 2: literal / -F flag. Treat the pattern as opaque bytes instead
+    // of a regex.
+    if (input.literal) {
+        try args.append(allocator, "-F");
+    }
+    if (input.only_matching) {
+        // -o / --only-matching: rg emits ONLY the matched substring per line
+        // (via data.submatches[]), NOT the full surrounding line.
+        try args.append(allocator, "-o");
+    }
+    try args.append(allocator, "-e");
+    try args.append(allocator, input.pattern);
+    try args.append(allocator, "--");
+    try args.append(allocator, input.path);
+
+    var captured = if (runner) |chosen| blk: {
+        var ran = try chosen.runFn(
+            chosen.ctx,
+            allocator,
+            io,
+            input.cwd orelse cwd,
+            args.items,
+            clamped_ms,
+            max_output,
+        );
+        defer ran.deinit(allocator);
+        if (ran.timed_out) return error.Timeout;
+        if (ran.code != 0 and ran.code != 1) {
+            // The guest's own `exec failed` is what an image without ripgrep
+            // says, and it is the same answer the host gives when rg is not
+            // installed: nothing to scan with.
+            if (ran.code == 127 and std.mem.indexOf(u8, ran.stderr, "exec failed") != null) {
+                return error.RgNotFound;
+            }
+            if (std.mem.indexOf(u8, ran.stderr, "regex") != null or
+                std.mem.indexOf(u8, ran.stderr, "Regex") != null or
+                std.mem.indexOf(u8, ran.stderr, "pattern") != null)
+            {
+                return error.RegexParseError;
+            }
+            return error.PathError;
+        }
+        break :blk Captured{
+            .stdout = try allocator.dupe(u8, ran.stdout),
+            .stderr = try allocator.dupe(u8, ran.stderr),
+            .capped = ran.truncated,
+            .bytes = ran.stdout.len,
+            .match_events = countMatchEvents(ran.stdout),
+        };
+    } else try spawnAndCollect(allocator, io, args.items, input.cwd orelse cwd, rg_binary, max_output, timeout_ns);
+    defer captured.deinit(allocator);
+
 
     var matches = std.ArrayList(SearchMatch).empty;
     errdefer {
@@ -689,7 +814,7 @@ pub fn executeSearch(allocator: std.mem.Allocator, io: std.Io, cwd: []const u8, 
     // counts match events instead of JSON-parsing every remaining line.
     var collecting = true;
 
-    const stdout_slice: []const u8 = stdout_data.items;
+    const stdout_slice: []const u8 = captured.stdout;
     var line_start: usize = 0;
     var current_file: ?[]const u8 = null;
 
@@ -702,7 +827,7 @@ pub fn executeSearch(allocator: std.mem.Allocator, io: std.Io, cwd: []const u8, 
                 // A capped final segment may be partial. Do not count its
                 // marker unless it is newline-terminated; the full-stream
                 // counter already accounts for complete match events.
-                if (stdout_state == .output_truncated and
+                if (captured.capped and
                     line_end == stdout_slice.len and
                     line_end > line_start and
                     !std.mem.endsWith(u8, stdout_slice, "\n"))
@@ -903,8 +1028,8 @@ pub fn executeSearch(allocator: std.mem.Allocator, io: std.Io, cwd: []const u8, 
         }
     }
 
-    const output_truncated = stdout_state == .output_truncated;
-    const total_matches = @max(seen_total, stdout_match_counter.count);
+    const output_truncated = captured.capped;
+    const total_matches = @max(seen_total, captured.match_events);
     const truncated = output_truncated or total_matches > matches.items.len;
 
     // No-match warning body. Built ONLY when nothing was collected and the
@@ -912,11 +1037,11 @@ pub fn executeSearch(allocator: std.mem.Allocator, io: std.Io, cwd: []const u8, 
     var warning: []const u8 = "";
     errdefer if (warning.len > 0) allocator.free(warning);
     if (matches.items.len == 0 and !output_truncated) {
-        if (stderr_data.items.len > 0) {
+        if (captured.stderr.len > 0) {
             // ripgrep surfaced an error (regex parse error, permission
             // denied, etc). Surface stderr verbatim — it already names the
             // root cause.
-            warning = try std.fmt.allocPrint(allocator, "<warning>{s}</warning>", .{stderr_data.items});
+            warning = try std.fmt.allocPrint(allocator, "<warning>{s}</warning>", .{captured.stderr});
         } else {
             // Clean no-match (rg exit code 1, empty stderr).
             warning = try std.fmt.allocPrint(
@@ -933,7 +1058,7 @@ pub fn executeSearch(allocator: std.mem.Allocator, io: std.Io, cwd: []const u8, 
         .total_matches = total_matches,
         .truncated = truncated,
         .output_truncated = output_truncated,
-        .output_bytes = stdout_bytes,
+        .output_bytes = captured.bytes,
     };
 }
 
@@ -3871,6 +3996,74 @@ const search_tool_mod = pabrikcore.search_tool;
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
 const path_validate = @import("helpers").path_validate;
+const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
+const vmd_policy = @import("../../../vmd/policy.zig");
+const vmd_rpc = @import("../../../vmd/rpc.zig");
+
+/// The guest's own ceiling on one exec, and the reason the guest's ripgrep is
+/// never asked for more than one reply can carry.
+const guest_exec_timeout_ceiling_ms: u64 = 600_000;
+
+/// Ripgrep, run where the tree is. Under `--saas` the guest runs it and the
+/// host opens nothing; in every other mode it is spawned here, as it always
+/// was.
+const GuestRunner = struct {
+    fs: *workspace_fs.Fs,
+
+    fn run(
+        ctx: *const anyopaque,
+        allocator: std.mem.Allocator,
+        io: std.Io,
+        cwd: []const u8,
+        argv: []const []const u8,
+        timeout_ms: u64,
+        max_output: usize,
+    ) anyerror!search_tool_mod.Run {
+        _ = io;
+        const self: *const GuestRunner = @ptrCast(@alignCast(ctx));
+        // `execve` searches no PATH and a host path means nothing in the
+        // guest, so the image's own ripgrep is the one that can run.
+        const guest_argv = try allocator.alloc([]const u8, argv.len);
+        defer allocator.free(guest_argv);
+        @memcpy(guest_argv, argv);
+        if (guest_argv.len > 0) guest_argv[0] = vmd_policy.guest_rg;
+
+        const launched = self.fs.run(
+            guest_argv,
+            cwd,
+            @intCast(@min(timeout_ms, guest_exec_timeout_ceiling_ms)),
+            @min(max_output, vmd_rpc.max_output_bytes_limit),
+        ) catch |err| switch (err) {
+            workspace_fs.Error.GuestPathOutsideWorkspace => return error.PathError,
+            else => return err,
+        };
+        return .{
+            .stdout = launched.stdout,
+            .stderr = launched.stderr,
+            .code = launched.code,
+            .timed_out = launched.timed_out,
+            .truncated = launched.truncated,
+        };
+    }
+};
+
+fn searchThrough(
+    ctx: ToolExecContext,
+    cwd: []const u8,
+    input: search_tool_mod.SearchInput,
+) !search_tool_mod.SearchResult {
+    var holder = try workspace_fs.forSession(ctx.allocator, ctx.db, ctx.session_id);
+    defer if (holder) |*fs| fs.deinit();
+    if (holder) |*fs| {
+        var guest_runner = GuestRunner{ .fs = fs };
+        return search_tool_mod.executeSearchWith(ctx.allocator, ctx.io, cwd, input, .{
+            .ctx = &guest_runner,
+            .runFn = GuestRunner.run,
+        });
+    }
+    return search_tool_mod.executeSearch(ctx.allocator, ctx.io, cwd, input);
+}
+
 /// Parse the model-provided JSON and normalize zero-valued optional head/tail
 /// placeholders.
 fn parseSearchInput(allocator: std.mem.Allocator, args: []const u8) !std.json.Parsed(search_tool_mod.SearchInput) {
@@ -3929,7 +4122,7 @@ pub fn execSearch(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     input.path = path_abs;
     input.cwd = cwd;
 
-    var search_result = search_tool_mod.executeSearch(ctx.allocator, ctx.io, cwd, input) catch |err| {
+    var search_result = searchThrough(ctx, cwd, input) catch |err| {
         // Map domain errors to LLM-friendly messages. A normal stdout
         // max_output overflow no longer appears here: executeSearch returns
         // a successful SearchResult with output_truncated metadata instead.
