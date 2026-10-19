@@ -1,6 +1,10 @@
-//! `pabrik headless` argument parsing.
+//! `pabrik headless` argument parsing. The flag names, the values they take
+//! and the help text come from `cli/flags.zig`; this file only knows the
+//! verbs, the positional words and how a parsed set becomes a `Command`.
 
 const std = @import("std");
+const cli_flags = @import("../cli/flags.zig");
+const cli_parse = @import("../cli/parse.zig");
 
 pub const RunArgs = struct {
     /// The user's message. Required — a turn with nothing to say is a
@@ -48,30 +52,38 @@ pub const Failure = struct {
 
 pub const ParseError = error{OutOfMemory};
 
-pub const HELP_TEXT =
-    \\pabrik headless — run the pabrik backend with no HTTP server and no port.
-    \\
-    \\Usage:
-    \\  pabrik headless run <message> [flags]     One agentic turn; prints the reply as JSON
-    \\  pabrik headless sessions [--limit N]      List recent sessions
-    \\  pabrik headless messages <id> [--limit N] Print one session's messages
-    \\  pabrik headless help                      Show this help
-    \\
-    \\Flags for `run`:
-    \\  --session <id>       Resume an existing session (default: mint a new one)
-    \\  --cwd <dir>          Working directory for the turn (default: process cwd)
-    \\  --profile <name>     LLM profile from config.json's profiles_models
-    \\  --tools <a,b,c>      Comma-separated tool allowlist (default: config default)
-    \\  --timeout-ms <n>     Wall-clock budget for the turn (default: no budget)
-    \\  --quiet              Print the assistant text only, not the JSON envelope
-    \\
-    \\Global flags:
-    \\  --log-file <path>    Where diagnostics go (default: $TMPDIR/agentic_coding.log)
-    \\  --json               Force the JSON envelope even with --quiet
-    \\
-    \\Output: one JSON object on stdout. Diagnostics go to the log file, never stdout.
-    \\
-;
+/// Every field a `headless` verb may set. The table decides which of them a
+/// given verb accepts, so a field it cannot set stays at its default.
+const Flags = struct {
+    session_id: ?[]const u8 = null,
+    cwd: ?[]const u8 = null,
+    profile: ?[]const u8 = null,
+    allowed_tools: []const u8 = "",
+    timeout_ms: u64 = 0,
+    quiet: bool = false,
+    limit: ?u32 = null,
+    log_file: ?[]const u8 = null,
+    help_requested: bool = false,
+};
+
+pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP server and no port.\n" ++
+    "\n" ++
+    "Usage:\n" ++
+    "  pabrik headless run <message> [flags]     One agentic turn; prints the reply as JSON\n" ++
+    "  pabrik headless sessions [flags]          List recent sessions\n" ++
+    "  pabrik headless messages <id> [flags]     Print one session's messages\n" ++
+    "  pabrik headless help                      Show this help\n" ++
+    "\n" ++
+    "Flags for `run`:\n" ++
+    cli_flags.usageBlock(.headless, "run") ++
+    "\n" ++
+    "Flags for `sessions` and `messages`:\n" ++
+    cli_flags.usageBlock(.headless, "sessions") ++
+    "\n" ++
+    "Global flags:\n" ++
+    cli_flags.globalUsageBlock(.headless) ++
+    "\n" ++
+    "Output: one JSON object on stdout. Diagnostics go to the log file, never stdout.\n";
 
 /// What `parse` produced: exactly one of the two fields is non-null.
 /// `mod.zig` turns this into the `Command` union.
@@ -108,87 +120,67 @@ pub fn parse(argv: []const []const u8) ParseError!Outcome {
 }
 
 fn parseRun(argv: []const []const u8) ParseError!Outcome {
-    var out: RunArgs = .{ .message = "" };
-    var i: usize = 0;
-    while (i < argv.len) : (i += 1) {
-        const a = argv[i];
-        if (std.mem.eql(u8, a, "--session")) {
-            i += 1;
-            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = "--session" });
-            out.session_id = argv[i];
-        } else if (std.mem.eql(u8, a, "--cwd")) {
-            i += 1;
-            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = "--cwd" });
-            out.cwd = argv[i];
-        } else if (std.mem.eql(u8, a, "--profile")) {
-            i += 1;
-            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = "--profile" });
-            out.profile = argv[i];
-        } else if (std.mem.eql(u8, a, "--tools")) {
-            i += 1;
-            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = "--tools" });
-            out.allowed_tools = argv[i];
-        } else if (std.mem.eql(u8, a, "--timeout-ms")) {
-            i += 1;
-            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = "--timeout-ms" });
-            out.timeout_ms = std.fmt.parseInt(u64, argv[i], 10) catch
-                return fail(.{ .kind = .invalid_number, .value = argv[i] });
-        } else if (std.mem.eql(u8, a, "--quiet")) {
-            out.quiet = true;
-        } else if (std.mem.eql(u8, a, "--json")) {
-            out.quiet = false;
-        } else if (std.mem.startsWith(u8, a, "-")) {
-            return fail(.{ .kind = .unknown_subcommand, .value = a });
-        } else if (out.message.len == 0) {
-            // The first bare word is the message. Everything after it is
-            // appended, so an unquoted multi-word message still works.
-            out.message = a;
-        } else {
-            return fail(.{ .kind = .run_requires_message, .value = a });
-        }
-    }
-    if (out.message.len == 0) return fail(.{ .kind = .run_requires_message });
-    return .{ .run = out };
+    var got: Flags = .{};
+    var words: std.ArrayList([]const u8) = .empty;
+    defer words.deinit(std.heap.page_allocator);
+
+    if (try parseFlags("run", argv, &got, &words)) |failure| return fail(translate(failure));
+
+    // The first bare word is the message. A second one is a caller bug:
+    // silently joining them would hide an unquoted message.
+    if (words.items.len == 0) return fail(.{ .kind = .run_requires_message });
+    if (words.items.len > 1) return fail(.{ .kind = .run_requires_message, .value = words.items[1] });
+
+    return .{ .run = .{
+        .message = words.items[0],
+        .session_id = got.session_id,
+        .cwd = got.cwd,
+        .profile = got.profile,
+        .allowed_tools = got.allowed_tools,
+        .timeout_ms = got.timeout_ms,
+        .quiet = got.quiet,
+    } };
 }
 
 fn parseSessions(argv: []const []const u8) ParseError!Outcome {
-    var out: SessionsArgs = .{};
-    var i: usize = 0;
-    while (i < argv.len) : (i += 1) {
-        const a = argv[i];
-        if (std.mem.eql(u8, a, "--limit")) {
-            i += 1;
-            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = "--limit" });
-            out.limit = std.fmt.parseInt(u32, argv[i], 10) catch
-                return fail(.{ .kind = .invalid_number, .value = argv[i] });
-        } else {
-            return fail(.{ .kind = .unknown_subcommand, .value = a });
-        }
-    }
-    return .{ .sessions = out };
+    var got: Flags = .{};
+    var words: std.ArrayList([]const u8) = .empty;
+    defer words.deinit(std.heap.page_allocator);
+
+    if (try parseFlags("sessions", argv, &got, &words)) |failure| return fail(translate(failure));
+    if (words.items.len > 0) return fail(.{ .kind = .unknown_subcommand, .value = words.items[0] });
+    return .{ .sessions = .{ .limit = got.limit orelse 20 } };
 }
 
 fn parseMessages(argv: []const []const u8) ParseError!Outcome {
-    var out: ?[]const u8 = null;
-    var limit: u32 = 50;
-    var i: usize = 0;
-    while (i < argv.len) : (i += 1) {
-        const a = argv[i];
-        if (std.mem.eql(u8, a, "--limit")) {
-            i += 1;
-            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = "--limit" });
-            limit = std.fmt.parseInt(u32, argv[i], 10) catch
-                return fail(.{ .kind = .invalid_number, .value = argv[i] });
-        } else if (std.mem.startsWith(u8, a, "-")) {
-            return fail(.{ .kind = .unknown_subcommand, .value = a });
-        } else if (out == null) {
-            out = a;
-        } else {
-            return fail(.{ .kind = .unknown_subcommand, .value = a });
-        }
-    }
-    const sid = out orelse return fail(.{ .kind = .messages_requires_session });
-    return .{ .messages = .{ .session_id = sid, .limit = limit } };
+    var got: Flags = .{};
+    var words: std.ArrayList([]const u8) = .empty;
+    defer words.deinit(std.heap.page_allocator);
+
+    if (try parseFlags("messages", argv, &got, &words)) |failure| return fail(translate(failure));
+    if (words.items.len == 0) return fail(.{ .kind = .messages_requires_session });
+    if (words.items.len > 1) return fail(.{ .kind = .unknown_subcommand, .value = words.items[1] });
+    return .{ .messages = .{ .session_id = words.items[0], .limit = got.limit orelse 50 } };
+}
+
+/// Run the one engine over `verb`'s flags, collecting the bare words.
+fn parseFlags(
+    comptime verb: []const u8,
+    argv: []const []const u8,
+    out: *Flags,
+    words: *std.ArrayList([]const u8),
+) ParseError!?cli_parse.Failure {
+    const opts: cli_parse.Options = .{ .scope = .headless, .verb = verb };
+    return cli_parse.parse(Flags, opts, std.heap.page_allocator, argv, out, words);
+}
+
+/// The engine's vocabulary mapped onto headless's own messages.
+fn translate(failure: cli_parse.Failure) Failure {
+    return switch (failure.kind) {
+        .missing_value => .{ .kind = .missing_value, .value = failure.flag },
+        .invalid_value => .{ .kind = .invalid_number, .value = failure.value },
+        .unknown_flag => .{ .kind = .unknown_subcommand, .value = failure.flag },
+    };
 }
 
 fn fail(f: Failure) Outcome {
@@ -307,5 +299,20 @@ test "parse: an unknown verb is reported by name" {
     switch (try parse(&.{"frobnicate"})) {
         .invalid => |f| try testing.expectEqualStrings("frobnicate", f.value),
         else => return error.ExpectedFailure,
+    }
+}
+
+test "parse: a flag another verb owns is rejected, not silently ignored" {
+    try expectFailure(&.{ "sessions", "--quiet" }, .unknown_subcommand);
+    try expectFailure(&.{ "run", "hi", "--limit", "3" }, .unknown_subcommand);
+}
+
+test "the help text lists every flag the table gives this scope" {
+    inline for (cli_flags.flags) |f| {
+        if (comptime cli_flags.hasScope(f, .headless)) {
+            var dashed_buf: [64]u8 = undefined;
+            const dashed = try std.fmt.bufPrint(&dashed_buf, "--{s}", .{f.long});
+            try testing.expect(std.mem.indexOf(u8, HELP_TEXT, dashed) != null);
+        }
     }
 }

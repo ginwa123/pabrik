@@ -352,7 +352,7 @@ test {
     // file_sandbox rule (docs/plans/2026-09-29-present-files-sandbox-parity.md).
     _ = @import("http_handlers/files_download.zig");
     _ = @import("http_handlers/preview_origin.zig");
-_ = @import("http_handlers/preview_proxy.zig");
+    _ = @import("http_handlers/preview_proxy.zig");
     // schedulers/cleanup_stale_background_process.zig has inline tests
     // (mirrors cleanup_stale_worker pattern). Re-imported here for the
     // same reason — see plan 2026-08-19-cleanup-stale-background-process.
@@ -395,6 +395,10 @@ _ = @import("http_handlers/preview_proxy.zig");
     _ = @import("service/signal_handlers.zig"); // SIGINT+SIGTERM graceful-shutdown contracts
     // Top-level CLI flag parser: impl + inline tests in one file.
     _ = @import("cli_args.zig");
+    // The one flag table and the engine that reads it: every subcommand's
+    // parser (`cli_args`, service, create-admin, headless) goes through them.
+    _ = @import("cli/flags.zig");
+    _ = @import("cli/parse.zig");
     // The App singleton (src/app.zig) carries the fetch-once MCP tools cache
     // tests with its implementation.
     _ = @import("app.zig");

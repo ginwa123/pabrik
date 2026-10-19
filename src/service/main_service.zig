@@ -8,6 +8,7 @@ const daemon = @import("daemon.zig");
 const signal_handlers = @import("signal_handlers.zig");
 // helpers/ lives at src/helpers/, one directory up from src/service/.
 const helpers = @import("helpers");
+const cli_parse = @import("../cli/parse.zig");
 
 pub const Subcommand = union(enum) {
     start: struct {
@@ -38,99 +39,62 @@ pub const ParseError = error{
     OutOfMemory,
 };
 
+/// The verbs this parser accepts. A runtime `args[0]` picks one, and the
+/// engine then sees its name at comptime so the flag table can filter.
+const Verb = enum { start, stop, restart };
+
 pub fn parseServiceSubcommand(
     args: []const []const u8,
 ) ParseError!Subcommand {
     if (args.len == 0) return error.UnknownSubcommand;
     const verb = args[0];
-
-    if (std.mem.eql(u8, verb, "start")) {
-        var port: u16 = 8081;
-        var no_static_dir = false;
-        var static_dir: ?[]const u8 = null;
-        var auth_enabled = false;
-        var i: usize = 1;
-        while (i < args.len) : (i += 1) {
-            const arg = args[i];
-            if (std.mem.eql(u8, arg, "--port")) {
-                i += 1;
-                if (i >= args.len) return error.MissingValue;
-                port = std.fmt.parseInt(u16, args[i], 10) catch return error.InvalidPort;
-            } else if (std.mem.eql(u8, arg, "--no-static-dir")) {
-                no_static_dir = true;
-            } else if (std.mem.eql(u8, arg, "--static-dir")) {
-                i += 1;
-                if (i >= args.len) return error.MissingValue;
-                static_dir = args[i];
-            } else if (std.mem.eql(u8, arg, "--auth")) {
-                auth_enabled = true;
-            } else return error.UnknownSubcommand;
-        }
-        return .{
-            .start = .{
-                .port = port,
-                .no_static_dir = no_static_dir,
-                .static_dir = static_dir,
-                .auth_enabled = auth_enabled,
-            },
-        };
-    }
-
-    if (std.mem.eql(u8, verb, "stop")) {
-        var graceful_timeout_ms: u32 = 5000;
-        var i: usize = 1;
-        while (i < args.len) : (i += 1) {
-            const arg = args[i];
-            if (std.mem.eql(u8, arg, "--graceful-timeout-ms")) {
-                i += 1;
-                if (i >= args.len) return error.MissingValue;
-                graceful_timeout_ms = std.fmt.parseInt(u32, args[i], 10) catch return error.InvalidPort;
-            } else return error.UnknownSubcommand;
-        }
-        return .{ .stop = .{ .graceful_timeout_ms = graceful_timeout_ms } };
-    }
+    const rest = args[1..];
 
     if (std.mem.eql(u8, verb, "status")) {
-        if (args.len > 1) return error.UnknownSubcommand;
+        if (rest.len > 0) return error.UnknownSubcommand;
         return .status;
     }
-
-    if (std.mem.eql(u8, verb, "restart")) {
-        var port: u16 = 8081;
-        var graceful_timeout_ms: u32 = 5000;
-        var static_dir: ?[]const u8 = null;
-        var auth_enabled = false;
-        var i: usize = 1;
-        while (i < args.len) : (i += 1) {
-            const arg = args[i];
-            if (std.mem.eql(u8, arg, "--port")) {
-                i += 1;
-                if (i >= args.len) return error.MissingValue;
-                port = std.fmt.parseInt(u16, args[i], 10) catch return error.InvalidPort;
-            } else if (std.mem.eql(u8, arg, "--graceful-timeout-ms")) {
-                i += 1;
-                if (i >= args.len) return error.MissingValue;
-                graceful_timeout_ms = std.fmt.parseInt(u32, args[i], 10) catch return error.InvalidPort;
-            } else if (std.mem.eql(u8, arg, "--static-dir")) {
-                // The usage text has always advertised this flag, but the
-                // parser used to reject it with UnknownSubcommand — so a
-                // restarted daemon silently lost its webapp dir (and
-                i += 1;
-                if (i >= args.len) return error.MissingValue;
-                static_dir = args[i];
-            } else if (std.mem.eql(u8, arg, "--auth")) {
-                auth_enabled = true;
-            } else return error.UnknownSubcommand;
-        }
-        return .{ .restart = .{
-            .port = port,
-            .graceful_timeout_ms = graceful_timeout_ms,
-            .static_dir = static_dir,
-            .auth_enabled = auth_enabled,
-        } };
-    }
-
+    if (std.mem.eql(u8, verb, "start")) return parseVerb(.start, rest);
+    if (std.mem.eql(u8, verb, "stop")) return parseVerb(.stop, rest);
+    if (std.mem.eql(u8, verb, "restart")) return parseVerb(.restart, rest);
     return error.UnknownSubcommand;
+}
+
+/// Every field any `service` verb may set. The table refuses a flag the verb
+/// does not list, so a field a verb cannot set stays at its default.
+const ServiceFlags = struct {
+    port: u16 = 8081,
+    no_static_dir: bool = false,
+    static_dir: ?[]const u8 = null,
+    auth_enabled: bool = false,
+    graceful_timeout_ms: u32 = 5000,
+};
+
+fn parseVerb(comptime verb: Verb, rest: []const []const u8) ParseError!Subcommand {
+    var got: ServiceFlags = .{};
+    const opts: cli_parse.Options = .{ .scope = .service, .verb = @tagName(verb) };
+    if (try cli_parse.parse(ServiceFlags, opts, null, rest, &got, null)) |failure| {
+        return switch (failure.kind) {
+            .missing_value => error.MissingValue,
+            .invalid_value => error.InvalidPort,
+            .unknown_flag => error.UnknownSubcommand,
+        };
+    }
+    return switch (verb) {
+        .start => .{ .start = .{
+            .port = got.port,
+            .no_static_dir = got.no_static_dir,
+            .static_dir = got.static_dir,
+            .auth_enabled = got.auth_enabled,
+        } },
+        .stop => .{ .stop = .{ .graceful_timeout_ms = got.graceful_timeout_ms } },
+        .restart => .{ .restart = .{
+            .port = got.port,
+            .graceful_timeout_ms = got.graceful_timeout_ms,
+            .static_dir = got.static_dir,
+            .auth_enabled = got.auth_enabled,
+        } },
+    };
 }
 
 pub const StartError = anyerror;
@@ -185,7 +149,7 @@ pub fn serviceStart(
     //    called, or SIGTERM received).
 }
 
-pub const StopError = error{ OutOfMemory };
+pub const StopError = error{OutOfMemory};
 
 pub const StopOptions = struct {
     graceful_timeout_ms: u32,

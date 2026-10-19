@@ -6,6 +6,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 
 const headless = @import("../headless/mod.zig");
+const cli_flags = @import("../cli/flags.zig");
 
 /// `pabrik headless {run,sessions,messages,help}`.
 pub fn dispatchHeadless(
@@ -32,9 +33,10 @@ pub fn dispatchHeadless(
     var verb_argv: std.ArrayList([]const u8) = .empty;
     defer verb_argv.deinit(allocator);
     {
+        const log_file_flag = cli_flags.word("log-file");
         var i: usize = 0;
         while (i < rest.items.len) : (i += 1) {
-            if (std.mem.eql(u8, rest.items[i], "--log-file")) {
+            if (std.mem.eql(u8, rest.items[i], log_file_flag)) {
                 i += 1;
                 if (i >= rest.items.len) {
                     std.log.err("headless: --log-file requires a value", .{});
