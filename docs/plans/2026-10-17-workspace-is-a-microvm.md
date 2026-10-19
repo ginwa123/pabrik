@@ -1871,3 +1871,41 @@ written in `agent-a` invisible in `agent-b`.
   asserts their hash, so a red smoke can still be a newer kernel. `PABRIK_GUEST_KERNEL` /
   `PABRIK_FC_BIN` are the override, and a pinned host-artifact manifest is the next card.
 - **No cgroup scope per VM**, so N workspaces are N × `mem_size_mib` with no ceiling (§24 §10.2).
+
+---
+
+## 34. The agent's cwd is the VM's path, not the host's
+
+A `--saas` session used to keep a **host** path in `sessions.cwd` and translate it to the guest's
+`/workspace` on the way down. The model, the prompt and every tool therefore still spoke the host's
+vocabulary while the shell ran in a VM — and the translation was invisible, so `pwd` printing
+`/workspace` looked like a bug rather than the design.
+
+The rule now: **under `--saas` a workspace's cwd is `/workspace`.** One path, one meaning, in the
+prompt, in the tools and in the guest.
+
+| item | where | proof |
+|---|---|---|
+| one cwd vocabulary: `/workspace…` or a host path under the root | `vmd/policy.zig::relativeWorkspace` | unit: guest root, nested, `/workspaces`, `/workspace/../etc`, `/etc` |
+| the shell executor accepts it | `agentic_loop/vm_runtime.zig` | — |
+| the file seam accepts it, and answers in the same vocabulary | `agentic_loop/workspace_fs.zig` (`relative`, `relativeDir`, `hostPath`, `guest_paths`) | 2 unit tests: `/workspace/src/agent` vs the host spelling |
+| a kanban task's session is created with `cwd=/workspace` + `workspace_id` | `http_handlers/kanban_tasks_create.zig` | — |
+| a task-linked chat session likewise | `http_handlers/session_create.zig` | — |
+| resolution stops depending on cwd | `agentic_loop/workspace_scope.zig::stampedWorkspaceId` | order: task link → row stamp → cwd heuristic |
+
+**Why the row stamp matters.** With `cwd=/workspace`, the cwd heuristic can no longer match a
+workspace (items carry host paths), so the session row's own `workspace_id` (migration 25) became
+load-bearing. `stampedWorkspaceId` reads it and answers null on a schema that predates the column,
+so a fixture DB behaves exactly as before.
+
+`zig build test`: **4807/4811 passed, 4 skipped** (the pinned Linux ceiling). Local mode is
+byte-identical: `guest_paths` is false for every `Fs` the host builds (`substrate(.host, …)`), so
+every walk still answers `/home/you/proj/...`.
+
+### What this does not do yet
+
+- **The project picker still lists the host.** `GET /api/system/folder?action=list` is a host
+  `readdir`; in `--saas` it must be workspace-scoped and list the guest through `fs.walk`, and the
+  dialog must start at `/workspace`. Next card.
+- **Nothing imports files into `/workspace`**, and the default image is the 128 MiB base tier
+  (no git/node/zig), so a new VM's tree is still empty.

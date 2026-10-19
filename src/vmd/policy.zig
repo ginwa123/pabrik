@@ -99,6 +99,18 @@ pub fn relativeToRoot(root: []const u8, cwd: []const u8) ?[]const u8 {
     return rel;
 }
 
+/// A cwd in EITHER vocabulary: the guest's own root (`/workspace…`) or a host
+/// path under `root`. Anything else is refused, never rewritten.
+pub fn relativeWorkspace(root: []const u8, cwd: []const u8) ?[]const u8 {
+    if (std.mem.eql(u8, cwd, guest_root)) return "";
+    const prefix = guest_root ++ "/";
+    if (std.mem.startsWith(u8, cwd, prefix)) {
+        const rel = cwd[prefix.len..];
+        return if (cwdRelValid(rel)) rel else null;
+    }
+    return relativeToRoot(root, cwd);
+}
+
 /// The credential the kernel reports for a unix-socket peer. Only the uid is
 /// load-bearing; the pid is carried so a refusal can name who was refused.
 pub const Peer = struct {
@@ -214,6 +226,20 @@ test "relativeToRoot maps a host cwd into the guest, refusing anything outside" 
     try testing.expect(relativeToRoot(root, "/home/you/proj-other") == null);
     try testing.expect(relativeToRoot(root, "/etc") == null);
     try testing.expect(relativeToRoot("", "/etc") == null);
+}
+
+test "relativeWorkspace: the guest root and a host path both resolve, escape does not" {
+    const root = "/home/you/proj";
+    try testing.expectEqualStrings("", relativeWorkspace(root, "/workspace").?);
+    try testing.expectEqualStrings("src", relativeWorkspace(root, "/workspace/src").?);
+    try testing.expectEqualStrings("a/b", relativeWorkspace(root, "/workspace/a/b").?);
+
+    try testing.expectEqualStrings("", relativeWorkspace(root, "/home/you/proj").?);
+    try testing.expectEqualStrings("src", relativeWorkspace(root, "/home/you/proj/src").?);
+
+    try testing.expect(relativeWorkspace(root, "/workspaces") == null);
+    try testing.expect(relativeWorkspace(root, "/workspace/../etc") == null);
+    try testing.expect(relativeWorkspace(root, "/etc") == null);
 }
 
 test "peerAllowed: only the expected uid is allowed through" {

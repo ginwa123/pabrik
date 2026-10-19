@@ -8,6 +8,8 @@ const http_response = @import("http_response.zig");
 const on_event_sent_kanban = pabrikcore.ai_mod.on_event_sent_kanban;
 const model_guard = @import("../agentic_loop/llm_history_model_guard.zig");
 const task_skills = @import("task_skills.zig");
+const runtime_mode = @import("../runtime_mode.zig");
+const vmd_policy = @import("../vmd/policy.zig");
 
 /// HTTP request body for kanban task create.
 pub const KanbanTaskCreateBody = struct {
@@ -239,14 +241,22 @@ pub fn kanbanTasksCreateHandler(
         const image_urls_wire = parsed.image_urls orelse "";
         const video_urls_wire = parsed.video_urls orelse "";
 
+        // Under `--saas` the workspace tree lives at the guest's root, so that
+        // is the session's cwd: a host path names a directory the VM never has.
+        const session_cwd: []const u8 = if (runtime_mode.currentMode() == .saas)
+            vmd_policy.guest_root
+        else
+            standard_result.cwd;
+
         sqlite_db.exec(
             allocator,
-            "INSERT OR IGNORE INTO sessions (id, name, status, cwd, created_at, updated_at, selected_profile_model, is_auto_retry_until_stop, user_id) " ++
-                "VALUES (?, ?, 'active', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?)",
+            "INSERT OR IGNORE INTO sessions (id, name, status, cwd, workspace_id, created_at, updated_at, selected_profile_model, is_auto_retry_until_stop, user_id) " ++
+                "VALUES (?, ?, 'active', ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?)",
             &[_][]const u8{
                 standard_result.task_id,
                 standard_result.name,
-                standard_result.cwd,
+                session_cwd,
+                ws_id,
                 profile,
                 normalized,
                 owner,

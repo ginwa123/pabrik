@@ -92,6 +92,9 @@ pub const Fs = struct {
     workspace_id: []u8,
     root: []u8,
     socket: []u8,
+    /// Whether answers are spelled in the guest's vocabulary. A `--saas` caller
+    /// gets `/workspace/...`; local mode keeps the host's own paths.
+    guest_paths: bool = false,
 
     pub fn deinit(self: *Fs) void {
         self.allocator.free(self.workspace_id);
@@ -102,7 +105,7 @@ pub const Fs = struct {
     /// The path relative to the workspace root, or null when `abs` is not under
     /// it. Borrows from `abs`, so the caller keeps owning its own string.
     pub fn relative(self: *const Fs, abs: []const u8) ?[]const u8 {
-        const rel = policy.relativeToRoot(self.root, abs) orelse return null;
+        const rel = policy.relativeWorkspace(self.root, abs) orelse return null;
         if (!fs_policy.pathRelValid(rel)) return null;
         return rel;
     }
@@ -133,7 +136,7 @@ pub const Fs = struct {
     /// The directory form of `relative`: a listing or a walk may start at the
     /// workspace root, which is the one path no file op may name.
     pub fn relativeDir(self: *const Fs, abs: []const u8) ?[]const u8 {
-        const rel = policy.relativeToRoot(self.root, abs) orelse return null;
+        const rel = policy.relativeWorkspace(self.root, abs) orelse return null;
         if (!fs_policy.dirRelValid(rel)) return null;
         return rel;
     }
@@ -143,6 +146,7 @@ pub const Fs = struct {
     /// relative answer becomes a path a tool can hand back to a model.
     pub fn hostPath(self: *const Fs, rel: []const u8) ![]u8 {
         if (!fs_policy.dirRelValid(rel)) return Error.GuestPathOutsideWorkspace;
+        if (self.guest_paths) return policy.guestCwd(self.allocator, policy.guest_root, rel);
         const root = std.mem.trimEnd(u8, self.root, "/");
         if (rel.len == 0) return self.allocator.dupe(u8, root);
         return std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ root, rel });
@@ -396,6 +400,7 @@ pub fn forSession(
         .workspace_id = workspace_id,
         .root = root,
         .socket = socket_copy,
+        .guest_paths = true,
     };
 }
 
@@ -427,6 +432,7 @@ pub fn forPath(
         .workspace_id = match.workspace_id,
         .root = match.root,
         .socket = socket_copy,
+        .guest_paths = true,
     };
 }
 
@@ -580,6 +586,43 @@ test "relative: a host path is never handed to the guest absolute" {
     const rel = fs.relative("/proj/a/deep/file.txt").?;
     try testing.expect(!std.mem.startsWith(u8, rel, "/"));
     try testing.expect(std.mem.indexOf(u8, rel, "proj") == null);
+}
+
+test "hostPath: a --saas caller is answered in the guest's vocabulary" {
+    const a = testing.allocator;
+    var fs = Fs{
+        .allocator = a,
+        .workspace_id = try a.dupe(u8, "ws"),
+        .root = try a.dupe(u8, "/home/you/proj"),
+        .socket = try a.dupe(u8, "/run/user/1000/pabrik-vmd.sock"),
+        .guest_paths = true,
+    };
+    defer fs.deinit();
+
+    const at_root = try fs.hostPath("");
+    defer a.free(at_root);
+    try testing.expectEqualStrings("/workspace", at_root);
+
+    const nested = try fs.hostPath("src/agent");
+    defer a.free(nested);
+    try testing.expectEqualStrings("/workspace/src/agent", nested);
+
+    try testing.expectError(Error.GuestPathOutsideWorkspace, fs.hostPath("../etc"));
+}
+
+test "hostPath: local mode still spells the host path" {
+    const a = testing.allocator;
+    var fs = Fs{
+        .allocator = a,
+        .workspace_id = try a.dupe(u8, "ws"),
+        .root = try a.dupe(u8, "/home/you/proj"),
+        .socket = try a.dupe(u8, "/tmp/s.sock"),
+    };
+    defer fs.deinit();
+
+    const nested = try fs.hostPath("src");
+    defer a.free(nested);
+    try testing.expectEqualStrings("/home/you/proj/src", nested);
 }
 
 test "substrate: local is the host, --saas is the guest or nobody" {
