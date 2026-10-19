@@ -81,8 +81,7 @@ pub fn ensureDefaultProject(
     // Every statement below goes through `tx`, never `db`: the tx holds the
     // backend mutex and the lock is not reentrant. (Same constraint as
     // workspace_items_create_agent.zig:139-152.)
-    tx.exec(
-        allocator,
+    tx.exec(allocator,
         \\INSERT INTO workspace_items
         \\  (id, workspace_id, item_type, name, path, position, is_default, created_at, updated_at)
         \\VALUES (?, ?, 'agent', ?, ?,
@@ -181,8 +180,7 @@ fn readDefault(
     db: *pabrikcore.sqlite.SqliteBackend,
     workspace_id: []const u8,
 ) ?DefaultProject {
-    var q = db.query(
-        allocator,
+    var q = db.query(allocator,
         \\SELECT id, name, path, position FROM workspace_items
         \\WHERE workspace_id = ? AND is_default = 1
     , &[_][]const u8{workspace_id}) catch return null;
@@ -321,10 +319,6 @@ pub fn workspaceDefaultProjectHandler(
 
     const di = try pabrikcore.getSingleton();
     const sqlite_db = di.db;
-    // Per-user tools checklist under `--auth` (see `session_llm_config.zig`).
-    const user_cfg = auth_common.requestUserConfig(allocator, di.db, di.auth_enabled, req.headers) orelse
-        pabrikcore.getLlmConfig(di);
-    const config_tools = user_cfg.tools;
 
     const workspace_id = req.params.get("workspace_id") orelse "";
     if (workspace_id.len == 0) {
@@ -333,6 +327,12 @@ pub fn workspaceDefaultProjectHandler(
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "workspace_id required" }),
         });
     }
+
+    // The workspace's own tools checklist — it seeds the default project's
+    // allowlist. Tools are workspace-scoped, never the user document's.
+    const workspace_cfg = auth_common.requestWorkspaceConfig(allocator, di, workspace_id, req.headers) orelse
+        pabrikcore.getLlmConfig(di);
+    const config_tools = workspace_cfg.tools;
 
     // An unknown workspace is a 404 here, unlike the list endpoint which
     // answers 200 + []. This is an explicit request for a specific
@@ -726,9 +726,7 @@ test "a corrupted default project name is repaired on read" {
     try testing.expect(nameLooksUsable(p.name));
 
     // And the stored row was actually rewritten, so the next read is clean too.
-    const stored = try countWhereFmt(&ctx.db, alloc,
-        "SELECT COUNT(*) FROM workspace_items WHERE id = '{s}' AND name = 'Project Default'",
-        .{p.id});
+    const stored = try countWhereFmt(&ctx.db, alloc, "SELECT COUNT(*) FROM workspace_items WHERE id = '{s}' AND name = 'Project Default'", .{p.id});
     try testing.expectEqual(@as(u32, 1), stored);
 }
 
@@ -739,7 +737,8 @@ test "a user rename of the default project is never clobbered" {
 
     const created = try ensureDefaultProject(alloc, &ctx.db, "ws_1", &ctx.env, null);
     defer created.deinit(alloc);
-    try ctx.db.exec(alloc,
+    try ctx.db.exec(
+        alloc,
         "UPDATE workspace_items SET name = 'Work stuff' WHERE id = ?",
         &[_][]const u8{created.id},
     );
@@ -749,9 +748,7 @@ test "a user rename of the default project is never clobbered" {
 
     // A name a person chose survives the heal, and the row is not rewritten.
     try testing.expectEqualStrings("Work stuff", p.name);
-    try testing.expectEqual(@as(u32, 1), try countWhereFmt(&ctx.db, alloc,
-        "SELECT COUNT(*) FROM workspace_items WHERE id = '{s}' AND name = 'Work stuff'",
-        .{p.id}));
+    try testing.expectEqual(@as(u32, 1), try countWhereFmt(&ctx.db, alloc, "SELECT COUNT(*) FROM workspace_items WHERE id = '{s}' AND name = 'Work stuff'", .{p.id}));
 }
 
 // ===== Tests merged from workspace_items_default_test.zig (2026-09-29

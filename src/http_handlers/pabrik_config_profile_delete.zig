@@ -1,6 +1,6 @@
 //! Deleting one LLM profile, from either scope: the user-scope route
 //! `DELETE /api/config/pabrik/profiles/:name`, and the workspace-scope twin in
-//! `workspace_config.zig`, which also clears this workspace's own copy.
+//! `workspace_config.zig`, which edits only that workspace's own row.
 
 const std = @import("std");
 const json = std.json;

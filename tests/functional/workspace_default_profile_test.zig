@@ -451,11 +451,25 @@ test "a chat's default model is its workspace's active profile" {
     const kanban_id = try createKanban(&h, cookie, ws_id, "sprint-default");
     defer gpa.free(kanban_id);
 
-    // 3. THE SETTING UNDER TEST — Settings -> Workspace -> "Set active",
-    //    which is what writes the overlay. The exact body the settings page
-    //    PUTs for "make this profile the workspace default".
+    // 3. THE SETTING UNDER TEST — Settings -> Workspace -> "Set active", which
+    //    is what writes the workspace's own copy. The exact body the settings
+    //    page PUTs: the whole workspace-scoped config it loaded (the profiles
+    //    this workspace owns) with `active_profile` moved.
     {
-        const body = try std.fmt.allocPrint(gpa, "{{\"active_profile\":\"{s}\"}}", .{WS_DEFAULT});
+        const body = try std.fmt.allocPrint(
+            gpa,
+            "{{\"profiles\":{{" ++
+                "\"{s}\":{{\"model\":\"{s}\",\"base_url\":\"{s}\",\"api_key\":\"{s}\",\"url_style\":\"openai\",\"thinking\":\"auto\",\"temperature\":\"auto\"}}," ++
+                "\"{s}\":{{\"model\":\"{s}\",\"base_url\":\"{s}\",\"api_key\":\"{s}\",\"url_style\":\"openai\",\"thinking\":\"auto\",\"temperature\":\"auto\"}}," ++
+                "\"{s}\":{{\"model\":\"{s}\",\"base_url\":\"{s}\",\"api_key\":\"{s}\",\"url_style\":\"openai\",\"thinking\":\"auto\",\"temperature\":\"auto\"}}" ++
+                "}},\"active_profile\":\"{s}\"}}",
+            .{
+                USER_DEFAULT, USER_DEFAULT_MODEL, DEAD_ENDPOINT, USER_KEY,
+                WS_DEFAULT,   WS_DEFAULT_MODEL,   stub_url,      USER_KEY,
+                EXPLICIT,     EXPLICIT_MODEL,     stub_url,      USER_KEY,
+                WS_DEFAULT,
+            },
+        );
         defer gpa.free(body);
         const path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/config", .{ws_id});
         defer gpa.free(path);

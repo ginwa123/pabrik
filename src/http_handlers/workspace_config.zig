@@ -106,7 +106,7 @@ fn loadBase(
     di: *pabrikcore.App,
     owner: []const u8,
 ) ?[]u8 {
-    return workspace_config.baseConfigText(
+    return workspace_config.scopedBaseConfigText(
         allocator,
         di.io,
         di.db,
@@ -224,16 +224,15 @@ pub fn workspaceConfigPutHandler(
 // DELETE /api/workspaces/:workspace_id/config/profiles/:name
 // =====================================================================
 
-/// Delete one profile from this workspace: the overlay's own copy and the
-/// user-level definition it inherits from. Only the first would be inherited
-/// straight back by the merge; only the second would leave the copy in place.
+/// Delete one profile from this workspace's own row. The user document is
+/// never touched: profiles are workspace-scoped, and deleting one here must
+/// not remove it from anywhere else.
 pub fn workspaceConfigProfileDeleteHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
     res: gserverz.HttpResponse,
 ) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
-    const io = ctx.io;
     const di = try pabrikcore.getSingleton();
 
     const workspace_id = req.params.get("workspace_id") orelse "";
@@ -247,39 +246,26 @@ pub fn workspaceConfigProfileDeleteHandler(
     const owner = ownerForRequest(allocator, di, req) orelse
         return profile_delete.makeErrorResponse(allocator, res, 500, name, "Out of memory");
 
-    // The workspace's own copy. A malformed overlay is already ignored by the
-    // merge, so there is nothing here to remove either - not a new failure.
-    var removed_from_overlay = false;
+    // A malformed overlay is already ignored by the merge, so there is
+    // nothing here to remove either - not a new failure.
+    var active_cleared = false;
+    var removed = false;
     if (store.loadRaw(allocator, di.db, owner, workspace_id) catch null) |overlay| {
-        const removal: ?profile_delete.ProfileRemoval =
-            profile_delete.removeProfileFromDocument(allocator, overlay, name) catch null;
-        if (removal) |r| {
+        if (profile_delete.removeProfileFromDocument(allocator, overlay, name) catch null) |r| {
             if (r.outcome.removed) {
                 store.saveRaw(allocator, di.db, owner, workspace_id, r.document) catch
                     return profile_delete.makeErrorResponse(allocator, res, 500, name, "Failed to save the workspace config");
-                removed_from_overlay = true;
+                removed = true;
+                active_cleared = r.outcome.active_cleared;
             }
         }
     }
 
-    // The user-level definition the workspace inherits from.
-    const outcome = profile_delete.removeProfileFromUserConfig(allocator, io, di, owner, name) catch |err| switch (err) {
-        error.InvalidDocument => return profile_delete.makeErrorResponse(allocator, res, 500, name, "Invalid JSON in the user config"),
-        else => return profile_delete.makeErrorResponse(allocator, res, 500, name, "Failed to update the user config"),
-    };
-
-    if (!removed_from_overlay and !outcome.removed)
+    if (!removed)
         return profile_delete.makeErrorResponse(allocator, res, 404, name, "Profile not found");
 
     di.clearMcpToolsCache();
-    if (outcome.removed and !di.auth_enabled) {
-        switch (profile_delete.liveReloadLlmConfig(io, name)) {
-            .ok => {},
-            .warning => |msg| return profile_delete.makeSuccessResponse(allocator, res, name, outcome.active_cleared, msg),
-            .fatal => |msg| return profile_delete.makeErrorResponse(allocator, res, 500, name, msg),
-        }
-    }
-    return profile_delete.makeSuccessResponse(allocator, res, name, outcome.active_cleared, null);
+    return profile_delete.makeSuccessResponse(allocator, res, name, active_cleared, null);
 }
 
 // =====================================================================

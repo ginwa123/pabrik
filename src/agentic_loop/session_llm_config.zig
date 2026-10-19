@@ -60,13 +60,16 @@ pub fn mergedConfigTextFor(
         null;
     defer if (overlay) |o| allocator.free(o);
 
-    const base = workspace_config.baseConfigText(allocator, io, db, environment, auth_enabled, owner);
+    const in_workspace = workspace_id.len > 0;
+    const base = if (in_workspace)
+        workspace_config.scopedBaseConfigText(allocator, io, db, environment, auth_enabled, owner)
+    else
+        workspace_config.baseConfigText(allocator, io, db, environment, auth_enabled, owner);
 
     if (overlay == null) {
-        // Case 1 and 2 - see the doc comment.
-        if (!auth_enabled) {
-            // File mode: a config.json read that found the file still answers
-            // null, because the singleton already holds exactly those bytes.
+        if (!auth_enabled and !in_workspace) {
+            // File mode, no workspace in scope: the singleton already holds
+            // exactly these bytes.
             if (base) |b| allocator.free(b);
             return null;
         }
@@ -392,20 +395,18 @@ test "an overlay in file mode merges over the base and replaces an array" {
     try testing.expectEqualStrings("mine", cfg.active_profile.?);
 }
 
-test "auth mode: the overlay wins over the user config and the rest survives" {
+test "auth mode: a workspace takes its scoped settings from its own row, never from the user config" {
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
     const alloc = testing.allocator;
 
-    // The user's saved config: a profile WITH a credential, plus two tools.
     try insertUser(
         &ctx.db,
         "u_1",
         "{\"profiles_models\":{\"claude\":{\"model\":\"opus\",\"api_key\":\"sk-user\"}}," ++
-            "\"active_profile\":\"claude\",\"tools\":[\"read_file\",\"write_file\"]}",
+            "\"active_profile\":\"claude\",\"tools\":[\"read_file\",\"write_file\"],\"retry_delay_ms\":1234}",
     );
-    // The workspace overrides ONLY the tool list.
     try putOverlay(&ctx.db, "u_1", "ws_a", "{\"tools\":[\"read_file\"]}");
 
     const merged = mergedConfigTextFor(alloc, ctx.threaded.io(), &ctx.db, null, true, "u_1", "ws_a") orelse
@@ -415,34 +416,37 @@ test "auth mode: the overlay wins over the user config and the rest survives" {
     const cfg = fromJsonText(alloc, merged) orelse return error.Unparseable;
     defer freeResolved(cfg);
 
-    // The overlay's key won...
     try testing.expectEqual(@as(usize, 1), cfg.tools.?.len);
     try testing.expectEqualStrings("read_file", cfg.tools.?[0]);
-    // ...and everything the workspace did not mention still came from the
-    // user config, credential included. A "last write wins" merge would have
-    // dropped the whole profile and broken every turn in this workspace.
-    try testing.expectEqual(@as(usize, 1), cfg.profiles_models.count());
-    const profile = cfg.profiles_models.get("claude") orelse return error.ProfileLost;
-    try testing.expectEqualStrings("opus", profile.model);
-    try testing.expectEqualStrings("sk-user", profile.api_key);
-    try testing.expectEqualStrings("claude", cfg.active_profile.?);
+
+    // The user's profile - and its credential - is not part of this scope.
+    try testing.expectEqual(@as(usize, 0), cfg.profiles_models.count());
+    try testing.expect(cfg.active_profile == null);
+
+    // General is still shared, so the run keeps the user's retry backoff.
+    try testing.expectEqual(@as(u32, 1234), cfg.retry_delay_ms);
 }
 
-test "auth mode with no overlay still returns the user config, unchanged" {
+test "auth mode with no overlay keeps the user's General settings and inherits no profile" {
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
     const alloc = testing.allocator;
 
-    try insertUser(&ctx.db, "u_1", "{\"active_profile\":\"mine\",\"tools\":[\"read_file\",\"write_file\"]}");
+    try insertUser(
+        &ctx.db,
+        "u_1",
+        "{\"active_profile\":\"mine\",\"tools\":[\"read_file\",\"write_file\"],\"retry_delay_ms\":1234}",
+    );
     const text = mergedConfigTextFor(alloc, ctx.threaded.io(), &ctx.db, null, true, "u_1", "ws_a") orelse
         return error.UserConfigLost;
     defer alloc.free(text);
 
     const cfg = fromJsonText(alloc, text) orelse return error.Unparseable;
     defer freeResolved(cfg);
-    try testing.expectEqual(@as(usize, 2), cfg.tools.?.len);
-    try testing.expectEqualStrings("mine", cfg.active_profile.?);
+    try testing.expect(cfg.tools == null);
+    try testing.expect(cfg.active_profile == null);
+    try testing.expectEqual(@as(u32, 1234), cfg.retry_delay_ms);
 
     // A user who never saved settings, and no overlay either: the singleton.
     try testing.expect(mergedConfigTextFor(alloc, ctx.threaded.io(), &ctx.db, null, true, "u_none", "ws_a") == null);
@@ -611,7 +615,7 @@ test "sessionWorkspace: no task link and no cwd match reads as no workspace" {
     try testing.expectEqualStrings("", ws);
 }
 
-test "forOwnerAndWorkspace: the overlay's active_profile wins over the user's" {
+test "forOwnerAndWorkspace: the workspace's own active_profile and profiles win" {
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
@@ -636,9 +640,9 @@ test "forOwnerAndWorkspace: the overlay's active_profile wins over the user's" {
     defer freeResolved(cfg);
     try testing.expectEqualStrings("ws-default", cfg.active_profile.?);
     try testing.expectEqualStrings("ws-model", cfg.resolveEffectiveProfile(cfg.active_profile.?).model);
-    // The user's own profile survives the merge: the overlay only named the
-    // active one (positive control for "layered", not "swapped").
-    try testing.expect(cfg.profiles_models.get("user-default") != null);
+    // The workspace's list is its own: the user's profile is not inherited.
+    try testing.expect(cfg.profiles_models.get("ws-default") != null);
+    try testing.expect(cfg.profiles_models.get("user-default") == null);
 
     // No workspace id: the user-level answer, unchanged.
     const plain = forOwnerAndWorkspace(alloc, ctx.threaded.io(), &ctx.db, null, true, "u_1", "") orelse

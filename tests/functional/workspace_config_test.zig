@@ -47,7 +47,11 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
 
 /// PUT the whole user config (the same body the Settings page sends).
 fn putUserConfig(h: *Harness) !void {
-    var r = try h.http(io, .PUT, "/api/config/pabrik", .{ .json_body = USER_CONFIG, .expect = &.{200} });
+    try putUserConfigBody(h, USER_CONFIG);
+}
+
+fn putUserConfigBody(h: *Harness, body: []const u8) !void {
+    var r = try h.http(io, .PUT, "/api/config/pabrik", .{ .json_body = body, .expect = &.{200} });
     defer r.deinit();
 }
 
@@ -135,29 +139,63 @@ test "workspace_config_route_answers_the_config_handler" {
 }
 
 // ============================================================================
-// Inheritance: a workspace with no overlay shows the USER's config
+// Creation: a new workspace takes its OWN copy of the scoped settings
 // ============================================================================
 
-test "workspace_config_inherits_the_user_config_by_default" {
+test "workspace_config_copies_the_user_config_at_creation" {
     var h = try boot();
     defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
     try putUserConfig(&h);
 
-    const id = try createWorkspace(&h, "Inherits");
+    const id = try createWorkspace(&h, "Copied");
     defer gpa.free(id);
 
     var got = try getWorkspaceConfig(&h, id);
     defer got.doc.deinit();
     defer got.r.deinit();
 
-    // The user's profiles are what a run here would use.
+    // The profiles this workspace owns, copied from the user config when it
+    // was created - they are what a run here uses.
     const profiles = got.doc.object("profiles") orelse return error.NoProfiles;
     try testing.expect(profiles.get("stub") != null);
     try testing.expect(profiles.get("extra") != null);
     try testing.expectEqualStrings("extra", got.doc.str("active_profile").?);
-    // And the General keys too - an inheriting workspace is the user config.
+    // The General keys stay shared with the user config.
     try testing.expectEqual(true, got.doc.boolean("notify_on_complete").?);
     try testing.expectEqual(@as(i64, 1234), got.doc.int("retry_delay_ms").?);
+}
+
+test "workspace_config_does_not_follow_a_later_user_config_change" {
+    var h = try boot();
+    defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    try putUserConfig(&h);
+
+    const id = try createWorkspace(&h, "Frozen");
+    defer gpa.free(id);
+
+    // The user edits their own settings afterwards: a new profile, and a
+    // different active one.
+    try putUserConfigBody(&h,
+        \\{"profiles":{"stub":{"model":"stub-model","base_url":"http://127.0.0.1:1","api_key":"stub-key-not-real"},
+        \\ "added":{"model":"added-model","base_url":"http://127.0.0.1:1","api_key":"added-key-not-real"}},
+        \\ "active_profile":"stub",
+        \\ "tools":["command","glob"],
+        \\ "notify_on_complete":true,
+        \\ "retry_delay_ms":4321}
+    );
+
+    var got = try getWorkspaceConfig(&h, id);
+    defer got.doc.deinit();
+    defer got.r.deinit();
+    const profiles = got.doc.object("profiles") orelse return error.NoProfiles;
+    // The workspace kept its own copy...
+    try testing.expect(profiles.get("stub") != null);
+    try testing.expect(profiles.get("extra") != null);
+    // ...the profile added afterwards is NOT inherited...
+    try testing.expect(profiles.get("added") == null);
+    try testing.expectEqualStrings("extra", got.doc.str("active_profile").?);
+    // ...and General still tracks the user config.
+    try testing.expectEqual(@as(i64, 4321), got.doc.int("retry_delay_ms").?);
 }
 
 // ============================================================================
@@ -202,9 +240,9 @@ test "workspace_config_put_overrides_only_the_workspace_scoped_keys" {
             "sonnet",
             profiles.get("extra").?.object.get("model").?.string,
         );
-        // ...and the profile the overlay never mentioned is STILL the user's,
-        // credential included. A "last write wins" merge would have dropped it.
-        try testing.expect(profiles.get("stub") != null);
+        // ...and the user's own profile is NOT part of this scope: the
+        // workspace owns the list it just PUT.
+        try testing.expect(profiles.get("stub") == null);
         // The General keys are the USER's, not the body's: they were sliced
         // out, so a change to them here cannot silently freeze them.
         try testing.expectEqual(true, got.doc.boolean("notify_on_complete").?);
@@ -269,10 +307,10 @@ test "workspace_config_put_refuses_a_body_with_nothing_workspace_scoped" {
 }
 
 // ============================================================================
-// DELETE: back to inheriting, and the decision is remembered
+// An empty PUT body: the workspace drops its own copy
 // ============================================================================
 
-test "workspace_config_put_with_an_empty_body_returns_to_inheriting" {
+test "workspace_config_put_with_an_empty_body_leaves_no_scoped_settings" {
     var h = try boot();
     defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
     try putUserConfig(&h);
@@ -296,9 +334,9 @@ test "workspace_config_put_with_an_empty_body_returns_to_inheriting" {
         try testing.expectEqual(@as(usize, 1), tools.len);
     }
     {
-        // An EMPTY body means "inherit", not "store an empty object" — the
-        // documented sentinel the settings page sends when it resets a
-        // workspace to the user-level config.
+        // An EMPTY body means "inherit nothing", not "store an empty object" —
+        // the documented sentinel the settings page sends when it resets a
+        // workspace.
         var r = try h.http(io, .PUT, path, .{ .json_body = "", .expect = &.{200} });
         defer r.deinit();
     }
@@ -306,11 +344,14 @@ test "workspace_config_put_with_an_empty_body_returns_to_inheriting" {
         var got = try getWorkspaceConfig(&h, id);
         defer got.doc.deinit();
         defer got.r.deinit();
+        // Nothing scoped comes back: the user config is no longer a source for
+        // these keys, so a reset workspace has no tools and no profiles.
         const tools = try toolNames(&got.doc);
         defer gpa.free(tools);
-        try testing.expectEqual(@as(usize, 2), tools.len);
-        try testing.expectEqualStrings("command", tools[0]);
-        try testing.expectEqualStrings("glob", tools[1]);
+        try testing.expectEqual(@as(usize, 0), tools.len);
+        try testing.expectEqual(@as(usize, 0), got.doc.object("profiles").?.count());
+        // General is still the user's.
+        try testing.expectEqual(@as(i64, 1234), got.doc.int("retry_delay_ms").?);
     }
 }
 
@@ -444,7 +485,7 @@ test "a profile added to a workspace overlay is absent from the user-scope confi
 // DELETE /api/workspaces/:id/config/profiles/:name
 // ============================================================================
 
-test "workspace_profile_delete_removes_it_everywhere_and_keeps_the_rest_of_the_config" {
+test "workspace_profile_delete_removes_it_from_this_workspace_only" {
     var h = try boot();
     defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
     try putUserConfig(&h);
@@ -485,17 +526,16 @@ test "workspace_profile_delete_removes_it_everywhere_and_keeps_the_rest_of_the_c
         try testing.expect(profiles.get("stub") != null);
     }
 
-    // The user config it inherits from: gone here too, or the merge would
-    // hand the profile straight back to the workspace above.
+    // The user config is NOT the workspace's to edit: both profiles, every
+    // other key and the search credential are exactly as they were.
     var r = try h.http(io, .GET, "/api/config/pabrik", .{ .expect = &.{200} });
     defer r.deinit();
     var doc = try r.json();
     defer doc.deinit();
     {
         const profiles = doc.object("profiles") orelse return error.NoProfiles;
-        try testing.expect(profiles.get("extra") == null);
+        try testing.expect(profiles.get("extra") != null);
         try testing.expect(profiles.get("stub") != null);
-        // Every other key of the document survived the delete.
         const tools = try toolNames(&doc);
         defer gpa.free(tools);
         try testing.expectEqual(@as(usize, 2), tools.len);
@@ -507,12 +547,12 @@ test "workspace_profile_delete_removes_it_everywhere_and_keeps_the_rest_of_the_c
     }
 
     // The stored document - the GET above masks the search key, so only the
-    // file can show that the delete did not take the credential with it.
+    // file proves the credential survived the delete.
     const stored = try readUserConfigFile(&h);
     defer gpa.free(stored);
     try testing.expect(std.mem.indexOf(u8, stored, SENTINEL) != null);
     try testing.expect(std.mem.indexOf(u8, stored, "retry_delay_ms") != null);
-    try testing.expect(std.mem.indexOf(u8, stored, "extra-key-not-real") == null);
+    try testing.expect(std.mem.indexOf(u8, stored, "extra-key-not-real") != null);
     try testing.expect(std.mem.indexOf(u8, stored, "stub-key-not-real") != null);
 }
 

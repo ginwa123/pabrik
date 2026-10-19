@@ -933,9 +933,9 @@ fn persistAndReloadStatus(ctx: ToolExecContext) ![]u8 {
     return ctx.allocator.dupe(u8, "true") catch ctx.allocator.dupe(u8, "false") catch @panic("dupe failed for the mcp_server success status");
 }
 
-/// Auth-mode persist: merge the live `mcp_servers` into the session
-/// owner's `users.config_json` (Migration 092). The owner resolves via
-/// `sessions.user_id`; ownerless/unknown sessions fail the persist (the
+/// Auth-mode persist. MCP servers are workspace-scoped, so the session's own
+/// workspace row is the target. A session with no workspace falls back to the
+/// owner's `users.config_json`.
 fn persistAuthModeStatus(ctx: ToolExecContext, di: *exec_pabrikcore.App) ![]u8 {
     const user_config_store = exec_pabrikcore.user_config_store;
     var owner: ?[]u8 = null;
@@ -961,17 +961,37 @@ fn persistAuthModeStatus(ctx: ToolExecContext, di: *exec_pabrikcore.App) ![]u8 {
             return failStatus(ctx.allocator, "OOM", "dupe owner");
         };
     }
-    const existing = user_config_store.loadRaw(ctx.allocator, ctx.db, owner.?) catch |err| {
-        return failStatus(ctx.allocator, "load user config", @errorName(err));
-    };
+
+    const store = exec_pabrikcore.workspace_settings_store;
+    const resolved_ws = exec_pabrikcore.session_llm_config.sessionWorkspace(ctx.allocator, ctx.db, ctx.session_id) catch null;
+    defer if (resolved_ws) |w| ctx.allocator.free(w);
+    const in_workspace = if (resolved_ws) |w| w.len > 0 else false;
+
+    const existing = if (in_workspace)
+        store.loadRaw(ctx.allocator, ctx.db, owner.?, resolved_ws.?) catch |err| {
+            return failStatus(ctx.allocator, "load workspace config", @errorName(err));
+        }
+    else
+        user_config_store.loadRaw(ctx.allocator, ctx.db, owner.?) catch |err| {
+            return failStatus(ctx.allocator, "load user config", @errorName(err));
+        };
     defer if (existing) |e| ctx.allocator.free(e);
+
     const new_body = buildUpdatedConfigJson(ctx, existing) catch |err| {
-        return failStatus(ctx.allocator, "merge user config", @errorName(err));
+        return failStatus(ctx.allocator, "merge config", @errorName(err));
     };
     defer ctx.allocator.free(new_body);
-    user_config_store.saveRaw(ctx.allocator, ctx.db, owner.?, new_body) catch |err| {
-        return failStatus(ctx.allocator, "save user config", @errorName(err));
-    };
+
+    if (in_workspace) {
+        store.saveRaw(ctx.allocator, ctx.db, owner.?, resolved_ws.?, new_body) catch |err| {
+            return failStatus(ctx.allocator, "save workspace config", @errorName(err));
+        };
+    } else {
+        user_config_store.saveRaw(ctx.allocator, ctx.db, owner.?, new_body) catch |err| {
+            return failStatus(ctx.allocator, "save user config", @errorName(err));
+        };
+    }
+
     di.clearMcpToolsCache();
     invalidateRegistries(ctx);
     return ctx.allocator.dupe(u8, "true") catch ctx.allocator.dupe(u8, "false") catch @panic("dupe failed for the mcp_server auth-mode status");
@@ -1648,7 +1668,7 @@ test "executeEditMcpServerToJSON: empty args slice clears the stored argv" {
     const alloc = testing.allocator;
     var cfg = try fixtureConfig(alloc);
     defer cfg.deinit();
-    try cfg.addMcpServerStdio(.{ .name = "s", .command = "cmd", .args = &.{"--a", "--b"} });
+    try cfg.addMcpServerStdio(.{ .name = "s", .command = "cmd", .args = &.{ "--a", "--b" } });
 
     const result = try executeEditMcpServerToJSON(alloc, testing.io, &cfg, .{
         .name = "s",

@@ -3,10 +3,10 @@
   Overview, Secrets, Skills, Memories, and the config sections that moved
   here: Profiles, MCP Servers, Tools and Skill Evals.
 
-  The config sections edit THIS workspace's overlay
-  (`/api/workspaces/:id/config`), which the backend merges over the
-  user-level config. A workspace that has overridden nothing therefore
-  behaves exactly as it did before they existed.
+  The config sections edit THIS workspace's own row
+  (`/api/workspaces/:id/config`): profiles, MCP servers, tools, skill evals
+  and web search are workspace-scoped, so a workspace gets its own copy when
+  it is created and never reads them from the user config.
 
   Skills are rows scoped to one workspace (`GET
   /workspaces/:id/skills`), so the panel binds the route workspace — not

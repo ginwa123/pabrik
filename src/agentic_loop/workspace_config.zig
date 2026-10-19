@@ -188,28 +188,63 @@ pub fn workspaceScopedOverlay(
     return out.toOwnedSlice(allocator);
 }
 
+fn isWorkspaceScopedKey(key: []const u8) bool {
+    for (WORKSPACE_SCOPED_KEYS) |scoped| {
+        if (std.mem.eql(u8, key, scoped.disk)) return true;
+        if (scoped.wire.len > 0 and std.mem.eql(u8, key, scoped.wire)) return true;
+    }
+    return false;
+}
+
+/// The user-level document minus the workspace-scoped keys: everything a
+/// workspace still shares once its own row owns profiles, MCP servers, tools,
+/// skill evals and web search.
+pub fn withoutScopedKeys(allocator: std.mem.Allocator, base_json: []const u8) ![]u8 {
+    const parsed = std.json.parseFromSlice(std.json.Value, allocator, base_json, .{}) catch
+        return allocator.dupe(u8, "{}");
+    defer parsed.deinit();
+    const obj = switch (parsed.value) {
+        .object => |o| o,
+        else => return allocator.dupe(u8, "{}"),
+    };
+
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+    try out.append(allocator, '{');
+    var first = true;
+    var it = obj.iterator();
+    while (it.next()) |entry| {
+        if (isWorkspaceScopedKey(entry.key_ptr.*)) continue;
+        if (!first) try out.append(allocator, ',');
+        first = false;
+        try appendKeyJson(allocator, &out, entry.key_ptr.*);
+        try out.append(allocator, ':');
+        try appendValueJson(allocator, &out, entry.value_ptr.*);
+    }
+    try out.append(allocator, '}');
+    return out.toOwnedSlice(allocator);
+}
+
 /// How a seeding pass went. Boot logs it; tests assert on it.
 pub const SeedReport = struct {
     seeded: usize = 0,
     already_decided: usize = 0,
+
+    pub fn add(self: *SeedReport, other: SeedReport) void {
+        self.seeded += other.seeded;
+        self.already_decided += other.already_decided;
+    }
 };
 
-/// Give every UNDECIDED workspace a copy of the user-level config.
-/// "Undecided" is `workspace_settings_store.hasRow`, not `hasOverlay`: a
-/// workspace whose row exists with an empty body was deliberately reset to
-pub fn seedWorkspaces(
+const settings_store = @import("workspace_settings_store.zig");
+
+fn seedOwner(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
-    base_config_json: []const u8,
-) !SeedReport {
-    const store = @import("workspace_settings_store.zig");
-    const overlay = try workspaceScopedOverlay(allocator, base_config_json);
-    defer allocator.free(overlay);
-
+    owner: []const u8,
+    overlay: []const u8,
+) SeedReport {
     var report = SeedReport{};
-    // Nothing to copy: seeding every workspace with `{}` would write an
-    // "explicitly inherited" row for workspaces nobody has looked at yet,
-    // and then the real config would never reach them.
     if (std.mem.eql(u8, overlay, "{}")) return report;
 
     var ids: std.ArrayList([]u8) = .empty;
@@ -219,27 +254,110 @@ pub fn seedWorkspaces(
     }
 
     // The reader lives in its OWN block so it is closed before the writes
-    // below, not at the end of the function.
+    // below. A read cursor held across a write deadlocks a pooled backend.
     {
         var q = db.query(allocator, "SELECT id FROM workspaces", &.{}) catch return report;
         defer q.deinit();
         while (q.next() catch null) |row| {
             defer row.deinit(allocator);
             if (row.values.len == 0 or row.values[0].len == 0) continue;
-            try ids.append(allocator, try allocator.dupe(u8, row.values[0]));
+            const id = allocator.dupe(u8, row.values[0]) catch return report;
+            ids.append(allocator, id) catch {
+                allocator.free(id);
+                return report;
+            };
         }
     }
 
     for (ids.items) |id| {
-        const decided = store.hasRow(allocator, db, store.FILE_MODE_OWNER, id) catch continue;
+        const decided = settings_store.hasRow(allocator, db, owner, id) catch continue;
         if (decided) {
             report.already_decided += 1;
             continue;
         }
-        store.saveRaw(allocator, db, store.FILE_MODE_OWNER, id, overlay) catch continue;
+        settings_store.saveRaw(allocator, db, owner, id, overlay) catch continue;
         report.seeded += 1;
     }
     return report;
+}
+
+/// Give every UNDECIDED workspace a copy of the user-level config.
+/// "Undecided" is `workspace_settings_store.hasRow`, not `hasOverlay`: a
+/// workspace whose row exists with an empty body was deliberately reset to
+pub fn seedWorkspaces(
+    allocator: std.mem.Allocator,
+    db: *sqlite.SqliteBackend,
+    base_config_json: []const u8,
+) !SeedReport {
+    const overlay = try workspaceScopedOverlay(allocator, base_config_json);
+    defer allocator.free(overlay);
+
+    // Nothing to copy: seeding every workspace with `{}` would write an
+    // "explicitly inherited" row for workspaces nobody has looked at yet,
+    // and then the real config would never reach them.
+    return seedOwner(allocator, db, settings_store.FILE_MODE_OWNER, overlay);
+}
+
+const UserConfigRow = struct { id: []u8, config: []u8 };
+
+/// Auth-mode backfill: each user's scoped settings are copied into every
+/// workspace that holds no row of its own for that user.
+pub fn seedWorkspacesForUsers(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend) SeedReport {
+    var report = SeedReport{};
+
+    var users: std.ArrayList(UserConfigRow) = .empty;
+    defer {
+        for (users.items) |u| {
+            allocator.free(u.id);
+            allocator.free(u.config);
+        }
+        users.deinit(allocator);
+    }
+
+    {
+        var q = db.query(allocator, "SELECT id, COALESCE(config_json, '') FROM users", &.{}) catch return report;
+        defer q.deinit();
+        while (q.next() catch null) |row| {
+            defer row.deinit(allocator);
+            if (row.values.len < 2 or row.values[0].len == 0 or row.values[1].len == 0) continue;
+            const id = allocator.dupe(u8, row.values[0]) catch return report;
+            const config = allocator.dupe(u8, row.values[1]) catch {
+                allocator.free(id);
+                return report;
+            };
+            users.append(allocator, .{ .id = id, .config = config }) catch {
+                allocator.free(id);
+                allocator.free(config);
+                return report;
+            };
+        }
+    }
+
+    for (users.items) |user| {
+        const overlay = workspaceScopedOverlay(allocator, user.config) catch continue;
+        defer allocator.free(overlay);
+        report.add(seedOwner(allocator, db, user.id, overlay));
+    }
+    return report;
+}
+
+/// Copy the creator's scoped settings into a brand-new workspace, so it opens
+/// with the agent sections already populated instead of empty ones.
+pub fn seedNewWorkspace(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    db: *sqlite.SqliteBackend,
+    environment: ?*const std.process.Environ.Map,
+    auth_enabled: bool,
+    owner: []const u8,
+    workspace_id: []const u8,
+) void {
+    if (workspace_id.len == 0) return;
+    const base = baseConfigText(allocator, io, db, environment, auth_enabled, owner) orelse return;
+    defer allocator.free(base);
+    const overlay = workspaceScopedOverlay(allocator, base) catch return;
+    defer allocator.free(overlay);
+    settings_store.saveRaw(allocator, db, owner, workspace_id, overlay) catch return;
 }
 
 /// The user-level config TEXT that a workspace overlay is layered over. *
@@ -268,6 +386,23 @@ pub fn baseConfigText(
     var read_buffer: [4096]u8 = undefined;
     var reader = file.reader(io, &read_buffer);
     return reader.interface.allocRemaining(allocator, .limited(1024 * 1024)) catch null;
+}
+
+/// `baseConfigText` with the workspace-scoped keys removed. A workspace owns
+/// its profiles, MCP servers, tools, skill evals and web search through its
+/// own row, so it inherits only the rest (General) from the user document.
+pub fn scopedBaseConfigText(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    db: *sqlite.SqliteBackend,
+    environment: ?*const std.process.Environ.Map,
+    auth_enabled: bool,
+    owner: []const u8,
+) ?[]u8 {
+    const base = baseConfigText(allocator, io, db, environment, auth_enabled, owner) orelse return null;
+    const stripped = withoutScopedKeys(allocator, base) catch null;
+    allocator.free(base);
+    return stripped;
 }
 
 // ===================================================================== Tests
@@ -558,6 +693,7 @@ fn setupSeedDb() !SeedCtx {
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
     try db.exec(alloc, "CREATE TABLE workspaces (id TEXT PRIMARY KEY)", &.{});
+    try db.exec(alloc, "CREATE TABLE users (id TEXT PRIMARY KEY, config_json TEXT)", &.{});
     try db.exec(alloc,
         \\CREATE TABLE workspace_settings (
         \\  owner TEXT NOT NULL DEFAULT '',
@@ -690,4 +826,168 @@ test "a new workspace added later is seeded by the next boot" {
     const report = try seedWorkspaces(alloc, &ctx.db, USER_CONFIG);
     try testing.expectEqual(@as(usize, 1), report.seeded);
     try testing.expect(try hasSettingsRow(&ctx, "ws_new"));
+}
+
+// ─── The user document a workspace still shares ─────────────────────────────
+
+const MIXED_CONFIG =
+    \\{"profiles_models":{"claude":{"model":"opus","api_key":"sk-user"}},
+    \\ "active_profile":"claude",
+    \\ "tools":["read_file"],
+    \\ "mcp_servers":{"a":{"url":"https://a.example.com"}},
+    \\ "skill_evals":{"enabled":true},
+    \\ "web_search":{"brave":{"url":"https://api.search.brave.com","key":"k"}},
+    \\ "retry_delay_ms":1234,
+    \\ "notify_on_complete":false}
+;
+
+test "withoutScopedKeys keeps General and drops every workspace-scoped key" {
+    const alloc = testing.allocator;
+    const stripped = try withoutScopedKeys(alloc, MIXED_CONFIG);
+    defer alloc.free(stripped);
+
+    var parsed = try parse(alloc, stripped);
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+
+    try testing.expect(obj.get("profiles_models") == null);
+    try testing.expect(obj.get("profiles") == null);
+    try testing.expect(obj.get("active_profile") == null);
+    try testing.expect(obj.get("tools") == null);
+    try testing.expect(obj.get("mcp_servers") == null);
+    try testing.expect(obj.get("skill_evals") == null);
+    try testing.expect(obj.get("web_search") == null);
+
+    try testing.expectEqual(@as(i64, 1234), obj.get("retry_delay_ms").?.integer);
+    try testing.expectEqual(false, obj.get("notify_on_complete").?.bool);
+}
+
+test "withoutScopedKeys strips the wire spelling `profiles` too" {
+    const alloc = testing.allocator;
+    const stripped = try withoutScopedKeys(alloc, "{\"profiles\":{\"a\":{}},\"retry_delay_ms\":7}");
+    defer alloc.free(stripped);
+
+    var parsed = try parse(alloc, stripped);
+    defer parsed.deinit();
+    try testing.expect(parsed.value.object.get("profiles") == null);
+    try testing.expectEqual(@as(i64, 7), parsed.value.object.get("retry_delay_ms").?.integer);
+}
+
+// ─── The auth-mode backfill (one copy per user, per workspace) ──────────────
+
+fn addUser(ctx: *SeedCtx, id: []const u8, config: []const u8) !void {
+    try ctx.db.exec(testing.allocator, "INSERT INTO users (id, config_json) VALUES (?, ?)", &[_][]const u8{ id, config });
+}
+
+fn ownerOverlayBody(ctx: *SeedCtx, owner: []const u8, workspace_id: []const u8) !?[]u8 {
+    const store = @import("workspace_settings_store.zig");
+    return store.loadRaw(testing.allocator, &ctx.db, owner, workspace_id);
+}
+
+test "the auth backfill copies each user's scoped settings into every workspace" {
+    const alloc = testing.allocator;
+    var ctx = try setupSeedDb();
+    defer teardownSeed(&ctx);
+
+    try addWorkspace(&ctx, "ws_a");
+    try addWorkspace(&ctx, "ws_b");
+    try addUser(&ctx, "u_1", MIXED_CONFIG);
+
+    const report = seedWorkspacesForUsers(alloc, &ctx.db);
+    try testing.expectEqual(@as(usize, 2), report.seeded);
+
+    const a = (try ownerOverlayBody(&ctx, "u_1", "ws_a")) orelse return error.NotSeeded;
+    defer alloc.free(a);
+    var parsed = try parse(alloc, a);
+    defer parsed.deinit();
+    const profile = parsed.value.object.get("profiles_models").?.object.get("claude").?.object;
+    try testing.expectEqualStrings("opus", profile.get("model").?.string);
+    // General keys are NOT copied into the workspace row - a frozen copy would
+    // stop a later General edit from reaching the workspace.
+    try testing.expect(parsed.value.object.get("retry_delay_ms") == null);
+    try testing.expect(parsed.value.object.get("notify_on_complete") == null);
+
+    try testing.expect((try ownerOverlayBody(&ctx, "u_1", "ws_b")) != null);
+}
+
+test "the auth backfill never overwrites a workspace the user already set" {
+    const alloc = testing.allocator;
+    var ctx = try setupSeedDb();
+    defer teardownSeed(&ctx);
+
+    const store = @import("workspace_settings_store.zig");
+    try addWorkspace(&ctx, "ws_a");
+    try addWorkspace(&ctx, "ws_b");
+    try addUser(&ctx, "u_1", MIXED_CONFIG);
+    try store.saveRaw(alloc, &ctx.db, "u_1", "ws_a", "{\"tools\":[\"glob\"]}");
+
+    const report = seedWorkspacesForUsers(alloc, &ctx.db);
+    try testing.expectEqual(@as(usize, 1), report.seeded);
+    try testing.expectEqual(@as(usize, 1), report.already_decided);
+
+    const a = (try ownerOverlayBody(&ctx, "u_1", "ws_a")) orelse return error.OverrideLost;
+    defer alloc.free(a);
+    try testing.expectEqualStrings("{\"tools\":[\"glob\"]}", a);
+}
+
+test "the auth backfill gives a user with nothing scoped no row" {
+    const alloc = testing.allocator;
+    var ctx = try setupSeedDb();
+    defer teardownSeed(&ctx);
+
+    try addWorkspace(&ctx, "ws_a");
+    try addUser(&ctx, "u_1", "{\"retry_delay_ms\":2000}");
+
+    const report = seedWorkspacesForUsers(alloc, &ctx.db);
+    try testing.expectEqual(@as(usize, 0), report.seeded);
+    try testing.expect((try ownerOverlayBody(&ctx, "u_1", "ws_a")) == null);
+}
+
+test "two users sharing a workspace each get their own copy" {
+    const alloc = testing.allocator;
+    var ctx = try setupSeedDb();
+    defer teardownSeed(&ctx);
+
+    try addWorkspace(&ctx, "ws_shared");
+    try addUser(&ctx, "u_1", "{\"active_profile\":\"mine\"}");
+    try addUser(&ctx, "u_2", "{\"active_profile\":\"theirs\"}");
+
+    _ = seedWorkspacesForUsers(alloc, &ctx.db);
+
+    const mine = (try ownerOverlayBody(&ctx, "u_1", "ws_shared")) orelse return error.Missing;
+    defer alloc.free(mine);
+    const theirs = (try ownerOverlayBody(&ctx, "u_2", "ws_shared")) orelse return error.Missing;
+    defer alloc.free(theirs);
+    try testing.expect(std.mem.indexOf(u8, mine, "mine") != null);
+    try testing.expect(std.mem.indexOf(u8, theirs, "theirs") != null);
+}
+
+test "a brand-new workspace is seeded from its creator's scoped settings" {
+    const alloc = testing.allocator;
+    var ctx = try setupSeedDb();
+    defer teardownSeed(&ctx);
+
+    try addUser(&ctx, "u_1", MIXED_CONFIG);
+    try addWorkspace(&ctx, "ws_new");
+
+    seedNewWorkspace(alloc, ctx.threaded.io(), &ctx.db, null, true, "u_1", "ws_new");
+
+    const body = (try ownerOverlayBody(&ctx, "u_1", "ws_new")) orelse return error.NotSeeded;
+    defer alloc.free(body);
+    var parsed = try parse(alloc, body);
+    defer parsed.deinit();
+    try testing.expect(parsed.value.object.get("profiles_models") != null);
+    try testing.expect(parsed.value.object.get("tools") != null);
+    try testing.expect(parsed.value.object.get("retry_delay_ms") == null);
+}
+
+test "a workspace created by a user with no saved config gets no row" {
+    const alloc = testing.allocator;
+    var ctx = try setupSeedDb();
+    defer teardownSeed(&ctx);
+
+    try addWorkspace(&ctx, "ws_new");
+    seedNewWorkspace(alloc, ctx.threaded.io(), &ctx.db, null, true, "u_absent", "ws_new");
+
+    try testing.expect((try ownerOverlayBody(&ctx, "u_absent", "ws_new")) == null);
 }

@@ -230,7 +230,8 @@ pub fn seedWorkspaceSettingsFromUserConfig(
     auth_enabled: bool,
 ) void {
     if (auth_enabled) {
-        std.log.info("workspace config seeding: skipped (--auth on: a shared workspace has no single user config to copy)", .{});
+        const users_report = workspace_config.seedWorkspacesForUsers(allocator, db);
+        std.log.info("workspace config seeding: copied each user's config into {d} workspace(s); {d} already decided", .{ users_report.seeded, users_report.already_decided });
         return;
     }
 
