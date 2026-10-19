@@ -113,6 +113,7 @@ pub const skill_evals_db = @import("agentic_loop/skill_evals_db.zig");
 pub const skill_eval_events = @import("agentic_loop/skill_eval_events.zig");
 pub const git_file_stage_events = @import("agentic_loop/git_file_stage_events.zig");
 pub const git_pr_state_events = @import("agentic_loop/git_pr_state_events.zig");
+pub const document_events = @import("agentic_loop/document_events.zig");
 pub const skill_evals_drift = @import("agentic_loop/skill_evals_drift.zig");
 pub const add_skill = skill_tools;
 pub const edit_skill = skill_tools;

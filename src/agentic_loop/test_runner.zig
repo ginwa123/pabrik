@@ -116,6 +116,7 @@ test {
     // Workspace-scoped chat history — read/search/list other sessions
     // in the caller's workspace (replaces the global history search).
     _ = @import("../modules/agent/tools/read_workspace_session.zig");
+    _ = @import("document_events.zig"); // documents SSE channel — sidebar list + open editor refresh
     _ = @import("../modules/agent/tools/document.zig"); // add_document + edit_document + delete_document + search_documents exec wrappers (Migration 098)
     _ = @import("documents_search.zig"); // matching / paging / rendering for the search_documents tool
     // Workspace-scoped chat history — session-to-workspace resolution

@@ -17,6 +17,7 @@ import type {
   SkillEvalEvent,
   GitFileStageEvent,
   GitPrStateEvent,
+  DocumentEvent,
 } from '../api'
 
 // NOTE: Plan's Chunk 1 spec imports `KanbanEvent` and `LlmChunkEvent` from `../api`, but those
@@ -48,6 +49,10 @@ type SseEventMap = {
   // `git_pr_state_closed`) that share the `GitPrStateEvent` payload — see
   // src/agentic_loop/git_pr_state_events.zig.
   gitPrState: GitPrStateEvent
+  // Document mutations. The backend emits three granular names (`document_created` /
+  // `document_updated` / `document_deleted`) that share the `DocumentEvent` payload — see
+  // src/agentic_loop/document_events.zig.
+  documents: DocumentEvent
 }
 
 type Listener<K extends keyof SseEventMap> = (event: SseEventMap[K]) => void
@@ -168,6 +173,7 @@ export function installSseBus(_app?: App, options?: SseBusInstallOptions): SseBu
     skillEvals: new Set<Listener<'skillEvals'>>(),
     gitFileStage: new Set<Listener<'gitFileStage'>>(),
     gitPrState: new Set<Listener<'gitPrState'>>(),
+    documents: new Set<Listener<'documents'>>(),
   }
 
   const state = shallowRef<SseState>('closed')
@@ -232,6 +238,10 @@ export function installSseBus(_app?: App, options?: SseBusInstallOptions): SseBu
         // frontend filters by `event.cwd` in the bridge that invalidates the shared PR-status cache
         // (helpers/prStatusCache.ts), so a merge in ANOTHER tab still recolours this one's badges.
         gitPrState: (e) => forward('gitPrState', e),
+        // Document mutations — the AGENT TOOLS only (`add_document` / `edit_document` /
+        // `delete_document`). The `documentsSse` store filters by `event.workspace_id` and refreshes
+        // the sidebar list (and an open editor) from it.
+        documents: (e) => forward('documents', e),
       },
       onError: (err) => {
         console.error('[sseBus] global SSE failed permanently:', err)

@@ -237,6 +237,7 @@ pub const DocumentToolError = struct {
 /// the body.
 pub const DeleteDocumentSuccess = struct {
     id: []const u8,
+    workspace_id: []const u8,
     title: []const u8,
     deleted: bool,
 };
@@ -410,6 +411,7 @@ pub fn executeDeleteDocument(
 
     return std.json.Stringify.valueAlloc(allocator, DeleteDocumentSuccess{
         .id = existing.id,
+        .workspace_id = workspace_id,
         .title = existing.title,
         .deleted = true,
     }, .{});
@@ -913,13 +915,17 @@ const agent = exec_pabrikcore.agent;
 const document_mod = exec_pabrikcore.document_tool;
 const exec_documents_store = exec_pabrikcore.documents_store;
 const exec_workspace_scope = exec_pabrikcore.workspace_scope;
+const document_events = exec_pabrikcore.document_events;
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
-/// Probe an inner JSON payload for a top-level `"error"` key. The returned
-/// slice borrows from `parsed` — keep it alive through the `wrapToolOutput`
-/// call, then `deinit`.
-const InnerErrorProbe = struct {
+/// The inner tool payload read back at the exec wrapper: a refusal in `"error"`, or the row a
+/// mutation touched (which the `documents` SSE channel needs). Slices borrow from `parsed` — free
+/// it only after `wrapToolOutput`.
+const InnerResultProbe = struct {
     @"error": ?[]const u8 = null,
+    id: []const u8 = "",
+    workspace_id: []const u8 = "",
+    title: []const u8 = "",
 };
 
 pub fn execAddDocument(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
@@ -955,12 +961,19 @@ pub fn execAddDocument(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult
     // what it needs — the same ownership shape `execSaveMemory` uses.
     defer ctx.allocator.free(inner);
 
-    if (std.json.parseFromSlice(InnerErrorProbe, ctx.allocator, inner, .{ .allocate = .alloc_always, .ignore_unknown_fields = true }) catch null) |probe| {
+    if (std.json.parseFromSlice(InnerResultProbe, ctx.allocator, inner, .{ .allocate = .alloc_always, .ignore_unknown_fields = true }) catch null) |probe| {
         defer probe.deinit();
         if (probe.value.@"error") |err_msg| {
             const output = try wrapToolOutput(ctx.allocator, "add_document", tc.function.arguments, false, err_msg, inner);
             return ToolExecResult{ .output = output, .output_allocated = true };
         }
+        // Only a real write reaches here: every refusal above returned.
+        document_events.emitDocumentEvent(ctx.allocator, ctx.event_bus, .{
+            .action = "created",
+            .workspace_id = probe.value.workspace_id,
+            .document_id = probe.value.id,
+            .title = probe.value.title,
+        });
     }
 
     const output = try wrapToolOutput(ctx.allocator, "add_document", tc.function.arguments, true, null, inner);
@@ -998,12 +1011,19 @@ pub fn execEditDocument(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResul
     // what it needs — the same ownership shape `execSaveMemory` uses.
     defer ctx.allocator.free(inner);
 
-    if (std.json.parseFromSlice(InnerErrorProbe, ctx.allocator, inner, .{ .allocate = .alloc_always, .ignore_unknown_fields = true }) catch null) |probe| {
+    if (std.json.parseFromSlice(InnerResultProbe, ctx.allocator, inner, .{ .allocate = .alloc_always, .ignore_unknown_fields = true }) catch null) |probe| {
         defer probe.deinit();
         if (probe.value.@"error") |err_msg| {
             const output = try wrapToolOutput(ctx.allocator, "edit_document", tc.function.arguments, false, err_msg, inner);
             return ToolExecResult{ .output = output, .output_allocated = true };
         }
+        // Only a real write reaches here: every refusal above returned.
+        document_events.emitDocumentEvent(ctx.allocator, ctx.event_bus, .{
+            .action = "updated",
+            .workspace_id = probe.value.workspace_id,
+            .document_id = probe.value.id,
+            .title = probe.value.title,
+        });
     }
 
     const output = try wrapToolOutput(ctx.allocator, "edit_document", tc.function.arguments, true, null, inner);
@@ -1037,12 +1057,19 @@ pub fn execDeleteDocument(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecRes
     };
     defer ctx.allocator.free(inner);
 
-    if (std.json.parseFromSlice(InnerErrorProbe, ctx.allocator, inner, .{ .allocate = .alloc_always, .ignore_unknown_fields = true }) catch null) |probe| {
+    if (std.json.parseFromSlice(InnerResultProbe, ctx.allocator, inner, .{ .allocate = .alloc_always, .ignore_unknown_fields = true }) catch null) |probe| {
         defer probe.deinit();
         if (probe.value.@"error") |err_msg| {
             const output = try wrapToolOutput(ctx.allocator, "delete_document", tc.function.arguments, false, err_msg, inner);
             return ToolExecResult{ .output = output, .output_allocated = true };
         }
+        // Only a real removal reaches here: every refusal above returned.
+        document_events.emitDocumentEvent(ctx.allocator, ctx.event_bus, .{
+            .action = "deleted",
+            .workspace_id = probe.value.workspace_id,
+            .document_id = probe.value.id,
+            .title = probe.value.title,
+        });
     }
 
     const output = try wrapToolOutput(ctx.allocator, "delete_document", tc.function.arguments, true, null, inner);
@@ -2188,5 +2215,206 @@ test "search_documents is seeded by default but delete_document is not" {
         if (std.mem.eql(u8, t.function.name, "delete_document")) delete_in_equips = true;
     }
     try exec_testing.expect(delete_in_equips);
+}
+
+// ─── documents SSE channel ───────────────────────────────────────────────
+// The exec wrapper is the only layer that knows a tool call SUCCEEDED: every failure path above
+// returned before it, so the emit lives here and not in the executor.
+
+const sse_event_mod = @import("../../../agentic_loop/sse.zig");
+const sse_bus_mod = exec_pabrikcore.event_bus;
+
+var sse_captured: ?sse_event_mod.SseEvent = null;
+var sse_payload: []u8 = &.{};
+
+/// The emit frees the buffer it built, so `ev.data` would dangle — copy it
+/// here, while the emit is still on the stack.
+fn captureDocumentSse(ev: sse_event_mod.SseEvent) void {
+    sse_captured = ev;
+    sse_payload = exec_testing.allocator.dupe(u8, ev.data) catch return;
+}
+
+fn releaseDocumentSse() void {
+    if (sse_payload.len > 0) exec_testing.allocator.free(sse_payload);
+    sse_payload = &.{};
+    sse_captured = null;
+}
+
+/// One JSON field out of the captured payload. The slice is copied out before
+/// the parse arena dies.
+fn capturedField(field: []const u8) ![]u8 {
+    const parsed = try std.json.parseFromSlice(std.json.Value, exec_testing.allocator, sse_payload, .{});
+    defer parsed.deinit();
+    return exec_testing.allocator.dupe(u8, parsed.value.object.get(field).?.string);
+}
+
+test "a successful add_document announces document_created with the new row" {
+    const alloc = exec_testing.allocator;
+    var ctx = try exec_setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var bus_threaded = std.Io.Threaded.init(alloc, .{});
+    defer bus_threaded.deinit();
+    var bus = sse_bus_mod.EventBus.init("documents_test", alloc, bus_threaded.io());
+    defer bus.deinit();
+    releaseDocumentSse();
+    try bus.subscribe(sse_event_mod.SseEvent, document_events.RoutingKey, captureDocumentSse);
+
+    var tc_ctx = makeTestCtx(alloc, &ctx.db, "s1");
+    tc_ctx.event_bus = &bus;
+    const result = try execAddDocument(tc_ctx, fakeToolCall("add_document", "{\"title\":\"Notes\",\"content\":\"# hi\"}"));
+    defer alloc.free(result.output);
+
+    try exec_testing.expect(sse_captured != null);
+    try exec_testing.expectEqualStrings(document_events.EventCreated, sse_captured.?.event_type orelse "");
+
+    const action = try capturedField("action");
+    defer alloc.free(action);
+    const workspace_id = try capturedField("workspace_id");
+    defer alloc.free(workspace_id);
+    const title = try capturedField("title");
+    defer alloc.free(title);
+    const document_id = try capturedField("document_id");
+    defer alloc.free(document_id);
+
+    try exec_testing.expectEqualStrings("created", action);
+    try exec_testing.expectEqualStrings("ws_1", workspace_id);
+    try exec_testing.expectEqualStrings("Notes", title);
+    try exec_testing.expect(document_id.len > 0);
+
+    releaseDocumentSse();
+}
+
+test "a successful edit_document announces document_updated with the new title" {
+    const alloc = exec_testing.allocator;
+    var ctx = try exec_setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var bus_threaded = std.Io.Threaded.init(alloc, .{});
+    defer bus_threaded.deinit();
+    var bus = sse_bus_mod.EventBus.init("documents_test", alloc, bus_threaded.io());
+    defer bus.deinit();
+
+    var tc_ctx = makeTestCtx(alloc, &ctx.db, "s1");
+    tc_ctx.event_bus = &bus;
+
+    const created = try execAddDocument(tc_ctx, fakeToolCall("add_document", "{\"title\":\"Draft\"}"));
+    defer alloc.free(created.output);
+    var created_env = try parseEnvelope(alloc, created.output);
+    defer created_env.deinit();
+
+    releaseDocumentSse();
+    try bus.subscribe(sse_event_mod.SseEvent, document_events.RoutingKey, captureDocumentSse);
+
+    const args = try std.fmt.allocPrint(alloc, "{{\"document_id\":\"{s}\",\"title\":\"Renamed\"}}", .{created_env.id});
+    defer alloc.free(args);
+    const edited = try execEditDocument(tc_ctx, fakeToolCall("edit_document", args));
+    defer alloc.free(edited.output);
+    var edited_env = try parseEnvelope(alloc, edited.output);
+    defer edited_env.deinit();
+    try exec_testing.expect(edited_env.success);
+
+    try exec_testing.expect(sse_captured != null);
+    try exec_testing.expectEqualStrings(document_events.EventUpdated, sse_captured.?.event_type orelse "");
+
+    const action = try capturedField("action");
+    defer alloc.free(action);
+    const title = try capturedField("title");
+    defer alloc.free(title);
+    const document_id = try capturedField("document_id");
+    defer alloc.free(document_id);
+
+    try exec_testing.expectEqualStrings("updated", action);
+    try exec_testing.expectEqualStrings("Renamed", title);
+    try exec_testing.expectEqualStrings(created_env.id, document_id);
+
+    releaseDocumentSse();
+}
+
+test "a successful delete_document announces document_deleted for the removed id" {
+    const alloc = exec_testing.allocator;
+    var ctx = try exec_setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var bus_threaded = std.Io.Threaded.init(alloc, .{});
+    defer bus_threaded.deinit();
+    var bus = sse_bus_mod.EventBus.init("documents_test", alloc, bus_threaded.io());
+    defer bus.deinit();
+
+    var tc_ctx = makeTestCtx(alloc, &ctx.db, "s1");
+    tc_ctx.event_bus = &bus;
+
+    const created = try execAddDocument(tc_ctx, fakeToolCall("add_document", "{\"title\":\"Doomed\"}"));
+    defer alloc.free(created.output);
+    var created_env = try parseEnvelope(alloc, created.output);
+    defer created_env.deinit();
+
+    releaseDocumentSse();
+    try bus.subscribe(sse_event_mod.SseEvent, document_events.RoutingKey, captureDocumentSse);
+
+    const args = try std.fmt.allocPrint(alloc, "{{\"document_id\":\"{s}\"}}", .{created_env.id});
+    defer alloc.free(args);
+    const removed = try execDeleteDocument(tc_ctx, fakeToolCall("delete_document", args));
+    defer alloc.free(removed.output);
+    var removed_env = try parseEnvelope(alloc, removed.output);
+    defer removed_env.deinit();
+    try exec_testing.expect(removed_env.success);
+
+    try exec_testing.expect(sse_captured != null);
+    try exec_testing.expectEqualStrings(document_events.EventDeleted, sse_captured.?.event_type orelse "");
+
+    const action = try capturedField("action");
+    defer alloc.free(action);
+    const document_id = try capturedField("document_id");
+    defer alloc.free(document_id);
+    const title = try capturedField("title");
+    defer alloc.free(title);
+    const workspace_id = try capturedField("workspace_id");
+    defer alloc.free(workspace_id);
+
+    try exec_testing.expectEqualStrings("deleted", action);
+    try exec_testing.expectEqualStrings(created_env.id, document_id);
+    try exec_testing.expectEqualStrings("Doomed", title);
+    try exec_testing.expectEqualStrings("ws_1", workspace_id);
+
+    releaseDocumentSse();
+}
+
+test "a refused document mutation announces nothing" {
+    const alloc = exec_testing.allocator;
+    var ctx = try exec_setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var bus_threaded = std.Io.Threaded.init(alloc, .{});
+    defer bus_threaded.deinit();
+    var bus = sse_bus_mod.EventBus.init("documents_test", alloc, bus_threaded.io());
+    defer bus.deinit();
+    releaseDocumentSse();
+    try bus.subscribe(sse_event_mod.SseEvent, document_events.RoutingKey, captureDocumentSse);
+
+    var tc_ctx = makeTestCtx(alloc, &ctx.db, "s1");
+    tc_ctx.event_bus = &bus;
+
+    // A blank title is refused by the store, so nothing may be announced — a listener acting on
+    // `action: "created"` would invent a document that was never written.
+    const blank = try execAddDocument(tc_ctx, fakeToolCall("add_document", "{\"title\":\"   \"}"));
+    defer alloc.free(blank.output);
+    try exec_testing.expect(sse_captured == null);
+
+    // An id that is not in this workspace reaches neither the update nor the
+    // delete, so neither may be announced.
+    const edit_miss = try execEditDocument(tc_ctx, fakeToolCall("edit_document", "{\"document_id\":\"doc_missing\",\"title\":\"Renamed\"}"));
+    defer alloc.free(edit_miss.output);
+    try exec_testing.expect(sse_captured == null);
+
+    const delete_miss = try execDeleteDocument(tc_ctx, fakeToolCall("delete_document", "{\"document_id\":\"doc_missing\"}"));
+    defer alloc.free(delete_miss.output);
+    try exec_testing.expect(sse_captured == null);
+
+    releaseDocumentSse();
 }
 
