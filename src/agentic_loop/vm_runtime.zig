@@ -93,7 +93,7 @@ fn runGuest(
     const root = (try workspace_scope.resolveWorkspaceRoot(allocator, db, session_id)) orelse
         return Error.GuestWorkspaceUnknown;
     defer allocator.free(root);
-    const cwd_rel = policy.relativeToRoot(root, cwd) orelse return Error.GuestCwdOutsideWorkspace;
+    const cwd_rel = policy.relativeWorkspace(root, cwd) orelse return Error.GuestCwdOutsideWorkspace;
 
     const socket = runtime_mode.socketPath() orelse return Error.GuestManagerUnavailable;
 

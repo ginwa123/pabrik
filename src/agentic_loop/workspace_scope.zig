@@ -26,7 +26,11 @@ pub fn resolveWorkspaceId(
         }
     }
 
-    // 2. Cwd heuristic.
+    // 2. The session's own stamp. A `--saas` session's cwd is the guest root,
+    // which matches no host item path, so the row is the answer.
+    if (try stampedWorkspaceId(allocator, db, session_id)) |id| return id;
+
+    // 3. Cwd heuristic.
     const cwd = try sessionCwd(allocator, db, session_id);
     defer if (cwd) |c| allocator.free(c);
     const c = cwd orelse return null;
@@ -34,6 +38,44 @@ pub fn resolveWorkspaceId(
     const match = (try matchWorkspaceByPath(allocator, db, c)) orelse return null;
     defer allocator.free(match.root);
     return match.workspace_id;
+}
+
+/// The workspace id a session row carries, when it carries one. Migration 25
+/// added the column; a schema that predates it answers null rather than error.
+pub fn stampedWorkspaceId(
+    allocator: std.mem.Allocator,
+    db: *sqlite.SqliteBackend,
+    session_id: []const u8,
+) !?[]u8 {
+    if (session_id.len == 0) return null;
+    var rows = db.query(allocator,
+        \\SELECT workspace_id FROM sessions WHERE id = ? LIMIT 1
+    , &.{session_id}) catch return null;
+    defer rows.deinit();
+    const row = (rows.next() catch return null) orelse return null;
+    defer row.deinit(allocator);
+    if (row.values[0].len == 0) return null;
+    return try allocator.dupe(u8, row.values[0]);
+}
+
+/// The workspace a session is task-linked to, and nothing else: the caller that
+/// needs "is this session already owned?" without the cwd heuristic.
+pub fn taskWorkspaceId(
+    allocator: std.mem.Allocator,
+    db: *sqlite.SqliteBackend,
+    session_id: []const u8,
+) !?[]u8 {
+    if (session_id.len == 0) return null;
+    var rows = try db.query(allocator,
+        \\SELECT wi.workspace_id FROM workspace_item_tasks t
+        \\JOIN workspace_items wi ON wi.id = t.workspace_item_id
+        \\WHERE t.id = ? LIMIT 1
+    , &.{session_id});
+    defer rows.deinit();
+    const row = (try rows.next()) orelse return null;
+    defer row.deinit(allocator);
+    if (row.values[0].len == 0) return null;
+    return try allocator.dupe(u8, row.values[0]);
 }
 
 /// True when both sessions resolve to the same non-null workspace.

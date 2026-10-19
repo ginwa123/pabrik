@@ -8,6 +8,9 @@ const auth_common = @import("auth_common.zig");
 const ai_workflow = pabrikcore.ai_mod;
 const sqlite_db_mod = pabrikcore.sqlite;
 const slash_skill_expand = @import("../agentic_loop/slash_skill_expand.zig");
+const workspace_scope = @import("../agentic_loop/workspace_scope.zig");
+const runtime_mode = @import("../runtime_mode.zig");
+const vmd_policy = @import("../vmd/policy.zig");
 
 /// Create a sandbox directory in data/apps and return the path
 fn createSandbox(allocator: std.mem.Allocator, io: std.Io, environment: ?*const std.process.Environ.Map, session_id: []const u8) ![]u8 {
@@ -241,6 +244,15 @@ pub fn useCase(alloc: std.mem.Allocator, io: std.Io, di: *pabrikcore.App, parsed
         } else {
             effective_cwd = createSandbox(alloc, io, environment, session_id) catch
                 sandboxTempFallback(environment);
+        }
+    }
+
+    // Under `--saas` a session that already belongs to a workspace runs in that
+    // workspace's VM, whose tree IS `/workspace`. Only the task link is
+    // consulted here: the row a chat session gets is written later.
+    if (runtime_mode.currentMode() == .saas) {
+        if (workspace_scope.taskWorkspaceId(alloc, di.db, session_id) catch null) |_| {
+            effective_cwd = vmd_policy.guest_root;
         }
     }
 
