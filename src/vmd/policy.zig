@@ -111,6 +111,36 @@ pub fn relativeWorkspace(root: []const u8, cwd: []const u8) ?[]const u8 {
     return relativeToRoot(root, cwd);
 }
 
+// ─── interactive terminals ───────────────────────────────────────────────
+
+/// A tty gets its OWN vsock port (`tty_port_base + tty_id`): the agent serves one
+/// connection at a time, so a terminal sharing it would freeze behind any `exec`.
+pub const tty_port_base: u32 = 5100;
+/// Concurrent terminals per VM. Each one is a guest process plus a vsock
+/// listener, so the ceiling is about fds, not taste.
+pub const max_ttys: u32 = 8;
+/// One read or write piece. The guest's frame cap is 64 KiB and base64 costs
+/// four bytes per three, so a piece this size always fits.
+pub const max_tty_chunk: usize = 32 * 1024;
+pub const min_tty_dim: u16 = 2;
+pub const max_tty_dim: u16 = 1000;
+
+pub fn ttyIdValid(id: i64) bool {
+    return id >= 0 and id < @as(i64, @intCast(max_ttys));
+}
+
+/// The guest port a tty id listens on, or null when the id is not one this
+/// daemon could have handed out.
+pub fn ttyPort(id: i64) ?u32 {
+    if (!ttyIdValid(id)) return null;
+    return tty_port_base + @as(u32, @intCast(id));
+}
+
+pub fn ttyDimValid(cols: u16, rows: u16) bool {
+    return cols >= min_tty_dim and cols <= max_tty_dim and
+        rows >= min_tty_dim and rows <= max_tty_dim;
+}
+
 /// The credential the kernel reports for a unix-socket peer. Only the uid is
 /// load-bearing; the pid is carried so a refusal can name who was refused.
 pub const Peer = struct {
@@ -240,6 +270,22 @@ test "relativeWorkspace: the guest root and a host path both resolve, escape doe
     try testing.expect(relativeWorkspace(root, "/workspaces") == null);
     try testing.expect(relativeWorkspace(root, "/workspace/../etc") == null);
     try testing.expect(relativeWorkspace(root, "/etc") == null);
+}
+
+test "ttyPort: every legal id maps to its own port and nothing else does" {
+    try testing.expectEqual(@as(?u32, 5100), ttyPort(0));
+    try testing.expectEqual(@as(?u32, 5107), ttyPort(7));
+    try testing.expect(ttyPort(-1) == null);
+    try testing.expect(ttyPort(@intCast(max_ttys)) == null);
+    try testing.expect(ttyIdValid(0));
+    try testing.expect(!ttyIdValid(-1));
+}
+
+test "ttyDimValid: the window size bounds are inclusive and symmetric" {
+    try testing.expect(ttyDimValid(80, 24));
+    try testing.expect(ttyDimValid(min_tty_dim, max_tty_dim));
+    try testing.expect(!ttyDimValid(min_tty_dim - 1, 24));
+    try testing.expect(!ttyDimValid(80, max_tty_dim + 1));
 }
 
 test "peerAllowed: only the expected uid is allowed through" {

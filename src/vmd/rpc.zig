@@ -38,7 +38,11 @@ pub const Error = error{
     InvalidBase64,
 };
 
-pub const Action = enum { ping, exec, stop, status, spawn, probe, signal, log, fs_stat, fs_read, fs_remove, fs_write, fs_walk };
+pub const Action = enum { ping, exec, stop, status, spawn, probe, signal, log, fs_stat, fs_read, fs_remove, fs_write, fs_walk, tty };
+
+/// What a `tty` request does. One action rather than five, because every one of
+/// them carries the same four fields and answers with the same reply shape.
+pub const TtyOp = enum { open, read, write, resize, close };
 
 pub const Request = struct {
     id: i64 = 0,
@@ -67,6 +71,13 @@ pub const Request = struct {
     /// `fs_walk`: how deep to descend, and how many entries to report.
     max_depth: u32 = default_walk_depth,
     max_entries: usize = default_walk_entries,
+    /// `tty`: which operation, and which guest tty it names. `open` mints the
+    /// id, so it is the one op that ignores `tty_id`.
+    tty_op: TtyOp = .open,
+    tty_id: i64 = -1,
+    /// `tty open` and `tty resize`: the window the caller wants.
+    cols: u16 = 0,
+    rows: u16 = 0,
 };
 
 pub const FailureCode = enum {
@@ -153,6 +164,20 @@ pub const FsWalk = struct {
     truncated: bool,
 };
 
+/// A terminal's answer. `data` is a `read`'s bytes and `` for every other op;
+/// `message` is an `open` the guest refused and `` otherwise.
+pub const TtyReply = struct {
+    op: []const u8,
+    tty_id: i64,
+    pid: i64,
+    data: []const u8,
+    eof: bool,
+    exited: bool,
+    exit_code: i64,
+    bytes: i64,
+    message: []const u8,
+};
+
 pub const Response = union(enum) {
     pong: struct { version: []const u8 },
     ack,
@@ -164,6 +189,7 @@ pub const Response = union(enum) {
     fs_stat: FsStat,
     fs_read: FsChunk,
     fs_walk: FsWalk,
+    tty: TtyReply,
     failure: struct { code: FailureCode, message: []const u8 },
 };
 
@@ -360,6 +386,17 @@ pub fn encodeRequest(allocator: std.mem.Allocator, request: Request) ![]u8 {
         try out.intField(allocator, "max_depth", @intCast(request.max_depth));
         try out.intField(allocator, "max_entries", @intCast(request.max_entries));
     }
+    if (request.action == .tty) {
+        try out.strField(allocator, "tty_op", @tagName(request.tty_op));
+        if (request.tty_op != .open) try out.intField(allocator, "tty_id", request.tty_id);
+        if (request.tty_op == .open or request.tty_op == .resize) {
+            try out.intField(allocator, "cols", @intCast(request.cols));
+            try out.intField(allocator, "rows", @intCast(request.rows));
+        }
+        if (request.tty_op == .open) try out.strField(allocator, "cwd_rel", request.cwd_rel);
+        if (request.tty_op == .read) try out.intField(allocator, "max_bytes", @intCast(request.max_bytes));
+        if (request.tty_op == .write) try out.base64Field(allocator, "data_b64", request.data);
+    }
     return out.finish(allocator);
 }
 
@@ -402,6 +439,11 @@ pub fn decodeRequest(allocator: std.mem.Allocator, json: []const u8) !OwnedReque
 
     if (action == .fs_write or action == .fs_walk) {
         try decodeFsWriteWalk(object, aa, action, &request);
+        return .{ .arena = arena, .value = request };
+    }
+
+    if (action == .tty) {
+        try decodeTtyAction(object, aa, &request);
         return .{ .arena = arena, .value = request };
     }
 
@@ -851,6 +893,20 @@ pub fn decodeResponse(
             .truncated = boolField(object, "truncated"),
         } } };
     }
+    if (std.mem.eql(u8, kind, "tty")) {
+        const data = if (object.get("data_b64")) |_| try decodeBase64Field(aa, object, "data_b64") else "";
+        return .{ .arena = arena, .value = .{ .tty = .{
+            .op = stringField(object, "tty_op") orelse "",
+            .tty_id = integerField(object, "tty_id") orelse -1,
+            .pid = integerField(object, "pid") orelse 0,
+            .data = data,
+            .eof = boolField(object, "eof"),
+            .exited = boolField(object, "exited"),
+            .exit_code = integerField(object, "exit_code") orelse 0,
+            .bytes = integerField(object, "bytes") orelse 0,
+            .message = stringField(object, "message") orelse "",
+        } } };
+    }
     if (std.mem.eql(u8, kind, "exec.result")) {
         const stdout = try decodeBase64Field(aa, object, "stdout_b64");
         const stderr = try decodeBase64Field(aa, object, "stderr_b64");
@@ -884,6 +940,73 @@ fn decodeBase64Field(
     const out = try allocator.alloc(u8, size);
     decoder.decode(out, text) catch return Error.InvalidBase64;
     return out;
+}
+
+/// The terminal action. `open` names a DIRECTORY inside the workspace; every
+/// other op names a tty id the daemon itself minted, never a port or a pid.
+fn decodeTtyAction(
+    object: std.json.ObjectMap,
+    allocator: std.mem.Allocator,
+    request: *Request,
+) !void {
+    const op_text = stringField(object, "tty_op") orelse return Error.BadRequest;
+    const op = std.meta.stringToEnum(TtyOp, op_text) orelse return Error.BadRequest;
+    request.tty_op = op;
+
+    if (op == .open) {
+        const cwd_rel = stringField(object, "cwd_rel") orelse return Error.BadRequest;
+        if (!policy.cwdRelValid(cwd_rel)) return Error.BadRequest;
+        request.cwd_rel = cwd_rel;
+        request.cols = try ttyDimField(object, "cols");
+        request.rows = try ttyDimField(object, "rows");
+        return;
+    }
+
+    const id = integerField(object, "tty_id") orelse return Error.BadRequest;
+    if (!policy.ttyIdValid(id)) return Error.BadRequest;
+    request.tty_id = id;
+
+    if (op == .resize) {
+        request.cols = try ttyDimField(object, "cols");
+        request.rows = try ttyDimField(object, "rows");
+    }
+    if (op == .read) {
+        const bytes = integerField(object, "max_bytes") orelse return Error.BadRequest;
+        if (bytes <= 0 or bytes > policy.max_tty_chunk) return Error.BadRequest;
+        request.max_bytes = @intCast(bytes);
+    }
+    if (op == .write) {
+        const text = stringField(object, "data_b64") orelse return Error.BadRequest;
+        const decoder = std.base64.standard.Decoder;
+        const size = decoder.calcSizeForSlice(text) catch return Error.InvalidBase64;
+        if (size == 0 or size > policy.max_tty_chunk) return Error.BadRequest;
+        const data = try allocator.alloc(u8, size);
+        decoder.decode(data, text) catch return Error.InvalidBase64;
+        request.data = data;
+    }
+}
+
+fn ttyDimField(object: std.json.ObjectMap, key: []const u8) !u16 {
+    const value = integerField(object, key) orelse return Error.BadRequest;
+    if (value < 0 or value > std.math.maxInt(u16)) return Error.BadRequest;
+    return @intCast(value);
+}
+
+pub fn encodeTtyReply(allocator: std.mem.Allocator, id: i64, reply: TtyReply) ![]u8 {
+    var out = try ObjectWriter.init(allocator);
+    errdefer out.list.deinit(allocator);
+    try out.strField(allocator, "type", "tty");
+    try out.intField(allocator, "id", id);
+    try out.strField(allocator, "tty_op", reply.op);
+    try out.intField(allocator, "tty_id", reply.tty_id);
+    try out.intField(allocator, "pid", reply.pid);
+    try out.intField(allocator, "exit_code", reply.exit_code);
+    try out.intField(allocator, "bytes", reply.bytes);
+    try out.boolField(allocator, "eof", reply.eof);
+    try out.boolField(allocator, "exited", reply.exited);
+    if (reply.message.len > 0) try out.strField(allocator, "message", reply.message);
+    if (reply.data.len > 0) try out.base64Field(allocator, "data_b64", reply.data);
+    return out.finish(allocator);
 }
 
 const testing = std.testing;

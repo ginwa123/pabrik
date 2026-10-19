@@ -1076,12 +1076,16 @@ const showProfilePicker = ref(false)
 const isUpdatingProfile = ref(false)
 const profilePickerRef = ref<HTMLElement | null>(null)
 
+/** The workspace this chat runs in: the route's, else the app's. The sidebar's
+ * Terminal tab starts its shell inside THIS workspace's VM under `--saas`. */
+const chatWorkspaceId = computed<string>(() =>
+  resolveWorkspaceId(route?.params?.workspaceId, workspacesStore.activeWorkspace?.id),
+)
+
 /** The workspace whose profiles the picker must list: the route's, else the one the app is in. The
  * picker must offer what actually RUNS here, and a run uses the workspace's config overlay merged
  * over the user config (`session_llm_config.mergedConfigTextFor`). */
-const profilePickerWorkspaceId = computed<string>(() =>
-  resolveWorkspaceId(route?.params?.workspaceId, workspacesStore.activeWorkspace?.id),
-)
+const profilePickerWorkspaceId = chatWorkspaceId
 
 const loadProfiles = async () => {
   try {
@@ -4965,6 +4969,7 @@ const compactSession = async () => {
       ref="chatSidebarRef"
       :cwd="effectiveCwd"
       :session-key="chatId"
+      :workspace-id="chatWorkspaceId"
       :branch="sidebarBranch"
       :pr-url="chatPrUrl"
       :pr-provider="chatPrProvider"

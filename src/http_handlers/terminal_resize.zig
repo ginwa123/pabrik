@@ -7,6 +7,7 @@ const http_response = @import("http_response.zig");
 const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
 const terminal_session = @import("terminal_session.zig");
+const terminal_guest = @import("terminal_guest.zig");
 const auth_common = @import("auth_common.zig");
 
 pub const TerminalResizeBody = struct {
@@ -69,6 +70,46 @@ pub fn terminalResizeHandler(
     // indistinguishable from a missing one (404, never 403).
     var owner_buf: [128]u8 = undefined;
     const owner: []const u8 = auth_common.resolveOwnerInto(&owner_buf, req.headers) orelse "";
+    if (terminal_guest.isGuestId(id)) {
+        const socket = terminal_guest.socketPath() orelse {
+            return res.jsonResponse(.{
+                .status_code = 503,
+                .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "the workspace VM manager is not running" }),
+            });
+        };
+        const guest = terminal_guest.getSessionForOwner(id, owner) orelse {
+            return res.jsonResponse(.{
+                .status_code = 404,
+                .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "terminal session not found" }),
+            });
+        };
+        terminal_guest.resizeSession(allocator, socket, guest, cols, rows) catch |err| {
+            const status: u16 = switch (err) {
+                error.InvalidSize => 400,
+                error.SessionExited => 410,
+                error.ManagerUnavailable, error.ManagerRefused => 503,
+                else => 500,
+            };
+            const message: []const u8 = switch (err) {
+                error.InvalidSize => "cols/rows must be in [2, 1000]",
+                error.SessionExited => "terminal session has exited",
+                error.ManagerUnavailable => "the workspace VM manager is not running",
+                error.ManagerRefused => "the workspace VM refused the resize",
+                else => "failed to resize terminal",
+            };
+            return res.jsonResponse(.{
+                .status_code = status,
+                .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = message }),
+            });
+        };
+        const guest_json = try std.json.Stringify.valueAlloc(allocator, TerminalResizeResponse{
+            .ok = true,
+            .cols = cols,
+            .rows = rows,
+        }, .{});
+        return res.jsonResponse(.{ .status_code = 200, .data = guest_json });
+    }
+
     const session = terminal_session.getSessionForOwner(id, owner) orelse {
         return res.jsonResponse(.{
             .status_code = 404,

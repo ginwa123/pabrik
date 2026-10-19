@@ -249,6 +249,21 @@ pub fn waitReadable(s: *Session, client_fd: i32, timeout_ms: c_int) Readiness {
     }
 }
 
+/// Wait for `client_fd` alone to be readable, or `timeout_ms` to pass. The guest
+/// terminal has no local pty to multiplex, and this is the one file that knows
+/// both hosts' readiness vocabulary (`poll(2)` and `WSAPoll`).
+pub fn waitSocketReadable(client_fd: i32, timeout_ms: c_int) bool {
+    if (comptime pty_backend == .conpty) {
+        var fds = [_]WsaPollFd{.{ .fd = socketToUsize(client_fd), .events = POLLRDNORM, .revents = 0 }};
+        const rc = WSAPoll(&fds, 1, timeout_ms);
+        return rc > 0 and (fds[0].revents & POLLRDNORM) != 0;
+    } else {
+        var pfds = [_]PollFd{.{ .fd = client_fd, .events = POLLIN, .revents = 0 }};
+        if (poll(&pfds, 1, timeout_ms) < 0) return false;
+        return (pfds[0].revents & POLLIN) != 0;
+    }
+}
+
 /// Which Windows mechanism is BEHIND a session's handle set. Both feed the
 /// same ring buffer, so only two things read this: `resizeSession` (a pipe
 /// has no window size to set) and the create response, which reports it so

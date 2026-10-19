@@ -15,6 +15,9 @@ import {
 
 const props = defineProps<{
   cwd: string
+  /** The workspace this chat runs in. Under `--saas` the shell starts inside that
+   * workspace's VM, and an empty id is a refusal from the server, not a host shell. */
+  workspaceId?: string
   /**    * Per-chat persistence key. With it, session ids survive tab/chat switches via localStorage and
    * re-attach on return; without it sessions are deleted on unmount. */
   sessionKey?: string
@@ -363,7 +366,7 @@ const newSession = async () => {
     // window): never spawn into a dead component — leaked creates
     // shift every later test's ids and sockets.
     if (disposed) return
-    const session = await createTerminalSession(cwd, {
+    const session = await createTerminalSession(props.workspaceId ?? '', cwd, {
       cols: term?.cols ?? 80,
       rows: term?.rows ?? 24,
     })
