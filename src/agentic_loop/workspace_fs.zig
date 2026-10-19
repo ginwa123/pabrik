@@ -404,6 +404,21 @@ pub fn forSession(
     };
 }
 
+pub fn forWorkspace(allocator: std.mem.Allocator, workspace_id: []const u8) !Fs {
+    if (substrate(runtime_mode.currentMode(), runtime_mode.vm_backend_available) != .guest) {
+        return Error.GuestManagerUnavailable;
+    }
+    if (!policy.workspaceIdValid(workspace_id)) return Error.GuestWorkspaceUnknown;
+    const socket = runtime_mode.socketPath() orelse return Error.GuestManagerUnavailable;
+    return .{
+        .allocator = allocator,
+        .workspace_id = try allocator.dupe(u8, workspace_id),
+        .root = try allocator.dupe(u8, ""),
+        .socket = try allocator.dupe(u8, socket),
+        .guest_paths = true,
+    };
+}
+
 /// The guest filesystem for a directory named by an ABSOLUTE host path: the
 /// call sites that have a path and no session. Same contract as `forSession`,
 /// and the same failure — `--saas` with an unowned path is an error, never the host.
@@ -586,6 +601,34 @@ test "relative: a host path is never handed to the guest absolute" {
     const rel = fs.relative("/proj/a/deep/file.txt").?;
     try testing.expect(!std.mem.startsWith(u8, rel, "/"));
     try testing.expect(std.mem.indexOf(u8, rel, "proj") == null);
+}
+
+test "forWorkspace: a workspace id alone builds the guest fs, and its paths are the guest's" {
+    const a = testing.allocator;
+    runtime_mode.setCurrent(.saas);
+    defer runtime_mode.setCurrent(.local);
+    runtime_mode.setManagerSocket("/run/user/1000/pabrik-vmd.sock");
+    defer runtime_mode.setManagerSocket(null);
+
+    var fs = try forWorkspace(a, "ws_1");
+    defer fs.deinit();
+    try testing.expect(fs.guest_paths);
+    try testing.expectEqualStrings("ws_1", fs.workspace_id);
+    try testing.expectEqualStrings("src", fs.relative("/workspace/src").?);
+
+    const listed = try fs.hostPath("src");
+    defer a.free(listed);
+    try testing.expectEqualStrings("/workspace/src", listed);
+}
+
+test "forWorkspace: an id that is not inert is refused before any socket is asked" {
+    runtime_mode.setCurrent(.saas);
+    defer runtime_mode.setCurrent(.local);
+    try testing.expectError(Error.GuestWorkspaceUnknown, forWorkspace(testing.allocator, "../../etc"));
+}
+
+test "forWorkspace: local mode has no guest to hand out" {
+    try testing.expectError(Error.GuestManagerUnavailable, forWorkspace(testing.allocator, "ws_1"));
 }
 
 test "hostPath: a --saas caller is answered in the guest's vocabulary" {

@@ -425,12 +425,18 @@ export async function healthCheck(): Promise<{
 }
 
 // System Folder API
-export async function getSystemFolder(): Promise<FolderInfo> {
-  return await apiFetch<FolderInfo>('/system/folder?action=list')
+export async function getSystemFolder(workspaceId?: string): Promise<FolderInfo> {
+  return await apiFetch<FolderInfo>(`/system/folder?action=list${workspaceQuery(workspaceId)}`)
 }
 
-export async function listFolder(path: string): Promise<FolderInfo> {
-  return await apiFetch<FolderInfo>(`/system/folder?path=${encodeURIComponent(path)}&action=list`)
+export async function listFolder(path: string, workspaceId?: string): Promise<FolderInfo> {
+  return await apiFetch<FolderInfo>(
+    `/system/folder?path=${encodeURIComponent(path)}&action=list${workspaceQuery(workspaceId)}`,
+  )
+}
+
+function workspaceQuery(workspaceId?: string): string {
+  return workspaceId ? `&workspace_id=${encodeURIComponent(workspaceId)}` : ''
 }
 
 /**  * Server-side recursive file search for the ChatView `@` picker. One round-trip replaces the old

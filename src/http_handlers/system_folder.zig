@@ -5,6 +5,56 @@ const gserverz = pabrikcore.gserverz;
 const SystemFolder = pabrikcore.system_folder.SystemFolder;
 const SystemFolderError = pabrikcore.system_folder.SystemFolderError;
 const FolderEntry = pabrikcore.system_folder.FolderEntry;
+const workspace_fs = @import("../agentic_loop/workspace_fs.zig");
+const runtime_mode = @import("../runtime_mode.zig");
+const vmd_policy = @import("../vmd/policy.zig");
+
+const saas_picker_hint = "SaaS mode lists a workspace's VM: pass workspace_id";
+
+/// Where `GET /api/system/folder` may read from. Local mode keeps the host; a
+/// `--saas` process answers only for a workspace, and refuses without one.
+pub const PickerRoute = union(enum) {
+    host,
+    guest: []const u8,
+    refuse: []const u8,
+};
+
+pub fn pickerRoute(mode: runtime_mode.Mode, workspace_id: ?[]const u8) PickerRoute {
+    if (mode != .saas) return .host;
+    const id = workspace_id orelse return .{ .refuse = saas_picker_hint };
+    if (id.len == 0) return .{ .refuse = saas_picker_hint };
+    return .{ .guest = id };
+}
+
+/// A guest walk as the picker's entry shape, filtered by a name fragment.
+pub fn pickerEntries(
+    allocator: std.mem.Allocator,
+    walked: []const workspace_fs.Entry,
+    q: []const u8,
+    limit: usize,
+) ![]FolderEntry {
+    var out = std.ArrayList(FolderEntry).empty;
+    errdefer {
+        for (out.items) |entry| {
+            allocator.free(entry.name);
+            allocator.free(entry.path);
+        }
+        out.deinit(allocator);
+    }
+    for (walked) |entry| {
+        if (out.items.len >= limit) break;
+        const name = std.fs.path.basename(entry.abs);
+        if (name.len == 0) continue;
+        if (q.len > 0 and std.mem.indexOf(u8, name, q) == null) continue;
+        try out.append(allocator, .{
+            .name = try allocator.dupe(u8, name),
+            .path = try allocator.dupe(u8, entry.abs),
+            .is_directory = entry.kind == .dir,
+            .is_symlink = entry.kind == .link,
+        });
+    }
+    return out.toOwnedSlice(allocator);
+}
 
 /// Escape special characters for JSON string values
 fn jsonEscape(allocator: std.mem.Allocator, value: []const u8) ![]u8 {
@@ -45,6 +95,69 @@ pub fn buildEntriesJson(allocator: std.mem.Allocator, entries: []const FolderEnt
         try out.append(allocator, '}');
     }
     return out.toOwnedSlice(allocator);
+}
+
+/// `action=list` / `action=search` against a workspace's VM. The guest root is
+/// the picker's home, so "Up" stops at `/workspace` and no host path is read.
+fn guestFolderResponse(
+    allocator: std.mem.Allocator,
+    req: gserverz.HttpRequest,
+    res: gserverz.HttpResponse,
+    workspace_id: []const u8,
+    do_list: bool,
+    do_search: bool,
+) !gserverz.HttpResponse {
+    if (!do_list and !do_search) {
+        return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "SaaS mode serves action=list and action=search here" }) });
+    }
+
+    var fs = workspace_fs.forWorkspace(allocator, workspace_id) catch |err| {
+        return res.jsonResponse(.{ .status_code = 503, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = @errorName(err) }) });
+    };
+    defer fs.deinit();
+
+    const requested = req.query.get("path") orelse vmd_policy.guest_root;
+    const target = if (std.mem.eql(u8, requested, "/")) vmd_policy.guest_root else requested;
+    const rel = fs.relativeDir(target) orelse {
+        return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "path must be inside the workspace" }) });
+    };
+
+    const depth: u32 = @intCast(if (do_search) SystemFolder.parseSearchMaxDepth(req.query.get("max_depth")) else 1);
+    var walked = fs.walkAll(target, depth) catch |err| {
+        return res.jsonResponse(.{ .status_code = 403, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = @errorName(err) }) });
+    };
+    defer walked.deinit();
+
+    const q = req.query.get("q") orelse "";
+    const limit = SystemFolder.parseSearchLimit(req.query.get("limit"));
+    const entries = try pickerEntries(allocator, walked.entries, q, limit);
+    defer {
+        for (entries) |entry| {
+            allocator.free(entry.name);
+            allocator.free(entry.path);
+        }
+        allocator.free(entries);
+    }
+
+    const entries_json = try buildEntriesJson(allocator, entries);
+    defer allocator.free(entries_json);
+
+    const target_path = try std.fmt.allocPrint(allocator, "/{s}", .{rel});
+    defer allocator.free(target_path);
+    const parent_path: ?[]u8 = if (rel.len == 0) null else blk: {
+        const dir = std.fs.path.dirname(rel) orelse "";
+        break :blk try std.fmt.allocPrint(allocator, "/{s}", .{dir});
+    };
+    defer if (parent_path) |parent| allocator.free(parent);
+
+    return res.jsonResponse(.{ .status_code = 200, .data = try buildFolderListJson(
+        allocator,
+        target_path,
+        target,
+        vmd_policy.guest_root,
+        parent_path,
+        entries_json,
+    ) });
 }
 
 /// Render the `{path, absolute, home[, parent][, entries]}` body.
@@ -119,6 +232,13 @@ pub fn systemFolderHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
     const path_param = req.query.get("path");
     const action = req.query.get("action");
     const do_list = std.mem.eql(u8, action orelse "", "list");
+    const do_search = std.mem.eql(u8, action orelse "", "search");
+
+    switch (pickerRoute(runtime_mode.currentMode(), req.query.get("workspace_id"))) {
+        .host => {},
+        .refuse => |message| return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = message }) }),
+        .guest => |workspace_id| return guestFolderResponse(allocator, req, res, workspace_id, do_list, do_search),
+    }
 
     if (path_param) |p| {
         if (p.len == 0 and std.mem.eql(u8, action orelse "", "search")) {
@@ -198,7 +318,6 @@ pub fn systemFolderHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
  // Recursive server-side search for the ChatView `@` picker: GET
  // /api/system/folder?action=search&path=<root>&q=comp&limit=50 Same route as
  // list (no new main.zig registration); same entry shape ({name, path,
-    const do_search = std.mem.eql(u8, action orelse "", "search");
     if (do_search) {
         const q = req.query.get("q") orelse "";
         const limit = SystemFolder.parseSearchLimit(req.query.get("limit"));
@@ -285,6 +404,123 @@ pub fn systemFolderHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
 // (plan: docs/superpowers/plans/2026-09-08-chatview-search-files-perf.md,
 
 const testing = std.testing;
+
+fn walkOf(allocator: std.mem.Allocator, specs: []const struct { path: []const u8, kind: workspace_fs.Kind }) ![]workspace_fs.Entry {
+    const entries = try allocator.alloc(workspace_fs.Entry, specs.len);
+    for (specs, 0..) |spec, i| entries[i] = .{ .abs = try allocator.dupe(u8, spec.path), .kind = spec.kind };
+    return entries;
+}
+
+fn freeWalk(allocator: std.mem.Allocator, entries: []workspace_fs.Entry) void {
+    for (entries) |entry| allocator.free(entry.abs);
+    allocator.free(entries);
+}
+
+test "pickerRoute: local mode lists the host whatever the request says" {
+    try testing.expectEqual(PickerRoute.host, pickerRoute(.local, null));
+    try testing.expectEqual(PickerRoute.host, pickerRoute(.local, "ws_1"));
+}
+
+test "pickerRoute: saas refuses to list anything without a workspace" {
+    switch (pickerRoute(.saas, null)) {
+        .refuse => |message| try testing.expectEqualStrings(saas_picker_hint, message),
+        else => return error.TestExpectedRefusal,
+    }
+    switch (pickerRoute(.saas, "")) {
+        .refuse => {},
+        else => return error.TestExpectedRefusal,
+    }
+}
+
+test "pickerRoute: saas lists the workspace the caller names" {
+    switch (pickerRoute(.saas, "ws_1")) {
+        .guest => |id| try testing.expectEqualStrings("ws_1", id),
+        else => return error.TestExpectedGuest,
+    }
+}
+
+test "pickerEntries: a guest walk becomes names and /workspace paths" {
+    const a = testing.allocator;
+    const walked = try walkOf(a, &.{
+        .{ .path = "/workspace/repo", .kind = .dir },
+        .{ .path = "/workspace/README.md", .kind = .file },
+        .{ .path = "/workspace/link", .kind = .link },
+    });
+    defer freeWalk(a, walked);
+
+    const entries = try pickerEntries(a, walked, "", 50);
+    defer {
+        for (entries) |entry| {
+            a.free(entry.name);
+            a.free(entry.path);
+        }
+        a.free(entries);
+    }
+
+    try testing.expectEqual(@as(usize, 3), entries.len);
+    try testing.expectEqualStrings("repo", entries[0].name);
+    try testing.expectEqualStrings("/workspace/repo", entries[0].path);
+    try testing.expect(entries[0].is_directory);
+    try testing.expectEqualStrings("README.md", entries[1].name);
+    try testing.expect(!entries[1].is_directory);
+    try testing.expect(entries[2].is_symlink);
+}
+
+test "pickerEntries: a search fragment matches the entry's own name, not its parent's" {
+    const a = testing.allocator;
+    const walked = try walkOf(a, &.{
+        .{ .path = "/workspace/src", .kind = .dir },
+        .{ .path = "/workspace/docs", .kind = .dir },
+        .{ .path = "/workspace/src/main.zig", .kind = .file },
+        .{ .path = "/workspace/driver.txt", .kind = .file },
+    });
+    defer freeWalk(a, walked);
+
+    const by_dir = try pickerEntries(a, walked, "src", 50);
+    defer {
+        for (by_dir) |entry| {
+            a.free(entry.name);
+            a.free(entry.path);
+        }
+        a.free(by_dir);
+    }
+    try testing.expectEqual(@as(usize, 1), by_dir.len);
+    try testing.expectEqualStrings("src", by_dir[0].name);
+
+    const by_file = try pickerEntries(a, walked, "driv", 50);
+    defer {
+        for (by_file) |entry| {
+            a.free(entry.name);
+            a.free(entry.path);
+        }
+        a.free(by_file);
+    }
+    try testing.expectEqual(@as(usize, 1), by_file.len);
+    try testing.expectEqualStrings("driver.txt", by_file[0].name);
+}
+
+test "pickerEntries: the limit caps the list at the first matches" {
+    const a = testing.allocator;
+    const walked = try walkOf(a, &.{
+        .{ .path = "/workspace/a", .kind = .file },
+        .{ .path = "/workspace/b", .kind = .file },
+        .{ .path = "/workspace/c", .kind = .file },
+    });
+    defer freeWalk(a, walked);
+
+    const entries = try pickerEntries(a, walked, "", 2);
+    defer {
+        for (entries) |entry| {
+            a.free(entry.name);
+            a.free(entry.path);
+        }
+        a.free(entries);
+    }
+    try testing.expectEqual(@as(usize, 2), entries.len);
+    try testing.expectEqualStrings("a", entries[0].name);
+    try testing.expectEqualStrings("b", entries[1].name);
+}
+
 
 // ===== Behavioural tests: the Windows wire format ========================
 // These guard the wire format: none of them would notice if the response body
