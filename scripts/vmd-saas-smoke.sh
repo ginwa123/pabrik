@@ -23,8 +23,14 @@ fail() { printf '[vmd-saas-smoke] FAIL %s\n' "$*" >&2; exit 1; }
 [ -r /dev/kvm ] || fail "/dev/kvm is not readable"
 [ -f "$guest_kernel" ] || fail "guest kernel not found: $guest_kernel (set GUEST_KERNEL)"
 
-pabrik="$repo_root/zig-out/bin/pabrik"
-[ -x "$pabrik" ] || fail "$pabrik not found; run 'zig build' first"
+# `zig build` installs the platform artifact as `pabrikcore-<os>-<arch>`; the bare
+# `pabrik` name only exists in a tree that also built the desktop app, so accept
+# either rather than assuming the checkout is a dev tree.
+pabrik=""
+for candidate in "$repo_root/zig-out/bin/pabrik" "$repo_root"/zig-out/bin/pabrikcore-*; do
+  [ -x "$candidate" ] && { pabrik="$candidate"; break; }
+done
+[ -n "$pabrik" ] || fail "no pabrik binary under $repo_root/zig-out/bin; run 'zig build' first"
 
 # A fresh HOME keeps the live agent.db (and the :8081 server) out of the run.
 work="$(mktemp -d -t pabrik-saas-smoke-XXXXXX)"
