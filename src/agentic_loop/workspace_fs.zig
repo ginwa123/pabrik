@@ -405,10 +405,10 @@ pub fn forSession(
 }
 
 pub fn forWorkspace(allocator: std.mem.Allocator, workspace_id: []const u8) !Fs {
+    if (!policy.workspaceIdValid(workspace_id)) return Error.GuestWorkspaceUnknown;
     if (substrate(runtime_mode.currentMode(), runtime_mode.vm_backend_available) != .guest) {
         return Error.GuestManagerUnavailable;
     }
-    if (!policy.workspaceIdValid(workspace_id)) return Error.GuestWorkspaceUnknown;
     const socket = runtime_mode.socketPath() orelse return Error.GuestManagerUnavailable;
     return .{
         .allocator = allocator,
@@ -609,6 +609,11 @@ test "forWorkspace: a workspace id alone builds the guest fs, and its paths are 
     defer runtime_mode.setCurrent(.local);
     runtime_mode.setManagerSocket("/run/user/1000/pabrik-vmd.sock");
     defer runtime_mode.setManagerSocket(null);
+
+    if (!runtime_mode.vm_backend_available) {
+        try testing.expectError(Error.GuestManagerUnavailable, forWorkspace(a, "ws_1"));
+        return;
+    }
 
     var fs = try forWorkspace(a, "ws_1");
     defer fs.deinit();
