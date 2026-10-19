@@ -1812,3 +1812,62 @@ Two lessons worth keeping:
    every way the app is served.** The local UI answers a different origin than the API's own port,
    and CI said so on six shards at once.
 
+
+---
+
+## 33. `--saas` starts its own manager — the one-command bring-up
+
+§24 named the gap: *"`pabrik-vmd` must be started by hand. Nothing supervises the daemon
+(no unit file, no auto-spawn)."* That made `--saas` a two-step recipe, which contradicts the
+product sentence it exists for: **pabrik is a platform where one process serves many agents, and
+a workspace is an isolated VM.** So the boot now starts the manager itself when it finds none.
+
+| item | where | proof |
+|---|---|---|
+| resolve → fork → wait, refused with a message that names the artifact | `src/vmd/bootstrap.zig` (new) | 8 unit tests, `scripts/vmd-saas-smoke.sh` |
+| the boot calls it before giving up | `src/boot/server_boot.zig::startManager` | smoke: `--saas: started pabrik-vmd (pid …)` then `runtime mode: saas` |
+| candidate order is pure (env map in, paths out) | `vmdCandidates` / `baseImageCandidates` / `kernelCandidates` / `fcCandidates` | asserted on every platform, no filesystem |
+| argv is a pure function of the artifacts | `argvFor` | one test pins all 11 words and their pairing |
+
+### The resolution order (first hit wins, absolute paths only)
+
+| artifact | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|
+| `pabrik-vmd` | `PABRIK_VMD_BIN` | beside this executable | each `PATH` entry | — |
+| guest image | `PABRIK_VM_BASE_IMAGE` | `<root>/base.ext4` | `~/.cache/pabrik-vm/images/base.ext4` | — |
+| guest kernel | `PABRIK_GUEST_KERNEL` | `<root>/vmlinux` | `~/.cache/pabrik-vm/vmlinux` | highest `vmlinux*` in `~/.cache/pabrik-vm` or `~/firecracker-demo` |
+| firecracker | `PABRIK_FC_BIN` | each `PATH` entry | `~/firecracker-demo/firecracker` | — |
+| VM root | `PABRIK_VM_DIR` | `~/.local/share/pabrik/vms` | — | — |
+
+### What the fork does
+
+`fork` → `setsid` (a Ctrl-C on the server never takes the manager down, and an orphan is
+adoptable by the next boot) → `chdir("/")` → stdout+stderr appended to `<root>/vmd.log` →
+`execve` with `pabrik-vmd serve --socket … --base-image … --kernel … --fc … --root …`. The
+boot then polls `ping` for 5 s. The socket probe is unchanged and still the authority: a second
+`--saas` boot on a live manager attaches instead of forking a second one (asserted).
+
+### The failure that is still a refusal, and its message
+
+A boot that cannot find the artifacts exits 2 and names the one that is missing, so a clean box
+is told `set PABRIK_VM_BASE_IMAGE (scripts/build-guest-image.sh --out IMG)` rather than being
+handed a socket error. The five `runtime_mode` refusals are unchanged and still come last.
+
+```
+[vmd-saas-smoke] ok  pabrik --port 8080 -> runtime mode: local
+[vmd-saas-smoke] ok  exit 2, naming both pabrik-vmd and the missing guest image
+[vmd-saas-smoke] ok  pabrik --saas --port 8080 -> runtime mode: saas, manager started by the boot
+[vmd-saas-smoke] ok  still 1 manager(s) on …/auto.sock
+```
+
+Measured on this box (2026-10-19), clean `HOME` with only the artifacts symlinked in, **no
+`PABRIK_*` variable set**: one `pabrik --saas --port 8080` → `runtime mode: saas`, then three
+workspaces touched → 3 Firecracker VMMs, 3 × 128 MiB `disk.ext4`, ~78 MB RSS each, and a file
+written in `agent-a` invisible in `agent-b`.
+
+### What this still does NOT do
+
+- **The kernel and firecracker are discovered, not pinned.** §27's open item stands: nothing
+  asserts their hash, so a red smoke can still be a newer kernel. `PABRIK_GUEST_KERNEL` /
+  `PABRIK_FC_BIN` are the override, and a pinned host-artifact manifest is the next card.
+- **No cgroup scope per VM**, so N workspaces are N × `mem_size_mib` with no ceiling (§24 §10.2).

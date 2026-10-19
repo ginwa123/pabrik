@@ -38,6 +38,7 @@ export HOME="$work"
 sock="$work/vmd.sock"
 pids=()
 cleanup() {
+  pkill -f "pabrik-vmd serve --socket $work" 2>/dev/null || true
   for pid in "${pids[@]:-}"; do kill -TERM "$pid" 2>/dev/null || true; done
   sleep 0.3
   for pid in "${pids[@]:-}"; do kill -KILL "$pid" 2>/dev/null || true; done
@@ -66,26 +67,44 @@ say "local mode (no flag) still boots on the host runtime"
 log="$(boot_and_expect 'runtime mode: local' --no-static-dir)"
 say "ok  pabrik --port $port -> runtime mode: local"
 
-say "saas refuses when no manager answers, instead of running commands on the host"
+say "saas refuses when there is no manager AND nothing to start one with"
 rc=0
-PABRIK_VMD_SOCKET="$work/absent.sock" "$pabrik" --saas --port "$port" --no-static-dir \
-  >"$work/refusal.log" 2>&1 || rc=$?
+PABRIK_VMD_SOCKET="$work/absent.sock" \
+PABRIK_VM_BASE_IMAGE="$work/absent.ext4" \
+PABRIK_GUEST_KERNEL="$work/absent.vmlinux" \
+PABRIK_FC_BIN="$work/absent-firecracker" \
+PABRIK_VM_DIR="$work/absent-vms" \
+  "$pabrik" --saas --port "$port" --no-static-dir >"$work/refusal.log" 2>&1 || rc=$?
 [ "$rc" -eq 2 ] || fail "expected exit 2 for a refused mode, got $rc ($(cat "$work/refusal.log"))"
 grep -q "needs a running pabrik-vmd" "$work/refusal.log" \
   || fail "the refusal did not name the fix: $(cat "$work/refusal.log")"
+grep -q "needs a guest image" "$work/refusal.log" \
+  || fail "the refusal did not name the missing artifact: $(cat "$work/refusal.log")"
 if grep -q "runtime mode" "$work/refusal.log"; then fail "a refused mode still booted"; fi
-say "ok  exit 2 and a refusal that names pabrik-vmd"
+say "ok  exit 2, naming both pabrik-vmd and the missing guest image"
 
-say "saas boots once a manager answers its ping"
+say "saas starts its own manager when none is running"
 "$repo_root/scripts/build-guest-image.sh" --out "$work/base.ext4" --size 128M >/dev/null
-"$repo_root/zig-out/bin/pabrik-vmd" serve --socket "$sock" --base-image "$work/base.ext4" \
-  --kernel "$guest_kernel" --fc "$fc_bin" --root "$work/vms" >"$work/vmd.log" 2>&1 &
-pids+=("$!")
-for _ in $(seq 1 100); do [ -S "$sock" ] && break; sleep 0.05; done
-[ -S "$sock" ] || fail "the manager never listened on $sock (see $work/vmd.log)"
+sock="$work/auto.sock"
 export PABRIK_VMD_SOCKET="$sock"
+export PABRIK_VM_BASE_IMAGE="$work/base.ext4"
+export PABRIK_GUEST_KERNEL="$guest_kernel"
+export PABRIK_FC_BIN="$fc_bin"
+export PABRIK_VM_DIR="$work/vms"
 
 log="$(boot_and_expect 'runtime mode: saas' --saas --no-static-dir)"
-say "ok  pabrik --saas --port $port -> runtime mode: saas (manager on $sock)"
+grep -q -- "--saas: started pabrik-vmd" "$log" \
+  || fail "the boot did not report starting the manager: $(cat "$log")"
+[ -S "$sock" ] || fail "no manager socket at $sock after the boot"
+grep -q "serving on $sock" "$work/vms/vmd.log" \
+  || fail "the spawned manager never wrote its log: $(cat "$work/vms/vmd.log" 2>/dev/null)"
+say "ok  pabrik --saas --port $port -> runtime mode: saas, manager started by the boot"
 
-say "OK - local mode unchanged, and --saas accepted only with a live manager"
+say "a second boot adopts that manager instead of starting another"
+before="$(pgrep -fc "pabrik-vmd serve --socket $sock" || true)"
+log="$(boot_and_expect 'runtime mode: saas' --saas --no-static-dir)"
+after="$(pgrep -fc "pabrik-vmd serve --socket $sock" || true)"
+[ "$before" = "$after" ] || fail "a second boot spawned another manager ($before -> $after)"
+say "ok  still $after manager(s) on $sock"
+
+say "OK - local mode unchanged, refusals name the artifact, and one flag is enough"

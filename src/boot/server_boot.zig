@@ -8,6 +8,7 @@ const gserverz = @import("kabelweb").server;
 const cli_args = @import("../cli_args.zig");
 const runtime_mode = @import("../runtime_mode.zig");
 const vmd_client = @import("../vmd/vmd_client.zig");
+const vmd_bootstrap = @import("../vmd/bootstrap.zig");
 const migration = @import("../migrations/mod.zig").migration;
 const static_files = @import("../modules/static_files.zig");
 const shutdown = @import("shutdown.zig");
@@ -83,6 +84,29 @@ fn probeManager(allocator: std.mem.Allocator, socket_path: []const u8) bool {
     return true;
 }
 
+/// The manager is part of the `--saas` contract, so a boot that finds none
+/// starts one: `--saas` is the platform, not a manual two-step bring-up.
+fn startManager(allocator: std.mem.Allocator, io: std.Io, env: *const std.process.Environ.Map, socket_path: []const u8) bool {
+    var exe_dir: ?[]u8 = null;
+    defer if (exe_dir) |dir| allocator.free(dir);
+    if (std.process.executablePathAlloc(io, allocator)) |exe_path| {
+        defer allocator.free(exe_path);
+        if (std.fs.path.dirname(exe_path)) |dir| exe_dir = allocator.dupe(u8, dir) catch null;
+    } else |_| {}
+
+    const outcome = vmd_bootstrap.ensure(allocator, io, env, exe_dir, socket_path, vmd_bootstrap.default_wait_ms) catch |err| {
+        std.log.err("--saas could not start pabrik-vmd: {s}", .{@errorName(err)});
+        return false;
+    };
+    return switch (outcome) {
+        .started => true,
+        .refused => |refusal| blk: {
+            std.log.err("{s}", .{vmd_bootstrap.message(refusal)});
+            break :blk false;
+        },
+    };
+}
+
 /// Applies `--saas`: it implies auth, then refuses unless this host can honour
 /// isolation. Refusal is logged and returns null so the caller can exit. On
 /// success the resolved mode and the manager's socket are recorded process-wide.
@@ -102,6 +126,8 @@ pub fn enforceRuntimeMode(
                 // so it is never freed.
                 runtime_mode.setManagerSocket(path);
                 manager_reachable = probeManager(allocator, path);
+                // No manager yet: `--saas` starts one rather than refusing.
+                if (!manager_reachable) manager_reachable = startManager(allocator, io, env, path);
             } else |_| {}
         }
     }
