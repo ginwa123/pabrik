@@ -246,6 +246,29 @@ pub fn requestUserConfig(
     return pabrikcore.session_llm_config.forOwner(allocator, db, owner);
 }
 
+/// The `LlmConfig` for `(the user behind headers, workspace_id)`, or null when
+/// neither the workspace row nor a user document resolves — the caller then
+/// falls back to the singleton.
+pub fn requestWorkspaceConfig(
+    allocator: std.mem.Allocator,
+    di: *pabrikcore.App,
+    workspace_id: []const u8,
+    headers: anytype,
+) ?*pabrikcore.config.LlmConfig {
+    if (workspace_id.len == 0) return null;
+    const owner = resolveRequestUserId(allocator, di.db, di.auth_enabled, headers) catch return null;
+    defer allocator.free(owner);
+    return pabrikcore.session_llm_config.forOwnerAndWorkspace(
+        allocator,
+        di.io,
+        di.db,
+        di.environment,
+        di.auth_enabled,
+        owner,
+        workspace_id,
+    );
+}
+
 /// Verify a password against a stored `users.password_hash`.
 /// Sentinel `!disabled` (user_system) always fails. Supports bcrypt
 /// hashes; any other format fails closed.

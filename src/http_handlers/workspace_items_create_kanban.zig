@@ -185,11 +185,6 @@ pub fn workspaceItemsCreateKanbanHandler(
 
     const di = try pabrikcore.getSingleton();
     const sqlite_db = di.db;
-    // Live `tools` checklist — seeds the fresh board's allowlist instead of
-    // the defaults when set (plan 2026-09-22-tools-menu).
-    const user_cfg = auth_common.requestUserConfig(allocator, di.db, di.auth_enabled, req.headers) orelse
-        pabrikcore.getLlmConfig(di);
-    const config_tools = user_cfg.tools;
 
     const workspace_id = req.params.get("workspace_id") orelse "";
     if (workspace_id.len == 0) {
@@ -198,6 +193,13 @@ pub fn workspaceItemsCreateKanbanHandler(
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "workspace_id required" }),
         });
     }
+
+    // Live `tools` checklist — seeds the fresh board's allowlist instead of
+    // the defaults when set (plan 2026-09-22-tools-menu). It is the
+    // WORKSPACE's list: tools are workspace-scoped.
+    const workspace_cfg = auth_common.requestWorkspaceConfig(allocator, di, workspace_id, req.headers) orelse
+        pabrikcore.getLlmConfig(di);
+    const config_tools = workspace_cfg.tools;
 
     if (req.body.len == 0) {
         return res.jsonResponse(.{

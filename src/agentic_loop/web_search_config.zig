@@ -6,6 +6,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const config_mod = @import("../modules/config/Config.zig");
 const session_llm_config = @import("session_llm_config.zig");
+const workspace_settings_store = @import("workspace_settings_store.zig");
 
 pub const Providers = config_mod.LlmConfig.WebSearchProvidersMap;
 
@@ -16,37 +17,43 @@ const UserConfigHolder = struct {
     web_search: ?std.json.Value = null,
 };
 
-/// The providers in force for `session_id`.
+/// The providers in force for `session_id`, read from the session's workspace
+/// row. `null` means the singleton in `ctx.config` is authoritative — either
+/// because the run is not in auth mode, the session has no workspace, or the
+/// workspace saved no providers.
 pub fn resolve(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
     session_id: []const u8,
 ) ?Providers {
     const di = pabrikcore.getSingleton() catch return null;
-    // File mode: the PUT swaps the singleton synchronously, so it already
-    // tracks the user's settings. Reading the database here would add a
-    // second source that can only ever disagree with it.
     if (!di.auth_enabled) return null;
     if (session_id.len == 0) return null;
 
     const owner = session_llm_config.sessionOwner(allocator, db, session_id) catch return null;
     defer allocator.free(owner);
-    return resolveForOwner(allocator, db, owner);
+    return resolveForSessionWorkspace(allocator, db, owner, session_id);
 }
 
-/// The providers stored for one user, or null when they have none.
-pub fn resolveForOwner(
+fn resolveForSessionWorkspace(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
     owner: []const u8,
+    session_id: []const u8,
 ) ?Providers {
-    const raw = pabrikcore.user_config_store.loadRaw(allocator, db, owner) catch return null;
-    // No saved config means this user never opened Settings, so the
-    // singleton is still the better guess. An absent row is not a request
-    // to remove their providers.
-    const content = raw orelse return null;
-    defer allocator.free(content);
+    const workspace_id = session_llm_config.sessionWorkspace(allocator, db, session_id) catch
+        return resolveForOwner(allocator, db, owner);
+    defer allocator.free(workspace_id);
+    if (workspace_id.len == 0) return resolveForOwner(allocator, db, owner);
 
+    const overlay = workspace_settings_store.loadRaw(allocator, db, owner, workspace_id) catch return null;
+    const content = overlay orelse return null;
+    defer allocator.free(content);
+    return providersFrom(allocator, content);
+}
+
+/// The providers in one stored document, or null when it carries none.
+pub fn providersFrom(allocator: std.mem.Allocator, content: []const u8) ?Providers {
     const parsed = std.json.parseFromSlice(UserConfigHolder, allocator, content, .{
         .ignore_unknown_fields = true,
     }) catch return null;
@@ -54,6 +61,20 @@ pub fn resolveForOwner(
 
     const ws = parsed.value.web_search orelse return null;
     return config_mod.LlmConfig.parseWebSearchProvidersMap(allocator, ws) catch null;
+}
+
+/// The providers stored for one user, or null when they have none. Only a
+/// session with no workspace still resolves here — everywhere else the
+/// workspace row is the source.
+pub fn resolveForOwner(
+    allocator: std.mem.Allocator,
+    db: *pabrikcore.sqlite.SqliteBackend,
+    owner: []const u8,
+) ?Providers {
+    const raw = pabrikcore.user_config_store.loadRaw(allocator, db, owner) catch return null;
+    const content = raw orelse return null;
+    defer allocator.free(content);
+    return providersFrom(allocator, content);
 }
 
 // ─── tests: matrix rows 58–63 ────────────────────────────────────────────

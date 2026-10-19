@@ -34,8 +34,8 @@ export interface PabrikConfigSource {
   /** Persist the whole edited config. */
   save(config: PabrikConfig): Promise<void>
   /** Remove one profile by name. Each scope has its own endpoint: the user-scope one also
-   * live-reloads the backend's in-memory config, and the workspace-scope one clears this workspace's
-   * copy so the overlay merge cannot inherit the profile back. */
+   * live-reloads the backend's in-memory config, and the workspace-scope one edits this
+   * workspace's own copy and nothing else. */
   deleteProfile(name: string): Promise<void>
 }
 

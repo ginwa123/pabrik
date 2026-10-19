@@ -34,7 +34,7 @@ pub fn workspaceItemsListHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRe
     // 1. Existence gate — see rule 1 above.
     if (workspace_default.workspaceExists(allocator, sqlite_db, workspace_id)) {
         // 2. Non-fatal ensure — see rule 2 above.
-        const config_tools = auth_common.requestUserConfig(allocator, di.db, di.auth_enabled, req.headers) orelse
+        const config_tools = auth_common.requestWorkspaceConfig(allocator, di, workspace_id, req.headers) orelse
             pabrikcore.getLlmConfig(di);
         const ensured = workspace_default.ensureDefaultProject(
             allocator,

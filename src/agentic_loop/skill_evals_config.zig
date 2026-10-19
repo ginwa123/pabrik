@@ -6,6 +6,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const config_mod = @import("../modules/config/Config.zig");
 const session_llm_config = @import("session_llm_config.zig");
+const workspace_settings_store = @import("workspace_settings_store.zig");
 
 /// The `skill_evals` block in force for `session_id`, or null when
 /// `ctx.config.skill_evals` is already authoritative and should be read
@@ -16,19 +17,54 @@ pub fn resolve(
     session_id: []const u8,
 ) ?config_mod.SkillEvalsConfig {
     const di = pabrikcore.getSingleton() catch return null;
-    // File mode: the PUT swaps the singleton synchronously, so it already
-    // tracks the user's settings. Reading the database here would add a
-    // second source that can only ever disagree with it.
     if (!di.auth_enabled) return null;
     if (session_id.len == 0) return null;
 
     const owner = session_llm_config.sessionOwner(allocator, db, session_id) catch return null;
     defer allocator.free(owner);
-    return resolveForOwner(allocator, db, owner);
+    return resolveForSessionWorkspace(allocator, db, owner, session_id);
 }
 
-/// The `skill_evals` block stored for one user, or null when they have no
-/// saved config at all.
+fn resolveForSessionWorkspace(
+    allocator: std.mem.Allocator,
+    db: *pabrikcore.sqlite.SqliteBackend,
+    owner: []const u8,
+    session_id: []const u8,
+) ?config_mod.SkillEvalsConfig {
+    const workspace_id = session_llm_config.sessionWorkspace(allocator, db, session_id) catch
+        return resolveForOwner(allocator, db, owner);
+    defer allocator.free(workspace_id);
+    if (workspace_id.len == 0) return resolveForOwner(allocator, db, owner);
+    return resolveFromWorkspaceRow(allocator, db, owner, workspace_id);
+}
+
+/// The block stored in `(owner, workspace_id)`'s row, or null when that row
+/// carries none.
+pub fn resolveFromWorkspaceRow(
+    allocator: std.mem.Allocator,
+    db: *pabrikcore.sqlite.SqliteBackend,
+    owner: []const u8,
+    workspace_id: []const u8,
+) ?config_mod.SkillEvalsConfig {
+    const overlay = workspace_settings_store.loadRaw(allocator, db, owner, workspace_id) catch return null;
+    const content = overlay orelse return null;
+    defer allocator.free(content);
+    return skillEvalsFrom(allocator, content);
+}
+
+/// The block in one stored document, or null when it carries none.
+pub fn skillEvalsFrom(allocator: std.mem.Allocator, content: []const u8) ?config_mod.SkillEvalsConfig {
+    const cfg = session_llm_config.fromJsonText(allocator, content) orelse return null;
+    defer {
+        var tmp = cfg;
+        tmp.deinit();
+        allocator.destroy(tmp);
+    }
+    return cfg.skill_evals;
+}
+
+/// The block stored for one user. Only a session with no workspace still
+/// resolves here — everywhere else the workspace row is the source.
 pub fn resolveForOwner(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
