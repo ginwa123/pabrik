@@ -907,7 +907,8 @@ test "the auth backfill copies each user's scoped settings into every workspace"
     try testing.expect(parsed.value.object.get("retry_delay_ms") == null);
     try testing.expect(parsed.value.object.get("notify_on_complete") == null);
 
-    try testing.expect((try ownerOverlayBody(&ctx, "u_1", "ws_b")) != null);
+    const b = (try ownerOverlayBody(&ctx, "u_1", "ws_b")) orelse return error.CopyMissing;
+    defer alloc.free(b);
 }
 
 test "the auth backfill never overwrites a workspace the user already set" {
