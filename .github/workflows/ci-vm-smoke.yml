@@ -29,6 +29,13 @@ on:
       - 'scripts/vmd-smoke.sh'
       - 'scripts/vmd-daemon-smoke.sh'
       - 'scripts/vmd-saas-smoke.sh'
+      - 'scripts/saas-cwd-smoke.sh'
+      - 'scripts/saas-cwd-probe.py'
+      - 'scripts/stub_llm_server.py'
+      - 'src/agentic_loop/workspace_scope.zig'
+      - 'src/agentic_loop/vm_runtime.zig'
+      - 'src/http_handlers/session_create.zig'
+      - 'src/http_handlers/kanban_tasks_create.zig'
       - 'src/vm_agent/**'
       - 'src/vmd/**'
       - 'build.zig'
@@ -95,7 +102,7 @@ jobs:
         run: scripts/vmd-daemon-smoke.sh
 
   saas:
-    name: --saas boots only with a live manager
+    name: --saas boots only with a live manager, and a chat runs in its VM
     needs: preflight
     runs-on: [self-hosted, linux, x64, kvm]
     timeout-minutes: 60
@@ -132,3 +139,8 @@ jobs:
 
       - name: Local mode is unchanged, and --saas refuses without a manager
         run: scripts/vmd-saas-smoke.sh
+
+      - name: 'A new workspace’s first chat runs at /workspace, in its VM'
+        # The #1003 regression end to end: the session row, the prompt, and the
+        # `command` tool's own `pwd` / `uname -r` — no kanban task in the way.
+        run: scripts/saas-cwd-smoke.sh
