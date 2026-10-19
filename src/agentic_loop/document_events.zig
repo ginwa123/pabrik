@@ -167,6 +167,9 @@ test "an omitted title still reaches the wire as an empty string" {
 }
 
 test "a null event_bus makes the emit a no-op" {
+    // Reset first: `captured` is module state, and reading it without clearing
+    // would make this test pass or fail on whatever ran before it.
+    releaseCapture();
     emitDocumentEvent(testing.allocator, null, .{
         .action = "created",
         .workspace_id = "ws_1",

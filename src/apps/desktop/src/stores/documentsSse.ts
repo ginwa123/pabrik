@@ -18,10 +18,9 @@ export const useDocumentsSseStore = defineStore('documentsSse', () => {
   // Unsubscribe for the bus's "you may have missed events" signal (see `helpers/sseTabChannel.ts`).
   let offResync: (() => void) | null = null
 
-  // Disposer for the `bus.state → refreshDocuments` subscription. See `initDocumentsSse`.
+  // Disposer for the `bus.state → refreshDocuments` subscription.
   let stopOpenSub: (() => void) | null = null
 
-  // Throttle for reconnect-triggered refetches (see refreshDocuments).
   let lastDocumentsFetchAt = 0
 
   /** Subscribe the documents store to the bus's `documents` channel. */

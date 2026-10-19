@@ -12,10 +12,30 @@ import {
   __setSseBusGlobalClient,
 } from '../helpers/sseBus'
 import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
-import type { DocumentEvent } from '../api'
+import type { Document as ApiDocument, DocumentEvent } from '../api'
 import { useDocumentsSseStore } from '../stores/documentsSse'
 import { useDocumentsStore } from '../stores/documents'
 import { makeLocalStorageStub } from './helpers'
+
+const listDocuments = vi.hoisted(() => vi.fn())
+
+// ONLY `listDocuments` is replaced — everything else in `../api` stays real because
+// `installSseBus` builds its client through `createUnifiedSseConnection`.
+vi.mock('../api', async () => {
+  const actual = await vi.importActual<typeof import('../api')>('../api')
+  return { ...actual, listDocuments }
+})
+
+const doc = (over: Partial<ApiDocument> = {}): ApiDocument => ({
+  id: 'doc_1',
+  workspace_id: 'ws_1',
+  title: 'Notes',
+  content: '# heading',
+  format: 'markdown',
+  created_at: '2026-09-01 10:00:00',
+  updated_at: '2026-09-01 10:00:00',
+  ...over,
+})
 
 /** Test-only stub SseClient: never opens a network EventSource. */
 function makeStubClient(initial: SseState): SseClient {
@@ -43,6 +63,7 @@ describe('useDocumentsSseStore (bus-backed)', () => {
 
   beforeEach(() => {
     setActivePinia(createPinia())
+    listDocuments.mockReset()
     Object.defineProperty(globalThis, 'localStorage', {
       value: makeLocalStorageStub(),
       writable: true,
@@ -79,6 +100,36 @@ describe('useDocumentsSseStore (bus-backed)', () => {
     dispatch({ action: 'created', workspace_id: 'ws_1', document_id: 'doc_1', title: 'Notes' })
 
     expect(fetchSpy).toHaveBeenCalledWith('ws_1')
+  })
+
+  it('an agent create lands in the store, not just as a fetch call', async () => {
+    // The test above proves the wiring; this proves the OUTCOME an agent write has for the
+    // sidebar. The list is cache-first over a module singleton, so clear it first or a previous
+    // test's rows paint through and the assertion becomes order-dependent.
+    const { documentEngineDb } = await import('../sync/DocumentEngineDb')
+    const { runSyncVoid } = await import('../sync/runtime')
+    await runSyncVoid(documentEngineDb.clear('ws_1'), 'spec.clearDocuments')
+
+    listDocuments.mockResolvedValue({
+      documents: [doc({ id: 'doc_agent', title: 'Written by the agent' })],
+      count: 1,
+    })
+
+    await useDocumentsSseStore().initDocumentsSse('ws_1')
+    // Positive control: init alone must NOT read the list (the bus is still 'connecting'), so the
+    // population below can only have come from the dispatched event.
+    expect(listDocuments).not.toHaveBeenCalled()
+
+    dispatch({
+      action: 'created',
+      workspace_id: 'ws_1',
+      document_id: 'doc_agent',
+      title: 'Written by the agent',
+    })
+
+    await vi.waitFor(() => {
+      expect(useDocumentsStore().documents.map((d) => d.id)).toEqual(['doc_agent'])
+    })
   })
 
   it('re-reads the list for an updated document as well', async () => {
