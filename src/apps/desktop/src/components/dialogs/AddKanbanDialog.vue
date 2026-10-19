@@ -36,6 +36,7 @@ import UiIcon from '../ui/UiIcon.vue'
 
 const props = defineProps<{
   show: boolean
+  workspaceId?: string
 }>()
 
 const emit = defineEmits<{
@@ -61,7 +62,7 @@ const nameError = computed<string | null>(() => {
 // ─── Picker data source ──────────────────────────────────────────────────── Adapts the existing
 // listFolder/getSystemFolder API to the picker's agnostic (path: string) => Promise<T[]> contract.
 const loadItemsForPicker = async (path: string): Promise<FolderEntry[]> => {
-  const data = path ? await listFolder(path) : await getSystemFolder()
+  const data = path ? await listFolder(path, props.workspaceId) : await getSystemFolder(props.workspaceId)
   return (data.entries || []) as FolderEntry[]
 }
 

@@ -1267,6 +1267,7 @@ defineExpose({
     />
     <AddKanbanDialog
       :show="showAddKanbanDialog"
+      :workspace-id="addItemTargetWorkspaceId ?? undefined"
       @close="handleCloseAddKanbanDialog"
       @create="handleCreateKanban"
     />
