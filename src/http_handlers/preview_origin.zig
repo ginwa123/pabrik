@@ -142,8 +142,8 @@ pub fn allowedFor(
     return out.toOwnedSlice(allocator);
 }
 
-/// Whether the request's `Origin` is the app's own origin — the endpoint
-/// the request was addressed to. `host` is the request's `Host` header.
+/// Whether the request's `Origin` is the app's own origin: the same host
+/// and port the request was addressed to. `host` is the `Host` header.
 pub fn sameOrigin(origin: ?[]const u8, host: ?[]const u8) bool {
     const o = origin orelse return false;
     const h = host orelse return false;
