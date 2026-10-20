@@ -294,7 +294,13 @@ pub fn main(init: std.process.Init) !void {
     // The local UI is served from the Vite dev origin, so enabling it for local
     // mode would 403 every mutation the app makes.
     const allowed_origins = try ai_mod.http_handlers.preview_origin.allowedFor(allocator, environment, address.port);
-    gs.cors = .{ .enabled = boot_mode == .saas, .allowed_origins = allowed_origins };
+    // `allow_same_origin`: the app's own origin passes the gate, so a
+    // deployment behind a proxy serves its public origin with no allowlist.
+    gs.cors = .{
+        .enabled = boot_mode == .saas,
+        .allowed_origins = allowed_origins,
+        .allow_same_origin = true,
+    };
 
     // SIGINT/SIGTERM close the listener via shutdown(), unblocking listen()
     // so the post-listen block below runs. Second signal force-exits (130).

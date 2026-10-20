@@ -3,6 +3,7 @@
 //! mutation. Pure, so the table is testable without a proxy or a browser.
 
 const std = @import("std");
+const gserverz = @import("pabrikcore").gserverz;
 
 /// The label the preview host is built from: `<id>.preview.<base>`.
 pub const preview_label = "preview";
@@ -139,6 +140,21 @@ pub fn allowedFor(
         }
     }
     return out.toOwnedSlice(allocator);
+}
+
+/// Whether the request's `Origin` is the app's own origin: the same host
+/// and port the request was addressed to. `host` is the `Host` header.
+pub fn sameOrigin(origin: ?[]const u8, host: ?[]const u8) bool {
+    const o = origin orelse return false;
+    const h = host orelse return false;
+    return gserverz.security.sameEndpoint(o, h);
+}
+
+/// Whether a mutation may come from this `Origin`: the app's own origin
+/// and the origins the deployment serves may, a foreign one may not.
+pub fn mayMutate(origin: ?[]const u8, host: ?[]const u8, allowed: []const []const u8) bool {
+    if (sameOrigin(origin, host)) return true;
+    return !originVerdict(origin, allowed).refused();
 }
 
 /// The rule the engine applies to those entries: the host (with its port) of
@@ -286,6 +302,25 @@ test "the deployment serves its own origin on the port it bound, and what the op
     try testing.expect(!originHostAllowed("https://evil.example", allowed));
     try testing.expect(!originHostAllowed("null", allowed));
     try testing.expect(!originHostAllowed("http://127.0.0.1:9999", allowed));
+}
+
+test "the app's own origin is the endpoint the request was addressed to" {
+    try testing.expect(sameOrigin("https://agent.ginwa.site", "agent.ginwa.site"));
+    try testing.expect(sameOrigin("https://agent.ginwa.site", "agent.ginwa.site:443"));
+    try testing.expect(sameOrigin("http://127.0.0.1:8081", "127.0.0.1:8081"));
+    try testing.expect(!sameOrigin("https://evil.example", "agent.ginwa.site"));
+    try testing.expect(!sameOrigin("https://agent.ginwa.site:8443", "agent.ginwa.site"));
+    try testing.expect(!sameOrigin(null, "agent.ginwa.site"));
+    try testing.expect(!sameOrigin("https://agent.ginwa.site", null));
+}
+
+test "a mutation may come from the app's own origin or from a served one" {
+    const allowed = [_][]const u8{"https://pabrik.example.com"};
+    try testing.expect(mayMutate("https://agent.ginwa.site", "agent.ginwa.site", &allowed));
+    try testing.expect(mayMutate("https://pabrik.example.com", "agent.ginwa.site", &allowed));
+    try testing.expect(mayMutate(null, "agent.ginwa.site", &allowed));
+    try testing.expect(!mayMutate("https://evil.example", "agent.ginwa.site", &allowed));
+    try testing.expect(!mayMutate("https://agent.ginwa.site:8443", "agent.ginwa.site", &allowed));
 }
 
 test "the preview policy pins framing and connection targets" {

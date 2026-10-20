@@ -159,6 +159,14 @@
         // after eaf2b583 (#9). It carries all four fixes and CI on kabelweb is
         // green for it (all four jobs, windows-latest included).
         //
+        // e834a67 = #12, the origin gate's same-origin rule: an `Origin`
+        // that names the endpoint the request was addressed to passes the
+        // engine's pre-gate. Without it a `--saas` deployment behind a
+        // proxy or a tunnel refused EVERY state-changing request, because
+        // the app's own public origin is not in the static allowlist.
+        // It is a BRANCH head (kabelweb PR #12), so it resolves while the
+        // branch lives; move it to the merge SHA when #12 lands.
+        //
         // To move it again: bump the SHA, then re-derive the hash with
         //   zig fetch "git+https://github.com/ginwa123/kabelweb.git#<sha>"
         // and paste the `kabelweb-0.0.0-…` line it prints. Expect to
@@ -173,8 +181,8 @@
         //     is over the file tree, not the commit — so only the `#<sha>`
         //     moves. Do not "re-derive" the hash just because the SHA changed.
         .kabelweb = .{
-            .url = "git+https://github.com/ginwa123/kabelweb.git#497a509f778b02a7ab2694b5a6dc1b2a5d0e1c88",
-            .hash = "kabelweb-0.0.0-vhZam4BoHQAUm6MtkH6jf1qLfoBUoTCkE6qwgsFSgCpM",
+            .url = "git+https://github.com/ginwa123/kabelweb.git#e834a678fe30e14b193e0cb95433d667c4a4dce1",
+            .hash = "kabelweb-0.0.0-vhZam0qGHQCzi7tg9e4tnQucLRoFxnrkXSsTjV_rBxal",
         },
         // The Zig linter (github.com/ginwa123/zglint), moved out of
         // `src/modules/zginlint/`. A std-only package with no dependencies of

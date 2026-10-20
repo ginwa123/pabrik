@@ -217,7 +217,8 @@ pub fn previewProxyHandler(
     if (preview_origin.isMutatingMethod(req.method)) {
         const allowed = try allowedOrigins(allocator, ctx.allowed_origins);
         const origin = req.headers.get("Origin") orelse req.headers.get("origin");
-        if (preview_origin.originVerdict(origin, allowed).refused()) {
+        const host = req.headers.get("Host") orelse req.headers.get("host");
+        if (!preview_origin.mayMutate(origin, host, allowed)) {
             return refuse(res, allocator, 403, "a foreign Origin may not drive this workspace");
         }
     }
