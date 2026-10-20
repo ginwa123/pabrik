@@ -1,11 +1,6 @@
 //! Agent-callable tool: `update_plan_text_replace` — a surgical EDIT of the
-//! session's task plan. It replaces one specific snippet (`old_text`) with
-//! another (`new_text`) and leaves every other line of the plan untouched.
-//!
-//! `update_plan` overwrites the WHOLE plan (UPSERT), so a small change
-//! (flipping one checkbox, fixing one line) means re-sending the entire
-//! document — and any part the model forgets is lost. This tool is the
-//! surgical alternative: it names exactly the text that must change.
+//! session's task plan: it replaces one snippet (`old_text`) with another
+//! (`new_text`) and leaves every other line of the plan untouched.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");

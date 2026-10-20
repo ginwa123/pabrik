@@ -285,35 +285,20 @@ const renderTool = (content: string, tool_name: string | undefined): string => {
   if (tool_name === 'update_plan_text_replace') {
     // Collapsed-bubble summary for the inline tool pill in ChatView. JSON envelope:
     // {"tool":…,"success":bool,"data":{session_id,updated_at,plan,replacements},"error":…}
-    try {
-      const parsed: unknown = JSON.parse(content)
-      const record =
-        typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
-          ? (parsed as Record<string, unknown>)
-          : null
-      const envelope =
-        record !== null && (typeof record.tool === 'string' || typeof record.success === 'boolean')
-          ? record
-          : null
-      if (envelope !== null && envelope.success === false) {
-        const msg =
-          typeof envelope.error === 'string' && envelope.error.trim().length > 0
-            ? envelope.error.trim()
-            : 'error'
-        return `<span class="tool-inline">${tool_name} → ${escapeHtml(msg)}</span>`
+    const unwrapped = tryUnwrapToolOutput(content)
+    if (unwrapped !== null) {
+      if (!unwrapped.success) {
+        return `<span class="tool-inline">${tool_name} → ${escapeHtml(unwrapped.error ?? 'error')}</span>`
       }
-      const dataRaw = envelope !== null ? envelope.data : parsed
       const data =
-        typeof dataRaw === 'object' && dataRaw !== null && !Array.isArray(dataRaw)
-          ? (dataRaw as Record<string, unknown>)
+        typeof unwrapped.data === 'object' && unwrapped.data !== null && !Array.isArray(unwrapped.data)
+          ? (unwrapped.data as Record<string, unknown>)
           : null
       if (data !== null) {
         const count = typeof data.replacements === 'number' ? data.replacements : null
         const suffix = count === null ? '' : ` · ${count} replacement${count === 1 ? '' : 's'}`
         return `<span class="tool-inline">${tool_name} → edited plan${suffix}</span>`
       }
-    } catch {
-      // Not JSON — fall through to the generic renderer.
     }
   }
 
