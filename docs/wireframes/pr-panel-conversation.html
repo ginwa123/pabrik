@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wireframe: the Pabrik PR panel, a Conversation tab, and a merge box that says why</title>
+<style>
+  :root {
+    --bg: #181616; --bg-m1: #1D1C19; --bg-m2: #12120f; --bg-p1: #282727; --bg-p2: #393836;
+    --border: #282727; --border-light: #393836;
+    --text: #c5c9c5; --muted: #a6a69c; --dim: #8f9691;
+    --violet: #8992a7; --aqua: #8ea4a2; --yellow: #c4b28a; --blue: #8ba4b0;
+    --green: #87a987; --red: #c4746e;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 16px; line-height: 1.55; padding: 40px 28px 72px;
+  }
+  .page { max-width: 1180px; margin: 0 auto; }
+
+  h1 { font-size: 30px; line-height: 1.15; font-weight: 600; letter-spacing: -0.01em; }
+  .lead { font-size: 17px; color: var(--muted); max-width: 58ch; margin-top: 12px; }
+  .meta { font-size: 15px; color: var(--dim); max-width: 58ch; margin-top: 10px; }
+  h2 { font-size: 20px; font-weight: 600; margin: 46px 0 6px; letter-spacing: -0.01em; }
+  h2 .n { color: var(--violet); font-weight: 500; margin-right: 8px; }
+  h3 { font-size: 17px; font-weight: 600; margin: 24px 0 6px; }
+  h4 { font-size: 15px; font-weight: 600; color: var(--muted); margin: 16px 0 4px; }
+  p { max-width: 58ch; margin: 10px 0; }
+  ul, ol { max-width: 58ch; margin: 10px 0; padding-left: 22px; }
+  li { margin: 5px 0; }
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.92em;
+    background: var(--bg-m2); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere;
+  }
+  a { color: var(--blue); text-decoration: underline; text-underline-offset: 2px; }
+  .small { font-size: 16px; color: var(--muted); }
+  .dim { color: var(--dim); }
+  .tight { margin-top: 4px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 16px; margin: 14px 0; }
+  th {
+    text-align: left; font-weight: 600; color: var(--muted);
+    padding: 8px 10px; border-bottom: 1px solid var(--border-light);
+  }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; overflow-wrap: anywhere; }
+  tr:last-child td { border-bottom: none; }
+  td.now { color: var(--muted); }
+  td.next { color: var(--text); }
+
+  .cols { display: flex; gap: 28px; align-items: flex-start; }
+  .mocks { flex: 1 1 auto; min-width: 0; }
+  .notes { flex: 0 0 380px; max-width: 380px; }
+  @media (max-width: 1000px) { .cols { flex-direction: column; } .notes { flex: 1 1 auto; max-width: none; } }
+
+  .num { display: inline-block; width: 22px; height: 22px; border-radius: 50%;
+         background: var(--violet); color: var(--bg); font-size: 13px; font-weight: 700;
+         text-align: center; line-height: 22px; margin-right: 8px; vertical-align: 2px; }
+  .notelist { list-style: none; padding: 0; }
+  .notelist li { margin: 0 0 14px; font-size: 16px; color: var(--muted); }
+  .notelist b { color: var(--text); font-weight: 600; }
+
+  .callout { background: var(--bg-m1); border-radius: 8px; padding: 16px 18px; margin: 16px 0; max-width: 76ch; }
+  .callout p { margin: 6px 0; font-size: 16px; color: var(--muted); }
+  .callout b { color: var(--text); }
+
+  .kbd { background: var(--bg-p1); color: var(--text); border-radius: 4px; padding: 1px 6px; font-size: 15px; }
+
+  /* ── the app mock ─────────────────────────────────────────────────────
+     Every rule below lives under [data-ui]: a cropped interface fragment
+     keeps its own borders, densities and type sizes. */
+  [data-ui] .frame { width: 320px; padding: 20px; background: var(--bg-m2); }
+  [data-ui] .framelabel { font-size: 11px; color: var(--dim); margin: 0 0 6px; }
+  [data-ui] .panel {
+    width: 280px; background: var(--bg); color: var(--text);
+    font-size: 12px; line-height: 1.45; overflow: hidden;
+  }
+  [data-ui] .strip {
+    display: flex; align-items: center; gap: 8px; padding: 0 8px; height: 32px;
+    border-bottom: 1px solid var(--border); position: relative;
+  }
+  [data-ui] .actions { flex: 0 0 auto; display: flex; align-items: center; }
+  [data-ui] .cluster {
+    display: flex; align-items: center; gap: 4px; flex: 1 1 auto; min-width: 0;
+    height: 32px; overflow: hidden;
+  }
+  [data-ui] .tab {
+    padding: 0 10px; height: 32px; line-height: 32px; color: var(--text);
+    opacity: 0.6; white-space: nowrap; flex: 0 0 auto;
+  }
+  [data-ui] .tab.on { opacity: 1; font-weight: 600; box-shadow: inset 0 -2px 0 0 var(--violet); }
+  [data-ui] .tab.cut { opacity: 0.6; }
+  [data-ui] .pill {
+    padding: 0 6px; border-radius: 9px; background: var(--bg-p1); color: var(--muted);
+    font-size: 10px; font-weight: 600; margin-left: 4px; display: inline-block;
+  }
+  [data-ui] .stripend {
+    position: absolute; right: 34px; top: 0; height: 32px; display: flex; align-items: center;
+    gap: 2px; background: var(--bg); padding-left: 8px;
+  }
+  [data-ui] .chev {
+    width: 18px; height: 18px; border-radius: 3px; color: var(--dim);
+    font-size: 9px; line-height: 18px; text-align: center;
+  }
+  [data-ui] .band {
+    display: flex; align-items: center; gap: 6px; padding: 0 12px; height: 36px;
+    background: var(--bg-m1); border-bottom: 1px solid var(--border);
+  }
+  [data-ui] .band .num { width: 16px; height: 16px; font-size: 10px; line-height: 16px; margin: 0; }
+  [data-ui] .tag { padding: 1px 6px; border-radius: 9px; font-size: 10px; font-weight: 600; }
+  [data-ui] .tag.open { background: var(--bg-p1); color: var(--muted); }
+  [data-ui] .tag.good { background: var(--green); color: var(--bg); }
+  [data-ui] .prno { font-weight: 600; }
+  [data-ui] .grow { margin-left: auto; }
+
+  [data-ui] .prhead { padding: 9px 12px 11px; background: var(--bg-m1); border-bottom: 1px solid var(--border); }
+  [data-ui] .prtitle { font-size: 13px; font-weight: 600; line-height: 1.35; margin-top: 5px; }
+  [data-ui] .prmeta { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  [data-ui] .prmeta .path { color: var(--dim); }
+  [data-ui] .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 9px; }
+  [data-ui] .chip {
+    display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px;
+    border-radius: 5px; background: var(--bg-p1); color: var(--text); font-size: 11px;
+  }
+  [data-ui] .chip.bad { background: rgba(196, 116, 110, 0.16); color: var(--red); }
+  [data-ui] .chip.wait { background: rgba(196, 178, 138, 0.16); color: var(--yellow); }
+  [data-ui] .chip .arrow { color: var(--dim); }
+
+  [data-ui] .filter {
+    margin: 8px 12px 0; height: 26px; border-radius: 5px; background: var(--bg-m1);
+    color: var(--dim); font-size: 11px; display: flex; align-items: center; padding: 0 8px;
+  }
+  [data-ui] .listhead {
+    display: flex; align-items: center; gap: 6px; padding: 10px 12px 4px;
+    font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: 0.04em;
+  }
+  [data-ui] .frow { display: flex; align-items: center; gap: 8px; padding: 0 12px; height: 28px; }
+  [data-ui] .frow.group { height: 24px; font-size: 11px; color: var(--muted); padding-top: 4px; }
+  [data-ui] .fstat {
+    width: 16px; height: 16px; border-radius: 3px; background: var(--bg-p1); color: var(--muted);
+    font-size: 9px; font-weight: 700; text-align: center; line-height: 16px; flex: 0 0 auto;
+  }
+  [data-ui] .fpath { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  [data-ui] .fdir { color: var(--dim); }
+  [data-ui] .fadd { color: var(--green); font-size: 11px; }
+  [data-ui] .fdel { color: var(--red); font-size: 11px; }
+
+  [data-ui] .merge { border-top: 1px solid var(--border); background: var(--bg); padding: 9px 12px 12px; }
+  [data-ui] .mline { display: flex; gap: 7px; align-items: flex-start; }
+  [data-ui] .mdot {
+    width: 14px; height: 14px; border-radius: 50%; background: var(--yellow); color: var(--bg);
+    font-size: 10px; font-weight: 700; text-align: center; line-height: 14px; flex: 0 0 auto; margin-top: 1px;
+  }
+  [data-ui] .mhead { font-weight: 600; font-size: 12px; }
+  [data-ui] .mdetail { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  [data-ui] .mlabel { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); margin-top: 9px; }
+  [data-ui] .mbox { width: 11px; height: 11px; border-radius: 2px; background: var(--bg-p1); flex: 0 0 auto; }
+  [data-ui] .mbranch { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  [data-ui] .mbtn { display: flex; margin-top: 9px; }
+  [data-ui] .mprimary {
+    flex: 1 1 auto; height: 32px; border-radius: 4px 0 0 4px; background: var(--green); color: var(--bg);
+    font-weight: 600; font-size: 12px; display: flex; align-items: center; justify-content: center;
+  }
+  [data-ui] .mcaret {
+    width: 30px; height: 32px; border-radius: 0 4px 4px 0; background: var(--green); color: var(--bg);
+    font-size: 11px; display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  }
+  [data-ui] .mprimary.off { background: var(--bg-p1); color: var(--dim); }
+
+  [data-ui] .post { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  [data-ui] .who { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+  [data-ui] .avatar {
+    width: 18px; height: 18px; border-radius: 50%; background: var(--bg-p1); color: var(--muted);
+    font-size: 9px; text-align: center; line-height: 18px; flex: 0 0 auto;
+  }
+  [data-ui] .who b { color: var(--text); font-weight: 600; }
+  [data-ui] .pbody { font-size: 12px; line-height: 1.55; margin-top: 7px; }
+  [data-ui] .phead { font-size: 12px; font-weight: 700; margin-top: 9px; }
+  [data-ui] .ptable { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 7px; }
+  [data-ui] .ptable th, [data-ui] .ptable td { padding: 3px 6px; border-bottom: 1px solid var(--border); text-align: left; }
+  [data-ui] .ptable th { color: var(--muted); font-weight: 600; }
+  [data-ui] .verdict {
+    display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; border-radius: 5px;
+    background: rgba(196, 116, 110, 0.16); color: var(--red); font-size: 10px; font-weight: 600; margin-top: 8px;
+  }
+  [data-ui] .foot {
+    padding: 9px 12px; background: var(--bg-m1); border-top: 1px solid var(--border);
+    display: flex; align-items: center; gap: 6px; font-size: 11px;
+  }
+  [data-ui] .foot .go { color: var(--blue); font-weight: 600; }
+  [data-ui] .foot .hint { color: var(--dim); margin-left: auto; }
+  [data-ui] .composer { padding: 9px 12px; background: var(--bg-m1); border-top: 1px solid var(--border); }
+  [data-ui] .composer .box {
+    height: 52px; border-radius: 5px; background: var(--bg-p1); color: var(--dim);
+    font-size: 11px; padding: 6px 8px; display: flex; align-items: flex-start;
+  }
+  [data-ui] .composer .acts { display: flex; gap: 6px; margin-top: 7px; }
+  [data-ui] .composer .act {
+    padding: 3px 8px; border-radius: 4px; background: var(--bg-p1); color: var(--muted); font-size: 11px;
+  }
+  [data-ui] .deferred { opacity: 0.55; }
+  [data-ui] .calloutnum {
+    position: absolute; width: 18px; height: 18px; border-radius: 50%; background: var(--violet);
+    color: var(--bg); font-size: 11px; font-weight: 700; text-align: center; line-height: 18px;
+  }
+  [data-ui] .holder { position: relative; }
+
+  .toggle {
+    background: var(--bg-p1); color: var(--text); border: none; border-radius: 5px;
+    padding: 6px 12px; font: inherit; font-size: 15px; cursor: pointer;
+  }
+  .toggle:hover { background: var(--bg-p2); }
+  .hidden { display: none; }
+
+  footer {
+    margin-top: 56px; padding-top: 18px; font-size: 15px; color: var(--dim); max-width: 76ch;
+  }
+  @media (max-width: 700px) {
+    body { padding: 26px 16px 56px; }
+    h1 { font-size: 25px; }
+    table { font-size: 13px; }
+    th, td { padding: 6px 6px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>The PR panel, redrawn</h1>
+  <p class="lead">
+    Pabrik shows a change request as a list of files and a merge button. Three things a reviewer
+    actually needs are missing: what the request says, what was said about it, and why the merge is
+    held. This wireframe adds those three, and it adds them without changing what the panel does.
+  </p>
+  <p class="meta">
+    Wireframe only, no code changed. Drawn against <code>main</code> at <code>bcb41305e</code>.
+    Sources read: <code>SidebarDiffPanel.vue</code>, <code>MergeBox.vue</code>,
+    <code>helpers/mergeWording.ts</code>, <code>helpers/forgeWording.ts</code>,
+    <code>helpers/markdown.ts</code>. The panel is drawn at its real default width, 280px
+    (<code>RightSidebar.vue</code>), inside a 320px frame.
+  </p>
+
+  <h2><span class="n">§1</span>The verdict, in six changes</h2>
+  <table>
+    <thead>
+      <tr><th style="width:30%">Today</th><th style="width:34%">Proposed</th><th>Why</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="now">The band shows <code>#1010</code> and an <code>Open</code> tag</td>
+        <td class="next">The band shows the request's title, its author, its state and two status chips</td>
+        <td>The number is a lookup key. The title is what a reviewer reads first, and today it is nowhere on the screen.</td>
+      </tr>
+      <tr>
+        <td class="now">“Some checks were not successful”</td>
+        <td class="next">Two chips, <code>2 checks failed</code> and <code>1 review requested</code>, each opening the tab that holds the reason</td>
+        <td>The sentence names no job and opens no door. A chip is a door.</td>
+      </tr>
+      <tr>
+        <td class="now">No conversation</td>
+        <td class="next">A <code>Conversation</code> tab: the request body, the comments, the review verdicts</td>
+        <td>“Why is this not merged?” is answered in one place on the forge, and that place is not in the app.</td>
+      </tr>
+      <tr>
+        <td class="now">Two file lists named <code>Files</code> and <code>PR</code></td>
+        <td class="next">Named <code>Local</code> and <code>Changed</code></td>
+        <td>The working tree and the request's diff are different things. One word each says neither.</td>
+      </tr>
+      <tr>
+        <td class="now">Five tabs, and the fifth is already off-screen</td>
+        <td class="next">Six tabs that scroll, with the active tab always in view and two chevrons to move</td>
+        <td>Measured below: the strip holds 238px at the default width and today's labels need 319px, so <code>Evals</code> is already unreachable.</td>
+      </tr>
+      <tr>
+        <td class="now">The empty middle of the file list</td>
+        <td class="next">The request's own summary: lines added and removed, per-folder counts, the files a failing check touched</td>
+        <td>The dead space is exactly where the review context belongs.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2><span class="n">§2</span>Today, annotated</h2>
+  <p>
+    The panel as it ships. Every number and every file below is real: it is
+    <code>ginwa123/pabrik#1010</code>, the sixteen files the request changes, in the order the panel
+    lists them. The six marks are the six changes in §1.
+  </p>
+  <div class="cols">
+    <div class="mocks">
+      <div class="frame" data-ui>
+        <div class="panel">
+          <div class="strip">
+            <div class="cluster">
+              <span class="tab">Files</span>
+              <span class="tab on">PR<span class="pill">16</span></span>
+              <span class="tab">Commits</span>
+              <span class="tab">Checks</span>
+              <span class="tab">Evals</span>
+            </div>
+            <div class="actions"><span class="chev">↻</span></div>
+          </div>
+          <div class="band">
+            <span class="prno">#1010</span>
+            <span class="tag open">Open</span>
+            <span class="pill grow">16</span>
+          </div>
+          <div class="filter">⌕ &nbsp;Filter files…</div>
+          <div class="listhead">PR FILES (16)</div>
+          <div class="frow"><span class="fstat">M</span><span class="fpath"><code><span class="fdir">src/apps/desktop/src/__tests__/</span>KanbanSettingsView.spec.ts</code></span><span class="fadd">+27</span><span class="fdel">−3</span></div>
+          <div class="frow"><span class="fstat">M</span><span class="fpath"><code><span class="fdir">src/apps/desktop/src/__tests__/</span>KanbanView.spec.ts</code></span><span class="fadd">+2</span><span class="fdel">−2</span></div>
+          <div class="frow"><span class="fstat">M</span><span class="fpath"><code><span class="fdir">src/apps/desktop/src/__tests__/</span>Sidebar.goToSettings.spec.ts</code></span><span class="fadd">+6</span><span class="fdel">−2</span></div>
+          <div class="frow"><span class="fstat">M</span><span class="fpath"><code><span class="fdir">src/apps/desktop/src/__tests__/</span>routerCatchAll.spec.ts</code></span><span class="fadd">+3</span><span class="fdel">−0</span></div>
+          <div class="frow"><span class="fstat">M</span><span class="fpath"><code><span class="fdir">src/apps/desktop/src/__tests__/</span>tabTarget.spec.ts</code></span><span class="fadd">+15</span><span class="fdel">−0</span></div>
+          <div class="frow"><span class="fstat">M</span><span class="fpath"><code><span class="fdir">src/apps/desktop/src/components/</span>AppLayout.vue</code></span><span class="fadd">+31</span><span class="fdel">−13</span></div>
+          <div class="frow"><span class="fstat">M</span><span class="fpath"><code><span class="fdir">src/apps/desktop/src/components/</span>KanbanView.vue</code></span><span class="fadd">+8</span><span class="fdel">−5</span></div>
+          <div class="frow"><span class="fstat">M</span><span class="fpath"><code><span class="fdir">src/apps/desktop/src/components/</span>Sidebar.vue</code></span><span class="fadd">+3</span><span class="fdel">−2</span></div>
+          <div class="frow"><span class="fstat">M</span><span class="fpath"><code><span class="fdir">src/apps/desktop/src/components/views/</span>KanbanSettingsView.vue</code></span><span class="fadd">+43</span><span class="fdel">−11</span></div>
+          <div class="frow"><span class="fstat">M</span><span class="fpath"><code><span class="fdir">src/apps/desktop/src/composables/</span>useCurrentMainView.ts</code></span><span class="fadd">+10</span><span class="fdel">−2</span></div>
+          <div class="frow"><span class="fstat">M</span><span class="fpath"><code><span class="fdir">src/apps/desktop/src/helpers/</span>appUrl.ts</code></span><span class="fadd">+28</span><span class="fdel">−3</span></div>
+          <div class="frow"><span class="fstat">M</span><span class="fpath"><code><span class="fdir">src/apps/desktop/src/helpers/</span>tabTarget.ts</code></span><span class="fadd">+12</span><span class="fdel">−4</span></div>
+          <div class="frow"><span class="fstat">M</span><span class="fpath"><code><span class="fdir">src/apps/desktop/src/router/</span>index.ts</code></span><span class="fadd">+8</span><span class="fdel">−3</span></div>
+          <div class="frow"><span class="fstat">M</span><span class="fpath"><code><span class="fdir">tests/functional_ui/</span>kanban_sidebar_open_ui_test.py</code></span><span class="fadd">+3</span><span class="fdel">−3</span></div>
+          <div class="merge">
+            <div class="mline">
+              <span class="mdot">!</span>
+              <span>
+                <span class="mhead">Some checks were not successful</span>
+                <span class="mdetail">Merging is still allowed on GitHub.</span>
+              </span>
+            </div>
+            <div class="mlabel"><span class="mbox"></span>Delete branch<span class="mbranch">worktree/url-browser-should-included-with-app-ws-17925226679…</span></div>
+            <div class="mbtn"><span class="mprimary">Squash and merge</span><span class="mcaret">▾</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="notes">
+      <ol class="notelist">
+        <li><span class="num">1</span><b>No title.</b> The band carries the number, a state tag and a count. The request's own title, which is the first line on the forge, is not on the screen at all.</li>
+        <li><span class="num">2</span><b>The strip already overflows.</b> Five labels do not fit in the space the strip has, and there is no arrow, no fade, no cut-off label. <code>Evals</code> is unreachable today.</li>
+        <li><span class="num">3</span><b>Two file lists, one word each.</b> <code>Files</code> is the working tree. <code>PR</code> is what the request changes. The names do not say which is which, and both are called “files” in the code.</li>
+        <li><span class="num">4</span><b>The count is said three times.</b> A pill on the tab, a pill in the band, a heading over the list. Once is enough.</li>
+        <li><span class="num">5</span><b>Sixteen rows, then nothing.</b> The panel's middle is empty ground. Nothing tells you what the request is about, who wrote it, or whether anyone has read it.</li>
+        <li><span class="num">6</span><b>The merge verdict is a dead end.</b> “Some checks were not successful” and “Merging is still allowed” both at once, with no way to see what failed. In the blocked state the box says “Required approvals or checks are missing” and still does not say which.</li>
+      </ol>
+    </div>
+  </div>
+
+  <h2><span class="n">§3</span>The proposal</h2>
+  <p>
+    Same panel, same files, same merge button. Three things change: a request header replaces the
+    bare band, the strip gains a first tab and a way to scroll, and the merge verdict becomes two
+    chips that open the tab holding the reason.
+  </p>
+  <div class="cols">
+    <div class="mocks">
+      <div class="frame" data-ui>
+        <div class="panel">
+          <div class="strip">
+            <div class="cluster">
+              <span class="tab on">Conversation</span>
+              <span class="tab">Local<span class="pill">3</span></span>
+              <span class="tab">Changed<span class="pill">16</span></span>
+              <span class="tab">Commits</span>
+              <span class="tab">Checks</span>
+              <span class="tab">Evals</span>
+            </div>
+            <div class="actions"><span class="chev">↻</span></div>
+            <div class="stripend"><span class="chev">‹</span><span class="chev">›</span></div>
+          </div>
+          <div class="prhead">
+            <div class="band" style="border-bottom:none;background:none;padding:0;height:auto">
+              <span class="prno">#1010</span>
+              <span class="tag open">Open</span>
+            </div>
+            <div class="prtitle">fix(url): the kanban settings URL names the workspace too</div>
+            <div class="prmeta">gilang opened 2 hours ago · <span class="path">main ← worktree/url-browser-should-included-with-app-ws-17925226679…</span></div>
+            <div class="chips">
+              <span class="chip bad">2 checks failed <span class="arrow">›</span></span>
+              <span class="chip wait">1 review requested <span class="arrow">›</span></span>
+            </div>
+          </div>
+          <div class="filter">⌕ &nbsp;Filter files…</div>
+          <div class="listhead">CHANGED FILES (16) · +278 −51</div>
+          <div class="frow group"><span>src/apps/desktop/src/__tests__</span></div>
+          <div class="frow"><span class="fstat">M</span><span class="fpath"><code>KanbanSettingsView.spec.ts</code></span><span class="fadd">+27</span><span class="fdel">−3</span></div>
+          <div class="frow"><span class="fstat">M</span><span class="fpath"><code>KanbanView.spec.ts</code></span><span class="fadd">+2</span><span class="fdel">−2</span></div>
+          <div class="frow"><span class="fstat">M</span><span class="fpath"><code>Sidebar.goToSettings.spec.ts</code></span><span class="fadd">+6</span><span class="fdel">−2</span></div>
+          <div class="frow"><span class="fstat">M</span><span class="fpath"><code>routerCatchAll.spec.ts</code></span><span class="fadd">+3</span><span class="fdel">−0</span></div>
+          <div class="frow"><span class="fstat">M</span><span class="fpath"><code>tabTarget.spec.ts</code></span><span class="fadd">+15</span><span class="fdel">−0</span></div>
+          <div class="frow group"><span>src/apps/desktop/src/components</span></div>
+          <div class="frow"><span class="fstat">M</span><span class="fpath"><code>AppLayout.vue</code></span><span class="fadd">+31</span><span class="fdel">−13</span></div>
+          <div class="frow"><span class="fstat">M</span><span class="fpath"><code>KanbanView.vue</code></span><span class="fadd">+8</span><span class="fdel">−5</span></div>
+          <div class="frow"><span class="fstat">M</span><span class="fpath"><code>Sidebar.vue</code></span><span class="fadd">+3</span><span class="fdel">−2</span></div>
+          <div class="frow"><span class="fstat">M</span><span class="fpath"><code>views/KanbanSettingsView.vue</code></span><span class="fadd">+43</span><span class="fdel">−11</span></div>
+          <div class="frow group"><span>src/apps/desktop/src/helpers</span></div>
+          <div class="frow"><span class="fstat">M</span><span class="fpath"><code>appUrl.ts</code></span><span class="fadd">+28</span><span class="fdel">−3</span></div>
+          <div class="frow"><span class="fstat">M</span><span class="fpath"><code>tabTarget.ts</code></span><span class="fadd">+12</span><span class="fdel">−4</span></div>
+          <div class="frow group"><span>… 6 more files</span></div>
+          <div class="merge">
+            <div class="mline">
+              <span class="mdot">!</span>
+              <span>
+                <span class="mhead">2 checks failed, 1 review requested</span>
+                <span class="mdetail">Merging is still allowed on GitHub.</span>
+              </span>
+            </div>
+            <div class="mlabel"><span class="mbox"></span>Delete branch<span class="mbranch">worktree/url-browser-should-included-with-app-ws-17925226679…</span></div>
+            <div class="mbtn"><span class="mprimary">Squash and merge</span><span class="mcaret">▾</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="notes">
+      <h4 style="margin-top:0">What changed, part by part</h4>
+      <p class="small">
+        <b>The header.</b> The number and the state stay. The title arrives in two lines, the author
+        and the age under it, the base and head refs beside them. The title is truncated, never
+        wrapped into a third line: the full text is the tooltip and the forge link.
+      </p>
+      <p class="small">
+        <b>The chips.</b> Two, at most three. Each is a status, not a button with a label on it:
+        <code>2 checks failed</code> opens the Checks tab, <code>1 review requested</code> opens the
+        Conversation tab. They replace the “some checks were not successful” sentence, because the
+        sentence is the reason the reviewer has to leave the app.
+      </p>
+      <p class="small">
+        <b>The list.</b> The same sixteen rows in the same order, grouped by folder so a long list
+        can be read, with the totals in the heading. Grouping is a display change only; the click
+        behaviour is untouched.
+      </p>
+      <p class="small">
+        <b>The merge box.</b> Untouched in behaviour, one line changed. The button, the method
+        memory, the delete-branch checkbox and the confirm step all stay as they are.
+      </p>
+    </div>
+  </div>
+
+  <h2><span class="n">§4</span>The Conversation tab</h2>
+  <p>
+    The question this answers is the one a reviewer asks first: what was said about this, and who
+    is holding it? On the forge that is the request body, the issue comments and the review
+    verdicts. Here it is one tab, read only, with the review decision at the top because that is
+    the sentence behind “Merging is blocked”.
+  </p>
+  <div class="cols">
+    <div class="mocks">
+      <div class="frame" data-ui>
+        <div class="panel">
+          <div class="strip">
+            <div class="cluster">
+              <span class="tab on">Conversation<span class="pill">2</span></span>
+              <span class="tab">Local<span class="pill">3</span></span>
+              <span class="tab">Changed<span class="pill">16</span></span>
+              <span class="tab">Commits</span>
+              <span class="tab">Checks</span>
+              <span class="tab">Evals</span>
+            </div>
+            <div class="actions"><span class="chev">↻</span></div>
+            <div class="stripend"><span class="chev">‹</span><span class="chev">›</span></div>
+          </div>
+          <div class="prhead">
+            <div class="band" style="border-bottom:none;background:none;padding:0;height:auto">
+              <span class="prno">#1010</span>
+              <span class="tag open">Open</span>
+            </div>
+            <div class="prtitle">fix(url): the kanban settings URL names the workspace too</div>
+            <div class="prmeta">gilang opened 2 hours ago · <span class="path">main ← worktree/url-browser-…</span></div>
+            <div class="chips">
+              <span class="chip wait">Changes requested <span class="arrow">›</span></span>
+            </div>
+          </div>
+          <div class="post">
+            <div class="who"><span class="avatar">g</span><b>gilang</b> opened this change request · 2 hours ago</div>
+            <div class="pbody">
+              <div class="phead">What</div>
+              The kanban settings page was the one page whose browser URL named a target but no
+              workspace, so the address bar could not say which workspace the board belonged to.
+              The canonical shape is now <b>/app/{workspaceId}/projects/{itemId}/settings</b>.
+              <div class="phead">How</div>
+              <ul>
+                <li><code>helpers/appUrl.ts</code>, a new <code>projectSettings</code> target.</li>
+                <li><code>router/index.ts</code>, the scoped path registered before the project route.</li>
+                <li>Producers and consumers both move to the canonical shape.</li>
+              </ul>
+            </div>
+          </div>
+          <div class="post">
+            <div class="who"><span class="avatar">g</span><b>gilang</b> commented · 1 hour ago</div>
+            <div class="pbody">
+              <div class="phead">CI verdict, checked against main, same commit set</div>
+              <table class="ptable">
+                <tr><th>check</th><th>state</th></tr>
+                <tr><td>zginlint</td><td>fixed here</td></tr>
+                <tr><td>backend (Linux X64)</td><td>failed</td></tr>
+                <tr><td>functional Linux</td><td>1 of 3 failed</td></tr>
+              </table>
+            </div>
+          </div>
+          <div class="post">
+            <div class="who"><span class="avatar">r</span><b>reviewer</b> reviewed · 20 minutes ago</div>
+            <div class="pbody">Two of the specs still assume the old URL shape, and the legacy route
+              needs a test of its own.</div>
+            <span class="verdict">Changes requested</span>
+          </div>
+          <div class="foot">
+            <span class="go">Open on GitHub ↗</span>
+            <span class="hint">comment, approve or request changes on the forge</span>
+          </div>
+        </div>
+      </div>
+      <p class="small" style="margin-top:10px">
+        The body above is <code>ginwa123/pabrik#1010</code>'s real body, trimmed to what fits a
+        280px panel. The comment and the review are shaped like the real ones on
+        <code>#1003</code> and <code>#983</code>, with the content shortened.
+      </p>
+    </div>
+    <div class="notes">
+      <h4 style="margin-top:0">The anatomy</h4>
+      <p class="small">
+        <b>The decision line.</b> <code>reviewDecision</code> is
+        <code>APPROVED</code>, <code>CHANGES_REQUESTED</code>, <code>REVIEW_REQUIRED</code> or empty.
+        It is the sentence the merge box is missing: today the box says “Required approvals or
+        checks are missing”, and this says which.
+      </p>
+      <p class="small">
+        <b>The body.</b> The request's own description, rendered as markdown, because that is how
+        it was written.
+      </p>
+      <p class="small">
+        <b>Comments.</b> Issue comments, oldest first, each with its author and its age.
+      </p>
+      <p class="small">
+        <b>Reviews.</b> A review is a comment with a verdict on it, so it is drawn the same way
+        with the verdict attached: approved, changes requested, or commented.
+      </p>
+      <h4>Why v1 is read only</h4>
+      <p class="small">
+        Writing a comment is a write path, and it is a different job: <code>gh pr comment</code> on
+        GitHub, <code>glab mr note create</code> on GitLab, and the whole <code>glab mr note</code>
+        family is still marked experimental. A read only tab is honest about what it is, and it is
+        not a dead end: the footer's one action takes the reader to the place where the three
+        things they might want to do are.
+      </p>
+      <p class="small">
+        The composer and the three verdicts are drawn below in a lighter tone, labelled as the
+        second version, and they are not part of this proposal.
+      </p>
+    </div>
+  </div>
+
+  <div class="callout">
+    <p>
+      <b>The one rule that is not negotiable.</b> A comment on a pull request can be written by
+      anyone who can comment on the repository. <code>helpers/markdown.ts</code> renders markdown
+      with <code>marked.parse</code> and no sanitiser, and the repository ships no DOMPurify. Every
+      body in this tab, the request's own body included, goes through
+      <code>renderMarkdownHtml()</code> or <code>renderInlineMarkdownHtml()</code>, and never
+      through <code>marked.parse</code> directly. The test is that
+      <code>&lt;img src=x onerror=…&gt;</code> arrives in the DOM as text.
+    </p>
+  </div>
+
+  <h3>The second version, drawn but not proposed</h3>
+  <p class="small">
+    A composer and the three verdicts, for the shape only. This card does not ask for them, and the
+    button below toggles the drawing so the reviewer can see what is being deferred.
+  </p>
+  <p>
+    <button class="toggle" id="v2toggle" type="button" aria-expanded="false">Show the deferred composer</button>
+  </p>
+  <div class="hidden" id="v2box">
+    <div class="frame" data-ui>
+      <div class="panel">
+        <div class="composer deferred">
+          <div class="box">Leave a comment on this change request…</div>
+          <div class="acts">
+            <span class="act">Approve</span>
+            <span class="act">Request changes</span>
+            <span class="act">Comment</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="n">§5</span>The tab strip, measured</h2>
+  <p>
+    A sixth tab does not fit. The numbers below are measured in the browser, on the two strips drawn
+    in this page, at the app's own metrics: 12px labels, 10px of padding a side, a 4px gap. The
+    cluster of labels is what the 280px panel has left after its padding and the refresh button:
+    238px. The table is the page's own measurement, so it moves if the drawing does.
+  </p>
+  <table>
+    <thead>
+      <tr><th style="width:34%">Strip</th><th style="width:22%">Labels need</th><th style="width:22%">Strip has</th><th>Hidden at 280px</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Today: Files, PR, Commits, Checks, Evals</td>
+        <td><span data-measure="today">–</span></td>
+        <td><span data-measure="viewport">–</span></td>
+        <td><span data-measure="todayHidden">–</span>, which is why <code>Evals</code> cannot be reached</td>
+      </tr>
+      <tr>
+        <td>Proposed: Conversation, Local, Changed, Commits, Checks, Evals</td>
+        <td><span data-measure="prop">–</span></td>
+        <td><span data-measure="viewport">–</span></td>
+        <td><span data-measure="propHidden">–</span>, so the strip must scroll</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    So the strip needs an affordance, and it needs one today, before the sixth tab arrives. Four
+    things, all small:
+  </p>
+  <ul>
+    <li>Two chevrons that float over the cluster's right edge, shown only when the strip
+      overflows, and they cost no width of their own. They do cover the last 46px of the cluster,
+      so about 192px of label is readable at a time.</li>
+    <li>The active tab is scrolled into view whenever it changes, so <code>Conversation</code> is
+      never the tab you cannot see.</li>
+    <li>Left and right arrow keys move between tabs. The strip already carries
+      <code>role="tablist"</code>, so the keys belong to it.</li>
+    <li><code>?tab=conversation</code> opens the tab directly, and the tab survives a panel
+      reload.</li>
+  </ul>
+  <p class="small">
+    A fade on the right edge is optional and is not drawn here: the chevrons and the half visible
+    label carry the same message, and a fade is decoration on top of a control.
+  </p>
+
+  <h2><span class="n">§6</span>The merge box, before and after</h2>
+  <div class="cols">
+    <div class="mocks">
+      <div class="frame" data-ui>
+        <div class="panel">
+          <div class="merge">
+            <div class="mline">
+              <span class="mdot">!</span>
+              <span>
+                <span class="mhead">Some checks were not successful</span>
+                <span class="mdetail">Merging is still allowed on GitHub.</span>
+              </span>
+            </div>
+          </div>
+          <div class="merge">
+            <div class="mline">
+              <span class="mdot">!</span>
+              <span>
+                <span class="mhead">2 checks failed, 1 review requested</span>
+                <span class="mdetail">Merging is still allowed on GitHub.</span>
+              </span>
+            </div>
+            <div class="chips">
+              <span class="chip bad">2 checks failed <span class="arrow">›</span></span>
+              <span class="chip wait">1 review requested <span class="arrow">›</span></span>
+            </div>
+          </div>
+          <div class="merge">
+            <div class="mhead">Squash and merge into main</div>
+            <div class="mdetail">The commits will be combined into one commit in main.</div>
+            <div class="composer" style="border-top:none;background:none;padding:8px 0 0">
+              <div class="box" style="height:44px">fix(url): the kanban settings URL names the workspace too</div>
+            </div>
+            <div class="mbtn"><span class="mprimary">Confirm squash and merge</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="notes">
+      <p class="small">
+        Today the verdict is a sentence about a category. The same two facts, as chips, are
+        countable, clickable, and each one knows where its detail lives.
+      </p>
+      <p class="small">
+        The blocked case gets the same treatment: “Required approvals or checks are missing”
+        becomes <code>1 review requested</code> and <code>2 checks failed</code>, so the reviewer
+        sees why the button is disabled before trying to press it.
+      </p>
+      <p class="small">
+        Both sentences come from <code>helpers/mergeWording.ts</code>, which already knows the
+        state. The chips need one thing the box does not have yet: the count of failing checks and
+        the review decision, which is the same read the Conversation tab makes.
+      </p>
+    </div>
+  </div>
+
+  <h2><span class="n">§7</span>What it costs</h2>
+  <table>
+    <thead>
+      <tr><th style="width:26%">Piece</th><th style="width:38%">Command or route</th><th>Note</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Read the conversation</td>
+        <td><code>gh pr view &lt;n&gt; --json body,comments,reviews,latestReviews,reviewDecision,author,createdAt</code></td>
+        <td>Every field name is verified against the real <code>gh</code> field list. <code>timelineItems</code> does not exist, so there is no GitHub timeline: no “force pushed” or “merged” system rows.</td>
+      </tr>
+      <tr>
+        <td>Read it on GitLab</td>
+        <td><code>glab mr view &lt;iid&gt; --comments -F json</code></td>
+        <td><code>--comments</code> returns comments and activities. <code>--system-logs</code>, <code>--resolved</code> and <code>--unresolved</code> are the extra switches.</td>
+      </tr>
+      <tr>
+        <td>New route</td>
+        <td><code>GET /api/git/pr/conversation</code></td>
+        <td>One call, the same shape as <code>/api/git/pr/status</code>. It returns the body, the comments, the reviews and the review decision, and it renders nothing: the escaping happens in the client, through <code>helpers/markdown.ts</code>.</td>
+      </tr>
+      <tr>
+        <td>Checks count</td>
+        <td>the Checks panel's own list</td>
+        <td>The panel is mounted only when the tab is open, so the count has to come with the status read, not be borrowed from a list that may not exist.</td>
+      </tr>
+      <tr>
+        <td>The second version</td>
+        <td><code>gh pr comment</code>, <code>gh pr review</code>, <code>glab mr note create</code></td>
+        <td>Not in this proposal. The GitLab note family is experimental, so the parser would have to be written against whatever the CLI actually returns.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="small">
+    One read serves two surfaces: the same <code>reviewDecision</code> that names the review state
+    in the header also says whether the merge box is blocked. That is the one place where the
+    Conversation tab earns its keep on the first day.
+  </p>
+
+  <h2><span class="n">§8</span>Decisions, each with a recommendation</h2>
+  <table>
+    <thead>
+      <tr><th style="width:8%">#</th><th style="width:36%">Question</th><th style="width:34%">Recommendation</th><th>Alternative</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>D1</td>
+        <td>Sixth tab, or a section inside the request tab?</td>
+        <td><b>Sixth tab, first in the strip</b>, the order GitHub uses, with the strip fix shipped in the same change</td>
+        <td>A section inside the request tab would sit in the file list's own scroll, so only a reader who is already looking at files would ever see it</td>
+      </tr>
+      <tr>
+        <td>D2</td>
+        <td>Read only, or with a composer?</td>
+        <td><b>Read only in the first version</b>, with one action: open on the forge</td>
+        <td>Writing is a second card, and on GitLab the command family is still experimental</td>
+      </tr>
+      <tr>
+        <td>D3</td>
+        <td>The forge's conversation, or the agent's session?</td>
+        <td><b>The forge's conversation</b></td>
+        <td>The agent's session is already readable in the peek panel, and a request tab showing the agent's chat would not answer “who is stopping me”</td>
+      </tr>
+      <tr>
+        <td>D4</td>
+        <td>What do the two file tabs say?</td>
+        <td><b>Local</b> and <b>Changed</b></td>
+        <td>Keeping <code>PR</code> is shorter, but <code>PR</code> is the forge's noun and the tab is also on GitLab</td>
+      </tr>
+      <tr>
+        <td>D5</td>
+        <td>Where does the title go?</td>
+        <td><b>The header, under the number</b>, two lines, truncated</td>
+        <td>The band is 36px tall and cannot hold a title; growing it would push the file list down</td>
+      </tr>
+      <tr>
+        <td>D6</td>
+        <td>Does the request tab open on the file list, or on the conversation?</td>
+        <td><b>The file list</b>, as today, and the conversation is one click away and deep linkable</td>
+        <td>Opening on the conversation is one word of code, and this is the one decision worth revisiting after the first week of use</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2><span class="n">§9</span>What the gate said</h2>
+  <p class="small">
+    The house gate for this repo is the design skill's own scanner: a static pass over the source
+    and a real browser that measures the rendered page at 1440, 768 and 390 pixels. Both were run
+    on this file, and the numbers below are what they said.
+  </p>
+  <table>
+    <thead>
+      <tr><th style="width:44%">Run</th><th style="width:22%">Result</th><th>Note</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>lint.mjs</code> over the file</td>
+        <td>0 FAIL, 0 WARN</td>
+        <td>No banned pattern in the source. The mock's own borders, densities and type sizes are inside a <code>data-ui</code> fragment, which is where they belong.</td>
+      </tr>
+      <tr>
+        <td><code>inspect.mjs</code>, with the three allowances below</td>
+        <td>0 FAIL, 1 WARN</td>
+        <td>Across 1440, 768 and 390 pixels. One type face for prose, one for code, body copy at 16px, no horizontal overflow at any width, every headline on one line.</td>
+      </tr>
+      <tr>
+        <td><code>inspect.mjs</code>, strict</td>
+        <td>1 FAIL, 3 WARN</td>
+        <td>The FAIL is the motion budget, which is the first of the three allowances. The other two are the picture and footage findings.</td>
+      </tr>
+    </tbody>
+  </table>
+  <h4>The four findings, and why each one is defended</h4>
+  <ul>
+    <li><b>still-page (FAIL, allowed).</b> The motion budget counts elements that move while a page
+      loads and scrolls. This document is a specification, and adding entrances to it would fake
+      the thing the document describes. The motion belongs to the panels it draws.</li>
+    <li><b>no-real-pictures (WARN, allowed).</b> The subject of this document is an app panel. The
+      honest picture of a pull request panel is the panel itself, drawn at its real width of 280px
+      from the real request, and there is no photography of one to find.</li>
+    <li><b>no-footage (WARN, allowed).</b> The same reason. No honest clip of a pull request panel
+      exists.</li>
+    <li><b>first-action (WARN, not allowed, defended).</b> The first screen of a specification is
+      its summary, which is the table in §1. A call to action on a spec page would be decoration.
+      The one control the page owns is the toggle in §4, and it is where the reader reaches it.</li>
+  </ul>
+  <h4>What the browser measured, since the agent cannot look at the render</h4>
+  <p class="small">
+    The inspector saves screenshots, and an agent cannot read an image. So the witness is the
+    browser's own numbers, taken with a scripted pass over the rendered page:
+  </p>
+  <ul>
+    <li>Horizontal overflow: 0px at 1440, 768 and 390.</li>
+    <li>Interface fragments counted as pictures: 4, each at least 300 by 200 (772 by 661, 772 by
+      816, 772 by 920, 772 by 328).</li>
+    <li>The strips: five labels needing 319px inside a 238px cluster, so 81px of today's strip is
+      off-screen. Six labels needing 495px in the same 238px, so 257px is off-screen. The
+      conversation strip measures the same 238px.</li>
+    <li>The deferred composer: 0px tall before the button is pressed, 100px after, with the label
+      and <code>aria-expanded</code> both flipping.</li>
+    <li>No character from the emoji blocks anywhere in the page's text.</li>
+  </ul>
+
+  <footer>
+    Wireframe only, no code changed. The files read for this artifact, at
+    <code>main</code> <code>bcb41305e</code>:
+    <code>components/views/chat_right_sidebar/SidebarDiffPanel.vue</code>,
+    <code>components/views/chat_right_sidebar/MergeBox.vue</code>,
+    <code>components/shell/RightSidebar.vue</code>,
+    <code>helpers/mergeWording.ts</code>, <code>helpers/forgeWording.ts</code>,
+    <code>helpers/markdown.ts</code>, <code>helpers/prStatusCache.ts</code>.
+    The pull request drawn is <code>ginwa123/pabrik#1010</code>, read with
+    <code>gh pr view</code> on this machine; the field list was checked with
+    <code>gh pr view --json bogus</code>.
+  </footer>
+</div>
+
+<script>
+  // The strip measurements in §5 are read from the two strips drawn above, at the
+  // app's own metrics, so the numbers in the table are the page's own numbers.
+  (function () {
+    function measure(cluster) {
+      var labels = cluster.querySelectorAll('.tab');
+      var need = 0;
+      labels.forEach(function (l) { need += l.getBoundingClientRect().width; });
+      need += 4 * (labels.length - 1);
+      return { need: Math.round(need), view: Math.round(cluster.clientWidth) };
+    }
+    var clusters = document.querySelectorAll('.cluster');
+    var today = clusters.length ? measure(clusters[0]) : null;
+    var prop = clusters.length > 1 ? measure(clusters[1]) : null;
+    function set(name, value) {
+      document.querySelectorAll('[data-measure="' + name + '"]').forEach(function (el) {
+        el.textContent = value;
+      });
+    }
+    if (today) {
+      set('today', today.need + 'px');
+      set('viewport', today.view + 'px');
+      set('todayHidden', Math.max(0, today.need - today.view) + 'px');
+    }
+    if (prop) {
+      set('prop', prop.need + 'px');
+      set('propHidden', Math.max(0, prop.need - prop.view) + 'px');
+    }
+
+    var toggle = document.getElementById('v2toggle');
+    var box = document.getElementById('v2box');
+    if (toggle && box) {
+      toggle.addEventListener('click', function () {
+        var open = box.classList.toggle('hidden') === false;
+        toggle.setAttribute('aria-expanded', String(open));
+        toggle.textContent = open ? 'Hide the deferred composer' : 'Show the deferred composer';
+      });
+    }
+  })();
+</script>
+</body>
+</html>
