@@ -171,6 +171,8 @@
   [data-ui] .row.on { background: var(--bg-p1); }
   [data-ui] .row .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
   [data-ui] .row .dot.dead { background: var(--text-dim); }
+  [data-ui] .row.gone { opacity: 0.55; }
+  [data-ui] .row.gone .lbl { text-decoration: line-through; }
   [data-ui] .row .lbl { font-weight: 500; }
   [data-ui] .row code.cwd { color: var(--text-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   [data-ui] .row .meta { margin-left: auto; font-size: 12px; color: var(--text-muted); flex-shrink: 0; }
@@ -450,6 +452,19 @@
   grouped under the workspace that owns them, so the same shell in two workspaces reads as two
   different things, which is exactly the case the card is about.
 </p>
+<p>
+  The dialog does both jobs, because they are different jobs. A row <strong>opens</strong> a
+  terminal that already exists, and the button at the foot <strong>opens</strong> a new one: it
+  creates a session in the workspace that owns the group it was pressed in, so the choice of
+  workspace is the choice of group, and a person who wants a shell somewhere else picks that
+  group first.
+</p>
+  <p>
+    The last row is a session whose workspace was deleted. It is drawn greyed and struck through
+    and it says <code>workspace deleted</code>, because that is the truth of it: the shell is
+    still running, the workspace that owned it is not, and the person has to be able to close it.
+  </p>
+
 <section id="pane-dialog" data-ui>
   <div class="shot rel">
     <div class="winbar">
@@ -484,6 +499,11 @@
             <button type="button" class="row" data-session="term-4">
               <span class="dot dead"></span><span class="lbl">term 1</span>
               <code class="cwd">/home/ginwa/ruangsql</code><span class="meta">exited (0) &#183; 4 min ago</span>
+            </button>
+            <div class="group"><span class="gname">Legacy</span> &#183; ws_1792516660044</div>
+            <button type="button" class="row gone" data-session="term-5">
+              <span class="dot dead"></span><span class="lbl">term 1</span>
+              <code class="cwd">/home/ginwa/legacy</code><span class="meta">workspace deleted</span>
             </button>
           </div>
           <div class="cardfoot">
@@ -534,7 +554,109 @@
   </div>
 </section>
 
-<h2><span class="n">4</span>What the server has to grow</h2>
+
+<h2><span class="n">4</span>What clears a terminal on its own</h2>
+<p>
+  The card asked whether a session can outlive the thing that made it. It can, and the mechanism
+  that ends it is already in the server. Here is that mechanism, measured, because the footer has
+  to live with it rather than pretend it away.
+</p>
+<table>
+  <caption>The auto-clear, read from the source and confirmed against a live backend</caption>
+  <thead>
+    <tr><th>Rule</th><th>Window</th><th>What it is</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>The user-idle kill</td>
+      <td class="num">30 minutes</td>
+      <td>
+        <code>sweepIdle</code> reaps a session nobody has touched for
+        <code>idle_kill_s</code> (30 &#215; 60). A session that produced output in the last five
+        minutes is <strong>exempt</strong> (<code>busy_output_window_s</code>), so a long build
+        keeps its shell no matter how long it has been quiet at the keyboard.
+      </td>
+    </tr>
+    <tr>
+      <td>The absolute timeout</td>
+      <td class="num">24 hours</td>
+      <td>
+        <code>idle_timeout_s</code> (24 &#215; 3600) reaps a session untouched for a whole day,
+        busy or not. This is the one unconditional rule.
+      </td>
+    </tr>
+    <tr>
+      <td>When the sweep runs</td>
+      <td class="num">on traffic</td>
+      <td>
+        <strong>Not on a timer.</strong> <code>sweepIdle</code> is called from create, from the
+        output poll and from destroy, and nothing else: there is no terminal entry in
+        <code>src/schedulers/</code>. A session is reaped at the next poll or the next create
+        that happens to come past, not at the 30-minute mark.
+      </td>
+    </tr>
+    <tr>
+      <td>Who touches the user stamp</td>
+      <td class="num">on attach and on input</td>
+      <td>
+        Attaching a socket, typing, and resizing refresh it. A bare output poll does
+        <strong>not</strong> (there is a case for exactly that), so a session left open in a
+        background tab is reaped on schedule while a person is still looking at it elsewhere.
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="panel">
+  <h4>The one gap this design has to name</h4>
+  <p>
+    <strong>Deleting a workspace does not kill a host terminal.</strong> Measured on a live
+    backend: created a session against a workspace, deleted that workspace
+    (<code>DELETE /api/workspaces/&lt;id&gt;</code> answered
+    <code>{"success":true}</code>), and the session still answered its output poll with
+    <strong>200</strong>. The shell kept running. On the host path a deleted workspace leaves its
+    PTY alive until the idle sweep claims it; under <code>--saas</code> the shell lives in the
+    workspace's VM and dies with it.
+  </p>
+  <p>
+    So the footer list can hold a row whose workspace no longer exists. It must not crash on it,
+    and it must say so plainly: the row reads as gone, with the workspace greyed out, rather than
+    pretending the session is healthy. That is a list-state decision, and it is in the wireframe.
+  </p>
+</div>
+
+<h2><span class="n">5</span>Two surfaces, one registry</h2>
+<p>
+  The footer does not replace the sidebar's Terminal tab. A person in a chat still sees the
+  terminal there, and the footer lists the terminals that are open across workspaces. The two are
+  two windows onto one set of sessions, and the thing that has to be true for that to work is
+  that two clients can watch one session at the same time.
+</p>
+<table>
+  <caption>Two clients on one session, measured on a live backend</caption>
+  <thead>
+    <tr><th>Check</th><th>Result</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Two WebSocket clients attach to the same session id</td>
+      <td class="ok">Both handshake <code>101 Switching Protocols</code>.</td>
+    </tr>
+    <tr>
+      <td>The second client gets the scrollback</td>
+      <td class="ok">Yes. The attach flush replays the buffer to each socket.</td>
+    </tr>
+    <tr>
+      <td>Both see what is typed while both are attached</td>
+      <td class="ok">Yes. Both received 2023 bytes and both contained the marker.</td>
+    </tr>
+  </tbody>
+</table>
+<p>
+  So the sidebar and the footer can hold the same session at once, and the footer can open a
+  session in a workspace the person is not currently in. Neither surface has to evict the other.
+</p>
+<h2><span class="n">6</span>What the server has to grow</h2>
 <p>
   This is the part of the card that is not only a picture. The dialog lists sessions that span
   workspaces, and the server does not serve that list today. Three things have to change, and
@@ -602,7 +724,7 @@
   </p>
 </div>
 
-<h2><span class="n">5</span>What this costs the existing suite</h2>
+<h2><span class="n">8</span>What this costs the existing suite</h2>
 <p>
   The terminal already has real coverage, so the honest number matters more than the plan's
   confidence.
@@ -616,7 +738,7 @@
     <tr>
       <td><code>src/apps/desktop/src/__tests__/ChatRightSidebarTerminal.spec.ts</code></td>
       <td>20 vitest cases on the sidebar terminal: chip rows, per-chat persistence in localStorage, the "no session on mount" rule, 404 reclaim, reconnect, resize, the counter.</td>
-      <td class="ok">Unchanged. The footer is a new component; the sidebar tab is not touched.</td>
+      <td class="ok">Unchanged. The footer is a new component and the sidebar tab keeps its own chat key, so all twenty still pass. One of them, <code>persists sessions per chat key and re-attaches on remount</code>, is the case that would break if the review picks the other open question.</td>
     </tr>
     <tr>
       <td><code>tests/functional_ui/terminal_sidebar_ui_test.py</code></td>
@@ -632,6 +754,11 @@
       <td><code>src/apps/desktop/src/api/__tests__/terminalApi.spec.ts</code></td>
       <td>The wire shape of the five existing terminal API functions.</td>
       <td class="ok">A sixth function is additive; the five do not move.</td>
+    </tr>
+    <tr>
+      <td>The two surfaces at once</td>
+      <td>Nothing pins a session to one surface, because nothing did before.</td>
+      <td class="ok">Measured on a live backend: two WebSocket clients on one session id both handshake, both get the scrollback, and both see what is typed. The footer and the sidebar can hold the same shell open at the same time.</td>
     </tr>
   </tbody>
 </table>
@@ -651,7 +778,7 @@
   </p>
 </div>
 
-<h2><span class="n">6</span>The gate, and what I defend</h2>
+<h2><span class="n">9</span>The gate, and what I defend</h2>
 <p>
   Both scanners were run from the repo root against this file after every edit. The source linter
   is clean, and what remains from the inspector is what a spec document cannot honestly satisfy
@@ -691,30 +818,55 @@
     1178 by 30, and the terminal area 558 by 216. At 768 the fragments are 704 wide and at 390
     they are 326, and the page never scrolls sideways at any of the three widths.
   </p>
+  <h4>The auto-clear, measured on a live backend</h4>
+  <p id="gate-autoclear">
+    A session created against a workspace, then that workspace deleted:
+    <code>DELETE /api/workspaces/&lt;id&gt;</code> answered <code>{"success":true}</code> and the
+    session still answered its output poll with <strong>200</strong>, on two separate workspaces.
+    Two WebSocket clients on one session id both handshook, both received the attach flush, and
+    both received the 2023 bytes that carried the marker typed while they were attached.
+  </p>
 </div>
 
-<h2><span class="n">7</span>Open questions</h2>
+<h2><span class="n">7</span>Decisions, and what is still open</h2>
 <div class="panel">
-  <h4>Does the footer replace the sidebar's Terminal tab?</h4>
+  <h4>Decided: the footer and the sidebar tab both stay</h4>
   <p>
-    Drawn as both, because the sidebar tab answers "what is running in this chat" and the footer
-    answers "what is running anywhere in this workspace". If the review wants one surface, the
-    footer should win, because the sidebar's Terminal is invisible below 1024px and the footer
-    would not be.
+    The footer is the window-wide list; the sidebar's Terminal tab stays where it is, so a person
+    in a chat still sees the terminal without going anywhere. The sidebar shows the workspace it
+    is in, the footer shows every workspace. Both are the same registry, and the measurement
+    above is what lets them be open at the same time.
   </p>
-  <h4>Should the dialog open a terminal, or only list them?</h4>
+  <h4>Decided: the dialog opens terminals and lists them</h4>
   <p>
-    Drawn with a "New terminal" button that starts a shell in the workspace that owns the
-    selected group, and with the list rows opening an existing session. The alternative is a
-    read-only list that only attaches, which is one button less but means a person with no
-    session has to go back to a chat to make one.
+    A row attaches to a session that is already running; the button at the foot starts a new one
+    in the workspace of the group it belongs to. Neither is the only way in, because "show me
+    what is running" and "give me a shell" are two different intents.
   </p>
-  <h4>What about a session whose chat is gone?</h4>
+  <h4>Decided: a session outlives the chat, and the server ends it</h4>
   <p>
-    Drawn in the list, as a row under its workspace that reads <code>exited (0)</code> with the
-    time it died. A session outlives the chat that started it, which is the whole reason the
-    footer is worth building, so the list has to show the dead ones, or it will look like the app
-    lost something.
+    The chat is not the owner, so a chat cannot orphan a terminal. The workspace is the owner.
+    The server's idle sweep ends what nobody touches, and the wireframe above states its two
+    windows and the fact that it runs on traffic rather than on a clock.
+  </p>
+</div>
+
+<div class="panel">
+  <h4>Still open: a session whose workspace was deleted</h4>
+  <p>
+    Measured: the shell keeps running and the session keeps answering after the workspace is
+    gone. The list has to show that row as gone rather than as healthy, and the person has to be
+    able to close it. Whether the server should also stop the PTY on a workspace delete, rather
+    than leaving it to the idle sweep, is a call for the review: it is one more line in
+    <code>workspace_delete.zig</code> and it is the difference between a shell that outlives its
+    workspace by seconds and one that outlives it by a day.
+  </p>
+  <h4>Still open: does the sidebar tab keep its own chat key?</h4>
+  <p>
+    Drawn as the sidebar keeping the chat it is in, and the footer carrying the cross-workspace
+    list. The alternative is one key for both, which would make the sidebar tab show a terminal
+    that a different chat started. Both are defensible; the wireframe picks the first because it
+    changes the fewest existing tests, and it says which ones.
   </p>
 </div>
 
