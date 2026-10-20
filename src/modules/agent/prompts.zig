@@ -49,8 +49,6 @@ pub const PullRequestToolRule = prompts.PullRequestToolRule;
 // exercises directly.
 pub const loadGlobalKnowledge = @import("../../agentic_loop/prompts_build_messages_for_agent_prompt.zig").loadGlobalKnowledge;
 pub const loadLocalKnowledge = @import("../../agentic_loop/prompts_build_messages_for_agent_prompt.zig").loadLocalKnowledge;
-pub const SubAgentListingRow = @import("../../agentic_loop/prompts_build_messages_for_agent_prompt.zig").SubAgentListingRow;
-pub const appendSubAgentsListing = @import("../../agentic_loop/prompts_build_messages_for_agent_prompt.zig").appendSubAgentsListing;
 
 // ===== Tests merged from prompts_test.zig (2026-09-29 flatten) =====
 const prompts_mod = @import("../../agentic_loop/prompts_build_messages_for_agent_prompt.zig");
@@ -117,7 +115,7 @@ test "build_agent_prompt loads memory files into Global Knowledge section" {
         makeTool("read_file", "Read a file"),
         makeTool("list_memory", "List memory files"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", &env, "", "", "", "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", &env, "", "", "");
     defer alloc.free(prompt);
 
     // The Global Knowledge section is present
@@ -167,7 +165,7 @@ test "build_agent_prompt omits Available Skills section when search_skills tool 
     const tools = [_]AgentTool{
         makeTool("read_file", "Read a file"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", &env, "", "", "", "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", &env, "", "", "");
     defer alloc.free(prompt);
 
     try std.testing.expect(!contains(prompt, "## Available Skills"));
@@ -183,8 +181,7 @@ test "build_agent_prompt silently skips Available Skills when env is null" {
         makeTool("read_file", "Read a file"),
         makeTool("search_skills", "Search available skills"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", null, // ← env is null
-        "", "", "", "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", null, "", "", "");
     defer alloc.free(prompt);
 
     // No section emitted; no error thrown
@@ -221,8 +218,7 @@ test "build_agent_prompt injects Local Knowledge section from <cwd>/.pabrik/memo
     const tools = [_]AgentTool{
         makeTool("read_file", "Read a file"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(alloc, io, tmp_cwd, "", "", "", "", &tools, "", null, // env is null — only local knowledge should be present
-        "", "", "", "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, tmp_cwd, "", "", "", "", &tools, "", null, "", "", "");
     defer alloc.free(prompt);
 
     // The section header is present
@@ -272,7 +268,7 @@ test "build_agent_prompt Global Knowledge section emits each memory's absolute p
     const tools = [_]AgentTool{
         makeTool("list_memory", "List memory files"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", &env, "", "", "", "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", &env, "", "", "");
     defer alloc.free(prompt);
 
     // The full absolute path appears in the prompt — copy-pasteable
@@ -312,7 +308,7 @@ test "build_agent_prompt Local Knowledge section emits each memory's absolute pa
     const tools = [_]AgentTool{
         makeTool("read_file", "Read a file"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(alloc, io, tmp_cwd, "", "", "", "", &tools, "", null, "", "", "", "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, tmp_cwd, "", "", "", "", &tools, "", null, "", "", "");
     defer alloc.free(prompt);
 
     // Full absolute path of the local memory, copy-pasteable.
@@ -376,7 +372,7 @@ test "build_agent_prompt renders Local and Global Knowledge together when both e
         makeTool("read_file", "Read a file"),
         makeTool("list_memory", "List memory files"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(alloc, io, tmp_cwd, "", "", "", "", &tools, "", &env, "", "", "", "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, tmp_cwd, "", "", "", "", &tools, "", &env, "", "", "");
     defer alloc.free(prompt);
 
     // Both sections are present
@@ -409,7 +405,7 @@ test "build_agent_prompt omits Local Knowledge when <cwd>/.pabrik/memories does 
     const tools = [_]AgentTool{
         makeTool("read_file", "Read a file"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(alloc, io, tmp_cwd, "", "", "", "", &tools, "", null, "", "", "", "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, tmp_cwd, "", "", "", "", &tools, "", null, "", "", "");
     defer alloc.free(prompt);
 
     // No .pabrik/memories → no Local Knowledge section
@@ -423,8 +419,8 @@ test "build_agent_prompt omits Local Knowledge when cwd is empty" {
     const tools = [_]AgentTool{
         makeTool("read_file", "Read a file"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "", // ← cwd is empty
-        "", "", "", "", &tools, "", null, "", "", "", "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "",                  
+        "", "", "", "", &tools, "", null, "", "", "");
     defer alloc.free(prompt);
 
     // No cwd → no Local Knowledge section
@@ -457,111 +453,14 @@ test "build_agent_prompt omits Local Knowledge when <cwd>/.pabrik/memories has n
     const tools = [_]AgentTool{
         makeTool("read_file", "Read a file"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(alloc, io, tmp_cwd, "", "", "", "", &tools, "", null, "", "", "", "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, tmp_cwd, "", "", "", "", &tools, "", null, "", "", "");
     defer alloc.free(prompt);
 
     // Dir exists but has no .md files → no section
     try std.testing.expect(!contains(prompt, "## Local Knowledge"));
 }
 
-// ---------------------------------------------------------------------------
-// appendSubAgentsListing — "Available Sub-Agents" section
-// ---------------------------------------------------------------------------
-
-test "appendSubAgentsListing: empty rows slice is a no-op" {
-    const alloc = std.testing.allocator;
-
-    var result: std.ArrayList(u8) = .empty;
-    defer result.deinit(alloc);
-    try appendSubAgentsListing(alloc, &result, &.{});
-    try std.testing.expectEqual(@as(usize, 0), result.items.len);
-}
-
-test "appendSubAgentsListing: renders a single row with name + model + description" {
-    const alloc = std.testing.allocator;
-
-    const rows = [_]SubAgentListingRow{
-        .{
-            .name = "code-reviewer",
-            .model = "gpt-4o",
-            .description = "You are a strict code reviewer.",
-            .source = "",
-        },
-    };
-
-    var result: std.ArrayList(u8) = .empty;
-    defer result.deinit(alloc);
-    try appendSubAgentsListing(alloc, &result, &rows);
-
-    const out = result.items;
-    // Header is present.
-    try std.testing.expect(contains(out, "## Available Sub-Agents"));
-    // Row is rendered with name, model, description.
-    try std.testing.expect(contains(out, "**code-reviewer**"));
-    try std.testing.expect(contains(out, "model: `gpt-4o`"));
-    try std.testing.expect(contains(out, "You are a strict code reviewer."));
-    // No source suffix when source is empty.
-    try std.testing.expect(!contains(out, "from profile"));
-    // Footer explains where the list came from.
-    try std.testing.expect(contains(out, "sub_agents"));
-    try std.testing.expect(contains(out, "profile"));
-}
-
-test "appendSubAgentsListing: per-profile source suffix is shown" {
-    const alloc = std.testing.allocator;
-
-    const rows = [_]SubAgentListingRow{
-        .{
-            .name = "reviewer",
-            .model = "gpt-4o",
-            .description = "Profile-specific reviewer.",
-            .source = "profile1",
-        },
-    };
-
-    var result: std.ArrayList(u8) = .empty;
-    defer result.deinit(alloc);
-    try appendSubAgentsListing(alloc, &result, &rows);
-
-    try std.testing.expect(contains(result.items, "from profile `profile1`"));
-}
-
-test "appendSubAgentsListing: rows with empty name are skipped (defensive)" {
-    const alloc = std.testing.allocator;
-
-    const rows = [_]SubAgentListingRow{
-        .{ .name = "", .model = "m", .description = "should be skipped", .source = "" },
-        .{ .name = "valid", .model = "m", .description = "should be rendered", .source = "" },
-    };
-
-    var result: std.ArrayList(u8) = .empty;
-    defer result.deinit(alloc);
-    try appendSubAgentsListing(alloc, &result, &rows);
-
-    try std.testing.expect(!contains(result.items, "should be skipped"));
-    try std.testing.expect(contains(result.items, "should be rendered"));
-    try std.testing.expect(contains(result.items, "**valid**"));
-}
-
-test "appendSubAgentsListing: empty model/description still renders the row" {
-    const alloc = std.testing.allocator;
-
-    const rows = [_]SubAgentListingRow{
-        .{ .name = "minimal", .model = "", .description = "", .source = "" },
-    };
-
-    var result: std.ArrayList(u8) = .empty;
-    defer result.deinit(alloc);
-    try appendSubAgentsListing(alloc, &result, &rows);
-
-    // The name is present but neither the model nor the
-    // description is rendered (no "model: \`\`", no em-dash).
-    try std.testing.expect(contains(result.items, "**minimal**"));
-    try std.testing.expect(!contains(result.items, "model: `"));
-    try std.testing.expect(!contains(result.items, " — \""));
-}
-
-test "build_agent_prompt with sub_agents_listing: section is omitted when empty" {
+test "build_agent_prompt: no sub-agent section is rendered" {
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
@@ -576,12 +475,10 @@ test "build_agent_prompt with sub_agents_listing: section is omitted when empty"
         "",
         &tools,
         "",
-        null,
-        "", // empty sub_agents_listing
-        "", // empty workspaceContext
-        "", // empty kanbanStatusContent
-        "", // empty designStatusContent
-    );
+        null,                            
+        "",                          
+        "",                             
+        "");
     defer alloc.free(prompt);
 
     try std.testing.expect(!contains(prompt, "## Available Sub-Agents"));
@@ -615,7 +512,7 @@ test "build_agent_prompt renders Kanban Status Tracking when section is non-empt
         \\- **complete** — move to `done` before your final reply
         \\- **blocked** — do NOT move
     ;
-    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", null, "", "", kanban_block, "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", null, "", kanban_block, "");
     defer alloc.free(prompt);
 
     try std.testing.expect(contains(prompt, "## Kanban Status Tracking"));
@@ -643,11 +540,9 @@ test "build_agent_prompt omits Kanban Status Tracking when section is empty" {
         &tools,
         "",
         null,
-        "",
-        "", // empty workspaceContext
-        "", // empty kanbanStatusContent
-        "", // empty designStatusContent
-    );
+        "",                          
+        "",                             
+        "");
     defer alloc.free(prompt);
 
     try std.testing.expect(!contains(prompt, "## Kanban Status Tracking"));
@@ -1130,7 +1025,7 @@ test "build_agent_prompt renders Workspace Context when section is non-empty" {
         \\  - task: `API` (type: standard, session: `sess_backend`)
         \\
     ;
-    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", null, "", workspaceContext, "", "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", null, workspaceContext, "", "");
     defer alloc.free(prompt);
 
     // Section header is present.
@@ -1180,11 +1075,9 @@ test "build_agent_prompt omits Workspace Context when section is empty" {
         &tools,
         "",
         null,
-        "",
-        "", // empty workspaceContext
-        "", // empty kanbanStatusContent
-        "", // empty designStatusContent
-    );
+        "",                          
+        "",                             
+        "");
     defer alloc.free(prompt);
 
     // No Workspace Context section is rendered.
@@ -1215,9 +1108,7 @@ test "build_agent_prompt always renders Search Tool Preference (unconditional)" 
         null,
         "",
         "",
-        "",
-        "",
-    );
+        "");
     defer alloc.free(prompt);
 
     // Header is rendered.
@@ -1264,9 +1155,7 @@ test "build_agent_prompt Search Tool Preference appears even with non-empty tool
         null,
         "",
         "",
-        "",
-        "",
-    );
+        "");
     defer alloc.free(prompt);
 
     try std.testing.expect(contains(prompt, "## Search Tool Preference (MANDATORY)"));
@@ -1299,9 +1188,7 @@ test "build_agent_prompt renders Memory Tools section when load_memory is in too
         null,
         "",
         "",
-        "",
-        "",
-    );
+        "");
     defer alloc.free(prompt);
 
     // Section header is rendered.
@@ -1337,9 +1224,7 @@ test "build_agent_prompt omits Memory Tools section when load_memory is absent" 
         null,
         "",
         "",
-        "",
-        "",
-    );
+        "");
     defer alloc.free(prompt);
 
     try std.testing.expect(!contains(prompt, "## Memory Tools"));

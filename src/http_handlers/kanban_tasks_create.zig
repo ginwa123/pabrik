@@ -218,7 +218,7 @@ pub fn kanbanTasksCreateHandler(
         ) orelse auth_common.requestUserConfig(allocator, di.db, di.auth_enabled, req.headers) orelse
             pabrikcore.getLlmConfig(di);
         if (profile.len == 0) {
-            if (user_cfg.active_profile) |ap| {
+            if (user_cfg.active_agent) |ap| {
                 profile = ap;
             }
         }
@@ -318,7 +318,7 @@ pub fn kanbanTasksCreateHandler(
             // and avoids relying on the helper's SSE/FTS plumbing for what is
             // effectively a one-shot wire-side message.
             const seed_model = model_guard.resolve(
-                user_cfg.resolveEffectiveProfile(profile).model,
+                user_cfg.resolveEffectiveAgent(profile).model,
             );
             sqlite_db.exec(
                 allocator,

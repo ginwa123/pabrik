@@ -8,7 +8,7 @@ const std = @import("std");
 pub const UNKNOWN_MODEL: []const u8 = "unknown";
 
 /// True when `model` cannot be persisted: absent, empty, or only
-/// whitespace. Whitespace matters — a profile whose `model` is `"  "`
+/// whitespace. Whitespace matters — an agent whose `model` is `"  "`
 /// passes `len > 0` checks elsewhere but is equally unusable.
 pub fn isEmpty(model: []const u8) bool {
     return std.mem.trim(u8, model, " \t\r\n").len == 0;
@@ -34,7 +34,7 @@ test "resolve substitutes the sentinel for an empty model" {
 }
 
 test "resolve substitutes the sentinel for a whitespace-only model" {
-    // `len > 0` is NOT sufficient — a profile can carry `"  "`.
+    // `len > 0` is NOT sufficient — an agent can carry `"  "`.
     try testing.expectEqualStrings(UNKNOWN_MODEL, resolve(" "));
     try testing.expectEqualStrings(UNKNOWN_MODEL, resolve("\t\n"));
     try testing.expectEqualStrings(UNKNOWN_MODEL, resolve("   \r\n\t  "));

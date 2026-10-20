@@ -52,7 +52,7 @@ pub const help_text =
     \\Config (highest priority first):
     \\  --server <url>     Server URL (default http://localhost:8081)
     \\  --session <id>     Default session id
-    \\  --profile <name>   LLM profile
+    \\  --profile <name>   LLM agent
     \\  env PABRIKCLI_SERVER, PABRIKCLI_SESSION_ID, PABRIKCLI_PROFILE
     \\
 ;

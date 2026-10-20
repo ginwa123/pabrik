@@ -198,7 +198,7 @@ describe('older-history prefetch — invalidation', () => {
     expect(entryBody).toContain("resetOlderPrefetch('session-change')")
     expect(source).toContain("resetOlderPrefetch('refresh')")
     expect(source).toContain("resetOlderPrefetch('unmount')")
-    const unmountBody = fnBody(source, 'onUnmounted(() => {', '\n// Load available profiles')
+    const unmountBody = fnBody(source, 'onUnmounted(() => {', '\n// Load available agents')
     expect(unmountBody).toContain("resetOlderPrefetch('unmount')")
   })
 

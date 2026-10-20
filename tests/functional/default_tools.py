@@ -44,7 +44,7 @@ DEFAULT_AGENT_TOOLS: list[str] = [
     "glob",
     "list_directory",
     "list_secrets",
-    "list_sub_agent",
+    "list_agents",
     "list_web_search_providers",
     "load_memory",
     "present_files",

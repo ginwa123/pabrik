@@ -125,7 +125,7 @@ function installApiMocks(): void {
   vi.spyOn(api, 'getSession').mockResolvedValue({
     session_id: 'placeholder',
     session_name: '',
-    selectedProfile: null,
+    selectedAgent: null,
     cwd: '',
     git_worktree_cwd: '',
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

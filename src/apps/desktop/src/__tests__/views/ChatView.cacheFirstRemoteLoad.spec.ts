@@ -199,7 +199,7 @@ describe('ChatView cached mount — what the reader sees while the remote half l
     vi.spyOn(api, 'getSession').mockResolvedValue({
       session_id: 's_cache',
       session_name: '',
-      selectedProfile: null,
+      selectedAgent: null,
       cwd: '',
       git_worktree_cwd: '',
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

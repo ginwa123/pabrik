@@ -334,7 +334,7 @@ const confirmRename = async (name: string) => {
 
 // ─── Unattended mode ───────────────────────────────────────────────────────
 // `is_auto_retry_until_stop` lives on `sessions`, so this one genuinely has to go through
-// updateSession — which means selectedProfile must be sent back explicitly.
+// updateSession — which means selectedAgent must be sent back explicitly.
 const isUnattended = (chat: { is_auto_retry_until_stop?: string }): boolean =>
   chat.is_auto_retry_until_stop === '1'
 
@@ -354,7 +354,7 @@ const toggleUnattendedFromMenu = async () => {
   try {
     await api.updateSession(chat.id, {
       isAutoRetryUntilStop: next,
-      selectedProfile: chat.selected_profile_model ?? '',
+      selectedAgent: chat.selected_profile_model ?? '',
     })
   } catch (err) {
     if (row) row.is_auto_retry_until_stop = previous

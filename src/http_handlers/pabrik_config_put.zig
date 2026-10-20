@@ -273,46 +273,8 @@ pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
                                 };
                                 try profile_obj.put(allocator, "reasoning_effort", json.Value{ .string = try allocator.dupe(u8, re) });
                             }
-                            // === Per-profile sub_agents (plan
-                            // 2026-09-04-subagents-per-profile) === When the
-                            // change provides a list, validate + serialize it
-                            if (profile_change.sub_agents) |sas| {
-                                for (sas) |sa| {
-                                    if (sa.thinking_budget_tokens) |t| {
-                                        if (t == 0 or t > 2_000_000) {
-                                            return res.jsonResponse(.{
-                                                .status_code = 400,
-                                                .data = try http_response.makeErrorResponse(
-                                                    allocator,
-                                                    .{ .@"error" = "InvalidThinkingBudgetTokens: thinking_budget_tokens must be in (0, 2_000_000]" },
-                                                ),
-                                            });
-                                        }
-                                    }
-                                    if (sa.reasoning_effort) |re| {
-                                        _ = parse_thinking_mod.parseReasoningEffort(re) catch {
-                                            return res.jsonResponse(.{
-                                                .status_code = 400,
-                                                .data = try http_response.makeErrorResponse(
-                                                    allocator,
-                                                    .{ .@"error" = "InvalidReasoningEffort: reasoning_effort must be one of low/medium/high/auto" },
-                                                ),
-                                            });
-                                        };
-                                    }
-                                    if (sa.compaction_threshold_percent) |tp| {
-                                        if (tp > 100) return error.InvalidThresholdPercent;
-                                    }
-                                }
-                                try profile_obj.put(allocator, "sub_agents", try subAgentsJsonToValue(allocator, sas));
-                            } else if (std.mem.eql(u8, action, "update")) {
-                                if (profiles_obj.get(profile_change.name)) |existing| {
-                                    if (existing == .object) {
-                                        if (existing.object.get("sub_agents")) |sas_value| {
-                                            try profile_obj.put(allocator, "sub_agents", try deepCopyJsonValue(allocator, sas_value));
-                                        }
-                                    }
-                                }
+                            if (profile_change.system_prompt.len > 0) {
+                                try profile_obj.put(allocator, "system_prompt", json.Value{ .string = try allocator.dupe(u8, profile_change.system_prompt) });
                             }
                             const profile_value_obj = json.Value{ .object = profile_obj };
                             try profiles_obj.put(allocator, try allocator.dupe(u8, profile_change.name), profile_value_obj);
@@ -392,60 +354,6 @@ pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
             },
         }
     }
-
-    // Handle top-level sub_agents (DEPRECATED — plan
-    // 2026-09-04-subagents-per-profile: subagents are per-profile now).
-    if (input.sub_agents) |sas| {
-        // === Model-thinking validation (plan 2026-08-23-model-thinking) ===
-        // Validate each sub-agent's `thinking_budget_tokens` and
-        // `reasoning_effort` BEFORE any dup'ing so a bad value is rejected at
-        for (sas) |sa| {
-            if (sa.thinking_budget_tokens) |t| {
-                if (t == 0 or t > 2_000_000) {
-                    return res.jsonResponse(.{
-                        .status_code = 400,
-                        .data = try http_response.makeErrorResponse(
-                            allocator,
-                            .{ .@"error" = "InvalidThinkingBudgetTokens: thinking_budget_tokens must be in (0, 2_000_000]" },
-                        ),
-                    });
-                }
-            }
-            if (sa.reasoning_effort) |re| {
-                _ = parse_thinking_mod.parseReasoningEffort(re) catch {
-                    return res.jsonResponse(.{
-                        .status_code = 400,
-                        .data = try http_response.makeErrorResponse(
-                            allocator,
-                            .{ .@"error" = "InvalidReasoningEffort: reasoning_effort must be one of low/medium/high/auto" },
-                        ),
-                    });
-                };
-            }
-        }
-        const owned = try allocator.alloc(LlmConfig.SubAgentJson, sas.len);
-        errdefer allocator.free(owned);
-        for (sas, 0..) |sa, i| {
-            owned[i] = .{
-                .name = try allocator.dupe(u8, sa.name),
-                .model = try allocator.dupe(u8, sa.model),
-                .base_url = try allocator.dupe(u8, sa.base_url),
-                .thinking = try allocator.dupe(u8, sa.thinking),
-                .temperature = try allocator.dupe(u8, sa.temperature),
-                .url_style = try allocator.dupe(u8, sa.url_style),
-                .api_key = try allocator.dupe(u8, sa.api_key),
-                .system_prompt = try allocator.dupe(u8, sa.system_prompt),
-                // Model-thinking knobs (plan 2026-08-23-model-thinking).
-                // Already range-validated above; thread through as-is.
-                .thinking_budget_tokens = sa.thinking_budget_tokens,
-                .reasoning_effort = if (sa.reasoning_effort) |re| try allocator.dupe(u8, re) else null,
-            };
-        }
-        config_json.sub_agents = owned;
-    }
-
-    // Plan 2026-09-04-subagents-per-profile: disk-side migration.
-    try migrateTopLevelSubAgentsOnDisk(allocator, &config_json);
 
     // Write config
     const config_str = try std.json.Stringify.valueAlloc(allocator, config_json, .{
@@ -578,9 +486,6 @@ pub const ConfigInput = struct {
     /// Delay in milliseconds before retrying a failed workflow call.
     /// Range-validated at apply time: 0 ≤ value ≤ 60_000.
     retry_delay_ms: ?u32 = null,
-    // Note: per-profile compaction overrides (max_capacity_tokens,
-    // compaction_threshold_percent) live on `ProfileChange` below.
-    sub_agents: ?[]const LlmConfig.SubAgentJson = null,
     /// Whole-list replace for the `tools` default checklist (plan
     /// 2026-09-22-tools-menu-config-default-tools, D2).
     tools: ?[]const []const u8 = null,
@@ -601,10 +506,10 @@ const ProfileChange = struct {
     url_style: []const u8 = "openai",
     api_key: []const u8 = "",
     /// Optional override for the per-profile context window (in tokens).
-    /// Mirrors `LlmProfile.max_capacity_tokens` in Config.zig.
+    /// Mirrors `LlmAgent.max_capacity_tokens` in Config.zig.
     max_capacity_tokens: ?u32 = null,
     /// Optional per-profile compaction threshold percentage (0-100). Mirrors
-    /// `LlmProfile.compaction_threshold_percent`.
+    /// `LlmAgent.compaction_threshold_percent`.
     compaction_threshold_percent: ?u8 = null,
     /// Anthropic-only override for `thinking.budget_tokens`. Plan
     /// 2026-08-23-model-thinking.
@@ -612,10 +517,8 @@ const ProfileChange = struct {
     /// OpenAI-style reasoning effort (o1/o3/GPT-5/DeepSeek-R1). One of "low"
     /// | "medium" | "high" | "auto".
     reasoning_effort: ?[]const u8 = null,
-    /// Per-profile sub-agents (plan 2026-09-04-subagents-per-profile). Each
-    /// profile owns its list — there is no global list anymore. When non-null
-    /// on add/update, replaces the profile's list wholesale.
-    sub_agents: ?[]const LlmConfig.SubAgentJson = null,
+    /// The agent's persona. Replaces the profile's prompt on add/update.
+    system_prompt: []const u8 = "",
 };
 
 const ConfigJson = struct {
@@ -651,9 +554,6 @@ const ConfigJson = struct {
     /// Mirrors `LlmConfig.retry_delay_ms` (Config.zig). Clamped to
     /// [0, 60_000] by the apply block. Default 0 = no delay.
     retry_delay_ms: u32 = 0,
-    /// Top-level sub-agents array (snake_case, matches PABRIK.md JSON
-    /// convention).
-    sub_agents: ?[]LlmConfig.SubAgentJson = null,
     /// Default tool checklist (Tools tab, plan
     /// 2026-09-22-tools-menu-config-default-tools).
     tools: ?[]const []const u8 = null,
@@ -785,80 +685,6 @@ fn firstUnknownToolName(names: []const []const u8) ?[]const u8 {
     return null;
 }
 
-/// Serialize a borrowed `[]SubAgentJson` slice into an owned `json.Value`
-/// array for writing onto a profile object (plan
-/// 2026-09-04-subagents-per-profile).
-fn subAgentsJsonToValue(allocator: std.mem.Allocator, sas: []const LlmConfig.SubAgentJson) error{OutOfMemory}!json.Value {
-    var arr = json.Array.init(allocator);
-    errdefer arr.deinit();
-    for (sas) |sa| {
-        var obj = try json.ObjectMap.init(allocator, &.{}, &.{});
-        errdefer obj.deinit(allocator);
-        try obj.put(allocator, "name", json.Value{ .string = try allocator.dupe(u8, sa.name) });
-        try obj.put(allocator, "model", json.Value{ .string = try allocator.dupe(u8, sa.model) });
-        try obj.put(allocator, "base_url", json.Value{ .string = try allocator.dupe(u8, sa.base_url) });
-        try obj.put(allocator, "thinking", json.Value{ .string = try allocator.dupe(u8, sa.thinking) });
-        try obj.put(allocator, "temperature", json.Value{ .string = try allocator.dupe(u8, sa.temperature) });
-        try obj.put(allocator, "url_style", json.Value{ .string = try allocator.dupe(u8, sa.url_style) });
-        try obj.put(allocator, "api_key", json.Value{ .string = try allocator.dupe(u8, sa.api_key) });
-        try obj.put(allocator, "system_prompt", json.Value{ .string = try allocator.dupe(u8, sa.system_prompt) });
-        if (sa.max_capacity_tokens) |mct| {
-            try obj.put(allocator, "max_capacity_tokens", json.Value{ .integer = mct });
-        }
-        if (sa.compaction_threshold_percent) |tp| {
-            try obj.put(allocator, "compaction_threshold_percent", json.Value{ .integer = tp });
-        }
-        if (sa.thinking_budget_tokens) |t| {
-            try obj.put(allocator, "thinking_budget_tokens", json.Value{ .integer = t });
-        }
-        if (sa.reasoning_effort) |re| {
-            try obj.put(allocator, "reasoning_effort", json.Value{ .string = try allocator.dupe(u8, re) });
-        }
-        try arr.append(json.Value{ .object = obj });
-    }
-    return json.Value{ .array = arr };
-}
-
-/// Disk-side twin of the load migration in `Config.zig`
-/// (`migrateTopLevelSubAgentsIntoEmptyProfiles`).
-fn migrateTopLevelSubAgentsOnDisk(
-    allocator: std.mem.Allocator,
-    config_json: *ConfigJson,
-) error{OutOfMemory}!void {
-    const top = config_json.sub_agents orelse return;
-    if (top.len == 0) {
-        config_json.sub_agents = null;
-        return;
-    }
-    const profiles_value = config_json.profiles_models orelse return;
-    if (profiles_value != .object) return;
-
-    // Serialize once, deep-copy per profile that needs it.
-    const arr_value = try subAgentsJsonToValue(allocator, top);
-    var new_obj = try json.ObjectMap.init(allocator, &.{}, &.{});
-    errdefer new_obj.deinit(allocator);
-    var iter = profiles_value.object.iterator();
-    while (iter.next()) |entry| {
-        const key = try allocator.dupe(u8, entry.key_ptr.*);
-        errdefer allocator.free(key);
-        var copied_value = try deepCopyJsonValue(allocator, entry.value_ptr.*);
-        if (copied_value == .object) {
-            const needs = blk: {
-                if (copied_value.object.get("sub_agents")) |sas| {
-                    if (sas == .array and sas.array.items.len > 0) break :blk false;
-                }
-                break :blk true;
-            };
-            if (needs) {
-                try copied_value.object.put(allocator, "sub_agents", try deepCopyJsonValue(allocator, arr_value));
-            }
-        }
-        try new_obj.put(allocator, key, copied_value);
-    }
-    config_json.profiles_models = json.Value{ .object = new_obj };
-    config_json.sub_agents = null;
-}
-
 /// Deep copy a json.Value to avoid use-after-free from parsed.deinit()
 fn deepCopyJsonValue(allocator: std.mem.Allocator, value: json.Value) error{OutOfMemory}!json.Value {
     switch (value) {
@@ -911,7 +737,7 @@ fn validateModelThinkingOnDiskProfileMap(obj: json.ObjectMap) !void {
 
         // reasoning_effort: must be one of low / medium / high / auto,
         // or `.null` for "no override" (matches
-        // `LlmProfile.reasoning_effort: ?[]const u8 = null`).
+        // `LlmAgent.reasoning_effort: ?[]const u8 = null`).
         if (profile_obj.get("reasoning_effort")) |re| {
             switch (re) {
                 .null => {},
@@ -934,15 +760,14 @@ const testing = std.testing;
 
 /// The exact body shape the user's main settings panel sends on save.
 const USER_BODY =
-    \\{"api_endpoint":"https://api.minimax.io/v1","api_key":"sk-test","model":"MiniMax-M3","url_style":"openai","temperature":0,"max_tokens":"","system_prompt":"","profiles":{"profile1":{"model":"MiniMax-M2.723223233","base_url":"https://api.minimax.io/v122","thinking":"on","temperature":"0","url_style":"anthropic","api_key":"sk-cp-0","sub_agents":[],"max_capacity_tokens":null,"compaction_threshold_percent":null},"profile2":{"model":"MiniMax-M2.7","base_url":"https://api.minimax.io/v1","thinking":"auto","temperature":"auto","url_style":"openai","api_key":"sk-cp-1","sub_agents":[],"max_capacity_tokens":null,"compaction_threshold_percent":null}},"active_profile":null,"mcp_servers":null,"sub_agents":[{"name":"CodeImplementationAgent","model":"MiniMax-M3","base_url":"https://api.minimax.io/v1","thinking":"false","temperature":"auto","url_style":"openai","api_key":"sk-cp-x","system_prompt":"em-dash here: \u2014, arrow here: \u2192, fully valid UTF-8."},{"name":"DebuggingAgent","model":"MiniMax-M3","base_url":"https://api.minimax.io/v1","thinking":"true","temperature":"auto","url_style":"openai","api_key":"sk-cp-x","system_prompt":"another agent with binary-search comment out halves \u2014 fully valid UTF-8."}],"notify_on_complete":true,"model_compaction_size_kb":100,"max_capacity_token_model":500000,"compaction_threshold_percent":95}
+    \\{"api_endpoint":"https://api.minimax.io/v1","api_key":"sk-test","model":"MiniMax-M3","url_style":"openai","temperature":0,"max_tokens":"","system_prompt":"","profiles":{"profile1":{"model":"MiniMax-M2.723223233","base_url":"https://api.minimax.io/v122","thinking":"on","temperature":"0","url_style":"anthropic","api_key":"sk-cp-0","system_prompt":"You are a careful reviewer.","max_capacity_tokens":null,"compaction_threshold_percent":null},"profile2":{"model":"MiniMax-M2.7","base_url":"https://api.minimax.io/v1","thinking":"auto","temperature":"auto","url_style":"openai","api_key":"sk-cp-1","system_prompt":"You write docs.","max_capacity_tokens":null,"compaction_threshold_percent":null}},"active_profile":null,"mcp_servers":null,"notify_on_complete":true,"model_compaction_size_kb":100,"max_capacity_token_model":500000,"compaction_threshold_percent":95}
 ;
 
 // ---------- Tests ----------
 
 test "parseConfigInput: accepts the on-disk object-map shape (user's main settings panel body)" {
-    // `parseFromSliceLeaky` does allocate (slice headers for the
-    // `[]SubAgentJson`, internal ObjectMap storage for `?json.Value`), so we
-    // back it with an arena.
+    // `parseFromSliceLeaky` does allocate (internal ObjectMap storage for
+    // `?json.Value`), so we back it with an arena.
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
@@ -983,19 +808,12 @@ test "parseConfigInput: accepts the on-disk object-map shape (user's main settin
     try testing.expect(seen_profile1);
     try testing.expect(seen_profile2);
 
-    // The `sub_agents` array is also present and parsed (with non-ASCII
-    // bytes in the system_prompts — would have failed the parse before
-    // any change if the field were missing or wrongly typed).
-    const sub_agents = input.sub_agents orelse return error.SubAgentsFieldMissing;
-    try testing.expectEqual(@as(usize, 2), sub_agents.len);
-    try testing.expectEqualStrings("CodeImplementationAgent", sub_agents[0].name);
-    try testing.expectEqualStrings("DebuggingAgent", sub_agents[1].name);
-    // The em-dash and arrow survive the parse round-trip (the
-    // pre-fix parse error was triggered by this exact byte sequence).
-    // Em-dash is U+2014 = 0xE2 0x80 0x94 in UTF-8.
-    const em_dash = "\xe2\x80\x94";
-    try testing.expect(std.mem.indexOf(u8, sub_agents[0].system_prompt, em_dash) != null);
-    try testing.expect(std.mem.indexOf(u8, sub_agents[1].system_prompt, em_dash) != null);
+    // Each agent carries its own system_prompt, and the non-ASCII bytes in
+    // it survive the parse (a wrongly-typed field would fail the parse).
+    const p1 = profiles_value.object.get("profile1").?;
+    try testing.expectEqualStrings("You are a careful reviewer.", p1.object.get("system_prompt").?.string);
+    const p2 = profiles_value.object.get("profile2").?;
+    try testing.expectEqualStrings("You write docs.", p2.object.get("system_prompt").?.string);
 }
 
 test "parseConfigInput: accepts the granular array-of-changes shape (regression)" {
@@ -1006,7 +824,7 @@ test "parseConfigInput: accepts the granular array-of-changes shape (regression)
 
     // `body` stays alive for the test (constant slice — parsed slices borrow).
     const body =
-        \\{"api_key":"k","model":"m","api_endpoint":"https://api.test/v1","profiles":[{"name":"alpha","action":"add","model":"m","base_url":"https://api.test/v1","thinking":"auto","temperature":"auto","url_style":"openai","api_key":"k","sub_agents":[]}]}
+        \\{"api_key":"k","model":"m","api_endpoint":"https://api.test/v1","profiles":[{"name":"alpha","action":"add","model":"m","base_url":"https://api.test/v1","thinking":"auto","temperature":"auto","url_style":"openai","api_key":"k"}]}
     ;
 
     const input = try parseConfigInput(arena.allocator(), body);
@@ -1035,7 +853,6 @@ test "parseConfigInput: accepts a body with NO profiles field (regression)" {
     const input = try parseConfigInput(arena.allocator(), body);
 
     try testing.expect(input.profiles == null);
-    try testing.expect(input.sub_agents == null);
     try testing.expect(input.mcp_servers == null);
     try testing.expect(input.max_capacity_token_model == null);
     try testing.expect(input.compaction_threshold_percent == null);
@@ -1187,8 +1004,7 @@ fn makeConfig(allocator: std.mem.Allocator, model: []const u8) !*LlmConfig {
         .retry_delay_ms = 0,
         .mcpServers_parsed = null,
         .mcp_servers = LlmConfig.McpServersMap.init(allocator),
-        .profiles_models = LlmConfig.ProfilesMap.init(allocator),
-        .sub_agents = &.{},
+        .agents = LlmConfig.AgentsMap.init(allocator),
     };
     return ptr;
 }
@@ -1376,7 +1192,7 @@ test "live-reload: getLlmConfig returns the latest pointer immediately after set
 test "live-reload: swapping the same model name twice returns the new pointer each time" {
     // The model string is the same in both configs (e.g. user clicked "Save"
     // without changing the value), but the holder still swaps the pointer —
-    // the workflow's per-iteration `getProfile()` etc. picks up any sub-field
+    // the workflow's per-iteration `getAgent()` etc. picks up any sub-field
     const allocator = testing.allocator;
     const cfg_a = try makeConfig(allocator, "model-same");
     const cfg_b = try makeConfig(allocator, "model-same");

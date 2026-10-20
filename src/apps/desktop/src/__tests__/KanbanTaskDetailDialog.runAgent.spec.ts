@@ -113,7 +113,7 @@ describe('KanbanTaskDetailDialog — Create task & run agent', () => {
         worktreeBaseBranch: '',
         tags: [],
         // NEW (plan: 2026-08-06-kanban-task-profile-selector)
-        selectedProfile: '',
+        selectedAgent: '',
         // NEW (plan: 2026-08-06-kanban-no-base64-in-desc).
         pendingFiles: [],
         // NEW (Migration 070 — kanban-cwd-session-optional plan).

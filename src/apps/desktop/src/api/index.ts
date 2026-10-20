@@ -1310,7 +1310,7 @@ export async function sendChatMessage(
   message: string,
   cwdSession: string,
   imageUrls?: string[],
-  selectedProfile?: string,
+  selectedAgent?: string,
   isAutoRetryUntilStop?: string,
   videoUrls?: string[],
   workspaceId?: string,
@@ -1335,7 +1335,7 @@ export async function sendChatMessage(
         workspace_id: workspaceId ?? '',
         image_urls: imageUrlsStr,
         video_urls: videoUrlsStr,
-        selected_profile_model: selectedProfile || '',
+        selected_profile_model: selectedAgent || '',
         // Migration 063 — pass through to POST /api/session. Empty
         // / undefined => the backend's default ("0" = off).
         is_auto_retry_until_stop: isAutoRetryUntilStop ?? '',
@@ -1355,13 +1355,13 @@ export async function sendChatMessage(
   }
 }
 
-// Update an existing session (selectedProfile, name, isAutoRetryUntilStop). Migration 063 — extends
+// Update an existing session (selectedAgent, name, isAutoRetryUntilStop). Migration 063 — extends
 // the update shape to carry the unattended- mode flag. Pass `isAutoRetryUntilStop: '0'` to disable,
 // '1' to enable, or omit to leave unchanged (matches the backend's `len > 0` guard).
 export async function updateSession(
   sessionId: string,
   updates: {
-    selectedProfile?: string | null
+    selectedAgent?: string | null
     name?: string
     isAutoRetryUntilStop?: string
   },
@@ -1381,7 +1381,7 @@ export async function updateSession(
   }>(`/llm/session/${sessionId}`, {
     method: 'PUT',
     body: {
-      selected_profile_model: updates.selectedProfile ?? '',
+      selected_profile_model: updates.selectedAgent ?? '',
       name: updates.name ?? '',
       is_auto_retry_until_stop: updates.isAutoRetryUntilStop ?? '',
     },
@@ -1624,7 +1624,7 @@ export interface Session {
   createdAt: string
   agent: string
   sessionName: string
-  selectedProfile?: string
+  selectedAgent?: string
   // Migration 091 — resolved sub-agent name (e.g. "implementator").
   subAgentName?: string
   parentSessionId?: string
@@ -1679,7 +1679,7 @@ async function fetchSessionDetail(sessionId: string): Promise<Session | null> {
       // 2026-08-07-profile-persist-read — pass through the persisted profile name. Empty string (=
       // "no profile set" from the backend's COALESCE-on-NULL) is preserved here; ChatView coerces
       // empty → null.
-      selectedProfile: data.selected_profile_model,
+      selectedAgent: data.selected_profile_model,
       subAgentName: data.sub_agent_name,
       parentSessionId: data.parent_session_id,
       git_worktree_cwd: data.git_worktree_cwd,
@@ -3645,13 +3645,16 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
 }
 
 // Pabrik Config API
-export interface PabrikProfile {
+export interface PabrikAgent {
   model?: string
   base_url?: string
   thinking?: string
   temperature?: string
   url_style?: string
   api_key?: string
+  /** The agent's persona. Injected into a spawned child's system prompt as its
+   * `## Your Active Agent Configuration` block. */
+  system_prompt?: string
   /** Which TRANSPORT runs this profile's calls: `"http"` (default), `"claude-code"` (the local
    * `claude` CLI, subscription auth via `claude login`), or `"opencode"` (the local `opencode` CLI,
    * auth via `opencode login`). Mirrors the backend's `LlmProfile.backend`. */
@@ -3663,9 +3666,6 @@ export interface PabrikProfile {
   /** Claude Code only: agentic turn ceiling passed as `--max-turns`.
    * Mirrors `LlmProfile.max_turns`. Null = the CLI's own default. */
   max_turns?: number | null
-  /**    * Per-profile sub-agents. Same shape as the top-level `PabrikConfig.sub_agents` field — profiles
-   * can override the default sub-agent set with their own. */
-  sub_agents?: SubAgent[]
   /** Optional override for this profile's context window (in tokens). When null (or omitted), the
    * backend's built-in per-model default is used (e.g. 200_000 for MiniMax-M2.7, 500_000 for
    * MiniMax-M3, 200_000 fallback). Useful for self-hosted models with a non-standard window. */
@@ -3681,31 +3681,6 @@ export interface PabrikProfile {
   /**    * OpenAI-style reasoning effort (o1/o3/GPT-5/DeepSeek-R1). Plan 2026-08-23-model-thinking.
    * Mirrors `LlmProfile.reasoning_effort`. Hidden when `thinking === "off"`. Server-side validation
    * via `parse_thinking.parseReasoningEffort` (low|medium|high|auto). */
-  reasoning_effort?: 'low' | 'medium' | 'high' | 'auto' | null
-}
-
-export interface SubAgent {
-  name: string
-  model: string
-  base_url: string
-  thinking: string
-  temperature: string
-  url_style: string
-  api_key: string
-  system_prompt: string
-  /**    * Transport discriminator, mirroring `PabrikProfile.backend`. `"http"` (default) |
-   * `"claude-code"` | `"opencode"`. Empty/absent = inherit the parent profile's backend. */
-  backend?: string
-  /** Claude Code only: `CLAUDE_CONFIG_DIR` override. */
-  config_dir?: string | null
-  /** Claude Code only: `--max-turns` override. */
-  max_turns?: number | null
-  /**    * Anthropic-only override for `thinking.budget_tokens`. Plan 2026-08-23-model-thinking. Mirrors
-   * `LlmProfile.thinking_budget_tokens`. Optional in the wire shape — old configs without this
-   * field hydrate as undefined and are coerced to null in the form. */
-  thinking_budget_tokens?: number | null
-  /** OpenAI-style reasoning effort (o1/o3/GPT-5/DeepSeek-R1).
-   * Mirrors `LlmProfile.reasoning_effort`. Optional. */
   reasoning_effort?: 'low' | 'medium' | 'high' | 'auto' | null
 }
 
@@ -3776,7 +3751,7 @@ export interface PabrikConfig {
   // Plan 2026-08-24-config-simplify-remove-defaults: the top-level LLM defaults
   // (api_endpoint/api_key/model/url_style/temperature/max_tokens/system_prompt) were REMOVED from
   // config.json.
-  profiles?: Record<string, PabrikProfile>
+  profiles?: Record<string, PabrikAgent>
   active_profile?: string
   /** Map of MCP server name to its raw JSON config (snake_case). Each value follows the `{"url":
    * "...", "headers": {...}}` shape used by the LLM config. Sent verbatim to the backend on save. */
@@ -3793,10 +3768,6 @@ export interface PabrikConfig {
    * config.json. Keys of this map are the names the agent passes to `web_search`'s `provider`
    * argument; the agent discovers them through `list_web_search_providers`. */
   web_search?: Record<string, PabrikWebSearchProvider> | null
-  /** @deprecated Per-profile only (plan 2026-09-04-subagents-per-profile). The backend (`GET
-   * /api/config/pabrik`) always returns `sub_agents: null` at the top level; each profile owns its
-   * list via `PabrikProfile.sub_agents`. */
-  sub_agents?: SubAgent[]
   /**    * Opt-in OS notification flag. When true, the backend fires `notify-send` / osascript /
    * PowerShell when an LLM response completes with `finish_reason === 'stop'`. Defaults to `false`
    * when absent (matches the `LlmConfigJson` default in `Config.zig`). */
@@ -3828,7 +3799,7 @@ export interface PabrikConfig {
    * a random local port at startup. Defaults to `false` when absent (matches `LlmConfigJson`). */
   web_launch_enabled?: boolean
   // Per-profile compaction overrides (`max_capacity_tokens` /
-  // `compaction_threshold_percent`) live on `PabrikProfile` (Chunk
+  // `compaction_threshold_percent`) live on `PabrikAgent` (Chunk
   // 7.6) and remain there. Both layers coexist.
 }
 
@@ -3884,7 +3855,7 @@ export async function getWebStatus(): Promise<WebStatus | null> {
 /** Response shape from `DELETE /api/config/pabrik/profiles/:name`. `active_profile_was_cleared` is
  * `true` when the deleted profile was the active one (the backend also cleared `active_profile` on
  * disk). */
-export interface ProfileDeleteResponse {
+export interface AgentDeleteResponse {
   success: boolean
   profile_name: string
   active_profile_was_cleared?: boolean
@@ -3894,8 +3865,8 @@ export interface ProfileDeleteResponse {
 /**  * DELETE /api/config/pabrik/profiles/:name Removes a profile from `config.json` and live-reloads
  * the backend's in-memory LLM config. Throws an Error (with the HTTP status) on non-2xx responses;
  * the composable wraps this for UI concerns (optimistic update, rollback, notification). */
-export async function deleteProfile(name: string): Promise<ProfileDeleteResponse> {
-  return await apiFetch<ProfileDeleteResponse>(
+export async function deleteAgent(name: string): Promise<AgentDeleteResponse> {
+  return await apiFetch<AgentDeleteResponse>(
     `/config/pabrik/profiles/${encodeURIComponent(name)}`,
     { method: 'DELETE' },
   )
@@ -3904,11 +3875,11 @@ export async function deleteProfile(name: string): Promise<ProfileDeleteResponse
 /**  * `DELETE /api/workspaces/:workspace_id/config/profiles/:name` Removes the profile from this
  * workspace's overlay AND from the user config it inherits from, so deleting it from the workspace
  * Profiles list actually removes it (dropping it from the overlay alone would inherit it back). */
-export async function deleteWorkspaceProfile(
+export async function deleteWorkspaceAgent(
   workspaceId: string,
   name: string,
-): Promise<ProfileDeleteResponse> {
-  return await apiFetch<ProfileDeleteResponse>(
+): Promise<AgentDeleteResponse> {
+  return await apiFetch<AgentDeleteResponse>(
     `/workspaces/${encodeURIComponent(workspaceId)}/config/profiles/${encodeURIComponent(name)}`,
     { method: 'DELETE' },
   )

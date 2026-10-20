@@ -269,11 +269,10 @@ fn testConfig(allocator: std.mem.Allocator) !config_mod.LlmConfig {
         .retry_delay_ms = 0,
         .max_capacity_token_model = null,
         .compaction_threshold_percent = null,
-        .active_profile = null,
+        .active_agent = null,
         .mcpServers_parsed = null,
         .mcp_servers = config_mod.LlmConfig.McpServersMap.init(allocator),
-        .profiles_models = config_mod.LlmConfig.ProfilesMap.init(allocator),
-        .sub_agents = &.{},
+        .agents = config_mod.LlmConfig.AgentsMap.init(allocator),
         .random_names = &.{},
     };
     errdefer cfg.deinit();

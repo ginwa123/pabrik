@@ -26,7 +26,7 @@ describe('chatview profile persistence — selected_profile_model wire shape', (
     expect(sample.selected_profile_model).toBe('900ribu')
   })
 
-  it('getSession return type carries selectedProfile?: string | undefined', () => {
+  it('getSession return type carries selectedAgent?: string | undefined', () => {
     type Ret = Awaited<ReturnType<typeof api.getSession>>
     // If the getSession impl drops the field, the assignment fails
     // type-check. Lock it down.
@@ -36,14 +36,14 @@ describe('chatview profile persistence — selected_profile_model wire shape', (
       createdAt: '',
       agent: '',
       sessionName: '',
-      selectedProfile: '900ribu',
+      selectedAgent: '900ribu',
       git_worktree_cwd: undefined,
     }
-    expect(sample.selectedProfile).toBe('900ribu')
+    expect(sample.selectedAgent).toBe('900ribu')
   })
 
   it('empty / missing selected_profile_model coerces to null semantics', () => {
-    // The frontend's loadChatHistory branch in ChatView.vue does selectedProfile.value =
+    // The frontend's loadChatHistory branch in ChatView.vue does selectedAgent.value =
     // data.selected_profile_model || null so empty string (= "no profile set" from the backend's
     // COALESCE-on-NULL) is treated identically to missing/undefined.
     const cases: Array<{ input: string | undefined; expected: string | null }> = [

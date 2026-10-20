@@ -1,13 +1,13 @@
-/** Tests for ListSubAgent.vue. */
+/** Tests for ListAgents.vue. */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
-import ListSubAgent from '../ListSubAgent.vue'
+import ListAgents from '../ListAgents.vue'
 
 // ────────────────────────────────────────────────────────────────────────
 // Helpers
 // ────────────────────────────────────────────────────────────────────────
-const subAgent = (opts: {
+const agent = (opts: {
   name: string
   model?: string
   urlStyle?: string
@@ -48,7 +48,7 @@ const subAgent = (opts: {
 
 const makeEnvelope = (data: unknown): string =>
   JSON.stringify({
-    tool: 'list_sub_agent',
+    tool: 'list_agents',
     parameters: {},
     success: true,
     data,
@@ -58,35 +58,33 @@ const makeEnvelope = (data: unknown): string =>
 
 const makePopulated = (): string =>
   makeEnvelope({
-    profile: 'dev',
     count: 2,
-    sub_agents: [
-      subAgent({ name: 'coder', model: 'gpt-5', urlStyle: 'openai-response', thinking: 'high', temperature: '0.2', prompt: 'Coder prompt.' }),
-      subAgent({ name: 'reviewer', model: 'claude-4', urlStyle: 'anthropic', thinking: 'off', temperature: '0.9', budget: '8000', effort: 'medium', prompt: 'Reviewer prompt.' }),
+    agents: [
+      agent({ name: 'coder', model: 'gpt-5', urlStyle: 'openai-response', thinking: 'high', temperature: '0.2', prompt: 'Coder prompt.' }),
+      agent({ name: 'reviewer', model: 'claude-4', urlStyle: 'anthropic', thinking: 'off', temperature: '0.9', budget: '8000', effort: 'medium', prompt: 'Reviewer prompt.' }),
     ],
   })
 
-const makeEmpty = (profile = 'dev'): string => makeEnvelope({ profile, count: 0, sub_agents: [] })
+const makeEmpty = (): string => makeEnvelope({ count: 0, agents: [] })
 
 // ────────────────────────────────────────────────────────────────────────
 // Tests
 // ────────────────────────────────────────────────────────────────────────
-describe('ListSubAgent.vue — populated', () => {
-  it('header chip shows count + profile name', () => {
-    const wrapper = mount(ListSubAgent, { props: { message: { content: makePopulated() } } })
-    expect(wrapper.find('[data-testid="list-sub-agent"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('list_sub_agent')
-    expect(wrapper.text()).toContain('2 subagents')
-    expect(wrapper.text()).toContain('dev')
+describe('ListAgents.vue — populated', () => {
+  it('header chip shows the agent count', () => {
+    const wrapper = mount(ListAgents, { props: { message: { content: makePopulated() } } })
+    expect(wrapper.find('[data-testid="list-agents"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('list_agents')
+    expect(wrapper.text()).toContain('2 agents')
   })
 
   it('renders 2 rows with name + model/url_style meta + tuning', async () => {
-    const wrapper = mount(ListSubAgent, {
+    const wrapper = mount(ListAgents, {
       props: { message: { content: makePopulated() } },
       attachTo: document.body,
     })
     await wrapper.find('[role="button"]').trigger('click')
-    const rows = wrapper.findAll('[data-testid^="list-sub-agent-row-"]')
+    const rows = wrapper.findAll('[data-testid^="list-agents-row-"]')
     expect(rows).toHaveLength(2)
     expect(wrapper.text()).toContain('coder')
     expect(wrapper.text()).toContain('gpt-5')
@@ -102,45 +100,35 @@ describe('ListSubAgent.vue — populated', () => {
   })
 
   it('is collapsed by default and expands on header click', async () => {
-    const wrapper = mount(ListSubAgent, {
+    const wrapper = mount(ListAgents, {
       props: { message: { content: makePopulated() } },
       attachTo: document.body,
     })
-    expect(wrapper.find('[data-testid="list-sub-agent-body"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="list-agents-body"]').exists()).toBe(false)
     await wrapper.find('[role="button"]').trigger('click')
-    expect(wrapper.find('[data-testid="list-sub-agent-body"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="list-agents-body"]').exists()).toBe(true)
   })
 })
 
-describe('ListSubAgent.vue — empty / profile', () => {
-  it('empty state shows "No subagents on profile <name>"', async () => {
-    const wrapper = mount(ListSubAgent, {
-      props: { message: { content: makeEmpty('dev') } },
+describe('ListAgents.vue — empty', () => {
+  it('empty state says no agents are configured', async () => {
+    const wrapper = mount(ListAgents, {
+      props: { message: { content: makeEmpty() } },
       attachTo: document.body,
     })
-    expect(wrapper.text()).toContain('No subagents')
-    expect(wrapper.text()).toContain('dev')
+    expect(wrapper.text()).toContain('No agents')
     await wrapper.find('[role="button"]').trigger('click')
-    expect(wrapper.find('[data-testid="list-sub-agent-empty"]').exists()).toBe(true)
-  })
-
-  it('missing <profile> falls back to a placeholder string', () => {
-    const wrapper = mount(ListSubAgent, {
-      props: { message: { content: makeEnvelope({ count: 0, sub_agents: [] }) } },
-    })
-    // Must render *something* for the profile slot — never blank/undefined.
-    expect(wrapper.text()).toMatch(/unknown|profile/i)
+    expect(wrapper.find('[data-testid="list-agents-empty"]').exists()).toBe(true)
   })
 })
 
-describe('ListSubAgent.vue — tuning presence + prompt + secrets', () => {
+describe('ListAgents.vue — tuning presence + prompt + secrets', () => {
   it('absent optional tuning tags render no cells', async () => {
     const content = makeEnvelope({
-      profile: 'dev',
       count: 1,
-      sub_agents: [subAgent({ name: 'plain', maxCapacity: null, compactionPct: null, budget: null, effort: null })],
+      agents: [agent({ name: 'plain', maxCapacity: null, compactionPct: null, budget: null, effort: null })],
     })
-    const wrapper = mount(ListSubAgent, {
+    const wrapper = mount(ListAgents, {
       props: { message: { content } },
       attachTo: document.body,
     })
@@ -157,19 +145,18 @@ describe('ListSubAgent.vue — tuning presence + prompt + secrets', () => {
   it('long system_prompt renders in FULL inside the collapsible block', async () => {
     const longPrompt = 'PROMPT-START ' + 'x'.repeat(5000) + ' PROMPT-END'
     const content = makeEnvelope({
-      profile: 'dev',
       count: 1,
-      sub_agents: [subAgent({ name: 'verbose', prompt: longPrompt })],
+      agents: [agent({ name: 'verbose', prompt: longPrompt })],
     })
-    const wrapper = mount(ListSubAgent, {
+    const wrapper = mount(ListAgents, {
       props: { message: { content } },
       attachTo: document.body,
     })
     await wrapper.find('[role="button"]').trigger('click')
     // Open the per-row prompt <details>.
-    const details = wrapper.find('[data-testid="list-sub-agent-prompt-0"]')
+    const details = wrapper.find('[data-testid="list-agents-prompt-0"]')
     expect(details.exists()).toBe(true)
-    const pre = wrapper.find('[data-testid="list-sub-agent-prompt-body-0"]')
+    const pre = wrapper.find('[data-testid="list-agents-prompt-body-0"]')
     expect(pre.exists()).toBe(true)
     expect(pre.text()).toContain('PROMPT-START')
     expect(pre.text()).toContain('PROMPT-END')
@@ -178,9 +165,8 @@ describe('ListSubAgent.vue — tuning presence + prompt + secrets', () => {
 
   it('never renders api_key/base_url even if injected (defense in depth)', async () => {
     const content = makeEnvelope({
-      profile: 'dev',
       count: 1,
-      sub_agents: [
+      agents: [
         {
           name: 'evil',
           model: 'm',
@@ -193,7 +179,7 @@ describe('ListSubAgent.vue — tuning presence + prompt + secrets', () => {
         },
       ],
     })
-    const wrapper = mount(ListSubAgent, {
+    const wrapper = mount(ListAgents, {
       props: { message: { content } },
       attachTo: document.body,
     })

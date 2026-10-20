@@ -1042,7 +1042,7 @@ test "ModelCatalog: trim survives the two real rows that used to blank the catal
     const alloc = testing.allocator;
 
     // WHY (2026-10-16): these two rows failed the ENTIRE payload's parse, which
-    // is why the DB stayed empty and every profile answered "no catalog yet".
+    // is why the DB stayed empty and every agent answered "no catalog yet".
     const trimmed = try trimRawPayload(alloc, RAW_HOSTILE_FIXTURE, 0);
     defer alloc.free(trimmed);
 

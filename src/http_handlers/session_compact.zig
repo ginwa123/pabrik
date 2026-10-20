@@ -53,7 +53,7 @@ pub fn sessionCompactHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReques
     // 2026-08-21-fix-ui-context-window — resolve the session's selected
     // profile so the compaction decision honors the profile's
     // `max_capacity_tokens` / `compaction_threshold_percent` overrides,
-    const compact_profile: ?config.LlmConfig.LlmProfile = blk: {
+    const compact_profile: ?config.LlmConfig.LlmAgent = blk: {
         const profile_name = llm_history.getSessionProfileName(allocator, sqlite_db, session_id) catch "";
         break :blk llm_history.resolveSessionProfile(live_cfg, profile_name);
     };

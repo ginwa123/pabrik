@@ -526,7 +526,7 @@ private fun ColumnPicker(
 }
 
 /**
- * The chip both pickers draw, so "Project root" and "Profile" read as a pair.
+ * The chip both pickers draw, so "Project root" and "Agent" read as a pair.
  *
  * The web builds the same chip twice with the same classes and says why ("Both
  * use the same chip-style trigger so they read as siblings").
@@ -848,7 +848,7 @@ private fun NewTaskSettings(
                     }
                     if (data.profiles.isEmpty() && !data.isLoading) {
                         DropdownMenuItem(
-                            text = { Text("No profiles configured. Add one in Settings.") },
+                            text = { Text("No agents configured. Add one in Settings.") },
                             onClick = { onProfileMenuChange(false) },
                             modifier = Modifier.testTag("create_task_profile_empty"),
                         )

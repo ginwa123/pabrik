@@ -27,7 +27,7 @@ const EXPECTED_KANBAN_SEEDED_TOOLS = [_][]const u8{
     "kanban_move_task",
     "list_directory",
     "list_secrets",
-    "list_sub_agent",
+    "list_agents",
     "list_web_search_providers",
     "load_memory",
     "present_files",

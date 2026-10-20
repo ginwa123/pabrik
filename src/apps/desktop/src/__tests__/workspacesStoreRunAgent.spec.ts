@@ -76,7 +76,7 @@ describe('workspacesStore.runAgentOnNewTask', () => {
     await store.runAgentOnNewTask('ws_1', 'item_1', 'task_abc', {
       queueMessage: 'Title',
       cwd: '/cwd',
-      selectedProfile: '900r1bu',
+      selectedAgent: '900r1bu',
     })
     expect(sendSpy).toHaveBeenCalledWith(
       'task_abc',

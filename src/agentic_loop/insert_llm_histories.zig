@@ -85,7 +85,7 @@ pub fn inserLLMHistories(
             enveloped_owned = try parsing.encodeUserContent(allocator, uid, nm, contentStr);
             effective_content = enveloped_owned.?;
         } else if (std.mem.eql(u8, roleStr, "assistant")) {
-            // Profile name the user picked; raw model id when Default /
+            // Agent name the user picked; raw model id when Default /
             // auth off / lookup fails.
             const profile_owned: ?[]u8 = parsing.resolveProfileName(allocator, db, session_id) catch null;
             defer if (profile_owned) |pr| allocator.free(pr);

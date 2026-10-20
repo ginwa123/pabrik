@@ -163,7 +163,7 @@ fn activeProfileForSession(
     const cfg = session_llm_config.forSession(alloc, di.db, session_id) orelse
         session_llm_config.forOwner(alloc, di.db, owner) orelse
         pabrikcore.getLlmConfig(di);
-    return cfg.active_profile;
+    return cfg.active_agent;
 }
 
 /// The session-create funnel, callable without an HTTP request. `pub` so

@@ -1288,11 +1288,10 @@ fn fixtureConfig(allocator: std.mem.Allocator) !LlmConfig {
         .retry_delay_ms = 0,
         .max_capacity_token_model = null,
         .compaction_threshold_percent = null,
-        .active_profile = null,
+        .active_agent = null,
         .mcpServers_parsed = null,
         .mcp_servers = LlmConfig.McpServersMap.init(allocator),
-        .profiles_models = LlmConfig.ProfilesMap.init(allocator),
-        .sub_agents = &.{},
+        .agents = LlmConfig.AgentsMap.init(allocator),
         .random_names = &.{},
     };
 }

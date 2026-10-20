@@ -181,8 +181,9 @@ test "useCase: every path-taking tool REQUIRES an absolute cwd" {
     }
 
     // The swept tools are gone from the published schema too — being absent
-    // from the registry is what makes a name uncallable.
-    for ([_][]const u8{ "change_agent", "list_agents", "remove_agent" }) |tool_name| {
+    // from the registry is what makes a name uncallable. `list_agents` is
+    // no longer swept: it is the live tool that lists the configured agents.
+    for ([_][]const u8{ "change_agent", "remove_agent" }) |tool_name| {
         try testing.expect(findEntry(output, tool_name) == null);
     }
 }

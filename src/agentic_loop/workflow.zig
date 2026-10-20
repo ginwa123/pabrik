@@ -523,7 +523,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
     // singleton still describes the on-disk `config.json` — it is never
     var config = session_llm_config.forSession(parent_allocator, db, params.session_id) orelse
         pabrikcore.getLlmConfig(di.di);
-    var eff = config.resolveEffectiveProfile(params.selected_profile_model);
+    var eff = config.resolveEffectiveAgent(params.selected_profile_model);
 
     logger.infoFmt(
         "[CHECKPOINT] profile selected_profile_model='{s}' eff.model={s} eff.base_url={s} eff.url_style={s} eff.thinking_str={s} eff.thinking_budget_tokens={?d} eff.reasoning_effort={?s}",
@@ -784,19 +784,19 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         );
 
         // Step 1 produces a warning when the named profile is missing.
-        // Step 2 (`config.active_profile`) is silent — it's the user's
+        // Step 2 (`config.active_agent`) is silent — it's the user's
         // default, so a typo there is a normal fall-through to top-level.
         if (live_selected_profile_model.len > 0 and
-            config.getProfile(live_selected_profile_model) == null)
+            config.getAgent(live_selected_profile_model) == null)
         {
             logger.warnFmt("WORKFLOW: selected_profile_model '{s}' not found in LlmConfig.profiles_models, using top-level config", .{live_selected_profile_model});
         }
         // === Per-iteration profile re-resolution
         // ============================ ONE typed cascade call replaces the 4×
         // resolveProfileField + ~50 lines of hand-rolled
-        eff = config.resolveEffectiveProfile(live_selected_profile_model);
-        const iter_profile: ?config_mod.LlmConfig.LlmProfile =
-            config.resolveSessionProfileCompat(live_selected_profile_model);
+        eff = config.resolveEffectiveAgent(live_selected_profile_model);
+        const iter_profile: ?config_mod.LlmConfig.LlmAgent =
+            config.resolveSessionAgentCompat(live_selected_profile_model);
 
         logger.infoFmt(
             "[CHECKPOINT] loop iter start session_id={s} loop_counter={d} retry_count={d} eff.model={s}",
@@ -947,7 +947,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         var agent_temperature = currentAgentState.temperature;
         var isThinking = currentAgentState.is_thinking;
 
-        // Apply sub-agent overrides (resolved by Config.resolveSubAgent in
+        // Apply sub-agent overrides (resolved by Config.resolveAgent in
         // tool_registry.execSpawnSubAgent).
         var sub_agent_session_name: []const u8 = "";
         if (params.sub_agent_overrides) |ov| {
@@ -2078,7 +2078,7 @@ pub const SubAgentOverrides = struct {
     api_key: []const u8 = "",
     url_style: []const u8 = "",
     /// Transport override — `"http"` | `"claude-code"` | `"opencode"`.
-    /// Empty = keep the parent's (see `ResolvedSubAgent.backend`).
+    /// Empty = keep the parent's (see `ResolvedAgent.backend`).
     backend: []const u8 = "",
     /// Claude Code only: `CLAUDE_CONFIG_DIR` override. Null = parent's.
     config_dir: ?[]const u8 = null,

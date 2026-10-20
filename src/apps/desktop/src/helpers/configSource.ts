@@ -2,8 +2,8 @@
  * used to call the user-scope API functions directly, which made "user settings" and "workspace
  * settings" the same code path with no seam to tell them apart. */
 import {
-  deleteProfile as apiDeleteProfile,
-  deleteWorkspaceProfile,
+  deleteAgent as apiDeleteAgent,
+  deleteWorkspaceAgent,
   getPabrikConfig,
   getWorkspaceConfig,
   savePabrikConfig,
@@ -16,7 +16,7 @@ export type ConfigScope = 'user' | 'workspace'
 /** The config sections that live in Workspace settings, in nav order. One list, two consumers: the
  * settings shell renders a nav item per entry and the workspace view renders an editor for each -
  * so a section can never be listed but unrenderable (a dead link) or renderable but unlisted. */
-export const WORKSPACE_AGENT_SECTIONS = ['profiles', 'mcp', 'tools', 'evals'] as const
+export const WORKSPACE_AGENT_SECTIONS = ['agents', 'mcp', 'tools', 'evals'] as const
 
 /**  * Does the WORKSPACE settings page render this section? The complement of
  * `WORKSPACE_AGENT_SECTIONS`, for callers that hold a section id from somewhere else (the editor's
@@ -36,7 +36,7 @@ export interface PabrikConfigSource {
   /** Remove one profile by name. Each scope has its own endpoint: the user-scope one also
    * live-reloads the backend's in-memory config, and the workspace-scope one edits this
    * workspace's own copy and nothing else. */
-  deleteProfile(name: string): Promise<void>
+  deleteAgent(name: string): Promise<void>
 }
 
 export function userConfigSource(): PabrikConfigSource {
@@ -46,8 +46,8 @@ export function userConfigSource(): PabrikConfigSource {
     save: async (config) => {
       await savePabrikConfig(config)
     },
-    deleteProfile: async (name) => {
-      await apiDeleteProfile(name)
+    deleteAgent: async (name) => {
+      await apiDeleteAgent(name)
     },
   }
 }
@@ -59,8 +59,8 @@ export function workspaceConfigSource(workspaceId: string): PabrikConfigSource {
     save: async (config) => {
       await saveWorkspaceConfig(workspaceId, config)
     },
-    deleteProfile: async (name) => {
-      await deleteWorkspaceProfile(workspaceId, name)
+    deleteAgent: async (name) => {
+      await deleteWorkspaceAgent(workspaceId, name)
     },
   }
 }

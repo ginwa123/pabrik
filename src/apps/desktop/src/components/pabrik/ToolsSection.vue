@@ -52,7 +52,7 @@ const BUILTIN_DEFAULT_TOOLS: readonly string[] = [
   'edit_skill',
   'search_skills',
   'spawn_sub_agent',
-  'list_sub_agent',
+  'list_agents',
   'used_tools',
   // Read-only introspection: where this session runs (cwd, git worktree, task)
   // and whether a run is in flight. Default-on, like `read_workspace_session`.
@@ -73,7 +73,7 @@ const TOOL_GROUPS: readonly string[] = [
   'Memory & sessions',
   'Documents',
   'Skills',
-  'Sub-agents',
+  'Agents',
   'Interactive',
   'Progressive tool search',
   'Git',
@@ -113,7 +113,7 @@ const GROUP_BY_TOOL: Record<string, string> = {
   edit_skill: 'Skills',
   remove_skill: 'Skills',
   spawn_sub_agent: 'Sub-agents',
-  list_sub_agent: 'Sub-agents',
+  list_agents: 'Agents',
   used_tools: 'Progressive tool search',
   ask_user: 'Interactive',
   search_tool: 'Progressive tool search',

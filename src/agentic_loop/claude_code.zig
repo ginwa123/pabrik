@@ -23,10 +23,10 @@ pub fn isKnownBackend(backend: []const u8) bool {
         isClaudeCodeBackend(backend);
 }
 
-/// Validation for a Claude Code profile. Unlike HTTP profiles, `base_url` and
+/// Validation for a Claude Code agent. Unlike HTTP agents, `base_url` and
 /// `api_key` are NOT required — auth comes from `claude login`, not from
 /// config. Only `model` must be non-empty (it becomes the CLI's `--model`).
-pub fn validateClaudeCodeProfile(model: []const u8) error{MissingModel}!void {
+pub fn validateClaudeCodeAgent(model: []const u8) error{MissingModel}!void {
     if (model.len == 0) return error.MissingModel;
 }
 
@@ -153,7 +153,7 @@ pub fn describeVersionProbe(
     if (spawn_failed) {
         return std.fmt.allocPrint(
             allocator,
-            "'{s}' was not found or could not be executed. Install the Claude Code CLI and run `claude login`, or point the profile at an absolute binary path.",
+            "'{s}' was not found or could not be executed. Install the Claude Code CLI and run `claude login`, or point the agent at an absolute binary path.",
             .{binary},
         );
     }
@@ -209,7 +209,7 @@ pub fn parseResultLine(
     return .{ .line_type = t, .result_text = text, .is_result = true };
 }
 
-/// Actionable error text surfaced when a Claude Code profile reaches the
+/// Actionable error text surfaced when a Claude Code agent reaches the
 /// workflow before Phase 2 execution wiring lands.
 pub fn notWiredMessage(
     allocator: std.mem.Allocator,
@@ -217,9 +217,9 @@ pub fn notWiredMessage(
 ) ![]u8 {
     return std.fmt.allocPrint(
         allocator,
-        "profile uses backend=\"claude-code\" (model=\"{s}\") but CLI execution is not wired yet (Phase 1: configuration only). " ++
+        "agent uses backend=\"claude-code\" (model=\"{s}\") but CLI execution is not wired yet (Phase 1: configuration only). " ++
             "Install the CLI (https://docs.anthropic.com/en/docs/claude-code) and run `claude login`, " ++
-            "or set the profile's backend back to \"http\".",
+            "or set the agent's backend back to \"http\".",
         .{model},
     );
 }
@@ -247,10 +247,10 @@ test "isKnownBackend accepts unset, http and claude-code" {
     try testing.expect(!isKnownBackend("weird"));
 }
 
-test "validateClaudeCodeProfile requires model only" {
-    try validateClaudeCodeProfile("sonnet");
-    try validateClaudeCodeProfile("claude-sonnet-4-5-20250929");
-    try testing.expectError(error.MissingModel, validateClaudeCodeProfile(""));
+test "validateClaudeCodeAgent requires model only" {
+    try validateClaudeCodeAgent("sonnet");
+    try validateClaudeCodeAgent("claude-sonnet-4-5-20250929");
+    try testing.expectError(error.MissingModel, validateClaudeCodeAgent(""));
 }
 
 test "resolveBinaryPath defaults to claude on PATH" {

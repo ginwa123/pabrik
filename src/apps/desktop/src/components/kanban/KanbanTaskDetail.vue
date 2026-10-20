@@ -198,9 +198,9 @@ const emit = defineEmits<{
       // tag strings. Empty array = no tags. Host forwards via
       // api.createTask's `tags` param; backend validates + persists.
       tags: string[]
-      // NEW (plan: 2026-08-06-kanban-task-profile-selector). Selected profile-model name (empty
+      // NEW (plan: 2026-08-06-kanban-task-profile-selector). Selected agent-model name (empty
       // string = backend default / top-level config).
-      selectedProfile: string
+      selectedAgent: string
       // NEW (plan: 2026-08-06-kanban-no-base64-in-desc). Files the dialog's editor staged in create
       // mode (no base64 ever written into `description`). Always present — empty array when no
       // images were pasted/picked.
@@ -234,8 +234,8 @@ const emit = defineEmits<{
       worktreeBaseBranch: string
       tags: string[]
       // NEW (plan: 2026-08-06-kanban-task-profile-selector). See note on the `create` emit above.
-      // Threaded through to runAgentOnNewTask so the agent runs with the chosen profile.
-      selectedProfile: string
+      // Threaded through to runAgentOnNewTask so the agent runs with the chosen agent.
+      selectedAgent: string
       // NEW (plan: 2026-08-06-kanban-no-base64-in-desc). Mirror of
       // the `pendingFiles` field on the `create` emit above.
       pendingFiles: PreviewFile[]
@@ -315,16 +315,16 @@ const descriptionEditorRef = ref<{ pendingFiles: PreviewFile[] } | null>(null)
 const nameInput = ref<HTMLInputElement | null>(null)
 // Description is UNLIMITED (no maxlength) — the backend stores TEXT with no length check. The
 // description is ALWAYS shown as the editor (textarea + paperclip + char counter).
-interface ProfileEntry {
+interface AgentEntry {
   name: string
   model: string
   base_url: string
 }
-const selectedProfile = ref('')
-const isProfilePickerOpen = ref(false)
-const profilePickerRef = ref<HTMLElement | null>(null)
-const availableProfiles = ref<ProfileEntry[]>([])
-const profilesLoading = ref(false)
+const selectedAgent = ref('')
+const isAgentPickerOpen = ref(false)
+const agentPickerRef = ref<HTMLElement | null>(null)
+const availableAgents = ref<AgentEntry[]>([])
+const agentsLoading = ref(false)
 
 // Skills picker (create only, Migration 112). Source is api.getSkills — the
 // same rows search_skills reads, so a picked name always resolves in
@@ -471,7 +471,7 @@ const openDialog = async (): Promise<void> => {
     worktreePath.value = ''
     worktreeBaseBranch.value = ''
     tags.value = [] // NEW: start with empty tags in create mode
-    selectedProfile.value = '' // NEW: profile selector defaults to backend default
+    selectedAgent.value = '' // NEW: agent selector defaults to backend default
     selectedSkills.value = []
     skillSearch.value = ''
     isSkillPickerOpen.value = false
@@ -523,11 +523,11 @@ const openDialog = async (): Promise<void> => {
   if (props.workspaceId) {
     void tagSuggestions.ensureLoaded()
   }
-  // NEW (plan: 2026-08-06-kanban-task-profile-selector). Fetch profiles for the picker in create
+  // NEW (plan: 2026-08-06-kanban-task-profile-selector). Fetch agents for the picker in create
   // mode. Same fire-and-forget pattern as tagSuggestions — the dropdown only opens when the user
   // clicks it.
   if (isCreateMode.value) {
-    void loadProfiles()
+    void loadAgents()
     void loadHomeDir()
     void loadSkills()
   }
@@ -675,7 +675,7 @@ const handleSave = () => {
       // NEW (plan: 2026-08-06-kanban-task-profile-selector). Empty string = backend default. Host
       // captures but does NOT persist on plain create (Path A — the backend's task_create.zig has
       // no selected_profile_model field).
-      selectedProfile: selectedProfile.value,
+      selectedAgent: selectedAgent.value,
       // NEW (plan: 2026-08-06-kanban-no-base64-in-desc). Create mode image attachments: the editor
       // never writes base64 into `description`. Instead it stages pasted/picked images in
       // `pendingFiles`.
@@ -737,7 +737,7 @@ const handleRunAgent = () => {
     // NEW (plan: 2026-08-06-kanban-task-profile-selector). Empty string = backend default. Host
     // threads through to runAgentOnNewTask which sets selected_profile_model on the session at
     // creation time so the chatview's picker reflects it on landing.
-    selectedProfile: selectedProfile.value,
+    selectedAgent: selectedAgent.value,
     // NEW (plan: 2026-08-06-kanban-no-base64-in-desc). Mirror of
     // handleSave's pendingFiles — see that handler for the
     // orchestration contract.
@@ -799,39 +799,39 @@ const loadHomeDir = async () => {
   }
 }
 
-// Plan 2026-08-06-kanban-task-profile-selector. Load the profiles this workspace can actually RUN
-// with (mirrors ChatView.loadProfiles). Called on dialog open in create mode; failure -> empty list
+// Plan 2026-08-06-kanban-task-profile-selector. Load the agents this workspace can actually RUN
+// with (mirrors ChatView.loadAgents). Called on dialog open in create mode; failure -> empty list
 // (the picker still works, just only shows "Default").
-const loadProfiles = async () => {
+const loadAgents = async () => {
   if (!isCreateMode.value) return
-  profilesLoading.value = true
+  agentsLoading.value = true
   try {
     const wsId = props.workspaceId ?? ''
     const config = wsId ? await api.getWorkspaceConfig(wsId) : await api.getPabrikConfig()
-    const profiles = (config.profiles ?? {}) as Record<
+    const agents = (config.profiles ?? {}) as Record<
       string,
       { model?: string; base_url?: string }
     >
-    availableProfiles.value = Object.entries(profiles).map(([name, p]) => ({
+    availableAgents.value = Object.entries(agents).map(([name, p]) => ({
       name,
       model: p.model ?? '',
       base_url: p.base_url ?? '',
     }))
   } catch (err) {
-    console.error('Failed to load profiles:', err)
-    availableProfiles.value = []
+    console.error('Failed to load agents:', err)
+    availableAgents.value = []
   } finally {
-    profilesLoading.value = false
+    agentsLoading.value = false
   }
 }
 
-const toggleProfilePicker = () => {
-  isProfilePickerOpen.value = !isProfilePickerOpen.value
+const toggleAgentPicker = () => {
+  isAgentPickerOpen.value = !isAgentPickerOpen.value
 }
 
-const selectProfile = (name: string) => {
-  selectedProfile.value = name
-  isProfilePickerOpen.value = false
+const selectAgent = (name: string) => {
+  selectedAgent.value = name
+  isAgentPickerOpen.value = false
 }
 
 const loadSkills = async () => {
@@ -848,7 +848,7 @@ const loadSkills = async () => {
       name: sk.name,
       description: sk.description ?? '',
     }))
-    // eslint-disable-next-line local/no-try-catch -- mirrors loadProfiles directly above: a failed fetch must degrade to an empty picker, not break the dialog
+    // eslint-disable-next-line local/no-try-catch -- mirrors loadAgents directly above: a failed fetch must degrade to an empty picker, not break the dialog
   } catch (err) {
     console.error('Failed to load skills:', err)
     availableSkills.value = []
@@ -1254,7 +1254,7 @@ const isMediaLoading = computed<boolean>(() => {
           </div>
           <div class="ktd-rail-group" data-testid="kanban-task-detail-settings-section">
             <!-- Per-task cwd picker. Same trigger pattern as the
-                     profile picker (button toggle + click-outside
+                     agent picker (button toggle + click-outside
                      close + ▾ caret). Pre-populated from the parent
                      kanban's path in create mode, or the task's
                      persisted `cwd` field in edit mode. Plan:
@@ -1319,12 +1319,12 @@ const isMediaLoading = computed<boolean>(() => {
               </div>
             </div>
 
-            <!-- Profile picker (create mode only). Same chip-style
+            <!-- Agent picker (create mode only). Same chip-style
                      trigger as the cwd picker so they read as siblings. -->
-            <div v-if="isCreateMode" ref="profilePickerRef">
+            <div v-if="isCreateMode" ref="agentPickerRef">
               <button
                 type="button"
-                @click.stop="toggleProfilePicker"
+                @click.stop="toggleAgentPicker"
                 class="ktd-picker w-full text-dense flex items-center gap-1.5 transition-opacity duration-200"
                 style="
                   background-color: var(--semantic-sidebar-bg);
@@ -1332,59 +1332,59 @@ const isMediaLoading = computed<boolean>(() => {
                   color: var(--semantic-text);
                 "
                 :title="
-                  selectedProfile
-                    ? `Using profile: ${selectedProfile}`
+                  selectedAgent
+                    ? `Using agent: ${selectedAgent}`
                     : 'Using default (top-level config)'
                 "
-                data-testid="kanban-task-detail-profile-picker"
+                data-testid="kanban-task-detail-agent-picker"
               >
                 <UiIcon name="robot" />
-                <span class="font-medium">Profile</span>
+                <span class="font-medium">Agent</span>
                 <span style="color: var(--semantic-text-muted)">{{
-                  selectedProfile || 'Default'
+                  selectedAgent || 'Default'
                 }}</span>
                 <span class="text-micro shrink-0" style="color: var(--semantic-text-dim)">▾</span>
               </button>
               <div
-                v-if="isProfilePickerOpen"
+                v-if="isAgentPickerOpen"
                 class="ktd-list mt-1"
-                data-testid="kanban-task-detail-profile-picker-dropdown"
+                data-testid="kanban-task-detail-agent-picker-dropdown"
                 @click.stop
               >
                 <button
                   type="button"
-                  @click="selectProfile('')"
+                  @click="selectAgent('')"
                   class="w-full text-left px-3 py-2 text-dense hover:opacity-80 flex items-center justify-between"
                   style="color: var(--semantic-text)"
-                  data-testid="kanban-task-detail-profile-picker-item"
+                  data-testid="kanban-task-detail-agent-picker-item"
                 >
                   <span class="font-medium">Default (top-level config)</span>
-                  <span v-if="selectedProfile === ''">✓</span>
+                  <span v-if="selectedAgent === ''">✓</span>
                 </button>
                 <button
-                  v-for="p in availableProfiles"
+                  v-for="p in availableAgents"
                   :key="p.name"
                   type="button"
-                  @click="selectProfile(p.name)"
+                  @click="selectAgent(p.name)"
                   class="w-full text-left px-3 py-2 text-dense hover:opacity-80"
                   style="color: var(--semantic-text); border-top: 1px solid var(--color-border)"
-                  data-testid="kanban-task-detail-profile-picker-item"
+                  data-testid="kanban-task-detail-agent-picker-item"
                 >
                   <div class="flex items-center justify-between">
                     <span class="font-medium">{{ p.name }}</span>
-                    <span v-if="selectedProfile === p.name">✓</span>
+                    <span v-if="selectedAgent === p.name">✓</span>
                   </div>
                   <div class="text-micro mt-0.5" style="color: var(--semantic-text-muted)">
                     {{ p.model }} · {{ p.base_url }}
                   </div>
                 </button>
                 <div
-                  v-if="!profilesLoading && availableProfiles.length === 0"
+                  v-if="!agentsLoading && availableAgents.length === 0"
                   class="px-3 py-2 text-dense"
                   style="color: var(--semantic-text-muted)"
-                  data-testid="kanban-task-detail-profile-picker-empty"
+                  data-testid="kanban-task-detail-agent-picker-empty"
                 >
-                  No profiles configured. Add one in Settings.
+                  No agents configured. Add one in Settings.
                 </div>
               </div>
             </div>

@@ -487,8 +487,7 @@ test "handle_mcp_tool_run: disabled server returns MCPServerDisabled (no spawn)"
         .model_compaction_size_kb = 100,
         .mcpServers_parsed = parsed,
         .mcp_servers = config_mod.LlmConfig.McpServersMap.init(testing.allocator),
-        .profiles_models = config_mod.LlmConfig.ProfilesMap.init(testing.allocator),
-        .sub_agents = &.{},
+        .agents = config_mod.LlmConfig.AgentsMap.init(testing.allocator),
         .url_style = "openai",
     };
     // NOTE: no cfg.deinit — the string fields borrow static literals and
@@ -597,8 +596,7 @@ const StdioCallFixture = struct {
                 .model_compaction_size_kb = 100,
                 .mcpServers_parsed = servers,
                 .mcp_servers = config_mod.LlmConfig.McpServersMap.init(allocator),
-                .profiles_models = config_mod.LlmConfig.ProfilesMap.init(allocator),
-                .sub_agents = &.{},
+                .agents = config_mod.LlmConfig.AgentsMap.init(allocator),
                 .url_style = "openai",
             },
         };

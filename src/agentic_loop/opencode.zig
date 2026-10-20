@@ -24,10 +24,10 @@ pub fn isKnownBackend(backend: []const u8) bool {
         isOpencodeBackend(backend);
 }
 
-/// Validation for an OpenCode profile. Unlike HTTP profiles, `base_url` and
+/// Validation for an OpenCode agent. Unlike HTTP agents, `base_url` and
 /// `api_key` are NOT required — auth comes from `opencode` login state, not
 /// from config.
-pub fn validateOpencodeProfile(model: []const u8) error{MissingModel}!void {
+pub fn validateOpencodeAgent(model: []const u8) error{MissingModel}!void {
     if (model.len == 0) return error.MissingModel;
 }
 
@@ -150,7 +150,7 @@ pub fn describeVersionProbe(
     if (spawn_failed) {
         return std.fmt.allocPrint(
             allocator,
-            "'{s}' was not found or could not be executed. Install the OpenCode CLI and run `opencode login`, or point the profile at an absolute binary path.",
+            "'{s}' was not found or could not be executed. Install the OpenCode CLI and run `opencode login`, or point the agent at an absolute binary path.",
             .{binary},
         );
     }
@@ -205,7 +205,7 @@ pub fn parseResultLine(
     return .{ .line_type = t, .result_text = text, .is_result = true };
 }
 
-/// Actionable error text surfaced when an OpenCode profile reaches the
+/// Actionable error text surfaced when an OpenCode agent reaches the
 /// workflow before Phase 2 execution wiring lands.
 pub fn notWiredMessage(
     allocator: std.mem.Allocator,
@@ -213,9 +213,9 @@ pub fn notWiredMessage(
 ) ![]u8 {
     return std.fmt.allocPrint(
         allocator,
-        "profile uses backend=\"opencode\" (model=\"{s}\") but CLI execution is not wired yet (Phase 1: configuration only). " ++
+        "agent uses backend=\"opencode\" (model=\"{s}\") but CLI execution is not wired yet (Phase 1: configuration only). " ++
             "Install the CLI (https://docs.opencode.dev/) and run `opencode login`, " ++
-            "or set the profile's backend back to \"http\".",
+            "or set the agent's backend back to \"http\".",
         .{model},
     );
 }
@@ -244,10 +244,10 @@ test "isKnownBackend accepts unset, http, claude-code and opencode" {
     try testing.expect(!isKnownBackend("weird"));
 }
 
-test "validateOpencodeProfile requires model only" {
-    try validateOpencodeProfile("deepseek-flash");
-    try validateOpencodeProfile("opencode-go/deepseek-flash");
-    try testing.expectError(error.MissingModel, validateOpencodeProfile(""));
+test "validateOpencodeAgent requires model only" {
+    try validateOpencodeAgent("deepseek-flash");
+    try validateOpencodeAgent("opencode-go/deepseek-flash");
+    try testing.expectError(error.MissingModel, validateOpencodeAgent(""));
 }
 
 test "resolveBinaryPath defaults to opencode on PATH" {

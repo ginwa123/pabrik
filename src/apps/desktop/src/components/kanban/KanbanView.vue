@@ -1191,7 +1191,7 @@ const handleCreateTaskSave = async (payload: {
   // NEW (plan: 2026-08-06-kanban-task-profile-selector). Empty string = backend default / "Default
   // (top-level config)". Threaded through to runAgentOnNewTask only (Path A — plain create doesn't
   // persist the choice; user can set from chatview later).
-  selectedProfile?: string
+  selectedAgent?: string
   // NEW (plan: 2026-08-06-kanban-image-base64-in-chatview, replaces
   // 2026-08-06-kanban-no-base64-in-desc). Files the dialog staged in create mode
   // (KanbanDescriptionEditor.pendingFiles).
@@ -1252,7 +1252,7 @@ const handleCreateTaskSave = async (payload: {
       tags: payload.tags,
       cwd: payload.cwdSession,
       isAutoRetryUntilStop: payload.is_auto_retry_until_stop,
-      selected_profile_model: payload.selectedProfile,
+      selected_profile_model: payload.selectedAgent,
       skillNames: payload.skillNames ?? [],
       queue_message: queueMessage,
       imageUrls: uploadedImageUrls,

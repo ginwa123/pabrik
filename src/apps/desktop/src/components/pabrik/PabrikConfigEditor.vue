@@ -6,8 +6,7 @@ import {
   savePabrikConfig,
   type McpServer,
   type PabrikConfig,
-  type PabrikProfile,
-  type SubAgent,
+  type PabrikAgent,
 } from '../../api'
 import { usePabrikConfig } from '../../composables/usePabrikConfig'
 import { useRoute, useRouter } from 'vue-router'
@@ -15,9 +14,7 @@ import { useTabsStore } from '../../stores/tabs'
 
 import PabrikSaveBar from './PabrikSaveBar.vue'
 import PabrikGeneralSection, { type PabrikGeneralSettings } from './PabrikGeneralSection.vue'
-import ProfilesSection, { type ProfileRow } from './ProfilesSection.vue'
-// Plan 2026-09-04-subagents-per-profile: SubAgentsSection.vue is no longer
-// mounted here (no global list). The file is kept for now — see note below.
+import AgentsSection, { type AgentRow } from './AgentsSection.vue'
 import McpServersSection from './McpServersSection.vue'
 import WebSearchSection from './WebSearchSection.vue'
 import ToolsSection from './ToolsSection.vue'
@@ -34,11 +31,9 @@ import {
 } from './webSearchProviders'
 // The models.dev catalog: its status for the block below, and the manual
 // refresh. Both live in the General tab because the catalog is machine-wide —
-// it is not a per-workspace or per-profile fact.
+// it is not a per-workspace or per-agent fact.
 import { getModelCatalog, refreshModelCatalog } from '../../api'
-import ProfileModal from './ProfileModal.vue'
-import { type LlmConfigModalValue } from './LlmConfigModal.vue'
-import SubAgentModal, { type SubAgentModalValue } from './SubAgentModal.vue'
+import AgentModal, { type AgentModalValue } from './AgentModal.vue'
 import McpServerModal, { type McpServerModalValue } from './McpServerModal.vue'
 import ConfirmDialog from '../dialogs/ConfirmDialog.vue'
 import UiIcon from '../ui/UiIcon.vue'
@@ -51,7 +46,7 @@ const emit = defineEmits<{
 // ─── Scope ──────────────────────────────────────────────────────────────── Navigation lives in
 // `SettingsShell` (flat sidebar items + `?section=`), so this component renders ONE section at a
 // time and owns no tab strip. One editor, two scopes.
-type Tab = 'general' | 'profiles' | 'mcp' | 'tools' | 'evals'
+type Tab = 'general' | 'agents' | 'mcp' | 'tools' | 'evals'
 
 const props = withDefaults(
   defineProps<{
@@ -67,7 +62,7 @@ const props = withDefaults(
     // Inline, not a module constant: `defineProps` is hoisted above the
     // setup body, so its default factories may not reference a local
     // declaration. The type annotation is erased and therefore fine.
-    sections: () => ['general', 'profiles', 'mcp', 'tools', 'evals'] as Tab[],
+    sections: () => ['general', 'agents', 'mcp', 'tools', 'evals'] as Tab[],
   },
 )
 
@@ -88,7 +83,7 @@ const TAB_STORAGE_KEY = 'pabrik-settings-active-tab'
  * pointing at a section this editor does not offer falls back instead of rendering nothing. */
 const TAB_IDS = computed<readonly string[]>(() => props.sections)
 // ─── Edit mode: the form, or the raw JSON ──────────────────────────────── Some edits are far
-// easier to express as JSON - pasting a whole profile map from another machine, or reading the
+// easier to express as JSON - pasting a whole agent map from another machine, or reading the
 // exact keys the backend will store - and a workspace's config IS a JSON document on the wire.
 type EditorMode = 'form' | 'json'
 const MODE_PARAM = 'mode'
@@ -139,7 +134,7 @@ function readStoredTab(): Tab | null {
 }
 
 // Falls back to the FIRST section this editor offers, not to `general`:
-// an editor mounted with `sections: ['profiles', ...]` has no General to show,
+// an editor mounted with `sections: ['agents', ...]` has no General to show,
 // and defaulting to it renders an empty pane.
 const firstTab = computed<Tab>(() => props.sections[0] ?? 'general')
 const activeTabLocal = ref<Tab>(readStoredTab() ?? props.sections[0] ?? 'general')
@@ -276,13 +271,11 @@ onMounted(async () => {
 })
 
 // ─── Per-section view state ──────────────────────────────────────────────
-const profilesList = ref<ProfileRow[]>([])
-const activeProfile = ref<string | null>(null)
-/**  * Has the profile list been edited this session? An emptied list must still be written through —
- * otherwise deleting the LAST profile would save the pre-delete map back and resurrect it. */
-const profilesTouched = ref(false)
-// Plan 2026-09-04-subagents-per-profile: no global list — per-profile
-// `profilesList[].sub_agents` is the only editor.
+const agentsList = ref<AgentRow[]>([])
+const activeAgent = ref<string | null>(null)
+/**  * Has the agent list been edited this session? An emptied list must still be written through —
+ * otherwise deleting the LAST agent would save the pre-delete map back and resurrect it. */
+const agentsTouched = ref(false)
 const mcpServersList = ref<McpServer[]>([])
 // Web search providers (`web_search` in config.json). Edited as rows rather than as the raw map —
 // see components/pabrik/webSearchProviders.ts.
@@ -316,7 +309,7 @@ const skillEvalsHydrated = ref(false)
 function syncFromConfig() {
   if (!config.value) return
   const c = config.value
-  profilesList.value = Object.entries(c.profiles ?? {}).map(([name, p]) => ({
+  agentsList.value = Object.entries(c.profiles ?? {}).map(([name, p]) => ({
     name,
     model: p.model ?? '',
     base_url: p.base_url ?? '',
@@ -324,26 +317,24 @@ function syncFromConfig() {
     temperature: p.temperature ?? 'auto',
     url_style: p.url_style ?? 'openai',
     api_key: p.api_key ?? '',
+    system_prompt: p.system_prompt ?? '',
     // Transport + its Claude Code knobs. Absent `backend` reads as "http",
     // matching the backend's default so nothing migrates.
     backend: p.backend ?? 'http',
     config_dir: p.config_dir ?? null,
     max_turns: p.max_turns ?? null,
-    sub_agents: p.sub_agents ?? [],
-    // Compaction overrides — both top-level and per-profile coexist. Each layer cascades over the
-    // next; per-profile wins over top-level.
+    // Compaction overrides — both top-level and per-agent coexist. Each layer cascades over the
+    // next; the agent's own wins over the top-level.
     max_capacity_tokens: p.max_capacity_tokens ?? null,
     compaction_threshold_percent: p.compaction_threshold_percent ?? null,
     // Model-thinking knobs (plan 2026-08-23-model-thinking). Anthropic budget + OpenAI effort. Both
-    // default to null when missing from the persisted profile, so the form can decide whether to
+    // default to null when missing from the persisted agent, so the form can decide whether to
     // render the row (it does for thinking !== "off").
     thinking_budget_tokens: p.thinking_budget_tokens ?? null,
     reasoning_effort: p.reasoning_effort ?? null,
   }))
-  activeProfile.value = c.active_profile ?? null
-  profilesTouched.value = false
-  // Plan 2026-09-04-subagents-per-profile: top-level `sub_agents` is
-  // always null from the backend — intentionally NOT hydrated anywhere.
+  activeAgent.value = c.active_profile ?? null
+  agentsTouched.value = false
   mcpServersList.value = parseMcpServers(c.mcp_servers)
   // Web search providers hydrate with whatever `key` the backend sent, which may be a MASK rather
   // than the secret. It is kept verbatim so a save that does not touch the key field cannot blank
@@ -454,8 +445,8 @@ function syncToConfig() {
   const c = config.value
   // Only write list fields when non-empty, so the structural shape of the config stays close to the
   // original (loaded) snapshot. Plan 2026-08-24-config-simplify-remove-defaults: the top-level LLM
-  // defaults are no longer sent — profiles + operational settings only.
-  const profiles = profilesToRecord(profilesList.value)
+  // defaults are no longer sent — the agents map + operational settings only.
+  const agents = agentsToRecord(agentsList.value)
   const mcpServers = serializeMcpServers(mcpServersList.value)
   const webSearch = serializeWebSearchProviders(webSearchRows.value)
   config.value = {
@@ -487,11 +478,10 @@ function syncToConfig() {
     // Unconditional spread so `null` is preserved (cascade wildcard).
     max_capacity_token_model: c.max_capacity_token_model,
     compaction_threshold_percent: c.compaction_threshold_percent,
-    // Per-profile compaction overrides still live on `profiles` below.
-    ...(profilesTouched.value || Object.keys(profiles).length > 0 ? { profiles } : {}),
-    ...(activeProfile.value ? { active_profile: activeProfile.value } : {}),
-    // Plan 2026-09-04-subagents-per-profile: never send top-level
-    // `sub_agents` — per-profile lists ride inside `profiles` above.
+    // The agents map rides under the wire key `profiles` — the storage
+    // contract keeps its old name, the concept is an AGENT.
+    ...(agentsTouched.value || Object.keys(agents).length > 0 ? { profiles: agents } : {}),
+    ...(activeAgent.value ? { active_profile: activeAgent.value } : {}),
     ...(mcpServers ? { mcp_servers: mcpServers } : {}),
     // Same guard for `web_search`: no providers means the key is left
     // exactly as loaded, so the backend sees "no change" instead of an
@@ -504,46 +494,32 @@ function syncToConfig() {
   }
 }
 
-function profilesToRecord(list: ProfileRow[]): Record<string, PabrikProfile> {
-  const out: Record<string, PabrikProfile> = {}
-  for (const p of list) {
-    const { name, ...rest } = p
+function agentsToRecord(list: AgentRow[]): Record<string, PabrikAgent> {
+  const out: Record<string, PabrikAgent> = {}
+  for (const a of list) {
+    const { name, ...rest } = a
     out[name] = rest
   }
   return out
 }
 
 // ─── Modal state ──────────────────────────────────────────────────────────
-type ProfileModalState = { mode: 'add' | 'edit'; value: LlmConfigModalValue } | null
-/**  * Where a sub-agent is being added/edited. Plan 2026-09-04-subagents-per-profile: per-profile only
- * — the `scope` always carries the owning profile name (the old `{ kind: 'top' }` global scope is
- * gone with the Sub-agents tab). */
-type SubAgentScope = { kind: 'profile'; profileName: string }
-type SubAgentModalState = {
-  mode: 'add' | 'edit'
-  scope: SubAgentScope
-  value: SubAgentModalValue
-} | null
+type AgentModalState = { mode: 'add' | 'edit'; value: AgentModalValue } | null
 type McpServerModalState = { mode: 'add' | 'edit'; value: McpServerModalValue } | null
 
-const profileModal = ref<ProfileModalState>(null)
-const subAgentModal = ref<SubAgentModalState>(null)
+const agentModal = ref<AgentModalState>(null)
 const mcpServerModal = ref<McpServerModalState>(null)
 
-const profileErrors = ref<{ name?: string; model?: string; base_url?: string; api_key?: string }>(
-  {},
-)
-const subAgentErrors = ref<{ name?: string; model?: string; base_url?: string; api_key?: string }>(
-  {},
-)
+const agentErrors = ref<{ name?: string; model?: string; base_url?: string; api_key?: string }>({})
 const mcpServerErrors = ref<{ name?: string; url?: string; command?: string }>({})
 
 // ─── Section event handlers ──────────────────────────────────────────────
-function startAddProfile() {
-  profileModal.value = {
+function startAddAgent() {
+  agentModal.value = {
     mode: 'add',
     value: {
       name: '',
+      system_prompt: '',
       config: {
         model: '',
         base_url: '',
@@ -562,11 +538,12 @@ function startAddProfile() {
     },
   }
 }
-function startEditProfile(p: ProfileRow) {
-  profileModal.value = {
+function startEditAgent(p: AgentRow) {
+  agentModal.value = {
     mode: 'edit',
     value: {
       name: p.name,
+      system_prompt: p.system_prompt ?? '',
       config: {
         model: p.model ?? '',
         base_url: p.base_url ?? '',
@@ -581,7 +558,7 @@ function startEditProfile(p: ProfileRow) {
         max_capacity_tokens: p.max_capacity_tokens ?? null,
         compaction_threshold_percent: p.compaction_threshold_percent ?? null,
         // Model-thinking knobs (plan 2026-08-23-model-thinking).
-        // Hydrate from the loaded profile so the form re-opens
+        // Hydrate from the loaded agent so the form re-opens
         // with the previously-saved budget / effort.
         thinking_budget_tokens: p.thinking_budget_tokens ?? null,
         reasoning_effort: p.reasoning_effort ?? null,
@@ -589,151 +566,50 @@ function startEditProfile(p: ProfileRow) {
     },
   }
 }
-function closeProfileModal() {
-  profileModal.value = null
-  profileErrors.value = {}
+function closeAgentModal() {
+  agentModal.value = null
+  agentErrors.value = {}
 }
-function saveProfile() {
-  if (!profileModal.value) return
-  const v = profileModal.value.value
+function saveAgent() {
+  if (!agentModal.value) return
+  const v = agentModal.value.value
   const name = v.name.trim()
   if (!name) {
-    profileErrors.value = { name: 'Name is required' }
+    agentErrors.value = { name: 'Name is required' }
     return
   }
   if (!v.config.model.trim()) {
-    profileErrors.value = { model: 'Model is required' }
+    agentErrors.value = { model: 'Model is required' }
     return
   }
-  profilesTouched.value = true
-  if (profileModal.value.mode === 'add') {
-    profilesList.value = [...profilesList.value, { name, ...v.config, sub_agents: [] }]
+  agentsTouched.value = true
+  const row = { name, ...v.config, system_prompt: v.system_prompt }
+  if (agentModal.value.mode === 'add') {
+    agentsList.value = [...agentsList.value, row]
   } else {
-    profilesList.value = profilesList.value.map((p) =>
-      p.name === name ? { ...p, ...v.config, sub_agents: p.sub_agents } : p,
-    )
+    agentsList.value = agentsList.value.map((a) => (a.name === name ? { ...a, ...row } : a))
   }
   syncToConfig()
-  closeProfileModal()
+  closeAgentModal()
 }
-function deleteProfile(name: string) {
+function deleteAgent(name: string) {
   // Optimistic local removal; the API call is best-effort.
-  const previous = profilesList.value
-  const previousActive = activeProfile.value
-  profilesTouched.value = true
-  profilesList.value = profilesList.value.filter((p) => p.name !== name)
-  if (activeProfile.value === name) activeProfile.value = null
+  const previous = agentsList.value
+  const previousActive = activeAgent.value
+  agentsTouched.value = true
+  agentsList.value = agentsList.value.filter((a) => a.name !== name)
+  if (activeAgent.value === name) activeAgent.value = null
   syncToConfig()
-  source.deleteProfile(name).catch((err) => {
-    profilesList.value = previous
-    activeProfile.value = previousActive
+  source.deleteAgent(name).catch((err) => {
+    agentsList.value = previous
+    activeAgent.value = previousActive
     syncToConfig()
     emit(
       'notification',
-      `Failed to delete profile "${name}": ${err instanceof Error ? err.message : String(err)}`,
+      `Failed to delete agent "${name}": ${err instanceof Error ? err.message : String(err)}`,
       'error',
     )
   })
-}
-
-function startAddSubAgentInProfile(profileName: string) {
-  subAgentModal.value = {
-    mode: 'add',
-    scope: { kind: 'profile', profileName },
-    value: {
-      name: '',
-      system_prompt: '',
-      config: {
-        model: '',
-        base_url: '',
-        thinking: 'auto',
-        temperature: 'auto',
-        url_style: 'openai',
-        api_key: '',
-        backend: '',
-        config_dir: null,
-        max_turns: null,
-        max_capacity_tokens: null,
-        compaction_threshold_percent: null,
-        thinking_budget_tokens: null,
-        reasoning_effort: null,
-      },
-    },
-  }
-}
-function startEditSubAgentInProfile(profileName: string, sa: SubAgent) {
-  subAgentModal.value = {
-    mode: 'edit',
-    scope: { kind: 'profile', profileName },
-    value: {
-      name: sa.name,
-      system_prompt: sa.system_prompt ?? '',
-      config: {
-        model: sa.model ?? '',
-        base_url: sa.base_url ?? '',
-        thinking: sa.thinking ?? 'auto',
-        temperature: sa.temperature ?? 'auto',
-        url_style: sa.url_style ?? 'openai',
-        api_key: sa.api_key ?? '',
-        // Empty = inherit the parent profile's backend (the backend's own
-        // rule for `SubAgentConfig.backend`).
-        backend: sa.backend ?? '',
-        config_dir: sa.config_dir ?? null,
-        max_turns: sa.max_turns ?? null,
-        // Compaction overrides (plan 2026-07-07-compaction-inline) —
-        // required by LlmConfig type. Sub-agent-level overrides
-        // currently cascade from the parent profile (Chunk 7).
-        max_capacity_tokens: null,
-        compaction_threshold_percent: null,
-        // Model-thinking knobs (plan 2026-08-23-model-thinking).
-        // Mirrors the top-level edit mapper above — hydrate from
-        // the loaded SubAgent's values.
-        thinking_budget_tokens: sa.thinking_budget_tokens ?? null,
-        reasoning_effort: sa.reasoning_effort ?? null,
-      },
-    },
-  }
-}
-function closeSubAgentModal() {
-  subAgentModal.value = null
-  subAgentErrors.value = {}
-}
-function saveSubAgent() {
-  if (!subAgentModal.value) return
-  const v = subAgentModal.value.value
-  const name = v.name.trim()
-  if (!name) {
-    subAgentErrors.value = { name: 'Name is required' }
-    return
-  }
-  const next: SubAgent = { name, ...v.config, system_prompt: v.system_prompt }
-  profilesTouched.value = true
-  // Plan 2026-09-04-subagents-per-profile: profile scope only — the
-  // top-level branch is gone with the Sub-agents tab.
-  const profileName = subAgentModal.value.scope.profileName
-  const mode = subAgentModal.value.mode
-  profilesList.value = profilesList.value.map((p) => {
-    if (p.name !== profileName) return p
-    const subs = p.sub_agents ?? []
-    const exists = subs.some((s) => s.name === name)
-    const nextSubs =
-      mode === 'add'
-        ? exists
-          ? subs
-          : [...subs, next]
-        : subs.map((s) => (s.name === name ? next : s))
-    return { ...p, sub_agents: nextSubs }
-  })
-  syncToConfig()
-  closeSubAgentModal()
-}
-function deleteSubAgentInProfile(profileName: string, subAgentName: string) {
-  profilesTouched.value = true
-  profilesList.value = profilesList.value.map((p) => {
-    if (p.name !== profileName) return p
-    return { ...p, sub_agents: (p.sub_agents ?? []).filter((s) => s.name !== subAgentName) }
-  })
-  syncToConfig()
 }
 
 function startAddMcpServer() {
@@ -861,13 +737,13 @@ function addWebSearchRow() {
 
 // ─── Set active (instant — no dirty pill, immediate save) ───────────────
 const isSettingActive = ref(false)
-async function setActiveProfile(name: string) {
-  activeProfile.value = name
+async function setActiveAgent(name: string) {
+  activeAgent.value = name
   syncToConfig()
   isSettingActive.value = true
   try {
     await savePabrikConfig({ ...config.value, active_profile: name } as PabrikConfig)
-    emit('notification', `Active profile set to "${name}"`, 'success')
+    emit('notification', `Active agent set to "${name}"`, 'success')
   } catch (err) {
     emit(
       'notification',
@@ -879,18 +755,18 @@ async function setActiveProfile(name: string) {
   }
 }
 
-// Clear the active profile — same instant-save path as setActiveProfile, but writes
+// Clear the active agent — same instant-save path as setActiveAgent, but writes
 // `active_profile: ""` (empty string) to config.json.
-async function clearActiveProfile() {
-  const previous = activeProfile.value
-  activeProfile.value = null
+async function clearActiveAgent() {
+  const previous = activeAgent.value
+  activeAgent.value = null
   syncToConfig()
   isSettingActive.value = true
   try {
     await savePabrikConfig({ ...config.value, active_profile: '' } as PabrikConfig)
-    emit('notification', `Active profile cleared — using top-level config`, 'success')
+    emit('notification', `Active agent cleared — using top-level config`, 'success')
   } catch (err) {
-    activeProfile.value = previous // optimistic-rollback on failure
+    activeAgent.value = previous // optimistic-rollback on failure
     syncToConfig()
     emit(
       'notification',
@@ -991,19 +867,19 @@ onMounted(async () => {
   await refreshWebStatus()
 })
 
-// ─── Confirm dialog for profile delete ───────────────────────────────────
-const confirmingDeleteProfile = ref<string | null>(null)
-function requestDeleteProfile(name: string) {
-  confirmingDeleteProfile.value = name
+// ─── Confirm dialog for agent delete ─────────────────────────────────────
+const confirmingDeleteAgent = ref<string | null>(null)
+function requestDeleteAgent(name: string) {
+  confirmingDeleteAgent.value = name
 }
-function cancelDeleteProfile() {
-  confirmingDeleteProfile.value = null
+function cancelDeleteAgent() {
+  confirmingDeleteAgent.value = null
 }
-function confirmDeleteProfile() {
-  const name = confirmingDeleteProfile.value
+function confirmDeleteAgent() {
+  const name = confirmingDeleteAgent.value
   if (!name) return
-  confirmingDeleteProfile.value = null
-  deleteProfile(name)
+  confirmingDeleteAgent.value = null
+  deleteAgent(name)
 }
 
 // ─── Loading ─────────────────────────────────────────────────────────────
@@ -1136,7 +1012,7 @@ const isLoading = computed(() => !loaded.value)
       >
         <p class="text-dense" style="color: var(--semantic-text-muted)">
           <template v-if="source.scope === 'workspace'">
-            Only the settings that live in Workspace settings — profiles, MCP servers, tools, skill
+            Only the settings that live in Workspace settings — agents, MCP servers, tools, skill
             evals and web search — are stored for this workspace. Everything else comes from your
             user settings and is not saved from here.
           </template>
@@ -1262,7 +1138,7 @@ const isLoading = computed(() => !loaded.value)
             pabrik reads each model's context window, output cap and reasoning shape from
             <span class="font-mono">models.dev</span>, cached in the database and synced in the
             background every hour. Compaction then fires at the threshold below of that window.
-            These two fields override the catalog for every profile that does not set its own.
+            These two fields override the catalog for every agent that does not set its own.
           </p>
           <div class="grid grid-cols-2 gap-3">
             <div>
@@ -1338,26 +1214,19 @@ const isLoading = computed(() => !loaded.value)
           @update:model-value="syncToConfig"
         />
 
-        <ProfilesSection
-          v-if="activeTab === 'profiles'"
-          v-model="profilesList"
-          :active-profile="activeProfile"
+        <AgentsSection
+          v-if="activeTab === 'agents'"
+          v-model="agentsList"
+          :active-agent="activeAgent"
           :loading="isLoading"
           @update:model-value="syncToConfig"
-          @set-active="setActiveProfile"
-          @clear-active="clearActiveProfile"
-          @edit="startEditProfile"
-          @delete="requestDeleteProfile"
-          @add="startAddProfile"
-          @add-sub-agent="startAddSubAgentInProfile"
-          @edit-sub-agent="startEditSubAgentInProfile"
-          @delete-sub-agent="deleteSubAgentInProfile"
+          @set-active="setActiveAgent"
+          @clear-active="clearActiveAgent"
+          @edit="startEditAgent"
+          @delete="requestDeleteAgent"
+          @add="startAddAgent"
         />
 
-        <!-- Plan 2026-09-04-subagents-per-profile: the global Sub-agents
-             tab is removed. Sub-agents are edited inline inside each
-             profile row (Profiles tab → expand chevron → + Add sub-agent).
-             SubAgentsSection.vue is kept on disk but no longer mounted. -->
         <McpServersSection
           v-else-if="activeTab === 'mcp'"
           v-model="mcpServersList"
@@ -1395,29 +1264,20 @@ const isLoading = computed(() => !loaded.value)
         />
         <!-- Plan 2026-07-07-compaction-inline: the dedicated Compaction
              tab is REMOVED. Compaction settings now live in the Defaults
-             tab (top-level defaults) + the Edit-profile modal
-             (per-profile overrides). There is no 'compaction' section. -->
+             tab (top-level defaults) + the Edit-agent modal
+             (per-agent overrides). There is no 'compaction' section. -->
       </div>
 
     </template>
 
     <!-- Modals -->
-    <ProfileModal
-      v-if="profileModal"
-      v-model="profileModal.value"
-      :errors="profileErrors"
-      :mode="profileModal.mode"
-      @cancel="closeProfileModal"
-      @save="saveProfile"
-    />
-
-    <SubAgentModal
-      v-if="subAgentModal"
-      v-model="subAgentModal.value"
-      :errors="subAgentErrors"
-      :mode="subAgentModal.mode"
-      @cancel="closeSubAgentModal"
-      @save="saveSubAgent"
+    <AgentModal
+      v-if="agentModal"
+      v-model="agentModal.value"
+      :errors="agentErrors"
+      :mode="agentModal.mode"
+      @cancel="closeAgentModal"
+      @save="saveAgent"
     />
 
     <McpServerModal
@@ -1431,13 +1291,13 @@ const isLoading = computed(() => !loaded.value)
 
     <!-- Confirm delete dialog -->
     <ConfirmDialog
-      :show="confirmingDeleteProfile !== null"
-      title="Delete profile"
-      :message="`Are you sure you want to delete the profile \u201c${confirmingDeleteProfile ?? ''}\u201d? This cannot be undone.`"
+      :show="confirmingDeleteAgent !== null"
+      title="Delete agent"
+      :message="`Are you sure you want to delete the agent \u201c${confirmingDeleteAgent ?? ''}\u201d? This cannot be undone.`"
       confirm-text="Delete"
       cancel-text="Cancel"
-      @confirm="confirmDeleteProfile"
-      @close="cancelDeleteProfile"
+      @confirm="confirmDeleteAgent"
+      @close="cancelDeleteAgent"
     />
   </div>
 </template>

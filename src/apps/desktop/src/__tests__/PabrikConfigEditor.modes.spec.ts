@@ -14,7 +14,7 @@ import { makeLocalStorageStub } from './helpers'
 vi.mock('../api', () => ({
   getPabrikConfig: vi.fn(),
   savePabrikConfig: vi.fn(),
-  deleteProfile: vi.fn(),
+  deleteAgent: vi.fn(),
   getWebStatus: vi.fn(),
   getAgentToolsRegistry: vi.fn(),
   getWorkspaceConfig: vi.fn(),
@@ -28,7 +28,7 @@ const mockRegistry = api.getAgentToolsRegistry as unknown as ReturnType<typeof v
 const mockGetWs = api.getWorkspaceConfig as unknown as ReturnType<typeof vi.fn>
 const mockSaveWs = api.saveWorkspaceConfig as unknown as ReturnType<typeof vi.fn>
 
-const WORKSPACE_TABS = ['profiles', 'mcp', 'tools', 'evals'] as const
+const WORKSPACE_TABS = ['agents', 'mcp', 'tools', 'evals'] as const
 
 /** A router already sitting on `/app/settings` (plus any query). */
 async function makeRouter(query: Record<string, string> = {}) {
@@ -222,7 +222,7 @@ describe('PabrikConfigEditor — workspace scope', () => {
     })
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="profile-list"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="agent-list"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="pabrik-general-section"]').exists()).toBe(false)
 
     // `general` is deliberately NOT in WORKSPACE_AGENT_SECTIONS (decision D4),
@@ -236,7 +236,7 @@ describe('PabrikConfigEditor — workspace scope', () => {
     await flushPromises()
 
     expect(withGeneral.find('[data-testid="pabrik-general-section"]').exists()).toBe(false)
-    expect(withGeneral.find('[data-testid="profile-list"]').exists()).toBe(true)
+    expect(withGeneral.find('[data-testid="agent-list"]').exists()).toBe(true)
   })
 
   it('reads and writes through the workspace endpoints, never the user ones', async () => {

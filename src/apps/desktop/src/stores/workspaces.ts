@@ -2545,7 +2545,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
       // NEW (plan: 2026-08-06-kanban-task-profile-selector). Empty / undefined = backend default
       // ("Default (top-level config)"). When set, the chatview's picker will reflect the chosen
       // profile immediately on landing.
-      selectedProfile?: string
+      selectedAgent?: string
       // NEW (plan: 2026-08-06-kanban-image-base64-in-chatview, replaces
       // 2026-08-06-kanban-image-attach-in-chatview). Base64 data URLs of images the user pasted in
       // the create-mode description.
@@ -2559,7 +2559,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
         params.queueMessage,
         params.cwd,
         params.imageUrls, // was: undefined (bug — see plan)
-        params.selectedProfile ?? '', // CHANGED — was ''
+        params.selectedAgent ?? '', // CHANGED — was ''
         params.isAutoRetryUntilStop ?? '', // forwards '1' when toggle ON, else ''
         params.videoUrls, // Migration 090 — clips ride video_urls
       )

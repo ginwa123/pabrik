@@ -1,4 +1,4 @@
-/** The New Chat profile picker must list the profiles a run in THIS workspace will actually use. */
+/** The New Chat agent picker must list the agents a run in THIS workspace will actually use. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, ref } from 'vue'
@@ -53,7 +53,7 @@ function installApiMocks() {
   vi.spyOn(api, 'getSession').mockResolvedValue({
     session_id: 'placeholder',
     session_name: '',
-    selectedProfile: null,
+    selectedAgent: null,
     cwd: '',
     git_worktree_cwd: '',
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -82,7 +82,7 @@ async function mountChatView(sessionId: string, router?: Router): Promise<VueWra
       ...(router ? { plugins: [router] } : {}),
     },
   })
-  // Settle the async mount (loadProfiles + the session watcher).
+  // Settle the async mount (loadAgents + the session watcher).
   for (let i = 0; i < 30; i++) {
     await new Promise((r) => setTimeout(r, 0))
     await nextTick()
@@ -95,12 +95,12 @@ async function mountChatView(sessionId: string, router?: Router): Promise<VueWra
 
 /** The picker as the user sees it: open it, then name the rows on screen. */
 async function openPickerRows(wrapper: VueWrapper): Promise<string[]> {
-  const chip = wrapper.find('[data-testid="profile-picker-button"]')
-  if (!chip.exists()) throw new Error('profile chip not found — picker cannot be opened')
+  const chip = wrapper.find('[data-testid="agent-picker-button"]')
+  if (!chip.exists()) throw new Error('agent chip not found — picker cannot be opened')
   await chip.trigger('click.stop')
   await nextTick()
   return wrapper
-    .findAll('[data-testid^="profile-picker-"]')
+    .findAll('[data-testid^="agent-picker-"]')
     .map((el) => el.attributes('data-testid') ?? '')
 }
 
@@ -124,7 +124,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('ChatView profile picker — workspace scope', () => {
+describe('ChatView agent picker — workspace scope', () => {
   it('lists a profile that exists only in the workspace overlay, and asks the workspace scope for it', async () => {
     const ws = useWorkspacesStore()
     ws.workspaces = [
@@ -139,7 +139,7 @@ describe('ChatView profile picker — workspace scope', () => {
 
     // The regression: `kilo` was in the workspace's Settings -> Profiles list
     // and in no picker row, because the list came from the user scope.
-    expect(rows).toContain('profile-picker-kilo')
+    expect(rows).toContain('agent-picker-kilo')
     expect(wsSpy).toHaveBeenCalledWith('ws_with_kilo')
     expect(vi.mocked(api.getPabrikConfig)).not.toHaveBeenCalled()
     wrapper.unmount()
@@ -154,8 +154,8 @@ describe('ChatView profile picker — workspace scope', () => {
     const wrapper = await mountChatView('sess_no_ws')
     const rows = await openPickerRows(wrapper)
 
-    expect(rows).toContain('profile-picker-900ribu')
-    expect(rows).not.toContain('profile-picker-kilo')
+    expect(rows).toContain('agent-picker-900ribu')
+    expect(rows).not.toContain('agent-picker-kilo')
     expect(wsSpy).not.toHaveBeenCalled()
     expect(vi.mocked(api.getPabrikConfig)).toHaveBeenCalled()
     wrapper.unmount()
@@ -187,8 +187,8 @@ describe('ChatView profile picker — workspace scope', () => {
 
     expect(wsSpy).toHaveBeenCalledWith('ws_from_url')
     expect(wsSpy).not.toHaveBeenCalledWith('ws_from_store')
-    const listed = (wrapper.vm as unknown as { availableProfiles?: { name: string }[] })
-      .availableProfiles
+    const listed = (wrapper.vm as unknown as { availableAgents?: { name: string }[] })
+      .availableAgents
     expect((listed ?? []).map((p) => p.name)).toContain('kilo')
     wrapper.unmount()
   })

@@ -26,7 +26,7 @@ const EXPECTED_DEFAULTS = [_][]const u8{
     "glob",
     "list_directory",
     "list_secrets",
-    "list_sub_agent",
+    "list_agents",
     "list_web_search_providers",
     "load_memory",
     "present_files",

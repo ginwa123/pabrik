@@ -24,7 +24,7 @@ enum class ToolKind {
     Plan,
     Question,
     SubAgentSpawn,
-    SubAgentCatalog,
+    AgentCatalog,
     MemorySave,
     MemoryLoad,
     MemoryList,
@@ -263,16 +263,15 @@ sealed interface ToolBody {
         val failed: Int = 0,
     ) : ToolBody
 
-    data class SubAgentCatalogEntry(
+    data class AgentCatalogEntry(
         val name: String = "",
         val model: String = "",
         val thinking: String = "",
     )
 
-    data class SubAgentCatalog(
-        val profile: String = "",
+    data class AgentCatalog(
         val count: Int = 0,
-        val agents: List<SubAgentCatalogEntry> = emptyList(),
+        val agents: List<AgentCatalogEntry> = emptyList(),
     ) : ToolBody
 
     data class MemorySave(val id: String = "") : ToolBody
@@ -514,7 +513,7 @@ object ToolCard {
      * The tools the web opens by default, because their content *is* the message
      * rather than detail supporting it.
      */
-    private val DEFAULT_EXPANDED = setOf("ask_user", "update_plan", "get_plan", "list_sub_agent")
+    private val DEFAULT_EXPANDED = setOf("ask_user", "update_plan", "get_plan", "list_agents")
 
     fun from(message: ChatMessage): ToolCardModel {
         val envelope = ToolOutput.tryUnwrap(message.content)
@@ -567,7 +566,7 @@ object ToolCard {
         toolName == "update_plan" || toolName == "get_plan" -> ToolKind.Plan
         toolName == "ask_user" -> ToolKind.Question
         toolName == "spawn_sub_agent" -> ToolKind.SubAgentSpawn
-        toolName == "list_sub_agent" -> ToolKind.SubAgentCatalog
+        toolName == "list_agents" -> ToolKind.AgentCatalog
         toolName == "save_memory" -> ToolKind.MemorySave
         toolName == "load_memory" -> ToolKind.MemoryLoad
         toolName == "list_memory" -> ToolKind.MemoryList
@@ -734,12 +733,10 @@ object ToolCard {
                 )
             }
 
-            ToolKind.SubAgentCatalog -> ToolBody.SubAgentCatalog(
-                profile = data.string("profile"),
+            ToolKind.AgentCatalog -> ToolBody.AgentCatalog(
                 count = data.intOrNull("count") ?: 0,
-                // The key is `sub_agents`, not `agents`.
-                agents = data.arrayOrEmpty("sub_agents").mapObjects { agent ->
-                    ToolBody.SubAgentCatalogEntry(
+                agents = data.arrayOrEmpty("agents").mapObjects { agent ->
+                    ToolBody.AgentCatalogEntry(
                         name = agent.string("name"),
                         model = agent.string("model"),
                         thinking = agent.string("thinking"),
@@ -951,7 +948,8 @@ object ToolCard {
         for (key in primaryParameterKeys(kind)) {
             param(parameters, key)?.let { return it }
         }
-        return when (body) {            is ToolBody.ReadFile -> body.path
+        return when (body) {
+            is ToolBody.ReadFile -> body.path
             is ToolBody.WriteFile -> body.path
             is ToolBody.Shell -> body.command
             is ToolBody.Search -> body.pattern
@@ -961,7 +959,7 @@ object ToolCard {
             is ToolBody.Plan -> body.sessionId
             is ToolBody.Question -> body.question
             is ToolBody.SubAgentSpawn -> null
-            is ToolBody.SubAgentCatalog -> body.profile
+            is ToolBody.AgentCatalog -> null
             is ToolBody.MemorySave -> body.id
             is ToolBody.MemoryList -> "${body.memories.size}"
             is ToolBody.MemoryLoad -> body.query
@@ -1025,7 +1023,7 @@ object ToolCard {
             is ToolBody.SubAgentSpawn ->
                 "${body.succeeded} ok · ${body.failed} failed"
 
-            is ToolBody.SubAgentCatalog -> "${body.count}"
+            is ToolBody.AgentCatalog -> "${body.count}"
             is ToolBody.MemoryLoad -> "${body.count}/${body.totalCount}"
             // Both paged searches read their header the same way, because they
             // send the same counts: rows in this page over rows in the result.

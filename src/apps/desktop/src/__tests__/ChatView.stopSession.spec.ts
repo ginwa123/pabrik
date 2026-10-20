@@ -66,7 +66,7 @@ function installChatViewMocks() {
     session_id: 'placeholder',
     session_name: '',
      
-    selectedProfile: null,
+    selectedAgent: null,
     cwd: '',
     git_worktree_cwd: '',
    

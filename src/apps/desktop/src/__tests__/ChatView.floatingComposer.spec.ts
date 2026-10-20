@@ -89,7 +89,7 @@ function installBaseMocks() {
   vi.spyOn(api, 'getSession').mockResolvedValue({
     session_id: 's_float',
     session_name: '',
-    selectedProfile: null,
+    selectedAgent: null,
     cwd: '',
     git_worktree_cwd: '',
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -311,18 +311,18 @@ describe('ChatView floating composer — source contract', () => {
     expect(sliderSrc).toContain('bottom: calc(var(--chat-composer-inset, 0px) + 8px);')
   })
 
-  it('bounds the profile picker menu by that inset and lets it scroll', () => {
+  it('bounds the agent picker menu by that inset and lets it scroll', () => {
     // `bottom-full` pins the menu's BOTTOM to the composer chip, so an uncapped
     // list grows off the TOP of the window and `overflow-hidden` leaves nothing
     // to scroll. The cap is the space above the chip: viewport minus the dock.
-    const rule = chatViewSrc.match(/\.profile-picker-menu\s*\{[^}]*\}/)
+    const rule = chatViewSrc.match(/\.agent-picker-menu\s*\{[^}]*\}/)
     expect(rule).not.toBeNull()
     expect(rule![0]).toMatch(
       /max-height:\s*min\(60vh,\s*calc\(100vh\s*-\s*var\(--chat-composer-inset, 0px\)\s*-\s*2rem\)\);/,
     )
     expect(rule![0]).toMatch(/overflow-y:\s*auto;/)
     // The menu must not clip the overflow instead of scrolling it.
-    const menuIdx = chatViewSrc.indexOf('profile-picker-menu')
+    const menuIdx = chatViewSrc.indexOf('agent-picker-menu')
     expect(menuIdx).toBeGreaterThan(-1)
     const menuTag = chatViewSrc.slice(menuIdx, menuIdx + 200)
     expect(menuTag).toContain('bottom-full')

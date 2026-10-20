@@ -50,7 +50,7 @@ const list_secrets_mod = pabrikcore.list_secrets;
 // Markdown task plan with - [ ] / - [x] checklist, persisted across iterations.
 const update_plan_mod = pabrikcore.update_plan;
 const get_plan_mod = pabrikcore.get_plan;
-const list_sub_agent_mod = pabrikcore.list_sub_agent;
+const list_agents_mod = pabrikcore.list_agents;
 const used_tools_mod = pabrikcore.used_tools;
 const run_skill_eval_mod = @import("run_skill_eval.zig");
 // 2026-08-28 — add_mcp_server agent tool (Step 5 of
@@ -86,7 +86,7 @@ pub fn equips(allocator: std.mem.Allocator) []const AgentTool {
         // 2026-08-19 — session_plan tools (Task 4).
         update_plan_mod.update_plan_tool,
         get_plan_mod.get_plan_tool,
-        list_sub_agent_mod.list_sub_agent_tool,
+        list_agents_mod.list_agents_tool,
         // used_tools: read-only introspection over this very list ("what
         // tools do I have"). Sub-agent-safe (NOT main-agent-only).
         used_tools_mod.used_tools_tool,
@@ -193,7 +193,7 @@ pub fn UNIFIED_TOOL_REGISTRY() []const ToolInfo {
         // 2026-08-19-session-plan-agent-tool.md).
         .{ .name = "update_plan", .exec = tools.execUpdatePlan, .tool_def = update_plan_mod.update_plan_tool },
         .{ .name = "get_plan", .exec = tools.execGetPlan, .tool_def = get_plan_mod.get_plan_tool },
-        .{ .name = "list_sub_agent", .exec = tools.execListSubAgent, .tool_def = list_sub_agent_mod.list_sub_agent_tool },
+        .{ .name = "list_agents", .exec = tools.execListAgents, .tool_def = list_agents_mod.list_agents_tool },
         // used_tools: read-only introspection ("what tools do I have").
         // Available in every mode; the exec adapter resolves the
         // session's effective list via the same helpers as the workflow.
@@ -374,7 +374,7 @@ pub const DEFAULT_AGENT_TOOLS: []const []const u8 = &.{
 
     // spawn
     spawn_sub_agent_tool.spawn_sub_agent_tool.function.name,
-    list_sub_agent_mod.list_sub_agent_tool.function.name,
+    list_agents_mod.list_agents_tool.function.name,
 
     // introspection — "what tools do I have" (read-only, sub-agent-safe).
     used_tools_mod.used_tools_tool.function.name,
@@ -618,7 +618,7 @@ test "DEFAULT_AGENT_TOOLS ships the spawn pair and the progressive meta-tools" {
     var found_list = false;
     for (DEFAULT_AGENT_TOOLS) |name| {
         if (std.mem.eql(u8, name, "spawn_sub_agent")) found_spawn = true;
-        if (std.mem.eql(u8, name, "list_sub_agent")) found_list = true;
+        if (std.mem.eql(u8, name, "list_agents")) found_list = true;
     }
     try std.testing.expect(found_spawn and found_list);
 

@@ -120,7 +120,7 @@ describe('LlmConfigForm', () => {
     // The checkbox is gone on purpose: a control whose only job is to enable the
     // field beneath it is noise when "empty" already means "inherit".
     expect(wrapper.find('[data-testid="profile-capacity-override-checkbox"]').exists()).toBe(false)
-    const input = wrapper.find('[data-testid="profile-capacity-input"]')
+    const input = wrapper.find('[data-testid="agent-capacity-input"]')
     expect((input.element as HTMLInputElement).value).toBe('')
     // ENABLED, not disabled — typing is how you override.
     expect((input.element as HTMLInputElement).disabled).toBe(false)
@@ -130,7 +130,7 @@ describe('LlmConfigForm', () => {
 
   it('states the inherited window as the placeholder, so the default is legible', async () => {
     const wrapper = await mountOpen(LlmConfigForm, { props: { modelValue: { ...baseValue } } })
-    const input = wrapper.find('[data-testid="profile-capacity-input"]')
+    const input = wrapper.find('[data-testid="agent-capacity-input"]')
     expect((input.element as HTMLInputElement).placeholder).toContain('inherit')
   })
 
@@ -138,7 +138,7 @@ describe('LlmConfigForm', () => {
     const wrapper = await mountOpen(LlmConfigForm, {
       props: { modelValue: { ...baseValue, max_capacity_tokens: 400000 } },
     })
-    const input = wrapper.find('[data-testid="profile-capacity-input"]')
+    const input = wrapper.find('[data-testid="agent-capacity-input"]')
     expect((input.element as HTMLInputElement).disabled).toBe(false)
     expect((input.element as HTMLInputElement).value).toBe('400000')
   })
@@ -147,7 +147,7 @@ describe('LlmConfigForm', () => {
 
   it('typing a context window emits the number, and clearing it emits null (never "")', async () => {
     const wrapper = await mountOpen(LlmConfigForm, { props: { modelValue: { ...baseValue } } })
-    const input = wrapper.find('[data-testid="profile-capacity-input"]')
+    const input = wrapper.find('[data-testid="agent-capacity-input"]')
 
     await input.setValue('350000')
     const first = wrapper.emitted('update:modelValue')?.[0]?.[0] as typeof baseValue
@@ -166,7 +166,7 @@ describe('LlmConfigForm', () => {
     const wrapper = await mountOpen(LlmConfigForm, {
       props: { modelValue: { ...baseValue, max_capacity_tokens: 350000 } },
     })
-    const input = wrapper.find('[data-testid="profile-capacity-input"]')
+    const input = wrapper.find('[data-testid="agent-capacity-input"]')
     expect((input.element as HTMLInputElement).value).toBe('350000')
   })
 
@@ -177,7 +177,7 @@ describe('LlmConfigForm', () => {
     expect(wrapper.find('[data-testid="profile-threshold-override-checkbox"]').exists()).toBe(false)
     // The slider is gone with it — 97% is not a thing to scrub at.
     expect(wrapper.find('[data-testid="profile-threshold-slider"]').exists()).toBe(false)
-    const input = wrapper.find('[data-testid="profile-threshold-input"]')
+    const input = wrapper.find('[data-testid="agent-threshold-input"]')
     expect((input.element as HTMLInputElement).value).toBe('')
     expect((input.element as HTMLInputElement).placeholder).toContain('inherit')
   })
@@ -186,7 +186,7 @@ describe('LlmConfigForm', () => {
 
   it('typing a threshold emits the percentage, and clearing it emits null', async () => {
     const wrapper = await mountOpen(LlmConfigForm, { props: { modelValue: { ...baseValue } } })
-    const input = wrapper.find('[data-testid="profile-threshold-input"]')
+    const input = wrapper.find('[data-testid="agent-threshold-input"]')
 
     await input.setValue('50')
     const first = wrapper.emitted('update:modelValue')?.[0]?.[0] as typeof baseValue
@@ -204,7 +204,7 @@ describe('LlmConfigForm', () => {
       props: { modelValue: { ...baseValue, compaction_threshold_percent: 60 } },
     })
     expect(
-      (wrapper.find('[data-testid="profile-threshold-input"]').element as HTMLInputElement).value,
+      (wrapper.find('[data-testid="agent-threshold-input"]').element as HTMLInputElement).value,
     ).toBe('60')
   })
 
@@ -212,7 +212,7 @@ describe('LlmConfigForm', () => {
 
   it('clamps a threshold outside 0-100', async () => {
     const wrapper = await mountOpen(LlmConfigForm, { props: { modelValue: { ...baseValue } } })
-    await wrapper.find('[data-testid="profile-threshold-input"]').setValue('150')
+    await wrapper.find('[data-testid="agent-threshold-input"]').setValue('150')
     const emitted = wrapper.emitted('update:modelValue')?.[0]?.[0] as typeof baseValue
     expect(emitted.compaction_threshold_percent).toBe(100)
   })
@@ -221,7 +221,7 @@ describe('LlmConfigForm', () => {
 
   it('clamps a NEGATIVE threshold to 0', async () => {
     const wrapper = await mountOpen(LlmConfigForm, { props: { modelValue: { ...baseValue } } })
-    await wrapper.find('[data-testid="profile-threshold-input"]').setValue('-5')
+    await wrapper.find('[data-testid="agent-threshold-input"]').setValue('-5')
     const emitted = wrapper.emitted('update:modelValue')?.[0]?.[0] as typeof baseValue
     expect(emitted.compaction_threshold_percent).toBe(0)
   })
@@ -309,8 +309,8 @@ describe('LlmConfigForm — backend gating', () => {
     const wrapper = await mountOpen(LlmConfigForm, {
       props: { modelValue: { ...baseValue, backend: 'claude-code' } },
     })
-    expect(wrapper.find('[data-testid=profile-threshold-input]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid=profile-capacity-input]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid=agent-threshold-input]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid=agent-capacity-input]').exists()).toBe(true)
   })
 
   it('hides the CLI knobs for http', async () => {

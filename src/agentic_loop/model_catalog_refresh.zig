@@ -18,7 +18,7 @@ pub const MAX_FETCH_BYTES: usize = 32 * 1024 * 1024;
 pub const SYNC_INTERVAL_NS: i96 = 3_600 * 1_000_000_000;
 
 /// The loop's FIRST wait: a boot that read NO snapshot fetches NOW, because an
-/// hour of silence leaves every profile on the built-in window (and a server
+/// hour of silence leaves every agent on the built-in window (and a server
 /// restarted more often than hourly would never fetch at all).
 pub fn firstDelayNs(have_snapshot: bool) i96 {
     return if (have_snapshot) SYNC_INTERVAL_NS else 0;
@@ -227,7 +227,7 @@ const testing = std.testing;
 test "model catalog refresh: a boot WITH a snapshot waits an interval, one WITHOUT waits zero" {
     // The snapshot is the whole difference: boot already loaded it, so there is
     // nothing to fetch yet. With nothing loaded, the hour of silence is what
-    // left the DB empty and every profile on the built-in window.
+    // left the DB empty and every agent on the built-in window.
     try testing.expectEqual(SYNC_INTERVAL_NS, firstDelayNs(true));
     try testing.expectEqual(@as(i96, 0), firstDelayNs(false));
 }
