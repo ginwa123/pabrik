@@ -1942,3 +1942,8 @@ request was addressed to is same-origin, and a page on another site cannot forge
 
 A foreign origin is still refused, and so is the same host on another port: the tenant defence
 (§11.2) is unchanged.
+
+**The limit.** A `Host` header carries no scheme, so the rule compares the host and the port only:
+a page served over plain http on the same host counts as same-origin for the gate. A deployment
+that serves one host over both schemes should terminate http (HSTS + a redirect) — that is the
+only place the scheme is visible at all.
