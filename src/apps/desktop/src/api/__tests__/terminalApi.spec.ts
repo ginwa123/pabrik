@@ -7,6 +7,7 @@ import {
   createTerminalSession,
   deleteTerminalSession,
   getTerminalOutput,
+  listTerminalSessions,
   resizeTerminal,
   sendTerminalInput,
 } from '../index'
@@ -93,5 +94,34 @@ describe('getTerminalOutput / deleteTerminalSession', () => {
     expect(url).toBe('/api/terminal/sessions/term-1')
     expect(init.method).toBe('DELETE')
     expect(init.body).toBeUndefined()
+  })
+})
+
+describe('listTerminalSessions', () => {
+  it('reads the live session list', async () => {
+    const fetchMock = stubFetchOnce({
+      sessions: [
+        {
+          id: 'term-1',
+          workspace_id: 'ws_1',
+          cwd: '/tmp/work',
+          cols: 80,
+          rows: 24,
+          exited: false,
+          backend: 'posix-pty',
+        },
+      ],
+    })
+    const sessions = await listTerminalSessions()
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0]!.workspace_id).toBe('ws_1')
+    expect(sessions[0]!.cwd).toBe('/tmp/work')
+    const [url] = fetchMock.mock.calls[0] as unknown as [string]
+    expect(url).toBe('/api/terminal/sessions')
+  })
+
+  it('answers an empty list when the server has no shell running', async () => {
+    stubFetchOnce({ sessions: [] })
+    expect(await listTerminalSessions()).toEqual([])
   })
 })

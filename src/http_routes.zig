@@ -114,6 +114,10 @@ fn registerTerminalRoutes(authed: *Group, router: *gserverz.router.Router) !void
     // prefix — no `:param` siblings exist under it, so no matchRoute
     // shadowing risk (router walks registration order).
     try authed.post("/api/terminal/sessions", ai_mod.http_handlers.terminalCreateHandler);
+    // The live session list: a window-level footer reads it to show the
+    // shells grouped per workspace. Registered before the `:id` routes so
+    // the exact path is matched first.
+    try authed.get("/api/terminal/sessions", ai_mod.http_handlers.terminalListHandler);
     try authed.post("/api/terminal/sessions/:id/input", ai_mod.http_handlers.terminalInputHandler);
     try authed.get("/api/terminal/sessions/:id/output", ai_mod.http_handlers.terminalOutputHandler);
     try authed.post("/api/terminal/sessions/:id/resize", ai_mod.http_handlers.terminalResizeHandler);

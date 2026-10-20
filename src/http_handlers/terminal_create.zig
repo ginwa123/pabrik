@@ -78,7 +78,7 @@ pub fn terminalCreateHandler(
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = message }),
         }),
         .guest => |id| createGuest(allocator, req, res, id, cwd, parsed.cols, parsed.rows, owner),
-        .host => createHost(ctx, res, cwd, shell, parsed.cols, parsed.rows, owner),
+        .host => createHost(ctx, res, cwd, workspace_id orelse "", shell, parsed.cols, parsed.rows, owner),
     };
 }
 
@@ -134,13 +134,14 @@ fn createHost(
     ctx: gserverz.HttpContext,
     res: gserverz.HttpResponse,
     cwd: []const u8,
+    workspace_id: []const u8,
     shell: ?[]const u8,
     cols: ?u16,
     rows: ?u16,
     owner: []const u8,
 ) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
-    const info = terminal_session.createSession(ctx.io, cwd, shell, cols, rows, owner) catch |err| {
+    const info = terminal_session.createSession(ctx.io, cwd, workspace_id, shell, cols, rows, owner) catch |err| {
         const status: u16 = switch (err) {
             error.InvalidCwd, error.InvalidShell, error.InvalidSize => 400,
             error.CwdNotDir => 404,
