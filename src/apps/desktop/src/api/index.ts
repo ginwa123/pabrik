@@ -1308,6 +1308,7 @@ export async function sendChatMessage(
   selectedProfile?: string,
   isAutoRetryUntilStop?: string,
   videoUrls?: string[],
+  workspaceId?: string,
 ): Promise<{ status: string }> {
   // Migration 090 — split data:video/... out to video_urls so a pasted
   // clip never hits the image-only validator (400).
@@ -1326,6 +1327,7 @@ export async function sendChatMessage(
         queue_message: message,
         allowed_tools: DEFAULT_CHAT_TOOLS,
         cwd_session: cwdSession,
+        workspace_id: workspaceId ?? '',
         image_urls: imageUrlsStr,
         video_urls: videoUrlsStr,
         selected_profile_model: selectedProfile || '',
@@ -5156,8 +5158,10 @@ export interface TerminalOutput {
 }
 
 /** Spawn a shell on a fresh PTY.
- * POST /api/terminal/sessions { cwd, shell?, cols?, rows? } -> 201 { id, pid } */
+ * POST /api/terminal/sessions { workspace_id, cwd, shell?, cols?, rows? } -> 201 { id, pid }
+ * `workspaceId` names whose VM hosts it; `--saas` refuses without one. */
 export async function createTerminalSession(
+  workspaceId: string,
   cwd: string,
   opts: { shell?: string; cols?: number; rows?: number } = {},
 ): Promise<TerminalSession> {
@@ -5166,7 +5170,7 @@ export async function createTerminalSession(
     // NOTE: apiFetch stringifies `body` itself — pass the object, NOT
     // JSON.stringify (double-encoding yields a JSON string the server
     // rejects with 400; caught live 2026-09-16 via DevTools payload).
-    body: { cwd, ...opts },
+    body: { workspace_id: workspaceId, cwd, ...opts },
     silent: true,
   })
 }

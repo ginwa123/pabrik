@@ -38,13 +38,19 @@ afterEach(() => {
 describe('createTerminalSession', () => {
   it('sends a singly-encoded object body', async () => {
     const fetchMock = stubFetchOnce({ id: 'term-1', pid: 111 })
-    const data = await createTerminalSession('/tmp/work', { cols: 80, rows: 24 })
+    const data = await createTerminalSession('ws_1', '/tmp/work', { cols: 80, rows: 24 })
     expect(data).toEqual({ id: 'term-1', pid: 111 })
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [url] = fetchMock.mock.calls[0] as unknown as [string]
     expect(url).toBe('/api/terminal/sessions')
-    // Parses to an OBJECT (not a string) with the exact fields.
-    expect(sentBody(fetchMock)).toEqual({ cwd: '/tmp/work', cols: 80, rows: 24 })
+    // Parses to an OBJECT (not a string) with the exact fields. `workspace_id` is
+    // what makes a --saas server run the shell inside that workspace's VM.
+    expect(sentBody(fetchMock)).toEqual({
+      workspace_id: 'ws_1',
+      cwd: '/tmp/work',
+      cols: 80,
+      rows: 24,
+    })
   })
 })
 

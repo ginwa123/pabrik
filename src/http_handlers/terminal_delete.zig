@@ -7,6 +7,7 @@ const http_response = @import("http_response.zig");
 const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
 const terminal_session = @import("terminal_session.zig");
+const terminal_guest = @import("terminal_guest.zig");
 const auth_common = @import("auth_common.zig");
 
 pub const TerminalDeleteResponse = struct {
@@ -37,6 +38,33 @@ pub fn terminalDeleteHandler(
     // indistinguishable from a missing one (404, never 403).
     var owner_buf: [128]u8 = undefined;
     const owner: []const u8 = auth_common.resolveOwnerInto(&owner_buf, req.headers) orelse "";
+
+    if (terminal_guest.isGuestId(id)) {
+        const socket = terminal_guest.socketPath() orelse {
+            return res.jsonResponse(.{
+                .status_code = 503,
+                .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "the workspace VM manager is not running" }),
+            });
+        };
+        terminal_guest.destroyForOwner(allocator, socket, id, owner) catch |err| {
+            const status: u16 = switch (err) {
+                error.SessionNotFound => 404,
+                error.ManagerUnavailable, error.ManagerRefused => 503,
+                else => 500,
+            };
+            const message: []const u8 = switch (err) {
+                error.SessionNotFound => "terminal session not found",
+                error.ManagerUnavailable => "the workspace VM manager is not running",
+                else => "failed to delete terminal session",
+            };
+            return res.jsonResponse(.{
+                .status_code = status,
+                .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = message }),
+            });
+        };
+        const guest_json = try std.json.Stringify.valueAlloc(allocator, TerminalDeleteResponse{ .ok = true }, .{});
+        return res.jsonResponse(.{ .status_code = 200, .data = guest_json });
+    }
 
     terminal_session.destroySessionForOwner(id, owner) catch |err| {
         const status: u16 = switch (err) {

@@ -4,8 +4,15 @@
 
 const std = @import("std");
 const linux = std.os.linux;
+const policy = @import("policy.zig");
 
 pub const agent_port: u32 = 5000;
+/// Opening a terminal forks a guest process that must bind its own listener, so
+/// it gets more than a plain RPC's budget and less than a boot's.
+const tty_open_guard_ms: u32 = 10_000;
+/// A terminal read/write/resize is answered from a running process, never from
+/// a boot: a peer that has not answered by now is not going to.
+const tty_call_guard_ms: u32 = 5_000;
 pub const max_frame: usize = 64 * 1024;
 /// One `fs.write` frame's bytes. The agent refuses more than this, and a
 /// 64 KiB frame cannot hold much more once base64 and the envelope are paid
@@ -43,6 +50,12 @@ pub const Error = error{
     /// The guest was asked to walk something that is not a directory it will
     /// enter. Not the same as an empty one, and not this client's to guess at.
     WalkNotADirectory,
+    /// The guest refused to open a terminal, or answered something a terminal
+    /// answer cannot be. Distinct from a transport failure.
+    TtyFailed,
+    /// The terminal's own guest process is gone: the shell exited, or the VM
+    /// was restarted under it. Never a reason to boot anything.
+    TtyGone,
 };
 
 // ─── layout: the only place a path is decided ────────────────────────────
@@ -659,9 +672,21 @@ pub fn exec(allocator: std.mem.Allocator, layout: Layout, request: ExecRequest) 
 /// One request frame in, one reply frame out. `exec` is the only multi-frame
 /// conversation the guest has; everything here is a single round trip.
 fn oneShot(allocator: std.mem.Allocator, layout: Layout, payload: []const u8, guard_ms: u32) ![]const u8 {
+    return oneShotPort(allocator, layout, agent_port, payload, guard_ms);
+}
+
+/// The same round trip to a port other than the agent's. A terminal answers on
+/// its OWN port, so its reads never queue behind a long `exec` on 5000.
+fn oneShotPort(
+    allocator: std.mem.Allocator,
+    layout: Layout,
+    port: u32,
+    payload: []const u8,
+    guard_ms: u32,
+) ![]const u8 {
     const fd = try connectUnix(layout.vsock_sock);
     defer _ = linux.close(fd);
-    try handshake(fd, agent_port);
+    try handshake(fd, port);
     try sendFrame(fd, payload);
 
     var waited_ms: u32 = 0;
@@ -1163,6 +1188,204 @@ pub fn walk(
     return .{ .entries = try out.toOwnedSlice(allocator), .count = count, .truncated = truncated };
 }
 
+// ─── interactive terminals ───────────────────────────────────────────────
+
+/// A terminal the guest created: the id the daemon minted, the pid of the
+/// shell it runs, and the vsock port that terminal answers on.
+pub const TtyOpen = struct {
+    tty_id: i64,
+    pid: i64,
+    port: u32,
+};
+
+pub const TtyRead = struct {
+    data: []u8,
+    eof: bool,
+    exited: bool,
+    exit_code: i64,
+
+    pub fn deinit(self: TtyRead, allocator: std.mem.Allocator) void {
+        allocator.free(self.data);
+    }
+};
+
+/// The guest's own reason for refusing to open a terminal. Copied, not
+/// borrowed: the frame it came from is released before the caller reads it.
+pub const TtyRefusal = struct {
+    pub const max = 256;
+    message: [max]u8 = [_]u8{0} ** max,
+    len: usize = 0,
+
+    pub fn text(self: *const TtyRefusal) []const u8 {
+        return self.message[0..self.len];
+    }
+};
+
+/// Open a terminal in the guest. The agent forks the process that will own the
+/// pty and answer on `tty_port_base + tty_id`.
+pub fn ttyOpen(
+    allocator: std.mem.Allocator,
+    layout: Layout,
+    cols: u16,
+    rows: u16,
+    cwd: []const u8,
+    refusal: ?*TtyRefusal,
+) !TtyOpen {
+    var frame_buf: [4096]u8 = undefined;
+    const head = try std.fmt.bufPrint(
+        &frame_buf,
+        "{{\"type\":\"tty\",\"op\":\"open\",\"id\":1,\"cols\":{d},\"rows\":{d},\"cwd\":",
+        .{ cols, rows },
+    );
+    var off = head.len;
+    try appendJsonString(&frame_buf, &off, cwd);
+    frame_buf[off] = '}';
+    off += 1;
+
+    const text = try oneShot(allocator, layout, frame_buf[0..off], tty_open_guard_ms);
+    defer allocator.free(text);
+
+    var parsed = try parseObject(allocator, text);
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+    const id = jsonIntField(obj, "tty_id") orelse {
+        if (refusal) |out| {
+            const message = jsonStringField(obj, "message") orelse "the guest refused the terminal";
+            out.len = @min(message.len, TtyRefusal.max);
+            @memcpy(out.message[0..out.len], message[0..out.len]);
+        }
+        return Error.TtyFailed;
+    };
+    if (id < 0) return Error.TtyFailed;
+    const pid = jsonIntField(obj, "pid") orelse return Error.TtyFailed;
+    const port = jsonIntField(obj, "port") orelse return Error.TtyFailed;
+    if (port <= 0 or port > std.math.maxInt(u16)) return Error.TtyFailed;
+    return .{ .tty_id = id, .pid = pid, .port = @intCast(port) };
+}
+
+/// One piece of a terminal's output. An empty `data` with `eof` means "nothing
+/// right now", which is what the caller's next poll asks again.
+pub fn ttyRead(
+    allocator: std.mem.Allocator,
+    layout: Layout,
+    tty_id: i64,
+    max_bytes: usize,
+) !TtyRead {
+    const port = policy.ttyPort(tty_id) orelse return Error.TtyFailed;
+    var frame_buf: [256]u8 = undefined;
+    const frame = try std.fmt.bufPrint(
+        &frame_buf,
+        "{{\"type\":\"tty\",\"op\":\"read\",\"id\":1,\"max_bytes\":{d}}}",
+        .{@min(max_bytes, policy.max_tty_chunk)},
+    );
+    // The guest process that owned the pty is what answered that port, so
+    // nothing listening there IS the exit report — not a failed read.
+    const text = oneShotPort(allocator, layout, port, frame, tty_call_guard_ms) catch |err| switch (err) {
+        error.ConnectFailed, error.HandshakeRejected => return .{
+            .data = try allocator.alloc(u8, 0),
+            .eof = true,
+            .exited = true,
+            .exit_code = -1,
+        },
+        else => return err,
+    };
+    defer allocator.free(text);
+
+    var parsed = try parseObject(allocator, text);
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+    const b64 = jsonStringField(obj, "data_b64") orelse "";
+    const data = try decodeTtyBytes(allocator, b64);
+    return .{
+        .data = data,
+        .eof = jsonBoolField(obj, "eof"),
+        .exited = jsonBoolField(obj, "exited"),
+        .exit_code = jsonIntField(obj, "exit_code") orelse 0,
+    };
+}
+
+fn decodeTtyBytes(allocator: std.mem.Allocator, b64: []const u8) ![]u8 {
+    if (b64.len == 0) return allocator.alloc(u8, 0);
+    const decoder = std.base64.standard.Decoder;
+    const size = decoder.calcSizeForSlice(b64) catch return Error.ProtocolViolation;
+    if (size > policy.max_tty_chunk) return Error.ReplyTooLarge;
+    const out = try allocator.alloc(u8, size);
+    decoder.decode(out, b64) catch {
+        allocator.free(out);
+        return Error.ProtocolViolation;
+    };
+    return out;
+}
+
+/// Keystrokes into the terminal. Returns how many bytes the guest accepted.
+pub fn ttyWrite(
+    allocator: std.mem.Allocator,
+    layout: Layout,
+    tty_id: i64,
+    data: []const u8,
+) !usize {
+    const port = policy.ttyPort(tty_id) orelse return Error.TtyFailed;
+    if (data.len == 0 or data.len > policy.max_tty_chunk) return Error.WriteFailed;
+
+    var head_buf: [96]u8 = undefined;
+    const head = try std.fmt.bufPrint(&head_buf, "{{\"type\":\"tty\",\"op\":\"write\",\"id\":1,\"data_b64\":\"", .{});
+    const encoded_len = std.base64.standard.Encoder.calcSize(data.len);
+    const frame = try allocator.alloc(u8, head.len + encoded_len + 2);
+    defer allocator.free(frame);
+    @memcpy(frame[0..head.len], head);
+    _ = std.base64.standard.Encoder.encode(frame[head.len..][0..encoded_len], data);
+    const tail_at = head.len + encoded_len;
+    frame[tail_at] = '"';
+    frame[tail_at + 1] = '}';
+
+    const text = oneShotPort(allocator, layout, port, frame, tty_call_guard_ms) catch |err| switch (err) {
+        error.ConnectFailed, error.HandshakeRejected => return Error.TtyGone,
+        else => return err,
+    };
+    defer allocator.free(text);
+
+    var parsed = try parseObject(allocator, text);
+    defer parsed.deinit();
+    const accepted = jsonIntField(parsed.value.object, "bytes") orelse 0;
+    if (accepted < 0) return Error.WriteFailed;
+    return @intCast(accepted);
+}
+
+pub fn ttyResize(
+    allocator: std.mem.Allocator,
+    layout: Layout,
+    tty_id: i64,
+    cols: u16,
+    rows: u16,
+) !void {
+    const port = policy.ttyPort(tty_id) orelse return Error.TtyFailed;
+    var frame_buf: [256]u8 = undefined;
+    const frame = try std.fmt.bufPrint(
+        &frame_buf,
+        "{{\"type\":\"tty\",\"op\":\"resize\",\"id\":1,\"cols\":{d},\"rows\":{d}}}",
+        .{ cols, rows },
+    );
+    // A window size for a terminal that is already gone is not a failure the
+    // caller can act on.
+    const text = oneShotPort(allocator, layout, port, frame, tty_call_guard_ms) catch |err| switch (err) {
+        error.ConnectFailed, error.HandshakeRejected => return,
+        else => return err,
+    };
+    allocator.free(text);
+}
+
+/// Close the terminal and kill its shell. A tty the guest already forgot has
+/// nothing left to ask, so a refused close is success.
+pub fn ttyClose(allocator: std.mem.Allocator, layout: Layout, tty_id: i64) !void {
+    const port = policy.ttyPort(tty_id) orelse return;
+    var frame_buf: [128]u8 = undefined;
+    const frame = try std.fmt.bufPrint(&frame_buf, "{{\"type\":\"tty\",\"op\":\"close\",\"id\":1}}", .{});
+    const text = oneShotPort(allocator, layout, port, frame, tty_call_guard_ms) catch |err| switch (err) {
+        error.ConnectFailed, error.HandshakeRejected => return,
+        else => return err,
+    };
+    allocator.free(text);
+}
 pub fn readSerialExcerpt(allocator: std.mem.Allocator, layout: Layout, max_bytes: usize) ![]u8 {
     var buf: [4096]u8 = undefined;
     const z = cstr(layout.serial_log, &buf) orelse return Error.OutOfMemory;

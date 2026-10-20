@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# `--saas`: a BRAND-NEW workspace's FIRST chat runs at `/workspace`, never at a
+# host path — the #1003 regression, end to end. The scenario deliberately has no
+# kanban task, because a task link was the only thing that used to supply the
+# guest cwd, and only the seam's silent mapping hid the disagreement.
+#
+# Booting a microVM needs /dev/kvm, which no GitHub-hosted functional shard has,
+# so this lives with the other KVM smokes (ci-vm-smoke.yml, self-hosted runner).
+#
+# Usage: scripts/saas-cwd-smoke.sh   (needs /dev/kvm)
+# Env:   FC_BIN, GUEST_KERNEL, PABRIK_SAAS_CWD_PORT
+
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fc_bin="${FC_BIN:-firecracker}"
+guest_kernel="${GUEST_KERNEL:-$HOME/firecracker-demo/vmlinux-6.18.51}"
+port="${PABRIK_SAAS_CWD_PORT:-8080}"
+profile="saas-cwd-stub"
+marker="PABRIK_CWD_PROBE"
+email="cwd-probe@example.invalid"
+password="cwd-probe-password"
+
+say() { printf '[saas-cwd-smoke] %s\n' "$*"; }
+fail() { printf '[saas-cwd-smoke] FAIL %s\n' "$*" >&2; exit 1; }
+
+[ -r /dev/kvm ] || fail "/dev/kvm is not readable"
+[ -f "$guest_kernel" ] || fail "guest kernel not found: $guest_kernel (set GUEST_KERNEL)"
+command -v "$fc_bin" >/dev/null || fail "firecracker not found: $fc_bin (set FC_BIN)"
+command -v python3 >/dev/null || fail "python3 is required"
+# 8081 is this box's live dev server; this smoke must never bind or signal it.
+[ "$port" != "8081" ] || fail "port 8081 is reserved; set PABRIK_SAAS_CWD_PORT to another port"
+
+pabrik=""
+for candidate in "$repo_root/zig-out/bin/pabrik" "$repo_root"/zig-out/bin/pabrikcore-*; do
+  [ -x "$candidate" ] && { pabrik="$candidate"; break; }
+done
+[ -n "$pabrik" ] || fail "no pabrik binary under $repo_root/zig-out/bin; run 'zig build' first"
+
+# The guest `uname -r` is asserted against the kernel this smoke boots, so a host
+# whose kernel is somehow the same as the guest's must not pass silently.
+kernel_release="$(grep -a -m1 -oE 'Linux version [0-9][^[:space:]]*' "$guest_kernel" |
+  awk '{print $3}')"
+[ -n "$kernel_release" ] || fail "cannot read a version string out of $guest_kernel"
+host_release="$(uname -r)"
+[ "$kernel_release" != "$host_release" ] ||
+  fail "the guest kernel $guest_kernel reports the host's release ($host_release); nothing here would prove a VM ran"
+
+work="$(mktemp -d -t pabrik-saas-cwd-smoke-XXXXXX)"
+export HOME="$work"
+pids=()
+cleanup() {
+  for pid in "${pids[@]:-}"; do kill -TERM "$pid" 2>/dev/null || true; done
+  sleep 0.3
+  for pid in "${pids[@]:-}"; do kill -KILL "$pid" 2>/dev/null || true; done
+  pkill -f "pabrik-vmd serve --socket $work" 2>/dev/null || true
+  rm -rf "$work"
+}
+trap cleanup EXIT
+
+say "guest kernel $guest_kernel -> release $kernel_release (host $host_release)"
+say "assembling the guest image"
+"$repo_root/scripts/build-guest-image.sh" --out "$work/base.ext4" --size 128M | tail -1
+
+stub_record="$work/stub"
+python3 "$repo_root/scripts/stub_llm_server.py" \
+  --port-file "$work/stub.port" \
+  --record-dir "$stub_record" \
+  --marker "$marker" \
+  --tool command \
+  --tool-call-id call_cwd_probe_1 \
+  --arguments '{"command":"pwd; uname -r","cwd":"{cwd}","timeout":30}' \
+  >"$work/stub.log" 2>&1 &
+pids+=($!)
+for _ in $(seq 1 200); do [ -s "$work/stub.port" ] && break; sleep 0.05; done
+[ -s "$work/stub.port" ] || fail "the stub upstream never reported a port: $(cat "$work/stub.log")"
+stub_port="$(cat "$work/stub.port")"
+llm_url="http://127.0.0.1:$stub_port/v1/chat/completions"
+say "stub upstream for the model on 127.0.0.1:$stub_port"
+
+say "booting pabrik --saas --port $port"
+env PABRIK_VMD_SOCKET="$work/vmd.sock" \
+  PABRIK_VM_BASE_IMAGE="$work/base.ext4" \
+  PABRIK_GUEST_KERNEL="$guest_kernel" \
+  PABRIK_FC_BIN="$fc_bin" \
+  PABRIK_VM_DIR="$work/vms" \
+  "$pabrik" --saas --port "$port" --no-static-dir >"$work/server.log" 2>&1 &
+pids+=($!)
+
+server_ready() {
+  grep -q 'runtime mode: saas' "$work/server.log" 2>/dev/null &&
+    curl -fsS "http://127.0.0.1:$port/health" >/dev/null 2>&1
+}
+for _ in $(seq 1 600); do server_ready && break; sleep 0.1; done
+server_ready || fail "pabrik --saas never became ready
+--- server log ---
+$(tail -n 20 "$work/server.log")"
+say "ok  runtime mode: saas on port $port"
+
+"$pabrik" create-admin --email "$email" --password "$password" >"$work/create-admin.log" 2>&1 ||
+  fail "pabrik create-admin failed: $(tail -n 5 "$work/create-admin.log")"
+say "ok  admin $email created in the smoke HOME"
+
+say "creating a new workspace, then its FIRST chat (no kanban task)"
+rc=0
+python3 "$repo_root/scripts/saas-cwd-probe.py" \
+  --base-url "http://127.0.0.1:$port" \
+  --llm-url "$llm_url" \
+  --email "$email" \
+  --password "$password" \
+  --profile "$profile" \
+  --marker "$marker" \
+  --guest-release "$kernel_release" \
+  --host-release "$host_release" \
+  --host-home "$work" \
+  --record-dir "$stub_record" || rc=$?
+if [ "$rc" -ne 0 ]; then
+  printf -- '--- server log (tail) ---\n%s\n' "$(tail -n 30 "$work/server.log")" >&2
+  printf -- '--- vmd log (tail) ---\n%s\n' "$(tail -n 20 "$work/vms/vmd.log" 2>/dev/null)" >&2
+  fail "the probe failed (rc=$rc)"
+fi
+
+say "OK - a new workspace's first chat ran at /workspace, on the guest kernel"

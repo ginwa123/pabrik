@@ -1,6 +1,6 @@
 //! `pabrik-vm-agent` — guest PID 1: mount the pseudo filesystems, create the
 //! device nodes this kernel lacks, then serve framed JSON over vsock (`hello`,
-//! `exec`, `spawn`, `fs.*`, `shutdown`). Port forwarding is the piece still open.
+//! `exec`, `spawn`, `fs.*`, `tty open`, `shutdown`).
 
 const std = @import("std");
 const linux = std.os.linux;
@@ -987,6 +987,409 @@ fn runFsWalk(conn_fd: linux.fd_t, id: i64, path: []const u8, max_depth: u32, max
     out.done(emitted, truncated or gave_up);
 }
 
+// ─── interactive terminals ───────────────────────────────────────────────
+
+/// Every terminal answers on its OWN vsock port. The agent serves one
+/// connection at a time, so a terminal sharing port 5000 would freeze for as
+/// long as any `exec` the tenant started — including the agent's own commands.
+const tty_port_base: u32 = 5100;
+const max_ttys: usize = 8;
+const tty_chunk: usize = 32 * 1024;
+/// `/dev/ptmx` is devtmpfs's node; the slave the kernel allocates appears under
+/// the devpts mount at `/dev/pts/<n>`, owned by whoever opened the master.
+const tty_ptmx = "/dev/ptmx";
+const tty_pts_dir = "/dev/pts/";
+const tty_shell = "/bin/sh";
+const tty_cwd = "/workspace";
+
+/// `TIOCSPTLCK` (unlock the slave), `TIOCGPTN` (which slave), `TIOCSCTTY` (this
+/// pty is my controlling terminal), `TIOCSWINSZ` (window size).
+const tiocsptlck: u32 = 0x40045431;
+const tiocgptn: u32 = 0x80045430;
+const tiocsctty: u32 = 0x540E;
+const tiocswinsz: u32 = 0x5414;
+
+const tty_min_dim: u16 = 2;
+const tty_max_dim: u16 = 1000;
+/// A terminal host reports before it serves; this is how long the agent waits
+/// for that report before declaring it dead.
+const tty_report_deadline_ms: u32 = 5_000;
+
+const WinSize = extern struct { rows: u16, cols: u16, xpixel: u16, ypixel: u16 };
+
+const tty_env = [_:null]?[*:0]const u8{
+    "PATH=/bin:/usr/bin",
+    "HOME=/workspace",
+    "LANG=C",
+    "TERM=xterm-256color",
+    "PS1=\\w \\$ ",
+};
+
+/// One live terminal: the agent's handle on the process that owns it. The pty
+/// and the shell belong to that process, never to PID 1.
+const TtySlot = struct {
+    used: bool = false,
+    host_pid: i64 = 0,
+};
+
+var tty_slots: [max_ttys]TtySlot = [_]TtySlot{.{}} ** max_ttys;
+
+fn ttyWindowOk(cols: u16, rows: u16) bool {
+    return cols >= tty_min_dim and cols <= tty_max_dim and
+        rows >= tty_min_dim and rows <= tty_max_dim;
+}
+
+/// A shell may start at `/workspace` or anywhere inside it. No `..` segment,
+/// so nothing resolves above the tenant's own tree.
+fn ttyCwdOk(cwd: []const u8) bool {
+    if (std.mem.eql(u8, cwd, tty_cwd)) return true;
+    const prefix = tty_cwd ++ "/";
+    if (!std.mem.startsWith(u8, cwd, prefix)) return false;
+    var it = std.mem.splitScalar(u8, cwd[prefix.len..], '/');
+    while (it.next()) |segment| {
+        if (segment.len == 0) return false;
+        if (std.mem.eql(u8, segment, ".") or std.mem.eql(u8, segment, "..")) return false;
+    }
+    return true;
+}
+
+/// Reap the terminal hosts that died since the last open, so a slot is freed by
+/// the same call that wants one.
+fn ttyReapDead() void {
+    for (&tty_slots) |*slot| {
+        if (!slot.used) continue;
+        var status: u32 = 0;
+        const rc = linux.wait4(@intCast(slot.host_pid), &status, wno_hang, null);
+        if (linux.errno(rc) == .SUCCESS and rc != 0) slot.* = .{};
+    }
+}
+
+fn ttyFreeSlot() ?usize {
+    for (&tty_slots, 0..) |*slot, i| {
+        if (!slot.used) return i;
+    }
+    return null;
+}
+
+fn ttySetWinsize(master: linux.fd_t, cols: u16, rows: u16) bool {
+    var win = WinSize{ .rows = rows, .cols = cols, .xpixel = 0, .ypixel = 0 };
+    return linux.errno(linux.ioctl(master, tiocswinsz, @intFromPtr(&win))) == .SUCCESS;
+}
+
+fn ttyListen(port: u32) ?linux.fd_t {
+    const rc = linux.socket(vsock_af, sock_stream, 0);
+    if (linux.errno(rc) != .SUCCESS) return null;
+    const fd: linux.fd_t = @intCast(rc);
+    var addr = SockaddrVm{ .family = vsock_af, .port = port, .cid = cid_any };
+    if (linux.errno(linux.bind(fd, @ptrCast(&addr), @sizeOf(SockaddrVm))) != .SUCCESS) {
+        _ = linux.close(fd);
+        return null;
+    }
+    if (linux.errno(linux.listen(fd, 4)) != .SUCCESS) {
+        _ = linux.close(fd);
+        return null;
+    }
+    return fd;
+}
+
+/// Tell the agent why no terminal exists, then leave. The agent forwards this
+/// frame, so a caller reads the guest's own reason rather than a timeout.
+fn ttyFail(status_fd: linux.fd_t, message: []const u8) noreturn {
+    var buf: [512]u8 = undefined;
+    const text = std.fmt.bufPrint(
+        &buf,
+        "{{\"type\":\"tty.error\",\"id\":0,\"message\":\"{s}\"}}",
+        .{message},
+    ) catch "{\"type\":\"tty.error\",\"id\":0,\"message\":\"terminal setup failed\"}";
+    writeFrame(status_fd, text);
+    linux.exit(1);
+}
+
+/// The shell side of a terminal: its own session, the pty as its controlling
+/// terminal, the caller's uid — never root — and the workspace as its cwd.
+fn ttyShellChild(slave_number: u32, cwd: []const u8) noreturn {
+    var path_buf: [64]u8 = undefined;
+    const slave_path = std.fmt.bufPrintZ(&path_buf, "{s}{d}", .{ tty_pts_dir, slave_number }) catch linux.exit(127);
+    if (linux.errno(linux.setsid()) != .SUCCESS) linux.exit(127);
+    const slave_rc = linux.open(slave_path, .{ .ACCMODE = .RDWR }, 0);
+    if (linux.errno(slave_rc) != .SUCCESS) linux.exit(127);
+    const slave: linux.fd_t = @intCast(slave_rc);
+    if (linux.errno(linux.ioctl(slave, tiocsctty, 0)) != .SUCCESS) linux.exit(127);
+    _ = linux.dup2(slave, 0);
+    _ = linux.dup2(slave, 1);
+    _ = linux.dup2(slave, 2);
+    if (slave > 2) _ = linux.close(slave);
+
+    var cwd_buf: [1024]u8 = undefined;
+    if (cstr(cwd, &cwd_buf)) |dir| _ = linux.chdir(dir);
+    _ = linux.setgroups(0, &[_]linux.gid_t{});
+    _ = linux.setgid(default_gid);
+    _ = linux.setuid(default_uid);
+    _ = linux.prctl(@intFromEnum(linux.PR.SET_NO_NEW_PRIVS), 1, 0, 0, 0);
+
+    const argv = [_:null]?[*:0]const u8{ tty_shell, null };
+    _ = linux.execve(tty_shell, &argv, &tty_env);
+    writeAll(2, "pabrik-vm-agent: terminal shell exec failed\n");
+    linux.exit(127);
+}
+
+/// Kill the shell's whole session and wait for it. The shell leads its own
+/// session, so its pid is its process group.
+fn ttyKill(master: linux.fd_t, shell_pid: i64) void {
+    const group: usize = @bitCast(-@as(isize, @intCast(shell_pid)));
+    _ = linux.syscall2(.kill, group, @intFromEnum(linux.SIG.KILL));
+    _ = linux.syscall2(.kill, @intCast(shell_pid), @intFromEnum(linux.SIG.KILL));
+    var status: u32 = 0;
+    var i: usize = 0;
+    while (i < 50) : (i += 1) {
+        const rc = linux.wait4(@intCast(shell_pid), &status, wno_hang, null);
+        if (linux.errno(rc) == .SUCCESS and rc != 0) break;
+        const ts = linux.timespec{ .sec = 0, .nsec = 10 * std.time.ns_per_ms };
+        _ = linux.nanosleep(&ts, null);
+    }
+    _ = linux.close(master);
+}
+
+/// One `read`: whatever the pty has right now, plus the exit state. Never
+/// blocks — an empty answer is the caller's cue to ask again.
+fn ttyReplyRead(conn_fd: linux.fd_t, master: linux.fd_t, shell_pid: i64, max_bytes: usize) void {
+    var exited = false;
+    var status: u32 = 0;
+    const reaped = linux.wait4(@intCast(shell_pid), &status, wno_hang, null);
+    if (linux.errno(reaped) == .SUCCESS and reaped != 0) exited = true;
+    const code: i64 = if (!exited)
+        0
+    else if (linux.W.IFEXITED(status))
+        @intCast(linux.W.EXITSTATUS(status))
+    else
+        -1;
+
+    var chunk: [tty_chunk]u8 = undefined;
+    var got: usize = 0;
+    var pfd = [_]linux.pollfd{.{ .fd = master, .events = linux.POLL.IN, .revents = 0 }};
+    if (linux.errno(linux.poll(&pfd, 1, 0)) == .SUCCESS and
+        pfd[0].revents & (linux.POLL.IN | linux.POLL.HUP | linux.POLL.ERR) != 0)
+    {
+        const rc = linux.read(master, &chunk, @min(max_bytes, chunk.len));
+        const err = linux.errno(rc);
+        if (err == .SUCCESS) {
+            // Zero bytes IS end-of-file; a short read is just a short read.
+            if (rc > 0) got = rc else exited = true;
+        } else if (err == .IO) {
+            // EIO: every slave descriptor is closed, so the shell is gone.
+            exited = true;
+        }
+    }
+
+    if (got == 0) {
+        reply(conn_fd, "{{\"type\":\"tty.data\",\"id\":1,\"eof\":true,\"exited\":{s},\"exit_code\":{d},\"data_b64\":\"\"}}", .{
+            if (exited) "true" else "false",
+            code,
+        });
+        return;
+    }
+    var b64: [std.base64.standard.Encoder.calcSize(tty_chunk)]u8 = undefined;
+    const encoded = std.base64.standard.Encoder.encode(&b64, chunk[0..got]);
+    reply(conn_fd, "{{\"type\":\"tty.data\",\"id\":1,\"eof\":false,\"exited\":{s},\"exit_code\":{d},\"data_b64\":\"{s}\"}}", .{
+        if (exited) "true" else "false",
+        code,
+        encoded,
+    });
+}
+
+fn ttyReplyWrite(conn_fd: linux.fd_t, master: linux.fd_t, data_b64: []const u8) void {
+    var chunk: [tty_chunk]u8 = undefined;
+    const size = std.base64.standard.Decoder.calcSizeForSlice(data_b64) catch {
+        reply(conn_fd, "{{\"type\":\"tty.error\",\"id\":1,\"message\":\"data is not base64\"}}", .{});
+        return;
+    };
+    if (size > chunk.len) {
+        reply(conn_fd, "{{\"type\":\"tty.error\",\"id\":1,\"message\":\"one write piece is too large\"}}", .{});
+        return;
+    }
+    std.base64.standard.Decoder.decode(chunk[0..size], data_b64) catch {
+        reply(conn_fd, "{{\"type\":\"tty.error\",\"id\":1,\"message\":\"data is not base64\"}}", .{});
+        return;
+    };
+    var written: usize = 0;
+    if (size > 0) {
+        const rc = linux.write(master, chunk[0..size].ptr, size);
+        if (linux.errno(rc) == .SUCCESS and rc > 0) written = rc;
+    }
+    reply(conn_fd, "{{\"type\":\"tty.wrote\",\"id\":1,\"bytes\":{d}}}", .{written});
+}
+
+/// One request on a terminal's own port. Returns false when the terminal is
+/// finished and its host should go away.
+fn ttyServeOne(conn_fd: linux.fd_t, master: linux.fd_t, shell_pid: i64) bool {
+    var header: [4]u8 = undefined;
+    if (!readExact(conn_fd, &header)) return true;
+    const len = std.mem.readInt(u32, &header, .big);
+    if (len == 0 or len > max_frame) return true;
+    var payload: [max_frame]u8 = undefined;
+    if (!readExact(conn_fd, payload[0..len])) return true;
+
+    const parsed = std.json.parseFromSlice(std.json.Value, std.heap.page_allocator, payload[0..len], .{}) catch {
+        reply(conn_fd, "{{\"type\":\"tty.error\",\"id\":1,\"message\":\"bad json frame\"}}", .{});
+        return true;
+    };
+    defer parsed.deinit();
+    const obj = switch (parsed.value) {
+        .object => |o| o,
+        else => {
+            reply(conn_fd, "{{\"type\":\"tty.error\",\"id\":1,\"message\":\"frame is not an object\"}}", .{});
+            return true;
+        },
+    };
+    const op = if (obj.get("op")) |v| (if (v == .string) v.string else "") else "";
+
+    if (std.mem.eql(u8, op, "read")) {
+        const asked = if (obj.get("max_bytes")) |v| asUsize(v, tty_chunk) else tty_chunk;
+        ttyReplyRead(conn_fd, master, shell_pid, @min(asked, tty_chunk));
+        return true;
+    }
+    if (std.mem.eql(u8, op, "write")) {
+        const data_b64 = if (obj.get("data_b64")) |v| (if (v == .string) v.string else "") else "";
+        ttyReplyWrite(conn_fd, master, data_b64);
+        return true;
+    }
+    if (std.mem.eql(u8, op, "resize")) {
+        const cols = asU16(if (obj.get("cols")) |v| v else .{ .integer = 0 }, 0);
+        const rows = asU16(if (obj.get("rows")) |v| v else .{ .integer = 0 }, 0);
+        if (!ttyWindowOk(cols, rows)) {
+            reply(conn_fd, "{{\"type\":\"tty.error\",\"id\":1,\"message\":\"cols/rows are out of range\"}}", .{});
+            return true;
+        }
+        _ = ttySetWinsize(master, cols, rows);
+        reply(conn_fd, "{{\"type\":\"tty.resized\",\"id\":1}}", .{});
+        return true;
+    }
+    if (std.mem.eql(u8, op, "close")) {
+        reply(conn_fd, "{{\"type\":\"tty.closed\",\"id\":1}}", .{});
+        return false;
+    }
+    reply(conn_fd, "{{\"type\":\"tty.error\",\"id\":1,\"message\":\"unknown terminal request\"}}", .{});
+    return true;
+}
+
+/// The process that owns one terminal: it creates the pty, forks the shell,
+/// binds the terminal's own vsock port, and serves until the terminal closes.
+fn ttyHost(status_fd: linux.fd_t, request_id: i64, slot: usize, cols: u16, rows: u16, cwd: []const u8) noreturn {
+    const master_rc = linux.open(tty_ptmx, .{ .ACCMODE = .RDWR, .NOCTTY = true }, 0);
+    if (linux.errno(master_rc) != .SUCCESS) ttyFail(status_fd, "the guest has no usable /dev/ptmx");
+    const master: linux.fd_t = @intCast(master_rc);
+
+    var unlock: u32 = 0;
+    if (linux.errno(linux.ioctl(master, tiocsptlck, @intFromPtr(&unlock))) != .SUCCESS) {
+        ttyFail(status_fd, "cannot unlock the pty");
+    }
+    var slave_number: u32 = 0;
+    if (linux.errno(linux.ioctl(master, tiocgptn, @intFromPtr(&slave_number))) != .SUCCESS) {
+        ttyFail(status_fd, "cannot number the pty");
+    }
+
+    const shell_rc = linux.fork();
+    if (linux.errno(shell_rc) != .SUCCESS) ttyFail(status_fd, "fork failed");
+    if (shell_rc == 0) ttyShellChild(slave_number, cwd);
+    const shell_pid: i64 = @intCast(shell_rc);
+
+    _ = ttySetWinsize(master, cols, rows);
+
+    const port = tty_port_base + @as(u32, @intCast(slot));
+    const listen_fd = ttyListen(port) orelse ttyFail(status_fd, "cannot listen on the terminal's port");
+
+    var report: [512]u8 = undefined;
+    const opened = std.fmt.bufPrint(
+        &report,
+        "{{\"type\":\"tty.opened\",\"id\":{d},\"tty_id\":{d},\"pid\":{d},\"port\":{d}}}",
+        .{ request_id, slot, shell_pid, port },
+    ) catch ttyFail(status_fd, "terminal setup failed");
+    writeFrame(status_fd, opened);
+    _ = linux.close(status_fd);
+
+    while (true) {
+        const conn_rc = linux.accept(listen_fd, null, null);
+        if (linux.errno(conn_rc) != .SUCCESS) continue;
+        const conn_fd: linux.fd_t = @intCast(conn_rc);
+        const keep = ttyServeOne(conn_fd, master, shell_pid);
+        _ = linux.close(conn_fd);
+        if (!keep) {
+            ttyKill(master, shell_pid);
+            linux.exit(0);
+        }
+    }
+}
+
+/// Read the terminal host's report. A host that died without one is a failed
+/// open, never an open the caller has to discover is dead.
+fn ttyReadReport(status_fd: linux.fd_t, buf: []u8) ?[]const u8 {
+    var waited: u32 = 0;
+    while (waited < tty_report_deadline_ms) : (waited += 20) {
+        var pfd = [_]linux.pollfd{.{ .fd = status_fd, .events = linux.POLL.IN, .revents = 0 }};
+        const rc = linux.poll(&pfd, 1, 20);
+        if (linux.errno(rc) != .SUCCESS) return null;
+        if (rc > 0) break;
+    }
+    var header: [4]u8 = undefined;
+    if (!readExact(status_fd, &header)) return null;
+    const len = std.mem.readInt(u32, &header, .big);
+    if (len == 0 or len > buf.len) return null;
+    if (!readExact(status_fd, buf[0..len])) return null;
+    return buf[0..len];
+}
+
+/// `tty open`: fork the terminal host and answer with its pid and port. The
+/// agent itself owns no pty, so a terminal outlives any one connection.
+fn runTtyOpen(conn_fd: linux.fd_t, id: i64, cols: u16, rows: u16, cwd: []const u8) void {
+    if (!ttyWindowOk(cols, rows)) {
+        reply(conn_fd, "{{\"type\":\"tty.error\",\"id\":{d},\"message\":\"cols/rows are out of range\"}}", .{id});
+        return;
+    }
+    if (!ttyCwdOk(cwd)) {
+        reply(conn_fd, "{{\"type\":\"tty.error\",\"id\":{d},\"message\":\"the shell must start inside /workspace\"}}", .{id});
+        return;
+    }
+    ttyReapDead();
+    const slot = ttyFreeSlot() orelse {
+        reply(conn_fd, "{{\"type\":\"tty.error\",\"id\":{d},\"message\":\"all {d} terminals are in use\"}}", .{ id, max_ttys });
+        return;
+    };
+
+    var pipe_fds: [2]linux.fd_t = .{ -1, -1 };
+    if (!pipePair(&pipe_fds)) {
+        reply(conn_fd, "{{\"type\":\"tty.error\",\"id\":{d},\"message\":\"pipe failed\"}}", .{id});
+        return;
+    }
+    const report_fd = pipe_fds[0];
+    const status_fd = pipe_fds[1];
+
+    const fork_rc = linux.fork();
+    if (linux.errno(fork_rc) != .SUCCESS) {
+        closeIfOpen(report_fd);
+        closeIfOpen(status_fd);
+        reply(conn_fd, "{{\"type\":\"tty.error\",\"id\":{d},\"message\":\"fork failed\"}}", .{id});
+        return;
+    }
+    if (fork_rc == 0) {
+        _ = linux.close(report_fd);
+        ttyHost(status_fd, id, slot, cols, rows, cwd);
+    }
+    const host_pid: i64 = @intCast(fork_rc);
+    _ = linux.close(status_fd);
+
+    var buf: [max_frame]u8 = undefined;
+    const report = ttyReadReport(report_fd, &buf);
+    _ = linux.close(report_fd);
+    const text = report orelse {
+        _ = linux.syscall2(.kill, @intCast(host_pid), @intFromEnum(linux.SIG.KILL));
+        reply(conn_fd, "{{\"type\":\"tty.error\",\"id\":{d},\"message\":\"the terminal host never reported\"}}", .{id});
+        return;
+    };
+    if (std.mem.indexOf(u8, text, "\"type\":\"tty.opened\"") != null) {
+        tty_slots[slot] = .{ .used = true, .host_pid = host_pid };
+    }
+    writeFrame(conn_fd, text);
+}
 // ─── request dispatch ────────────────────────────────────────────────────
 
 fn asU32(value: std.json.Value, fallback: u32) u32 {
@@ -1007,6 +1410,13 @@ fn asI64(value: std.json.Value, fallback: i64) i64 {
 fn asUsize(value: std.json.Value, fallback: usize) usize {
     return switch (value) {
         .integer => |i| @intCast(@max(i, 0)),
+        else => fallback,
+    };
+}
+
+fn asU16(value: std.json.Value, fallback: u16) u16 {
+    return switch (value) {
+        .integer => |i| @intCast(@min(@max(i, 0), std.math.maxInt(u16))),
         else => fallback,
     };
 }
@@ -1096,6 +1506,21 @@ fn serveRequest(conn_fd: linux.fd_t, text: []const u8) void {
             }
         }
         runSpawn(conn_fd, &req);
+        return;
+    }
+    if (std.mem.eql(u8, kind, "tty")) {
+        const id = if (obj.get("id")) |v| asI64(v, 0) else 0;
+        const op = if (obj.get("op")) |v| (if (v == .string) v.string else "") else "";
+        // Only `open` reaches the agent. A live terminal answers on its own
+        // port, where a tty id names a guest process rather than a request.
+        if (!std.mem.eql(u8, op, "open")) {
+            reply(conn_fd, "{{\"type\":\"tty.error\",\"id\":{d},\"message\":\"the agent only opens terminals\"}}", .{id});
+            return;
+        }
+        const cols = asU16(if (obj.get("cols")) |v| v else .{ .integer = 0 }, 0);
+        const rows = asU16(if (obj.get("rows")) |v| v else .{ .integer = 0 }, 0);
+        const cwd = if (obj.get("cwd")) |v| (if (v == .string) v.string else tty_cwd) else tty_cwd;
+        runTtyOpen(conn_fd, id, cols, rows, cwd);
         return;
     }
     if (std.mem.eql(u8, kind, "probe")) {

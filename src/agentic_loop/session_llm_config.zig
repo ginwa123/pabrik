@@ -54,10 +54,15 @@ pub fn mergedConfigTextFor(
     owner: []const u8,
     workspace_id: []const u8,
 ) ?[]u8 {
-    const overlay: ?[]u8 = if (workspace_id.len > 0)
-        workspace_settings_store.loadRaw(allocator, db, owner, workspace_id) catch null
-    else
-        null;
+    const overlay: ?[]u8 = workspace_config.workspaceOverlay(
+        allocator,
+        io,
+        db,
+        environment,
+        auth_enabled,
+        owner,
+        workspace_id,
+    );
     defer if (overlay) |o| allocator.free(o);
 
     const in_workspace = workspace_id.len > 0;
@@ -395,7 +400,7 @@ test "an overlay in file mode merges over the base and replaces an array" {
     try testing.expectEqualStrings("mine", cfg.active_profile.?);
 }
 
-test "auth mode: a workspace takes its scoped settings from its own row, never from the user config" {
+test "auth mode: a workspace's own row wins for every key it sets" {
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
@@ -419,15 +424,16 @@ test "auth mode: a workspace takes its scoped settings from its own row, never f
     try testing.expectEqual(@as(usize, 1), cfg.tools.?.len);
     try testing.expectEqualStrings("read_file", cfg.tools.?[0]);
 
-    // The user's profile - and its credential - is not part of this scope.
-    try testing.expectEqual(@as(usize, 0), cfg.profiles_models.count());
-    try testing.expect(cfg.active_profile == null);
+    // The row sets tools and nothing about profiles, so the user's profile -
+    // and the key it carries - is what a run here resolves.
+    try testing.expectEqualStrings("opus", cfg.profiles_models.get("claude").?.model);
+    try testing.expectEqualStrings("claude", cfg.active_profile.?);
 
     // General is still shared, so the run keeps the user's retry backoff.
     try testing.expectEqual(@as(u32, 1234), cfg.retry_delay_ms);
 }
 
-test "auth mode with no overlay keeps the user's General settings and inherits no profile" {
+test "auth mode: a workspace with no row adopts the user's scoped settings" {
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
@@ -444,12 +450,39 @@ test "auth mode with no overlay keeps the user's General settings and inherits n
 
     const cfg = fromJsonText(alloc, text) orelse return error.Unparseable;
     defer freeResolved(cfg);
-    try testing.expect(cfg.tools == null);
-    try testing.expect(cfg.active_profile == null);
+    // A workspace nobody has saved into runs with what the user set up, which
+    // is also what the agent sections have to render.
+    try testing.expectEqual(@as(usize, 2), cfg.tools.?.len);
+    try testing.expectEqualStrings("mine", cfg.active_profile.?);
     try testing.expectEqual(@as(u32, 1234), cfg.retry_delay_ms);
 
     // A user who never saved settings, and no overlay either: the singleton.
     try testing.expect(mergedConfigTextFor(alloc, ctx.threaded.io(), &ctx.db, null, true, "u_none", "ws_a") == null);
+}
+
+test "an empty profile copy runs on the user's profiles" {
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+    const alloc = testing.allocator;
+
+    try insertUser(
+        &ctx.db,
+        "u_1",
+        "{\"profiles_models\":{\"claude\":{\"model\":\"opus\",\"api_key\":\"sk-user\"}}," ++
+            "\"active_profile\":\"claude\"}",
+    );
+    // The copy a workspace takes while the user has no profiles yet.
+    try putOverlay(&ctx.db, "u_1", "ws_a", "{\"profiles_models\":{}}");
+
+    const merged = mergedConfigTextFor(alloc, ctx.threaded.io(), &ctx.db, null, true, "u_1", "ws_a") orelse
+        return error.OverlayIgnored;
+    defer alloc.free(merged);
+
+    const cfg = fromJsonText(alloc, merged) orelse return error.Unparseable;
+    defer freeResolved(cfg);
+    try testing.expectEqualStrings("opus", cfg.profiles_models.get("claude").?.model);
+    try testing.expectEqualStrings("claude", cfg.active_profile.?);
 }
 
 test "an overlay never reaches another workspace" {

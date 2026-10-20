@@ -4,6 +4,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
 const terminal_session = @import("terminal_session.zig");
+const terminal_guest = @import("terminal_guest.zig");
 const auth_common = @import("auth_common.zig");
 const ws_frames = gserverz.ws_frames;
 
@@ -11,6 +12,11 @@ const ws_frames = gserverz.ws_frames;
 /// websocket's latency floor, and the one number the two hosts disagree
 /// on: POSIX `poll(2)` wakes the instant the shell writes, so it can
 const pump_tick_ms: c_int = if (terminal_session.pty_backend == .conpty) 20 else 100;
+
+/// The guest path has no pty fd to poll, so one tick is "ask the VM, then wait
+/// this long on the client socket". Shorter than the host path's tick because
+/// the wait doubles as the terminal's output latency.
+const guest_pump_tick_ms: c_int = 50;
 
 /// Max buffered client bytes before a complete frame must arrive.
 /// Control frames are tiny (keystrokes, resize JSON); anything larger
@@ -145,6 +151,11 @@ pub fn terminalWsHandler(
 
     const id = req.query.get("id") orelse return;
     if (id.len == 0) return;
+    if (terminal_guest.isGuestId(id)) {
+        const guest = terminal_guest.getSessionForOwner(id, owner) orelse return;
+        const socket = terminal_guest.socketPath() orelse return;
+        return pumpGuest(server, allocator, client_fd, id, guest, socket);
+    }
     const session = terminal_session.getSessionForOwner(id, owner) orelse return;
     // Attach = explicit user action (tab switch): refresh the user
     // stamp so switching back to a session keeps it alive.
@@ -262,6 +273,117 @@ fn pump(
     }
 }
 
+/// Attach and stream a terminal inside a workspace VM. With no local pty fd to
+/// multiplex, each tick asks the guest for what it has, then waits on the client
+/// socket for the slice the host pty path would have spent in `poll`.
+fn pumpGuest(
+    server: *gserverz.GinwaServer,
+    allocator: std.mem.Allocator,
+    client_fd: i32,
+    id: []const u8,
+    session: *terminal_guest.Session,
+    socket: []const u8,
+) !void {
+    // Attach flush: everything the guest still holds, then stream.
+    var cursor: u64 = 0;
+    {
+        const out = terminal_guest.readOutputAlloc(allocator, socket, session, 0) catch return;
+        defer allocator.free(out.data);
+        cursor = out.cursor;
+        if (out.data.len > 0) {
+            const burst = out.data[0..@min(out.data.len, max_forward_per_tick)];
+            sendBinary(server, allocator, client_fd, burst) catch return;
+        }
+        if (out.exited) {
+            sendExit(server, allocator, client_fd, out.exit_code) catch {};
+            return;
+        }
+    }
+
+    var net_buf: [8192]u8 = undefined;
+    var pending = std.ArrayList(u8).empty;
+    defer pending.deinit(allocator);
+
+    while (true) {
+        // The registry may drop the session (DELETE or the idle sweep) while we
+        // hold no lock; a missing id ends the socket.
+        const live = terminal_guest.getSession(id) orelse return;
+        const out = terminal_guest.readOutputAlloc(allocator, socket, live, cursor) catch return;
+        defer allocator.free(out.data);
+        cursor = out.cursor;
+        if (out.data.len > 0) {
+            const burst = out.data[0..@min(out.data.len, max_forward_per_tick)];
+            sendBinary(server, allocator, client_fd, burst) catch return;
+        }
+        if (out.exited) {
+            sendExit(server, allocator, client_fd, out.exit_code) catch {};
+            return;
+        }
+
+        if (!terminal_session.waitSocketReadable(client_fd, guest_pump_tick_ms)) continue;
+        const n = server.recvFromClient(client_fd, &net_buf) catch return;
+        if (n == 0) return; // peer closed
+        if (pending.items.len + n > max_pending) return;
+        pending.appendSlice(allocator, net_buf[0..n]) catch return;
+
+        while (pending.items.len > 0) {
+            const wire_len = frameWireLen(pending.items) catch |err| {
+                if (err == error.IncompleteFrame) break;
+                return; // InvalidFrame / FrameTooLarge — protocol error.
+            };
+            var frame = ws_frames.parseFrame(allocator, pending.items[0..wire_len]) catch return;
+            defer frame.deinit(allocator);
+
+            switch (frame.opcode) {
+                .text => {
+                    const cur = terminal_guest.getSession(id) orelse return;
+                    const keep = handleGuestControl(server, allocator, client_fd, socket, cur, frame.payload) catch return;
+                    if (!keep) return;
+                },
+                .binary => {}, // binary C→S is ignored (input goes via JSON).
+                .ping => sendPong(server, allocator, client_fd, frame.payload) catch return,
+                .close => return,
+                else => {},
+            }
+
+            const rest = pending.items.len - wire_len;
+            std.mem.copyForwards(u8, pending.items[0..rest], pending.items[wire_len..]);
+            pending.items.len = rest;
+        }
+    }
+}
+
+/// One client control frame, for a terminal inside a workspace VM. Returns false
+/// when the socket should close (the shell has exited).
+fn handleGuestControl(
+    server: *gserverz.GinwaServer,
+    allocator: std.mem.Allocator,
+    fd: i32,
+    socket: []const u8,
+    session: *terminal_guest.Session,
+    payload: []const u8,
+) !bool {
+    const parsed = std.json.parseFromSliceLeaky(WsControl, allocator, payload, .{}) catch return true;
+    if (std.mem.eql(u8, parsed.type, "input")) {
+        const data = parsed.data orelse return true;
+        if (data.len == 0) return true;
+        _ = terminal_guest.writeInput(allocator, socket, session, data) catch |err| {
+            if (err == error.SessionExited) {
+                sendExit(server, allocator, fd, terminal_guest.exitCode(session)) catch {};
+                return false;
+            }
+            return true; // transient failure — keep the socket.
+        };
+        return true;
+    }
+    if (std.mem.eql(u8, parsed.type, "resize")) {
+        const cols = parsed.cols orelse return true;
+        const rows = parsed.rows orelse return true;
+        terminal_guest.resizeSession(allocator, socket, session, cols, rows) catch {};
+        return true;
+    }
+    return true; // unknown type — ignore, keep the socket.
+}
 // ---------------------------------------------------------------------
 // Inline tests (framing + control parsing; the live socket is covered by the
 // functional WS harness test).

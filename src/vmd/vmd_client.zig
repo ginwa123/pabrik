@@ -132,6 +132,26 @@ pub const WalkEntry = struct {
     kind: []u8,
 };
 
+/// A terminal the workspace's VM opened: the id the daemon minted (its position
+/// in the guest's tty table) and the pid of the shell it runs there.
+pub const TtyOpened = struct {
+    tty_id: i64,
+    pid: i64,
+};
+
+/// One piece of a terminal's output. An empty `data` with `eof` means the
+/// terminal had nothing to say right now, which is not the same as an end.
+pub const TtyChunk = struct {
+    data: []u8,
+    eof: bool,
+    exited: bool,
+    exit_code: i64,
+
+    pub fn deinit(self: TtyChunk, allocator: std.mem.Allocator) void {
+        allocator.free(self.data);
+    }
+};
+
 pub const WalkResult = struct {
     entries: []WalkEntry,
     count: usize,
@@ -452,6 +472,130 @@ pub const Client = struct {
                 .eof = c.eof,
                 .missing = c.missing,
             },
+            .failure => |f| self.reportFailure(f),
+            else => Error.ProtocolViolation,
+        };
+    }
+
+    /// Open a terminal inside the workspace's VM. `cwd_rel` is workspace
+    /// relative and the daemon joins it under the guest's `/workspace`.
+    pub fn ttyOpen(
+        self: *Client,
+        workspace_id: []const u8,
+        cwd_rel: []const u8,
+        cols: u16,
+        rows: u16,
+    ) !TtyOpened {
+        var response = try self.call(.{
+            .action = .tty,
+            .id = self.takeId(),
+            .workspace_id = workspace_id,
+            .tty_op = .open,
+            .cwd_rel = cwd_rel,
+            .cols = cols,
+            .rows = rows,
+        }, long_call_guard_ms);
+        defer response.deinit();
+        return switch (response.value) {
+            .tty => |t| blk: {
+                if (t.tty_id < 0) break :blk Error.ProtocolViolation;
+                break :blk .{ .tty_id = t.tty_id, .pid = t.pid };
+            },
+            .failure => |f| self.reportFailure(f),
+            else => Error.ProtocolViolation,
+        };
+    }
+
+    /// Whatever the terminal has produced since the last read.
+    pub fn ttyRead(
+        self: *Client,
+        workspace_id: []const u8,
+        tty_id: i64,
+        max_bytes: usize,
+    ) !TtyChunk {
+        var response = try self.call(.{
+            .action = .tty,
+            .id = self.takeId(),
+            .workspace_id = workspace_id,
+            .tty_op = .read,
+            .tty_id = tty_id,
+            .max_bytes = max_bytes,
+        }, self.guard_ms);
+        defer response.deinit();
+        return switch (response.value) {
+            .tty => |t| .{
+                .data = try self.allocator.dupe(u8, t.data),
+                .eof = t.eof,
+                .exited = t.exited,
+                .exit_code = t.exit_code,
+            },
+            .failure => |f| self.reportFailure(f),
+            else => Error.ProtocolViolation,
+        };
+    }
+
+    /// Keystrokes into the terminal. Returns how many bytes the guest took.
+    pub fn ttyWrite(
+        self: *Client,
+        workspace_id: []const u8,
+        tty_id: i64,
+        data: []const u8,
+    ) !usize {
+        var response = try self.call(.{
+            .action = .tty,
+            .id = self.takeId(),
+            .workspace_id = workspace_id,
+            .tty_op = .write,
+            .tty_id = tty_id,
+            .data = data,
+        }, self.guard_ms);
+        defer response.deinit();
+        return switch (response.value) {
+            .tty => |t| if (t.bytes < 0) self.reportFailure(.{
+                .code = .bad_request,
+                .message = "the terminal refused the input",
+            }) else @as(usize, @intCast(t.bytes)),
+            .failure => |f| self.reportFailure(f),
+            else => Error.ProtocolViolation,
+        };
+    }
+
+    pub fn ttyResize(
+        self: *Client,
+        workspace_id: []const u8,
+        tty_id: i64,
+        cols: u16,
+        rows: u16,
+    ) !void {
+        var response = try self.call(.{
+            .action = .tty,
+            .id = self.takeId(),
+            .workspace_id = workspace_id,
+            .tty_op = .resize,
+            .tty_id = tty_id,
+            .cols = cols,
+            .rows = rows,
+        }, self.guard_ms);
+        defer response.deinit();
+        return switch (response.value) {
+            .ack => {},
+            .failure => |f| self.reportFailure(f),
+            else => Error.ProtocolViolation,
+        };
+    }
+
+    /// Kill the terminal's shell and forget it.
+    pub fn ttyClose(self: *Client, workspace_id: []const u8, tty_id: i64) !void {
+        var response = try self.call(.{
+            .action = .tty,
+            .id = self.takeId(),
+            .workspace_id = workspace_id,
+            .tty_op = .close,
+            .tty_id = tty_id,
+        }, self.guard_ms);
+        defer response.deinit();
+        return switch (response.value) {
+            .ack => {},
             .failure => |f| self.reportFailure(f),
             else => Error.ProtocolViolation,
         };

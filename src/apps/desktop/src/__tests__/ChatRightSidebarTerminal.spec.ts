@@ -122,9 +122,9 @@ const apiState = {
 
 vi.mock('../api', () => ({
   ApiError: FakeApiError,
-  createTerminalSession: vi.fn(async (cwd: string) => {
+  createTerminalSession: vi.fn(async (workspaceId: string, cwd: string) => {
     apiState.nextId += 1
-    return { id: `term-${apiState.nextId}`, pid: 100 + apiState.nextId, cwd }
+    return { id: `term-${apiState.nextId}`, pid: 100 + apiState.nextId, cwd, workspace_id: workspaceId }
   }),
   sendTerminalInput: vi.fn(async () => ({ ok: true, bytes: 3 })),
   getTerminalOutput: vi.fn(async (id: string) => {
@@ -215,6 +215,22 @@ describe('ChatRightSidebar terminal tab (Phase 4: multi-session)', () => {
     wrapper.unmount()
   })
 
+  it('tells the server which workspace hosts the shell', async () => {
+    const wrapper = mount(TerminalTab, {
+      props: { cwd: '/workspace', workspaceId: 'ws_abc' },
+    })
+    await flush()
+    await wrapper.find('[data-testid="terminal-empty-new"]').trigger('click')
+    await waitForCreates(1)
+    // Under --saas this id is what puts the shell inside the workspace VM; an
+    // empty one is the server's refusal, never a host shell.
+    expect(createTerminalSession).toHaveBeenCalledWith('ws_abc', '/workspace', {
+      cols: 80,
+      rows: 24,
+    })
+    wrapper.unmount()
+  })
+
   it('stays empty on mount and creates only on explicit action', async () => {
     const wrapper = mount(TerminalTab, { props: { cwd: '/tmp/toolbox' } })
     await flush()
@@ -224,7 +240,7 @@ describe('ChatRightSidebar terminal tab (Phase 4: multi-session)', () => {
     expect(wrapper.find('[data-testid="terminal-status"]').text()).toContain('No terminal')
     await wrapper.find('[data-testid="terminal-empty-new"]').trigger('click')
     await waitForCreates(1)
-    expect(createTerminalSession).toHaveBeenCalledWith('/tmp/toolbox', {
+    expect(createTerminalSession).toHaveBeenCalledWith('', '/tmp/toolbox', {
       cols: 80,
       rows: 24,
     })
@@ -521,7 +537,7 @@ describe('ChatRightSidebar terminal tab (Phase 4: multi-session)', () => {
     await wrapper.find('[data-testid="terminal-new"]').trigger('click')
     await waitForCreates(1)
     expect(createTerminalSession).toHaveBeenCalledTimes(1)
-    expect(createTerminalSession).toHaveBeenCalledWith('/real/dir', {
+    expect(createTerminalSession).toHaveBeenCalledWith('', '/real/dir', {
       cols: 80,
       rows: 24,
     })

@@ -353,6 +353,96 @@ fn dispatch(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request
         .fs_remove => return dispatchFsRemove(manager, allocator, request),
         .fs_write => return dispatchFsWrite(manager, allocator, request),
         .fs_walk => return dispatchFsWalk(manager, allocator, request),
+        .tty => return dispatchTty(manager, allocator, request),
+    }
+}
+
+/// A terminal RPC. `open` asks the AGENT to fork the guest process that will
+/// own the pty; every other op talks to that process on the port it bound, so
+/// a terminal never queues behind a long `exec` on the agent's own port.
+fn dispatchTty(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request) ![]u8 {
+    const layout = manager.ensure(allocator, request.workspace_id) catch |err| {
+        log("workspace {s} has no usable VM for a terminal: {s}", .{ request.workspace_id, @errorName(err) });
+        return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+    };
+    switch (request.tty_op) {
+        .open => {
+            const cwd = policy.guestCwd(allocator, policy.guest_root, request.cwd_rel) catch |err| {
+                return rpc.encodeFailure(allocator, request.id, .bad_request, @errorName(err));
+            };
+            var refusal = vm_client.TtyRefusal{};
+            const opened = vm_client.ttyOpen(allocator, layout, request.cols, request.rows, cwd, &refusal) catch |err| {
+                log("terminal open in workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
+                if (err == vm_client.Error.TtyFailed) {
+                    const reason = if (refusal.len > 0) refusal.text() else "the guest refused to open a terminal";
+                    return rpc.encodeFailure(allocator, request.id, .bad_request, reason);
+                }
+                return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+            };
+            return rpc.encodeTtyReply(allocator, request.id, .{
+                .op = "open",
+                .tty_id = opened.tty_id,
+                .pid = opened.pid,
+                .data = "",
+                .eof = false,
+                .exited = false,
+                .exit_code = 0,
+                .bytes = 0,
+                .message = "",
+            });
+        },
+        .read => {
+            const chunk = vm_client.ttyRead(allocator, layout, request.tty_id, request.max_bytes) catch |err| {
+                log("terminal read in workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
+                return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+            };
+            defer chunk.deinit(allocator);
+            return rpc.encodeTtyReply(allocator, request.id, .{
+                .op = "read",
+                .tty_id = request.tty_id,
+                .pid = 0,
+                .data = chunk.data,
+                .eof = chunk.eof,
+                .exited = chunk.exited,
+                .exit_code = chunk.exit_code,
+                .bytes = @intCast(chunk.data.len),
+                .message = "",
+            });
+        },
+        .write => {
+            const written = vm_client.ttyWrite(allocator, layout, request.tty_id, request.data) catch |err| {
+                log("terminal write in workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
+                if (err == vm_client.Error.TtyGone) {
+                    return rpc.encodeFailure(allocator, request.id, .not_ready, "the terminal has exited");
+                }
+                return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+            };
+            return rpc.encodeTtyReply(allocator, request.id, .{
+                .op = "write",
+                .tty_id = request.tty_id,
+                .pid = 0,
+                .data = "",
+                .eof = false,
+                .exited = false,
+                .exit_code = 0,
+                .bytes = @intCast(written),
+                .message = "",
+            });
+        },
+        .resize => {
+            vm_client.ttyResize(allocator, layout, request.tty_id, request.cols, request.rows) catch |err| {
+                log("terminal resize in workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
+                return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+            };
+            return rpc.encodeAck(allocator, request.id);
+        },
+        .close => {
+            vm_client.ttyClose(allocator, layout, request.tty_id) catch |err| {
+                log("terminal close in workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
+                return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+            };
+            return rpc.encodeAck(allocator, request.id);
+        },
     }
 }
 

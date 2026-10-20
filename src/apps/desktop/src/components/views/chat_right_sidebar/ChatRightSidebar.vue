@@ -24,6 +24,9 @@ const props = defineProps<{
   /**    * Per-chat persistence key (ChatView's chatId). When set, terminal session ids persist in
    * localStorage and re-attach on return; without it sessions die with the tab (legacy behavior). */
   sessionKey?: string
+  /** The workspace this chat runs in; the Terminal tab runs its shell inside that
+   * workspace's VM under `--saas`. */
+  workspaceId?: string
 }>()
 
 const emit = defineEmits<{
@@ -224,7 +227,7 @@ defineExpose({
         <FolderExplorer :cwd="cwd" @file-click="onExplorerFileClick" />
       </div>
       <div v-show="activePanel === 'terminal'" class="h-full min-h-0">
-        <TerminalTab :cwd="cwd" :session-key="sessionKey" />
+        <TerminalTab :cwd="cwd" :session-key="sessionKey" :workspace-id="workspaceId" />
       </div>
       <div v-show="activePanel === 'changes'" class="h-full min-h-0">
         <SidebarDiffPanel

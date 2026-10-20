@@ -8,6 +8,13 @@ const sqlite = @import("pabrikcore").sqlite;
 /// The `owner` value used when `--auth` is OFF. Also the column DEFAULT.
 pub const FILE_MODE_OWNER = "";
 
+/// The `owner` a `workspace_settings` row uses for a request. ONE definition
+/// for every reader and writer: `--auth` OFF is a single-user instance whose
+/// rows live under `FILE_MODE_OWNER`, whatever identity the request resolved.
+pub fn ownerKey(auth_enabled: bool, resolved_user_id: []const u8) []const u8 {
+    return if (auth_enabled) resolved_user_id else FILE_MODE_OWNER;
+}
+
 /// Is `json_text` an overlay that carries NO overrides?
 pub fn isEmptyOverlay(json_text: []const u8) bool {
     const trimmed = std.mem.trim(u8, json_text, " \t\r\n");
@@ -316,4 +323,34 @@ test "an empty workspace_id is refused rather than written as a global default" 
     );
     try testing.expectEqual(@as(i64, 0), try rowCount(&ctx));
     try testing.expect((try loadRaw(alloc, &ctx.db, FILE_MODE_OWNER, "")) == null);
+}
+
+test "a row written for a request identity is the row a reader finds in file mode" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+
+    // `user_system` is what request identity resolves to with `--auth` off;
+    // every reader asks this store with `FILE_MODE_OWNER`.
+    try saveRaw(alloc, &ctx.db, ownerKey(false, "user_system"), "ws_a", "{\"tools\":[\"read_file\"]}");
+
+    const loaded = (try loadRaw(alloc, &ctx.db, ownerKey(false, ""), "ws_a")) orelse
+        return error.OverlayMissing;
+    defer alloc.free(loaded);
+    try testing.expectEqualStrings("{\"tools\":[\"read_file\"]}", loaded);
+}
+
+test "auth mode keys a workspace's row by the user, not by the sentinel" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+
+    try saveRaw(alloc, &ctx.db, ownerKey(true, "user_1"), "ws_a", "{\"tools\":[\"read_file\"]}");
+
+    try testing.expect((try loadRaw(alloc, &ctx.db, ownerKey(true, "user_2"), "ws_a")) == null);
+    try testing.expect((try loadRaw(alloc, &ctx.db, ownerKey(true, "user_system"), "ws_a")) == null);
+    const loaded = (try loadRaw(alloc, &ctx.db, ownerKey(true, "user_1"), "ws_a")) orelse
+        return error.OverlayMissing;
+    defer alloc.free(loaded);
+    try testing.expectEqualStrings("{\"tools\":[\"read_file\"]}", loaded);
 }
