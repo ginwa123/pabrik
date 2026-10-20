@@ -33,6 +33,7 @@ pub const update_plan_tool_system_prompt =
     \\Use `update_plan` to create or overwrite the session's markdown plan (checklist with `- [ ]` / `- [x]`).
     \\- Call early for multi-step work and after each step to flip the checkbox. The plan is re-injected into your prompt every iteration.
     \\- Content must be 1 byte–256 KiB. Empty content is rejected.
+    \\- Every call REPLACES the whole plan. For a small change (flip one checkbox, reword one step) use `update_plan_text_replace` instead — it edits only the named text and keeps the rest of the plan.
     \\
 ;
 
@@ -41,15 +42,66 @@ pub const update_plan_tool = AgentTool{
     .function = .{
         .name = "update_plan",
         .description =
-        \\`update_plan` overwrites (UPSERT) this session's structured task plan — plain markdown with a `- [ ]` (todo) / `- [x]` (done) checklist.
+        \\`update_plan` overwrites (UPSERT) this session's structured task plan — plain-markdown document with a `- [ ]` (todo) / `- [x]` (done) checklist.
         \\
-        \\- Lay out your plan BEFORE you start work, then overwrite it after each checklist item, flipping `- [ ]` to `- [x]`.
-        \\- The plan is re-injected into your system prompt every iteration, so the next agent (after compaction, restart, or sub-agent handoff) sees the same progress.
-        \\- `content` must be 1 byte – 256 KiB; empty content is rejected. Every call overwrites the prior plan (UPSERT) — there is no merge. `session_id` is implicit (the current session).
-        \\- To close out a finished plan, call with a final marker like `# Plan complete` — never with empty content.
-        \\- To read the current plan, use `get_plan`.
+        \\## Why this exists (READ THIS)
+        \\The plan is the SOURCE OF TRUTH for this session's progress. It is re-injected into your system prompt on every iteration and survives context compaction, restarts, and sub-agent handoffs. After compaction your conversation history is summarized or dropped, but the plan is kept verbatim. If the plan and your memory of the conversation disagree, TRUST THE PLAN. Write it as if the next reader is an agent with ZERO memory of this conversation who must continue the work using only this document.
         \\
-        \\Format suggestion (adapt freely): `## Goal`, then a `## Steps` checklist of `- [x]` done / `- [ ]` pending items, then optional `## Notes`.
+        \\## When to call
+        \\1. BEFORE starting any non-trivial work (3+ steps, multiple files, or anything that may outlast one context window): write the full plan first.
+        \\2. IMMEDIATELY after finishing each checklist item: flip `- [ ]` to `- [x]` and update "Current Focus". Do not batch several completions into one update, and do not wait until the end.
+        \\3. When you learn something that changes the approach (a discovery, a failed attempt, a changed requirement, a new constraint): record it in the plan right away.
+        \\4. Before any long-running or risky operation (large refactor, migration, delegating to a sub-agent): checkpoint the plan first.
+        \\5. When the user changes or adds requirements: update the Goal, Constraints, and Steps to match.
+        \\Skip the plan only for trivial single-step requests.
+        \\
+        \\## What a good plan contains
+        \\- Goal: what "done" means, in 1-3 sentences, including the user's original intent and acceptance criteria. Quote critical user requirements verbatim.
+        \\- Constraints and decisions: user preferences, rules to follow, design choices already made and WHY (so they are not re-litigated after compaction).
+        \\- Steps: an ordered checklist. Make each step concrete, verifiable, and specific, naming exact file paths, function names, commands, or endpoints. Avoid vague items like "fix bugs" or "clean up".
+        \\- Current Focus / Next Action: the single step being worked on and the exact next concrete action (e.g. "edit src/foo.zig `parseHeader`, then run `zig build test`"). This is the first thing a resumed agent reads.
+        \\- Findings and state: facts discovered that you would otherwise lose, such as file locations, root causes, commands that work, values and IDs, what was already tried and failed, and why.
+        \\- Blockers and open questions: anything unresolved or needing user input.
+        \\- Files touched: paths created, modified, or deleted so far, with a one-line note each.
+        \\
+        \\## Rules
+        \\- UPSERT: every call REPLACES the entire plan. There is no merge or append. Always send the COMPLETE plan including all previously completed items, otherwise that progress is lost.
+        \\- Never remove or rewrite `- [x]` items; they are the record of what is already done. Keep step order stable and add new steps instead of renumbering.
+        \\- If a step turns out to be wrong or unnecessary, keep it and mark it as skipped with the reason (e.g. `- [x] ~~Step~~ (skipped: reason)`) rather than deleting it silently.
+        \\- Only mark `- [x]` when the work is actually done and verified (build, tests, or output checked). If it is partially done, keep `- [ ]` and describe the remaining part in Current Focus.
+        \\- Keep it dense and factual, with no filler or conversational text. Prefer exact paths, names, and commands over prose. Do not paste large code or logs; reference where they live instead.
+        \\- `content` must be 1 byte – 256 KiB; empty content is rejected. `session_id` is implicit (the current session).
+        \\- To close out a finished plan, call with a final marker such as `# Plan complete` followed by a short summary of the outcome. Never call with empty content.
+        \\- To read the current plan, use `get_plan`. After compaction or a restart, read the injected plan first and resume from "Current Focus" rather than redoing finished steps.
+        \\
+        \\## Small edits: use `update_plan_text_replace`, not this tool
+        \\Every call to `update_plan` REPLACES the whole plan, so a one-line change means re-sending the entire document — and anything you forget to resend is lost. When only a small part changes (flip one checkbox, reword one step, correct one finding, update "Current Focus"), call `update_plan_text_replace` with the exact `old_text` and its `new_text` instead: it edits only the text you name and leaves every other line untouched.
+        \\
+        \\## Recommended format (adapt freely, but keep these sections)
+        \\```
+        \\## Goal
+        \\<what done means + acceptance criteria>
+        \\
+        \\## Constraints & Decisions
+        \\- <user rule / design decision — why>
+        \\
+        \\## Steps
+        \\- [x] 1. <completed step — result>
+        \\- [ ] 2. <pending step — exact files/commands>
+        \\- [ ] 3. <pending step>
+        \\
+        \\## Current Focus
+        \\Step 2 — next action: <exact concrete action>
+        \\
+        \\## Findings & State
+        \\- <fact / path / command / failed attempt + reason>
+        \\
+        \\## Files Touched
+        \\- <path> — <what changed>
+        \\
+        \\## Blockers / Open Questions
+        \\- <none | item>
+        \\```
         ,
         .parameters = .{
             .type = "object",

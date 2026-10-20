@@ -40,6 +40,11 @@ pub fn makePlanContext(
         \\`- [ ]` → `- [x]`). The plan is automatically re-injected into your
         \\system prompt on every iteration, so you always see the current state.
         \\
+        \\`update_plan` REPLACES the whole plan, so a small change (flip one
+        \\checkbox, reword one step) is better made with `update_plan_text_replace`:
+        \\pass the exact `old_text` and its `new_text` and it edits only that text,
+        \\leaving every other line of the plan untouched.
+        \\
     );
 
     // Wrap the raw plan body in a markdown fence so the agent's parser treats

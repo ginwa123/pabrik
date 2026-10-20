@@ -105,6 +105,18 @@ pub fn buildMessages(
             \\current state explicitly.
             \\
         );
+        // The surgical half: `update_plan` REPLACES the whole plan, so a
+        // one-line change means re-sending the document. The text-replace
+        // tool edits only the text the agent names.
+        if (hasTool(filtered_tools, "update_plan_text_replace")) {
+            try final_system.appendSlice(allocator,
+                \\`update_plan` REPLACES the whole plan. For a small change (flip one checkbox,
+                \\reword one step, update "Current Focus") use `update_plan_text_replace` with the
+                \\exact `old_text` and its `new_text` — it edits only the text you name and leaves
+                \\the rest of the plan untouched.
+                \\
+            );
+        }
     }
     // The four "tools the agent must actually use" mandates: the special tool
     // (search the catalog for a tool), the special skills (load the skill a
@@ -1195,6 +1207,17 @@ const PROMPT_SECTIONS: []const PromptSection = &.{
         \\
         ,
         .requires_tool = "update_plan",
+    },
+    .{
+        .name = "task_planning_surgical_edit",
+        .content =
+        \\`update_plan` REPLACES the whole plan. For a small change (flip one checkbox,
+        \\reword one step, update "Current Focus") use `update_plan_text_replace` with the
+        \\exact `old_text` and its `new_text` — it edits only the text you name and leaves
+        \\the rest of the plan untouched.
+        \\
+        ,
+        .requires_tool = "update_plan_text_replace",
     },
 };
 

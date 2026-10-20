@@ -28,6 +28,10 @@ const BUILTIN_DEFAULT_TOOLS: readonly string[] = [
   'list_web_search_providers',
   'update_plan',
   'get_plan',
+  // Surgical plan edit: replace one snippet of the plan, keep the rest. Ships
+  // default-on with `update_plan` — a one-line change should not cost a
+  // full-plan rewrite.
+  'update_plan_text_replace',
   'ask_user',
   'save_memory',
   'load_memory',
@@ -96,6 +100,7 @@ const GROUP_BY_TOOL: Record<string, string> = {
   list_web_search_providers: 'Search',
   update_plan: 'Planning',
   get_plan: 'Planning',
+  update_plan_text_replace: 'Planning',
   save_memory: 'Memory & sessions',
   load_memory: 'Memory & sessions',
   read_workspace_session: 'Memory & sessions',

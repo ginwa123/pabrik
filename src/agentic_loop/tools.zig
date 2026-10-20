@@ -70,6 +70,7 @@ pub const execSpawnSubAgent = @import("../modules/agent/tools/spawn_sub_agent.zi
 // persists across iterations and gets re-injected into the system prompt.
 pub const execUpdatePlan = @import("../modules/agent/tools/update_plan.zig").execUpdatePlan;
 pub const execGetPlan = @import("../modules/agent/tools/get_plan.zig").execGetPlan;
+pub const execUpdatePlanTextReplace = @import("../modules/agent/tools/update_plan_text_replace.zig").execUpdatePlanTextReplace;
 pub const execListSubAgent = @import("../modules/agent/tools/list_sub_agent.zig").execListSubAgent;
 pub const execUsedTools = @import("../modules/agent/tools/used_tools.zig").execUsedTools;
 // 2026-09-16 — ask_user: ends the turn so the human can answer in their own
