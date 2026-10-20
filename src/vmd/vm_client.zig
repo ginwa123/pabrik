@@ -1250,7 +1250,7 @@ pub fn ttyOpen(
     const obj = parsed.value.object;
     const id = jsonIntField(obj, "tty_id") orelse {
         if (refusal) |out| {
-            const message = jsonStringField(obj, "message") orelse "the guest refused the terminal";
+            const message = refusalText(obj);
             out.len = @min(message.len, TtyRefusal.max);
             @memcpy(out.message[0..out.len], message[0..out.len]);
         }
@@ -1261,6 +1261,17 @@ pub fn ttyOpen(
     const port = jsonIntField(obj, "port") orelse return Error.TtyFailed;
     if (port <= 0 or port > std.math.maxInt(u16)) return Error.TtyFailed;
     return .{ .tty_id = id, .pid = pid, .port = @intCast(port) };
+}
+
+/// What the guest said, in words an operator can act on. The guest answers
+/// "unknown request" when its agent predates the terminal action — the disk
+/// was made from an older image — so the fix replaces the symptom.
+pub fn refusalText(object: std.json.ObjectMap) []const u8 {
+    const message = jsonStringField(object, "message") orelse return "the guest refused the terminal";
+    if (std.mem.eql(u8, message, "unknown request")) {
+        return "the workspace VM's guest agent is too old for terminals: rebuild the guest image and recreate the VM";
+    }
+    return message;
 }
 
 /// One piece of a terminal's output. An empty `data` with `eof` means "nothing
@@ -1397,4 +1408,24 @@ pub fn readSerialExcerpt(allocator: std.mem.Allocator, layout: Layout, max_bytes
     const n = linux.read(fd, out.ptr, out.len);
     if (linux.errno(n) != .SUCCESS) return out[0..0];
     return out[0..n];
+}
+
+const testing = std.testing;
+
+test "a guest that does not know the terminal action says what to do about it" {
+    var parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator,
+        "{\"type\":\"error\",\"message\":\"unknown request\"}", .{});
+    defer parsed.deinit();
+
+    const text = refusalText(parsed.value.object);
+    try testing.expect(std.mem.indexOf(u8, text, "too old") != null);
+    try testing.expect(std.mem.indexOf(u8, text, "recreate the VM") != null);
+}
+
+test "a guest that refuses for its own reason keeps its own words" {
+    var parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator,
+        "{\"type\":\"error\",\"message\":\"the guest is out of terminals\"}", .{});
+    defer parsed.deinit();
+
+    try testing.expectEqualStrings("the guest is out of terminals", refusalText(parsed.value.object));
 }
