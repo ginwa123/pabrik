@@ -22,8 +22,9 @@ const on_disk_agent = "/init.agent";
 /// How long the hand-off may take before the disk's agent is used instead.
 const handoff_timeout_ms: u64 = 20_000;
 
-/// The host's listener may still be coming up when the guest dials.
-const connect_attempts: usize = 50;
+/// The host's listener may still be coming up when the guest dials — but the
+/// disk's agent is right there, so the wait is short.
+const connect_attempts: usize = 15;
 const connect_retry_ms: u64 = 200;
 
 const max_head_bytes: usize = 64;
