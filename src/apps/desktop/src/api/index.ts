@@ -11,6 +11,7 @@ export const API_BASE = '/api'
 import { useNotificationStore } from '../stores/notifications'
 import { getActivePinia } from 'pinia'
 import { useLoadingStore } from '../stores/loading'
+import { getCurrentWorkspaceId } from '../helpers/workspaceScope'
 
 export class ApiError extends Error {
   constructor(
@@ -435,8 +436,12 @@ export async function listFolder(path: string, workspaceId?: string): Promise<Fo
   )
 }
 
+/** The `workspace_id` a folder request carries: SaaS mode lists a workspace's
+ *  VM, so a request that does not say which workspace it means is refused.
+ *  The app shows one workspace at a time — the current one, unless named. */
 function workspaceQuery(workspaceId?: string): string {
-  return workspaceId ? `&workspace_id=${encodeURIComponent(workspaceId)}` : ''
+  const id = workspaceId || getCurrentWorkspaceId()
+  return id ? `&workspace_id=${encodeURIComponent(id)}` : ''
 }
 
 /**  * Server-side recursive file search for the ChatView `@` picker. One round-trip replaces the old
@@ -449,7 +454,7 @@ export async function searchFiles(
   signal?: AbortSignal,
 ): Promise<{ entries: FolderEntry[] }> {
   return await apiFetch<{ entries: FolderEntry[] }>(
-    `/system/folder?path=${encodeURIComponent(cwd)}&action=search&q=${encodeURIComponent(q)}&limit=${limit}&max_depth=${max_depth}`,
+    `/system/folder?path=${encodeURIComponent(cwd)}&action=search&q=${encodeURIComponent(q)}&limit=${limit}&max_depth=${max_depth}${workspaceQuery()}`,
     { signal, silent: true },
   )
 }
@@ -2914,7 +2919,7 @@ export async function listFiles(cwd: string, dirPath?: string): Promise<string[]
   try {
     const targetPath = dirPath || cwd
     const data = await apiFetch<{ entries: FolderEntry[] }>(
-      `/system/folder?path=${encodeURIComponent(targetPath)}&action=list`,
+      `/system/folder?path=${encodeURIComponent(targetPath)}&action=list${workspaceQuery()}`,
     )
     // Return names sorted, directories first
     const entries = data.entries || []

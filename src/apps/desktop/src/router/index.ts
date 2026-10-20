@@ -4,6 +4,7 @@ import LoginView from '../views/LoginView.vue'
 import { getAuthMeCached } from '../helpers/authMe'
 import { useLoadingStore } from '../stores/loading'
 import { getCurrentUserId, purgeForeignScopedKeys, setCurrentUserId } from '../helpers/userScope'
+import { resolveWorkspaceId, setCurrentWorkspaceId } from '../helpers/workspaceScope'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -174,7 +175,19 @@ router.beforeEach(async (to) => {
   }
 })
 
-router.afterEach(() => {
+/** The workspace a route names: its `:workspaceId` path segment, else the
+ * legacy `?workspaceId=` query. */
+function workspaceIdOfRoute(to: { params: Record<string, unknown>; query: Record<string, unknown> }): string | null {
+  const fromQuery = to.query.workspaceId
+  const named = resolveWorkspaceId(
+    to.params.workspaceId as string | string[] | undefined,
+    typeof fromQuery === 'string' && fromQuery.length > 0 ? fromQuery : null,
+  )
+  return named.length > 0 ? named : null
+}
+
+router.afterEach((to) => {
+  setCurrentWorkspaceId(workspaceIdOfRoute(to))
   loadingStore()?.finishRoute()
 })
 

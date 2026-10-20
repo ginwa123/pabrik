@@ -1947,3 +1947,28 @@ A foreign origin is still refused, and so is the same host on another port: the 
 a page served over plain http on the same host counts as same-origin for the gate. A deployment
 that serves one host over both schemes should terminate http (HSTS + a redirect) — that is the
 only place the scheme is visible at all.
+
+---
+
+## 36. The app says which workspace a folder request is about
+
+`--saas` lists a workspace's VM, so `GET /api/system/folder` has to be told WHICH workspace it
+means — without one it answers 400 "SaaS mode lists a workspace's VM: pass workspace_id". The
+client had one way to say it (`&workspace_id=`, added with the picker in #1002) and one caller
+that used it (`AddKanbanDialog`). The Explorer did not, so the right sidebar's tree was empty and
+every attempt raised a toast.
+
+The rule is now in ONE place: **every folder request names the workspace the app is on.** The app
+shows one workspace at a time, and the URL names it, so the router records it on each navigation
+(`helpers/workspaceScope.ts`, the same shape as `helpers/userScope.ts`) and the api layer attaches
+it to every folder call — the Explorer's listing, the pickers' root, the `@` search, the
+autocomplete list. A caller that means another workspace still says so explicitly.
+
+| item | where | proof |
+|---|---|---|
+| the app's current workspace is recorded on every navigation | `router/index.ts` → `helpers/workspaceScope.ts` | unit: the api layer's folder calls carry it |
+| every folder request names it | `api/index.ts::workspaceQuery` | unit: `apiFolderWorkspace.spec.ts` (6 tests) |
+| the Explorer lists the workspace's VM | — | functional: `explorer_saas_ui_test.py` — the request answers 200 with the guest's `/workspace`; without the fix the same request answers 400 |
+
+The route still refuses a request that names no workspace: that is the negative control in the
+functional test, and the reason a caller that means another workspace has to say so.
