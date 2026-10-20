@@ -45,6 +45,7 @@ const EXPECTED_KANBAN_SEEDED_TOOLS = [_][]const u8{
     "spawn_sub_agent",
     "text_replace",
     "update_plan",
+    "update_plan_text_replace",
     "use_skill",
     "use_tool",
     "used_tools",

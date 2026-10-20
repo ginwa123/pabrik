@@ -13,7 +13,7 @@ const io = testing.io;
 // Expected tool lists — mirrors tests/functional/default_tools.py
 // ============================================================================
 
-/// Mirrors `DEFAULT_AGENT_TOOLS` — 35 names, sorted ASC, matching the
+/// Mirrors `DEFAULT_AGENT_TOOLS` — 36 names, sorted ASC, matching the
 /// wire order of `GET /api/agents/:agent_id/tools`.
 const EXPECTED_DEFAULTS = [_][]const u8{
     "add_document",
@@ -44,6 +44,7 @@ const EXPECTED_DEFAULTS = [_][]const u8{
     "spawn_sub_agent",
     "text_replace",
     "update_plan",
+    "update_plan_text_replace",
     "use_skill",
     "use_tool",
     "used_tools",
@@ -68,8 +69,8 @@ fn isSorted(list: []const []const u8) bool {
 
 comptime {
     @setEvalBranchQuota(20_000);
-    if (EXPECTED_DEFAULTS.len != 35)
-        @compileError("EXPECTED_DEFAULTS must mirror default_tools.py's 35-name DEFAULT_AGENT_TOOLS");
+    if (EXPECTED_DEFAULTS.len != 36)
+        @compileError("EXPECTED_DEFAULTS must mirror default_tools.py's 36-name DEFAULT_AGENT_TOOLS");
     if (!isSorted(&EXPECTED_DEFAULTS))
         @compileError("EXPECTED_DEFAULTS must be sorted ASC (the wire order the assertions compare against)");
     for (EXPECTED_DEFAULTS) |name| {
