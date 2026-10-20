@@ -7,8 +7,8 @@ and its follow-ups:
    workspace item opens its board.
 2. ``test_sidebar_rightclick_kanban_go_to_settings_opens_new_tab`` —
    right-click shows "Go to settings"; activating it opens
-   ``/app/kanban/:id/settings`` in a NEW browser tab while the current
-   tab stays put.
+   ``/app/{workspaceId}/projects/{id}/settings`` in a NEW browser tab
+   while the current tab stays put.
 3. ``test_sidebar_rightclick_agent_go_to_settings_opens_item_settings``
    — opens the agent's project URL and renders AgentView even when
    localStorage still selects a different workspace.
@@ -133,7 +133,7 @@ def test_sidebar_rightclick_kanban_go_to_settings_opens_new_tab(
     popup = popup_info.value
     popup.wait_for_load_state("domcontentloaded", timeout=60000)
     try:
-        assert f"/app/kanban/{kanban_id}/settings" in popup.url, (
+        assert f"/app/{ws_id}/projects/{kanban_id}/settings" in popup.url, (
             f"Settings popup opened at unexpected URL: {popup.url}"
         )
         # The current tab must stay put (never navigates to settings itself).

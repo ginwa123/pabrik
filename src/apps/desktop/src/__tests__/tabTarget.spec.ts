@@ -103,6 +103,13 @@ describe('tabKeyOf', () => {
     expect(tabKeyOf('/app/kanban/item_7/settings/', {})).toBe('ks:item_7')
   })
 
+  it('keys the workspace-scoped settings page like the legacy one', () => {
+    // The board is the same target either way, so the tab key must not change
+    // when the URL shape changes.
+    expect(tabKeyOf('/app/ws_1/projects/item_7/settings', {})).toBe('ks:item_7')
+    expect(tabKeyOf('/app/ws_1/projects/item_7/settings/', {})).toBe('ks:item_7')
+  })
+
   it('ignores the tab param and the volatile sorts param', () => {
     const base = tabKeyOf('/app', { view: 'chat', session: 'session-1' })
     expect(tabKeyOf('/app', { view: 'chat', session: 'session-1', tab: 'tab_zzz' })).toBe(base)
@@ -376,6 +383,14 @@ describe('migrateLegacySettingsTab', () => {
   it('leaves browser tab IDs (?tab=tab_xxx) untouched', () => {
     expect(migrateLegacySettingsTab(KS, { tab: 'tab_mu0lle6j940yz' })).toEqual({
       tab: 'tab_mu0lle6j940yz',
+    })
+  })
+
+  it('migrates the legacy ?tab= on the workspace-scoped settings page too', () => {
+    expect(
+      migrateLegacySettingsTab('/app/ws_1/projects/item_1/settings', { tab: 'tools' }),
+    ).toEqual({
+      section: 'agent',
     })
   })
 

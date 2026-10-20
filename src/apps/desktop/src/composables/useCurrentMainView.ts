@@ -51,6 +51,15 @@ export function useCurrentMainView(): ComputedRef<CurrentMainView> {
       return { kind: 'document', documentId: parsed.documentId, workspaceId: parsed.workspaceId }
     }
 
+    // Kanban settings page, workspace-scoped: /app/{ws}/projects/{pid}/settings.
+    if (parsed.kind === 'projectSettings') {
+      return {
+        kind: 'kanban-settings',
+        workspaceId: parsed.workspaceId,
+        itemId: parsed.projectId,
+      }
+    }
+
     // Landing with a legacy `?view=` query is not the landing — fall
     // through to the query handling below (the boot rewrite converts
     // it to a path URL on the next tick).
@@ -108,8 +117,7 @@ export function useCurrentMainView(): ComputedRef<CurrentMainView> {
       }
       return { kind: 'none' }
     }
-    // kanban-settings page (path route /app/kanban/:itemId/settings). itemId comes from
-    // route.params (path).
+    // LEGACY kanban-settings path (/app/kanban/:itemId/settings) — itemId comes from the path.
     const kanbanSettingsMatch = /^\/app\/kanban\/([^/]*)\/settings\/?$/.exec(route?.path ?? '')
     if (kanbanSettingsMatch) {
       return {

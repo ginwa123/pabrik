@@ -30,5 +30,8 @@ describe('router catch-all', () => {
     // after it.
     await router.push('/app/ws_1/projects/item_7/add')
     expect(router.currentRoute.value.path).toBe('/app/ws_1/projects/item_7/add')
+
+    await router.push('/app/ws_1/projects/item_7/settings')
+    expect(router.currentRoute.value.path).toBe('/app/ws_1/projects/item_7/settings')
   })
 })
