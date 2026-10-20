@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { isDocumentFile } from '@/helpers/fileAttachments'
 
 export interface PreviewFile {
   file: File
@@ -26,6 +27,8 @@ const popupItem = computed(() => {
 })
 
 const isVideoFile = (file: File): boolean => file.type.startsWith('video/')
+
+const isImageFile = (file: File): boolean => file.type.startsWith('image/')
 
 const removeFile = (index: number) => {
   const newFiles = [...props.modelValue]
@@ -66,6 +69,18 @@ const closePopup = () => {
           controls
           preload="metadata"
         />
+        <div v-else-if="isDocumentFile(item.file)" class="preview-document">
+          <svg class="preview-document-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"
+            />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 2v6h6" />
+          </svg>
+          <span class="preview-document-name">{{ item.file.name }}</span>
+        </div>
         <img
           v-else
           :src="item.previewUrl"
@@ -116,7 +131,16 @@ const closePopup = () => {
             controls
             preload="metadata"
           />
-          <img v-else :src="popupItem.previewUrl" :alt="popupItem.file.name" class="popup-image" />
+          <img
+            v-else-if="isImageFile(popupItem.file)"
+            :src="popupItem.previewUrl"
+            :alt="popupItem.file.name"
+            class="popup-image"
+          />
+          <div v-else class="popup-document">
+            <span class="popup-filename">{{ popupItem.file.name }}</span>
+            <span class="popup-size">{{ (popupItem.file.size / 1024).toFixed(1) }} KB</span>
+          </div>
           <div class="popup-footer">
             <span class="popup-filename">{{ popupItem.file.name }}</span>
             <span class="popup-size">{{ (popupItem.file.size / 1024).toFixed(1) }} KB</span>
@@ -159,6 +183,33 @@ const closePopup = () => {
 
 .preview-image:hover {
   opacity: 0.9;
+}
+
+.preview-document {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+  padding: 4px;
+  color: var(--color-text);
+}
+
+.preview-document-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.preview-document-name {
+  font-size: var(--text-micro);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .remove-btn {
@@ -254,6 +305,14 @@ const closePopup = () => {
   max-height: calc(90vh - 60px);
   object-fit: contain;
   border-radius: 8px;
+}
+
+.popup-document {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 24px;
 }
 
 .popup-footer {

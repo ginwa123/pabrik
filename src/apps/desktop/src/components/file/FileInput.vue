@@ -10,6 +10,12 @@ import { runSyncResult } from '../../sync/runtime'
 import FilePreview from './FilePreview.vue'
 import UiIcon from '../ui/UiIcon.vue'
 import { parseBackgroundCommandOutput } from '@/helpers/isBackgroundCommandOutput'
+import {
+  FILE_ATTACHMENT_ACCEPT,
+  MAX_FILE_ATTACHMENT_BYTES,
+  MAX_FILE_ATTACHMENT_COUNT,
+  isDocumentFile,
+} from '@/helpers/fileAttachments'
 
 export interface QueuedMessage {
   id: string
@@ -222,10 +228,22 @@ const triggerFilePicker = () => {
   nativeFileInput.value?.click()
 }
 
-// Add a single image or video file to the preview list (shared by paperclip + paste flows)
-const addImageFile = (file: File) => {
-  if (!isMediaFile(file)) return
+// Add a single image, video or document to the preview list (shared by the paperclip + paste
+// flows). A document rides along as a file attachment — the model reads a PDF as a file and a
+// text document as text.
+const addAttachmentFile = (file: File) => {
+  const isMedia = isMediaFile(file)
+  const isDocument = isDocumentFile(file)
+  if (!isMedia && !isDocument) return
   if (isVideoFile(file) && file.size > MAX_VIDEO_BYTES) return
+  // The caps bound the DOCUMENTS only — they mirror the backend's file caps,
+  // and the image/video path has always had its own.
+  if (isDocument) {
+    const staged = previewFiles.value.filter((item) => isDocumentFile(item.file))
+    if (staged.length >= MAX_FILE_ATTACHMENT_COUNT) return
+    const stagedBytes = staged.reduce((sum, item) => sum + item.file.size, 0)
+    if (stagedBytes + file.size > MAX_FILE_ATTACHMENT_BYTES) return
+  }
   const previewUrl = URL.createObjectURL(file)
   previewFiles.value.push({ file, previewUrl })
 }
@@ -238,7 +256,7 @@ const handleNativeFileSelect = (event: Event) => {
 
   for (const file of files) {
     if (!file) continue
-    addImageFile(file)
+    addAttachmentFile(file)
   }
 
   // Reset the input so same files can be selected again
@@ -272,9 +290,9 @@ const handlePaste = async (e: ClipboardEvent) => {
       if (!file.name) {
         const ext = item.type.split('/')[1] ?? 'png'
         const renamed = new File([file], `pasted-image-${Date.now()}.${ext}`, { type: item.type })
-        addImageFile(renamed)
+        addAttachmentFile(renamed)
       } else {
-        addImageFile(file)
+        addAttachmentFile(file)
       }
       pastedImageCount++
     }
@@ -292,7 +310,7 @@ const handlePaste = async (e: ClipboardEvent) => {
           const blob = await ci.getType(type)
           const ext = type.split('/')[1] ?? 'png'
           const file = new File([blob], `pasted-image-${Date.now()}.${ext}`, { type })
-          addImageFile(file)
+          addAttachmentFile(file)
           pastedImageCount++
         }
       }
@@ -1036,7 +1054,7 @@ const sendMessage = () => {
       ref="nativeFileInput"
       type="file"
       class="hidden"
-      accept="image/*,video/*"
+      :accept="FILE_ATTACHMENT_ACCEPT"
       @change="handleNativeFileSelect"
     />
 

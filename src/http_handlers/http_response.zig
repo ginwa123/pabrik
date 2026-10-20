@@ -197,6 +197,9 @@ pub const SessionMessage = struct {
     diffview_after: []const u8 = "",
     image_url: []const u8 = "",
     video_url: []const u8 = "",
+    /// The attached files as a JSON array of `{name, mime, bytes}` — the
+    /// bytes never cross the read path.
+    file_attachments: []const u8 = "",
     tool_call_id: []const u8 = "",
     tool_calls_json: []const u8 = "",
 };
