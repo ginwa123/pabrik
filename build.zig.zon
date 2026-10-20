@@ -181,7 +181,7 @@
         //     is over the file tree, not the commit — so only the `#<sha>`
         //     moves. Do not "re-derive" the hash just because the SHA changed.
         .kabelweb = .{
-            .url = "git+https://github.com/ginwa123/kabelweb.git#e834a678fe30e14b193e0cb95433d667c4a4dce1",
+            .url = "git+https://github.com/ginwa123/kabelweb.git#5bd37c31d50446d2410d28c3c8a247c239281958",
             .hash = "kabelweb-0.0.0-vhZam0qGHQCzi7tg9e4tnQucLRoFxnrkXSsTjV_rBxal",
         },
         // The Zig linter (github.com/ginwa123/zglint), moved out of
