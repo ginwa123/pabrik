@@ -9,6 +9,7 @@ const policy = @import("policy.zig");
 const vm_client = @import("vm_client.zig");
 const reconciler_mod = @import("reconciler.zig");
 const egress_proxy = @import("egress_proxy.zig");
+const agent_service = @import("agent_service.zig");
 const proxy_rpc = @import("proxy_rpc.zig");
 
 pub const Error = error{
@@ -41,6 +42,10 @@ pub const Config = struct {
     /// The host's own TCP ports, refused to every workspace's egress whatever
     /// address is used to reach them.
     host_listeners: []const u16 = &.{8081},
+    /// The `pabrik-vm-agent` this host serves to a guest's bootstrap. Null
+    /// means the daemon serves none, and every guest runs the agent that is
+    /// on its own disk.
+    agent_path: ?[]const u8 = null,
 };
 
 pub const State = struct {
@@ -58,9 +63,16 @@ pub const State = struct {
 pub const Manager = struct {
     allocator: std.mem.Allocator,
     config: Config,
+    /// The current agent, served to every guest's bootstrap. Empty when the
+    /// daemon was started without one.
+    agent: []const u8 = &.{},
 
     pub fn init(allocator: std.mem.Allocator, config: Config) Manager {
-        return .{ .allocator = allocator, .config = config };
+        return .{
+            .allocator = allocator,
+            .config = config,
+            .agent = readAgent(allocator, config.agent_path),
+        };
     }
 
     pub fn expectedUid(self: *const Manager) u32 {
@@ -97,17 +109,18 @@ pub const Manager = struct {
 
     /// The workspace's layout, booting its VM only when the reconciler says so.
     pub fn ensure(self: *const Manager, allocator: std.mem.Allocator, workspace_id: []const u8) !vm_client.Layout {
+        // The listeners are bound BEFORE the VM boots: a guest's bootstrap
+        // dials for the agent the moment the kernel starts, and the request
+        // below only returns once the guest is up (or has failed).
+        const layout = try self.layoutFor(allocator, workspace_id);
+        egress_proxy.ensure(self.allocator, layout, self.config.host_listeners);
+        agent_service.ensure(self.allocator, layout, self.agent);
         const record = try self.reconciler().request(allocator, workspace_id);
         defer record.deinit(allocator);
         if (record.state != .ready) {
             log("workspace {s} is {s}: {s}", .{ workspace_id, record.state.name(), record.last_error });
             return error.VmUnavailable;
         }
-        const layout = try self.layoutFor(allocator, workspace_id);
-        // Bound before the first guest op. The listeners and their accept
-        // threads outlive this request, so they are allocated from the daemon's
-        // allocator and never from the caller's arena.
-        egress_proxy.ensure(self.allocator, layout, self.config.host_listeners);
         return layout;
     }
 
@@ -133,6 +146,17 @@ pub const Manager = struct {
         return record.state == .absent;
     }
 };
+
+/// The agent's bytes, or none when there is no agent to serve.
+fn readAgent(allocator: std.mem.Allocator, path: ?[]const u8) []const u8 {
+    const file = path orelse return &.{};
+    const bytes = egress_proxy.readFileAlloc(allocator, file, agent_service.max_agent_bytes) orelse {
+        log("agent: cannot read {s}", .{file});
+        return &.{};
+    };
+    log("agent: serving {s} ({d} bytes) to every guest's bootstrap", .{ file, bytes.len });
+    return bytes;
+}
 
 // ─── peer credentials ───────────────────────────────────────────────────
 

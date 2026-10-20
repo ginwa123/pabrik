@@ -42,6 +42,9 @@ pub const Artifacts = struct {
     kernel: []const u8,
     fc: []const u8,
     root: []const u8,
+    /// The agent the manager serves to a guest's bootstrap. Empty means it
+    /// serves none, and every guest runs the agent on its own disk.
+    agent: []const u8 = "",
 };
 
 pub const Plan = union(enum) {
@@ -56,6 +59,7 @@ pub const Found = struct {
     kernel: ?[]const u8 = null,
     fc: ?[]const u8 = null,
     root: []const u8 = "",
+    agent: ?[]const u8 = null,
 };
 
 pub fn plan(found: Found) Plan {
@@ -69,6 +73,7 @@ pub fn plan(found: Found) Plan {
         .kernel = kernel,
         .fc = fc,
         .root = found.root,
+        .agent = found.agent orelse "",
     } };
 }
 
@@ -76,16 +81,26 @@ pub const max_argv = 16;
 
 /// The exact argv `pabrik-vmd serve` is forked with: program, command, pairs.
 pub fn argvFor(artifacts: Artifacts, socket_path: []const u8, buf: *[max_argv][]const u8) []const []const u8 {
-    const words = [_][]const u8{
+    var words = [_][]const u8{
         artifacts.vmd,  "serve",
         "--socket",     socket_path,
         "--base-image", artifacts.base_image,
         "--kernel",     artifacts.kernel,
         "--fc",         artifacts.fc,
         "--root",       artifacts.root,
+        "",             "", // the agent, when there is one
     };
-    @memcpy(buf[0..words.len], &words);
-    return buf[0..words.len];
+    // The twelve fixed words (the program, the command and five pairs); the
+    // two agent slots follow when there is one.
+    var len: usize = 12;
+    if (artifacts.agent.len > 0) {
+        words[len] = "--agent";
+        len += 1;
+        words[len] = artifacts.agent;
+        len += 1;
+    }
+    @memcpy(buf[0..len], words[0..len]);
+    return buf[0..len];
 }
 
 pub const Candidates = std.ArrayList([]const u8);
@@ -119,6 +134,16 @@ pub fn vmdCandidates(a: std.mem.Allocator, env: *const std.process.Environ.Map, 
     if (env.get("PABRIK_VMD_BIN")) |path| try addOwned(&list, a, path);
     if (exe_dir) |dir| try addJoined(&list, a, &.{ dir, "pabrik-vmd" });
     try addOnPath(&list, a, env.get("PATH"), "pabrik-vmd");
+    return list;
+}
+
+/// `PABRIK_VM_AGENT`, then beside the manager binary. The agent is optional:
+/// without one every guest runs the agent on its own disk.
+pub fn agentCandidates(a: std.mem.Allocator, env: *const std.process.Environ.Map, exe_dir: ?[]const u8) !Candidates {
+    var list: Candidates = .empty;
+    errdefer freeCandidates(&list, a);
+    if (env.get("PABRIK_VM_AGENT")) |path| try addOwned(&list, a, path);
+    if (exe_dir) |dir| try addJoined(&list, a, &.{ dir, "pabrik-vm-agent" });
     return list;
 }
 
@@ -209,6 +234,11 @@ fn resolve(a: std.mem.Allocator, io: std.Io, env: *const std.process.Environ.Map
 
     const firecrackers = try fcCandidates(a, env, home);
     found.fc = firstUsable(io, firecrackers.items, .{ .execute = true });
+
+    // The agent the manager serves to a guest's bootstrap. Optional: without
+    // one every guest runs the agent that is on its own disk.
+    const agents = try agentCandidates(a, env, exe_dir);
+    found.agent = firstUsable(io, agents.items, .{ .read = true });
     return found;
 }
 
@@ -283,6 +313,9 @@ fn spawnDetached(a: std.mem.Allocator, artifacts: Artifacts, socket_path: []cons
     const log_path = a.dupeZ(u8, log_text) catch return null;
     const envp = [_:null]?[*:0]const u8{ "PATH=/usr/local/bin:/usr/bin:/bin", null };
 
+    std.log.info("--saas: launching {s} {s} {s} {s} {s} {s}", .{
+        words[0], words[1], words[2], words[3], words[4], words[5],
+    });
     const child = linux.fork();
     if (linux.errno(child) != .SUCCESS) return null;
     if (child == 0) {
@@ -384,6 +417,31 @@ test "argvFor: program and command first, then one value per flag" {
     };
     try testing.expectEqual(expected.len, argv.len);
     for (expected, 0..) |word, i| try testing.expectEqualStrings(word, argv[i]);
+}
+
+test "argvFor: the agent is handed to the manager when there is one" {
+    var buf: [max_argv][]const u8 = undefined;
+    var artifacts = testArtifacts();
+    artifacts.agent = "/opt/pabrik/pabrik-vm-agent";
+    const argv = argvFor(artifacts, "/run/user/1000/pabrik-vmd.sock", &buf);
+
+    try testing.expectEqual(@as(usize, 14), argv.len);
+    try testing.expectEqualStrings("--agent", argv[12]);
+    try testing.expectEqualStrings("/opt/pabrik/pabrik-vm-agent", argv[13]);
+}
+
+test "agentCandidates: the env override, then the binary beside the manager" {
+    const a = testing.allocator;
+    var env = std.process.Environ.Map.init(a);
+    defer env.deinit();
+    try env.put("PABRIK_VM_AGENT", "/custom/pabrik-vm-agent");
+
+    var list = try agentCandidates(a, &env, "/opt/pabrik");
+    defer freeCandidates(&list, a);
+
+    try testing.expectEqual(@as(usize, 2), list.items.len);
+    try testing.expectEqualStrings("/custom/pabrik-vm-agent", list.items[0]);
+    try testing.expectEqualStrings("/opt/pabrik/pabrik-vm-agent", list.items[1]);
 }
 
 test "vmdCandidates: env override, beside the binary, then PATH order" {

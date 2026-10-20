@@ -2535,6 +2535,17 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
+    // The guest's `/init`: it asks the host for the current agent and execs
+    // it, so a workspace's disk never carries the agent (see
+    // src/vm_agent/bootstrap.zig).
+    const vm_bootstrap_exe = b.addExecutable(.{
+        .name = "pabrik-vm-bootstrap",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/vm_agent/bootstrap.zig"),
+            .target = guest_target,
+            .optimize = optimize,
+        }),
+    });
     const vm_probe_exe = b.addExecutable(.{
         .name = "pabrik-probe",
         .root_module = b.createModule(.{
@@ -2553,10 +2564,13 @@ pub fn build(b: *std.Build) void {
     });
     const install_vm_netd = b.addInstallArtifact(vm_netd_exe, .{});
     const install_vm_agent = b.addInstallArtifact(vm_agent_exe, .{});
+    const install_vm_bootstrap = b.addInstallArtifact(vm_bootstrap_exe, .{});
     const install_vm_probe = b.addInstallArtifact(vm_probe_exe, .{});
     vm_step.dependOn(&install_vm_agent.step);
+    vm_step.dependOn(&install_vm_bootstrap.step);
     vm_step.dependOn(&install_vm_probe.step);
     b.getInstallStep().dependOn(&install_vm_agent.step);
+    b.getInstallStep().dependOn(&install_vm_bootstrap.step);
     b.getInstallStep().dependOn(&install_vm_probe.step);
     vm_step.dependOn(&install_vm_netd.step);
     b.getInstallStep().dependOn(&install_vm_netd.step);
