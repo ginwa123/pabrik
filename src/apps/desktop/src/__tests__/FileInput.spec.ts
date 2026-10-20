@@ -284,7 +284,7 @@ describe('FileInput — paste image (Ctrl+V) attaches to preview', () => {
     ta.dispatchEvent(ev)
     await flushPromises()
 
-    // FileInput is image-only (the paperclip flow), so PDFs are ignored.
+    // The PASTE flow is media-only (the paperclip flow takes documents too).
     expect(wrapper.findAll('.preview-item').length).toBe(0)
     // preventDefault is only called when at least one image was attached.
     expect(ev.defaultPrevented).toBe(false)

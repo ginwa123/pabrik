@@ -39,6 +39,7 @@ const get_llm_histories_mod = @import("get_llm_histories.zig");
 const get_queue_message_mod = @import("get_queue_message.zig");
 const has_queue_message_mod = @import("has_queue_messagge.zig");
 const insert_llm_histories_mod = @import("insert_llm_histories.zig");
+const file_attachments = @import("file_attachments.zig");
 const insert_queue_message_mod = @import("insert_queue_message.zig");
 const is_session_kanban_mod = @import("is_session_kanban.zig");
 const is_worker_cancelled_mod = @import("is_worker_cancelled.zig");
@@ -582,6 +583,10 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
     const copy_is_sub_agent = params.is_sub_agent;
     const copy_image_urls = try parent_allocator.dupe(u8, params.image_urls);
     const copy_video_urls = try parent_allocator.dupe(u8, params.video_urls);
+    const copy_file_attachments = try parent_allocator.dupe(u8, params.file_attachments);
+    // The queue row owns its own copy, so the payload is dead once the
+    // message is queued.
+    defer parent_allocator.free(copy_file_attachments);
     const copy_inherited_context = try parent_allocator.dupe(u8, params.inherited_context);
     var is_have_queue_message = false;
 
@@ -632,6 +637,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             .message = copy_message,
             .image_url = copy_image_urls,
             .video_url = copy_video_urls,
+            .file_attachments = copy_file_attachments,
             .event_bus = event_bus,
             .is_emit_sse = true,
         });
@@ -664,6 +670,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             .message = copy_message,
             .image_url = copy_image_urls,
             .video_url = copy_video_urls,
+            .file_attachments = copy_file_attachments,
             .event_bus = event_bus,
             .is_emit_sse = true,
         });
@@ -879,6 +886,19 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                     };
                 }
 
+                // The attachments ride as a JSON payload; the read path
+                // needs the metadata only, so derive it here.
+                var file_attachments_meta: []const u8 = "";
+                if (queued.file_attachments.len > 0) {
+                    if (file_attachments.parseStored(allocator, queued.file_attachments)) |parsed_files| {
+                        var stored = parsed_files;
+                        defer stored.deinit();
+                        file_attachments_meta = file_attachments.encodeMeta(allocator, stored.files) catch "";
+                    } else |parse_err| {
+                        logger.errFmt("[CHECKPOINT] file attachments parse failed session_id={s}: {s}", .{ copy_session_id, @errorName(parse_err) });
+                    }
+                }
+
                 _ = try insertLLMHistories(.{
                     .allocator = allocator,
                     .io = io,
@@ -910,6 +930,8 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                         .is_output = false,
                         .image_urls = image_urls,
                         .video_urls = video_urls,
+                        .file_attachments = if (queued.file_attachments.len > 0) queued.file_attachments else null,
+                        .file_attachments_meta = if (file_attachments_meta.len > 0) file_attachments_meta else null,
                         .created_at = try std.fmt.allocPrint(allocator, "{}", .{std.Io.Timestamp.now(io, .real).nanoseconds}),
                         .is_feed_to_llm = true,
                     },
@@ -2110,6 +2132,9 @@ pub const RunParamsNew = struct {
     is_sub_agent: bool = false,
     image_urls: []const u8 = "",
     video_urls: []const u8 = "",
+    /// The chat's file attachments, as the JSON payload the model path
+    /// reads. Empty when the message carries no file.
+    file_attachments: []const u8 = "",
     selected_profile_model: []const u8 = "",
     inherited_context: []const u8 = "",
     sub_agent_overrides: ?SubAgentOverrides = null,

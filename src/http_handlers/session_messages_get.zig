@@ -131,6 +131,7 @@ pub fn sessionMessagesHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
             .diffview_after = msg.diffview_after orelse "",
             .image_url = image_url_str,
             .video_url = video_url_str,
+            .file_attachments = msg.file_attachments_meta orelse "",
             .tool_call_id = msg.tool_call_id orelse "",
             .tool_calls_json = msg.tool_calls_json orelse "",
         };

@@ -35,6 +35,12 @@ pub const LLMHistory = struct {
     diffview_after: ?[]const u8 = null,
     image_urls: ?[][]const u8 = null,
     video_urls: ?[][]const u8 = null,
+    /// The chat's file attachments, as the JSON payload the model path
+    /// reads (name, mime, bytes, and the text or the base64).
+    file_attachments: ?[]const u8 = null,
+    /// The same attachments as metadata only (name, mime, bytes) — what the
+    /// read path emits, so the bytes never cross the wire twice.
+    file_attachments_meta: ?[]const u8 = null,
     tool_call_id: ?[]const u8 = null,
     tool_calls_json: []const u8,
     is_feed_to_llm: bool = true,
@@ -65,6 +71,8 @@ pub const LLMHistory = struct {
             for (vums) |vid| allocator.free(vid);
             allocator.free(vums);
         }
+        if (self.file_attachments) |fa| allocator.free(fa);
+        if (self.file_attachments_meta) |fam| allocator.free(fam);
         if (self.tool_call_id) |tci| allocator.free(tci);
         if (self.parent_id) |pi| allocator.free(pi);
     }

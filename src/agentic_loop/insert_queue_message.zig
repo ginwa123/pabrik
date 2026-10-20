@@ -15,6 +15,9 @@ pub const InsertQueueMessageInput = struct {
     message: []const u8,
     image_url: []const u8,
     video_url: []const u8 = "",
+    /// The chat's file attachments, as the JSON payload the model path
+    /// reads. Empty when the message carries no file.
+    file_attachments: []const u8 = "",
     event_bus: ?*event_bus_mod.EventBus,
     is_emit_sse: bool,
 };
@@ -31,18 +34,21 @@ pub fn insertQueueMessage(
     const message = obj.message;
     const image_url = obj.image_url;
     const video_url = obj.video_url;
+    const file_attachments = obj.file_attachments;
     const is_emit_sse = obj.is_emit_sse;
 
     const id = try std.fmt.allocPrint(allocator, "{}", .{std.Io.Timestamp.now(std.Options.debug_io, .real).nanoseconds});
     defer allocator.free(id);
 
-    const sql = "INSERT INTO session_queue_messages (id, session_id, message, image_url, video_url) VALUES (?, ?, ?, ?, ?)";
+    const sql = "INSERT INTO session_queue_messages (id, session_id, message, image_url, video_url, file_attachments) VALUES (?, ?, ?, ?, ?, ?)";
     const copy_image_url = try allocator.dupe(u8, image_url);
     defer allocator.free(copy_image_url);
     const copy_video_url = try allocator.dupe(u8, video_url);
     defer allocator.free(copy_video_url);
+    const copy_file_attachments = try allocator.dupe(u8, file_attachments);
+    defer allocator.free(copy_file_attachments);
 
-    try db.exec(allocator, sql, &.{ id, session_id, message, copy_image_url, copy_video_url });
+    try db.exec(allocator, sql, &.{ id, session_id, message, copy_image_url, copy_video_url, copy_file_attachments });
 
     // Emit SSE event to notify connected clients
     if (is_emit_sse) {
@@ -97,7 +103,8 @@ fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
         \\    session_id TEXT NOT NULL,
         \\    message TEXT NOT NULL,
         \\    image_url TEXT,
-        \\    video_url TEXT
+        \\    video_url TEXT,
+        \\    file_attachments TEXT
         \\)
     , &.{});
     return .{ .db = db, .threaded = threaded };

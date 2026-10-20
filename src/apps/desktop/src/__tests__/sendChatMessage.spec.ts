@@ -98,6 +98,20 @@ describe('sendChatMessage — attachment wire format', () => {
     expect(body.video_urls).toBe('')
   })
 
+  it('sends the attached documents as ONE JSON array field', async () => {
+    const body = await postedBody('s1', 'hi', '/cwd', [], undefined, undefined, [], undefined, [
+      { name: 'doc.pdf', mime: 'application/pdf', b64: 'aGk=' },
+    ])
+    expect(JSON.parse(String(body.file_attachments))).toEqual([
+      { name: 'doc.pdf', mime: 'application/pdf', b64: 'aGk=' },
+    ])
+  })
+
+  it('omits the file field when the message carries no document', async () => {
+    const body = await postedBody('s1', 'hi', '/cwd')
+    expect(body.file_attachments).toBeUndefined()
+  })
+
   it('routes data:video entries to video_urls, joined with ||', async () => {
     const body = await postedBody(
       's1',
