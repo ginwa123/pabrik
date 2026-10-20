@@ -282,26 +282,6 @@ const renderTool = (content: string, tool_name: string | undefined): string => {
     return `<span class="tool-inline">${tool_name} → wrote ${innerBytes}b of plan</span>`
   }
 
-  if (tool_name === 'update_plan_text_replace') {
-    // Collapsed-bubble summary for the inline tool pill in ChatView. JSON envelope:
-    // {"tool":…,"success":bool,"data":{session_id,updated_at,plan,replacements},"error":…}
-    const unwrapped = tryUnwrapToolOutput(content)
-    if (unwrapped !== null) {
-      if (!unwrapped.success) {
-        return `<span class="tool-inline">${tool_name} → ${escapeHtml(unwrapped.error ?? 'error')}</span>`
-      }
-      const data =
-        typeof unwrapped.data === 'object' && unwrapped.data !== null && !Array.isArray(unwrapped.data)
-          ? (unwrapped.data as Record<string, unknown>)
-          : null
-      if (data !== null) {
-        const count = typeof data.replacements === 'number' ? data.replacements : null
-        const suffix = count === null ? '' : ` · ${count} replacement${count === 1 ? '' : 's'}`
-        return `<span class="tool-inline">${tool_name} → edited plan${suffix}</span>`
-      }
-    }
-  }
-
   if (tool_name === 'get_plan') {
     // Collapsed-bubble summary for the inline tool pill in ChatView. Mirrors the structured
     // GetPlan.vue card so users see "fetched current plan · N items" whether they look at the

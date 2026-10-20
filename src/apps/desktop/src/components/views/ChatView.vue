@@ -4213,15 +4213,6 @@ const compactSession = async () => {
                             — local toggle is enough for an optional UI).
                           -->
                           <UpdatePlan v-else-if="msg.tool_name === 'update_plan'" :message="msg" />
-                          <!--
-                            `update_plan_text_replace` is the surgical edit of the plan: its
-                            payload carries the same `plan` field, so the same checklist card
-                            renders it.
-                          -->
-                          <UpdatePlan
-                            v-else-if="msg.tool_name === 'update_plan_text_replace'"
-                            :message="msg"
-                          />
                           <GetPlan v-else-if="msg.tool_name === 'get_plan'" :message="msg" />
                           <ListSubAgent
                             v-else-if="msg.tool_name === 'list_sub_agent'"

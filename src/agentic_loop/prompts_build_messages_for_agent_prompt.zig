@@ -104,19 +104,13 @@ pub fn buildMessages(
             \\every iteration, so you always see the current state. Use `get_plan` to verify the
             \\current state explicitly.
             \\
+            \\`update_plan` has two modes: pass `content` to rewrite the whole plan, or `old_text` +
+            \\`new_text` to replace ONE snippet and leave the rest of the plan untouched. For a small
+            \\change (flip one checkbox, reword one step, update "Current Focus") use the text-replace
+            \\mode — a full rewrite means resending the whole document, and anything you forget to
+            \\resend is lost.
+            \\
         );
-        // The surgical half: `update_plan` REPLACES the whole plan, so a
-        // one-line change means re-sending the document. The text-replace
-        // tool edits only the text the agent names.
-        if (hasTool(filtered_tools, "update_plan_text_replace")) {
-            try final_system.appendSlice(allocator,
-                \\`update_plan` REPLACES the whole plan. For a small change (flip one checkbox,
-                \\reword one step, update "Current Focus") use `update_plan_text_replace` with the
-                \\exact `old_text` and its `new_text` — it edits only the text you name and leaves
-                \\the rest of the plan untouched.
-                \\
-            );
-        }
     }
     // The four "tools the agent must actually use" mandates: the special tool
     // (search the catalog for a tool), the special skills (load the skill a
@@ -1205,19 +1199,14 @@ const PROMPT_SECTIONS: []const PromptSection = &.{
         \\every iteration, so you always see the current state. Use `get_plan` to verify the
         \\current state explicitly.
         \\
-        ,
-        .requires_tool = "update_plan",
-    },
-    .{
-        .name = "task_planning_surgical_edit",
-        .content =
-        \\`update_plan` REPLACES the whole plan. For a small change (flip one checkbox,
-        \\reword one step, update "Current Focus") use `update_plan_text_replace` with the
-        \\exact `old_text` and its `new_text` — it edits only the text you name and leaves
-        \\the rest of the plan untouched.
+        \\`update_plan` has two modes: pass `content` to rewrite the whole plan, or `old_text` +
+        \\`new_text` to replace ONE snippet and leave the rest of the plan untouched. For a small
+        \\change (flip one checkbox, reword one step, update "Current Focus") use the text-replace
+        \\mode — a full rewrite means resending the whole document, and anything you forget to
+        \\resend is lost.
         \\
         ,
-        .requires_tool = "update_plan_text_replace",
+        .requires_tool = "update_plan",
     },
 };
 

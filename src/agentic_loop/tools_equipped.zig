@@ -49,10 +49,7 @@ const list_secrets_mod = pabrikcore.list_secrets;
 // 2026-08-19 — session_plan agent tools (Task 4 of 2026-08-19-session-plan-agent-tool.md).
 // Markdown task plan with - [ ] / - [x] checklist, persisted across iterations.
 const update_plan_mod = pabrikcore.update_plan;
-const get_plan_mod = pabrikcore.get_plan;
-// update_plan_text_replace — the surgical edit of the plan: replace ONE
-// snippet, leave the rest of the document untouched.
-const update_plan_text_replace_mod = pabrikcore.update_plan_text_replace;
+const get_plan_mod =pabrikcore.get_plan;
 const list_sub_agent_mod = pabrikcore.list_sub_agent;
 const used_tools_mod = pabrikcore.used_tools;
 const run_skill_eval_mod = @import("run_skill_eval.zig");
@@ -89,7 +86,6 @@ pub fn equips(allocator: std.mem.Allocator) []const AgentTool {
         // 2026-08-19 — session_plan tools (Task 4).
         update_plan_mod.update_plan_tool,
         get_plan_mod.get_plan_tool,
-        update_plan_text_replace_mod.update_plan_text_replace_tool,
         list_sub_agent_mod.list_sub_agent_tool,
         // used_tools: read-only introspection over this very list ("what
         // tools do I have"). Sub-agent-safe (NOT main-agent-only).
@@ -197,7 +193,6 @@ pub fn UNIFIED_TOOL_REGISTRY() []const ToolInfo {
         // 2026-08-19-session-plan-agent-tool.md).
         .{ .name = "update_plan", .exec = tools.execUpdatePlan, .tool_def = update_plan_mod.update_plan_tool },
         .{ .name = "get_plan", .exec = tools.execGetPlan, .tool_def = get_plan_mod.get_plan_tool },
-        .{ .name = "update_plan_text_replace", .exec = tools.execUpdatePlanTextReplace, .tool_def = update_plan_text_replace_mod.update_plan_text_replace_tool },
         .{ .name = "list_sub_agent", .exec = tools.execListSubAgent, .tool_def = list_sub_agent_mod.list_sub_agent_tool },
         // used_tools: read-only introspection ("what tools do I have").
         // Available in every mode; the exec adapter resolves the
@@ -342,7 +337,6 @@ pub const DEFAULT_AGENT_TOOLS: []const []const u8 = &.{
     // for context-aware tools
     update_plan_mod.update_plan_tool.function.name,
     get_plan_mod.get_plan_tool.function.name,
-    update_plan_text_replace_mod.update_plan_text_replace_tool.function.name,
 
     // interactive — ask the human and end the turn
     ask_user_mod.ask_user_tool.function.name,

@@ -49,7 +49,6 @@ test {
     _ = @import("progressive_catalog.zig"); // progressive tool catalog + result renderers
     _ = @import("progressive_regex.zig"); // search_tool's in-process regex engine (Pike VM + python-`re` oracle table)
     _ = @import("../modules/agent/tools/update_plan.zig"); // inlined 3 tests from update_plan_test.zig
-    _ = @import("../modules/agent/tools/update_plan_text_replace.zig"); // the surgical plan edit
     _ = @import("../modules/agent/tools/memory.zig"); // merged save/load/delete exec wrappers + inlined 2 delete tests
     _ = @import("../modules/agent/tools/add_mcp_server.zig"); // 2026-08-28-add-mcp-server-agent-tool — Step 3 (exec wrapper)
     _ = @import("kanban_model.zig"); // Phase 4 — inlined tests from 3 kanban_model_*_test.zig files

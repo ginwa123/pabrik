@@ -1,5 +1,6 @@
-//! Agent-callable tool: `update_plan` — UPSERT the agent's task plan for the
-//! current session as markdown with a `- [ ]` / `- [x]` checklist.
+//! Agent-callable tool: `update_plan` — write the agent's task plan for the
+//! current session as markdown with a `- [ ]` / `- [x]` checklist. Either a
+//! full rewrite (UPSERT) or a text replace of ONE snippet of the current plan.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -19,21 +20,31 @@ const session_plan = @import("../../../agentic_loop/session_plan.zig");
 /// reach into the storage module. Same value (256 KiB).
 pub const MAX_PLAN_BYTES: usize = session_plan.MAX_PLAN_BYTES;
 
-/// Input for `update_plan`.
+/// Input for `update_plan`. Two modes, one tool:
+/// - FULL REWRITE: `content` carries the COMPLETE plan body (1 byte – 256 KiB).
+/// - TEXT REPLACE: `old_text` + `new_text` edit ONE snippet of the plan.
 pub const UpdatePlanInput = struct {
     /// The markdown plan body. 1 byte – 256 KiB. Empty content is rejected
     /// (use a final marker like `# Plan complete` to "close" a plan instead
-    /// of calling with empty).
+    /// of calling with empty). Empty when the text-replace mode is used.
     content: []const u8 = "",
+    /// The exact text to find in the current plan (text-replace mode).
+    /// Must match exactly once unless `replace_all` is true.
+    old_text: []const u8 = "",
+    /// The replacement text (text-replace mode). Empty deletes the match.
+    new_text: []const u8 = "",
+    /// Replace every occurrence of `old_text` (text-replace mode).
+    replace_all: bool = false,
 };
 
 /// Top-level tool definition for the LLM.
 pub const update_plan_tool_system_prompt =
     \\## Update Plan Tool — Behavior
-    \\Use `update_plan` to create or overwrite the session's markdown plan (checklist with `- [ ]` / `- [x]`).
-    \\- Call early for multi-step work and after each step to flip the checkbox. The plan is re-injected into your prompt every iteration.
-    \\- Content must be 1 byte–256 KiB. Empty content is rejected.
-    \\- Every call REPLACES the whole plan. For a small change (flip one checkbox, reword one step) use `update_plan_text_replace` instead — it edits only the named text and keeps the rest of the plan.
+    \\Use `update_plan` to write the session's markdown plan (checklist with `- [ ]` / `- [x]`). TWO modes:
+    \\- FULL REWRITE: pass `content` — the COMPLETE plan body. It REPLACES the whole plan.
+    \\- TEXT REPLACE: pass `old_text` + `new_text` — only that text changes, the rest of the plan stays as it is.
+    \\- Call early for multi-step work and after each step to flip the checkbox (text-replace mode). The plan is re-injected into your prompt every iteration.
+    \\- `content` must be 1 byte–256 KiB. Empty content is rejected.
     \\
 ;
 
@@ -42,14 +53,21 @@ pub const update_plan_tool = AgentTool{
     .function = .{
         .name = "update_plan",
         .description =
-        \\`update_plan` overwrites (UPSERT) this session's structured task plan — plain-markdown document with a `- [ ]` (todo) / `- [x]` (done) checklist.
+        \\`update_plan` writes this session's structured task plan — a plain-markdown document with a `- [ ]` (todo) / `- [x]` (done) checklist. It has TWO modes; use ONE per call.
+        \\
+        \\## Mode 1 — full rewrite (UPSERT): pass `content`
+        \\`content` is the COMPLETE plan body. It REPLACES the whole plan — there is no merge or append. Always send the complete plan including all previously completed items, otherwise that progress is lost.
+        \\
+        \\## Mode 2 — text replace: pass `old_text` + `new_text`
+        \\`old_text` is the exact text to find in the CURRENT plan; `new_text` is what replaces it. ONLY that text changes — every other line of the plan stays exactly as it was. `old_text` must match exactly once; when it matches several times the call is refused (add surrounding context, or pass `replace_all: true` to replace them all). `new_text` may be empty to delete the matched text. Read the plan with `get_plan` when you need the exact text.
+        \\Use this mode for SMALL changes: flip one checkbox, reword one step, correct one finding, update "Current Focus". A full rewrite of a long plan means resending the whole document, and anything you forget to resend is lost.
         \\
         \\## Why this exists (READ THIS)
         \\The plan is the SOURCE OF TRUTH for this session's progress. It is re-injected into your system prompt on every iteration and survives context compaction, restarts, and sub-agent handoffs. After compaction your conversation history is summarized or dropped, but the plan is kept verbatim. If the plan and your memory of the conversation disagree, TRUST THE PLAN. Write it as if the next reader is an agent with ZERO memory of this conversation who must continue the work using only this document.
         \\
         \\## When to call
-        \\1. BEFORE starting any non-trivial work (3+ steps, multiple files, or anything that may outlast one context window): write the full plan first.
-        \\2. IMMEDIATELY after finishing each checklist item: flip `- [ ]` to `- [x]` and update "Current Focus". Do not batch several completions into one update, and do not wait until the end.
+        \\1. BEFORE starting any non-trivial work (3+ steps, multiple files, or anything that may outlast one context window): write the full plan first (Mode 1).
+        \\2. IMMEDIATELY after finishing each checklist item: flip `- [ ]` to `- [x]` and update "Current Focus" — Mode 2 touches just that line. Do not batch several completions into one update, and do not wait until the end.
         \\3. When you learn something that changes the approach (a discovery, a failed attempt, a changed requirement, a new constraint): record it in the plan right away.
         \\4. Before any long-running or risky operation (large refactor, migration, delegating to a sub-agent): checkpoint the plan first.
         \\5. When the user changes or adds requirements: update the Goal, Constraints, and Steps to match.
@@ -65,7 +83,7 @@ pub const update_plan_tool = AgentTool{
         \\- Files touched: paths created, modified, or deleted so far, with a one-line note each.
         \\
         \\## Rules
-        \\- UPSERT: every call REPLACES the entire plan. There is no merge or append. Always send the COMPLETE plan including all previously completed items, otherwise that progress is lost.
+        \\- Mode 1 is an UPSERT: every call REPLACES the entire plan. There is no merge or append. Always send the COMPLETE plan including all previously completed items, otherwise that progress is lost. Mode 2 edits the named snippet in place and never touches the rest of the plan.
         \\- Never remove or rewrite `- [x]` items; they are the record of what is already done. Keep step order stable and add new steps instead of renumbering.
         \\- If a step turns out to be wrong or unnecessary, keep it and mark it as skipped with the reason (e.g. `- [x] ~~Step~~ (skipped: reason)`) rather than deleting it silently.
         \\- Only mark `- [x]` when the work is actually done and verified (build, tests, or output checked). If it is partially done, keep `- [ ]` and describe the remaining part in Current Focus.
@@ -73,9 +91,6 @@ pub const update_plan_tool = AgentTool{
         \\- `content` must be 1 byte – 256 KiB; empty content is rejected. `session_id` is implicit (the current session).
         \\- To close out a finished plan, call with a final marker such as `# Plan complete` followed by a short summary of the outcome. Never call with empty content.
         \\- To read the current plan, use `get_plan`. After compaction or a restart, read the injected plan first and resume from "Current Focus" rather than redoing finished steps.
-        \\
-        \\## Small edits: use `update_plan_text_replace`, not this tool
-        \\Every call to `update_plan` REPLACES the whole plan, so a one-line change means re-sending the entire document — and anything you forget to resend is lost. When only a small part changes (flip one checkbox, reword one step, correct one finding, update "Current Focus"), call `update_plan_text_replace` with the exact `old_text` and its `new_text` instead: it edits only the text you name and leaves every other line untouched.
         \\
         \\## Recommended format (adapt freely, but keep these sections)
         \\```
@@ -109,23 +124,47 @@ pub const update_plan_tool = AgentTool{
                 .{
                     .name = "content",
                     .type = "string",
-                    .description = "The full markdown plan body. 1 byte – 256 KiB. Replaces any existing plan. Required.",
+                    .description = "Mode 1 (full rewrite): the COMPLETE markdown plan body. 1 byte – 256 KiB. It replaces any existing plan, so include all prior completed items, the current focus, constraints, findings and next action. Leave it out when you use the text-replace mode.",
+                },
+                .{
+                    .name = "old_text",
+                    .type = "string",
+                    .description = "Mode 2 (text replace): the exact text to find in the current plan. Must appear exactly once unless `replace_all` is true. Copy it verbatim from the plan (use `get_plan` to read it).",
+                },
+                .{
+                    .name = "new_text",
+                    .type = "string",
+                    .description = "Mode 2 (text replace): the replacement text. An empty string deletes the matched text.",
+                },
+                .{
+                    .name = "replace_all",
+                    .type = "boolean",
+                    .description = "Mode 2 only: when true, replace EVERY occurrence of `old_text`. When false (default), an `old_text` that matches more than once is refused.",
                 },
             },
-            .required = &.{"content"},
+            .required = &.{},
         },
         .system_prompt = update_plan_tool_system_prompt,
     },
 };
 
 /// Execute update_plan. Returns a JSON string for the LLM. Caller owns the
-/// returned slice and must free it with `allocator.free()`.
+/// returned slice and must free it with `allocator.free()`. Two modes:
+/// `old_text` set → TEXT REPLACE of one snippet; otherwise → FULL REWRITE.
 pub fn executeUpdatePlan(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
     session_id: []const u8,
     input: UpdatePlanInput,
 ) ![]const u8 {
+    if (input.old_text.len > 0) {
+        return executeTextReplace(allocator, db, session_id, input);
+    }
+
+    if (input.content.len == 0) {
+        return jsonError(allocator, "content must be non-empty (1 byte minimum) — pass `content` for a full rewrite, or `old_text` + `new_text` to edit one snippet of the current plan");
+    }
+
     const updated_at = session_plan.savePlan(allocator, db, .{
         .session_id = session_id,
         .content = input.content,
@@ -141,7 +180,110 @@ pub fn executeUpdatePlan(
     };
     defer allocator.free(updated_at);
 
-    return successJSON(allocator, session_id, updated_at, input.content);
+    return successJSON(allocator, session_id, updated_at, input.content, 0);
+}
+
+/// The TEXT REPLACE mode: swap `old_text` for `new_text` inside the CURRENT
+/// plan. Every other line of the plan is left exactly as it was.
+fn executeTextReplace(
+    allocator: std.mem.Allocator,
+    db: *sqlite.SqliteBackend,
+    session_id: []const u8,
+    input: UpdatePlanInput,
+) ![]const u8 {
+    const current = session_plan.getPlan(allocator, db, session_id) catch |err| {
+        const msg = try std.fmt.allocPrint(allocator, "could not read the current plan: {s}", .{@errorName(err)});
+        defer allocator.free(msg);
+        return jsonError(allocator, msg);
+    };
+    defer allocator.free(current);
+
+    if (current.len == 0) {
+        return jsonError(allocator, "this session has no plan yet — write one with `content` first");
+    }
+
+    const occurrences = countOccurrences(current, input.old_text);
+    if (occurrences == 0) {
+        return jsonError(allocator, "old_text was not found in the current plan — read it with get_plan and copy the text exactly");
+    }
+    if (occurrences > 1 and !input.replace_all) {
+        var msg_buf: [160]u8 = undefined;
+        const msg = try std.fmt.bufPrint(
+            &msg_buf,
+            "old_text matches {d} times — include more surrounding context to make it unique, or set replace_all to true",
+            .{occurrences},
+        );
+        return jsonError(allocator, msg);
+    }
+
+    const new_plan = try replaceOccurrences(
+        allocator,
+        current,
+        input.old_text,
+        input.new_text,
+        input.replace_all,
+    );
+    defer allocator.free(new_plan);
+
+    if (new_plan.len == 0) {
+        return jsonError(allocator, "the replacement would empty the plan — a plan must stay non-empty");
+    }
+    if (new_plan.len > MAX_PLAN_BYTES) {
+        return jsonError(allocator, "the replacement would exceed the 256 KiB per-plan cap");
+    }
+
+    const updated_at = session_plan.savePlan(allocator, db, .{
+        .session_id = session_id,
+        .content = new_plan,
+    }) catch |err| {
+        const msg = switch (err) {
+            error.InvalidContent => "the replacement would empty the plan — a plan must stay non-empty",
+            error.ContentTooLarge => "the replacement would exceed the 256 KiB per-plan cap",
+            error.InvalidSessionId => "session_id is required (this is a bug — exec adapter should pass ctx.session_id)",
+            error.RowNotFoundAfterInsert => "row missing after UPSERT (DB inconsistency)",
+            else => @errorName(err),
+        };
+        return jsonError(allocator, msg);
+    };
+    defer allocator.free(updated_at);
+
+    const replacements: usize = if (input.replace_all) occurrences else 1;
+    return successJSON(allocator, session_id, updated_at, new_plan, replacements);
+}
+
+/// How many times `needle` appears in `haystack` (non-overlapping).
+fn countOccurrences(haystack: []const u8, needle: []const u8) usize {
+    var count: usize = 0;
+    var idx: usize = 0;
+    while (std.mem.indexOfPos(u8, haystack, idx, needle)) |pos| {
+        count += 1;
+        idx = pos + needle.len;
+    }
+    return count;
+}
+
+/// Build the plan body with `needle` replaced by `replacement`. When `all`
+/// is false only the FIRST occurrence is replaced.
+fn replaceOccurrences(
+    allocator: std.mem.Allocator,
+    haystack: []const u8,
+    needle: []const u8,
+    replacement: []const u8,
+    all: bool,
+) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+
+    var idx: usize = 0;
+    while (std.mem.indexOfPos(u8, haystack, idx, needle)) |pos| {
+        try out.appendSlice(allocator, haystack[idx..pos]);
+        try out.appendSlice(allocator, replacement);
+        idx = pos + needle.len;
+        if (!all) break;
+    }
+    try out.appendSlice(allocator, haystack[idx..]);
+
+    return out.toOwnedSlice(allocator);
 }
 
 fn successJSON(
@@ -149,6 +291,7 @@ fn successJSON(
     session_id: []const u8,
     updated_at: []const u8,
     content: []const u8,
+    replacements: usize,
 ) ![]u8 {
     const clean_sid = try sanitize(allocator, session_id);
     defer allocator.free(clean_sid);
@@ -161,6 +304,7 @@ fn successJSON(
         .session_id = clean_sid,
         .updated_at = clean_ts,
         .plan = clean_plan,
+        .replacements = replacements,
     }, .{});
 }
 
@@ -333,7 +477,7 @@ test "executeUpdatePlan: oversized content (> MAX_PLAN_BYTES) returns error payl
 
 // ─── Test 4: JSON schema shape (name / required / properties) ──────────────
 
-test "update_plan_tool JSON schema: name='update_plan', required=['content'], properties=[content]" {
+test "update_plan_tool JSON schema: the description names BOTH modes" {
     const tool = update_plan_tool;
 
     // Top-level type must be 'function' (OpenAI conventions).
@@ -342,20 +486,220 @@ test "update_plan_tool JSON schema: name='update_plan', required=['content'], pr
     // Function name.
     try testing.expectEqualStrings("update_plan", tool.function.name);
 
-    // Description must mention both the tool name and the checklist pattern
-    // — the description is the agent's primary "when to call this" signal.
+    // The description is the agent's primary "when to call this" signal, and
+    // the tool has TWO modes now — the model can only pick the right one if
+    // the description names both the full-rewrite and the text-replace half.
     const description = tool.function.description;
     try testing.expect(std.mem.indexOf(u8, description, "update_plan") != null);
     try testing.expect(std.mem.indexOf(u8, description, "checklist") != null);
+    try testing.expect(std.mem.indexOf(u8, description, "content") != null);
+    try testing.expect(std.mem.indexOf(u8, description, "old_text") != null);
+    try testing.expect(std.mem.indexOf(u8, description, "new_text") != null);
+}
 
-    // Required: exactly ["content"] — session_id is implicit (D3).
-    try testing.expectEqual(@as(usize, 1), tool.function.parameters.required.len);
-    try testing.expectEqualStrings("content", tool.function.parameters.required[0]);
+// ─── Text-replace mode ────────────────────────────────────────────────────
+// Mode 2: `old_text` → `new_text` inside the CURRENT plan. Only the named
+// text changes; every other line of the plan stays byte-for-byte.
 
-    // Properties: exactly one (content) — no session_id parameter.
-    try testing.expectEqual(@as(usize, 1), tool.function.parameters.properties.len);
-    try testing.expectEqualStrings("content", tool.function.parameters.properties[0].name);
-    try testing.expectEqualStrings("string", tool.function.parameters.properties[0].type);
+test "update_plan: the text-replace mode flips one checklist item and leaves the rest of the plan untouched" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const original = "## Steps\n- [ ] 1. write the tool\n- [ ] 2. register it\n";
+    {
+        const ts = try session_plan.savePlan(alloc, &ctx.db, .{
+            .session_id = "s_one",
+            .content = original,
+        });
+        defer alloc.free(ts);
+    }
+
+    const result = try executeUpdatePlan(alloc, &ctx.db, "s_one", .{
+        .old_text = "- [ ] 1. write the tool",
+        .new_text = "- [x] 1. write the tool",
+    });
+    defer alloc.free(result);
+
+    // The stored plan changed ONLY at the matched line.
+    const stored = try session_plan.getPlan(alloc, &ctx.db, "s_one");
+    defer alloc.free(stored);
+    try testing.expectEqualStrings(
+        "## Steps\n- [x] 1. write the tool\n- [ ] 2. register it\n",
+        stored,
+    );
+
+    // The payload echoes the new plan and reports one replacement.
+    const parsed = try parseTestJson(alloc, result);
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+    try testing.expectEqualStrings(
+        "## Steps\n- [x] 1. write the tool\n- [ ] 2. register it\n",
+        obj.get("plan").?.string,
+    );
+    try testing.expectEqual(@as(i64, 1), obj.get("replacements").?.integer);
+    try testing.expect(obj.get("error") == null);
+}
+
+test "update_plan: a text-replace whose old_text matches twice is refused and the plan is not touched" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const original = "- [ ] step\n- [ ] step\n";
+    {
+        const ts = try session_plan.savePlan(alloc, &ctx.db, .{
+            .session_id = "s_ambiguous",
+            .content = original,
+        });
+        defer alloc.free(ts);
+    }
+
+    const result = try executeUpdatePlan(alloc, &ctx.db, "s_ambiguous", .{
+        .old_text = "- [ ] step",
+        .new_text = "- [x] step",
+    });
+    defer alloc.free(result);
+
+    const parsed = try parseTestJson(alloc, result);
+    defer parsed.deinit();
+    const err = parsed.value.object.get("error").?.string;
+    try testing.expect(std.mem.indexOf(u8, err, "2 times") != null);
+
+    // The plan row is unchanged — an ambiguous edit writes nothing.
+    const stored = try session_plan.getPlan(alloc, &ctx.db, "s_ambiguous");
+    defer alloc.free(stored);
+    try testing.expectEqualStrings(original, stored);
+}
+
+test "update_plan: replace_all rewrites every occurrence" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    {
+        const ts = try session_plan.savePlan(alloc, &ctx.db, .{
+            .session_id = "s_all",
+            .content = "- [ ] step\n- [ ] step\n- [ ] other\n",
+        });
+        defer alloc.free(ts);
+    }
+
+    const result = try executeUpdatePlan(alloc, &ctx.db, "s_all", .{
+        .old_text = "- [ ] step",
+        .new_text = "- [x] step",
+        .replace_all = true,
+    });
+    defer alloc.free(result);
+
+    const stored = try session_plan.getPlan(alloc, &ctx.db, "s_all");
+    defer alloc.free(stored);
+    try testing.expectEqualStrings("- [x] step\n- [x] step\n- [ ] other\n", stored);
+
+    const parsed = try parseTestJson(alloc, result);
+    defer parsed.deinit();
+    try testing.expectEqual(@as(i64, 2), parsed.value.object.get("replacements").?.integer);
+}
+
+test "update_plan: a text-replace whose old_text is not in the plan leaves the plan alone" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const original = "- [ ] only step\n";
+    {
+        const ts = try session_plan.savePlan(alloc, &ctx.db, .{
+            .session_id = "s_missing",
+            .content = original,
+        });
+        defer alloc.free(ts);
+    }
+
+    const result = try executeUpdatePlan(alloc, &ctx.db, "s_missing", .{
+        .old_text = "- [ ] a step that never existed",
+        .new_text = "- [x] a step that never existed",
+    });
+    defer alloc.free(result);
+
+    const parsed = try parseTestJson(alloc, result);
+    defer parsed.deinit();
+    try testing.expect(std.mem.indexOf(u8, parsed.value.object.get("error").?.string, "not found") != null);
+
+    const stored = try session_plan.getPlan(alloc, &ctx.db, "s_missing");
+    defer alloc.free(stored);
+    try testing.expectEqualStrings(original, stored);
+}
+
+test "update_plan: a text-replace with no plan yet is refused instead of creating one" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const result = try executeUpdatePlan(alloc, &ctx.db, "s_noplan", .{
+        .old_text = "- [ ] step",
+        .new_text = "- [x] step",
+    });
+    defer alloc.free(result);
+
+    const parsed = try parseTestJson(alloc, result);
+    defer parsed.deinit();
+    try testing.expect(std.mem.indexOf(u8, parsed.value.object.get("error").?.string, "no plan") != null);
+
+    // No row was created.
+    const stored = try session_plan.getPlan(alloc, &ctx.db, "s_noplan");
+    defer alloc.free(stored);
+    try testing.expectEqualStrings("", stored);
+}
+
+test "update_plan: a text-replace with an empty new_text deletes the matched text" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    {
+        const ts = try session_plan.savePlan(alloc, &ctx.db, .{
+            .session_id = "s_delete",
+            .content = "## Steps\n- [ ] step\n## Notes\n",
+        });
+        defer alloc.free(ts);
+    }
+
+    const result = try executeUpdatePlan(alloc, &ctx.db, "s_delete", .{
+        .old_text = "- [ ] step\n",
+        .new_text = "",
+    });
+    defer alloc.free(result);
+
+    const stored = try session_plan.getPlan(alloc, &ctx.db, "s_delete");
+    defer alloc.free(stored);
+    try testing.expectEqualStrings("## Steps\n## Notes\n", stored);
+}
+
+test "update_plan: a call with neither content nor old_text writes nothing" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const result = try executeUpdatePlan(alloc, &ctx.db, "s_empty_call", .{});
+    defer alloc.free(result);
+
+    const parsed = try parseTestJson(alloc, result);
+    defer parsed.deinit();
+    const err = parsed.value.object.get("error").?.string;
+    try testing.expect(std.mem.indexOf(u8, err, "non-empty") != null);
+    // The message must name BOTH ways to write a plan.
+    try testing.expect(std.mem.indexOf(u8, err, "old_text") != null);
+
+    const stored = try session_plan.getPlan(alloc, &ctx.db, "s_empty_call");
+    defer alloc.free(stored);
+    try testing.expectEqualStrings("", stored);
 }
 
 // Exec adapter — merged from `update_plan.zig` (2026-10-14, task_1791993404141_2).
@@ -615,3 +959,76 @@ test "execUpdatePlan: plan containing error-like JSON text still succeeds" {
     try exec_testing.expect(env5.value.object.get("success").?.bool);
 }
 
+test "execUpdatePlan: the text-replace mode edits the stored plan and reports success" {
+    const alloc = exec_testing.allocator;
+    var ctx = try exec_setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    {
+        const ts = try exec_session_plan.savePlan(alloc, &ctx.db, .{
+            .session_id = "sess_exec",
+            .content = "- [ ] step one\n- [ ] step two\n",
+        });
+        defer alloc.free(ts);
+    }
+
+    const tcx = makeTestCtx(alloc, &ctx.db);
+    const tc = fakeToolCall(
+        "update_plan",
+        "{\"old_text\":\"- [ ] step two\",\"new_text\":\"- [x] step two\"}",
+    );
+
+    const result = try execUpdatePlan(tcx, tc);
+    defer if (result.output_allocated) alloc.free(result.output);
+
+    const env = try std.json.parseFromSlice(std.json.Value, alloc, result.output, .{});
+    defer env.deinit();
+    const obj = env.value.object;
+    try exec_testing.expectEqualStrings("update_plan", obj.get("tool").?.string);
+    try exec_testing.expect(obj.get("success").?.bool);
+    const data = obj.get("data").?.object;
+    try exec_testing.expectEqualStrings(
+        "- [ ] step one\n- [x] step two\n",
+        data.get("plan").?.string,
+    );
+
+    const stored = try exec_session_plan.getPlan(alloc, &ctx.db, "sess_exec");
+    defer alloc.free(stored);
+    try exec_testing.expectEqualStrings("- [ ] step one\n- [x] step two\n", stored);
+}
+
+test "execUpdatePlan: a text-replace that matches nothing comes back as a failed call and writes nothing" {
+    const alloc = exec_testing.allocator;
+    var ctx = try exec_setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    {
+        const ts = try exec_session_plan.savePlan(alloc, &ctx.db, .{
+            .session_id = "sess_exec",
+            .content = "- [ ] step one\n",
+        });
+        defer alloc.free(ts);
+    }
+
+    const tcx = makeTestCtx(alloc, &ctx.db);
+    const tc = fakeToolCall(
+        "update_plan",
+        "{\"old_text\":\"- [ ] nope\",\"new_text\":\"- [x] nope\"}",
+    );
+
+    const result = try execUpdatePlan(tcx, tc);
+    defer if (result.output_allocated) alloc.free(result.output);
+
+    const env = try std.json.parseFromSlice(std.json.Value, alloc, result.output, .{});
+    defer env.deinit();
+    const obj = env.value.object;
+    try exec_testing.expect(!obj.get("success").?.bool);
+    try exec_testing.expect(std.mem.indexOf(u8, obj.get("error").?.string, "not found") != null);
+    try exec_testing.expect(obj.get("data").? == .null);
+
+    const stored = try exec_session_plan.getPlan(alloc, &ctx.db, "sess_exec");
+    defer alloc.free(stored);
+    try exec_testing.expectEqualStrings("- [ ] step one\n", stored);
+}

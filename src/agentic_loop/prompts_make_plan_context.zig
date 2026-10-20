@@ -40,10 +40,10 @@ pub fn makePlanContext(
         \\`- [ ]` → `- [x]`). The plan is automatically re-injected into your
         \\system prompt on every iteration, so you always see the current state.
         \\
-        \\`update_plan` REPLACES the whole plan, so a small change (flip one
-        \\checkbox, reword one step) is better made with `update_plan_text_replace`:
-        \\pass the exact `old_text` and its `new_text` and it edits only that text,
-        \\leaving every other line of the plan untouched.
+        \\`update_plan` has two modes: `content` rewrites the whole plan, while
+        \\`old_text` + `new_text` replace ONE snippet and leave the rest of the plan
+        \\untouched. For a small change (flip one checkbox, reword one step) use the
+        \\text-replace mode — a full rewrite means resending the whole document.
         \\
     );
 
