@@ -1293,7 +1293,7 @@ its own status and can be promoted into branch protection once it has history.
 
 ### `.github/workflows/ci-vm-smoke.yml` — the /dev/kvm job, and the manual gate
 
-The four smokes cannot run on a hosted runner (§20 finding 5: Firecracker needs
+The five smokes cannot run on a hosted runner (§20 finding 5: Firecracker needs
 `/dev/kvm`). This workflow runs them on `[self-hosted, linux, x64, kvm]` behind a
 `preflight` job that fails with a named reason — no `/dev/kvm`, no `firecracker`,
 no kernel, a missing tool — before any VM starts, and it prints the kernel's
@@ -1305,14 +1305,15 @@ with `/dev/kvm` is online and the gate becomes live. `workflow_dispatch` runs it
 by hand meanwhile. A job that waits for a runner nobody has registered queues
 forever, which is why this is a variable and not a label.
 
-**The manual gate** — one command per suite, on a box with `/dev/kvm` (all four
-verified locally on 2026-10-18: 13/13, 5/5, 8/8, 3/3):
+**The manual gate** — one command per suite, on a box with `/dev/kvm` (all five
+verified locally: 13/13, 5/5, 8/8, 3/3 on 2026-10-18, and 7/7 on 2026-10-19):
 
 ```bash
 FC_BIN=$HOME/firecracker-demo/firecracker scripts/vm-guest-smoke.sh     # 13/13 image, boot, exec protocol
 FC_BIN=$HOME/firecracker-demo/firecracker scripts/vmd-smoke.sh          #  5/5 the Zig client
 FC_BIN=$HOME/firecracker-demo/firecracker scripts/vmd-daemon-smoke.sh   #  8/8 the daemon + reconciler
 zig build && FC_BIN=$HOME/firecracker-demo/firecracker scripts/vmd-saas-smoke.sh  #  3/3 the boot decision
+zig build && FC_BIN=$HOME/firecracker-demo/firecracker scripts/saas-cwd-smoke.sh  #  7/7 a chat runs at /workspace
 ```
 
 The runner provides `firecracker` and the kernel; the repo vendors neither.

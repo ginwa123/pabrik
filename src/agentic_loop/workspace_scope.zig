@@ -1,6 +1,7 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const policy = @import("../vmd/policy.zig");
 
 /// Resolve which workspace a chat session belongs to. Resolution order (first
 /// hit wins): 1.
@@ -215,6 +216,18 @@ pub fn resolveWorkspaceRoot(
     const cwd = (try sessionCwd(allocator, db, session_id)) orelse return null;
     defer allocator.free(cwd);
     if (cwd.len == 0) return null;
+
+    // A `--saas` session's cwd is the guest root, which no host item path can be
+    // a prefix of — including a brand-new workspace's first chat, whose only
+    // workspace is the one stamped on the row. There the guest IS the root.
+    if (std.mem.eql(u8, cwd, policy.guest_root) or
+        std.mem.startsWith(u8, cwd, policy.guest_root ++ "/"))
+    {
+        const stamped = (try stampedWorkspaceId(allocator, db, session_id)) orelse return null;
+        allocator.free(stamped);
+        return try allocator.dupe(u8, policy.guest_root);
+    }
+
     const match = (try matchWorkspaceByPath(allocator, db, cwd)) orelse return null;
     defer allocator.free(match.workspace_id);
     return match.root;
@@ -310,7 +323,8 @@ fn setupDb() !TestCtx {
         \\  id TEXT PRIMARY KEY,
         \\  name TEXT NOT NULL,
         \\  status TEXT DEFAULT 'active',
-        \\  cwd TEXT
+        \\  cwd TEXT,
+        \\  workspace_id TEXT
         \\)
     , &.{});
     try db.exec(alloc,
@@ -470,6 +484,47 @@ test "resolveWorkspaceRoot: a cwd-matched session reports the longest matching i
         return error.TestUnexpectedResult;
     defer alloc.free(root);
     try testing.expectEqualStrings("/proj/a", root);
+}
+
+test "resolveWorkspaceRoot: a guest-root cwd is rooted at the guest root, from the stamp" {
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+    const alloc = testing.allocator;
+
+    // A brand-new workspace's first chat: no kanban task, no item path that could
+    // describe `/workspace`, only the workspace stamped on the row.
+    try ctx.db.exec(alloc,
+        \\INSERT INTO sessions (id, name, status, cwd, workspace_id)
+        \\VALUES ('s6', 'First chat', 'active', '/workspace', 'w1')
+    , &.{});
+    const root = (try resolveWorkspaceRoot(alloc, &ctx.db, "s6")) orelse
+        return error.TestUnexpectedResult;
+    defer alloc.free(root);
+    try testing.expectEqualStrings("/workspace", root);
+
+    // Nested guest cwd: the workspace root is still the guest root itself.
+    try ctx.db.exec(alloc,
+        \\INSERT INTO sessions (id, name, status, cwd, workspace_id)
+        \\VALUES ('s7', 'Deep chat', 'active', '/workspace/src', 'w1')
+    , &.{});
+    const nested = (try resolveWorkspaceRoot(alloc, &ctx.db, "s7")) orelse
+        return error.TestUnexpectedResult;
+    defer alloc.free(nested);
+    try testing.expectEqualStrings("/workspace", nested);
+}
+
+test "resolveWorkspaceRoot: an unowned guest-root cwd has no root" {
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+    const alloc = testing.allocator;
+
+    // The guest root alone names no workspace, and a command placed in the wrong
+    // workspace's VM is worse than a refusal.
+    try ctx.db.exec(alloc,
+        \\INSERT INTO sessions (id, name, status, cwd, workspace_id)
+        \\VALUES ('s8', 'Loose chat', 'active', '/workspace', NULL)
+    , &.{});
+    try testing.expect(try resolveWorkspaceRoot(alloc, &ctx.db, "s8") == null);
 }
 
 test "resolveWorkspaceRoot: a session with no workspace, and a workspace with no path, have none" {
