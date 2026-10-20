@@ -1910,3 +1910,35 @@ every walk still answers `/home/you/proj/...`.
   dialog must start at `/workspace`. Next card.
 - **Nothing imports files into `/workspace`**, and the default image is the 128 MiB base tier
   (no git/node/zig), so a new VM's tree is still empty.
+
+---
+
+## 35. The app's own origin passes the origin gate
+
+`--saas` refused **every** state-changing request on a deployment served from its own public
+hostname (behind a reverse proxy or a Cloudflare tunnel):
+
+```
+403 — Cross-origin request blocked
+Origin https://agent.ginwa.site is not in server.cors.allowed_origins.
+```
+
+The engine's pre-gate compares the request's `Origin` against a **static** allowlist, and that
+allowlist only knew the loopback port the server bound (`127.0.0.1:8081`, `localhost:8081`). The
+app's own public origin was "foreign" to it: the deployment's own pages could not talk to the
+deployment's own API.
+
+§32's lesson applies a second time: **a security gate's allowlist must match every way the app is
+served.** The missing way is the app's own origin, and the only thing that knows it at request time
+is the request itself — the `Host` header the browser set. An `Origin` that names the endpoint the
+request was addressed to is same-origin, and a page on another site cannot forge it.
+
+| item | where | proof |
+|---|---|---|
+| the engine's pre-gate allows a same-origin `Origin` | kabelweb #12: `security.sameEndpoint`, `CORSConfig.allow_same_origin` | kabelweb: 7 new behaviour tests, 789 passed / 5 skipped |
+| the pin moves to it | `build.zig.zon` | `e834a67` (the head of `fix/same-origin-gate`) |
+| the preview proxy's own origin check learns the same rule | `http_handlers/preview_origin.zig::mayMutate`, `http_handlers/preview_proxy.zig` | 2 new behaviour tests |
+| the deployment needs no configuration | — | `--saas` on 8080: `POST` with `Origin: https://agent.ginwa.site` answers 401 (the handler ran); the same request on main answers 403 |
+
+A foreign origin is still refused, and so is the same host on another port: the tenant defence
+(§11.2) is unchanged.
