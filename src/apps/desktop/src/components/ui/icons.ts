@@ -1,6 +1,11 @@
 /** The app's single icon registry. Every non-brand glyph the UI draws comes from here, so a panel
  * that needs a "file" or a "trash" asks for the name instead of hand-copying a `<path>`. */
 export const ICON_PATHS = {
+  alert: [
+    'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z',
+    'M12 9v4',
+    'M12 17h.01',
+  ],
   atom: [
     'M11 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0',
     'M20.2 20.2c2.04-2.03.02-7.36-4.5-11.9-4.54-4.52-9.87-6.54-11.9-4.5-2.04 2.03-.02 7.36 4.5 11.9 4.54 4.52 9.87 6.54 11.9 4.5Z',

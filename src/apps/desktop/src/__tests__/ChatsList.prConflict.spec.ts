@@ -1,6 +1,6 @@
-/**  * Conflict-only hint for the git-branch badge in ChatsList (quiet-when-clean). Contract:
- * CONFLICTING shows a ⚠ marker with data-pr-conflict and extends the tooltip with "merge
- * conflicts". MERGEABLE/unknown renders exactly as before (icon only, no attr). */
+/**  * The mark column of a chat row is 16px wide and holds ONE mark, so the branch glyph stays alone
+ * in it and a merge conflict rides the trailing group's status-mark slot, where the tooltip names
+ * it. Contract: CONFLICTING marks the row and says so; MERGEABLE leaves the row clean. */
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp, nextTick, ref } from 'vue'
@@ -78,7 +78,18 @@ describe('ChatsList — git branch conflict hint', () => {
     vi.restoreAllMocks()
   })
 
-  it('shows the ⚠ marker when the PR is CONFLICTING', async () => {
+  const mountList = async () => {
+    const wrapper = mount(ChatsList, {
+      attachTo: document.body,
+      global: { provide: { processingState: ref<Record<string, boolean>>({}) } },
+    })
+    await flushPromises()
+    await nextTick()
+    await nextTick()
+    return wrapper
+  }
+
+  it('shows the conflict as a status mark beside the branch badge when the PR is CONFLICTING', async () => {
     mockChatWithBranch()
     vi.spyOn(api, 'getPrStatus').mockResolvedValue({
       status: 'open',
@@ -87,22 +98,26 @@ describe('ChatsList — git branch conflict hint', () => {
       merge_state: 'DIRTY',
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any)
-    const wrapper = mount(ChatsList, {
-      attachTo: document.body,
-      global: { provide: { processingState: ref<Record<string, boolean>>({}) } },
-    })
-    await flushPromises()
-    await nextTick()
-    await nextTick()
+    const wrapper = await mountList()
+
     const badge = wrapper.find('[data-testid="chat-git-branch"]')
     expect(badge.exists()).toBe(true)
     expect(badge.attributes('data-pr-conflict')).toBe('true')
-    expect(badge.text()).toContain('⚠')
+    expect(badge.findAll('svg')).toHaveLength(1)
+    expect(badge.text()).toBe('')
+
+    const conflict = wrapper.find('[data-testid="chat-status-pr-conflict"]')
+    expect(conflict.exists()).toBe(true)
+    expect(conflict.find('[data-icon="alert"]').exists()).toBe(true)
+    expect(badge.element.contains(conflict.element)).toBe(false)
+
     expect(badge.attributes('title')).toContain('merge conflicts')
+    expect(conflict.attributes('title')).toContain('Merge conflicts')
+    expect(conflict.attributes('title')).toContain('feature/x')
     wrapper.unmount()
   })
 
-  it('stays quiet (icon only, no attr) when the PR is mergeable', async () => {
+  it('leaves the row clean when the PR is mergeable', async () => {
     mockChatWithBranch()
     vi.spyOn(api, 'getPrStatus').mockResolvedValue({
       status: 'open',
@@ -111,17 +126,14 @@ describe('ChatsList — git branch conflict hint', () => {
       merge_state: 'CLEAN',
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any)
-    const wrapper = mount(ChatsList, {
-      attachTo: document.body,
-      global: { provide: { processingState: ref<Record<string, boolean>>({}) } },
-    })
-    await flushPromises()
-    await nextTick()
-    await nextTick()
+    const wrapper = await mountList()
+
     const badge = wrapper.find('[data-testid="chat-git-branch"]')
     expect(badge.exists()).toBe(true)
     expect(badge.attributes('data-pr-conflict')).toBeUndefined()
-    expect(badge.text()).not.toContain('⚠')
+    expect(badge.findAll('svg')).toHaveLength(1)
+    expect(badge.text()).toBe('')
+    expect(wrapper.find('[data-testid="chat-status-pr-conflict"]').exists()).toBe(false)
     expect(badge.attributes('title')).not.toContain('merge conflicts')
     wrapper.unmount()
   })
