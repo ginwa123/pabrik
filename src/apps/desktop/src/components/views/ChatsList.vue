@@ -1183,7 +1183,6 @@ defineExpose({
                   d="M6 3v12M18 9a3 3 0 100-6 3 3 0 000 6zM6 21a3 3 0 100-6 3 3 0 000 6zM18 9a9 9 0 01-9 9"
                 />
               </svg>
-              <span v-if="prConflicts[item.id]" class="ml-0.5 text-micro font-bold">⚠</span>
             </span>
           </span>
           <span class="flex-1 min-w-0 truncate text-left" :title="item.name">{{ item.name }}</span>
@@ -1244,6 +1243,16 @@ defineExpose({
               data-testid="chat-status-agent-error"
             >
               ⚠
+            </span>
+            <span
+              v-if="prConflicts[item.id]"
+              class="inline-flex items-center shrink-0 cursor-context-menu"
+              style="color: var(--color-red)"
+              :title="'Merge conflicts — ' + (item.git_branch || '')"
+              data-testid="chat-status-pr-conflict"
+              @contextmenu.prevent.stop="onGitIconContextMenu($event, item)"
+            >
+              <UiIcon name="alert" size-class="w-3 h-3" />
             </span>
             <span
               v-if="!isProcessing(item.id)"
@@ -1386,7 +1395,6 @@ defineExpose({
                     d="M6 3v12M18 9a3 3 0 100-6 3 3 0 000 6zM6 21a3 3 0 100-6 3 3 0 000 6zM18 9a9 9 0 01-9 9"
                   />
                 </svg>
-                <span v-if="prConflicts[item.id]" class="ml-0.5 text-micro font-bold">⚠</span>
               </span>
             </span>
             <span class="flex-1 min-w-0 truncate text-left" :title="item.name">{{
@@ -1449,6 +1457,16 @@ defineExpose({
                 data-testid="chat-status-agent-error"
               >
                 ⚠
+              </span>
+              <span
+                v-if="prConflicts[item.id]"
+                class="inline-flex items-center shrink-0 cursor-context-menu"
+                style="color: var(--color-red)"
+                :title="'Merge conflicts — ' + (item.git_branch || '')"
+                data-testid="chat-status-pr-conflict"
+                @contextmenu.prevent.stop="onGitIconContextMenu($event, item)"
+              >
+                <UiIcon name="alert" size-class="w-3 h-3" />
               </span>
               <span
                 v-if="!isProcessing(item.id)"
