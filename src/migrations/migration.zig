@@ -124,6 +124,7 @@ const migration_110 = @import("migration_110.zig");
 const migration_111 = @import("migration_111.zig");
 const migration_112 = @import("migration_112.zig");
 const migration_113 = @import("migration_113.zig");
+const migration_114 = @import("migration_114.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -239,6 +240,7 @@ pub const Migration110AddTaskSkillName = migration_110.Migration110AddTaskSkillN
 pub const Migration111AddKanbanTaskDependencies = migration_111.Migration111AddKanbanTaskDependencies;
 pub const Migration112RenameTaskSkillNames = migration_112.Migration112RenameTaskSkillNames;
 pub const Migration113AddGuestJobColumns = migration_113.Migration113AddGuestJobColumns;
+pub const Migration114AddFileAttachments = migration_114.Migration114AddFileAttachments;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -451,6 +453,9 @@ pub const allMigrations: []const Migration = &.{
     // the column's position both survive.
     .{ .version = Migration112RenameTaskSkillNames.version, .name = Migration112RenameTaskSkillNames.name, .up = Migration112RenameTaskSkillNames.up },
     .{ .version = Migration113AddGuestJobColumns.version, .name = Migration113AddGuestJobColumns.name, .up = Migration113AddGuestJobColumns.up },
+    // Migration 114 — the chat's file attachments: the payload for the model
+    // and the metadata for the read path.
+    .{ .version = Migration114AddFileAttachments.version, .name = Migration114AddFileAttachments.name, .up = Migration114AddFileAttachments.up },
 };
 
 /// Register all migrations with a MigrationManager

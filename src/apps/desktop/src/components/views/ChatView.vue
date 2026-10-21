@@ -50,6 +50,12 @@ import FileInput from '../file/FileInput.vue'
 import { installSseBus, useSseBus } from '../../helpers/sseBus'
 import { readGitStatusCache } from '../../helpers/gitStatusCache'
 import { splitMediaUrlsWire } from '../../helpers/mediaUrls'
+import {
+  fileToAttachment,
+  isDocumentFile,
+  styleCarriesFile,
+  type FileAttachment,
+} from '../../helpers/fileAttachments'
 import { Effect } from 'effect'
 import { runEffectExit } from '../../helpers/effectRuntime'
 import {
@@ -193,6 +199,8 @@ interface Message {
   diffview_after?: string
   image_urls?: string[]
   video_urls?: string[]
+  /** The attached files as a JSON array of `{name, mime, bytes}` — metadata only. */
+  file_attachments?: string
   tool_calls_json?: string
   finish_reason?: string
   tool_call_id?: string
@@ -1066,7 +1074,9 @@ const maxCapacityTotalTokens = ref(200000)
 
 // ─── Agent selection ───────────────────────────────────────────────────────── Per-session model
 // selection.
-const availableAgents = ref<Array<{ name: string; model: string; base_url: string }>>([])
+const availableAgents = ref<
+  Array<{ name: string; model: string; base_url: string; url_style: string }>
+>([])
 const selectedAgent = ref<string | null>(null)
 // User-chosen default agent from Settings → Agents → "Set active". `null` when no agent
 // is marked active (or no agents configured).
@@ -1092,12 +1102,13 @@ const loadAgents = async () => {
     const config = wsId ? await api.getWorkspaceConfig(wsId) : await api.getPabrikConfig()
     const agents = (config.profiles ?? {}) as Record<
       string,
-      { model?: string; base_url?: string }
+      { model?: string; base_url?: string; url_style?: string }
     >
     availableAgents.value = Object.entries(agents).map(([name, p]) => ({
       name,
       model: p.model ?? '',
       base_url: p.base_url ?? '',
+      url_style: p.url_style ?? '',
     }))
     // `active_profile` is the user-chosen default from Settings. Empty
     // string → null (matches the backend's PUT coercion in
@@ -1117,6 +1128,15 @@ const effectiveAgent = computed<string | null>(() => {
   const sel = selectedAgent.value
   if (sel && sel.length > 0) return sel
   return activeAgent.value
+})
+
+/// The wire style the effective profile uses — it decides which file types the model can read.
+/// Empty when the profile is unknown; the backend then has the final say.
+const effectiveProfileUrlStyle = computed<string | undefined>(() => {
+  const name = effectiveAgent.value
+  if (!name) return undefined
+  const style = availableAgents.value.find((p) => p.name === name)?.url_style
+  return style && style.length > 0 ? style : undefined
 })
 
 /// Tooltip text reflecting what the backend will actually use. Distinguishes
@@ -1382,6 +1402,8 @@ const filteredMessages = computed(() =>
     // 2026-08-23: image-only user messages must survive the filter —
     // hasBubbleContent renders their images downstream.
     if ((m.image_urls?.length ?? 0) > 0) return true
+    // A turn that carries only an attached document renders its chips.
+    if ((m.file_attachments?.length ?? 0) > 0) return true
     // 2026-08-23: tool results render via dedicated components; never
     // drop them on empty stripped content.
     if (m.role === 'tool') return true
@@ -1671,6 +1693,7 @@ const hasBubbleContent = (group: MessageGroup, groupIndex: number): boolean => {
     return group.messages.some(
       (m) =>
         (m.image_urls?.length ?? 0) > 0 ||
+        (m.file_attachments?.length ?? 0) > 0 ||
         hasVisibleContent(m) ||
         !!(m.reasoning_content && m.reasoning_content.trim() !== ''),
     )
@@ -1792,6 +1815,7 @@ const toChatMessages = (
     diffview_after: msg.diffview_after,
     image_urls: splitMediaUrlsWire(msg.image_url),
     video_urls: splitMediaUrlsWire(msg.video_url),
+    file_attachments: msg.file_attachments,
     finish_reason: msg.finish_reason,
     tool_calls_json: msg.tool_calls_json,
     tool_call_id: msg.tool_call_id,
@@ -3067,6 +3091,7 @@ const connectSse = () => {
           existingById.diffview_after = event.diffview_after
           existingById.image_urls = splitMediaUrlsWire(event.image_url)
           existingById.video_urls = splitMediaUrlsWire(event.video_url)
+          existingById.file_attachments = event.file_attachments
           existingById.is_input = event.is_input
           existingById.is_output = event.is_output
           rememberLiveMessage(sid, event.id, role)
@@ -3143,6 +3168,7 @@ const connectSse = () => {
         // broken-image icon in the transcript.
         image_urls: splitMediaUrlsWire(event.image_url),
         video_urls: splitMediaUrlsWire(event.video_url),
+        file_attachments: event.file_attachments,
         finish_reason: event.finish_reason,
         tool_call_id: event.tool_call_id,
         // 2026-08-24 (task_1787545088500_6, bug A) — carry the wire field through the SSE
@@ -3524,6 +3550,7 @@ const handleFileInputSubmit = async (userMessage: string, files?: File[]) => {
   // window so the user waits instead of double-clicking Send.
   isSendingAttachments.value = true
   let imageUrls: string[] = []
+  let fileAttachments: FileAttachment[] = []
   try {
     if (files && files.length > 0) {
       const fileToBase64 = (file: File): Promise<string> => {
@@ -3534,7 +3561,24 @@ const handleFileInputSubmit = async (userMessage: string, files?: File[]) => {
           reader.readAsDataURL(file)
         })
       }
-      imageUrls = await Promise.all(files.map((f) => fileToBase64(f)))
+      const mediaFiles = files.filter((f) => !isDocumentFile(f))
+      const documentFiles = files.filter((f) => isDocumentFile(f))
+      // Only the Responses API reads a rich binary document; the other wire
+      // styles take a PDF. Refuse the turn rather than drop the file silently.
+      const style = effectiveProfileUrlStyle.value
+      const unreadable = documentFiles.filter((f) => !styleCarriesFile(style, f))
+      if (unreadable.length > 0) {
+        messages.value.push({
+          id: `error-${Date.now()}`,
+          role: 'assistant',
+          content: `This model cannot read ${unreadable.map((f) => f.name).join(', ')}. Only the OpenAI Responses API reads a Word or Excel document.`,
+          timestamp: new Date(),
+        })
+        isSendingAttachments.value = false
+        return
+      }
+      imageUrls = await Promise.all(mediaFiles.map((f) => fileToBase64(f)))
+      fileAttachments = await Promise.all(documentFiles.map((f) => fileToAttachment(f)))
     }
   } catch (err) {
     console.error('Failed to convert attachments:', err)
@@ -3561,6 +3605,7 @@ const handleFileInputSubmit = async (userMessage: string, files?: File[]) => {
       '',
       [],
       workspacesStore.activeWorkspace?.id,
+      fileAttachments,
     )
   } catch (err) {
     console.error('Failed to send message:', err)
@@ -3998,10 +4043,12 @@ const compactSession = async () => {
                           <ChatAttachments
                             v-if="
                               (userMsg.image_urls && userMsg.image_urls.length > 0) ||
-                              (userMsg.video_urls && userMsg.video_urls.length > 0)
+                              (userMsg.video_urls && userMsg.video_urls.length > 0) ||
+                              (userMsg.file_attachments && userMsg.file_attachments.length > 0)
                             "
                             :image-urls="userMsg.image_urls"
                             :video-urls="userMsg.video_urls"
+                            :file-attachments="userMsg.file_attachments"
                             @open-image="openImagePreview"
                           />
                           <template v-if="isBgUserMsg(userMsg)"
@@ -5369,6 +5416,37 @@ const compactSession = async () => {
 
 .chat-attached-image-thumb:hover .chat-attached-image-img {
   opacity: 0.9;
+}
+
+/* Attached document chip — the name of a PDF or a text document the model
+   read. Metadata only: the bytes never reach the transcript. */
+.chat-attached-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background-color: var(--semantic-sidebar-bg);
+  font-size: var(--text-dense);
+}
+
+.chat-attached-file-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.chat-attached-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-attached-file-size {
+  opacity: 0.6;
+  flex-shrink: 0;
 }
 
 /* Pill-jump flash (2026-09-09 chatview user pill): brief outline pulse

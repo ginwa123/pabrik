@@ -28,7 +28,7 @@ import AddMemoryDialog from '../dialogs/AddMemoryDialog.vue'
 import ConfirmDialog from '../dialogs/ConfirmDialog.vue'
 import AddTaskPickerDialog from '../dialogs/AddTaskPickerDialog.vue'
 import type { WorkspaceItem } from '../../stores/workspaces'
-import { buildAppUrl, buildTaskAppUrl, parseAppPath } from '../../helpers/appUrl'
+import { buildAppUrl, buildProjectSettingsUrl, buildTaskAppUrl, parseAppPath } from '../../helpers/appUrl'
 import { parseItemIdWithChat } from '../../helpers/buildItemIdWithChat'
 import { useCurrentMainView } from '../../composables/useCurrentMainView'
 import { openInNewTab } from '../../helpers/openInNewTab'
@@ -320,7 +320,8 @@ const handleGoToSettings = (payload: {
   itemType?: string
 }) => {
   if (payload.itemType === 'kanban') {
-    openInNewTab(router, { path: `/app/kanban/${payload.itemId}/settings`, query: {} })
+    const target = buildProjectSettingsUrl(payload.workspaceId, payload.itemId)
+    openInNewTab(router, { path: target.path, query: {} })
     return
   }
   openInNewTab(router, buildAppUrl({ workspaceId: payload.workspaceId, projectId: payload.itemId }))

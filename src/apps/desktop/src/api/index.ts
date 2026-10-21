@@ -5,6 +5,7 @@ import { readGitStatusCache, writeGitStatusCache } from '../helpers/gitStatusCac
 import { Cause, Data, Effect, Exit, Option } from 'effect'
 import { describeCause } from '../helpers/effectRuntime'
 import { joinMediaUrlsWire } from '../helpers/mediaUrls'
+import { encodeFileAttachmentsWire, type FileAttachment } from '../helpers/fileAttachments'
 
 export const API_BASE = '/api'
 
@@ -1094,6 +1095,8 @@ export interface Message {
   diffview_after?: string
   image_url?: string
   video_url?: string
+  /** The attached files as a JSON array of `{name, mime, bytes}` — metadata only, never the bytes. */
+  file_attachments?: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.
   tool_calls_json?: any
   finish_reason?: string
@@ -1314,12 +1317,16 @@ export async function sendChatMessage(
   isAutoRetryUntilStop?: string,
   videoUrls?: string[],
   workspaceId?: string,
+  fileAttachments?: FileAttachment[],
 ): Promise<{ status: string }> {
   // Migration 090 — split data:video/... out to video_urls so a pasted
   // clip never hits the image-only validator (400).
   const { images, videos } = splitMediaUrls(imageUrls, videoUrls)
   const imageUrlsStr = joinMediaUrlsWire(images)
   const videoUrlsStr = joinMediaUrlsWire(videos)
+  // The attached documents ride in ONE field, as a JSON array string — the
+  // same shape the backend's `file_attachments` column holds.
+  const fileAttachmentsStr = encodeFileAttachmentsWire(fileAttachments ?? [])
 
   try {
     // silent: true — ChatView already surfaces these failures inline
@@ -1335,6 +1342,9 @@ export async function sendChatMessage(
         workspace_id: workspaceId ?? '',
         image_urls: imageUrlsStr,
         video_urls: videoUrlsStr,
+        ...(fileAttachmentsStr && fileAttachmentsStr !== '[]'
+          ? { file_attachments: fileAttachmentsStr }
+          : {}),
         selected_profile_model: selectedAgent || '',
         // Migration 063 — pass through to POST /api/session. Empty
         // / undefined => the backend's default ("0" = off).
@@ -1477,6 +1487,8 @@ export interface SseEvent {
   // Pipe-separated video URLs (Migration 090, backend
   // SseEventLLMHistory.video_url). Split on '|' into video_urls.
   video_url?: string
+  // The attached files as a JSON array of `{name, mime, bytes}` — metadata only.
+  file_attachments?: string
   // Live session skills pushed on the SSE wire (backend: sse_on_event_send_llm_history.zig:45
   // SseEventLLMHistory.session_skills, next to is_error).
   session_skills?: SkillInfo[]

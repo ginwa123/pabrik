@@ -138,11 +138,14 @@ pub fn inserLLMHistories(
         \\    diffview_before,
         \\    diffview_after,
         \\    image_url,
-        \\    video_url
+        \\    video_url,
+        \\    file_attachments,
+        \\    file_attachments_meta
         \\) VALUES (
         \\    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
         \\    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        \\    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        \\    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        \\    ?, ?
         \\)
     ;
 
@@ -235,7 +238,10 @@ pub fn inserLLMHistories(
     }
     defer if (copy_video_urls) |c| allocator.free(c);
 
-    const sqlArgs = &.{ id, copy_session_id, copy_model, copy_content, copy_finish_reason, copy_role, copy_tool_calls, copy_tool_call_id, copy_reasoning, copy_reasoning_id, copy_reasoning_encrypted_content, copy_is_feed_to_llm, copy_agent, loop_index_str, temperature_str, is_thinking_str, created_at, created_iso, copy_parent_session_id, copy_parent_id, prompt_tokens_str, completion_tokens_str, total_tokens_str, cache_creation_input_tokens_str, cache_read_input_tokens_str, if (input.is_input) "1" else "0", if (input.is_output) "1" else "0", copy_tool_name, copy_diffview_before, copy_diffview_after, image_urls_str, video_urls_str };
+    const file_attachments_str = input.file_attachments orelse "";
+    const file_attachments_meta_str = input.file_attachments_meta orelse "";
+
+    const sqlArgs = &.{ id, copy_session_id, copy_model, copy_content, copy_finish_reason, copy_role, copy_tool_calls, copy_tool_call_id, copy_reasoning, copy_reasoning_id, copy_reasoning_encrypted_content, copy_is_feed_to_llm, copy_agent, loop_index_str, temperature_str, is_thinking_str, created_at, created_iso, copy_parent_session_id, copy_parent_id, prompt_tokens_str, completion_tokens_str, total_tokens_str, cache_creation_input_tokens_str, cache_read_input_tokens_str, if (input.is_input) "1" else "0", if (input.is_output) "1" else "0", copy_tool_name, copy_diffview_before, copy_diffview_after, image_urls_str, video_urls_str, file_attachments_str, file_attachments_meta_str };
 
     if (!is_skip_db) {
         try db.exec(allocator, sql, sqlArgs);
@@ -271,6 +277,7 @@ pub fn inserLLMHistories(
                 .is_output = is_output,
                 .image_url = copy_image_urls,
                 .video_url = copy_video_urls,
+                .file_attachments = file_attachments_meta_str,
                 .session_skills = session_skills,
                 .tool_name = copy_tool_name,
                 .total_tokens = input.total_tokens,

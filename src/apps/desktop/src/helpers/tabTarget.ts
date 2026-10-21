@@ -43,6 +43,14 @@ export const TABS_VERSION = 1
 
 const SETTINGS_PATH = '/app/settings'
 const KANBAN_SETTINGS_RE = /^\/app\/kanban\/([^/]+)\/settings\/?$/
+const PROJECT_SETTINGS_RE = /^\/app\/[^/]+\/projects\/([^/]+)\/settings\/?$/
+
+/** The board a kanban-settings URL names — the workspace-scoped project shape or the legacy
+ * kanban shape. Empty when the path is not a settings page. */
+export function kanbanSettingsItemId(path: string): string {
+  const match = KANBAN_SETTINGS_RE.exec(path) ?? PROJECT_SETTINGS_RE.exec(path)
+  return match?.[1] ?? ''
+}
 
 /**  * Views that are full-surface overlays over whatever was there before (`AppLayout.vue` mounts them
  * `absolute inset-0 z-10` with their own Back button). They are not destinations, so they never
@@ -123,8 +131,8 @@ export function tabKeyOf(
   itemType?: string | null,
 ): string {
   const q = stripTabParam(query)
-  const kanbanSettings = KANBAN_SETTINGS_RE.exec(path)
-  if (kanbanSettings && kanbanSettings[1]) return `ks:${kanbanSettings[1]}`
+  const kanbanSettings = kanbanSettingsItemId(path)
+  if (kanbanSettings) return `ks:${kanbanSettings}`
   if (path === SETTINGS_PATH || path === `${SETTINGS_PATH}/`) return 'settings'
 
   const view = q.view || 'chat'
@@ -189,7 +197,7 @@ export function shouldTabify(
 }
 
 export function kindOf(path: string, query: Record<string, unknown> | null | undefined): TabKind {
-  if (KANBAN_SETTINGS_RE.test(path)) return 'kanban-settings'
+  if (kanbanSettingsItemId(path)) return 'kanban-settings'
   if (path === SETTINGS_PATH || path === `${SETTINGS_PATH}/`) return 'settings'
   const q = stripTabParam(query)
   const view = q.view || 'chat'
@@ -225,7 +233,7 @@ export function migrateLegacySettingsTab(
   path: string,
   query: Record<string, unknown> | null | undefined,
 ): Record<string, unknown> {
-  if (!KANBAN_SETTINGS_RE.test(path)) return query ?? {}
+  if (!kanbanSettingsItemId(path)) return query ?? {}
   const q: Record<string, unknown> = { ...query }
   const rawSection = q.section
   const section = Array.isArray(rawSection) ? rawSection[0] : rawSection

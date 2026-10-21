@@ -53,7 +53,8 @@ pub fn getLLMHistories(
         \\    COALESCE(h.diffview_after, ''),
         \\    COALESCE(h.image_url, ''),
         \\    COALESCE(h.video_url, ''),
-        \\    COALESCE(h.tool_call_id, '')
+        \\    COALESCE(h.tool_call_id, ''),
+        \\    COALESCE(h.file_attachments, '')
         \\FROM llm_history h
         \\LEFT JOIN sessions s ON h.session_id = s.id
         \\WHERE h.session_id = ?
@@ -127,6 +128,7 @@ pub fn getLLMHistories(
                 break :blk if (urls.items.len > 0) try urls.toOwnedSlice(allocator) else null;
             } else null,
             .tool_call_id = if (row.values[27].len > 0) try allocator.dupe(u8, row.values[27]) else null,
+            .file_attachments = if (row.values[28].len > 0) try allocator.dupe(u8, row.values[28]) else null,
         };
         try results.append(allocator, history);
         row.deinit(allocator);
@@ -199,7 +201,8 @@ fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
         \\    diffview_before TEXT,
         \\    diffview_after TEXT,
         \\    image_url TEXT,
-        \\    video_url TEXT
+        \\    video_url TEXT,
+        \\    file_attachments TEXT
         \\)
     , &.{});
     try db.exec(alloc,

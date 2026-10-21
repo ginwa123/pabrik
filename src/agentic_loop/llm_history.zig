@@ -645,6 +645,9 @@ pub const SessionMessage = struct {
     diffview_after: ?[]const u8 = null,
     image_urls: ?[][]const u8 = null,
     video_urls: ?[][]const u8 = null,
+    /// The attached files as metadata only (name, mime, bytes) — the bytes
+    /// never cross the read path.
+    file_attachments_meta: ?[]const u8 = null,
     tool_call_id: ?[]const u8 = null,
     tool_calls_json: ?[]const u8 = null,
 
@@ -670,6 +673,7 @@ pub const SessionMessage = struct {
             for (vums) |vid| allocator.free(vid);
             allocator.free(vums);
         }
+        if (self.file_attachments_meta) |fam| allocator.free(fam);
         if (self.tool_call_id) |tci| allocator.free(tci);
         if (self.tool_calls_json) |tcj| allocator.free(tcj);
     }
@@ -766,7 +770,8 @@ pub fn getSessionMessagesSorted(
             \\       COALESCE(h.is_input, 0), COALESCE(h.is_output, 0), COALESCE(h.tool_name, ''),
             \\       COALESCE(h.finish_reason, ''), COALESCE(s.cwd, ''), COALESCE(s.git_worktree_cwd, ''), COALESCE(h.reasoning_content, ''), COALESCE(h.reasoning_id, ''), COALESCE(h.reasoning_encrypted_content, ''),
             \\       COALESCE(h.diffview_before, ''), COALESCE(h.diffview_after, ''), COALESCE(h.image_url, ''), COALESCE(h.video_url, ''), COALESCE(h.tool_call_id, ''), COALESCE(h.tool_calls_json, ''),
-            \\       COALESCE(s.selected_profile_model, ''), COALESCE(s.pr_url, ''), COALESCE(s.pr_provider, ''), COALESCE(s.sub_agent_name, ''), COALESCE(s.parent_session_id, '')
+            \\       COALESCE(s.selected_profile_model, ''), COALESCE(s.pr_url, ''), COALESCE(s.pr_provider, ''), COALESCE(s.sub_agent_name, ''), COALESCE(s.parent_session_id, ''),
+            \\       COALESCE(h.file_attachments_meta, '')
             \\FROM llm_history h LEFT JOIN sessions s ON h.session_id = s.id
             \\WHERE h.session_id = ?{s}{s} LIMIT ?
         , .{ cursor_cmp, order_part });
@@ -787,7 +792,8 @@ pub fn getSessionMessagesSorted(
             \\       COALESCE(h.is_input, 0), COALESCE(h.is_output, 0), COALESCE(h.tool_name, ''),
             \\       COALESCE(h.finish_reason, ''), COALESCE(s.cwd, ''), COALESCE(s.git_worktree_cwd, ''), COALESCE(h.reasoning_content, ''), COALESCE(h.reasoning_id, ''), COALESCE(h.reasoning_encrypted_content, ''),
             \\       COALESCE(h.diffview_before, ''), COALESCE(h.diffview_after, ''), COALESCE(h.image_url, ''), COALESCE(h.video_url, ''), COALESCE(h.tool_call_id, ''), COALESCE(h.tool_calls_json, ''),
-            \\       COALESCE(s.selected_profile_model, ''), COALESCE(s.pr_url, ''), COALESCE(s.pr_provider, ''), COALESCE(s.sub_agent_name, ''), COALESCE(s.parent_session_id, '')
+            \\       COALESCE(s.selected_profile_model, ''), COALESCE(s.pr_url, ''), COALESCE(s.pr_provider, ''), COALESCE(s.sub_agent_name, ''), COALESCE(s.parent_session_id, ''),
+            \\       COALESCE(h.file_attachments_meta, '')
             \\FROM llm_history h LEFT JOIN sessions s ON h.session_id = s.id
             \\WHERE h.session_id = ?{s} LIMIT ?
         , .{order_part});
@@ -962,6 +968,7 @@ pub fn getSessionMessagesSorted(
                 }
                 break :blk if (urls.items.len > 0) urls.items else null;
             } else null,
+            .file_attachments_meta = if (row.values.len > 25 and row.values[25].len > 0) try allocator.dupe(u8, row.values[25]) else null,
             .tool_call_id = if (row.values[18].len > 0) try allocator.dupe(u8, row.values[18]) else null,
             .tool_calls_json = if (row.values[19].len > 0) try allocator.dupe(u8, row.values[19]) else null,
         };

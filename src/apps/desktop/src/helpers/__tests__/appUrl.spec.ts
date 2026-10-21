@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildAppUrl,
+  buildProjectSettingsUrl,
   buildSettingsUrl,
   buildTaskAppUrl,
   detectLegacyAppUrl,
@@ -15,9 +16,9 @@ describe('appUrl — path-based URL contract (2026-09-22 revamp)', () => {
       expect(buildSettingsUrl('ws_1')).toEqual({ path: '/app/ws_1/settings', query: {} })
     })
     it('passes the remembered section through as ?section=', () => {
-      expect(buildSettingsUrl('ws_1', 'profiles')).toEqual({
+      expect(buildSettingsUrl('ws_1', 'agents')).toEqual({
         path: '/app/ws_1/settings',
-        query: { section: 'profiles' },
+        query: { section: 'agents' },
       })
     })
     it('drops an empty section rather than emitting ?section=', () => {
@@ -265,6 +266,61 @@ describe('appUrl — path-based URL contract (2026-09-22 revamp)', () => {
       expect(() =>
         buildAppUrl({ workspaceId: 'ws_1', projectId: 'p', addTask: true, chatTaskId: 't' }),
       ).toThrow(/addTask cannot combine with chatTaskId/)
+    })
+  })
+
+  describe('project settings page shape', () => {
+    it('builds /app/{ws}/projects/{pid}/settings — the URL names the workspace AND the board', () => {
+      expect(
+        buildAppUrl({ workspaceId: 'ws_1', projectId: 'item_7', projectSettings: true }),
+      ).toEqual({ path: '/app/ws_1/projects/item_7/settings', query: {} })
+    })
+    it('carries the open section through as ?section=', () => {
+      expect(buildProjectSettingsUrl('ws_1', 'item_7', 'agent')).toEqual({
+        path: '/app/ws_1/projects/item_7/settings',
+        query: { section: 'agent' },
+      })
+    })
+    it('parses /app/{ws}/projects/{pid}/settings', () => {
+      expect(parseAppPath('/app/ws_1/projects/item_7/settings')).toEqual({
+        kind: 'projectSettings',
+        workspaceId: 'ws_1',
+        projectId: 'item_7',
+      })
+      expect(isAppPath('/app/ws_1/projects/item_7/settings')).toBe(true)
+    })
+    it('ignores a trailing slash', () => {
+      expect(parseAppPath('/app/ws_1/projects/item_7/settings/')).toEqual({
+        kind: 'projectSettings',
+        workspaceId: 'ws_1',
+        projectId: 'item_7',
+      })
+    })
+    it('does not swallow the sibling shapes', () => {
+      // `settings` shares the `/projects/{pid}` prefix with project, add and
+      // project-chat, so an ordering slip in the parser would turn one of
+      // them into the settings page.
+      expect(parseAppPath('/app/ws_1/projects/p').kind).toBe('project')
+      expect(parseAppPath('/app/ws_1/projects/p/add').kind).toBe('projectAdd')
+      expect(parseAppPath('/app/ws_1/projects/p/chat/t').kind).toBe('projectChat')
+    })
+    it('the legacy kanban path is not a project-settings page', () => {
+      // The old shape named no workspace; it is rewritten by the page itself
+      // once the owning workspace is known.
+      expect(parseAppPath('/app/kanban/item_7/settings').kind).toBe('other')
+    })
+    it('projectSettings needs a project, and excludes the task chat and the add page', () => {
+      expect(() => buildAppUrl({ workspaceId: 'ws_1', projectSettings: true })).toThrow(
+        /projectSettings requires projectId/,
+      )
+      expect(() =>
+        buildAppUrl({
+          workspaceId: 'ws_1',
+          projectId: 'p',
+          projectSettings: true,
+          chatTaskId: 't',
+        }),
+      ).toThrow(/projectSettings cannot combine/)
     })
   })
 

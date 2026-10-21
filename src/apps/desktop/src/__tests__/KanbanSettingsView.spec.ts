@@ -1,6 +1,6 @@
 /** Tests for KanbanSettingsView — the dedicated full-page route for per-board kanban settings.
  * Replaces KanbanSettingsDialog (the centered modal that used to pop up when the user clicked ⚙ on
- * a kanban board header). URL: /app/kanban/:itemId/settings (path-based vue-router route). */
+ * a kanban board header). URL: /app/{ws}/projects/{itemId}/settings (vue-router route). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -50,8 +50,8 @@ const baseItem: WorkspaceItem = {
 
 function setupRoute(
   query: Record<string, string>,
-  path = '/app/kanban/wi_test/settings',
-  params: Record<string, string> = { itemId: 'wi_test' },
+  path = '/app/ws_1/projects/wi_test/settings',
+  params: Record<string, string> = { workspaceId: 'ws_1', projectId: 'wi_test' },
 ) {
   const obj = reactive({ query, path, params, fullPath: path })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -172,6 +172,30 @@ describe('KanbanSettingsView', () => {
     const page = findInDom<HTMLElement>('[data-testid="kanban-settings-page"]')
     expect(page).not.toBeNull()
     expect(page?.textContent).toContain('Sprint 12')
+  })
+
+  it('renders the board named by the workspace-scoped URL', async () => {
+    setupRoute({}, '/app/ws_1/projects/wi_test/settings', {
+      workspaceId: 'ws_1',
+      projectId: 'wi_test',
+    })
+    seedWorkspaces()
+    mountView()
+    await flushPromises()
+    const page = findInDom<HTMLElement>('[data-testid="kanban-settings-page"]')
+    expect(page).not.toBeNull()
+    expect(page?.textContent).toContain('Sprint 12')
+  })
+
+  it('rewrites a legacy board URL to the workspace-scoped one', async () => {
+    seedWorkspaces()
+    const { router } = setupRoute({}, '/app/kanban/wi_test/settings', { itemId: 'wi_test' })
+    mountView()
+    await flushPromises()
+    expect(router.replace).toHaveBeenCalledWith({
+      path: '/app/ws_1/projects/wi_test/settings',
+      query: {},
+    })
   })
 
   it('renders one row per column sorted by position', async () => {

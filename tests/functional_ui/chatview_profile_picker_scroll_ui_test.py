@@ -54,7 +54,7 @@ PROFILE_COUNT = 22
 SLACK_PX = 2
 
 #: The profile the picker's own list must place last, to prove the BOTTOM of a
-#: long list is reachable too (the top is covered by `profile-picker-default`).
+#: long list is reachable too (the top is covered by `agent-picker-default`).
 LAST_PROFILE = f"profile-slot-{PROFILE_COUNT:02d}"
 
 
@@ -110,7 +110,7 @@ def _open_chat(ui_harness, page, session_id: str) -> None:
     # The chip is `:disabled` until the session resolves, and its `title`
     # carries the loaded profile count — that is our readiness gate.
     page.wait_for_function(
-        "() => { const b = document.querySelector('[data-testid=\"profile-picker-button\"]');"
+        "() => { const b = document.querySelector('[data-testid=\"agent-picker-button\"]');"
         " return !!b && !b.disabled; }",
         timeout=30000,
     )
@@ -118,14 +118,14 @@ def _open_chat(ui_harness, page, session_id: str) -> None:
 
 
 #: One geometry sample of the OPEN dropdown, in viewport coordinates. The
-#: dropdown card is `[data-testid="profile-picker-menu"]`, with the "Default"
+#: dropdown card is `[data-testid="agent-picker-menu"]`, with the "Default"
 #: row's parent as the fallback handle (always the list's first child).
 _GEOM_SCRIPT = r"""
 () => {
-  const chip = document.querySelector('[data-testid="profile-picker-button"]');
-  const firstRow = document.querySelector('[data-testid="profile-picker-default"]');
+  const chip = document.querySelector('[data-testid="agent-picker-button"]');
+  const firstRow = document.querySelector('[data-testid="agent-picker-default"]');
   const dropdown =
-    document.querySelector('[data-testid="profile-picker-menu"]') ||
+    document.querySelector('[data-testid="agent-picker-menu"]') ||
     (firstRow ? firstRow.parentElement : null);
   if (!chip || !dropdown) return null;
   const lastRow = dropdown.lastElementChild;
@@ -160,8 +160,8 @@ def _geom(page) -> dict:
 
 
 def _open_picker(page) -> None:
-    page.locator('[data-testid="profile-picker-button"]').first.click()
-    page.wait_for_selector('[data-testid="profile-picker-default"]', timeout=10000)
+    page.locator('[data-testid="agent-picker-button"]').first.click()
+    page.wait_for_selector('[data-testid="agent-picker-default"]', timeout=10000)
     page.wait_for_timeout(200)
 
 
@@ -261,9 +261,9 @@ def test_first_and_last_rows_are_both_reachable(ui_harness, page) -> None:
     )
 
     # ── Bottom of the list: the last seeded profile ────────────────────────
-    assert top["lastRowTestId"] == f"profile-picker-{LAST_PROFILE}", (
+    assert top["lastRowTestId"] == f"agent-picker-{LAST_PROFILE}", (
         f"the list's last row is {top['lastRowTestId']!r}, expected "
-        f"'profile-picker-{LAST_PROFILE}' — the full seed is not rendered: {top}"
+        f"'agent-picker-{LAST_PROFILE}' — the full seed is not rendered: {top}"
     )
     _wheel_over_dropdown(page, top, 5000)
     bottom = _geom(page)
