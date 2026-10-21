@@ -124,7 +124,13 @@ pub fn buildMessages(
     if (hasTool(filtered_tools, "list_secrets")) {
         try final_system.appendSlice(allocator, prompts_const.SecretsToolRule);
     }
-    _ = activeAgentContent;
+    // The spawned agent's own configuration — the persona the parent picked
+    // when it named this agent. Empty for a top-level session, so the
+    // section never appears there.
+    if (activeAgentContent.len > 0) {
+        try final_system.appendSlice(allocator, "\n\n## Your Active Agent Configuration\n\n");
+        try final_system.appendSlice(allocator, activeAgentContent);
+    }
 
     // 2. WorkingDirectoryContext — PABRIK.md / CLAUDE.md / AGENTS.md (right after static sections)
     const memoryMd = try agentic_loop.prompts_mod.makeWorkingDirectoryContext(allocator, io, cwd);
@@ -1697,6 +1703,71 @@ fn insertWorkspaceTask(db: *sqlite.SqliteBackend, task_id: []const u8, item_id: 
         \\INSERT INTO workspace_item_tasks (id, name, workspace_item_id, created_at, updated_at, task_type)
         \\VALUES (?, 'T', ?, datetime('now'), datetime('now'), 'standard')
     , &[_][]const u8{ task_id, item_id });
+}
+
+test "buildMessages: the spawned agent's configuration reaches the prompt" {
+    var ctx = try setupPromptDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(testing.io, &path_buf);
+    const cwd = try testing.allocator.dupe(u8, path_buf[0..n]);
+    defer testing.allocator.free(cwd);
+
+    const messages = try buildMessages(
+        testing.allocator,
+        ctx.threaded.io(),
+        &ctx.db,
+        cwd,
+        "sess_agent_cfg",
+        "",
+        &.{},
+        &.{},
+        "",
+        "You are a strict code reviewer.",
+    );
+    const prompt = try testing.allocator.dupe(u8, messages[0].content orelse "");
+    for (messages) |*msg| msg.deinit(testing.allocator);
+    testing.allocator.free(messages);
+    defer testing.allocator.free(prompt);
+
+    try testing.expect(std.mem.indexOf(u8, prompt, "## Your Active Agent Configuration") != null);
+    try testing.expect(std.mem.indexOf(u8, prompt, "You are a strict code reviewer.") != null);
+}
+
+test "buildMessages: a top-level session gets no agent-configuration section" {
+    var ctx = try setupPromptDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(testing.io, &path_buf);
+    const cwd = try testing.allocator.dupe(u8, path_buf[0..n]);
+    defer testing.allocator.free(cwd);
+
+    const messages = try buildMessages(
+        testing.allocator,
+        ctx.threaded.io(),
+        &ctx.db,
+        cwd,
+        "sess_no_agent_cfg",
+        "",
+        &.{},
+        &.{},
+        "",
+        "",
+    );
+    const prompt = try testing.allocator.dupe(u8, messages[0].content orelse "");
+    for (messages) |*msg| msg.deinit(testing.allocator);
+    testing.allocator.free(messages);
+    defer testing.allocator.free(prompt);
+
+    try testing.expect(std.mem.indexOf(u8, prompt, "## Your Active Agent Configuration") == null);
 }
 
 test "buildMessages: the cross-project block reaches the prompt, after the workspace, listing workspace_items siblings" {
