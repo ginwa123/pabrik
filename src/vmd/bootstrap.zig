@@ -327,9 +327,10 @@ fn spawnDetached(a: std.mem.Allocator, artifacts: Artifacts, socket_path: []cons
     if (linux.errno(child) != .SUCCESS) return null;
     if (child == 0) {
         _ = linux.setsid();
-        // The kernel ends the manager when the server that started it dies,
-        // so a server that never got to say goodbye still leaves no manager.
-        _ = linux.prctl(pr_set_pdeathsig, @intFromEnum(linux.SIG.TERM), 0, 0, 0);
+        // The kernel ends the manager when the server that started it dies:
+        // SIGUSR1, because the service is gone and the manager takes the
+        // workspace VMs it owns down with it.
+        _ = linux.prctl(pr_set_pdeathsig, @intFromEnum(linux.SIG.USR1), 0, 0, 0);
         if (linux.getppid() != parent_pid) linux.exit(0);
         _ = linux.chdir("/");
         const rc = linux.open(log_path, .{ .ACCMODE = .WRONLY, .CREAT = true, .APPEND = true }, 0o644);

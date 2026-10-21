@@ -181,8 +181,14 @@ pub fn peerOf(fd: linux.fd_t) !policy.Peer {
 
 var stopping = std.atomic.Value(bool).init(false);
 
-fn onSignal(_: std.posix.SIG) callconv(.c) void {
+/// SIGUSR1 means "the service that owns this daemon is going away": the
+/// workspace VMs it owns go down with it. SIGTERM and SIGINT only stop the
+/// daemon — the VMs stay, because a daemon that is restarted adopts them.
+var taking_vms_down = std.atomic.Value(bool).init(false);
+
+fn onSignal(sig: std.posix.SIG) callconv(.c) void {
     stopping.store(true, .seq_cst);
+    if (sig == std.posix.SIG.USR1) taking_vms_down.store(true, .seq_cst);
 }
 
 /// Without SA_RESTART, a signal makes the blocked `accept` return EINTR, which
@@ -195,6 +201,7 @@ pub fn installSignalHandlers() void {
     };
     std.posix.sigaction(std.posix.SIG.TERM, &sa, null);
     std.posix.sigaction(std.posix.SIG.INT, &sa, null);
+    std.posix.sigaction(std.posix.SIG.USR1, &sa, null);
 }
 
 // ─── the socket ──────────────────────────────────────────────────────────
@@ -260,11 +267,13 @@ pub fn serve(allocator: std.mem.Allocator, config: Config) !void {
         thread.detach();
     }
 
-    const stopped = manager.stopAll(allocator) catch |err| blk: {
-        log("shutdown: could not stop every workspace VM: {s}", .{@errorName(err)});
-        break :blk 0;
-    };
-    if (stopped > 0) log("shutdown: stopped {d} workspace VM(s)", .{stopped});
+    if (taking_vms_down.load(.seq_cst)) {
+        const stopped = manager.stopAll(allocator) catch |err| blk: {
+            log("shutdown: could not stop every workspace VM: {s}", .{@errorName(err)});
+            break :blk 0;
+        };
+        if (stopped > 0) log("shutdown: stopped {d} workspace VM(s)", .{stopped});
+    }
 }
 
 /// The reconciler's clock: one pass over every workspace per interval. It

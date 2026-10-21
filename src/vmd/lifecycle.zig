@@ -9,6 +9,10 @@ const linux = std.os.linux;
 /// How long the manager gets to leave on its own before it is killed.
 pub const default_stop_timeout_ms: u32 = 5_000;
 
+/// Linux's SIGUSR1: the manager reads it as "the service that owns me is
+/// going away", so it takes the workspace VMs it owns down with it. SIGTERM
+/// only stops the manager — a manager that is restarted adopts its VMs.
+pub const sig_usr1: u8 = 10;
 pub const sig_term: u8 = 15;
 pub const sig_kill: u8 = 9;
 
@@ -42,10 +46,12 @@ pub fn spawnedPid() ?i32 {
     return spawned;
 }
 
-/// SIGTERM first, so the manager stops the VMs it owns, then SIGKILL for a
-/// manager that will not go.
+/// SIGUSR1 first — the service is going away, so the manager takes its VMs
+/// with it — then SIGTERM, then SIGKILL for a manager that will not go.
 pub fn stop(env: Env, pid: ?i32, timeout_ms: u32) Outcome {
     const target = pid orelse return .nothing_to_stop;
+    env.signal(env.ctx, target, sig_usr1);
+    if (waitGone(env, target, timeout_ms)) return .stopped;
     env.signal(env.ctx, target, sig_term);
     if (waitGone(env, target, timeout_ms)) return .stopped;
     env.signal(env.ctx, target, sig_kill);
@@ -115,7 +121,9 @@ const testing = std.testing;
 const Fake = struct {
     now: i64 = 0,
     alive: bool = true,
-    deaf_to_term: bool = false,
+    /// The manager ignores every signal until SIGKILL.
+    deaf: bool = false,
+    usr1s: u32 = 0,
     terms: u32 = 0,
     kills: u32 = 0,
 
@@ -131,9 +139,13 @@ const Fake = struct {
     fn signal(ctx: *anyopaque, _: i32, sig: u8) void {
         const fake = me(ctx);
         switch (sig) {
+            sig_usr1 => {
+                fake.usr1s += 1;
+                if (!fake.deaf) fake.alive = false;
+            },
             sig_term => {
                 fake.terms += 1;
-                if (!fake.deaf_to_term) fake.alive = false;
+                if (!fake.deaf) fake.alive = false;
             },
             sig_kill => {
                 fake.kills += 1;
@@ -161,22 +173,23 @@ fn fakeEnv(fake: *Fake) Env {
     };
 }
 
-/// A child that waits to be signalled. `deaf_to_term` is a wedged manager:
-/// it never leaves on SIGTERM. The pipe is the handshake, so the parent
-/// never signals a child that has not armed its disposition yet.
-fn forkWaiter(deaf_to_term: bool) !i32 {
+/// A child that waits to be signalled. `deaf` is a wedged manager: it ignores
+/// every signal until SIGKILL. The pipe is the handshake, so the parent never
+/// signals a child that has not armed its dispositions yet.
+fn forkWaiter(deaf: bool) !i32 {
     var fds: [2]i32 = undefined;
     if (linux.errno(linux.pipe2(&fds, .{ .CLOEXEC = true })) != .SUCCESS) return error.PipeFailed;
     const child = linux.fork();
     if (linux.errno(child) != .SUCCESS) return error.ForkFailed;
     if (child == 0) {
         _ = linux.close(fds[0]);
-        if (deaf_to_term) {
+        if (deaf) {
             var sa: linux.Sigaction = .{
                 .handler = .{ .handler = @as(?linux.Sigaction.handler_fn, @ptrFromInt(1)) },
                 .mask = std.mem.zeroes(linux.sigset_t),
                 .flags = 0,
             };
+            _ = linux.sigaction(linux.SIG.USR1, &sa, null);
             _ = linux.sigaction(linux.SIG.TERM, &sa, null);
         }
         _ = linux.write(fds[1], "x", 1);
@@ -198,18 +211,20 @@ fn goneForReal(pid: i32) bool {
     return err == .SUCCESS or err == .PERM;
 }
 
-test "a manager that leaves on SIGTERM is not killed" {
+test "a manager that leaves on the first signal is not killed" {
     var fake = Fake{};
     const env = fakeEnv(&fake);
     try testing.expectEqual(Outcome.stopped, stop(env, 4242, 1000));
-    try testing.expectEqual(@as(u32, 1), fake.terms);
+    try testing.expectEqual(@as(u32, 1), fake.usr1s);
+    try testing.expectEqual(@as(u32, 0), fake.terms);
     try testing.expectEqual(@as(u32, 0), fake.kills);
 }
 
-test "a manager that ignores SIGTERM is killed" {
-    var fake = Fake{ .deaf_to_term = true };
+test "a manager that ignores every signal is killed" {
+    var fake = Fake{ .deaf = true };
     const env = fakeEnv(&fake);
     try testing.expectEqual(Outcome.killed, stop(env, 4242, 1000));
+    try testing.expectEqual(@as(u32, 1), fake.usr1s);
     try testing.expectEqual(@as(u32, 1), fake.terms);
     try testing.expectEqual(@as(u32, 1), fake.kills);
 }
@@ -218,6 +233,7 @@ test "no manager means nothing is signalled" {
     var fake = Fake{};
     const env = fakeEnv(&fake);
     try testing.expectEqual(Outcome.nothing_to_stop, stop(env, null, 1000));
+    try testing.expectEqual(@as(u32, 0), fake.usr1s);
     try testing.expectEqual(@as(u32, 0), fake.terms);
     try testing.expectEqual(@as(u32, 0), fake.kills);
 }
@@ -232,7 +248,7 @@ test "the manager this process started is stopped when the service closes" {
     try testing.expect(!goneForReal(pid));
 }
 
-test "a manager that ignores SIGTERM does not outlive the service" {
+test "a manager that ignores every signal does not outlive the service" {
     const pid = try forkWaiter(true);
     rememberSpawned(pid);
 

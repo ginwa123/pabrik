@@ -2055,15 +2055,29 @@ So the manager is the server's child in the only sense that matters: **it goes d
 | item | where | proof |
 |---|---|---|
 | the server keeps the pid of the manager it forked | `src/vmd/lifecycle.zig` (`rememberSpawned`), `src/vmd/bootstrap.zig` | unit: the pid this process started is the one that is stopped |
-| the server stops it when the listener closes | `src/main.zig::stopManager` | SIGTERM, then SIGKILL for a manager that will not go |
+| the server stops it when the listener closes | `src/main.zig::stopManager` | SIGUSR1, then SIGTERM, then SIGKILL for a manager that will not go |
 | the manager stops the VMs it owns before it exits | `src/vmd/daemon.zig::serve` → `Reconciler.stopAll` | unit: two workspaces with two VMMs, both stopped |
-| a server that never says goodbye still takes the manager with it | `PR_SET_PDEATHSIG` in `src/vmd/bootstrap.zig::spawnDetached` | the kernel sends SIGTERM when the parent dies |
+| a server that never says goodbye still takes the manager with it | `PR_SET_PDEATHSIG` in `src/vmd/bootstrap.zig::spawnDetached` | the kernel sends the signal when the parent dies |
+| a manager that is only RESTARTED keeps its VMs | `src/vmd/daemon.zig::onSignal` | `scripts/vmd-daemon-smoke.sh`: "a restarted daemon adopted vmm pid=…" |
 
-The order is the graceful one: the server SIGTERMs the manager, the manager stops each workspace
-VM it owns (the same `stop` the reconciler already does, so the VMM's sockets are reclaimed and
-its state file says `absent`), the manager unlinks its socket and exits, and only then does the
-server exit. The two SIGKILLs are the backstops: the server's for a wedged manager, the
-kernel's for a server that was SIGKILLed.
+The order is the graceful one: the server tells the manager that the service is going away, the
+manager stops each workspace VM it owns (the same `stop` the reconciler already does, so the
+VMM's sockets are reclaimed and its state file says `absent`), the manager unlinks its socket
+and exits, and only then does the server exit.
+
+**Two signals, because "the manager stops" and "the service is closing" are not the same
+event.** §25 made a restarted daemon ADOPT the VMs it finds instead of orphaning them, and
+`scripts/vmd-daemon-smoke.sh` asserts it. So:
+
+| signal | meaning | the VMs |
+|---|---|---|
+| SIGTERM / SIGINT | "stop" — the daemon exits | stay: the next daemon adopts them |
+| SIGUSR1 | "the service that owns you is going away" | go down with the daemon |
+
+The server sends SIGUSR1 (`src/vmd/lifecycle.zig::sig_usr1`), and the manager's
+`PR_SET_PDEATHSIG` is SIGUSR1 too: a server that was SIGKILLed is a service that is gone, so
+the manager takes its VMs with it. A manager an operator restarts by hand gets SIGTERM, and its
+VMs survive — the adoption contract, unchanged.
 
 **A manager the server did not start is left alone.** A manager that was already running when
 the server booted is adopted, not owned — the next boot attaches to it rather than forking a
