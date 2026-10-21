@@ -1,6 +1,4 @@
-/** KanbanTagsInput — autocomplete dropdown behavioural tests. Plan:
- * docs/superpowers/plans/2026-07-30-kanban-task-tags-autocomplete.md (Task 2.5 — RED step, Task 2.6
- * — GREEN step) Covers: 1. Dropdown visibility (empty / non-empty suggestions) 2. */
+/** KanbanTagsInput — autocomplete dropdown behavioural tests.Covers: 1. Dropdown visibility (empty / non-empty suggestions) 2. */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'

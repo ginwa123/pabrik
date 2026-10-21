@@ -271,6 +271,35 @@ jobs:
           bash scripts/lint-no-catch-unreachable.sh --selftest
           bash scripts/lint-no-catch-unreachable.sh
 
+      - name: No comment points at a document that does not exist
+        # A comment that names a document is a promise to the reader:
+        # follow the pointer, read the document, understand the code. When
+        # the document is deleted, the promise is broken — and nothing
+        # notices, because a comment is not code, so the compiler is
+        # silent.
+        #
+        # PR #815 deleted 356 plan documents in one commit and left 218
+        # comments pointing at them. Every one was a dead promise and
+        # every one was invisible to the build.
+        #
+        # The selftest runs first for the same reason as the scan above:
+        # a scanner that has quietly stopped matching is a silent outage.
+        # The rule and its rationale live in CODING_STANDARDS.md.
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The interpreter is checked, not assumed: a scan that cannot run
+          # must never report the tree clean, because "clean" is the one
+          # answer that lets a violation merge. ubuntu-latest ships
+          # python3, and the step says so out loud rather than letting a
+          # missing interpreter read as a pass.
+          command -v python3 >/dev/null 2>&1 || {
+            echo "x python3 not found on PATH -- the dead-doc-ref scan cannot run" >&2
+            exit 1
+          }
+          python3 scripts/lint-no-dead-doc-refs.py --selftest
+          python3 scripts/lint-no-dead-doc-refs.py
+
   # ── 1b. zginlint ────────────────────────────────────────────────────
   # The Zig linter's gate: github.com/ginwa123/zglint, pinned by URL +
   # hash in `build.zig.zon`, run over this tree as a CLI with zero

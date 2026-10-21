@@ -1,5 +1,4 @@
-/** Behavioural test for the design-page-sync fix. Plan:
- * docs/superpowers/plans/2026-08-06-design-page-sync-fix.md Tests: 1. setActiveDesignPage(newId) on
+/** Behavioural test for the design-page-sync fix.Tests: 1. setActiveDesignPage(newId) on
  * the store → local activePageId updates within one tick. 2. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'

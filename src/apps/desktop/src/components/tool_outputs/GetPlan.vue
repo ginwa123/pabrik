@@ -40,7 +40,6 @@
   The CDATA wrapper around the plan content (set by executeGetPlan.zig)
   is stripped here so we can render the raw markdown line-by-line.
 
-  Plan: docs/superpowers/plans/2026-08-19-session-plan-agent-tool.md
   Task 8 of 9
 -->
 <script setup lang="ts">

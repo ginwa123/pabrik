@@ -46,7 +46,6 @@
                   what it wrote.
     `answer`    → stripped for the chip only, same raw-value rule.
 
-  Plan: docs/superpowers/plans/2026-09-16-agent-tool-ask-user.md
   Wireframe: docs/wireframes/ask-user-tool.html
 -->
 <script setup lang="ts">

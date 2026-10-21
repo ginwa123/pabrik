@@ -1,6 +1,5 @@
 /** Tests for workspacesStore.runAllAgentsInColumn — the store action that wraps
- * api.runAllAgentsInColumn for the column "Run all agents" flow (plan:
- * docs/superpowers/plans/2026-09-09-run-all-agents-by-column.md, Task 4, Option C). */
+ * api.runAllAgentsInColumn for the column "Run all agents" flow. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

@@ -368,9 +368,8 @@ const emit = defineEmits<{
   // KanbanColumnEditor in the right mode.
   requestRenameColumn: [columnId: string]
   requestDeleteColumn: [columnId: string]
-  /**    * Fired when the user renames the kanban via the inline pencil on the header title. Mirrors
-   * KanbanSettingsDialog's rename-item emit so AppLayout handles both with one handler. Plan:
-   * docs/superpowers/plans/2026-06-30-edit-workspace-item-name.md */
+  /** * Fired when the user renames the kanban via the inline pencil on the header title. Mirrors
+   * KanbanSettingsDialog's rename-item emit so AppLayout handles both with one handler. */
   renameItem: [name: string]
   // Chat pane (kanban-embed-chatview plan, Task 2+4). Fired when ChatView's header close button is
   // clicked. AppLayout's handler clears activeTask + navigates to view=workspace (URL is the source
@@ -929,8 +928,7 @@ const handleTaskDetailSave = async (payload: {
 }
 
 // NEW (plan: 2026-08-18-kanban-task-detail-start-agent). Edit-mode Start agent click handler. Wired
-// to the dialog's @start-agent emit. Plan:
-// docs/superpowers/specs/2026-08-18-kanban-task-detail-start-agent.md
+// to the dialog's @start-agent emit.
 const handleStartAgent = async (payload: { taskId: string }) => {
   // Defensive: ignore if the dialog is already closed or the click
   // somehow fires for a different task than the one we have open.

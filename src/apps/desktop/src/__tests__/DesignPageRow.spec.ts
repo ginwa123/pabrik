@@ -1,5 +1,4 @@
-/** Behavioural tests for DesignPageRow.vue. Plan:
- * docs/superpowers/plans/2026-08-06-design-pages-in-workspace-tree.md 6 tests covering the row's
+/** Behavioural tests for DesignPageRow.vue.6 tests covering the row's
  * behavioral contract: 1. Renders the page name. 2. */
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'

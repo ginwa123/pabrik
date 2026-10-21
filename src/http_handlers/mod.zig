@@ -177,12 +177,10 @@ pub const secretsUpdateHandler = @import("secrets_update.zig").secretsUpdateHand
 pub const secretsDeleteHandler = @import("secrets_delete.zig").secretsDeleteHandler;
 
 // Kanban column CRUD handlers (item_type='kanban' sub-resources).
-// See docs/superpowers/plans/2026-06-21-workspace-item-kanban.md (Chunk 3).
 pub const kanbanColumnsListHandler = @import("kanban_columns_list.zig").kanbanColumnsListHandler;
 pub const kanbanColumnsCreateHandler = @import("kanban_columns_create.zig").kanbanColumnsCreateHandler;
 // POST /api/workspaces/:workspace_id/items/:item_id/kanban/tasks with
-// `mode` discriminator ('create' | 'create_and_run'). See
-// docs/superpowers/plans/2026-08-13-kanban-task-create-endpoint.md (Task 1).
+// `mode` discriminator ('create' | 'create_and_run').
 pub const kanbanTasksCreateHandler = @import("kanban_tasks_create.zig").kanbanTasksCreateHandler;
 pub const kanbanColumnsUpdateHandler = @import("kanban_columns_update.zig").kanbanColumnsUpdateHandler;
 pub const kanbanColumnsDeleteHandler = @import("kanban_columns_delete.zig").kanbanColumnsDeleteHandler;
@@ -191,14 +189,12 @@ pub const kanbanColumnsDeleteHandler = @import("kanban_columns_delete.zig").kanb
 pub const kanbanCopySpecHandler = @import("kanban_copy_spec.zig").kanbanCopySpecHandler;
 pub const tasksMoveHandler = @import("tasks_move.zig").tasksMoveHandler;
 pub const tasksListHandler = @import("tasks_list.zig").tasksListHandler;
-// Single-task GET endpoint (plan:
-// docs/superpowers/plans/2026-08-24-kanban-task-detail-single-fetch.md).
+// Single-task GET endpoint.
 pub const tasksGetHandler = @import("tasks_get.zig").tasksGetHandler;
 // Lazy media fetch (media-flags change) — full `image_urls` / `video_urls`
 // only when `is_have_image` / `is_have_video` is true.
 pub const tasksMediaHandler = @import("tasks_media.zig").tasksMediaHandler;
-// Kanban tag autocomplete endpoint (Chunk 1 of plan
-// docs/superpowers/plans/2026-07-30-kanban-task-tags-autocomplete.md).
+// Kanban tag autocomplete endpoint.
 // Stub-only in this commit — Task 1.4 implements the useCase body.
 pub const kanbanTagsListHandler = @import("kanban_tags_list.zig").kanbanTagsListHandler;
 pub const tasksCreateHandler = @import("task_create.zig").tasksCreateHandler;
@@ -212,7 +208,7 @@ pub const TaskDeleteOutcome = @import("task_delete.zig").TaskDeleteOutcome;
 pub const taskPinHandler = @import("task_pin.zig").taskPinHandler;
 // Chunk 3 of kanban-task-notification-icon: thin handler that stamps
 // `last_human_touched_at` and emits the `kanban_task.human_touched`
-// SSE event. See docs/plans/2026-07-26-kanban-task-notification-icon.md.
+// SSE event.
 pub const taskMarkHumanTouchedHandler = @import("task_mark_human_touched.zig").taskMarkHumanTouchedHandler;
 pub const tasksReorderPinnedHandler = @import("tasks_reorder_pinned.zig").tasksReorderPinnedHandler;
 // Task attachment upload/download handlers — REMOVED 2026-08-06 (Migration
@@ -240,8 +236,7 @@ pub const skillCreateHandler = @import("skill_create.zig").skillCreateHandler;
 pub const skillDetailHandler = @import("skill_detail.zig").skillDetailHandler;
 pub const skillUpdateHandler = @import("skill_update.zig").skillUpdateHandler;
 pub const skillDeleteHandler = @import("skill_delete.zig").skillDeleteHandler;
-// Skill Evals — the read surface (see docs/plans/2026-09-27-skill-evals.md
-// §4.10).
+// Skill Evals — the read surface.
 pub const skillEvalsRunsHandler = @import("skill_evals.zig").skillEvalsRunsHandler;
 pub const skillEvalsSummaryHandler = @import("skill_evals.zig").skillEvalsSummaryHandler;
 pub const skillEvalsApplyHandler = @import("skill_evals.zig").skillEvalsApplyHandler;
@@ -316,8 +311,7 @@ pub const terminalListHandler = @import("terminal_list.zig").terminalListHandler
 pub const terminalWsHandler = @import("terminal_ws.zig").terminalWsHandler;
 
 // Design-mode HTTP handlers (item_type='design') — v6 of the design-mode
-// redesign. See docs/superpowers/plans/2026-07-08-design-mode-redesign.md
-// (Chunk 3) for the full route table.
+// redesign.for the full route table.
 pub const designPagesListHandler = @import("design_pages_list.zig").designPagesListHandler;
 pub const designPagesCreateHandler = @import("design_pages_create.zig").designPagesCreateHandler;
 pub const designPagesGetHandler = @import("design_pages_get.zig").designPagesGetHandler;
@@ -338,27 +332,23 @@ pub const designElementsGeometryUpdateHandler = @import("design_elements_geometr
 pub const designElementsGeometryBatchHandler = @import("design_elements_geometry_batch.zig").designElementsGeometryBatchHandler;
 // NEW (2026-08-06) — POST .../translate. Single-element move with
 // delta. Cascades to descendants when the element is a group/frame.
-// See docs/superpowers/plans/2026-08-06-split-move-resize.md.
 pub const designElementsTranslateHandler = @import("design_elements_translate.zig").designElementsTranslateHandler;
 pub const designElementsTranslateUseCase = @import("design_elements_translate.zig").useCase;
 pub const designElementsTranslateError = @import("design_elements_translate.zig").DesignElementTranslateError;
 // NEW (2026-08-06) — POST .../resize. Single-element resize with absolute
 // x/y/width/height/rotation. No cascade (resize is per-element by Figma
-// convention). See docs/superpowers/plans/2026-08-06-split-move-resize.md.
+// convention).
 pub const designElementsResizeHandler = @import("design_elements_resize.zig").designElementsResizeHandler;
 pub const designElementsResizeUseCase = @import("design_elements_resize.zig").useCase;
 pub const designElementsResizeError = @import("design_elements_resize.zig").DesignElementResizeError;
 // Group 2+ elements into a new `group`/`frame` parent. POST
-// /api/workspaces/:w/items/:i/design/pages/:p/elements/group — see
-// docs/superpowers/plans/2026-07-28-grouped-layers.md (Chunk 3).
+// /api/workspaces/:w/items/:i/design/pages/:p/elements/group
 pub const designElementsGroupHandler = @import("design_elements_group.zig").designElementsGroupHandler;
 pub const designElementsReorderHandler = @import("design_elements_reorder.zig").designElementsReorderHandler;
 pub const designElementsReparentBatchHandler = @import("design_elements_reparent.zig").designElementsReparentBatchHandler;
 // Server-side cascade move. POST /api/workspaces/:w/items/:i/design/pages/:p/elements/move-batch
-// — see docs/superpowers/plans/2026-08-06-move-element-with-descendants.md (Chunk 2).
 pub const designElementsMoveBatchHandler = @import("design_elements_move_batch.zig").designElementsMoveBatchHandler;
 // Cross-page element relocate. POST /api/workspaces/:w/items/:i/design/pages/:p/elements/:eid/move-to-page
-// — see docs/superpowers/plans/2026-08-06-move-element-to-page.md (Chunk 2).
 pub const designElementsMoveToPageHandler = @import("design_elements_move_to_page.zig").designElementsMoveToPageHandler;
 pub const designElementsUngroupHandler = @import("design_elements_ungroup.zig").designElementsUngroupHandler;
 
@@ -399,7 +389,7 @@ pub const webStatusHandler = @import("web_status.zig").webStatusHandler;
 
 // Frontend error log handlers — persist and query the window.error /
 // unhandledrejection / console.error / console.warn events in the `logs`
-// table. See docs/plans/2026-07-17-frontend-error-logs-design.md.
+// table.
 pub const frontendLogPostHandler = @import("frontend_log_post.zig").frontendLogPostHandler;
 pub const frontendLogGetHandler = @import("frontend_log_get.zig").frontendLogGetHandler;
 

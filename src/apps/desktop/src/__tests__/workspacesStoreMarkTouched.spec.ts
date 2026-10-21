@@ -1,5 +1,4 @@
-/** Tests for the kanban notification icon's frontend stamp hook (plan:
- * docs/plans/2026-07-26-kanban-task-notification-icon.md, Chunk 7). */
+/** Tests for the kanban notification icon's frontend stamp hook. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick } from 'vue'

@@ -41,8 +41,7 @@ fn useCase(
     const task = task_opt orelse return error.TaskNotFound;
     defer task.deinit(allocator);
 
-    // Kanban-task-git-branch (plan:
-    // docs/superpowers/plans/2026-08-06-kanban-task-git-branch.md).
+    // Kanban-task-git-branch.
     const item_path = fetchWorkspaceItemPath(allocator, db, item_id) catch "";
     const cwd = if (task.git_worktree_cwd.len > 0)
         task.git_worktree_cwd

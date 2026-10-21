@@ -1,5 +1,4 @@
-/** Unit tests for the workspaces store's `refreshTask` action. Plan:
- * docs/superpowers/plans/2026-08-24-kanban-task-detail-single-fetch.md (Task 3). */
+/** Unit tests for the workspaces store's `refreshTask` action. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

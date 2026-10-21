@@ -3870,8 +3870,7 @@ const compactSession = async () => {
           Why this exists: the <VirtualScroller> below only emits @load-more
           when the user scrolls within `loadMoreThreshold` of the top of a
           *scrollable* container. When the loaded messages fit in the
-          viewport (a common case for short tool/result chats, see the
-          screenshot in docs/plans/2026-06-04-chat-lazy-load-button.md),
+          viewport (a common case for short tool/result chats),
           the container is not scrollable, the scroll event never fires,
           and the user has no way to reach older messages.
 

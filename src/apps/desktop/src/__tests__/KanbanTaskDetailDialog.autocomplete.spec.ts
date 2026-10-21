@@ -1,6 +1,5 @@
 /** Behavioural tests for KanbanTaskDetailDialog — tag autocomplete wiring (Task 2.7 of the
- * kanban-task-tags-autocomplete plan). Plan:
- * docs/superpowers/plans/2026-07-30-kanban-task-tags-autocomplete.md Chunk 2 / Task 2.7 */
+ * kanban-task-tags-autocomplete plan). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -132,7 +131,6 @@ describe('KanbanTaskDetailDialog — tag autocomplete wiring', () => {
   })
 
   it('fetches in create mode when the column prop is present (so the new task can pick from existing tags)', async () => {
-    // Plan: docs/superpowers/plans/2026-08-06-kanban-tags-autocomplete-in-create-mode.md The
     // previous test ("does NOT fetch in create mode") locked in a bug: users opening the "+ Add
     // task" dialog could not see the kanban's existing tags in the dropdown.
     const spy = vi
@@ -159,7 +157,7 @@ describe('KanbanTaskDetailDialog — tag autocomplete wiring', () => {
   })
 
   it('renders the existing-tag dropdown in create mode so the user can one-click pick a tag', async () => {
-    // Plan: docs/superpowers/plans/2026-08-06-kanban-tags-autocomplete-in-create-mode.md Regression
+    // PlanRegression
     // guard for the user-reported symptom: "when create a task, the auto tags not trigger".
     vi.spyOn(api, 'getKanbanTagSuggestions').mockResolvedValue({
       tags: [
@@ -208,7 +206,6 @@ describe('KanbanTaskDetailDialog — tag autocomplete wiring', () => {
   })
 
   it('clicking a suggestion in create mode adds the chip (one-click pick)', async () => {
-    // Plan: docs/superpowers/plans/2026-08-06-kanban-tags-autocomplete-in-create-mode.md
     // End-to-end of the user request: open "+ Add task", focus tags input,
     // click an existing tag in the dropdown, see the chip appear.
     vi.spyOn(api, 'getKanbanTagSuggestions').mockResolvedValue({

@@ -690,10 +690,8 @@ export async function createTask(
     isAutoRetryUntilStop?: string
     // Kanban task tags (Migration 067 — kanban task tags feature). Array of free-form tag strings.
     // Empty array / undefined = no tags. Forwarded as a JSON-encoded array string on the wire.
-    // Plan: docs/superpowers/plans/2026-07-28-kanban-task-tags.md.
     tags?: string[]
-    // NEW (Migration 069 — kanban image urls column). Plan:
-    // docs/superpowers/plans/2026-08-06-kanban-image-urls-column.md. NOTE (Migration 090): may also
+    // NEW (Migration 069 — kanban image urls column). NOTE (Migration 090): may also
     // carry `data:video/...` URLs — splitMediaUrls routes those to `video_urls` at send time.
     imageUrls?: string[]
     // NEW (Migration 090 — kanban video urls column). Array of
@@ -745,8 +743,7 @@ export async function createTask(
   })
 }
 
-/** Kanban-specific task create endpoint. Plan:
- * docs/superpowers/plans/2026-08-14-kanban-task-create-endpoints.md */
+/** Kanban-specific task create endpoint. */
 export type KanbanCreateMode = 'create' | 'create_session' | 'create_and_run'
 
 export interface KanbanCreateTaskPayload {
@@ -990,8 +987,7 @@ export async function runWorkspaceRoutine(
 }
 
 /** Trigger an LLM worker on an existing task's session WITHOUT queueing a new user message. For
- * tasks with chat history, the agent resumes the conversation. Plan:
- * docs/superpowers/specs/2026-08-18-kanban-task-detail-start-agent.md */
+ * tasks with chat history, the agent resumes the conversation. */
 export async function startAgentOnTask(
   workspaceId: string,
   itemId: string,
@@ -1003,8 +999,7 @@ export async function startAgentOnTask(
   )
 }
 
-/** Bulk "Run all agents" for one kanban column (plan:
- * docs/superpowers/plans/2026-09-09-run-all-agents-by-column.md, Task 4, Option C). */
+/** Bulk "Run all agents" for one kanban column. */
 export interface RunAllAgentsSummary {
   success: boolean
   column_id?: string
@@ -1062,8 +1057,7 @@ export interface Chat {
   /// via `git -C <cwd>`, same helper as the kanban task badge).
   git_branch?: string
   // Backend wall-clock timestamp of the last `sessions.UPDATE` — bumped by everything (agent loop,
-  // profile change, error, etc). Plan:
-  // docs/superpowers/plans/2026-08-29-chat-sidebar-last-human-touched.md
+  // profile change, error, etc).
   updated_at?: string
   /// Migration 063 — "0" / "1" opt-in for unattended mode. Always
   /// present in the GET /api/sessions response (ChatsList uses this
@@ -1071,7 +1065,7 @@ export interface Chat {
   is_auto_retry_until_stop?: string
   // Migration 082 — unix-ms string of the last time a HUMAN interacted with this session. Empty
   // string (NOT undefined) for legacy rows so the ChatsList time pill can fall back to `updated_at`
-  // predictably. Plan: docs/superpowers/plans/2026-08-29-chat-sidebar-last-human-touched.md
+  // predictably.
   last_human_touched_at?: string
   /// Migration 104 — pinned sessions (PINNED section above RECENT).
   /// True when the user pinned via right-click menu. Always present
@@ -1969,7 +1963,6 @@ export async function moveTask(
   })
 }
 
-/** Plan: docs/superpowers/plans/2026-07-30-kanban-task-tags-autocomplete.md */
 export interface KanbanTagSuggestion {
   name: string
   count: number

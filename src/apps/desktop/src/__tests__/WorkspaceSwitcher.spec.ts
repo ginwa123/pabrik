@@ -1,5 +1,4 @@
-/** Behavioural tests for the header WorkspaceSwitcher dropdown (plan:
- * docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md). Props-driven component — no
+/** Behavioural tests for the header WorkspaceSwitcher dropdown. Props-driven component — no
  * store/router needed. */
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'

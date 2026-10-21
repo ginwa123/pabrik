@@ -121,8 +121,7 @@ pub fn kanbanTagsListHandler(
     return res.jsonResponse(.{ .status_code = 200, .data = data });
 }
 // ===================================================================== Tests
-// for useCase Plan:
-// docs/superpowers/plans/2026-07-30-kanban-task-tags-autocomplete.md
+// for useCase
 
 fn setupDbWithTagsForHandler() !struct { db: pabrikcore.sqlite.SqliteBackend, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;

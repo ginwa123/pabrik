@@ -1,6 +1,6 @@
-//! Functional service-level verification for single-file Lua hooks. Branch:
-//! worktree/hook2312maspodmp2131 (plan
-//! docs/superpowers/plans/2026-09-12-hook-lua-pre-post-tool-use.md).
+// ! Functional service-level verification for single-file Lua hooks. Branch:
+// ! worktree/hook2312maspodmp2131 (plan
+// !).
 
 const std = @import("std");
 const testing = std.testing;

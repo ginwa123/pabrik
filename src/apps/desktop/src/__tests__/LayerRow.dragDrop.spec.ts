@@ -1,6 +1,5 @@
 /** Behavioural tests for `<LayerRow>` drag-and-drop wire (Chunk 4
- * Task 4.1).
- * Plan: docs/superpowers/plans/2026-07-30-design-layer-drag-join-or-leave-group.md */
+ * Task 4.1). */
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'

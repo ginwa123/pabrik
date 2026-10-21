@@ -1,5 +1,4 @@
-/** Unit tests for the workspaces store's `updateTaskDetails` action. Plan:
- * docs/superpowers/plans/2026-07-16-kanban-task-detail-dialog.md */
+/** Unit tests for the workspaces store's `updateTaskDetails` action. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

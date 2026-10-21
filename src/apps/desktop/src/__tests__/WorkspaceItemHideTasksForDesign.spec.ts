@@ -1,5 +1,4 @@
-/** Behavioural test for the design-items-hide-tasks-section change. Plan:
- * docs/superpowers/plans/2026-08-06-design-pages-hide-tasks-for-design.md 4 tests: 1. */
+/** Behavioural test for the design-items-hide-tasks-section change.4 tests: 1. */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

@@ -60,8 +60,8 @@
   API but never told DesignView to refresh — leaving the user
   staring at stale tabs until they reloaded the page.
 
-  Note: the canvas background feature has been removed (plan
-  docs/superpowers/plans/2026-07-29-remove-canvas-background.md), so
+  Note: the canvas background feature has been removed
+  so
   pages no longer have a visible W × H rectangle / enforced boundary
   in the canvas UI. The `design_pages.width` / `height` columns
   remain in the DB for backward compat; `setDesignPage` /
@@ -1526,7 +1526,7 @@ onUpdated(() => {
 })
 
 // ─── Page-size inputs were removed ────────────────────────────────────── The W × H header inputs
-// have been removed (plan docs/superpowers/plans/2026-07-29-remove-canvas-background.md): pages no
+// have been removed: pages no
 // longer have a visible rectangle / enforced boundary.
 </script>
 

@@ -377,8 +377,7 @@ const isCompletionMsg = (msg: { message: string }): boolean =>
 const completionPid = (msg: { message: string }): string | null =>
   parseBackgroundCommandOutput(msg.message)?.pid ?? null
 
-// ── @ picker server search (Task 2: plan
-// docs/superpowers/plans/2026-09-08-chatview-search-files-perf.md) ────── Single round-trip per
+// ── @ picker server search ────── Single round-trip per
 // query via `api.searchFiles`.
 let fileSearchTimer: ReturnType<typeof setTimeout> | null = null
 let fileSearchGen = 0

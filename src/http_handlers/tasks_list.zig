@@ -122,8 +122,7 @@ fn useCase(
         allocator.free(result.tasks);
     }
 
-    // Kanban-task-git-branch (plan:
-    // docs/superpowers/plans/2026-08-06-kanban-task-git-branch.md).
+    // Kanban-task-git-branch.
     const item_path = fetchWorkspaceItemPath(allocator, db, input.item_id) catch "";
     defer if (item_path.len > 0) allocator.free(item_path);
 
@@ -189,8 +188,7 @@ fn useCase(
             // WorkspaceItemTaskInfo.deinit, stays valid until the outer defer
             // at the top of useCase runs).
             .is_auto_retry_until_stop = task.is_auto_retry_until_stop,
-            // Kanban notification icon (Migration 065 / plan
-            // docs/plans/2026-07-26-kanban-task-notification-icon.md):
+            // Kanban notification icon (Migration 065 /):
             // last_finish_reason comes from the LEFT JOIN on sessions,
             .last_finish_reason = task.last_finish_reason,
             .needs_human_review = task.needs_human_review,

@@ -1,5 +1,4 @@
-/** "Move to column" — the new context-menu submenu. Plan:
- * docs/superpowers/plans/2026-09-25-kanban-card-context-menu-move-to-column.md */
+/** "Move to column" — the new context-menu submenu. */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref } from 'vue'

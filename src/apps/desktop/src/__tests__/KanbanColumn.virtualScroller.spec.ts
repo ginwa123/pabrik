@@ -1,5 +1,5 @@
 /** Behavioural tests for KanbanColumn + VirtualScroller integration (kanban-virtual-scroll,
- * 2026-08-06). Why this exists. Plan: docs/superpowers/plans/2026-08-06-kanban-virtual-scroll.md */
+ * 2026-08-06). Why this exists. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'

@@ -26,7 +26,6 @@
       update:sortBy    [value]
       update:direction [value]
 
-  Plan: docs/superpowers/plans/2026-08-06-kanban-sort-by.md Task 2
 -->
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'

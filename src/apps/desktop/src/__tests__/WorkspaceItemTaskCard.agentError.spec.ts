@@ -1,6 +1,5 @@
 /** Behavioural tests for the agent-error indicator on <WorkspaceItemTaskCard> (the kanban board
- * card variant). Plan: docs/superpowers/plans/2026-08-29-chatview-agent-error-persistent.md (Task 5
- * — kanban card error indicator). */
+ * card variant). */
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

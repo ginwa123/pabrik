@@ -443,8 +443,7 @@ describe('DesignElement drag', () => {
   })
 
   // Counterpart: a single-element drag (no multi-selection context) emits `translate` (delta-based)
-  // — the new typed event replacing the old conflated `update` event. See
-  // docs/superpowers/plans/2026-08-06-split-move-resize.md.
+  // — the new typed event replacing the old conflated `update` event.
   it('drag with empty selectedIds still emits translate (single-element path)', async () => {
     const wrapper = mount(DesignElement, {
       props: { element: ELEMENT, selectedIds: [], selected: true, zoom: 1.0 },

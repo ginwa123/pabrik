@@ -1,5 +1,5 @@
 /** Tests for MarkdownDescription — the display-only component used to render kanban task
- * descriptions. Plan: docs/superpowers/plans/2026-07-25-kanban-description-rich-editor.md Chunk 1 —
+ * descriptions. —
  * MarkdownDescription component (display only). */
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'

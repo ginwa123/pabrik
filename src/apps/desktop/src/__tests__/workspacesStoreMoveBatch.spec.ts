@@ -1,5 +1,4 @@
-/**  * Behavioural tests for `workspacesStore.moveDesignElementsBatch`. Plan:
- * docs/superpowers/plans/2026-08-06-move-element-with-descendants.md (Chunk 3, Task 3.3) */
+/** * Behavioural tests for `workspacesStore.moveDesignElementsBatch`. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

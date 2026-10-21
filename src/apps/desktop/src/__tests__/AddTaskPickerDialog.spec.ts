@@ -73,9 +73,8 @@ describe('AddTaskPickerDialog', () => {
   })
 
   it('emits pick="memory" when the Memory card is clicked', async () => {
-    // The Memory card was added in 2026-06-20 (plan: docs/plans/
-    // 2026-06-20-add-markdown-memory.md). It opens a flow where the user creates a local .md file
-    // and a task row pointing at it (via AddMemoryDialog in mode='task' → addTask).
+    // The Memory card was added in 2026-06-20. It opens a flow where the user creates a local .md
+    // file and a task row pointing at it (via AddMemoryDialog in mode='task' → addTask).
     const w = mountPicker({ show: true })
     await w.vm.$nextTick()
     const card = document.querySelector<HTMLElement>('[data-testid="picker-memory"]')!

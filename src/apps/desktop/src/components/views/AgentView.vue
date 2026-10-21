@@ -11,7 +11,7 @@
   UI/UX polish: 2026-08-20 (task_1787254463604_3) — added a search
   filter, an enabled-count chip, Select all / Clear all bulk ops,
   full-description tooltips, hover state on remove buttons, and a
-  better empty state. See plan: docs/superpowers/plans/2026-08-20-agent-tools-ui-ux.md
+  better empty state.
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'

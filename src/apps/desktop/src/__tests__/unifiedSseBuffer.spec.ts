@@ -1,5 +1,4 @@
-/** unifiedSseBuffer.spec.ts Regression test for Plan Reviewer finding #1 (in
- * docs/superpowers/plans/2026-06-30-unify-sse-endpoints.md): The unified factory's default-message
+/** unifiedSseBuffer.spec.ts Regression test for Plan Reviewer finding #1: The unified factory's default-message
  * handler MUST use a SINGLE shared buffer for the 3 default-`message` event families (workers. */
 import { assert, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -369,7 +368,7 @@ describe('createUnifiedSseConnection: single-buffer design (regression for Plan 
   })
 })
 
-/** Regression tests for Chunk 4 of docs/superpowers/plans/2026-06-30-single-sse-all-sessions.md:
+/** Regression tests for:
  * The `UnifiedChannels.llm` / `.queue` shapes now accept an OPTIONAL `sessionId`. */
 describe('createUnifiedSseConnection: bare vs per-session tokens (Chunk 4)', () => {
   const spy = vi.spyOn(sseClient, 'createSseClient')

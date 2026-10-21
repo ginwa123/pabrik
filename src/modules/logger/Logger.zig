@@ -376,9 +376,6 @@ pub fn deinitGlobal(io: std.Io) void {
 
 /// Get the global logger (returns null if not initialized)
 pub fn getGlobal() ?*Logger {
-    // global_mutex.lockUncancelable(io);
-    // defer global_mutex.unlock(io);
-
     if (global_logger) |*logger| {
         return logger;
     }

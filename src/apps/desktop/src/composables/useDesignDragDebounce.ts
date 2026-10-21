@@ -1,8 +1,7 @@
 import { onBeforeUnmount } from 'vue'
 
 /** Trailing-edge debounce composable for the design-canvas drag handlers. The previous
- * implementation used a 50 ms leading-edge throttle in `DesignElement.vue`. Plan:
- * docs/superpowers/plans/2026-07-30-design-drag-debounce-batch.md (Chunk 2) */
+ * implementation used a 50 ms leading-edge throttle in `DesignElement.vue`. */
 export interface UseDesignDragDebounceArgs<P> {
   onFlush: (patch: P) => void
   /** Idle window in ms. Default 250. */

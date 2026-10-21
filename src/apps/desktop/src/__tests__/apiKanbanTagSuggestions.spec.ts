@@ -1,5 +1,4 @@
-/** Unit tests for the kanban tag suggestions API client (getKanbanTagSuggestions). Plan:
- * docs/superpowers/plans/2026-07-30-kanban-task-tags-autocomplete.md Chunk 2 / Tasks 2.1 + 2.2 */
+/** Unit tests for the kanban tag suggestions API client (getKanbanTagSuggestions)./ Tasks 2.1 + 2.2 */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

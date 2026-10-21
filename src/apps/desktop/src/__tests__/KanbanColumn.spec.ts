@@ -1,6 +1,5 @@
 /** Tests for KanbanColumn — a single column with header (inline rename + count badge + ⋮ menu),
- * cards list, footer "+ Add" button, and drop zone. Plan:
- * docs/superpowers/plans/2026-06-21-workspace-item-kanban.md Chunk 6 / Task 6.4 */
+ * cards list, footer "+ Add" button, and drop zone. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, type VueWrapper } from '@vue/test-utils'

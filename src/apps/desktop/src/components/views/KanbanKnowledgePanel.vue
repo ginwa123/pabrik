@@ -26,7 +26,6 @@
   Public API:
     props: item ({ id, name? } | null), workspaceId (string)
 
-  Plan: docs/superpowers/plans/2026-08-27-kanban-agent-as-tab.md
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'

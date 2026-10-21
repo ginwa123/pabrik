@@ -167,7 +167,4 @@ pub fn handleIndexCodebase(
     _ = io;
     _ = cwd;
     return error.NotImplemented;
-    // const index_dir = indexing.getIndexDir(cwd); defer
-    // allocator.free(index_dir); // Create index directory
-    // std.Io.Dir.cwd().createDirPath(io, index_dir); const files =
 }

@@ -1,6 +1,5 @@
 /** Tests for the double-click guard on the create-mode commit buttons ("Create task" + "▶ Create
- * task & run agent") in KanbanTaskDetailDialog. Plan:
- * docs/superpowers/plans/2026-08-24-kanban-create-run-disable-double-click.md */
+ * task & run agent") in KanbanTaskDetailDialog. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

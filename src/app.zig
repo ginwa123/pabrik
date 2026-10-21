@@ -501,9 +501,6 @@ pub fn unregisterSessionClientId(routing_key: []const u8, client_id: [16]u8, is_
 pub fn getClientIdForSession(session_id: []const u8, is_use_lock: bool) ?[16]u8 {
     _ = is_use_lock;
     const di = getSingleton() catch return null;
-    // const io = di.io;
-    // di.session_map_lock.lock(io) catch {};
-    // defer di.session_map_lock.unlock(io);
 
     if (di.session_to_client_ids.getPtr(session_id)) |list| {
         if (list.items.len > 0) {
@@ -566,8 +563,6 @@ pub fn handleClientDisconnect(client_id: [16]u8) void {
     defer di.on_disconnect_lock.unlock(io);
 
     if (di.on_disconnect_cb) |cb| {
-        // di.session_map_lock.lock(io) catch {};
-        // defer di.session_map_lock.unlock(io);
         cb(client_id);
     }
 

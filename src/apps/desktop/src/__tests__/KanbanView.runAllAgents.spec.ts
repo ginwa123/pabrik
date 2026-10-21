@@ -1,5 +1,4 @@
-/** Tests for KanbanView.handleRunAllAgents — the column "Run all agents" host handler (plan:
- * docs/superpowers/plans/2026-09-09-run-all-agents-by-column.md, Tasks 3+4, Option C). */
+/** Tests for KanbanView.handleRunAllAgents — the column "Run all agents" host handler. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

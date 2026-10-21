@@ -64,8 +64,6 @@ fn registerSessionRoutes(authed: *Group) !void {
     // `sessions.last_human_touched_at_nano` when the user opens a chat.
     try authed.post("/api/session/:session_id/touched", ai_mod.http_handlers.sessionMarkTouchedHandler);
     try authed.get("/api/session", ai_mod.http_handlers.sessionListHandler);
-    //
-    // // try authed.get("/api/session/stream", http_handlers.sessionStreamHandler, ctxParent);
     try authed.get("/api/session/:session_id/messages", ai_mod.http_handlers.sessionMessagesHandler);
     // Token usage + cache hit rate, derived from `llm_history` (the
     // `sessions` table stores no token column).
@@ -92,8 +90,6 @@ fn registerWorkerRoutes(authed: *Group) !void {
     try authed.post("/api/llm/session/:session/stop", ai_mod.http_handlers.sessionStopHandler);
     // `ask_user` answer route.
     try authed.post("/api/llm/session/:session_id/answer", ai_mod.http_handlers.askUserAnswerHandler);
-
-    // try authed.post("/api/llm/session", ai_mod.http_handlers.sessionCreateHandler);
 
     try authed.get("/api/llm/session", ai_mod.http_handlers.sessionListHandler);
     // Session detail incl. `workspace_id` (workspace-scoped sessions).
@@ -147,9 +143,6 @@ fn registerStreamRoutes(authed: *Group, router: *gserverz.router.Router) !void {
 }
 
 fn registerSystemRoutes(authed: *Group, router: *gserverz.router.Router) !void {
-    // try authed.post("/api/llm/session/:session_id/cancel", http_handlers.sessionCancelHandler, ctxParent);
-    //
-    // // Desktop app routes (system, health, workspaces)
     try router.get("/health", ai_mod.http_handlers.healthHandler);
     // Skills are NOT registered here.
 
@@ -281,7 +274,6 @@ fn registerWorkspaceRoutes(authed: *Group) !void {
 
 fn registerAgentRoutes(authed: *Group) !void {
     // Agent Mode workspace-item endpoint (item_type='agent') + sub-resources.
-    // Plan: docs/superpowers/plans/2026-08-15-agent-mode.md
     // Task: task_1786962724740_0
     try authed.post("/api/workspaces/:workspace_id/items/agent", ai_mod.http_handlers.workspaceItemsCreateAgentHandler);
     try authed.get("/api/workspaces/:workspace_id/items/:item_id/agent", ai_mod.http_handlers.agentsGetHandler);
@@ -395,19 +387,16 @@ fn registerKanbanRoutes(authed: *Group) !void {
     try authed.post("/api/workspaces/:workspace_id/items/:item_id/kanban/copy_spec_from/:source_item_id", ai_mod.http_handlers.kanbanCopySpecHandler);
     try authed.patch("/api/workspaces/:workspace_id/items/:item_id/tasks/:task_id/move", ai_mod.http_handlers.tasksMoveHandler);
     try authed.get("/api/workspaces/:workspace_id/items/:item_id/tasks", ai_mod.http_handlers.tasksListHandler);
-    // Single-task GET for the kanban Task details dialog (plan:
-    // docs/superpowers/plans/2026-08-24-kanban-task-detail-single-fetch.md).
+    // Single-task GET for the kanban Task details dialog.
     try authed.get("/api/workspaces/:workspace_id/items/:item_id/tasks/:task_id", ai_mod.http_handlers.tasksGetHandler);
     // Lazy media fetch (media-flags change) — full `image_urls` / `video_urls`
     // only when `is_have_image` / `is_have_video` is true. Longer path
     // (extra `/media` segment) so no shadowing vs the `:task_id` route.
     try authed.get("/api/workspaces/:workspace_id/items/:item_id/tasks/:task_id/media", ai_mod.http_handlers.tasksMediaHandler);
-    // Kanban task tag autocomplete (Chunk 1 of plan
-    // docs/superpowers/plans/2026-07-30-kanban-task-tags-autocomplete.md).
+    // Kanban task tag autocomplete.
     try authed.get("/api/workspaces/:workspace_id/items/:item_id/kanban/tags", ai_mod.http_handlers.kanbanTagsListHandler);
     // Kanban-scoped task create endpoint with mode='create' | mode='create_and_run' discriminator.
     // Mirrors the generic /tasks POST but rejects 404 when the parent item is not a kanban.
-    // Plan: docs/superpowers/plans/2026-08-14-kanban-task-create-endpoints.md
     try authed.post("/api/workspaces/:workspace_id/items/:item_id/kanban/tasks", ai_mod.http_handlers.kanbanTasksCreateHandler);
     try authed.post("/api/workspaces/:workspace_id/items/:item_id/tasks", ai_mod.http_handlers.tasksCreateHandler);
     // Migration 069 (2026-08-06) removed the filesystem-backed kanban-task

@@ -19,8 +19,7 @@ import RenameDesignPageModal from '../dialogs/RenameDesignPageModal.vue'
 import AddItemDialog from '../dialogs/AddItemDialog.vue'
 import AddKanbanDialog from '../dialogs/AddKanbanDialog.vue'
 // NEW (design-mode feature): the modal that creates a design workspace item (DesignView's
-// container). Opened via the "+ Add Item → Add Design" dropdown option in ProjectsList. Plan:
-// docs/superpowers/plans/2026-06-13-design-mode.md.
+// container). Opened via the "+ Add Item → Add Design" dropdown option in ProjectsList.
 import AddDesignDialog from '../design/AddDesignDialog.vue'
 import AddAgentDialog from '../dialogs/AddAgentDialog.vue'
 import AddRoutineItemDialog from '../dialogs/AddRoutineItemDialog.vue'
@@ -63,8 +62,7 @@ const emit = defineEmits<{
   ]
   'toggle-collapse': []
   resize: [width: number]
-  // Header dropdown switch (plan: docs/plans/2026-09-22-revamp-
-  // workspace-ui-dropdown-projects.md) — AppLayout pushes
+  // Header dropdown switch — AppLayout pushes
   // ?view=workspace&workspaceId=X (history entry, not replace).
   selectWorkspace: [workspaceId: string]
 }>()
@@ -116,8 +114,7 @@ const addItemTargetWorkspaceId = ref<string | null>(null)
 // kanban item is created in that workspace, same as folder/memory).
 const showAddKanbanDialog = ref(false)
 // NEW (design-mode feature): mirrors showAddKanbanDialog for the design-mode flow. See
-// AddDesignDialog.vue for the internal flow. Plan:
-// docs/superpowers/plans/2026-06-13-design-mode.md.
+// AddDesignDialog.vue for the internal flow.
 const showAddDesignDialog = ref(false)
 const showAddMemoryDialog = ref(false)
 const addMemoryTargetWorkspaceId = ref<string | null>(null)
@@ -452,7 +449,7 @@ const handleAddItem = (workspaceId: string, itemType: string) => {
   if (itemType === 'kanban') showAddKanbanDialog.value = true
   // NEW (design-mode feature): routes the 'design' itemType to AddDesignDialog. Mirrors the kanban
   // routing above — both dialogs share the (workspaceId, itemType) routing pattern emitted by
-  // ProjectsList. Plan: docs/superpowers/plans/2026-06-13-design-mode.md.
+  // ProjectsList.
   if (itemType === 'design') showAddDesignDialog.value = true
   // Agent Mode (plan 2026-08-15-agent-mode, task_1786962724740_0):
   // routes the 'agent' itemType to the new AddAgentDialog.
@@ -492,8 +489,7 @@ const handleCloseAddKanbanDialog = () => {
   showAddKanbanDialog.value = false
 }
 
-// NEW (design-mode feature): mirrors handleCreateKanban. Plan:
-// docs/superpowers/plans/2026-06-13-design-mode.md.
+// NEW (design-mode feature): mirrors handleCreateKanban.
 const handleCreateDesign = async (name: string, path: string) => {
   if (addItemTargetWorkspaceId.value) {
     await workspacesStore.addDesignItem(addItemTargetWorkspaceId.value, name, path)
@@ -900,8 +896,7 @@ const handleReorderWorkspaceItems = (workspaceId: string, orderedItemIds: string
   workspacesStore.reorderWorkspaceItems(workspaceId, orderedItemIds)
 }
 
-// NEW (pinned-tasks feature, plan:
-// docs/superpowers/plans/2026-06-20-pinned-workspace-item-tasks.md): pin/unpin and drag-reorder of
+// NEW (pinned-tasks feature): pin/unpin and drag-reorder of
 // the pinned subset, both forwarded from <WorkspaceItem> via <ProjectsList>.
 const handlePinTask = (workspaceId: string, itemId: string, taskId: string, isPinned: boolean) => {
   workspacesStore.pinTask(workspaceId, itemId, taskId, isPinned)
@@ -1065,7 +1060,7 @@ defineExpose({
          WorkspaceSwitcher dropdown (current workspace name + chevron)
          + a small settings/logout pair. The thin border-bottom keeps
          the section boundary visible without any visual heaviness.
-         Plan: docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md -->
+-->
     <div
       class="h-12 flex items-center shrink-0"
       :class="isCollapsed ? 'justify-center px-0' : 'px-[var(--sb-gutter)] justify-between'"
@@ -1276,7 +1271,7 @@ defineExpose({
          workspace item. Wired to the 'design' itemType in
          handleAddItem (above). See AddDesignDialog.vue for the
          internal flow. Plan:
-         docs/superpowers/plans/2026-06-13-design-mode.md. -->
+-->
     <AddDesignDialog
       :show="showAddDesignDialog"
       @close="handleCloseAddDesignDialog"

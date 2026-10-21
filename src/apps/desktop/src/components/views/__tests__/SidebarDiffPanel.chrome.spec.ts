@@ -4,7 +4,7 @@ import { createRouter, createMemoryHistory } from 'vue-router'
 import SidebarDiffPanel from '../chat_right_sidebar/SidebarDiffPanel.vue'
 import { clearFolderDiffCache } from '../../../helpers/folderDiffCache'
 
-/** The chrome redesign (docs/plans/2026-10-04-right-sidebar-redesign.md). These lock the NEW
+/** The chrome redesign. These lock the NEW
  * behaviour the redesign introduced. */
 const { getGitChangesMock, getGitFolderDiffsMock, getPrDiffMock, getPrStatusMock, getGitCommitsMock } =
   vi.hoisted(() => ({

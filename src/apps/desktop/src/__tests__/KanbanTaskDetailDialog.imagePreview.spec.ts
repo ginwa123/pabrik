@@ -1,6 +1,5 @@
 /** Tests for the persisted-image gallery preview in KanbanTaskDetailDialog (edit mode — task
- * already created with imageUrls). Plan:
- * docs/superpowers/plans/2026-08-25-kanban-task-detail-image-preview.md */
+ * already created with imageUrls). */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

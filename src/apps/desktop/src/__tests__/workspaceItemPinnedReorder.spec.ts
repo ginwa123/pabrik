@@ -1,5 +1,4 @@
-/** Component tests for the pinned-task drag-reorder feature in <WorkspaceItem>. Covers: 1. Plan:
- * docs/superpowers/plans/2026-06-20-pinned-workspace-item-tasks.md */
+/** Component tests for the pinned-task drag-reorder feature in <WorkspaceItem>. Covers: 1. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, type Ref } from 'vue'

@@ -1,5 +1,4 @@
-/** Migration 082 - ChatsList time pill + stale-dot display tests. Plan:
- * docs/superpowers/plans/2026-08-29-chat-sidebar-last-human-touched.md Task 8. */
+/** Migration 082 - ChatsList time pill + stale-dot display tests. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp, nextTick, ref, type Ref } from 'vue'

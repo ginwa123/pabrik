@@ -376,8 +376,7 @@ fn nullableInt(v: []const u8) ?i64 {
 }
 
 // ===== Tests merged from frontend_log_get_test.zig (2026-09-11 flatten)
-// ===== Behavioural SQL tests for `frontend_log_get` (GET /api/logs, Chunk 3
-// of `docs/superpowers/plans/2026-07-17-frontend-error-logs.md`).
+// ===== Behavioural SQL tests for `frontend_log_get` (GET /api/logs).
 
 const testing = std.testing;
 

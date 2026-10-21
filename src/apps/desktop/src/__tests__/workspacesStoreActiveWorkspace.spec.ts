@@ -1,6 +1,5 @@
 /** Unit tests for the workspaces store's active-workspace selection — the state behind the header
- * dropdown + sidebar Projects section. Plan:
- * docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md */
+ * dropdown + sidebar Projects section. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

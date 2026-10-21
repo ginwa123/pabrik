@@ -394,10 +394,6 @@ fn insertElementRaw(
     });
 }
 
-// ─── Behavioural tests (REMOVED, 2026-09-29 flatten) ─────────────────────
-// The former get_design_context_test.zig also carried 8 behavioural tests
-// that built a v6-schema in-memory DB and asserted the tool's XML output
-
 // Exec adapter — merged from `get_design_context.zig` (2026-10-14, task_1791993404141_2).
 // The tool definition above and its executor below live in ONE file.
 

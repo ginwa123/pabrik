@@ -1424,7 +1424,6 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                     try notifications.notify(io, allocator, "Agent Pabrik", preview);
                 }
 
-                // try llm_history.markSessionIdle(allocator, db, copy_session_id);
                 try deleteWorker(DeleteWorkerInput{
                     .allocator = allocator,
                     .db = db,

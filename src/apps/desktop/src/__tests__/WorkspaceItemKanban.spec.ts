@@ -1,5 +1,5 @@
 /** Tests for the kanban branch of WorkspaceItem.vue after the inline-board → main-content migration
- * (2026-06-21). Plan: docs/superpowers/plans/2026-06-21-workspace-item-kanban.md Migration chunk /
+ * (2026-06-21).Migration chunk /
  * step "Move kanban board to AppLayout" */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'

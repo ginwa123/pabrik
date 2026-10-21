@@ -399,9 +399,7 @@ pub fn systemFolderHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
     ) });
 }
 
-// ===== Tests merged from system_folder_search_test.zig (2026-09-11 flatten)
 // ===== Static-contract tests for `action=search` on GET /api/system/folder
-// (plan: docs/superpowers/plans/2026-09-08-chatview-search-files-perf.md,
 
 const testing = std.testing;
 

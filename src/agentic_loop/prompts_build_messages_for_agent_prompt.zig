@@ -1139,8 +1139,7 @@ pub fn filteringTools(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, s
 }
 
 // =============================================================================
-// Moved from src/modules/agent/prompts.zig on 2026-08-23 (plan:
-// docs/superpowers/plans/2026-08-23-move-build-agent-prompt-body.md).
+// Moved from src/modules/agent/prompts.zig on 2026-08-23.
 
 /// Get the current operating system as a human-readable string
 fn getCurrentOs() []const u8 {

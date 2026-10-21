@@ -1,5 +1,5 @@
 /** Tests for AppLayout's URL sync watcher behavior when handleSelectTask is invoked from
- * Sidebar.vue. Plan: docs/superpowers/plans/2026-08-06-fix-task-url-overwrite.md */
+ * Sidebar.vue. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick } from 'vue'

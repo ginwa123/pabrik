@@ -1,6 +1,5 @@
 /** Pure-logic composable that backs the LayersPanel drag-and-drop affordance. Owns the drag state
- * machine + per-element visual class predicates. Plan:
- * docs/superpowers/plans/2026-07-30-design-layer-drag-join-or-leave-group.md (Chunk 3 Task 3.1) */
+ * machine + per-element visual class predicates. */
 import { computed, ref, type Ref } from 'vue'
 
 import type { DesignElement } from '../api'

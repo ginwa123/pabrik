@@ -1,6 +1,5 @@
 /** Behavioral tests for DesignView.vue's hand-mode (Space + drag to pan). 4 tests covering: 1.
- * Holding Space sets body cursor to grab. 2. Releasing Space restores the default cursor. 3. Plan:
- * docs/superpowers/plans/2026-07-19-design-hand-pan-mode.md (Chunk 1, Task 1.3) */
+ * Holding Space sets body cursor to grab. 2. Releasing Space restores the default cursor. 3. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

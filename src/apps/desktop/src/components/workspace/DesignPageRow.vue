@@ -15,9 +15,7 @@
        one step more). Both paths flow through the same `deletePage`
        emit (the parent's confirm dialog gates both).
 
-  Plan: docs/superpowers/plans/2026-08-06-design-pages-in-workspace-tree.md
         (initial row)
-        docs/superpowers/plans/2026-08-06-rename-design-pages.md
         (⋮ menu added 2026-08-06 — design page rename menu)
 
   Why this component instead of reusing WorkspaceItemTaskRow?

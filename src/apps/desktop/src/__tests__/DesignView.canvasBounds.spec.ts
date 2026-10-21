@@ -1,6 +1,5 @@
-/** Static-contract regression tests for the canvas-background removal. Plan:
- * docs/superpowers/plans/2026-07-29-remove-canvas-background.md These tests grep DesignView.vue's
- * source to verify the canvas background feature has been removed end-to-end:. */
+/** Static-contract regression tests for the canvas-background removal.These tests grep DesignView.vue's
+ * source to verify the canvas background feature has been removed end-to-end. */
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { describe, expect, it } from 'vitest'

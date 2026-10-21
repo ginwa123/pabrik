@@ -914,8 +914,7 @@ pub const BatchGeometryUpdateError = error{
 };
 
 // ─── moveElementsWithDescendantsBatch ─────────────────────────────────────
-// Plan: docs/superpowers/plans/2026-08-06-move-element-with-descendants.md
-// (Chunk 1, Task 1.1) Server-side cascade: each item's (dx, dy) applies to
+// Server-side cascade: each item's (dx, dy) applies to
 
 pub const MoveItem = struct {
     element_id: []const u8,
@@ -1109,8 +1108,7 @@ pub fn updateElementsBatch(
 }
 
 // ─── moveElementsWithDescendantsBatch ─────────────────────────────────────
-// Plan: docs/superpowers/plans/2026-08-06-move-element-with-descendants.md
-// (Chunk 1, Task 1.2) Server-side cascade move.
+// Server-side cascade move.
 
 pub fn moveElementsWithDescendantsBatch(
     allocator: std.mem.Allocator,
@@ -1353,7 +1351,6 @@ pub fn moveElementsWithDescendantsBatch(
 }
 
 // ─── moveElementToPage ────────────────────────────────────────────────────
-// Plan: docs/superpowers/plans/2026-08-06-move-element-to-page.md (Chunk 1)
 // Cross-page element relocate.
 
 pub const MoveElementToPageInput = struct {
@@ -3019,8 +3016,7 @@ pub fn loadElementHtml(
 }
 
 // ─── Behavioural tests for `updateElementsBatch` ─────────────────────────
-// Plan: docs/superpowers/plans/2026-07-30-design-drag-debounce-batch.md
-// (Chunk 1, Task 1.1) — the backend mitigation that collapses N per-element
+// — the backend mitigation that collapses N per-element
 
 const testing_geometry = std.testing;
 
@@ -4807,8 +4803,7 @@ test "moveElementsWithDescendantsBatch handles deeply nested subtree (depth 3+)"
     try testing_move_batch.expectEqual(@as(i64, 157), try moveBatchReadY(alloc, &ctx.db, leaf));
 }
 
-// ─── Behavioural tests for `moveElementToPage` (2026-08-06) ─── Plan:
-// docs/superpowers/plans/2026-08-06-move-element-to-page.md (Chunk 1) Inline
+// ─── Behavioural tests for `moveElementToPage` (2026-08-06) ───Inline
 // tests per the project rule (see
 
 const testing_move_to_page = std.testing;

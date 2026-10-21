@@ -1,6 +1,4 @@
-/** Behavioural tests for the image thumbnail strip in WorkspaceItemTaskCard (kanban board card).
- * Plan: docs/superpowers/plans/2026-08-24-kanban-task-image-urls-read-path.md (Task 4 — kanban card
- * thumbnail). */
+/** Behavioural tests for the image thumbnail strip in WorkspaceItemTaskCard (kanban board card). */
 import { describe, expect, it, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

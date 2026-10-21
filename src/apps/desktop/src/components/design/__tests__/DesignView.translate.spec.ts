@@ -1,5 +1,4 @@
-/** Behavioural tests for the SINGLE-element drag wire. Plan:
- * docs/superpowers/plans/2026-08-06-split-move-resize.md The wire is: 1. User pointerdown on a
+/** Behavioural tests for the SINGLE-element drag wire.The wire is: 1. User pointerdown on a
  * single (non-group) element body. 2. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'

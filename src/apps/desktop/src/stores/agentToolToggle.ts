@@ -1,5 +1,4 @@
-// Pure helper for the AgentView Tools panel toggle. Plan:
-// docs/superpowers/plans/2026-08-19-agent-tools-toggle-wire.md (Task 4)
+// Pure helper for the AgentView Tools panel toggle.
 export interface ToggleCallbacks {
   enableAgentTool: (agentId: string, toolName: string) => Promise<unknown>
   disableAgentTool: (agentId: string, toolName: string) => Promise<unknown>

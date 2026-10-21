@@ -11,9 +11,8 @@ vi.mock('vue-router', () => ({ useRouter: () => ({ push }) }))
 import Chats from '../components/views/Chats.vue'
 import { useWorkspacesStore } from '../stores/workspaces'
 
-/** The landing page is a static brand page with ONE affordance (spec:
- * docs/superpowers/specs/2026-09-13-home-landing-design.md, amended by the 2026-09-22 revamp plan —
- * `/app` now creates workspaces). */
+/** The landing page is a static brand page with ONE affordance, amended by
+ * the 2026-09-22 revamp plan — `/app` now creates workspaces. */
 describe('Chats — Pabrik landing page', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
