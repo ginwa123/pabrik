@@ -283,3 +283,61 @@ describe('SidebarDiffPanel tabs', () => {
     expect(wrapper.find('[data-testid="sidebar-diff-file-unstaged-dirty.txt"]').exists()).toBe(true)
   })
 })
+
+describe('SidebarDiffPanel without a router', () => {
+  beforeEach(() => {
+    clearFolderDiffCache()
+    vi.clearAllMocks()
+    getGitChangesMock.mockResolvedValue({
+      is_git_repo: true,
+      branch: 'main',
+      has_changes: false,
+      staged_files: [],
+      modified_files: [],
+      untracked_files: [],
+    })
+    getPrDiffMock.mockResolvedValue({
+      pr_url: 'https://github.com/acme/app/pull/42',
+      base: 'main',
+      head: 'feature',
+      diff_content: PR_DIFF,
+      truncated: false,
+    })
+    getPrStatusMock.mockResolvedValue({
+      status: 'open',
+      state: 'OPEN',
+      title: 'Test',
+      pr_url: 'https://github.com/acme/app/pull/42',
+      number: 42,
+      mergeable: '',
+      merge_state: '',
+      head_ref: 'feature',
+      base_ref: 'main',
+      author: 'acme',
+      created_at: '',
+      updated_at: '',
+      merged_at: '',
+      closed_at: '',
+      additions: 0,
+      deletions: 0,
+      changed_files: 2,
+    })
+  })
+
+  it('switches tabs instead of throwing when there is no router to keep in sync', async () => {
+    // A standalone mount (the harness, a unit mount) has no router: there is no URL to write the
+    // tab into, and the panel said so when it read the URL. The write must not throw.
+    const errors: unknown[] = []
+    const wrapper = mount(SidebarDiffPanel, {
+      global: { config: { errorHandler: (err: unknown) => errors.push(err) } },
+      props: { cwd: '/repo', prUrl: 'https://github.com/acme/app/pull/42' },
+    })
+    await flushPromises()
+    await wrapper.get('[data-testid="sidebar-tab-conversation"]').trigger('click')
+    await flushPromises()
+    expect(errors).toEqual([])
+    expect(wrapper.get('[data-testid="sidebar-tab-conversation"]').attributes('aria-selected')).toBe(
+      'true',
+    )
+  })
+})

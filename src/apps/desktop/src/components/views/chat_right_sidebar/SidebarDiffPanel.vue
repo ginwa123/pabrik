@@ -115,6 +115,7 @@ const readTabParam = (): PanelTab | null => {
 const syncTabParam = (tab: PanelTab | null) => {
   // No router means no URL to keep in sync — the same reason the read above is guarded. Without
   // this the first tab switch threw and took the tab with it.
+  if (!router || !route) return
   const query = { ...route.query }
   if (tab) query.panel = tab
   else delete query.panel
@@ -126,6 +127,7 @@ const syncTabParam = (tab: PanelTab | null) => {
 const readConflictsParam = (): boolean => route.query.conflicts === '1'
 
 const syncConflictsParam = (on: boolean) => {
+  if (!router || !route) return
   const query = { ...route.query }
   if (on) query.conflicts = '1'
   else delete query.conflicts
