@@ -1,5 +1,4 @@
-/** Tests for KanbanCard — the draggable card wrapper around WorkspaceItemTask. Plan:
- * docs/superpowers/plans/2026-06-21-workspace-item-kanban.md Chunk 6 / Task 6.3 */
+/** Tests for KanbanCard — the draggable card wrapper around WorkspaceItemTask. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, type VueWrapper } from '@vue/test-utils'

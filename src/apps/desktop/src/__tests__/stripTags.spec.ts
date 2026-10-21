@@ -1,5 +1,4 @@
-/** Unit tests for the <html> wrapper-tag helpers in stripTags.ts. Plan:
- * docs/superpowers/plans/2026-08-23-html-tag-support.md (Task 2) The <html> tag lets the LLM emit
+/** Unit tests for the <html> wrapper-tag helpers in stripTags.ts.The <html> tag lets the LLM emit
  * raw HTML that the chat UI renders as a live sandboxed-iframe block. */
 import { beforeEach, describe, expect, it } from 'vitest'
 import {

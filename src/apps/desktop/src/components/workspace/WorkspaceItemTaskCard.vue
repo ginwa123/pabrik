@@ -48,8 +48,7 @@ import { formatTaskTimestamp as formatRelativeTime } from '../../helpers/formatT
 import UiIcon from '../ui/UiIcon.vue'
 import WorkerElapsedChip from '../WorkerElapsedChip.vue'
 
-// Kanban task tags palette (Migration 067 — plan
-// docs/superpowers/plans/2026-07-28-kanban-task-tags.md).
+// Kanban task tags palette (Migration 067).
 const TAG_PALETTE = [
   { bg: 'rgba(139, 92, 246, 0.18)', border: 'rgba(139, 92, 246, 0.45)', text: '#a78bfa' },
   { bg: 'rgba(59, 130, 246, 0.18)', border: 'rgba(59, 130, 246, 0.45)', text: '#60a5fa' },
@@ -355,8 +354,7 @@ const extraTagsCount = computed<number>(() => {
   return Math.max(0, tags.length - VISIBLE_TAGS_MAX)
 })
 
-// Image thumbnail (Migration 069 read-path fix, plan:
-// docs/superpowers/plans/2026-08-24-kanban-task-image-urls-read-path.md Task 4). The card renders
+// Image thumbnail (Migration 069 read-path fix). The card renders
 // the FIRST image as a 48px-tall thumbnail + a `+N` badge when more images exist.
 const firstImage = computed<string | null>(() => {
   const urls = props.task.imageUrls
@@ -514,7 +512,6 @@ onUpdated(() => {
       <!-- single branch — per-task routines deleted (Migration 084). -->
       <!-- (standard content unwrapped) -->
       <!-- Kanban notification icon (Chunk 6 of
-             docs/plans/2026-07-26-kanban-task-notification-icon.md).
              8px orange-400 dot with a 4-pulse glow when the AI has
              finished a turn (finish_reason=stop) and the user
              hasn't engaged with the task since. Rendered BEFORE the pin
@@ -683,7 +680,7 @@ onUpdated(() => {
          as a 48px-tall cover-cropped thumb + a `+N` badge when more
          images exist. Click opens the detail dialog (same affordance
          as the `+N more` tags link). Plan:
-         docs/superpowers/plans/2026-08-24-kanban-task-image-urls-read-path.md -->
+-->
     <div
       v-if="firstImage"
       class="relative w-full rounded overflow-hidden shrink-0"
@@ -812,7 +809,6 @@ onUpdated(() => {
         <span>{{ typeBadge }}</span>
       </span>
       <!-- Git-branch badge (plan:
-           docs/superpowers/plans/2026-08-06-kanban-task-git-branch.md).
            Shows the task's current git branch (worktree branch when
            bound, else the workspace's current branch). Backend
            computes via `git -C <cwd> symbolic-ref --short HEAD` per

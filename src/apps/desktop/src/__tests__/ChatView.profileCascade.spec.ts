@@ -1,5 +1,4 @@
-/** Tests for ChatView's agent chip + picker — the cascade display. Plan:
- * docs/superpowers/plans/2026-08-06-chatview-profile-cascade-display.md */
+/** Tests for ChatView's agent chip + picker — the cascade display. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, ref } from 'vue'

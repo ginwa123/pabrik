@@ -1,5 +1,4 @@
-/** Unit tests for the bus-backed designSse Pinia store (Chunk 6 of
- * docs/superpowers/plans/2026-07-08-design-mode-redesign.md). Mirrors kanbanSse.spec.ts
+/** Unit tests for the bus-backed designSse Pinia store. Mirrors kanbanSse.spec.ts
  * byte-for-byte in structure. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'

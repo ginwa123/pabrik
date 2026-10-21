@@ -1,5 +1,4 @@
-/** Tests for FileInput — chat input's @-triggered file/folder autocomplete. Plan:
- * docs/plans/2026-06-26-keep-at-on-select.md */
+/** Tests for FileInput — chat input's @-triggered file/folder autocomplete. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -175,8 +174,7 @@ describe('FileInput — @ autocomplete on select keeps the @ symbol', () => {
   })
 })
 
-/** Paste-image regression tests (WebKitGTK + pabrik-desktop bug). Plan:
- * docs/plans/2026-07-04-fix-desktop-paste-image.md */
+/** Paste-image regression tests (WebKitGTK + pabrik-desktop bug). */
 describe('FileInput — paste image (Ctrl+V) attaches to preview', () => {
   beforeEach(() => {
     setActivePinia(createPinia())

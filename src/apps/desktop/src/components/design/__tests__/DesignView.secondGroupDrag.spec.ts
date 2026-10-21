@@ -1,6 +1,5 @@
 /** Regression test for "group moves first time, but second drag fails until page refresh". Symptom
- * (user report 2026-08-01): 1. User creates a group + child. 2. Plan:
- * docs/superpowers/plans/2026-08-06-move-element-with-descendants.md */
+ * (user report 2026-08-01): 1. User creates a group + child. 2. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'

@@ -11,7 +11,6 @@
     - pageName prop: shown in the header alongside the task name
     - The header reads "Design Chat: <pageName>" when pageName is set,
       otherwise falls back to the task name (matches the FK rewrite
-      per docs/superpowers/plans/2026-07-28-design-page-workspace-item-task-fk.md)
 
   ChatView is mounted with :show-header="false" so the dialog's own
   header carries the page name + ✕ and we don't double up.

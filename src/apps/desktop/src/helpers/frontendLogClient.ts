@@ -1,6 +1,5 @@
 /** frontendLogClient.ts Captures browser-side errors and ships them to the backend `POST /api/logs`
- * endpoint for the frontend-error-logs feature (plan:
- * `docs/superpowers/plans/2026-07-17-frontend-error-logs.md`). */
+ * endpoint for the frontend-error-logs feature. */
 export type LogLevel = 'error' | 'warn' | 'info' | 'debug'
 export type LogKind =
   | 'window_error'

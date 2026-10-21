@@ -8,7 +8,6 @@
     props:  show (boolean)
     emits:  close, create(name: string, path: string)
 
-  Plan: docs/superpowers/plans/2026-09-10-workspace-items-routines.md
 -->
 <script setup lang="ts">
 import { ref, computed, nextTick, onBeforeUnmount, onMounted, onUpdated } from 'vue'

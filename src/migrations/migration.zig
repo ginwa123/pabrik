@@ -316,7 +316,7 @@ pub const allMigrations: []const Migration = &.{
     .{ .version = Migration066AddDesignPageTaskFk.version, .name = Migration066AddDesignPageTaskFk.name, .up = Migration066AddDesignPageTaskFk.up },
     // kanban task tags plan, Task 1: adds `tags TEXT NOT NULL DEFAULT ''`
     // so workspace_item_tasks rows can carry a JSON-encode array of user
-    // labels. See docs/superpowers/plans/2026-07-28-kanban-task-tags.md.
+    // labels.
     .{ .version = Migration067AddTaskTags.version, .name = Migration067AddTaskTags.name, .up = Migration067AddTaskTags.up },
     // tool-call-loading-placeholder plan, Task 1: adds
     // `llm_history.is_loading` + partial UNIQUE INDEX on `tool_call_id` so we
@@ -347,8 +347,7 @@ pub const allMigrations: []const Migration = &.{
     // preserved.
     .{ .version = Migration075RenameTimestampColumnsToNanoSuffix.version, .name = Migration075RenameTimestampColumnsToNanoSuffix.name, .up = Migration075RenameTimestampColumnsToNanoSuffix.up },
     // Migration 076 — `session_plan` 1:1 table with `sessions` for the
-    // agent's persistent task plan (markdown + checklist). Plan:
-    // docs/superpowers/plans/2026-08-19-session-plan-agent-tool.md.
+    // agent's persistent task plan (markdown + checklist).
     .{ .version = Migration076CreateSessionPlan.version, .name = Migration076CreateSessionPlan.name, .up = Migration076CreateSessionPlan.up },
     // Migration 077 — `users` + `user_companies` + `user_company_members` +
     // additive `workspaces.user_id` + `sessions.user_id` + default
@@ -359,16 +358,13 @@ pub const allMigrations: []const Migration = &.{
     // allowlist).
     .{ .version = Migration076AddAgentsAndAgentKnowledgeAndAgentTools.version, .name = Migration076AddAgentsAndAgentKnowledgeAndAgentTools.name, .up = Migration076AddAgentsAndAgentKnowledgeAndAgentTools.up },
     // Migration 079 — agent_knowledge.content (manual text knowledge).
-    // Plan: docs/superpowers/plans/2026-08-21-agent-knowledge-manual-text.md.
     // Task: task_1787315943769_9.
     .{ .version = Migration079AddContentToAgentKnowledge.version, .name = Migration079AddContentToAgentKnowledge.name, .up = Migration079AddContentToAgentKnowledge.up },
     // Migration 080 — agent_system_prompt (N-1 with agents, per-agent named
-    // prompt blocks injected into the LLM system message). Plan:
-    // docs/superpowers/plans/2026-08-21-agent-system-prompt.md.
+    // prompt blocks injected into the LLM system message).
     .{ .version = Migration080AddAgentSystemPrompt.version, .name = Migration080AddAgentSystemPrompt.name, .up = Migration080AddAgentSystemPrompt.up },
     // Migration 081 — Agent-Kanbans mirror: agent_kanbans (1-1 with kanban
-    // workspace_items) + knowledges + system_prompt + tools children. Plan:
-    // docs/superpowers/plans/2026-08-25-agent-kanbans-mirror.md.
+    // workspace_items) + knowledges + system_prompt + tools children.
     .{ .version = Migration081CreateAgentKanbans.version, .name = Migration081CreateAgentKanbans.name, .up = Migration081CreateAgentKanbans.up },
     // Migration 082 — sessions.last_human_touched_at_nano column. Sibling of
     // Migration 065's task-side column.
@@ -9139,7 +9135,6 @@ test "Migration098 is registered in allMigrations" {
 
 // Migration 100 — `workspace_members` (shared workspaces) — inline tests
 // ============================================================================
-// See docs/plans/2026-10-02-workspace-members-shared-workspaces.md.
 
 /// Minimal pre-100 schema: just a `workspaces` table carrying `user_id`
 /// exactly as Migration 077 left it.

@@ -11,7 +11,6 @@
             busy (boolean), error (string | null)
     emits:  close, create(title, content), save(promptId, updates)
 
-  Plan: docs/superpowers/plans/2026-08-21-agent-system-prompt.md
   Task: task_1787408958280_1
 -->
 <script setup lang="ts">

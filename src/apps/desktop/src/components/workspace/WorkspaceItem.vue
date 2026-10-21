@@ -26,8 +26,7 @@ const props = defineProps<{
   isActive: boolean
   workspaceId: string
   // Drag-and-drop visual state, owned by the parent <ProjectsList> and passed down so the <li> can
-  // dim when being dragged and show a violet drop indicator on hover. See
-  // docs/plans/2026-06-16-workspace-item-position-reorder.md.
+  // dim when being dragged and show a violet drop indicator on hover.
   isItemDragging?: boolean
   isItemDragOver?: boolean
   // When `isItemDragOver` is true, this flag tells the row whether the cursor is in the BOTTOM half
@@ -56,8 +55,7 @@ const emit = defineEmits<{
   renameTask: [workspaceId: string, itemId: string, taskId: string, currentName: string]
   // The user must click to fetch the next page of tasks for this item.
   loadMoreTasks: [workspaceId: string, itemId: string]
-  // NEW (pinned-tasks feature, plan:
-  // docs/superpowers/plans/2026-06-20-pinned-workspace-item-tasks.md): pin/unpin and drag-reorder
+  // NEW (pinned-tasks feature): pin/unpin and drag-reorder
   // of the pinned subset, both forwarded up to ProjectsList → Sidebar.
   pinTask: [workspaceId: string, itemId: string, taskId: string, isPinned: boolean]
   reorderPinnedTasks: [workspaceId: string, itemId: string, orderedIds: string[]]

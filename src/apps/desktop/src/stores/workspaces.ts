@@ -102,7 +102,7 @@ export interface Task {
   description?: string
   // NEW (Chunk 5 of task-routines plan, deleted Migration 084). Optional for backwards compat with
   // legacy task literals (tests + offline fallbacks). 'memory' added in 2026-06-20 for the
-  // markdown-memory feature (plan: docs/plans/2026-06-20-add-markdown-memory.md).
+  // markdown-memory feature.
   task_type?: 'standard' | 'memory'
   // NEW: present iff task_type === 'memory'. Captures the .md
   // file name (no extension in the path; just the basename like
@@ -125,18 +125,17 @@ export interface Task {
   // column (Migration 063). task.id == session.id (project convention) so the flag can be persisted
   // via PUT /api/llm/session/<id>.
   is_auto_retry_until_stop?: string
-  // NEW (kanban-task-notification-icon feature, plan
-  // docs/plans/2026-07-26-kanban-task-notification-icon.md). Backend-computed boolean from
+  // NEW (kanban-task-notification-icon feature). Backend-computed boolean from
   // Migration 065 + sessions.last_finish_reason.
   needs_human_review?: boolean
   // NEW: denormalized cache of the session's last_finish_reason (joined from
   // sessions.last_finish_reason on the kanban SELECT). Empty string when no session row exists.
   last_finish_reason?: string
-  // NEW (kanban task tags feature, plan: docs/superpowers/plans/2026-07-28-kanban-task-tags.md).
+  // NEW (kanban task tags feature).
   // Array of free-form tag strings (Migration 067). Empty array = no tags. Optional for backwards
   // compat with legacy task literals in tests.
   tags?: string[]
-  // NEW (kanban image urls, plan: docs/superpowers/plans/2026-08-06-kanban-image-urls-column.md,
+  // NEW (kanban image urls)
   // Migration 069). Array of base64 data URLs (`data:image/<mime>;base64,<payload>`). Empty array =
   // no images. Optional for backwards compat with legacy task literals in tests.
   imageUrls?: string[]
@@ -151,8 +150,7 @@ export interface Task {
   // NEW (Migration 070 — kanban-cwd-session-optional plan). Per-task cwd override. Absolute path on
   // disk or '' for cwd-less. Optional for backwards compat with legacy task literals in tests.
   cwd?: string
-  // NEW (kanban task git-branch badge, plan:
-  // docs/superpowers/plans/2026-08-06-kanban-task-git-branch.md).
+  // NEW (kanban task git-branch badge).
   git_branch?: string | null
   // NEW (kanban task dependencies). `depends_on` lists ids this task waits for; `blocked_by` is
   // the incomplete subset; `is_blocked` mirrors `blocked_by.length > 0`.
@@ -165,13 +163,10 @@ export interface Task {
 const STORAGE_KEY_WORKSPACE_EXPANDED = 'pabrik-workspace-expanded'
 const STORAGE_KEY_WORKSPACE_ITEM_EXPANDED = 'pabrik-workspace-item-expanded'
 const STORAGE_KEY_WORKSPACE_ITEM_TASKS_EXPANDED = 'pabrik-workspace-item-tasks-expanded'
-// Persisted header-dropdown selection (plan:
-// docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md).
+// Persisted header-dropdown selection.
 const STORAGE_KEY_ACTIVE_WORKSPACE = 'pabrik-active-workspace'
 
-// Kanban task tags normalization (Migration 067 — plan
-// docs/superpowers/plans/2026-07-28-kanban-task-tags.md). Plan:
-// docs/superpowers/plans/2026-08-06-kanban-image-urls-column.md.
+// Kanban task tags normalization (Migration 067).
 function normalizeTaskTags(task: Task): Task {
   // Kanban task dependencies ride the same fetch sites: coerce
   // `depends_on` to string[] (wire is a real array; tolerated
@@ -237,7 +232,7 @@ function normalizeTaskDatesInPlace(task: Task): void {
 }
 
 // Decode the `||`-delimited `image_urls` wire string into a `string[]` (Migration 069 — kanban
-// image urls column). Plan: docs/superpowers/plans/2026-08-06-kanban-image-urls-column.md.
+// image urls column).
 function normalizeTaskImageUrlsInPlace(task: Task): void {
   // Wire→camel bridge (read-path fix, 2026-08-24): the backend's WorkspaceItemTaskResponse
   // serializes the field as snake_case `image_urls` (the ||-delimited string), but the Task
@@ -291,8 +286,7 @@ function normalizeTaskVideoUrlsInPlace(task: Task): void {
 }
 
 // Decode the `||`-delimited `image_urls` wire string into a `string[]` (REMOVED — folded into
-// normalizeTaskTags above. Plan: docs/superpowers/plans/2026-07-30-design-drag-debounce-batch.md
-// (Chunk 3, Task 3.1)
+// normalizeTaskTags above.
 export const RECENT_MUTATION_TTL_MS = 1500
 
 const recentLocalMutations = new Map<string, number>()
@@ -347,8 +341,7 @@ import {
   updateDesignElementGeometry as updateDesignElementGeometryApi,
   updateDesignElementsGeometryBatch as updateDesignElementsGeometryBatchApi,
   // NEW (2026-08-06) — replace the conflated /geometry endpoint with
-  // two distinct endpoints: /translate (move) and /resize. See
-  // `docs/superpowers/plans/2026-08-06-split-move-resize.md`.
+  // two distinct endpoints: /translate (move) and /resize.
   translateDesignElement as translateDesignElementApi,
   resizeDesignElement as resizeDesignElementApi,
   updateDesignPage as updateDesignPageApi,
@@ -422,11 +415,10 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     designPagesInFlight.clear()
   }
 
-  // NEW (kanban task search feature, plan: docs/superpowers/plans/2026-07-30-kanban-task-search.md
-  // Chunk 4). Map<itemId, q> — the active search query per board.
+  // NEW (kanban task search feature). Map<itemId, q> — the active search query per board.
   const activeSearchQueries: Map<string, string> = new Map()
 
-  // NEW (kanban-sort-by, plan docs/superpowers/plans/2026-08-06-kanban-sort-by.md Chunk 3).
+  // NEW (kanban-sort-by).
   // Map<itemId, sortField> + Map<itemId, direction> — the active per-board sort.
   const activeSortBy: Map<string, 'created_at' | 'updated_at' | 'name'> = new Map()
   const activeSortDirection: Map<string, 'asc' | 'desc'> = new Map()
@@ -661,8 +653,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     return workspaces.value.find((ws) => ws.id === saved)
   }
 
-  // ─── Lazy per-workspace item loading ──────────────────────────────── (plan:
-  // docs/plans/2026-09-22-revamp-ui-chats-workspace-scoped.md) init() seeds every workspace row
+  // ─── Lazy per-workspace item loading ──────────────────────────────── init seeds every workspace row
   // with `items: []` and loads items only for the ACTIVE workspace.
   let currentInit: Promise<void> | null = null
   const workspaceItemsLoaded = new Set<string>()
@@ -1070,7 +1061,6 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
 
   // Select a workspace (header dropdown / URL restore). Clears an active item/task that belongs to
   // a DIFFERENT workspace so the Projects section and main view never mix two workspace contexts
-  // (plan: docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md).
   async function setActiveWorkspace(workspaceId: string): Promise<void> {
     if (workspaces.value.length > 0 && !workspaces.value.some((ws) => ws.id === workspaceId)) {
       return
@@ -1208,11 +1198,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
       tags?: string[]
       // NEW (Migration 069 — kanban image urls column): array of base64 data URLs. Forwarded to
       // api.createTask which `||`-joins for the wire (matching `llm_history.image_url` convention).
-      // Plan: docs/superpowers/plans/2026-08-06-kanban-image-urls-column.md.
       imageUrls?: string[]
       // NEW (Migration 070 — kanban-cwd-session-optional plan). Per-task cwd override. Forwarded to
-      // api.createTask as `cwd` on the wire. Absolute path on disk or '' for cwd-less. Plan:
-      // docs/superpowers/plans/2026-08-06-kanban-cwd-session-optional.md
+      // api.createTask as `cwd` on the wire. Absolute path on disk or '' for cwd-less.
       cwd?: string
     },
   ): Promise<string | undefined> {
@@ -1772,7 +1760,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   }
 
   // Mirror a kanban task's column (and optional position) into the local store WITHOUT an HTTP
-  // round-trip. Plan: docs/superpowers/plans/2026-08-06-sse-kanban-move-duplicate-task.md Contract:
+  // round-trip.Contract:
   // - `newColumnId`: the destination column id (`null` for unassign).
   function mirrorKanbanTaskMove(
     workspaceId: string,
@@ -2088,8 +2076,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   }
 
   // Atomic N-element geometry update. Used by the canvas drag handler for multi-element drag so the
-  // N per-element PATCHes collapse into ONE PATCH per pointermove. Plan:
-  // docs/superpowers/plans/2026-07-30-design-drag-debounce-batch.md (Chunk 3, Task 3.1)
+  // N per-element PATCHes collapse into ONE PATCH per pointermove.
   async function updateDesignElementsGeometryBatch(
     workspaceId: string,
     itemId: string,
@@ -2169,8 +2156,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   }
 
   // Server-side cascade move. Each item's (dx, dy) applies to the element AND every transitive
-  // descendant of that element. Optional width/height/rotation apply ONLY to the root. Plan:
-  // docs/superpowers/plans/2026-08-06-move-element-with-descendants.md (Chunk 3, Task 3.2)
+  // descendant of that element. Optional width/height/rotation apply ONLY to the root.
   async function moveDesignElementsBatch(
     workspaceId: string,
     itemId: string,
@@ -2424,8 +2410,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   }
 
   // Move a single element (and its subtree when apply_to_children=true) from `sourcePageId` to
-  // `newPageId`. Backend returns the moved elements; we mirror by: 1. Plan:
-  // docs/superpowers/plans/2026-08-06-move-element-to-page.md (Chunk 5)
+  // `newPageId`. Backend returns the moved elements; we mirror by: 1.
   async function moveDesignElementToPage(
     workspaceId: string,
     itemId: string,
@@ -2485,8 +2470,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     }
   }
 
-  // Kanban "Start agent" flow (plan:
-  // docs/superpowers/specs/2026-08-18-kanban-task-detail-start-agent.md).
+  // Kanban "Start agent" flow.
   async function startAgentOnTask(
     workspaceId: string,
     itemId: string,
@@ -2500,8 +2484,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     }
   }
 
-  // Column "Run all agents" flow (plan:
-  // docs/superpowers/plans/2026-09-09-run-all-agents-by-column.md, Task 4, Option C).
+  // Column "Run all agents" flow.
   async function runAllAgentsInColumn(
     workspaceId: string,
     itemId: string,
@@ -2531,8 +2514,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     }
   }
 
-  // Kanban "create task & run agent" flow (plan:
-  // docs/superpowers/plans/2026-08-06-kanban-create-task-run-agent.md). Wraps api.sendChatMessage
+  // Kanban "create task & run agent" flow. Wraps api.sendChatMessage
   // so KanbanView doesn't import the wire shape directly.
   async function runAgentOnNewTask(
     workspaceId: string,
@@ -3785,8 +3767,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     pinTask,
     reorderPinnedTasks,
     addKanbanItem,
-    // NEW (design-mode feature): creates a design-mode workspace item. Plan:
-    // docs/superpowers/plans/2026-06-13-design-mode.md.
+    // NEW (design-mode feature): creates a design-mode workspace item.
     addDesignItem,
     // Agent Mode (plan 2026-08-15-agent-mode, task_1786962724740_0):
     // creates an agent-mode workspace item. POSTs to

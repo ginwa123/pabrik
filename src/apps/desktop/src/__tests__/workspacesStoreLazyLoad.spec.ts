@@ -1,6 +1,5 @@
-/** Lazy per-workspace item loading (plan:
- * docs/plans/2026-09-22-revamp-ui-chats-workspace-scoped.md, Phase 4). init() fetches the workspace
- * list but loads items (tasks, design pages, kanban prefetch) for the ACTIVE workspace. */
+/** Lazy per-workspace item loading. init() fetches the workspace list but
+ * loads items (tasks, design pages, kanban prefetch) for the ACTIVE workspace. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp } from 'vue'

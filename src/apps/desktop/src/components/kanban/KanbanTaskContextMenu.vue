@@ -25,7 +25,6 @@
   resolves the append position because only it (and its KanbanColumn
   ancestor) can see the rest of the board.
 
-  Plan: docs/superpowers/plans/2026-09-25-kanban-card-context-menu-move-to-column.md
 -->
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'

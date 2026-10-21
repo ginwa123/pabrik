@@ -155,14 +155,13 @@ const setSortMode = (newSortBy: SortField, newDirection: SortDirection) => {
 defineExpose({ setSortMode })
 
 // ─── Derived data ────────────────────────────────────────────────────────── Cards in this column.
-// Plan: docs/superpowers/plans/2026-08-06-kanban-sort-independence.md
 const cardsInColumn = computed<Task[]>(() => {
   return props.tasks.filter((t) => t.kanban_column_id === props.column.id).slice()
 })
 
 // ─── Virtual scrolling + lazy load (kanban-virtual-scroll, 2026-08-06) ─── The cards list is
 // rendered through <VirtualScroller>, which mounts only the rows currently in the viewport (plus a
-// buffer above and below). Plan: docs/superpowers/plans/2026-08-06-kanban-virtual-scroll.md
+// buffer above and below).
 const workspacesStore = useWorkspacesStore()
 
 // Resolve the parent WorkspaceItem once. Used to read `hasMore` / `isLoading` for both the
@@ -364,7 +363,7 @@ const openSortModal = () => {
 
 // Close the modal AND emit the sort change unconditionally — even if the user picked the SAME sort
 // (Manual again, etc.), the parent's per-column fetch should still fire so the wire data is
-// refreshed. Plan: docs/superpowers/plans/2026-08-06-kanban-sort-independence.md
+// refreshed.
 const handleSortModalSelect = () => {
   sortModalOpen.value = false
   emit('sortChange', { sortBy: sortBy.value, direction: direction.value })

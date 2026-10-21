@@ -31,7 +31,6 @@
   The dialog is purely presentational — the host (AppLayout)
   delegates to workspacesStore.copyKanbanSpecFrom on each emit.
 
-  Plan: docs/superpowers/plans/2026-07-04-copy-kanban-spec.md
     (Chunk 4, Task 4.1)
 -->
 <script setup lang="ts">

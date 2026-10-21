@@ -4,8 +4,7 @@ import { ref } from 'vue'
 const STORAGE_KEY_CHATS_HEIGHT = 'pabrik-sidebar-chats-height'
 const STORAGE_KEY_NAV_EXPANDED = 'pabrik-sidebar-nav-expanded'
 // Legacy key kept ONLY to seed the renamed projects key once, so
-// existing users don't get a silently re-collapsed section (revamp
-// plan: docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md).
+// existing users don't get a silently re-collapsed section.
 const STORAGE_KEY_LEGACY_WORKSPACES_EXPANDED = 'pabrik-sidebar-workspaces-expanded'
 const STORAGE_KEY_PROJECTS_EXPANDED = 'pabrik-sidebar-projects-expanded'
 // Documents section (Migration 095). Separate key from the projects one

@@ -204,8 +204,7 @@ export function installSseBus(_app?: App, options?: SseBusInstallOptions): SseBu
   }
 
   // Build the single global EventSource carrying ALL channels. The bus does NOT open a second
-  // EventSource per chat (the v1 refcount design was reverted; see
-  // docs/plans/2026-06-30-single-sse-all-sessions-design.md).
+  // EventSource per chat (the v1 refcount design was reverted).
   function openClient(): void {
     if (_globalClient) return
     const client: SseClient = createUnifiedSseConnection({

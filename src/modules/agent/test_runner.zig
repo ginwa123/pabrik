@@ -37,7 +37,6 @@ test {
     // value could never have compiled — see the note on its inline block.
 
     // Shared file-sandbox rule shared by present_files + /api/files/download
-    // (docs/plans/2026-09-29-present-files-sandbox-parity.md).
     _ = @import("tools/file_sandbox.zig");
 
     // Shared shell core + pwsh tool tests (Task 1 + 3 of 2026-08-14-pwsh-tool.md)
@@ -48,11 +47,9 @@ test {
     // ownership + XML serialization + tool schema contract)
 
     // generate_image tool tests (DALL-E 2/3, gpt-image-1 via OpenAI Images API)
-    // Plan: docs/superpowers/plans/2026-08-14-generate-image-tool.md
 
     // update_activity helper tests — moved from tui/update_activity_test.zig
-    // to modules/agent/tools/update_activity_test.zig in Phase 7 of
-    // docs/superpowers/plans/2026-08-14-flatten-tui-into-agentic-loop.md.
+    // to modules/agent/tools/update_activity_test.zig in Phase 7
 
     // 2026-08-14 — list_directory agent tool tests (Task 5 of the same plan).
     _ = @import("tools/create_kanban_task.zig");

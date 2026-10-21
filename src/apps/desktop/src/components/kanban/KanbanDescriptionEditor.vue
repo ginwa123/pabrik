@@ -37,7 +37,6 @@
     is created, the dialog's host
     reads `pendingFiles`, uploads each via `api.uploadTaskAttachment`,
     and patches the description with `![name](<url>)` markdown.
-    See docs/superpowers/plans/2026-08-06-kanban-no-base64-in-desc.md.
 -->
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onBeforeUnmount, onUpdated } from 'vue'

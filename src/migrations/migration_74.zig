@@ -7,7 +7,7 @@ const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
 
-/// Migration 074 — Add `cache_creation_input_tokens` + `cache_read_input_tokens` columns to `llm_history` so the Anthropic profile's cache breakdown survives from the SSE parser to the persistent row. OpenAI rows always carry 0. Idempotent via `addColumnIfMissing` (probes `pragma_table_info` first; matches the Migration 013/020 pattern). Plan: docs/superpowers/plans/2026-08-13-fix-anthropic-total-tokens.md. Task: task_1786640688092.
+/// Migration 074 — Add `cache_creation_input_tokens` + `cache_read_input_tokens` columns to `llm_history` so the Anthropic profile's cache breakdown survives from the SSE parser to the persistent row. OpenAI rows always carry 0. Idempotent via `addColumnIfMissing` (probes `pragma_table_info` first; matches the Migration 013/020 pattern). Task: task_1786640688092.
 pub const Migration074AddLlmHistoryCacheTokenColumns = struct {
     pub const version: u32 = 74;
     pub const name = "add_llm_history_cache_token_columns";

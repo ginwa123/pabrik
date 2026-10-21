@@ -700,8 +700,7 @@ const handleNavigate = (
   }
 }
 
-// Header dropdown workspace switch (plan:
-// docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md).
+// Header dropdown workspace switch.
 const handleSelectWorkspace = (workspaceId: string) => {
   const parsed = parseAppPath(route.path)
   const alreadyThere =
@@ -1849,8 +1848,7 @@ const handleDesignSelectElement = (_elementId: string) => {
   void _elementId
 }
 
-// NEW: design-mode chat toggle (top-right 💬 button in DesignView). Plan:
-// docs/superpowers/plans/2026-07-28-design-per-page-chat-sessions.md Migration of legacy data:
+// NEW: design-mode chat toggle (top-right 💬 button in DesignView).Migration of legacy data:
 // users created before this fix have a single "Design Chat" canonical task (the pre-fix behavior).
 const handleDesignOpenChat = async (payload: {
   pageId: string
@@ -1863,8 +1861,7 @@ const handleDesignOpenChat = async (payload: {
   if (!payload.pageId || !payload.pageName) return
   if (!payload.workspaceItemTaskId) return
 
-  // 2026-07-28 FK rewrite (plan:
-  // docs/superpowers/plans/2026-07-28-design-page-workspace-item-task-fk.md): resolve the chat task
+  // 2026-07-28 FK rewrite: resolve the chat task
   // via the FK directly.
   workspacesStore.setActiveTask(payload.workspaceItemTaskId)
   // 2026-08-06 (plan: design-chat-as-dialog): capture the design page's own name so
@@ -2962,7 +2959,6 @@ defineExpose({
       Settings page under, picker over, both visible at once. The picker
       filters out the active kanban as a source (CopyKanbanSpecDialog's
       `availableSources` computed).
-      Plan: docs/superpowers/plans/2026-07-04-copy-kanban-spec.md
         (Chunk 4, Task 4.3)
     -->
     <CopyKanbanSpecDialog

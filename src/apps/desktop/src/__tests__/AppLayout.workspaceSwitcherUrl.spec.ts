@@ -1,5 +1,4 @@
-/** URL contract pair for the header workspace switcher (plan:
- * docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md): 1. click-writes: Sidebar emits
+/** URL contract pair for the header workspace switcher: 1. click-writes: Sidebar emits
  * select-workspace → AppLayout.handleSelectWorkspace PUSHES `?view=workspace&workspaceId=X`. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'

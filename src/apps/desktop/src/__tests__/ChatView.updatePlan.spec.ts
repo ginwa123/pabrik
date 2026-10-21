@@ -1,5 +1,4 @@
-/** Tests for the update_plan + get_plan tool dispatcher in ChatView.vue. Plan:
- * docs/superpowers/plans/2026-08-19-session-plan-agent-tool.md Task 8 */
+/** Tests for the update_plan + get_plan tool dispatcher in ChatView.vue. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, ref } from 'vue'

@@ -638,3 +638,82 @@ no rule, so those cases are the spec's real subject.
 `src/apps/desktop/docs/comment-length-policy.md` is the working companion:
 how to fix a finding (shorten, split, move, delete), what stays legal, and
 why there is no inline exemption.
+
+---
+
+## 6. A comment may not point at a document that does not exist
+
+**Banned.** A comment that names a `docs/...md` path must name a
+document that is actually there. The rule is `scripts/lint-no-dead-doc-refs.py`,
+wired into the `lint` job of `.github/workflows/ci.yml` and mirrored by
+`.husky/pre-commit`.
+
+```zig
+// WRONG — the document was deleted; the pointer is a dead end.
+// See docs/plans/2026-07-04-copy-kanban-spec.md (Chunk 4, Task 4.1).
+
+// RIGHT — either point at a document that exists, or drop the pointer.
+// The copy dialog copies a column spec from another kanban.
+```
+
+### Why
+
+A comment that names a document is a **promise to the reader**: follow the
+pointer, read the document, understand the code. When the document is
+deleted, the promise is broken, and the pointer is worse than no pointer,
+because it looks like an answer.
+
+Nothing notices. A comment is not code, so the compiler is silent, and no
+linter asked whether the file was still there. This happened here: PR
+#815 deleted 356 plan documents in one commit and left **218 comments**
+pointing at them — 101 distinct paths across 128 files. Every one of
+those was a dead promise, and every one of them was invisible to the
+build.
+
+### The rule
+
+- A reference resolves when the file exists **at the repository root** or
+  **relative to the directory of the file that holds the comment**. The
+  frontend's own `src/apps/desktop/docs/comment-length-policy.md` is
+  reachable that way, and the rule leaves it alone.
+- Every dead reference on a line is reported, not just the first.
+
+### What is NOT banned
+
+- **A path in a string literal.** A test fixture that mentions
+  `docs/spec.md`, or a path a program writes to disk, is data, not a
+  pointer.
+- **A trailing comment after code.** `const x = 1; // see docs/x.md` is
+  not a claim the reader follows, and the scan does not treat it as one.
+- **A document that exists.** Pointing at a live document is the point.
+- **Paths outside `docs/`.** The rule is about the documents this repo
+  keeps in `docs/`, not about every path mentioned in the tree.
+
+### How it is scanned
+
+The scan is **line-anchored**: a line counts only when it BEGINS with a
+comment marker (`//`, `/*`, `*`). That anchor is what keeps a
+`docs/x.md` inside a string literal out of the findings.
+
+It is a deliberate trade. A full lexer would be exact; this script is a
+scan. The cost is that a `docs/x.md` inside a multi-line string literal
+whose line happens to begin with `//` would be a false positive. There
+are none in this tree, and the selftest pins the behaviour so a change in
+the anchor cannot pass unnoticed.
+
+### Running it
+
+```bash
+python3 scripts/lint-no-dead-doc-refs.py --selftest  # the scanner against fixtures
+python3 scripts/lint-no-dead-doc-refs.py              # the gate: fail on any hit
+```
+
+Exit codes: `0` clean, `1` findings, `2` a usage error. The selftest
+runs first in CI for the same reason `ci-change-filter.sh` runs its own:
+**a scanner that has quietly stopped matching is a silent outage**, and
+the only way to notice is to check it against known input on every
+invocation.
+
+The interpreter is checked, not assumed. If `python3` is not on PATH the
+step FAILS — a scan that cannot run must never report the tree clean,
+because "clean" is the one answer that lets a violation merge.

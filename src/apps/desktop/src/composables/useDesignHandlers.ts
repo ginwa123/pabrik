@@ -46,8 +46,7 @@ export function useDesignHandlers(args?: UseDesignHandlersArgs) {
       return
     }
     // DEPRECATED path — kept for back-compat. New callers should use
-    // `translateElement` (move) or `resizeElement` (resize). See
-    // `docs/superpowers/plans/2026-08-06-split-move-resize.md`.
+    // `translateElement` (move) or `resizeElement` (resize).
     const keys = Object.keys(patch)
     const isGeometryOnly = keys.length > 0 && keys.every((k) => k === 'x' || k === 'y' || k === 'width' || k === 'height' || k === 'rotation')
     try {
@@ -398,7 +397,7 @@ export function useDesignHandlers(args?: UseDesignHandlersArgs) {
     }
   }
 
-  /** NEW (Plan: docs/superpowers/plans/2026-08-06-move-element-with-descendants.md). Figma-style
+  /** NEW. Figma-style
    * drag affordance: translate 1 OR N elements by a single (dx, dy) delta — the backend cascades
    * the delta to every transitive descendant of each item's element via a recursive CTE. */
   async function moveElementWithDescendants(payload: {

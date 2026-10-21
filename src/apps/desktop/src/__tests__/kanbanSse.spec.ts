@@ -1,6 +1,5 @@
-/** Unit tests for the bus-backed kanbanSse Pinia store (Chunk 10 of
- * docs/superpowers/plans/2026-06-30-unify-frontend-sse.md). The store no longer opens its own
- * EventSource — it subscribes via `useSseBus().on('kanban', ...)`. */
+/** Unit tests for the bus-backed kanbanSse Pinia store. The store no longer opens its own
+ * EventSource — it subscribes via `useSseBus.on('kanban'...)`. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'
@@ -533,8 +532,7 @@ describe('useKanbanSseStore (bus-backed)', () => {
   })
 
   it('forwards the active q to fetchKanbanTasks on kanban_task events (Chunk 7)', async () => {
-    // CONTRACT (kanban task search, plan docs/superpowers/plans/2026-07-30-kanban-task-search.md
-    // Chunk 7): When the SSE handler triggers a task refetch, it MUST forward the active q from
+    // CONTRACT (kanban task search): When the SSE handler triggers a task refetch, it MUST forward the active q from
     // activeSearchQueries so a remote move/edit during a search doesn't reset the user's narrowed.
     const ws = useWorkspacesStore()
     // Seed the activeSearchQueries for item_1.

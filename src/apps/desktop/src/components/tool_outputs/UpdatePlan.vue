@@ -38,7 +38,6 @@
   rounded-md card frame) but uses ToolCardHeader.vue for the chrome
   to stay aligned with the rest of the tool_outputs family.
 
-  Plan: docs/superpowers/plans/2026-08-19-session-plan-agent-tool.md
   Task 8 of 9
 -->
 <script setup lang="ts">

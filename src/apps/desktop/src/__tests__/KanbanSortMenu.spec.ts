@@ -1,6 +1,5 @@
 /** Tests for KanbanSortMenu — the menu used inside the kanban's per-column "⋮" menu (Sort tasks…)
- * and (in future) the kanban header. Plan: docs/superpowers/plans/2026-08-06-kanban-sort-by.md Task
- * 2 */
+ * and (in future) the kanban header. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 

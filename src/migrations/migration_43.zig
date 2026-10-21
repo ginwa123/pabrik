@@ -13,8 +13,7 @@ pub const Migration043AddPositionToWorkspaces = struct {
 
     pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
         // Adds the `position` column to the workspaces table. The column is
-        // the sort key for the sidebar's workspace list — see
-        // docs/plans/2026-06-12-workspace-drag-and-drop.md.
+        // the sort key for the sidebar's workspace list
         try db.exec(allocator, "ALTER TABLE workspaces ADD COLUMN position INTEGER NOT NULL DEFAULT 0", &[_][]const u8{});
 
         // Backfill. Assign position N-1 to the newest workspace, 0 to the

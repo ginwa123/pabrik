@@ -1,6 +1,5 @@
 /** Tests for AppLayout's URL sync watcher behavior when Sidebar.handleChatsNavigate fires
- * (navigating AWAY from a workspace item to a chat session). Plan:
- * docs/superpowers/plans/2026-08-27-fix-chat-click-url-overwrite.md */
+ * (navigating AWAY from a workspace item to a chat session). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick } from 'vue'

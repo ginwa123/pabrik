@@ -349,7 +349,7 @@ test {
     _ = @import("agentic_loop/skills_import.zig");
     // The download endpoint half of the present_files contract: it holds the
     // status mapping tests plus the static checks that keep it on the shared
-    // file_sandbox rule (docs/plans/2026-09-29-present-files-sandbox-parity.md).
+    // file_sandbox rule.
     _ = @import("http_handlers/files_download.zig");
     _ = @import("http_handlers/preview_origin.zig");
     _ = @import("http_handlers/preview_proxy.zig");

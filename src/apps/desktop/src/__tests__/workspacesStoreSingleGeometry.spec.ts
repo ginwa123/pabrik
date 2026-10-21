@@ -1,5 +1,5 @@
 /** Behavioural tests for `workspacesStore.updateDesignElementGeometry` (single-element drag/resize
- * path). Plan: docs/superpowers/plans/2026-08-06-design-single-element-drag-mirror.md */
+ * path). */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

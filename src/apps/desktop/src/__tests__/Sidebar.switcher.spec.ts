@@ -1,5 +1,4 @@
-/** Sidebar header → WorkspaceSwitcher wiring (plan:
- * docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md). */
+/** Sidebar header → WorkspaceSwitcher wiring. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, createApp } from 'vue'

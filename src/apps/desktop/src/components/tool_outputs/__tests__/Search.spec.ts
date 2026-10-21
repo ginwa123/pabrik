@@ -1,5 +1,4 @@
-/** Tests for Search.vue — the chatview toast card for the `search` agent tool. See
- * docs/superpowers/plans/2026-08-06-search-better-error.md. */
+/** Tests for Search.vue — the chatview toast card for the `search` agent tool. */
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 import { defineComponent, h, provide } from 'vue'
@@ -8,7 +7,7 @@ import Search from '../Search.vue'
 import { OPEN_IN_CODE_EDITOR_KEY, type OpenInCodeEditorFn } from '@/composables/useCodeEditor'
 
 // ──────────────────────────────────────────────────────────────────────── Test fixtures — match
-// the JSON data shape in docs/superpowers/plans/2026-09-18-agent-tool-output-json-schema.md §2.3
+// the JSON data shape
 // ────────────────────────────────────────────────────────────────────────
 interface MatchFixture {
   line: number

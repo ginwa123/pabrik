@@ -2952,8 +2952,7 @@ pub fn cancelSession(
 }
 
 // =============================================================================
-// Tool-call loading placeholder (Migration 068, plan:
-// docs/superpowers/plans/2026-08-06-tool-call-loading-placeholder.md) The
+// Tool-call loading placeholder (Migration 068) The
 
 /// Options for `saveToolResultPlaceholder`.
 pub const SaveToolResultPlaceholderOptions = struct {
@@ -4497,8 +4496,7 @@ pub const WorkspaceItemTaskInfo = struct {
     }
 };
 
-/// One distinct tag suggestion for a kanban's autocomplete dropdown (plan
-/// docs/superpowers/plans/2026-07-30-kanban-task-tags-autocomplete.md).
+/// One distinct tag suggestion for a kanban's autocomplete dropdown.
 pub const KanbanTagSuggestion = struct {
     /// The tag value as it appeared in some task's tags JSON array.
     /// First-occurrence casing wins (matches tags_validation.zig).
@@ -5459,8 +5457,7 @@ pub fn updateWorkspaceUpdatedAt(allocator: std.mem.Allocator, db: *sqlite.Sqlite
 }
 
 // ===================================================================== Tests
-// for listKanbanDistinctTags Plan:
-// docs/superpowers/plans/2026-07-30-kanban-task-tags-autocomplete.md
+// for listKanbanDistinctTags
 
 fn setupDbWithTagsForKanban() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
@@ -5658,8 +5655,7 @@ test "listKanbanDistinctTags skips rows with malformed tags JSON (defensive)" {
     try testing.expectEqualStrings("good", page.tags[0].name);
 }
 // ════════════════════════════════════════════════════════════════════════════
-// Inline behavioural tests for the kanban task search q-parameter (plan:
-// docs/superpowers/plans/2026-07-30-kanban-task-search.md) Per project
+// Inline behavioural tests for the kanban task search q-parameter Per project
 
 const TestCtx = struct {
     db: sqlite.SqliteBackend,
@@ -6270,8 +6266,7 @@ test "listWorkspaceItemTasksWithCursor sorts by created_at asc and desc" {
     try testing.expectEqualStrings("task_old", desc.tasks[2].id);
 }
 // ════════════════════════════════════════════════════════════════════════════
-// Inline behavioural tests for the kanban per-column pagination filter (plan:
-// docs/superpowers/plans/2026-08-06-kanban-per-column-pagination.md, Task 3).
+// Inline behavioural tests for the kanban per-column pagination filter.
 
 test "listWorkspaceItemTasksWithCursor column_id=col_a returns only col_a tasks" {
     const alloc = testing.allocator;

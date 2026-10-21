@@ -10,6 +10,9 @@
 #        bash scripts/lint-no-catch-unreachable.sh
 # and, in the `zginlint` job,
 #   run: zig build zginlint:check
+# and, in the `lint` job,
+#   run: python3 scripts/lint-no-dead-doc-refs.py --selftest
+#        python3 scripts/lint-no-dead-doc-refs.py
 #
 # That first step used to live at ci.yml lines 1485-1491 and the CI job
 # was deleted in PR #398 ("drop frontend job"), which left this hook
@@ -37,6 +40,10 @@ echo "→ pnpm run lint:check (src/apps/desktop)"
 echo "→ zig coding standards (no catch unreachable)"
 bash scripts/lint-no-catch-unreachable.sh --selftest
 bash scripts/lint-no-catch-unreachable.sh
+
+echo "→ no comment points at a document that does not exist"
+python3 scripts/lint-no-dead-doc-refs.py --selftest
+python3 scripts/lint-no-dead-doc-refs.py
 
 echo "→ zginlint (comment-block ceiling, zero findings)"
 zig build zginlint:check

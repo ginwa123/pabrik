@@ -27,7 +27,6 @@
   Empty / not-found states render centered hints with friendly
   messages instead of the columns UI.
 
-  Plan: docs/superpowers/plans/2026-09-02-kanban-settings-as-page.md
 -->
 <script setup lang="ts">
 import { computed, onMounted, onUpdated, ref } from 'vue'

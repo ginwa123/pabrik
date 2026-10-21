@@ -17,7 +17,6 @@
   The component is stateless — the host (KanbanView.vue) owns the
   debounce + refetch logic. Keeps this component trivially testable.
 
-  Plan: docs/superpowers/plans/2026-07-30-kanban-task-search.md Chunk 5
 -->
 <script setup lang="ts">
 import UiIcon from '../ui/UiIcon.vue'

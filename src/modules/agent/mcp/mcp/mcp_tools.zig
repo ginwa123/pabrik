@@ -74,7 +74,6 @@ pub const ToolAdapter = struct {
                     return error.ToolNotFound;
                 };
 
-                // TODO: Parse arguments and call tool
                 _ = arguments;
                 _ = tool;
 
@@ -83,6 +82,3 @@ pub const ToolAdapter = struct {
         }.exec;
     }
 };
-
-// The former mcp_tools_test.zig was already gone before the 2026-09-29 test
-// flatten, leaving this registrar pointing at a file that cannot be resolved.

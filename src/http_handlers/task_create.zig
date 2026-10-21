@@ -145,7 +145,7 @@ const StandardResponse = struct {
     kanban_position: i64 = 0,
     /// JSON-encoded array of tag strings (Migration 067 — kanban
     /// task tags feature). Empty string means the task has no
-    /// tags. Plan: docs/superpowers/plans/2026-07-28-kanban-task-tags.md
+    /// tags.
     tags: []const u8 = "",
     /// Per-task cwd override (Migration 070). Empty string means the task has
     /// no per-task cwd (falls back to kanban-level path + sandbox). Plan:

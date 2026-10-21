@@ -1,5 +1,4 @@
-/** Mutation coherence for the local-first task-list cache (plan
- * docs/superpowers/plans/2026-09-24-local-first-task-list-caching.md). */
+/** Mutation coherence for the local-first task-list cache. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp } from 'vue'

@@ -1853,7 +1853,6 @@ pub const Agent = struct {
             } else if (msg.role == .assistant) {
                 // Responses reasoning is a separate top-level `type:"reasoning"`
                 // item, NOT merged into the assistant `type:"message"` content.
-                // See plan docs/superpowers/plans/2026-09-01-fix-openai-response-reasoning-leak-and-persist.md
                 const has_tool_calls = msg.tool_calls != null and msg.tool_calls.?.len > 0;
                 const c = msg.content;
                 const rc = msg.reasoning_content;

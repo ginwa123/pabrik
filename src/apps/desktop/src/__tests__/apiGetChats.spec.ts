@@ -35,7 +35,6 @@ describe('getChats - Migration 082 last_human_touched_at wire shape', () => {
 
   it('forwards last_human_touched_at to Chat when the backend provides a value', async () => {
     // Backend wire shape: unix-ms as a string, e.g. "1786500000000".
-    // Plan: docs/superpowers/plans/2026-08-29-chat-sidebar-last-human-touched.md
     mockFetchOnce(200, {
       sessions: [
         {

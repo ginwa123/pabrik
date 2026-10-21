@@ -38,7 +38,6 @@
     so config is populated and the unconfigured banner disappears.
     This is how a user FIRST configures a board from this UI.
 
-  Plan: docs/superpowers/plans/2026-08-27-kanban-agent-as-tab.md
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'

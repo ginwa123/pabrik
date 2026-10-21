@@ -9,8 +9,7 @@ import WorkspaceItemComponent from './WorkspaceItem.vue'
 import * as api from '../../api'
 import SidebarSkeleton from '../shell/SidebarSkeleton.vue'
 
-// The single SELECTED workspace (header dropdown + Projects section, plan:
-// docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md). null = no workspace
+// The single SELECTED workspace (header dropdown + Projects section). null = no workspace
 // selected/exists — the template renders an empty-state hint instead of rows.
 const props = defineProps<{
   workspace: Workspace | null
@@ -55,8 +54,7 @@ const emit = defineEmits<{
   // Drag-and-drop reordering for items of a single workspace. Emitted on a successful drop with the
   // workspace id and the new top-to-bottom array of item IDs.
   reorderWorkspaceItems: [workspaceId: string, orderedItemIds: string[]]
-  // NEW (pinned-tasks feature, plan:
-  // docs/superpowers/plans/2026-06-20-pinned-workspace-item-tasks.md): pin/unpin and drag-reorder
+  // NEW (pinned-tasks feature): pin/unpin and drag-reorder
   // of the pinned subset, forwarded from <WorkspaceItem>.
   pinTask: [workspaceId: string, itemId: string, taskId: string, isPinned: boolean]
   reorderPinnedTasks: [workspaceId: string, itemId: string, orderedIds: string[]]
@@ -290,7 +288,7 @@ const handleItemDragEnd = () => {
     <!-- Section Header — chevron + title left; busy slider + add-item
          menu right. Workspace-level create/rename/delete + reorder
          moved to the header WorkspaceSwitcher (revamp plan:
-         docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md). -->
+-->
     <div class="relative shrink-0" data-workspace-menu>
       <div
         class="px-[var(--sb-gutter)] h-7 flex items-center shrink-0 border-b border-[--color-border]/40"

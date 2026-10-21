@@ -39,7 +39,6 @@
     queue_message is sent. Disabled when a worker is already
     running for this task's session (the frontend's best-effort
     check; the backend's atomic DB lookup is the source of truth).
-    Plan: docs/superpowers/specs/2026-08-18-kanban-task-detail-start-agent.md
 
   Public API:
     props:
@@ -206,8 +205,7 @@ const emit = defineEmits<{
       // images were pasted/picked.
       pendingFiles: PreviewFile[]
       // NEW (Migration 070 — kanban-cwd-session-optional plan). Per-task cwd override. Absolute
-      // path on disk or '' for cwd-less. Plan:
-      // docs/superpowers/plans/2026-08-06-kanban-cwd-session-optional.md
+      // path on disk or '' for cwd-less.
       skillNames: string[]
       cwdSession?: string
     },
@@ -356,7 +354,7 @@ const selectColumn = (id: string) => {
 }
 
 // NEW (Migration 070 — kanban-cwd-session-optional plan). Per-task cwd picker state (create mode
-// only). Plan: docs/superpowers/plans/2026-08-14-kanban-task-detail-edit-cwd.md
+// only).
 const cwdSession = ref<string>('')
 const isCwdPickerOpen = ref(false)
 const cwdPickerRef = ref<HTMLElement | null>(null)
@@ -381,8 +379,7 @@ const handleDocumentClickCwd = (event: MouseEvent) => {
   if (
     cwdPickerRef.value &&
     target &&
-    // Allow the FilePickerDialog dropdown contents to escape the ref's containment check. Plan:
-    // docs/superpowers/plans/2026-08-14-kanban-task-detail-edit-cwd.md
+    // Allow the FilePickerDialog dropdown contents to escape the ref's containment check.
     !cwdPickerRef.value.contains(target) &&
     // Walk up from the click target to see if any ancestor is the teleported FilePickerDialog root.
     // The dialog root carries the `data-testid="file-picker-dialog"` testid, so we can match it
@@ -612,8 +609,7 @@ const pendingCommitLabel = computed<string | null>(() => {
 })
 
 // Inject the processingState map (provided by App.vue; populated via SSE worker events). The Start
-// agent menu item is `:disabled` when a worker is already running for this task's session. Plan:
-// docs/superpowers/specs/2026-08-18-kanban-task-detail-start-agent.md
+// agent menu item is `:disabled` when a worker is already running for this task's session.
 const processingState = inject<Record<string, boolean> | undefined>('processingState', undefined)
 const isWorkerRunning = computed<boolean>(() => {
   if (!props.task?.id) return false

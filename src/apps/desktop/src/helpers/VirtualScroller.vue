@@ -158,7 +158,7 @@ const estimateHeight = (index: number): number => {
 }
 
 /** Whether the container's content currently overflows its visible area (i.e. `scrollHeight >
- * clientHeight`). See docs/plans/2026-06-04-chat-lazy-load-button.md §4.3. */
+ * clientHeight`). */
 const isScrollable = computed(() => {
   const totalContentHeight = accumulatedHeights.value[props.items.length] ?? 0
   return totalContentHeight > containerHeight.value
@@ -1014,8 +1014,7 @@ defineExpose({
   overflow-y: auto;
   /** Disable CSS scroll anchoring. The default `overflow-anchor: auto` makes the browser adjust
    * scrollTop by the spacer delta when the topSpacer mutates — which happens every time
-   * `measureItems()` re-measures buffer items. See
-   * docs/plans/2026-06-10-scroll-ratcheting-fix.md. */
+   * `measureItems` re-measures buffer items. */
   overflow-anchor: none;
   /** Use `flex: 1 1 0` instead of `height: 100%` so the scroller participates in the parent's flex
    * layout properly. */

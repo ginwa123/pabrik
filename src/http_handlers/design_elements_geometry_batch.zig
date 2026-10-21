@@ -202,8 +202,6 @@ fn makeErrorJson(allocator: std.mem.Allocator, message: []const u8) ![]u8 {
 }
 
 // ─── Behavioural tests for the `POST .../elements/geometry-batch` handler ─
-// Plan: docs/superpowers/plans/2026-07-30-design-drag-debounce-batch.md
-// (Chunk 1, Task 1.3).
 
 const testing_handler = std.testing;
 

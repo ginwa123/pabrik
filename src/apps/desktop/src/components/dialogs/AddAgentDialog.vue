@@ -8,7 +8,6 @@
     props:  show (boolean)
     emits:  close, create(name: string, path: string)
 
-  Spec: docs/superpowers/specs/2026-08-15-agent-mode-design.md
 -->
 <script setup lang="ts">
 import { ref, computed, nextTick, onBeforeUnmount, onMounted, onUpdated } from 'vue'

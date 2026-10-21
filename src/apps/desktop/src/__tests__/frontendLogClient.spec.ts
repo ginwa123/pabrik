@@ -1,6 +1,5 @@
 /** frontendLogClient.spec.ts Unit tests for `helpers/frontendLogClient.ts`. Covers the 10
- * behaviours required by plan Chunk 6 of
- * `docs/superpowers/plans/2026-07-17-frontend-error-logs.md`: 1. */
+ * behaviours required by: 1. */
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 import {

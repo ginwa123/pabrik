@@ -1,6 +1,5 @@
 /** Behavioral tests for DesignView.vue's keyboard nudge (arrow keys move selection by 1px;
- * Shift+arrow by 10px). Plan: docs/superpowers/plans/2026-07-25-design-element-drag-and-drop.md
- * (Chunk 4, Task 4.1). 3 tests: 1. Arrow key nudges selection by 1 design-px. 2. */
+ * Shift+arrow by 10px). 3 tests: 1. Arrow key nudges selection by 1 design-px. 2. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'

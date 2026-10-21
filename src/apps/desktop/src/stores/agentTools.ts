@@ -1,6 +1,4 @@
-// Pinia store for the Agent Mode tool registry. Plan:
-// docs/superpowers/plans/2026-08-15-agent-mode.md (Task 14) Spec:
-// docs/superpowers/specs/2026-08-15-agent-mode-design.md (D9)
+// Pinia store for the Agent Mode tool registry.(D9)
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import * as api from '../api'

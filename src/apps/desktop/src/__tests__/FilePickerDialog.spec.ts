@@ -248,8 +248,7 @@ describe('FilePickerDialog — selection (folder mode)', () => {
   })
 
   // RENAMED + initialPath changed from '/home/user' to '/' to assert the "disabled at root"
-  // invariant. Previously: "Select button is disabled when nothing is selected". Plan:
-  // docs/superpowers/plans/2026-08-13-folder-picker-select-button-current-folder.md
+  // invariant. Previously: "Select button is disabled when nothing is selected".
   it('Select button is disabled at root when nothing is selected', async () => {
     wrapper = mountDialog({ initialPath: '/', mode: 'folder' })
     await wrapper.setProps({ modelValue: true })
@@ -874,8 +873,7 @@ describe('FilePickerDialog — address bar (type a path)', () => {
   })
 })
 
-// ─── Select button — current folder fallback (folder mode) ───────────────── Plan:
-// docs/superpowers/plans/2026-08-13-folder-picker-select-button-current-folder.md The Select button
+// ─── Select button — current folder fallback (folder mode) ─────────────────The Select button
 // is enabled whenever the user has a meaningful folder in scope.
 describe('FilePickerDialog — Select when current folder is open (folder mode)', () => {
   let wrapper: VueWrapper | null = null
@@ -992,8 +990,7 @@ describe('FilePickerDialog — Select when current folder is open (folder mode)'
   })
 })
 
-// ─── Recent tab + tabstrip + pin ──────────────────────────────────────────── Plan:
-// docs/superpowers/plans/2026-08-14-folder-picker-recent-history.md The dialog opens on the Recent
+// ─── Recent tab + tabstrip + pin ────────────────────────────────────────────The dialog opens on the Recent
 // tab by default.
 describe('FilePickerDialog — Recent tab + tabstrip + pin', () => {
   let wrapper: VueWrapper | null = null

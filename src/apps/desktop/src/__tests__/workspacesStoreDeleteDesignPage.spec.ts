@@ -1,6 +1,6 @@
 /** Unit tests for workspacesStore.deleteDesignPage. 4 tests: 1. Calls api.deleteDesignPage with the
  * same workspaceId/itemId/pageId. 2. Clears activeDesignPageId when the deleted page was the active
- * one. 3. Plan: docs/superpowers/plans/2026-07-25-design-page-delete-button.md (Chunk 4) */
+ * one. 3. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 

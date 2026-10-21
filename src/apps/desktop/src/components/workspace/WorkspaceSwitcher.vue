@@ -1,6 +1,5 @@
 <script setup lang="ts">
-/** WorkspaceSwitcher — header dropdown for selecting the active workspace (plan:
- * docs/plans/2026-09-22-revamp-workspace-ui-dropdown-projects.md). */
+/** WorkspaceSwitcher — header dropdown for selecting the active workspace. */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { Workspace } from '../../stores/workspaces'
 import OpenInNewTabMenu from '../shell/OpenInNewTabMenu.vue'

@@ -1,5 +1,4 @@
-/** Tests for KanbanView — the board layout (header + horizontally scrollable column row). Plan:
- * docs/superpowers/plans/2026-06-21-workspace-item-kanban.md Chunk 6 / Task 6.5 + Task 6.7 */
+/** Tests for KanbanView — the board layout (header + horizontally scrollable column row).+ Task 6.7 */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
@@ -931,9 +930,8 @@ describe('KanbanView — header + Add task button', () => {
     expect(moveTaskSpy).toHaveBeenCalledWith(WS_ID, ITEM_ID, 'task_new_1', 'col_y', 0)
   })
 
-  // ─── Agent button → settings page navigation (plan
-  // docs/superpowers/plans/2026-08-27-kanban-agent-as-tab.md, iteration 2 — Agent button now lands
-  // on ?tab=tools since the Agent umbrella tab was split into Tools + Knowledge) ───
+  // ─── Agent button → settings page navigation — Agent button now lands
+  // on ?tab=tools since the Agent umbrella tab was split into Tools + Knowledge ───
   async function mountViewWithRouter(item: WorkspaceItem) {
     const { createRouter, createMemoryHistory } = await import('vue-router')
     const router = createRouter({

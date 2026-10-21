@@ -1,5 +1,4 @@
-/** Tests for KanbanColumn "Run all agents" menu item (plan:
- * docs/superpowers/plans/2026-09-09-run-all-agents-by-column.md, Task 3, Option C). */
+/** Tests for KanbanColumn "Run all agents" menu item. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, type VueWrapper } from '@vue/test-utils'

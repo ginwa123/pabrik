@@ -27,7 +27,6 @@
                                    different from the original.
       cancel  []                   Fires on Escape.
 
-  Plan: docs/superpowers/plans/2026-06-30-edit-workspace-item-name.md
 -->
 <script setup lang="ts">
 import { ref, nextTick } from 'vue'

@@ -1,5 +1,4 @@
-/** Behavioural tests for the git-branch badge in WorkspaceItemTaskCard. Plan:
- * docs/superpowers/plans/2026-08-06-kanban-task-git-branch.md (Task 7 — frontend wiring). */
+/** Behavioural tests for the git-branch badge in WorkspaceItemTaskCard. */
 import { describe, expect, it, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

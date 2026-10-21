@@ -1,5 +1,5 @@
 /** Component tests for <WorkspaceItemTaskCard> — the bordered kanban- card variant of the per-task
- * UI. Plan: docs/plans/2026-07-01-change-task-to-card-kanban.md */
+ * UI. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, type VueWrapper } from '@vue/test-utils'
@@ -78,8 +78,7 @@ describe('WorkspaceItemTaskCard data-attribute contract', () => {
   })
 
   // The hover action strip (pin / rename / details / delete) was removed in favour of the card's
-  // right-click context menu. Plan:
-  // docs/superpowers/plans/2026-09-25-kanban-card-context-menu-move-to-column.md
+  // right-click context menu.
   it('renders NO hover action buttons in the top row', () => {
     wrapper = mountCard({ id: 't1', name: 'Alpha' })
     // The two that carried a test id...

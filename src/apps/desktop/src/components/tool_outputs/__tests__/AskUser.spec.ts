@@ -1,6 +1,5 @@
 /** AskUser.vue — the `ask_user` tool card. The card renders from the JSON `data` object and, while
- * the state is `pending`, POSTs the answer. Plan:
- * docs/superpowers/plans/2026-09-16-agent-tool-ask-user.md */
+ * the state is `pending`, POSTs the answer. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import AskUser from '../AskUser.vue'

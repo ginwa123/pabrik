@@ -91,8 +91,7 @@ const emit = defineEmits<{
   // (Figma parity with the layers panel which already supports it).
   select: [payload: { elementId: string; additive: boolean }]
   /** DEPRECATED — replaced by `translate` (move) and `resize` (Figma parity with the backend's POST
-   * /translate + POST /resize split — see
-   * `docs/superpowers/plans/2026-08-06-split-move-resize.md`). */
+   * /translate + POST /resize split). */
   update: [patch: Partial<DesignElement>]
   /** NEW (2026-08-06) — fires on every pointermove during a drag for a SINGLE element (leaf OR a
    * single-element drag of a group that didn't trigger the group-drag path). */

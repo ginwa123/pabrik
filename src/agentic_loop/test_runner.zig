@@ -108,7 +108,6 @@ test {
     _ = @import("../modules/agent/tools/spawn_sub_agent.zig");
     // present_files exec adapter — the sandbox root it resolves from the
     // session row is what keeps a card servable by /api/files/download
-    // (docs/plans/2026-09-29-present-files-sandbox-parity.md).
     _ = @import("../modules/agent/tools/present_files.zig");
     // 2026-09-02 stream-resume-on-reselect (task_1787673548905_0) —
     // in-flight stream buffer registry + snapshot getter. Tests inline.

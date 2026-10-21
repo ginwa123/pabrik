@@ -1,6 +1,6 @@
 /** Unit tests for the workspaces store's reorderWorkspaces action. reorderWorkspaces is the
  * optimistic-update action for workspace-level ordering (the 2026-09-22 revamp removed the sidebar
- * UI; store + API remain). Plan: docs/plans/2026-06-12-workspace-drag-and-drop.md */
+ * UI; store + API remain). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

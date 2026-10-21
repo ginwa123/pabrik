@@ -1,5 +1,4 @@
 // Behavioural tests for the agentToolToggle pure helper.
-// Plan: docs/superpowers/plans/2026-08-19-agent-tools-toggle-wire.md (Task 4)
 import { describe, it, expect, vi } from 'vitest'
 import { buildToggle } from '../stores/agentToolToggle'
 

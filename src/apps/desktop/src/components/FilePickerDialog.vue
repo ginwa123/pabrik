@@ -484,8 +484,7 @@ function handleCancel() {
 
 const canSelect = computed(() => !!effectiveSelection.value)
 
-// Effective selection for the Select button. Plan:
-// docs/superpowers/plans/2026-08-13-folder-picker-select-button-current-folder.md
+// Effective selection for the Select button.
 const effectiveSelection = computed<string>(() => {
   if (mode.value !== 'folder') return selectedPath.value
   if (selectedPath.value) return selectedPath.value

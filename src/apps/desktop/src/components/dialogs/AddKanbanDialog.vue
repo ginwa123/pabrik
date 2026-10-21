@@ -51,7 +51,7 @@ const showPicker = ref(false)
 const nameInput = ref<HTMLInputElement | null>(null)
 // Same "touched + visible error" UX as AddItemDialog. After the user types (or blurs) the name
 // field empty/whitespace, the dialog shows "Name is required" below the input so the disabled Add
-// button is self-explanatory. Plan: docs/superpowers/plans/2026-07-10-empty-workspace-item-bug.md.
+// button is self-explanatory.
 const nameTouched = ref(false)
 const nameError = computed<string | null>(() => {
   if (!nameTouched.value) return null

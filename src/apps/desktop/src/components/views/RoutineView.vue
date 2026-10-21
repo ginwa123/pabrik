@@ -19,7 +19,6 @@
   Public API:
     props:  item (WorkspaceItem), workspaceId (string), itemId (string)
 
-  Plan: docs/superpowers/plans/2026-09-10-workspace-items-routines.md
   Routine mode task_1789505553300_1 (option A, mirror agent_kanban_*).
 -->
 <script setup lang="ts">
