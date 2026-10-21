@@ -2040,3 +2040,52 @@ Four things the hand-off needed, each found the hard way:
    the guest's `sockaddr_vm` must be the kernel's shape (`family u16`, `reserved u16`, `port u32`,
    `cid u32`) — a `u32` family puts the port in the wrong field and every connect fails.
 
+
+---
+
+## 39. The manager goes down with the server
+
+§33's `setsid` was deliberate: a Ctrl-C on the server never takes the manager down, and an
+orphan is adoptable by the next boot. The first half of that sentence became a leak — close the
+`pabrik` service and the `pabrik-vmd` it started stayed on the box, with every Firecracker VMM
+it owned still running.
+
+So the manager is the server's child in the only sense that matters: **it goes down with it.**
+
+| item | where | proof |
+|---|---|---|
+| the server keeps the pid of the manager it forked | `src/vmd/lifecycle.zig` (`rememberSpawned`), `src/vmd/bootstrap.zig` | unit: the pid this process started is the one that is stopped |
+| the server stops it when the listener closes | `src/main.zig::stopManager` | SIGUSR1, then SIGTERM, then SIGKILL for a manager that will not go |
+| the manager stops the VMs it owns before it exits | `src/vmd/daemon.zig::serve` → `Reconciler.stopAll` | unit: two workspaces with two VMMs, both stopped |
+| a server that never says goodbye still takes the manager with it | `PR_SET_PDEATHSIG` in `src/vmd/bootstrap.zig::spawnDetached` | the kernel sends the signal when the parent dies |
+| a manager that is only RESTARTED keeps its VMs | `src/vmd/daemon.zig::onSignal` | `scripts/vmd-daemon-smoke.sh`: "a restarted daemon adopted vmm pid=…" |
+
+The order is the graceful one: the server tells the manager that the service is going away, the
+manager stops each workspace VM it owns (the same `stop` the reconciler already does, so the
+VMM's sockets are reclaimed and its state file says `absent`), the manager unlinks its socket
+and exits, and only then does the server exit.
+
+**Two signals, because "the manager stops" and "the service is closing" are not the same
+event.** §25 made a restarted daemon ADOPT the VMs it finds instead of orphaning them, and
+`scripts/vmd-daemon-smoke.sh` asserts it. So:
+
+| signal | meaning | the VMs |
+|---|---|---|
+| SIGTERM / SIGINT | "stop" — the daemon exits | stay: the next daemon adopts them |
+| SIGUSR1 | "the service that owns you is going away" | go down with the daemon |
+
+The server sends SIGUSR1 (`src/vmd/lifecycle.zig::sig_usr1`), and the manager's
+`PR_SET_PDEATHSIG` is SIGUSR1 too: a server that was SIGKILLed is a service that is gone, so
+the manager takes its VMs with it. A manager an operator restarts by hand gets SIGTERM, and its
+VMs survive — the adoption contract, unchanged.
+
+**A manager the server did not start is left alone.** A manager that was already running when
+the server booted is adopted, not owned — the next boot attaches to it rather than forking a
+second one (§33), so stopping it would take away a service somebody else is using.
+
+### What this still does NOT do
+
+- **No cgroup scope per VM** (§10.2), so a VM's memory is still the VM's own.
+- **The manager is still not a systemd unit.** Its lifetime is tied to the server that started
+  it, not to the machine: a reboot still leaves no manager, and a server that is not running
+  has none to talk to.

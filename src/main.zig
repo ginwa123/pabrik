@@ -28,6 +28,20 @@ const server_boot = pabrikcore.boot_server_boot;
 // keeps the elastic pool from holding a burst's readers forever.
 const db_config = pabrikcore.boot_db_config;
 const static_serve = pabrikcore.http_static_serve;
+const vmd_lifecycle = pabrikcore.vmd_lifecycle;
+
+/// The manager this server started goes down with it: SIGTERM first, so it
+/// stops the VMs it owns, then SIGKILL for a manager that will not go.
+fn stopManager() void {
+    const pid = vmd_lifecycle.spawnedPid() orelse return;
+    std.log.info("stopping the VM manager (pid {d})", .{pid});
+    switch (vmd_lifecycle.stopSpawned(vmd_lifecycle.default_stop_timeout_ms)) {
+        .stopped => std.log.info("VM manager stopped", .{}),
+        .killed => std.log.warn("the VM manager ignored SIGTERM; it was killed", .{}),
+        .survived => std.log.err("the VM manager is still running", .{}),
+        .nothing_to_stop => {},
+    }
+}
 
 pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
@@ -368,6 +382,9 @@ pub fn main(init: std.process.Init) !void {
         std.debug.print("Failed to register cleanup_stale_background_process cron: {s}\n", .{@errorName(err)});
     };
     try gs.listenEventLoop(.{ .dispatch_mode = .worker_pool });
+
+    // The manager is this server's child, so it goes down with the server.
+    stopManager();
 
     // Post-listen shutdown. The signal path only sets the flag (handlers
     // can't log), so logging happens here.
