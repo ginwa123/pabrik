@@ -1972,3 +1972,27 @@ autocomplete list. A caller that means another workspace still says so explicitl
 
 The route still refuses a request that names no workspace: that is the negative control in the
 functional test, and the reason a caller that means another workspace has to say so.
+
+---
+
+## 37. A workspace's VM keeps the guest agent it was created with
+
+A `--saas` terminal refused to open: **503 "the workspace VM refused the terminal"**, and the
+guest's own words behind it — `unknown request`. The guest agent answers `unknown request` for an
+action it does not know, and the terminal action (`tty`) is newer than some workspace's disk.
+
+The chain: the guest agent is baked into the image as `/init` (`scripts/build-guest-image.sh` copies
+`zig-out/bin/pabrik-vm-agent` into it), and the daemon **copies the image into a workspace's disk
+once** — after that the disk is the workspace's own, with the agent that was current that day. A
+workspace whose disk predates the terminal action answers `unknown request` to every `tty` RPC, and
+the daemon's open fails (`TtyFailed`) → the server answers 503.
+
+So the fix is a deployment one — **recreate the VM** (stop it, drop its `disk.ext4`; the daemon
+re-creates it from the current image) — and the code change is to say so: the refusal now names the
+cause ("the workspace VM's guest agent is too old for terminals: rebuild the guest image and
+recreate the VM") instead of passing `unknown request` through, and the daemon's log carries it too.
+
+| item | where | proof |
+|---|---|---|
+| the refusal says what to do | `vmd/vm_client.zig::refusalText` | unit: "unknown request" becomes the fix; any other reason keeps the guest's own words |
+| the daemon logs the reason | `vmd/daemon.zig::dispatchTty` | the log line carries the refusal, not just the error name |

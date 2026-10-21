@@ -372,7 +372,11 @@ fn dispatchTty(manager: Manager, allocator: std.mem.Allocator, request: rpc.Requ
             };
             var refusal = vm_client.TtyRefusal{};
             const opened = vm_client.ttyOpen(allocator, layout, request.cols, request.rows, cwd, &refusal) catch |err| {
-                log("terminal open in workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
+                if (refusal.len > 0) {
+                    log("terminal open in workspace {s} failed: {s} ({s})", .{ request.workspace_id, @errorName(err), refusal.text() });
+                } else {
+                    log("terminal open in workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
+                }
                 if (err == vm_client.Error.TtyFailed) {
                     const reason = if (refusal.len > 0) refusal.text() else "the guest refused to open a terminal";
                     return rpc.encodeFailure(allocator, request.id, .bad_request, reason);
