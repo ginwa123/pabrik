@@ -242,6 +242,25 @@ describe('useCurrentMainView', () => {
     })
   })
 
+  it('returns kanban-settings view with the workspace from /app/{ws}/projects/{pid}/settings', () => {
+    // The canonical shape: the URL names the workspace AND the board, so the
+    // view never has to guess which workspace the board belongs to.
+    mockRoute({}, '/app/ws_1/projects/item_kanban/settings', {
+      workspaceId: 'ws_1',
+      projectId: 'item_kanban',
+    })
+    let v!: ReturnType<typeof useCurrentMainView>
+    function setup() {
+      v = useCurrentMainView()
+    }
+    setup()
+    expect(v.value).toEqual({
+      kind: 'kanban-settings',
+      workspaceId: 'ws_1',
+      itemId: 'item_kanban',
+    })
+  })
+
   it('does NOT match kanban-settings for unrelated paths like /app/settings', () => {
     mockRoute({}, '/app/settings', {})
     let v!: ReturnType<typeof useCurrentMainView>

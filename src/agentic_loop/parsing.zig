@@ -3,6 +3,7 @@ const testing = std.testing;
 const pabrikcore = @import("pabrikcore");
 const LLMHistory = @import("llm_history_row.zig").LLMHistory;
 const args_repair = @import("tools_args_repair.zig");
+const file_attachments = @import("file_attachments.zig");
 
 const agent = pabrikcore.agent;
 const json = std.json;
@@ -91,16 +92,24 @@ pub fn transformLLMHistoryToAgentMessage(allocator: std.mem.Allocator, message: 
         const reasoning_id: ?[]const u8 = if (message.reasoning_id) |rid| try allocator.dupe(u8, rid) else null;
         const reasoning_encrypted_content: ?[]const u8 = if (message.reasoning_encrypted_content) |rec| try allocator.dupe(u8, rec) else null;
 
-        // Handle vision + video support: if image_urls/video_urls are set,
-        // create content_parts with text, images, and videos.
+        // Handle vision + video + file support: if image_urls/video_urls or
+        // file attachments are set, create content_parts with text, images,
+        // videos and files.
+        var stored_files: ?file_attachments.Stored = null;
+        defer if (stored_files) |*s| s.deinit();
+        if (message.file_attachments) |raw| {
+            if (raw.len > 0) stored_files = try file_attachments.parseStored(allocator, raw);
+        }
+        const files: []const file_attachments.StoredFile = if (stored_files) |s| s.files else &.{};
+
         var content_parts: ?[]agent.ContentPart = null;
         const has_images = message.image_urls != null and message.image_urls.?.len > 0;
         const has_videos = message.video_urls != null and message.video_urls.?.len > 0;
-        if (has_images or has_videos) {
+        if (has_images or has_videos or files.len > 0) {
             const image_count = if (message.image_urls) |iums| iums.len else 0;
             const video_count = if (message.video_urls) |vums| vums.len else 0;
             const has_text = content.len > 0;
-            const total_parts = image_count + video_count + (if (has_text) @as(usize, 1) else 0);
+            const total_parts = image_count + video_count + files.len + (if (has_text) @as(usize, 1) else 0);
             var parts = try allocator.alloc(agent.ContentPart, total_parts);
             var part_idx: usize = 0;
             // Text part (first) if there's text content
@@ -110,6 +119,7 @@ pub fn transformLLMHistoryToAgentMessage(allocator: std.mem.Allocator, message: 
                     .text = content,
                     .image_url = null,
                     .video_url = null,
+                    .file = null,
                 };
                 part_idx += 1;
             }
@@ -124,6 +134,7 @@ pub fn transformLLMHistoryToAgentMessage(allocator: std.mem.Allocator, message: 
                             .detail = null,
                         },
                         .video_url = null,
+                        .file = null,
                     };
                     part_idx += 1;
                 }
@@ -139,9 +150,36 @@ pub fn transformLLMHistoryToAgentMessage(allocator: std.mem.Allocator, message: 
                         .video_url = .{
                             .url = try allocator.dupe(u8, video_url),
                         },
+                        .file = null,
                     };
                     part_idx += 1;
                 }
+            }
+            // File parts: a text-like document rides as text (every style
+            // reads it), a binary one as a provider file part.
+            for (files) |file| {
+                if (file.text) |_| {
+                    parts[part_idx] = .{
+                        .part_type = "text",
+                        .text = try file_attachments.textPart(allocator, file),
+                        .image_url = null,
+                        .video_url = null,
+                        .file = null,
+                    };
+                } else {
+                    parts[part_idx] = .{
+                        .part_type = "file",
+                        .text = null,
+                        .image_url = null,
+                        .video_url = null,
+                        .file = .{
+                            .filename = try allocator.dupe(u8, file.name),
+                            .mime = try allocator.dupe(u8, file.mime),
+                            .b64 = try allocator.dupe(u8, file.b64 orelse ""),
+                        },
+                    };
+                }
+                part_idx += 1;
             }
             content_parts = parts;
         } else {}

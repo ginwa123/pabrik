@@ -1997,6 +1997,7 @@ recreate the VM") instead of passing `unknown request` through, and the daemon's
 | the refusal says what to do | `vmd/vm_client.zig::refusalText` | unit: "unknown request" becomes the fix; any other reason keeps the guest's own words |
 | the daemon logs the reason | `vmd/daemon.zig::dispatchTty` | the log line carries the refusal, not just the error name |
 
+
 ---
 
 ## 38. The guest agent comes from the host, not from the workspace's disk
@@ -2038,3 +2039,4 @@ Four things the hand-off needed, each found the hard way:
 4. The file must be **closed** before it is exec'd (a file still open for writing is `ETXTBSY`), and
    the guest's `sockaddr_vm` must be the kernel's shape (`family u16`, `reserved u16`, `port u32`,
    `cid u32`) — a `u32` family puts the port in the wrong field and every connect fails.
+

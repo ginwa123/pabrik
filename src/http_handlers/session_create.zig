@@ -11,6 +11,7 @@ const slash_skill_expand = @import("../agentic_loop/slash_skill_expand.zig");
 const workspace_scope = @import("../agentic_loop/workspace_scope.zig");
 const runtime_mode = @import("../runtime_mode.zig");
 const vmd_policy = @import("../vmd/policy.zig");
+const file_attachments = @import("../agentic_loop/file_attachments.zig");
 
 /// Create a sandbox directory in data/apps and return the path
 fn createSandbox(allocator: std.mem.Allocator, io: std.Io, environment: ?*const std.process.Environ.Map, session_id: []const u8) ![]u8 {
@@ -66,6 +67,8 @@ pub const RequestSession = struct {
     body_message: []const u8 = "",
     image_urls: []const u8 = "",
     video_urls: []const u8 = "",
+    /// The chat's file attachments — a JSON array of `{name, mime, b64}`.
+    file_attachments: []const u8 = "",
     selected_profile_model: []const u8 = "", // NEW: name of profile in LlmConfig.profiles_models
     /// Migration 063 — "1" to opt into unattended mode (workflow keeps
     /// retrying past the 10-attempt TooManyRetries bail). Empty string
@@ -120,7 +123,11 @@ pub fn sessionCreateHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
 
     const usecase = useCase(allocator, io, di, parsed, owner) catch |err| {
         return res.jsonResponse(.{
-            .status_code = 500,
+            .status_code = switch (err) {
+                error.InvalidFileAttachments, error.UnsupportedFileType, error.NotValidUtf8 => 400,
+                error.FilesTooLarge, error.TooManyFiles => 413,
+                else => 500,
+            },
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = @errorName(err) }),
         });
     };
@@ -301,6 +308,17 @@ pub fn useCase(alloc: std.mem.Allocator, io: std.Io, di: *pabrikcore.App, parsed
         selected_profile_model = ap;
     }
 
+    // The chat's file attachments: a JSON array of `{name, mime, b64}`.
+    // The backend classifies each file ONCE, here, so the model path never
+    // re-decodes them.
+    var file_attachments_payload: []const u8 = "";
+    if (parsed.file_attachments.len > 0) {
+        const url_style = profileUrlStyle(alloc, di, session_id, owner, selected_profile_model);
+        try rejectUncarryableFiles(alloc, parsed.file_attachments, url_style);
+        file_attachments_payload = try normalizeFileAttachments(alloc, parsed.file_attachments);
+    }
+    defer if (file_attachments_payload.len > 0) alloc.free(file_attachments_payload);
+
     // Migration 063 — opt into unattended mode. Empty / anything other
     // than "1" stays off (matches the production SQL default '0').
     var is_auto_retry_until_stop: []const u8 = "";
@@ -363,6 +381,7 @@ pub fn useCase(alloc: std.mem.Allocator, io: std.Io, di: *pabrikcore.App, parsed
         .allowed_tools = allowed_tools,
         .image_urls = image_urls,
         .video_urls = video_urls,
+        .file_attachments = file_attachments_payload,
         .selected_profile_model = selected_profile_model,
         .is_auto_retry_until_stop = is_auto_retry_until_stop,
         // Owner rides along so the concurrent insert_worker task stamps the
@@ -387,6 +406,57 @@ pub fn useCase(alloc: std.mem.Allocator, io: std.Io, di: *pabrikcore.App, parsed
         .name = session_name,
         .status = "send",
     };
+}
+
+/// The wire style the session's profile uses — it decides which file types
+/// the model can read. Null when the profile cannot be resolved.
+fn profileUrlStyle(
+    alloc: std.mem.Allocator,
+    di: *pabrikcore.App,
+    session_id: []const u8,
+    owner: []const u8,
+    profile_name: []const u8,
+) ?[]const u8 {
+    if (profile_name.len == 0) return null;
+    const cfg = session_llm_config.forSession(alloc, di.db, session_id) orelse
+        session_llm_config.forOwner(alloc, di.db, owner) orelse
+        return null;
+    const profile = ai_workflow.llm_history.resolveSessionProfile(cfg, profile_name) orelse return null;
+    return profile.url_style;
+}
+
+/// Reject a file the session's wire style cannot carry. The Responses API
+/// takes the rich binary documents; every other style takes a PDF only.
+fn rejectUncarryableFiles(
+    alloc: std.mem.Allocator,
+    raw: []const u8,
+    url_style: ?[]const u8,
+) !void {
+    const style = url_style orelse return;
+    var request_files = file_attachments.parseRequest(alloc, raw) catch return error.InvalidFileAttachments;
+    defer request_files.deinit();
+    for (request_files.files) |file| {
+        const kind = file_attachments.classify(file.name, file.mime);
+        if (!file_attachments.styleCarriesFile(style, kind)) return error.UnsupportedFileType;
+    }
+}
+
+/// Turn the wire's file attachments into the JSON payload the model path
+/// reads. A text-like document keeps its decoded text; a binary file keeps
+/// its base64.
+fn normalizeFileAttachments(alloc: std.mem.Allocator, raw: []const u8) ![]u8 {
+    var request_files = file_attachments.parseRequest(alloc, raw) catch return error.InvalidFileAttachments;
+    defer request_files.deinit();
+    const stored = file_attachments.normalize(alloc, request_files.files) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.UnsupportedFileType => return error.UnsupportedFileType,
+        error.FilesTooLarge => return error.FilesTooLarge,
+        error.TooManyFiles => return error.TooManyFiles,
+        error.NotValidUtf8 => return error.NotValidUtf8,
+        else => return error.InvalidFileAttachments,
+    };
+    defer file_attachments.freeStored(alloc, stored);
+    return file_attachments.encodeStored(alloc, stored);
 }
 
 /// Server-side cwd fallback chain (Migration 070). Returns the first

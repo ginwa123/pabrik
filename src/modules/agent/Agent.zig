@@ -16,6 +16,7 @@ const custom_http_client = @import("kabelweb").client;
 // Leaf module (std-only) shared with the agentic loop — same cross-directory
 // import `prompts.zig` already uses.
 const args_repair = @import("../../agentic_loop/tools_args_repair.zig");
+const file_attachments = @import("../../agentic_loop/file_attachments.zig");
 const logger_mod = @import("../logger/Logger.zig");
 
 /// Log level for agent logging
@@ -43,12 +44,38 @@ pub const UnresolvedIntentResult = struct {
     reason: ?[]const u8,
 };
 
-/// Content part types for multimodal messages (text, image_url, or video_url)
+/// Content part types for multimodal messages (text, image_url, video_url, or file)
 pub const ContentPart = struct {
     part_type: []const u8,
     text: ?[]const u8 = null,
     image_url: ?ImageUrl = null,
     video_url: ?VideoUrl = null,
+    /// A document the model reads as a file. The wire shape differs per
+    /// provider, so every request builder maps this part itself.
+    file: ?FilePart = null,
+};
+
+/// A document the model reads as a file: a PDF, or a rich binary document.
+/// The bytes ride as base64 in `b64` (no data-URL prefix).
+pub const FilePart = struct {
+    filename: []const u8,
+    mime: []const u8,
+    b64: []const u8,
+
+    /// The payload as a data URL — what OpenAI's `file_data` wants.
+    pub fn dataUrl(self: @This(), allocator: std.mem.Allocator) ![]u8 {
+        return std.fmt.allocPrint(allocator, "data:{s};base64,{s}", .{ self.mime, self.b64 });
+    }
+};
+
+/// The Chat Completions wire shape of a content part. A file rides as
+/// `{"type":"file","file":{"filename":…,"file_data":"data:…;base64,…"}}`.
+const ChatContentPart = struct {
+    part_type: []const u8,
+    text: ?[]const u8 = null,
+    image_url: ?ImageUrl = null,
+    video_url: ?VideoUrl = null,
+    file: ?OpenAiFile = null,
 
     pub fn jsonStringify(self: @This(), stringify: *std.json.Stringify) !void {
         try stringify.beginObject();
@@ -66,6 +93,53 @@ pub const ContentPart = struct {
             try stringify.objectField("video_url");
             try vid.jsonStringify(stringify);
         }
+        if (self.file) |f| {
+            try stringify.objectField("file");
+            try f.jsonStringify(stringify);
+        }
+        try stringify.endObject();
+    }
+};
+
+/// Map a file part to the Chat Completions wire shape. Chat Completions
+/// takes a PDF only, so a rich binary document is a hard error here —
+/// never a silently dropped attachment.
+fn chatFilePart(allocator: std.mem.Allocator, file: FilePart) !OpenAiFile {
+    const kind = file_attachments.classify(file.filename, file.mime);
+    if (!file_attachments.styleCarriesFile("openai", kind)) return error.UnsupportedFileType;
+    return .{ .filename = file.filename, .file_data = try file.dataUrl(allocator) };
+}
+
+/// The OpenAI Chat Completions shape of a file part:
+/// `{"type":"file","file":{"filename":…,"file_data":"data:…;base64,…"}}`.
+pub const OpenAiFile = struct {
+    filename: []const u8,
+    file_data: []const u8,
+
+    pub fn jsonStringify(self: @This(), stringify: *std.json.Stringify) !void {
+        try stringify.beginObject();
+        try stringify.objectField("filename");
+        try stringify.write(self.filename);
+        try stringify.objectField("file_data");
+        try stringify.write(self.file_data);
+        try stringify.endObject();
+    }
+};
+
+/// The Anthropic shape of a document part:
+/// `{"type":"document","source":{"type":"base64","media_type":…,"data":…}}`.
+pub const AnthropicDocument = struct {
+    media_type: []const u8,
+    data: []const u8,
+
+    pub fn jsonStringify(self: @This(), stringify: *std.json.Stringify) !void {
+        try stringify.beginObject();
+        try stringify.objectField("type");
+        try stringify.write("base64");
+        try stringify.objectField("media_type");
+        try stringify.write(self.media_type);
+        try stringify.objectField("data");
+        try stringify.write(self.data);
         try stringify.endObject();
     }
 };
@@ -191,7 +265,7 @@ const JsonToolCall = struct {
 const JsonMessage = struct {
     role: []const u8,
     content: ?[]const u8 = null,
-    content_parts: ?[]const ContentPart = null,
+    content_parts: ?[]const ChatContentPart = null,
     tool_calls: ?[]const JsonToolCall = null,
     tool_call_id: ?[]const u8 = null,
     reasoning_content: ?[]const u8 = null,
@@ -329,6 +403,8 @@ const AnthropicContentBlock = struct {
     /// Anthropic vision image source.
     image: ?AnthropicImage = null,
     video: ?AnthropicVideo = null,
+    /// Anthropic document source — a PDF the model reads as a file.
+    document: ?AnthropicDocument = null,
 
     pub fn jsonStringify(self: @This(), stringify: *std.json.Stringify) !void {
         try stringify.beginObject();
@@ -363,6 +439,11 @@ const AnthropicContentBlock = struct {
             try stringify.write("video");
             try stringify.objectField("source");
             try vid.jsonStringify(stringify);
+        } else if (self.document) |doc| {
+            try stringify.objectField("type");
+            try stringify.write("document");
+            try stringify.objectField("source");
+            try doc.jsonStringify(stringify);
         }
         try stringify.endObject();
     }
@@ -598,12 +679,14 @@ const AnthropicRequest = struct {
 /// Request shape for POST /v1/responses
 /// (https://developers.openai.com/api/reference/resources/responses) Mirrors
 const ResponsesInputContent = struct {
-    /// "input_text" | "input_image" | "input_video"
+    /// "input_text" | "input_image" | "input_video" | "input_file"
     content_type: []const u8,
     text: ?[]const u8 = null,
     image_url: ?[]const u8 = null,
     video_url: ?[]const u8 = null,
     detail: ?[]const u8 = null,
+    filename: ?[]const u8 = null,
+    file_data: ?[]const u8 = null,
 
     pub fn jsonStringify(self: @This(), stringify: *std.json.Stringify) !void {
         try stringify.beginObject();
@@ -627,6 +710,15 @@ const ResponsesInputContent = struct {
             if (self.video_url) |u| {
                 try stringify.objectField("video_url");
                 try stringify.write(u);
+            }
+        } else if (std.mem.eql(u8, self.content_type, "input_file")) {
+            if (self.filename) |name| {
+                try stringify.objectField("filename");
+                try stringify.write(name);
+            }
+            if (self.file_data) |data| {
+                try stringify.objectField("file_data");
+                try stringify.write(data);
             }
         } else {
             if (self.text) |t| {
@@ -909,6 +1001,11 @@ pub const AgentMessage = struct {
                 }
                 if (part.video_url) |vid| {
                     if (vid.url) |u| allocator.free(u);
+                }
+                if (part.file) |f| {
+                    allocator.free(f.filename);
+                    allocator.free(f.mime);
+                    allocator.free(f.b64);
                 }
             }
             allocator.free(parts);
@@ -1392,6 +1489,7 @@ pub const Agent = struct {
                             .tool_result = null,
                             .image = null,
                             .video = null,
+                            .document = null,
                         };
                         if (part.image_url) |img| {
                             const url_str = img.url orelse "";
@@ -1411,6 +1509,15 @@ pub const Agent = struct {
                                 .source_type = "url",
                                 .url_or_data = url_str,
                                 .media_type = null,
+                            };
+                        } else if (part.file) |f| {
+                            const kind = file_attachments.classify(f.filename, f.mime);
+                            if (!file_attachments.styleCarriesFile("anthropic", kind)) {
+                                return error.UnsupportedFileType;
+                            }
+                            non_assistant_blocks[j].document = .{
+                                .media_type = f.mime,
+                                .data = f.b64,
                             };
                         } else if (part.text) |t| {
                             non_assistant_blocks[j].text = t;
@@ -1579,15 +1686,16 @@ pub const Agent = struct {
                 json_tool_calls = tc_slice;
             }
 
-            var json_content_parts: ?[]const ContentPart = null;
+            var json_content_parts: ?[]const ChatContentPart = null;
             if (msg.content_parts) |parts| {
-                const parts_copy = try arena_alloc.alloc(ContentPart, parts.len);
+                const parts_copy = try arena_alloc.alloc(ChatContentPart, parts.len);
                 for (parts, 0..) |part, j| {
                     parts_copy[j] = .{
                         .part_type = part.part_type,
                         .text = part.text,
                         .image_url = part.image_url,
                         .video_url = part.video_url,
+                        .file = if (part.file) |f| try chatFilePart(arena_alloc, f) else null,
                     };
                 }
                 json_content_parts = parts_copy;
@@ -1710,6 +1818,16 @@ pub const Agent = struct {
                             contents[j] = .{
                                 .content_type = "input_video",
                                 .video_url = url_str,
+                            };
+                        } else if (part.file) |f| {
+                            const kind = file_attachments.classify(f.filename, f.mime);
+                            if (!file_attachments.styleCarriesFile("openai-response", kind)) {
+                                return error.UnsupportedFileType;
+                            }
+                            contents[j] = .{
+                                .content_type = "input_file",
+                                .filename = f.filename,
+                                .file_data = try f.dataUrl(arena_alloc),
                             };
                         } else if (part.text) |t| {
                             contents[j] = .{ .content_type = "input_text", .text = t };
@@ -2891,7 +3009,7 @@ pub const Agent = struct {
 
 test "VideoUrl jsonStringify emits video_url url" {
     const alloc = std.testing.allocator;
-    const part = ContentPart{ .part_type = "video_url", .video_url = .{ .url = "data:video/mp4;base64,AAAA" } };
+    const part = ChatContentPart{ .part_type = "video_url", .video_url = .{ .url = "data:video/mp4;base64,AAAA" } };
     const s = try std.json.Stringify.valueAlloc(alloc, part, .{});
     defer alloc.free(s);
     try std.testing.expect(std.mem.indexOf(u8, s, "video_url") != null);

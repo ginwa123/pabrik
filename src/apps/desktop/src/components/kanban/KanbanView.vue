@@ -67,7 +67,7 @@ import { useWorkspacesStore } from '../../stores/workspaces'
 import { useNotificationStore } from '../../stores/notifications'
 import { useKanbanScrollRestore } from '../../composables/useKanbanScrollRestore'
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
-import { buildAppUrl, parseAppPath } from '../../helpers/appUrl'
+import { buildAppUrl, buildProjectSettingsUrl, parseAppPath } from '../../helpers/appUrl'
 import type { PreviewFile } from '../file/FilePreview.vue'
 import type { WorkspaceItem, Task, KanbanColumn as KanbanColumnType } from '../../stores/workspaces'
 
@@ -353,8 +353,7 @@ const emit = defineEmits<{
   // payload — the host derives the active item from its own state.
   openSettings: []
   // (openAgentSettings was REMOVED in the kanban-agent-as-tab plan — the Agent button now navigates
-  // directly to /app/kanban/:itemId/settings?tab=agent instead of emitting for the host to mount a
-  // dialog.
+  // directly to the settings page instead of emitting for the host to mount a dialog.
   selectTask: [taskId: string]
   openTaskInBackground: [payload: { workspaceId: string; itemId: string; taskId: string }]
   openTaskDetailInBackground: [payload: { workspaceId: string; itemId: string; taskId: string }]
@@ -554,8 +553,12 @@ const handleOpenSettings = () => {
 // active (iteration 2 — the Agent umbrella tab was split into Tools + Knowledge; we land on Tools
 // since that's the more security-critical config — the access allowlist).
 const handleOpenAgentSettings = () => {
+  // The URL names the board AND its workspace; with no workspace, the legacy shape is all there is.
+  const path = props.workspaceId
+    ? buildProjectSettingsUrl(props.workspaceId, props.item.id).path
+    : `/app/kanban/${props.item.id}/settings`
   void router.push({
-    path: `/app/kanban/${props.item.id}/settings`,
+    path,
     query: { tab: 'tools' },
   })
 }
@@ -1511,7 +1514,7 @@ const handleCreateTaskSave = async (payload: {
         </button>
 
         <!-- Agent config (Migration 081, agent-kanbans mirror).
-           Navigates to /app/kanban/:itemId/settings?tab=tools — the
+           Navigates to the board's settings page (?tab=tools) — the
            Tools allowlist is mounted there as a tab body
            (KanbanToolsPanel inside KanbanSettingsView). User can
            also visit ?tab=knowledge for the Knowledge + System

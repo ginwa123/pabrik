@@ -200,4 +200,9 @@ Decisions a human has to make before step 1:
 * The OpenAI capability table is from the official OpenAI API docs
   (`developers.openai.com/api/docs/guides/file-inputs` and `/guides/pdf-files`),
   read 2026-10-21.
-* No code was changed for this card; this document is the deliverable.
+* The implementation landed after this analysis: Migration 114 adds the
+  `file_attachments` columns, `src/agentic_loop/file_attachments.zig` is the
+  codec, and the three request builders emit the provider-correct file part.
+  The wire is ONE field — `file_attachments`, a JSON array of
+  `{name, mime, b64}` — and a text-like document is decoded to text once, at
+  the HTTP boundary, so every wire style can read it.

@@ -949,14 +949,14 @@ describe('KanbanView — header + Add task button', () => {
     return { pushSpy }
   }
 
-  it('navigates to /app/kanban/:itemId/settings?tab=tools when the Agent button is clicked', async () => {
+  it('navigates to the workspace-scoped settings page when the Agent button is clicked', async () => {
     const { pushSpy } = await mountViewWithRouter(makeItem())
     await flushPromises()
     const btn = wrapper!.find(`[data-testid="kanban-view-${ITEM_ID}-open-agent-settings"]`)
     expect(btn.exists()).toBe(true)
     await btn.trigger('click')
     expect(pushSpy).toHaveBeenCalledWith({
-      path: `/app/kanban/${ITEM_ID}/settings`,
+      path: `/app/${WS_ID}/projects/${ITEM_ID}/settings`,
       query: { tab: 'tools' },
     })
   })

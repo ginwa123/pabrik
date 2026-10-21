@@ -134,9 +134,13 @@ describe('Sidebar Go to settings browser URL', () => {
     expect(openSpy).toHaveBeenCalledWith(`/app/${WS_ID}/projects/${ITEM_ID}`, '_blank', 'noopener')
   })
 
-  it('keeps the dedicated kanban settings route', async () => {
+  it('opens the workspace-scoped kanban settings URL in a new browser tab', async () => {
     await clickGoToSettings(makeItem('kanban'))
 
-    expect(openSpy).toHaveBeenCalledWith(`/app/kanban/${ITEM_ID}/settings`, '_blank', 'noopener')
+    expect(openSpy).toHaveBeenCalledWith(
+      `/app/${WS_ID}/projects/${ITEM_ID}/settings`,
+      '_blank',
+      'noopener',
+    )
   })
 })
