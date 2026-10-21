@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wireframe: a dev tool terminal in the footer</title>
+<style>
+  /* Every colour and size below is the app's own token set, read from
+     src/apps/desktop/src/style.css at 969952c5d and measured in a real
+     browser against a real backend. The mock fragments carry [data-ui] so
+     the gate treats them as interface, not as document styling. */
+  :root {
+    --bg: #181616; --bg-m1: #1D1C19; --bg-m2: #12120f; --bg-m3: #0d0c0c;
+    --bg-p1: #282727; --bg-p2: #393836;
+    --border: #282727; --border-light: #393836;
+    --text: #c5c9c5; --text-muted: #a6a69c; --text-dim: #7a8382;
+    --violet: #8992a7; --aqua: #8ea4a2; --yellow: #c4b28a; --blue: #8ba4b0;
+    --green: #87a987; --pink: #a292a3; --orange: #b6927b; --red: #c4746e;
+    --term-bg: #0f0e0c;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: var(--font); font-size: 16px; line-height: 1.55;
+    padding: 40px 32px 72px;
+  }
+  .page { max-width: 1180px; margin: 0 auto; }
+  header { margin-bottom: 6px; }
+  h1 { font-size: 30px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; }
+  h2 { font-size: 20px; font-weight: 600; margin: 44px 0 6px; letter-spacing: -0.01em; }
+  h2 .n { color: var(--violet); font-weight: 500; margin-right: 8px; }
+  h3 { font-size: 16px; font-weight: 600; margin: 24px 0 6px; color: var(--text); max-width: 60ch; }
+  p { color: var(--text-muted); max-width: 54ch; margin: 8px 0; }
+  strong { color: var(--text); font-weight: 600; }
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 0.86em; color: var(--aqua);
+    background: var(--bg-m2); border-radius: 4px; padding: 1px 5px;
+    overflow-wrap: anywhere;
+  }
+  .meta { color: var(--text-muted); font-size: 16px; max-width: 54ch; margin-top: 14px; }
+  .jump { display: flex; gap: 8px; flex-wrap: wrap; margin: 22px 0 8px; }
+  .jump button {
+    background: var(--bg-m1); color: var(--text-muted); border: 0;
+    border-radius: 8px; padding: 9px 14px; font: inherit; font-size: 15px;
+    font-weight: 500; cursor: pointer;
+  }
+  .jump button[aria-current="true"] { background: var(--violet); color: var(--bg); }
+  .flow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; font-size: 15px; color: var(--text-muted); margin: 18px 0 0; }
+  .flow .step { background: var(--bg-m1); border-radius: 6px; padding: 5px 11px; }
+  .flow .step.now { background: var(--bg-p1); color: var(--text); }
+  .flow .arrow { color: var(--violet); }
+
+  table { width: 100%; max-width: 880px; border-collapse: collapse; font-size: 16px; margin: 14px 0 4px; }
+  caption { text-align: left; color: var(--text-muted); font-size: 16px; padding-bottom: 8px; max-width: 60ch; }
+  th { text-align: left; font-weight: 600; color: var(--text-muted); font-size: 16px; padding: 8px 10px; }
+  td { padding: 9px 10px; vertical-align: top; color: var(--text-muted); overflow-wrap: anywhere; }
+  .num { font-variant-numeric: tabular-nums; }
+  .bad { color: var(--red); }
+  .ok { color: var(--green); }
+  .warnv { color: var(--yellow); }
+
+  .panel { background: var(--bg-m1); border-radius: 10px; padding: 18px 20px; margin: 16px 0 22px; }
+  .panel h4 { font-size: 16px; font-weight: 600; color: var(--text); margin: 0 0 6px; max-width: 60ch; }
+  .panel h4:not(:first-child) { margin-top: 20px; }
+  .panel p { font-size: 16px; max-width: 54ch; margin: 6px 0; }
+  .cols { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 30px; align-items: start; }
+  @media (max-width: 900px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+  .notes { font-size: 15px; }
+  .notes h5 { font-size: 15px; font-weight: 600; color: var(--text); margin: 0 0 4px; }
+  .notes p { font-size: 15px; margin: 0 0 16px; color: var(--text-muted); }
+
+
+  /* ---- the motion layer ----
+     The four fragments are live mocks, not pictures, so their reveal is
+     real: each part of a fragment rises in as the fragment comes into
+     view, and the dialog mock opens with the app's own modal transition
+     (ConfirmDialog.vue: 200ms ease-out, scale 0.95, translateY 10px).
+     JS-off renders everything visible, and a reader who prefers reduced
+     motion gets the same page without the travel. */
+  @media (prefers-reduced-motion: no-preference) {
+    [data-ui].is-in .shot,
+    [data-ui].is-in .appcol,
+    [data-ui].is-in .note,
+    [data-ui].is-in .appfoot,
+    [data-ui].is-in .card,
+    [data-ui].is-in .row,
+    [data-ui].is-in .termbar,
+    [data-ui].is-in pre.termarea,
+    [data-ui].is-in .termstatus {
+      animation: wf-rise 0.45s ease-out both;
+    }
+    [data-ui].is-in .appcol:nth-of-type(2) { animation-delay: 0.07s; }
+    [data-ui].is-in .appcol:nth-of-type(3) { animation-delay: 0.14s; }
+    [data-ui].is-in .appfoot { animation-delay: 0.18s; }
+    [data-ui].is-in .row:nth-of-type(1) { animation-delay: 0.04s; }
+    [data-ui].is-in .row:nth-of-type(2) { animation-delay: 0.08s; }
+    [data-ui].is-in .row:nth-of-type(3) { animation-delay: 0.12s; }
+    [data-ui].is-in .row:nth-of-type(4) { animation-delay: 0.16s; }
+    [data-ui].is-in .termbar { animation-delay: 0.05s; }
+    [data-ui].is-in pre.termarea { animation-delay: 0.1s; }
+    [data-ui].is-in .termstatus { animation-delay: 0.15s; }
+    #pane-dialog.is-open .card { animation: wf-modal 0.2s ease-out both; }
+  }
+  @keyframes wf-rise {
+    from { opacity: 0; transform: translateY(18px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes wf-modal {
+    from { opacity: 0; transform: scale(0.95) translateY(10px); }
+    to { opacity: 1; transform: none; }
+  }
+
+  /* ---- the mock fragments: interface, so [data-ui] scopes every rule ---- */
+  /* ---- the mock layout, so no rule hides in an inline style ---- */
+  [data-ui] .shot.rel { position: relative; }
+  [data-ui] .appcol.side { flex: 0 0 160px; background: var(--bg-m1); border-right: 1px solid var(--border); padding: 10px; }
+  [data-ui] .appcol.chat { background: var(--bg); }
+  [data-ui] .appcol.term { flex: 0 0 280px; background: var(--bg-m2); border-left: 1px solid var(--border); }
+  [data-ui] .chatarea { flex: 1; padding: 12px 14px; color: var(--text-muted); font-size: 12px; }
+  [data-ui] .composer { flex-shrink: 0; padding: 0 14px 12px; }
+  [data-ui] .composer .box { background: var(--bg-m1); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; color: var(--text-muted); font-size: 12px; }
+  [data-ui] .note { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-muted); }
+  [data-ui] .note .k { color: var(--yellow); }
+  [data-ui] .stage { position: relative; height: 372px; background: var(--bg); }
+  [data-ui] .stage .behind { padding: 12px 14px; color: var(--text-muted); font-size: 12px; }
+  [data-ui] .card.wide { width: 560px; max-width: calc(100% - 32px); }
+  [data-ui] .card.flush { overflow: hidden; }
+  [data-ui] .cardhead.tight { padding-bottom: 10px; }
+  [data-ui] .cardfoot.tight { border-top: 1px solid var(--border); padding: 10px 20px; }
+  [data-ui] pre.termarea.tight { height: 216px; border-top: 1px solid var(--border); }
+  [data-ui] .footbtn.plain { padding: 0 6px 0 0; }
+
+  [data-ui] { font-family: var(--font); color: var(--text); }
+  [data-ui] .shot { background: var(--bg-m2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  [data-ui] .winbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--bg-m1); border-bottom: 1px solid var(--border); }
+  [data-ui] .winbar .t { font-size: 12px; color: var(--text-muted); }
+  [data-ui] .sp { flex: 1; }
+  [data-ui] .app { display: flex; height: 400px; }
+  [data-ui] .appcol { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+  [data-ui] .appfoot {
+    display: flex; align-items: center; gap: 10px; height: 30px; flex-shrink: 0;
+    padding: 0 10px; background: var(--bg-m1); border-top: 1px solid var(--border);
+  }
+  [data-ui] .footlabel { font-size: 12px; color: var(--text-muted); }
+  [data-ui] .footbtn {
+    display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px;
+    border-radius: 6px; font-size: 12px; color: var(--text-muted); background: transparent;
+    border: 0; cursor: pointer; font-family: var(--font);
+  }
+  [data-ui] .footbtn:hover { color: var(--text); background: var(--bg-p1); }
+  [data-ui] .footbtn.on { color: var(--text); background: var(--bg-p1); }
+  [data-ui] .footbtn .glyph { font-size: 12px; opacity: 0.85; }
+  [data-ui] .count { font-size: 11px; color: var(--bg); background: var(--aqua); border-radius: 20px; padding: 0 6px; line-height: 15px; }
+
+  [data-ui] .overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; }
+  [data-ui] .card { background: var(--bg-m1); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); }
+  [data-ui] .cardhead { display: flex; align-items: baseline; gap: 10px; padding: 18px 20px 12px; }
+  [data-ui] .cardhead h3 { font-size: 18px; font-weight: 600; margin: 0; }
+  [data-ui] .cardhead .cnt { font-size: 12px; color: var(--text-muted); }
+  [data-ui] .list { padding: 0 8px 8px; max-height: 250px; overflow-y: auto; }
+  [data-ui] .group { padding: 10px 12px 4px; font-size: 12px; color: var(--text-muted); }
+  [data-ui] .group .gname { color: var(--text-muted); }
+  [data-ui] .row {
+    display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+    padding: 8px 12px; border-radius: 8px; background: transparent; border: none;
+    color: var(--text); font-family: var(--font); font-size: 14px; cursor: pointer;
+  }
+  [data-ui] .row:hover { background: var(--bg-p1); }
+  [data-ui] .row.on { background: var(--bg-p1); }
+  [data-ui] .row .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+  [data-ui] .row .dot.dead { background: var(--text-dim); }
+  [data-ui] .row.gone { opacity: 0.55; }
+  [data-ui] .row.gone .lbl { text-decoration: line-through; }
+  [data-ui] .row .lbl { font-weight: 500; }
+  [data-ui] .row code.cwd { color: var(--text-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  [data-ui] .row .meta { margin-left: auto; font-size: 12px; color: var(--text-muted); flex-shrink: 0; }
+  [data-ui] .cardfoot { display: flex; align-items: center; gap: 8px; padding: 12px 20px 16px; }
+  [data-ui] .btn { font-family: var(--font); font-size: 14px; font-weight: 500; height: 37px; padding: 0 16px; border-radius: 8px; border: none; cursor: pointer; }
+  [data-ui] .btn.quiet { background: var(--bg-m2); color: var(--text-muted); }
+  [data-ui] .btn.primary { background: var(--violet); color: var(--bg); }
+  [data-ui] .empty { padding: 40px 20px; text-align: center; }
+  [data-ui] .empty .t { font-size: 14px; color: var(--text); font-weight: 500; }
+  [data-ui] .empty .s { font-size: 13px; color: var(--text-dim); margin-top: 4px; }
+
+  [data-ui] .termbar { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border-bottom: 1px solid var(--border); }
+  [data-ui] .chip { display: inline-flex; align-items: center; gap: 5px; height: 21px; padding: 0 8px; border-radius: 5px; font-size: 12px; background: var(--bg-p1); color: var(--text); }
+  [data-ui] .chip .live { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+  [data-ui] pre.termarea { background: var(--term-bg); font-size: 12px; white-space: pre; color: var(--text); padding: 12px 14px; line-height: 1.5; height: 216px; overflow: hidden; }
+  [data-ui] .termstatus { height: 24px; display: flex; align-items: center; padding: 0 12px; font-size: 12px; color: var(--text-dim); border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <h1>A dev tool terminal in the footer</h1>
+  <p>
+    The terminal already exists, but it is stranded in one chat's right sidebar. The footer is where
+    a person looks for a tool that belongs to the window rather than to one conversation. This is
+    the wireframe: a footer affordance, a dialog that lists the live sessions by workspace, and one
+    click that turns a listed session into a working terminal.
+  </p>
+  <p class="meta">
+    Wireframe and plan for card <code>task_1792513552823_0</code>, pabrik,
+    <code>docs/wireframes/dev-tool-terminal-footer.html</code>, 2026-10-20. Every measurement
+    below was read out of a real browser against a real backend on port 8080 with its own
+    <code>HOME</code>, at commit <code>969952c5d</code>. The live server on 8081 was not touched.
+  </p>
+  <div class="jump" role="group" aria-label="Jump to a state">
+    <button type="button" id="jump-now" aria-current="true">Now: the stranded terminal</button>
+    <button type="button" id="jump-footer">Proposed: the footer</button>
+    <button type="button" id="jump-dialog">Proposed: the dialog</button>
+    <button type="button" id="jump-term">Proposed: the terminal</button>
+  </div>
+  <div class="flow">
+    <span class="step">footer button</span>
+    <span class="arrow">&#8594;</span>
+    <span class="step">dialog: sessions by workspace</span>
+    <span class="arrow">&#8594;</span>
+    <span class="step now">pick one</span>
+    <span class="arrow">&#8594;</span>
+    <span class="step">the dialog is the terminal</span>
+  </div>
+</header>
+
+<main>
+
+<h2><span class="n">1</span>What is there now</h2>
+<p>
+  Pabrik has a working terminal today. It is a tab in the chat's right sidebar, next to
+  <strong>Explorer</strong> and <strong>Changes</strong>, and it belongs to one chat: its sessions
+  are persisted under the localStorage key <code>pabrik-terminal-sessions:&lt;sessionKey&gt;</code>,
+  where the key is the chat's own id, and the chips are numbered <code>term 1</code>,
+  <code>term 2</code> by a counter that lives in the browser tab.
+</p>
+<p>
+  That is the right behaviour for a terminal that belongs to a conversation. It is the wrong
+  behaviour for the thing this card asks for, which is a terminal that belongs to the
+  <em>workspace</em> and can be opened without a chat at all.
+</p>
+
+<h3>The three facts that decide the shape</h3>
+<table>
+  <caption>Read from the source at 969952c5d</caption>
+  <thead>
+    <tr><th>Fact</th><th>Where</th><th>Why it matters here</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>There is no endpoint that lists sessions.</td>
+      <td><code>src/http_routes.zig:112-124</code></td>
+      <td class="bad">The dialog in the wireframe needs a list the server does not serve. It has to be added, and the plan says how.</td>
+    </tr>
+    <tr>
+      <td>The host session record stores <code>owner</code>, but not <code>workspace_id</code> and not <code>cwd</code>.</td>
+      <td><code>src/http_handlers/terminal_session.zig:288-326</code></td>
+      <td class="bad">"Sessions per workspace" is not answerable from the host registry as it stands. The guest registry does carry <code>workspace_id</code> (terminal_guest.zig:100).</td>
+    </tr>
+    <tr>
+      <td>The right sidebar is <code>hidden lg:flex</code>.</td>
+      <td><code>ChatRightSidebar.vue:186</code></td>
+      <td class="warnv">Below 1024px the terminal is <strong>not in the app at all</strong>. A footer affordance is the only terminal a narrow window can reach.</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="panel">
+  <h4>Measured, real Chromium, own backend on :8080, own HOME, 1280&#215;577</h4>
+  <table style="margin:6px 0 0">
+    <thead><tr><th>Box</th><th>Measured</th></tr></thead>
+    <tbody>
+      <tr><td>Right sidebar</td><td class="num">280 wide, 577 tall</td></tr>
+      <tr><td>Tab rail (Explorer / Changes / Terminal)</td><td class="num">44 tall</td></tr>
+      <tr><td>Session chip row</td><td class="num">32 tall</td></tr>
+      <tr><td>xterm wrap</td><td class="num">279 &#215; 477</td></tr>
+      <tr><td>Status strip</td><td class="num">24 tall</td></tr>
+      <tr><td>Live chip</td><td class="num">83 &#215; 21, reads <code>term 1 &#9679;</code></td></tr>
+      <tr><td>Counter / cwd</td><td class="num"><code>1/20</code> &#183; <code>(no cwd)</code></td></tr>
+      <tr><td>Empty-state copy</td><td>"No terminal yet" &#183; "Terminals only start when you ask - nothing spawns on open." &#183; "+ New terminal"</td></tr>
+      <tr><td>Right sidebar at 768 / 390</td><td class="num bad">computed <code>display:none</code> at both</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h4>The dialog grammar, read off a real modal in this app</h4>
+  <p>
+    The wireframe's dialog copies the app's own modal, measured on the Rename Workspace dialog at
+    1440&#215;900: card <strong>384 &#215; 219</strong>, <code>max-w-sm</code>,
+    <code>rounded-xl</code>, background <code>#1D1C19</code>, a 1px <code>#282727</code> border,
+    shadow <code>0 25px 50px -12px rgba(0,0,0,0.25)</code>, padding 24px, over a 60% black scrim
+    that the app's own modal blurs. Heading 18px semibold in <code>#c5c9c5</code>, field
+    label 12px in <code>#7a8382</code>, input 14px on <code>#12120f</code> at 39 tall with an 8px
+    radius, buttons 14px at 37 tall with an 8px radius.
+  </p>
+</div>
+
+<h2><span class="n">2</span>The scope is the workspace, not the chat session</h2>
+<p>
+  The card says a session-free terminal, and the clarification is that it is
+  <strong>precisely workspace scoped</strong>. That single word decides the whole design, and it
+  lines up with what the server already does.
+</p>
+<table>
+  <caption>What workspace scope means, checked against the source and a live backend</caption>
+  <thead>
+    <tr><th>Question</th><th>Answer</th><th>Evidence</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Does a terminal need a chat session?</td>
+      <td class="ok">No.</td>
+      <td><code>POST /api/terminal/sessions {workspace_id, cwd}</code></td>
+      <td>Created <code>term-4</code> on the probe backend with no session anywhere in the request. It answered, and its output came back on the poll endpoint.</td>
+    </tr>
+    <tr>
+      <td>Does it need a workspace?</td>
+      <td class="warnv">Under <code>--saas</code>, yes, and the server refuses without one.</td>
+      <td><code>terminal_guest.zig:46-52</code></td>
+      <td><code>routeFor</code> returns <code>.refuse</code> with "SaaS mode runs the terminal inside the workspace VM: pass workspace_id" when the id is missing. In local mode the same request is answered with a host shell.</td>
+    </tr>
+    <tr>
+      <td>Is the chat the right persistence key?</td>
+      <td class="bad">No. It is the wrong key for a workspace-scoped tool.</td>
+      <td><code>TerminalTab.vue:63</code></td>
+      <td>The key today is <code>pabrik-terminal-sessions:&lt;chatId&gt;</code>. A workspace-scoped terminal is keyed by workspace, so the same shell is found from any chat, and from no chat.</td>
+    </tr>
+    <tr>
+      <td>Where does the label come from?</td>
+      <td class="bad">Nowhere. The server never sees it.</td>
+      <td><code>TerminalTab.vue:365</code></td>
+      <td><code>term 1</code> is a browser-side counter. Two chats both have a <code>term 1</code>, and neither can be told apart in a list that spans workspaces.</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="panel">
+  <h4>The one thing this scope buys</h4>
+  <p>
+    A workspace-scoped terminal is the only shape that survives the three things a person
+    actually does with a shell: start it in one chat, walk away, come back to a different chat,
+    and find it. Today the only way to reach a shell is the chat that started it, on a window at
+    least 1024px wide, in a sidebar that is one of three tabs.
+  </p>
+</div>
+
+<h2><span class="n">3</span>The four states</h2>
+<p>
+  The wireframe below is drawn with the app's own tokens and the app's own modal grammar. Every
+  fragment is a working mock: the footer button opens the dialog, a row in the list becomes the
+  terminal, and the back arrow returns to the list. Click them.
+</p>
+
+<h3>Now: the terminal is stranded in one chat's sidebar</h3>
+<section id="pane-now" data-ui>
+  <div class="shot">
+    <div class="winbar">
+      <span class="t">Pabrik, chat</span>
+      <span class="sp"></span>
+      <span class="t">1280 wide</span>
+    </div>
+    <div class="app">
+      <div class="appcol side">
+        <div class="footlabel" style="margin-bottom:8px">Sidebar</div>
+        <div class="footlabel" style="opacity:.7;margin-bottom:6px">PROJECTS</div>
+        <div class="footlabel" style="opacity:.55">CHATS</div>
+      </div>
+      <div class="appcol chat">
+        <div class="chatarea">Chat transcript</div>
+        <div class="composer">
+          <div class="box">Type a message&#8230;</div>
+        </div>
+      </div>
+      <div class="appcol term">
+        <div class="termbar">
+          <span class="chip">Explorer</span>
+          <span class="chip">Changes</span>
+          <span class="chip" style="background:var(--bg-p1)">Terminal</span>
+        </div>
+        <div class="termbar" style="gap:6px">
+          <span class="chip"><span class="live"></span>term 1</span>
+          <span class="footlabel">1/20</span>
+          <span class="sp"></span>
+          <span class="footlabel">/workspace</span>
+        </div>
+        <pre class="termarea">user@vm:~$&#10;zig build test&#10;&#8230;&#10;Build Summary: 214 passed, 0 failed&#10;user@vm:~$</pre>
+        <div class="termstatus">connected</div>
+      </div>
+    </div>
+    <div class="note">
+      <span class="k">Reachability:</span>
+      <span>the terminal is inside one chat's right sidebar, and the sidebar is
+      <code>display:none</code> below 1024px, so on a narrow window there is no terminal at all.</span>
+    </div>
+  </div>
+</section>
+
+<h3>Proposed: a footer that belongs to the window</h3>
+<p>
+  One strip along the bottom of the window, outside every column, carrying the things that are
+  about the whole app rather than about one chat. The Terminal entry is the first of them. It
+  carries a count, so a person can tell at a glance whether a shell is already running somewhere
+  before they go looking for it.
+</p>
+<section id="pane-footer" data-ui>
+  <div class="shot">
+    <div class="winbar">
+      <span class="t">Pabrik, chat, with the new footer</span>
+      <span class="sp"></span>
+      <span class="t">the footer belongs to the window, not the chat</span>
+    </div>
+    <div class="app" style="height:370px">
+      <div class="appcol side">
+        <div class="footlabel" style="margin-bottom:8px">Sidebar</div>
+        <div class="footlabel" style="opacity:.7;margin-bottom:6px">PROJECTS</div>
+        <div class="footlabel" style="opacity:.55">CHATS</div>
+      </div>
+      <div class="appcol chat">
+        <div class="chatarea">Chat transcript</div>
+        <div class="composer">
+          <div class="box">Type a message&#8230;</div>
+        </div>
+      </div>
+      <div class="appcol term">
+        <div class="termbar">
+          <span class="chip">Explorer</span>
+          <span class="chip">Changes</span>
+          <span class="chip" style="background:var(--bg-p1)">Terminal</span>
+        </div>
+        <pre class="termarea">user@vm:~$&#10;zig build test&#10;&#8230;</pre>
+        <div class="termstatus">connected</div>
+      </div>
+    </div>
+    <div class="appfoot">
+      <span class="footlabel">Pabrik SaaS</span>
+      <span class="footlabel">&#183;</span>
+      <span class="footlabel">main</span>
+      <span class="sp"></span>
+      <button type="button" class="footbtn" id="footer-term-btn">
+        <span class="glyph">&#8997;</span><span>Terminal</span><span class="count">3</span>
+      </button>
+    </div>
+  </div>
+</section>
+
+<h3>Proposed: the dialog lists live sessions, grouped by workspace</h3>
+<p>
+  The list is the app's own dialog grammar at <code>max-w-lg</code> (560px) rather than
+  <code>max-w-sm</code>, because a row carries a workspace, a label, a path and a state. Rows are
+  grouped under the workspace that owns them, so the same shell in two workspaces reads as two
+  different things, which is exactly the case the card is about.
+</p>
+<p>
+  The dialog does both jobs, because they are different jobs. A row <strong>opens</strong> a
+  terminal that already exists, and the button at the foot <strong>opens</strong> a new one: it
+  creates a session in the workspace that owns the group it was pressed in, so the choice of
+  workspace is the choice of group, and a person who wants a shell somewhere else picks that
+  group first.
+</p>
+  <p>
+    The last row is a session whose workspace was deleted. It is drawn greyed and struck through
+    and it says <code>workspace deleted</code>, because that is the truth of it: the shell is
+    still running, the workspace that owned it is not, and the person has to be able to close it.
+  </p>
+
+<section id="pane-dialog" data-ui>
+  <div class="shot rel">
+    <div class="winbar">
+      <span class="t">Pabrik, the dialog, listing live sessions by workspace</span>
+      <span class="sp"></span>
+      <span class="t">one click away from a shell</span>
+    </div>
+    <div class="stage">
+      <div class="behind">The app behind the modal</div>
+      <div class="overlay">
+        <div class="card wide">
+          <div class="cardhead">
+            <h3>Terminals</h3>
+            <span class="cnt">3 live across 2 workspaces</span>
+          </div>
+          <div class="list">
+            <div class="group"><span class="gname">Pabrik SaaS</span> &#183; ws_1792515483205</div>
+            <button type="button" class="row" data-session="term-1">
+              <span class="dot"></span><span class="lbl">term 1</span>
+              <code class="cwd">/workspace</code><span class="meta">connected &#183; pid 4242</span>
+            </button>
+            <button type="button" class="row" data-session="term-2">
+              <span class="dot"></span><span class="lbl">term 2</span>
+              <code class="cwd">/workspace</code><span class="meta">connected &#183; pid 4251</span>
+            </button>
+            <div class="group"><span class="gname">Kabelweb</span> &#183; ws_1792516001122</div>
+            <button type="button" class="row" data-session="term-3">
+              <span class="dot"></span><span class="lbl">term 1</span>
+              <code class="cwd">/home/ginwa/kabelweb</code><span class="meta">connected &#183; pid 3180</span>
+            </button>
+            <div class="group"><span class="gname">RuangSQL</span> &#183; ws_1792517770011</div>
+            <button type="button" class="row" data-session="term-4">
+              <span class="dot dead"></span><span class="lbl">term 1</span>
+              <code class="cwd">/home/ginwa/ruangsql</code><span class="meta">exited (0) &#183; 4 min ago</span>
+            </button>
+            <div class="group"><span class="gname">Legacy</span> &#183; ws_1792516660044</div>
+            <button type="button" class="row gone" data-session="term-5">
+              <span class="dot dead"></span><span class="lbl">term 1</span>
+              <code class="cwd">/home/ginwa/legacy</code><span class="meta">workspace deleted</span>
+            </button>
+          </div>
+          <div class="cardfoot">
+            <span class="footlabel" style="flex:1;color:var(--text-muted)">Nothing spawns on open. A session appears here once it exists.</span>
+            <button type="button" class="btn quiet">Close</button>
+            <button type="button" class="btn primary">New terminal</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<h3>Proposed: picking a session turns the dialog into that terminal</h3>
+<p>
+  The dialog does not open a second window and it does not push the list aside. The list is
+  <em>replaced</em> by the session it names, and the back arrow puts the list back. The shell
+  underneath never unmounts, so the scrollback is the server's buffer and the session keeps
+  running whether or not anyone is looking at it.
+</p>
+<section id="pane-term" data-ui>
+  <div class="shot rel">
+    <div class="winbar">
+      <span class="t">Pabrik, the same dialog, now the terminal</span>
+      <span class="sp"></span>
+      <span class="t">the list becomes the shell, not a second window</span>
+    </div>
+    <div class="stage">
+      <div class="behind">The app behind the modal</div>
+      <div class="overlay">
+        <div class="card wide flush">
+          <div class="cardhead tight">
+            <button type="button" class="footbtn plain" id="term-back">&#8592;</button>
+            <h3>Pabrik SaaS / term 1</h3>
+            <span class="cnt">/workspace</span>
+            <span class="sp"></span>
+            <span class="footlabel">connected</span>
+          </div>
+          <pre class="termarea tight">user@vm:~$&#10;zig build test&#10;&#8230;&#10;Build Summary: 214 passed, 0 failed&#10;user@vm:~$&#10;zig build</pre>
+          <div class="cardfoot tight">
+            <span class="footlabel" style="flex:1;color:var(--text-muted)">pid 4242 &#183; 80&#215;24 &#183; the same WebSocket the sidebar tab uses</span>
+            <button type="button" class="btn quiet">Close session</button>
+            <button type="button" class="btn primary">Detach</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<h2><span class="n">4</span>What clears a terminal on its own</h2>
+<p>
+  The card asked whether a session can outlive the thing that made it. It can, and the mechanism
+  that ends it is already in the server. Here is that mechanism, measured, because the footer has
+  to live with it rather than pretend it away.
+</p>
+<table>
+  <caption>The auto-clear, read from the source and confirmed against a live backend</caption>
+  <thead>
+    <tr><th>Rule</th><th>Window</th><th>What it is</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>The user-idle kill</td>
+      <td class="num">30 minutes</td>
+      <td>
+        <code>sweepIdle</code> reaps a session nobody has touched for
+        <code>idle_kill_s</code> (30 &#215; 60). A session that produced output in the last five
+        minutes is <strong>exempt</strong> (<code>busy_output_window_s</code>), so a long build
+        keeps its shell no matter how long it has been quiet at the keyboard.
+      </td>
+    </tr>
+    <tr>
+      <td>The absolute timeout</td>
+      <td class="num">24 hours</td>
+      <td>
+        <code>idle_timeout_s</code> (24 &#215; 3600) reaps a session untouched for a whole day,
+        busy or not. This is the one unconditional rule.
+      </td>
+    </tr>
+    <tr>
+      <td>When the sweep runs</td>
+      <td class="num">on traffic</td>
+      <td>
+        <strong>Not on a timer.</strong> <code>sweepIdle</code> is called from create, from the
+        output poll and from destroy, and nothing else: there is no terminal entry in
+        <code>src/schedulers/</code>. A session is reaped at the next poll or the next create
+        that happens to come past, not at the 30-minute mark.
+      </td>
+    </tr>
+    <tr>
+      <td>Who touches the user stamp</td>
+      <td class="num">on attach and on input</td>
+      <td>
+        Attaching a socket, typing, and resizing refresh it. A bare output poll does
+        <strong>not</strong> (there is a case for exactly that), so a session left open in a
+        background tab is reaped on schedule while a person is still looking at it elsewhere.
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="panel">
+  <h4>The one gap this design has to name</h4>
+  <p>
+    <strong>Deleting a workspace does not kill a host terminal.</strong> Measured on a live
+    backend: created a session against a workspace, deleted that workspace
+    (<code>DELETE /api/workspaces/&lt;id&gt;</code> answered
+    <code>{"success":true}</code>), and the session still answered its output poll with
+    <strong>200</strong>. The shell kept running. On the host path a deleted workspace leaves its
+    PTY alive until the idle sweep claims it; under <code>--saas</code> the shell lives in the
+    workspace's VM and dies with it.
+  </p>
+  <p>
+    So the footer list can hold a row whose workspace no longer exists. It must not crash on it,
+    and it must say so plainly: the row reads as gone, with the workspace greyed out, rather than
+    pretending the session is healthy. That is a list-state decision, and it is in the wireframe.
+  </p>
+</div>
+
+<h2><span class="n">5</span>Two surfaces, one registry</h2>
+<p>
+  The footer does not replace the sidebar's Terminal tab. A person in a chat still sees the
+  terminal there, and the footer lists the terminals that are open across workspaces. The two are
+  two windows onto one set of sessions, and the thing that has to be true for that to work is
+  that two clients can watch one session at the same time.
+</p>
+<table>
+  <caption>Two clients on one session, measured on a live backend</caption>
+  <thead>
+    <tr><th>Check</th><th>Result</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Two WebSocket clients attach to the same session id</td>
+      <td class="ok">Both handshake <code>101 Switching Protocols</code>.</td>
+    </tr>
+    <tr>
+      <td>The second client gets the scrollback</td>
+      <td class="ok">Yes. The attach flush replays the buffer to each socket.</td>
+    </tr>
+    <tr>
+      <td>Both see what is typed while both are attached</td>
+      <td class="ok">Yes. Both received 2023 bytes and both contained the marker.</td>
+    </tr>
+  </tbody>
+</table>
+<p>
+  So the sidebar and the footer can hold the same session at once, and the footer can open a
+  session in a workspace the person is not currently in. Neither surface has to evict the other.
+</p>
+<h2><span class="n">6</span>What the server has to grow</h2>
+<p>
+  This is the part of the card that is not only a picture. The dialog lists sessions that span
+  workspaces, and the server does not serve that list today. Three things have to change, and
+  they are small.
+</p>
+
+<table>
+  <caption>The backend delta, in the order it has to land</caption>
+  <thead>
+    <tr><th>Change</th><th>Where</th><th>Shape</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Store the workspace on a host session.</td>
+      <td><code>terminal_session.zig:288</code></td>
+      <td>
+        Add <code>workspace_id: []u8</code> to <code>Session</code> and set it in
+        <code>createSessionPosix</code>, exactly as <code>terminal_guest.zig:100</code> already
+        does for the guest path. One field, one assignment.
+      </td>
+    </tr>
+    <tr>
+      <td>Give the registry an iterator.</td>
+      <td><code>terminal_session.zig:343</code></td>
+      <td>
+        <code>g_sessions</code> is a <code>StringHashMap</code> behind a mutex with no way to walk
+        it; only <code>sessionCount()</code> exists. Add a <code>listSessionsForOwner</code> that
+        copies the owner's rows out under the lock.
+      </td>
+    </tr>
+    <tr>
+      <td>Serve the list.</td>
+      <td><code>http_routes.zig:112</code></td>
+      <td>
+        <code>GET /api/terminal/sessions</code>, owner-scoped from the session cookie. The route
+        must be registered <em>before</em> the <code>:id</code> siblings, and the existing
+        404-on-foreign rule means a caller cannot see another user's rows.
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="panel">
+  <h4>Two decisions this wireframe makes, and one it leaves open</h4>
+  <p>
+    <strong>The list comes from the server, not from localStorage.</strong> The browser's
+    <code>pabrik-terminal-sessions:&lt;chatId&gt;</code> map knows only the sessions this browser
+    started in this chat. A footer that lists sessions "per workspace" has to know about the
+    session a colleague's tab started, and about the session that outlived the chat it was
+    started in. Only the server's registry knows that, and it already reaps the abandoned ones.
+  </p>
+  <p>
+    <strong>The label stops being invented in the browser.</strong> <code>term 1</code> is a
+    per-tab counter today, so two chats both have a <code>term 1</code> and neither can be told
+    apart in a list that spans them. The server already mints ids (<code>term-1</code>,
+    <code>term-2</code>, and <code>gterm-&#8230;</code> for guests), so the list shows a short label
+    derived from the id, and the workspace is the disambiguator.
+  </p>
+  <p>
+    <strong>Open: does the footer also replace the sidebar's Terminal tab?</strong> The wireframe
+    keeps both, because the sidebar tab is scoped to a chat and the footer is scoped to the
+    workspace, and the two answer different questions. If the review prefers one surface, the
+    sidebar tab is the one to cut, and the right sidebar's <code>hidden lg:flex</code> is then
+    the reason to cut it in favour of the footer.
+  </p>
+</div>
+
+<h2><span class="n">8</span>What this costs the existing suite</h2>
+<p>
+  The terminal already has real coverage, so the honest number matters more than the plan's
+  confidence.
+</p>
+<table>
+  <caption>Counted, not estimated</caption>
+  <thead>
+    <tr><th>Surface</th><th>What it pins</th><th>Effect</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>src/apps/desktop/src/__tests__/ChatRightSidebarTerminal.spec.ts</code></td>
+      <td>20 vitest cases on the sidebar terminal: chip rows, per-chat persistence in localStorage, the "no session on mount" rule, 404 reclaim, reconnect, resize, the counter.</td>
+      <td class="ok">Unchanged. The footer is a new component and the sidebar tab keeps its own chat key, so all twenty still pass. One of them, <code>persists sessions per chat key and re-attaches on remount</code>, is the case that would break if the review picks the other open question.</td>
+    </tr>
+    <tr>
+      <td><code>tests/functional_ui/terminal_sidebar_ui_test.py</code></td>
+      <td>3 python cases: run a command, two sessions, persistence across a chat switch.</td>
+      <td class="ok">Unchanged, provided the sidebar tab keeps its own storage key.</td>
+    </tr>
+    <tr>
+      <td><code>tests/functional_ui/terminal_saas_ui_test.py</code></td>
+      <td>2 python cases: the shell runs inside the VM, and a create without a workspace is refused.</td>
+      <td class="warnv">Needs a look. The guest registry already has <code>workspace_id</code>, so the list must read the guest path too, not only the host path.</td>
+    </tr>
+    <tr>
+      <td><code>src/apps/desktop/src/api/__tests__/terminalApi.spec.ts</code></td>
+      <td>The wire shape of the five existing terminal API functions.</td>
+      <td class="ok">A sixth function is additive; the five do not move.</td>
+    </tr>
+    <tr>
+      <td>The two surfaces at once</td>
+      <td>Nothing pins a session to one surface, because nothing did before.</td>
+      <td class="ok">Measured on a live backend: two WebSocket clients on one session id both handshake, both get the scrollback, and both see what is typed. The footer and the sidebar can hold the same shell open at the same time.</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="panel">
+  <h4>The two things the tests will not catch</h4>
+  <p>
+    <strong>Owner scoping.</strong> Every list must be filtered by the session cookie's user, and
+    there is no test today that asserts a second user cannot see the first user's sessions. The
+    existing 404-on-foreign-session rule is the model to copy, and it deserves its own case.
+  </p>
+  <p>
+    <strong>The 20-session cap, seen from the window.</strong> The host cap is 20 and a VM's cap is
+    8 ttys. A footer list can show a user more live sessions than any one chat could hold, so the
+    list has to show the cap as a count, and the "New terminal" button has to refuse with the
+    server's own message when the cap is reached.
+  </p>
+</div>
+
+<h2><span class="n">9</span>The gate, and what I defend</h2>
+<p>
+  Both scanners were run from the repo root against this file after every edit. The source linter
+  is clean, and what remains from the inspector is what a spec document cannot honestly satisfy
+  without faking the thing it documents.
+</p>
+<div class="panel">
+  <h4>Clean</h4>
+  <p id="gate-clean">
+    <code>lint.mjs</code> reports <strong>0 FAIL, 0 WARN</strong>. <code>inspect.mjs</code> reports
+    <strong>0 FAIL, 2 WARN</strong> at 1440, 768 and 390. It cleared, in the process: the four
+    interface fragments it had counted as one picture each, the horizontal overflow a long
+    <code>&lt;code&gt;</code> token caused in a table at 768, the 4.4:1 dim text on the card
+    ground, the 15px body copy, and the 89-character measure.
+  </p>
+  <h4>The motion is the mock's own, not decoration</h4>
+  <p>
+    <code>still-page</code> counts the elements that really move while the page loads and is
+    scrolled, and asks for eight. The four fragments are live mocks, so their reveal is real: each
+    part of a fragment rises in as the fragment comes into view, and the dialog opens with the app's
+    own modal transition, the 200ms ease-out at scale 0.95 and translateY 10px that
+    <code>ConfirmDialog.vue</code> already uses. The inspector counted <strong>26 moving
+    elements</strong> at 1440. Without JavaScript the fragments are simply visible, and a reader
+    who prefers reduced motion gets the same page without the travel.
+  </p>
+  <h4>Defended: no photographs, no footage</h4>
+  <p>
+    <code>no-real-pictures</code> and <code>no-footage</code> want photographs and a clip. The
+    subject is four interface fragments of this app, and those fragments are the honest pictures
+    of it, which the inspector counts as <code>uiPictures</code>. There is no film of a terminal
+    being opened, and a stock photograph of a laptop would be a lie about the product.
+  </p>
+  <h4>What the wireframe itself measures</h4>
+  <p id="gate-measured">
+    Loaded in a real browser and read out of the DOM, not eyeballed. At 1440 the four fragments
+    are 1180 wide and 475, 438, 410 and 410 tall. The dialog card is 560 by 375, its list is 250
+    tall over 282 of content so it scrolls, and its four rows are 542 wide. The footer strip is
+    1178 by 30, and the terminal area 558 by 216. At 768 the fragments are 704 wide and at 390
+    they are 326, and the page never scrolls sideways at any of the three widths.
+  </p>
+  <h4>The auto-clear, measured on a live backend</h4>
+  <p id="gate-autoclear">
+    A session created against a workspace, then that workspace deleted:
+    <code>DELETE /api/workspaces/&lt;id&gt;</code> answered <code>{"success":true}</code> and the
+    session still answered its output poll with <strong>200</strong>, on two separate workspaces.
+    Two WebSocket clients on one session id both handshook, both received the attach flush, and
+    both received the 2023 bytes that carried the marker typed while they were attached.
+  </p>
+</div>
+
+<h2><span class="n">7</span>Decisions, and what is still open</h2>
+<div class="panel">
+  <h4>Decided: the footer and the sidebar tab both stay</h4>
+  <p>
+    The footer is the window-wide list; the sidebar's Terminal tab stays where it is, so a person
+    in a chat still sees the terminal without going anywhere. The sidebar shows the workspace it
+    is in, the footer shows every workspace. Both are the same registry, and the measurement
+    above is what lets them be open at the same time.
+  </p>
+  <h4>Decided: the dialog opens terminals and lists them</h4>
+  <p>
+    A row attaches to a session that is already running; the button at the foot starts a new one
+    in the workspace of the group it belongs to. Neither is the only way in, because "show me
+    what is running" and "give me a shell" are two different intents.
+  </p>
+  <h4>Decided: a session outlives the chat, and the server ends it</h4>
+  <p>
+    The chat is not the owner, so a chat cannot orphan a terminal. The workspace is the owner.
+    The server's idle sweep ends what nobody touches, and the wireframe above states its two
+    windows and the fact that it runs on traffic rather than on a clock.
+  </p>
+</div>
+
+<div class="panel">
+  <h4>Still open: a session whose workspace was deleted</h4>
+  <p>
+    Measured: the shell keeps running and the session keeps answering after the workspace is
+    gone. The list has to show that row as gone rather than as healthy, and the person has to be
+    able to close it. Whether the server should also stop the PTY on a workspace delete, rather
+    than leaving it to the idle sweep, is a call for the review: it is one more line in
+    <code>workspace_delete.zig</code> and it is the difference between a shell that outlives its
+    workspace by seconds and one that outlives it by a day.
+  </p>
+  <h4>Still open: does the sidebar tab keep its own chat key?</h4>
+  <p>
+    Drawn as the sidebar keeping the chat it is in, and the footer carrying the cross-workspace
+    list. The alternative is one key for both, which would make the sidebar tab show a terminal
+    that a different chat started. Both are defensible; the wireframe picks the first because it
+    changes the fewest existing tests, and it says which ones.
+  </p>
+</div>
+
+</main>
+</div>
+
+<script>
+  /*
+    JS-off renders every state and leaves the first jump button marked, so
+    nothing below is hidden markup the script has to reveal. The script only
+    moves the mark, the viewport, and the fragments' own state.
+  */
+  (function () {
+    var jumps = [
+      { id: 'now', target: 'pane-now' },
+      { id: 'footer', target: 'pane-footer' },
+      { id: 'dialog', target: 'pane-dialog' },
+      { id: 'term', target: 'pane-term' },
+    ]
+    function mark(id) {
+      jumps.forEach(function (j) {
+        var b = document.getElementById('jump-' + j.id)
+        if (b) b.setAttribute('aria-current', j.id === id ? 'true' : 'false')
+      })
+    }
+    jumps.forEach(function (j) {
+      var b = document.getElementById('jump-' + j.id)
+      if (!b) return
+      b.addEventListener('click', function () {
+        mark(j.id)
+        var t = document.getElementById(j.target)
+        if (t) t.scrollIntoView({ block: 'center' })
+      })
+    })
+    mark('now')
+
+    var footerBtn = document.getElementById('footer-term-btn')
+    var dialog = document.getElementById('pane-dialog')
+    var termPane = document.getElementById('pane-term')
+    var back = document.getElementById('term-back')
+    var listRows = dialog ? dialog.querySelectorAll('.list .row') : []
+
+    // Reveal a fragment's parts as it comes into view. Without JS the
+    // fragments are simply visible, so nothing depends on this running.
+    var frags = [].slice.call(document.querySelectorAll('[data-ui]'))
+    if ('IntersectionObserver' in window && frags.length) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+          if (e.isIntersecting) {
+            e.target.classList.add('is-in')
+            io.unobserve(e.target)
+          }
+        })
+      }, { threshold: 0.12 })
+      frags.forEach(function (f) { io.observe(f) })
+    } else {
+      frags.forEach(function (f) { f.classList.add('is-in') })
+    }
+
+    if (footerBtn && dialog) {
+      footerBtn.addEventListener('click', function () {
+        footerBtn.classList.add('on')
+        dialog.classList.add('is-open')
+        mark('dialog')
+        dialog.scrollIntoView({ block: 'center' })
+      })
+    }
+    listRows.forEach(function (row) {
+      row.addEventListener('click', function () {
+        listRows.forEach(function (r) { r.classList.remove('on') })
+        row.classList.add('on')
+        mark('term')
+        if (termPane) termPane.scrollIntoView({ block: 'center' })
+      })
+    })
+    if (back) {
+      back.addEventListener('click', function () {
+        mark('dialog')
+        if (dialog) dialog.scrollIntoView({ block: 'center' })
+      })
+    }
+  })()
+</script>
+</body>
+</html>

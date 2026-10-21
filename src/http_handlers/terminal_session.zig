@@ -299,6 +299,13 @@ pub const Session = struct {
     rows: u16,
     /// Owning user id (plan 2026-09-25, W2.5).
     owner: []u8,
+    /// The workspace this session belongs to. Empty when the create named
+    /// none: a terminal is scoped to a WORKSPACE (not to a chat session),
+    /// but a shell can be opened without either.
+    workspace_id: []u8,
+    /// The directory the shell ACTUALLY started in — the effective cwd, not
+    /// the requested one (an empty cwd falls back to the server's).
+    cwd: []u8,
     /// Ring-ish output log: `buf` holds the newest bytes, `base` is the
     /// absolute cursor of `buf[0]`, `total` the absolute cursor of the
     /// end. Bytes in [0, base) were dropped by the cap.
@@ -423,10 +430,20 @@ pub fn setMaxSessionsForTest(n: u32) u32 {
 /// no master fd): stamps, sweep, cap, owner checks and reap can then be
 /// driven from ONE body on every host. `s.id` dies with the reap — copy it.
 pub fn insertSessionForTest(owner: []const u8) SessionError!*Session {
+    return insertSessionForTestIn("", owner);
+}
+
+/// Test-only insert that also records the workspace the session belongs to:
+/// the list groups by it, so a test needs more than one workspace.
+pub fn insertSessionForTestIn(workspace_id: []const u8, owner: []const u8) SessionError!*Session {
     const id = try allocId();
     errdefer g_alloc.free(id);
     const owner_copy = g_alloc.dupe(u8, owner) catch return error.OutOfMemory;
     errdefer g_alloc.free(owner_copy);
+    const workspace_copy = g_alloc.dupe(u8, workspace_id) catch return error.OutOfMemory;
+    errdefer g_alloc.free(workspace_copy);
+    const cwd_copy = g_alloc.dupe(u8, "") catch return error.OutOfMemory;
+    errdefer g_alloc.free(cwd_copy);
     const session = g_alloc.create(Session) catch return error.OutOfMemory;
     errdefer g_alloc.destroy(session);
     const now = nowSeconds();
@@ -437,6 +454,8 @@ pub fn insertSessionForTest(owner: []const u8) SessionError!*Session {
         .cols = default_cols,
         .rows = default_rows,
         .owner = owner_copy,
+        .workspace_id = workspace_copy,
+        .cwd = cwd_copy,
         .buf = .empty,
         .base = 0,
         .total = 0,
@@ -621,15 +640,15 @@ pub const backend_pipe: []const u8 = "pipe";
 
 /// Spawn a shell on a fresh PTY. `shell` null/empty selects `$SHELL`, then
 /// `/bin/bash`, then `/bin/sh`. `owner` is the server-derived user id (plan
-/// 2026-09-25, W2.5).
-pub fn createSession(io: std.Io, cwd: []const u8, shell: ?[]const u8, cols: ?u16, rows: ?u16, owner: []const u8) SessionError!SessionInfo {
+/// 2026-09-25, W2.5); `workspace_id` is recorded for the per-workspace list.
+pub fn createSession(io: std.Io, cwd: []const u8, workspace_id: []const u8, shell: ?[]const u8, cols: ?u16, rows: ?u16, owner: []const u8) SessionError!SessionInfo {
     // `if (comptime ...) { } else { }` rather than two early returns: Zig
     // elides the NOT-taken branch of a comptime-known condition, and only
     // the taken one is analyzed. That is what lets one file hold both
     if (comptime pty_backend == .conpty) {
-        return createSessionWin(io, cwd, shell, cols, rows, owner);
+        return createSessionWin(io, cwd, workspace_id, shell, cols, rows, owner);
     } else if (comptime pty_backend == .posix_pty) {
-        return createSessionPosix(io, cwd, shell, cols, rows, owner);
+        return createSessionPosix(io, cwd, workspace_id, shell, cols, rows, owner);
     } else {
         return error.UnsupportedPlatform;
     }
@@ -648,6 +667,94 @@ pub fn getSessionForOwner(id: []const u8, caller_owner: []const u8) ?*Session {
     const s = getSession(id) orelse return null;
     if (!mayAccess(s, caller_owner)) return null;
     return s;
+}
+
+/// One row of the session list: the live shell, the workspace it belongs to,
+/// and where it started. The strings are owned copies.
+pub const SessionSummary = struct {
+    id: []u8,
+    workspace_id: []u8,
+    cwd: []u8,
+    cols: u16,
+    rows: u16,
+    exited: bool,
+    backend: []const u8,
+};
+
+/// Every live session the caller may drive, owner-scoped with the same rule
+/// as `mayAccess`: an empty owner means no identity, and a foreign session
+/// is not the caller's. The rows are owned copies: free them.
+pub fn listSessionsForOwner(allocator: std.mem.Allocator, caller_owner: []const u8) ![]SessionSummary {
+    var out = std.ArrayList(SessionSummary).empty;
+    errdefer {
+        for (out.items) |row| {
+            allocator.free(row.id);
+            allocator.free(row.workspace_id);
+            allocator.free(row.cwd);
+        }
+        out.deinit(allocator);
+    }
+    const reg = registry();
+    mutexLock(&g_mutex);
+    defer g_mutex.unlock();
+    var it = reg.iterator();
+    while (it.next()) |entry| {
+        const s = entry.value_ptr.*;
+        if (!mayAccess(s, caller_owner)) continue;
+        const id = allocator.dupe(u8, s.id) catch |err| return err;
+        const workspace_id = allocator.dupe(u8, s.workspace_id) catch |err| {
+            allocator.free(id);
+            return err;
+        };
+        const cwd = allocator.dupe(u8, s.cwd) catch |err| {
+            allocator.free(id);
+            allocator.free(workspace_id);
+            return err;
+        };
+        // The live fields are written under the session lock (the drain
+        // grows the buffer and marks the exit), so read them the same way.
+        mutexLock(&s.mutex);
+        const cols = s.cols;
+        const rows = s.rows;
+        const exited = s.exited;
+        s.mutex.unlock();
+        out.append(allocator, .{
+            .id = id,
+            .workspace_id = workspace_id,
+            .cwd = cwd,
+            .cols = cols,
+            .rows = rows,
+            .exited = exited,
+            .backend = sessionBackend(s),
+        }) catch |err| {
+            allocator.free(id);
+            allocator.free(workspace_id);
+            allocator.free(cwd);
+            return err;
+        };
+    }
+    return out.toOwnedSlice(allocator);
+}
+
+/// Free a list produced by `listSessionsForOwner` (or the guest twin).
+pub fn freeSessionSummaries(allocator: std.mem.Allocator, rows: []SessionSummary) void {
+    for (rows) |row| {
+        allocator.free(row.id);
+        allocator.free(row.workspace_id);
+        allocator.free(row.cwd);
+    }
+    allocator.free(rows);
+}
+
+/// The console this session actually got, as a wire string — the same words
+/// the create response uses, so a list row and a create answer agree.
+pub fn sessionBackend(s: *Session) []const u8 {
+    if (comptime pty_backend == .conpty) {
+        if (s.win.kind == .conpty) return backend_conpty;
+        return backend_pipe;
+    }
+    if (comptime pty_backend == .posix_pty) return backend_posix_pty;
+    return "none";
 }
 
 fn allocId() SessionError![]u8 {
@@ -681,7 +788,7 @@ fn defaultShell() []const u8 {
     return "/bin/bash";
 }
 
-fn createSessionPosix(io: std.Io, cwd: []const u8, shell_opt: ?[]const u8, cols_opt: ?u16, rows_opt: ?u16, owner: []const u8) SessionError!SessionInfo {
+fn createSessionPosix(io: std.Io, cwd: []const u8, workspace_id: []const u8, shell_opt: ?[]const u8, cols_opt: ?u16, rows_opt: ?u16, owner: []const u8) SessionError!SessionInfo {
     // Empty cwd (fresh standalone chats have no session cwd yet): fall back
     // to the server process cwd, mirroring the agent shell tools'
     // optional-cwd behavior.
@@ -735,6 +842,10 @@ fn createSessionPosix(io: std.Io, cwd: []const u8, shell_opt: ?[]const u8, cols_
 
     const owner_copy = g_alloc.dupe(u8, owner) catch return error.OutOfMemory;
     errdefer g_alloc.free(owner_copy);
+    const workspace_copy = g_alloc.dupe(u8, workspace_id) catch return error.OutOfMemory;
+    errdefer g_alloc.free(workspace_copy);
+    const cwd_copy = g_alloc.dupe(u8, eff_cwd) catch return error.OutOfMemory;
+    errdefer g_alloc.free(cwd_copy);
 
     const session = g_alloc.create(Session) catch return error.OutOfMemory;
     errdefer g_alloc.destroy(session);
@@ -745,6 +856,8 @@ fn createSessionPosix(io: std.Io, cwd: []const u8, shell_opt: ?[]const u8, cols_
         .cols = dims.cols,
         .rows = dims.rows,
         .owner = owner_copy,
+        .workspace_id = workspace_copy,
+        .cwd = cwd_copy,
         .buf = .empty,
         .base = 0,
         .total = 0,
@@ -811,7 +924,7 @@ const WinSpawn = struct {
 /// Windows create. Validates once, then spawns on the best backend this
 /// host can actually deliver.
 ///
-fn createSessionWin(io: std.Io, cwd: []const u8, shell: ?[]const u8, cols: ?u16, rows: ?u16, owner: []const u8) SessionError!SessionInfo {
+fn createSessionWin(io: std.Io, cwd: []const u8, workspace_id: []const u8, shell: ?[]const u8, cols: ?u16, rows: ?u16, owner: []const u8) SessionError!SessionInfo {
     // Empty cwd (fresh standalone chats have no session cwd yet): fall back
     // to the server process cwd, mirroring the POSIX path exactly.
     var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -862,23 +975,31 @@ fn createSessionWin(io: std.Io, cwd: []const u8, shell: ?[]const u8, cols: ?u16,
     var session: ?*Session = null;
     var id: ?[]u8 = null;
     var owner_copy: ?[]u8 = null;
+    var workspace_copy: ?[]u8 = null;
+    var cwd_copy: ?[]u8 = null;
     errdefer {
         if (session) |s| {
             reapSessionWin(s);
             g_alloc.free(s.owner);
+            g_alloc.free(s.workspace_id);
+            g_alloc.free(s.cwd);
             g_alloc.free(s.id);
             g_alloc.destroy(s);
         } else {
             closeWinHandles(spawned.handles, false);
             if (owner_copy) |o| g_alloc.free(o);
+            if (workspace_copy) |w| g_alloc.free(w);
+            if (cwd_copy) |c| g_alloc.free(c);
             if (id) |i| g_alloc.free(i);
         }
     }
 
     id = try allocId();
     owner_copy = g_alloc.dupe(u8, owner) catch return error.OutOfMemory;
+    workspace_copy = g_alloc.dupe(u8, workspace_id) catch return error.OutOfMemory;
+    cwd_copy = g_alloc.dupe(u8, eff_cwd) catch return error.OutOfMemory;
     const s = g_alloc.create(Session) catch return error.OutOfMemory;
-    s.* = winSessionRecord(id.?, owner_copy.?, spawned.handles, spawned.pid, dims);
+    s.* = winSessionRecord(id.?, owner_copy.?, workspace_copy.?, cwd_copy.?, spawned.handles, spawned.pid, dims);
     session = s;
     // Ownership moved; a later failure must not close these twice.
     spawned.handles = .{};
@@ -896,7 +1017,7 @@ fn createSessionWin(io: std.Io, cwd: []const u8, shell: ?[]const u8, cols: ?u16,
 
 /// The Session record for a Windows spawn. One literal for both backends:
 /// only the handle set and the reported kind differ.
-fn winSessionRecord(id: []u8, owner: []u8, handles: WinPty, pid: DWORD, dims: Dims) Session {
+fn winSessionRecord(id: []u8, owner: []u8, workspace_id: []u8, cwd: []u8, handles: WinPty, pid: DWORD, dims: Dims) Session {
     return .{
         .id = id,
         .master_fd = -1,
@@ -905,6 +1026,8 @@ fn winSessionRecord(id: []u8, owner: []u8, handles: WinPty, pid: DWORD, dims: Di
         .cols = dims.cols,
         .rows = dims.rows,
         .owner = owner,
+        .workspace_id = workspace_id,
+        .cwd = cwd,
         .buf = .empty,
         .base = 0,
         .total = 0,
@@ -1664,6 +1787,8 @@ fn reapSession(s: *Session) void {
     s.buf.deinit(g_alloc);
     s.line.deinit(g_alloc);
     g_alloc.free(s.owner);
+    g_alloc.free(s.workspace_id);
+    g_alloc.free(s.cwd);
     g_alloc.free(s.id);
     g_alloc.destroy(s);
 }
@@ -1734,7 +1859,7 @@ test "the pipe backend echoes typing and commits the line on Enter" {
         .posix_pty => {},
         .none => {},
         .conpty => {
-            const info = try createSession(testing.io, "", null, 80, 24, "user_test");
+            const info = try createSession(testing.io, "", "ws_test", null, 80, 24, "user_test");
             defer destroySession(info.id) catch {};
             // A real console cooks AND echoes its own input; only the pipe
             // fallback needs the server's discipline, so only it asserts.
@@ -1814,7 +1939,7 @@ test "empty cwd falls back to the server cwd" {
     // reject the empty string as a relative path.
     switch (pty_backend) {
         .posix_pty => {
-            const info = try createSession(testing.io, "", "/bin/sh", 80, 24, "user_test");
+            const info = try createSession(testing.io, "", "ws_test", "/bin/sh", 80, 24, "user_test");
             defer destroySession(info.id) catch {};
             try testing.expect(getSession(info.id) != null);
         },
@@ -1822,14 +1947,14 @@ test "empty cwd falls back to the server cwd" {
             // No shell override either: the empty cwd must fall back to the
             // server's cwd AND `%COMSPEC%` must resolve, or this throws
             // instead of returning a session.
-            const info = try createSession(testing.io, "", null, 80, 24, "user_test");
+            const info = try createSession(testing.io, "", "ws_test", null, 80, 24, "user_test");
             defer destroySession(info.id) catch {};
             try testing.expect(getSession(info.id) != null);
             try testing.expect(info.pid > 0);
         },
         .none => {
             // No PTY backend: the spawn this test needs is the refusal.
-            try testing.expectError(error.UnsupportedPlatform, createSession(testing.io, "", null, 80, 24, "user_test"));
+            try testing.expectError(error.UnsupportedPlatform, createSession(testing.io, "", "ws_test", null, 80, 24, "user_test"));
         },
     }
 }
@@ -1942,7 +2067,7 @@ test "max sessions cap rejects over the limit" {
         // Empty cwd resolves to the SERVER's cwd, which exists on every
         // host. The literal "/tmp" this used to pass would be a CwdNotDir
         // 404 on Windows, and the assertion below would then pass for
-        try testing.expectError(error.TooManySessions, createSession(testing.io, "", null, 80, 24, "user_test"));
+        try testing.expectError(error.TooManySessions, createSession(testing.io, "", "ws_test", null, 80, 24, "user_test"));
     }
 
     // One slot below the cap is accepted again.
@@ -1976,7 +2101,7 @@ fn expectMarker(s: *Session, marker: []const u8, ticks: usize) !void {
 test "spawned shell echoes input" {
     switch (pty_backend) {
         .posix_pty => {
-            const info = try createSession(testing.io, "/tmp", "/bin/sh", 80, 24, "user_test");
+            const info = try createSession(testing.io, "/tmp", "ws_test", "/bin/sh", 80, 24, "user_test");
             defer destroySession(info.id) catch {};
 
             const s = getSession(info.id) orelse return error.SessionNotFound;
@@ -1989,7 +2114,7 @@ test "spawned shell echoes input" {
             // The Windows parity assertion, end to end on ONE live shell:
             // a Windows session answers the same operations the POSIX one
             // does — create, input, echo, resize, and an observed process
-            const info = try createSession(testing.io, "", null, 80, 24, "user_test");
+            const info = try createSession(testing.io, "", "ws_test", null, 80, 24, "user_test");
             defer destroySession(info.id) catch {};
             try testing.expect(info.pid > 0);
             const be = info.backend;
@@ -2030,7 +2155,7 @@ test "spawned shell echoes input" {
         .none => {
             // No PTY backend: every PTY step this test needs is a refusal,
             // while the registry teardown stays host-independent.
-            try testing.expectError(error.UnsupportedPlatform, createSession(testing.io, "", null, 80, 24, "user_test"));
+            try testing.expectError(error.UnsupportedPlatform, createSession(testing.io, "", "ws_test", null, 80, 24, "user_test"));
             const s = try insertSessionForTest("user_test");
             const id = try testing.allocator.dupe(u8, s.id);
             defer testing.allocator.free(id);
@@ -2231,6 +2356,8 @@ test "mayAccess: same owner allowed, different owner denied" {
         .cols = 80,
         .rows = 24,
         .owner = @constCast("user_a"),
+        .workspace_id = @constCast(""),
+        .cwd = @constCast(""),
         .buf = .empty,
         .base = 0,
         .total = 0,
@@ -2256,6 +2383,8 @@ test "mayAccess: an empty owner on either side means no identity (auth off)" {
         .cols = 80,
         .rows = 24,
         .owner = @constCast(""),
+        .workspace_id = @constCast(""),
+        .cwd = @constCast(""),
         .buf = .empty,
         .base = 0,
         .total = 0,
@@ -2312,4 +2441,101 @@ test "destroySessionForOwner: a foreign caller cannot kill the session" {
     // A can still destroy its own session.
     try destroySessionForOwner(id, "user_a");
     try testing.expect(getSession(id) == null);
+}
+
+// ---------------------------------------------------------------------
+// The session list: what a window-level footer shows, grouped per
+// workspace.
+
+test "the list holds the caller's own shells and nobody else's" {
+    const prev_timeout = setIdleTimeoutForTest(3600);
+    defer _ = setIdleTimeoutForTest(prev_timeout);
+    const prev_kill = setIdleKillForTest(3600);
+    defer _ = setIdleKillForTest(prev_kill);
+
+    const mine = try insertSessionForTestIn("ws_1", "user_a");
+    const mine_id = try testing.allocator.dupe(u8, mine.id);
+    defer testing.allocator.free(mine_id);
+    defer destroySession(mine_id) catch {};
+
+    const theirs = try insertSessionForTestIn("ws_1", "user_b");
+    const theirs_id = try testing.allocator.dupe(u8, theirs.id);
+    defer testing.allocator.free(theirs_id);
+    defer destroySession(theirs_id) catch {};
+
+    const rows = try listSessionsForOwner(testing.allocator, "user_a");
+    defer freeSessionSummaries(testing.allocator, rows);
+
+    var saw_mine = false;
+    for (rows) |row| {
+        try testing.expect(!std.mem.eql(u8, row.id, theirs_id));
+        if (std.mem.eql(u8, row.id, mine_id)) saw_mine = true;
+    }
+    try testing.expect(saw_mine);
+}
+
+test "a list row names the workspace the shell belongs to" {
+    const prev_timeout = setIdleTimeoutForTest(3600);
+    defer _ = setIdleTimeoutForTest(prev_timeout);
+    const prev_kill = setIdleKillForTest(3600);
+    defer _ = setIdleKillForTest(prev_kill);
+
+    const s = try insertSessionForTestIn("ws_42", "user_a");
+    const id = try testing.allocator.dupe(u8, s.id);
+    defer testing.allocator.free(id);
+    defer destroySession(id) catch {};
+
+    const rows = try listSessionsForOwner(testing.allocator, "user_a");
+    defer freeSessionSummaries(testing.allocator, rows);
+
+    var found = false;
+    for (rows) |row| {
+        if (!std.mem.eql(u8, row.id, id)) continue;
+        found = true;
+        try testing.expectEqualStrings("ws_42", row.workspace_id);
+        try testing.expectEqual(@as(u16, default_cols), row.cols);
+        try testing.expectEqual(@as(u16, default_rows), row.rows);
+        try testing.expect(!row.exited);
+        try testing.expect(row.backend.len > 0);
+    }
+    try testing.expect(found);
+}
+
+test "a caller with no identity lists every shell (auth off)" {
+    const prev_timeout = setIdleTimeoutForTest(3600);
+    defer _ = setIdleTimeoutForTest(prev_timeout);
+    const prev_kill = setIdleKillForTest(3600);
+    defer _ = setIdleKillForTest(prev_kill);
+
+    const owned = try insertSessionForTestIn("ws_1", "user_a");
+    const owned_id = try testing.allocator.dupe(u8, owned.id);
+    defer testing.allocator.free(owned_id);
+    defer destroySession(owned_id) catch {};
+
+    const rows = try listSessionsForOwner(testing.allocator, "");
+    defer freeSessionSummaries(testing.allocator, rows);
+
+    var saw = false;
+    for (rows) |row| {
+        if (std.mem.eql(u8, row.id, owned_id)) saw = true;
+    }
+    try testing.expect(saw);
+}
+
+test "the list of a workspace with no shell is empty" {
+    const prev_timeout = setIdleTimeoutForTest(3600);
+    defer _ = setIdleTimeoutForTest(prev_timeout);
+    const prev_kill = setIdleKillForTest(3600);
+    defer _ = setIdleKillForTest(prev_kill);
+
+    const s = try insertSessionForTestIn("ws_1", "user_a");
+    const id = try testing.allocator.dupe(u8, s.id);
+    defer testing.allocator.free(id);
+    defer destroySession(id) catch {};
+
+    const rows = try listSessionsForOwner(testing.allocator, "user_a");
+    defer freeSessionSummaries(testing.allocator, rows);
+    for (rows) |row| {
+        try testing.expect(!std.mem.eql(u8, row.workspace_id, "ws_other"));
+    }
 }

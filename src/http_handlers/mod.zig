@@ -312,6 +312,7 @@ pub const terminalInputHandler = @import("terminal_input.zig").terminalInputHand
 pub const terminalOutputHandler = @import("terminal_output.zig").terminalOutputHandler;
 pub const terminalResizeHandler = @import("terminal_resize.zig").terminalResizeHandler;
 pub const terminalDeleteHandler = @import("terminal_delete.zig").terminalDeleteHandler;
+pub const terminalListHandler = @import("terminal_list.zig").terminalListHandler;
 pub const terminalWsHandler = @import("terminal_ws.zig").terminalWsHandler;
 
 // Design-mode HTTP handlers (item_type='design') — v6 of the design-mode

@@ -13,6 +13,7 @@ import WorkspaceSettingsView from './views/WorkspaceSettingsView.vue'
 import CodeViewerStage from './views/CodeViewerStage.vue'
 import NotificationContainer from './shell/NotificationContainer.vue'
 import SseStatusBadge from './shell/SseStatusBadge.vue'
+import TerminalFooter from './shell/TerminalFooter.vue'
 import KanbanView from './kanban/KanbanView.vue'
 import DesignChatDialog from './design/DesignChatDialog.vue'
 import AgentView from './views/AgentView.vue'
@@ -2364,7 +2365,11 @@ defineExpose({
 </script>
 
 <template>
-  <div class="flex h-screen" style="background-color: var(--semantic-content-bg)">
+  <div class="flex flex-col h-screen" style="background-color: var(--semantic-content-bg)">
+    <!-- The row of columns. It is a wrapper so the terminal footer can sit
+         BELOW the sidebar and the main view: the footer belongs to the
+         window, not to one column. -->
+    <div class="flex flex-1 min-h-0">
     <Sidebar
       ref="sidebarRef"
       @navigate="handleNavigate"
@@ -2886,6 +2891,16 @@ defineExpose({
         -->
       </div>
     </main>
+    </div>
+
+    <!-- The window-level terminal footer: a strip along the bottom of the
+         app, outside every column, carrying the launcher for the live
+         shells (the right sidebar's Terminal tab stays where it is). -->
+    <TerminalFooter
+      :workspaces="workspacesStore.workspaces"
+      :active-workspace-id="activeWorkspaceId"
+      :cwd="rightSidebarCwd"
+    />
 
     <!-- Settings page -->
     <SettingsView v-if="currentView === 'settings'" />

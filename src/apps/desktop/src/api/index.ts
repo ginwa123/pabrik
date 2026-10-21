@@ -5236,6 +5236,32 @@ export async function deleteTerminalSession(id: string): Promise<{ ok: boolean }
   })
 }
 
+/** One live terminal session, as the list endpoint reports it. */
+export interface TerminalSessionSummary {
+  id: string
+  /** The workspace the shell belongs to. Empty when the create named none. */
+  workspace_id: string
+  /** Where the shell started. Host path in local mode, workspace-relative
+   * under `--saas`. */
+  cwd: string
+  cols: number
+  rows: number
+  exited: boolean
+  /** `posix-pty`, `conpty`, `pipe` or `guest-pty`. */
+  backend: string
+}
+
+/** The live terminal sessions the caller may drive, for the window-level
+ * footer's launcher. GET /api/terminal/sessions -> 200 { sessions: [...] }
+ * Owner-scoped by the server: a workspace with no shell has no row. */
+export async function listTerminalSessions(): Promise<TerminalSessionSummary[]> {
+  const data = await apiFetch<{ sessions?: TerminalSessionSummary[] }>(`/terminal/sessions`, {
+    method: 'GET',
+    silent: true,
+  })
+  return data.sessions ?? []
+}
+
 // ─── Documents (Migration 095) ─────────────────────────────────────────── Workspace-scoped
 // markdown documents. A document belongs to a workspace directly — it is NOT a `workspace_items`
 // row and never appears in the project tree; the sidebar's Documents section is its only home.

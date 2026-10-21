@@ -100,6 +100,9 @@ pub const Info = struct {
 pub const Session = struct {
     id: []u8,
     workspace_id: []u8,
+    /// The directory the shell started in, as the GUEST sees it: a path
+    /// relative to the workspace root. Empty means the workspace root.
+    cwd: []u8,
     /// The guest's terminal id: its slot in the VM's tty table, which is also
     /// how the daemon finds the port that terminal answers on.
     tty_id: i64,
@@ -198,6 +201,59 @@ pub fn getSessionForOwner(id: []const u8, caller_owner: []const u8) ?*Session {
     return s;
 }
 
+/// Every live guest terminal the caller may drive, in the same shape as the
+/// host list: the workspace it belongs to, the directory it started in, and
+/// the console it got. Owner-scoped with the guest's own rule.
+pub fn listSessionsForOwner(allocator: std.mem.Allocator, caller_owner: []const u8) ![]terminal_session.SessionSummary {
+    var out = std.ArrayList(terminal_session.SessionSummary).empty;
+    errdefer {
+        for (out.items) |row| {
+            allocator.free(row.id);
+            allocator.free(row.workspace_id);
+            allocator.free(row.cwd);
+        }
+        out.deinit(allocator);
+    }
+    const reg = registry();
+    mutexLock(&g_mutex);
+    defer g_mutex.unlock();
+    var it = reg.iterator();
+    while (it.next()) |entry| {
+        const s = entry.value_ptr.*;
+        if (s.owner.len != 0 and caller_owner.len != 0 and !std.mem.eql(u8, s.owner, caller_owner)) continue;
+        const id = allocator.dupe(u8, s.id) catch |err| return err;
+        const workspace_id = allocator.dupe(u8, s.workspace_id) catch |err| {
+            allocator.free(id);
+            return err;
+        };
+        const cwd = allocator.dupe(u8, s.cwd) catch |err| {
+            allocator.free(id);
+            allocator.free(workspace_id);
+            return err;
+        };
+        mutexLock(&s.mutex);
+        const cols = s.cols;
+        const rows = s.rows;
+        const exited = s.exited;
+        s.mutex.unlock();
+        out.append(allocator, .{
+            .id = id,
+            .workspace_id = workspace_id,
+            .cwd = cwd,
+            .cols = cols,
+            .rows = rows,
+            .exited = exited,
+            .backend = backend_guest_pty,
+        }) catch |err| {
+            allocator.free(id);
+            allocator.free(workspace_id);
+            allocator.free(cwd);
+            return err;
+        };
+    }
+    return out.toOwnedSlice(allocator);
+}
+
 fn allocId() Error![]u8 {
     mutexLock(&g_mutex);
     g_id_counter += 1;
@@ -256,6 +312,8 @@ pub fn create(
     try checkCapacity();
 
     const cwd_rel = guestCwdFor(requested_cwd);
+    const cwd_copy = g_alloc.dupe(u8, cwd_rel) catch return error.OutOfMemory;
+    errdefer g_alloc.free(cwd_copy);
     var client = vmd.Client.init(allocator, socket);
     const opened = client.ttyOpen(workspace_id, cwd_rel, size.cols, size.rows) catch |err| {
         if (err == vmd.Error.ServerFailure) {
@@ -284,6 +342,7 @@ pub fn create(
     session.* = .{
         .id = id,
         .workspace_id = workspace_copy,
+        .cwd = cwd_copy,
         .tty_id = opened.tty_id,
         .guest_pid = opened.pid,
         .cols = size.cols,
@@ -481,6 +540,7 @@ fn reapSession(allocator: std.mem.Allocator, socket: []const u8, s: *Session) vo
     s.buf.deinit(g_alloc);
     g_alloc.free(s.owner);
     g_alloc.free(s.workspace_id);
+    g_alloc.free(s.cwd);
     g_alloc.free(s.id);
     g_alloc.destroy(s);
 }
@@ -585,12 +645,14 @@ test "validateSize: the window bounds match the host pty path" {
 fn insertSessionForTest(workspace_id: []const u8, owner: []const u8) !*Session {
     const id = try allocId();
     const workspace_copy = try allocStr(workspace_id);
+    const cwd_copy = try allocStr("");
     const owner_copy = try allocStr(owner);
     const session = g_alloc.create(Session) catch return error.OutOfMemory;
     const now = nowSeconds();
     session.* = .{
         .id = id,
         .workspace_id = workspace_copy,
+        .cwd = cwd_copy,
         .tty_id = 0,
         .guest_pid = 0,
         .cols = terminal_session.default_cols,
@@ -628,6 +690,7 @@ fn removeSessionForTest(s: *Session) void {
     entry.value.buf.deinit(g_alloc);
     g_alloc.free(entry.value.owner);
     g_alloc.free(entry.value.workspace_id);
+    g_alloc.free(entry.value.cwd);
     g_alloc.free(entry.value.id);
     g_alloc.destroy(entry.value);
 }
@@ -708,4 +771,25 @@ test "a guest terminal ages out on the host path's own rule" {
     sweepIdle(testing.allocator, "/nonexistent/pabrik-vmd.sock");
     try testing.expect(getSession(stale_id) == null);
     try testing.expect(getSession(busy_id) != null);
+}
+
+test "the guest list holds the caller's own shells, with their workspace" {
+    const mine = try insertSessionForTest("ws_1", "user_a");
+    defer removeSessionForTest(mine);
+    const theirs = try insertSessionForTest("ws_2", "user_b");
+    defer removeSessionForTest(theirs);
+
+    const rows = try listSessionsForOwner(testing.allocator, "user_a");
+    defer terminal_session.freeSessionSummaries(testing.allocator, rows);
+
+    var found = false;
+    for (rows) |row| {
+        try testing.expect(!std.mem.eql(u8, row.id, theirs.id));
+        if (!std.mem.eql(u8, row.id, mine.id)) continue;
+        found = true;
+        try testing.expectEqualStrings("ws_1", row.workspace_id);
+        try testing.expectEqualStrings(backend_guest_pty, row.backend);
+        try testing.expectEqual(@as(u16, terminal_session.default_cols), row.cols);
+    }
+    try testing.expect(found);
 }
