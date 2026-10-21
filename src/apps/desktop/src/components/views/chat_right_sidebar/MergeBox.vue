@@ -44,6 +44,8 @@ const props = defineProps<{
   prProvider?: string
   /** The live status payload from the PR tab's 30 s poll. */
   status: GitPrStatus | null
+  /** How many CI checks failed, when the panel knows. */
+  failedChecks?: number
 }>()
 
 const emit = defineEmits<{
@@ -66,6 +68,29 @@ const wording = computed(() =>
 /** The PR's already-known merge state, so the box never renders a spinner for
  *  something the poll already answered. */
 const ready = computed(() => props.status !== null)
+
+// The reasons the merge is held, as a countable sentence. The wording table
+// says WHICH state; this says HOW MANY, which is the part a reviewer acts on.
+const reasonParts = computed<string[]>(() => {
+  const parts: string[] = []
+  const failed = props.failedChecks ?? 0
+  if (failed > 0) parts.push(`${failed} check${failed === 1 ? '' : 's'} failed`)
+  const decision = (props.status?.review_decision ?? '').toUpperCase()
+  if (decision === 'CHANGES_REQUESTED') parts.push('changes requested')
+  else if (decision === 'REVIEW_REQUIRED') parts.push('review requested')
+  return parts
+})
+
+const reasonLine = computed(() => reasonParts.value.join(', '))
+
+// A blocked merge must still say it is blocked; the counts only explain it.
+const headline = computed(() =>
+  reasonLine.value && wording.value.state !== 'blocked' ? reasonLine.value : wording.value.headline,
+)
+
+const detail = computed(() =>
+  reasonLine.value && wording.value.state === 'blocked' ? reasonLine.value : wording.value.detail,
+)
 
 const dotClass = computed(() => {
   switch (wording.value.state) {
@@ -211,17 +236,17 @@ async function submit() {
           style="color: var(--semantic-text)"
           data-testid="pr-merge-headline"
         >
-          {{ wording.headline }}
+          {{ headline }}
         </div>
         <!-- Disabled is never silent: the reason is a visible sentence, not a
              title attribute. At 200px a tooltip is unreachable anyway. -->
         <div
-          v-if="wording.detail"
+          v-if="detail"
           class="text-micro leading-snug"
           style="color: var(--semantic-text-muted)"
           data-testid="pr-merge-detail"
         >
-          {{ wording.detail }}
+          {{ detail }}
         </div>
       </div>
     </div>

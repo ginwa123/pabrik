@@ -41,6 +41,14 @@ fn isGitRepository(
     return check.term.exited == 0;
 }
 
+/// Whether `path` is a work tree the forge may be asked about. Public so the
+/// conversation endpoint shares this endpoint's gate.
+pub fn isWorkTree(allocator: std.mem.Allocator, io: std.Io, path: []const u8) bool {
+    var route = routeForPath(allocator, path);
+    defer route.deinit();
+    return isGitRepository(allocator, io, &route, path);
+}
+
 /// `git remote get-url origin` in `path`, from whichever side may answer.
 fn remoteOriginUrl(
     allocator: std.mem.Allocator,
@@ -103,7 +111,51 @@ const GhPrView = struct {
     additions: i64 = 0,
     deletions: i64 = 0,
     changedFiles: i64 = 0,
+    /// APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED, or "" when the forge
+    /// has no verdict to give.
+    reviewDecision: []const u8 = "",
+    /// The CI rollup, one entry per check. Counted into the summary below.
+    statusCheckRollup: []const GhRollupEntry = &.{},
 };
+
+/// One entry of `statusCheckRollup`. GitHub mixes two shapes in it: a check
+/// run (conclusion) and a commit status (state), so both are read.
+const GhRollupEntry = struct {
+    name: []const u8 = "",
+    status: []const u8 = "",
+    conclusion: []const u8 = "",
+    state: []const u8 = "",
+};
+
+/// The bucket a rollup entry falls into, using the same vocabulary as the
+/// checks endpoint: pass | fail | pending | skipping | cancel.
+pub fn rollupBucket(entry: GhRollupEntry) []const u8 {
+    const conclusion = entry.conclusion;
+    if (conclusion.len > 0) {
+        if (std.ascii.eqlIgnoreCase(conclusion, "SUCCESS")) return "pass";
+        if (std.ascii.eqlIgnoreCase(conclusion, "FAILURE") or
+            std.ascii.eqlIgnoreCase(conclusion, "TIMED_OUT") or
+            std.ascii.eqlIgnoreCase(conclusion, "ACTION_REQUIRED") or
+            std.ascii.eqlIgnoreCase(conclusion, "STARTUP_FAILURE") or
+            std.ascii.eqlIgnoreCase(conclusion, "STALE")) return "fail";
+        if (std.ascii.eqlIgnoreCase(conclusion, "CANCELLED")) return "cancel";
+        if (std.ascii.eqlIgnoreCase(conclusion, "SKIPPED") or
+            std.ascii.eqlIgnoreCase(conclusion, "NEUTRAL")) return "skipping";
+    }
+    if (entry.state.len > 0) {
+        if (std.ascii.eqlIgnoreCase(entry.state, "SUCCESS")) return "pass";
+        if (std.ascii.eqlIgnoreCase(entry.state, "FAILURE") or
+            std.ascii.eqlIgnoreCase(entry.state, "ERROR")) return "fail";
+        if (std.ascii.eqlIgnoreCase(entry.state, "PENDING") or
+            std.ascii.eqlIgnoreCase(entry.state, "EXPECTED")) return "pending";
+    }
+    if (std.ascii.eqlIgnoreCase(entry.status, "COMPLETED")) return "pass";
+    if (std.ascii.eqlIgnoreCase(entry.status, "IN_PROGRESS") or
+        std.ascii.eqlIgnoreCase(entry.status, "QUEUED") or
+        std.ascii.eqlIgnoreCase(entry.status, "PENDING") or
+        std.ascii.eqlIgnoreCase(entry.status, "WAITING")) return "pending";
+    return "skipping";
+}
 
 /// Normalize a forge state to the lowercase status the CLI prints. GitHub
 /// says OPEN/CLOSED/MERGED; GitLab says `opened`/`closed`/ `merged`/`locked`.
@@ -169,9 +221,10 @@ pub const GLAB_PROGRAM: []const u8 = "glab";
 /// Wall-clock budget for one PR/MR view invocation.
 pub const GH_TIMEOUT_MS: u32 = 20_000;
 
-/// Per-stream capture cap. A `pr view` payload is a few hundred
-/// bytes; anything past this is an error message we truncate anyway.
-const GH_MAX_OUTPUT_BYTES: usize = 64 * 1024;
+/// Per-stream capture cap. A `pr view` payload is a few hundred bytes
+/// without the CI rollup, and a few kilobytes with it; anything past this
+/// is an error message we truncate anyway.
+const GH_MAX_OUTPUT_BYTES: usize = 256 * 1024;
 
 /// Run `gh pr view` in `path` and return the raw stdout JSON (owned).
 /// `pr_arg` is "" for "current branch's PR", otherwise a number, URL, or
@@ -186,13 +239,26 @@ fn runView(
     timeout_ms: u32,
     fetch_detail: *?[]u8,
 ) ![]u8 {
-    const cli = pr_cli.cliFor(provider) orelse return error.CliMissing;
-
     // `<gh> pr view [<pr>] --json <fields>` for GitHub, `<glab> mr view
     // [<mr>] --output json` for GitLab.
     var argv_buf: [pr_cli.view_argv_max][]const u8 = undefined;
     const argv = pr_cli.viewArgv(&argv_buf, provider, prog, pr_arg) orelse return error.CliMissing;
+    return runForgeView(allocator, io, provider, path, argv, timeout_ms, fetch_detail);
+}
 
+/// Spawn one forge read and return its stdout. `argv` is the caller's, so
+/// every forge read shares one timeout, one capture cap and one stderr
+/// policy.
+pub fn runForgeView(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    provider: pr_provider.PrProvider,
+    path: []const u8,
+    argv: []const []const u8,
+    timeout_ms: u32,
+    fetch_detail: *?[]u8,
+) ![]u8 {
+    const cli = pr_cli.cliFor(provider) orelse return error.CliMissing;
     var res = run_captured.run(allocator, io, argv, .{
         .cwd = path,
         .max_output_bytes = GH_MAX_OUTPUT_BYTES,
@@ -488,7 +554,32 @@ fn buildResponse(
         .additions = parsed.additions,
         .deletions = parsed.deletions,
         .changed_files = parsed.changedFiles,
+        .review_decision = try allocator.dupe(u8, parsed.reviewDecision),
+        .checks = countRollup(parsed.statusCheckRollup),
     };
+}
+
+/// Count a CI rollup into the summary the panel reads. The buckets are the
+/// checks endpoint's vocabulary, so one chip means the same thing in both
+/// places.
+fn countRollup(entries: []const GhRollupEntry) http_response.GitPrChecksSummary {
+    var summary: http_response.GitPrChecksSummary = .{};
+    for (entries) |entry| {
+        summary.total += 1;
+        const bucket = rollupBucket(entry);
+        if (std.ascii.eqlIgnoreCase(bucket, "pass")) {
+            summary.passed += 1;
+        } else if (std.ascii.eqlIgnoreCase(bucket, "fail")) {
+            summary.failed += 1;
+        } else if (std.ascii.eqlIgnoreCase(bucket, "pending")) {
+            summary.pending += 1;
+        } else if (std.ascii.eqlIgnoreCase(bucket, "cancel")) {
+            summary.cancelled += 1;
+        } else {
+            summary.skipped += 1;
+        }
+    }
+    return summary;
 }
 
 /// Build the wire response from `glab mr view --output json` stdout. ## Why
@@ -672,6 +763,24 @@ pub fn gitPrStatusHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, 
 }
 
 const testing = std.testing;
+
+test "the CI rollup counts failures, passes and pending checks" {
+    // The header chip and the merge box read this count, so the buckets have
+    // to mean the same thing here as they do in the checks endpoint.
+    const entries = [_]GhRollupEntry{
+        .{ .name = "backend", .status = "COMPLETED", .conclusion = "FAILURE" },
+        .{ .name = "lint", .status = "COMPLETED", .conclusion = "SUCCESS" },
+        .{ .name = "docs", .status = "IN_PROGRESS" },
+        .{ .name = "external", .state = "ERROR" },
+        .{ .name = "old", .state = "SUCCESS" },
+    };
+    const summary = countRollup(&entries);
+    try testing.expectEqual(@as(u32, 5), summary.total);
+    try testing.expectEqual(@as(u32, 2), summary.failed);
+    try testing.expectEqual(@as(u32, 2), summary.passed);
+    try testing.expectEqual(@as(u32, 1), summary.pending);
+}
+
 test "normalizeStatus maps OPEN/CLOSED/MERGED" {
     try testing.expectEqualStrings("open", normalizeStatus("OPEN"));
     try testing.expectEqualStrings("open", normalizeStatus("open"));

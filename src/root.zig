@@ -417,6 +417,7 @@ test {
     // payload shapes, error mapping, and the `run_captured` contract) never
     // ran — same discovery gap as git_file_diffs above.
     _ = @import("http_handlers/git_pr_status.zig");
+    _ = @import("http_handlers/git_pr_conversation.zig");
     _ = @import("http_handlers/git_pr_checks.zig");
     _ = @import("http_handlers/git_pr_create.zig");
     _ = @import("http_handlers/git_pr_diff.zig");
