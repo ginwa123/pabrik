@@ -6,6 +6,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const linux = std.os.linux;
 const vmd_client = @import("vmd_client.zig");
+const lifecycle = @import("lifecycle.zig");
 
 /// A cold manager binds its socket, then answers — 5 s covers a loaded box.
 pub const default_wait_ms: u32 = 5_000;
@@ -210,6 +211,7 @@ pub fn ensure(
         .spawn => |artifacts| {
             ensureDirPath(artifacts.root) catch return .{ .refused = .spawn_failed };
             const pid = spawnDetached(arena, artifacts, socket_path) orelse return .{ .refused = .spawn_failed };
+            lifecycle.rememberSpawned(pid);
             std.log.info("--saas: started pabrik-vmd (pid {d}) on {s}", .{ pid, socket_path });
             if (!try waitForPing(arena, io, socket_path, wait_ms)) return .{ .refused = .never_answered };
             return .{ .started = {} };
@@ -299,6 +301,10 @@ fn ensureDirPath(path: []const u8) !void {
     }
 }
 
+/// `prctl(2)`'s PR_SET_PDEATHSIG: the signal the kernel sends this process
+/// when its parent dies.
+const pr_set_pdeathsig: i32 = 1;
+
 /// Fork the manager into its own session, with the VM root's log on both
 /// streams: a manager's stdout is never the server's.
 fn spawnDetached(a: std.mem.Allocator, artifacts: Artifacts, socket_path: []const u8) ?i32 {
@@ -316,10 +322,15 @@ fn spawnDetached(a: std.mem.Allocator, artifacts: Artifacts, socket_path: []cons
     std.log.info("--saas: launching {s} {s} {s} {s} {s} {s}", .{
         words[0], words[1], words[2], words[3], words[4], words[5],
     });
+    const parent_pid = linux.getpid();
     const child = linux.fork();
     if (linux.errno(child) != .SUCCESS) return null;
     if (child == 0) {
         _ = linux.setsid();
+        // The kernel ends the manager when the server that started it dies,
+        // so a server that never got to say goodbye still leaves no manager.
+        _ = linux.prctl(pr_set_pdeathsig, @intFromEnum(linux.SIG.TERM), 0, 0, 0);
+        if (linux.getppid() != parent_pid) linux.exit(0);
         _ = linux.chdir("/");
         const rc = linux.open(log_path, .{ .ACCMODE = .WRONLY, .CREAT = true, .APPEND = true }, 0o644);
         if (linux.errno(rc) == .SUCCESS) {

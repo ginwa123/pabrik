@@ -134,6 +134,12 @@ pub const Manager = struct {
         };
     }
 
+    /// Every workspace VM this daemon owns, stopped. A manager that is going
+    /// down takes the VMs with it.
+    pub fn stopAll(self: *const Manager, allocator: std.mem.Allocator) !u32 {
+        return self.reconciler().stopAll(allocator);
+    }
+
     /// `false` means nothing was running, or that a VMM this daemon cannot
     /// account for still owns the workspace.
     pub fn stopWorkspace(self: *const Manager, allocator: std.mem.Allocator, workspace_id: []const u8) bool {
@@ -253,6 +259,12 @@ pub fn serve(allocator: std.mem.Allocator, config: Config) !void {
         };
         thread.detach();
     }
+
+    const stopped = manager.stopAll(allocator) catch |err| blk: {
+        log("shutdown: could not stop every workspace VM: {s}", .{@errorName(err)});
+        break :blk 0;
+    };
+    if (stopped > 0) log("shutdown: stopped {d} workspace VM(s)", .{stopped});
 }
 
 /// The reconciler's clock: one pass over every workspace per interval. It

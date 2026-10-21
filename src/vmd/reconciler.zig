@@ -313,6 +313,44 @@ pub const Reconciler = struct {
         return record;
     }
 
+    /// Every workspace under this root, by id.
+    pub fn workspaceIds(self: *const Reconciler, allocator: std.mem.Allocator) ![][]u8 {
+        const root = try std.fmt.allocPrint(allocator, "{s}/workspaces", .{self.config.root});
+        defer allocator.free(root);
+
+        var names: std.ArrayList([]u8) = .empty;
+        defer freeNames(allocator, &names);
+        listDirs(allocator, root, &names) catch |err| switch (err) {
+            error.FileNotFound => return try allocator.alloc([]u8, 0),
+            else => return err,
+        };
+
+        var ids: std.ArrayList([]u8) = .empty;
+        errdefer freeNames(allocator, &ids);
+        for (names.items) |name| {
+            if (!policy.workspaceIdValid(name)) continue;
+            try ids.append(allocator, try allocator.dupe(u8, name));
+        }
+        return ids.toOwnedSlice(allocator);
+    }
+
+    /// Every workspace VM under this root, stopped. A manager that is going
+    /// down takes the VMs it owns with it.
+    pub fn stopAll(self: *const Reconciler, allocator: std.mem.Allocator) !u32 {
+        const ids = try self.workspaceIds(allocator);
+        defer freeWorkspaceIds(allocator, ids);
+        var stopped: u32 = 0;
+        for (ids) |id| {
+            const layout = try self.layoutFor(allocator, id);
+            defer layout.deinit(allocator);
+            const was_running = vm_client.readPid(layout) != null;
+            const record = try self.stop(allocator, id);
+            defer record.deinit(allocator);
+            if (was_running and record.state == .absent) stopped += 1;
+        }
+        return stopped;
+    }
+
     /// One pass over every workspace on this box: reclaim the dead, mark the
     /// ones that failed, leave the busy alone.
     pub fn sweep(self: *const Reconciler, allocator: std.mem.Allocator) !Sweep {
@@ -586,6 +624,11 @@ fn freeNames(allocator: std.mem.Allocator, names: *std.ArrayList([]u8)) void {
     names.deinit(allocator);
 }
 
+pub fn freeWorkspaceIds(allocator: std.mem.Allocator, ids: [][]u8) void {
+    for (ids) |id| allocator.free(id);
+    allocator.free(ids);
+}
+
 const dt_dir: u8 = 4;
 
 // ─── the real inputs ─────────────────────────────────────────────────────
@@ -664,6 +707,15 @@ const Fake = struct {
     ready: bool = true,
     boot_error: bool = false,
     boot_pid: i64 = 777,
+    /// The pids the fake reports as running. Empty means "every pid runs",
+    /// which is what the single-workspace cases want.
+    live: [8]i64 = .{0} ** 8,
+    live_count: usize = 0,
+
+    fn markLive(self: *Fake, pid: i64) void {
+        self.live[self.live_count] = pid;
+        self.live_count += 1;
+    }
 
     fn me(ctx: *anyopaque) *Fake {
         return @ptrCast(@alignCast(ctx));
@@ -671,8 +723,13 @@ const Fake = struct {
     fn nowMs(ctx: *anyopaque) i64 {
         return me(ctx).now;
     }
-    fn pidAlive(ctx: *anyopaque, _: i64) bool {
-        return me(ctx).alive;
+    fn pidAlive(ctx: *anyopaque, pid: i64) bool {
+        const fake = me(ctx);
+        if (fake.live_count == 0) return fake.alive;
+        for (fake.live[0..fake.live_count]) |live| {
+            if (live == pid) return true;
+        }
+        return false;
     }
     fn socketOwned(ctx: *anyopaque, _: []const u8) bool {
         return me(ctx).owned;
@@ -680,9 +737,16 @@ const Fake = struct {
     fn helloAnswered(ctx: *anyopaque, _: vm_client.Layout) bool {
         return me(ctx).hello;
     }
-    fn kill(ctx: *anyopaque, _: i64) void {
-        me(ctx).kills += 1;
-        me(ctx).alive = false;
+    fn kill(ctx: *anyopaque, pid: i64) void {
+        const fake = me(ctx);
+        fake.kills += 1;
+        fake.alive = false;
+        for (fake.live[0..fake.live_count], 0..) |live, i| {
+            if (live != pid) continue;
+            fake.live[i] = fake.live[fake.live_count - 1];
+            fake.live_count -= 1;
+            break;
+        }
     }
     fn waitGone(_: *anyopaque, _: i64, _: u32) bool {
         return true;
@@ -988,6 +1052,24 @@ test "stop keeps a workspace whose socket an unaccounted VMM owns" {
     defer record.deinit(alloc);
     try std.testing.expectEqual(State.failed, record.state);
     try std.testing.expect(try scratch.exists("demo", "api.sock"));
+}
+
+test "a manager that is going down stops every workspace VM it owns" {
+    var scratch = try Scratch.init("stop-all");
+    defer scratch.deinit();
+    try scratch.write("alpha", "fc.pid", "4242\n");
+    try scratch.write("beta", "fc.pid", "4343\n");
+    var fake = Fake{};
+    fake.markLive(4242);
+    fake.markLive(4343);
+    const rec = testReconciler(&fake, scratch.root);
+    const alloc = std.testing.allocator;
+
+    const stopped = try rec.stopAll(alloc);
+    try std.testing.expectEqual(@as(u32, 2), stopped);
+    try std.testing.expectEqual(@as(u32, 2), fake.kills);
+    try std.testing.expect(!try scratch.exists("alpha", "fc.pid"));
+    try std.testing.expect(!try scratch.exists("beta", "fc.pid"));
 }
 
 test "a recorded state survives a restart, and an unknown one reads absent" {

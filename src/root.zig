@@ -215,6 +215,7 @@ pub const vm_runtime = @import("agentic_loop/vm_runtime.zig");
 pub const vmd_policy = @import("vmd/policy.zig");
 pub const vmd_rpc = @import("vmd/rpc.zig");
 pub const vmd_client = @import("vmd/vmd_client.zig");
+pub const vmd_lifecycle = @import("vmd/lifecycle.zig");
 pub const agent_memories = @import("agentic_loop/agent_memories.zig");
 /// Workspace-scoped document storage (Migration 098).
 pub const documents_store = @import("agentic_loop/documents_store.zig");
