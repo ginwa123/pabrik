@@ -4119,6 +4119,11 @@ export interface GitPrStatus {
   additions: number
   deletions: number
   changed_files: number
+  /** APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED, or "" when the forge has no
+   *  verdict to give. It is the sentence behind "Merging is blocked". */
+  review_decision: string
+  /** The CI rollup, counted. The header chips and the merge box read it. */
+  checks: GitPrChecksSummary
 }
 
 export async function getPrStatus(
@@ -4132,6 +4137,57 @@ export async function getPrStatus(
   })
   if (opts?.provider) params.set('provider', opts.provider)
   return await apiFetch<GitPrStatus>(`/git/pr/status?${params.toString()}`, { silent: true })
+}
+
+// The change request's conversation (GET /api/git/pr/conversation): the body,
+// the comments and the review verdicts. Every body here is authored by someone
+// who can comment on the repo, so it is rendered through helpers/markdown.ts.
+export interface GitPrConversationComment {
+  author: string
+  body: string
+  created_at: string
+  url: string
+}
+
+export interface GitPrConversationReview {
+  author: string
+  /** APPROVED | CHANGES_REQUESTED | COMMENTED | DISMISSED */
+  state: string
+  body: string
+  created_at: string
+  url: string
+}
+
+export interface GitPrConversation {
+  provider: string
+  number: number
+  title: string
+  /** The request's own description, in markdown. */
+  body: string
+  author: string
+  created_at: string
+  review_decision: string
+  comments: GitPrConversationComment[]
+  reviews: GitPrConversationReview[]
+  /** Comments plus reviews: how many entries the thread holds. */
+  comment_count: number
+  /** A non-fatal note about the answer, rendered inline. */
+  detail: string
+}
+
+export async function getPrConversation(
+  cwd: string,
+  prUrl: string,
+  opts?: { provider?: string },
+): Promise<GitPrConversation> {
+  const params = new URLSearchParams({
+    path: cwd,
+    pr: prUrl,
+  })
+  if (opts?.provider) params.set('provider', opts.provider)
+  // silent: true — the Conversation tab renders the server's own error
+  // sentence inline, so a toast would only repeat it.
+  return await apiFetch<GitPrConversation>(`/git/pr/conversation?${params.toString()}`, { silent: true })
 }
 
 // PR/MR list for a repo (GET /api/git/pr/list via `gh pr list` /

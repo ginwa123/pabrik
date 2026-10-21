@@ -703,9 +703,54 @@ pub const GitPrStatusResponse = struct {
     additions: i64 = 0,
     deletions: i64 = 0,
     changed_files: i64 = 0,
+    /// APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED, or "" when the forge
+    /// has no verdict to give. The sentence behind "Merging is blocked".
+    review_decision: []const u8 = "",
+    /// The CI rollup, counted. The merge box and the header chips read it.
+    checks: GitPrChecksSummary = .{},
 };
 
 pub fn makeGitPrStatusResponse(allocator: std.mem.Allocator, response: GitPrStatusResponse) ![]u8 {
+    return std.json.Stringify.valueAlloc(allocator, response, .{});
+}
+
+// ─── Git PR conversation types ─────────────────────────────────────────────
+// Wire shape for `GET
+// /api/git/pr/conversation?path=<repo>[&pr=<n|url>][&provider=]`.
+pub const GitPrConversationComment = struct {
+    author: []const u8 = "",
+    body: []const u8 = "",
+    created_at: []const u8 = "",
+    url: []const u8 = "",
+};
+
+pub const GitPrConversationReview = struct {
+    author: []const u8 = "",
+    /// APPROVED | CHANGES_REQUESTED | COMMENTED | DISMISSED.
+    state: []const u8 = "",
+    body: []const u8 = "",
+    created_at: []const u8 = "",
+    url: []const u8 = "",
+};
+
+pub const GitPrConversationResponse = struct {
+    provider: []const u8 = "",
+    number: i64 = 0,
+    title: []const u8 = "",
+    /// The request's own description, in markdown.
+    body: []const u8 = "",
+    author: []const u8 = "",
+    created_at: []const u8 = "",
+    review_decision: []const u8 = "",
+    comments: []GitPrConversationComment = &.{},
+    reviews: []GitPrConversationReview = &.{},
+    /// Comments plus reviews: how many entries the thread holds.
+    comment_count: i64 = 0,
+    /// A non-fatal note about the answer, rendered inline.
+    detail: []const u8 = "",
+};
+
+pub fn makeGitPrConversationResponse(allocator: std.mem.Allocator, response: GitPrConversationResponse) ![]u8 {
     return std.json.Stringify.valueAlloc(allocator, response, .{});
 }
 

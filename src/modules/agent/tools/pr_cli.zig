@@ -6,7 +6,7 @@ const PrProvider = pr_provider.PrProvider;
 /// Fields requested from `gh pr view --json`. Kept here (not next to
 /// the caller) so the argv builder and the parser it feeds cannot drift,
 /// and so the GitLab builder below has an obvious sibling to read.
-pub const GH_JSON_FIELDS = "number,title,url,state,mergeable,mergeStateStatus,headRefName,baseRefName,createdAt,updatedAt,mergedAt,closedAt,author,additions,deletions,changedFiles,headRefOid";
+pub const GH_JSON_FIELDS = "number,title,url,state,mergeable,mergeStateStatus,headRefName,baseRefName,createdAt,updatedAt,mergedAt,closedAt,author,additions,deletions,changedFiles,headRefOid,reviewDecision,statusCheckRollup";
 
 /// The command-line tool that owns a forge, plus the words its users expect
 /// to read.
@@ -91,6 +91,51 @@ pub fn viewArgv(storage: [][]const u8, provider: PrProvider, prog: []const u8, r
             n += 1;
         },
         // `cliFor` already returned null for this.
+        .generic => unreachable,
+    }
+    return storage[0..n];
+}
+
+/// The fields `gh pr view --json` needs for the conversation: the request
+/// body, the issue comments, the reviews and the review verdict.
+pub const GH_CONVERSATION_JSON_FIELDS = "body,title,number,url,author,createdAt,comments,reviews,reviewDecision";
+
+/// Upper bound on `conversationArgv` output.
+pub const conversation_argv_max = 8;
+
+/// Build the "read this change request's conversation" argv. The GitHub form
+/// asks for named fields; the GitLab form asks for the notes, because glab
+/// prints them only when asked.
+pub fn conversationArgv(storage: [][]const u8, provider: PrProvider, prog: []const u8, ref: []const u8) ?[]const []const u8 {
+    const c = cliFor(provider) orelse return null;
+    if (storage.len < conversation_argv_max) return null;
+
+    var n: usize = 0;
+    storage[n] = prog;
+    n += 1;
+    storage[n] = c.noun;
+    n += 1;
+    storage[n] = "view";
+    n += 1;
+    if (ref.len > 0) {
+        storage[n] = ref;
+        n += 1;
+    }
+    switch (provider) {
+        .github => {
+            storage[n] = "--json";
+            n += 1;
+            storage[n] = GH_CONVERSATION_JSON_FIELDS;
+            n += 1;
+        },
+        .gitlab => {
+            storage[n] = "--comments";
+            n += 1;
+            storage[n] = "--output";
+            n += 1;
+            storage[n] = "json";
+            n += 1;
+        },
         .generic => unreachable,
     }
     return storage[0..n];

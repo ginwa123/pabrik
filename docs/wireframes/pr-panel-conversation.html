@@ -771,7 +771,52 @@
     </tbody>
   </table>
 
-  <h2><span class="n">§9</span>What the gate said</h2>
+  <h2><span class="n">§9</span>What shipped, and where it differs</h2>
+  <p class="small">
+    The implementation landed after this document was accepted. Six places differ, and each one
+    is a decision the code had to make that the drawing could not:
+  </p>
+  <ul>
+    <li>
+      <b>The two file tabs are “Local” and the forge's own “PR” / “MR”, not “Changed”.</b> The
+      point of the rename was to tell the working tree apart from the request's diff, and “Local”
+      does that. “Changed” would also have taken the forge's name off the surface, and this
+      repository's convention is that the forge names itself
+      (<code>helpers/forgeWording.ts</code>).
+    </li>
+    <li>
+      <b>The chips come from the status read, not from a second one.</b>
+      <code>gh pr view</code> already answers for the merge state, so
+      <code>reviewDecision</code> and <code>statusCheckRollup</code> were added to that one call:
+      the review chip and the failing-check count cost no extra spawn, and they are right on the
+      30-second poll instead of going stale on a tab switch.
+    </li>
+    <li>
+      <b>The merge box's counted sentence is its headline, except when the merge is blocked.</b>
+      Then the headline still says “Merging is blocked” and the counts move to the line under it,
+      because a blocked merge must say so.
+    </li>
+    <li>
+      <b>The Conversation tab's count appears once the thread has been read.</b> The count is the
+      thread's size, so the tab cannot show it before the tab has been opened.
+    </li>
+    <li>
+      <b>The read asks for less than §7 said.</b> The field list is
+      <code>body,title,number,url,author,createdAt,comments,reviews,reviewDecision</code>:
+      <code>latestReviews</code> is not needed, because every review is read and the verdict comes
+      from <code>reviewDecision</code>.
+    </li>
+    <li>
+      <b>GitLab reads the notes best-effort.</b> The GitLab CLI's JSON does not always carry them,
+      and this machine has no GitLab token to check against, so the panel says so in the thread
+      instead of showing an empty list that reads as “nobody commented”.
+    </li>
+  </ul>
+  <p class="small">
+    The composer and the three verdicts are still deferred: writing is a second card.
+  </p>
+
+  <h2><span class="n">§10</span>What the gate said</h2>
   <p class="small">
     The house gate for this repo is the design skill's own scanner: a static pass over the source
     and a real browser that measures the rendered page at 1440, 768 and 390 pixels. Both were run

@@ -230,6 +230,7 @@ fn registerGitRoutes(authed: *Group) !void {
     // test in git_pr_checks.zig), so matchRoute cannot shadow it.
     try authed.get("/api/git/pr/checks", ai_mod.http_handlers.gitPrChecksHandler);
     try authed.get("/api/git/pr/diff", ai_mod.http_handlers.gitPrDiffHandler);
+    try authed.get("/api/git/pr/conversation", ai_mod.http_handlers.gitPrConversationHandler);
     try authed.get("/api/git/pr/conflicts", ai_mod.http_handlers.gitPrConflictsHandler);
     // POST, and the only mutating forge endpoint: `gh pr merge` / `glab mr
     // merge` change a remote branch, so it is never reachable unauthenticated.

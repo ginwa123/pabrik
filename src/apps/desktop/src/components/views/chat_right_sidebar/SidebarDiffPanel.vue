@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, onUpdated, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, onUpdated, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import * as api from '../../../api'
 import { openInNewTab } from '../../../helpers/openInNewTab'
@@ -15,6 +15,7 @@ import EmptyState from '../../pabrik/EmptyState.vue'
 import GitCommits from '../../git/GitCommits.vue'
 import ForgeIcon from '../../git/ForgeIcon.vue'
 import PrChecksPanel from './PrChecksPanel.vue'
+import ConversationPanel from './ConversationPanel.vue'
 import MergeBox from './MergeBox.vue'
 import SkillEvalsPanel from './SkillEvalsPanel.vue'
 import {
@@ -97,14 +98,21 @@ const changeCount = computed(
 const router = useRouter()
 const route = useRoute()
 
-const readTabParam = (): 'files' | 'pr' | 'commits' | 'checks' | 'evals' | null => {
+type PanelTab = 'files' | 'pr' | 'conversation' | 'commits' | 'checks' | 'evals'
+
+const readTabParam = (): PanelTab | null => {
   const v = route.query.panel
-  return v === 'files' || v === 'pr' || v === 'commits' || v === 'checks' || v === 'evals'
+  return v === 'files' ||
+    v === 'pr' ||
+    v === 'conversation' ||
+    v === 'commits' ||
+    v === 'checks' ||
+    v === 'evals'
     ? v
     : null
 }
 
-const syncTabParam = (tab: 'files' | 'pr' | 'commits' | 'checks' | 'evals' | null) => {
+const syncTabParam = (tab: PanelTab | null) => {
   const query = { ...route.query }
   if (tab) query.panel = tab
   else delete query.panel
@@ -126,8 +134,8 @@ const isPrMode = computed(() => (props.prUrl ?? '').trim().length > 0)
 // Every view switch lands in the URL (?panel=files|pr|commits|checks|evals) so refresh,
 // Back/Forward, and shared links restore the same panel. The commits tab is valid with or without
 // an attached PR; ?panel=pr without a prUrl still falls back to files (pre-commits behavior).
-const initialTab = (): 'files' | 'pr' | 'commits' | 'checks' | 'evals' => {
-  let param: 'files' | 'pr' | 'commits' | 'checks' | 'evals' | null = null
+const initialTab = (): PanelTab => {
+  let param: PanelTab | null = null
   try {
     param = readTabParam()
   } catch {
@@ -143,13 +151,17 @@ const initialTab = (): 'files' | 'pr' | 'commits' | 'checks' | 'evals' => {
   if (isPrMode.value) return param ?? 'pr'
   return param === 'commits' ? 'commits' : 'files'
 }
-const activeTab = ref<'files' | 'pr' | 'commits' | 'checks' | 'evals'>(initialTab())
+const activeTab = ref<PanelTab>(initialTab())
 const showCommits = computed(() => activeTab.value === 'commits')
+const showConversation = computed(() => activeTab.value === 'conversation')
 const showChecks = computed(() => activeTab.value === 'checks')
 const showEvals = computed(() => activeTab.value === 'evals')
 // PrChecksPanel loads itself, so the sidebar's ↻ asks it directly rather
 // than going through loadTab (which has nothing to fetch for this tab).
 const checksRef = ref<InstanceType<typeof PrChecksPanel> | null>(null)
+const conversationRef = ref<InstanceType<typeof ConversationPanel> | null>(null)
+/** How many entries the forge's thread holds, once it has been read. */
+const conversationCount = ref(0)
 const showPr = computed(() => isPrMode.value && activeTab.value === 'pr')
 const loadedTabs = ref(new Set<string>())
 const prFiles = ref<SplitDiffFile[]>([])
@@ -451,6 +463,24 @@ const prStatusLabel = computed(() => {
   if (prStatus.value === 'closed') return 'Closed'
   if (prStatus.value === 'open') return 'Open'
   return ''
+})
+
+// The request's own words. The number is a lookup key; the title is what
+// a reviewer reads first, and it was nowhere on the screen.
+const prTitle = computed(() => prStatusData.value?.title ?? prStatusTitle.value ?? '')
+const prAuthor = computed(() => prStatusData.value?.author ?? '')
+const prHeadRef = computed(() => prStatusData.value?.head_ref ?? prHead.value ?? '')
+const prBaseRef = computed(() => prStatusData.value?.base_ref ?? prBase.value ?? '')
+
+// The chips: two doors into the two tabs that hold the reasons.
+const failedChecksCount = computed(() => prStatusData.value?.checks?.failed ?? 0)
+const reviewChip = computed(() => {
+  const decision = (prStatusData.value?.review_decision ?? '').toUpperCase()
+  if (decision === 'CHANGES_REQUESTED')
+    return { label: 'Changes requested', title: 'A reviewer asked for changes' }
+  if (decision === 'REVIEW_REQUIRED')
+    return { label: 'Review requested', title: 'This change request still needs a review' }
+  return null
 })
 
 const prStatusStyle = computed(() => {
@@ -758,7 +788,7 @@ const loadFullList = async (cwd: string = props.cwd) => {
 // Per-tab lazy load: each side fetches once until cwd/prUrl changes.
 // The commits tab needs no panel-level fetch — GitCommits.vue loads
 // (and paginates) itself when it mounts, and so does PrChecksPanel.vue.
-const loadTab = async (tab: 'files' | 'pr' | 'commits' | 'checks' | 'evals', force = false) => {
+const loadTab = async (tab: PanelTab, force = false) => {
   if (!force && loadedTabs.value.has(tab)) return
   if (tab === 'pr') await Promise.all([loadPrDiff(), loadPrStatus()])
   else if (tab === 'files') await loadGitStatus()
@@ -770,15 +800,48 @@ const loadTab = async (tab: 'files' | 'pr' | 'commits' | 'checks' | 'evals', for
 // re-syncs PR merge state when the PR tab is visible.
 const refreshCurrentTab = async () => {
   if (showPr.value) await loadTab('pr', true)
+  else if (showConversation.value) conversationRef.value?.reload()
   else if (showCommits.value) await loadTab('commits', true)
   else if (showChecks.value) checksRef.value?.reload()
   else await loadTab('files', true)
 }
 
-const setActiveTab = (tab: 'files' | 'pr' | 'commits' | 'checks' | 'evals') => {
+// The strip holds six labels in a 238px cluster, so the active tab has to be
+// scrolled into view: a tab you cannot see is a tab you cannot come back to.
+const tabStrip = ref<HTMLElement | null>(null)
+const stripOverflows = ref(false)
+
+const scrollActiveTabIntoView = () => {
+  const el = tabStrip.value
+  if (!el) return
+  const active = el.querySelector<HTMLElement>('[aria-selected="true"]')
+  if (!active) return
+  const left = active.offsetLeft
+  const right = left + active.offsetWidth
+  if (left < el.scrollLeft) el.scrollLeft = left
+  else if (right > el.scrollLeft + el.clientWidth) el.scrollLeft = right - el.clientWidth
+}
+
+const measureStrip = () => {
+  const el = tabStrip.value
+  if (!el) return
+  stripOverflows.value = el.scrollWidth > el.clientWidth + 1
+}
+
+const scrollStrip = (direction: -1 | 1) => {
+  const el = tabStrip.value
+  if (!el) return
+  el.scrollBy({ left: direction * 120, behavior: 'smooth' })
+}
+
+const setActiveTab = (tab: PanelTab) => {
   activeTab.value = tab
   syncTabParam(tab)
   void loadTab(tab)
+  void nextTick(() => {
+    scrollActiveTabIntoView()
+    measureStrip()
+  })
 }
 
 const loadDiff = async () => {
@@ -1142,11 +1205,37 @@ defineExpose({
          five tabs fit at the 200px minimum — "Pull request (43)" is 148px,
          "PR" plus a pill is 46px. -->
     <div
-      class="flex items-center gap-2 px-2 h-9 shrink-0"
+      class="relative flex items-center gap-2 px-2 h-9 shrink-0"
       style="border-bottom: 1px solid var(--color-border)"
       role="tablist"
     >
-      <div class="flex items-center gap-1 flex-1 min-w-0 h-full overflow-x-auto">
+      <div ref="tabStrip" class="flex items-center gap-1 flex-1 min-w-0 h-full overflow-x-auto">
+        <button
+          v-if="isPrMode"
+          type="button"
+          class="shrink-0 h-8 px-2.5 rounded flex items-center gap-1.5 text-dense transition-colors duration-150"
+          data-testid="sidebar-tab-conversation"
+          role="tab"
+          :aria-selected="activeTab === 'conversation'"
+          :style="
+            activeTab === 'conversation'
+              ? {
+                  color: 'var(--semantic-text)',
+                  fontWeight: 600,
+                  boxShadow: 'inset 0 -2px 0 0 var(--color-violet)',
+                }
+              : { color: 'var(--semantic-text)', opacity: '0.6' }
+          "
+          @click="setActiveTab('conversation')"
+        >
+          Conversation
+          <span
+            v-if="conversationCount > 0"
+            class="px-1.5 rounded-full text-micro font-semibold"
+            style="background-color: var(--color-bg-p1); color: var(--semantic-text-muted)"
+            >{{ conversationCount }}</span
+          >
+        </button>
         <button
           type="button"
           class="shrink-0 h-8 px-2.5 rounded flex items-center gap-1.5 text-dense transition-colors duration-150"
@@ -1164,7 +1253,7 @@ defineExpose({
           "
           @click="setActiveTab('files')"
         >
-          Files
+          Local
           <span
             v-if="changeCount > 0"
             class="px-1.5 rounded-full text-micro font-semibold"
@@ -1268,74 +1357,157 @@ defineExpose({
           ↻
         </button>
       </div>
+      <!-- The strip is narrower than its labels. The chevrons float over the
+           cluster's edge, so they cost no width of their own. -->
+      <div
+        v-if="stripOverflows"
+        class="absolute right-11 top-0 h-9 flex items-center gap-0.5 pl-1"
+        style="background-color: var(--color-bg)"
+        data-testid="sidebar-tab-scroll"
+      >
+        <button
+          type="button"
+          class="w-5 h-5 rounded flex items-center justify-center text-dense"
+          style="color: var(--semantic-text-dim)"
+          title="Scroll the tabs left"
+          data-testid="sidebar-tab-scroll-left"
+          @click="scrollStrip(-1)"
+        >
+          ‹
+        </button>
+        <button
+          type="button"
+          class="w-5 h-5 rounded flex items-center justify-center text-dense"
+          style="color: var(--semantic-text-dim)"
+          title="Scroll the tabs right"
+          data-testid="sidebar-tab-scroll-right"
+          @click="scrollStrip(1)"
+        >
+          ›
+        </button>
+      </div>
     </div>
 
-    <!-- ── Context band ────────────────────────────────────────────────────
-         Tinted rather than outlined, so it reads as the second line of the
-         header block instead of a fourth bar of chrome. -->
+    <!-- ── The request header ───────────────────────────────────────────────
+         The number is a lookup key; the title is what a reviewer reads
+         first, and it was nowhere on the screen. The chips are doors: each
+         one opens the tab that holds the reason. -->
     <div
-      v-if="showPr"
-      class="flex items-center gap-2 px-3 h-9 shrink-0"
+      v-if="isPrMode"
+      class="px-3 py-2 shrink-0"
       style="background-color: var(--color-bg-m1); border-bottom: 1px solid var(--color-border)"
+      data-testid="sidebar-pr-header"
     >
-      <ForgeIcon
-        :provider="prProvider"
-        class="shrink-0"
-        style="color: var(--semantic-text-dim)"
-        :title="`${forge.forge} ${forge.noun}`"
-        data-testid="sidebar-pr-forge-icon"
-      />
-      <a
-        :href="prUrl"
-        target="_blank"
-        rel="noopener"
-        class="font-mono text-dense font-semibold truncate hover:underline"
-        style="color: var(--semantic-text)"
-        :title="prUrl"
-        data-testid="sidebar-pr-link"
-      >
-        {{ prLabel }}
-      </a>
-      <span
-        v-if="prStatusLabel"
-        class="px-1.5 rounded-full text-micro font-semibold shrink-0"
-        :style="prStatusStyle"
-        :title="prStatusTitle || prStatusLabel"
-        data-testid="sidebar-pr-status"
-      >
-        {{ prStatusLabel }}
-      </span>
-      <span
-        v-if="hasPrConflict"
-        class="px-1.5 rounded-full text-micro font-semibold shrink-0"
-        style="background-color: var(--semantic-error); color: var(--color-bg)"
-        :title="
-          prConflictFiles.length > 0
-            ? `This ${forge.noun} has merge conflicts in ${prConflictFiles.length} file(s)`
-            : `This ${forge.noun} has merge conflicts that must be resolved`
-        "
-        data-testid="sidebar-pr-conflict-badge"
-      >
-        ⚠ Merge conflicts<span v-if="prConflictFiles.length > 0">
-          ({{ prConflictFiles.length }})</span
+      <div class="flex items-center gap-2 min-w-0">
+        <ForgeIcon
+          :provider="prProvider"
+          class="shrink-0"
+          style="color: var(--semantic-text-dim)"
+          :title="`${forge.forge} ${forge.noun}`"
+          data-testid="sidebar-pr-forge-icon"
+        />
+        <a
+          :href="prUrl"
+          target="_blank"
+          rel="noopener"
+          class="font-mono text-dense font-semibold truncate hover:underline"
+          style="color: var(--semantic-text)"
+          :title="prUrl"
+          data-testid="sidebar-pr-link"
         >
-      </span>
-      <span
-        v-if="prBase || prHead"
-        class="font-mono text-micro truncate min-w-0"
+          {{ prLabel }}
+        </a>
+        <span
+          v-if="prStatusLabel"
+          class="px-1.5 rounded-full text-micro font-semibold shrink-0"
+          :style="prStatusStyle"
+          :title="prStatusTitle || prStatusLabel"
+          data-testid="sidebar-pr-status"
+        >
+          {{ prStatusLabel }}
+        </span>
+        <span
+          v-if="hasPrConflict"
+          class="px-1.5 rounded-full text-micro font-semibold shrink-0"
+          style="background-color: var(--semantic-error); color: var(--color-bg)"
+          :title="
+            prConflictFiles.length > 0
+              ? `This ${forge.noun} has merge conflicts in ${prConflictFiles.length} file(s)`
+              : `This ${forge.noun} has merge conflicts that must be resolved`
+          "
+          data-testid="sidebar-pr-conflict-badge"
+        >
+          ⚠ Merge conflicts<span v-if="prConflictFiles.length > 0">
+            ({{ prConflictFiles.length }})</span
+          >
+        </span>
+        <span
+          v-if="prFiles.length > 0"
+          class="ml-auto shrink-0 px-1.5 rounded-full text-micro font-semibold"
+          style="background-color: var(--color-bg-p1); color: var(--semantic-text-muted)"
+          data-testid="sidebar-pr-count"
+        >
+          {{ prFiles.length }}
+        </span>
+      </div>
+      <div
+        v-if="prTitle"
+        class="mt-1 text-dense font-semibold leading-snug"
+        style="
+          color: var(--semantic-text);
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        "
+        :title="prTitle"
+        data-testid="sidebar-pr-title"
+      >
+        {{ prTitle }}
+      </div>
+      <div
+        v-if="prAuthor || prBaseRef || prHeadRef"
+        class="mt-0.5 text-micro truncate"
         style="color: var(--semantic-text-dim)"
-        :title="`${prBase}...${prHead}`"
+        :title="`${prBaseRef}…${prHeadRef}`"
+        data-testid="sidebar-pr-refs"
       >
-        {{ prBase }}…{{ prHead }}
-      </span>
-      <span
-        v-if="prFiles.length > 0"
-        class="ml-auto shrink-0 px-1.5 rounded-full text-micro font-semibold"
-        style="background-color: var(--color-bg-p1); color: var(--semantic-text-muted)"
-        data-testid="sidebar-pr-count"
+        <template v-if="prAuthor">{{ prAuthor }} · </template>{{ prBaseRef }}…{{ prHeadRef }}
+      </div>
+      <div
+        v-if="failedChecksCount > 0 || reviewChip"
+        class="mt-1.5 flex items-center gap-1.5 flex-wrap"
+        data-testid="sidebar-pr-chips"
       >
-        {{ prFiles.length }}
-      </span>
+        <button
+          v-if="failedChecksCount > 0"
+          type="button"
+          class="px-1.5 rounded text-micro font-semibold"
+          style="
+            background-color: color-mix(in srgb, var(--semantic-error) 16%, transparent);
+            color: var(--semantic-error);
+          "
+          :title="`${failedChecksCount} CI check(s) failed`"
+          data-testid="sidebar-pr-chip-checks"
+          @click="setActiveTab('checks')"
+        >
+          {{ failedChecksCount }} check{{ failedChecksCount === 1 ? '' : 's' }} failed ›
+        </button>
+        <button
+          v-if="reviewChip"
+          type="button"
+          class="px-1.5 rounded text-micro font-semibold"
+          style="
+            background-color: color-mix(in srgb, var(--color-yellow) 16%, transparent);
+            color: var(--color-yellow);
+          "
+          :title="reviewChip.title"
+          data-testid="sidebar-pr-chip-review"
+          @click="setActiveTab('conversation')"
+        >
+          {{ reviewChip.label }} ›
+        </button>
+      </div>
     </div>
     <div
       v-else
@@ -1374,7 +1546,16 @@ defineExpose({
       </span>
     </div>
 
-    <div v-if="showChecks" class="flex-1 min-h-0">
+    <div v-if="showConversation" class="flex-1 min-h-0">
+      <ConversationPanel
+        ref="conversationRef"
+        :cwd="cwd"
+        :pr-url="prUrl"
+        :pr-provider="prProvider"
+        @loaded="conversationCount = $event"
+      />
+    </div>
+    <div v-else-if="showChecks" class="flex-1 min-h-0">
       <PrChecksPanel ref="checksRef" :cwd="cwd" :pr-url="prUrl" :pr-provider="prProvider" />
     </div>
     <div v-else-if="showEvals" class="flex-1 min-h-0">
@@ -2067,6 +2248,7 @@ defineExpose({
       :pr-url="prUrl ?? ''"
       :pr-provider="prProvider"
       :status="prStatusData"
+      :failed-checks="failedChecksCount"
       @merged="onMerged"
     />
 
