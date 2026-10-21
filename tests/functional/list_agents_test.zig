@@ -143,8 +143,11 @@ fn expectNotString(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8) !v
 
 // A seeded agent comes back with the exact fields the tool renders.
 test "populated_agent_round_trips_tool_inputs_verbatim" {
-    var h = try Harness.init(gpa);
-    defer h.deinit();
+    try harness.requirePabrikBin(io, gpa);
+    var h = try Harness.boot(io, gpa, .{});
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}", .{@errorName(err)});
+    };
 
     const agent_json = try std.fmt.allocPrint(gpa,
         \\{{"model":"gpt-4o","base_url":"https://api.openai.com/v1","thinking":"on","temperature":"0.2","url_style":"openai","api_key":"coder-key-not-real","system_prompt":"{s}","max_capacity_tokens":128000,"compaction_threshold_percent":80,"reasoning_effort":"high"}}
@@ -154,7 +157,7 @@ test "populated_agent_round_trips_tool_inputs_verbatim" {
 
     const body = try getConfigBody(&h);
     defer gpa.free(body);
-    const doc = try parseJson(body);
+    var doc = try parseJson(body);
     defer doc.deinit();
 
     const agent = try agentObject(&doc, "coder");
@@ -173,8 +176,11 @@ test "populated_agent_round_trips_tool_inputs_verbatim" {
 // round-trip as absent-or-null (never invented defaults), because the tool
 // treats absent tags as "inherits the default".
 test "sparse_agent_null_optionals_stay_absent_or_null" {
-    var h = try Harness.init(gpa);
-    defer h.deinit();
+    try harness.requirePabrikBin(io, gpa);
+    var h = try Harness.boot(io, gpa, .{});
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}", .{@errorName(err)});
+    };
 
     const agent_json = try std.fmt.allocPrint(gpa,
         \\{{"model":"","base_url":"","thinking":"","temperature":"","url_style":"","api_key":"","system_prompt":"{s}"}}
@@ -184,7 +190,7 @@ test "sparse_agent_null_optionals_stay_absent_or_null" {
 
     const body = try getConfigBody(&h);
     defer gpa.free(body);
-    const doc = try parseJson(body);
+    var doc = try parseJson(body);
     defer doc.deinit();
 
     const agent = try agentObject(&doc, "helper");
@@ -199,8 +205,11 @@ test "sparse_agent_null_optionals_stay_absent_or_null" {
 
 // The sub-agents feature is gone: nothing carries a `sub_agents` list any more.
 test "no_sub_agents_key_survives_a_save" {
-    var h = try Harness.init(gpa);
-    defer h.deinit();
+    try harness.requirePabrikBin(io, gpa);
+    var h = try Harness.boot(io, gpa, .{});
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}", .{@errorName(err)});
+    };
 
     const agent_json = try std.fmt.allocPrint(gpa,
         \\{{"model":"gpt-4o","api_key":"stub-key-not-real","sub_agents":[{{"name":"ghost","model":"m"}}]}}
@@ -210,7 +219,7 @@ test "no_sub_agents_key_survives_a_save" {
 
     const body = try getConfigBody(&h);
     defer gpa.free(body);
-    const doc = try parseJson(body);
+    var doc = try parseJson(body);
     defer doc.deinit();
 
     const agent = try agentObject(&doc, "coder");
@@ -220,11 +229,44 @@ test "no_sub_agents_key_survives_a_save" {
     }
 }
 
+// A config.json written by an older build still carries a top-level
+// `sub_agents` array. The next save must drop it: the feature is gone, and
+// a stale list must not come back to life.
+test "the_deprecated_top_level_sub_agents_key_is_dropped_on_save" {
+    try harness.requirePabrikBin(io, gpa);
+    var h = try Harness.boot(io, gpa, .{});
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}", .{@errorName(err)});
+    };
+
+    const body =
+        \\{\\"profiles\":{\\"coder\":{\"model\":\"stub-model\"}},\\"sub_agents\":[{\"name\":\"ghost\",\"model\":\"m\"}]}
+    ;
+    var r = try h.http(io, .PUT, "/api/config/pabrik", .{
+        .json_body = body,
+        .expect = &.{200},
+    });
+    defer r.deinit();
+
+    const saved = try getConfigBody(&h);
+    defer gpa.free(saved);
+    var doc = try parseJson(saved);
+    defer doc.deinit();
+
+    if (doc.get("sub_agents")) |v| {
+        std.debug.print("the deprecated top-level sub_agents key survived: {any}\n", .{v});
+        return error.TestUnexpectedResult;
+    }
+}
+
 // The secrets stay confined to their own two keys: a marker in api_key or
 // base_url must not leak into another field.
 test "secrets_confined_to_their_own_keys" {
-    var h = try Harness.init(gpa);
-    defer h.deinit();
+    try harness.requirePabrikBin(io, gpa);
+    var h = try Harness.boot(io, gpa, .{});
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}", .{@errorName(err)});
+    };
 
     const agent_json = try std.fmt.allocPrint(gpa,
         \\{{"model":"gpt-4o","base_url":"https://{s}","api_key":"{s}","system_prompt":"clean"}}
@@ -234,7 +276,7 @@ test "secrets_confined_to_their_own_keys" {
 
     const body = try getConfigBody(&h);
     defer gpa.free(body);
-    const doc = try parseJson(body);
+    var doc = try parseJson(body);
     defer doc.deinit();
 
     const agent = try agentObject(&doc, "coder");

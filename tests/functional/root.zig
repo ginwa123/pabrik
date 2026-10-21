@@ -135,7 +135,6 @@ const subagent_identity_test = @import("subagent_identity_test.zig");
 const subagent_peek_test = @import("subagent_peek_test.zig");
 const subagent_refresh_test = @import("subagent_refresh_test.zig");
 const subagent_selected_profile_test = @import("subagent_selected_profile_test.zig");
-const subagents_per_profile_test = @import("subagents_per_profile_test.zig");
 const system_folder_gitignore_test = @import("system_folder_gitignore_test.zig");
 const system_folder_home_test = @import("system_folder_home_test.zig");
 const system_folder_path_validation_test = @import("system_folder_path_validation_test.zig");
@@ -292,7 +291,6 @@ pub const suites = .{
     subagent_peek_test,
     subagent_refresh_test,
     subagent_selected_profile_test,
-    subagents_per_profile_test,
     system_folder_gitignore_test,
     system_folder_home_test,
     system_folder_path_validation_test,
