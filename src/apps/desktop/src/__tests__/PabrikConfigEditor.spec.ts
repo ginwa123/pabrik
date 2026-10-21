@@ -10,7 +10,7 @@ import { makeLocalStorageStub } from './helpers'
 vi.mock('../api', () => ({
   getPabrikConfig: vi.fn(),
   savePabrikConfig: vi.fn(),
-  deleteProfile: vi.fn(),
+  deleteAgent: vi.fn(),
   // Plan 2026-09-10-web-launch-toggle: browser-mode status for the
   // General tab URL pill. Resolves null by default (pill waiting hint).
   getWebStatus: vi.fn(),
@@ -63,9 +63,9 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     expect(wrapper.find('[data-testid="skill-evals-section"]').exists()).toBe(true)
   })
 
-  it('never mounts the global SubAgentsSection (per-profile lists are the only editor)', async () => {
+  it('never mounts a separate sub-agents section (the agent list is the only editor)', async () => {
     // Plan 2026-09-04-subagents-per-profile regression: the global
-    // `subAgentsList` + `SubAgentsSection` mount are gone. Even with a
+    // `subAgentsList` + the sub-agents section mount are gone. Even with a
     // legacy top-level `sub_agents` payload, no global list renders.
     mockGet.mockResolvedValueOnce({
       profiles: { work: { model: 'm' } },
@@ -88,16 +88,16 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     expect(wrapper.find('[data-testid="pabrik-general-section"]').exists()).toBe(true)
   })
 
-  it('loads the config on mount and shows the Profiles section', async () => {
+  it('loads the config on mount and shows the Agents section', async () => {
     mockGet.mockResolvedValueOnce({
       profiles: { work: { model: 'gpt-4o-mini', base_url: 'https://x' } },
     })
-    const wrapper = await mountAt('profiles')
+    const wrapper = await mountAt('agents')
     expect(mockGet).toHaveBeenCalled()
-    // The profile name is visible. (This used to assert `toContain('work')`
+    // The agent name is visible. (This used to assert `toContain('work')`
     // while landing on GENERAL, so it passed on the word "worktree" in an
     // unrelated registry blurb - a green test that proved nothing.)
-    expect(wrapper.find('[data-testid="profile-list"]').text()).toContain('work')
+    expect(wrapper.find('[data-testid="agent-list"]').text()).toContain('work')
   })
 
   it('does not send top-level LLM defaults in the PUT body (config-simplify)', async () => {
@@ -113,7 +113,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     await wrapper.find('[data-testid="toggle-notify-on-complete"]').setValue(true)
     await flushPromises()
     expect(wrapper.find('[data-testid="save-btn"]').exists()).toBe(true)
-    // Save the profile-only config.
+    // Save the agent-only config.
     await wrapper.find('[data-testid="save-btn"]').trigger('click')
     await flushPromises()
     expect(mockSave).toHaveBeenCalledTimes(1)
@@ -133,7 +133,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
   })
 
   // ─── Per-profile sub-agents (regression for the inline-expand flow) ──
-  it('routes a sub-agent add through a profile scope to the right profile', async () => {
+  it('saves the agent system prompt on the agent it belongs to', async () => {
     mockGet.mockResolvedValueOnce({
       profiles: {
         work: {
@@ -143,6 +143,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
           temperature: 'auto',
           url_style: 'openai',
           api_key: '',
+          system_prompt: 'you are the work agent',
         },
         home: {
           model: 'm2',
@@ -154,37 +155,29 @@ describe('PabrikConfigEditor (orchestrator)', () => {
         },
       },
     })
-    const wrapper = await mountAt('profiles')
+    const wrapper = await mountAt('agents')
 
-    // 'work' is expanded by default, so open + Add sub-agent directly.
-    await wrapper.find('[data-testid="add-sub-agent-btn-work"]').trigger('click')
+    // Open the Edit modal for the 'work' agent and change its system prompt.
+    const rows = wrapper.findAll('[data-testid="agent-list"] > li')
+    const workRow = rows.find((r) => r.text().includes('work'))
+    expect(workRow).toBeDefined()
+    await workRow!.find('[data-testid="edit-btn"]').trigger('click')
     await flushPromises()
 
-    // The sub-agent modal should be open. Fill in name + save.
-    const nameInput = wrapper.find('[data-testid="name-input"]')
-    expect(nameInput.exists()).toBe(true)
-    await nameInput.setValue('coder')
-    await wrapper.find('[data-testid="model-input"]').setValue('claude-haiku-4-5')
+    const promptBox = wrapper.find('[data-testid="agent-system-prompt-input"]')
+    expect(promptBox.exists()).toBe(true)
+    await promptBox.setValue('you are the reviewer now')
     await wrapper.find('[data-testid="modal-save"]').trigger('click')
     await flushPromises()
 
-    // After save, click Save changes and verify the sub-agent landed
-    // on 'work' (not 'home' or the top-level list).
+    // Save changes and verify the prompt landed on 'work' only.
     await wrapper.find('[data-testid="save-btn"]').trigger('click')
     await flushPromises()
     expect(mockSave).toHaveBeenCalledTimes(1)
     const savedConfig = mockSave.mock.calls[0]![0] as Record<string, unknown>
-    const profiles = savedConfig.profiles as Record<string, Record<string, unknown>>
-    expect(profiles.work).toBeDefined()
-    expect(profiles.home).toBeDefined()
-    expect((profiles.work!.sub_agents as Array<{ name: string }>)[0]!.name).toBe('coder')
-    // The 'home' profile never received a sub-agent, so its
-    // sub_agents should be an empty array (or undefined).
-    expect((profiles.home!.sub_agents as unknown[] | undefined)?.length ?? 0).toBe(0)
-    // No top-level sub_agents list is ever sent (per-profile only).
-    const topLevel = (savedConfig as Record<string, unknown>).sub_agents as
-      Array<{ name: string }> | undefined
-    expect(topLevel ?? []).not.toContainEqual(expect.objectContaining({ name: 'coder' }))
+    const agents = savedConfig.profiles as Record<string, Record<string, unknown>>
+    expect(agents.work!.system_prompt).toBe('you are the reviewer now')
+    expect(agents.home!.system_prompt ?? '').toBe('')
   })
 
   // ─── Clear active profile (plan 2026-08-06-reset-active-profile) ── Plan: Settings → Profiles →
@@ -196,7 +189,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
       active_profile: 'work',
     })
     mockSave.mockResolvedValueOnce({ success: true })
-    const wrapper = await mountAt('profiles')
+    const wrapper = await mountAt('agents')
 
     // Switch to Profiles tab. Plan 2026-08-25-notify-on-error moved General to index 0; Profiles is
     // now at index 1. The active pill should show 'work' and the Reset button should be visible.
@@ -219,7 +212,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
       active_profile: 'work',
     })
     mockSave.mockResolvedValueOnce({ success: true })
-    const wrapper = await mountAt('profiles')
+    const wrapper = await mountAt('agents')
     await flushPromises()
     await wrapper.find('[data-testid="reset-active-btn"]').trigger('click')
     await flushPromises()
@@ -232,7 +225,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
       active_profile: 'work',
     })
     mockSave.mockRejectedValueOnce(new Error('network down'))
-    const wrapper = await mountAt('profiles')
+    const wrapper = await mountAt('agents')
     await flushPromises()
     await wrapper.find('[data-testid="reset-active-btn"]').trigger('click')
 

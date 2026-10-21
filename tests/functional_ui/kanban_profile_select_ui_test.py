@@ -265,7 +265,7 @@ def test_dialog_create_task_persists_picked_profile_in_db(
 
     # 3. Open the Profile picker, then click the 900ribu row.
     profile_button = page.locator(
-        '[data-testid="kanban-task-detail-profile-picker"]'
+        '[data-testid="kanban-task-detail-agent-picker"]'
     ).first
     if profile_button.count() == 0 or not profile_button.is_visible():
         pytest.skip(
@@ -277,11 +277,11 @@ def test_dialog_create_task_persists_picked_profile_in_db(
     profile_button.click()
     page.wait_for_timeout(150)
     # The dropdown renders one button per configured profile, all sharing
-    # data-testid="kanban-task-detail-profile-picker-item". Filter by the
+    # data-testid="kanban-task-detail-agent-picker-item". Filter by the
     # profile name text — Playwright's has_text matches the button's text
     # content (the <span class="font-medium">{{ p.name }}</span> inside).
     target_profile_row = page.locator(
-        '[data-testid="kanban-task-detail-profile-picker-item"]:has-text("900ribu")'
+        '[data-testid="kanban-task-detail-agent-picker-item"]:has-text("900ribu")'
     ).first
     assert target_profile_row.count() > 0, (
         "'900ribu' profile row not present in dropdown. The seeded "
@@ -399,13 +399,13 @@ def test_dialog_create_and_run_persists_picked_profile_in_db(
         page.wait_for_timeout(100)
 
     profile_button = page.locator(
-        '[data-testid="kanban-task-detail-profile-picker"]'
+        '[data-testid="kanban-task-detail-agent-picker"]'
     ).first
     assert profile_button.count() > 0, "Profile picker missing"
     profile_button.click()
     page.wait_for_timeout(150)
     page.locator(
-        '[data-testid="kanban-task-detail-profile-picker-item"]:has-text("900ribu")'
+        '[data-testid="kanban-task-detail-agent-picker-item"]:has-text("900ribu")'
     ).first.click()
     page.wait_for_timeout(100)
 
@@ -494,11 +494,11 @@ def test_dialog_picked_profile_surfaces_in_chatview_chip(
         page.wait_for_timeout(100)
 
     page.locator(
-        '[data-testid="kanban-task-detail-profile-picker"]'
+        '[data-testid="kanban-task-detail-agent-picker"]'
     ).first.click()
     page.wait_for_timeout(150)
     page.locator(
-        '[data-testid="kanban-task-detail-profile-picker-item"]:has-text("900ribu")'
+        '[data-testid="kanban-task-detail-agent-picker-item"]:has-text("900ribu")'
     ).first.click()
     page.wait_for_timeout(100)
 
@@ -533,7 +533,7 @@ def test_dialog_picked_profile_surfaces_in_chatview_chip(
     # chip showing 'alpha' (the active_profile fallback) instead of
     # '900ribu'. There IS no testid on the chip itself, so we click
     # it to open the dropdown, then assert that '900ribu' is rendered
-    # as a dropdown row (data-testid="profile-picker-900ribu"
+    # as a dropdown row (data-testid="agent-picker-900ribu"
     # — ChatView.vue:3326).
     # The chatview's profile chip (ChatView.vue:3300) renders
     # `{{ effectiveProfile ?? 'Default' }}`. The fix flows the

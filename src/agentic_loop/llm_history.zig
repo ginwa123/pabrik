@@ -739,7 +739,7 @@ pub fn getSessionMessagesSorted(
     limit: u32,
     cursor: ?[]const u8,
     sort_spec: SortSpec,
-    profile: ?*const config_mod.LlmConfig.LlmProfile,
+    profile: ?*const config_mod.LlmConfig.LlmAgent,
 ) !SessionMessageResponse {
     // Query limit + 1 to check if more results exist
     const query_limit = limit + 1;
@@ -1026,8 +1026,7 @@ pub fn getSessionMessagesSorted(
                 .model_compaction_size_kb = 100,
                 .mcpServers_parsed = null,
                 .mcp_servers = std.StringHashMap(config_mod.LlmConfig.McpServerConfig).init(allocator),
-                .profiles_models = std.StringHashMap(config_mod.LlmConfig.LlmProfile).init(allocator),
-                .sub_agents = &.{},
+                .agents = std.StringHashMap(config_mod.LlmConfig.LlmAgent).init(allocator),
                 .url_style = "openai",
             };
             break :blk resolveMaxCapacityTotalTokens(&empty_cfg, profile, empty_cfg.model);
@@ -1095,13 +1094,13 @@ pub fn getSessionPrFields(
 /// process-global singleton.
 pub fn resolveMaxCapacityTotalTokens(
     cfg: *const config_mod.LlmConfig,
-    profile: ?*const config_mod.LlmConfig.LlmProfile,
+    profile: ?*const config_mod.LlmConfig.LlmAgent,
     model: []const u8,
 ) u32 {
     // The live catalog is what makes a non-MiniMax model resolve to its real
     // window instead of the built-in 200k. `null` (no catalog yet) degrades to
     // exactly the previous behaviour.
-    return cfg.maxCapacityForModelWith(profile, null, cfg, model, model_catalog.getSingleton());
+    return cfg.maxCapacityForModelWith(profile, cfg, model, model_catalog.getSingleton());
 }
 
 /// Resolve the profile a session effectively runs under — the shared cascade
@@ -1110,8 +1109,8 @@ pub fn resolveMaxCapacityTotalTokens(
 pub fn resolveSessionProfile(
     cfg: *const config_mod.LlmConfig,
     selected_profile_model: []const u8,
-) ?config_mod.LlmConfig.LlmProfile {
-    return cfg.resolveSessionProfileCompat(selected_profile_model);
+) ?config_mod.LlmConfig.LlmAgent {
+    return cfg.resolveSessionAgentCompat(selected_profile_model);
 }
 
 /// Get the total count of messages for a session

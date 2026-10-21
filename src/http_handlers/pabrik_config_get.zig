@@ -54,7 +54,6 @@ pub fn pabrikConfigGetHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
             });
         };
         const cfg = parsed;
-        _ = cfg.sub_agents;
 
         // Masking happens inside `makeConfigResponse`, which is the ONE
         // place the wire shape is built - so this branch and the file branch
@@ -115,10 +114,6 @@ pub fn pabrikConfigGetHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
 
     const cfg = parsed;
 
-    // Plan 2026-09-04-subagents-per-profile: the top-level `sub_agents`
-    // response block was removed.
-    _ = cfg.sub_agents;
-
     // Masking happens inside `makeConfigResponse` - see the auth branch above.
     return res.jsonResponse(.{
         .status_code = 200,
@@ -139,9 +134,6 @@ pub fn makeConfigResponse(allocator: std.mem.Allocator, cfg: ConfigJson) ![]u8 {
         .profiles = cfg.profiles_models,
         .active_profile = cfg.active_profile,
         .mcp_servers = cfg.mcp_servers,
-        // Plan 2026-09-04-subagents-per-profile: top-level sub-agents are
-        // removed from the wire.
-        .sub_agents = null,
         .notify_on_complete = cfg.notify_on_complete,
         .notify_on_error = cfg.notify_on_error,
         .web_launch_enabled = cfg.web_launch_enabled,
@@ -172,9 +164,6 @@ pub const ConfigJson = struct {
     mcp_servers: ?json.Value = null,
     profiles_models: ?json.Value = null,
     active_profile: ?[]const u8 = null,
-    /// Top-level sub-agents array (snake_case, matches PABRIK.md JSON
-    /// convention).
-    sub_agents: ?[]const LlmConfig.SubAgentJson = null,
     /// Opt-in OS notification flag (see LlmConfigJson in Config.zig).
     notify_on_complete: bool = false,
     /// Opt-in OS notification flag for the error path (see LlmConfigJson).

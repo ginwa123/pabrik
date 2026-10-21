@@ -1,5 +1,5 @@
 /** ChatView V1 composer toolbar — static contract (mirrors the DiffCommentBox.spec.ts
- * source-reading pattern; mounting the full ChatView needs the profileCascade harness). */
+ * source-reading pattern; mounting the full ChatView needs the agentCascade harness). */
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
@@ -28,17 +28,17 @@ describe('ChatView composer toolbar (V1 single-card)', () => {
 
   it('keeps every interactive hook (testids, dropdowns, titles)', () => {
     for (const hook of [
-      'profile-picker-button',
-      'profile-picker-default',
-      'profile-picker-menu',
-      'profile-picker-active-badge',
+      'agent-picker-button',
+      'agent-picker-default',
+      'agent-picker-menu',
+      'agent-picker-active-badge',
       'worktree-status-button',
       'tokens-status',
     ]) {
       expect(toolbarSrc).toContain(`data-testid="${hook}"`)
     }
     expect(toolbarSrc).toContain('<WorktreeMenu')
-    expect(toolbarSrc).toContain('profileChipTooltip')
+    expect(toolbarSrc).toContain('agentChipTooltip')
     expect(toolbarSrc).toContain('Compact conversation history')
   })
 

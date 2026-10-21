@@ -109,7 +109,7 @@ import SaveMemory from '../tool_outputs/SaveMemory.vue'
 import LoadMemory from '../tool_outputs/LoadMemory.vue'
 import UpdatePlan from '../tool_outputs/UpdatePlan.vue'
 import GetPlan from '../tool_outputs/GetPlan.vue'
-import ListSubAgent from '../tool_outputs/ListSubAgent.vue'
+import ListAgents from '../tool_outputs/ListAgents.vue'
 import UsedTools from '../tool_outputs/UsedTools.vue'
 import PresentFiles from '../tool_outputs/PresentFiles.vue'
 import ReadWorkspaceSession from '../tool_outputs/ReadWorkspaceSession.vue'
@@ -1072,19 +1072,18 @@ const sidebarBranch = computed(() =>
 const maxTotalTokens = ref(0)
 const maxCapacityTotalTokens = ref(200000)
 
-// ─── Profile selection ──────────────────────────────────────────────────────── Per-session model
+// ─── Agent selection ───────────────────────────────────────────────────────── Per-session model
 // selection.
-const availableProfiles = ref<
+const availableAgents = ref<
   Array<{ name: string; model: string; base_url: string; url_style: string }>
 >([])
-const selectedProfile = ref<string | null>(null)
-// User-chosen default profile from PabrikSettings → Profiles → "Set active". `null` when no profile
-// is marked active (or no profiles configured). See plan
-// docs/superpowers/plans/2026-08-06-chatview-profile-cascade-display.md.
-const activeProfile = ref<string | null>(null)
-const showProfilePicker = ref(false)
-const isUpdatingProfile = ref(false)
-const profilePickerRef = ref<HTMLElement | null>(null)
+const selectedAgent = ref<string | null>(null)
+// User-chosen default agent from Settings → Agents → "Set active". `null` when no agent
+// is marked active (or no agents configured).
+const activeAgent = ref<string | null>(null)
+const showAgentPicker = ref(false)
+const isUpdatingAgent = ref(false)
+const agentPickerRef = ref<HTMLElement | null>(null)
 
 /** The workspace this chat runs in: the route's, else the app's. The sidebar's
  * Terminal tab starts its shell inside THIS workspace's VM under `--saas`. */
@@ -1092,84 +1091,84 @@ const chatWorkspaceId = computed<string>(() =>
   resolveWorkspaceId(route?.params?.workspaceId, workspacesStore.activeWorkspace?.id),
 )
 
-/** The workspace whose profiles the picker must list: the route's, else the one the app is in. The
+/** The workspace whose agents the picker must list: the route's, else the one the app is in. The
  * picker must offer what actually RUNS here, and a run uses the workspace's config overlay merged
  * over the user config (`session_llm_config.mergedConfigTextFor`). */
-const profilePickerWorkspaceId = chatWorkspaceId
+const agentPickerWorkspaceId = chatWorkspaceId
 
-const loadProfiles = async () => {
+const loadAgents = async () => {
   try {
-    const wsId = profilePickerWorkspaceId.value
+    const wsId = agentPickerWorkspaceId.value
     const config = wsId ? await api.getWorkspaceConfig(wsId) : await api.getPabrikConfig()
-    const profiles = (config.profiles ?? {}) as Record<
+    const agents = (config.profiles ?? {}) as Record<
       string,
       { model?: string; base_url?: string; url_style?: string }
     >
-    availableProfiles.value = Object.entries(profiles).map(([name, p]) => ({
+    availableAgents.value = Object.entries(agents).map(([name, p]) => ({
       name,
       model: p.model ?? '',
       base_url: p.base_url ?? '',
       url_style: p.url_style ?? '',
     }))
-    // `active_profile` is the user-chosen default from PabrikSettings. Empty
+    // `active_profile` is the user-chosen default from Settings. Empty
     // string → null (matches the backend's PUT coercion in
     // `pabrik_config_put.zig`).
     const raw = (config as { active_profile?: string | null }).active_profile
-    activeProfile.value = raw && raw.length > 0 ? raw : null
+    activeAgent.value = raw && raw.length > 0 ? raw : null
   } catch (err) {
-    console.error('Failed to load profiles:', err)
-    availableProfiles.value = []
-    activeProfile.value = null
+    console.error('Failed to load agents:', err)
+    availableAgents.value = []
+    activeAgent.value = null
   }
 }
 
-// Effective profile the chip / picker reflect — mirrors the backend cascade in
-// `workflow.zig::resolveProfileField`.
-const effectiveProfile = computed<string | null>(() => {
-  const sel = selectedProfile.value
+// Effective agent the chip / picker reflect — mirrors the backend cascade in
+// `workflow.zig::resolveEffectiveAgent`.
+const effectiveAgent = computed<string | null>(() => {
+  const sel = selectedAgent.value
   if (sel && sel.length > 0) return sel
-  return activeProfile.value
+  return activeAgent.value
 })
 
 /// The wire style the effective profile uses — it decides which file types the model can read.
 /// Empty when the profile is unknown; the backend then has the final say.
 const effectiveProfileUrlStyle = computed<string | undefined>(() => {
-  const name = effectiveProfile.value
+  const name = effectiveAgent.value
   if (!name) return undefined
-  const style = availableProfiles.value.find((p) => p.name === name)?.url_style
+  const style = availableAgents.value.find((p) => p.name === name)?.url_style
   return style && style.length > 0 ? style : undefined
 })
 
 /// Tooltip text reflecting what the backend will actually use. Distinguishes
-/// "explicit per-session choice" from "defaulted to active profile" so the
+/// "explicit per-session choice" from "defaulted to the active agent" so the
 /// user understands the cascade.
-const profileChipTooltip = computed(() => {
-  const sel = selectedProfile.value
-  if (sel && sel.length > 0) return `Using profile: ${sel}`
-  if (activeProfile.value) return `Using active profile: ${activeProfile.value}`
+const agentChipTooltip = computed(() => {
+  const sel = selectedAgent.value
+  if (sel && sel.length > 0) return `Using agent: ${sel}`
+  if (activeAgent.value) return `Using active agent: ${activeAgent.value}`
   return 'Using default (top-level config)'
 })
 
-const selectProfile = async (name: string | null) => {
-  if (isUpdatingProfile.value) return
-  isUpdatingProfile.value = true
+const selectAgent = async (name: string | null) => {
+  if (isUpdatingAgent.value) return
+  isUpdatingAgent.value = true
   try {
     const sid = sessionId.value
     if (sid) {
-      await api.updateSession(sid, { selectedProfile: name })
+      await api.updateSession(sid, { selectedAgent: name })
     }
-    selectedProfile.value = name
+    selectedAgent.value = name
   } catch (err) {
-    console.error('Failed to update profile:', err)
+    console.error('Failed to update agent:', err)
   } finally {
-    isUpdatingProfile.value = false
-    showProfilePicker.value = false
+    isUpdatingAgent.value = false
+    showAgentPicker.value = false
   }
 }
 
 const closeOnOutsideClick = (e: MouseEvent) => {
-  if (profilePickerRef.value && !profilePickerRef.value.contains(e.target as Node)) {
-    showProfilePicker.value = false
+  if (agentPickerRef.value && !agentPickerRef.value.contains(e.target as Node)) {
+    showAgentPicker.value = false
   }
 }
 
@@ -1215,7 +1214,7 @@ const onWorktreeMenuClear = async () => {
       'Please call set_git_worktree with clear=true to remove the current worktree binding.',
       sessionCwd.value,
       [],
-      selectedProfile.value ?? undefined,
+      selectedAgent.value ?? undefined,
       '',
       [],
       workspacesStore.activeWorkspace?.id,
@@ -1255,7 +1254,7 @@ const onCreateWorktree = async (path: string) => {
       message,
       sessionCwd.value,
       [],
-      selectedProfile.value ?? undefined,
+      selectedAgent.value ?? undefined,
       '',
       [],
       workspacesStore.activeWorkspace?.id,
@@ -2309,7 +2308,7 @@ const applyDeltaExtra = (extra: {
   if (extra.pr_url !== undefined) chatPrUrl.value = extra.pr_url ?? ''
   if (extra.pr_provider !== undefined) chatPrProvider.value = extra.pr_provider ?? ''
   if (extra.selected_profile_model !== undefined)
-    selectedProfile.value =
+    selectedAgent.value =
       typeof extra.selected_profile_model === 'string' ? extra.selected_profile_model || null : null
   if (extra.max_total_tokens !== undefined) maxTotalTokens.value = extra.max_total_tokens
   if (extra.max_capacity_total_tokens !== undefined)
@@ -2429,7 +2428,7 @@ const runHistoryLoadAttempt = async () => {
 
   // 2026-08-07-profile-persist-read.
   if (data.selected_profile_model !== undefined) {
-    selectedProfile.value =
+    selectedAgent.value =
       typeof data.selected_profile_model === 'string' ? data.selected_profile_model || null : null
   }
 
@@ -3377,7 +3376,7 @@ const updateStreamingMessage = () => {
 // ─── Init ──────────────────────────────────────────────────────────────────────
 onMounted(async () => {
   sessionId.value = props.chatId.replace(/^chat-/, '')
-  // Replaces the old sessionId watchers (profile load + scroll-logger
+  // Replaces the old sessionId watchers (agent load + scroll-logger
   // refresh): the id is fixed for the component lifetime.
   void onSessionChanged(sessionId.value)
 
@@ -3456,8 +3455,8 @@ onUnmounted(() => {
   resetOlderPrefetch('unmount')
 })
 
-// Load available profiles (called once on mount)
-loadProfiles()
+// Load available agents (called once on mount)
+loadAgents()
 document.addEventListener('click', closeOnOutsideClick)
 // `<html>` blocks auto-size themselves via postMessage (see onHtmlFrameResize above). Registered
 // here — paired with the removeEventListener in onUnmounted — for the same lifetime as the other
@@ -3472,16 +3471,16 @@ const onSessionChanged = async (newId: string) => {
   // the new session's history loads.
   resetOlderPrefetch('session-change')
   if (!newId) {
-    selectedProfile.value = null
+    selectedAgent.value = null
     return
   }
   try {
     const session = await api.getSession(newId)
-    const raw = session?.selectedProfile ?? null
-    selectedProfile.value = typeof raw === 'string' ? raw : null
+    const raw = session?.selectedAgent ?? null
+    selectedAgent.value = typeof raw === 'string' ? raw : null
   } catch (err) {
-    console.error('Failed to load session profile:', err)
-    selectedProfile.value = null
+    console.error('Failed to load session agent:', err)
+    selectedAgent.value = null
   }
 }
 
@@ -3602,7 +3601,7 @@ const handleFileInputSubmit = async (userMessage: string, files?: File[]) => {
       userMessage,
       sessionCwd.value,
       imageUrls,
-      selectedProfile.value ?? undefined,
+      selectedAgent.value ?? undefined,
       '',
       [],
       workspacesStore.activeWorkspace?.id,
@@ -4261,8 +4260,8 @@ const compactSession = async () => {
                           -->
                           <UpdatePlan v-else-if="msg.tool_name === 'update_plan'" :message="msg" />
                           <GetPlan v-else-if="msg.tool_name === 'get_plan'" :message="msg" />
-                          <ListSubAgent
-                            v-else-if="msg.tool_name === 'list_sub_agent'"
+                          <ListAgents
+                            v-else-if="msg.tool_name === 'list_agents'"
                             :message="msg"
                           />
                           <!--
@@ -4698,70 +4697,70 @@ const compactSession = async () => {
                     <span>{{ isCompacting ? 'Compacting...' : 'Compact' }}</span>
                   </button>
 
-                  <!-- Model/Profile selector -->
-                  <div ref="profilePickerRef" class="relative">
+                  <!-- Model/Agent selector -->
+                  <div ref="agentPickerRef" class="relative">
                     <button
-                      @click.stop="showProfilePicker = !showProfilePicker"
-                      :disabled="isUpdatingProfile || isInitializing || !sessionId"
+                      @click.stop="showAgentPicker = !showAgentPicker"
+                      :disabled="isUpdatingAgent || isInitializing || !sessionId"
                       class="composer-tool-btn"
-                      data-testid="profile-picker-button"
-                      :title="profileChipTooltip"
+                      data-testid="agent-picker-button"
+                      :title="agentChipTooltip"
                     >
-                      <span>{{ effectiveProfile ?? 'Default' }}</span>
+                      <span>{{ effectiveAgent ?? 'Default' }}</span>
                       <span class="text-micro">▾</span>
                     </button>
                     <div
-                      v-if="showProfilePicker"
-                      class="profile-picker-menu absolute bottom-full mb-2 left-0 min-w-[240px] rounded-lg shadow-lg z-20"
-                      data-testid="profile-picker-menu"
+                      v-if="showAgentPicker"
+                      class="agent-picker-menu absolute bottom-full mb-2 left-0 min-w-[240px] rounded-lg shadow-lg z-20"
+                      data-testid="agent-picker-menu"
                       style="
                         background-color: var(--semantic-card-bg);
                         border: 1px solid var(--color-border);
                       "
                     >
                       <button
-                        @click="selectProfile(null)"
+                        @click="selectAgent(null)"
                         class="w-full text-left px-3 py-2 text-dense hover:opacity-80 flex items-center justify-between"
                         style="color: var(--semantic-text)"
-                        data-testid="profile-picker-default"
+                        data-testid="agent-picker-default"
                       >
                         <span>Default (top-level config)</span>
-                        <span v-if="!selectedProfile && !activeProfile">✓</span>
+                        <span v-if="!selectedAgent && !activeAgent">✓</span>
                       </button>
                       <button
-                        v-for="p in availableProfiles"
+                        v-for="p in availableAgents"
                         :key="p.name"
-                        @click="selectProfile(p.name)"
+                        @click="selectAgent(p.name)"
                         class="w-full text-left px-3 py-2 text-dense hover:opacity-80"
                         style="
                           color: var(--semantic-text);
                           border-top: 1px solid var(--color-border);
                         "
-                        :data-testid="`profile-picker-${p.name}`"
+                        :data-testid="`agent-picker-${p.name}`"
                       >
                         <div class="flex items-center justify-between">
                           <span class="font-medium">
                             {{ p.name }}
                             <span
-                              v-if="activeProfile === p.name"
+                              v-if="activeAgent === p.name"
                               class="text-micro ml-1 px-1 py-0.5 rounded"
                               :style="{ backgroundColor: 'var(--color-violet)', color: '#181616' }"
-                              data-testid="profile-picker-active-badge"
+                              data-testid="agent-picker-active-badge"
                               >(active)</span
                             >
                           </span>
-                          <span v-if="effectiveProfile === p.name">✓</span>
+                          <span v-if="effectiveAgent === p.name">✓</span>
                         </div>
                         <div class="text-micro mt-0.5" style="color: var(--semantic-text-muted)">
                           {{ p.model }} · {{ p.base_url }}
                         </div>
                       </button>
                       <div
-                        v-if="availableProfiles.length === 0"
+                        v-if="availableAgents.length === 0"
                         class="px-3 py-2 text-dense"
                         style="color: var(--semantic-text-muted)"
                       >
-                        No profiles configured. Add one in Settings.
+                        No agents configured. Add one in Settings.
                       </div>
                     </div>
                   </div>
@@ -5617,7 +5616,7 @@ const compactSession = async () => {
    non-positioned content. A static card therefore loses to the scrim, whose
    opaque band covers the dock's full height — the input row, paperclip and
    Send button all vanish, leaving only whatever the card happens to position
-   itself (the profile picker's `relative` wrapper) on top. `pointer-events:
+   itself (the agent picker's `relative` wrapper) on top. `pointer-events:
    none` on the scrim hides the damage from hit-testing, so `elementFromPoint`
    still reports the textarea and every geometry test passes. Giving the card
    its own stacking context above the scrim is what keeps it visible. */
@@ -5695,10 +5694,10 @@ const compactSession = async () => {
   color: var(--semantic-text-dim);
 }
 
-/* The profile list is capped by the space above the composer
+/* The agent list is capped by the space above the composer
    (`--chat-composer-inset` = the dock's published height) and scrolls: an
    uncapped list ran off the top of the window, with no way to reach it. */
-.profile-picker-menu {
+.agent-picker-menu {
   max-height: min(60vh, calc(100vh - var(--chat-composer-inset, 0px) - 2rem));
   overflow-y: auto;
   overflow-x: hidden;

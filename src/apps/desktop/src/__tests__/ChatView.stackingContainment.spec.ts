@@ -93,7 +93,7 @@ describe('ChatView stacking containment — document overlay must cover the chat
     vi.spyOn(api, 'getSession').mockResolvedValue({
       session_id: 's_stack',
       session_name: '',
-      selectedProfile: null,
+      selectedAgent: null,
       cwd: '/tmp',
       git_worktree_cwd: '',
     } as never)

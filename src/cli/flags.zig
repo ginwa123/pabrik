@@ -279,7 +279,7 @@ pub const flags = [_]Flag{
         .kind = .text,
         .fields = &.{"profile"},
         .value_name = "NAME",
-        .help = "LLM profile from config.json's profiles_models",
+        .help = "LLM agent from config.json's profiles_models",
     },
     .{
         .long = "tools",

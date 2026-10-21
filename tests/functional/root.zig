@@ -85,7 +85,7 @@ const kanban_task_get_test = @import("kanban_task_get_test.zig");
 const kanban_task_image_urls_test = @import("kanban_task_image_urls_test.zig");
 const kanban_task_long_description_test = @import("kanban_task_long_description_test.zig");
 const kanban_task_session_name_test = @import("kanban_task_session_name_test.zig");
-const list_sub_agent_test = @import("list_sub_agent_test.zig");
+const list_agents_test = @import("list_agents_test.zig");
 const llm_history_model_not_empty_test = @import("llm_history_model_not_empty_test.zig");
 const llm_stream_get_test = @import("llm_stream_get_test.zig");
 const llm_test_test = @import("llm_test_test.zig");
@@ -135,7 +135,6 @@ const subagent_identity_test = @import("subagent_identity_test.zig");
 const subagent_peek_test = @import("subagent_peek_test.zig");
 const subagent_refresh_test = @import("subagent_refresh_test.zig");
 const subagent_selected_profile_test = @import("subagent_selected_profile_test.zig");
-const subagents_per_profile_test = @import("subagents_per_profile_test.zig");
 const system_folder_gitignore_test = @import("system_folder_gitignore_test.zig");
 const system_folder_home_test = @import("system_folder_home_test.zig");
 const system_folder_path_validation_test = @import("system_folder_path_validation_test.zig");
@@ -242,7 +241,7 @@ pub const suites = .{
     kanban_task_image_urls_test,
     kanban_task_long_description_test,
     kanban_task_session_name_test,
-    list_sub_agent_test,
+    list_agents_test,
     llm_history_model_not_empty_test,
     llm_stream_get_test,
     llm_test_test,
@@ -292,7 +291,6 @@ pub const suites = .{
     subagent_peek_test,
     subagent_refresh_test,
     subagent_selected_profile_test,
-    subagents_per_profile_test,
     system_folder_gitignore_test,
     system_folder_home_test,
     system_folder_path_validation_test,

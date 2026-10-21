@@ -16,9 +16,9 @@ describe('appUrl — path-based URL contract (2026-09-22 revamp)', () => {
       expect(buildSettingsUrl('ws_1')).toEqual({ path: '/app/ws_1/settings', query: {} })
     })
     it('passes the remembered section through as ?section=', () => {
-      expect(buildSettingsUrl('ws_1', 'profiles')).toEqual({
+      expect(buildSettingsUrl('ws_1', 'agents')).toEqual({
         path: '/app/ws_1/settings',
-        query: { section: 'profiles' },
+        query: { section: 'agents' },
       })
     })
     it('drops an empty section rather than emitting ?section=', () => {

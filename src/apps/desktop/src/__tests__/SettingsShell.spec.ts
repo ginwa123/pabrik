@@ -63,7 +63,7 @@ describe('SettingsShell', () => {
 
     expect(wrapper.find('[data-testid="settings-shell"]').attributes('data-scope')).toBe('user')
     expect(wrapper.find('[data-testid="settings-nav-general"]').exists()).toBe(true)
-    for (const id of ['pabrik', 'profiles', 'mcp', 'tools', 'evals', 'skills', 'memories']) {
+    for (const id of ['pabrik', 'agents', 'mcp', 'tools', 'evals', 'skills', 'memories']) {
       expect(wrapper.find(`[data-testid="settings-nav-${id}"]`).exists()).toBe(false)
     }
     expect(wrapper.find('[data-testid="settings-scope-label"]').text()).toContain('User')
@@ -77,14 +77,14 @@ describe('SettingsShell', () => {
     expect(wrapper.find('[data-testid="settings-shell"]').attributes('data-scope')).toBe(
       'workspace',
     )
-    for (const id of ['overview', 'secrets', 'skills', 'memories', 'profiles', 'mcp', 'tools', 'evals']) {
+    for (const id of ['overview', 'secrets', 'skills', 'memories', 'agents', 'mcp', 'tools', 'evals']) {
       expect(wrapper.find(`[data-testid="settings-nav-${id}"]`).exists()).toBe(true)
     }
     // The workspace comes from the URL, so nav items carry no per-item workspace
     // suffix — and no name box: the URL is the context, the Overview section
     // shows name + ID.
     expect(wrapper.find('[data-testid="settings-nav-overview"]').text()).not.toContain('Acme')
-    for (const id of ['overview', 'secrets', 'skills', 'memories', 'profiles', 'mcp', 'tools', 'evals']) {
+    for (const id of ['overview', 'secrets', 'skills', 'memories', 'agents', 'mcp', 'tools', 'evals']) {
       expect(wrapper.find(`[data-testid="settings-nav-${id}-workspace"]`).exists()).toBe(false)
     }
 
@@ -116,12 +116,12 @@ describe('SettingsShell', () => {
       'Secrets',
       'Skills',
       'Memories',
-      'Profiles',
+      'Agents',
       'MCP Servers',
       'Tools',
       'Skill Evals',
     ])
-    // No 'Sub-agents' section: per-profile lists are the only editor.
+    // No 'Sub-agents' section: the agent list is the only editor.
     expect(labels).not.toContain('Sub-agents')
   })
 

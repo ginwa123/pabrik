@@ -1,7 +1,7 @@
 <!--
   SettingsShell — the one chrome for both settings scopes.
 
-  User scope (`/app/settings`) edits `~/.config/pabrik/` (profiles, MCP,
+  User scope (`/app/settings`) edits `~/.config/pabrik/` (agents, MCP,
   tools, general, web search, evals). Workspace scope
   (`/app/:workspaceId/settings`) edits one workspace (overview, secrets,
   skills, memories). The path IS the scope — no `?scope=` param — and the
@@ -48,7 +48,7 @@ const AGENT_SECTION_META: Record<
   (typeof WORKSPACE_AGENT_SECTIONS)[number],
   { label: string; icon: UiIconName }
 > = {
-  profiles: { label: 'Profiles', icon: 'atom' },
+  agents: { label: 'Agents', icon: 'atom' },
   mcp: { label: 'MCP Servers', icon: 'globe' },
   tools: { label: 'Tools', icon: 'tools' },
   evals: { label: 'Skill Evals', icon: 'sparkle' },

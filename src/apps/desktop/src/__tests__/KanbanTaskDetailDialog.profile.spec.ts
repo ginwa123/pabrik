@@ -1,4 +1,4 @@
-/** Tests for the profile-model picker in KanbanTaskDetailDialog (create mode only). Mount pattern:
+/** Tests for the agent-model picker in KanbanTaskDetailDialog (create mode only). Mount pattern:
  * same as KanbanTaskDetailDialog.runAgent.spec.ts — <Teleport to="body">, attachTo: document.body +
  * document.querySelector. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -17,7 +17,7 @@ function findAllInDom<T extends Element = Element>(selector: string): T[] {
   return Array.from(document.querySelectorAll<T>(selector))
 }
 
-describe('KanbanTaskDetailDialog — profile picker', () => {
+describe('KanbanTaskDetailDialog — agent picker', () => {
   let wrapper: VueWrapper | null = null
 
   beforeEach(() => {
@@ -47,22 +47,22 @@ describe('KanbanTaskDetailDialog — profile picker', () => {
     return wrapper
   }
 
-  it('renders the profile picker button in create mode', async () => {
+  it('renders the agent picker button in create mode', async () => {
     mountDialog()
     await flushPromises()
     expect(
-      findInDom('[data-testid="kanban-task-detail-profile-picker"]'),
+      findInDom('[data-testid="kanban-task-detail-agent-picker"]'),
     ).not.toBeNull()
   })
 
-  it('does NOT render the profile picker in edit mode', async () => {
+  it('does NOT render the agent picker in edit mode', async () => {
     mountDialog({
       mode: 'edit',
       task: { id: 'task_1', name: 'Existing', task_type: 'standard' } as Task,
     })
     await flushPromises()
     expect(
-      findInDom('[data-testid="kanban-task-detail-profile-picker"]'),
+      findInDom('[data-testid="kanban-task-detail-agent-picker"]'),
     ).toBeNull()
   })
 
@@ -70,24 +70,24 @@ describe('KanbanTaskDetailDialog — profile picker', () => {
     mountDialog()
     await flushPromises()
     const btn = findInDom<HTMLButtonElement>(
-      '[data-testid="kanban-task-detail-profile-picker"]',
+      '[data-testid="kanban-task-detail-agent-picker"]',
     )
     expect(btn?.textContent).toContain('Default')
   })
 
-  it('clicking the picker opens a dropdown with Default + each profile', async () => {
+  it('clicking the picker opens a dropdown with Default + each agent', async () => {
     mountDialog()
     await flushPromises()
     const btn = findInDom<HTMLButtonElement>(
-      '[data-testid="kanban-task-detail-profile-picker"]',
+      '[data-testid="kanban-task-detail-agent-picker"]',
     )
     btn?.click()
     await flushPromises()
     expect(
-      findInDom('[data-testid="kanban-task-detail-profile-picker-dropdown"]'),
+      findInDom('[data-testid="kanban-task-detail-agent-picker-dropdown"]'),
     ).not.toBeNull()
     const items = findAllInDom(
-      '[data-testid="kanban-task-detail-profile-picker-item"]',
+      '[data-testid="kanban-task-detail-agent-picker-item"]',
     )
     expect(items.length).toBe(2)
     expect(items[0]?.textContent).toContain('Default')
@@ -98,19 +98,19 @@ describe('KanbanTaskDetailDialog — profile picker', () => {
     mountDialog()
     await flushPromises()
     const btn = findInDom<HTMLButtonElement>(
-      '[data-testid="kanban-task-detail-profile-picker"]',
+      '[data-testid="kanban-task-detail-agent-picker"]',
     )
     btn?.click()
     await flushPromises()
     const profileItem = findAllInDom(
-      '[data-testid="kanban-task-detail-profile-picker-item"]',
+      '[data-testid="kanban-task-detail-agent-picker-item"]',
     )[1] as HTMLButtonElement
     profileItem?.click()
     await flushPromises()
     expect(btn?.textContent).toContain('900r1bu')
   })
 
-  it('emits create-and-run with selectedProfile after a profile is picked', async () => {
+  it('emits create-and-run with selectedAgent after an agent is picked', async () => {
     mountDialog()
     await flushPromises()
     const input = findInDom<HTMLInputElement>(
@@ -121,12 +121,12 @@ describe('KanbanTaskDetailDialog — profile picker', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
     const btn = findInDom<HTMLButtonElement>(
-      '[data-testid="kanban-task-detail-profile-picker"]',
+      '[data-testid="kanban-task-detail-agent-picker"]',
     )
     btn?.click()
     await flushPromises()
     const profileItem = findAllInDom(
-      '[data-testid="kanban-task-detail-profile-picker-item"]',
+      '[data-testid="kanban-task-detail-agent-picker-item"]',
     )[1] as HTMLButtonElement
     profileItem?.click()
     await flushPromises()
@@ -137,11 +137,11 @@ describe('KanbanTaskDetailDialog — profile picker', () => {
     await flushPromises()
     const emitted = wrapper!.emitted('create-and-run')
     expect(emitted).toBeTruthy()
-    const payload = emitted![0]![0] as { selectedProfile: string }
-    expect(payload.selectedProfile).toBe('900r1bu')
+    const payload = emitted![0]![0] as { selectedAgent: string }
+    expect(payload.selectedAgent).toBe('900r1bu')
   })
 
-  it('emits create with selectedProfile for plain create', async () => {
+  it('emits create with selectedAgent for plain create', async () => {
     mountDialog()
     await flushPromises()
     const input = findInDom<HTMLInputElement>(
@@ -152,12 +152,12 @@ describe('KanbanTaskDetailDialog — profile picker', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
     const btn = findInDom<HTMLButtonElement>(
-      '[data-testid="kanban-task-detail-profile-picker"]',
+      '[data-testid="kanban-task-detail-agent-picker"]',
     )
     btn?.click()
     await flushPromises()
     const profileItem = findAllInDom(
-      '[data-testid="kanban-task-detail-profile-picker-item"]',
+      '[data-testid="kanban-task-detail-agent-picker-item"]',
     )[1] as HTMLButtonElement
     profileItem?.click()
     await flushPromises()
@@ -168,11 +168,11 @@ describe('KanbanTaskDetailDialog — profile picker', () => {
     await flushPromises()
     const emitted = wrapper!.emitted('create')
     expect(emitted).toBeTruthy()
-    const payload = emitted![0]![0] as { selectedProfile: string }
-    expect(payload.selectedProfile).toBe('900r1bu')
+    const payload = emitted![0]![0] as { selectedAgent: string }
+    expect(payload.selectedAgent).toBe('900r1bu')
   })
 
-  it('emits create-and-run with selectedProfile="" when Default is selected', async () => {
+  it('emits create-and-run with selectedAgent="" when Default is selected', async () => {
     mountDialog()
     await flushPromises()
     const input = findInDom<HTMLInputElement>(
@@ -188,8 +188,8 @@ describe('KanbanTaskDetailDialog — profile picker', () => {
     runBtn?.click()
     await flushPromises()
     const emitted = wrapper!.emitted('create-and-run')
-    const payload = emitted![0]![0] as { selectedProfile: string }
-    expect(payload.selectedProfile).toBe('')
+    const payload = emitted![0]![0] as { selectedAgent: string }
+    expect(payload.selectedAgent).toBe('')
   })
 
   it('handles api.getPabrikConfig failure gracefully (no profiles)', async () => {
@@ -197,13 +197,13 @@ describe('KanbanTaskDetailDialog — profile picker', () => {
     mountDialog()
     await flushPromises()
     const btn = findInDom<HTMLButtonElement>(
-      '[data-testid="kanban-task-detail-profile-picker"]',
+      '[data-testid="kanban-task-detail-agent-picker"]',
     )
     expect(btn).not.toBeNull()
     btn?.click()
     await flushPromises()
     const items = findAllInDom(
-      '[data-testid="kanban-task-detail-profile-picker-item"]',
+      '[data-testid="kanban-task-detail-agent-picker-item"]',
     )
     expect(items.length).toBe(1)
     expect(items[0]?.textContent).toContain('Default')

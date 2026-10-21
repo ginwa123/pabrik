@@ -267,7 +267,7 @@
       "count": 1
     }
   },
-  "src/components/tool_outputs/ListSubAgent.vue": {
+  "src/components/tool_outputs/ListAgents.vue": {
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -601,7 +601,7 @@
       "count": 3
     }
   },
-  "src/composables/useProfileDelete.ts": {
+  "src/composables/useAgentDelete.ts": {
     "local/no-try-catch": {
       "count": 1
     }

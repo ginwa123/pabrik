@@ -8,7 +8,7 @@ import {
   type ModelResolve,
 } from '../../api'
 
-/** The profile form. THE SHAPE OF THIS FORM IS THE FEATURE. It shows THREE things — the model, one
+/** The agent form. THE SHAPE OF THIS FORM IS THE FEATURE. It shows THREE things — the model, one
  * line of facts, the API key — and every other knob lives behind `Advanced` with a placeholder that
  * states its own default (`inherit — openai`). */
 export interface LlmConfig {
@@ -18,12 +18,12 @@ export interface LlmConfig {
   temperature: string
   url_style: string
   api_key: string
-  /** Which TRANSPORT runs this profile's calls: `"http"` (default), `"claude-code"` (the local
+  /** Which TRANSPORT runs this agent's calls: `"http"` (default), `"claude-code"` (the local
    * `claude` CLI, subscription auth via `claude login`), or `"opencode"` (the local `opencode` CLI,
    * auth via `opencode login`). */
   backend?: string
-  /**    * Claude Code only: `CLAUDE_CONFIG_DIR`. Two profiles pointing at two directories are two
-   * different `claude login` sessions — the way per-profile identity works when there is no API
+  /**    * Claude Code only: `CLAUDE_CONFIG_DIR`. Two agents pointing at two directories are two
+   * different `claude login` sessions — the way per-agent identity works when there is no API
    * key. `null` = the CLI default (`~/.claude`). */
   config_dir?: string | null
   /** Claude Code only: agentic turn ceiling (`--max-turns`).
@@ -35,10 +35,10 @@ export interface LlmConfig {
   /** OpenCode only: whether to pass `--auto`. `null`/absent = on (the
    * headless default); `false` = off. */
   opencode_auto?: boolean | null
-  /** Optional per-profile override for the context window (in tokens).
+  /** Optional per-agent override for the context window (in tokens).
    * `null` = resolve from the catalog, then fall through to the built-in. */
   max_capacity_tokens: number | null
-  /** Optional per-profile compaction threshold as a percentage (0-100).
+  /** Optional per-agent compaction threshold as a percentage (0-100).
    * `null` = the global default (built-in 80). */
   compaction_threshold_percent: number | null
   /**    * Anthropic-only override for `thinking.budget_tokens`. Range (0, 2_000_000]. `null` = the
@@ -172,7 +172,7 @@ function chooseModel(entry: ModelCatalogEntry): void {
     model: entry.model_id,
     // An empty base_url means "use the catalog's" — the field stays overrideable.
     // NOT for a CLI backend: those have no endpoint at all, and setting one
-    // would trip the profile validator (base_url is rejected for the CLI).
+    // would trip the agent validator (base_url is rejected for the CLI).
     base_url: isCliBackend.value
       ? props.modelValue.base_url
       : props.modelValue.base_url || entry.provider_name,
@@ -188,7 +188,7 @@ function fmtTokens(n: number): string {
   return String(n)
 }
 
-/** The effective threshold in tokens: this profile's percentage, or the global 80. */
+/** The effective threshold in tokens: this agent's percentage, or the global 80. */
 const effectiveThreshold = computed<number | null>(() => {
   const r = resolved.value
   if (!r) return null
@@ -231,7 +231,7 @@ const factWarning = computed<string | null>(() => {
   return null
 })
 
-// === Transport gating (`backend`, orthogonal to `url_style`) ============= A CLI profile
+// === Transport gating (`backend`, orthogonal to `url_style`) ============= A CLI agent
 // (claude-code, opencode) runs a local binary: no base URL, no API key, no HTTP body shape, and no
 // request-body knobs.
 const isClaudeCodeBackend = computed<boolean>(() => props.modelValue.backend === 'claude-code')
@@ -262,7 +262,7 @@ function onTemperatureInput(raw: string): void {
 
 // === Capability gating comes from the MODEL, not the wire shape =========
 // The old form showed a Reasoning-effort dropdown for every OpenAI-shaped
-// profile, including models that ignore the field entirely.
+// agent, including models that ignore the field entirely.
 const hasFacts = computed<boolean>(() => resolved.value?.source === 'catalog')
 
 /** Does the model support extended reasoning at all? With facts: its own `reasoning_options`.
@@ -354,7 +354,7 @@ const overrideCount = computed<number>(() => {
 
 <template>
   <div class="space-y-4">
-    <!-- ── Backend: which TRANSPORT runs this profile ────────────────── -->
+    <!-- ── Backend: which TRANSPORT runs this agent ────────────────── -->
     <!-- Gates everything below. HTTP shows the connection + request-body
          controls; claude-code shows the CLI's own knobs instead. -->
     <div>
@@ -588,7 +588,7 @@ const overrideCount = computed<number>(() => {
         </template>
 
         <!-- Claude Code knobs (CLI only). `config_dir` is what makes two
-             profiles two different logins. -->
+             agents two different logins. -->
         <template v-if="isClaudeCodeBackend">
           <div class="font-mono text-micro uppercase tracking-wider pt-1" :style="helperStyle">
             Claude Code
@@ -597,7 +597,7 @@ const overrideCount = computed<number>(() => {
             <label :class="labelBase" :style="labelStyle"
               >Config dir
               <span class="block text-dense mt-0.5" :style="helperStyle">
-                CLAUDE_CONFIG_DIR. Blank = ~/.claude. Point two profiles at two dirs to keep two
+                CLAUDE_CONFIG_DIR. Blank = ~/.claude. Point two agents at two dirs to keep two
                 logins apart.
               </span>
             </label>
@@ -840,7 +840,7 @@ const overrideCount = computed<number>(() => {
               placeholder="inherit — 80"
               :class="inputBase"
               :style="inputStyle(!!errors?.compaction_threshold_percent)"
-              data-testid="profile-threshold-input"
+              data-testid="agent-threshold-input"
             />
             <button
               v-if="modelValue.compaction_threshold_percent !== null"
@@ -877,7 +877,7 @@ const overrideCount = computed<number>(() => {
               :placeholder="resolved ? `inherit — ${resolved.context_window}` : 'inherit — catalog'"
               :class="inputBase"
               :style="inputStyle(!!errors?.max_capacity_tokens)"
-              data-testid="profile-capacity-input"
+              data-testid="agent-capacity-input"
             />
             <button
               v-if="modelValue.max_capacity_tokens !== null"

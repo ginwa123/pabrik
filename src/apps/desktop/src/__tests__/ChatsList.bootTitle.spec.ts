@@ -83,7 +83,7 @@ describe('ChatsList — fresh-tab title', () => {
       createdAt: '',
       agent: '',
       sessionName: 'deep task name',
-      selectedProfile: undefined,
+      selectedAgent: undefined,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any)
     const wrapper = mountChatsList()

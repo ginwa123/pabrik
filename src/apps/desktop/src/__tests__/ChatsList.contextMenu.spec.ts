@@ -218,7 +218,7 @@ describe('ChatsList — right-click context menu', () => {
     wrapper.unmount()
   })
 
-  it('unattended toggle passes selectedProfile back so it is not cleared', async () => {
+  it('unattended toggle passes selectedAgent back so it is not cleared', async () => {
     vi.spyOn(api, 'getChats').mockResolvedValue({
       sessions: [
         {
@@ -262,7 +262,7 @@ describe('ChatsList — right-click context menu', () => {
     // reset this chat back to the default profile.
     expect(updateSession).toHaveBeenCalledWith('chat_1', {
       isAutoRetryUntilStop: '1',
-      selectedProfile: 'codex-high',
+      selectedAgent: 'codex-high',
     })
     updateSession.mockRestore()
     wrapper.unmount()

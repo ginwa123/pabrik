@@ -1,18 +1,18 @@
 <script setup lang="ts">
 import LlmConfigModal, { type LlmConfigModalValue } from './LlmConfigModal.vue'
 
-export interface SubAgentModalValue extends LlmConfigModalValue {
+export interface AgentModalValue extends LlmConfigModalValue {
   system_prompt: string
 }
 
 const props = defineProps<{
-  modelValue: SubAgentModalValue
+  modelValue: AgentModalValue
   errors?: { name?: string; model?: string; base_url?: string; api_key?: string }
   mode: 'add' | 'edit'
 }>()
 
 const emit = defineEmits<{
-  'update:modelValue': [value: SubAgentModalValue]
+  'update:modelValue': [value: AgentModalValue]
   cancel: []
   save: []
 }>()
@@ -29,7 +29,7 @@ function updateSystemPrompt(val: string) {
   <LlmConfigModal
     :model-value="modelValue"
     :errors="errors"
-    :title="mode === 'add' ? 'Add sub-agent' : 'Edit sub-agent'"
+    :title="mode === 'add' ? 'Add agent' : 'Edit agent'"
     :name-editable="mode === 'add'"
     extra-slot-name="extra"
     max-width-class="max-w-2xl"
@@ -45,8 +45,9 @@ function updateSystemPrompt(val: string) {
         <textarea
           :value="modelValue.system_prompt"
           @input="updateSystemPrompt(($event.target as HTMLTextAreaElement).value)"
+          data-testid="agent-system-prompt-input"
           rows="8"
-          placeholder="System prompt for this sub-agent…"
+          placeholder="System prompt for this agent…"
           class="w-full px-3 py-2 rounded-md border text-body font-sans resize-none"
           style="background-color: var(--semantic-content-bg); color: var(--semantic-text); border-color: var(--color-border);"
         />

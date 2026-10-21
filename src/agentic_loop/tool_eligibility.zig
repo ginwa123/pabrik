@@ -263,9 +263,9 @@ test "allowlistFilter: sub-agent strips spawn_sub_agent" {
     defer arena.deinit();
     const a = arena.allocator();
 
-    const tools = try makeTools(a, &.{ "spawn_sub_agent", "list_sub_agent", "read_file" });
+    const tools = try makeTools(a, &.{ "spawn_sub_agent", "list_agents", "read_file" });
     const kept = try allowlistFilter(a, tools, "", true);
-    try expectNames(&.{ "list_sub_agent", "read_file" }, kept);
+    try expectNames(&.{ "list_agents", "read_file" }, kept);
 }
 
 test "allowlistFilter: sub-agent strips ask_user (no answer surface)" {

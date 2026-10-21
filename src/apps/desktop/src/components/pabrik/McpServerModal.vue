@@ -227,7 +227,7 @@ defineExpose({ onSave })
 
 <template>
   <!-- HTTP branch: bespoke centered dialog (Name + URL + Headers).
-       Deliberately NOT LlmConfigModal — that renders LLM profile
+       Deliberately NOT LlmConfigModal — that renders LLM agent
        fields (Model / Thinking / Temperature / URL style / API key /
        compaction overrides) which don't apply to MCP servers. -->
   <Teleport v-if="transport === 'http'" to="body">

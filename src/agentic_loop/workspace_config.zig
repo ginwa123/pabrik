@@ -137,6 +137,9 @@ pub const ScopedKey = struct {
 };
 
 pub const WORKSPACE_SCOPED_KEYS = [_]ScopedKey{
+    // The agents map keeps its old spelling on BOTH sides: `profiles_models`
+    // on disk is what every existing config.json holds, and `profiles` is what
+    // the HTTP clients already speak. The concept is an AGENT (see `LlmAgent`).
     .{ .disk = "profiles_models", .wire = "profiles" },
     .{ .disk = "active_profile" },
     .{ .disk = "mcp_servers" },

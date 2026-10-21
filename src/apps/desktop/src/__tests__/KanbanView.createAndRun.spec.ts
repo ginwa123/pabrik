@@ -279,7 +279,7 @@ describe('KanbanView.handleCreateTaskSave — create_and_run', () => {
     expect(view.emitted('selectTask')).toBeUndefined()
   })
 
-  it('forwards selectedProfile from dialog emit to addKanbanTask', async () => {
+  it('forwards selectedAgent from dialog emit to addKanbanTask', async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fakeTask = { id: 'task_new', name: 'My task', task_type: 'standard' } as any
     const fakeSession = { id: 'task_new', name: 'My task', status: 'send' }
@@ -297,7 +297,7 @@ describe('KanbanView.handleCreateTaskSave — create_and_run', () => {
       description: 'desc',
       is_auto_retry_until_stop: '0',
       tags: [],
-      selectedProfile: '900r1bu',
+      selectedAgent: '900r1bu',
     })
     await flushPromises()
 

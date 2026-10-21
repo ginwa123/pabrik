@@ -78,7 +78,7 @@ function installApiMocks(): void {
     sessionName: '',
     createdAt: '',
     agent: '',
-    selectedProfile: '',
+    selectedAgent: '',
     cwd: '/tmp',
     git_worktree_cwd: '',
   })

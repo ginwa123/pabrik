@@ -687,7 +687,7 @@ test "execSearchTool: a regex finds tools a literal substring could not, end to 
     try exec_testing.expect(std.mem.indexOf(u8, out, "\"pattern_mode\":\"regex\"") != null);
     try exec_testing.expect(std.mem.indexOf(u8, out, "\"pattern_warning\":null") != null);
     const total = try totalOf(a, out);
-    try exec_testing.expect(total >= 5); // list_directory/search_skills/list_sub_agent + load_/save_memory at least
+    try exec_testing.expect(total >= 5); // list_directory/search_skills/list_agents + load_/save_memory at least
     try exec_testing.expect(std.mem.indexOf(u8, out, "\"name\":\"save_memory\"") != null);
 
     // Enabled tools are NOT discoverable (they are already in the tool list).
@@ -733,7 +733,7 @@ test "execSearchTool: limit/offset page the matches and report the true total" {
         "{\"query\":\"^(list|load|save|search)_\",\"limit\":3,\"offset\":0}",
     );
     const total = try totalOf(a, page1);
-    try exec_testing.expect(total >= 5); // list_directory/search_skills/list_sub_agent + load_/save_memory
+    try exec_testing.expect(total >= 5); // list_directory/search_skills/list_agents + load_/save_memory
     try exec_testing.expect(total > 3); // otherwise "page 2" would be empty
     try exec_testing.expect(std.mem.indexOf(u8, page1, "\"count\":3") != null);
     try exec_testing.expect(std.mem.indexOf(u8, page1, "\"offset\":0,\"limit\":3") != null);

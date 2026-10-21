@@ -170,7 +170,7 @@ private fun ToolBodyFor(
         is ToolBody.Plan -> PlanBody(body)
         is ToolBody.Question -> QuestionCard(body, model.toolCallId, onAnswer)
         is ToolBody.SubAgentSpawn -> SubAgentSpawnBody(body)
-        is ToolBody.SubAgentCatalog -> SubAgentCatalogBody(body)
+        is ToolBody.AgentCatalog -> AgentCatalogBody(body)
         is ToolBody.MemorySave -> MemorySaveBody(body)
         is ToolBody.MemoryLoad -> MemoryLoadBody(body)
         is ToolBody.MemoryList -> MemoryListBody(body)
@@ -782,8 +782,7 @@ private fun SubAgentSpawnBody(body: ToolBody.SubAgentSpawn) {
 }
 
 @Composable
-private fun SubAgentCatalogBody(body: ToolBody.SubAgentCatalog) {
-    if (body.profile.isNotBlank()) ToolKeyValue(key = "profile", value = body.profile)
+private fun AgentCatalogBody(body: ToolBody.AgentCatalog) {
     body.agents.forEach { agent ->
         ToolKeyValue(
             key = agent.name,

@@ -1,4 +1,4 @@
-/** Tests for ChatView's profile chip + picker — the cascade display. Plan:
+/** Tests for ChatView's agent chip + picker — the cascade display. Plan:
  * docs/superpowers/plans/2026-08-06-chatview-profile-cascade-display.md */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
@@ -70,7 +70,7 @@ function installChatViewMocks(opts: {
       session_id: 'placeholder',
       session_name: '',
 
-      selectedProfile: null,
+      selectedAgent: null,
       cwd: '',
       git_worktree_cwd: '',
     },
@@ -93,7 +93,7 @@ async function mountChatViewWithSession(sessionId: string) {
       provide: { processingState },
     },
   })
-  // Wait for the onMounted loadProfiles + watch on sessionId to settle.
+  // Wait for the onMounted loadAgents + watch on sessionId to settle.
   for (let i = 0; i < 30; i++) {
     await new Promise((r) => setTimeout(r, 0))
     await nextTick()
@@ -137,11 +137,11 @@ function readChip(wrapper: VueWrapper): {
   text: string
   title: string
 } {
-  // The picker trigger carries `data-testid="profile-picker-button"` (added
+  // The picker trigger carries `data-testid="agent-picker-button"` (added
   // with the V1 composer toolbar — previously located via the 🤖 emoji,
   // which the toolbar restyle removed).
-  const found = wrapper.find('[data-testid="profile-picker-button"]')
-  if (!found.exists()) throw new Error('profile chip button not found')
+  const found = wrapper.find('[data-testid="agent-picker-button"]')
+  if (!found.exists()) throw new Error('agent chip button not found')
   const chipBtn = found as unknown as DOMWrapper<HTMLButtonElement>
   return {
     text: chipBtn.text().trim(),
@@ -150,7 +150,7 @@ function readChip(wrapper: VueWrapper): {
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────
-describe('ChatView profile chip — cascade display', () => {
+describe('ChatView agent chip — cascade display', () => {
   it('shows the active profile when no chat session has been opened yet (active = default)', async () => {
     installChatViewMocks({
       config: {
@@ -160,7 +160,7 @@ describe('ChatView profile chip — cascade display', () => {
         },
         active_profile: '300 ribu',
       },
-      session: { selectedProfile: null, cwd: '', git_worktree_cwd: '' },
+      session: { selectedAgent: null, cwd: '', git_worktree_cwd: '' },
     })
 
     const wrapper = await mountChatViewWithSession('sess_no_session')
@@ -168,7 +168,7 @@ describe('ChatView profile chip — cascade display', () => {
     const { text, title } = readChip(wrapper)
     expect(text).toContain('300 ribu')
     expect(text).not.toContain('Default')
-    expect(title).toMatch(/active profile/i)
+    expect(title).toMatch(/active agent/i)
   })
 
   it('shows the active profile when session has empty selected_profile_model (cascade falls through)', async () => {
@@ -180,14 +180,14 @@ describe('ChatView profile chip — cascade display', () => {
         },
         active_profile: '300 ribu',
       },
-      session: { selectedProfile: '', cwd: '', git_worktree_cwd: '' },
+      session: { selectedAgent: '', cwd: '', git_worktree_cwd: '' },
     })
 
     const wrapper = await mountChatViewWithSession('sess_empty_selected')
 
     const { text, title } = readChip(wrapper)
     expect(text).toContain('300 ribu')
-    expect(title).toMatch(/active profile/i)
+    expect(title).toMatch(/active agent/i)
   })
 
   it('shows the per-session selected_profile_model when it is set (overrides active)', async () => {
@@ -199,14 +199,14 @@ describe('ChatView profile chip — cascade display', () => {
         },
         active_profile: '300 ribu',
       },
-      session: { selectedProfile: '900ribu', cwd: '', git_worktree_cwd: '' },
+      session: { selectedAgent: '900ribu', cwd: '', git_worktree_cwd: '' },
     })
 
     const wrapper = await mountChatViewWithSession('sess_900ribu')
 
     const { text, title } = readChip(wrapper)
     expect(text).toContain('900ribu')
-    expect(title).toMatch(/profile.*900ribu/i)
+    expect(title).toMatch(/agent.*900ribu/i)
   })
 
   it('shows "Default" only when neither selected_profile_model nor active_profile is set', async () => {
@@ -217,7 +217,7 @@ describe('ChatView profile chip — cascade display', () => {
         },
         active_profile: null,
       },
-      session: { selectedProfile: null, cwd: '', git_worktree_cwd: '' },
+      session: { selectedAgent: null, cwd: '', git_worktree_cwd: '' },
     })
 
     const wrapper = await mountChatViewWithSession('sess_default')
@@ -230,7 +230,7 @@ describe('ChatView profile chip — cascade display', () => {
   it('shows "Default" when no profiles are configured at all', async () => {
     installChatViewMocks({
       config: { profiles: {}, active_profile: null },
-      session: { selectedProfile: null, cwd: '', git_worktree_cwd: '' },
+      session: { selectedAgent: null, cwd: '', git_worktree_cwd: '' },
     })
 
     const wrapper = await mountChatViewWithSession('sess_empty_profiles')
@@ -248,13 +248,13 @@ describe('ChatView profile chip — cascade display', () => {
         },
         active_profile: '300 ribu',
       },
-      session: { selectedProfile: null, cwd: '', git_worktree_cwd: '' },
+      session: { selectedAgent: null, cwd: '', git_worktree_cwd: '' },
     })
 
     const wrapper = await mountChatViewWithSession('sess_active_badge')
 
     // Open the picker
-    const chip = wrapper.find('[data-testid="profile-picker-button"]')
+    const chip = wrapper.find('[data-testid="agent-picker-button"]')
     if (!chip.exists()) throw new Error('chip not found')
     await chip.trigger('click.stop')
     await nextTick()
@@ -275,21 +275,21 @@ describe('ChatView profile chip — cascade display', () => {
         },
         active_profile: '300 ribu',
       },
-      session: { selectedProfile: null, cwd: '', git_worktree_cwd: '' },
+      session: { selectedAgent: null, cwd: '', git_worktree_cwd: '' },
     })
 
     const wrapper = await mountChatViewWithSession('sess_checkmark')
 
-    const chip = wrapper.find('[data-testid="profile-picker-button"]')
+    const chip = wrapper.find('[data-testid="agent-picker-button"]')
     if (!chip.exists()) throw new Error('chip not found')
     await chip.trigger('click.stop')
     await nextTick()
 
-    // With selectedProfile=null + activeProfile="300 ribu", ✓ should be on the 300 ribu row (not on
+    // With selectedAgent=null + activeAgent="300 ribu", ✓ should be on the 300 ribu row (not on
     // "Default (top-level)" — the effective selection IS the active profile). Scope by testid so we
     // don't match the chip's own "300 ribu" text (which has no ✓).
-    const picker300 = wrapper.find('[data-testid="profile-picker-300 ribu"]')
-    const picker900 = wrapper.find('[data-testid="profile-picker-900ribu"]')
+    const picker300 = wrapper.find('[data-testid="agent-picker-300 ribu"]')
+    const picker900 = wrapper.find('[data-testid="agent-picker-900ribu"]')
     expect(picker300.exists()).toBe(true)
     expect(picker900.exists()).toBe(true)
     expect(picker300.text()).toContain('✓')

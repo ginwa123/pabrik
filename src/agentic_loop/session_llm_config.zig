@@ -269,14 +269,14 @@ test "forOwner: a saved profile is what a chat turn gets" {
     const cfg = forOwner(testing.allocator, &ctx.db, "u1") orelse return error.ConfigNotResolved;
     defer freeResolved(cfg);
 
-    try testing.expectEqualStrings("mine", cfg.active_profile.?);
-    const eff = cfg.resolveEffectiveProfile("mine");
+    try testing.expectEqualStrings("mine", cfg.active_agent.?);
+    const eff = cfg.resolveEffectiveAgent("mine");
     try testing.expectEqualStrings("user-model", eff.model);
     try testing.expectEqualStrings("http://user.example/v1", eff.base_url);
     try testing.expectEqualStrings("user-key", eff.api_key);
     // The same cascade the workflow calls with an EMPTY profile name must
     // also land on the user's active_profile, not on top-level defaults.
-    const via_active = cfg.resolveEffectiveProfile("");
+    const via_active = cfg.resolveEffectiveAgent("");
     try testing.expectEqualStrings("user-model", via_active.model);
     try testing.expectEqualStrings("user-key", via_active.api_key);
 }
@@ -327,10 +327,10 @@ test "fromJsonText: matches the on-disk parse for identical bytes" {
     defer freeResolved(from_text);
 
     try testing.expectEqualStrings(from_text.model, from_db.model);
-    try testing.expectEqualStrings(from_text.active_profile.?, from_db.active_profile.?);
+    try testing.expectEqualStrings(from_text.active_agent.?, from_db.active_agent.?);
     try testing.expectEqualStrings(
-        from_text.profiles_models.get("p").?.api_key,
-        from_db.profiles_models.get("p").?.api_key,
+        from_text.agents.get("p").?.api_key,
+        from_db.agents.get("p").?.api_key,
     );
     try testing.expectEqual(from_text.tools.?.len, from_db.tools.?.len);
 }
@@ -397,7 +397,7 @@ test "an overlay in file mode merges over the base and replaces an array" {
     defer freeResolved(cfg);
     try testing.expectEqual(@as(usize, 1), cfg.tools.?.len);
     try testing.expectEqualStrings("read_file", cfg.tools.?[0]);
-    try testing.expectEqualStrings("mine", cfg.active_profile.?);
+    try testing.expectEqualStrings("mine", cfg.active_agent.?);
 }
 
 test "auth mode: a workspace's own row wins for every key it sets" {
@@ -426,8 +426,8 @@ test "auth mode: a workspace's own row wins for every key it sets" {
 
     // The row sets tools and nothing about profiles, so the user's profile -
     // and the key it carries - is what a run here resolves.
-    try testing.expectEqualStrings("opus", cfg.profiles_models.get("claude").?.model);
-    try testing.expectEqualStrings("claude", cfg.active_profile.?);
+    try testing.expectEqualStrings("opus", cfg.agents.get("claude").?.model);
+    try testing.expectEqualStrings("claude", cfg.active_agent.?);
 
     // General is still shared, so the run keeps the user's retry backoff.
     try testing.expectEqual(@as(u32, 1234), cfg.retry_delay_ms);
@@ -453,7 +453,7 @@ test "auth mode: a workspace with no row adopts the user's scoped settings" {
     // A workspace nobody has saved into runs with what the user set up, which
     // is also what the agent sections have to render.
     try testing.expectEqual(@as(usize, 2), cfg.tools.?.len);
-    try testing.expectEqualStrings("mine", cfg.active_profile.?);
+    try testing.expectEqualStrings("mine", cfg.active_agent.?);
     try testing.expectEqual(@as(u32, 1234), cfg.retry_delay_ms);
 
     // A user who never saved settings, and no overlay either: the singleton.
@@ -481,8 +481,8 @@ test "an empty profile copy runs on the user's profiles" {
 
     const cfg = fromJsonText(alloc, merged) orelse return error.Unparseable;
     defer freeResolved(cfg);
-    try testing.expectEqualStrings("opus", cfg.profiles_models.get("claude").?.model);
-    try testing.expectEqualStrings("claude", cfg.active_profile.?);
+    try testing.expectEqualStrings("opus", cfg.agents.get("claude").?.model);
+    try testing.expectEqualStrings("claude", cfg.active_agent.?);
 }
 
 test "an overlay never reaches another workspace" {
@@ -671,17 +671,17 @@ test "forOwnerAndWorkspace: the workspace's own active_profile and profiles win"
     const cfg = forOwnerAndWorkspace(alloc, ctx.threaded.io(), &ctx.db, null, true, "u_1", "ws_a") orelse
         return error.ScopedConfigMissing;
     defer freeResolved(cfg);
-    try testing.expectEqualStrings("ws-default", cfg.active_profile.?);
-    try testing.expectEqualStrings("ws-model", cfg.resolveEffectiveProfile(cfg.active_profile.?).model);
+    try testing.expectEqualStrings("ws-default", cfg.active_agent.?);
+    try testing.expectEqualStrings("ws-model", cfg.resolveEffectiveAgent(cfg.active_agent.?).model);
     // The workspace's list is its own: the user's profile is not inherited.
-    try testing.expect(cfg.profiles_models.get("ws-default") != null);
-    try testing.expect(cfg.profiles_models.get("user-default") == null);
+    try testing.expect(cfg.agents.get("ws-default") != null);
+    try testing.expect(cfg.agents.get("user-default") == null);
 
     // No workspace id: the user-level answer, unchanged.
     const plain = forOwnerAndWorkspace(alloc, ctx.threaded.io(), &ctx.db, null, true, "u_1", "") orelse
         return error.UserConfigMissing;
     defer freeResolved(plain);
-    try testing.expectEqualStrings("user-default", plain.active_profile.?);
+    try testing.expectEqualStrings("user-default", plain.active_agent.?);
 
     // No identity in auth mode: nothing scoped, so the caller falls back to
     // the singleton rather than to the shared file-mode bucket.

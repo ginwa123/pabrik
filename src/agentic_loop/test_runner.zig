@@ -44,7 +44,7 @@ test {
     _ = @import("retry_delay_ms.zig"); // inlined 1 stress test from retry_delay_ms_race_test.zig
     _ = @import("prompts_make_plan_context.zig"); // inlined 3 live-DB tests from prompts_make_plan_context_test.zig
     _ = @import("../modules/agent/tools/get_plan.zig"); // inlined 2 tests from get_plan_test.zig
-    _ = @import("../modules/agent/tools/list_sub_agent.zig"); // list_sub_agent exec adapter + registry static contracts
+    _ = @import("../modules/agent/tools/list_agents.zig"); // list_agents exec adapter + registry static contracts
     _ = @import("tool_eligibility.zig"); // allowlist + item-type eligibility (shared leaf module)
     _ = @import("progressive_catalog.zig"); // progressive tool catalog + result renderers
     _ = @import("progressive_regex.zig"); // search_tool's in-process regex engine (Pike VM + python-`re` oracle table)

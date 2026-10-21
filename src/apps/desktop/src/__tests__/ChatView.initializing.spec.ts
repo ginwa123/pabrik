@@ -123,7 +123,7 @@ function installBaseMocks() {
   vi.spyOn(api, 'getSession').mockResolvedValue({
     session_id: 's_init',
     session_name: '',
-    selectedProfile: null,
+    selectedAgent: null,
     cwd: '',
     git_worktree_cwd: '',
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

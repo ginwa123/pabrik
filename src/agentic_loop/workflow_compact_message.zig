@@ -7,8 +7,7 @@ const mark_history_not_for_llmrun = @import("markHistoryNotForLLMRun.zig").markH
 const migration = @import("../migrations/migration.zig");
 
 const LlmConfig = pabrikcore.config.LlmConfig;
-const LlmProfile = pabrikcore.config.LlmConfig.LlmProfile;
-const SubAgentConfig = pabrikcore.config.LlmConfig.SubAgentConfig;
+const LlmAgent = pabrikcore.config.LlmConfig.LlmAgent;
 const LLMModels = pabrikcore.llm_models;
 const agent = pabrikcore.agent;
 const prompt = pabrikcore.agent.prompt;
@@ -477,7 +476,7 @@ pub const ThresholdCtx = struct {
     llm_config: *const LlmConfig,
     /// The session's selected profile, resolved by the caller from
     /// `sessions.selected_profile_model`.
-    profile: ?*const LlmConfig.LlmProfile = null,
+    profile: ?*const LlmConfig.LlmAgent = null,
 };
 
 /// All non-std-lib function dependencies of `maybeCompactMessagesNew`.
@@ -513,8 +512,8 @@ pub fn shouldCompactDefault(ctx: ThresholdCtx) bool {
     if (ctx.force) return true;
     return agent.LLMModels.shouldCompact(
         ctx.total_tokens,
-        ctx.llm_config.maxCapacityForModelWith(ctx.profile, null, ctx.llm_config, ctx.model, model_catalog.getSingleton()),
-        ctx.llm_config.compactionThresholdPercent(ctx.profile, null, ctx.llm_config),
+        ctx.llm_config.maxCapacityForModelWith(ctx.profile, ctx.llm_config, ctx.model, model_catalog.getSingleton()),
+        ctx.llm_config.compactionThresholdPercent(ctx.profile, ctx.llm_config),
     );
 }
 /// All production dependencies wired into one bundle. Pass this as the first
@@ -549,8 +548,8 @@ pub fn maybeCompactMessagesNew(
     event_bus: ?*event_bus_mod.EventBus,
     llm_config: *const LlmConfig,
     /// The session's selected profile (resolved by the caller from
-    /// `sessions.selected_profile_model` via `LlmConfig.getProfile`).
-    profile: ?*const LlmConfig.LlmProfile,
+    /// `sessions.selected_profile_model` via `LlmConfig.getAgent`).
+    profile: ?*const LlmConfig.LlmAgent,
 ) !bool {
     if (!deps.shouldCompact(.{
         .force = force,
@@ -1389,21 +1388,20 @@ fn makeLlmConfig(allocator: std.mem.Allocator) !*pabrikcore.config.LlmConfig {
         .notify_on_complete = false,
         .mcpServers_parsed = null,
         .mcp_servers = pabrikcore.config.LlmConfig.McpServersMap.init(allocator),
-        .profiles_models = pabrikcore.config.LlmConfig.ProfilesMap.init(allocator),
-        .sub_agents = &.{},
+        .agents = pabrikcore.config.LlmConfig.AgentsMap.init(allocator),
     };
     return cfg_ptr;
 }
 
-/// Build an LlmProfile with the given threshold. The returned
-/// pointer owns its heap allocations; pair with `freeProfile`.
-fn makeProfile(
+/// Build an LlmAgent with the given threshold. The returned
+/// pointer owns its heap allocations; pair with `freeAgent`.
+fn makeAgent(
     allocator: std.mem.Allocator,
     name: []const u8,
     threshold: ?u8,
     max_capacity: ?u32,
-) !*LlmProfile {
-    const p = try allocator.create(LlmProfile);
+) !*LlmAgent {
+    const p = try allocator.create(LlmAgent);
     p.* = .{
         .model = try allocator.dupe(u8, "MiniMax-M2.7"),
         .base_url = try allocator.dupe(u8, "https://test.example.com"),
@@ -1411,7 +1409,6 @@ fn makeProfile(
         .temperature = try allocator.dupe(u8, "auto"),
         .api_key = try allocator.dupe(u8, "test-key"),
         .url_style = try allocator.dupe(u8, "openai"),
-        .sub_agents = &.{},
         .max_capacity_tokens = max_capacity,
         .compaction_threshold_percent = threshold,
     };
@@ -1419,17 +1416,17 @@ fn makeProfile(
     return p;
 }
 
-/// Free the inner strings of an LlmProfile (allocated by `makeProfile`),
-/// then destroy the struct itself. Mirrors `freeProfilesMap`'s per-entry
+/// Free the inner strings of an LlmAgent (allocated by `makeAgent`),
+/// then destroy the struct itself. Mirrors `freeAgentsMap`'s per-entry
 /// cleanup (Config.zig:431-440).
-fn freeProfile(allocator: std.mem.Allocator, p: *LlmProfile) void {
+fn freeAgent(allocator: std.mem.Allocator, p: *LlmAgent) void {
     allocator.free(p.model);
     allocator.free(p.base_url);
     allocator.free(p.thinking);
     allocator.free(p.temperature);
     allocator.free(p.api_key);
     allocator.free(p.url_style);
-    // sub_agents is `&.{}` in makeProfile (empty slice) — no free needed.
+    // sub_agents is `&.{}` in makeAgent (empty slice) — no free needed.
     allocator.destroy(p);
 }
 
@@ -1440,7 +1437,7 @@ test "compactionThresholdPercent: null profile falls back to 80% built-in defaul
         cfg.deinit();
         allocator.destroy(cfg);
     }
-    try testing.expectEqual(@as(u8, 80), cfg.compactionThresholdPercent(null, null, null));
+    try testing.expectEqual(@as(u8, 80), cfg.compactionThresholdPercent(null, null));
 }
 
 test "compactionThresholdPercent: profile override wins over built-in default" {
@@ -1450,9 +1447,9 @@ test "compactionThresholdPercent: profile override wins over built-in default" {
         cfg.deinit();
         allocator.destroy(cfg);
     }
-    const profile = try makeProfile(allocator, "dev", 50, null);
-    defer freeProfile(allocator, profile);
-    try testing.expectEqual(@as(u8, 50), cfg.compactionThresholdPercent(profile, null, null));
+    const profile = try makeAgent(allocator, "dev", 50, null);
+    defer freeAgent(allocator, profile);
+    try testing.expectEqual(@as(u8, 50), cfg.compactionThresholdPercent(profile, null));
 }
 
 test "compaction: two profiles with different thresholds produce different decisions at the same token count" {
@@ -1463,28 +1460,28 @@ test "compaction: two profiles with different thresholds produce different decis
         cfg.deinit();
         allocator.destroy(cfg);
     }
-    const profile_80 = try makeProfile(allocator, "prod", null, null); // → 80 (built-in)
-    defer freeProfile(allocator, profile_80);
-    const profile_50 = try makeProfile(allocator, "dev", 50, null);
-    defer freeProfile(allocator, profile_50);
+    const profile_80 = try makeAgent(allocator, "prod", null, null); // → 80 (built-in)
+    defer freeAgent(allocator, profile_80);
+    const profile_50 = try makeAgent(allocator, "dev", 50, null);
+    defer freeAgent(allocator, profile_50);
 
     const model = "MiniMax-M2.7";
-    const cap: u32 = cfg.maxCapacityForModel(null, null, null, model);
+    const cap: u32 = cfg.maxCapacityForModel(null, null, model);
     const at_79pct: u32 = cap * 79 / 100; // ~158,000 with 200k default
 
     // 79% of 200,000 = 158,000 — below the 80% threshold → no compact
     // under profile_80 (which uses the built-in 80% default).
     try testing.expect(!LLMModels.shouldCompact(
         at_79pct,
-        cfg.maxCapacityForModel(profile_80, null, null, model),
-        cfg.compactionThresholdPercent(profile_80, null, null),
+        cfg.maxCapacityForModel(profile_80, null, model),
+        cfg.compactionThresholdPercent(profile_80, null),
     ));
 
     // 79% is above 50% threshold → compact under profile_50.
     try testing.expect(LLMModels.shouldCompact(
         at_79pct,
-        cfg.maxCapacityForModel(profile_50, null, null, model),
-        cfg.compactionThresholdPercent(profile_50, null, null),
+        cfg.maxCapacityForModel(profile_50, null, model),
+        cfg.compactionThresholdPercent(profile_50, null),
     ));
 }
 
@@ -1495,8 +1492,8 @@ test "compaction: max_capacity_tokens override shifts the threshold proportional
         cfg.deinit();
         allocator.destroy(cfg);
     }
-    const profile = try makeProfile(allocator, "dev", 50, 400_000);
-    defer freeProfile(allocator, profile);
+    const profile = try makeAgent(allocator, "dev", 50, 400_000);
+    defer freeAgent(allocator, profile);
 
     const model = "MiniMax-M2.7";
     try testing.expectEqual(@as(u32, 200_000), LLMModels.getModelTokenCount(model));
@@ -1504,61 +1501,36 @@ test "compaction: max_capacity_tokens override shifts the threshold proportional
     // With the 2x capacity override (400k) and same 50% threshold, the
     // boundary shifts to 200k — at 100k we are below (was at the
     // boundary without the override).
-    try testing.expectEqual(@as(u32, 400_000), cfg.maxCapacityForModel(profile, null, null, model));
+    try testing.expectEqual(@as(u32, 400_000), cfg.maxCapacityForModel(profile, null, model));
     try testing.expect(!LLMModels.shouldCompact(
         100_000,
-        cfg.maxCapacityForModel(profile, null, null, model),
-        cfg.compactionThresholdPercent(profile, null, null),
+        cfg.maxCapacityForModel(profile, null, model),
+        cfg.compactionThresholdPercent(profile, null),
     ));
     try testing.expect(LLMModels.shouldCompact(
         200_000,
-        cfg.maxCapacityForModel(profile, null, null, model),
-        cfg.compactionThresholdPercent(profile, null, null),
+        cfg.maxCapacityForModel(profile, null, model),
+        cfg.compactionThresholdPercent(profile, null),
     ));
 }
 
-test "compaction: sub-agent override beats parent profile (cascade)" {
+test "compaction: the agent's own override beats the top-level default" {
     const allocator = testing.allocator;
     const cfg = try makeLlmConfig(allocator);
     defer {
         cfg.deinit();
         allocator.destroy(cfg);
     }
-    // Parent profile uses 50% threshold.
-    const profile = try makeProfile(allocator, "dev", 50, null);
-    defer freeProfile(allocator, profile);
-    // Sub-agent tightens to 90% — should win over the parent.
-    const sub_agent = try allocator.create(SubAgentConfig);
-    sub_agent.* = .{
-        .name = try allocator.dupe(u8, "alpha"),
-        .model = try allocator.dupe(u8, "MiniMax-M2.7"),
-        .base_url = try allocator.dupe(u8, "https://test.example.com"),
-        .thinking = try allocator.dupe(u8, "auto"),
-        .temperature = try allocator.dupe(u8, "auto"),
-        .api_key = try allocator.dupe(u8, "test-key"),
-        .url_style = try allocator.dupe(u8, "openai"),
-        .system_prompt = try allocator.dupe(u8, ""),
-        .max_capacity_tokens = null,
-        .compaction_threshold_percent = 90,
-    };
-    defer {
-        allocator.free(sub_agent.name);
-        allocator.free(sub_agent.model);
-        allocator.free(sub_agent.base_url);
-        allocator.free(sub_agent.thinking);
-        allocator.free(sub_agent.temperature);
-        allocator.free(sub_agent.url_style);
-        allocator.free(sub_agent.api_key);
-        allocator.free(sub_agent.system_prompt);
-        allocator.destroy(sub_agent);
-    }
+    // The top-level default is 65%.
+    cfg.compaction_threshold_percent = 65;
 
-    // Sub-agent cascade wins: 90% threshold (not 50% from profile).
-    try testing.expectEqual(@as(u8, 90), cfg.compactionThresholdPercent(profile, sub_agent, null));
-    // Without sub-agent: profile's 50% wins.
-    try testing.expectEqual(@as(u8, 50), cfg.compactionThresholdPercent(profile, null, null));
-    // Without profile and sub-agent: built-in 80%.
-    try testing.expectEqual(@as(u8, 80), cfg.compactionThresholdPercent(null, null, null));
+    // The agent tightens to 90% — it wins over the top-level default.
+    const agent_cfg = try makeAgent(allocator, "dev", 90, null);
+    defer freeAgent(allocator, agent_cfg);
+    try testing.expectEqual(@as(u8, 90), cfg.compactionThresholdPercent(agent_cfg, cfg));
+
+    // Without an agent: the top-level default applies.
+    try testing.expectEqual(@as(u8, 65), cfg.compactionThresholdPercent(null, cfg));
 }
 
 test "compactionThresholdPercent: top-level defaults (cfg) cascade before built-in" {
@@ -1573,14 +1545,14 @@ test "compactionThresholdPercent: top-level defaults (cfg) cascade before built-
     cfg.max_capacity_token_model = 350_000;
 
     // No profile, no sub-agent → top-level defaults apply.
-    try testing.expectEqual(@as(u8, 65), cfg.compactionThresholdPercent(null, null, cfg));
-    try testing.expectEqual(@as(u32, 350_000), cfg.maxCapacityForModel(null, null, cfg, "MiniMax-M2.7"));
+    try testing.expectEqual(@as(u8, 65), cfg.compactionThresholdPercent(null, cfg));
+    try testing.expectEqual(@as(u32, 350_000), cfg.maxCapacityForModel(null, cfg, "MiniMax-M2.7"));
 
     // Profile override (50%) wins over top-level defaults (65%).
-    const profile = try makeProfile(allocator, "dev", 50, 600_000);
-    defer freeProfile(allocator, profile);
-    try testing.expectEqual(@as(u8, 50), cfg.compactionThresholdPercent(profile, null, cfg));
-    try testing.expectEqual(@as(u32, 600_000), cfg.maxCapacityForModel(profile, null, cfg, "MiniMax-M2.7"));
+    const profile = try makeAgent(allocator, "dev", 50, 600_000);
+    defer freeAgent(allocator, profile);
+    try testing.expectEqual(@as(u8, 50), cfg.compactionThresholdPercent(profile, cfg));
+    try testing.expectEqual(@as(u32, 600_000), cfg.maxCapacityForModel(profile, cfg, "MiniMax-M2.7"));
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1717,8 +1689,7 @@ fn buildTestConfig(allocator: std.mem.Allocator) LlmConfig {
         .model_compaction_size_kb = 100,
         .mcpServers_parsed = null,
         .mcp_servers = LlmConfig.McpServersMap.init(allocator),
-        .profiles_models = LlmConfig.ProfilesMap.init(allocator),
-        .sub_agents = &.{},
+        .agents = LlmConfig.AgentsMap.init(allocator),
         .url_style = "openai",
     };
 }
@@ -2445,8 +2416,7 @@ fn buildShouldCompactTestConfig(
         .model_compaction_size_kb = 100,
         .mcpServers_parsed = null,
         .mcp_servers = LlmConfig.McpServersMap.init(allocator),
-        .profiles_models = LlmConfig.ProfilesMap.init(allocator),
-        .sub_agents = &.{},
+        .agents = LlmConfig.AgentsMap.init(allocator),
         .max_capacity_token_model = max_capacity_override,
         .compaction_threshold_percent = threshold_percent_override,
     };
@@ -2718,7 +2688,7 @@ test "shouldCompactDefault: profile override shapes the decision (cap + threshol
     // 2026-08-21-fix-ui-context-window — the compaction decision must honor
     // the session profile's `max_capacity_tokens` and
     // `compaction_threshold_percent` overrides, matching the (now
-    const profile = LlmConfig.LlmProfile{
+    const profile = LlmConfig.LlmAgent{
         .model = "claude-sonnet-4-5",
         .max_capacity_tokens = 400_000,
         .compaction_threshold_percent = 50,

@@ -130,7 +130,13 @@ pub fn buildMessages(
     if (hasTool(filtered_tools, "list_secrets")) {
         try final_system.appendSlice(allocator, prompts_const.SecretsToolRule);
     }
-    _ = activeAgentContent;
+    // The spawned agent's own configuration — the persona the parent picked
+    // when it named this agent. Empty for a top-level session, so the
+    // section never appears there.
+    if (activeAgentContent.len > 0) {
+        try final_system.appendSlice(allocator, "\n\n## Your Active Agent Configuration\n\n");
+        try final_system.appendSlice(allocator, activeAgentContent);
+    }
 
     // 2. WorkingDirectoryContext — PABRIK.md / CLAUDE.md / AGENTS.md (right after static sections)
     const memoryMd = try agentic_loop.prompts_mod.makeWorkingDirectoryContext(allocator, io, cwd);
@@ -1325,7 +1331,6 @@ pub fn build_agent_prompt(
     tools: []const tool_models.AgentTool,
     activity_info: []const u8,
     environment: ?*const std.process.Environ.Map,
-    sub_agents_listing: []const u8,
     workspaceContext: []const u8,
     kanbanStatusContent: []const u8,
     designStatusContent: []const u8,
@@ -1334,7 +1339,6 @@ pub fn build_agent_prompt(
     _ = backgroundProcessContent;
     _ = activeAgentContent;
     _ = activity_info;
-    _ = sub_agents_listing;
 
     var result: std.ArrayList(u8) = .empty;
     errdefer result.deinit(allocator);
@@ -1439,77 +1443,6 @@ fn appendToolListing(allocator: std.mem.Allocator, result: *std.ArrayList(u8), t
 // ---------------------------------------------------------------------------
 // Available Sub-Agents listing
 // ---------------------------------------------------------------------------
-
-/// One row of the sub-agents listing. Borrowed slices from the
-/// `SubAgentConfig` entry — they live as long as the parent `LlmConfig`.
-pub const SubAgentListingRow = struct {
-    name: []const u8,
-    model: []const u8,
-    /// First N chars of the sub-agent's `system_prompt`, used as a one-line
-    /// description in the listing. Empty when the sub-agent has no
-    /// system_prompt.
-    description: []const u8,
-    /// The profile name the row came from (per-profile-only;
-    /// plan 2026-09-04-subagents-per-profile). Used for the source
-    /// suffix in the listing.
-    source: []const u8,
-};
-
-/// Append a "## Available Sub-Agents" section to the result ArrayList.
-pub fn appendSubAgentsListing(
-    allocator: std.mem.Allocator,
-    result: *std.ArrayList(u8),
-    rows: []const SubAgentListingRow,
-) !void {
-    if (rows.len == 0) return;
-
-    try result.appendSlice(allocator,
-        \\## Available Sub-Agents
-        \\
-        \\You can use the `spawn_sub_agent` tool with one of these
-        \\`agent_name` values to delegate the task to a pre-configured
-        \\specialized sub-agent:
-        \\
-        \\If you are unsure which agent_name values exist or which fits
-        \\the job, call list_sub_agent first — it shows full specs
-        \\(model, tuning, system prompt); absent optional tags mean
-        \\'inherits the profile default'.
-        \\
-    );
-
-    for (rows) |row| {
-        // Skip rows with empty name (defensive — should never
-        // happen since the LlmConfig rejects empty names at
-        // load time, but be tolerant).
-        if (row.name.len == 0) continue;
-        try result.appendSlice(allocator, "- **");
-        try result.appendSlice(allocator, row.name);
-        try result.appendSlice(allocator, "**");
-        if (row.model.len > 0) {
-            try result.appendSlice(allocator, " (model: `");
-            try result.appendSlice(allocator, row.model);
-            try result.appendSlice(allocator, "`)");
-        }
-        if (row.description.len > 0) {
-            try result.appendSlice(allocator, " — \"");
-            try result.appendSlice(allocator, row.description);
-            try result.appendSlice(allocator, "\"");
-        }
-        if (row.source.len > 0) {
-            try result.appendSlice(allocator, " _(from profile `");
-            try result.appendSlice(allocator, row.source);
-            try result.appendSlice(allocator, "`)_");
-        }
-        try result.appendSlice(allocator, "\n");
-    }
-
-    try result.appendSlice(allocator,
-        \\
-        \\Loaded from the profile's `sub_agents` array in
-        \\`~/.config/pabrik/config.json` under `profiles_models`.
-        \\
-    );
-}
 
 // ============================================================================
 // Unit tests for buildMCPToolsRun (task_1788372445618_0 follow-up)
@@ -1784,6 +1717,71 @@ fn insertWorkspaceTask(db: *sqlite.SqliteBackend, task_id: []const u8, item_id: 
     , &[_][]const u8{ task_id, item_id });
 }
 
+test "buildMessages: the spawned agent's configuration reaches the prompt" {
+    var ctx = try setupPromptDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(testing.io, &path_buf);
+    const cwd = try testing.allocator.dupe(u8, path_buf[0..n]);
+    defer testing.allocator.free(cwd);
+
+    const messages = try buildMessages(
+        testing.allocator,
+        ctx.threaded.io(),
+        &ctx.db,
+        cwd,
+        "sess_agent_cfg",
+        "",
+        &.{},
+        &.{},
+        "",
+        "You are a strict code reviewer.",
+    );
+    const prompt = try testing.allocator.dupe(u8, messages[0].content orelse "");
+    for (messages) |*msg| msg.deinit(testing.allocator);
+    testing.allocator.free(messages);
+    defer testing.allocator.free(prompt);
+
+    try testing.expect(std.mem.indexOf(u8, prompt, "## Your Active Agent Configuration") != null);
+    try testing.expect(std.mem.indexOf(u8, prompt, "You are a strict code reviewer.") != null);
+}
+
+test "buildMessages: a top-level session gets no agent-configuration section" {
+    var ctx = try setupPromptDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(testing.io, &path_buf);
+    const cwd = try testing.allocator.dupe(u8, path_buf[0..n]);
+    defer testing.allocator.free(cwd);
+
+    const messages = try buildMessages(
+        testing.allocator,
+        ctx.threaded.io(),
+        &ctx.db,
+        cwd,
+        "sess_no_agent_cfg",
+        "",
+        &.{},
+        &.{},
+        "",
+        "",
+    );
+    const prompt = try testing.allocator.dupe(u8, messages[0].content orelse "");
+    for (messages) |*msg| msg.deinit(testing.allocator);
+    testing.allocator.free(messages);
+    defer testing.allocator.free(prompt);
+
+    try testing.expect(std.mem.indexOf(u8, prompt, "## Your Active Agent Configuration") == null);
+}
+
 test "buildMessages: the cross-project block reaches the prompt, after the workspace, listing workspace_items siblings" {
     var ctx = try setupPromptDb();
     defer ctx.threaded.deinit();
@@ -1861,11 +1859,9 @@ test "build_agent_prompt renders CrossProject section after workspace" {
         &tools,
         "",
         null,
-        "",
         workspaceContext,
         "",
-        "",
-    );
+        "");
     defer alloc.free(prompt);
     try testing.expect(std.mem.indexOf(u8, prompt, "## Cross-Project Context") != null);
     const ws_pos = std.mem.indexOf(u8, prompt, "## Workspace Context") orelse

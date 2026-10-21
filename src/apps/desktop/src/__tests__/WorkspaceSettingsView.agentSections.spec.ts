@@ -11,7 +11,7 @@ import { makeLocalStorageStub } from './helpers'
 vi.mock('../api', () => ({
   getPabrikConfig: vi.fn(),
   savePabrikConfig: vi.fn(),
-  deleteProfile: vi.fn(),
+  deleteAgent: vi.fn(),
   getWebStatus: vi.fn(),
   getAgentToolsRegistry: vi.fn(),
   getWorkspaceConfig: vi.fn(),
@@ -60,7 +60,7 @@ describe('WorkspaceSettingsView — the moved config sections', () => {
     })
   })
 
-  for (const section of ['profiles', 'mcp', 'tools', 'evals'] as const) {
+  for (const section of ['agents', 'mcp', 'tools', 'evals'] as const) {
     it(`mounts the config editor for ?section=${section}, pointed at THIS workspace`, async () => {
       const wrapper = await mountAt(section)
       await flushPromises()
@@ -86,7 +86,7 @@ describe('WorkspaceSettingsView — the moved config sections', () => {
   })
 
   it('keeps ONE editor instance across a section switch, so edits survive', async () => {
-    const wrapper = await mountAt('profiles')
+    const wrapper = await mountAt('agents')
     await flushPromises()
     const editorBefore = wrapper.findComponent({ name: 'PabrikConfigEditor' })
     expect(editorBefore.exists()).toBe(true)

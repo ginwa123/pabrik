@@ -103,7 +103,7 @@ function installChatViewMocks(opts: { messages: Message[]; sessionId: string }) 
     sessionName: '',
     createdAt: '2026-08-19 00:00:00',
     agent: '',
-    selectedProfile: '',
+    selectedAgent: '',
     cwd: '',
     git_worktree_cwd: '',
   })

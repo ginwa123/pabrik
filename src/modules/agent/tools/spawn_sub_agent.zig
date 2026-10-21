@@ -39,7 +39,7 @@ pub const SubAgentsInput = struct {
 pub const spawn_sub_agent_tool_system_prompt =
     \\## Spawn Sub Agent Tool — Behavior
     \\Use `spawn_sub_agent` to delegate independent sub-tasks in parallel.
-    \\- Provide `instruction` (full task details), `agent_name` (from available sub-agents), and `tools` (REQUIRED explicit allowlist — never omit, never "all"). The sub-agent runs isolated and returns a result.
+    \\- Provide `instruction` (full task details), `agent_name` (a configured agent, from `list_agents`), and `tools` (REQUIRED explicit allowlist — never omit, never "all"). The sub-agent runs isolated and returns a result.
     \\- `ask_user` and `spawn_sub_agent` are main-agent-only: never list them for a sub-agent (rejected at parse time). A sub-agent cannot reach the human — if you need a decision, ask it yourself with `ask_user` before spawning, or bake the answer into the `instruction`.
     \\- Use for parallel research or multi-file work, not for trivial single-step tasks. Up to 20 sub-agents in parallel.
     \\- Explorer-code sub-agents (read-only: read_file, glob, search) share your cwd — NO new worktree needed.
@@ -66,7 +66,7 @@ pub const spawn_sub_agent_tool = AgentTool{
         \\- Explorer-code sub-agent (read-only: read_file, glob, search, semantic_search, web_search): NO new worktree — it shares your cwd.
         \\- Writer/editor sub-agent (anything that creates or modifies files): you MUST tell it explicitly in "instruction" to call `set_git_worktree` FIRST with a path under `.worktree/worktrees_agent_<randomname>`, do all file work inside that worktree, then return a summary of changed files and whether it pushed. Its "tools" MUST include "set_git_worktree" plus the write tools it needs.
         \\
-        \\AGENT_NAME (REQUIRED): the name of a pre-configured sub-agent in the active profile's `sub_agents` list (per-profile only — there is no top-level fallback), resolved against the parent session's `selected_profile_model`. Call `list_sub_agent` first if you are unsure which names exist or which fits; absent optional tags there mean "inherits the profile default". The sub-agent takes that config's model, base_url, api_key, url_style, thinking, temperature and system_prompt (injected as its "## Your Active Agent Configuration" block). The name is also the label on the result XML's <agent name="...">. If the name is NOT found, a random "agent-{16 hex chars}" name is used with the orchestrator's default model / api_key / base_url / url_style and no specialized system prompt, and the affected <agent> tag carries random_fallback="true".
+        \\AGENT_NAME (REQUIRED): the name of a configured agent, from the list `list_agents` shows. Call `list_agents` first if you are unsure which names exist or which fits; absent optional tags there mean "inherits the default". The spawned sub-agent takes that agent's model, base_url, api_key, url_style, thinking, temperature and system_prompt (injected as its "## Your Active Agent Configuration" block). The name is also the label on the result XML's <agent name="...">. If the name is NOT found, a random "agent-{16 hex chars}" name is used with the orchestrator's default model / api_key / base_url / url_style and no specialized system prompt, and the affected <agent> tag carries random_fallback="true".
         \\
         \\Optional per sub-agent:
         \\- "timeout_seconds": on expiry the sub-agent is terminated and returns an error. Default: no timeout (runs until completion).
@@ -84,7 +84,7 @@ pub const spawn_sub_agent_tool = AgentTool{
                     \\  "sub_agents": [
                     \\    {
                     \\      "instruction": "Full task details", // Required. Self-contained: include ALL context the agent needs.
-                    \\      "agent_name": "code-reviewer",      // Required. Pre-configured sub-agent from the active profile's sub_agents.
+                    \\      "agent_name": "code-reviewer",      // Required. A configured agent, from list_agents.
                     \\      "tools": ["read_file", "glob", "search"], // REQUIRED non-empty explicit allowlist. Never omit, never "all".
                     \\      "timeout_seconds": 300,             // Optional. Seconds (0 = no limit).
                     \\      "inherited_context": "last:5"       // Optional. Parent-history inheritance mode.
@@ -250,9 +250,8 @@ fn parseSubAgentsFromValue(
             }
         }
 
-        // Parse required "agent_name" field — name of a sub-agent from
-        // `LlmConfig.sub_agents` to apply as an overlay on the orchestrator's
-        // defaults.
+        // Parse required "agent_name" field — the name of a configured
+        // agent, applied as an overlay on the orchestrator's defaults.
         const an_val = agent_obj.get("agent_name") orelse {
             return error.MissingSubAgentAgentName;
         };
@@ -520,7 +519,7 @@ test "parse_sub_agents - a normal read-only tool list still parses" {
     const alloc = std.testing.allocator;
     // The negative control: the new rejection must not catch innocent names.
     const input_json =
-        \\{"sub_agents":[{"agent_name":"a","instruction":"x","tools":["list_sub_agent","read_workspace_session","use_skill"]}]}
+        \\{"sub_agents":[{"agent_name":"a","instruction":"x","tools":["list_agents","read_workspace_session","use_skill"]}]}
     ;
     var parsed = try parse_sub_agents(alloc, input_json, 20);
     defer parsed.deinit(alloc);
@@ -716,12 +715,12 @@ pub fn execSpawnSubAgent(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResu
     return ToolExecResult{ .output = output, .output_allocated = true };
 }
 
-/// Resolve one sub-agent's config overlay from the live LlmConfig.
-/// `agent_name` is the LLM-provided name.
+/// Resolve the spawned child's config overlay from the live LlmConfig.
+/// `an` is the LLM-provided agent name.
 fn resolveOverrides(ctx: ToolExecContext, an: []const u8) ai_workflow.SubAgentOverrides {
-    const resolved = @constCast(ctx.config).resolveSubAgent(ctx.selected_profile_model, an);
+    const resolved = @constCast(ctx.config).resolveAgent(an);
     if (resolved.is_random_fallback) {
-        ctx.logger.warnFmt("spawn_sub_agent: agent_name '{s}' not found in LlmConfig.sub_agents; using random name '{s}' and orchestrator defaults", .{ an, resolved.name });
+        ctx.logger.warnFmt("spawn_sub_agent: agent_name '{s}' not found among the configured agents; using random name '{s}' and orchestrator defaults", .{ an, resolved.name });
     } else {
         ctx.logger.infoFmt("spawn_sub_agent: agent_name '{s}' resolved (source='{s}', model='{s}')", .{ an, resolved.source, resolved.model });
     }
@@ -743,7 +742,7 @@ fn resolveOverrides(ctx: ToolExecContext, an: []const u8) ai_workflow.SubAgentOv
         .is_thinking = resolved.is_thinking,
         .temperature = resolved.temperature,
         // Model-thinking knobs (plan 2026-08-23-model-thinking), threaded
-        // from ResolvedSubAgent so the spawned sub-agent can override its
+        // from ResolvedAgent so the spawned sub-agent can override its
         // parent profile's thinking budget / reasoning effort without
         .thinking_budget_tokens = resolved.thinking_budget_tokens,
         .reasoning_effort = resolved.reasoning_effort,

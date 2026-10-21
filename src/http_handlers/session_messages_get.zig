@@ -55,7 +55,7 @@ pub fn sessionMessagesHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
     const cfg = session_llm_config.forSession(allocator, di.db, session_id) orelse
         pabrikcore.getLlmConfig(di);
     const profile_name = llm_history.getSessionProfileName(allocator, sqlite_db, session_id) catch "";
-    const profile: ?config.LlmConfig.LlmProfile =
+    const profile: ?config.LlmConfig.LlmAgent =
         llm_history.resolveSessionProfile(cfg, profile_name);
 
     const msg_response = llm_history.getSessionMessagesSorted(allocator, sqlite_db, session_id, limit_val, cursor, sort_spec, if (profile) |*p| p else null) catch {
@@ -366,7 +366,7 @@ test "getSessionMessagesSorted: profile override flows into max_capacity_total_t
     var cfg = try pabrikcore.config.LlmConfig.init(arena_alloc, testing.io, config_path, &env_map);
     defer cfg.deinit();
 
-    const profile = cfg.profiles_models.get("900ribu") orelse unreachable;
+    const profile = cfg.agents.get("900ribu") orelse unreachable;
 
     const resp = try llm_history.getSessionMessagesSorted(
         arena_alloc,

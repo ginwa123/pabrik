@@ -663,7 +663,7 @@ private fun ComposerFooter(
     var expanded by remember { mutableStateOf(false) }
 
     // The cascade's answer, computed once and used by both the chip's label and
-    // the picker's tick. Two independent readings of "which profile is this"
+    // the picker's tick. Two independent readings of "which agent is this"
     // is how a chip and its own menu end up disagreeing.
     val effective = effectiveProfileName(model, activeModelProfile)
     // A menu with nothing in it is a menu that opens onto an empty list, so
@@ -827,7 +827,7 @@ private fun ModelPicker(
             // profile is already running on a named one.
             ProfileMenuRow(
                 title = "Default (top-level config)",
-                detail = "Follows the profile marked active in settings.",
+                detail = "Follows the agent marked active in settings.",
                 isChecked = selectedProfile.isEmpty(),
                 enabled = !isSaving,
                 testTag = "chat_model_default",
@@ -854,7 +854,7 @@ private fun ModelPicker(
 
             if (profiles.isEmpty()) {
                 Text(
-                    text = "No profiles configured. Add one in Settings.",
+                    text = "No agents configured. Add one in Settings.",
                     style = MaterialTheme.typography.labelMedium,
                     color = PabrikMuted,
                     modifier = Modifier

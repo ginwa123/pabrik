@@ -68,7 +68,7 @@ function installChatViewMocks() {
     sessionName: '',
     createdAt: '',
     agent: '',
-    selectedProfile: '',
+    selectedAgent: '',
     cwd: '',
     git_worktree_cwd: '',
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

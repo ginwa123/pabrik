@@ -32,8 +32,8 @@ pub const SkillEvalsConfig = struct {
 };
 
 /// Tolerant JSON mirror of `SkillEvalsConfig`. A separate type from the
-/// runtime one for the same reason `ProfileJson` is separate from
-/// `LlmProfile`: the JSON side must survive a user typo.
+/// runtime one for the same reason `AgentJson` is separate from
+/// `LlmAgent`: the JSON side must survive a user typo.
 pub const SkillEvalsJson = struct {
     enabled: bool = false,
     max_skills_per_run: u32 = 8,
@@ -74,11 +74,9 @@ pub const LlmConfig = struct {
     /// Typed map of MCP servers. Keys are server names, values are owned
     /// `McpServerConfig` (with their own owned `url` and `headers`).
     mcp_servers: McpServersMap,
-    /// Parsed profiles from profiles_models
-    profiles_models: ProfilesMap,
-    /// Top-level sub-agents array. Each entry is a typed `SubAgentConfig`
-    /// with its own owned strings.
-    sub_agents: SubAgentsList,
+    /// The configured agents, keyed by name. Parsed from the on-disk
+    /// `profiles_models` key (the storage contract keeps its old name).
+    agents: AgentsMap,
     url_style: []const u8,
     /// When true, fire an OS-level notification when an LLM response finishes
     /// with `finish_reason === 'stop'`. Off by default — the user opts in via
@@ -107,11 +105,11 @@ pub const LlmConfig = struct {
     /// Add a model-written summary to each compaction envelope. Off by default:
     /// the envelope is deterministic without it.
     compaction_llm_summary: bool = false,
-    /// Plan 2026-08-06-set-active-profile-default — optional name of a
-    /// profile in `profiles_models` that the workflow uses as the default
-    /// when neither the session's `selected_profile_model` nor the POST
-    active_profile: ?[]const u8 = null,
-    /// Owned slice of random sub-agent names that `resolveSubAgent` generated
+    /// Plan 2026-08-06-set-active-profile-default — the agent the workflow
+    /// uses as the default when neither the session's selection nor the POST
+    /// names one. Parsed from the on-disk `active_profile` key.
+    active_agent: ?[]const u8 = null,
+    /// Owned slice of random sub-agent names that `resolveAgent` generated
     /// for the random-fallback case. Each name is allocated on
     /// `self.allocator` and is freed in `deinit`.
     random_names: [][]u8 = &.{},
@@ -155,14 +153,17 @@ pub const LlmConfig = struct {
         pub const opencode = "opencode";
     };
 
-    /// Individual profile settings.
-    pub const LlmProfile = struct {
+    /// One configured agent: a named LLM setup you can run or spawn.
+    pub const LlmAgent = struct {
         model: []const u8 = "",
         base_url: []const u8 = "",
         thinking: []const u8 = "auto",
         temperature: []const u8 = "auto",
         api_key: []const u8 = "",
         url_style: []const u8 = "openai",
+        /// The agent's persona. Injected into a spawned child's system
+        /// prompt as its `## Your Active Agent Configuration` block.
+        system_prompt: []const u8 = "",
         /// Transport discriminator — `""` (unset → resolves to `"http"`) or
         /// `"claude-code"`.
         backend: []const u8 = "",
@@ -177,13 +178,10 @@ pub const LlmConfig = struct {
         opencode_agent: ?[]const u8 = null,
         /// OpenCode only: whether to pass `--auto`. `null` = on (the headless
         /// default); `false` = off. Stored as an optional so the absent key
-        /// costs no allocation and `freeProfilesMap` stays balanced.
+        /// costs no allocation and `freeAgentsMap` stays balanced.
         opencode_auto: ?bool = null,
-        /// Per-profile sub-agents. Owned `[]SubAgentConfig` (default empty).
-        /// Each entry's strings are allocated with the parent `LlmConfig.allocator`.
-        sub_agents: SubAgentsList = &.{},
         /// Optional override for the context window (in tokens) used by this
-        /// profile.
+        /// agent.
         max_capacity_tokens: ?u32 = null,
         /// Compaction threshold as a percentage (0-100) of the model's
         /// context window. `null` = use the built-in 80. Values > 100
@@ -199,63 +197,14 @@ pub const LlmConfig = struct {
         reasoning_effort: ?[]const u8 = null,
     };
 
-    /// Typed configuration for a single sub-agent. Mirrors `LlmProfile`
-    /// fields plus an additional `system_prompt` and two compaction-related
-    /// overrides that cascade over the parent profile.
-    pub const SubAgentConfig = struct {
-        name: []const u8,
-        model: []const u8,
-        base_url: []const u8,
-        thinking: []const u8,
-        temperature: []const u8,
-        url_style: []const u8,
-        api_key: []const u8,
-        system_prompt: []const u8,
-        /// Transport discriminator — `"http"` (default) | `"claude-code"`.
-        /// Empty = inherit the parent orchestrator's backend.
-        backend: []const u8 = "",
-        /// Claude Code only: `CLAUDE_CONFIG_DIR` override. `null` =
-        /// inherit the parent profile (then the CLI default).
-        config_dir: ?[]const u8 = null,
-        /// Claude Code only: `--max-turns` override. `null` = inherit the
-        /// parent profile.
-        max_turns: ?u32 = null,
-        /// OpenCode only: `--agent` override. `null` = inherit the parent
-        /// profile.
-        opencode_agent: ?[]const u8 = null,
-        /// OpenCode only: `--auto` override. `null` = inherit the parent
-        /// profile.
-        opencode_auto: ?bool = null,
-        /// Optional override for the context window (in tokens) for
-        /// this sub-agent. `null` = inherit from the parent profile (or
-        /// the built-in default if no profile).
-        max_capacity_tokens: ?u32 = null,
-        /// Compaction threshold percentage (0-100) for this sub-agent.
-        /// `null` = inherit from the parent profile (or 80 if no profile).
-        compaction_threshold_percent: ?u8 = null,
-        /// Anthropic-only override for `thinking.budget_tokens`. See
-        /// `LlmProfile.thinking_budget_tokens` for full semantics.
-        /// `null` = inherit from the parent profile.
-        thinking_budget_tokens: ?u32 = null,
-        /// OpenAI-style reasoning effort (o1 / o3 / GPT-5 / DeepSeek-R1).
-        /// See `LlmProfile.reasoning_effort` for full semantics.
-        /// `null` = inherit from the parent profile.
-        reasoning_effort: ?[]const u8 = null,
-    };
-
-    /// Owned slice of `SubAgentConfig` entries. The slice itself (when non-empty)
-    /// is allocated with the parent `LlmConfig.allocator`, and each entry's
-    /// string fields are individually allocated on the same allocator.
-    pub const SubAgentsList = []SubAgentConfig;
-
-    /// Resolved sub-agent configuration — the output of `resolveSubAgent`.
-    pub const ResolvedSubAgent = struct {
-        /// Name to record as `agent_name` for the sub-agent's session
+    /// Resolved agent configuration — the output of `resolveAgent`.
+    pub const ResolvedAgent = struct {
+        /// Name to record as `agent_name` for the spawned child's session
         /// and to embed in the session_id suffix.
         name: []const u8,
 
-        /// True iff `agent_name` was provided but not found in any
-        /// sub_agents list. False when the name was found.
+        /// True iff `agent_name` was provided but not found among the
+        /// configured agents. False when the name was found.
         is_random_fallback: bool,
 
         /// The name the LLM originally requested. Useful for
@@ -294,32 +243,33 @@ pub const LlmConfig = struct {
         temperature: ?f32,
 
         /// Resolved Anthropic `thinking.budget_tokens` override. `null`
-        /// = inherit from the parent profile. Range-validated upstream
+        /// = inherit from the parent agent. Range-validated upstream
         /// (HTTP layer rejects 0 or > 2_000_000).
         thinking_budget_tokens: ?u32,
 
         /// Resolved OpenAI `reasoning_effort` value (already validated
         /// to one of "low" | "medium" | "high" | "auto"). `null` =
-        /// inherit from the parent profile.
+        /// inherit from the parent agent.
         reasoning_effort: ?[]const u8,
 
-        /// System prompt to inject as the sub-agent's
+        /// System prompt to inject as the child's
         /// `## Your Active Agent Configuration`. Empty for the
         /// random-fallback case.
         system_prompt: []const u8,
 
-        /// Which sub_agents list supplied this config: the profile name (e.g.
-        /// `"profile1"`) or `""` for top-level.
+        /// The agent this config came from. `""` for the random fallback.
         source: []const u8,
     };
 
-    const ProfileJson = struct {
+    const AgentJson = struct {
         model: []const u8 = "",
         base_url: []const u8 = "",
         thinking: []const u8 = "auto",
         temperature: []const u8 = "auto",
         api_key: []const u8 = "",
         url_style: []const u8 = "openai",
+        /// The agent's persona. Absent = no system prompt.
+        system_prompt: []const u8 = "",
         /// Transport discriminator. Absent key = `"http"`, which is what
         /// keeps every pre-existing config byte-identical.
         backend: []const u8 = "http",
@@ -331,8 +281,6 @@ pub const LlmConfig = struct {
         opencode_agent: ?[]const u8 = null,
         /// OpenCode only: `--auto`. Null = on (the headless default).
         opencode_auto: ?bool = null,
-        /// Per-profile sub-agents (typed — defaults to absent).
-        sub_agents: ?[]SubAgentJson = null,
         /// Optional per-profile override for the context window (in tokens).
         /// Null = use LLMModels built-in per-model default.
         max_capacity_tokens: ?u32 = null,
@@ -388,9 +336,6 @@ pub const LlmConfig = struct {
         mcp_servers: ?std.json.Value = null,
         /// Profiles - parsed as json.Value then converted to map
         profiles_models: ?std.json.Value = null,
-        /// Top-level sub-agents array. Raw JSON value parsed via
-        /// `parseSubAgentsList` into an owned `[]SubAgentConfig`.
-        sub_agents: ?std.json.Value = null,
         /// Stable per-install UUID used as the LLM-API end-user identifier.
         /// Empty string when missing from the parsed JSON (legacy configs).
         user_identifier: []const u8 = "",
@@ -403,43 +348,8 @@ pub const LlmConfig = struct {
         web_search: ?std.json.Value = null,
     };
 
-    /// JSON-side parse struct for a single sub-agent entry. Mirrors
-    /// `SubAgentConfig` exactly (borrowed slices from the parsed JSON blob,
-    /// vs `SubAgentConfig`'s owned allocator slices).
-    pub const SubAgentJson = struct {
-        name: []const u8 = "",
-        model: []const u8 = "",
-        base_url: []const u8 = "",
-        thinking: []const u8 = "auto",
-        temperature: []const u8 = "auto",
-        url_style: []const u8 = "openai",
-        api_key: []const u8 = "",
-        system_prompt: []const u8 = "",
-        /// Transport discriminator. Empty = inherit the parent profile's
-        /// backend (see `SubAgentConfig.backend`).
-        backend: []const u8 = "",
-        /// Claude Code only: `CLAUDE_CONFIG_DIR` override.
-        config_dir: ?[]const u8 = null,
-        /// Claude Code only: `--max-turns` override.
-        max_turns: ?u32 = null,
-        /// OpenCode only: `--agent` override.
-        opencode_agent: ?[]const u8 = null,
-        /// OpenCode only: `--auto` override.
-        opencode_auto: ?bool = null,
-        /// Optional per-sub-agent override for the context window (in tokens).
-        max_capacity_tokens: ?u32 = null,
-        /// Optional per-sub-agent override for the compaction threshold
-        /// percentage (0-100).
-        compaction_threshold_percent: ?u8 = null,
-        /// Anthropic-only override for `thinking.budget_tokens`. See
-        /// `LlmProfile.thinking_budget_tokens`.
-        thinking_budget_tokens: ?u32 = null,
-        /// OpenAI-style `reasoning_effort`. See `LlmProfile.reasoning_effort`.
-        reasoning_effort: ?[]const u8 = null,
-    };
-
     /// Profiles storage after parsing from JSON
-    pub const ProfilesMap = std.StringHashMap(LlmProfile);
+    pub const AgentsMap = std.StringHashMap(LlmAgent);
 
     /// A single header (key/value pair) for an MCP server request.
     pub const McpHeader = struct {
@@ -720,7 +630,7 @@ pub const LlmConfig = struct {
 
     /// Build an `LlmConfig` from in-memory JSON text, applying the same
     /// shape, tolerance (`ignore_unknown_fields`) and post-processing
-    /// (`parseToolsList`, `backfillTopLevelFromProfiles`,
+    /// (`parseToolsList`, `backfillTopLevelFromAgents`,
     pub fn initFromJsonText(
         allocator: std.mem.Allocator,
         content: []const u8,
@@ -754,25 +664,23 @@ pub const LlmConfig = struct {
             .compaction_llm_summary = config_json.compaction_llm_summary,
             // Plan 2026-08-06-set-active-profile-default — load the
             // user-chosen default profile from JSON.
-            .active_profile = blk: {
+            .active_agent = blk: {
                 const raw = config_json.active_profile orelse break :blk null;
                 if (raw.len == 0) break :blk null;
                 break :blk try allocator.dupe(u8, raw);
             },
             .mcpServers_parsed = null,
             .mcp_servers = LlmConfig.McpServersMap.init(allocator),
-            .profiles_models = LlmConfig.ProfilesMap.init(allocator),
-            .sub_agents = &.{},
+            .agents = LlmConfig.AgentsMap.init(allocator),
         };
         errdefer {
             allocator.free(config.api_key);
             allocator.free(config.model);
             allocator.free(config.base_url);
             allocator.free(config.url_style);
-            if (config.active_profile) |ap| allocator.free(ap);
+            if (config.active_agent) |ap| allocator.free(ap);
             freeMcpServersMap(&config.mcp_servers, allocator);
-            freeProfilesMap(&config.profiles_models, allocator);
-            freeSubAgentsList(config.sub_agents, allocator);
+            freeAgentsMap(&config.agents, allocator);
             freeToolsList(config.tools, allocator);
             if (config.web_search) |*ws| freeWebSearchProvidersMap(ws, allocator);
             if (config.mcpServers_parsed) |*p| p.deinit();
@@ -818,48 +726,48 @@ pub const LlmConfig = struct {
             }
         }
 
-        // Parse profiles_models into ProfilesMap.
+        // Parse the on-disk `profiles_models` map into the agents map.
         // 2026-08-06-config-profiles-arbitrary-keys: the previous
         // implementation parsed `profiles_models` against a hardcoded 4-field
-        if (config_json.profiles_models) |profiles| {
-            const profiles_str = std.json.Stringify.valueAlloc(allocator, profiles, .{}) catch {
+        if (config_json.profiles_models) |agents_json| {
+            const agents_str = std.json.Stringify.valueAlloc(allocator, agents_json, .{}) catch {
                 return error.InvalidJson;
             };
-            defer allocator.free(profiles_str);
+            defer allocator.free(agents_str);
 
-            const profiles_parsed = json.parseFromSlice(json.Value, allocator, profiles_str, .{
+            const agents_parsed = json.parseFromSlice(json.Value, allocator, agents_str, .{
                 .ignore_unknown_fields = true,
             }) catch {
                 return error.InvalidJson;
             };
-            defer profiles_parsed.deinit();
+            defer agents_parsed.deinit();
 
-            switch (profiles_parsed.value) {
+            switch (agents_parsed.value) {
                 .object => |obj| {
                     var it = obj.iterator();
                     while (it.next()) |entry| {
-                        // entry.key_ptr.* is the user-chosen profile
+                        // entry.key_ptr.* is the user-chosen agent
                         // name (e.g. "900ribu"). entry.value_ptr is a
-                        // json.Value for the profile object.
-                        const profile_json_str = std.json.Stringify.valueAlloc(
+                        // json.Value for the agent object.
+                        const agent_json_str = std.json.Stringify.valueAlloc(
                             allocator,
                             entry.value_ptr,
                             .{},
                         ) catch continue;
-                        defer allocator.free(profile_json_str);
+                        defer allocator.free(agent_json_str);
 
-                        const profile_parsed = json.parseFromSlice(
-                            ProfileJson,
+                        const agent_parsed = json.parseFromSlice(
+                            AgentJson,
                             allocator,
-                            profile_json_str,
+                            agent_json_str,
                             .{ .ignore_unknown_fields = true },
                         ) catch continue;
-                        defer profile_parsed.deinit();
+                        defer agent_parsed.deinit();
 
-                        try addProfile(
-                            &config.profiles_models,
+                        try addAgent(
+                            &config.agents,
                             entry.key_ptr.*,
-                            profile_parsed.value,
+                            agent_parsed.value,
                             allocator,
                         );
                     }
@@ -868,35 +776,28 @@ pub const LlmConfig = struct {
             }
         }
 
-        // Parse top-level sub_agents (skip-with-warning on bad entries).
-        config.sub_agents = try parseSubAgentsList(allocator, config_json.sub_agents);
-
-        // Plan 2026-09-04-subagents-per-profile: one-time load migration. Old
-        // configs carry subagents ONLY at the top level.
-        try migrateTopLevelSubAgentsIntoEmptyProfiles(&config);
-
         // Plan 2026-08-24-config-simplify-remove-defaults: config.json no
         // longer carries top-level api_key/model/base_url/url_style.
-        try backfillTopLevelFromProfiles(&config);
+        try backfillTopLevelFromAgents(&config);
 
         return config;
     }
 
-    /// Derive empty top-level LLM fields from the resolved profile.
-    fn backfillTopLevelFromProfiles(config: *LlmConfig) LoadError!void {
+    /// Derive empty top-level LLM fields from the resolved agent.
+    fn backfillTopLevelFromAgents(config: *LlmConfig) LoadError!void {
         const needs_backfill =
             config.model.len == 0 or
             config.base_url.len == 0 or
             config.api_key.len == 0;
         if (!needs_backfill) return;
 
-        // resolveSessionProfileCompat walks selected→active; here there is
+        // resolveSessionAgentCompat walks selected→active; here there is
         // no session context, so selection is just active_profile.
-        var p: ?LlmProfile = config.resolveSessionProfileCompat("");
+        var p: ?LlmAgent = config.resolveSessionAgentCompat("");
         if (p == null) {
             // No active profile (or it names a missing entry): fall back to
             // the first profile with a non-empty model.
-            var it = config.profiles_models.iterator();
+            var it = config.agents.iterator();
             while (it.next()) |entry| {
                 if (entry.value_ptr.model.len > 0) {
                     p = entry.value_ptr.*;
@@ -950,8 +851,8 @@ pub const LlmConfig = struct {
         allocator.free(names);
     }
 
-    /// Free all keys and value strings inside a ProfilesMap, then deinit the map.
-    fn freeProfilesMap(map: *ProfilesMap, allocator: std.mem.Allocator) void {
+    /// Free all keys and value strings inside a AgentsMap, then deinit the map.
+    fn freeAgentsMap(map: *AgentsMap, allocator: std.mem.Allocator) void {
         var it = map.iterator();
         while (it.next()) |entry| {
             allocator.free(entry.key_ptr.*);
@@ -961,48 +862,48 @@ pub const LlmConfig = struct {
             allocator.free(entry.value_ptr.temperature);
             allocator.free(entry.value_ptr.api_key);
             allocator.free(entry.value_ptr.url_style);
+            allocator.free(entry.value_ptr.system_prompt);
             if (entry.value_ptr.backend.len > 0) allocator.free(entry.value_ptr.backend);
             if (entry.value_ptr.config_dir) |d| allocator.free(d);
             if (entry.value_ptr.opencode_agent) |a| allocator.free(a);
             if (entry.value_ptr.reasoning_effort) |re| allocator.free(re);
-            freeSubAgentsList(entry.value_ptr.sub_agents, allocator);
         }
         map.deinit();
     }
 
     /// Add a single profile to the map, duplicating all strings onto the allocator.
-    fn addProfile(m: *ProfilesMap, name: []const u8, p: ?ProfileJson, alloc: std.mem.Allocator) !void {
-        const profile = p orelse return;
+    fn addAgent(m: *AgentsMap, name: []const u8, p: ?AgentJson, alloc: std.mem.Allocator) !void {
+        const agent = p orelse return;
 
         const key = try alloc.dupe(u8, name);
         errdefer alloc.free(key);
 
-        const model = try alloc.dupe(u8, profile.model);
+        const model = try alloc.dupe(u8, agent.model);
         errdefer alloc.free(model);
 
-        const base_url = try alloc.dupe(u8, profile.base_url);
+        const base_url = try alloc.dupe(u8, agent.base_url);
         errdefer alloc.free(base_url);
 
-        const thinking = try alloc.dupe(u8, profile.thinking);
+        const thinking = try alloc.dupe(u8, agent.thinking);
         errdefer alloc.free(thinking);
 
-        const temperature = try alloc.dupe(u8, profile.temperature);
+        const temperature = try alloc.dupe(u8, agent.temperature);
         errdefer alloc.free(temperature);
 
-        const url_style = try alloc.dupe(u8, profile.url_style);
+        const url_style = try alloc.dupe(u8, agent.url_style);
         errdefer alloc.free(url_style);
 
-        const api_key = try alloc.dupe(u8, profile.api_key);
+        const api_key = try alloc.dupe(u8, agent.api_key);
         errdefer alloc.free(api_key);
 
         // Transport + its Claude Code knobs.
-        const backend: []const u8 = if (profile.backend.len > 0)
-            try alloc.dupe(u8, profile.backend)
+        const backend: []const u8 = if (agent.backend.len > 0)
+            try alloc.dupe(u8, agent.backend)
         else
             "";
         errdefer if (backend.len > 0) alloc.free(backend);
         const config_dir: ?[]const u8 = blk: {
-            const d = profile.config_dir orelse break :blk null;
+            const d = agent.config_dir orelse break :blk null;
             if (d.len == 0) break :blk null;
             break :blk try alloc.dupe(u8, d);
         };
@@ -1010,16 +911,16 @@ pub const LlmConfig = struct {
         // OpenCode's `--agent` follows the same "empty stays absent" rule as
         // `config_dir`, so an absent key costs no allocation.
         const opencode_agent: ?[]const u8 = blk: {
-            const a = profile.opencode_agent orelse break :blk null;
+            const a = agent.opencode_agent orelse break :blk null;
             if (a.len == 0) break :blk null;
             break :blk try alloc.dupe(u8, a);
         };
         errdefer if (opencode_agent) |a| alloc.free(a);
 
-        const profile_sub_agents = try parseSubAgentsJson(alloc, profile.sub_agents);
-        errdefer freeSubAgentsList(profile_sub_agents, alloc);
+        const system_prompt = try alloc.dupe(u8, agent.system_prompt);
+        errdefer alloc.free(system_prompt);
 
-        try m.put(key, LlmProfile{
+        try m.put(key, LlmAgent{
             .model = model,
             .base_url = base_url,
             .thinking = thinking,
@@ -1028,295 +929,17 @@ pub const LlmConfig = struct {
             .url_style = url_style,
             .backend = backend,
             .config_dir = config_dir,
-            .max_turns = profile.max_turns,
+            .max_turns = agent.max_turns,
             .opencode_agent = opencode_agent,
-            .opencode_auto = profile.opencode_auto,
-            .sub_agents = profile_sub_agents,
+            .opencode_auto = agent.opencode_auto,
+            .system_prompt = system_prompt,
             // Per-profile compaction overrides — optional, parsed from JSON.
-            .max_capacity_tokens = profile.max_capacity_tokens,
-            .compaction_threshold_percent = profile.compaction_threshold_percent,
+            .max_capacity_tokens = agent.max_capacity_tokens,
+            .compaction_threshold_percent = agent.compaction_threshold_percent,
             // Model-thinking knobs — Anthropic budget + OpenAI effort.
-            .thinking_budget_tokens = profile.thinking_budget_tokens,
-            .reasoning_effort = if (profile.reasoning_effort) |re| try alloc.dupe(u8, re) else null,
+            .thinking_budget_tokens = agent.thinking_budget_tokens,
+            .reasoning_effort = if (agent.reasoning_effort) |re| try alloc.dupe(u8, re) else null,
         });
-    }
-
-    /// Free all owned memory inside a `SubAgentsList` (per-entry strings
-    /// plus the slice header itself). Safe to call with an empty slice.
-    fn freeSubAgentsList(slice: SubAgentsList, allocator: std.mem.Allocator) void {
-        for (slice) |sa| {
-            allocator.free(sa.name);
-            allocator.free(sa.model);
-            allocator.free(sa.base_url);
-            allocator.free(sa.thinking);
-            allocator.free(sa.temperature);
-            allocator.free(sa.url_style);
-            allocator.free(sa.api_key);
-            allocator.free(sa.system_prompt);
-            // Empty = "inherit the parent's backend", stored as the struct's
-            // literal default rather than a heap copy — freeing it would
-            // abort on a non-heap pointer. Only a non-empty value was duped.
-            if (sa.backend.len > 0) allocator.free(sa.backend);
-            if (sa.config_dir) |d| allocator.free(d);
-            if (sa.opencode_agent) |a| allocator.free(a);
-            if (sa.reasoning_effort) |re| allocator.free(re);
-        }
-        if (slice.len > 0) allocator.free(slice);
-    }
-
-    /// Parse a `SubAgentsList` from an already-typed `[]SubAgentJson` (the
-    /// parse target for `ProfileJson.sub_agents`).
-    fn parseSubAgentsJson(allocator: std.mem.Allocator, items: ?[]const SubAgentJson) !SubAgentsList {
-        const unwrapped = items orelse return &.{};
-
-        var list = std.ArrayList(SubAgentConfig).empty;
-        errdefer {
-            for (list.items) |sa| {
-                allocator.free(sa.name);
-                allocator.free(sa.model);
-                allocator.free(sa.base_url);
-                allocator.free(sa.thinking);
-                allocator.free(sa.temperature);
-                allocator.free(sa.url_style);
-                allocator.free(sa.api_key);
-                allocator.free(sa.system_prompt);
-                if (sa.backend.len > 0) allocator.free(sa.backend);
-                if (sa.config_dir) |d| allocator.free(d);
-                if (sa.opencode_agent) |a| allocator.free(a);
-            }
-            list.deinit(allocator);
-        }
-
-        for (unwrapped) |j| {
-            if (j.name.len == 0) {
-                std.log.warn("sub_agents entry has empty 'name'; skipping", .{});
-                continue;
-            }
-
-            const name = try allocator.dupe(u8, j.name);
-            errdefer allocator.free(name);
-            const model = try allocator.dupe(u8, j.model);
-            errdefer allocator.free(model);
-            const base_url = try allocator.dupe(u8, j.base_url);
-            errdefer allocator.free(base_url);
-            const thinking = try allocator.dupe(u8, j.thinking);
-            errdefer allocator.free(thinking);
-            const temperature = try allocator.dupe(u8, j.temperature);
-            errdefer allocator.free(temperature);
-            const url_style = try allocator.dupe(u8, j.url_style);
-            errdefer allocator.free(url_style);
-            const api_key = try allocator.dupe(u8, j.api_key);
-            errdefer allocator.free(api_key);
-            const system_prompt = try allocator.dupe(u8, j.system_prompt);
-            errdefer allocator.free(system_prompt);
-            // Empty backend/config_dir stay literal/absent — see
-            // `freeSubAgentsList` for why only non-empty values are freed.
-            const backend: []const u8 = if (j.backend.len > 0)
-                try allocator.dupe(u8, j.backend)
-            else
-                "";
-            errdefer if (backend.len > 0) allocator.free(backend);
-            const config_dir: ?[]const u8 = blk: {
-                const d = j.config_dir orelse break :blk null;
-                if (d.len == 0) break :blk null;
-                break :blk try allocator.dupe(u8, d);
-            };
-            errdefer if (config_dir) |d| allocator.free(d);
-            const opencode_agent: ?[]const u8 = blk: {
-                const a = j.opencode_agent orelse break :blk null;
-                if (a.len == 0) break :blk null;
-                break :blk try allocator.dupe(u8, a);
-            };
-            errdefer if (opencode_agent) |a| allocator.free(a);
-
-            try list.append(allocator, .{
-                .name = name,
-                .model = model,
-                .base_url = base_url,
-                .thinking = thinking,
-                .temperature = temperature,
-                .url_style = url_style,
-                .api_key = api_key,
-                .system_prompt = system_prompt,
-                .backend = backend,
-                .config_dir = config_dir,
-                .max_turns = j.max_turns,
-                .opencode_agent = opencode_agent,
-                .opencode_auto = j.opencode_auto,
-                // Per-sub-agent compaction overrides — optional, parsed from JSON.
-                .max_capacity_tokens = j.max_capacity_tokens,
-                .compaction_threshold_percent = j.compaction_threshold_percent,
-                // Model-thinking knobs — Anthropic budget + OpenAI effort.
-                .thinking_budget_tokens = j.thinking_budget_tokens,
-                .reasoning_effort = if (j.reasoning_effort) |re| try allocator.dupe(u8, re) else null,
-            });
-        }
-
-        return list.toOwnedSlice(allocator);
-    }
-
-    /// Parse a `SubAgentsList` from a raw JSON array value.
-    fn parseSubAgentsList(allocator: std.mem.Allocator, value: ?std.json.Value) !SubAgentsList {
-        const unwrapped = value orelse return &.{};
-        const arr = switch (unwrapped) {
-            .array => |a| a,
-            else => return &.{},
-        };
-
-        var list = std.ArrayList(SubAgentConfig).empty;
-        errdefer {
-            for (list.items) |sa| {
-                allocator.free(sa.name);
-                allocator.free(sa.model);
-                allocator.free(sa.base_url);
-                allocator.free(sa.thinking);
-                allocator.free(sa.temperature);
-                allocator.free(sa.url_style);
-                allocator.free(sa.api_key);
-                allocator.free(sa.system_prompt);
-                if (sa.backend.len > 0) allocator.free(sa.backend);
-                if (sa.config_dir) |d| allocator.free(d);
-                if (sa.reasoning_effort) |re| allocator.free(re);
-            }
-            list.deinit(allocator);
-        }
-
-        for (arr.items) |item| {
-            const obj = item.object;
-            const name_val = obj.get("name") orelse {
-                std.log.warn("sub_agents entry missing 'name'; skipping", .{});
-                continue;
-            };
-            if (name_val != .string or name_val.string.len == 0) {
-                std.log.warn("sub_agents entry has empty/non-string 'name'; skipping", .{});
-                continue;
-            }
-
-            const item_str = try std.json.Stringify.valueAlloc(allocator, item, .{});
-            defer allocator.free(item_str);
-            const parsed = json.parseFromSlice(SubAgentJson, allocator, item_str, .{
-                .ignore_unknown_fields = true,
-            }) catch |err| {
-                std.log.warn("Failed to parse sub_agents entry: {s}", .{@errorName(err)});
-                continue;
-            };
-            defer parsed.deinit();
-
-            const j = parsed.value;
-            const name = try allocator.dupe(u8, j.name);
-            errdefer allocator.free(name);
-            const model = try allocator.dupe(u8, j.model);
-            errdefer allocator.free(model);
-            const base_url = try allocator.dupe(u8, j.base_url);
-            errdefer allocator.free(base_url);
-            const thinking = try allocator.dupe(u8, j.thinking);
-            errdefer allocator.free(thinking);
-            const temperature = try allocator.dupe(u8, j.temperature);
-            errdefer allocator.free(temperature);
-            const url_style = try allocator.dupe(u8, j.url_style);
-            errdefer allocator.free(url_style);
-            const api_key = try allocator.dupe(u8, j.api_key);
-            errdefer allocator.free(api_key);
-            const system_prompt = try allocator.dupe(u8, j.system_prompt);
-            errdefer allocator.free(system_prompt);
-            const backend: []const u8 = if (j.backend.len > 0)
-                try allocator.dupe(u8, j.backend)
-            else
-                "";
-            errdefer if (backend.len > 0) allocator.free(backend);
-            const config_dir: ?[]const u8 = blk: {
-                const d = j.config_dir orelse break :blk null;
-                if (d.len == 0) break :blk null;
-                break :blk try allocator.dupe(u8, d);
-            };
-            errdefer if (config_dir) |d| allocator.free(d);
-            const opencode_agent: ?[]const u8 = blk: {
-                const a = j.opencode_agent orelse break :blk null;
-                if (a.len == 0) break :blk null;
-                break :blk try allocator.dupe(u8, a);
-            };
-            errdefer if (opencode_agent) |a| allocator.free(a);
-
-            try list.append(allocator, .{
-                .name = name,
-                .model = model,
-                .base_url = base_url,
-                .thinking = thinking,
-                .temperature = temperature,
-                .url_style = url_style,
-                .api_key = api_key,
-                .system_prompt = system_prompt,
-                .backend = backend,
-                .config_dir = config_dir,
-                .max_turns = j.max_turns,
-                .opencode_agent = opencode_agent,
-                .opencode_auto = j.opencode_auto,
-                // Model-thinking knobs — Anthropic budget + OpenAI effort.
-                // Range validation is the HTTP layer's job; this site
-                // just threads the JSON-parsed values through.
-                .thinking_budget_tokens = j.thinking_budget_tokens,
-                .reasoning_effort = if (j.reasoning_effort) |re| try allocator.dupe(u8, re) else null,
-            });
-        }
-
-        return list.toOwnedSlice(allocator);
-    }
-
-    /// Deep-copy one already-parsed `SubAgentConfig` onto `allocator`.
-    /// Used by the top-level → per-profile load migration and by `clone`.
-    fn dupeSubAgentConfig(allocator: std.mem.Allocator, sa: SubAgentConfig) !SubAgentConfig {
-        return SubAgentConfig{
-            .name = try allocator.dupe(u8, sa.name),
-            .model = try allocator.dupe(u8, sa.model),
-            .base_url = try allocator.dupe(u8, sa.base_url),
-            .thinking = try allocator.dupe(u8, sa.thinking),
-            .temperature = try allocator.dupe(u8, sa.temperature),
-            .url_style = try allocator.dupe(u8, sa.url_style),
-            .api_key = try allocator.dupe(u8, sa.api_key),
-            .system_prompt = try allocator.dupe(u8, sa.system_prompt),
-            // Empty/absent stay that way so `freeSubAgentsList`'s
-            // "only free non-empty" rule holds for copies too.
-            .backend = if (sa.backend.len > 0) try allocator.dupe(u8, sa.backend) else "",
-            .config_dir = if (sa.config_dir) |d| try allocator.dupe(u8, d) else null,
-            .max_turns = sa.max_turns,
-            .opencode_agent = if (sa.opencode_agent) |a| try allocator.dupe(u8, a) else null,
-            .opencode_auto = sa.opencode_auto,
-            .max_capacity_tokens = sa.max_capacity_tokens,
-            .compaction_threshold_percent = sa.compaction_threshold_percent,
-            .thinking_budget_tokens = sa.thinking_budget_tokens,
-            .reasoning_effort = if (sa.reasoning_effort) |re| try allocator.dupe(u8, re) else null,
-        };
-    }
-
-    /// Plan 2026-09-04-subagents-per-profile: copy the deprecated top-level
-    /// `sub_agents` into every profile whose own list is empty. No-op when
-    /// the top-level list is empty.
-    fn migrateTopLevelSubAgentsIntoEmptyProfiles(config: *LlmConfig) !void {
-        if (config.sub_agents.len == 0) return;
-        var it = config.profiles_models.iterator();
-        while (it.next()) |entry| {
-            if (entry.value_ptr.sub_agents.len > 0) continue;
-            var list = std.ArrayList(SubAgentConfig).empty;
-            errdefer {
-                for (list.items) |sa| {
-                    config.allocator.free(sa.name);
-                    config.allocator.free(sa.model);
-                    config.allocator.free(sa.base_url);
-                    config.allocator.free(sa.thinking);
-                    config.allocator.free(sa.temperature);
-                    config.allocator.free(sa.url_style);
-                    config.allocator.free(sa.api_key);
-                    config.allocator.free(sa.system_prompt);
-                    if (sa.opencode_agent) |a| config.allocator.free(a);
-                    if (sa.reasoning_effort) |re| config.allocator.free(re);
-                }
-                list.deinit(config.allocator);
-            }
-            for (config.sub_agents) |sa| {
-                try list.append(config.allocator, try dupeSubAgentConfig(config.allocator, sa));
-            }
-            entry.value_ptr.sub_agents = try list.toOwnedSlice(config.allocator);
-        }
     }
 
     /// Free all owned memory inside a `McpHeadersMap` (header keys + values)
@@ -1519,11 +1142,10 @@ pub const LlmConfig = struct {
         self.allocator.free(self.url_style);
         // Plan 2026-08-06-set-active-profile-default — owned slice was
         // duped in `init` only when non-empty.
-        if (self.active_profile) |ap| self.allocator.free(ap);
+        if (self.active_agent) |ap| self.allocator.free(ap);
 
         freeMcpServersMap(&self.mcp_servers, self.allocator);
-        freeProfilesMap(&self.profiles_models, self.allocator);
-        freeSubAgentsList(self.sub_agents, self.allocator);
+        freeAgentsMap(&self.agents, self.allocator);
         freeToolsList(self.tools, self.allocator);
         if (self.web_search) |*ws| freeWebSearchProvidersMap(ws, self.allocator);
 
@@ -1531,7 +1153,7 @@ pub const LlmConfig = struct {
             parsed.deinit();
         }
 
-        // Free each random sub-agent name that resolveSubAgent generated,
+        // Free each random sub-agent name that resolveAgent generated,
         // then free the tracking slice itself. The names borrow from
         // `self.allocator` and the slice header was grown via `realloc`.
         for (self.random_names) |name| {
@@ -1563,24 +1185,22 @@ pub const LlmConfig = struct {
             .compaction_llm_summary = self.compaction_llm_summary,
             // Plan 2026-08-06-set-active-profile-default — deep-dupe
             // the user-chosen default profile name (null stays null).
-            .active_profile = if (self.active_profile) |ap|
+            .active_agent = if (self.active_agent) |ap|
                 try self.allocator.dupe(u8, ap)
             else
                 null,
             .mcpServers_parsed = null,
             .mcp_servers = McpServersMap.init(self.allocator),
-            .profiles_models = ProfilesMap.init(self.allocator),
-            .sub_agents = &.{},
+            .agents = AgentsMap.init(self.allocator),
         };
         errdefer {
             self.allocator.free(config.api_key);
             self.allocator.free(config.model);
             self.allocator.free(config.base_url);
             self.allocator.free(config.url_style);
-            if (config.active_profile) |ap| self.allocator.free(ap);
+            if (config.active_agent) |ap| self.allocator.free(ap);
             freeMcpServersMap(&config.mcp_servers, self.allocator);
-            freeProfilesMap(&config.profiles_models, self.allocator);
-            freeSubAgentsList(config.sub_agents, self.allocator);
+            freeAgentsMap(&config.agents, self.allocator);
             freeToolsList(config.tools, self.allocator);
             if (config.web_search) |*ws| freeWebSearchProvidersMap(ws, self.allocator);
             if (config.mcpServers_parsed) |*p| p.deinit();
@@ -1674,36 +1294,13 @@ pub const LlmConfig = struct {
             try config.mcp_servers.put(key_dup, cloned);
         }
 
-        // Clone all profiles.
-        var it = self.profiles_models.iterator();
+        // Clone all agents.
+        var it = self.agents.iterator();
         while (it.next()) |entry| {
-            const owned_sub_agents = blk: {
-                if (entry.value_ptr.sub_agents.len == 0) break :blk @as(SubAgentsList, &.{});
-                var plist = std.ArrayList(SubAgentConfig).empty;
-                errdefer {
-                    for (plist.items) |sa| {
-                        self.allocator.free(sa.name);
-                        self.allocator.free(sa.model);
-                        self.allocator.free(sa.base_url);
-                        self.allocator.free(sa.thinking);
-                        self.allocator.free(sa.temperature);
-                        self.allocator.free(sa.url_style);
-                        self.allocator.free(sa.api_key);
-                        self.allocator.free(sa.system_prompt);
-                        if (sa.reasoning_effort) |re| self.allocator.free(re);
-                    }
-                    plist.deinit(self.allocator);
-                }
-                for (entry.value_ptr.sub_agents) |sa| {
-                    try plist.append(self.allocator, try dupeSubAgentConfig(self.allocator, sa));
-                }
-                break :blk try plist.toOwnedSlice(self.allocator);
-            };
-            errdefer freeSubAgentsList(owned_sub_agents, self.allocator);
-            try addProfile(
-                &config.profiles_models,
+            try addAgent(
+                &config.agents,
                 entry.key_ptr.*,
-                ProfileJson{
+                AgentJson{
                     .model = entry.value_ptr.model,
                     .base_url = entry.value_ptr.base_url,
                     .thinking = entry.value_ptr.thinking,
@@ -1715,47 +1312,11 @@ pub const LlmConfig = struct {
                     .max_turns = entry.value_ptr.max_turns,
                     .opencode_agent = entry.value_ptr.opencode_agent,
                     .opencode_auto = entry.value_ptr.opencode_auto,
-                    .sub_agents = null,
+                    .system_prompt = entry.value_ptr.system_prompt,
                 },
                 self.allocator,
             );
-            // `addProfile` always sets an empty list (it only parses
-            // from `ProfileJson`); swap in the deep-copied list.
-            if (owned_sub_agents.len > 0) {
-                const got = config.profiles_models.getPtr(entry.key_ptr.*).?;
-                freeSubAgentsList(got.sub_agents, config.allocator);
-                got.sub_agents = owned_sub_agents;
-            } else {
-                if (owned_sub_agents.len == 0) {
-                    // `toOwnedSlice` on an empty list may still allocate;
-                    // `freeSubAgentsList` is safe on any slice.
-                    freeSubAgentsList(owned_sub_agents, self.allocator);
-                }
-            }
         }
-
-        // Deep-copy top-level sub_agents into a freshly allocated slice.
-        var sub_agents_list = std.ArrayList(SubAgentConfig).empty;
-        errdefer {
-            for (sub_agents_list.items) |sa| {
-                self.allocator.free(sa.name);
-                self.allocator.free(sa.model);
-                self.allocator.free(sa.base_url);
-                self.allocator.free(sa.thinking);
-                self.allocator.free(sa.temperature);
-                self.allocator.free(sa.url_style);
-                self.allocator.free(sa.api_key);
-                self.allocator.free(sa.system_prompt);
-                if (sa.backend.len > 0) self.allocator.free(sa.backend);
-                if (sa.config_dir) |d| self.allocator.free(d);
-                if (sa.reasoning_effort) |re| self.allocator.free(re);
-            }
-            sub_agents_list.deinit(self.allocator);
-        }
-        for (self.sub_agents) |sa| {
-            try sub_agents_list.append(self.allocator, try dupeSubAgentConfig(self.allocator, sa));
-        }
-        config.sub_agents = try sub_agents_list.toOwnedSlice(self.allocator);
 
         return config;
     }
@@ -1782,7 +1343,7 @@ pub const LlmConfig = struct {
 
     /// The transport the ACTIVE profile selects, defaulting to `"http"`.
     pub fn effectiveBackend(self: *const LlmConfig) []const u8 {
-        const p = self.resolveSessionProfileCompat("") orelse return Backend.http;
+        const p = self.resolveSessionAgentCompat("") orelse return Backend.http;
         if (p.backend.len == 0) return Backend.http;
         return p.backend;
     }
@@ -2238,11 +1799,10 @@ pub const LlmConfig = struct {
             .retry_delay_ms = 0,
             .max_capacity_token_model = null,
             .compaction_threshold_percent = null,
-            .active_profile = null,
+            .active_agent = null,
             .mcpServers_parsed = null,
             .mcp_servers = LlmConfig.McpServersMap.init(allocator),
-            .profiles_models = LlmConfig.ProfilesMap.init(allocator),
-            .sub_agents = &.{},
+            .agents = LlmConfig.AgentsMap.init(allocator),
             .random_names = &.{},
         };
     }
@@ -2640,27 +2200,27 @@ pub const LlmConfig = struct {
         try std.testing.expect(cfg.hasMcpServer("keep"));
     }
 
-    /// Look up a profile by name (the key in `profiles_models`). Returns null when
-    /// not configured. The returned `LlmProfile` borrows from `self` — the lifetime
+    /// Look up an agent by name (the key in `agents`). Returns null when
+    /// not configured. The returned `LlmAgent` borrows from `self` — the lifetime
     /// is tied to this `LlmConfig` (do not outlive the config).
-    pub fn getProfile(self: *const LlmConfig, name: []const u8) ?LlmProfile {
-        const entry = self.profiles_models.getEntry(name) orelse return null;
+    pub fn getAgent(self: *const LlmConfig, name: []const u8) ?LlmAgent {
+        const entry = self.agents.getEntry(name) orelse return null;
         return entry.value_ptr.*;
     }
 
-    /// Returns true if a profile with the given name exists and has a non-empty
-    /// `model` field. Use this before calling `getProfile` if you need to know
+    /// Returns true if an agent with the given name exists and has a non-empty
+    /// `model` field. Use this before calling `getAgent` if you need to know
     /// whether resolution will succeed.
-    pub fn hasProfile(self: *const LlmConfig, name: []const u8) bool {
-        if (self.profiles_models.getEntry(name)) |entry| {
+    pub fn hasAgent(self: *const LlmConfig, name: []const u8) bool {
+        if (self.agents.getEntry(name)) |entry| {
             return entry.value_ptr.model.len > 0;
         }
         return false;
     }
 
     /// Fully-resolved effective settings for one LLM call, produced by
-    /// walking the canonical profile cascade (see `resolveEffectiveProfile`).
-    pub const EffectiveProfile = struct {
+    /// walking the canonical agent cascade (see `resolveEffectiveAgent`).
+    pub const EffectiveAgent = struct {
         model: []const u8,
         base_url: []const u8,
         api_key: []const u8,
@@ -2691,22 +2251,22 @@ pub const LlmConfig = struct {
         reasoning_effort: ?[]const u8,
     };
 
-    /// Internal: getProfile that treats an empty name as a miss so the
+    /// Internal: getAgent that treats an empty name as a miss so the
     /// cascade can pass `active_profile orelse ""` without branching.
-    fn getProfileIfSet(self: *const LlmConfig, name: []const u8) ?LlmProfile {
+    fn getAgentIfSet(self: *const LlmConfig, name: []const u8) ?LlmAgent {
         if (name.len == 0) return null;
-        return self.getProfile(name);
+        return self.getAgent(name);
     }
 
     /// THE canonical profile cascade — ONE implementation for the whole
     /// codebase. Walks: 1.
-    pub fn resolveEffectiveProfile(
+    pub fn resolveEffectiveAgent(
         self: *const LlmConfig,
         selected_profile_model: []const u8,
-    ) EffectiveProfile {
-        const sel = self.getProfileIfSet(selected_profile_model);
+    ) EffectiveAgent {
+        const sel = self.getAgentIfSet(selected_profile_model);
         const act = if (sel == null)
-            self.getProfileIfSet(self.active_profile orelse "")
+            self.getAgentIfSet(self.active_agent orelse "")
         else
             null;
 
@@ -2806,68 +2366,33 @@ pub const LlmConfig = struct {
         };
     }
 
-    /// Whole-profile variant of the cascade: returns the winning `LlmProfile`
+    /// Whole-agent variant of the cascade: returns the winning `LlmAgent`
     /// (selected → active → null), NOT per-field merged.
-    pub fn resolveSessionProfileCompat(
+    pub fn resolveSessionAgentCompat(
         self: *const LlmConfig,
         selected_profile_model: []const u8,
-    ) ?LlmProfile {
-        if (self.getProfileIfSet(selected_profile_model)) |p| return p;
-        if (self.active_profile) |ap| {
+    ) ?LlmAgent {
+        if (self.getAgentIfSet(selected_profile_model)) |p| return p;
+        if (self.active_agent) |ap| {
             if (ap.len > 0) {
-                if (self.getProfile(ap)) |p| return p;
+                if (self.getAgent(ap)) |p| return p;
             }
         }
         return null;
     }
 
-    /// Look up a top-level sub-agent by name. Returns null when not configured.
-    /// The returned `SubAgentConfig` borrows from `self` — its lifetime is
-    /// tied to this `LlmConfig` (do not outlive the config).
-    pub fn getSubAgent(self: *const LlmConfig, name: []const u8) ?SubAgentConfig {
-        for (self.sub_agents) |sa| {
-            if (std.mem.eql(u8, sa.name, name)) return sa;
-        }
-        return null;
-    }
-
-    /// Returns true if a top-level sub-agent with the given name is configured.
-    pub fn hasSubAgent(self: *const LlmConfig, name: []const u8) bool {
-        return self.getSubAgent(name) != null;
-    }
-
-    /// Returns the number of top-level sub-agents.
-    pub fn subAgentCount(self: *const LlmConfig) u32 {
-        return @intCast(self.sub_agents.len);
-    }
-
-    /// Resolve a sub-agent by name, applying the v1 lookup rules: 1. If
-    /// `profile_name` is non-empty AND a profile with that name exists,
-    /// search `profile.sub_agents` first. 2.
-    pub fn resolveSubAgent(
+    /// Resolve an agent by name for a spawn. The lookup is against the
+    /// configured agents — the same list `list_agents` shows — so a spawn
+    /// can name any configured agent.
+    pub fn resolveAgent(
         self: *LlmConfig,
-        profile_name: []const u8,
         agent_name: []const u8,
-    ) ResolvedSubAgent {
-        // 1. Per-profile lookup ONLY (plan 2026-09-04-subagents-per-profile).
-        // Each profile owns its subagents; there is no global fallback.
-        // A miss here goes straight to the random fallback below.
-        if (profile_name.len > 0) {
-            if (self.getProfile(profile_name)) |profile| {
-                if (profile.sub_agents.len > 0) {
-                    for (profile.sub_agents) |sa| {
-                        if (std.mem.eql(u8, sa.name, agent_name)) {
-                            return self.buildResolvedFromConfig(sa, agent_name, profile_name);
-                        }
-                    }
-                }
-            }
-            // Profile not found OR no match: fall through to the
-            // random fallback. (We deliberately do NOT warn here —
-            // an empty per-profile list is a normal configuration.)
+    ) ResolvedAgent {
+        if (self.getAgent(agent_name)) |agent| {
+            return self.buildResolvedFromAgent(agent, agent_name);
         }
 
-        // 2. Not found — random fallback.
+        // Not found — random fallback.
         const random_name = generateRandomAgentName(self.allocator) catch blk: {
             // Last-ditch fallback: empty string.
             break :blk "";
@@ -2891,8 +2416,8 @@ pub const LlmConfig = struct {
         }
         // Transport for the random fallback: whatever the orchestrator
         // resolves to.
-        const act_profile = self.resolveSessionProfileCompat("");
-        return ResolvedSubAgent{
+        const act_profile = self.resolveSessionAgentCompat("");
+        return ResolvedAgent{
             .name = random_name,
             .is_random_fallback = true,
             .requested_name = agent_name,
@@ -2914,15 +2439,14 @@ pub const LlmConfig = struct {
         };
     }
 
-    /// Internal helper — convert a matched `SubAgentConfig` into a
-    /// `ResolvedSubAgent` with string→bool/f32 parsing for `thinking` /
+    /// Internal helper — convert a matched `LlmAgent` into a
+    /// `ResolvedAgent` with string→bool/f32 parsing for `thinking` /
     /// `temperature`.
-    fn buildResolvedFromConfig(
+    fn buildResolvedFromAgent(
         self: *const LlmConfig,
-        sa: SubAgentConfig,
+        sa: LlmAgent,
         requested_name: []const u8,
-        source: []const u8,
-    ) ResolvedSubAgent {
+    ) ResolvedAgent {
         // thinking: route through the pure parse_thinking helper. The helper
         // accepts "auto" / "on" / "off" / "true" / "false" / "" and surfaces
         // `error.InvalidThinkingMode` on garbage.
@@ -2947,13 +2471,13 @@ pub const LlmConfig = struct {
             break :blk e;
         };
 
-        return ResolvedSubAgent{
-            .name = sa.name,
+        return ResolvedAgent{
+            .name = requested_name,
             .is_random_fallback = false,
             .requested_name = requested_name,
-            // Overlay: empty field in SubAgentConfig → orchestrator default.
+            // Overlay: empty field on the agent → orchestrator default.
             // NOTE (plan 2026-08-23-refactor-profile-resolution): this is
-            // deliberately NOT `resolveEffectiveProfile`.
+            // deliberately NOT `resolveEffectiveAgent`.
             .model = if (sa.model.len > 0) sa.model else self.model,
             .base_url = if (sa.base_url.len > 0) sa.base_url else self.base_url,
             .api_key = if (sa.api_key.len > 0) sa.api_key else self.api_key,
@@ -2962,19 +2486,19 @@ pub const LlmConfig = struct {
             // a sub-agent that names no backend runs on the orchestrator's.
             .backend = if (sa.backend.len > 0) sa.backend else self.effectiveBackend(),
             .config_dir = if (sa.config_dir) |d| d else blk: {
-                const p = self.resolveSessionProfileCompat("") orelse break :blk null;
+                const p = self.resolveSessionAgentCompat("") orelse break :blk null;
                 break :blk p.config_dir;
             },
             .max_turns = if (sa.max_turns) |n| n else blk: {
-                const p = self.resolveSessionProfileCompat("") orelse break :blk null;
+                const p = self.resolveSessionAgentCompat("") orelse break :blk null;
                 break :blk p.max_turns;
             },
             .opencode_agent = if (sa.opencode_agent) |a| a else blk: {
-                const p = self.resolveSessionProfileCompat("") orelse break :blk null;
+                const p = self.resolveSessionAgentCompat("") orelse break :blk null;
                 break :blk p.opencode_agent;
             },
             .opencode_auto = if (sa.opencode_auto) |b| b else blk: {
-                const p = self.resolveSessionProfileCompat("") orelse break :blk null;
+                const p = self.resolveSessionAgentCompat("") orelse break :blk null;
                 break :blk p.opencode_auto;
             },
             .is_thinking = resolved_thinking,
@@ -2982,38 +2506,35 @@ pub const LlmConfig = struct {
             .thinking_budget_tokens = resolved_budget,
             .reasoning_effort = resolved_effort,
             .system_prompt = sa.system_prompt,
-            .source = source,
+            .source = requested_name,
         };
     }
 
     /// Resolve the effective max-context-window in tokens for a given model
-    /// under the optional profile + sub-agent scope. Cascade order: 1.
+    /// under the optional agent scope. Cascade order: 1.
     pub fn maxCapacityForModel(
         self: *const LlmConfig,
-        profile: ?*const LlmProfile,
-        sub_agent: ?*const SubAgentConfig,
+        agent: ?*const LlmAgent,
         defaults: ?*const LlmConfig,
         model_name: []const u8,
     ) u32 {
         // No catalog: the pre-models.dev cascade, byte for byte. Kept as its
         // own entry point because callers that genuinely have no catalog (and
         // every existing test) must not accidentally start consulting one.
-        return self.maxCapacityForModelWith(profile, sub_agent, defaults, model_name, null);
+        return self.maxCapacityForModelWith(agent, defaults, model_name, null);
     }
 
-    /// The cascade, with an explicit catalog in step 4: 1.
-    /// `sub_agent.max_capacity_tokens` 2. `profile.max_capacity_tokens` 3.
+    /// The cascade, with an explicit catalog in step 3: 1.
+    /// `agent.max_capacity_tokens` 2. `defaults.max_capacity_token_model` 3.
     pub fn maxCapacityForModelWith(
         self: *const LlmConfig,
-        profile: ?*const LlmProfile,
-        sub_agent: ?*const SubAgentConfig,
+        agent: ?*const LlmAgent,
         defaults: ?*const LlmConfig,
         model_name: []const u8,
         cat: ?*const model_catalog.Catalog,
     ) u32 {
         _ = self;
-        if (sub_agent) |sa| if (sa.max_capacity_tokens) |override| return override;
-        if (profile) |p| if (p.max_capacity_tokens) |override| return override;
+        if (agent) |a| if (a.max_capacity_tokens) |override| return override;
         if (defaults) |d| if (d.max_capacity_token_model) |override| return override;
         if (cat) |c| {
             if (c.lookup(null, model_name)) |facts| {
@@ -3025,16 +2546,14 @@ pub const LlmConfig = struct {
 
     /// Resolve the compaction threshold as a percentage (0-100). Cascade
     /// order (same shape as `maxCapacityForModel`): 1.
-    /// `sub_agent.compaction_threshold_percent` (if non-null and set) 2.
+    /// `agent.compaction_threshold_percent` (if non-null and set) 2.
     pub fn compactionThresholdPercent(
         self: *const LlmConfig,
-        profile: ?*const LlmProfile,
-        sub_agent: ?*const SubAgentConfig,
+        agent: ?*const LlmAgent,
         defaults: ?*const LlmConfig,
     ) u8 {
         _ = self;
-        if (sub_agent) |sa| if (sa.compaction_threshold_percent) |override| return override;
-        if (profile) |p| if (p.compaction_threshold_percent) |override| return override;
+        if (agent) |a| if (a.compaction_threshold_percent) |override| return override;
         if (defaults) |d| if (d.compaction_threshold_percent) |override| return override;
         return 80;
     }
@@ -3188,7 +2707,7 @@ pub fn loadDefault(allocator: std.mem.Allocator, environment: *std.process.Envir
 }
 
 // ---------------------------------------------------------------------------
-// resolveEffectiveProfile — THE canonical profile cascade (plan
+// resolveEffectiveAgent — THE canonical agent cascade (plan
 // 2026-08-23-refactor-profile-resolution).
 
 /// Shared fixture: top-level defaults + two profiles ("alpha" fully
@@ -3205,35 +2724,32 @@ fn cascadeFixture(allocator: std.mem.Allocator) !LlmConfig {
         .retry_delay_ms = 0,
         .max_capacity_token_model = null,
         .compaction_threshold_percent = null,
-        .active_profile = null,
+        .active_agent = null,
         .mcpServers_parsed = null,
         .mcp_servers = LlmConfig.McpServersMap.init(allocator),
-        .profiles_models = LlmConfig.ProfilesMap.init(allocator),
-        .sub_agents = &.{},
+        .agents = LlmConfig.AgentsMap.init(allocator),
         .random_names = &.{},
     };
     errdefer cfg.deinit();
-    try cfg.profiles_models.put(try allocator.dupe(u8, "alpha"), .{
+    try cfg.agents.put(try allocator.dupe(u8, "alpha"), .{
         .model = try allocator.dupe(u8, "alpha-model"),
         .base_url = try allocator.dupe(u8, "https://alpha"),
         .thinking = try allocator.dupe(u8, "on"),
         .temperature = try allocator.dupe(u8, "auto"),
         .api_key = try allocator.dupe(u8, "alpha-key"),
         .url_style = try allocator.dupe(u8, "anthropic"),
-        .sub_agents = &.{},
         .max_capacity_tokens = null,
         .compaction_threshold_percent = null,
         .thinking_budget_tokens = 4096,
         .reasoning_effort = try allocator.dupe(u8, "high"),
     });
-    try cfg.profiles_models.put(try allocator.dupe(u8, "partial"), .{
+    try cfg.agents.put(try allocator.dupe(u8, "partial"), .{
         .model = try allocator.dupe(u8, "partial-model"),
         .base_url = try allocator.dupe(u8, ""),
         .thinking = try allocator.dupe(u8, ""),
         .temperature = try allocator.dupe(u8, "auto"),
         .api_key = try allocator.dupe(u8, ""),
         .url_style = try allocator.dupe(u8, ""),
-        .sub_agents = &.{},
         .max_capacity_tokens = null,
         .compaction_threshold_percent = null,
         .thinking_budget_tokens = null,
@@ -3242,12 +2758,12 @@ fn cascadeFixture(allocator: std.mem.Allocator) !LlmConfig {
     return cfg;
 }
 
-test "resolveEffectiveProfile: selected profile wins over top-level for every field" {
+test "resolveEffectiveAgent: selected profile wins over top-level for every field" {
     const allocator = std.testing.allocator;
     var cfg = try cascadeFixture(allocator);
     defer cfg.deinit();
 
-    const e = cfg.resolveEffectiveProfile("alpha");
+    const e = cfg.resolveEffectiveAgent("alpha");
     try std.testing.expectEqualStrings("alpha-model", e.model);
     try std.testing.expectEqualStrings("https://alpha", e.base_url);
     try std.testing.expectEqualStrings("alpha-key", e.api_key);
@@ -3260,12 +2776,12 @@ test "resolveEffectiveProfile: selected profile wins over top-level for every fi
     try std.testing.expectEqualStrings("high", e.reasoning_effort.?);
 }
 
-test "resolveEffectiveProfile: no selection + no active → pure top-level defaults" {
+test "resolveEffectiveAgent: no selection + no active → pure top-level defaults" {
     const allocator = std.testing.allocator;
     var cfg = try cascadeFixture(allocator);
     defer cfg.deinit();
 
-    const e = cfg.resolveEffectiveProfile("");
+    const e = cfg.resolveEffectiveAgent("");
     try std.testing.expectEqualStrings("top-model", e.model);
     try std.testing.expectEqualStrings("https://top", e.base_url);
     try std.testing.expectEqualStrings("top-key", e.api_key);
@@ -3278,21 +2794,21 @@ test "resolveEffectiveProfile: no selection + no active → pure top-level defau
     try std.testing.expectEqual(@as(?[]const u8, null), e.reasoning_effort);
 }
 
-test "resolveEffectiveProfile: missing selected name falls through to top-level" {
+test "resolveEffectiveAgent: missing selected name falls through to top-level" {
     const allocator = std.testing.allocator;
     var cfg = try cascadeFixture(allocator);
     defer cfg.deinit();
 
-    const e = cfg.resolveEffectiveProfile("does_not_exist");
+    const e = cfg.resolveEffectiveAgent("does_not_exist");
     try std.testing.expectEqualStrings("top-model", e.model);
 }
 
-test "resolveEffectiveProfile: partial profile falls through for THAT field only" {
+test "resolveEffectiveAgent: partial profile falls through for THAT field only" {
     const allocator = std.testing.allocator;
     var cfg = try cascadeFixture(allocator);
     defer cfg.deinit();
 
-    const e = cfg.resolveEffectiveProfile("partial");
+    const e = cfg.resolveEffectiveAgent("partial");
     // Set on the profile:
     try std.testing.expectEqualStrings("partial-model", e.model);
     // Empty on the profile → top-level fallback:
@@ -3303,76 +2819,76 @@ test "resolveEffectiveProfile: partial profile falls through for THAT field only
     try std.testing.expectEqualStrings("auto", e.thinking_str);
 }
 
-test "resolveEffectiveProfile: active_profile wins when selection empty" {
+test "resolveEffectiveAgent: active_profile wins when selection empty" {
     const allocator = std.testing.allocator;
     var cfg = try cascadeFixture(allocator);
     defer cfg.deinit();
-    cfg.active_profile = try std.testing.allocator.dupe(u8, "alpha");
+    cfg.active_agent = try std.testing.allocator.dupe(u8, "alpha");
 
-    const e = cfg.resolveEffectiveProfile("");
+    const e = cfg.resolveEffectiveAgent("");
     try std.testing.expectEqualStrings("alpha-model", e.model);
     try std.testing.expectEqualStrings("anthropic", e.url_style);
     try std.testing.expectEqual(@as(?u32, 4096), e.thinking_budget_tokens);
 }
 
-test "resolveEffectiveProfile: selected wins over active_profile" {
+test "resolveEffectiveAgent: selected wins over active_profile" {
     const allocator = std.testing.allocator;
     var cfg = try cascadeFixture(allocator);
     defer cfg.deinit();
-    cfg.active_profile = try std.testing.allocator.dupe(u8, "partial");
+    cfg.active_agent = try std.testing.allocator.dupe(u8, "partial");
 
-    const e = cfg.resolveEffectiveProfile("alpha");
+    const e = cfg.resolveEffectiveAgent("alpha");
     try std.testing.expectEqualStrings("alpha-model", e.model);
     try std.testing.expectEqualStrings("alpha-key", e.api_key);
 }
 
-test "resolveEffectiveProfile: missing selected falls to active_profile" {
+test "resolveEffectiveAgent: missing selected falls to active_profile" {
     const allocator = std.testing.allocator;
     var cfg = try cascadeFixture(allocator);
     defer cfg.deinit();
-    cfg.active_profile = try std.testing.allocator.dupe(u8, "alpha");
+    cfg.active_agent = try std.testing.allocator.dupe(u8, "alpha");
 
-    const e = cfg.resolveEffectiveProfile("does_not_exist");
+    const e = cfg.resolveEffectiveAgent("does_not_exist");
     try std.testing.expectEqualStrings("alpha-model", e.model);
 }
 
-test "resolveEffectiveProfile: derived fields for off / garbage thinking strings" {
+test "resolveEffectiveAgent: derived fields for off / garbage thinking strings" {
     const allocator = std.testing.allocator;
     var cfg = try cascadeFixture(allocator);
     defer cfg.deinit();
-    cfg.active_profile = try std.testing.allocator.dupe(u8, "partial");
+    cfg.active_agent = try std.testing.allocator.dupe(u8, "partial");
     // Mutate the stored profile's thinking directly.
-    const pptr = cfg.profiles_models.getPtr("partial").?;
+    const pptr = cfg.agents.getPtr("partial").?;
     cfg.allocator.free(pptr.thinking);
     pptr.thinking = try cfg.allocator.dupe(u8, "off");
 
-    const e_off = cfg.resolveEffectiveProfile("");
+    const e_off = cfg.resolveEffectiveAgent("");
     try std.testing.expect(e_off.is_thinking == false);
     try std.testing.expectEqual(false, e_off.thinking_adaptive);
 
     cfg.allocator.free(pptr.thinking);
     pptr.thinking = try cfg.allocator.dupe(u8, "total-garbage");
-    const e_bad = cfg.resolveEffectiveProfile("");
+    const e_bad = cfg.resolveEffectiveAgent("");
     // Garbage ≠ "auto" → adaptive=false; parse fails → is_thinking=null.
     try std.testing.expect(e_bad.is_thinking == null);
     try std.testing.expectEqual(false, e_bad.thinking_adaptive);
 }
 
-test "resolveSessionProfileCompat: mirrors old resolveSessionProfile semantics" {
+test "resolveSessionAgentCompat: mirrors old resolveSessionProfile semantics" {
     const allocator = std.testing.allocator;
     var cfg = try cascadeFixture(allocator);
     defer cfg.deinit();
 
     // Selected hit.
-    try std.testing.expect(cfg.resolveSessionProfileCompat("alpha") != null);
-    try std.testing.expectEqualStrings("alpha-model", cfg.resolveSessionProfileCompat("alpha").?.model);
+    try std.testing.expect(cfg.resolveSessionAgentCompat("alpha") != null);
+    try std.testing.expectEqualStrings("alpha-model", cfg.resolveSessionAgentCompat("alpha").?.model);
     // Miss → null (no active set in fixture).
-    try std.testing.expect(cfg.resolveSessionProfileCompat("") == null);
-    try std.testing.expect(cfg.resolveSessionProfileCompat("nope") == null);
+    try std.testing.expect(cfg.resolveSessionAgentCompat("") == null);
+    try std.testing.expect(cfg.resolveSessionAgentCompat("nope") == null);
 
     // Active hit.
-    cfg.active_profile = try std.testing.allocator.dupe(u8, "alpha");
-    const p = cfg.resolveSessionProfileCompat("").?;
+    cfg.active_agent = try std.testing.allocator.dupe(u8, "alpha");
+    const p = cfg.resolveSessionAgentCompat("").?;
     try std.testing.expectEqualStrings("alpha-model", p.model);
 }
 
@@ -4172,343 +3688,49 @@ test "mcp_servers: clone produces independent deep copy" {
 // sub_agents: top-level typed array
 // ---------------------------------------------------------------------------
 
-test "sub_agents: top-level field is parsed into SubAgentsList" {
+test "agents: each agent carries its own system_prompt" {
     const allocator = std.testing.allocator;
-
     const json_body =
         \\{
-        \\  "api_key": "k",
-        \\  "model": "m",
-        \\  "base_url": "b",
-        \\  "sub_agents": [
-        \\    {
-        \\      "name": "SubAgent1",
-        \\      "model": "MiniMax-M3",
-        \\      "base_url": "https://api.minimax.io/v1",
-        \\      "thinking": "false",
-        \\      "temperature": "auto",
-        \\      "url_style": "openai",
-        \\      "api_key": "",
-        \\      "system_prompt": ""
-        \\    }
-        \\  ]
+        \\  "profiles_models": {
+        \\    "alpha": { "model": "M1", "base_url": "https://a", "api_key": "ak1", "system_prompt": "you are alpha" },
+        \\    "beta":  { "model": "M2", "base_url": "https://b", "api_key": "ak2", "system_prompt": "you are beta" }
+        \\  }
         \\}
     ;
 
     var cfg = try writeAndRead(allocator, std.testing.io, json_body);
     defer cfg.deinit();
 
-    try std.testing.expectEqual(@as(usize, 1), cfg.sub_agents.len);
-    const sa = cfg.sub_agents[0];
-    try std.testing.expectEqualStrings("SubAgent1", sa.name);
-    try std.testing.expectEqualStrings("MiniMax-M3", sa.model);
-    try std.testing.expectEqualStrings("https://api.minimax.io/v1", sa.base_url);
-    try std.testing.expectEqualStrings("false", sa.thinking);
-    try std.testing.expectEqualStrings("auto", sa.temperature);
-    try std.testing.expectEqualStrings("openai", sa.url_style);
-    try std.testing.expectEqualStrings("", sa.api_key);
-    try std.testing.expectEqualStrings("", sa.system_prompt);
-}
-
-test "sub_agents: hasSubAgent / getSubAgent accessors" {
-    const allocator = std.testing.allocator;
-
-    const json_body =
-        \\{
-        \\  "api_key": "k", "model": "m", "base_url": "b",
-        \\  "sub_agents": [
-        \\    { "name": "alpha", "model": "M1", "base_url": "https://a",
-        \\      "thinking": "on", "temperature": "0.5", "url_style": "openai",
-        \\      "api_key": "ak1", "system_prompt": "you are alpha" },
-        \\    { "name": "beta",  "model": "M2", "base_url": "https://b",
-        \\      "thinking": "off", "temperature": "auto", "url_style": "anthropic",
-        \\      "api_key": "ak2", "system_prompt": "" }
-        \\  ]
-        \\}
-    ;
-
-    var cfg = try writeAndRead(allocator, std.testing.io, json_body);
-    defer cfg.deinit();
-
-    try std.testing.expect(cfg.hasSubAgent("alpha"));
-    try std.testing.expect(cfg.hasSubAgent("beta"));
-    try std.testing.expect(!cfg.hasSubAgent("nope"));
-
-    const a = cfg.getSubAgent("alpha").?;
+    const a = cfg.getAgent("alpha").?;
     try std.testing.expectEqualStrings("M1", a.model);
     try std.testing.expectEqualStrings("https://a", a.base_url);
-    try std.testing.expectEqualStrings("on", a.thinking);
-    try std.testing.expectEqualStrings("0.5", a.temperature);
     try std.testing.expectEqualStrings("you are alpha", a.system_prompt);
 
-    try std.testing.expect(cfg.getSubAgent("nope") == null);
+    const b = cfg.getAgent("beta").?;
+    try std.testing.expectEqualStrings("M2", b.model);
+    try std.testing.expectEqualStrings("you are beta", b.system_prompt);
 }
 
-test "model-thinking knobs: profile thinking_budget_tokens + reasoning_effort round-trip" {
-    // Verify the new per-profile fields round-trip through the JSON parser
-    // without being silently dropped.
+test "agents: an agent without a system_prompt gets an empty one" {
     const allocator = std.testing.allocator;
-
     const json_body =
         \\{
-        \\  "api_key": "k", "model": "m", "base_url": "b",
-        \\  "profiles_models": {
-        \\    "alpha": {
-        \\      "model": "m", "base_url": "https://a", "api_key": "k",
-        \\      "thinking": "on", "temperature": "auto", "url_style": "anthropic",
-        \\      "thinking_budget_tokens": 4096,
-        \\      "reasoning_effort": "high"
-        \\    }
-        \\  }
+        \\  "profiles_models": { "alpha": { "model": "M1" } }
         \\}
     ;
 
     var cfg = try writeAndRead(allocator, std.testing.io, json_body);
     defer cfg.deinit();
 
-    const p = cfg.getProfile("alpha").?;
-    try std.testing.expectEqual(@as(?u32, 4096), p.thinking_budget_tokens);
-    try std.testing.expectEqualStrings("high", p.reasoning_effort.?);
+    try std.testing.expectEqualStrings("", cfg.getAgent("alpha").?.system_prompt);
 }
 
-test "opencode knobs: profile opencode_agent + opencode_auto round-trip" {
-    // The OpenCode CLI knobs must survive the JSON parser rather than being
-    // silently dropped — the same storage-path guarantee the model-thinking
-    // knobs get above.
+test "agents: clone produces an independent deep copy" {
     const allocator = std.testing.allocator;
-
     const json_body =
         \\{
-        \\  "api_key": "k", "model": "m", "base_url": "b",
-        \\  "profiles_models": {
-        \\    "alpha": {
-        \\      "model": "opencode-go/deepseek-flash", "base_url": "", "api_key": "",
-        \\      "thinking": "auto", "temperature": "auto", "url_style": "openai",
-        \\      "backend": "opencode",
-        \\      "opencode_agent": "build",
-        \\      "opencode_auto": false
-        \\    }
-        \\  }
-        \\}
-    ;
-
-    var cfg = try writeAndRead(allocator, std.testing.io, json_body);
-    defer cfg.deinit();
-
-    const p = cfg.getProfile("alpha").?;
-    try std.testing.expectEqualStrings("opencode", p.backend);
-    try std.testing.expectEqualStrings("build", p.opencode_agent.?);
-    try std.testing.expectEqual(@as(?bool, false), p.opencode_auto);
-}
-
-test "opencode knobs: profile fields default to null when omitted" {
-    // Backward compatibility — a config.json written before these fields
-    // existed must parse cleanly with both as null.
-    const allocator = std.testing.allocator;
-
-    const json_body =
-        \\{
-        \\  "api_key": "k", "model": "m", "base_url": "b",
-        \\  "profiles_models": {
-        \\    "alpha": {
-        \\      "model": "m", "base_url": "https://a", "api_key": "k",
-        \\      "thinking": "auto", "temperature": "auto", "url_style": "openai"
-        \\    }
-        \\  }
-        \\}
-    ;
-
-    var cfg = try writeAndRead(allocator, std.testing.io, json_body);
-    defer cfg.deinit();
-
-    const p = cfg.getProfile("alpha").?;
-    try std.testing.expectEqual(@as(?[]const u8, null), p.opencode_agent);
-    try std.testing.expectEqual(@as(?bool, null), p.opencode_auto);
-}
-
-test "model-thinking knobs: profile fields default to null when omitted" {
-    // Backward compatibility — old config.json files without the new
-    // fields must parse cleanly with the new fields as null.
-    const allocator = std.testing.allocator;
-
-    const json_body =
-        \\{
-        \\  "api_key": "k", "model": "m", "base_url": "b",
-        \\  "profiles_models": {
-        \\    "alpha": {
-        \\      "model": "m", "base_url": "https://a", "api_key": "k",
-        \\      "thinking": "auto", "temperature": "auto", "url_style": "openai"
-        \\    }
-        \\  }
-        \\}
-    ;
-
-    var cfg = try writeAndRead(allocator, std.testing.io, json_body);
-    defer cfg.deinit();
-
-    const p = cfg.getProfile("alpha").?;
-    try std.testing.expectEqual(@as(?u32, null), p.thinking_budget_tokens);
-    try std.testing.expectEqual(@as(?[]const u8, null), p.reasoning_effort);
-}
-
-test "model-thinking knobs: sub_agent thinking_budget_tokens + reasoning_effort round-trip" {
-    const allocator = std.testing.allocator;
-
-    const json_body =
-        \\{
-        \\  "api_key": "k", "model": "m", "base_url": "b",
-        \\  "sub_agents": [
-        \\    { "name": "alpha", "model": "M1", "base_url": "https://a",
-        \\      "thinking": "on", "temperature": "0.5", "url_style": "anthropic",
-        \\      "api_key": "ak1", "system_prompt": "sp",
-        \\      "thinking_budget_tokens": 8192,
-        \\      "reasoning_effort": "medium" }
-        \\  ]
-        \\}
-    ;
-
-    var cfg = try writeAndRead(allocator, std.testing.io, json_body);
-    defer cfg.deinit();
-
-    const sa = cfg.getSubAgent("alpha").?;
-    try std.testing.expectEqual(@as(?u32, 8192), sa.thinking_budget_tokens);
-    try std.testing.expectEqualStrings("medium", sa.reasoning_effort.?);
-}
-
-test "sub_agents: clone produces independent deep copy" {
-    const allocator = std.testing.allocator;
-
-    const json_body =
-        \\{
-        \\  "api_key": "k", "model": "m", "base_url": "b",
-        \\  "sub_agents": [
-        \\    { "name": "alpha", "model": "M1", "base_url": "https://a",
-        \\      "thinking": "on", "temperature": "0.5", "url_style": "openai",
-        \\      "api_key": "ak1", "system_prompt": "sp" }
-        \\  ]
-        \\}
-    ;
-
-    var cfg = try writeAndRead(allocator, std.testing.io, json_body);
-    var cloned = try cfg.clone();
-    defer {
-        cfg.deinit();
-        cloned.deinit();
-    }
-
-    try std.testing.expectEqual(@as(usize, 1), cloned.sub_agents.len);
-    const orig = cfg.sub_agents[0];
-    const copy = cloned.sub_agents[0];
-    try std.testing.expect(orig.name.ptr != copy.name.ptr);
-    try std.testing.expect(orig.model.ptr != copy.model.ptr);
-    try std.testing.expectEqualStrings("alpha", copy.name);
-    try std.testing.expectEqualStrings("sp", copy.system_prompt);
-}
-
-test "sub_agents: per-profile sub_agents are parsed" {
-    const allocator = std.testing.allocator;
-
-    const json_body =
-        \\{
-        \\  "api_key": "k", "model": "m", "base_url": "b",
-        \\  "profiles_models": {
-        \\    "profile1": {
-        \\      "model": "M-p1", "base_url": "https://p1",
-        \\      "thinking": "auto", "temperature": "auto",
-        \\      "url_style": "openai", "api_key": "kp1",
-        \\      "sub_agents": [
-        \\        { "name": "p1sa", "model": "M1", "base_url": "https://a",
-        \\          "thinking": "on", "temperature": "0.5", "url_style": "openai",
-        \\          "api_key": "ak1", "system_prompt": "sp1" }
-        \\      ]
-        \\    }
-        \\  }
-        \\}
-    ;
-
-    var cfg = try writeAndRead(allocator, std.testing.io, json_body);
-    defer cfg.deinit();
-
-    const p1 = cfg.getProfile("profile1").?;
-    try std.testing.expectEqual(@as(usize, 1), p1.sub_agents.len);
-    try std.testing.expectEqualStrings("p1sa", p1.sub_agents[0].name);
-    try std.testing.expectEqualStrings("M1", p1.sub_agents[0].model);
-    try std.testing.expectEqualStrings("sp1", p1.sub_agents[0].system_prompt);
-}
-
-test "sub_agents: top-level list migrates into profiles with empty lists" {
-    const allocator = std.testing.allocator;
-
-    const json_body =
-        \\{
-        \\  "api_key": "k", "model": "m", "base_url": "b",
-        \\  "sub_agents": [
-        \\    { "name": "shared", "model": "M", "base_url": "https://a",
-        \\      "thinking": "on", "temperature": "0.5", "url_style": "openai",
-        \\      "api_key": "ak", "system_prompt": "sp" }
-        \\  ],
-        \\  "profiles_models": {
-        \\    "empty1": {
-        \\      "model": "M-e1", "base_url": "https://e1",
-        \\      "thinking": "auto", "temperature": "auto",
-        \\      "url_style": "openai", "api_key": "ke1"
-        \\    },
-        \\    "empty2": {
-        \\      "model": "M-e2", "base_url": "https://e2",
-        \\      "thinking": "auto", "temperature": "auto",
-        \\      "url_style": "openai", "api_key": "ke2"
-        \\    },
-        \\    "owns": {
-        \\      "model": "M-o", "base_url": "https://o",
-        \\      "thinking": "auto", "temperature": "auto",
-        \\      "url_style": "openai", "api_key": "ko",
-        \\      "sub_agents": [
-        \\        { "name": "mine", "model": "MO", "base_url": "https://mo",
-        \\          "thinking": "off", "temperature": "auto", "url_style": "openai",
-        \\          "api_key": "ako", "system_prompt": "spo" }
-        \\      ]
-        \\    }
-        \\  }
-        \\}
-    ;
-
-    var cfg = try writeAndRead(allocator, std.testing.io, json_body);
-    defer cfg.deinit();
-
-    // Empty profiles inherit the migrated entry (deep copy).
-    const e1 = cfg.getProfile("empty1").?;
-    try std.testing.expectEqual(@as(usize, 1), e1.sub_agents.len);
-    try std.testing.expectEqualStrings("shared", e1.sub_agents[0].name);
-    try std.testing.expectEqualStrings("sp", e1.sub_agents[0].system_prompt);
-    const e2 = cfg.getProfile("empty2").?;
-    try std.testing.expectEqual(@as(usize, 1), e2.sub_agents.len);
-    try std.testing.expectEqualStrings("shared", e2.sub_agents[0].name);
-    // Independent copies, not shared pointers.
-    try std.testing.expect(e1.sub_agents[0].name.ptr != e2.sub_agents[0].name.ptr);
-    // Non-empty profile keeps its own list (no merge).
-    const owns = cfg.getProfile("owns").?;
-    try std.testing.expectEqual(@as(usize, 1), owns.sub_agents.len);
-    try std.testing.expectEqualStrings("mine", owns.sub_agents[0].name);
-}
-
-test "sub_agents: clone preserves per-profile sub_agents" {
-    const allocator = std.testing.allocator;
-
-    const json_body =
-        \\{
-        \\  "api_key": "k", "model": "m", "base_url": "b",
-        \\  "profiles_models": {
-        \\    "profile1": {
-        \\      "model": "M-p1", "base_url": "https://p1",
-        \\      "thinking": "auto", "temperature": "auto",
-        \\      "url_style": "openai", "api_key": "kp1",
-        \\      "sub_agents": [
-        \\        { "name": "p1sa", "model": "M1", "base_url": "https://a",
-        \\          "thinking": "on", "temperature": "0.5", "url_style": "openai",
-        \\          "api_key": "ak1", "system_prompt": "sp1" }
-        \\      ]
-        \\    }
-        \\  }
+        \\  "profiles_models": { "alpha": { "model": "M1", "system_prompt": "sp1" } }
         \\}
     ;
 
@@ -4517,17 +3739,16 @@ test "sub_agents: clone preserves per-profile sub_agents" {
     var cloned = try cfg.clone();
     defer cloned.deinit();
 
-    const p1 = cloned.getProfile("profile1").?;
-    try std.testing.expectEqual(@as(usize, 1), p1.sub_agents.len);
-    try std.testing.expectEqualStrings("p1sa", p1.sub_agents[0].name);
-    try std.testing.expectEqualStrings("sp1", p1.sub_agents[0].system_prompt);
+    const a = cloned.getAgent("alpha").?;
+    try std.testing.expectEqualStrings("M1", a.model);
+    try std.testing.expectEqualStrings("sp1", a.system_prompt);
     // Deep copy, not aliased.
-    const orig = cfg.getProfile("profile1").?;
-    try std.testing.expect(orig.sub_agents[0].name.ptr != p1.sub_agents[0].name.ptr);
+    const orig = cfg.getAgent("alpha").?;
+    try std.testing.expect(orig.system_prompt.ptr != a.system_prompt.ptr);
 }
 
 // ---------------------------------------------------------------------------
-// resolveSubAgent — config-driven sub-agent selection
+// resolveAgent — config-driven agent selection
 // ---------------------------------------------------------------------------
 
 const resolve_alloc = std.testing.allocator;
@@ -4537,52 +3758,34 @@ const resolve_io = std.testing.io;
 /// the resolved struct.
 const ResolvedPair = struct {
     cfg: LlmConfig,
-    resolved: LlmConfig.ResolvedSubAgent,
+    resolved: LlmConfig.ResolvedAgent,
 };
 
-/// Helper: build a config JSON with the given top-level sub_agents array (and
-/// no profiles) and resolve `agent_name` against it. Caller owns the returned
-/// `cfg` and must call `deinit` on it AFTER they're done with `resolved`.
-fn resolveFromTopLevel(json_body: []const u8, agent_name: []const u8) !ResolvedPair {
+/// Helper: build a config JSON and resolve `agent_name` against the
+/// configured agents. Caller owns the returned `cfg` and must call `deinit`
+/// on it AFTER they're done with `resolved`.
+fn resolveFromAgents(json_body: []const u8, agent_name: []const u8) !ResolvedPair {
     var cfg = try writeAndRead(resolve_alloc, resolve_io, json_body);
-    const resolved = cfg.resolveSubAgent("", agent_name);
+    const resolved = cfg.resolveAgent(agent_name);
     return ResolvedPair{ .cfg = cfg, .resolved = resolved };
 }
 
-/// Helper: same as `resolveFromTopLevel` but passes `profile_name`
-/// so the per-profile sub_agents lookup is exercised.
-fn resolveFromProfile(
-    json_body: []const u8,
-    profile_name: []const u8,
-    agent_name: []const u8,
-) !ResolvedPair {
-    var cfg = try writeAndRead(resolve_alloc, resolve_io, json_body);
-    const resolved = cfg.resolveSubAgent(profile_name, agent_name);
-    return ResolvedPair{ .cfg = cfg, .resolved = resolved };
-}
-
-test "resolveSubAgent: per-profile hit returns the matched sub-agent's fields" {
+test "resolveAgent: a hit returns the matched agent's fields" {
     const json_body =
         \\{
         \\  "api_key": "default-key", "model": "default-model",
         \\  "base_url": "https://default.example.com",
         \\  "profiles_models": {
-        \\    "profile1": {
-        \\      "model": "M-p1", "base_url": "https://p1",
-        \\      "thinking": "auto", "temperature": "auto",
-        \\      "url_style": "openai", "api_key": "kp1",
-        \\      "sub_agents": [
-        \\        { "name": "reviewer", "model": "gpt-4o",
-        \\          "base_url": "https://api.openai.com/v1",
-        \\          "thinking": "true", "temperature": "0.3",
-        \\          "url_style": "openai", "api_key": "reviewer-key",
-        \\          "system_prompt": "You are a strict code reviewer." }
-        \\      ]
+        \\    "reviewer": {
+        \\      "model": "gpt-4o", "base_url": "https://api.openai.com/v1",
+        \\      "thinking": "true", "temperature": "0.3",
+        \\      "url_style": "openai", "api_key": "reviewer-key",
+        \\      "system_prompt": "You are a strict code reviewer."
         \\    }
         \\  }
         \\}
     ;
-    var pair = try resolveFromProfile(json_body, "profile1", "reviewer");
+    var pair = try resolveFromAgents(json_body, "reviewer");
     defer pair.cfg.deinit();
     const r = pair.resolved;
     try std.testing.expectEqualStrings("reviewer", r.name);
@@ -4593,351 +3796,146 @@ test "resolveSubAgent: per-profile hit returns the matched sub-agent's fields" {
     try std.testing.expectEqualStrings("reviewer-key", r.api_key);
     try std.testing.expectEqualStrings("openai", r.url_style);
     try std.testing.expectEqualStrings("You are a strict code reviewer.", r.system_prompt);
-    try std.testing.expectEqual(@as(?bool, true), r.is_thinking);
-    try std.testing.expectApproxEqAbs(@as(f32, 0.3), r.temperature.?, 0.0001);
-    // Per-profile lookup: source is the profile name.
-    try std.testing.expectEqualStrings("profile1", r.source);
+    try std.testing.expectEqualStrings("reviewer", r.source);
 }
 
-test "resolveSubAgent: miss returns random fallback with orchestrator defaults" {
+test "resolveAgent: a miss returns the random fallback with orchestrator defaults" {
     const json_body =
         \\{
         \\  "api_key": "default-key", "model": "default-model",
         \\  "base_url": "https://default.example.com",
-        \\  "url_style": "anthropic"
+        \\  "profiles_models": {
+        \\    "reviewer": { "model": "gpt-4o" }
+        \\  }
         \\}
     ;
-    var pair = try resolveFromTopLevel(json_body, "unknown");
+    var pair = try resolveFromAgents(json_body, "nope");
     defer pair.cfg.deinit();
     const r = pair.resolved;
     try std.testing.expect(r.is_random_fallback);
-    try std.testing.expectEqualStrings("unknown", r.requested_name);
-    // Random name format: "agent-" + 16 hex chars.
+    try std.testing.expectEqualStrings("nope", r.requested_name);
     try std.testing.expect(r.name.len > 0);
     try std.testing.expect(std.mem.startsWith(u8, r.name, "agent-"));
-    try std.testing.expectEqual(@as(usize, "agent-".len + 16), r.name.len);
-    // All hex chars in the suffix.
-    for (r.name["agent-".len..]) |c| {
-        try std.testing.expect((c >= '0' and c <= '9') or (c >= 'a' and c <= 'f'));
-    }
-    // Orchestrator defaults preserved.
+    // The orchestrator's own defaults, not any configured agent's.
     try std.testing.expectEqualStrings("default-model", r.model);
     try std.testing.expectEqualStrings("https://default.example.com", r.base_url);
     try std.testing.expectEqualStrings("default-key", r.api_key);
-    try std.testing.expectEqualStrings("anthropic", r.url_style);
-    // No specialized system_prompt.
     try std.testing.expectEqualStrings("", r.system_prompt);
-    try std.testing.expectEqual(@as(?bool, null), r.is_thinking);
-    try std.testing.expectEqual(@as(?f32, null), r.temperature);
-    try std.testing.expectEqualStrings("", r.source);
 }
 
-test "resolveSubAgent: overlay — empty SubAgentConfig field falls through to orchestrator" {
-    // Sub-agent has `model` but no `api_key` / `base_url`. Resolve
-    // and verify the orchestrator's values are used for the empty
-    // fields (NOT the empty string from the SubAgentConfig).
+test "resolveAgent: an empty agent name misses and falls back" {
+    const json_body =
+        \\{
+        \\  "api_key": "default-key", "model": "default-model",
+        \\  "profiles_models": { "reviewer": { "model": "gpt-4o" } }
+        \\}
+    ;
+    var pair = try resolveFromAgents(json_body, "");
+    defer pair.cfg.deinit();
+    try std.testing.expect(pair.resolved.is_random_fallback);
+}
+
+test "resolveAgent: an empty field on the agent falls through to the orchestrator" {
     const json_body =
         \\{
         \\  "api_key": "default-key", "model": "default-model",
         \\  "base_url": "https://default.example.com",
-        \\  "url_style": "openai",
         \\  "profiles_models": {
-        \\    "profile1": {
-        \\      "model": "M-p1", "base_url": "https://p1",
-        \\      "thinking": "auto", "temperature": "auto",
-        \\      "url_style": "openai", "api_key": "kp1",
-        \\      "sub_agents": [
-        \\        { "name": "minimal", "model": "gpt-4o",
-        \\          "base_url": "", "thinking": "auto", "temperature": "auto",
-        \\          "url_style": "", "api_key": "", "system_prompt": "" }
-        \\      ]
-        \\    }
+        \\    "reviewer": { "model": "gpt-4o", "api_key": "reviewer-key" }
         \\  }
         \\}
     ;
-    var pair = try resolveFromProfile(json_body, "profile1", "minimal");
+    var pair = try resolveFromAgents(json_body, "reviewer");
     defer pair.cfg.deinit();
     const r = pair.resolved;
-    try std.testing.expect(!r.is_random_fallback);
-    try std.testing.expectEqualStrings("gpt-4o", r.model); // from SubAgentConfig
-    try std.testing.expectEqualStrings("https://default.example.com", r.base_url); // orchestrator
-    try std.testing.expectEqualStrings("default-key", r.api_key); // orchestrator
-    try std.testing.expectEqualStrings("openai", r.url_style); // orchestrator
-    try std.testing.expectEqual(@as(?bool, null), r.is_thinking); // "auto" -> inherit
-    try std.testing.expectEqual(@as(?f32, null), r.temperature); // "auto" -> inherit
+    // The agent names a model and a key, so those win.
+    try std.testing.expectEqualStrings("gpt-4o", r.model);
+    try std.testing.expectEqualStrings("reviewer-key", r.api_key);
+    // The agent names no base_url, so the orchestrator's is used.
+    try std.testing.expectEqualStrings("https://default.example.com", r.base_url);
 }
 
-test "resolveSubAgent: thinking \"true\" -> Some(true), \"false\" -> Some(false)" {
-    const json_true =
-        \\{ "api_key": "k", "model": "m", "base_url": "u",
-        \\  "profiles_models": { "p1": {
-        \\    "model": "m", "base_url": "u", "thinking": "auto",
-        \\    "temperature": "auto", "url_style": "openai", "api_key": "k",
-        \\    "sub_agents": [{ "name": "sa", "model": "m",
-        \\      "base_url": "u", "thinking": "true", "temperature": "auto",
-        \\      "url_style": "openai", "api_key": "k", "system_prompt": "p" }] } } }
-    ;
-    var pair_true = try resolveFromProfile(json_true, "p1", "sa");
-    defer pair_true.cfg.deinit();
-    try std.testing.expectEqual(@as(?bool, true), pair_true.resolved.is_thinking);
-
-    const json_false =
-        \\{ "api_key": "k", "model": "m", "base_url": "u",
-        \\  "profiles_models": { "p1": {
-        \\    "model": "m", "base_url": "u", "thinking": "auto",
-        \\    "temperature": "auto", "url_style": "openai", "api_key": "k",
-        \\    "sub_agents": [{ "name": "sa", "model": "m",
-        \\      "base_url": "u", "thinking": "false", "temperature": "auto",
-        \\      "url_style": "openai", "api_key": "k", "system_prompt": "p" }] } } }
-    ;
-    var pair_false = try resolveFromProfile(json_false, "p1", "sa");
-    defer pair_false.cfg.deinit();
-    try std.testing.expectEqual(@as(?bool, false), pair_false.resolved.is_thinking);
-}
-
-test "resolveSubAgent: temperature \"0.7\" parses to Some(0.7)" {
+test "resolveAgent: thinking true and false resolve to Some(true) and Some(false)" {
     const json_body =
-        \\{ "api_key": "k", "model": "m", "base_url": "u",
-        \\  "profiles_models": { "p1": {
-        \\    "model": "m", "base_url": "u", "thinking": "auto",
-        \\    "temperature": "auto", "url_style": "openai", "api_key": "k",
-        \\    "sub_agents": [{ "name": "sa", "model": "m",
-        \\      "base_url": "u", "thinking": "auto", "temperature": "0.7",
-        \\      "url_style": "openai", "api_key": "k", "system_prompt": "p" }] } } }
+        \\{
+        \\  "api_key": "k", "model": "m",
+        \\  "profiles_models": {
+        \\    "on":  { "model": "m", "thinking": "true" },
+        \\    "off": { "model": "m", "thinking": "false" }
+        \\  }
+        \\}
     ;
-    var pair = try resolveFromProfile(json_body, "p1", "sa");
+    var on_pair = try resolveFromAgents(json_body, "on");
+    defer on_pair.cfg.deinit();
+    try std.testing.expectEqual(@as(?bool, true), on_pair.resolved.is_thinking);
+
+    var off_pair = try resolveFromAgents(json_body, "off");
+    defer off_pair.cfg.deinit();
+    try std.testing.expectEqual(@as(?bool, false), off_pair.resolved.is_thinking);
+}
+
+test "resolveAgent: temperature 0.7 parses to Some(0.7) and garbage to null" {
+    const json_body =
+        \\{
+        \\  "api_key": "k", "model": "m",
+        \\  "profiles_models": {
+        \\    "warm": { "model": "m", "temperature": "0.7" },
+        \\    "junk": { "model": "m", "temperature": "not-a-number" }
+        \\  }
+        \\}
+    ;
+    var warm_pair = try resolveFromAgents(json_body, "warm");
+    defer warm_pair.cfg.deinit();
+    try std.testing.expectEqual(@as(?f32, 0.7), warm_pair.resolved.temperature);
+
+    var junk_pair = try resolveFromAgents(json_body, "junk");
+    defer junk_pair.cfg.deinit();
+    try std.testing.expectEqual(@as(?f32, null), junk_pair.resolved.temperature);
+}
+
+test "resolveAgent: the name match is exact and case-sensitive" {
+    const json_body =
+        \\{
+        \\  "api_key": "k", "model": "m",
+        \\  "profiles_models": { "Reviewer": { "model": "M1" } }
+        \\}
+    ;
+    var exact = try resolveFromAgents(json_body, "Reviewer");
+    defer exact.cfg.deinit();
+    try std.testing.expect(!exact.resolved.is_random_fallback);
+    try std.testing.expectEqualStrings("M1", exact.resolved.model);
+
+    var wrong_case = try resolveFromAgents(json_body, "reviewer");
+    defer wrong_case.cfg.deinit();
+    try std.testing.expect(wrong_case.resolved.is_random_fallback);
+}
+
+test "resolveAgent: no configured agents means every name misses" {
+    const json_body =
+        \\{
+        \\  "api_key": "k", "model": "m"
+        \\}
+    ;
+    var pair = try resolveFromAgents(json_body, "reviewer");
     defer pair.cfg.deinit();
-    const r = pair.resolved;
-    try std.testing.expect(r.temperature != null);
-    try std.testing.expectApproxEqAbs(@as(f32, 0.7), r.temperature.?, 0.0001);
-}
-
-test "resolveSubAgent: temperature garbage -> null (treat as auto)" {
-    const json_body =
-        \\{ "api_key": "k", "model": "m", "base_url": "u",
-        \\  "sub_agents": [{ "name": "sa", "model": "m",
-        \\    "base_url": "u", "thinking": "auto", "temperature": "garbage",
-        \\    "url_style": "openai", "api_key": "k", "system_prompt": "p" }] }
-    ;
-    var pair = try resolveFromTopLevel(json_body, "sa");
-    defer pair.cfg.deinit();
-    const r = pair.resolved;
-    try std.testing.expectEqual(@as(?f32, null), r.temperature);
-}
-
-test "resolveSubAgent: top-level sub_agents list is empty -> miss fallback" {
-    const json_body =
-        \\{ "api_key": "k", "model": "m", "base_url": "u",
-        \\  "sub_agents": [] }
-    ;
-    var pair = try resolveFromTopLevel(json_body, "anything");
-    defer pair.cfg.deinit();
-    const r = pair.resolved;
-    try std.testing.expect(r.is_random_fallback);
-    try std.testing.expectEqualStrings("anything", r.requested_name);
-    try std.testing.expectEqualStrings("m", r.model);
-}
-
-test "resolveSubAgent: two per-profile sub_agents, the second one matches" {
-    const json_body =
-        \\{ "api_key": "k", "model": "m", "base_url": "u",
-        \\  "profiles_models": { "p1": {
-        \\    "model": "m", "base_url": "u", "thinking": "auto",
-        \\    "temperature": "auto", "url_style": "openai", "api_key": "k",
-        \\    "sub_agents": [
-        \\      { "name": "first", "model": "M1", "base_url": "u",
-        \\        "thinking": "auto", "temperature": "auto",
-        \\        "url_style": "openai", "api_key": "k", "system_prompt": "sp1" },
-        \\      { "name": "second", "model": "M2", "base_url": "u",
-        \\        "thinking": "auto", "temperature": "auto",
-        \\        "url_style": "openai", "api_key": "k", "system_prompt": "sp2" }
-        \\    ] } } }
-    ;
-    var pair1 = try resolveFromProfile(json_body, "p1", "first");
-    defer pair1.cfg.deinit();
-    try std.testing.expect(!pair1.resolved.is_random_fallback);
-    try std.testing.expectEqualStrings("M1", pair1.resolved.model);
-    try std.testing.expectEqualStrings("sp1", pair1.resolved.system_prompt);
-    var pair2 = try resolveFromProfile(json_body, "p1", "second");
-    defer pair2.cfg.deinit();
-    try std.testing.expect(!pair2.resolved.is_random_fallback);
-    try std.testing.expectEqualStrings("M2", pair2.resolved.model);
-    try std.testing.expectEqualStrings("sp2", pair2.resolved.system_prompt);
-}
-
-test "resolveSubAgent: name match is exact (case-sensitive)" {
-    const json_body =
-        \\{ "api_key": "k", "model": "m", "base_url": "u",
-        \\  "profiles_models": { "p1": {
-        \\    "model": "m", "base_url": "u", "thinking": "auto",
-        \\    "temperature": "auto", "url_style": "openai", "api_key": "k",
-        \\    "sub_agents": [{ "name": "Reviewer", "model": "M1",
-        \\      "base_url": "u", "thinking": "auto", "temperature": "auto",
-        \\      "url_style": "openai", "api_key": "k", "system_prompt": "p" }] } } }
-    ;
-    var pair_match = try resolveFromProfile(json_body, "p1", "Reviewer");
-    defer pair_match.cfg.deinit();
-    try std.testing.expect(!pair_match.resolved.is_random_fallback);
-    var pair_miss = try resolveFromProfile(json_body, "p1", "reviewer");
-    defer pair_miss.cfg.deinit();
-    try std.testing.expect(pair_miss.resolved.is_random_fallback);
+    try std.testing.expect(pair.resolved.is_random_fallback);
 }
 
 // ---------------------------------------------------------------------------
-// resolveSubAgent — per-profile sub_agents lookup (decision #1)
+// resolveAgent — the configured-agents lookup
 // ---------------------------------------------------------------------------
 
-test "resolveSubAgent: per-profile sub_agent is preferred over top-level" {
-    // profile1 has its own "reviewer" with a specialized model;
-    // the top-level "reviewer" uses a different model. The
-    // per-profile hit must win.
+test "resolveAgent: the agent's own system_prompt reaches the resolved config" {
     const json_body =
-        \\{ "api_key": "k", "model": "default", "base_url": "u",
-        \\  "sub_agents": [
-        \\    { "name": "reviewer", "model": "TOP_MODEL",
-        \\      "base_url": "u", "thinking": "auto", "temperature": "auto",
-        \\      "url_style": "openai", "api_key": "k",
-        \\      "system_prompt": "top-level reviewer" }
-        \\  ],
+        \\{ "api_key": "k", "model": "default",
         \\  "profiles_models": {
-        \\    "profile1": {
-        \\      "model": "P1_MODEL", "base_url": "u",
-        \\      "thinking": "auto", "temperature": "auto",
-        \\      "url_style": "openai", "api_key": "k",
-        \\      "sub_agents": [
-        \\        { "name": "reviewer", "model": "PROFILE1_MODEL",
-        \\          "base_url": "u", "thinking": "true", "temperature": "0.5",
-        \\          "url_style": "openai", "api_key": "k",
-        \\          "system_prompt": "profile1 reviewer" }
-        \\      ]
-        \\    }
+        \\    "reviewer": { "model": "M1", "system_prompt": "you are the reviewer" }
         \\  }
         \\}
     ;
-    var pair = try resolveFromProfile(json_body, "profile1", "reviewer");
+    var pair = try resolveFromAgents(json_body, "reviewer");
     defer pair.cfg.deinit();
-    try std.testing.expect(!pair.resolved.is_random_fallback);
-    try std.testing.expectEqualStrings("reviewer", pair.resolved.name);
-    // Per-profile hit: PROFILE1_MODEL wins, not TOP_MODEL.
-    try std.testing.expectEqualStrings("PROFILE1_MODEL", pair.resolved.model);
-    try std.testing.expectEqualStrings("profile1 reviewer", pair.resolved.system_prompt);
-    try std.testing.expectEqualStrings("profile1", pair.resolved.source);
-}
-
-test "resolveSubAgent: empty profile inherits top-level via load migration" {
-    // profile1 has no sub_agents of its own; the load migration (plan
-    // 2026-09-04-subagents-per-profile) copies the top-level "reviewer" into
-    // it.
-    const json_body =
-        \\{ "api_key": "k", "model": "default", "base_url": "u",
-        \\  "sub_agents": [
-        \\    { "name": "reviewer", "model": "TOP_MODEL",
-        \\      "base_url": "u", "thinking": "auto", "temperature": "auto",
-        \\      "url_style": "openai", "api_key": "k",
-        \\      "system_prompt": "top-level" }
-        \\  ],
-        \\  "profiles_models": {
-        \\    "profile1": { "model": "P1", "base_url": "u",
-        \\      "thinking": "auto", "temperature": "auto",
-        \\      "url_style": "openai", "api_key": "k" }
-        \\  }
-        \\}
-    ;
-    var pair = try resolveFromProfile(json_body, "profile1", "reviewer");
-    defer pair.cfg.deinit();
-    try std.testing.expect(!pair.resolved.is_random_fallback);
-    // Migrated entry: TOP_MODEL wins, source is the profile.
-    try std.testing.expectEqualStrings("TOP_MODEL", pair.resolved.model);
-    try std.testing.expectEqualStrings("profile1", pair.resolved.source);
-}
-
-test "resolveSubAgent: empty profile_name -> random fallback (no global list)" {
-    // The call passes `""` for `profile_name` (e.g. the parent session has no
-    // profile selected). Per-profile-only means there is nothing to consult —
-    // random fallback, even though profile1 owns a matching "reviewer".
-    const json_body =
-        \\{ "api_key": "k", "model": "default", "base_url": "u",
-        \\  "profiles_models": {
-        \\    "profile1": {
-        \\      "model": "P1", "base_url": "u",
-        \\      "thinking": "auto", "temperature": "auto",
-        \\      "url_style": "openai", "api_key": "k",
-        \\      "sub_agents": [
-        \\        { "name": "reviewer", "model": "P1_MODEL",
-        \\          "base_url": "u", "thinking": "auto", "temperature": "auto",
-        \\          "url_style": "openai", "api_key": "k",
-        \\          "system_prompt": "profile1" }
-        \\      ]
-        \\    }
-        \\  }
-        \\}
-    ;
-    // Note: resolveFromTopLevel passes "" as profile_name, so no
-    // profile list is consulted — random fallback.
-    var pair = try resolveFromTopLevel(json_body, "reviewer");
-    defer pair.cfg.deinit();
-    try std.testing.expect(pair.resolved.is_random_fallback);
-    try std.testing.expectEqualStrings("reviewer", pair.resolved.requested_name);
-}
-
-test "resolveSubAgent: profile_name not in profiles_models -> random fallback" {
-    // The user requested a profile that doesn't exist; with no
-    // global list there is nothing to fall back to.
-    const json_body =
-        \\{ "api_key": "k", "model": "default", "base_url": "u",
-        \\  "profiles_models": {
-        \\    "profile1": { "model": "P1", "base_url": "u",
-        \\      "thinking": "auto", "temperature": "auto",
-        \\      "url_style": "openai", "api_key": "k",
-        \\      "sub_agents": [
-        \\        { "name": "reviewer", "model": "P1_MODEL",
-        \\          "base_url": "u", "thinking": "auto", "temperature": "auto",
-        \\          "url_style": "openai", "api_key": "k",
-        \\          "system_prompt": "profile1" }
-        \\      ] }
-        \\  }
-        \\}
-    ;
-    // profile_name "profile_unknown" is not in profiles_models;
-    // random fallback (the unknown profile owns nothing).
-    var pair = try resolveFromProfile(json_body, "profile_unknown", "reviewer");
-    defer pair.cfg.deinit();
-    try std.testing.expect(pair.resolved.is_random_fallback);
-    try std.testing.expectEqualStrings("reviewer", pair.resolved.requested_name);
-}
-
-test "resolveSubAgent: per-profile miss AND top-level miss -> random fallback" {
-    const json_body =
-        \\{ "api_key": "k", "model": "default", "base_url": "u",
-        \\  "sub_agents": [
-        \\    { "name": "other", "model": "M", "base_url": "u",
-        \\      "thinking": "auto", "temperature": "auto",
-        \\      "url_style": "openai", "api_key": "k",
-        \\      "system_prompt": "p" }
-        \\  ],
-        \\  "profiles_models": {
-        \\    "profile1": {
-        \\      "model": "P1", "base_url": "u",
-        \\      "thinking": "auto", "temperature": "auto",
-        \\      "url_style": "openai", "api_key": "k",
-        \\      "sub_agents": [
-        \\        { "name": "diff_name", "model": "M",
-        \\          "base_url": "u", "thinking": "auto", "temperature": "auto",
-        \\          "url_style": "openai", "api_key": "k",
-        \\          "system_prompt": "p" }
-        \\      ]
-        \\    }
-        \\  }
-        \\}
-    ;
-    var pair = try resolveFromProfile(json_body, "profile1", "reviewer");
-    defer pair.cfg.deinit();
-    // Neither profile1.sub_agents (has "diff_name") nor top-level
-    // (has "other") contains "reviewer" -> random fallback.
-    try std.testing.expect(pair.resolved.is_random_fallback);
-    try std.testing.expectEqualStrings("reviewer", pair.resolved.requested_name);
-    try std.testing.expectEqualStrings("default", pair.resolved.model);
-    try std.testing.expectEqualStrings("", pair.resolved.source);
+    try std.testing.expectEqualStrings("you are the reviewer", pair.resolved.system_prompt);
 }
 
 // ---------------------------------------------------------------------------
@@ -5135,12 +4133,12 @@ test "init does NOT auto-create when file exists with parse error" {
 // Compaction overrides: max_capacity_token_model +
 // compaction_threshold_percent (configurable compaction settings — see
 
-test "LlmConfig: LlmProfile.max_capacity_tokens reads value from JSON" {
+test "LlmConfig: LlmAgent.max_capacity_tokens reads value from JSON" {
     const allocator = std.testing.allocator;
 
     // NOTE: `profiles_models` is a real JSON map (matches the shape the UI
     // sends). The legacy `profile1..profile4` keys are convenience shorthands
-    // for tests; both shapes parse to the same internal `ProfilesMap`.
+    // for tests; both shapes parse to the same internal `AgentsMap`.
     const json_body =
         \\{ "api_key": "k", "model": "m", "base_url": "b",
         \\  "profiles_models": { "profile1": { "model": "m", "max_capacity_tokens": 128000 } } }
@@ -5149,11 +4147,11 @@ test "LlmConfig: LlmProfile.max_capacity_tokens reads value from JSON" {
     var cfg = try writeAndRead(allocator, std.testing.io, json_body);
     defer cfg.deinit();
 
-    const profile = cfg.profiles_models.get("profile1") orelse unreachable;
-    try std.testing.expectEqual(@as(?u32, 128000), profile.max_capacity_tokens);
+    const agent = cfg.agents.get("profile1") orelse unreachable;
+    try std.testing.expectEqual(@as(?u32, 128000), agent.max_capacity_tokens);
 }
 
-test "LlmConfig: LlmProfile.max_capacity_tokens defaults to null when missing from JSON" {
+test "LlmConfig: LlmAgent.max_capacity_tokens defaults to null when missing from JSON" {
     const allocator = std.testing.allocator;
 
     const json_body =
@@ -5164,11 +4162,11 @@ test "LlmConfig: LlmProfile.max_capacity_tokens defaults to null when missing fr
     var cfg = try writeAndRead(allocator, std.testing.io, json_body);
     defer cfg.deinit();
 
-    const profile = cfg.profiles_models.get("profile1") orelse unreachable;
-    try std.testing.expectEqual(@as(?u32, null), profile.max_capacity_tokens);
+    const agent = cfg.agents.get("profile1") orelse unreachable;
+    try std.testing.expectEqual(@as(?u32, null), agent.max_capacity_tokens);
 }
 
-test "LlmConfig: LlmProfile.compaction_threshold_percent reads value from JSON" {
+test "LlmConfig: LlmAgent.compaction_threshold_percent reads value from JSON" {
     const allocator = std.testing.allocator;
 
     const json_body =
@@ -5179,11 +4177,11 @@ test "LlmConfig: LlmProfile.compaction_threshold_percent reads value from JSON" 
     var cfg = try writeAndRead(allocator, std.testing.io, json_body);
     defer cfg.deinit();
 
-    const profile = cfg.profiles_models.get("profile1") orelse unreachable;
-    try std.testing.expectEqual(@as(?u8, 70), profile.compaction_threshold_percent);
+    const agent = cfg.agents.get("profile1") orelse unreachable;
+    try std.testing.expectEqual(@as(?u8, 70), agent.compaction_threshold_percent);
 }
 
-test "LlmConfig: LlmProfile.compaction_threshold_percent defaults to null when missing from JSON" {
+test "LlmConfig: LlmAgent.compaction_threshold_percent defaults to null when missing from JSON" {
     const allocator = std.testing.allocator;
 
     const json_body =
@@ -5194,8 +4192,8 @@ test "LlmConfig: LlmProfile.compaction_threshold_percent defaults to null when m
     var cfg = try writeAndRead(allocator, std.testing.io, json_body);
     defer cfg.deinit();
 
-    const profile = cfg.profiles_models.get("profile1") orelse unreachable;
-    try std.testing.expectEqual(@as(?u8, null), profile.compaction_threshold_percent);
+    const agent = cfg.agents.get("profile1") orelse unreachable;
+    try std.testing.expectEqual(@as(?u8, null), agent.compaction_threshold_percent);
 }
 
 test "LlmConfig: maxCapacityForModel returns profile override when set" {
@@ -5209,10 +4207,10 @@ test "LlmConfig: maxCapacityForModel returns profile override when set" {
     var cfg = try writeAndRead(allocator, std.testing.io, json_body);
     defer cfg.deinit();
 
-    const profile = cfg.profiles_models.get("profile1") orelse unreachable;
+    const profile = cfg.agents.get("profile1") orelse unreachable;
     // Profile override wins over the LLMModels built-in.
-    try std.testing.expectEqual(@as(u32, 1000000), cfg.maxCapacityForModel(&profile, null, null, "MiniMax-M3"));
-    try std.testing.expectEqual(@as(u32, 1000000), cfg.maxCapacityForModel(&profile, null, null, "SomeOtherModel"));
+    try std.testing.expectEqual(@as(u32, 1000000), cfg.maxCapacityForModel(&profile, null, "MiniMax-M3"));
+    try std.testing.expectEqual(@as(u32, 1000000), cfg.maxCapacityForModel(&profile, null, "SomeOtherModel"));
 }
 
 test "LlmConfig: maxCapacityForModel falls back to LLMModels default when profile has null" {
@@ -5226,13 +4224,13 @@ test "LlmConfig: maxCapacityForModel falls back to LLMModels default when profil
     var cfg = try writeAndRead(allocator, std.testing.io, json_body);
     defer cfg.deinit();
 
-    const profile = cfg.profiles_models.get("profile1") orelse unreachable;
+    const profile = cfg.agents.get("profile1") orelse unreachable;
     // MiniMax-M3 default is 500_000 (see LLMModels.zig:18).
-    try std.testing.expectEqual(@as(u32, 500000), cfg.maxCapacityForModel(&profile, null, null, "MiniMax-M3"));
+    try std.testing.expectEqual(@as(u32, 500000), cfg.maxCapacityForModel(&profile, null, "MiniMax-M3"));
     // Unknown model falls back to 200_000 (LLMModels.zig:31).
-    try std.testing.expectEqual(@as(u32, 200000), cfg.maxCapacityForModel(&profile, null, null, "Unknown"));
+    try std.testing.expectEqual(@as(u32, 200000), cfg.maxCapacityForModel(&profile, null, "Unknown"));
     // No profile at all: same default applies.
-    try std.testing.expectEqual(@as(u32, 500000), cfg.maxCapacityForModel(null, null, null, "MiniMax-M3"));
+    try std.testing.expectEqual(@as(u32, 500000), cfg.maxCapacityForModel(null, null, "MiniMax-M3"));
 }
 
 test "LlmConfig: compactionThresholdPercent returns profile override when set" {
@@ -5246,8 +4244,8 @@ test "LlmConfig: compactionThresholdPercent returns profile override when set" {
     var cfg = try writeAndRead(allocator, std.testing.io, json_body);
     defer cfg.deinit();
 
-    const profile = cfg.profiles_models.get("profile1") orelse unreachable;
-    try std.testing.expectEqual(@as(u8, 50), cfg.compactionThresholdPercent(&profile, null, null));
+    const profile = cfg.agents.get("profile1") orelse unreachable;
+    try std.testing.expectEqual(@as(u8, 50), cfg.compactionThresholdPercent(&profile, null));
 }
 
 test "LlmConfig: compactionThresholdPercent returns 80 when no profile / null profile" {
@@ -5261,11 +4259,11 @@ test "LlmConfig: compactionThresholdPercent returns 80 when no profile / null pr
     var cfg = try writeAndRead(allocator, std.testing.io, json_body);
     defer cfg.deinit();
 
-    const profile = cfg.profiles_models.get("profile1") orelse unreachable;
+    const profile = cfg.agents.get("profile1") orelse unreachable;
     // Profile has null threshold — falls back to built-in 80.
-    try std.testing.expectEqual(@as(u8, 80), cfg.compactionThresholdPercent(&profile, null, null));
+    try std.testing.expectEqual(@as(u8, 80), cfg.compactionThresholdPercent(&profile, null));
     // No profile at all — same default.
-    try std.testing.expectEqual(@as(u8, 80), cfg.compactionThresholdPercent(null, null, null));
+    try std.testing.expectEqual(@as(u8, 80), cfg.compactionThresholdPercent(null, null));
 }
 
 // ============================================================ Top-level
@@ -5337,13 +4335,13 @@ test "LlmConfig: top-level defaults cascade — profile override wins" {
     var cfg = try writeAndRead(allocator, std.testing.io, json_body);
     defer cfg.deinit();
 
-    const profile = cfg.profiles_models.get("profile1") orelse unreachable;
+    const profile = cfg.agents.get("profile1") orelse unreachable;
     // Profile override (600_000) wins over top-level defaults (200_000).
-    try std.testing.expectEqual(@as(u32, 600000), cfg.maxCapacityForModel(&profile, null, &cfg, "MiniMax-M3"));
-    try std.testing.expectEqual(@as(u8, 90), cfg.compactionThresholdPercent(&profile, null, &cfg));
+    try std.testing.expectEqual(@as(u32, 600000), cfg.maxCapacityForModel(&profile, &cfg, "MiniMax-M3"));
+    try std.testing.expectEqual(@as(u8, 90), cfg.compactionThresholdPercent(&profile, &cfg));
     // Without profile, top-level defaults apply.
-    try std.testing.expectEqual(@as(u32, 200000), cfg.maxCapacityForModel(null, null, &cfg, "MiniMax-M3"));
-    try std.testing.expectEqual(@as(u8, 70), cfg.compactionThresholdPercent(null, null, &cfg));
+    try std.testing.expectEqual(@as(u32, 200000), cfg.maxCapacityForModel(null, &cfg, "MiniMax-M3"));
+    try std.testing.expectEqual(@as(u8, 70), cfg.compactionThresholdPercent(null, &cfg));
 }
 
 test "LlmConfig: top-level defaults apply when profile is null (passes through)" {
@@ -5359,8 +4357,8 @@ test "LlmConfig: top-level defaults apply when profile is null (passes through)"
     defer cfg.deinit();
 
     // No profile → top-level defaults apply (no LLMModels fallback).
-    try std.testing.expectEqual(@as(u32, 350000), cfg.maxCapacityForModel(null, null, &cfg, "MiniMax-M3"));
-    try std.testing.expectEqual(@as(u8, 65), cfg.compactionThresholdPercent(null, null, &cfg));
+    try std.testing.expectEqual(@as(u32, 350000), cfg.maxCapacityForModel(null, &cfg, "MiniMax-M3"));
+    try std.testing.expectEqual(@as(u8, 65), cfg.compactionThresholdPercent(null, &cfg));
 }
 
 test "LlmConfig: top-level defaults are skipped when defaults=null passed" {
@@ -5376,8 +4374,8 @@ test "LlmConfig: top-level defaults are skipped when defaults=null passed" {
     defer cfg.deinit();
 
     // defaults=null skips step 3 → built-in LLMModels default applies.
-    try std.testing.expectEqual(@as(u32, 500000), cfg.maxCapacityForModel(null, null, null, "MiniMax-M3"));
-    try std.testing.expectEqual(@as(u8, 80), cfg.compactionThresholdPercent(null, null, null));
+    try std.testing.expectEqual(@as(u32, 500000), cfg.maxCapacityForModel(null, null, "MiniMax-M3"));
+    try std.testing.expectEqual(@as(u8, 80), cfg.compactionThresholdPercent(null, null));
 }
 
 // ---------------------------------------------------------------------------
@@ -5402,8 +4400,8 @@ test "active_profile: parses top-level 'active_profile' string from JSON" {
     var cfg = try writeAndRead(allocator, std.testing.io, json_body);
     defer cfg.deinit();
 
-    try std.testing.expect(cfg.active_profile != null);
-    try std.testing.expectEqualStrings("alpha", cfg.active_profile.?);
+    try std.testing.expect(cfg.active_agent != null);
+    try std.testing.expectEqualStrings("alpha", cfg.active_agent.?);
 }
 
 test "active_profile: missing key → null (back-compat with legacy configs)" {
@@ -5420,7 +4418,7 @@ test "active_profile: missing key → null (back-compat with legacy configs)" {
     var cfg = try writeAndRead(allocator, std.testing.io, json_body);
     defer cfg.deinit();
 
-    try std.testing.expect(cfg.active_profile == null);
+    try std.testing.expect(cfg.active_agent == null);
 }
 
 test "active_profile: empty string normalises to null" {
@@ -5440,7 +4438,7 @@ test "active_profile: empty string normalises to null" {
     var cfg = try writeAndRead(allocator, std.testing.io, json_body);
     defer cfg.deinit();
 
-    try std.testing.expect(cfg.active_profile == null);
+    try std.testing.expect(cfg.active_agent == null);
 }
 
 // ---------------------------------------------------------------------------
@@ -5449,8 +4447,8 @@ test "active_profile: empty string normalises to null" {
 
 test "profiles_models: arbitrary name 'alpha' is loaded" {
     // Pre-fix: ProfilesModelsJson hardcodes profile1..profile4 keys;
-    //           `alpha` is silently dropped → cfg.profiles_models is empty.
-    // Post-fix: `alpha` appears in cfg.profiles_models with its fields intact.
+    //           `alpha` is silently dropped → cfg.agents is empty.
+    // Post-fix: `alpha` appears in cfg.agents with its fields intact.
     const allocator = std.testing.allocator;
 
     const json_body =
@@ -5476,7 +4474,7 @@ test "profiles_models: arbitrary name 'alpha' is loaded" {
 
     // The profile name must be preserved verbatim (no renaming to
     // profile1..profile4).
-    const entry = cfg.profiles_models.getEntry("alpha");
+    const entry = cfg.agents.getEntry("alpha");
     try std.testing.expect(entry != null);
     try std.testing.expectEqualStrings("alpha-model", entry.?.value_ptr.model);
     try std.testing.expectEqualStrings("https://alpha.example.com", entry.?.value_ptr.base_url);
@@ -5511,7 +4509,7 @@ test "profiles_models: numeric prefix name '900ribu' is loaded" {
     var cfg = try writeAndRead(allocator, std.testing.io, json_body);
     defer cfg.deinit();
 
-    const entry = cfg.profiles_models.getEntry("900ribu");
+    const entry = cfg.agents.getEntry("900ribu");
     try std.testing.expect(entry != null);
     try std.testing.expectEqualStrings("MiniMax-M3", entry.?.value_ptr.model);
     try std.testing.expectEqualStrings("user-key-900ribu", entry.?.value_ptr.api_key);
@@ -5538,22 +4536,22 @@ test "profiles_models: multiple arbitrary names all loaded" {
     var cfg = try writeAndRead(allocator, std.testing.io, json_body);
     defer cfg.deinit();
 
-    try std.testing.expectEqual(@as(u32, 3), cfg.profiles_models.count());
+    try std.testing.expectEqual(@as(u32, 3), cfg.agents.count());
 
-    const a = cfg.profiles_models.getEntry("alpha");
+    const a = cfg.agents.getEntry("alpha");
     try std.testing.expect(a != null);
     try std.testing.expectEqualStrings("alpha-model", a.?.value_ptr.model);
 
-    const b = cfg.profiles_models.getEntry("beta");
+    const b = cfg.agents.getEntry("beta");
     try std.testing.expect(b != null);
     try std.testing.expectEqualStrings("beta-model", b.?.value_ptr.model);
 
-    const g = cfg.profiles_models.getEntry("gamma");
+    const g = cfg.agents.getEntry("gamma");
     try std.testing.expect(g != null);
     try std.testing.expectEqualStrings("gamma-model", g.?.value_ptr.model);
 }
 
-test "profiles_models: empty {} → cfg.profiles_models.count is 0" {
+test "profiles_models: empty {} → cfg.agents.count is 0" {
     // Pre-fix this passed (the schema decoded {} as 4 nulls which produced no
     // entries), but it's still worth pinning so the post-fix json.Value
     // iteration doesn't accidentally crash on an empty object.
@@ -5571,12 +4569,12 @@ test "profiles_models: empty {} → cfg.profiles_models.count is 0" {
     var cfg = try writeAndRead(allocator, std.testing.io, json_body);
     defer cfg.deinit();
 
-    try std.testing.expectEqual(@as(u32, 0), cfg.profiles_models.count());
+    try std.testing.expectEqual(@as(u32, 0), cfg.agents.count());
 }
 
-test "profiles_models: missing key → cfg.profiles_models.count is 0 (back-compat)" {
+test "profiles_models: missing key → cfg.agents.count is 0 (back-compat)" {
     // Legacy configs that never declared profiles_models must still
-    // load cleanly. The post-fix `if (config_json.profiles_models) |…|`
+    // load cleanly. The post-fix `if (config_json.agents) |…|`
     // short-circuits when the key is absent.
     const allocator = std.testing.allocator;
 
@@ -5591,7 +4589,7 @@ test "profiles_models: missing key → cfg.profiles_models.count is 0 (back-comp
     var cfg = try writeAndRead(allocator, std.testing.io, json_body);
     defer cfg.deinit();
 
-    try std.testing.expectEqual(@as(u32, 0), cfg.profiles_models.count());
+    try std.testing.expectEqual(@as(u32, 0), cfg.agents.count());
 }
 
 // ---------------------------------------------------------------------------

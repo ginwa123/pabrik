@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Shared placeholder for list-shaped settings surfaces. Why a shared component: ProfilesSection,
-// SubAgentsSection, McpServersSection and WebSearchSection are pure-prop and render their
+// McpServersSection and WebSearchSection are pure-prop and render their
 // EmptyState the instant `modelValue.length === 0`.
 withDefaults(
   defineProps<{

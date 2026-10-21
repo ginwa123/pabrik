@@ -1,34 +1,33 @@
 <!--
-  ListSubAgent — tool output component for the `list_sub_agent` agent tool.
+  ListAgents — tool output component for the `list_agents` agent tool.
 
-  Renders the XML envelope produced by the backend `list_sub_agent` tool.
+  Renders the envelope produced by the backend `list_agents` tool.
   Purely presentational: no API calls, no store mutations, no navigation.
 
-  Wire shape (whole role=tool message in `message.content`, inner envelope
+  Wire shape (the whole role=tool message in `message.content`, inner envelope
   parsed here — self-contained `:message="msg"` idiom, copied from
   GetPlan.vue):
     Populated:
-      <list_sub_agent><profile>P</profile><count>N</count><sub_agents>
-        <sub_agent><name>..</name><model>..</model><url_style>..</url_style>
+      <list_agents><count>N</count><agents>
+        <agent><name>..</name><model>..</model><url_style>..</url_style>
         <thinking>..</thinking><temperature>..</temperature>
         [<max_capacity_tokens>..</max_capacity_tokens>]
         [<compaction_threshold_percent>..</compaction_threshold_percent>]
         [<thinking_budget_tokens>..</thinking_budget_tokens>]
         [<reasoning_effort>..</reasoning_effort>]
-        <system_prompt><![CDATA[full text]]></system_prompt></sub_agent>
-      ...</sub_agents></list_sub_agent>
+        <system_prompt><![CDATA[full text]]></system_prompt></agent>
+      ...</agents></list_agents>
     Empty:
-      <list_sub_agent><profile>P</profile><empty/></list_sub_agent>
+      <list_agents><count>0</count></list_agents>
 
   String fields may be empty; optional numeric tags may be ABSENT (means
-  'inherits profile default') — absent tags render NO cells. api_key /
-  base_url NEVER appear on the wire and are never parsed or rendered here
-  (defense in depth: even an injected tag is ignored).
+  'inherits the default') — absent tags render NO cells. api_key / base_url
+  NEVER appear on the wire and are never parsed or rendered here (defense in
+  depth: even an injected tag is ignored).
 
   Header (always visible, via ToolCardHeader):
-    `list_sub_agent ✓` — primary "N subagents", right-meta "profile <name>"
-    `list_sub_agent ✓ (empty)` — primary "No subagents", right-meta
-      "profile <name>"
+    `list_agents ✓` — primary "N agents", right-meta "configured agents"
+    `list_agents ✓ (empty)` — primary "No agents"
 
   Expanded body (click header to toggle): per-row name (bold) +
   model/url_style muted meta + tuning grid (only tags present in the
@@ -51,10 +50,10 @@ interface ToolMessageLike {
   tool_name?: string
 }
 
-/**  * One parsed <sub_agent> row. `has*` flags record tag PRESENCE so the tuning grid renders only tags
- * present in the envelope (absent = 'inherits profile default', no empty cells). api_key / base_url
+/**  * One parsed <agent> row. `has*` flags record tag PRESENCE so the tuning grid renders only tags
+ * present in the envelope (absent = 'inherits the default', no empty cells). api_key / base_url
  * are deliberately absent — never parsed, never rendered. */
-interface SubAgentRow {
+interface AgentRow {
   name: string
   model: string
   urlStyle: string
@@ -69,14 +68,12 @@ interface SubAgentRow {
   systemPrompt: string
 }
 
-interface ParsedListSubAgent {
+interface ParsedListAgents {
   /** True when no `<error>` tag is present. */
   success: boolean
-  /** True when the backend returned `<empty/>` (or no rows parsed). */
+  /** True when the backend returned no agents. */
   isEmpty: boolean
-  /** Profile name, or 'unknown' when `<profile>` is absent. */
-  profile: string
-  rows: SubAgentRow[]
+  rows: AgentRow[]
   error: string | null
 }
 
@@ -86,36 +83,11 @@ const props = defineProps<{
 
 const isExpanded = ref(false)
 
-/** Envelope `<parameters>` for this tool message. `list_sub_agent` takes no input, so this is `{}`
+/**  * Envelope `<parameters>` for this tool message. `list_agents` takes no input, so this is `{}`
  * on the real wire and <ToolParameters> renders nothing (its hasArgs guard skips '' / '{}'). */
 const envelopeParams = computed(
   () => tryUnwrapToolOutput(props.message.content)?.parameters ?? '{}',
 )
-
-/**  * Inner `data` payload for this tool message. The dispatcher passes the raw tool message, whose
- * content is the full JSON envelope; we unwrap one level here so the component is self-contained. */
-function asRecord(v: unknown): Record<string, unknown> {
-  if (typeof v === 'string') {
-    try {
-      const p: unknown = JSON.parse(v)
-      return typeof p === 'object' && p !== null && !Array.isArray(p)
-        ? (p as Record<string, unknown>)
-        : {}
-    } catch {
-      return {}
-    }
-  }
-  return typeof v === 'object' && v !== null && !Array.isArray(v)
-    ? (v as Record<string, unknown>)
-    : {}
-}
-
-function strOrNull(v: unknown): string | null {
-  if (v === null || v === undefined) return null
-  if (typeof v === 'string') return v
-  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
-  return null
-}
 
 /**  * Unwrap the message content to the inner `data` record. Accepts the full JSON envelope string
  * (normal wire shape) or a bare data-object JSON string (defensive fallback for direct callers).
@@ -150,7 +122,30 @@ const innerError = computed((): string | null => {
   return u.error
 })
 
-function parseRow(item: unknown): SubAgentRow {
+function asRecord(v: unknown): Record<string, unknown> {
+  if (typeof v === 'string') {
+    try {
+      const p: unknown = JSON.parse(v)
+      return typeof p === 'object' && p !== null && !Array.isArray(p)
+        ? (p as Record<string, unknown>)
+        : {}
+    } catch {
+      return {}
+    }
+  }
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : {}
+}
+
+function strOrNull(v: unknown): string | null {
+  if (v === null || v === undefined) return null
+  if (typeof v === 'string') return v
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  return null
+}
+
+function parseRow(item: unknown): AgentRow {
   const r = asRecord(item)
   const maxCap = strOrNull(r.max_capacity_tokens)
   const compactPct = strOrNull(r.compaction_threshold_percent)
@@ -174,43 +169,33 @@ function parseRow(item: unknown): SubAgentRow {
   }
 }
 
-const parsed = computed((): ParsedListSubAgent => {
+const parsed = computed((): ParsedListAgents => {
   const inner = innerData.value
   const error = innerError.value ?? strOrNull(inner.error)
   if (error !== null) {
-    return {
-      success: false,
-      isEmpty: false,
-      profile: strOrNull(inner.profile) ?? 'unknown',
-      rows: [],
-      error,
-    }
+    return { success: false, isEmpty: false, rows: [], error }
   }
-  const profile = strOrNull(inner.profile) ?? 'unknown'
-  const rows: SubAgentRow[] = []
-  const raw = inner.sub_agents
+  const rows: AgentRow[] = []
+  const raw = inner.agents
   if (Array.isArray(raw)) {
     for (const item of raw) {
       const row = parseRow(item)
       if (row.name) rows.push(row)
     }
   }
-  if (rows.length === 0) {
-    return { success: true, isEmpty: true, profile, rows: [], error: null }
-  }
-  return { success: true, isEmpty: false, profile, rows, error: null }
+  return { success: true, isEmpty: rows.length === 0, rows, error: null }
 })
 
 const primaryLabel = computed((): string => {
   if (!parsed.value.success) return 'error'
-  if (parsed.value.isEmpty) return 'No subagents'
+  if (parsed.value.isEmpty) return 'No agents'
   const n = parsed.value.rows.length
-  return `${n} ${n === 1 ? 'subagent' : 'subagents'}`
+  return `${n} ${n === 1 ? 'agent' : 'agents'}`
 })
 
 const rightMeta = computed((): string => {
   if (!parsed.value.success) return parsed.value.error ?? 'error'
-  return `profile ${parsed.value.profile}`
+  return 'configured agents'
 })
 
 const expandable = computed(() => true)
@@ -224,10 +209,10 @@ const handleToggle = (next: boolean) => {
   <div
     class="chat-tool-card font-mono text-dense"
     :class="{ 'border-red-500/50 opacity-90': !parsed.success }"
-    data-testid="list-sub-agent"
+    data-testid="list-agents"
   >
     <ToolCardHeader
-      tool-name="list_sub_agent"
+      tool-name="list_agents"
       :primary="primaryLabel"
       :primary-title="primaryLabel"
       :success="parsed.success"
@@ -242,25 +227,25 @@ const handleToggle = (next: boolean) => {
     <div
       v-if="isExpanded"
       class="border-t border-[var(--color-border)] bg-black/[0.02]"
-      data-testid="list-sub-agent-body"
+      data-testid="list-agents-body"
     >
       <!-- Error body — always visible when expanded AND error. -->
       <div
         v-if="parsed.error"
         class="flex gap-2 px-2 py-1.5 text-red-500 text-dense"
-        data-testid="list-sub-agent-error"
+        data-testid="list-agents-error"
       >
         <span class="font-semibold shrink-0">Error:</span>
         <span class="whitespace-pre-wrap break-all">{{ parsed.error }}</span>
       </div>
 
-      <!-- Empty result (valid response, no subagents on this profile). -->
+      <!-- Empty result (valid response, no agents configured). -->
       <div
         v-else-if="parsed.isEmpty"
         class="px-3 py-3 text-center text-[var(--semantic-text-muted)] text-dense"
-        data-testid="list-sub-agent-empty"
+        data-testid="list-agents-empty"
       >
-        No subagents on profile {{ parsed.profile }}.
+        No agents configured.
       </div>
 
       <!-- Populated rows. -->
@@ -269,7 +254,7 @@ const handleToggle = (next: boolean) => {
           v-for="(row, idx) in parsed.rows"
           :key="idx"
           class="rounded border border-[var(--color-border)] px-2 py-1.5"
-          :data-testid="`list-sub-agent-row-${idx}`"
+          :data-testid="`list-agents-row-${idx}`"
         >
           <!-- Name (bold) + model/url_style muted meta. -->
           <div class="flex items-baseline gap-2 min-w-0">
@@ -298,11 +283,11 @@ const handleToggle = (next: boolean) => {
             >
           </div>
           <!-- FULL system_prompt in an expandable collapsible block. -->
-          <details class="mt-1" :data-testid="`list-sub-agent-prompt-${idx}`">
+          <details class="mt-1" :data-testid="`list-agents-prompt-${idx}`">
             <summary class="cursor-pointer text-[var(--color-violet)]">system_prompt</summary>
             <pre
               class="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[var(--semantic-text)]"
-              :data-testid="`list-sub-agent-prompt-body-${idx}`"
+              :data-testid="`list-agents-prompt-body-${idx}`"
               >{{ row.systemPrompt }}</pre>
           </details>
         </div>
@@ -310,7 +295,7 @@ const handleToggle = (next: boolean) => {
       <!--
         Envelope params: collapsed <details>, rendered only
         when non-empty (ToolParameters v-ifs on hasArgs). Today this
-        is always '{}' for list_sub_agent (no-input tool) so nothing shows.
+        is always '{}' for list_agents (no-input tool) so nothing shows.
       -->
       <ToolParameters :parameters="envelopeParams" />
     </div>
