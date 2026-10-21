@@ -115,6 +115,11 @@ jobs:
         with:
           version: ${{ env.ZIG_VERSION }}
 
+      - name: Build the guest agent
+        # The server serves this agent to a guest's bootstrap, so the workspace
+        # never carries one. Without it the guest falls back to its own disk.
+        run: zig build vm
+
       - name: Check the server's link dependencies
         # A self-hosted runner owns its own system packages, so this only
         # reports what is missing and names the install script rather than

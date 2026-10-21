@@ -8,6 +8,7 @@ const vm_client = @import("vm_client.zig");
 const egress_proxy = @import("egress_proxy.zig");
 const vmd_client = @import("vmd_client.zig");
 const daemon = @import("daemon.zig");
+const agent_service = @import("agent_service.zig");
 const policy = @import("policy.zig");
 const reconciler = @import("reconciler.zig");
 const rpc = @import("rpc.zig");
@@ -16,7 +17,7 @@ const usage =
     \\usage: pabrik-vmd <command> [options]
     \\
     \\  run     --workspace-id ID --base-image IMG --kernel K [--fc BIN] [-- <argv...>]
-    \\  serve   --socket PATH --base-image IMG --kernel K [--root DIR] [--allowed-uid N]
+    \\  serve   --socket PATH --base-image IMG --kernel K [--root DIR] [--allowed-uid N] [--agent BIN]
     \\  ping    --socket PATH
     \\  exec    --socket PATH --workspace-id ID [--cwd-rel R] [--timeout-ms N] -- <argv...>
     \\  status  --socket PATH --workspace-id ID
@@ -32,6 +33,8 @@ const usage =
     \\                       this workspace is derived from it
     \\  --base-image IMG     sealed base ext4 image, cloned per workspace
     \\  --kernel K           guest kernel (ELF vmlinux)
+    \\  --agent BIN          the agent served to a guest's bootstrap (the guest asks
+    \\                       for it at boot, so a disk never carries the agent)
     \\  --fc BIN             firecracker binary (default: firecracker from PATH)
     \\  --root DIR           VM root (default: $PABRIK_VM_DIR, else ~/.local/share/pabrik/vms)
     \\  --socket PATH        daemon socket (default: $PABRIK_VMD_SOCKET)
@@ -60,6 +63,7 @@ const Options = struct {
     workspace_id: []const u8 = "",
     base_image: []const u8 = "",
     kernel: []const u8 = "",
+    agent: []const u8 = "",
     fc_bin: []const u8 = "firecracker",
     root: []const u8 = "",
     socket: []const u8 = "",
@@ -128,6 +132,9 @@ fn parse(args: []const []const u8, options: *Options) void {
             i += 1;
         } else if (std.mem.eql(u8, arg, "--base-image")) {
             options.base_image = valueAt(args, i);
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--agent")) {
+            options.agent = valueAt(args, i);
             i += 1;
         } else if (std.mem.eql(u8, arg, "--kernel")) {
             options.kernel = valueAt(args, i);
@@ -306,6 +313,9 @@ fn run(init: std.process.Init, arena: std.mem.Allocator, options: *Options) !voi
         std.process.exit(1);
     };
     emit(2, "pabrik-vmd: vm up (pid={d}) disk={s}\n", .{ vm.pid, vm.layout.disk });
+    // The guest's bootstrap asks for the agent here; without a listener it
+    // falls back to the one on its own disk.
+    agent_service.ensure(arena, vm.layout, readAgentBytes(arena, options.agent));
 
     vm_client.waitReady(vm.layout, vm_client.boot_timeout_ms) catch |err| {
         const excerpt = vm_client.readSerialExcerpt(arena, vm.layout, 1024) catch "";
@@ -343,6 +353,12 @@ fn run(init: std.process.Init, arena: std.mem.Allocator, options: *Options) !voi
     if (result.code != 0) std.process.exit(1);
 }
 
+/// The agent the guest's bootstrap asks for, or none.
+fn readAgentBytes(arena: std.mem.Allocator, path: []const u8) []const u8 {
+    if (path.len == 0) return &.{};
+    return egress_proxy.readFileAlloc(arena, path, agent_service.max_agent_bytes) orelse &.{};
+}
+
 fn serve(init: std.process.Init, arena: std.mem.Allocator, options: *Options) !void {
     if (options.base_image.len == 0) fail("--base-image is required", .{});
     if (options.kernel.len == 0) fail("--kernel is required", .{});
@@ -362,6 +378,7 @@ fn serve(init: std.process.Init, arena: std.mem.Allocator, options: *Options) !v
         .allowed_uid = options.allowed_uid,
         .sweep_interval_ms = options.sweep_interval_ms,
         .backoff_base_ms = options.backoff_base_ms,
+        .agent_path = if (options.agent.len > 0) options.agent else null,
     }) catch |err| {
         emit(2, "pabrik-vmd: serve failed: {s}\n", .{@errorName(err)});
         std.process.exit(1);
@@ -576,6 +593,7 @@ test {
     _ = @import("reconciler.zig");
     _ = @import("rpc.zig");
     _ = @import("vmd_client.zig");
+    _ = @import("agent_service.zig");
     _ = @import("daemon.zig");
     _ = @import("vm_client.zig");
 }

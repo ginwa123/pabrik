@@ -1996,3 +1996,47 @@ recreate the VM") instead of passing `unknown request` through, and the daemon's
 |---|---|---|
 | the refusal says what to do | `vmd/vm_client.zig::refusalText` | unit: "unknown request" becomes the fix; any other reason keeps the guest's own words |
 | the daemon logs the reason | `vmd/daemon.zig::dispatchTty` | the log line carries the refusal, not just the error name |
+
+
+---
+
+## 38. The guest agent comes from the host, not from the workspace's disk
+
+§37 said what a stale agent costs: the workspace's disk froze the agent of its birth date, so a
+new guest action answered `unknown request` there, and the only fix was to rebuild the disk by
+hand. That is not a fix a user can be asked to do.
+
+So the disk stops carrying the agent. The image's `/init` is now a tiny **bootstrap**
+(`src/vm_agent/bootstrap.zig`): it dials the host over vsock, asks for the current
+`pabrik-vm-agent`, writes it to the disk and execs it. The host's half is `src/vmd/agent_service.zig`
+— the manager serves the agent it was built with, on a socket per workspace, and the server hands
+that agent to the manager (`--agent`, resolved beside the binary or from `PABRIK_VM_AGENT`).
+
+The agent is still in the image, at `/init.agent`: it is the bootstrap's fallback when the host does
+not answer, so a guest always starts. The workspace's files are never touched — the agent is
+written next to them, and only the agent changes.
+
+| item | where | proof |
+|---|---|---|
+| the guest asks the host for the agent and execs it | `vm_agent/bootstrap.zig` | the guest's console: "connected to the host", "the host has the agent", "wrote 13450040 bytes" |
+| the host serves it | `vmd/agent_service.zig` | the manager's log: "agent: serving … to every guest's bootstrap" |
+| the manager is told which agent | `vmd/bootstrap.zig`, `vmd/main.zig` (`--agent`), `boot/server_boot.zig` | the argv carries `--agent` beside the manager binary |
+| the image carries the bootstrap, not the agent | `scripts/build-guest-image.sh` | `/init` is the bootstrap, `/init.agent` the agent |
+
+**Proved end to end**: an image whose `/init.agent` was a stub that answers nothing (no terminal
+action at all) still opened a terminal — `201 {"backend":"guest-pty"}` — because the guest ran the
+agent the host served. With the stub on the disk, the same workspace on the old path answers
+`unknown request` and the terminal is refused.
+
+Four things the hand-off needed, each found the hard way:
+
+1. The listener must be bound **before** the VM boots: the guest's bootstrap dials the moment the
+   kernel starts, and the manager's request only returns once the guest is up.
+2. The socket lives in the workspace's directory, which the reconciler creates when it boots the
+   VM — so the directory is made first.
+3. The head is `OK <bytes>\n` and the bytes after it are the agent: the reply must be framed at
+   its first newline, or the length parse reads the agent's own bytes.
+4. The file must be **closed** before it is exec'd (a file still open for writing is `ETXTBSY`), and
+   the guest's `sockaddr_vm` must be the kernel's shape (`family u16`, `reserved u16`, `port u32`,
+   `cid u32`) — a `u32` family puts the port in the wrong field and every connect fails.
+

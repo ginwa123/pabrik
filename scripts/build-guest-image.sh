@@ -26,6 +26,7 @@ manifest="$repo_root/scripts/guest-image.manifest"
 out=""
 tier="base"
 agent_bin=""
+bootstrap_bin=""
 probe_bin=""
 probe_given=0
 netd_bin=""
@@ -214,6 +215,7 @@ while [ $# -gt 0 ]; do
     --out) out="$2"; shift 2 ;;
     --tier) tier="$2"; shift 2 ;;
     --agent) agent_bin="$2"; shift 2 ;;
+    --bootstrap) bootstrap_bin="$2"; shift 2 ;;
     --probe) probe_bin="$2"; probe_given=1; shift 2 ;;
     --netd) netd_bin="$2"; netd_given=1; shift 2 ;;
     --payload) payload="$2"; shift 2 ;;
@@ -232,6 +234,7 @@ case "$tier" in base|dev) ;; *) fail "--tier must be base or dev, not $tier" ;; 
 # directory is not ours: a relative --probe would name nothing inside it.
 abs() { case "$1" in /*) printf '%s\n' "$1" ;; *) printf '%s/%s\n' "$PWD" "$1" ;; esac; }
 [ -z "$agent_bin" ] || agent_bin="$(abs "$agent_bin")"
+[ -z "$bootstrap_bin" ] || bootstrap_bin="$(abs "$bootstrap_bin")"
 [ -z "$probe_bin" ] || probe_bin="$(abs "$probe_bin")"
 [ -z "$netd_bin" ] || netd_bin="$(abs "$netd_bin")"
 [ -z "$out" ] || out="$(abs "$out")"
@@ -269,6 +272,7 @@ fi
 
 [ -n "$out" ] || fail "--out IMG is required"
 [ -n "$agent_bin" ] || agent_bin="$repo_root/zig-out/bin/pabrik-vm-agent"
+[ -n "$bootstrap_bin" ] || bootstrap_bin="$repo_root/zig-out/bin/pabrik-vm-bootstrap"
 [ -n "$probe_bin" ] || probe_bin="$repo_root/zig-out/bin/pabrik-probe"
 [ -n "$netd_bin" ] || netd_bin="$repo_root/zig-out/bin/pabrik-vm-netd"
 [ "$netd_given" = 0 ] || [ -f "$netd_bin" ] || fail "no forwarder at $netd_bin"
@@ -279,6 +283,7 @@ command -v e2fsck >/dev/null || fail "e2fsck missing (e2fsprogs)"
 command -v sha256sum >/dev/null || fail "sha256sum missing"
 command -v curl >/dev/null || command -v wget >/dev/null || fail "curl or wget missing"
 [ -f "$agent_bin" ] || fail "no agent at $agent_bin - run 'zig build vm' first"
+[ -f "$bootstrap_bin" ] || fail "no bootstrap at $bootstrap_bin - run 'zig build vm' first"
 if [ "$tier" = dev ]; then
   command -v apk >/dev/null || fail "the dev tier installs its packages with apk-tools; run with --in-container"
   [ "$(id -u)" = 0 ] || fail "the dev tier needs root to set package ownership in the rootfs; run with --in-container"
@@ -335,8 +340,14 @@ if [ "${#packages[@]}" -gt 0 ]; then
 fi
 
 # ─── our own side ────────────────────────────────────────────────────────
-cp "$agent_bin" "$work/init"
+# /init is the BOOTSTRAP: it asks the host for the current agent and execs
+# it, so a workspace's disk never carries the agent (src/vm_agent/bootstrap.zig).
+# The agent itself stays on the disk as /init.agent — the bootstrap's fallback
+# when the host does not answer.
+cp "$bootstrap_bin" "$work/init"
 chmod +x "$work/init"
+cp "$agent_bin" "$work/init.agent"
+chmod +x "$work/init.agent"
 if [ -f "$netd_bin" ]; then
   mkdir -p "$work/usr/bin"
   cp "$netd_bin" "$work/usr/bin/pabrik-vm-netd"
