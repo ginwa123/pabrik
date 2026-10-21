@@ -33,6 +33,8 @@ pub const get_plan_tool = AgentTool{
         \\
         \\The plan is also re-injected into your system prompt every iteration, so calling `get_plan` is mostly for explicit verification: before flipping a `- [ ]` to `- [x]`, before your first `update_plan` after a session handoff, or after a compaction to check the injected copy.
         \\
+        \\Read it before `update_plan`'s text-replace mode so the `old_text` you pass matches the plan exactly.
+        \\
         \\The output is JSON, so the raw `<`, `>`, `&` inside the markdown body are preserved verbatim — the LLM sees its own plan back byte-for-byte.
         ,
         .parameters = .{

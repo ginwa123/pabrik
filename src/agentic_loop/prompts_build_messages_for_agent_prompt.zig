@@ -104,6 +104,12 @@ pub fn buildMessages(
             \\every iteration, so you always see the current state. Use `get_plan` to verify the
             \\current state explicitly.
             \\
+            \\`update_plan` has two modes: pass `content` to rewrite the whole plan, or `old_text` +
+            \\`new_text` to replace ONE snippet and leave the rest of the plan untouched. For a small
+            \\change (flip one checkbox, reword one step, update "Current Focus") use the text-replace
+            \\mode — a full rewrite means resending the whole document, and anything you forget to
+            \\resend is lost.
+            \\
         );
     }
     // The four "tools the agent must actually use" mandates: the special tool
@@ -1192,6 +1198,12 @@ const PROMPT_SECTIONS: []const PromptSection = &.{
         \\`- [ ]` → `- [x]`). The plan is automatically re-injected into your system prompt on
         \\every iteration, so you always see the current state. Use `get_plan` to verify the
         \\current state explicitly.
+        \\
+        \\`update_plan` has two modes: pass `content` to rewrite the whole plan, or `old_text` +
+        \\`new_text` to replace ONE snippet and leave the rest of the plan untouched. For a small
+        \\change (flip one checkbox, reword one step, update "Current Focus") use the text-replace
+        \\mode — a full rewrite means resending the whole document, and anything you forget to
+        \\resend is lost.
         \\
         ,
         .requires_tool = "update_plan",
