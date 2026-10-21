@@ -563,6 +563,13 @@ test "a path that is not a work tree is refused before the CLI runs" {
     var fx = try Fixture.init(a);
     defer fx.deinit();
 
+    // A directory under /tmp, not the fixture's own root: the fixture lives
+    // under the repository's .zig-cache, and git walks UP into the
+    // repository from there, so the fixture root IS a work tree.
+    const not_repo = try pr_status.makeNonRepoDir(a);
+    defer pr_status.removeNonRepoDir(a, not_repo);
+    if (pr_status.gitProbeIsEnvHijacked(a, not_repo)) return error.SkipZigTest;
+
     const sentinel = try std.fmt.allocPrint(a, "{s}/gh-was-run", .{fx.root()});
     defer a.free(sentinel);
     const gh = try fx.writeProgram("gh", .{ .touch_file = sentinel, .stdout = CONVERSATION_JSON });
@@ -570,10 +577,13 @@ test "a path that is not a work tree is refused before the CLI runs" {
 
     var detail: ?[]u8 = null;
     defer if (detail) |d| a.free(d);
-    try testing.expectError(
-        error.NotARepository,
-        useCaseWithPrograms(a, testing.io, .{ .gh = gh }, fx.root(), "", null, &detail),
-    );
+    if (useCaseWithPrograms(a, testing.io, .{ .gh = gh }, not_repo, "", null, &detail)) |res| {
+        freeConversation(a, res);
+        return error.GhWasSpawned;
+    } else |err| {
+        try testing.expectEqual(error.NotARepository, err);
+    }
+    // The sentinel proves the CLI never ran.
     try testing.expectError(error.FileNotFound, std.Io.Dir.cwd().access(testing.io, sentinel, .{}));
 }
 
