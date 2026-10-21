@@ -5,6 +5,8 @@ const gserverz = pabrikcore.gserverz;
 const sqlite = pabrikcore.sqlite;
 const auth_common = @import("auth_common.zig");
 const provisioning = @import("workspace_provisioning.zig");
+const workspace_vm = @import("../agentic_loop/workspace_vm.zig");
+const runtime_mode = @import("../runtime_mode.zig");
 
 pub const WorkspacesCreateError = error{
     OutOfMemory,
@@ -82,8 +84,12 @@ fn useCase(
     const name = root.get("name") orelse return error.MissingName;
     if (name != .string) return error.NameNotString;
 
+    // A workspace created by a `--saas` server is VM-backed; one created by a
+    // local server is not (Migration 115).
+    const is_vm = workspace_vm.creationIsVm(runtime_mode.currentMode());
+
     // Id generation, the `position = MAX + 1` formula, the paired
     // `workspace_members` grant and the attached default project all live in
     // workspace_provisioning.zig — the same code the automatic per-user
-    return provisioning.createWorkspaceRow(allocator, sqlite_db, io, name.string, owner, environment);
+    return provisioning.createWorkspaceRow(allocator, sqlite_db, io, name.string, owner, environment, is_vm);
 }

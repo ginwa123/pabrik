@@ -67,6 +67,16 @@ describe('workspacesCache', () => {
     expect(cached?.[0]?.items).toEqual([])
   })
 
+  it('keeps the VM flag across the round-trip', () => {
+    writeWorkspacesCache([
+      { id: 'ws_1', name: 'One', icon: '📁', items: [], expanded: false, is_vm: true } as never,
+      { id: 'ws_2', name: 'Two', icon: '📁', items: [], expanded: false, is_vm: false } as never,
+    ])
+    const cached = readWorkspacesCache()
+    expect(cached?.[0]?.is_vm).toBe(true)
+    expect(cached?.[1]?.is_vm).toBe(false)
+  })
+
   it('clear drops the entry', () => {
     writeWorkspacesCache([ws('ws_1', 'One')])
     expect(readWorkspacesCache()).not.toBeNull()

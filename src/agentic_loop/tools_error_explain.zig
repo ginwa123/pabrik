@@ -716,6 +716,10 @@ pub fn explain(allocator: std.mem.Allocator, err: anyerror, context: ?[]const u8
             u8,
             "`pabrik-vmd`, the process that owns the workspace VMs, is not reachable. Start it (`pabrik-vmd serve`), or point PABRIK_VMD_SOCKET at its socket, then retry. Nothing was run on the host.",
         ),
+        error.GuestWorkspaceNotVm => try allocator.dupe(
+            u8,
+            "This workspace is not a VM workspace, so it has no microVM to run in — and SaaS mode never runs a workspace on the host. Create the workspace from a SaaS-mode server, or report the blocker.",
+        ),
         error.GuestManagerRefused => try allocator.dupe(
             u8,
             "The workspace VM manager refused the command (the VM failed to start, or the workspace is unavailable). Read `pabrik-vmd`'s log for the cause — the retry to try is a fresh `pabrik-vmd stop`/re-run, not the identical call.",

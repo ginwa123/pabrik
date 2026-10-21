@@ -75,6 +75,10 @@ export interface Workspace {
   // is_include_items=false), so count badges don't depend on whether
   // this workspace's items have been lazily loaded yet.
   items_count?: number
+  // Whether the workspace's work runs in a microVM on this server. False on
+  // a local server (no Firecracker at all), true for the VM-backed workspaces
+  // of a `--saas` server.
+  is_vm?: boolean
   expanded: boolean
 }
 

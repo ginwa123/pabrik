@@ -162,6 +162,10 @@ export interface Workspace {
   // when `is_include_items=false` (items stay `[]` until lazily
   // loaded) — keeps count badges truthful for unvisited workspaces.
   items_count?: number
+  // Whether the workspace's work runs in a microVM on this server. False on
+  // a local server (no Firecracker at all), true for the VM-backed workspaces
+  // of a `--saas` server.
+  is_vm?: boolean
   expanded: boolean
 }
 

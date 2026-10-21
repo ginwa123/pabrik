@@ -7,6 +7,7 @@ const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
 const runtime_mode = @import("../runtime_mode.zig");
 const workspace_scope = @import("workspace_scope.zig");
+const workspace_vm = @import("workspace_vm.zig");
 const vmd = @import("../vmd/vmd_client.zig");
 const proxy_rpc = @import("../vmd/proxy_rpc.zig");
 const policy = @import("../vmd/policy.zig");
@@ -15,6 +16,8 @@ const git_hardening = @import("helpers").git_hardening;
 
 pub const Error = error{
     GuestWorkspaceUnknown,
+    /// The workspace is not VM-backed: no Firecracker, no host fallback.
+    GuestWorkspaceNotVm,
     GuestPathOutsideWorkspace,
     GuestManagerUnavailable,
     GuestManagerRefused,
@@ -390,6 +393,7 @@ pub fn forSession(
     const workspace_id = (try workspace_scope.resolveWorkspaceId(allocator, db, session_id)) orelse
         return Error.GuestWorkspaceUnknown;
     errdefer allocator.free(workspace_id);
+    if (!workspace_vm.isVmWorkspace(allocator, db, workspace_id)) return Error.GuestWorkspaceNotVm;
     const root = (try workspace_scope.resolveWorkspaceRoot(allocator, db, session_id)) orelse
         return Error.GuestWorkspaceUnknown;
     errdefer allocator.free(root);
@@ -404,11 +408,12 @@ pub fn forSession(
     };
 }
 
-pub fn forWorkspace(allocator: std.mem.Allocator, workspace_id: []const u8) !Fs {
+pub fn forWorkspace(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, workspace_id: []const u8) !Fs {
     if (!policy.workspaceIdValid(workspace_id)) return Error.GuestWorkspaceUnknown;
     if (substrate(runtime_mode.currentMode(), runtime_mode.vm_backend_available) != .guest) {
         return Error.GuestManagerUnavailable;
     }
+    if (!workspace_vm.isVmWorkspace(allocator, db, workspace_id)) return Error.GuestWorkspaceNotVm;
     const socket = runtime_mode.socketPath() orelse return Error.GuestManagerUnavailable;
     return .{
         .allocator = allocator,
@@ -436,11 +441,9 @@ pub fn forPath(
     const database = db orelse return Error.GuestWorkspaceUnknown;
     const match = (try workspace_scope.resolveWorkspaceForPath(allocator, database, abs_path)) orelse
         return Error.GuestWorkspaceUnknown;
-    const socket = runtime_mode.socketPath() orelse {
-        var owned = match;
-        owned.deinit(allocator);
-        return Error.GuestManagerUnavailable;
-    };
+    errdefer match.deinit(allocator);
+    if (!workspace_vm.isVmWorkspace(allocator, database, match.workspace_id)) return Error.GuestWorkspaceNotVm;
+    const socket = runtime_mode.socketPath() orelse return Error.GuestManagerUnavailable;
     const socket_copy = try allocator.dupe(u8, socket);
     return .{
         .allocator = allocator,
@@ -505,12 +508,14 @@ pub fn routeForPath(
 /// exactly like every other guest call here.
 pub fn previewExchange(
     allocator: std.mem.Allocator,
+    db: *sqlite.SqliteBackend,
     workspace_id: []const u8,
     port: u16,
     request_bytes: []const u8,
 ) !proxy_rpc.Reply {
     if (!runtime_mode.vm_backend_available) return Error.GuestManagerUnavailable;
     if (runtime_mode.currentMode() != .saas) return Error.GuestManagerUnavailable;
+    if (!workspace_vm.isVmWorkspace(allocator, db, workspace_id)) return Error.GuestWorkspaceNotVm;
     const socket = runtime_mode.socketPath() orelse return Error.GuestManagerUnavailable;
     return proxy_rpc.exchange(allocator, socket, workspace_id, port, request_bytes);
 }
@@ -573,6 +578,15 @@ fn guestTestCtx() !GuestTestCtx {
         \\INSERT INTO sessions (id, name, status, cwd) VALUES ('s1','Task one','active','/proj/a')
     , &.{});
 
+    // Migration 115: which workspaces are VM-backed. `w1` is (it belongs to
+    // the session above), `w_host` is not.
+    try db.exec(testing.allocator,
+        \\CREATE TABLE workspaces (id TEXT PRIMARY KEY, is_vm INTEGER NOT NULL DEFAULT 0)
+    , &.{});
+    try db.exec(testing.allocator,
+        \\INSERT INTO workspaces (id, is_vm) VALUES ('w1', 1), ('w_host', 0)
+    , &.{});
+
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -610,12 +624,15 @@ test "forWorkspace: a workspace id alone builds the guest fs, and its paths are 
     runtime_mode.setManagerSocket("/run/user/1000/pabrik-vmd.sock");
     defer runtime_mode.setManagerSocket(null);
 
+    var ctx = try guestTestCtx();
+    defer ctx.deinit();
+
     if (!runtime_mode.vm_backend_available) {
-        try testing.expectError(Error.GuestManagerUnavailable, forWorkspace(a, "ws_1"));
+        try testing.expectError(Error.GuestManagerUnavailable, forWorkspace(a, &ctx.db, "ws_1"));
         return;
     }
 
-    var fs = try forWorkspace(a, "ws_1");
+    var fs = try forWorkspace(a, &ctx.db, "ws_1");
     defer fs.deinit();
     try testing.expect(fs.guest_paths);
     try testing.expectEqualStrings("ws_1", fs.workspace_id);
@@ -629,11 +646,35 @@ test "forWorkspace: a workspace id alone builds the guest fs, and its paths are 
 test "forWorkspace: an id that is not inert is refused before any socket is asked" {
     runtime_mode.setCurrent(.saas);
     defer runtime_mode.setCurrent(.local);
-    try testing.expectError(Error.GuestWorkspaceUnknown, forWorkspace(testing.allocator, "../../etc"));
+    var ctx = try guestTestCtx();
+    defer ctx.deinit();
+    try testing.expectError(Error.GuestWorkspaceUnknown, forWorkspace(testing.allocator, &ctx.db, "../../etc"));
+}
+
+test "forWorkspace: a workspace that is not VM-backed gets no Firecracker" {
+    const a = testing.allocator;
+    runtime_mode.setCurrent(.saas);
+    defer runtime_mode.setCurrent(.local);
+    runtime_mode.setManagerSocket("/run/user/1000/pabrik-vmd.sock");
+    defer runtime_mode.setManagerSocket(null);
+
+    var ctx = try guestTestCtx();
+    defer ctx.deinit();
+
+    // The refusal comes BEFORE the manager is asked, so no VM is spawned for
+    // a workspace that has none.
+    try testing.expectError(Error.GuestWorkspaceNotVm, forWorkspace(a, &ctx.db, "w_host"));
+
+    if (!runtime_mode.vm_backend_available) return;
+    var fs = try forWorkspace(a, &ctx.db, "w1");
+    defer fs.deinit();
+    try testing.expectEqualStrings("w1", fs.workspace_id);
 }
 
 test "forWorkspace: local mode has no guest to hand out" {
-    try testing.expectError(Error.GuestManagerUnavailable, forWorkspace(testing.allocator, "ws_1"));
+    var ctx = try guestTestCtx();
+    defer ctx.deinit();
+    try testing.expectError(Error.GuestManagerUnavailable, forWorkspace(testing.allocator, &ctx.db, "ws_1"));
 }
 
 test "hostPath: a --saas caller is answered in the guest's vocabulary" {

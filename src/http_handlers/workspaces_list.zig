@@ -4,6 +4,8 @@ const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
 const sqlite = pabrikcore.sqlite;
 const auth_common = @import("auth_common.zig");
+const workspace_vm = @import("../agentic_loop/workspace_vm.zig");
+const runtime_mode = @import("../runtime_mode.zig");
 
 pub const WorkspaceWithItemsResponse = struct {
     id: []const u8,
@@ -17,6 +19,9 @@ pub const WorkspaceWithItemsResponse = struct {
     /// regardless of `is_include_items` (one GROUP BY query, no N+1)
     /// so a badge can render before/without the lazy items fetch.
     items_count: usize = 0,
+    /// Whether this workspace runs in a microVM on THIS server (Migration
+    /// 115). False on a local server, which has no Firecracker at all.
+    is_vm: bool = false,
 };
 
 pub const WorkspaceItemWithTasksResponse = struct {
@@ -61,7 +66,7 @@ pub fn workspacesListHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReques
     };
     defer allocator.free(owner);
 
-    const response = useCase(allocator, sqlite_db, is_include_items, owner) catch |err| {
+    const response = useCase(allocator, sqlite_db, is_include_items, owner, runtime_mode.currentMode()) catch |err| {
         const message: []const u8 = switch (err) {
             error.DatabaseError => "Failed to fetch workspaces",
             error.OutOfMemory => "Out of memory",
@@ -75,18 +80,18 @@ pub fn workspacesListHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReques
     return res.jsonResponse(.{ .status_code = 200, .data = try std.json.Stringify.valueAlloc(allocator, response, .{}) });
 }
 
-fn useCase(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, include_items: bool, owner: []const u8) WorkspacesListError!WorkspacesListResponse {
-    return fetchWorkspacesList(alloc, db, include_items, owner) catch |err| {
+fn useCase(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, include_items: bool, owner: []const u8, mode: runtime_mode.Mode) WorkspacesListError!WorkspacesListResponse {
+    return fetchWorkspacesList(alloc, db, include_items, owner, mode) catch |err| {
         std.log.err("Failed to fetch workspaces: {s}", .{@errorName(err)});
         return error.DatabaseError;
     };
 }
 
-fn fetchWorkspacesList(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, include_items: bool, owner: []const u8) !WorkspacesListResponse {
+fn fetchWorkspacesList(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, include_items: bool, owner: []const u8, mode: runtime_mode.Mode) !WorkspacesListResponse {
     // Fetch the workspaces this request may see first.
     var rows = try db.query(
         alloc,
-        "SELECT id, name, created_at, updated_at FROM workspaces WHERE " ++ comptime auth_common.workspaceVisibilityClause("workspaces") ++ " ORDER BY position DESC, created_at DESC",
+        "SELECT id, name, created_at, updated_at, is_vm FROM workspaces WHERE " ++ comptime auth_common.workspaceVisibilityClause("workspaces") ++ " ORDER BY position DESC, created_at DESC",
         &[_][]const u8{ owner, owner },
     );
     defer rows.deinit();
@@ -99,6 +104,7 @@ fn fetchWorkspacesList(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, incl
         name: []const u8,
         created_at: ?[]const u8,
         updated_at: ?[]const u8,
+        is_vm: bool,
     }).empty;
     defer workspaces_data.deinit(alloc);
 
@@ -113,6 +119,9 @@ fn fetchWorkspacesList(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, incl
             .name = try alloc.dupe(u8, row.values[1]),
             .created_at = if (row.values[2].len > 0) try alloc.dupe(u8, row.values[2]) else null,
             .updated_at = if (row.values[3].len > 0) try alloc.dupe(u8, row.values[3]) else null,
+            // The stored flag says the workspace was created by a saas server;
+            // the mode says whether there is a Firecracker here to run it in.
+            .is_vm = workspace_vm.runsInVm(mode, row.values[4].len > 0 and row.values[4][0] == '1'),
         });
         // Values are duped above; row memory is owned by the row.
         row.deinit(alloc);
@@ -277,6 +286,7 @@ fn fetchWorkspacesList(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, incl
                 .items = try workspace_items.toOwnedSlice(alloc),
                 .expanded = false,
                 .items_count = items_count_by_ws.get(ws.id) orelse 0,
+                .is_vm = ws.is_vm,
             });
         }
     } else {
@@ -291,6 +301,7 @@ fn fetchWorkspacesList(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, incl
                 .items = &[_]WorkspaceItemWithTasksResponse{},
                 .expanded = false,
                 .items_count = items_count_by_ws.get(ws.id) orelse 0,
+                .is_vm = ws.is_vm,
             });
         }
     }
@@ -327,7 +338,8 @@ fn setupDb() !TestCtx {
         \\  created_at DATETIME,
         \\  updated_at DATETIME,
         \\  position INTEGER,
-        \\  user_id TEXT
+        \\  user_id TEXT,
+        \\  is_vm INTEGER NOT NULL DEFAULT 0
         \\)
     , &.{});
     // Migration 100 moved visibility onto this join table, so the fixture
@@ -407,7 +419,7 @@ test "fetchWorkspacesList: items_count is populated even when items are skipped"
     defer teardown(&ctx);
     const alloc = testing.allocator;
 
-    const response = try fetchWorkspacesList(alloc, &ctx.db, false, auth_common.system_user_id);
+    const response = try fetchWorkspacesList(alloc, &ctx.db, false, auth_common.system_user_id, .local);
     defer freeResponse(response);
 
     try testing.expectEqual(@as(usize, 3), response.workspaces.len);
@@ -453,7 +465,7 @@ test "fetchWorkspacesList: another user's workspace is invisible; the shared leg
 
     // user_a sees the 3 legacy rows + the sentinel row — never ws_b.
     {
-        const response = try fetchWorkspacesList(alloc, &ctx.db, false, "user_a");
+        const response = try fetchWorkspacesList(alloc, &ctx.db, false, "user_a", .local);
         defer freeResponse(response);
         try testing.expectEqual(@as(usize, 4), response.workspaces.len);
         for (response.workspaces) |ws| {
@@ -465,7 +477,7 @@ test "fetchWorkspacesList: another user's workspace is invisible; the shared leg
     // the sentinel) — that is the whole point of the shared-bucket rule, so
     // the isolation claim is "A cannot see B's row", not "B sees only one".
     {
-        const response = try fetchWorkspacesList(alloc, &ctx.db, false, "user_b");
+        const response = try fetchWorkspacesList(alloc, &ctx.db, false, "user_b", .local);
         defer freeResponse(response);
         try testing.expectEqual(@as(usize, 5), response.workspaces.len);
         var saw_own = false;
@@ -479,7 +491,7 @@ test "fetchWorkspacesList: another user's workspace is invisible; the shared leg
     // off there is no identity and the system user IS the installation, so a
     // real user's row is visible here. ws_b must appear.
     {
-        const response = try fetchWorkspacesList(alloc, &ctx.db, false, auth_common.system_user_id);
+        const response = try fetchWorkspacesList(alloc, &ctx.db, false, auth_common.system_user_id, .local);
         defer freeResponse(response);
         try testing.expectEqual(@as(usize, 5), response.workspaces.len);
         var saw_ws_b = false;
@@ -503,7 +515,7 @@ test "fetchWorkspacesList: a second member sees a shared workspace it was not cr
 
     const seesPrivate = struct {
         fn run(a: std.mem.Allocator, c: *TestCtx, owner: []const u8) !bool {
-            const response = try fetchWorkspacesList(a, &c.db, false, owner);
+            const response = try fetchWorkspacesList(a, &c.db, false, owner, .local);
             defer freeResponse(response);
             for (response.workspaces) |ws| {
                 if (std.mem.eql(u8, ws.id, "ws_p")) return true;
@@ -547,7 +559,7 @@ test "fetchWorkspacesList: a private workspace stays private even when a sibling
         \\  ('ws_a_open', 'user_d', 'viewer')
     , &.{});
 
-    const response = try fetchWorkspacesList(alloc, &ctx.db, false, "user_d");
+    const response = try fetchWorkspacesList(alloc, &ctx.db, false, "user_d", .local);
     defer freeResponse(response);
 
     var saw_shared = false;
@@ -556,4 +568,35 @@ test "fetchWorkspacesList: a private workspace stays private even when a sibling
         if (std.mem.eql(u8, ws.id, "ws_a_open")) saw_shared = true;
     }
     try testing.expect(saw_shared);
+}
+
+test "fetchWorkspacesList: only a saas server reports a VM-backed workspace as one" {
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+    const alloc = testing.allocator;
+
+    // ws_1 was created by a saas server; ws_2 was not.
+    try ctx.db.exec(alloc, "UPDATE workspaces SET is_vm = 1 WHERE id = 'ws_1'", &.{});
+
+    {
+        const response = try fetchWorkspacesList(alloc, &ctx.db, false, auth_common.system_user_id, .saas);
+        defer freeResponse(response);
+        for (response.workspaces) |ws| {
+            if (std.mem.eql(u8, ws.id, "ws_1")) {
+                try testing.expect(ws.is_vm);
+            } else {
+                try testing.expect(!ws.is_vm);
+            }
+        }
+    }
+
+    {
+        // A local server has no Firecracker, so no workspace runs in a VM on
+        // it — not even the one the row marks.
+        const response = try fetchWorkspacesList(alloc, &ctx.db, false, auth_common.system_user_id, .local);
+        defer freeResponse(response);
+        for (response.workspaces) |ws| {
+            try testing.expect(!ws.is_vm);
+        }
+    }
 }
