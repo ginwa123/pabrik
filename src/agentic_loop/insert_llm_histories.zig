@@ -151,7 +151,10 @@ pub fn inserLLMHistories(
 
     const copy_session_id = try allocator.dupe(u8, input.session_id);
     defer allocator.free(copy_session_id);
-    const copy_model = try allocator.dupe(u8, input.model);
+    // The GUARDED model, not the raw one: a blank model reaches the
+    // `llm_history_ai_model_not_empty` backstop, whose repair UPDATE aborts
+    // the INSERT instead of repairing it (see migration 101).
+    const copy_model = try allocator.dupe(u8, model);
     defer allocator.free(copy_model);
     const copy_content = try allocator.dupe(u8, effective_content);
     defer allocator.free(copy_content);
@@ -291,6 +294,174 @@ pub fn inserLLMHistories(
     }
 
     return allocator.dupe(u8, id);
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────
+
+const testing = std.testing;
+
+/// A replica of the history table's FTS5 mirror, the triggers that keep it
+/// in sync, and the backstop that repairs a blank model with an UPDATE —
+/// which re-enters the mirror, so FTS5 refuses it.
+fn setupHistoryDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+    const alloc = testing.allocator;
+    var threaded = std.Io.Threaded.init(alloc, .{});
+    errdefer threaded.deinit();
+    const io = threaded.io();
+    var db: sqlite.SqliteBackend = .{};
+    errdefer db.deinit();
+    try db.init(io, ":memory:");
+    try db.exec(alloc,
+        \\CREATE TABLE llm_history (
+        \\    id TEXT PRIMARY KEY,
+        \\    session_id TEXT NOT NULL,
+        \\    model TEXT NOT NULL,
+        \\    response_content TEXT,
+        \\    tool_calls_json TEXT,
+        \\    finish_reason TEXT,
+        \\    role TEXT,
+        \\    tool_call_id TEXT,
+        \\    reasoning_content TEXT,
+        \\    reasoning_id TEXT,
+        \\    reasoning_encrypted_content TEXT,
+        \\    is_feed_to_llm INTEGER DEFAULT 1,
+        \\    agent TEXT,
+        \\    loop_index INTEGER DEFAULT 0,
+        \\    temperature REAL DEFAULT 0.2,
+        \\    is_thinking INTEGER DEFAULT 0,
+        \\    created_at_nano TEXT,
+        \\    created_iso TEXT,
+        \\    parent_session_id TEXT,
+        \\    parent_id TEXT,
+        \\    prompt_tokens INTEGER DEFAULT 0,
+        \\    completion_tokens INTEGER DEFAULT 0,
+        \\    total_tokens INTEGER DEFAULT 0,
+        \\    cache_creation_input_tokens INTEGER DEFAULT 0,
+        \\    cache_read_input_tokens INTEGER DEFAULT 0,
+        \\    is_input INTEGER DEFAULT 0,
+        \\    is_output INTEGER DEFAULT 0,
+        \\    tool_name TEXT,
+        \\    diffview_before TEXT,
+        \\    diffview_after TEXT,
+        \\    image_url TEXT,
+        \\    video_url TEXT,
+        \\    file_attachments TEXT,
+        \\    file_attachments_meta TEXT
+        \\)
+    , &.{});
+    try db.exec(alloc,
+        \\CREATE TABLE sessions (
+        \\    id TEXT PRIMARY KEY,
+        \\    name TEXT,
+        \\    cwd TEXT,
+        \\    updated_at TEXT
+        \\)
+    , &.{});
+    try db.exec(alloc,
+        \\CREATE VIRTUAL TABLE messages_fts USING fts5(
+        \\    content,
+        \\    tokenize='porter unicode61 remove_diacritics 2'
+        \\)
+    , &.{});
+    try db.exec(alloc,
+        \\CREATE TRIGGER llm_history_ai AFTER INSERT ON llm_history BEGIN
+        \\  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, COALESCE(new.response_content, ''));
+        \\END
+    , &.{});
+    try db.exec(alloc,
+        \\CREATE TRIGGER llm_history_ad AFTER DELETE ON llm_history BEGIN
+        \\  DELETE FROM messages_fts WHERE rowid = old.rowid;
+        \\END
+    , &.{});
+    try db.exec(alloc,
+        \\CREATE TRIGGER llm_history_au AFTER UPDATE ON llm_history BEGIN
+        \\  DELETE FROM messages_fts WHERE rowid = old.rowid;
+        \\  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, COALESCE(new.response_content, ''));
+        \\END
+    , &.{});
+    try db.exec(alloc,
+        \\CREATE TRIGGER llm_history_ai_model_not_empty
+        \\AFTER INSERT ON llm_history
+        \\FOR EACH ROW WHEN NEW.model IS NULL OR TRIM(NEW.model) = ''
+        \\BEGIN
+        \\  UPDATE llm_history SET model = 'unknown' WHERE id = NEW.id;
+        \\END
+    , &.{});
+    return .{ .db = db, .threaded = threaded };
+}
+
+test "a history row for a session with no model is written, and its model is never empty" {
+    var s = try setupHistoryDb();
+    defer s.db.deinit();
+    defer s.threaded.deinit();
+
+    const id = try inserLLMHistories(.{
+        .allocator = testing.allocator,
+        .io = s.threaded.io(),
+        .db = &s.db,
+        .logger = null,
+        .event_bus = null,
+        .is_emit_sse = false,
+        .cwd = "/tmp",
+        .entity = .{
+            .id = "entity-id",
+            .session_id = "session-without-a-model",
+            .model = "",
+            .created_at = "1",
+            .response_content = "hello",
+            .finish_reason = "null",
+            .role = "user",
+            .tool_calls_json = "",
+        },
+    });
+    defer testing.allocator.free(id);
+
+    var q = try s.db.query(
+        testing.allocator,
+        "SELECT model FROM llm_history WHERE id = ?",
+        &.{id},
+    );
+    defer q.deinit();
+    const row = (try q.next()) orelse return error.HistoryRowMissing;
+    defer row.deinit(testing.allocator);
+    try testing.expect(row.values[0].len > 0);
+}
+
+test "a history row for a session with a model keeps that model" {
+    var s = try setupHistoryDb();
+    defer s.db.deinit();
+    defer s.threaded.deinit();
+
+    const id = try inserLLMHistories(.{
+        .allocator = testing.allocator,
+        .io = s.threaded.io(),
+        .db = &s.db,
+        .logger = null,
+        .event_bus = null,
+        .is_emit_sse = false,
+        .cwd = "/tmp",
+        .entity = .{
+            .id = "entity-id",
+            .session_id = "session-with-a-model",
+            .model = "minimax-m3.1-flash-free",
+            .created_at = "1",
+            .response_content = "hello",
+            .finish_reason = "null",
+            .role = "user",
+            .tool_calls_json = "",
+        },
+    });
+    defer testing.allocator.free(id);
+
+    var q = try s.db.query(
+        testing.allocator,
+        "SELECT model FROM llm_history WHERE id = ?",
+        &.{id},
+    );
+    defer q.deinit();
+    const row = (try q.next()) orelse return error.HistoryRowMissing;
+    defer row.deinit(testing.allocator);
+    try testing.expectEqualStrings("minimax-m3.1-flash-free", row.values[0]);
 }
 
 /// Get all skills loaded for a session
