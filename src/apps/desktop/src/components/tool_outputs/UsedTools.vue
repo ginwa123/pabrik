@@ -14,7 +14,7 @@
       {"tool":"used_tools","parameters":{},"success":false,
        "data":null,"error":"used_tools failed: …","v":1}
 
-  Self-contained `:message="msg"` idiom (same as GetPlan.vue / ListSubAgent.vue /
+  Self-contained `:message="msg"` idiom (same as GetPlan.vue / ListAgents.vue /
   UpdatePlan.vue): `used_tools` declares zero input parameters, so there is no
   `<parameters>` block worth threading and no `expanded` state worth sharing with
   the dispatcher. The component unwraps the envelope itself.

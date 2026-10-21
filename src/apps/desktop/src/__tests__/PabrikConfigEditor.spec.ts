@@ -63,9 +63,9 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     expect(wrapper.find('[data-testid="skill-evals-section"]').exists()).toBe(true)
   })
 
-  it('never mounts a global SubAgentsSection (the agent list is the only editor)', async () => {
+  it('never mounts a separate sub-agents section (the agent list is the only editor)', async () => {
     // Plan 2026-09-04-subagents-per-profile regression: the global
-    // `subAgentsList` + `SubAgentsSection` mount are gone. Even with a
+    // `subAgentsList` + the sub-agents section mount are gone. Even with a
     // legacy top-level `sub_agents` payload, no global list renders.
     mockGet.mockResolvedValueOnce({
       profiles: { work: { model: 'm' } },

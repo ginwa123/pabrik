@@ -12,7 +12,7 @@ import org.junit.Test
  *
  * Every payload here is shaped like one the backend actually emits, taken from
  * the per-tool builders. The field names that look wrong in isolation —
- * `file_write` for a write path, `sub_agents` for an agent list, a *number* for
+ * `file_write` for a write path, `agents` for an agent list, a *number* for
  * `glob`'s `truncated` — are the ones a client guesses wrongly, so they are
  * the ones asserted.
  */
@@ -375,21 +375,20 @@ class ToolCardModelTest {
         assertEquals("a", body.answer)
     }
 
-    // ─── sub-agents ─────────────────────────────────────────────────────────
+    // ─── agents ─────────────────────────────────────────────────────────────
 
-    /** The key is `sub_agents`, not `agents`. */
+    /** The key is `agents` — the tool lists the configured agents. */
     @Test
-    fun `list_sub_agent reads sub_agents`() {
+    fun `list_agents reads agents`() {
         val body = ToolCard.from(
             toolRow(
-                "list_sub_agent",
-                """{"profile":"space bunny free","count":1,"sub_agents":[
+                "list_agents",
+                """{"count":1,"agents":[
                    {"name":"explorer","model":"gpt","url_style":"openai",
                    "thinking":"auto","temperature":"auto","system_prompt":"x"}]}""",
             ),
-        ).body as ToolBody.SubAgentCatalog
+        ).body as ToolBody.AgentCatalog
 
-        assertEquals("space bunny free", body.profile)
         assertEquals(1, body.count)
         assertEquals("explorer", body.agents[0].name)
     }
@@ -830,7 +829,7 @@ class ToolCardModelTest {
         val names = listOf(
             "read_file", "write_file", "bash", "pwsh", "run_command", "command",
             "search", "glob", "list_directory", "text_replace", "update_plan",
-            "get_plan", "ask_user", "spawn_sub_agent", "list_sub_agent",
+            "get_plan", "ask_user", "spawn_sub_agent", "list_agents",
             "save_memory", "load_memory", "list_memory", "search_skills",
             "use_skill", "add_skill", "edit_skill", "remove_skill",
             "kanban_move_task", "kanban_list", "present_files", "generate_image",
