@@ -57,6 +57,15 @@ describe('ConversationPanel', () => {
     getPrConversationMock.mockResolvedValue(CONVERSATION)
   })
 
+  it('names its own foreground, so a thread never inherits the host ambient colour', async () => {
+    const wrapper = await mountPanel()
+    // A forge's body is prose. Prose that inherits the host's colour inherits the browser's
+    // default black, which is invisible on the dark theme — the panel states the theme's
+    // foreground itself, the way the kanban card does.
+    const style = wrapper.get('[data-testid="pr-conversation-panel"]').attributes('style') ?? ''
+    expect(style).toContain('color: var(--semantic-text)')
+  })
+
   it('renders the request body as markdown', async () => {
     const wrapper = await mountPanel()
     const body = wrapper.get('[data-testid="conversation-body"]')
