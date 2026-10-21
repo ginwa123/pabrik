@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import AppLayout from '../components/AppLayout.vue'
 import LoginView from '../views/LoginView.vue'
 import { getAuthMeCached } from '../helpers/authMe'
@@ -56,21 +56,17 @@ const router = createRouter({
       name: 'project-chat',
       component: AppLayout,
     },
-    // Kanban add-task page. Registered before `/projects/:projectId` — vue-router matches in order,
-    // so the longer path is the one that decides.
-    {
-      path: '/app/:workspaceId/projects/:projectId/add',
-      name: 'project-add',
-      component: AppLayout,
-    },
     // Project (kanban) settings page. The workspace rides in the path, so the URL names it.
     {
       path: '/app/:workspaceId/projects/:projectId/settings',
       name: 'project-settings',
       component: AppLayout,
     },
+    // The board and its add-task page (`/add`) are ONE record on purpose: vue-router runs
+    // `onBeforeRouteUpdate` only for the records in BOTH the from- and the to-route, so as two
+    // records no guard ever saw the move between them (browser Back left the add page on screen).
     {
-      path: '/app/:workspaceId/projects/:projectId',
+      path: '/app/:workspaceId/projects/:projectId/:add(add)?',
       name: 'project',
       component: AppLayout,
     },
@@ -108,6 +104,9 @@ const router = createRouter({
     },
   ],
 })
+
+/** The app's route table, exported so a test can mount the REAL paths (not a copy of them). */
+export const appRoutes: readonly RouteRecordRaw[] = router.options.routes
 
 // Auth guard: when the backend runs with `--auth`, every `/app*` view requires a valid
 // `pabrik_session` cookie. Anonymous visits redirect to `/login?redirect=<target>` (router.replace,
