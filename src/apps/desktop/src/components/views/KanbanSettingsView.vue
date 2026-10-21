@@ -4,9 +4,10 @@
   used to pop up when the user clicked the board header's Settings
   button).
 
-  URL: /app/kanban/:itemId/settings (path-based vue-router route).
-  The page reads itemId from route.params and derives workspaceId
-  from the store by walking workspaces (itemId is globally unique).
+  URL: /app/{workspaceId}/projects/{itemId}/settings (the legacy
+  /app/kanban/:itemId/settings still renders here and is rewritten).
+  The page reads both ids from the path, falling back to the store
+  for the workspace when the URL is the legacy shape.
 
   Layout (single column, no sidebar — the page REPLACES the kanban
   board entirely, not overlays it):
@@ -40,7 +41,7 @@ import AgentKnowledgeDialog from '../dialogs/AgentKnowledgeDialog.vue'
 import AgentKnowledgeDetailDialog from '../dialogs/AgentKnowledgeDetailDialog.vue'
 import AgentSystemPromptDialog from '../dialogs/AgentSystemPromptDialog.vue'
 import { useWorkspacesStore } from '../../stores/workspaces'
-import { buildAppUrl } from '../../helpers/appUrl'
+import { buildAppUrl, buildProjectSettingsUrl } from '../../helpers/appUrl'
 import * as api from '../../api'
 import UiIcon from '../ui/UiIcon.vue'
 import { buildToggle } from '../../stores/agentToolToggle'
@@ -122,11 +123,13 @@ const settingsEditorTargetDescription = ref('')
 const settingsEditorTargetIsDone = ref(false)
 
 // ─── Computed ──────────────────────────────────────────────────────────────
-// itemId comes from route.params (path). May be empty if the URL is
-// malformed — defensive: render the "no kanban selected" hint.
+// itemId comes from the path: the project id on the workspace-scoped shape, the legacy `:itemId`
+// param on the old kanban shape. Empty when the URL is malformed — the page then shows a hint.
 const itemId = computed<string>(() => {
-  const raw = route.params.itemId
-  return typeof raw === 'string' ? raw : ''
+  const canonical = route.params.projectId
+  if (typeof canonical === 'string' && canonical.length > 0) return canonical
+  const legacy = route.params.itemId
+  return typeof legacy === 'string' ? legacy : ''
 })
 
 // Look up the kanban WorkspaceItem across all workspaces. itemId is globally unique
@@ -142,10 +145,11 @@ const item = computed(() => {
   return null
 })
 
-// Derive workspaceId by walking the store looking for the workspace that owns the current item.
-// Returns '' if the item isn't found (defensive — goBack uses this to round-trip back to the kanban
-// view; if we can't find the owning workspace, fall back to /app).
+// The workspace the board belongs to: the one the URL names, else the one the store says owns the
+// board (the legacy URL shape named no workspace). Empty when the board cannot be found.
 const workspaceId = computed<string>(() => {
+  const fromPath = route.params.workspaceId
+  if (typeof fromPath === 'string' && fromPath.length > 0) return fromPath
   const id = itemId.value
   if (!id) return ''
   for (const ws of workspacesStore.workspaces) {
@@ -193,12 +197,39 @@ async function loadKanbanAgent() {
   }
 }
 
+// ─── Legacy URL rewrite ─────────────────────────────────────────────────── A legacy deep link
+// (/app/kanban/:itemId/settings) still renders this page, but it names no workspace. Once the
+// owning workspace is known, the URL is rewritten to the workspace-scoped shape.
+const LEGACY_SETTINGS_PATH_RE = /^\/app\/kanban\/[^/]+\/settings\/?$/
+const rewroteLegacyUrl = ref(false)
+function rewriteLegacyUrl(): void {
+  if (rewroteLegacyUrl.value) return
+  if (!LEGACY_SETTINGS_PATH_RE.test(route.path)) return
+  const wsId = workspaceId.value
+  const itId = itemId.value
+  if (!wsId || !itId) return
+  rewroteLegacyUrl.value = true
+  // The query rides along: `?section=` (which section is open) and the browser
+  // tab id must survive the rewrite.
+  const query: Record<string, string> = {}
+  for (const [k, v] of Object.entries(route.query)) {
+    if (typeof v === 'string') query[k] = v
+    else if (Array.isArray(v)) {
+      const first = v.find((x): x is string => typeof x === 'string')
+      if (first !== undefined) query[k] = first
+    }
+  }
+  const target = buildProjectSettingsUrl(wsId, itId)
+  void router.replace({ path: target.path, query })
+}
+
 // Reload the agent panel when the resolved item changes: mount covers
 // the initial load, prev-id guard on update covers item switches.
 const prevAgentItemId = ref(item.value?.id ?? '')
 onMounted(() => {
   prevAgentItemId.value = item.value?.id ?? ''
   if (item.value?.id) void loadKanbanAgent()
+  rewriteLegacyUrl()
 })
 onUpdated(() => {
   const rowId = item.value?.id ?? ''
@@ -206,6 +237,7 @@ onUpdated(() => {
     prevAgentItemId.value = rowId
     if (rowId) void loadKanbanAgent()
   }
+  rewriteLegacyUrl()
 })
 
 // ─── AgentView dialog state (mirrors AppLayout's agent dialogs) ─────────────

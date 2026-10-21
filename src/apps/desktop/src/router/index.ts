@@ -41,9 +41,8 @@ const router = createRouter({
       name: 'task',
       component: AppLayout,
     },
-    // Kanban settings page (plan: 2026-09-02-kanban-settings-as-page).
-    // Resolves to AppLayout which dispatches via the `currentView`
-    // AppLayout.handleOpenKanbanSettings via `router.push`.
+    // LEGACY kanban-settings route (plan: 2026-09-02-kanban-settings-as-page) — kept so old
+    // links still boot. The canonical shape is the workspace-scoped project route below.
     {
       path: '/app/kanban/:itemId/settings',
       name: 'kanban-settings',
@@ -62,6 +61,12 @@ const router = createRouter({
     {
       path: '/app/:workspaceId/projects/:projectId/add',
       name: 'project-add',
+      component: AppLayout,
+    },
+    // Project (kanban) settings page. The workspace rides in the path, so the URL names it.
+    {
+      path: '/app/:workspaceId/projects/:projectId/settings',
+      name: 'project-settings',
       component: AppLayout,
     },
     {

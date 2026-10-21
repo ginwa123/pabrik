@@ -53,6 +53,7 @@ import { useCurrentMainView } from '../composables/useCurrentMainView'
 import {
   buildAppUrl,
   buildSettingsUrl,
+  buildProjectSettingsUrl,
   buildTaskAppUrl,
   isAppPath,
   normalizeAppPath,
@@ -175,6 +176,7 @@ async function handleBootUrl(): Promise<void> {
     parsed.kind === 'project' ||
     parsed.kind === 'projectChat' ||
     parsed.kind === 'projectAdd' ||
+    parsed.kind === 'projectSettings' ||
     parsed.kind === 'chat'
       ? parsed.workspaceId
       : undefined
@@ -914,12 +916,21 @@ const activeDocumentId = computed(() => {
   return parsed.kind === 'doc' ? parsed.documentId : ''
 })
 
+// The board the settings page shows: the item id the URL names — the project id on the
+// workspace-scoped path, the legacy `:itemId` param on the old kanban path.
+const kanbanSettingsItemId = computed(() => {
+  const parsed = parseAppPath(route.path)
+  if (parsed.kind === 'projectSettings') return parsed.projectId
+  const legacy = route.params.itemId
+  return typeof legacy === 'string' ? legacy : ''
+})
+
 const currentView = computed(() => {
   const path = route.path
   if (path === '/app/settings') return 'settings'
-  // NEW (plan: 2026-09-02-kanban-settings-as-page). Path-based kanban-settings route
-  // (/app/kanban/:itemId/settings). Must come BEFORE the route.query.view fallthrough because the
-  // URL has no `view=` query param — the path IS the discriminator.
+  // LEGACY kanban-settings route (/app/kanban/:itemId/settings); the canonical shape is the
+  // workspace-scoped project path, matched below via parseAppPath. Must come BEFORE the
+  // route.query.view fallthrough: the URL has no `view=` param, the path IS the discriminator.
   if (/^\/app\/kanban\/[^/]+\/settings\/?$/.test(path)) {
     return 'kanban-settings'
   }
@@ -952,6 +963,8 @@ const currentView = computed(() => {
   // chain as every other main view, so the chat behind it is unmounted rather than stacked under.
   // Checked before the workspace/chat branches so nothing else can claim a doc path.
   if (parsedPath.kind === 'doc') return 'documents'
+  // Kanban settings page, workspace-scoped: /app/{ws}/projects/{pid}/settings.
+  if (parsedPath.kind === 'projectSettings') return 'kanban-settings'
   if (
     parsedPath.kind === 'workspace' ||
     parsedPath.kind === 'project' ||
@@ -1556,14 +1569,18 @@ const handleKanbanColumnEditorDelete = () => {
 
 // ─── Kanban settings page (plan: 2026-09-02-kanban-settings-as-page) ──── The settings UI moved
 // from a centered modal dialog (the deleted KanbanSettingsDialog) to a dedicated full-page route
-// (/app/kanban/:itemId/settings).
+// (/app/{workspaceId}/projects/{itemId}/settings).
 const handleOpenKanbanSettings = () => {
   const itemId = activeWorkspaceItem.value?.id ?? ''
+  const workspaceId = activeWorkspace.value?.id ?? ''
   if (!itemId) return
-  // Path-based route: /app/kanban/:itemId/settings (registered in router/index.ts). workspaceId is
-  // derived from the store by the page itself — no need to encode it in the URL (itemId is globally
-  // unique across all workspaces).
-  router.push({ path: `/app/kanban/${itemId}/settings` })
+  // The URL names the workspace AND the board, so a reload knows which workspace the board is in.
+  // With no workspace to name, the legacy shape is the only URL available.
+  if (!workspaceId) {
+    router.push({ path: `/app/kanban/${itemId}/settings` })
+    return
+  }
+  router.push(buildProjectSettingsUrl(workspaceId, itemId))
 }
 
 const handleKanbanSettingsAddColumn = (name: string, description: string) => {
@@ -1985,11 +2002,12 @@ const reconcileRoute = async () => {
   } else if (
     parsed.kind === 'project' ||
     parsed.kind === 'projectChat' ||
-    parsed.kind === 'projectAdd'
+    parsed.kind === 'projectAdd' ||
+    parsed.kind === 'projectSettings'
   ) {
     // Path project URLs: adopt workspace + item, sync the task chat suffix, drop any standalone
-    // chat. `/add` rides the project path, so it adopts the same context — no task is active on
-    // the add page (wantTaskId stays null for it), exactly as on the plain board.
+    // chat. `/add` and `/settings` ride the project path, so they adopt the same context — no task
+    // is active on them (wantTaskId stays null), exactly as on the plain board.
     if (workspacesStore.activeWorkspaceId !== parsed.workspaceId) {
       await workspacesStore.setActiveWorkspace(parsed.workspaceId)
     }
@@ -2471,10 +2489,10 @@ defineExpose({
            so the settings page REPLACES the kanban board — no overlay.
            The :key forces a fresh mount when the user navigates from
            one kanban's settings to another's (the page re-reads
-           route.params.itemId on mount). -->
+           the item id from the URL on mount). -->
       <KanbanSettingsView
         v-else-if="currentView === 'kanban-settings'"
-        :key="'kanban-settings-' + (route.params.itemId as string)"
+        :key="'kanban-settings-' + kanbanSettingsItemId"
         @add-column="handleKanbanSettingsAddColumn"
         @edit-column="handleKanbanSettingsEditColumn"
         @delete-column="handleKanbanSettingsDeleteColumn"

@@ -13,6 +13,8 @@ export interface AppUrlTarget {
   chatTaskId?: string | null | undefined
   /** Kanban add-task page (`/add` appended to the project path; requires projectId). */
   addTask?: boolean | null | undefined
+  /** Project settings page (`/settings` appended to the project path; requires projectId). */
+  projectSettings?: boolean | null | undefined
   /**    * Document id (Migration 095). Emits `/app/{ws}/doc/{id}` — a PAGE, not a query overlay: the
    * document replaces the main view, so it must not borrow the path of whatever page happened to be
    * open underneath it. */
@@ -34,6 +36,7 @@ export type ParsedAppPath =
   | { kind: 'project'; workspaceId: string; projectId: string }
   | { kind: 'projectChat'; workspaceId: string; projectId: string; chatTaskId: string }
   | { kind: 'projectAdd'; workspaceId: string; projectId: string }
+  | { kind: 'projectSettings'; workspaceId: string; projectId: string }
   | { kind: 'other'; path: string }
 
 /** First path segments that are route keywords, never workspace ids. Without this,
@@ -54,6 +57,7 @@ export function buildAppUrl(input: AppUrlTarget): AppUrlLocation {
   const chatTaskId = (input.chatTaskId ?? '').toString().trim()
   const documentId = (input.documentId ?? '').toString().trim()
   const addTask = input.addTask === true
+  const projectSettings = input.projectSettings === true
   const query: Record<string, string> = { ...input.query }
 
   if (!workspaceId) {
@@ -80,6 +84,12 @@ export function buildAppUrl(input: AppUrlTarget): AppUrlLocation {
   if (addTask && chatTaskId) {
     throw new Error('buildAppUrl: addTask cannot combine with chatTaskId')
   }
+  if (projectSettings && !projectId) {
+    throw new Error('buildAppUrl: projectSettings requires projectId')
+  }
+  if (projectSettings && (chatTaskId || addTask)) {
+    throw new Error('buildAppUrl: projectSettings cannot combine with chatTaskId/addTask')
+  }
 
   let path = `/app/${workspaceId}`
   if (documentId) {
@@ -89,7 +99,8 @@ export function buildAppUrl(input: AppUrlTarget): AppUrlLocation {
   } else if (projectId) {
     path += `/projects/${projectId}`
     if (chatTaskId) path += `/chat/${chatTaskId}`
-    if (addTask) path += '/add'
+    else if (addTask) path += '/add'
+    else if (projectSettings) path += '/settings'
   }
   return { path, query }
 }
@@ -107,8 +118,19 @@ export function buildSettingsUrl(
   return { path: `/app/${id}/settings`, query }
 }
 
+/** The project's settings page: the workspace-scoped path with `/settings` appended. */
+export function buildProjectSettingsUrl(
+  workspaceId: string | null | undefined,
+  projectId: string | null | undefined,
+  section?: string | null,
+): AppUrlLocation {
+  const query: Record<string, string> = {}
+  if (section) query.section = section
+  return buildAppUrl({ workspaceId, projectId, projectSettings: true, query })
+}
+
 /**  * Parse an app path into its kind + ids. Trailing slashes are ignored (canonical form has none).
- * Anything that is not one of the six app shapes — settings, kanban-settings, legacy routes,
+ * Anything that is not one of the app shapes — settings, kanban-settings, legacy routes,
  * unknown — comes back as `{ kind: 'other', path }` so callers can fall through. */
 export function parseAppPath(rawPath: string): ParsedAppPath {
   const path = normalizeAppPath(rawPath)
@@ -129,6 +151,8 @@ export function parseAppPath(rawPath: string): ParsedAppPath {
   // pattern must never get the first chance to claim this page.
   m = /^\/app\/([^/]+)\/projects\/([^/]+)\/add$/.exec(path)
   if (m?.[1] && m[2]) return { kind: 'projectAdd', workspaceId: m[1], projectId: m[2] }
+  m = /^\/app\/([^/]+)\/projects\/([^/]+)\/settings$/.exec(path)
+  if (m?.[1] && m[2]) return { kind: 'projectSettings', workspaceId: m[1], projectId: m[2] }
   m = /^\/app\/([^/]+)\/projects\/([^/]+)$/.exec(path)
   if (m?.[1] && m[2]) return { kind: 'project', workspaceId: m[1], projectId: m[2] }
   m = /^\/app\/([^/]+)$/.exec(path)
@@ -144,7 +168,7 @@ export function normalizeAppPath(rawPath: string): string {
   return rawPath.replace(/\/+$/, '') || '/'
 }
 
-/** True when the path is one of the six app shapes (landing included). */
+/** True when the path is one of the app shapes (landing included). */
 export function isAppPath(rawPath: string): boolean {
   return parseAppPath(rawPath).kind !== 'other'
 }
@@ -226,6 +250,7 @@ export function isChatRouteStaleForSession(routePath: string, sessionId: string)
     parsed.kind === 'workspace' ||
     parsed.kind === 'project' ||
     parsed.kind === 'projectAdd' ||
+    parsed.kind === 'projectSettings' ||
     parsed.kind === 'doc'
   ) {
     return true
