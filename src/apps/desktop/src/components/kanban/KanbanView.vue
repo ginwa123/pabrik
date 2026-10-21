@@ -1162,7 +1162,7 @@ const openCreatePage = (columnId: string | null) => {
   showCreateDialog.value = true
 }
 
-// Open the create page for a `/add` deep link (refresh, shared link, new tab).
+// For a `/add` deep link — a refresh, a shared link, a new tab.
 const openCreateFromRoute = () => {
   if (parseAppPath(route?.path ?? '').kind !== 'projectAdd') return
   openCreatePage(readAddColumnParam())

@@ -64,7 +64,6 @@ const makeBoard = () =>
 
 const Root = defineComponent({ template: '<router-view />' })
 
-/** The app's REAL route table: the board and the add page are ONE record. */
 async function makeRouter(initial: {
   path: string
   query?: Record<string, string>
@@ -125,7 +124,7 @@ describe('KanbanView — navigating between the board and the add page', () => {
     expect(router.currentRoute.value.path).toBe(ADD_PATH)
     expect(w.find('[data-testid="kanban-task-detail-create-name"]').exists()).toBe(true)
 
-    // The browser Back button: the URL is the board again, so the board must be showing.
+    // `router.back()` is the browser's Back button — a POP navigation, not a push.
     router.back()
     await flushPromises()
     await flushPromises()
