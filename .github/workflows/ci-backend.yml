@@ -939,6 +939,31 @@ jobs:
           done
           exit 1
 
+      - name: Admin console (its own package: build + unit tests)
+        # `src/apps/admin` is a Zig package of its own (`pabrik-admin`), so the
+        # root `zig build test` above never compiles it. It links only the
+        # sqlite and HTTP-server packages, and its dependencies are the copy
+        # the step above already fetched into `zig-pkg/`.
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          if [[ "${RUNNER_OS:-}" == "Windows" ]]; then
+            export PATH="/c/vcpkg/installed/x64-windows/bin:$PATH"
+            export PATH="/c/Windows/System32/downlevel:$PATH"
+          fi
+          cd src/apps/admin
+          zig build test --summary all
+
+      - name: Admin console functional slice (Linux)
+        # The Zig functional corpus is not part of `zig build test`; this runs
+        # the console's slice of it. Linux only: the suite boots real servers,
+        # and the Windows/macOS cells gate the unit suites above.
+        if: runner.os == 'Linux'
+        timeout-minutes: 30
+        run: |
+          zig build test:vmd --summary all -Dno-webapp-rebuild
+          zig build functional-test:zig:admin --summary all -Dno-webapp-rebuild
+
       - name: Skipped-test ceiling (zig build test)
         # Every platform's `zig build test` prints
         #     Build Summary: N/N steps succeeded; P/T tests passed (K skipped)

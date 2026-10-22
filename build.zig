@@ -3038,6 +3038,18 @@ pub fn build(b: *std.Build) void {
     b.step("functional-test:zig", "Run the Zig functional test suite (tests/functional/)")
         .dependOn(&run_func_zig.step);
 
+    // The console's functional slice on its own, so CI can gate it without
+    // booting the whole functional corpus.
+    const admin_func_tests = b.addTest(.{
+        .root_module = func_tests_module,
+        .filters = &.{"admin_console_test"},
+    });
+    const run_admin_func = b.addRunArtifact(admin_func_tests);
+    run_admin_func.setCwd(b.path(""));
+    run_admin_func.step.dependOn(b.getInstallStep());
+    b.step("functional-test:zig:admin", "Run the admin console's functional suite only")
+        .dependOn(&run_admin_func.step);
+
     // =====================================================================
     // Functional UI tests (Python+Playwright) — see
     // tests/functional_ui/README.md.
