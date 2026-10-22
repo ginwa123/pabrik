@@ -12,6 +12,7 @@ const DEFAULT_SETTINGS: PabrikGeneralSettings = {
   retry_delay_ms: 0,
   // Plan 2026-09-10-web-launch-toggle: 4th key (browser-mode flag).
   web_launch_enabled: false,
+  chat_view: 'dev',
 }
 
 describe('PabrikGeneralSection', () => {
@@ -36,6 +37,7 @@ describe('PabrikGeneralSection', () => {
           notify_on_error: true,
           retry_delay_ms: 15000, // 15 seconds
           web_launch_enabled: true,
+          chat_view: 'dev',
         },
         webUrl: 'http://127.0.0.1:51234/',
       },
@@ -62,6 +64,7 @@ describe('PabrikGeneralSection', () => {
       notify_on_error: false,
       retry_delay_ms: 0,
       web_launch_enabled: false,
+      chat_view: 'dev',
     })
   })
 
@@ -75,6 +78,7 @@ describe('PabrikGeneralSection', () => {
           notify_on_error: false,
           retry_delay_ms: 5000,
           web_launch_enabled: false,
+          chat_view: 'dev',
         },
       },
     })
@@ -95,6 +99,7 @@ describe('PabrikGeneralSection', () => {
       notify_on_error: false,
       retry_delay_ms: 5000, // 5 sec → 5000 ms
       web_launch_enabled: false,
+      chat_view: 'dev',
     })
   })
 
@@ -126,6 +131,7 @@ describe('PabrikGeneralSection', () => {
           notify_on_error: false,
           retry_delay_ms: 30000,
           web_launch_enabled: false,
+          chat_view: 'dev',
         },
       },
     })
@@ -136,6 +142,7 @@ describe('PabrikGeneralSection', () => {
       notify_on_error: true,
       retry_delay_ms: 30000,
       web_launch_enabled: false,
+      chat_view: 'dev',
     })
   })
 
@@ -157,6 +164,7 @@ describe('PabrikGeneralSection', () => {
           notify_on_error: false,
           retry_delay_ms: 5000,
           web_launch_enabled: false,
+          chat_view: 'dev',
         },
       },
     })
@@ -166,6 +174,7 @@ describe('PabrikGeneralSection', () => {
       notify_on_error: false,
       retry_delay_ms: 5000,
       web_launch_enabled: true,
+      chat_view: 'dev',
     })
   })
 

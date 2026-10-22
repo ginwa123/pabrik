@@ -16,6 +16,7 @@ const getLatestMessage = llm_history.getLatestMessage;
 const handle_mcp_tool = @import("handle_mcp_tool.zig");
 const agentic_loop_mod = @import("workflow.zig");
 const wrapToolOutput = agentic_loop_mod.tools.wrapToolOutput;
+const withDurationMs = agentic_loop_mod.tools.withDurationMs;
 const xmlUnescape = @import("helpers").xmlUnescape;
 const helpers = @import("helpers");
 const on_event_sent = @import("on_event_sent.zig");
@@ -478,10 +479,18 @@ fn dispatchFromRegistry(ctx: ToolContext, tool_call: agent.ToolCall, exec: tools
         // A host without one (unit tests) leaves it null and the emit no-ops.
         .event_bus = if (pabrik.getSingleton()) |di| di.event_bus else |_| null,
     };
+    const started_ns = std.Io.Timestamp.now(ctx.io, .real).nanoseconds;
     const exec_result = try exec(ctx_local, tool_call);
+    const elapsed_ms = elapsedMsSince(ctx.io, started_ns);
+
+    var output = exec_result.output;
+    if (exec_result.output_allocated) {
+        output = try withDurationMs(ctx.allocator, exec_result.output, elapsed_ms);
+        ctx.allocator.free(exec_result.output);
+    }
 
     return ToolResult{
-        .output = exec_result.output,
+        .output = output,
         .temperature = exec_result.temperature,
         .is_thinking = exec_result.is_thinking,
         .stop_loop = exec_result.stop_loop,
@@ -532,6 +541,13 @@ fn dispatchMCP(ctx: ToolContext, tool_call: agent.ToolCall) !ToolResult {
     );
     // Return success with tool output
     return ToolResult{ .output = result };
+}
+
+fn elapsedMsSince(io: std.Io, start_ns: i128) u64 {
+    return @intCast(@divTrunc(
+        std.Io.Timestamp.now(io, .real).nanoseconds - start_ns,
+        std.time.ns_per_ms,
+    ));
 }
 
 /// Check if a tool name is registered (uses unified registry)

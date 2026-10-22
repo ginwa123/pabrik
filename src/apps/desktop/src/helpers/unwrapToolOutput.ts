@@ -11,6 +11,8 @@ export interface UnwrappedToolOutput {
   error: string | null
   /** Inner tool-specific payload (parsed object) on success, null on error */
   data: unknown
+  /** Wall-clock duration of the tool call in milliseconds, when the backend recorded one. */
+  duration_ms?: number
 }
 
 /**  * Parse a JSON tool envelope. Throws on malformed input — use `tryUnwrapToolOutput` for a null
@@ -52,6 +54,7 @@ export function unwrapToolOutput(content: string): UnwrappedToolOutput {
     name: env.tool,
     parameters,
     success,
+    duration_ms: typeof env.duration_ms === 'number' ? env.duration_ms : undefined,
     error: success
       ? null
       : typeof env.error === 'string'

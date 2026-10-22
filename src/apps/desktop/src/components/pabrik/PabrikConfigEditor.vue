@@ -11,6 +11,7 @@ import {
 import { usePabrikConfig } from '../../composables/usePabrikConfig'
 import { useRoute, useRouter } from 'vue-router'
 import { useTabsStore } from '../../stores/tabs'
+import { useChatViewStore } from '../../stores/chatView'
 
 import PabrikSaveBar from './PabrikSaveBar.vue'
 import PabrikGeneralSection, { type PabrikGeneralSettings } from './PabrikGeneralSection.vue'
@@ -294,6 +295,7 @@ const generalSettings = ref<PabrikGeneralSettings>({
   retry_delay_ms: 0,
   // Plan 2026-09-10-web-launch-toggle: browser-mode flag (4th key).
   web_launch_enabled: false,
+  chat_view: 'dev',
 })
 
 // Skill Evals tab. Only `enabled` is editable in the UI; the budget
@@ -357,6 +359,7 @@ function syncFromConfig() {
     // Plan 2026-09-10-web-launch-toggle: browser-mode flag, same
     // `?? false` hydration as the notify toggles.
     web_launch_enabled: c.web_launch_enabled ?? false,
+    chat_view: c.chat_view === 'compact' ? 'compact' : 'dev',
   }
   // Remember the persisted flag so handleSave can detect the OFF→ON
   // transition for the one-time browser auto-open.
@@ -460,6 +463,7 @@ function syncToConfig() {
     // Plan 2026-09-10-web-launch-toggle: 4th operational setting,
     // always written through like its siblings.
     web_launch_enabled: generalSettings.value.web_launch_enabled,
+    chat_view: generalSettings.value.chat_view,
     // Skill Evals: write the switch on top of the raw block, so the budget knobs the UI doesn't
     // expose survive the save untouched.
     ...(skillEvalsSettings.value.enabled !== skillEvalsHydrated.value
@@ -803,6 +807,7 @@ async function handleSave() {
     await save()
     webSearchErrors.value = {}
     prevWebLaunch.value = generalSettings.value.web_launch_enabled
+    useChatViewStore().setMode(generalSettings.value.chat_view)
     await refreshWebStatus()
     emit('notification', 'Settings saved', 'success')
     // Plan 2026-09-10-web-launch-toggle: auto-open the browser once on the OFF→ON transition. Fired
@@ -1116,7 +1121,10 @@ const isLoading = computed(() => !loaded.value)
         <div
           v-if="activeTab === 'general'"
           class="rounded-lg p-5 space-y-3"
-          style="background-color: var(--semantic-content-bg); border: 1px solid var(--color-border)"
+          style="
+            background-color: var(--semantic-content-bg);
+            border: 1px solid var(--color-border);
+          "
           data-testid="models-compaction-block"
         >
           <div class="flex items-center gap-2">
@@ -1132,7 +1140,8 @@ const isLoading = computed(() => !loaded.value)
                   : { color: 'var(--semantic-text-dim)' }
               "
               data-testid="catalog-freshness"
-            >{{ catalogFreshnessLabel }}</span>
+              >{{ catalogFreshnessLabel }}</span
+            >
           </div>
           <p class="text-dense" style="color: var(--semantic-text-dim)">
             pabrik reads each model's context window, output cap and reasoning shape from
@@ -1142,7 +1151,10 @@ const isLoading = computed(() => !loaded.value)
           </p>
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="block text-dense font-medium mb-1.5" style="color: var(--semantic-text-muted)">
+              <label
+                class="block text-dense font-medium mb-1.5"
+                style="color: var(--semantic-text-muted)"
+              >
                 Default compaction threshold (%)
               </label>
               <input
@@ -1162,7 +1174,10 @@ const isLoading = computed(() => !loaded.value)
               />
             </div>
             <div>
-              <label class="block text-dense font-medium mb-1.5" style="color: var(--semantic-text-muted)">
+              <label
+                class="block text-dense font-medium mb-1.5"
+                style="color: var(--semantic-text-muted)"
+              >
                 Force context window (tokens)
               </label>
               <input
@@ -1203,7 +1218,8 @@ const isLoading = computed(() => !loaded.value)
               class="font-mono text-dense"
               style="color: var(--color-red)"
               data-testid="catalog-error"
-            >{{ catalogError }}</span>
+              >{{ catalogError }}</span
+            >
           </div>
         </div>
 
@@ -1267,7 +1283,6 @@ const isLoading = computed(() => !loaded.value)
              tab (top-level defaults) + the Edit-agent modal
              (per-agent overrides). There is no 'compaction' section. -->
       </div>
-
     </template>
 
     <!-- Modals -->

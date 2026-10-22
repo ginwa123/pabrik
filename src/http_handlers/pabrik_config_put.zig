@@ -142,6 +142,19 @@ pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
     if (input.web_launch_enabled) |n| {
         config_json.web_launch_enabled = n;
     }
+    // chat_view: only the two known names. An unknown one is a 400, not a
+    // silent fallback, so a typo in the client is visible.
+    if (input.chat_view) |mode| {
+        if (!isChatViewMode(mode)) {
+            return res.jsonResponse(.{
+                .status_code = 400,
+                .data = try http_response.makeErrorResponse(allocator, .{
+                    .@"error" = "InvalidChatViewMode: chat_view must be one of dev|compact",
+                }),
+            });
+        }
+        config_json.chat_view = mode;
+    }
     if (input.model_compaction_size_kb) |kb| {
         config_json.model_compaction_size_kb = kb;
     }
@@ -471,6 +484,9 @@ pub const ConfigInput = struct {
     /// Absent = preserve existing on-disk value. Mirrors the
     /// `LlmConfigJson` default (`false`).
     web_launch_enabled: ?bool = null,
+    /// How the chat draws tool calls: "dev" or "compact". Absent =
+    /// preserve the existing on-disk value.
+    chat_view: ?[]const u8 = null,
     /// Threshold (in KB) above which the session compactor is invoked
     /// to shrink the LLM context. Absent = preserve existing on-disk
     /// value. Mirrors the `LlmConfigJson` default (`100`).
@@ -521,6 +537,10 @@ const ProfileChange = struct {
     system_prompt: []const u8 = "",
 };
 
+fn isChatViewMode(raw: []const u8) bool {
+    return std.mem.eql(u8, raw, "dev") or std.mem.eql(u8, raw, "compact");
+}
+
 const ConfigJson = struct {
     // Plan 2026-08-24-config-simplify-remove-defaults: the top-level LLM
     // defaults (api_key/model/base_url/url_style/max_tokens/system_prompt)
@@ -540,6 +560,9 @@ const ConfigJson = struct {
     /// Opt-in web-launch flag. Default `false` matches `LlmConfigJson`
     /// (Config.zig); a brand-new config has web launch off.
     web_launch_enabled: bool = false,
+    /// How the chat draws tool calls. `null` = the key is not on disk, so
+    /// a save does not add it.
+    chat_view: ?[]const u8 = null,
     /// Compaction threshold in KB. Default `100` matches
     /// `LlmConfigJson` (Config.zig:92).
     model_compaction_size_kb: usize = 100,

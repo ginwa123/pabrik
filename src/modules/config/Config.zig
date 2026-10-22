@@ -51,6 +51,24 @@ fn parseApplyMode(raw: ?[]const u8) SkillEvalsConfig.ApplyMode {
     return .propose;
 }
 
+/// How the chat draws tool calls: one card per call, or a run folded into one.
+pub const ChatViewMode = enum { dev, compact };
+
+/// Map the tolerant `config.json` string to the runtime enum.
+pub fn parseChatViewMode(raw: ?[]const u8) ChatViewMode {
+    const s = raw orelse return .dev;
+    if (std.mem.eql(u8, s, "compact")) return .compact;
+    return .dev;
+}
+
+/// The on-disk name of a chat view mode.
+pub fn chatViewModeName(mode: ChatViewMode) []const u8 {
+    return switch (mode) {
+        .dev => "dev",
+        .compact => "compact",
+    };
+}
+
 /// Map the wire block onto the runtime struct.
 pub fn skillEvalsFromJson(wire: SkillEvalsJson) SkillEvalsConfig {
     return .{
@@ -90,6 +108,8 @@ pub const LlmConfig = struct {
     /// webview is advertised for the user's system browser on a random local
     /// port (settings General tab shows the URL + auto-opens it).
     web_launch_enabled: bool = false,
+    /// How the chat draws tool calls.
+    chat_view: ChatViewMode = .dev,
     /// Skill Evals — the agent evaluates the skills it actually used. Off by
     /// default; see `SkillEvalsConfig` for the switch and the reasoning.
     skill_evals: SkillEvalsConfig = .{},
@@ -314,6 +334,8 @@ pub const LlmConfig = struct {
         /// Opt-in: allow the agent to launch URLs in the user's web
         /// browser. Default false. Mirrors `notify_on_complete`.
         web_launch_enabled: bool = false,
+        /// How the chat draws tool calls: "dev" or "compact".
+        chat_view: []const u8 = "dev",
         /// Skill Evals.
         skill_evals: SkillEvalsJson = .{},
         /// Delay in milliseconds before retrying a failed workflow call.
@@ -655,6 +677,7 @@ pub const LlmConfig = struct {
             .notify_on_complete = config_json.notify_on_complete,
             .notify_on_error = config_json.notify_on_error,
             .web_launch_enabled = config_json.web_launch_enabled,
+            .chat_view = parseChatViewMode(config_json.chat_view),
             .skill_evals = skillEvalsFromJson(config_json.skill_evals),
             .retry_delay_ms = config_json.retry_delay_ms,
             // Top-level compaction defaults — restored in plan
@@ -1175,6 +1198,7 @@ pub const LlmConfig = struct {
             .notify_on_complete = self.notify_on_complete,
             .notify_on_error = self.notify_on_error,
             .web_launch_enabled = self.web_launch_enabled,
+            .chat_view = self.chat_view,
             // Plain value copy — `SkillEvalsConfig` owns no memory, so the
             // clone needs no dupe and `deinit` needs no new free.
             .skill_evals = self.skill_evals,
@@ -2148,7 +2172,7 @@ pub const LlmConfig = struct {
         const allocator = std.testing.allocator;
         var cfg = try addMcpServerStdioFixture(allocator);
         defer cfg.deinit();
-        try cfg.addMcpServerStdio(.{ .name = "s", .command = "cmd", .args = &.{"--a", "--b"} });
+        try cfg.addMcpServerStdio(.{ .name = "s", .command = "cmd", .args = &.{ "--a", "--b" } });
 
         try cfg.editMcpServer(.{ .name = "s", .args = &.{} });
 
@@ -3499,6 +3523,36 @@ test "notify_on_error: round-trips independently of notify_on_complete" {
 
 // ---------------------------------------------------------------------------
 // web_launch_enabled: opt-in browser-launch flag.
+
+test "chat_view: defaults to dev and reads compact from JSON" {
+    const allocator = std.testing.allocator;
+
+    const without =
+        \\{
+        \\  "api_key": "k", "model": "m", "base_url": "b"
+        \\}
+    ;
+    var cfg = try writeAndRead(allocator, std.testing.io, without);
+    defer cfg.deinit();
+    try std.testing.expectEqual(ChatViewMode.dev, cfg.chat_view);
+
+    const with_compact =
+        \\{
+        \\  "api_key": "k", "model": "m", "base_url": "b", "chat_view": "compact"
+        \\}
+    ;
+    var cfg2 = try writeAndRead(allocator, std.testing.io, with_compact);
+    defer cfg2.deinit();
+    try std.testing.expectEqual(ChatViewMode.compact, cfg2.chat_view);
+}
+
+test "chat_view: an unknown mode degrades to dev" {
+    try std.testing.expectEqual(ChatViewMode.dev, parseChatViewMode("fancy"));
+    try std.testing.expectEqual(ChatViewMode.dev, parseChatViewMode(null));
+    try std.testing.expectEqual(ChatViewMode.compact, parseChatViewMode("compact"));
+    try std.testing.expectEqualStrings("dev", chatViewModeName(ChatViewMode.dev));
+    try std.testing.expectEqualStrings("compact", chatViewModeName(ChatViewMode.compact));
+}
 
 test "web_launch_enabled: defaults to false when missing from JSON" {
     const allocator = std.testing.allocator;

@@ -306,6 +306,8 @@ pub const PabrikConfigResponse = struct {
     /// the user's web browser. Default `false` so a brand-new install
     /// has web launch off.
     web_launch_enabled: bool = false,
+    /// How the chat draws tool calls: "dev" or "compact".
+    chat_view: []const u8 = "dev",
     /// Compaction threshold in KB. Sessions whose DB-stored token
     /// estimate exceeds this value trigger context compaction.
     /// Consumed by `session_compact.zig:57`.

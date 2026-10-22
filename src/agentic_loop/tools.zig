@@ -7,6 +7,7 @@ const config_mod = pabrikcore.config;
 
 pub const all_agent_tools = @import("tools_equipped.zig").equips;
 pub const wrapToolOutput = @import("tools_wrap_output.zig").wrapToolOutput;
+pub const withDurationMs = @import("tools_wrap_output.zig").withDurationMs;
 
 // Re-export every migrated exec function. Tool_Registry.zig references
 // these via `agentic_loop_mod.tools.execXxx` etc.
