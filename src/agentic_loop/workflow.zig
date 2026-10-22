@@ -524,7 +524,10 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
     // singleton still describes the on-disk `config.json` — it is never
     var config = session_llm_config.forSession(parent_allocator, db, params.session_id) orelse
         pabrikcore.getLlmConfig(di.di);
-    var eff = config.resolveEffectiveAgent(params.selected_profile_model);
+    var eff = effectiveAgentForSubAgent(
+        config.resolveEffectiveAgent(params.selected_profile_model),
+        params.sub_agent_overrides,
+    );
 
     logger.infoFmt(
         "[CHECKPOINT] profile selected_profile_model='{s}' eff.model={s} eff.base_url={s} eff.url_style={s} eff.thinking_str={s} eff.thinking_budget_tokens={?d} eff.reasoning_effort={?s}",
@@ -620,6 +623,12 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         copy_session_id,
     );
     const initial_agent = initial_agent_state.agent;
+    // A sub-agent's configured temperature wins; without one the row carries
+    // the session's last temperature.
+    const insert_temperature: f32 = if (params.sub_agent_overrides) |ov|
+        ov.temperature orelse initial_agent_state.temperature
+    else
+        initial_agent_state.temperature;
 
     // Check if session is already running (exists in worker table).
     const is_worker_running = isWorkerRunning(parent_allocator, db, copy_session_id);
@@ -758,7 +767,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
 
         last_iter_start_ns = std.Io.Timestamp.now(io, .real).nanoseconds;
 
-        // ─── Live config re-read (plan 2026-08-06-live-config-reload) ───
+        // ─── Live config re-read ───
         // Re-fetch the LlmConfig pointer from the holder once per iteration
         // so user-initiated changes (model switch, profile change, API-key
         config = session_llm_config.forSession(allocator, db, copy_session_id) orelse
@@ -801,7 +810,10 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         // === Per-iteration profile re-resolution
         // ============================ ONE typed cascade call replaces the 4×
         // resolveProfileField + ~50 lines of hand-rolled
-        eff = config.resolveEffectiveAgent(live_selected_profile_model);
+        eff = effectiveAgentForSubAgent(
+            config.resolveEffectiveAgent(live_selected_profile_model),
+            params.sub_agent_overrides,
+        );
         const iter_profile: ?config_mod.LlmConfig.LlmAgent =
             config.resolveSessionAgentCompat(live_selected_profile_model);
 
@@ -919,7 +931,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                         .tool_call_id = null,
                         .agent = initial_agent,
                         .loop_index = 0,
-                        .temperature = initial_agent_state.temperature,
+                        .temperature = insert_temperature,
                         .is_thinking = eff.is_thinking orelse initial_agent_state.is_thinking,
                         .prompt_tokens = 0,
                         .completion_tokens = 0,
@@ -969,37 +981,13 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         var agent_temperature = currentAgentState.temperature;
         var isThinking = currentAgentState.is_thinking;
 
-        // Apply sub-agent overrides (resolved by Config.resolveAgent in
-        // tool_registry.execSpawnSubAgent).
+        // The agent itself was applied to `eff` before the first history row
+        // was written (see `effectiveAgentForSubAgent`); what is left here
+        // are the session-state values and the resolved agent's name.
         var sub_agent_session_name: []const u8 = "";
         if (params.sub_agent_overrides) |ov| {
-            if (ov.model.len > 0) eff.model = ov.model;
-            if (ov.base_url.len > 0) eff.base_url = ov.base_url;
-            if (ov.api_key.len > 0) eff.api_key = ov.api_key;
-            if (ov.url_style.len > 0) eff.url_style = ov.url_style;
-            // Transport + its CLI knobs follow the same "non-empty wins"
-            // rule, so a CLI sub-agent overrides its HTTP parent (and vice
-            // versa) without touching the profile cascade.
-            if (ov.backend.len > 0) eff.backend = ov.backend;
-            if (ov.config_dir) |d| eff.config_dir = d;
-            if (ov.max_turns) |n| eff.max_turns = n;
-            if (ov.opencode_agent) |a| eff.opencode_agent = a;
-            if (ov.opencode_auto) |b| eff.opencode_auto = b;
-            if (ov.is_thinking) |t| {
-                isThinking = t;
-                // Mirror the override onto the session-state carrier so the
-                // user-message INSERT below carries the sub-agent's resolved
-                // `is_thinking`, not the profile's.
-                eff.is_thinking = t;
-            }
+            if (ov.is_thinking) |t| isThinking = t;
             if (ov.temperature) |t| agent_temperature = t;
-            // Model-thinking overrides (plan 2026-08-23-model-thinking).
-            // Non-null budget_tokens wins over the profile's value. Non-null
-            // reasoning_effort wins over the profile's value.
-            if (ov.thinking_budget_tokens) |t| eff.thinking_budget_tokens = t;
-            if (ov.reasoning_effort) |re| {
-                if (re.len > 0) eff.reasoning_effort = re;
-            }
             sub_agent_session_name = ov.resolved_name;
         }
         // For sub-agent flow: replace `current_agent` (the session's last
@@ -1856,7 +1844,7 @@ fn callDynamicAgentNew(
     const messages_for_agent: []const agent.AgentMessage = messages_list.items;
     const dynamic_agent_call_params = agent.AgentCall{ .tools = equip_tools, .messages = messages_for_agent, .temperature = agent_temperature, .max_tokens = current_max_tokens, .cancel_fn = cancel_fn };
     dynamic_agent.thinkingEnabled = isThinking;
-    // === Model-thinking (plan 2026-08-23-model-thinking) ============= The
+    // === Model-thinking ======================================= The
     // new fields are no-ops when the URL style isn't a match:
     // buildJsonAnthropicRequest ignores `reasoningEffort`; OpenAI
     dynamic_agent.thinkingBudgetTokens = thinking_budget_tokens;
@@ -2120,6 +2108,36 @@ pub const SubAgentOverrides = struct {
     reasoning_effort: ?[]const u8 = null,
     system_prompt: []const u8 = "",
 };
+
+/// The agent a session runs with: a sub-agent's resolved override wins over
+/// what this session resolved. It has to be applied before the first history
+/// row is written — a sub-agent session has no config owner to resolve one.
+pub fn effectiveAgentForSubAgent(
+    base: config_mod.LlmConfig.EffectiveAgent,
+    overrides: ?SubAgentOverrides,
+) config_mod.LlmConfig.EffectiveAgent {
+    var eff = base;
+    const ov = overrides orelse return eff;
+    if (ov.model.len > 0) eff.model = ov.model;
+    if (ov.base_url.len > 0) eff.base_url = ov.base_url;
+    if (ov.api_key.len > 0) eff.api_key = ov.api_key;
+    if (ov.url_style.len > 0) eff.url_style = ov.url_style;
+    // Transport: a non-empty string wins for `backend`, and the optional CLI
+    // knobs are applied whenever the override carries one.
+    if (ov.backend.len > 0) eff.backend = ov.backend;
+    if (ov.config_dir) |d| eff.config_dir = d;
+    if (ov.max_turns) |n| eff.max_turns = n;
+    if (ov.opencode_agent) |a| eff.opencode_agent = a;
+    if (ov.opencode_auto) |b| eff.opencode_auto = b;
+    if (ov.is_thinking) |t| eff.is_thinking = t;
+    // Model-thinking overrides. A non-null budget wins over the profile's
+    // value, and so does a non-null reasoning effort.
+    if (ov.thinking_budget_tokens) |t| eff.thinking_budget_tokens = t;
+    if (ov.reasoning_effort) |re| {
+        if (re.len > 0) eff.reasoning_effort = re;
+    }
+    return eff;
+}
 
 pub const RunParamsNew = struct {
     parent_session_id: []const u8,
@@ -3025,6 +3043,59 @@ test "re_read_selected_profile_model: subsequent reads see UPDATEd value (live r
 
     const second = re_read_selected_profile_model(alloc, &ctx.db, "s_live", "snapshot");
     try testing.expectEqualStrings("gamma", second);
+}
+
+test "a sub-agent's override supplies the model when the session's own resolution is empty" {
+    const base = config_mod.LlmConfig.EffectiveAgent{
+        .model = "",
+        .base_url = "",
+        .api_key = "",
+        .url_style = "",
+        .backend = "http",
+        .config_dir = null,
+        .max_turns = null,
+        .opencode_agent = null,
+        .opencode_auto = null,
+        .thinking_str = "auto",
+        .is_thinking = null,
+        .thinking_adaptive = true,
+        .thinking_budget_tokens = null,
+        .reasoning_effort = null,
+    };
+    const eff = effectiveAgentForSubAgent(base, .{
+        .resolved_name = "opencode",
+        .is_random_fallback = false,
+        .model = "minimax-m3.1-flash-free",
+        .base_url = "https://opencode.ai/inference/go/v1/chat/completions",
+        .api_key = "a-key",
+        .url_style = "openai",
+    });
+    try testing.expectEqualStrings("minimax-m3.1-flash-free", eff.model);
+    try testing.expectEqualStrings("https://opencode.ai/inference/go/v1/chat/completions", eff.base_url);
+    try testing.expectEqualStrings("a-key", eff.api_key);
+    try testing.expectEqualStrings("openai", eff.url_style);
+}
+
+test "a session that spawns no sub-agent keeps the agent it resolved" {
+    const base = config_mod.LlmConfig.EffectiveAgent{
+        .model = "space-bunny-free",
+        .base_url = "https://opencode.ai/zen/go/v1/chat/completions",
+        .api_key = "a-key",
+        .url_style = "openai",
+        .backend = "http",
+        .config_dir = null,
+        .max_turns = null,
+        .opencode_agent = null,
+        .opencode_auto = null,
+        .thinking_str = "auto",
+        .is_thinking = null,
+        .thinking_adaptive = true,
+        .thinking_budget_tokens = null,
+        .reasoning_effort = null,
+    };
+    const eff = effectiveAgentForSubAgent(base, null);
+    try testing.expectEqualStrings("space-bunny-free", eff.model);
+    try testing.expectEqualStrings("a-key", eff.api_key);
 }
 
 test "flushCancelledPartial persists the streamed partial as a cancelled turn" {
