@@ -9,9 +9,9 @@ on:
       concurrency:
         description: 'concurrency of the cN phase'
         default: '8'
-      route:
-        description: 'GET route to benchmark'
-        default: '/health'
+      scenarios:
+        description: 'comma list: health, messages, or all'
+        default: 'all'
       min_scaling:
         description: 'gate: throughput at cN divided by throughput at c1'
         default: '2.0'
@@ -60,7 +60,7 @@ env:
 
 jobs:
   benchmark:
-    name: GET ${{ github.event.inputs.route || '/health' }} in a fixed container spec
+    name: GET ${{ github.event.inputs.scenarios || 'all' }} in a fixed container spec
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -117,22 +117,22 @@ jobs:
           set -euo pipefail
           requests='${{ github.event.inputs.requests }}'
           concurrency='${{ github.event.inputs.concurrency }}'
-          route='${{ github.event.inputs.route }}'
+          scenarios='${{ github.event.inputs.scenarios }}'
           min_scaling='${{ github.event.inputs.min_scaling }}'
           strict='${{ github.event.inputs.strict }}'
           requests="${requests:-2000}"
           concurrency="${concurrency:-8}"
-          route="${route:-/health}"
+          scenarios="${scenarios:-all}"
           min_scaling="${min_scaling:-2.0}"
           strict="${strict:-false}"
           case "$requests" in ''|*[!0-9]*) echo "::error::requests must be a positive integer"; exit 1 ;; esac
           case "$concurrency" in ''|*[!0-9]*) echo "::error::concurrency must be a positive integer"; exit 1 ;; esac
-          case "$route" in /*) ;; *) echo "::error::route must start with /"; exit 1 ;; esac
+          case "$scenarios" in ''|*[!a-z,]*) echo "::error::scenarios must be a comma list of scenario names"; exit 1 ;; esac
           case "$strict" in true|1) strict=1 ;; *) strict=0 ;; esac
           {
             echo "requests=$requests"
             echo "concurrency=$concurrency"
-            echo "route=$route"
+            echo "scenarios=$scenarios"
             echo "min_scaling=$min_scaling"
             echo "strict=$strict"
             echo "out=${RUNNER_TEMP}/api-bench"
@@ -144,7 +144,7 @@ jobs:
           CONTAINER_ENGINE: docker
           API_BENCH_REQUESTS: ${{ steps.run.outputs.requests }}
           API_BENCH_CONCURRENCY: ${{ steps.run.outputs.concurrency }}
-          API_BENCH_ROUTE: ${{ steps.run.outputs.route }}
+          API_BENCH_SCENARIOS: ${{ steps.run.outputs.scenarios }}
           API_BENCH_MIN_SCALING: ${{ steps.run.outputs.min_scaling }}
           API_BENCH_STRICT: ${{ steps.run.outputs.strict }}
           API_BENCH_OUT: ${{ runner.temp }}/api-bench

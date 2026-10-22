@@ -1,6 +1,7 @@
 # benchmark
 
 A GET benchmark whose **verdict is determined** and whose timing is honest about being timing.
+Two scenarios by default: `health` (in memory) and `messages` (a SQLite read).
 
 ```sh
 zig build install:linux -Doptimize=ReleaseFast -Dno-webapp-rebuild   # produces zig-out/bin/pabrikcore-linux-x86_64
@@ -11,6 +12,28 @@ CONTAINER_ENGINE=podman benchmark/run.sh run                         # same thin
 
 `run` leaves `api-bench.json`, `api-bench.md` and `server.log` in `$API_BENCH_OUT`
 (default `$TMPDIR/pabrik-api-bench`). Nothing it writes lands in the repository.
+
+## Scenarios
+
+| name | route | what it exercises | contract |
+| --- | --- | --- | --- |
+| `health` | `GET /health` | the HTTP path with no storage at all | `{"status":"ok","timestamp":<ts>}` after the timestamp is masked |
+| `messages` | `GET /api/session/bench/messages` | a SQLite read: the message query, the session row, the profile lookup | the whole body, byte for byte |
+
+`/api/session/bench/messages` on a fresh `HOME` is an empty inbox, and its body carries no id and
+no timestamp, so nothing needs masking — the entire response is the contract:
+
+```json
+{"messages":[],"has_more":false,"next_cursor":null,"cwd":null,"git_worktree_cwd":null,
+ "pr_url":null,"pr_provider":null,"selected_profile_model":null,"sub_agent_name":null,
+ "parent_session_id":null,"max_total_tokens":0,"max_capacity_total_tokens":200000,
+ "total":0,"skills":[]}
+```
+
+Both are reproducible only because the server starts on a **fresh empty HOME every run** (the
+container's `/pabrik-home` is a tmpfs), so "an empty inbox" is the state, not an accident.
+
+Pick scenarios with `API_BENCH_SCENARIOS=health` or `--scenario messages`; `all` is the default.
 
 ## The fixed spec
 
@@ -77,6 +100,12 @@ On a GitHub-hosted runner (4 vCPU, the `dedicated-2cpu` profile):
 The limits are set an order of magnitude away from that baseline on purpose: this gate exists to
 catch a collapse, not to police a percentage.
 
+Per scenario, because the two do not behave alike. Locally, `health` goes 36k rps at concurrency 1
+to 132k at concurrency 8 (scaling 3.7) while `messages` goes 7.6k to 8.6k (scaling 1.12) — the
+SQLite read path does not get faster with more connections, and that is the endpoint telling the
+truth, not a client artefact. So `messages` gates on scaling ≥ 1.0 (it must not get *slower* under
+concurrency) and rps ≥ 1000, while `health` keeps the 2.0 / 2000 pair.
+
 ## kabelweb closes a connection every 1000 requests
 
 `Keep-Alive: timeout=5, max=1000`, enforced at `keepalive_count < 1000` in kabelweb's threaded and
@@ -88,7 +117,7 @@ that needed more than that is a server behaviour change worth looking at, not a 
 
 | file | what it is |
 | --- | --- |
-| `api_bench.zig` | the load generator, the statistics, the gate, and 41 `zig test` behaviour checks |
+| `api_bench.zig` | the load generator, the statistics, the gate, the scenario table, and 49 `zig test` behaviour checks |
 | `run.sh` | the orchestration: load generator build, image build, both containers, artifacts, exit code |
 | `Containerfile` | the image both containers run |
 

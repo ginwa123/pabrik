@@ -9,7 +9,7 @@ SERVER_NAME="${API_BENCH_SERVER_NAME:-pabrik-api-bench-server}"
 PABRIK_BIN="${PABRIK_BIN:-$ROOT/zig-out/bin/pabrikcore-linux-x86_64}"
 LOADGEN_BIN="${API_BENCH_LOADGEN:-$ROOT/zig-out/bin/api-bench}"
 PORT="${API_BENCH_PORT:-18080}"
-ROUTE="${API_BENCH_ROUTE:-/health}"
+SCENARIOS="${API_BENCH_SCENARIOS:-all}"
 SERVER_CPUSET="${API_BENCH_SERVER_CPUSET-0,1}"
 CLIENT_CPUSET="${API_BENCH_CLIENT_CPUSET-2,3}"
 SERVER_CPUS=2
@@ -46,7 +46,7 @@ environment:
   API_BENCH_OUT           directory for api-bench.json, api-bench.md, server.log
   API_BENCH_REQUESTS      requests per measured phase, default 2000
   API_BENCH_CONCURRENCY   the concurrency of the cN phase, default 8
-  API_BENCH_ROUTE         GET route to benchmark, default /health
+  API_BENCH_SCENARIOS     comma list of scenarios, default all (health, messages)
   API_BENCH_STRICT=1      a performance-gate miss fails the run
   API_BENCH_SERVER_CPUSET empty drops --cpuset-cpus and the profile becomes quota-2cpu
   API_BENCH_CLIENT_CPUSET empty drops --cpuset-cpus and the profile becomes quota-2cpu
@@ -85,7 +85,7 @@ engine           $ENGINE
 image            $IMAGE
 server binary    $PABRIK_BIN
 load generator   $LOADGEN_BIN
-route            GET $ROUTE on 127.0.0.1:$PORT
+scenarios        $SCENARIOS on 127.0.0.1:$PORT (health = /health, messages = /api/session/bench/messages)
 server container --cpus $SERVER_CPUS --cpuset-cpus ${SERVER_CPUSET:-none} --memory ${MEMORY_MB}m --network none
 client container --cpus $CLIENT_CPUS --cpuset-cpus ${CLIENT_CPUSET:-none} --memory ${CLIENT_MEMORY_MB}m --network container:$SERVER_NAME
 phases           c1 (concurrency 1) and cN (concurrency $CONCURRENCY), $REQUESTS requests each, $WARMUP warmup
@@ -192,7 +192,7 @@ run_bench() {
     --ulimit nofile=65536:65536 \
     "$IMAGE" /opt/pabrik/api-bench \
       --port "$PORT" \
-      --route "$ROUTE" \
+      --scenario "$SCENARIOS" \
       --requests "$REQUESTS" \
       --concurrency "$CONCURRENCY" \
       --warmup "$WARMUP" \

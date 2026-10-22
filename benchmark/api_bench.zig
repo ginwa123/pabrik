@@ -2,13 +2,52 @@ const std = @import("std");
 const linux = std.os.linux;
 
 pub const expected_body = "{\"status\":\"ok\",\"timestamp\":<ts>}";
+pub const messages_body = "{\"messages\":[],\"has_more\":false,\"next_cursor\":null,\"cwd\":null,\"git_worktree_cwd\":null,\"pr_url\":null,\"pr_provider\":null,\"selected_profile_model\":null,\"sub_agent_name\":null,\"parent_session_id\":null,\"max_total_tokens\":0,\"max_capacity_total_tokens\":200000,\"total\":0,\"skills\":[]}";
 pub const max_response_bytes = 64 * 1024;
 pub const phase_names = [2][]const u8{ "c1", "cN" };
 const zero_digest: [32]u8 = [_]u8{0} ** 32;
 
+pub const Scenario = struct {
+    name: []const u8,
+    route: []const u8,
+    mask_timestamp: bool,
+    expected: []const u8,
+    min_scaling: f64 = 0,
+    min_rps: f64 = 0,
+};
+
+pub const scenarios = [_]Scenario{
+    .{
+        .name = "health",
+        .route = "/health",
+        .mask_timestamp = true,
+        .expected = expected_body,
+    },
+    .{
+        .name = "messages",
+        .route = "/api/session/bench/messages",
+        .mask_timestamp = false,
+        .expected = messages_body,
+        .min_scaling = 1.0,
+        .min_rps = 1000.0,
+    },
+};
+
+pub const scenario_pointers = [scenarios.len]*const Scenario{
+    &scenarios[0],
+    &scenarios[1],
+};
+
+pub fn findScenario(name: []const u8) ?*const Scenario {
+    for (&scenarios) |*scenario| {
+        if (std.mem.eql(u8, scenario.name, name)) return scenario;
+    }
+    return null;
+}
+
 pub const Config = struct {
     port: u16 = 18080,
-    route: []const u8 = "/health",
+    selected: []const *const Scenario = &scenario_pointers,
     requests: usize = 2000,
     concurrency: usize = 8,
     warmup: usize = 200,
@@ -320,7 +359,7 @@ pub fn computeLatency(gpa: std.mem.Allocator, samples: []const u64, elapsed_ns: 
     };
 }
 
-pub fn phaseProblems(phase: *Phase) !void {
+pub fn phaseProblems(phase: *Phase, expected: []const u8) !void {
     if (phase.requests != phase.expected_requests) {
         try phase.problems.append(phase.gpa, try std.fmt.allocPrint(phase.gpa, "completed {d} of {d} requests", .{ phase.requests, phase.expected_requests }));
     }
@@ -334,7 +373,7 @@ pub fn phaseProblems(phase: *Phase) !void {
     }
     if (phase.distinct_bodies != 1) {
         try phase.problems.append(phase.gpa, try std.fmt.allocPrint(phase.gpa, "{d} distinct response bodies", .{phase.distinct_bodies}));
-    } else if (!std.mem.eql(u8, phase.bodies.items[0], expected_body)) {
+    } else if (!std.mem.eql(u8, phase.bodies.items[0], expected)) {
         try phase.problems.append(phase.gpa, try std.fmt.allocPrint(phase.gpa, "body does not match the contract: {s}", .{phase.bodies.items[0]}));
     }
     if (phase.content_types.items.len == 0) {
@@ -347,16 +386,16 @@ pub fn phaseProblems(phase: *Phase) !void {
     }
 }
 
-pub fn settlePhase(phase: *Phase) !void {
+pub fn settlePhase(phase: *Phase, expected: []const u8) !void {
     phase.requests = phase.samples.items.len;
     phase.distinct_bodies = phase.bodies.items.len;
     phase.body_fp = try fingerprint(phase.gpa, phase.bodies.items);
     phase.latency = try computeLatency(phase.gpa, phase.samples.items, phase.elapsed_ns);
     phase.latency.samples = phase.samples.items.len;
-    try phaseProblems(phase);
+    try phaseProblems(phase, expected);
 }
 
-pub fn evaluateGate(gpa: std.mem.Allocator, phases: *const [2]Phase, cfg: *const Config) !Gate {
+pub fn evaluateGate(gpa: std.mem.Allocator, phases: *const [2]Phase, cfg: *const Config, scenario: *const Scenario) !Gate {
     var checks = std.ArrayList(Check).empty;
     errdefer checks.deinit(gpa);
 
@@ -371,15 +410,17 @@ pub fn evaluateGate(gpa: std.mem.Allocator, phases: *const [2]Phase, cfg: *const
         });
     }
 
+    const min_scaling = if (scenario.min_scaling > 0) scenario.min_scaling else cfg.min_scaling;
+    const min_rps = if (scenario.min_rps > 0) scenario.min_rps else cfg.min_rps;
     const floor = phases[0].latency.throughput_rps;
     const ceiling = phases[1].latency.throughput_rps;
     const scaling = if (floor > 0) round3(ceiling / floor) else 0;
     try checks.append(gpa, .{
         .name = try gpa.dupe(u8, "scaling.throughput"),
         .kind = "performance",
-        .ok = scaling >= cfg.min_scaling,
+        .ok = scaling >= min_scaling,
         .value = scaling,
-        .limit = cfg.min_scaling,
+        .limit = min_scaling,
         .detail = "throughput at the high-concurrency phase over concurrency 1",
     });
     try checks.append(gpa, .{
@@ -393,9 +434,9 @@ pub fn evaluateGate(gpa: std.mem.Allocator, phases: *const [2]Phase, cfg: *const
     try checks.append(gpa, .{
         .name = try gpa.dupe(u8, "throughput.cN"),
         .kind = "performance",
-        .ok = ceiling >= cfg.min_rps,
+        .ok = ceiling >= min_rps,
         .value = ceiling,
-        .limit = cfg.min_rps,
+        .limit = min_rps,
         .detail = "requests per second at the high-concurrency phase",
     });
 
@@ -421,31 +462,34 @@ fn appendPrint(list: *std.ArrayList(u8), gpa: std.mem.Allocator, comptime format
     try list.appendSlice(gpa, rendered);
 }
 
-pub fn canonicalDigest(gpa: std.mem.Allocator, cfg: *const Config, phases: *const [2]Phase, gate: *const Gate) ![32]u8 {
+pub fn canonicalDigest(gpa: std.mem.Allocator, cfg: *const Config, results: []const ScenarioResult) ![32]u8 {
     var text = std.ArrayList(u8).empty;
     defer text.deinit(gpa);
 
-    try appendPrint(&text, gpa, "route={s}\n", .{cfg.route});
     try appendPrint(&text, gpa, "requests={d}\nconcurrency={d}\nwarmup={d}\n", .{ cfg.requests, cfg.concurrency, cfg.warmup });
     try appendPrint(&text, gpa, "profile={s}\n", .{cfg.profile});
 
-    for (0..2) |index| {
-        const phase = &phases[index];
-        try appendPrint(&text, gpa, "phase={s} requests={d} expected={d} distinct={d} fp={s}\n", .{
-            phase_names[index],
-            phase.requests,
-            phase.expected_requests,
-            phase.distinct_bodies,
-            &phase.fingerprintHex(),
-        });
-        for (phase.statuses.items) |entry| try appendPrint(&text, gpa, " status={d}:{d}\n", .{ entry.code, entry.count });
-        for (phase.content_types.items) |value| try appendPrint(&text, gpa, " content_type={s}\n", .{value});
-        for (phase.problems.items) |problem| try appendPrint(&text, gpa, " problem={s}\n", .{problem});
-        try appendPrint(&text, gpa, " ok={d}\n", .{@intFromBool(phase.ok())});
-    }
-    for (gate.checks) |check| {
-        if (!std.mem.eql(u8, check.kind, "functional")) continue;
-        try appendPrint(&text, gpa, "check={s} ok={d}\n", .{ check.name, @intFromBool(check.ok) });
+    for (results) |result| {
+        const scenario = result.scenario;
+        try appendPrint(&text, gpa, "scenario={s} route={s}\n", .{ scenario.name, scenario.route });
+        for (0..2) |index| {
+            const phase = &result.phases[index];
+            try appendPrint(&text, gpa, " phase={s} requests={d} expected={d} distinct={d} fp={s}\n", .{
+                phase_names[index],
+                phase.requests,
+                phase.expected_requests,
+                phase.distinct_bodies,
+                &phase.fingerprintHex(),
+            });
+            for (phase.statuses.items) |entry| try appendPrint(&text, gpa, "  status={d}:{d}\n", .{ entry.code, entry.count });
+            for (phase.content_types.items) |value| try appendPrint(&text, gpa, "  content_type={s}\n", .{value});
+            for (phase.problems.items) |problem| try appendPrint(&text, gpa, "  problem={s}\n", .{problem});
+            try appendPrint(&text, gpa, "  ok={d}\n", .{@intFromBool(phase.ok())});
+        }
+        for (result.gate.checks) |check| {
+            if (!std.mem.eql(u8, check.kind, "functional")) continue;
+            try appendPrint(&text, gpa, " check={s} ok={d}\n", .{ check.name, @intFromBool(check.ok) });
+        }
     }
 
     var digest: [32]u8 = undefined;
@@ -616,6 +660,7 @@ const Shared = struct {
     payload: []const u8,
     counts: []const usize,
     results: []WorkerResult,
+    mask_timestamp: bool = true,
     started: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
     abort: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
     deadline_ns: u64 = 0,
@@ -687,7 +732,10 @@ fn workerMain(shared: *Shared, index: usize) void {
         };
         result.samples.append(gpa, outcome.elapsed_ns) catch break;
         recordStatus(&result.statuses, gpa, outcome.taken.head.status) catch break;
-        const body = normalizeBody(normalized, outcome.taken.body) catch outcome.taken.body;
+        const body = if (shared.mask_timestamp)
+            (normalizeBody(normalized, outcome.taken.body) catch outcome.taken.body)
+        else
+            outcome.taken.body;
         recordUnique(&result.bodies, gpa, body) catch break;
         recordUnique(&result.content_types, gpa, outcome.taken.head.content_type) catch break;
     }
@@ -695,7 +743,7 @@ fn workerMain(shared: *Shared, index: usize) void {
     result.connections = connection.opened;
 }
 
-fn mergePhase(gpa: std.mem.Allocator, phase: *Phase, results: []const WorkerResult, expected: usize) !void {
+fn mergePhase(gpa: std.mem.Allocator, phase: *Phase, results: []const WorkerResult, expected: usize, contract: []const u8) !void {
     phase.expected_requests = expected;
     var started: u64 = std.math.maxInt(u64);
     var finished: u64 = 0;
@@ -722,10 +770,10 @@ fn mergePhase(gpa: std.mem.Allocator, phase: *Phase, results: []const WorkerResu
         }
     }
     if (finished > started and started != std.math.maxInt(u64)) phase.elapsed_ns = finished - started;
-    try settlePhase(phase);
+    try settlePhase(phase, contract);
 }
 
-fn runPhase(gpa: std.mem.Allocator, cfg: *const Config, payload: []const u8, requests: usize, concurrency: usize) !Phase {
+fn runPhase(gpa: std.mem.Allocator, cfg: *const Config, scenario: *const Scenario, payload: []const u8, requests: usize, concurrency: usize) !Phase {
     const counts = try planCounts(gpa, requests, concurrency);
     defer gpa.free(counts);
     const results = try gpa.alloc(WorkerResult, concurrency);
@@ -741,6 +789,7 @@ fn runPhase(gpa: std.mem.Allocator, cfg: *const Config, payload: []const u8, req
         .payload = payload,
         .counts = counts,
         .results = results,
+        .mask_timestamp = scenario.mask_timestamp,
         .deadline_ns = nowNs() + std.time.ns_per_s * 120,
     };
 
@@ -759,7 +808,7 @@ fn runPhase(gpa: std.mem.Allocator, cfg: *const Config, payload: []const u8, req
 
     var phase: Phase = .{ .gpa = gpa };
     errdefer phase.deinit();
-    try mergePhase(gpa, &phase, results, requests);
+    try mergePhase(gpa, &phase, results, requests, scenario.expected);
     return phase;
 }
 
@@ -802,55 +851,107 @@ fn calibrate() f64 {
     return round1(@as(f64, @floatFromInt(32)) * 1e9 / @as(f64, @floatFromInt(elapsed)));
 }
 
-fn buildPayload(gpa: std.mem.Allocator, cfg: *const Config) ![]u8 {
-    return std.fmt.allocPrint(gpa, "GET {s} HTTP/1.1\r\nHost: 127.0.0.1:{d}\r\nUser-Agent: pabrik-api-bench/1\r\nAccept: application/json\r\nConnection: keep-alive\r\n\r\n", .{ cfg.route, cfg.port });
+fn buildPayload(gpa: std.mem.Allocator, cfg: *const Config, scenario: *const Scenario) ![]u8 {
+    return std.fmt.allocPrint(gpa, "GET {s} HTTP/1.1\r\nHost: 127.0.0.1:{d}\r\nUser-Agent: pabrik-api-bench/1\r\nAccept: application/json\r\nConnection: keep-alive\r\n\r\n", .{ scenario.route, cfg.port });
 }
 
-fn renderMarkdown(gpa: std.mem.Allocator, cfg: *const Config, phases: *const [2]Phase, gate: *const Gate, digest: [32]u8) ![]u8 {
+pub const ScenarioResult = struct {
+    scenario: *const Scenario,
+    phases: [2]Phase,
+    gate: Gate,
+    gpa: std.mem.Allocator,
+
+    pub fn deinit(self: *ScenarioResult) void {
+        for (&self.phases) |*phase| phase.deinit();
+        self.gate.deinit();
+    }
+};
+
+fn runScenario(gpa: std.mem.Allocator, cfg: *const Config, scenario: *const Scenario, cpu_mibs: *f64) !ScenarioResult {
+    const payload = try buildPayload(gpa, cfg, scenario);
+    defer gpa.free(payload);
+
+    waitReady(gpa, cfg, payload) catch return error.NotReady;
+
+    if (cfg.warmup > 0) {
+        var warm = try runPhase(gpa, cfg, scenario, payload, cfg.warmup, @min(cfg.warmup, cfg.concurrency));
+        const measured = warm.requests;
+        const problems = warm.problems.items.len;
+        warm.deinit();
+        std.log.info("{s}: warmup {d} requests, {d} measured, {d} problems", .{ scenario.name, cfg.warmup, measured, problems });
+        if (measured == 0) return error.NotReady;
+    }
+
+    cpu_mibs.* = calibrate();
+
+    var result: ScenarioResult = .{
+        .scenario = scenario,
+        .phases = undefined,
+        .gate = undefined,
+        .gpa = gpa,
+    };
+    result.phases[0] = try runPhase(gpa, cfg, scenario, payload, cfg.requests, 1);
+    result.phases[1] = try runPhase(gpa, cfg, scenario, payload, cfg.requests, cfg.concurrency);
+    result.gate = try evaluateGate(gpa, &result.phases, cfg, scenario);
+    return result;
+}
+
+fn renderMarkdown(gpa: std.mem.Allocator, cfg: *const Config, results: []const ScenarioResult, digest: [32]u8) ![]u8 {
     var text = std.ArrayList(u8).empty;
     errdefer text.deinit(gpa);
-    try appendPrint(&text, gpa, "## api benchmark: `GET {s}`\n\n", .{cfg.route});
-    try appendPrint(&text, gpa, "profile `{s}` — {d} requests per phase, concurrency 1 and {d}, warmup {d}\n\n", .{ cfg.profile, cfg.requests, cfg.concurrency, cfg.warmup });
-    try text.appendSlice(gpa, "| phase | requests | p50 ms | p90 ms | p99 ms | max ms | rps | bodies | connections | verdict |\n");
-    try text.appendSlice(gpa, "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n");
-    for (0..2) |index| {
-        const phase = &phases[index];
-        try appendPrint(&text, gpa, "| {s} | {d}/{d} | {d:.3} | {d:.3} | {d:.3} | {d:.3} | {d:.1} | {d} | {d} | {s} |\n", .{
-            phase_names[index],
-            phase.requests,
-            phase.expected_requests,
-            phase.latency.p50_ms,
-            phase.latency.p90_ms,
-            phase.latency.p99_ms,
-            phase.latency.max_ms,
-            phase.latency.throughput_rps,
-            phase.distinct_bodies,
-            phase.connections,
-            if (phase.ok()) "pass" else "fail",
+
+    try text.appendSlice(gpa, "## api benchmark\n\n");
+    for (results) |result| {
+        try appendPrint(&text, gpa, "`GET {s}` (`{s}`)\n", .{ result.scenario.route, result.scenario.name });
+    }
+    try appendPrint(&text, gpa, "\nprofile `{s}` — {d} requests per phase, concurrency 1 and {d}, warmup {d}\n", .{
+        cfg.profile, cfg.requests, cfg.concurrency, cfg.warmup,
+    });
+
+    for (results) |result| {
+        try appendPrint(&text, gpa, "\n### `{s}`\n\n", .{result.scenario.name});
+        try text.appendSlice(gpa, "| phase | requests | p50 ms | p90 ms | p99 ms | max ms | rps | bodies | connections | verdict |\n");
+        try text.appendSlice(gpa, "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n");
+        for (0..2) |index| {
+            const phase = &result.phases[index];
+            try appendPrint(&text, gpa, "| {s} | {d}/{d} | {d:.3} | {d:.3} | {d:.3} | {d:.3} | {d:.1} | {d} | {d} | {s} |\n", .{
+                phase_names[index],
+                phase.requests,
+                phase.expected_requests,
+                phase.latency.p50_ms,
+                phase.latency.p90_ms,
+                phase.latency.p99_ms,
+                phase.latency.max_ms,
+                phase.latency.throughput_rps,
+                phase.distinct_bodies,
+                phase.connections,
+                if (phase.ok()) "pass" else "fail",
+            });
+        }
+        for (0..2) |index| {
+            const phase = &result.phases[index];
+            if (phase.ok()) continue;
+            try appendPrint(&text, gpa, "\n- {s}: ", .{phase_names[index]});
+            for (phase.problems.items, 0..) |problem, position| {
+                if (position > 0) try text.appendSlice(gpa, "; ");
+                try text.appendSlice(gpa, problem);
+            }
+            try text.appendSlice(gpa, "\n");
+        }
+        try text.appendSlice(gpa, "\n| gate | kind | value | limit | ok |\n| --- | --- | --- | --- | --- |\n");
+        for (result.gate.checks) |check| {
+            try appendPrint(&text, gpa, "| {s} | {s} | ", .{ check.name, check.kind });
+            if (check.has_value) try appendPrint(&text, gpa, "{d:.3}", .{check.value}) else try text.appendSlice(gpa, "-");
+            try text.appendSlice(gpa, " | ");
+            if (check.has_limit) try appendPrint(&text, gpa, "{d:.3}", .{check.limit}) else try text.appendSlice(gpa, "-");
+            try appendPrint(&text, gpa, " | {s} |\n", .{if (check.ok) "yes" else "no"});
+        }
+        try appendPrint(&text, gpa, "\nbody fingerprint `{s}` on {s}\n", .{
+            &result.phases[1].fingerprintHex(),
+            if (result.phases[1].distinct_bodies == 1) "one body" else "several bodies",
         });
     }
-    for (0..2) |index| {
-        const phase = &phases[index];
-        if (phase.ok()) continue;
-        try appendPrint(&text, gpa, "\n- {s}: ", .{phase_names[index]});
-        for (phase.problems.items, 0..) |problem, position| {
-            if (position > 0) try text.appendSlice(gpa, "; ");
-            try text.appendSlice(gpa, problem);
-        }
-        try text.appendSlice(gpa, "\n");
-    }
-    try text.appendSlice(gpa, "\n| gate | kind | value | limit | ok |\n| --- | --- | --- | --- | --- |\n");
-    for (gate.checks) |check| {
-        try appendPrint(&text, gpa, "| {s} | {s} | ", .{ check.name, check.kind });
-        if (check.has_value) try appendPrint(&text, gpa, "{d:.3}", .{check.value}) else try text.appendSlice(gpa, "-");
-        try text.appendSlice(gpa, " | ");
-        if (check.has_limit) try appendPrint(&text, gpa, "{d:.3}", .{check.limit}) else try text.appendSlice(gpa, "-");
-        try appendPrint(&text, gpa, " | {s} |\n", .{if (check.ok) "yes" else "no"});
-    }
-    try appendPrint(&text, gpa, "\nresponse body fingerprint `{s}` on {s} — identical bytes on every run of this profile\n", .{
-        &phases[1].fingerprintHex(),
-        if (phases[1].distinct_bodies == 1) "one body" else "several bodies",
-    });
+
     try appendPrint(&text, gpa, "\ndeterministic result digest `{s}` — identical on every run of this profile, timing excluded\n", .{std.fmt.bytesToHex(digest, .lower)});
     try appendPrint(&text, gpa, "\ncontainer spec: `{s}`, server cpuset `{s}`, client cpuset `{s}`, memory `{d}` MB\n", .{
         cfg.profile, cfg.server_cpuset, cfg.client_cpuset, cfg.memory_mb,
@@ -883,15 +984,13 @@ fn jsonBool(value: bool) []const u8 {
     return if (value) "true" else "false";
 }
 
-fn renderJson(gpa: std.mem.Allocator, cfg: *const Config, phases: *const [2]Phase, gate: *const Gate, digest: [32]u8, cpu_mibs: f64) ![]u8 {
+fn renderJson(gpa: std.mem.Allocator, cfg: *const Config, results: []const ScenarioResult, digest: [32]u8, cpu_mibs: f64) ![]u8 {
     var text = std.ArrayList(u8).empty;
     errdefer text.deinit(gpa);
-    try text.appendSlice(gpa, "{\n  \"schema\": 1,\n  \"spec\": {\n");
+    try text.appendSlice(gpa, "{\n  \"schema\": 2,\n  \"spec\": {\n");
 
     try text.appendSlice(gpa, "    \"profile\": ");
     try jsonString(&text, gpa, cfg.profile);
-    try text.appendSlice(gpa, ",\n    \"route\": ");
-    try jsonString(&text, gpa, cfg.route);
     try text.appendSlice(gpa, ",\n    \"method\": \"GET\",\n");
     try appendPrint(&text, gpa, "    \"port\": {d},\n    \"requests\": {d},\n    \"concurrency\": {d},\n    \"warmup\": {d},\n", .{ cfg.port, cfg.requests, cfg.concurrency, cfg.warmup });
     try text.appendSlice(gpa, "    \"server_binary_sha256\": ");
@@ -901,72 +1000,87 @@ fn renderJson(gpa: std.mem.Allocator, cfg: *const Config, phases: *const [2]Phas
     try text.appendSlice(gpa, ",\n    \"client_cpuset\": ");
     try jsonString(&text, gpa, cfg.client_cpuset);
     try appendPrint(&text, gpa, ",\n    \"memory_mb\": {d},\n", .{cfg.memory_mb});
-    try appendPrint(&text, gpa, "    \"rules\": {{\"min_scaling\": {d:.3}, \"max_p99_ms\": {d:.3}, \"min_rps\": {d:.3}}}\n  }},\n", .{ cfg.min_scaling, cfg.max_p99_ms, cfg.min_rps });
+    try appendPrint(&text, gpa, "    \"rules\": {{\"min_scaling\": {d:.3}, \"max_p99_ms\": {d:.3}, \"min_rps\": {d:.3}}},\n", .{ cfg.min_scaling, cfg.max_p99_ms, cfg.min_rps });
+    try text.appendSlice(gpa, "    \"scenarios\": [");
+    for (results, 0..) |result, index| {
+        if (index > 0) try text.appendSlice(gpa, ", ");
+        try jsonString(&text, gpa, result.scenario.name);
+    }
+    try text.appendSlice(gpa, "]\n  },\n  \"results\": {\n");
 
-    try text.appendSlice(gpa, "  \"phases\": {\n");
-    for (0..2) |index| {
-        const phase = &phases[index];
+    for (results, 0..) |result, scenario_index| {
         try text.appendSlice(gpa, "    ");
-        try jsonString(&text, gpa, phase_names[index]);
-        try text.appendSlice(gpa, ": {\n");
-        try appendPrint(&text, gpa, "      \"requests\": {d},\n      \"expected_requests\": {d},\n      \"connections\": {d},\n      \"distinct_bodies\": {d},\n", .{
-            phase.requests, phase.expected_requests, phase.connections, phase.distinct_bodies,
+        try jsonString(&text, gpa, result.scenario.name);
+        try text.appendSlice(gpa, ": {\n      \"route\": ");
+        try jsonString(&text, gpa, result.scenario.route);
+        try text.appendSlice(gpa, ",\n      \"phases\": {\n");
+        for (0..2) |index| {
+            const phase = &result.phases[index];
+            try text.appendSlice(gpa, "        ");
+            try jsonString(&text, gpa, phase_names[index]);
+            try text.appendSlice(gpa, ": {\n");
+            try appendPrint(&text, gpa, "          \"requests\": {d},\n          \"expected_requests\": {d},\n          \"connections\": {d},\n          \"distinct_bodies\": {d},\n", .{
+                phase.requests, phase.expected_requests, phase.connections, phase.distinct_bodies,
+            });
+            try appendPrint(&text, gpa, "          \"body_fingerprint\": \"{s}\",\n          \"statuses\": {{", .{&phase.fingerprintHex()});
+            for (phase.statuses.items, 0..) |entry, position| {
+                if (position > 0) try text.appendSlice(gpa, ", ");
+                try appendPrint(&text, gpa, "\"{d}\": {d}", .{ entry.code, entry.count });
+            }
+            try text.appendSlice(gpa, "},\n          \"content_types\": [");
+            for (phase.content_types.items, 0..) |value, position| {
+                if (position > 0) try text.appendSlice(gpa, ", ");
+                try jsonString(&text, gpa, value);
+            }
+            try text.appendSlice(gpa, "],\n          \"latency\": {\n");
+            try appendPrint(&text, gpa, "            \"samples\": {d},\n            \"p50_ms\": {d:.3},\n            \"p90_ms\": {d:.3},\n            \"p99_ms\": {d:.3},\n            \"max_ms\": {d:.3},\n            \"mean_ms\": {d:.3},\n            \"throughput_rps\": {d:.1}\n          }},\n", .{
+                phase.latency.samples, phase.latency.p50_ms, phase.latency.p90_ms, phase.latency.p99_ms,
+                phase.latency.max_ms, phase.latency.mean_ms, phase.latency.throughput_rps,
+            });
+            try appendPrint(&text, gpa, "          \"ok\": {s},\n          \"problems\": [", .{jsonBool(phase.ok())});
+            for (phase.problems.items, 0..) |problem, position| {
+                if (position > 0) try text.appendSlice(gpa, ", ");
+                try jsonString(&text, gpa, problem);
+            }
+            try text.appendSlice(gpa, "]\n        }");
+            if (index == 0) try text.appendSlice(gpa, ",");
+            try text.appendSlice(gpa, "\n");
+        }
+        try text.appendSlice(gpa, "      },\n      \"gate\": {\n        \"verdict\": ");
+        try jsonString(&text, gpa, if (result.gate.verdict_pass) "pass" else "fail");
+        try appendPrint(&text, gpa, ",\n        \"strict\": {s},\n        \"enforced\": {s},\n        \"enforced_by\": [", .{
+            jsonBool(result.gate.strict), jsonBool(result.gate.enforced),
         });
-        try appendPrint(&text, gpa, "      \"body_fingerprint\": \"{s}\",\n      \"statuses\": {{", .{&phase.fingerprintHex()});
-        for (phase.statuses.items, 0..) |entry, position| {
-            if (position > 0) try text.appendSlice(gpa, ", ");
-            try appendPrint(&text, gpa, "\"{d}\": {d}", .{ entry.code, entry.count });
+        var first = true;
+        for (result.gate.checks) |check| {
+            if (check.ok) continue;
+            if (!result.gate.strict and !std.mem.eql(u8, check.kind, "functional")) continue;
+            if (!first) try text.appendSlice(gpa, ", ");
+            first = false;
+            try jsonString(&text, gpa, check.name);
         }
-        try text.appendSlice(gpa, "},\n      \"content_types\": [");
-        for (phase.content_types.items, 0..) |value, position| {
-            if (position > 0) try text.appendSlice(gpa, ", ");
-            try jsonString(&text, gpa, value);
+        try text.appendSlice(gpa, "],\n        \"checks\": [\n");
+        for (result.gate.checks, 0..) |check, index| {
+            try text.appendSlice(gpa, "          {\"name\": ");
+            try jsonString(&text, gpa, check.name);
+            try text.appendSlice(gpa, ", \"kind\": ");
+            try jsonString(&text, gpa, check.kind);
+            try appendPrint(&text, gpa, ", \"ok\": {s}, \"value\": ", .{jsonBool(check.ok)});
+            if (check.has_value) try appendPrint(&text, gpa, "{d:.3}", .{check.value}) else try text.appendSlice(gpa, "null");
+            try text.appendSlice(gpa, ", \"limit\": ");
+            if (check.has_limit) try appendPrint(&text, gpa, "{d:.3}", .{check.limit}) else try text.appendSlice(gpa, "null");
+            try text.appendSlice(gpa, ", \"detail\": ");
+            try jsonString(&text, gpa, check.detail);
+            try text.appendSlice(gpa, "}");
+            if (index + 1 < result.gate.checks.len) try text.appendSlice(gpa, ",");
+            try text.appendSlice(gpa, "\n");
         }
-        try text.appendSlice(gpa, "],\n      \"latency\": {\n");
-        try appendPrint(&text, gpa, "        \"samples\": {d},\n        \"p50_ms\": {d:.3},\n        \"p90_ms\": {d:.3},\n        \"p99_ms\": {d:.3},\n        \"max_ms\": {d:.3},\n        \"mean_ms\": {d:.3},\n        \"throughput_rps\": {d:.1}\n      }},\n", .{
-            phase.latency.samples, phase.latency.p50_ms,  phase.latency.p90_ms,         phase.latency.p99_ms,
-            phase.latency.max_ms,  phase.latency.mean_ms, phase.latency.throughput_rps,
-        });
-        try appendPrint(&text, gpa, "      \"ok\": {s},\n      \"problems\": [", .{jsonBool(phase.ok())});
-        for (phase.problems.items, 0..) |problem, position| {
-            if (position > 0) try text.appendSlice(gpa, ", ");
-            try jsonString(&text, gpa, problem);
-        }
-        try text.appendSlice(gpa, "]\n    }");
-        if (index == 0) try text.appendSlice(gpa, ",");
+        try text.appendSlice(gpa, "        ]\n      }\n    }");
+        if (scenario_index + 1 < results.len) try text.appendSlice(gpa, ",");
         try text.appendSlice(gpa, "\n");
     }
 
-    try text.appendSlice(gpa, "  },\n  \"gate\": {\n    \"verdict\": ");
-    try jsonString(&text, gpa, if (gate.verdict_pass) "pass" else "fail");
-    try appendPrint(&text, gpa, ",\n    \"strict\": {s},\n    \"enforced\": {s},\n    \"enforced_by\": [", .{
-        jsonBool(gate.strict), jsonBool(gate.enforced),
-    });
-    var first = true;
-    for (gate.checks) |check| {
-        if (check.ok) continue;
-        if (!gate.strict and !std.mem.eql(u8, check.kind, "functional")) continue;
-        if (!first) try text.appendSlice(gpa, ", ");
-        first = false;
-        try jsonString(&text, gpa, check.name);
-    }
-    try text.appendSlice(gpa, "],\n    \"checks\": [\n");
-    for (gate.checks, 0..) |check, index| {
-        try text.appendSlice(gpa, "      {\"name\": ");
-        try jsonString(&text, gpa, check.name);
-        try text.appendSlice(gpa, ", \"kind\": ");
-        try jsonString(&text, gpa, check.kind);
-        try appendPrint(&text, gpa, ", \"ok\": {s}, \"value\": ", .{jsonBool(check.ok)});
-        if (check.has_value) try appendPrint(&text, gpa, "{d:.3}", .{check.value}) else try text.appendSlice(gpa, "null");
-        try text.appendSlice(gpa, ", \"limit\": ");
-        if (check.has_limit) try appendPrint(&text, gpa, "{d:.3}", .{check.limit}) else try text.appendSlice(gpa, "null");
-        try text.appendSlice(gpa, ", \"detail\": ");
-        try jsonString(&text, gpa, check.detail);
-        try text.appendSlice(gpa, "}");
-        if (index + 1 < gate.checks.len) try text.appendSlice(gpa, ",");
-        try text.appendSlice(gpa, "\n");
-    }
-    try appendPrint(&text, gpa, "    ]\n  }},\n  \"machine\": {{\n    \"cpu_hash_mib_per_s\": {d:.1},\n    \"result_sha256\": \"{s}\"\n  }}\n}}\n", .{
+    try appendPrint(&text, gpa, "  }},\n  \"machine\": {{\n    \"cpu_hash_mib_per_s\": {d:.1},\n    \"result_sha256\": \"{s}\"\n  }}\n}}\n", .{
         cpu_mibs, std.fmt.bytesToHex(digest, .lower),
     });
     return text.toOwnedSlice(gpa);
@@ -980,11 +1094,12 @@ fn writeFile(io: std.Io, path: []const u8, contents: []const u8) !void {
 
 fn usage(io: std.Io) !void {
     const text =
-        \\usage: api-bench --port <n> [--route /health] [--requests 2000] [--concurrency 8]
-        \\                 [--warmup 200] [--min-scaling 2] [--max-p99-ms 5] [--min-rps 2000]
-        \\                 [--strict] [--profile name] [--server-cpuset 0,1] [--client-cpuset 2,3]
-        \\                 [--memory-mb 2048] [--server-binary-sha256 hex]
-        \\                 [--json path] [--markdown path]
+        \\usage: api-bench --port <n> [--scenario health,messages] [--requests 2000]
+        \\                 [--concurrency 8] [--warmup 200] [--min-scaling 2] [--max-p99-ms 5]
+        \\                 [--min-rps 2000] [--strict] [--profile name]
+        \\                 [--server-cpuset 0,1] [--client-cpuset 2,3] [--memory-mb 2048]
+        \\                 [--server-binary-sha256 hex] [--json path] [--markdown path]
+        \\scenarios: health (/health), messages (/api/session/bench/messages)
         \\
     ;
     try std.Io.File.writeStreamingAll(std.Io.File.stdout(), io, text);
@@ -995,20 +1110,49 @@ fn nextValue(args: []const [:0]const u8, index: usize) ![]const u8 {
     return std.mem.sliceTo(args[index + 1], 0);
 }
 
+fn selectScenarios(gpa: std.mem.Allocator, spec: []const u8) ![]const *const Scenario {
+    var selected = std.ArrayList(*const Scenario).empty;
+    errdefer selected.deinit(gpa);
+    var parts = std.mem.splitScalar(u8, spec, ',');
+    while (parts.next()) |part| {
+        const name = std.mem.trim(u8, part, " \t");
+        if (name.len == 0) continue;
+        if (std.mem.eql(u8, name, "all")) {
+            for (&scenarios) |*scenario| {
+                var present = false;
+                for (selected.items) |existing| {
+                    if (existing == scenario) present = true;
+                }
+                if (!present) try selected.append(gpa, scenario);
+            }
+            continue;
+        }
+        const scenario = findScenario(name) orelse return error.UnknownScenario;
+        var present = false;
+        for (selected.items) |existing| {
+            if (existing == scenario) present = true;
+        }
+        if (!present) try selected.append(gpa, scenario);
+    }
+    if (selected.items.len == 0) return error.UnknownScenario;
+    return selected.toOwnedSlice(gpa);
+}
+
 pub fn main(init: std.process.Init) !u8 {
     const gpa = init.gpa;
     const io = init.io;
     const args = try init.minimal.args.toSlice(init.arena.allocator());
 
     var cfg: Config = .{};
+    var scenario_spec: []const u8 = "all";
     var index: usize = 1;
     while (index < args.len) : (index += 1) {
         const arg = std.mem.sliceTo(args[index], 0);
         if (std.mem.eql(u8, arg, "--port")) {
             cfg.port = try std.fmt.parseInt(u16, try nextValue(args, index), 10);
             index += 1;
-        } else if (std.mem.eql(u8, arg, "--route")) {
-            cfg.route = try nextValue(args, index);
+        } else if (std.mem.eql(u8, arg, "--scenario") or std.mem.eql(u8, arg, "--route")) {
+            scenario_spec = try nextValue(args, index);
             index += 1;
         } else if (std.mem.eql(u8, arg, "--requests")) {
             cfg.requests = try std.fmt.parseInt(usize, try nextValue(args, index), 10);
@@ -1060,38 +1204,34 @@ pub fn main(init: std.process.Init) !u8 {
         }
     }
 
-    const payload = try buildPayload(gpa, &cfg);
-    defer gpa.free(payload);
+    cfg.selected = selectScenarios(gpa, scenario_spec) catch {
+        std.log.err("unknown scenario in '{s}'; known: health, messages", .{scenario_spec});
+        return 2;
+    };
+    defer gpa.free(cfg.selected);
 
-    waitReady(gpa, &cfg, payload) catch return 2;
+    const cpu_holder: *f64 = try gpa.create(f64);
+    defer gpa.destroy(cpu_holder);
+    cpu_holder.* = 0;
 
-    if (cfg.warmup > 0) {
-        var warm = try runPhase(gpa, &cfg, payload, cfg.warmup, @min(cfg.warmup, cfg.concurrency));
-        const measured = warm.requests;
-        const problems = warm.problems.items.len;
-        warm.deinit();
-        std.log.info("warmup {d} requests, {d} measured, {d} problems", .{ cfg.warmup, measured, problems });
-        if (measured == 0) return 2;
+    const results = try gpa.alloc(ScenarioResult, cfg.selected.len);
+    var built: usize = 0;
+    defer {
+        for (results[0..built]) |*result| result.deinit();
+        gpa.free(results);
+    }
+    while (built < cfg.selected.len) : (built += 1) {
+        results[built] = runScenario(gpa, &cfg, cfg.selected[built], cpu_holder) catch return 2;
     }
 
-    const cpu_mibs = calibrate();
+    const digest = try canonicalDigest(gpa, &cfg, results);
 
-    var phases: [2]Phase = undefined;
-    phases[0] = try runPhase(gpa, &cfg, payload, cfg.requests, 1);
-    errdefer phases[0].deinit();
-    phases[1] = try runPhase(gpa, &cfg, payload, cfg.requests, cfg.concurrency);
-    errdefer phases[1].deinit();
-
-    var gate = try evaluateGate(gpa, &phases, &cfg);
-    defer gate.deinit();
-    const digest = try canonicalDigest(gpa, &cfg, &phases, &gate);
-
-    const markdown = try renderMarkdown(gpa, &cfg, &phases, &gate, digest);
+    const markdown = try renderMarkdown(gpa, &cfg, results, digest);
     defer gpa.free(markdown);
     try std.Io.File.writeStreamingAll(std.Io.File.stdout(), io, markdown);
 
     if (cfg.json_path.len > 0) {
-        const report = try renderJson(gpa, &cfg, &phases, &gate, digest, cpu_mibs);
+        const report = try renderJson(gpa, &cfg, results, digest, cpu_holder.*);
         defer gpa.free(report);
         try writeFile(io, cfg.json_path, report);
     }
@@ -1099,13 +1239,26 @@ pub fn main(init: std.process.Init) !u8 {
         try writeFile(io, cfg.markdown_path, markdown);
     }
 
-    for (gate.checks) |check| {
-        if (check.ok) continue;
-        std.log.err("gate check {s} failed: value {d:.3}, limit {d:.3} ({s})", .{ check.name, check.value, check.limit, check.detail });
+    var enforced = false;
+    var verdict_pass = true;
+    for (results) |result| {
+        for (result.gate.checks) |check| {
+            if (check.ok) continue;
+            std.log.err("{s}: gate check {s} failed: value {d:.3}, limit {d:.3} ({s})", .{
+                result.scenario.name, check.name, check.value, check.limit, check.detail,
+            });
+        }
+        if (!result.gate.verdict_pass) {
+            verdict_pass = false;
+            std.log.info("{s}: verdict fail", .{result.scenario.name});
+        } else {
+            std.log.info("{s}: verdict pass", .{result.scenario.name});
+        }
+        if (result.gate.enforced) enforced = true;
     }
-    std.log.info("verdict {s} (enforced: {})", .{ if (gate.verdict_pass) "pass" else "fail", gate.enforced });
+    std.log.info("run verdict {s} (enforced: {})", .{ if (verdict_pass) "pass" else "fail", enforced });
 
-    return if (gate.enforced) 1 else 0;
+    return if (enforced) 1 else 0;
 }
 
 fn phaseFixture(gpa: std.mem.Allocator, bodies: []const []const u8, requests: usize, expected: usize, throughput: f64, p99: f64) !Phase {
@@ -1116,7 +1269,7 @@ fn phaseFixture(gpa: std.mem.Allocator, bodies: []const []const u8, requests: us
     for (bodies) |body| try recordUnique(&phase.bodies, gpa, body);
     phase.expected_requests = expected;
     phase.elapsed_ns = requests * 1_000_000;
-    try settlePhase(&phase);
+    try settlePhase(&phase, if (bodies.len == 1) bodies[0] else "several bodies");
     phase.latency.throughput_rps = throughput;
     phase.latency.p99_ms = p99;
     return phase;
@@ -1129,13 +1282,28 @@ fn bodyList() [1][]const u8 {
 fn healthyPhases(gpa: std.mem.Allocator) ![2]Phase {
     const bodies = bodyList();
     return .{
-        try phaseFixture(gpa, &bodies, 10, 10, 100.0, 12.0),
-        try phaseFixture(gpa, &bodies, 10, 10, 500.0, 40.0),
+        try phaseFixture(gpa, &bodies, 10, 10, 3000.0, 0.5),
+        try phaseFixture(gpa, &bodies, 10, 10, 12000.0, 2.0),
     };
 }
 
 fn healthyConfig(strict: bool) Config {
-    return .{ .concurrency = 8, .min_scaling = 1.2, .max_p99_ms = 50.0, .min_rps = 200.0, .strict = strict };
+    return .{
+        .concurrency = 8,
+        .min_scaling = 2.0,
+        .max_p99_ms = 5.0,
+        .min_rps = 2000.0,
+        .strict = strict,
+        .selected = &scenario_pointers,
+    };
+}
+
+fn resultFixture(gpa: std.mem.Allocator, scenario: *const Scenario, config: *const Config, bodies: []const []const u8, requests: usize, expected: usize, throughput: f64, p99: f64) !ScenarioResult {
+    var result: ScenarioResult = .{ .scenario = scenario, .phases = undefined, .gate = undefined, .gpa = gpa };
+    result.phases[0] = try phaseFixture(gpa, bodies, requests, expected, 100.0, p99);
+    result.phases[1] = try phaseFixture(gpa, bodies, requests, expected, throughput, p99);
+    result.gate = try evaluateGate(gpa, &result.phases, config, scenario);
+    return result;
 }
 
 test "timestamps normalize to one body" {
@@ -1322,30 +1490,83 @@ test "the fingerprint changes when a body changes" {
     try std.testing.expect(!std.mem.eql(u8, &first, &second));
 }
 
+test "every scenario is reachable by name" {
+    for (&scenarios) |*scenario| {
+        const found = findScenario(scenario.name) orelse return error.TestUnexpectedResult;
+        try std.testing.expectEqual(scenario, found);
+        try std.testing.expect(std.mem.startsWith(u8, found.route, "/"));
+    }
+    try std.testing.expectEqual(@as(?*const Scenario, null), findScenario("nope"));
+}
+
+test "the inbox contract is pinned and needs no masking" {
+    const inbox = findScenario("messages").?;
+    try std.testing.expect(!inbox.mask_timestamp);
+    try std.testing.expectEqualStrings("/api/session/bench/messages", inbox.route);
+    try std.testing.expect(std.mem.indexOf(u8, inbox.expected, "\"messages\":[]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, inbox.expected, "timestamp") == null);
+}
+
+test "the health contract needs masking and the inbox does not" {
+    try std.testing.expect(findScenario("health").?.mask_timestamp);
+    try std.testing.expect(std.mem.indexOf(u8, findScenario("health").?.expected, "<ts>") != null);
+    try std.testing.expect(!findScenario("messages").?.mask_timestamp);
+}
+
+test "selecting all lists both scenarios once" {
+    const selected = try selectScenarios(std.testing.allocator, "all,health");
+    defer std.testing.allocator.free(selected);
+    try std.testing.expectEqual(@as(usize, 2), selected.len);
+    try std.testing.expectEqualStrings("health", selected[0].name);
+    try std.testing.expectEqualStrings("messages", selected[1].name);
+}
+
+test "a named selection keeps the requested order" {
+    const selected = try selectScenarios(std.testing.allocator, "messages, health");
+    defer std.testing.allocator.free(selected);
+    try std.testing.expectEqual(@as(usize, 2), selected.len);
+    try std.testing.expectEqualStrings("messages", selected[0].name);
+    try std.testing.expectEqualStrings("health", selected[1].name);
+}
+
+test "an unknown scenario is rejected" {
+    try std.testing.expectError(error.UnknownScenario, selectScenarios(std.testing.allocator, "nope"));
+    try std.testing.expectError(error.UnknownScenario, selectScenarios(std.testing.allocator, ""));
+}
+
 test "a clean phase reports no problems" {
     const bodies = bodyList();
-    var phase = try phaseFixture(std.testing.allocator, &bodies, 10, 10, 100.0, 5.0);
+    var phase = try phaseFixture(std.testing.allocator, &bodies, 10, 10, 3000.0, 0.5);
     defer phase.deinit();
     try std.testing.expect(phase.ok());
     try std.testing.expectEqual(@as(usize, 1), phase.distinct_bodies);
     try std.testing.expectEqual(@as(usize, 10), phase.requests);
 }
 
+test "an inbox phase off its contract is a problem" {
+    const bodies = bodyList();
+    var phase = try phaseFixture(std.testing.allocator, &bodies, 10, 10, 3000.0, 0.5);
+    defer phase.deinit();
+    phase.problems.clearRetainingCapacity();
+    try phaseProblems(&phase, messages_body);
+    try std.testing.expect(!phase.ok());
+}
+
 test "a wrong status code is a problem" {
     const bodies = bodyList();
-    var phase = try phaseFixture(std.testing.allocator, &bodies, 10, 10, 100.0, 5.0);
+    var phase = try phaseFixture(std.testing.allocator, &bodies, 10, 10, 3000.0, 0.5);
     defer phase.deinit();
     phase.statuses.items[0].count = 9;
     try phase.statuses.append(phase.gpa, .{ .code = 503, .count = 1 });
     phase.problems.clearRetainingCapacity();
-    try phaseProblems(&phase);
+    try phaseProblems(&phase, expected_body);
     try std.testing.expect(!phase.ok());
     try std.testing.expect(std.mem.indexOf(u8, phase.problems.items[0], "503") != null);
 }
 
 test "two distinct bodies are a problem" {
     const bodies = [_][]const u8{ expected_body, "{\"status\":\"ok\",\"timestamp\":<ts>,\"extra\":1}" };
-    var phase = try phaseFixture(std.testing.allocator, &bodies, 10, 10, 100.0, 5.0);
+    var phase = try phaseFixture(std.testing.allocator, &bodies, 10, 10, 3000.0, 0.5);
     defer phase.deinit();
     try std.testing.expectEqual(@as(usize, 2), phase.distinct_bodies);
     try std.testing.expect(!phase.ok());
@@ -1354,15 +1575,17 @@ test "two distinct bodies are a problem" {
 
 test "a body off the contract is a problem" {
     const bodies = [_][]const u8{"{\"status\":\"down\",\"timestamp\":<ts>}"};
-    var phase = try phaseFixture(std.testing.allocator, &bodies, 10, 10, 100.0, 5.0);
+    var phase = try phaseFixture(std.testing.allocator, &bodies, 10, 10, 3000.0, 0.5);
     defer phase.deinit();
+    phase.problems.clearRetainingCapacity();
+    try phaseProblems(&phase, expected_body);
     try std.testing.expect(!phase.ok());
     try std.testing.expect(std.mem.indexOf(u8, phase.problems.items[0], "contract") != null);
 }
 
 test "a missing response is a problem" {
     const bodies = bodyList();
-    var phase = try phaseFixture(std.testing.allocator, &bodies, 9, 10, 100.0, 5.0);
+    var phase = try phaseFixture(std.testing.allocator, &bodies, 9, 10, 3000.0, 0.5);
     defer phase.deinit();
     try std.testing.expect(!phase.ok());
     try std.testing.expect(std.mem.indexOf(u8, phase.problems.items[0], "completed 9 of 10") != null);
@@ -1370,19 +1593,19 @@ test "a missing response is a problem" {
 
 test "a non-json content type is a problem" {
     const bodies = bodyList();
-    var phase = try phaseFixture(std.testing.allocator, &bodies, 10, 10, 100.0, 5.0);
+    var phase = try phaseFixture(std.testing.allocator, &bodies, 10, 10, 3000.0, 0.5);
     defer phase.deinit();
     phase.gpa.free(phase.content_types.items[0]);
     phase.content_types.items[0] = try phase.gpa.dupe(u8, "text/html");
     phase.problems.clearRetainingCapacity();
-    try phaseProblems(&phase);
+    try phaseProblems(&phase, expected_body);
     try std.testing.expect(!phase.ok());
 }
 
 test "an empty phase is a problem" {
     var phase: Phase = .{ .gpa = std.testing.allocator };
     defer phase.deinit();
-    try settlePhase(&phase);
+    try settlePhase(&phase, expected_body);
     try std.testing.expect(!phase.ok());
     try std.testing.expectEqual(@as(usize, 1), phase.problems.items.len);
     try std.testing.expect(std.mem.indexOf(u8, phase.problems.items[0], "no responses") != null);
@@ -1392,13 +1615,12 @@ test "a healthy run passes the gate" {
     var phases = try healthyPhases(std.testing.allocator);
     defer for (&phases) |*phase| phase.deinit();
     var config = healthyConfig(true);
-    var gate = try evaluateGate(std.testing.allocator, &phases, &config);
+    var gate = try evaluateGate(std.testing.allocator, &phases, &config, findScenario("health").?);
     defer gate.deinit();
     try std.testing.expect(gate.verdict_pass);
     try std.testing.expect(!gate.enforced);
-    const scaling = gate.checks[2];
-    try std.testing.expectEqualStrings("scaling.throughput", scaling.name);
-    try std.testing.expect(scaling.ok);
+    try std.testing.expectEqualStrings("scaling.throughput", gate.checks[2].name);
+    try std.testing.expect(gate.checks[2].ok);
 }
 
 test "flat throughput fails scaling but stays advisory" {
@@ -1406,7 +1628,7 @@ test "flat throughput fails scaling but stays advisory" {
     defer for (&phases) |*phase| phase.deinit();
     var config = healthyConfig(false);
     phases[1].latency.throughput_rps = phases[0].latency.throughput_rps;
-    var gate = try evaluateGate(std.testing.allocator, &phases, &config);
+    var gate = try evaluateGate(std.testing.allocator, &phases, &config, findScenario("health").?);
     defer gate.deinit();
     try std.testing.expect(!gate.verdict_pass);
     try std.testing.expect(!gate.enforced);
@@ -1417,7 +1639,7 @@ test "a strict run enforces a performance failure" {
     defer for (&phases) |*phase| phase.deinit();
     var config = healthyConfig(true);
     phases[1].latency.throughput_rps = 1.0;
-    var gate = try evaluateGate(std.testing.allocator, &phases, &config);
+    var gate = try evaluateGate(std.testing.allocator, &phases, &config, findScenario("health").?);
     defer gate.deinit();
     try std.testing.expect(!gate.verdict_pass);
     try std.testing.expect(gate.enforced);
@@ -1428,9 +1650,11 @@ test "a functional failure is enforced without strict" {
     var phases = try healthyPhases(std.testing.allocator);
     defer for (&phases) |*phase| phase.deinit();
     phases[0].deinit();
-    phases[0] = try phaseFixture(std.testing.allocator, &bodies, 10, 10, 100.0, 5.0);
+    phases[0] = try phaseFixture(std.testing.allocator, &bodies, 10, 10, 3000.0, 0.5);
+    phases[0].problems.clearRetainingCapacity();
+    try phaseProblems(&phases[0], expected_body);
     var config = healthyConfig(false);
-    var gate = try evaluateGate(std.testing.allocator, &phases, &config);
+    var gate = try evaluateGate(std.testing.allocator, &phases, &config, findScenario("health").?);
     defer gate.deinit();
     try std.testing.expect(!gate.verdict_pass);
     try std.testing.expect(gate.enforced);
@@ -1441,7 +1665,7 @@ test "a slow p99 fails the latency check" {
     defer for (&phases) |*phase| phase.deinit();
     var config = healthyConfig(true);
     phases[0].latency.p99_ms = 9000.0;
-    var gate = try evaluateGate(std.testing.allocator, &phases, &config);
+    var gate = try evaluateGate(std.testing.allocator, &phases, &config, findScenario("health").?);
     defer gate.deinit();
     try std.testing.expect(!gate.verdict_pass);
     try std.testing.expect(gate.enforced);
@@ -1449,59 +1673,76 @@ test "a slow p99 fails the latency check" {
 
 test "the digest ignores timing" {
     var config = healthyConfig(false);
-    var first = try healthyPhases(std.testing.allocator);
-    defer for (&first) |*phase| phase.deinit();
-    var second = try healthyPhases(std.testing.allocator);
-    defer for (&second) |*phase| phase.deinit();
-    second[1].latency.throughput_rps = 999_999.0;
-    second[0].latency.p99_ms = 1.0;
+    const health = findScenario("health").?;
+    const bodies = bodyList();
+    var results: [1]ScenarioResult = .{
+        try resultFixture(std.testing.allocator, health, &config, &bodies, 10, 10, 12000.0, 2.0),
+    };
+    defer for (&results) |*result| result.deinit();
+    const slow = try canonicalDigest(std.testing.allocator, &config, &results);
 
-    var first_gate = try evaluateGate(std.testing.allocator, &first, &config);
-    defer first_gate.deinit();
-    var second_gate = try evaluateGate(std.testing.allocator, &second, &config);
-    defer second_gate.deinit();
-
-    const first_digest = try canonicalDigest(std.testing.allocator, &config, &first, &first_gate);
-    const second_digest = try canonicalDigest(std.testing.allocator, &config, &second, &second_gate);
-    try std.testing.expectEqualSlices(u8, &first_digest, &second_digest);
+    results[0].phases[0].latency.p99_ms = 1.0;
+    results[0].phases[1].latency.throughput_rps = 999_999.0;
+    const fast = try canonicalDigest(std.testing.allocator, &config, &results);
+    try std.testing.expectEqualSlices(u8, &slow, &fast);
 }
 
 test "the digest changes when a body changes" {
     var config = healthyConfig(false);
-    var first = try healthyPhases(std.testing.allocator);
-    defer for (&first) |*phase| phase.deinit();
+    const health = findScenario("health").?;
     const other = [_][]const u8{"{\"status\":\"down\",\"timestamp\":<ts>}"};
-    var second = try healthyPhases(std.testing.allocator);
-    defer for (&second) |*phase| phase.deinit();
-    second[1].deinit();
-    second[1] = try phaseFixture(std.testing.allocator, &other, 10, 10, 500.0, 40.0);
+    const bodies = bodyList();
 
-    var first_gate = try evaluateGate(std.testing.allocator, &first, &config);
-    defer first_gate.deinit();
-    var second_gate = try evaluateGate(std.testing.allocator, &second, &config);
-    defer second_gate.deinit();
+    var first: [1]ScenarioResult = .{
+        try resultFixture(std.testing.allocator, health, &config, &bodies, 10, 10, 12000.0, 2.0),
+    };
+    defer for (&first) |*result| result.deinit();
+    var second: [1]ScenarioResult = .{
+        try resultFixture(std.testing.allocator, health, &config, &other, 10, 10, 500.0, 40.0),
+    };
+    defer for (&second) |*result| result.deinit();
 
-    const first_digest = try canonicalDigest(std.testing.allocator, &config, &first, &first_gate);
-    const second_digest = try canonicalDigest(std.testing.allocator, &config, &second, &second_gate);
+    const first_digest = try canonicalDigest(std.testing.allocator, &config, &first);
+    const second_digest = try canonicalDigest(std.testing.allocator, &config, &second);
     try std.testing.expect(!std.mem.eql(u8, &first_digest, &second_digest));
 }
 
 test "the digest notices a missing response" {
     var config = healthyConfig(false);
+    const health = findScenario("health").?;
     const bodies = bodyList();
-    var first = try healthyPhases(std.testing.allocator);
-    defer for (&first) |*phase| phase.deinit();
-    var second = try healthyPhases(std.testing.allocator);
-    defer for (&second) |*phase| phase.deinit();
-    second[0].deinit();
-    second[0] = try phaseFixture(std.testing.allocator, &bodies, 9, 10, 100.0, 12.0);
 
-    var first_gate = try evaluateGate(std.testing.allocator, &first, &config);
-    defer first_gate.deinit();
-    var second_gate = try evaluateGate(std.testing.allocator, &second, &config);
-    defer second_gate.deinit();
+    var first: [1]ScenarioResult = .{
+        try resultFixture(std.testing.allocator, health, &config, &bodies, 10, 10, 12000.0, 2.0),
+    };
+    defer for (&first) |*result| result.deinit();
+    var second: [1]ScenarioResult = .{
+        try resultFixture(std.testing.allocator, health, &config, &bodies, 9, 10, 12000.0, 2.0),
+    };
+    defer for (&second) |*result| result.deinit();
 
-    const first_digest = try canonicalDigest(std.testing.allocator, &config, &first, &first_gate);
-    const second_digest = try canonicalDigest(std.testing.allocator, &config, &second, &second_gate);
+    const first_digest = try canonicalDigest(std.testing.allocator, &config, &first);
+    const second_digest = try canonicalDigest(std.testing.allocator, &config, &second);
     try std.testing.expect(!std.mem.eql(u8, &first_digest, &second_digest));
+}
+
+test "the digest covers every scenario" {
+    var config = healthyConfig(false);
+    const health = findScenario("health").?;
+    const inbox = findScenario("messages").?;
+    const bodies = bodyList();
+
+    var one: [1]ScenarioResult = .{
+        try resultFixture(std.testing.allocator, health, &config, &bodies, 10, 10, 12000.0, 2.0),
+    };
+    defer for (&one) |*result| result.deinit();
+    var two: [2]ScenarioResult = .{
+        try resultFixture(std.testing.allocator, health, &config, &bodies, 10, 10, 12000.0, 2.0),
+        try resultFixture(std.testing.allocator, inbox, &config, &bodyList(), 10, 10, 12000.0, 2.0),
+    };
+    defer for (&two) |*result| result.deinit();
+
+    const one_digest = try canonicalDigest(std.testing.allocator, &config, &one);
+    const two_digest = try canonicalDigest(std.testing.allocator, &config, &two);
+    try std.testing.expect(!std.mem.eql(u8, &one_digest, &two_digest));
 }
