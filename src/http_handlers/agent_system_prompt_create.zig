@@ -162,8 +162,7 @@ pub fn agentSystemPromptCreateHandler(
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;
-const Migration076AddAgentsAndAgentKnowledgeAndAgentTools = @import("../migrations/migration.zig").Migration076AddAgentsAndAgentKnowledgeAndAgentTools;
-const Migration080AddAgentSystemPrompt = @import("../migrations/migration.zig").Migration080AddAgentSystemPrompt;
+const Migration116 = @import("../migrations/migration.zig").Migration116UnifyAgentConfigTables;
 
 const TestCtx = struct {
     db: sqlite.SqliteBackend,
@@ -185,11 +184,10 @@ fn setupDb() !TestCtx {
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
         &[_][]const u8{},
     );
-    try Migration076AddAgentsAndAgentKnowledgeAndAgentTools.up(&db, testing.allocator);
+    try Migration116.up(&db, testing.allocator);
     // Production DBs run every migration in order — the harness must
     // mirror that, or the agent_system_prompt table (Migration 080) is
     // missing and the INSERT in useCase fails with PrepareFailed.
-    try Migration080AddAgentSystemPrompt.up(&db, testing.allocator);
 
     // Seed: 1 workspace_item of type 'agent' + matching agents row.
     try db.exec(testing.allocator,
@@ -197,7 +195,7 @@ fn setupDb() !TestCtx {
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agents (id, workspace_item_id, description) VALUES ('ws_item_1', 'ws_item_1', '')",
+        "INSERT INTO agent_configs (id, workspace_item_id, item_type, description) VALUES ('ws_item_1', 'ws_item_1', 'agent', '')",
         &[_][]const u8{},
     );
 

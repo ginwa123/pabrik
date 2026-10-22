@@ -115,7 +115,7 @@ pub fn agentRoutineKnowledgeReorderHandler(
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;
-const Migration087CreateAgentRoutines = @import("../migrations/migration.zig").Migration087CreateAgentRoutines;
+const Migration116 = @import("../migrations/migration.zig").Migration116UnifyAgentConfigTables;
 
 const TestCtx = struct {
     db: sqlite.SqliteBackend,
@@ -134,7 +134,7 @@ fn setupDb() !TestCtx {
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
         &[_][]const u8{},
     );
-    try Migration087CreateAgentRoutines.up(&db, testing.allocator);
+    try Migration116.up(&db, testing.allocator);
 
     // Seed: configured routine + 3 knowledge rows (position 0, 1, 2).
     try db.exec(testing.allocator,
@@ -142,19 +142,19 @@ fn setupDb() !TestCtx {
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agent_routines (id, workspace_item_id) VALUES ('ws_item_1', 'ws_item_1')",
+        "INSERT INTO agent_configs (id, workspace_item_id, item_type) VALUES ('ws_item_1', 'ws_item_1', 'routine')",
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agent_routine_knowledges (id, routine_id, file_path, label, position) VALUES ('kn_1', 'ws_item_1', '/tmp/a.md', '', 0)",
+        "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, position) VALUES ('kn_1', 'ws_item_1', '/tmp/a.md', '', 0)",
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agent_routine_knowledges (id, routine_id, file_path, label, position) VALUES ('kn_2', 'ws_item_1', '/tmp/b.md', '', 1)",
+        "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, position) VALUES ('kn_2', 'ws_item_1', '/tmp/b.md', '', 1)",
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agent_routine_knowledges (id, routine_id, file_path, label, position) VALUES ('kn_3', 'ws_item_1', '/tmp/c.md', '', 2)",
+        "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, position) VALUES ('kn_3', 'ws_item_1', '/tmp/c.md', '', 2)",
         &[_][]const u8{},
     );
 
@@ -167,7 +167,7 @@ fn readPosition(
     id: []const u8,
 ) !i64 {
     var q = try db.query(allocator,
-        "SELECT position FROM agent_routine_knowledges WHERE id = ?",
+        "SELECT position FROM agent_config_knowledge WHERE id = ?",
         &[_][]const u8{id},
     );
     defer q.deinit();

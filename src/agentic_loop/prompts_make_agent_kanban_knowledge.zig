@@ -62,7 +62,7 @@ fn isConfiguredKanbanItem(
     if (workspace_item_id.len == 0) return false;
     var q = db.query(allocator,
         \\SELECT 1 FROM workspace_items WHERE id = ? AND item_type = 'kanban'
-        \\AND EXISTS (SELECT 1 FROM agent_kanbans WHERE id = ?)
+        \\AND EXISTS (SELECT 1 FROM agent_configs WHERE id = ? AND item_type = 'kanban')
     , &[_][]const u8{ workspace_item_id, workspace_item_id }) catch return false;
     defer q.deinit();
     if (q.next() catch null) |row| {
@@ -170,7 +170,7 @@ const testing = std.testing;
 // Use a fresh alias for the test section to avoid duplicate-struct-
 // member shadowing (file-level `const sqlite` already exists).
 const test_sqlite = @import("pabrikcore").sqlite;
-const Migration081CreateAgentKanbans = @import("../migrations/migration.zig").Migration081CreateAgentKanbans;
+const Migration116 = @import("../migrations/migration.zig").Migration116UnifyAgentConfigTables;
 
 const TestCtx = struct {
     db: test_sqlite.SqliteBackend,
@@ -207,7 +207,7 @@ fn setupDb() !TestCtx {
         \\    task_type TEXT DEFAULT 'standard'
         \\)
     , &[_][]const u8{});
-    try Migration081CreateAgentKanbans.up(&db, alloc);
+    try Migration116.up(&db, alloc);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -230,7 +230,7 @@ fn insertSession(ctx: *TestCtx, session_id: []const u8, workspace_item_id: []con
 fn insertConfig(ctx: *TestCtx, config_id: []const u8, workspace_item_id: []const u8) !void {
     const alloc = testing.allocator;
     try ctx.db.exec(alloc,
-        "INSERT INTO agent_kanbans (id, workspace_item_id) VALUES (?, ?)",
+        "INSERT INTO agent_configs (id, workspace_item_id, item_type) VALUES (?, ?, 'kanban')",
         &[_][]const u8{ config_id, workspace_item_id },
     );
 }
@@ -330,7 +330,7 @@ test "makeAgentKanbanKnowledge: renders ## Kanban Knowledge section with file co
     defer alloc.free(tmp_path);
 
     try ctx.db.exec(alloc,
-        "INSERT INTO agent_kanban_knowledges (id, kanban_id, file_path, label, position) VALUES ('kn_1', 'ws_item_1', ?, '', 0)",
+        "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, position) VALUES ('kn_1', 'ws_item_1', ?, '', 0)",
         &[_][]const u8{tmp_path},
     );
 
@@ -360,11 +360,11 @@ test "makeAgentKanbanKnowledge: respects position DESC ordering" {
     defer alloc.free(path_high);
 
     try ctx.db.exec(alloc,
-        "INSERT INTO agent_kanban_knowledges (id, kanban_id, file_path, label, position) VALUES ('kn_low', 'ws_item_1', ?, '', 0)",
+        "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, position) VALUES ('kn_low', 'ws_item_1', ?, '', 0)",
         &[_][]const u8{path_low},
     );
     try ctx.db.exec(alloc,
-        "INSERT INTO agent_kanban_knowledges (id, kanban_id, file_path, label, position) VALUES ('kn_high', 'ws_item_1', ?, '', 100)",
+        "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, position) VALUES ('kn_high', 'ws_item_1', ?, '', 100)",
         &[_][]const u8{path_high},
     );
 
@@ -387,7 +387,7 @@ test "makeAgentKanbanKnowledge: skips unreadable file paths without leaking head
     try insertSession(&ctx, "sess_1", "ws_item_1");
 
     try ctx.db.exec(alloc,
-        "INSERT INTO agent_kanban_knowledges (id, kanban_id, file_path, label, position) VALUES ('kn_bad', 'ws_item_1', '/tmp/non_existent_kanban_xyz_12345.md', '', 0)",
+        "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, position) VALUES ('kn_bad', 'ws_item_1', '/tmp/non_existent_kanban_xyz_12345.md', '', 0)",
         &[_][]const u8{},
     );
 
@@ -409,7 +409,7 @@ test "makeAgentKanbanKnowledge: inlines content rows without <file:> marker" {
     try insertSession(&ctx, "sess_1", "ws_item_1");
 
     try ctx.db.exec(alloc,
-        "INSERT INTO agent_kanban_knowledges (id, kanban_id, file_path, label, content, position) VALUES ('kn_inline', 'ws_item_1', '', 'Board rules', 'Always keep the todo column under 10 cards.', 0)",
+        "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, content, position) VALUES ('kn_inline', 'ws_item_1', '', 'Board rules', 'Always keep the todo column under 10 cards.', 0)",
         &[_][]const u8{},
     );
 

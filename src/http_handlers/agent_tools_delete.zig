@@ -87,7 +87,7 @@ pub fn agentToolsDeleteHandler(
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;
-const Migration076AddAgentsAndAgentKnowledgeAndAgentTools = @import("../migrations/migration.zig").Migration076AddAgentsAndAgentKnowledgeAndAgentTools;
+const Migration116 = @import("../migrations/migration.zig").Migration116UnifyAgentConfigTables;
 
 const TestCtx = struct {
     db: sqlite.SqliteBackend,
@@ -110,7 +110,7 @@ fn setupDb() !TestCtx {
         &[_][]const u8{},
     );
 
-    try Migration076AddAgentsAndAgentKnowledgeAndAgentTools.up(&db, testing.allocator);
+    try Migration116.up(&db, testing.allocator);
 
     // Seed: 2 agents (so the scoped test can verify cross-agent
     // isolation) + 1 tool on each.
@@ -123,19 +123,19 @@ fn setupDb() !TestCtx {
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agents (id, workspace_item_id, description) VALUES ('ws_item_1', 'ws_item_1', '')",
+        "INSERT INTO agent_configs (id, workspace_item_id, item_type, description) VALUES ('ws_item_1', 'ws_item_1', 'agent', '')",
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agents (id, workspace_item_id, description) VALUES ('ws_item_2', 'ws_item_2', '')",
+        "INSERT INTO agent_configs (id, workspace_item_id, item_type, description) VALUES ('ws_item_2', 'ws_item_2', 'agent', '')",
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agent_tools (id, agent_id, tool_name, enabled) VALUES ('at_1', 'ws_item_1', 'bash', 1)",
+        "INSERT INTO agent_config_tools (id, config_id, tool_name, enabled) VALUES ('at_1', 'ws_item_1', 'bash', 1)",
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agent_tools (id, agent_id, tool_name, enabled) VALUES ('at_2', 'ws_item_2', 'read_file', 1)",
+        "INSERT INTO agent_config_tools (id, config_id, tool_name, enabled) VALUES ('at_2', 'ws_item_2', 'read_file', 1)",
         &[_][]const u8{},
     );
 
@@ -148,7 +148,7 @@ fn countToolsForAgent(
     agent_id: []const u8,
 ) !u32 {
     var q = try db.query(allocator,
-        "SELECT COUNT(*) FROM agent_tools WHERE agent_id = ?",
+        "SELECT COUNT(*) FROM agent_config_tools WHERE config_id = ?",
         &[_][]const u8{agent_id},
     );
     defer q.deinit();

@@ -137,7 +137,7 @@ fn useCase(
     // immediately (mirrors the agent_kanbans seed in
     // workspace_items_create_kanban.zig).
     tx.exec(allocator,
-        "INSERT OR IGNORE INTO agent_routines (id, workspace_item_id) VALUES (?, ?)",
+        "INSERT OR IGNORE INTO agent_configs (id, workspace_item_id, item_type) VALUES (?, ?, 'routine')",
         &.{ item_id, item_id },
     ) catch return error.DatabaseError;
 
@@ -283,7 +283,7 @@ pub fn workspaceItemsCreateRoutineHandler(
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;
 const Migration084ReplaceRoutinesWithWorkspaceRoutines = @import("../migrations/migration.zig").Migration084ReplaceRoutinesWithWorkspaceRoutines;
-const Migration087CreateAgentRoutines = @import("../migrations/migration.zig").Migration087CreateAgentRoutines;
+const Migration116 = @import("../migrations/migration.zig").Migration116UnifyAgentConfigTables;
 
 const TestCtx = struct {
     db: sqlite.SqliteBackend,
@@ -307,7 +307,7 @@ fn setupDb() !TestCtx {
         &[_][]const u8{},
     );
     try Migration084ReplaceRoutinesWithWorkspaceRoutines.up(&db, testing.allocator);
-    try Migration087CreateAgentRoutines.up(&db, testing.allocator);
+    try Migration116.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -345,14 +345,14 @@ test "create routine: happy path inserts item + routine with next_run_at" {
     }
     // Agent-config row seeded in-txn (Migration 087) with no default tools.
     {
-        var q = try ctx.db.query(alloc, "SELECT COUNT(*) FROM agent_routines", &.{});
+        var q = try ctx.db.query(alloc, "SELECT COUNT(*) FROM agent_configs", &.{});
         defer q.deinit();
         const row = (try q.next()) orelse return error.RowMissing;
         defer row.deinit(alloc);
         try testing.expectEqualStrings("1", row.values[0]);
     }
     {
-        var q = try ctx.db.query(alloc, "SELECT COUNT(*) FROM agent_routine_tools", &.{});
+        var q = try ctx.db.query(alloc, "SELECT COUNT(*) FROM agent_config_tools", &.{});
         defer q.deinit();
         const row = (try q.next()) orelse return error.RowMissing;
         defer row.deinit(alloc);

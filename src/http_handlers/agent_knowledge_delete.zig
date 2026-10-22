@@ -87,7 +87,7 @@ pub fn agentKnowledgeDeleteHandler(
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;
-const Migration076AddAgentsAndAgentKnowledgeAndAgentTools = @import("../migrations/migration.zig").Migration076AddAgentsAndAgentKnowledgeAndAgentTools;
+const Migration116 = @import("../migrations/migration.zig").Migration116UnifyAgentConfigTables;
 
 const TestCtx = struct {
     db: sqlite.SqliteBackend,
@@ -109,7 +109,7 @@ fn setupDb() !TestCtx {
         &[_][]const u8{},
     );
 
-    try Migration076AddAgentsAndAgentKnowledgeAndAgentTools.up(&db, testing.allocator);
+    try Migration116.up(&db, testing.allocator);
 
     // Seed: 1 workspace_item of type 'agent' + matching agents row +
     // 1 knowledge row, so the happy-path test has something to delete.
@@ -118,11 +118,11 @@ fn setupDb() !TestCtx {
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agents (id, workspace_item_id, description) VALUES ('ws_item_1', 'ws_item_1', '')",
+        "INSERT INTO agent_configs (id, workspace_item_id, item_type, description) VALUES ('ws_item_1', 'ws_item_1', 'agent', '')",
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agent_knowledge (id, agent_id, file_path, label, position) VALUES ('know_1', 'ws_item_1', '/tmp/a.md', '', 0)",
+        "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, position) VALUES ('know_1', 'ws_item_1', '/tmp/a.md', '', 0)",
         &[_][]const u8{},
     );
 
@@ -135,7 +135,7 @@ fn countKnowledge(
     agent_id: []const u8,
 ) !u32 {
     var q = try db.query(allocator,
-        "SELECT COUNT(*) FROM agent_knowledge WHERE agent_id = ?",
+        "SELECT COUNT(*) FROM agent_config_knowledge WHERE config_id = ?",
         &[_][]const u8{agent_id},
     );
     defer q.deinit();

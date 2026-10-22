@@ -163,7 +163,7 @@ pub fn agentsUpdateHandler(
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;
-const Migration076AddAgentsAndAgentKnowledgeAndAgentTools = @import("../migrations/migration.zig").Migration076AddAgentsAndAgentKnowledgeAndAgentTools;
+const Migration116 = @import("../migrations/migration.zig").Migration116UnifyAgentConfigTables;
 
 const TestCtx = struct {
     db: sqlite.SqliteBackend,
@@ -185,7 +185,7 @@ fn setupDb() !TestCtx {
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
         &[_][]const u8{},
     );
-    try Migration076AddAgentsAndAgentKnowledgeAndAgentTools.up(&db, testing.allocator);
+    try Migration116.up(&db, testing.allocator);
 
     // Seed: 1 workspace_item of type 'agent' + matching agents row.
     try db.exec(testing.allocator,
@@ -193,7 +193,7 @@ fn setupDb() !TestCtx {
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agents (id, workspace_item_id, description) VALUES ('ws_item_1', 'ws_item_1', 'old description')",
+        "INSERT INTO agent_configs (id, workspace_item_id, item_type, description) VALUES ('ws_item_1', 'ws_item_1', 'agent', 'old description')",
         &[_][]const u8{},
     );
 
@@ -290,7 +290,7 @@ test "useCase: happy path updates description and returns Agent" {
 
     // Verify persistence with a fresh query.
     var q = try ctx.db.query(alloc,
-        "SELECT description FROM agents WHERE id = 'ws_item_1'",
+        "SELECT description FROM agent_configs WHERE id = 'ws_item_1'",
         &[_][]const u8{},
     );
     defer q.deinit();

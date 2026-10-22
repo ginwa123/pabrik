@@ -2359,7 +2359,7 @@ fn maybeOverrideAllowedToolsForKanban(
     // Only filter when the workspace_item has an agent_kanbans row.
     var q2 = db.query(
         allocator,
-        "SELECT id FROM agent_kanbans WHERE id = ?",
+        "SELECT id FROM agent_configs WHERE id = ? AND item_type = 'kanban'",
         &[_][]const u8{workspace_item_id},
     ) catch return false;
     defer q2.deinit();
@@ -2368,8 +2368,8 @@ fn maybeOverrideAllowedToolsForKanban(
 
     // Fetch the enabled tool_names.
     var q3 = db.query(allocator,
-        \\SELECT tool_name FROM agent_kanban_tools
-        \\WHERE kanban_id = ? AND enabled = 1
+        \\SELECT tool_name FROM agent_config_tools
+        \\WHERE config_id = ? AND enabled = 1
         \\ORDER BY tool_name ASC
     , &[_][]const u8{workspace_item_id}) catch return false;
     defer q3.deinit();
@@ -2435,7 +2435,7 @@ fn maybeOverrideAllowedToolsForRoutine(
     // Only filter when the workspace_item has an agent_routines row.
     var q2 = db.query(
         allocator,
-        "SELECT id FROM agent_routines WHERE id = ?",
+        "SELECT id FROM agent_configs WHERE id = ? AND item_type = 'routine'",
         &[_][]const u8{workspace_item_id},
     ) catch return false;
     defer q2.deinit();
@@ -2444,8 +2444,8 @@ fn maybeOverrideAllowedToolsForRoutine(
 
     // Fetch the enabled tool_names.
     var q3 = db.query(allocator,
-        \\SELECT tool_name FROM agent_routine_tools
-        \\WHERE routine_id = ? AND enabled = 1
+        \\SELECT tool_name FROM agent_config_tools
+        \\WHERE config_id = ? AND enabled = 1
         \\ORDER BY tool_name ASC
     , &[_][]const u8{workspace_item_id}) catch return false;
     defer q3.deinit();

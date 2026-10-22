@@ -223,18 +223,19 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
         \\ON workspace_items(workspace_id) WHERE is_default = 1
     , &[_][]const u8{});
     try db.exec(alloc,
-        \\CREATE TABLE agents (
+        \\CREATE TABLE agent_configs (
         \\  id TEXT PRIMARY KEY,
         \\  workspace_item_id TEXT NOT NULL UNIQUE,
+        \\  item_type TEXT NOT NULL,
         \\  description TEXT,
         \\  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         \\)
     , &[_][]const u8{});
     try db.exec(alloc,
-        \\CREATE TABLE agent_tools (
+        \\CREATE TABLE agent_config_tools (
         \\  id TEXT PRIMARY KEY,
-        \\  agent_id TEXT NOT NULL,
+        \\  config_id TEXT NOT NULL,
         \\  tool_name TEXT NOT NULL,
         \\  enabled INTEGER NOT NULL DEFAULT 1,
         \\  created_at DATETIME DEFAULT CURRENT_TIMESTAMP

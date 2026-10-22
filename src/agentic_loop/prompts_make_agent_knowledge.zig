@@ -175,8 +175,7 @@ const testing = std.testing;
 // Use a fresh alias for the test section to avoid duplicate-struct-
 // member shadowing (file-level `const sqlite` already exists).
 const test_sqlite = @import("pabrikcore").sqlite;
-const Migration076 = @import("../migrations/migration.zig").Migration076AddAgentsAndAgentKnowledgeAndAgentTools;
-const Migration079 = @import("../migrations/migration.zig").Migration079AddContentToAgentKnowledge;
+const Migration116 = @import("../migrations/migration.zig").Migration116UnifyAgentConfigTables;
 
 const TestCtx = struct {
     db: test_sqlite.SqliteBackend,
@@ -213,11 +212,9 @@ fn setupDb() !TestCtx {
         \\    task_type TEXT DEFAULT 'standard'
         \\)
     , &[_][]const u8{});
-    try Migration076.up(&db, alloc);
-    // Production DBs run every migration in order — the harness must
+    try Migration116.up(&db, alloc);
     // mirror that, or the `content` column (Migration 079) is missing
     // and content-row INSERTs fail.
-    try Migration079.up(&db, alloc);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -242,7 +239,7 @@ fn insertKnowledge(ctx: *TestCtx, id: []const u8, agent_id: []const u8, file_pat
     var sql_buf: [512]u8 = undefined;
     const sql = try std.fmt.bufPrint(
         &sql_buf,
-        "INSERT INTO agent_knowledge (id, agent_id, file_path, position) VALUES ('{s}', '{s}', '{s}', {d})",
+        "INSERT INTO agent_config_knowledge (id, config_id, file_path, position) VALUES ('{s}', '{s}', '{s}', {d})",
         .{ id, agent_id, file_path, position },
     );
     try ctx.db.exec(alloc, sql, &[_][]const u8{});
@@ -419,7 +416,7 @@ test "makeAgentKnowledge: inlines content rows without <file:> marker" {
     // empty). Parameter binding via db.exec argv (NOT bufPrint) so the
     // text can contain quotes safely.
     try ctx.db.exec(alloc,
-        "INSERT INTO agent_knowledge (id, agent_id, file_path, label, content, position) VALUES ('know_inline', 'ws_item_1', '', 'Deploy notes', 'Always deploy with the canary flag enabled.', 0)",
+        "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, content, position) VALUES ('know_inline', 'ws_item_1', '', 'Deploy notes', 'Always deploy with the canary flag enabled.', 0)",
         &[_][]const u8{},
     );
 
@@ -449,7 +446,7 @@ test "makeAgentKnowledge: mixed file + content rows both render" {
 
     try insertKnowledge(&ctx, "know_file", "ws_item_1", tmp_path, 0);
     try ctx.db.exec(alloc,
-        "INSERT INTO agent_knowledge (id, agent_id, file_path, label, content, position) VALUES ('know_inline', 'ws_item_1', '', 'Notes', 'inline marker content', 1)",
+        "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, content, position) VALUES ('know_inline', 'ws_item_1', '', 'Notes', 'inline marker content', 1)",
         &[_][]const u8{},
     );
 

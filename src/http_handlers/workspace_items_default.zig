@@ -422,18 +422,19 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
         \\ON workspace_items(workspace_id, is_default)
     , &[_][]const u8{});
     try db.exec(alloc,
-        \\CREATE TABLE agents (
+        \\CREATE TABLE agent_configs (
         \\  id TEXT PRIMARY KEY,
         \\  workspace_item_id TEXT NOT NULL UNIQUE,
+        \\  item_type TEXT NOT NULL,
         \\  description TEXT,
         \\  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         \\)
     , &[_][]const u8{});
     try db.exec(alloc,
-        \\CREATE TABLE agent_tools (
+        \\CREATE TABLE agent_config_tools (
         \\  id TEXT PRIMARY KEY,
-        \\  agent_id TEXT NOT NULL,
+        \\  config_id TEXT NOT NULL,
         \\  tool_name TEXT NOT NULL,
         \\  enabled INTEGER NOT NULL DEFAULT 1,
         \\  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -496,11 +497,11 @@ test "ensureDefaultProject creates the default on a miss, rooted at HOME" {
     try testing.expectEqual(@as(u32, 1), try countWhereFmt(&ctx.db, alloc, "SELECT COUNT(*) FROM workspace_items WHERE id = '{s}' AND item_type = 'agent' AND is_default = 1 AND path = '/home/tester'", .{p.id}));
     // The 1-1 invariant: the agents row's id AND workspace_item_id are both
     // the item id, which is what `agents.workspace_item_id UNIQUE` relies on.
-    try testing.expectEqual(@as(u32, 1), try countWhereFmt(&ctx.db, alloc, "SELECT COUNT(*) FROM agents WHERE id = '{s}' AND workspace_item_id = '{s}'", .{ p.id, p.id }));
+    try testing.expectEqual(@as(u32, 1), try countWhereFmt(&ctx.db, alloc, "SELECT COUNT(*) FROM agent_configs WHERE id = '{s}' AND workspace_item_id = '{s}'", .{ p.id, p.id }));
 
     // The tool allowlist must be seeded, or the default project is a
     // NotConfigured dead-end on first use.
-    const seeded = try countWhereFmt(&ctx.db, alloc, "SELECT COUNT(*) FROM agent_tools WHERE agent_id = '{s}'", .{p.id});
+    const seeded = try countWhereFmt(&ctx.db, alloc, "SELECT COUNT(*) FROM agent_config_tools WHERE config_id = '{s}'", .{p.id});
     try testing.expect(seeded > 0);
 }
 
