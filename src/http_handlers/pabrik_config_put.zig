@@ -537,7 +537,6 @@ const ProfileChange = struct {
     system_prompt: []const u8 = "",
 };
 
-/// True when the value is a chat view mode the app knows.
 fn isChatViewMode(raw: []const u8) bool {
     return std.mem.eql(u8, raw, "dev") or std.mem.eql(u8, raw, "compact");
 }

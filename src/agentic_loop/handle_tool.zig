@@ -543,7 +543,6 @@ fn dispatchMCP(ctx: ToolContext, tool_call: agent.ToolCall) !ToolResult {
     return ToolResult{ .output = result };
 }
 
-/// Wall-clock milliseconds since a `std.Io.Timestamp.now` reading.
 fn elapsedMsSince(io: std.Io, start_ns: i128) u64 {
     return @intCast(@divTrunc(
         std.Io.Timestamp.now(io, .real).nanoseconds - start_ns,

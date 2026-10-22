@@ -7,11 +7,8 @@ import { tryUnwrapToolOutput } from '@/helpers/unwrapToolOutput'
 import ToolCard, { type ToolCardData } from '../ToolCard.vue'
 
 const props = defineProps<{
-  /** The calls of this run, in order. */
   cards: ToolCardData[]
-  /** The session working directory. */
   cwd: string
-  /** The session that owns these calls. */
   sessionId: string
 }>()
 

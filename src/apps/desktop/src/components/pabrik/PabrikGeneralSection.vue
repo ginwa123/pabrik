@@ -18,12 +18,9 @@ export interface PabrikGeneralSettings {
   /** Serve this same UI in the system browser on a random local port.
    * Mirrors `PabrikConfig.web_launch_enabled`. Default false. */
   web_launch_enabled: boolean
-  /** How the chat draws tool calls. Mirrors `PabrikConfig.chat_view`.
-   * Default "dev". */
   chat_view: 'dev' | 'compact'
 }
 
-/** The two chat view modes, in the order they are drawn. */
 const CHAT_VIEW_OPTIONS = [
   { value: 'dev', label: 'Dev' },
   { value: 'compact', label: 'Compact' },

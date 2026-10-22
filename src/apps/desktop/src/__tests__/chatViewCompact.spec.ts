@@ -16,7 +16,6 @@ interface CardOptions {
   content?: string
 }
 
-/** One tool call of a run, with the envelope the backend wrote. */
 function card(tool: string, options: CardOptions = {}): ToolCardData {
   const envelope: Record<string, unknown> = {
     tool,

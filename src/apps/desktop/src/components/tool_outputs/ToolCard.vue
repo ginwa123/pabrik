@@ -40,7 +40,6 @@ import WebSearch from './WebSearch.vue'
 import WriteFile from './WriteFile.vue'
 import DiffView from './_shared/DiffView.vue'
 
-/** The tool message this card draws. */
 export interface ToolCardMessage {
   id: string
   role: string
@@ -53,7 +52,6 @@ export interface ToolCardMessage {
   finish_reason?: string
 }
 
-/** One tool call, with everything its card needs to draw it. */
 export interface ToolCardData {
   message: ToolCardMessage
   content: unknown
@@ -66,21 +64,13 @@ export interface ToolCardData {
 
 defineProps<{
   message: ToolCardMessage
-  /** The unwrapped tool result. */
   content: unknown
-  /** The tool-call arguments (XML or JSON). */
   parameters: string
-  /** Whether this card is expanded. */
   expanded: boolean
-  /** The stable key of the expand toggle. */
   expandKey: string
-  /** The session working directory. */
   cwd: string
-  /** The session that owns this call. */
   sessionId: string
-  /** Live sub-agent progress for this call. */
   subAgentProgress: SubAgentProgress[] | null
-  /** The sub-agent args of this call, inherited from the assistant turn. */
   subAgentArgs: SubAgentArgs[] | null
 }>()
 

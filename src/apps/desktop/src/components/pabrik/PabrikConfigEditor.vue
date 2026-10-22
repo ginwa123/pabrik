@@ -295,7 +295,6 @@ const generalSettings = ref<PabrikGeneralSettings>({
   retry_delay_ms: 0,
   // Plan 2026-09-10-web-launch-toggle: browser-mode flag (4th key).
   web_launch_enabled: false,
-  // How the chat draws tool calls (5th key).
   chat_view: 'dev',
 })
 

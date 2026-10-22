@@ -1261,8 +1261,6 @@ const subAgentProgressMap = ref<SubAgentProgressMap>({})
 // diagnostics. Fed by `full` SSE events with is_error=true (workflow.zig's 3 diagnostic sites —
 // never persisted, is_skip_db=true).
 const agentErrorStore = useAgentErrorStore()
-// How the chat draws tool calls. The mode lives in config.json; the store is
-// the app's copy of it.
 const chatView = useChatViewStore()
 // Per-session derived read. Reads from the store (keyed by sessionId) so the card survives ChatView
 // remounts caused by AppLayout's :key="activeChatId" or StandardTaskChatView's
