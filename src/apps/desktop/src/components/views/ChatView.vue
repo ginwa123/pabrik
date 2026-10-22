@@ -10,7 +10,6 @@ import {
   inject,
   type Ref,
 } from 'vue'
-import { marked } from 'marked'
 import * as api from '../../api'
 import { chatEngineDb, newestCursor, toChatMessage } from '../../sync/ChatEngineDb'
 import { runSyncEffect, runSyncEffectOr, runSyncVoid } from '../../sync/runtime'
@@ -20,6 +19,8 @@ import {
   stripThinkingTags,
   VirtualScroller,
   renderResponse,
+  renderStreamingResponse,
+  renderMarkdown,
   hasRichBlocks,
   extractRichBlocks,
   CHAT_HTML_FRAME_RESIZE_SOURCE,
@@ -1584,8 +1585,22 @@ const toolCardsFor = (group: MessageGroup, groupIndex: number): ToolCardData[] =
     subAgentArgs: findSubAgentArgsForToolGroup(msg.tool_call_id, messageGroups.value, groupIndex),
   }))
 
+const renderMessageHtml = (msg: Message): string =>
+  msg.id.startsWith('streaming-')
+    ? renderStreamingResponse(msg.content, msg.role, msg.tool_name)
+    : renderResponse(
+        msg.content,
+        msg.role,
+        msg.tool_name,
+        msg.diffview_before,
+        msg.diffview_after,
+        msg.finish_reason,
+        msg.tool_calls_json,
+      )
+
 const isBgUserMsg = (m: { content?: string }): boolean =>
   !!m.content && isBackgroundCommandOutput(m.content)
+
 const bgShellContent = (m: { content?: string }): string => {
   const pr = m.content ? parseBackgroundCommandOutput(m.content) : null
   return pr ? backgroundToShellXml(pr) : (m.content ?? '')
@@ -2975,7 +2990,6 @@ const persistSseFullRowLocally = (
 }
 
 const connectSse = () => {
-  console.log('[connectSse] Connecting SSE via sseBus for session:', sessionId.value)
   const sid = sessionId.value
   if (!sid) return
   if (liveMessageSessionId !== sid) {
@@ -3000,8 +3014,6 @@ const connectSse = () => {
   offLlm = bus.on('llm', (event: api.SseEvent) => {
     if (event.session_id !== sid) return
 
-    console.log('[SSE ChatView] Received event:', event)
-
     // 2026-08-23 spawn-subagent-live-progress: route sub-agent progress events into the
     // per-tool_call_id map and STOP here.
     if ((event as SubAgentProgressEvent).role === 'subagent_progress') {
@@ -3013,7 +3025,6 @@ const connectSse = () => {
     }
 
     if (event.type === 'connected' && event.session_id) {
-      console.log('SSE connected, session:', event.session_id)
       return
     }
 
@@ -3051,7 +3062,6 @@ const connectSse = () => {
         maxTotalTokens.value = event.total_tokens
       }
       if (!event.is_error && agentErrorStore.bySession[sid]) {
-        console.log('[SSE ChatView] clearing agent error card on chunk_final (run-end)')
         agentErrorStore.clearForSession(sid)
       }
       return
@@ -3073,7 +3083,6 @@ const connectSse = () => {
       // means the agent is alive and producing output — clear the error card so it disappears the
       // moment the agent recovers from the retry chain.
       if (agentErrorStore.bySession[sid]) {
-        console.log('[SSE ChatView] clearing agent error card on non-error full event')
         agentErrorStore.clearForSession(sid)
       }
       // 2026-09-06 virtual-scroller shrink fix: capture the streaming group's height key BEFORE the
@@ -3159,11 +3168,6 @@ const connectSse = () => {
         // same-content repeat (server re-emit) collapses to one message via the dedupe above.
         role !== 'user'
       ) {
-        console.log('[SSE ChatView] duplicate full event skipped', {
-          role,
-          tool_call_id: event.tool_call_id,
-          content_len: (event.content || '').length,
-        })
         return
       }
 
@@ -3252,7 +3256,6 @@ const connectSse = () => {
     // them onto the streaming assistant message so the collapsible reasoning section renders live
     // while a thinking model works (before any final content arrives).
     if (event.reasoning_content && !event.content) {
-      console.log('Reasoning:', event.reasoning_content)
       const existingMsg = messages.value.find(
         (m) => m.role === 'assistant' && m.id.startsWith('streaming-'),
       )
@@ -3272,7 +3275,6 @@ const connectSse = () => {
   })
   offQueue = bus.on('queue', (event: api.QueueMessageEvent) => {
     if (event.session_id !== sid) return
-    console.log('[QueueMessages SSE] Received event:', event)
     if (event.action === 'queued') {
       queuedMessages.value.push({
         id: event.id ?? `q-${Date.now()}`,
@@ -3349,7 +3351,6 @@ const disconnectSse = () => {
 let sseScrollPending = false
 
 const updateStreamingMessage = () => {
-  console.log('[updateStreamingMessage] streamingContent:', streamingContent.value)
   // Every SSE chunk drives an auto-stick via scrollToBottom below (coalesced to one-per-frame).
   // Mark the timestamp NOW, before the rAF coalesce, so the gate reflects the chunk that just
   // arrived — not the rAF callback that runs up to 16ms later.
@@ -4169,7 +4170,7 @@ const compactSession = async () => {
                               <!-- eslint-disable-next-line vue/no-v-html -->
                               <span
                                 v-if="seg.kind === 'markdown' && seg.payload"
-                                v-html="marked.parse(seg.payload, { async: false })"
+                                v-html="renderMarkdown(seg.payload)"
                               ></span>
                               <iframe
                                 v-else-if="seg.kind === 'html' && seg.payload"
@@ -4185,20 +4186,7 @@ const compactSession = async () => {
                               />
                             </template>
                           </template>
-                          <span
-                            v-else
-                            v-html="
-                              renderResponse(
-                                msg.content,
-                                msg.role,
-                                msg.tool_name,
-                                msg.diffview_before,
-                                msg.diffview_after,
-                                msg.finish_reason,
-                                msg.tool_calls_json,
-                              )
-                            "
-                          ></span>
+                          <span v-else v-html="renderMessageHtml(msg)"></span>
                         </div>
                       </div>
                     </template>
@@ -4717,7 +4705,6 @@ const compactSession = async () => {
       @close="showSkillsPopup = false"
       @skill-click="
         (skill) => {
-          console.log('Skill clicked:', skill)
           showSkillsPopup = false
         }
       "

@@ -20,12 +20,30 @@ const cache = new Map<string, string>()
  * callers can't accidentally clobber the cache. */
 export const _resetRenderResponseCache = (): void => {
   cache.clear()
+  streamSlot = null
 }
 
 const computeKey = (content: string, role: string, toolName: string | undefined): string => {
   // Pipe delimiter is safe: none of the inputs contain `|` (markdown
   // and tool envelopes are user/LLM text, not pipes).
   return `${role}|${toolName ?? ''}|${content.trim()}`
+}
+
+const cacheGet = (key: string): string | undefined => {
+  const hit = cache.get(key)
+  if (hit === undefined) return undefined
+  cache.delete(key)
+  cache.set(key, hit)
+  return hit
+}
+
+const cacheSet = (key: string, value: string): void => {
+  while (cache.size >= MAX_CACHE_ENTRIES) {
+    const oldest = cache.keys().next()
+    if (oldest.done) break
+    cache.delete(oldest.value)
+  }
+  cache.set(key, value)
 }
 
 /**  * The inline pill for a tool whose result carries no summary of its own: the tool name, plus
@@ -59,45 +77,63 @@ export const renderResponse = (
   // allocate a new trimmed string. The computeKey() inside is cheap
   // (one .trim() + concat).
   const key = computeKey(content, role, tool_name)
-  const cached = cache.get(key)
+  const cached = cacheGet(key)
   if (cached !== undefined) return cached
 
-  // Bounded cache: if we exceed the limit, clear and start over.
-  // Clearing is simpler than LRU and good enough — typical chats
-  // have far fewer than 200 distinct content variants.
-  if (cache.size >= MAX_CACHE_ENTRIES) {
-    cache.clear()
-  }
+  const result = renderUncached(content, role, tool_name)
+  cacheSet(key, result)
+  return result
+}
 
+const guardedRender = (content: string, render: (trimmed: string) => string): string => {
+  const trimmed = content.trim()
+  try {
+    return render(trimmed)
+  } catch {
+    return escapeHtml(trimmed)
+  }
+}
+
+const renderUncached = (content: string, role: string, tool_name?: string): string => {
   const trimmed = content.trim()
   if (!trimmed) {
-    // A `tool` row can legitimately be empty — 403 such rows in the live DB, mostly a result that
-    // has not landed yet and a handful of tools that return nothing at all.
-    const emptyTool = role === 'tool' && tool_name ? toolNamePill(tool_name) : ''
-    cache.set(key, emptyTool)
-    return emptyTool
+    return role === 'tool' && tool_name ? toolNamePill(tool_name) : ''
   }
 
-  let result: string
-  try {
+  return guardedRender(content, (text) => {
     if (role === 'assistant') {
-      if (isThinkingTags(trimmed)) {
-        result = getThinkingTags(trimmed)
-      } else {
-        const cleanContent = stripThinkingTags(trimmed)
-        result = marked.parse(cleanContent, { async: false }) as string
+      if (isThinkingTags(text)) {
+        return getThinkingTags(text)
       }
-    } else if (role === 'tool') {
-      result = renderTool(trimmed, tool_name)
-    } else {
-      result = escapeHtml(trimmed)
+      return marked.parse(stripThinkingTags(text), { async: false }) as string
     }
-  } catch {
-    result = escapeHtml(trimmed)
-  }
+    if (role === 'tool') {
+      return renderTool(text, tool_name)
+    }
+    return escapeHtml(text)
+  })
+}
 
-  cache.set(key, result)
-  return result
+let streamSlot: { content: string; html: string } | null = null
+
+export const renderStreamingResponse = (
+  content: string,
+  role: string,
+  tool_name?: string,
+): string => {
+  if (streamSlot !== null && streamSlot.content === content) return streamSlot.html
+  const html = renderUncached(content, role, tool_name)
+  streamSlot = { content, html }
+  return html
+}
+
+export const renderMarkdown = (payload: string): string => {
+  const key = `md|${payload}`
+  const cached = cacheGet(key)
+  if (cached !== undefined) return cached
+  const html = guardedRender(payload, (text) => marked.parse(text, { async: false }) as string)
+  cacheSet(key, html)
+  return html
 }
 
 // Tool branch — extracted from renderResponse so the assistant cache
