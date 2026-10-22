@@ -125,7 +125,15 @@ defineExpose({ reload: load })
 </script>
 
 <template>
-  <div class="flex flex-col h-full min-h-0" data-testid="pr-conversation-panel">
+  <!-- The panel names its own foreground. A forge's body and comments are prose, and prose that
+       inherits the host's ambient colour inherits the browser's default black — invisible on the
+       dark theme. The metadata below keeps its dim colour; this is the floor everything else
+       stands on. -->
+  <div
+    class="flex flex-col h-full min-h-0"
+    style="color: var(--semantic-text)"
+    data-testid="pr-conversation-panel"
+  >
     <header
       class="flex items-center justify-between px-3 py-2 shrink-0"
       style="border-bottom: 1px solid var(--color-border)"

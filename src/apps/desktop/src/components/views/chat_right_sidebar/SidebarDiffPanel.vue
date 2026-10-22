@@ -113,6 +113,9 @@ const readTabParam = (): PanelTab | null => {
 }
 
 const syncTabParam = (tab: PanelTab | null) => {
+  // No router means no URL to keep in sync — the same reason the read above is guarded. Without
+  // this the first tab switch threw and took the tab with it.
+  if (!router || !route) return
   const query = { ...route.query }
   if (tab) query.panel = tab
   else delete query.panel
@@ -124,6 +127,7 @@ const syncTabParam = (tab: PanelTab | null) => {
 const readConflictsParam = (): boolean => route.query.conflicts === '1'
 
 const syncConflictsParam = (on: boolean) => {
+  if (!router || !route) return
   const query = { ...route.query }
   if (on) query.conflicts = '1'
   else delete query.conflicts
@@ -430,12 +434,62 @@ const onFileRowClick = (event: MouseEvent, file: api.GitFileChange, staged: bool
   selectFile(file, staged)
 }
 
+// ── The before/after, in the panel ──────────────────────────────────────── The list said WHICH file
+// changed and never WHAT changed: the −/+ lines lived in the centre column, across the chat. The
+// panel holds the request's whole diff, so the file you click shows its own change under its row.
+const previewPath = ref<string | null>(null)
+
+/** A preview is a glance, not the diff: the first lines, and a count of what is left. */
+const PREVIEW_MAX_LINES = 14
+
+/** The before/after sign and colour of one preview line. */
+const PREVIEW_LINE: Record<string, { sign: string; color: string; background: string }> = {
+  add: {
+    sign: '+',
+    color: 'var(--color-green)',
+    background: 'color-mix(in srgb, var(--color-green) 12%, transparent)',
+  },
+  remove: {
+    sign: '−',
+    color: 'var(--color-red)',
+    background: 'color-mix(in srgb, var(--color-red) 12%, transparent)',
+  },
+  context: { sign: ' ', color: 'var(--semantic-text-dim)', background: 'transparent' },
+  hunk: { sign: '', color: 'var(--color-blue)', background: 'rgba(139, 164, 176, 0.08)' },
+}
+
+const preview = computed(() => {
+  const path = previewPath.value
+  if (!path) return null
+  const file = prFiles.value.find((f) => f.path === path)
+  if (!file) return null
+  const parsed = parseUnifiedDiff(file.text)
+  const lines = parsed.lines.filter(
+    (line) =>
+      line.type === 'add' || line.type === 'remove' || line.type === 'context' || line.type === 'hunk',
+  )
+  return {
+    lines: lines.slice(0, PREVIEW_MAX_LINES).map((line) => {
+      const look = PREVIEW_LINE[line.type] ?? PREVIEW_LINE.context
+      return { key: line.lineIndex, content: line.content, ...look }
+    }),
+    hidden: Math.max(0, lines.length - PREVIEW_MAX_LINES),
+  }
+})
+
+/** One preview at a time: a second file replaces the first, so the list never grows a column of
+ * them. Clicking the same file again puts it away. */
+const togglePreview = (path: string) => {
+  previewPath.value = previewPath.value === path ? null : path
+}
+
 const onPrFileRowClick = (event: MouseEvent, file: SplitDiffFile) => {
   if (isBackgroundOpenEvent(event)) {
     openFileInNewTab(file.path)
     return
   }
   selectPrFile(file)
+  togglePreview(file.path)
 }
 
 const onFileRowAuxClick = (event: MouseEvent, path: string) => {
@@ -1867,42 +1921,81 @@ defineExpose({
               }}<template v-if="conflictsOnly"> of {{ prFiles.length }}</template
               >)
             </div>
-            <div
-              v-for="file in filteredPrFiles"
-              :key="'pr-' + file.path"
-              role="button"
-              tabindex="0"
-              class="flex items-center gap-2 px-3 h-7 cursor-pointer hover:opacity-80"
-              :style="{
-                backgroundColor:
-                  selectedPath === file.path ? 'var(--semantic-active-bg)' : 'transparent',
-                boxShadow:
-                  selectedPath === file.path ? 'inset 2px 0 0 0 var(--color-violet)' : 'none',
-              }"
-              :data-testid="`sidebar-pr-file-${file.path}`"
-              :title="file.path"
-              @click="onPrFileRowClick($event, file)"
-              @contextmenu.prevent="onFileRowContextMenu($event, file.path)"
-              @auxclick="onFileRowAuxClick($event, file.path)"
-            >
-              <span
-                class="w-4 h-4 shrink-0 rounded flex items-center justify-center text-micro font-bold"
+            <div v-for="file in filteredPrFiles" :key="'pr-' + file.path">
+              <div
+                role="button"
+                tabindex="0"
+                class="flex items-center gap-2 px-3 h-7 cursor-pointer hover:opacity-80"
                 :style="{
-                  backgroundColor: chipFor(file.status).bg,
-                  color: chipFor(file.status).fg,
+                  backgroundColor:
+                    selectedPath === file.path ? 'var(--semantic-active-bg)' : 'transparent',
+                  boxShadow:
+                    selectedPath === file.path ? 'inset 2px 0 0 0 var(--color-violet)' : 'none',
                 }"
-                :title="chipFor(file.status).title"
-                aria-hidden="true"
-                >{{ chipFor(file.status).letter }}</span
+                :data-testid="`sidebar-pr-file-${file.path}`"
+                :title="file.path"
+                @click="onPrFileRowClick($event, file)"
+                @contextmenu.prevent="onFileRowContextMenu($event, file.path)"
+                @auxclick="onFileRowAuxClick($event, file.path)"
               >
-              <span class="text-dense truncate flex-1 min-w-0" :title="file.path">
-                <span style="color: var(--semantic-text-dim)">{{ pathParts(file.path).dir }}</span
-                ><span style="color: var(--semantic-text)">{{ pathParts(file.path).name }}</span>
-              </span>
-              <DiffCounts
-                :added="countsFor(file.path, false)?.added ?? null"
-                :removed="countsFor(file.path, false)?.removed ?? null"
-              />
+                <span
+                  class="w-4 h-4 shrink-0 rounded flex items-center justify-center text-micro font-bold"
+                  :style="{
+                    backgroundColor: chipFor(file.status).bg,
+                    color: chipFor(file.status).fg,
+                  }"
+                  :title="chipFor(file.status).title"
+                  aria-hidden="true"
+                  >{{ chipFor(file.status).letter }}</span
+                >
+                <span class="text-dense truncate flex-1 min-w-0" :title="file.path">
+                  <span style="color: var(--semantic-text-dim)">{{ pathParts(file.path).dir }}</span
+                  ><span style="color: var(--semantic-text)">{{ pathParts(file.path).name }}</span>
+                </span>
+                <DiffCounts
+                  :added="countsFor(file.path, false)?.added ?? null"
+                  :removed="countsFor(file.path, false)?.removed ?? null"
+                />
+              </div>
+              <!-- The before/after of the file you clicked, under its own row. -->
+              <div
+                v-if="preview && previewPath === file.path"
+                class="px-3 pb-2"
+                data-testid="sidebar-pr-file-preview"
+              >
+                <div
+                  class="rounded overflow-hidden font-mono"
+                  style="
+                    border: 1px solid var(--color-border);
+                    background-color: var(--color-bg-m1);
+                    font-size: var(--text-dense);
+                    line-height: 16px;
+                  "
+                >
+                  <div
+                    v-for="line in preview.lines"
+                    :key="line.key"
+                    class="flex gap-1.5 px-1.5"
+                    :style="{ backgroundColor: line.background }"
+                    data-testid="sidebar-pr-file-preview-line"
+                  >
+                    <span class="shrink-0" :style="{ color: line.color }">{{ line.sign }}</span>
+                    <span
+                      class="min-w-0"
+                      style="color: var(--semantic-text); white-space: pre-wrap; word-break: break-word"
+                      >{{ line.content }}</span
+                    >
+                  </div>
+                </div>
+                <p
+                  v-if="preview.hidden > 0"
+                  class="text-micro mt-1 px-0.5"
+                  style="color: var(--semantic-text-dim)"
+                  data-testid="sidebar-pr-file-preview-more"
+                >
+                  … {{ preview.hidden }} more line{{ preview.hidden === 1 ? '' : 's' }} in this file
+                </p>
+              </div>
             </div>
           </div>
         </template>

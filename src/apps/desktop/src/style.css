@@ -148,8 +148,12 @@
      */
   }
 
+  /* `bg-(--color-bg)` is Tailwind v4's CSS-variable shorthand; `bg-[--color-bg]` (the v3
+     spelling) compiles to the literal `background-color:--color-bg`, which the browser drops as
+     invalid. The body therefore had NO colour and NO background: every text that did not name its
+     own inherited the browser's black, which is invisible on the dark theme. */
   body {
-    @apply bg-[--color-bg] text-[--color-fg] font-sans antialiased;
+    @apply bg-(--color-bg) text-(--color-fg) font-sans antialiased;
     overflow-x: hidden;
   }
 
