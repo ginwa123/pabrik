@@ -455,6 +455,17 @@ pub fn decodeRequest(allocator: std.mem.Allocator, json: []const u8) !OwnedReque
         return .{ .arena = arena, .value = request };
     }
 
+    if (action == .resize) {
+        // The size rides in the request: the daemon has no database to look it
+        // up in, and the caller is the one that decided it.
+        const vcpus = integerField(object, "vcpus") orelse return Error.BadRequest;
+        const mem_mib = integerField(object, "mem_mib") orelse return Error.BadRequest;
+        if (vcpus <= 0 or mem_mib <= 0) return Error.BadRequest;
+        request.vcpus = @intCast(vcpus);
+        request.mem_mib = @intCast(mem_mib);
+        return .{ .arena = arena, .value = request };
+    }
+
     if (action == .exec) {
         const argv_value = object.get("argv") orelse return Error.BadRequest;
         const items = switch (argv_value) {
@@ -1381,6 +1392,24 @@ test "rpc: pong and status decode to their own shape" {
         },
         else => return error.TestExpectedStatus,
     }
+}
+
+test "a resize request carries the size it asks for" {
+    const allocator = testing.allocator;
+    const encoded = try encodeRequest(allocator, .{
+        .action = .resize,
+        .id = 31,
+        .workspace_id = "ws_1",
+        .vcpus = 2,
+        .mem_mib = 1024,
+    });
+    defer allocator.free(encoded);
+    var decoded = try decodeRequest(allocator, encoded);
+    defer decoded.deinit();
+    try testing.expectEqual(Action.resize, decoded.value.action);
+    try testing.expectEqualStrings("ws_1", decoded.value.workspace_id);
+    try testing.expectEqual(@as(u32, 2), decoded.value.vcpus);
+    try testing.expectEqual(@as(u32, 1024), decoded.value.mem_mib);
 }
 
 test "fs actions: a relative path crosses whole, with its offset and ceiling" {

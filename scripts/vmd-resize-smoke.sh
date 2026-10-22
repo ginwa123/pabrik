@@ -17,6 +17,11 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fc_bin="${FC_BIN:-firecracker}"
 guest_kernel="${GUEST_KERNEL:-$HOME/firecracker-demo/vmlinux-6.18.51}"
+# A dev box usually keeps the demo download in ~/firecracker-demo rather than
+# on PATH; CI passes FC_BIN, so this only helps the local run.
+if ! command -v "$fc_bin" >/dev/null && [ -x "$HOME/firecracker-demo/firecracker" ]; then
+  fc_bin="$HOME/firecracker-demo/firecracker"
+fi
 work="${PABRIK_VM_WORKDIR:-${TMPDIR:-/tmp}/pabrik-vmd-resize-smoke}"
 vmd="$repo_root/zig-out/bin/pabrik-vmd"
 vms="$work/vms"
