@@ -133,7 +133,8 @@ seconds; the processes inside it do not.
 | `POST` | `/api/admin/vms/:workspace/resize` | stop, resize, start |
 
 `POST` body: `{"vcpus": 2, "mem_mib": 1024}` — vCPUs `1..8`, memory
-`128..16384` MiB. The answer is the state the VM came back in (`ready`, or
+`128..16384` MiB **in 128 MiB steps** (Firecracker refuses anything off that
+grid at boot, so the console refuses it first). The answer is the state the VM came back in (`ready`, or
 `failed` with the guest's reason). A host with no manager answers
 `503 NoVmManager` and the panel says so, instead of offering a control that
 cannot work.
@@ -141,6 +142,14 @@ cannot work.
 The size lives beside the VM: `pabrik-vmd` records it per workspace in
 `<root>/workspaces/<id>/vm.spec`, so the manager needs no database and a
 workspace with no record keeps the manager's defaults.
+
+The same resize is a command, which is how CI proves it on a real guest:
+
+```bash
+pabrik-vmd resize --socket /run/user/$UID/pabrik-vmd.sock \
+  --workspace-id ws_123 --vcpus 2 --mem 1024
+scripts/vmd-resize-smoke.sh   # boots, resizes, and reads nproc + MemTotal inside the VM
+```
 
 ### The last owner
 

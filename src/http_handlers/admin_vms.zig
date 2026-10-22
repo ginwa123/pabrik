@@ -29,6 +29,7 @@ const Limits = struct {
     max_vcpus: u32 = vm_limits.max_vcpus,
     min_mem_mib: u32 = vm_limits.min_mem_mib,
     max_mem_mib: u32 = vm_limits.max_mem_mib,
+    mem_step_mib: u32 = vm_limits.mem_step_mib,
 };
 
 const VmsResponse = struct {

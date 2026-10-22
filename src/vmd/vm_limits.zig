@@ -8,16 +8,21 @@ pub const min_vcpus: u32 = 1;
 pub const max_vcpus: u32 = 8;
 pub const min_mem_mib: u32 = 128;
 pub const max_mem_mib: u32 = 16 * 1024;
+/// Firecracker lays the guest's memory out in 128 MiB steps and refuses
+/// anything else at boot, so a value off the grid is refused here instead.
+pub const mem_step_mib: u32 = 128;
 
 pub const Refusal = enum {
     vcpus_out_of_range,
     mem_mib_out_of_range,
+    mem_mib_not_aligned,
     bad_workspace_id,
 
     pub fn message(self: Refusal) []const u8 {
         return switch (self) {
             .vcpus_out_of_range => "vcpus must be 1..8",
             .mem_mib_out_of_range => "mem_mib must be 128..16384",
+            .mem_mib_not_aligned => "mem_mib must be a multiple of 128",
             .bad_workspace_id => "workspace id must be letters, digits, '-' or '_'",
         };
     }
@@ -38,14 +43,15 @@ pub fn vcpusInRange(v: u32) bool {
 }
 
 pub fn memInRange(m: u32) bool {
-    return m >= min_mem_mib and m <= max_mem_mib;
+    return m >= min_mem_mib and m <= max_mem_mib and m % mem_step_mib == 0;
 }
 
 /// The refusal a request hits, or null when it is in range.
 pub fn check(id: []const u8, vcpus: u32, mem_mib: u32) ?Refusal {
     if (!validWorkspaceId(id)) return .bad_workspace_id;
     if (!vcpusInRange(vcpus)) return .vcpus_out_of_range;
-    if (!memInRange(mem_mib)) return .mem_mib_out_of_range;
+    if (mem_mib < min_mem_mib or mem_mib > max_mem_mib) return .mem_mib_out_of_range;
+    if (mem_mib % mem_step_mib != 0) return .mem_mib_not_aligned;
     return null;
 }
 
@@ -60,6 +66,10 @@ test "a request inside the limits is accepted, and one outside is named" {
     // The boundaries themselves are inside.
     try testing.expect(check("ws_1", min_vcpus, min_mem_mib) == null);
     try testing.expect(check("ws_1", max_vcpus, max_mem_mib) == null);
+    // Firecracker takes memory in 128 MiB steps, and refuses anything else at
+    // boot, so a resize off the grid is refused before the manager is asked.
+    try testing.expectEqual(Refusal.mem_mib_not_aligned, check("ws_1", 2, 1000).?);
+    try testing.expect(check("ws_1", 2, 1536) == null);
 }
 
 test "a workspace id that could escape a path is refused" {

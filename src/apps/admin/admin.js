@@ -134,13 +134,14 @@ function drawUsers(users) {
   el('accounts-empty').hidden = users.length !== 0;
 }
 
-function numberInput(id, value, min, max) {
+function numberInput(id, value, min, max, step) {
   const input = document.createElement('input');
   input.type = 'number';
   input.className = 'vm-input';
   input.value = String(value);
   input.min = String(min);
   input.max = String(max);
+  input.step = String(step || 1);
   input.id = id;
   return input;
 }
@@ -165,7 +166,7 @@ function drawVms(vms, manager, limits) {
       const form = document.createElement('div');
       form.className = 'vm-form';
       const vcpus = numberInput('', vm.vcpus || limits.min_vcpus, limits.min_vcpus, limits.max_vcpus);
-      const mem = numberInput('', vm.mem_mib || limits.min_mem_mib, limits.min_mem_mib, limits.max_mem_mib);
+      const mem = numberInput('', vm.mem_mib || limits.min_mem_mib, limits.min_mem_mib, limits.max_mem_mib, limits.mem_step_mib);
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'button';
@@ -188,7 +189,7 @@ async function loadVms() {
     const data = await request(endpoints.vms);
     panel.hidden = false;
     el('vms-manager').textContent = data.manager
-      ? 'Changing vCPUs or memory restarts that workspace\'s VM: the guest comes back in a few seconds, the processes inside it do not.'
+      ? 'Changing vCPUs or memory restarts that workspace\'s VM: the guest comes back in a few seconds, the processes inside it do not. Memory moves in 128 MiB steps.'
       : 'No VM manager answered on this host, so there is nothing to size here.';
     drawVms(data.vms || [], Boolean(data.manager), data.limits || { min_vcpus: 1, max_vcpus: 8, min_mem_mib: 128, max_mem_mib: 16384 });
   } catch (error) {
