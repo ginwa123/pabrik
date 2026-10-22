@@ -39,8 +39,10 @@ command -v "$fc_bin" >/dev/null || fail "firecracker not found: $fc_bin"
 rm -rf "$work"
 mkdir -p "$work"
 
-say "building pabrik-vmd (zig build vmd)"
-(cd "$repo_root" && zig build vmd -Doptimize=ReleaseSafe)
+# The image build wants the agent on disk (`build-guest-image.sh` refuses
+# without it), and a fresh checkout has neither binary, so build both.
+say "building pabrik-vmd and the guest agent (zig build vmd vm)"
+(cd "$repo_root" && zig build vmd vm -Doptimize=ReleaseSafe)
 [ -x "$vmd" ] || fail "zig build vmd left no $vmd"
 
 say "assembling the guest image"
