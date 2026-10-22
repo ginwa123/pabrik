@@ -939,7 +939,8 @@ jobs:
           done
           exit 1
 
-      - name: Admin console (its own package: build + unit tests)
+      # A plain scalar may not hold ': ', so the name is quoted.
+      - name: "Admin console (its own package: build + unit tests)"
         # `src/apps/admin` is a Zig package of its own (`pabrik-admin`), so the
         # root `zig build test` above never compiles it. It links only the
         # sqlite and HTTP-server packages, and its dependencies are the copy

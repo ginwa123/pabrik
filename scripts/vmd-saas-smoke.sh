@@ -35,6 +35,10 @@ done
 # A fresh HOME keeps the live agent.db (and the :8081 server) out of the run.
 work="$(mktemp -d -t pabrik-saas-smoke-XXXXXX)"
 export HOME="$work"
+# A self-hosted runner may export XDG_*: pin pabrik's config, data, state and
+# runtime dir to the smoke's HOME, or the smoke reads the operator's install
+# (their real config.json and agent.db) instead of its own.
+unset XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_RUNTIME_DIR
 sock="$work/vmd.sock"
 pids=()
 cleanup() {
