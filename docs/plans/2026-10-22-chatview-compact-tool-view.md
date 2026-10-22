@@ -13,6 +13,13 @@ which is the existing one. Show me a Compact View wireframe before you implement
 So: the Dev View stays, a Compact View is added beside it, a setting in User settings chooses
 between them, and the wireframe comes first.
 
+Two decisions have been taken while the wireframe was being reviewed:
+
+- **A failed call keeps its place inside the run.** It is not lifted out of the group. The group
+  card says how many calls failed, so a folded group still announces the failure.
+- **There is no toolbar switch.** The mode is chosen in `Settings → User → General` and nowhere
+  else, so one place decides and no two places can disagree.
+
 ## The wireframe
 
 One standalone HTML file, opened straight from the disk. It shows, in order:
@@ -21,15 +28,14 @@ One standalone HTML file, opened straight from the disk. It shows, in order:
   `Settings → User → General`, with both states of the control;
 - the **chat view**: the same turn drawn twice, Compact on the left, Dev on the right, with a live
   read-out that measures the two tool blocks and prints the ratio;
-- the **toolbar switch**: the composer toolbar with the new control, and the reason it is called
-  "View" and not "Compact";
-- the **summary table**: what one compact line shows for each tool;
+- the **composer**, unchanged, because that is the point: the mode is not a toolbar control;
+- the **card each tool draws**, which the compact view inherits;
 - the **safety rules**, the **open questions**, and what the design gate measured.
 
-It is interactive: the group row folds and unfolds, the segmented control and the toolbar button
-switch the mode, and the read-out is computed from `getBoundingClientRect()` in the same tick it
-prints. Verified in `agent-browser` (structure, both sides of every claim, one snapshot per click),
-and through the design gate (`lint.mjs` 0 FAIL / 0 WARN, `inspect.mjs` 0 FAIL / 2 defended WARN).
+It is interactive: the group card folds and unfolds, the segmented control switches the mode, and
+the read-out is computed from `getBoundingClientRect()` in the same tick it prints. Verified in
+`agent-browser` (structure, both sides of every claim, one snapshot per click), and through the
+design gate (`lint.mjs` 0 FAIL / 0 WARN, `inspect.mjs` 0 FAIL / 2 defended WARN).
 
 ## The design
 
@@ -42,30 +48,32 @@ ran eight tools is eight bordered rows, and the agent's answer ends up below the
 
 ### The Compact View (new)
 
-A run of consecutive tool calls (which the chat already groups into one `tool` group) is drawn as:
+**The compact view has no new visual language. The cards behind the group card are today's cards,
+unchanged.** The only thing Compact does is fold a run of calls:
 
-- **one line per call**: a status dot, the tool name, the one argument you would recognise the call
-  by, and the outcome on the right;
-- **one group row for the run**: `8 tool calls · 1 failed · 42.1s · 1 write`, which unfolds into the
-  one-liners;
-- **a failed call keeps its place inside the run**, marked in red. It is not lifted out of the group.
-  What the group row carries is the count of the calls that failed, so a folded group never hides
-  that something went wrong, and one click on the failed line opens the full card with the error
-  body, exactly as today's Dev View does;
-- **a group that holds an `ask_user` starts open**, because that is the one call the human has to
-  act on, and a question you cannot see is a question you cannot answer;
-- **one click opens the full card**: clicking a compact line opens today's Dev View card for that
-  one call, in place. Compact is a rendering, not a downgrade.
+- the run of consecutive tool calls (which the chat already groups into one `tool` group) is drawn
+  as **one group card** in the shape of a dev card: the violet name is `8 tool calls`, the dim
+  primary is the list of the tools in the run, and the right-hand badges are the run's summary
+  (`1 failed`, `1 write`);
+- clicking the group card unfolds the **dev cards**, one per call, in the same order;
+- a failed call keeps its place in the run, marked in red, and the group card says how many failed;
+- a group that holds an `ask_user` starts open, because that is the one call the human has to act
+  on;
+- a running call is counted in the group card too, so a long call never looks like a call that never
+  happened.
 
-Measured on the wireframe: the tool block is **22px** in Compact view against **311px** in Dev view
-for the same eight calls, so **14.1 times** shorter: one row instead of eight. Unfolding the group
-row gives the nine rows (the eight calls plus the group row) at 270px.
+Measured on the wireframe: folded, the tool block is **39px** against **311px** in the dev view for
+the same eight calls, so **8 times shorter**: one card for all eight calls. Unfolded it is 359px
+and 9 cards, the same eight cards plus the group card on top.
 
-### The summary rule per tool
+### What this means for the implementation
 
-One line per call, and the line carries the argument that identifies the call:
+This is the part that got smaller. Because the compact view renders the existing cards, there is
+**no new summary rule per tool, no new parser and no second card component**: the card behind the
+group already carries the one argument that identifies the call, because that is what the card was
+for. The new work is a group card, a fold, and a setting.
 
-| Tool | The line shows | Outcome |
+| Tool | The card shows | Outcome |
 | --- | --- | --- |
 | `read_file` | the path | ok, and the size |
 | `write_file` | the path | written, and the size |
@@ -112,7 +120,7 @@ keep seeing the Dev View.
 
 ## The implementation
 
-Seven steps, in this order. The order matters: the Dev View must not move until the Compact View
+Six steps, in this order. The order matters: the Dev View must not move until the Compact View
 can render every tool it can render today.
 
 ### 1. The preference store
@@ -137,8 +145,8 @@ export const useChatViewStore = defineStore('chatView', () => {
 
 Today the 31-branch `v-if` / `v-else-if` chain that picks the card for a tool message lives inline
 in the ChatView template, from `ChatView.vue:4080` (`read_file`) down to the generic
-`.tool-expandable` fallback at `ChatView.vue:4368`. It is needed in two places (the Dev View, and
-the "one click opens the full card" state of the Compact View), so it moves to a new component:
+`.tool-expandable` fallback at `ChatView.vue:4368`. The Compact View has to render the same card
+for a message it draws behind the group card, so the chain moves to a new component:
 
 - new `src/apps/desktop/src/components/tool_outputs/ToolCard.vue`, props `message`, `content`,
   `parameters`, `expanded`, `cwd`, and the two slot-scoped helpers `innerToolData` and
@@ -146,45 +154,34 @@ the "one click opens the full card" state of the Compact View), so it moves to a
 - `ChatView.vue`'s tool block becomes `<ToolCard ... />` where the chain used to be.
 
 This is the only refactor the feature needs, and it is what keeps the two views from drifting
-apart: there is one chain, two renderers.
+apart: there is one chain and one card, drawn by two views.
 
-### 3. The summary helper
+### 3. The group card
 
-New file `src/apps/desktop/src/helpers/toolSummary.ts`:
+New file `src/apps/desktop/src/components/tool_outputs/compact/CompactToolGroup.vue`:
 
-```ts
-export interface ToolSummary {
-  tool: string
-  primary: string   // the one argument that identifies the call
-  status: 'ok' | 'failed' | 'running'
-  badge: string     // 'exit 0', 'failed', '142 KB', '12 hits', …
-}
-export function summarizeTool(tool: string, parameters: string, content: unknown): ToolSummary
-```
+- **the group card** — the shape of a dev card (`.chat-tool-card`): the violet name is
+  `N tool calls`, the dim primary is the tool names of the run, the right-hand badges are
+  `N failed`, `N running` and `N write`, and the `+`/`−` toggles the fold;
+- **the fold** — the group's messages rendered as `ToolCard`s, in order, hidden by default;
+- **the open-by-default rule** — a group that holds an `ask_user` starts open.
 
-- **the argument**: `parameters` is the tool-call args, either a JSON string or the XML the backend
-  produces (`components/tool_outputs/_shared/toolOutputParser.ts:26` has `extractTag`, and
-  `unwrapToolOutput.ts:39` shows both shapes are possible). Parse JSON first, fall back to
-  `extractTag`. A per-tool table says which argument is the identifying one (`path`, `command`,
-  `pattern`, `query`, …); the fallback is the first non-empty argument.
-- **the status**: `normalizeToolContent(content)` (`toolOutputParser.ts:136`) gives the envelope's
-  `error`; a non-empty error is `failed`. An empty envelope with a known argument is `running`.
-  For the shell family, `parseShell` gives the exit code.
-- **the badge**: the size, the hit count, the exit code, depending on the tool.
+The aggregates come from what the transcript already carries, and nothing more:
 
-The helpers already exist and are already used by the cards, so the summary table does not
-re-implement parsing.
+| the badge | where it comes from |
+| --- | --- |
+| the number of calls | the size of the `tool` group |
+| the tool names | `msg.tool_name` on each message |
+| the number of failures | the envelope's `success: false` (`helpers/unwrapToolOutput.ts:57` returns `success` and `error`) |
+| the number of writes | the tool names `write_file`, `text_replace`, `remove_file` |
+| the number of running calls | an empty envelope with a known argument, the same test the shell card uses |
 
-### 4. The compact components
+**There is no duration.** The envelope (`helpers/unwrapToolOutput.ts`) carries the tool name, the
+arguments, `success`, the error and the data. It carries no timing, so the group card cannot show
+how long the run took without a new field in the transcript. The wireframe therefore shows no
+duration, and if the human wants one, that is a separate change in the backend.
 
-- new `src/apps/desktop/src/components/tool_outputs/compact/CompactToolRow.vue` — one line, with
-  the same token classes the cards use (`--color-violet` for the name, `--semantic-text-dim` for the
-  argument, the green/red badges).
-- new `src/apps/desktop/src/components/tool_outputs/compact/CompactToolGroup.vue` — the group row
-  (the counts of failed and running calls), the fold, and the rule that a group holding an
-  `ask_user` starts open.
-
-### 5. The settings row
+### 4. The settings row
 
 `src/apps/desktop/src/components/pabrik/PabrikConfigEditor.vue`, in the Interface block next to the
 `toggle-browser-tabs` row (line 1093-1096): a "Chat view" row with a two-option segmented
@@ -192,39 +189,34 @@ control, `data-testid="row-chat-view"`, `data-testid="chat-view-compact"`,
 `data-testid="chat-view-dev"`. It writes the store, not `config.json`, so the block's own
 "app-local (localStorage), not config.json" comment stays true.
 
-### 6. The ChatView wiring
+### 5. The ChatView wiring
 
-`ChatView.vue`:
+`ChatView.vue`: the tool block at line 4071 becomes `v-if="chatView.mode === 'compact'"` →
+`<CompactToolGroup :messages="group.messages" :expanded-ids="expandedToolIds" ... />`, and `v-else`
+keeps today's `<ToolCard>` chain. Nothing else in the chat changes: the composer toolbar, the
+agent's prose and the transcript are untouched.
 
-- the tool block at line 4071 becomes `v-if="chatView.mode === 'compact'"` →
-  `<CompactToolGroup :messages="group.messages" :expanded-ids="expandedToolIds" ... />`, and
-  `v-else` keeps today's `<ToolCard>` chain;
-- the toolbar (`<template #toolbar>`, line 4663) gets the "View: Compact ▾" control in the **right**
-  zone, after the worktree status. It must not sit next to the existing "Compact" button in the
-  left zone, because that one compacts the conversation history and the two meanings would sit
-  side by side.
-
-### 7. Tests
+### 6. Tests
 
 - new `src/apps/desktop/src/__tests__/chatViewCompact.spec.ts`:
   - the store defaults to `dev` and round-trips through `localStorage`;
   - the segmented control writes the store and reads back;
-  - `summarizeTool` per tool family (the table above);
-  - the group row folds, unfolds, and counts the failed calls in the group row;
-  - a compact row expands into the same `ToolCard` the Dev View renders;
+  - the group card counts the calls, the failures, the writes and the running calls;
+  - the group card folds and unfolds, and the cards behind it are the same `ToolCard`s the dev
+    view renders;
+  - a group holding an `ask_user` starts open;
 - the existing specs stay green, in particular
   `src/apps/desktop/src/__tests__/ChatView.composerToolbar.spec.ts` (it asserts the toolbar's
-  testids and the "Compact conversation history" title) and the tool-card specs under
-  `src/apps/desktop/src/components/tool_outputs/__tests__/`;
+  testids and the "Compact conversation history" title, and the composer is not touched);
 - the Python functional tests under `tests/functional_ui/` need no change, because the default
   mode is `dev`.
 
 ## Data flow
 
 ```
-Settings → General → Interface → Chat view      ChatView toolbar → View: Compact
-        │                                                   │
-        └──────────────► useChatViewStore().mode ◄─────────┘
+Settings → General → Interface → Chat view
+        │
+        └──────────────► useChatViewStore().mode
                                  │
                                  ▼
                     ChatView's tool block (ChatView.vue:4071)
@@ -232,14 +224,11 @@ Settings → General → Interface → Chat view      ChatView toolbar → View:
                  mode === 'dev'  │  mode === 'compact'
                                  ▼                    ▼
               today's card chain (now         CompactToolGroup
-              components/tool_outputs/         → summarizeTool(tool, parameters, content)
-              ToolCard.vue)                    → one line per call
-                                                 → the group row for the run
-                                                 → a failed call marked, in place
-                                 │
+              components/tool_outputs/         → the group card: the count, the tool
+              ToolCard.vue)                      names, the failures, the writes
+                                 │              → the fold: the same ToolCards, in order
                                  ▼
-              a compact row that is expanded → the SAME ToolCard, so the
-              full card is one click away
+              the dev cards, one per call
 ```
 
 Nothing in this flow touches the history, the compaction, or the request that goes to the provider.
@@ -249,24 +238,25 @@ It is a rendering choice, made in the frontend, from data the transcript already
 
 | Risk | Why it matters | What the plan does about it |
 | --- | --- | --- |
-| A failure hides behind a folded group | A collapsed run can hide the one thing the human needed to see | The group row counts the failed calls in red, so a folded group announces the failure, and one click on the failed line opens the full card with the error body |
+| A failure hides behind a folded group | A collapsed run can hide the one thing the human needed to see | The group card counts the failed calls in red, so a folded group announces the failure, and the failed card behind it is today's card, which forces its error body open |
 | The two views drift | 31 cards in one view and a second renderer means two places to change | Extract the card dispatch into one `ToolCard.vue` and render it from both |
-| The summary table is wrong for a tool | 31 tools, and a new tool can arrive any time | A table with a stated fallback, plus a rule that any tool without a rule falls back to its name and first argument |
 | The default changes everyone's chat | The Dev View is what people know | The default is `dev`; the change is opt-in |
-| The word "Compact" already means something | The composer toolbar's "Compact" button compacts the conversation history | The view modes are "Compact view" and "Dev view"; the toolbar control says "View: Compact" and sits in the right zone |
+| The word "Compact" already means something | The composer toolbar's "Compact" button compacts the conversation history | There is no toolbar control, so the clash is only with the setting's own option label; the setting is called "Chat view" and the composer button keeps its own title |
 | A functional test breaks | `tests/functional_ui/` asserts on `.chat-tool-card` and `shell-tool-pill` | The default stays `dev`, so a fresh profile still renders the Dev View |
-| The `data-testid`s move | The vitest specs, the Python suite and the app itself are four consumers | Nothing is removed; the compact rows get their own testids |
+| The `data-testid`s move | The vitest specs, the Python suite and the app itself are four consumers | Nothing is removed; the group card gets its own testids |
 
 ## Open questions for the human
 
-One of these is already answered: **a failed call keeps its place inside the run**, and the group row
-says how many calls failed. It is not lifted out of the group.
+Two of these are already answered: **a failed call keeps its place inside the run** (the group card
+says how many failed), and **there is no toolbar switch** (the mode is chosen in
+`Settings → User → General` and nowhere else).
 
 1. **Where the preference is stored.** App-local storage, the way "Browser-style tabs" is (the
    proposal), or `config.json`, so it travels with the profile and a workspace can override it?
-2. **The names.** "Compact view" and "Dev view" with a toolbar control labelled "View: Compact", or
-   something else, such as "Simple" and "Full"?
-3. **Does the toolbar override exist at all?** It is useful, but it means two places can disagree
-   about the mode.
-4. **Does Compact fold the agent's prose too?** The proposal says no: only tool calls change.
-5. **A run of one call.** The proposal draws a lone call as a single line, with no group row.
+2. **The names.** "Compact view" and "Dev view" in a row called "Chat view", or something else,
+   such as "Simple" and "Full"?
+3. **Does Compact fold the agent's prose too?** The proposal says no: only tool calls change.
+4. **A run of one call.** The proposal draws a lone call as the card it already is, with no group
+   card on top.
+5. **A duration for the run.** The envelope carries no timing, so the group card cannot say how
+   long the run took. Should the backend record one, or is the count of calls enough?

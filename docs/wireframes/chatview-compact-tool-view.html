@@ -119,26 +119,18 @@
   [data-ui] .tag.bad { color: var(--red); }
   [data-ui] .plus { margin-left: auto; color: var(--dim); font-size: 13px; }
 
-  /* --- Compact view: one line per call, a group row for the run --- */
-  [data-ui] .crow { display: flex; align-items: center; gap: 9px; font-size: 12.5px; line-height: 1.7; width: 100%; text-align: left; }
-  [data-ui] button.crow { font-family: inherit; background: transparent; border: 0; padding: 0; cursor: pointer; color: inherit; }
-  [data-ui] .dot { flex: 0 0 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--border-light); }
-  [data-ui] .dot.ok { background: var(--green); }
-  [data-ui] .dot.bad { background: var(--red); }
-  [data-ui] .ctool { color: var(--violet); font-size: 12px; font-weight: 600; flex: 0 0 78px; }
-  [data-ui] .carg { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-  [data-ui] .csum { color: var(--text); font-size: 12.5px; }
+  /* --- Compact view: the same dev card, folded. The group card is a dev
+     card whose name is the run and whose right-hand badges are the run's
+     summary; the cards behind it ARE the dev cards, untouched. --- */
+  [data-ui] .dcards { display: flex; flex-direction: column; gap: 10px; }
+  [data-ui] .dgroup { cursor: pointer; }
+  [data-ui] .dgroup:hover { border-left-color: var(--violet); }
   [data-ui] .grow { flex: 1; }
-  [data-ui] .chev { color: var(--dim); font-size: 13px; flex: 0 0 10px; }
-  [data-ui] .clist { display: flex; flex-direction: column; gap: 2px; padding: 4px 0 0 15px; }
-  [data-ui] .crow-group { padding: 1px 0; }
-  [data-ui] .crow-group:hover .csum { color: var(--violet); }
 
   [data-ui] .composer { background: var(--bg-m2); border-radius: 10px; padding: 14px 16px; }
-  [data-ui] .crow-folded { margin: 2px 0 12px; }
   [data-ui] .ctype { font-size: 13px; color: var(--dim); padding: 10px 0 12px; }
-  [data-ui] .crow2 { display: flex; align-items: center; gap: 12px; }
-  [data-ui] .crow2 .ctype { flex: 1; min-width: 0; }
+  [data-ui] .inputrow { display: flex; align-items: center; gap: 12px; }
+  [data-ui] .inputrow .ctype { flex: 1; min-width: 0; }
   [data-ui] .send { font: inherit; font-size: 13px; font-weight: 500; padding: 7px 16px; border: 0; border-radius: 8px; background: var(--bg-p1); color: var(--text); cursor: pointer; }
   [data-ui] .toolbar { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--muted); }
   [data-ui] .tbtn { font: inherit; font-size: 12.5px; padding: 3px 8px; border-radius: 6px; background: transparent; border: 0; color: var(--muted); cursor: pointer; }
@@ -160,7 +152,7 @@
     [data-ui].is-in .bubble,
     [data-ui].is-in .toolblock,
     [data-ui].is-in .dcard,
-    [data-ui].is-in .crow,
+    [data-ui].is-in .dcard,
     [data-ui].is-in .setrow,
     [data-ui].is-in .blockhead,
     [data-ui].is-in .setmain h3,
@@ -189,7 +181,7 @@
   <h1>A Compact View for chat tool calls</h1>
   <p class="lede">Today every tool call in the chat is a card of its own, so a turn that ran eight tools
   pushes the agent's answer off the screen. This keeps the Dev View exactly as it is and adds a second
-  rendering, <strong>Compact</strong>, that draws a run of calls as one line, with a setting in
+  rendering, <strong>Compact</strong>, that folds a run of calls into one card, with a setting in
   <strong>Settings &rarr; User &rarr; General</strong> to choose between the two.</p>
   <p class="status">Wireframe only. Nothing is implemented yet, and the Dev View is not proposed for
   removal. The two chat panes below are sketches drawn from the current components, not screenshots.</p>
@@ -198,8 +190,8 @@
 <nav class="jump">
   <button type="button" data-goto="setting">The setting</button>
   <button type="button" data-goto="chat">The chat view</button>
-  <button type="button" data-goto="toolbar">The toolbar switch</button>
-  <button type="button" data-goto="rules">What one line shows</button>
+  <button type="button" data-goto="composer">The composer</button>
+  <button type="button" data-goto="rules">What a card shows</button>
   <button type="button" data-goto="safety">The rules that keep it safe</button>
   <button type="button" data-goto="open">Open questions</button>
 </nav>
@@ -253,13 +245,14 @@
 
 <section id="chat">
   <h2>The chat view</h2>
-  <p>The same turn, drawn twice. On the left is the proposal: the whole run of calls folded into one
-  line, which says how many of them failed. On the right is today, eight cards stacked in a column.
-  Click the group row in the compact pane to unfold the eight calls behind it.</p>
+  <p>The same turn, drawn twice. On the left is the proposal: the run of calls folded into one card,
+  which says how many of them failed. On the right is today, the same eight cards stacked in a
+  column. Click the group card in the compact pane to unfold the eight cards behind it: they are
+  the dev cards, unchanged.</p>
 
   <div class="readout" id="readout" aria-live="polite">
     <span class="rlabel">Measured from the two panes below</span>
-    <span id="readout-body">The tool block is 22px tall in Compact view and 311px in Dev view, so 14.1&times; shorter. Visible rows: 1 against 8, and the one row stands in for all 8 calls.</span>
+    <span id="readout-body">The tool block is 39px tall in Compact view and 311px in Dev view, so 8.0&times; shorter. Visible cards: 1 against 8, and the one card stands in for all 8 calls.</span>
   </div>
 
   <div class="grid2">
@@ -273,29 +266,54 @@
         <p class="bubble asst"><span class="who">Agent</span>Reading how the chat draws tool calls, then mocking the compact shape.</p>
 
         <div class="toolblock" id="compact-toolblock">
-          <button type="button" class="crow crow-group" id="crow-group" aria-expanded="false" aria-controls="clist">
-            <span class="dot bad"></span>
-            <span class="csum">8 tool calls</span>
-            <span class="grow"></span>
-            <span class="tag bad">1 failed</span>
-            <span class="tag">42.1s</span>
-            <span class="tag">1 write</span>
-            <span class="chev" id="chev">›</span>
-          </button>
-          <div class="clist" id="clist" style="display:none">
-            <div class="crow"><span class="dot ok"></span><code class="ctool">read_file</code><code class="carg">src/apps/desktop/src/components/views/ChatView.vue</code><span class="grow"></span><span class="tag">142 KB</span></div>
-            <div class="crow"><span class="dot ok"></span><code class="ctool">search</code><code class="carg">"tool-sequence" in src/apps/desktop/src</code><span class="grow"></span><span class="tag">12 hits</span></div>
-            <div class="crow"><span class="dot ok"></span><code class="ctool">command</code><code class="carg">$ git status --short</code><span class="grow"></span><span class="tag">exit 0</span></div>
-            <div class="crow"><span class="dot ok"></span><code class="ctool">command</code><code class="carg">$ zig build test</code><span class="grow"></span><span class="tag">42.1s</span></div>
-            <div class="crow"><span class="dot ok"></span><code class="ctool">write_file</code><code class="carg">docs/wireframes/chatview-compact-tool-view.html</code><span class="grow"></span><span class="tag">written</span></div>
-            <div class="crow"><span class="dot ok"></span><code class="ctool">read_file</code><code class="carg">src/apps/desktop/src/stores/tabs.ts</code><span class="grow"></span><span class="tag">4.1 KB</span></div>
-            <div class="crow"><span class="dot bad"></span><code class="ctool">command</code><code class="carg">$ npm run test:unit -- --run</code><span class="grow"></span><span class="tag bad">failed</span><span class="tag">exit 1</span></div>
-            <div class="crow"><span class="dot ok"></span><code class="ctool">present_files</code><code class="carg">chatview-compact-tool-view.html</code><span class="grow"></span><span class="tag">shown</span></div>
+          <div
+            class="dcard dgroup"
+            id="crow-group"
+            role="button"
+            tabindex="0"
+            aria-expanded="false"
+            aria-controls="clist"
+          >
+            <div class="dhead">
+              <code class="dtool">8 tool calls</code>
+              <code class="darg">read_file, search, command, write_file, read_file, command, present_files</code>
+              <span class="tag bad">1 failed</span>
+              <span class="tag">1 write</span>
+              <span class="plus" id="chev">+</span>
+            </div>
+          </div>
+          <div class="dcards" id="clist" style="display:none">
+            <div class="dcard">
+              <div class="dhead"><code class="dtool">read_file</code><code class="darg">src/apps/desktop/src/components/views/ChatView.vue</code><span class="plus">+</span></div>
+            </div>
+            <div class="dcard">
+              <div class="dhead"><code class="dtool">search</code><code class="darg">"tool-sequence" in src/apps/desktop/src</code><span class="plus">+</span></div>
+            </div>
+            <div class="dcard">
+              <div class="dhead"><code class="dtool">command</code><code class="dsign">$</code><code class="darg">git status --short</code><span class="tag ok">0</span><span class="plus">+</span></div>
+            </div>
+            <div class="dcard">
+              <div class="dhead"><code class="dtool">command</code><code class="dsign">$</code><code class="darg">zig build test</code><span class="tag ok">0</span><span class="plus">+</span></div>
+            </div>
+            <div class="dcard">
+              <div class="dhead"><code class="dtool">write_file</code><code class="darg">docs/wireframes/chatview-compact-tool-view.html</code><span class="plus">+</span></div>
+            </div>
+            <div class="dcard">
+              <div class="dhead"><code class="dtool">read_file</code><code class="darg">src/apps/desktop/src/stores/tabs.ts</code><span class="plus">+</span></div>
+            </div>
+            <div class="dcard bad">
+              <div class="dhead"><code class="dtool">command</code><code class="dsign">$</code><code class="darg">npm run test:unit -- --run</code><span class="tag bad">failed</span><span class="plus">&minus;</span></div>
+              <pre class="dbody">npm ERR! Test suite failed.
+1 failing spec: ChatView.toolCards.spec.ts</pre>
+            </div>
+            <div class="dcard">
+              <div class="dhead"><code class="dtool">present_files</code><code class="darg">chatview-compact-tool-view.html</code><span class="plus">+</span></div>
+            </div>
           </div>
         </div>
 
-        <p class="bubble asst"><span class="who">Agent</span>The eight calls above are one line here. The
-        failed call keeps its place in the group, and the group says how many failed.</p>
+        <p class="bubble asst"><span class="who">Agent</span>The eight calls above are one card here.
+        The cards behind it are the same ones on the right.</p>
       </div>
     </div>
 
@@ -337,33 +355,33 @@
           </div>
         </div>
 
-        <p class="bubble asst"><span class="who">Agent</span>The eight calls above are one line here. The
-        failed call keeps its place in the group, and the group says how many failed.</p>
+        <p class="bubble asst"><span class="who">Agent</span>The eight calls above are one card here.
+        The cards behind it are the same ones on the right.</p>
       </div>
     </div>
   </div>
 </section>
 
-<section id="toolbar">
-  <h2>The toolbar switch</h2>
-  <p>The composer toolbar already carries a button called <strong>Compact</strong>, and it does not
-  mean this: it compacts the conversation history. A second control in the same bar has to be told
-  apart, so it is labelled <strong>View</strong> and shows the mode it will switch to, and it sits at
-  the far right of the toolbar, away from the history button.</p>
+<section id="composer">
+  <h2>The composer does not change</h2>
+  <p>There is no view switch in the composer toolbar. The mode is chosen in
+  <strong>Settings &rarr; User &rarr; General</strong> and nowhere else, so one place decides how
+  the chat draws, and there is no second control that can disagree with it.</p>
 
   <div data-ui class="chatframe">
     <p class="bubble user"><span class="who">You</span>fold that run of calls, please.</p>
     <p class="bubble asst"><span class="who">Agent</span>Folded. The composer stays where it was; only the view mode changed.</p>
-    <div class="crow crow-folded">
-      <span class="dot bad"></span>
-      <span class="csum">8 tool calls</span>
-      <span class="grow"></span>
-      <span class="tag bad">1 failed</span>
-      <span class="tag">42.1s</span>
-      <span class="chev">›</span>
+    <div class="dcard dgroup" style="margin: 2px 0 12px">
+      <div class="dhead">
+        <code class="dtool">8 tool calls</code>
+        <code class="darg">read_file, search, command, write_file, read_file, command, present_files</code>
+        <span class="tag bad">1 failed</span>
+        <span class="tag">1 write</span>
+        <span class="plus">+</span>
+      </div>
     </div>
     <div class="composer">
-      <div class="crow2">
+      <div class="inputrow">
         <span class="ctype">Type a message&hellip; (@ files, /skill- skills, /tool- tools)</span>
         <button type="button" class="send">Send</button>
       </div>
@@ -371,24 +389,23 @@
         <button type="button" class="tbtn" title="Compact conversation history">Compact</button>
         <button type="button" class="tbtn">opencode <span aria-hidden="true">▾</span></button>
         <span class="tspill">354k / 1M</span>
-        <span class="grow"></span>
-        <button type="button" class="tbtn" id="toolbar-view" title="Switch the chat view mode">View: <b id="toolbar-mode">Compact</b> <span aria-hidden="true">▾</span></button>
       </div>
     </div>
   </div>
 
-  <p class="note">The toolbar control mirrors the setting and overrides it for the session you are
-  in. The setting stays the default for every other chat.</p>
+  <p class="note">The button called <strong>Compact</strong> in that toolbar is a different thing
+  entirely: it compacts the conversation history. That is why the setting in General is called
+  "Chat view", and why its two options are "Compact" and "Dev".</p>
 </section>
 
 <section id="rules">
-  <h2>What one line shows</h2>
-  <p>One line per call, and the line carries the one argument you would want to recognise the call
-  by, plus how it ended. The rule is per tool, so the line reads as the tool's own subject rather
-  than a JSON dump.</p>
+  <h2>What a card shows</h2>
+  <p>The compact view does not invent a summary: the card behind the group is today's card, and it
+  already carries the one argument you would want to recognise the call by, plus how it ended. The
+  rule is per tool, so a card reads as the tool's own subject rather than a JSON dump.</p>
   <table>
-    <caption>The summary rule for each tool the chat can receive. A tool with no rule of its own falls
-    back to its name and first argument.</caption>
+    <caption>The card each tool draws, which the compact view inherits. A tool with no rule of its
+    own falls back to its name and first argument.</caption>
     <thead>
       <tr><th>Tool</th><th>The line shows</th><th>Outcome</th></tr>
     </thead>
@@ -415,27 +432,28 @@
 <section id="safety">
   <h2>The rules that keep it safe</h2>
   <ol class="rules">
-    <li><strong>A failure stays inside the run.</strong> The failed call keeps its place in the group,
-    marked in red, and the group row says how many calls failed, so a folded group never hides that
-    something went wrong.</li>
-    <li><strong>One click opens the full card.</strong> Clicking a compact line opens today's Dev View
-    card for that one call, in place, with the error body that today's shell card forces open.
-    Compact is a rendering, not a downgrade, so nothing is lost.</li>
+    <li><strong>The cards are the dev cards.</strong> Unfolding the group card shows the same cards
+    the dev view shows, one per call. There is no second visual language to learn, and the full
+    detail is one click away.</li>
+    <li><strong>A failure stays inside the run.</strong> The failed call keeps its place in the
+    group, marked in red, and the group card says how many calls failed, so a folded group never
+    hides that something went wrong.</li>
     <li><strong>A question waiting on you opens the group.</strong> <code>ask_user</code> is the one
     call the human has to act on, so a group that holds one starts open rather than folded.</li>
-    <li><strong>A running call is counted too.</strong> The group row counts the calls still running,
-    so a long call never looks like a call that never happened.</li>
+    <li><strong>A running call is counted too.</strong> The group card counts the calls still
+    running, so a long call never looks like a call that never happened.</li>
     <li><strong>Nothing changes for the model.</strong> The setting decides what the chat draws. The
     history, the compaction and the request that goes to the provider are untouched.</li>
-    <li><strong>Two settings, one effect.</strong> The setting in General is the default for every
-    chat; the toolbar control overrides it for the session you are in.</li>
+    <li><strong>One place decides.</strong> The mode is chosen in Settings &rarr; User &rarr; General
+    and nowhere else. There is no toolbar switch, so no two places can disagree.</li>
   </ol>
 </section>
 
 <section id="open">
   <h2>Open questions</h2>
-  <p>One of these is already answered: a failed call keeps its place inside the run, and the group row
-  says how many failed. It is not lifted out of the group.</p>
+  <p>Two of these are already answered. A failed call keeps its place inside the run, and the group
+  card says how many failed; it is not lifted out of the group. And there is no toolbar switch: the
+  mode is chosen in Settings &rarr; User &rarr; General and nowhere else.</p>
   <ul class="plain">
     <li><strong>Where the preference is stored.</strong> The proposal is app-local, in the browser
     storage of the app, the same place <strong>Browser-style tabs</strong> lives, because it is a
@@ -447,9 +465,6 @@
     <strong>Dev view</strong>, and the toolbar control says <strong>View: Compact</strong>. Is that
     clear enough, or should the modes be named something else, such as <strong>Simple</strong> and
     <strong>Full</strong>?</li>
-    <li><strong>Does the toolbar override exist at all?</strong> The proposal keeps it, so a
-    conversation that turns noisy can be folded without leaving the chat. It also means two places can
-    disagree.</li>
     <li><strong>Does Compact fold the agent's prose too?</strong> The proposal says no. Only tool
     calls change; the agent's own sentences are left alone.</li>
     <li><strong>What happens to a run of one call?</strong> The proposal leaves a lone call as a
@@ -472,11 +487,12 @@
     the two chat panes and the composer, and each is a live mock rather than a picture of a mock.
     There is no clip here that a video would honestly show.</p>
     <p><strong>Measured, not eyeballed.</strong> The read-out above is computed from
-    <code>getBoundingClientRect()</code> in the same tick it prints. In the compact pane the tool
-    block measures 22px against 311px in the dev pane, so 14.1&times; shorter, with 1 visible row
-    against 8, and the one row stands in for all eight calls; unfolding the group row takes it to 9
-    rows and 270px, and folding it back returns it to 22px. The agent cannot look at a screenshot,
-    so these DOM measurements are the evidence.</p>
+    <code>getBoundingClientRect()</code> in the same tick it prints. Folded, the compact pane's tool
+    block measures 39px against 311px in the dev pane, so 8.0&times; shorter: one card for all
+    eight calls. Unfolding it gives 359px and 9 cards, the same eight cards plus the group card on
+    top, and folding it back returns it to 39px. The eight cards behind the group card were also
+    checked against the eight cards in the dev pane: the same tools, in the same order. The agent
+    cannot look at a screenshot, so these DOM measurements are the evidence.</p>
   </div>
 </section>
 
@@ -505,7 +521,7 @@
   function setList(open) {
     list.style.display = open ? 'flex' : 'none';
     groupBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
-    chev.textContent = open ? '⌄' : '›';
+    chev.textContent = open ? '−' : '+';
     render();
   }
 
@@ -513,13 +529,16 @@
     setList(list.style.display === 'none');
   });
 
+  groupBtn.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    setList(list.style.display === 'none');
+  });
+
   // ── the mode: the setting and the toolbar control are the same switch ──
   var segButtons = Array.prototype.slice.call(
     document.querySelectorAll('#seg-view button')
   );
-  var toolbarBtn = byId('toolbar-view');
-  var toolbarMode = byId('toolbar-mode');
-
   function setMode(next) {
     mode = next;
     segButtons.forEach(function (b) {
@@ -527,7 +546,6 @@
       b.classList.toggle('on', on);
       b.setAttribute('aria-checked', on ? 'true' : 'false');
     });
-    toolbarMode.textContent = next === 'compact' ? 'Compact' : 'Dev';
     byId('mark-compact').textContent = next === 'compact' ? 'in effect' : '';
     byId('mark-dev').textContent = next === 'dev' ? 'in effect' : '';
     render();
@@ -535,10 +553,6 @@
 
   segButtons.forEach(function (b) {
     b.addEventListener('click', function () { setMode(b.getAttribute('data-mode')); });
-  });
-
-  toolbarBtn.addEventListener('click', function () {
-    setMode(mode === 'compact' ? 'dev' : 'compact');
   });
 
   // ── the read-out: measured, not asserted ──────────────────────────────
@@ -554,18 +568,20 @@
     var dev = byId('dev-toolblock');
     var ch = Math.round(compact.getBoundingClientRect().height);
     var dh = Math.round(dev.getBoundingClientRect().height);
-    var crows = visibleRows(compact, '.crow');
+    var ccards = visibleRows(compact, '.dcard');
     var dcards = visibleRows(dev, '.dcard');
-    var calls = compact.querySelectorAll('#clist .crow').length;
+    var calls = compact.querySelectorAll('#clist .dcard').length;
     var ratio = dh > 0 ? (dh / Math.max(1, ch)).toFixed(1) : '0';
-    var detail = crows === 1
-      ? ', and the one row stands in for all ' + calls + ' calls'
-      : ', and the ' + crows + ' rows are the ' + calls + ' calls plus the group row';
+    var body = ccards === 1
+      ? 'The tool block is <b>' + ch + 'px</b> tall in Compact view and <b>' + dh +
+        'px</b> in Dev view, so <b>' + ratio + '&times;</b> shorter. Visible cards: <b>' +
+        ccards + '</b> against <b>' + dcards + '</b>, and the one card stands in for all ' +
+        calls + ' calls.'
+      : 'Unfolded, the compact block is <b>' + ch + 'px</b> against <b>' + dh +
+        'px</b> in the dev view: the same <b>' + calls + '</b> cards, plus the group card on ' +
+        'top. Visible cards: <b>' + ccards + '</b> against <b>' + dcards + '</b>.';
 
-    byId('readout-body').innerHTML =
-      'The tool block is <b>' + ch + 'px</b> tall in Compact view and <b>' + dh +
-      'px</b> in Dev view, so <b>' + ratio + '&times;</b> shorter. Visible rows: <b>' +
-      crows + '</b> against <b>' + dcards + '</b>' + detail + '.';
+    byId('readout-body').innerHTML = body;
   }
 
   // ── the jump nav ───────────────────────────────────────────────────────
