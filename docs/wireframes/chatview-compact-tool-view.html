@@ -124,6 +124,15 @@
      card whose name is the run and whose right-hand badges are the run's
      summary; the cards behind it ARE the dev cards, untouched. --- */
   [data-ui] .dcards { display: flex; flex-direction: column; gap: 10px; }
+  [data-ui] #compact-toolblock { gap: 2px; }
+  [data-ui] .crow { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 1px 8px 1px 10px; }
+  [data-ui] .crow code { font-family: var(--mono); }
+  [data-ui] .crow code.ctool { color: var(--violet); font-weight: 600; }
+  [data-ui] .crow code.carg { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  [data-ui] .crow .grow { flex: 1; }
+  [data-ui] .crow .tag { font-size: 11.5px; color: var(--dim); }
+  [data-ui] .crow .tag.bad { color: var(--red); }
+  [data-ui] .crow .plus { width: 14px; text-align: center; color: var(--dim); }
   [data-ui] .dgroup { cursor: pointer; }
   [data-ui] .dmeta { margin-left: auto; display: flex; align-items: center; gap: 8px; }
   [data-ui] .dgroup:hover { border-left-color: var(--violet); }
@@ -249,14 +258,14 @@
 
 <section id="chat">
   <h2>The chat view</h2>
-  <p>The same turn, drawn twice. On the left is the proposal: the run of calls folded into one card,
-  which says how many of them failed. On the right is today, the same eight cards stacked in a
-  column. Click the group card in the compact pane to unfold the eight cards behind it: they are
-  the dev cards, unchanged.</p>
+  <p>The same turn, drawn twice. On the left is the proposal: the turn's calls folded into one card
+  that says how many there were, how many failed and how long the run took. Click it to unfold: one
+  line per call, carrying the tool and the argument that identifies it. On the right is today, the
+  same eight calls as eight cards.</p>
 
   <div class="readout" id="readout" aria-live="polite">
     <span class="rlabel">Measured from the two panes below</span>
-    <span id="readout-body">The tool block is 24px tall in Compact view and 311px in Dev view, so 13.0&times; shorter. Visible cards: 1 against 8, and the one card stands in for all 8 calls.</span>
+    <span id="readout-body">The tool block is 191px tall in Compact view and 311px in Dev view, so 1.6&times; shorter. Visible rows: 8 against 8 cards.</span>
   </div>
 
   <div class="grid2">
@@ -289,32 +298,14 @@
             </div>
           </div>
           <div class="dcards" id="clist" style="display:none">
-            <div class="dcard">
-              <div class="dhead"><code class="dtool">read_file</code><code class="darg">src/apps/desktop/src/components/views/ChatView.vue</code><span class="plus">+</span></div>
-            </div>
-            <div class="dcard">
-              <div class="dhead"><code class="dtool">search</code><code class="darg">"tool-sequence" in src/apps/desktop/src</code><span class="plus">+</span></div>
-            </div>
-            <div class="dcard">
-              <div class="dhead"><code class="dtool">command</code><code class="dsign">$</code><code class="darg">git status --short</code><span class="tag ok">0</span><span class="plus">+</span></div>
-            </div>
-            <div class="dcard">
-              <div class="dhead"><code class="dtool">command</code><code class="dsign">$</code><code class="darg">zig build test</code><span class="tag ok">0</span><span class="plus">+</span></div>
-            </div>
-            <div class="dcard">
-              <div class="dhead"><code class="dtool">write_file</code><code class="darg">docs/wireframes/chatview-compact-tool-view.html</code><span class="plus">+</span></div>
-            </div>
-            <div class="dcard">
-              <div class="dhead"><code class="dtool">read_file</code><code class="darg">src/apps/desktop/src/stores/tabs.ts</code><span class="plus">+</span></div>
-            </div>
-            <div class="dcard bad">
-              <div class="dhead"><code class="dtool">command</code><code class="dsign">$</code><code class="darg">npm run test:unit -- --run</code><span class="tag bad">failed</span><span class="plus">&minus;</span></div>
-              <pre class="dbody">npm ERR! Test suite failed.
-1 failing spec: ChatView.toolCards.spec.ts</pre>
-            </div>
-            <div class="dcard">
-              <div class="dhead"><code class="dtool">present_files</code><code class="darg">chatview-compact-tool-view.html</code><span class="plus">+</span></div>
-            </div>
+          <div class="crow"><code class="ctool">read_file</code><code class="carg">src/apps/desktop/src/components/views/ChatView.vue</code><span class="grow"></span><span class="plus">+</span></div>
+          <div class="crow"><code class="ctool">search</code><code class="carg">"tool-sequence" in src/apps/desktop/src</code><span class="grow"></span><span class="plus">+</span></div>
+          <div class="crow"><code class="ctool">command</code><code class="carg">$ git status --short</code><span class="grow"></span><span class="plus">+</span></div>
+          <div class="crow"><code class="ctool">command</code><code class="carg">$ zig build test</code><span class="grow"></span><span class="plus">+</span></div>
+          <div class="crow"><code class="ctool">write_file</code><code class="carg">docs/wireframes/chatview-compact-tool-view.html</code><span class="grow"></span><span class="plus">+</span></div>
+          <div class="crow"><code class="ctool">read_file</code><code class="carg">src/apps/desktop/src/stores/tabs.ts</code><span class="grow"></span><span class="plus">+</span></div>
+          <div class="crow"><code class="ctool">command</code><code class="carg">$ npm run test:unit -- --run</code><span class="grow"></span><span class="tag bad">failed</span><span class="plus">+</span></div>
+          <div class="crow"><code class="ctool">present_files</code><code class="carg">chatview-compact-tool-view.html</code><span class="grow"></span><span class="plus">+</span></div>
           </div>
         </div>
 
@@ -492,12 +483,10 @@
     the two chat panes and the composer, and each is a live mock rather than a picture of a mock.
     There is no clip here that a video would honestly show.</p>
     <p><strong>Measured, not eyeballed.</strong> The read-out above is computed from
-    <code>getBoundingClientRect()</code> in the same tick it prints. Folded, the compact pane's tool
-    block measures 24px against 311px in the dev pane, so 13.0&times; shorter: one card for all
-    eight calls. Unfolding it gives 344px and 9 cards, the same eight cards plus the group card on
-    top, and folding it back returns it to 24px. The eight cards behind the group card were also
-    checked against the eight cards in the dev pane: the same tools, in the same order. The agent
-    cannot look at a screenshot, so these DOM measurements are the evidence.</p>
+    <code>getBoundingClientRect()</code> in the same tick it prints. The compact pane's tool block
+    measures 191px against 311px in the dev pane for the same eight calls, so 1.6&times; shorter, with
+    one line per call instead of one card per call. The agent cannot look at a screenshot, so these
+    DOM measurements are the evidence.</p>
   </div>
 </section>
 
@@ -518,7 +507,7 @@
 
   function byId(id) { return document.getElementById(id); }
 
-  // ── the group row: fold and unfold the seven calls behind it ──────────
+  // ── the group row folds a turn's calls into one card ─────────────────
   var groupBtn = byId('crow-group');
   var list = byId('clist');
   var chev = byId('chev');
@@ -538,6 +527,14 @@
     if (e.key !== 'Enter' && e.key !== ' ') return;
     e.preventDefault();
     setList(list.style.display === 'none');
+  });
+
+  // ── a line opens the full card for that one call ─────────────────────
+  Array.prototype.forEach.call(document.querySelectorAll('.crow .plus'), function (plus) {
+    plus.addEventListener('click', function () {
+      var row = plus.closest('.crow');
+      if (row) row.classList.toggle('open');
+    });
   });
 
   // ── the mode: the setting and the toolbar control are the same switch ──
@@ -573,18 +570,13 @@
     var dev = byId('dev-toolblock');
     var ch = Math.round(compact.getBoundingClientRect().height);
     var dh = Math.round(dev.getBoundingClientRect().height);
-    var ccards = visibleRows(compact, '.dcard');
+    var rows = visibleRows(compact, '.crow');
     var dcards = visibleRows(dev, '.dcard');
-    var calls = compact.querySelectorAll('#clist .dcard').length;
     var ratio = dh > 0 ? (dh / Math.max(1, ch)).toFixed(1) : '0';
-    var body = ccards === 1
-      ? 'The tool block is <b>' + ch + 'px</b> tall in Compact view and <b>' + dh +
-        'px</b> in Dev view, so <b>' + ratio + '&times;</b> shorter. Visible cards: <b>' +
-        ccards + '</b> against <b>' + dcards + '</b>, and the one card stands in for all ' +
-        calls + ' calls.'
-      : 'Unfolded, the compact block is <b>' + ch + 'px</b> against <b>' + dh +
-        'px</b> in the dev view: the same <b>' + calls + '</b> cards, plus the group card on ' +
-        'top. Visible cards: <b>' + ccards + '</b> against <b>' + dcards + '</b>.';
+    var body =
+      'The tool block is <b>' + ch + 'px</b> tall in Compact view and <b>' + dh +
+      'px</b> in Dev view, so <b>' + ratio + '&times;</b> shorter. Visible rows: <b>' +
+      rows + '</b> against <b>' + dcards + '</b> cards.';
 
     byId('readout-body').innerHTML = body;
   }

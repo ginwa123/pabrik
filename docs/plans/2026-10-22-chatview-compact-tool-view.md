@@ -34,17 +34,23 @@ ran eight tools is eight bordered rows, and the agent's answer ends up below the
 
 ### The Compact View (new)
 
-A run of consecutive tool calls (which the chat already groups into one `tool` group) is drawn as:
+The unit is the **agent turn**, not the transcript row: a turn's tool calls fold into **one group
+card**, and the card unfolds into **one line per call**.
 
-- **one group card**, in the shape of a dev card: the violet name is `8 tool calls`, the right-hand
-  badges are `1 failed`, `1 write` and the run's duration, and the `+`/`−` toggles the fold;
-- **the dev cards behind it**, one per call, in the same order, unchanged;
-- **a group that holds an `ask_user` starts open**, because that is the one call the human has to
-  act on: a question you cannot see is a question you cannot answer.
+- **the fold follows the turn**: every tool call up to the assistant message that stops
+  (`finish_reason === 'stop'`) belongs to the same run. It has to: a chat that fires one tool per
+  turn has a thinking turn between each call, so the transcript's own grouping puts every call in a
+  group of one, and folding by row adjacency never folds anything.
+- **a turn with one call is one line**, never a group card that says "1 tool calls".
+- **unfolded, each call is one line**: the tool, the argument that identifies it, and how it ended.
+  The `+` on the line opens that one call as the full dev card, in place.
+- **a turn that holds an `ask_user` starts open**, and the question is always drawn as the full
+  card, because that is the one call the human has to act on: a question you cannot see is a
+  question you cannot answer.
 
 Measured on the wireframe: folded, the tool block is **24px** against **311px** in the dev view for
-the same eight calls, so **13 times shorter**: one card instead of eight. Unfolded it is 344px and
-nine cards, the same eight plus the group card on top.
+the same eight calls — one card instead of eight. Unfolded it is 273px: the same turn, one line per
+call.
 
 ## Where the mode lives
 
@@ -86,7 +92,10 @@ The group card sums the durations of the calls in the run and shows the total.
 | File | What changed |
 | --- | --- |
 | `components/tool_outputs/ToolCard.vue` | **New.** The card for ONE tool call: the 31-branch dispatch that used to live inline in `ChatView.vue`, now with the parent's state as props and its events as emits. |
+| `components/tool_outputs/compact/CompactToolRow.vue` | **New.** One tool call as one line: the tool, the argument, the outcome, the `+`. |
 | `components/tool_outputs/compact/CompactToolGroup.vue` | **New.** The group card, the fold, the counts and the duration. |
+| `components/tool_outputs/_shared/toolSummary.ts` | **New.** The one line a call shows: which argument identifies it, and how it ended. |
+| `tests/functional_ui/chatview_compact_tool_view_test.py` | **New.** The compact view in a real browser. |
 | `components/views/ChatView.vue` | The tool group renders `<CompactToolGroup>` in compact mode and `<ToolCard>` per call otherwise. `toolCardsFor(group, groupIndex)` builds the cards; the 31 card imports are gone. |
 | `stores/chatView.ts` | **New.** The app's copy of the mode, and `chatViewModeFrom(config)`. |
 | `components/pabrik/PabrikGeneralSection.vue` | The "Chat view" row: a two-option control next to the notifications and the retry delay. |
@@ -106,8 +115,13 @@ drifting: there is one chain and one card, drawn two ways.
 ### Tests
 
 - `src/apps/desktop/src/__tests__/chatViewCompact.spec.ts` — **new**, behaviour-focused: the mode
-  the config carries, the mode the user saved, the group card's counts, its duration, the fold, the
-  group that opens itself for a question, the setting's two states, and the envelope's duration.
+  the config carries, the mode the user saved, the one line each tool shows, the group card's
+  counts, its duration, the fold, the group that opens itself for a question, the setting's two
+  states, and the envelope's duration.
+- `tests/functional_ui/chatview_compact_tool_view_test.py` — **new**, in a real browser: the
+  compact view draws one row per call with the tool and its argument, the `+` opens the full card,
+  and the dev view still draws the cards. The red/green pair: with the group card the rows never
+  appear (2 failed, a 20 s timeout waiting for them); with the fix, 3 passed.
 - `src/apps/desktop/src/components/tool_outputs/__tests__/ToolCard.parameters.spec.ts` — **moved**
   from `ChatView.tool-parameters.spec.ts`: the same contract (every branch threads the parameters),
   now asserted against the file the dispatcher lives in.

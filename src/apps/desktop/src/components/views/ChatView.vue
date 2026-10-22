@@ -1542,6 +1542,34 @@ const getParametersForMessage = (m: Message): string => {
   return unwrappedByMessageId.value.get(m.id)?.parameters ?? '{}'
 }
 
+/** One agent turn's tool calls, keyed by the group that draws them: the turn
+ * ends at the assistant message that stops (`finish_reason === 'stop'`), so the
+ * calls before it fold even when the agent thought between them. */
+const compactRuns = computed((): Map<number, ToolCardData[]> => {
+  const runs = new Map<number, ToolCardData[]>()
+  let cards: ToolCardData[] = []
+  let at: number | null = null
+  const flush = () => {
+    if (at !== null && cards.length > 0) runs.set(at, cards)
+    cards = []
+    at = null
+  }
+  messageGroups.value.forEach((group, groupIndex) => {
+    if (group.role === 'tool') {
+      if (at === null) at = groupIndex
+      cards.push(...toolCardsFor(group, groupIndex))
+      return
+    }
+    if (group.role === 'assistant') {
+      if (group.messages.some((m) => m.finish_reason === 'stop')) flush()
+      return
+    }
+    flush()
+  })
+  flush()
+  return runs
+})
+
 /** The cards of one tool group, in order. Both views draw the same cards. */
 const toolCardsFor = (group: MessageGroup, groupIndex: number): ToolCardData[] =>
   group.messages.map((msg, idx) => ({
@@ -4056,16 +4084,21 @@ const compactSession = async () => {
 
                     <!-- ── Tool ── -->
                     <template v-else-if="group.role === 'tool'">
-                      <CompactToolGroup
-                        v-if="chatView.mode === 'compact'"
-                        :cards="toolCardsFor(group, groupIndex)"
-                        :cwd="sessionCwd"
-                        :session-id="sessionId || chatId"
-                        @toggle-expand="toggleToolExpanded"
-                        @peek="nav.openPeek"
-                        @jump-to-line="handleFallbackJumpToLine"
-                        @open-session="onOpenWorkspaceSession"
-                      />
+                      <!-- The compact view draws a turn's calls ONCE, at the
+                           first tool group of the turn; the turn's later tool
+                           groups draw nothing (their calls are in that card). -->
+                      <template v-if="chatView.mode === 'compact'">
+                        <CompactToolGroup
+                          v-if="compactRuns.has(groupIndex)"
+                          :cards="compactRuns.get(groupIndex) ?? []"
+                          :cwd="sessionCwd"
+                          :session-id="sessionId || chatId"
+                          @toggle-expand="toggleToolExpanded"
+                          @peek="nav.openPeek"
+                          @jump-to-line="handleFallbackJumpToLine"
+                          @open-session="onOpenWorkspaceSession"
+                        />
+                      </template>
                       <div v-else class="tool-sequence">
                         <ToolCard
                           v-for="(card, idx) in toolCardsFor(group, groupIndex)"
@@ -4845,6 +4878,11 @@ const compactSession = async () => {
      De-bubbled rows are flat, so they need explicit rhythm to read as
      distinct steps instead of one dense wall. */
   gap: 0.625rem;
+}
+
+/* The compact view's rows carry the same information in a tighter stack. */
+:deep(.tool-sequence-compact) {
+  gap: 0.125rem;
 }
 
 :deep(.tool-item) {
