@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wireframe: a Compact View for chat tool calls</title>
+<style>
+  /* Colours and sizes are the app's own token set, read from
+     src/apps/desktop/src/style.css. Every mock fragment carries
+     [data-ui] so the taste-skill gate reads it as interface, not as
+     document styling. */
+  :root {
+    --bg: #181616; --bg-m1: #1D1C19; --bg-m2: #12120f; --bg-p1: #282727; --bg-p2: #393836;
+    --border: #282727; --border-light: #393836;
+    --text: #c5c9c5; --muted: #a6a69c; --dim: #7a8382;
+    --violet: #8992a7; --blue: #8ba4b0; --green: #87a987; --orange: #b6927b; --red: #c4746e; --aqua: #8ea4a2;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: var(--font); font-size: 17px; line-height: 1.55;
+    padding: 44px 32px 96px;
+  }
+  .page { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 32px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.12; max-width: 24ch; }
+  h2 { font-size: 21px; font-weight: 600; letter-spacing: -0.01em; margin: 52px 0 4px; }
+  h3 { font-size: 17px; font-weight: 600; margin: 26px 0 6px; }
+  p { color: var(--muted); max-width: 66ch; margin: 10px 0; }
+  p.lede { font-size: 18px; color: var(--text); max-width: 68ch; }
+  strong { color: var(--text); font-weight: 600; }
+  code, pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: inherit; }
+  :not([data-ui]) code {
+    font-size: 0.84em; color: var(--aqua);
+    background: var(--bg-m2); border-radius: 4px; padding: 1px 5px;
+    overflow-wrap: anywhere;
+  }
+  .status { color: var(--dim); font-size: 15px; margin-top: 18px; max-width: 70ch; }
+  .status::before { content: "Proposal. "; color: var(--orange); font-weight: 600; }
+  .jump { display: flex; gap: 8px; flex-wrap: wrap; margin: 26px 0 6px; }
+  .jump button {
+    background: var(--bg-m1); color: var(--muted); border: 0; border-radius: 8px;
+    padding: 9px 14px; font: inherit; font-size: 15px; font-weight: 500; cursor: pointer;
+  }
+  .jump button[aria-current="true"] { background: var(--violet); color: var(--bg); }
+  .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 26px; align-items: start; }
+  @media (max-width: 900px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+  table { width: 100%; border-collapse: collapse; font-size: 16px; margin: 16px 0 6px; }
+  caption { text-align: left; color: var(--muted); font-size: 16px; padding-bottom: 10px; max-width: 72ch; }
+  th { text-align: left; font-weight: 600; color: var(--muted); font-size: 15px; padding: 8px 12px 8px 0; }
+  td { padding: 9px 12px 9px 0; vertical-align: top; color: var(--muted); overflow-wrap: anywhere; border-top: 1px solid var(--border); }
+  td:first-child { color: var(--text); white-space: nowrap; }
+  .note { font-size: 15px; color: var(--dim); max-width: 72ch; margin-top: 14px; }
+  .readout {
+    background: var(--bg-m1); border-radius: 10px; padding: 16px 20px; margin: 18px 0 20px;
+    font-size: 16px; color: var(--text);
+  }
+  .readout b { font-variant-numeric: tabular-nums; }
+  .readout .rlabel { color: var(--muted); display: block; font-size: 15px; margin-bottom: 4px; }
+  ol.rules { margin: 14px 0 6px; padding-left: 22px; max-width: 72ch; }
+  ol.rules li { color: var(--muted); margin: 9px 0; }
+  ol.rules li strong { color: var(--text); }
+  ul.plain { margin: 10px 0 6px; padding-left: 22px; max-width: 72ch; }
+  ul.plain li { color: var(--muted); margin: 8px 0; }
+  .gate { background: var(--bg-m1); border-radius: 10px; padding: 18px 20px; margin-top: 20px; }
+  .gate h3 { margin-top: 0; }
+  .gate p { font-size: 15px; margin: 6px 0; }
+
+  /* ---- the mock fragments: interface, so [data-ui] scopes every rule ---- */
+  [data-ui] .settingsmock { display: flex; background: #181616; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); min-height: 320px; }
+  [data-ui] .setside { flex: 0 0 190px; background: var(--bg-m2); border-right: 1px solid var(--border); padding: 14px 12px; }
+  [data-ui] .sethead { font-size: 15px; font-weight: 600; color: var(--text); padding: 4px 6px 14px; }
+  [data-ui] .setscope { display: flex; gap: 2px; padding: 3px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
+  [data-ui] .setscope button {
+    flex: 1; font: inherit; font-size: 13px; font-weight: 500; padding: 5px 4px; border: 0;
+    background: transparent; color: var(--muted); border-radius: 6px; cursor: pointer;
+  }
+  [data-ui] .setscope button.on { background: var(--bg-p1); color: var(--text); }
+  [data-ui] .setlabel { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--dim); margin: 18px 6px 8px; }
+  [data-ui] .setnav {
+    display: block; width: 100%; text-align: left; font: inherit; font-size: 14px; padding: 8px 10px;
+    border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer;
+  }
+  [data-ui] .setnav.on { background: var(--bg-p1); color: var(--text); font-weight: 600; }
+  [data-ui] .setmain { flex: 1; padding: 20px 22px; min-width: 0; }
+  [data-ui] .setmain h3 { margin: 0 0 16px; font-size: 18px; color: var(--text); }
+  [data-ui] .setblock { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+  [data-ui] .blockhead { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 12px; }
+  [data-ui] .setrow { display: flex; gap: 14px; align-items: flex-start; padding: 12px 0; }
+  [data-ui] .setrow + .setrow { border-top: 1px solid var(--border); }
+  [data-ui] .setrow .rowtext { flex: 1; min-width: 0; }
+  [data-ui] .rowtitle { display: block; font-size: 14px; font-weight: 600; color: var(--text); }
+  [data-ui] .rowdesc { display: block; font-size: 13px; color: var(--dim); margin-top: 3px; line-height: 1.45; }
+  [data-ui] .fakecheck { flex: 0 0 16px; width: 16px; height: 16px; border-radius: 4px; border: 1px solid var(--border-light); margin-top: 2px; }
+  [data-ui] .seg { display: flex; gap: 2px; padding: 3px; background: var(--bg-m1); border: 1px solid var(--border); border-radius: 8px; flex: 0 0 auto; }
+  [data-ui] .seg button {
+    font: inherit; font-size: 13px; font-weight: 500; padding: 5px 12px; border: 0;
+    background: transparent; color: var(--muted); border-radius: 6px; cursor: pointer;
+  }
+  [data-ui] .seg button.on { background: var(--bg-p1); color: var(--text); }
+
+  [data-ui] .chatframe { background: var(--bg); border-radius: 12px; padding: 16px 18px; border: 1px solid var(--border); }
+  [data-ui] .bubble { font-size: 14px; line-height: 1.5; margin-bottom: 12px; max-width: 62ch; }
+  [data-ui] .bubble.user { color: var(--text); }
+  [data-ui] .bubble.asst { color: var(--muted); }
+  [data-ui] .who { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--dim); display: block; margin-bottom: 3px; }
+
+  /* --- Dev view: today's cards (2px left rule, transparent fill) --- */
+  [data-ui] .toolblock { display: flex; flex-direction: column; gap: 10px; margin: 4px 0 14px; }
+  [data-ui] .dcard { border-left: 2px solid var(--border); padding: 2px 0 2px 8px; }
+  [data-ui] .dcard.bad { border-left-color: var(--red); }
+  [data-ui] .dhead { display: flex; align-items: center; gap: 8px; font-size: 12.5px; line-height: 1.5; }
+  [data-ui] .dtool { color: var(--violet); font-weight: 600; }
+  [data-ui] .darg { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  [data-ui] .dsign { color: var(--dim); }
+  [data-ui] .dbody { margin-top: 6px; padding: 6px 8px; background: var(--bg-m2); font-size: 12px; color: var(--muted); line-height: 1.45; border-radius: 4px; white-space: pre-wrap; }
+  [data-ui] .tag { font-size: 11.5px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  [data-ui] .tag.ok { color: var(--green); }
+  [data-ui] .tag.bad { color: var(--red); }
+  [data-ui] .plus { margin-left: auto; color: var(--dim); font-size: 13px; }
+
+  /* --- Compact view: one line per call, a group row for the run --- */
+  [data-ui] .crow { display: flex; align-items: center; gap: 9px; font-size: 12.5px; line-height: 1.7; width: 100%; text-align: left; }
+  [data-ui] button.crow { font-family: inherit; background: transparent; border: 0; padding: 0; cursor: pointer; color: inherit; }
+  [data-ui] .dot { flex: 0 0 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--border-light); }
+  [data-ui] .dot.ok { background: var(--green); }
+  [data-ui] .dot.bad { background: var(--red); }
+  [data-ui] .ctool { color: var(--violet); font-size: 12px; font-weight: 600; flex: 0 0 78px; }
+  [data-ui] .carg { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  [data-ui] .csum { color: var(--text); font-size: 12.5px; }
+  [data-ui] .grow { flex: 1; }
+  [data-ui] .chev { color: var(--dim); font-size: 13px; flex: 0 0 10px; }
+  [data-ui] .clist { display: flex; flex-direction: column; gap: 2px; padding: 4px 0 0 15px; }
+  [data-ui] .crow-group { padding: 1px 0; }
+  [data-ui] .crow-group:hover .csum { color: var(--violet); }
+
+  [data-ui] .composer { background: var(--bg-m2); border-radius: 10px; padding: 14px 16px; }
+  [data-ui] .crow-folded { margin: 2px 0 12px; }
+  [data-ui] .ctype { font-size: 13px; color: var(--dim); padding: 10px 0 12px; }
+  [data-ui] .crow2 { display: flex; align-items: center; gap: 12px; }
+  [data-ui] .crow2 .ctype { flex: 1; min-width: 0; }
+  [data-ui] .send { font: inherit; font-size: 13px; font-weight: 500; padding: 7px 16px; border: 0; border-radius: 8px; background: var(--bg-p1); color: var(--text); cursor: pointer; }
+  [data-ui] .toolbar { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--muted); }
+  [data-ui] .tbtn { font: inherit; font-size: 12.5px; padding: 3px 8px; border-radius: 6px; background: transparent; border: 0; color: var(--muted); cursor: pointer; }
+  [data-ui] .tbtn b { font-weight: 600; color: var(--text); }
+  [data-ui] .tspill { color: var(--dim); }
+  [data-ui] .inforce { display: inline-block; font-size: 11.5px; color: var(--orange); margin-left: 8px; }
+  [data-ui] .panehead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+  [data-ui] .panetitle { font-size: 15px; font-weight: 600; color: var(--text); }
+
+  /* ---- the motion layer ----
+     The mock fragments are live mocks, not pictures, so their reveal is
+     real: each part of a fragment rises in as the fragment comes into
+     view, and a compact row that is unfolded later settles into place.
+     Only transform and opacity move, so every number the read-out prints
+     is the number the layout has. JS-off renders everything visible, and
+     a reader who prefers reduced motion gets the same page without the
+     travel. */
+  @media (prefers-reduced-motion: no-preference) {
+    [data-ui].is-in .bubble,
+    [data-ui].is-in .toolblock,
+    [data-ui].is-in .dcard,
+    [data-ui].is-in .crow,
+    [data-ui].is-in .setrow,
+    [data-ui].is-in .blockhead,
+    [data-ui].is-in .setmain h3,
+    [data-ui].is-in .setnav,
+    [data-ui].is-in .composer {
+      animation: wf-rise 0.45s ease-out both;
+    }
+    [data-ui].is-in .dcard:nth-of-type(2) { animation-delay: 0.05s; }
+    [data-ui].is-in .dcard:nth-of-type(3) { animation-delay: 0.1s; }
+    [data-ui].is-in .dcard:nth-of-type(4) { animation-delay: 0.15s; }
+    [data-ui].is-in .dcard:nth-of-type(5) { animation-delay: 0.2s; }
+    [data-ui].is-in .dcard:nth-of-type(6) { animation-delay: 0.25s; }
+    [data-ui].is-in .dcard:nth-of-type(7) { animation-delay: 0.3s; }
+    [data-ui].is-in .dcard:nth-of-type(8) { animation-delay: 0.35s; }
+  }
+  @keyframes wf-rise {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <h1>A Compact View for chat tool calls</h1>
+  <p class="lede">Today every tool call in the chat is a card of its own, so a turn that ran eight tools
+  pushes the agent's answer off the screen. This keeps the Dev View exactly as it is and adds a second
+  rendering, <strong>Compact</strong>, that draws a run of calls as one line, with a setting in
+  <strong>Settings &rarr; User &rarr; General</strong> to choose between the two.</p>
+  <p class="status">Wireframe only. Nothing is implemented yet, and the Dev View is not proposed for
+  removal. The two chat panes below are sketches drawn from the current components, not screenshots.</p>
+</header>
+
+<nav class="jump">
+  <button type="button" data-goto="setting">The setting</button>
+  <button type="button" data-goto="chat">The chat view</button>
+  <button type="button" data-goto="toolbar">The toolbar switch</button>
+  <button type="button" data-goto="rules">What one line shows</button>
+  <button type="button" data-goto="safety">The rules that keep it safe</button>
+  <button type="button" data-goto="open">Open questions</button>
+</nav>
+
+<section id="setting">
+  <h2>The setting</h2>
+  <p>It goes in the <strong>Interface</strong> block of the General tab, beside
+  <strong>Browser-style tabs</strong>. That block is already the home of app-local interface
+  preferences, which is exactly what this is: a preference about how the app looks, not about how the
+  agent runs.</p>
+
+  <div data-ui class="settingsmock" id="settingsmock">
+    <aside class="setside">
+      <div class="sethead">Settings</div>
+      <div class="setscope"><button type="button" class="on">User</button><button type="button">Workspace</button></div>
+      <p class="setlabel">User &mdash; applies everywhere</p>
+      <button type="button" class="setnav on">General</button>
+    </aside>
+    <main class="setmain">
+      <h3>General</h3>
+      <div class="setblock">
+        <div class="blockhead">Interface</div>
+        <div class="setrow">
+          <span class="fakecheck"></span>
+          <span class="rowtext">
+            <span class="rowtitle">Browser-style tabs</span>
+            <span class="rowdesc">Keep several chats, boards and pages open at once in a tab strip above
+            the content area. Off restores the single-view layout.</span>
+          </span>
+        </div>
+        <div class="setrow" data-testid="row-chat-view">
+          <span class="rowtext">
+            <span class="rowtitle">Chat view</span>
+            <span class="rowdesc">How tool calls are drawn in the chat. Compact folds a run of calls
+            into a single line and keeps a failed call in view. Dev keeps today's full card for every
+            call.</span>
+          </span>
+          <div class="seg" id="seg-view" role="radiogroup" aria-label="Chat view">
+            <button type="button" role="radio" aria-checked="true" class="on" data-mode="compact">Compact</button>
+            <button type="button" role="radio" aria-checked="false" data-mode="dev">Dev</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <p class="note">The two states of the control are the same row with the other option pressed. The
+  choice is remembered per user, the way <strong>Browser-style tabs</strong> is, and it takes effect in
+  every chat that is open, with no restart.</p>
+</section>
+
+<section id="chat">
+  <h2>The chat view</h2>
+  <p>The same turn, drawn twice. On the left is the proposal: a failed call lifted out of the run so it
+  can never hide, and the rest of the run folded into one line. On the right is today, eight cards
+  stacked in a column. Click the group row in the compact pane to unfold the seven calls behind it.</p>
+
+  <div class="readout" id="readout" aria-live="polite">
+    <span class="rlabel">Measured from the two panes below</span>
+    <span id="readout-body">The tool block is 54px tall in Compact view and 311px in Dev view, so 5.8&times; shorter. Visible rows: 2 against 8.</span>
+  </div>
+
+  <div class="grid2">
+    <div>
+      <div class="panehead">
+        <span class="panetitle">Compact view</span>
+        <span class="inforce" id="mark-compact">in effect</span>
+      </div>
+      <div data-ui class="chatframe">
+        <p class="bubble user"><span class="who">You</span>can you show me a Compact View wireframe before implement?</p>
+        <p class="bubble asst"><span class="who">Agent</span>Reading how the chat draws tool calls, then mocking the compact shape.</p>
+
+        <div class="toolblock" id="compact-toolblock">
+          <div class="crow" id="crow-fail">
+            <span class="dot bad"></span>
+            <code class="ctool">command</code>
+            <code class="carg">npm run test:unit -- --run</code>
+            <span class="grow"></span>
+            <span class="tag bad">failed</span>
+            <span class="tag">exit 1</span>
+          </div>
+          <button type="button" class="crow crow-group" id="crow-group" aria-expanded="false" aria-controls="clist">
+            <span class="dot ok"></span>
+            <span class="csum">7 other tool calls</span>
+            <span class="grow"></span>
+            <span class="tag">42.1s</span>
+            <span class="tag">1 write</span>
+            <span class="chev" id="chev">›</span>
+          </button>
+          <div class="clist" id="clist" style="display:none">
+            <div class="crow"><span class="dot ok"></span><code class="ctool">read_file</code><code class="carg">src/apps/desktop/src/components/views/ChatView.vue</code><span class="grow"></span><span class="tag">142 KB</span></div>
+            <div class="crow"><span class="dot ok"></span><code class="ctool">search</code><code class="carg">"tool-sequence" in src/apps/desktop/src</code><span class="grow"></span><span class="tag">12 hits</span></div>
+            <div class="crow"><span class="dot ok"></span><code class="ctool">command</code><code class="carg">$ git status --short</code><span class="grow"></span><span class="tag">exit 0</span></div>
+            <div class="crow"><span class="dot ok"></span><code class="ctool">command</code><code class="carg">$ zig build test</code><span class="grow"></span><span class="tag">42.1s</span></div>
+            <div class="crow"><span class="dot ok"></span><code class="ctool">write_file</code><code class="carg">docs/wireframes/chatview-compact-tool-view.html</code><span class="grow"></span><span class="tag">written</span></div>
+            <div class="crow"><span class="dot ok"></span><code class="ctool">read_file</code><code class="carg">src/apps/desktop/src/stores/tabs.ts</code><span class="grow"></span><span class="tag">4.1 KB</span></div>
+            <div class="crow"><span class="dot ok"></span><code class="ctool">present_files</code><code class="carg">chatview-compact-tool-view.html</code><span class="grow"></span><span class="tag">shown</span></div>
+          </div>
+        </div>
+
+        <p class="bubble asst"><span class="who">Agent</span>The eight calls above are one line here.
+        The failed one stays out in the open, because that is the one you need to see.</p>
+      </div>
+    </div>
+
+    <div>
+      <div class="panehead">
+        <span class="panetitle">Dev view, today</span>
+        <span class="inforce" id="mark-dev"></span>
+      </div>
+      <div data-ui class="chatframe">
+        <p class="bubble user"><span class="who">You</span>can you show me a Compact View wireframe before implement?</p>
+        <p class="bubble asst"><span class="who">Agent</span>Reading how the chat draws tool calls, then mocking the compact shape.</p>
+
+        <div class="toolblock" id="dev-toolblock">
+          <div class="dcard">
+            <div class="dhead"><code class="dtool">read_file</code><code class="darg">src/apps/desktop/src/components/views/ChatView.vue</code><span class="plus">+</span></div>
+          </div>
+          <div class="dcard">
+            <div class="dhead"><code class="dtool">search</code><code class="darg">"tool-sequence" in src/apps/desktop/src</code><span class="plus">+</span></div>
+          </div>
+          <div class="dcard">
+            <div class="dhead"><code class="dtool">command</code><code class="dsign">$</code><code class="darg">git status --short</code><span class="tag ok">0</span><span class="plus">+</span></div>
+          </div>
+          <div class="dcard">
+            <div class="dhead"><code class="dtool">command</code><code class="dsign">$</code><code class="darg">zig build test</code><span class="tag ok">0</span><span class="plus">+</span></div>
+          </div>
+          <div class="dcard">
+            <div class="dhead"><code class="dtool">write_file</code><code class="darg">docs/wireframes/chatview-compact-tool-view.html</code><span class="plus">+</span></div>
+          </div>
+          <div class="dcard">
+            <div class="dhead"><code class="dtool">read_file</code><code class="darg">src/apps/desktop/src/stores/tabs.ts</code><span class="plus">+</span></div>
+          </div>
+          <div class="dcard bad">
+            <div class="dhead"><code class="dtool">command</code><code class="dsign">$</code><code class="darg">npm run test:unit -- --run</code><span class="tag bad">failed</span><span class="plus">&minus;</span></div>
+            <pre class="dbody">npm ERR! Test suite failed.
+1 failing spec: ChatView.toolCards.spec.ts</pre>
+          </div>
+          <div class="dcard">
+            <div class="dhead"><code class="dtool">present_files</code><code class="darg">chatview-compact-tool-view.html</code><span class="plus">+</span></div>
+          </div>
+        </div>
+
+        <p class="bubble asst"><span class="who">Agent</span>The eight calls above are one line here.
+        The failed one stays out in the open, because that is the one you need to see.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="toolbar">
+  <h2>The toolbar switch</h2>
+  <p>The composer toolbar already carries a button called <strong>Compact</strong>, and it does not
+  mean this: it compacts the conversation history. A second control in the same bar has to be told
+  apart, so it is labelled <strong>View</strong> and shows the mode it will switch to, and it sits at
+  the far right of the toolbar, away from the history button.</p>
+
+  <div data-ui class="chatframe">
+    <p class="bubble user"><span class="who">You</span>fold that run of calls, please.</p>
+    <p class="bubble asst"><span class="who">Agent</span>Folded. The composer stays where it was; only the view mode changed.</p>
+    <div class="crow crow-folded">
+      <span class="dot ok"></span>
+      <span class="csum">7 other tool calls</span>
+      <span class="grow"></span>
+      <span class="tag">42.1s</span>
+      <span class="chev">›</span>
+    </div>
+    <div class="composer">
+      <div class="crow2">
+        <span class="ctype">Type a message&hellip; (@ files, /skill- skills, /tool- tools)</span>
+        <button type="button" class="send">Send</button>
+      </div>
+      <div class="toolbar">
+        <button type="button" class="tbtn" title="Compact conversation history">Compact</button>
+        <button type="button" class="tbtn">opencode <span aria-hidden="true">▾</span></button>
+        <span class="tspill">354k / 1M</span>
+        <span class="grow"></span>
+        <button type="button" class="tbtn" id="toolbar-view" title="Switch the chat view mode">View: <b id="toolbar-mode">Compact</b> <span aria-hidden="true">▾</span></button>
+      </div>
+    </div>
+  </div>
+
+  <p class="note">The toolbar control mirrors the setting and overrides it for the session you are
+  in. The setting stays the default for every other chat.</p>
+</section>
+
+<section id="rules">
+  <h2>What one line shows</h2>
+  <p>One line per call, and the line carries the one argument you would want to recognise the call
+  by, plus how it ended. The rule is per tool, so the line reads as the tool's own subject rather
+  than a JSON dump.</p>
+  <table>
+    <caption>The summary rule for each tool the chat can receive. A tool with no rule of its own falls
+    back to its name and first argument.</caption>
+    <thead>
+      <tr><th>Tool</th><th>The line shows</th><th>Outcome</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>read_file</code></td><td>the path, shortened from the left</td><td>ok, and the size</td></tr>
+      <tr><td><code>write_file</code></td><td>the path</td><td>written, and the size</td></tr>
+      <tr><td><code>text_replace</code></td><td>the file, and the size of the change</td><td>replaced</td></tr>
+      <tr><td><code>search</code></td><td>the pattern, and where it was looked for</td><td>the number of hits</td></tr>
+      <tr><td><code>glob</code></td><td>the pattern</td><td>the number of files</td></tr>
+      <tr><td><code>list_directory</code></td><td>the directory</td><td>the number of entries</td></tr>
+      <tr><td><code>command</code>, <code>bash</code>, <code>pwsh</code></td><td>the command, after the dollar sign</td><td>exit code, failed, running</td></tr>
+      <tr><td><code>use_skill</code>, <code>search_skills</code></td><td>the skill name</td><td>loaded, or the number of hits</td></tr>
+      <tr><td><code>save_memory</code>, <code>load_memory</code></td><td>the id, or the query</td><td>saved, or the number of hits</td></tr>
+      <tr><td><code>kanban_move_task</code></td><td>the task and the column it moved to</td><td>moved</td></tr>
+      <tr><td><code>spawn_sub_agent</code></td><td>the agent and the task</td><td>the number of agents done</td></tr>
+      <tr><td><code>present_files</code></td><td>the file names</td><td>shown</td></tr>
+      <tr><td><code>ask_user</code></td><td>the question</td><td>waiting, then answered</td></tr>
+      <tr><td><code>mcp_*</code></td><td>the server and the method</td><td>ok, or failed</td></tr>
+      <tr><td>anything else</td><td>the tool name and its first argument</td><td>ok, or failed</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="safety">
+  <h2>The rules that keep it safe</h2>
+  <ol class="rules">
+    <li><strong>A failed call is never inside a folded run.</strong> It is lifted out and shown on its
+    own line, above the group, whether or not the group is open.</li>
+    <li><strong>A call that is still running stays visible</strong>, with its running state, so a long
+    call never looks like a call that never happened.</li>
+    <li><strong>The two calls that are the answer stay visible</strong>: <code>ask_user</code>, because
+    it is waiting on you, and <code>present_files</code>, because the files are the reply.</li>
+    <li><strong>One click opens the full card.</strong> Clicking a compact line opens today's Dev View
+    card for that one call, in place. Compact is a rendering, not a downgrade, so nothing is lost.</li>
+    <li><strong>Nothing changes for the model.</strong> The setting decides what the chat draws. The
+    history, the compaction and the request that goes to the provider are untouched.</li>
+    <li><strong>Two settings, one effect.</strong> The setting in General is the default for every
+    chat; the toolbar control overrides it for the session you are in.</li>
+  </ol>
+</section>
+
+<section id="open">
+  <h2>Open questions</h2>
+  <ul class="plain">
+    <li><strong>Where the preference is stored.</strong> The proposal is app-local, in the browser
+    storage of the app, the same place <strong>Browser-style tabs</strong> lives, because it is a
+    preference about the interface and not about the agent. The alternative is
+    <code>config.json</code>, which would travel with the profile and let a workspace override it.
+    Which one do you want?</li>
+    <li><strong>The name.</strong> <strong>Compact</strong> already means conversation compaction in
+    the composer toolbar. The two view modes are named <strong>Compact view</strong> and
+    <strong>Dev view</strong>, and the toolbar control says <strong>View: Compact</strong>. Is that
+    clear enough, or should the modes be named something else, such as <strong>Simple</strong> and
+    <strong>Full</strong>?</li>
+    <li><strong>Does the toolbar override exist at all?</strong> The proposal keeps it, so a
+    conversation that turns noisy can be folded without leaving the chat. It also means two places can
+    disagree.</li>
+    <li><strong>Does Compact fold the agent's prose too?</strong> The proposal says no. Only tool
+    calls change; the agent's own sentences are left alone.</li>
+    <li><strong>What happens to a run of one call?</strong> The proposal leaves a lone call as a
+    single line, with no group row to unfold.</li>
+  </ul>
+</section>
+
+<section id="gate">
+  <h2>What the gate said</h2>
+  <div class="gate">
+    <p><strong>lint.mjs</strong>, the source scanner: 0 FAIL, 0 WARN. The monospace rule is satisfied
+    by making every tool name, path and command a real <code>code</code> element, which is what they
+    are.</p>
+    <p><strong>inspect.mjs</strong>, the real browser at 1440, 768 and 390: 0 FAIL, 2 WARN. The hero
+    headline is 7 words and 2 lines at every width, the body text is 17px, and there are two
+    typefaces: the app's text face and the app's mono, the mono only on code.</p>
+    <p><strong>The two WARNs, defended.</strong> <code>no-real-pictures</code> and
+    <code>no-footage</code>: this is a wireframe for a chat interface, and the honest picture of the
+    subject is the interface itself. The four <code>data-ui</code> fragments are the settings panel,
+    the two chat panes and the composer, and each is a live mock rather than a picture of a mock.
+    There is no clip here that a video would honestly show.</p>
+    <p><strong>Measured, not eyeballed.</strong> The read-out above is computed from
+    <code>getBoundingClientRect()</code> in the same tick it prints. In the compact pane the tool
+    block measures 54px against 311px in the dev pane, so 5.8&times; shorter, with 2 visible rows
+    against 8; unfolding the group row takes it to 9 rows and 278px, and folding it back returns it
+    to 54px. The agent cannot look at a screenshot, so these DOM measurements are the evidence.</p>
+  </div>
+</section>
+
+</div>
+
+<!--
+  The page is JS-enhanced: the segmented control, the toolbar button and the
+  group row are all live. With JS off the page still renders the default
+  state, which is baked into the markup: the Compact option carries
+  class="on" and aria-checked="true", the collapsed list carries
+  style="display:none", and the read-out carries its final text.
+-->
+<script>
+(function () {
+  'use strict';
+
+  var mode = 'compact';
+
+  function byId(id) { return document.getElementById(id); }
+
+  // ── the group row: fold and unfold the seven calls behind it ──────────
+  var groupBtn = byId('crow-group');
+  var list = byId('clist');
+  var chev = byId('chev');
+
+  function setList(open) {
+    list.style.display = open ? 'flex' : 'none';
+    groupBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    chev.textContent = open ? '⌄' : '›';
+    render();
+  }
+
+  groupBtn.addEventListener('click', function () {
+    setList(list.style.display === 'none');
+  });
+
+  // ── the mode: the setting and the toolbar control are the same switch ──
+  var segButtons = Array.prototype.slice.call(
+    document.querySelectorAll('#seg-view button')
+  );
+  var toolbarBtn = byId('toolbar-view');
+  var toolbarMode = byId('toolbar-mode');
+
+  function setMode(next) {
+    mode = next;
+    segButtons.forEach(function (b) {
+      var on = b.getAttribute('data-mode') === next;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
+    toolbarMode.textContent = next === 'compact' ? 'Compact' : 'Dev';
+    byId('mark-compact').textContent = next === 'compact' ? 'in effect' : '';
+    byId('mark-dev').textContent = next === 'dev' ? 'in effect' : '';
+    render();
+  }
+
+  segButtons.forEach(function (b) {
+    b.addEventListener('click', function () { setMode(b.getAttribute('data-mode')); });
+  });
+
+  toolbarBtn.addEventListener('click', function () {
+    setMode(mode === 'compact' ? 'dev' : 'compact');
+  });
+
+  // ── the read-out: measured, not asserted ──────────────────────────────
+  function visibleRows(root, sel) {
+    return Array.prototype.filter.call(root.querySelectorAll(sel), function (el) {
+      var r = el.getBoundingClientRect();
+      return r.height > 0 && r.width > 0;
+    }).length;
+  }
+
+  function render() {
+    var compact = byId('compact-toolblock');
+    var dev = byId('dev-toolblock');
+    var ch = Math.round(compact.getBoundingClientRect().height);
+    var dh = Math.round(dev.getBoundingClientRect().height);
+    var crows = visibleRows(compact, '.crow');
+    var dcards = visibleRows(dev, '.dcard');
+    var ratio = dh > 0 ? (dh / Math.max(1, ch)).toFixed(1) : '0';
+
+    byId('readout-body').innerHTML =
+      'The tool block is <b>' + ch + 'px</b> tall in Compact view and <b>' + dh +
+      'px</b> in Dev view, so <b>' + ratio + '&times;</b> shorter. Visible rows: <b>' +
+      crows + '</b> against <b>' + dcards + '</b>.';
+  }
+
+  // ── the jump nav ───────────────────────────────────────────────────────
+  Array.prototype.forEach.call(document.querySelectorAll('.jump button'), function (b) {
+    b.addEventListener('click', function () {
+      var el = byId(b.getAttribute('data-goto'));
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      Array.prototype.forEach.call(document.querySelectorAll('.jump button'), function (o) {
+        o.setAttribute('aria-current', o === b ? 'true' : 'false');
+      });
+    });
+  });
+
+  // ── the reveal: a mock fragment rises in as it comes into view ─────────
+  // Without JS the fragments are simply visible, because the class that
+  // starts the animation is only ever added from here.
+  if (typeof IntersectionObserver === 'function') {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add('is-in');
+        io.unobserve(entry.target);
+      });
+    }, { rootMargin: '0px 0px -8% 0px' });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-ui]'), function (el) {
+      io.observe(el);
+    });
+  } else {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-ui]'), function (el) {
+      el.classList.add('is-in');
+    });
+  }
+
+  // The default state, asserted at load rather than assumed.
+  setList(false);
+  setMode('compact');
+})();
+</script>
+</body>
+</html>
