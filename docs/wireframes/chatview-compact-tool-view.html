@@ -253,13 +253,13 @@
 
 <section id="chat">
   <h2>The chat view</h2>
-  <p>The same turn, drawn twice. On the left is the proposal: a failed call lifted out of the run so it
-  can never hide, and the rest of the run folded into one line. On the right is today, eight cards
-  stacked in a column. Click the group row in the compact pane to unfold the seven calls behind it.</p>
+  <p>The same turn, drawn twice. On the left is the proposal: the whole run of calls folded into one
+  line, which says how many of them failed. On the right is today, eight cards stacked in a column.
+  Click the group row in the compact pane to unfold the eight calls behind it.</p>
 
   <div class="readout" id="readout" aria-live="polite">
     <span class="rlabel">Measured from the two panes below</span>
-    <span id="readout-body">The tool block is 54px tall in Compact view and 311px in Dev view, so 5.8&times; shorter. Visible rows: 2 against 8.</span>
+    <span id="readout-body">The tool block is 22px tall in Compact view and 311px in Dev view, so 14.1&times; shorter. Visible rows: 1 against 8, and the one row stands in for all 8 calls.</span>
   </div>
 
   <div class="grid2">
@@ -273,18 +273,11 @@
         <p class="bubble asst"><span class="who">Agent</span>Reading how the chat draws tool calls, then mocking the compact shape.</p>
 
         <div class="toolblock" id="compact-toolblock">
-          <div class="crow" id="crow-fail">
-            <span class="dot bad"></span>
-            <code class="ctool">command</code>
-            <code class="carg">npm run test:unit -- --run</code>
-            <span class="grow"></span>
-            <span class="tag bad">failed</span>
-            <span class="tag">exit 1</span>
-          </div>
           <button type="button" class="crow crow-group" id="crow-group" aria-expanded="false" aria-controls="clist">
-            <span class="dot ok"></span>
-            <span class="csum">7 other tool calls</span>
+            <span class="dot bad"></span>
+            <span class="csum">8 tool calls</span>
             <span class="grow"></span>
+            <span class="tag bad">1 failed</span>
             <span class="tag">42.1s</span>
             <span class="tag">1 write</span>
             <span class="chev" id="chev">›</span>
@@ -296,12 +289,13 @@
             <div class="crow"><span class="dot ok"></span><code class="ctool">command</code><code class="carg">$ zig build test</code><span class="grow"></span><span class="tag">42.1s</span></div>
             <div class="crow"><span class="dot ok"></span><code class="ctool">write_file</code><code class="carg">docs/wireframes/chatview-compact-tool-view.html</code><span class="grow"></span><span class="tag">written</span></div>
             <div class="crow"><span class="dot ok"></span><code class="ctool">read_file</code><code class="carg">src/apps/desktop/src/stores/tabs.ts</code><span class="grow"></span><span class="tag">4.1 KB</span></div>
+            <div class="crow"><span class="dot bad"></span><code class="ctool">command</code><code class="carg">$ npm run test:unit -- --run</code><span class="grow"></span><span class="tag bad">failed</span><span class="tag">exit 1</span></div>
             <div class="crow"><span class="dot ok"></span><code class="ctool">present_files</code><code class="carg">chatview-compact-tool-view.html</code><span class="grow"></span><span class="tag">shown</span></div>
           </div>
         </div>
 
-        <p class="bubble asst"><span class="who">Agent</span>The eight calls above are one line here.
-        The failed one stays out in the open, because that is the one you need to see.</p>
+        <p class="bubble asst"><span class="who">Agent</span>The eight calls above are one line here. The
+        failed call keeps its place in the group, and the group says how many failed.</p>
       </div>
     </div>
 
@@ -343,8 +337,8 @@
           </div>
         </div>
 
-        <p class="bubble asst"><span class="who">Agent</span>The eight calls above are one line here.
-        The failed one stays out in the open, because that is the one you need to see.</p>
+        <p class="bubble asst"><span class="who">Agent</span>The eight calls above are one line here. The
+        failed call keeps its place in the group, and the group says how many failed.</p>
       </div>
     </div>
   </div>
@@ -361,9 +355,10 @@
     <p class="bubble user"><span class="who">You</span>fold that run of calls, please.</p>
     <p class="bubble asst"><span class="who">Agent</span>Folded. The composer stays where it was; only the view mode changed.</p>
     <div class="crow crow-folded">
-      <span class="dot ok"></span>
-      <span class="csum">7 other tool calls</span>
+      <span class="dot bad"></span>
+      <span class="csum">8 tool calls</span>
       <span class="grow"></span>
+      <span class="tag bad">1 failed</span>
       <span class="tag">42.1s</span>
       <span class="chev">›</span>
     </div>
@@ -420,14 +415,16 @@
 <section id="safety">
   <h2>The rules that keep it safe</h2>
   <ol class="rules">
-    <li><strong>A failed call is never inside a folded run.</strong> It is lifted out and shown on its
-    own line, above the group, whether or not the group is open.</li>
-    <li><strong>A call that is still running stays visible</strong>, with its running state, so a long
-    call never looks like a call that never happened.</li>
-    <li><strong>The two calls that are the answer stay visible</strong>: <code>ask_user</code>, because
-    it is waiting on you, and <code>present_files</code>, because the files are the reply.</li>
+    <li><strong>A failure stays inside the run.</strong> The failed call keeps its place in the group,
+    marked in red, and the group row says how many calls failed, so a folded group never hides that
+    something went wrong.</li>
     <li><strong>One click opens the full card.</strong> Clicking a compact line opens today's Dev View
-    card for that one call, in place. Compact is a rendering, not a downgrade, so nothing is lost.</li>
+    card for that one call, in place, with the error body that today's shell card forces open.
+    Compact is a rendering, not a downgrade, so nothing is lost.</li>
+    <li><strong>A question waiting on you opens the group.</strong> <code>ask_user</code> is the one
+    call the human has to act on, so a group that holds one starts open rather than folded.</li>
+    <li><strong>A running call is counted too.</strong> The group row counts the calls still running,
+    so a long call never looks like a call that never happened.</li>
     <li><strong>Nothing changes for the model.</strong> The setting decides what the chat draws. The
     history, the compaction and the request that goes to the provider are untouched.</li>
     <li><strong>Two settings, one effect.</strong> The setting in General is the default for every
@@ -437,6 +434,8 @@
 
 <section id="open">
   <h2>Open questions</h2>
+  <p>One of these is already answered: a failed call keeps its place inside the run, and the group row
+  says how many failed. It is not lifted out of the group.</p>
   <ul class="plain">
     <li><strong>Where the preference is stored.</strong> The proposal is app-local, in the browser
     storage of the app, the same place <strong>Browser-style tabs</strong> lives, because it is a
@@ -474,9 +473,10 @@
     There is no clip here that a video would honestly show.</p>
     <p><strong>Measured, not eyeballed.</strong> The read-out above is computed from
     <code>getBoundingClientRect()</code> in the same tick it prints. In the compact pane the tool
-    block measures 54px against 311px in the dev pane, so 5.8&times; shorter, with 2 visible rows
-    against 8; unfolding the group row takes it to 9 rows and 278px, and folding it back returns it
-    to 54px. The agent cannot look at a screenshot, so these DOM measurements are the evidence.</p>
+    block measures 22px against 311px in the dev pane, so 14.1&times; shorter, with 1 visible row
+    against 8, and the one row stands in for all eight calls; unfolding the group row takes it to 9
+    rows and 270px, and folding it back returns it to 22px. The agent cannot look at a screenshot,
+    so these DOM measurements are the evidence.</p>
   </div>
 </section>
 
@@ -556,12 +556,16 @@
     var dh = Math.round(dev.getBoundingClientRect().height);
     var crows = visibleRows(compact, '.crow');
     var dcards = visibleRows(dev, '.dcard');
+    var calls = compact.querySelectorAll('#clist .crow').length;
     var ratio = dh > 0 ? (dh / Math.max(1, ch)).toFixed(1) : '0';
+    var detail = crows === 1
+      ? ', and the one row stands in for all ' + calls + ' calls'
+      : ', and the ' + crows + ' rows are the ' + calls + ' calls plus the group row';
 
     byId('readout-body').innerHTML =
       'The tool block is <b>' + ch + 'px</b> tall in Compact view and <b>' + dh +
       'px</b> in Dev view, so <b>' + ratio + '&times;</b> shorter. Visible rows: <b>' +
-      crows + '</b> against <b>' + dcards + '</b>.';
+      crows + '</b> against <b>' + dcards + '</b>' + detail + '.';
   }
 
   // ── the jump nav ───────────────────────────────────────────────────────

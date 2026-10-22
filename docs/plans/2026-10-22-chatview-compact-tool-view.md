@@ -46,16 +46,20 @@ A run of consecutive tool calls (which the chat already groups into one `tool` g
 
 - **one line per call**: a status dot, the tool name, the one argument you would recognise the call
   by, and the outcome on the right;
-- **one group row for the run**: `7 other tool calls · 42.1s · 1 write`, which unfolds into the
+- **one group row for the run**: `8 tool calls · 1 failed · 42.1s · 1 write`, which unfolds into the
   one-liners;
-- **the calls that must never hide stay out in the open**: a failed call is lifted out of the group
-  and shown on its own line above it, a running call keeps its running state, and `ask_user` and
-  `present_files` are always visible because they are the answer or are waiting on you;
+- **a failed call keeps its place inside the run**, marked in red. It is not lifted out of the group.
+  What the group row carries is the count of the calls that failed, so a folded group never hides
+  that something went wrong, and one click on the failed line opens the full card with the error
+  body, exactly as today's Dev View does;
+- **a group that holds an `ask_user` starts open**, because that is the one call the human has to
+  act on, and a question you cannot see is a question you cannot answer;
 - **one click opens the full card**: clicking a compact line opens today's Dev View card for that
   one call, in place. Compact is a rendering, not a downgrade.
 
-Measured on the wireframe: the tool block is **54px** in Compact view against **311px** in Dev view
-for the same eight calls, so **5.8× shorter**, with 2 visible rows against 8.
+Measured on the wireframe: the tool block is **22px** in Compact view against **311px** in Dev view
+for the same eight calls, so **14.1 times** shorter: one row instead of eight. Unfolding the group
+row gives the nine rows (the eight calls plus the group row) at 270px.
 
 ### The summary rule per tool
 
@@ -176,8 +180,9 @@ re-implement parsing.
 - new `src/apps/desktop/src/components/tool_outputs/compact/CompactToolRow.vue` — one line, with
   the same token classes the cards use (`--color-violet` for the name, `--semantic-text-dim` for the
   argument, the green/red badges).
-- new `src/apps/desktop/src/components/tool_outputs/compact/CompactToolGroup.vue` — the group row,
-  the fold, and the hoist of the failed / running / `ask_user` / `present_files` calls.
+- new `src/apps/desktop/src/components/tool_outputs/compact/CompactToolGroup.vue` — the group row
+  (the counts of failed and running calls), the fold, and the rule that a group holding an
+  `ask_user` starts open.
 
 ### 5. The settings row
 
@@ -205,7 +210,7 @@ control, `data-testid="row-chat-view"`, `data-testid="chat-view-compact"`,
   - the store defaults to `dev` and round-trips through `localStorage`;
   - the segmented control writes the store and reads back;
   - `summarizeTool` per tool family (the table above);
-  - the group row folds, unfolds, and hoists a failed call out of the group;
+  - the group row folds, unfolds, and counts the failed calls in the group row;
   - a compact row expands into the same `ToolCard` the Dev View renders;
 - the existing specs stay green, in particular
   `src/apps/desktop/src/__tests__/ChatView.composerToolbar.spec.ts` (it asserts the toolbar's
@@ -230,7 +235,7 @@ Settings → General → Interface → Chat view      ChatView toolbar → View:
               components/tool_outputs/         → summarizeTool(tool, parameters, content)
               ToolCard.vue)                    → one line per call
                                                  → the group row for the run
-                                                 → a failed call hoisted out
+                                                 → a failed call marked, in place
                                  │
                                  ▼
               a compact row that is expanded → the SAME ToolCard, so the
@@ -244,7 +249,7 @@ It is a rendering choice, made in the frontend, from data the transcript already
 
 | Risk | Why it matters | What the plan does about it |
 | --- | --- | --- |
-| A failure hides behind a folded group | A collapsed run can hide the one thing the human needed to see | Failed and running calls are hoisted out of the group and are always visible |
+| A failure hides behind a folded group | A collapsed run can hide the one thing the human needed to see | The group row counts the failed calls in red, so a folded group announces the failure, and one click on the failed line opens the full card with the error body |
 | The two views drift | 31 cards in one view and a second renderer means two places to change | Extract the card dispatch into one `ToolCard.vue` and render it from both |
 | The summary table is wrong for a tool | 31 tools, and a new tool can arrive any time | A table with a stated fallback, plus a rule that any tool without a rule falls back to its name and first argument |
 | The default changes everyone's chat | The Dev View is what people know | The default is `dev`; the change is opt-in |
@@ -254,6 +259,9 @@ It is a rendering choice, made in the frontend, from data the transcript already
 
 ## Open questions for the human
 
+One of these is already answered: **a failed call keeps its place inside the run**, and the group row
+says how many calls failed. It is not lifted out of the group.
+
 1. **Where the preference is stored.** App-local storage, the way "Browser-style tabs" is (the
    proposal), or `config.json`, so it travels with the profile and a workspace can override it?
 2. **The names.** "Compact view" and "Dev view" with a toolbar control labelled "View: Compact", or
@@ -262,6 +270,3 @@ It is a rendering choice, made in the frontend, from data the transcript already
    about the mode.
 4. **Does Compact fold the agent's prose too?** The proposal says no: only tool calls change.
 5. **A run of one call.** The proposal draws a lone call as a single line, with no group row.
-6. **Is the failed call hoisted out of the group, or is the group forced open when it contains a
-   failure?** The wireframe hoists it. Hoisting changes the reading order; forcing the group open
-   keeps the order but gives up the density in exactly the turn you most want to read.
