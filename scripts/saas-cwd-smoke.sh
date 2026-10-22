@@ -15,7 +15,14 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fc_bin="${FC_BIN:-firecracker}"
 guest_kernel="${GUEST_KERNEL:-$HOME/firecracker-demo/vmlinux-6.18.51}"
-port="${PABRIK_SAAS_CWD_PORT:-8080}"
+# A server left behind by a cancelled run can still hold a fixed port, and the
+# health check below would then be answered by THAT server (a different HOME, a
+# different database) while the probe talks to it. Pick a free port unless the
+# operator names one.
+pick_free_port() {
+  python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'
+}
+port="${PABRIK_SAAS_CWD_PORT:-$(pick_free_port)}"
 profile="saas-cwd-stub"
 marker="PABRIK_CWD_PROBE"
 email="cwd-probe@example.invalid"
@@ -93,10 +100,13 @@ pids+=($!)
 
 server_ready() {
   grep -q 'runtime mode: saas' "$work/server.log" 2>/dev/null &&
+    # OUR server, on OUR port: another pabrik answering the health check would
+    # make every assertion below about a database this smoke never wrote.
+    grep -q "Open in your browser: http://127.0.0.1:$port/" "$work/server.log" 2>/dev/null &&
     curl -fsS "http://127.0.0.1:$port/health" >/dev/null 2>&1
 }
 for _ in $(seq 1 600); do server_ready && break; sleep 0.1; done
-server_ready || fail "pabrik --saas never became ready
+server_ready || fail "pabrik --saas never became ready on port $port (another process may hold it)
 --- server log ---
 $(tail -n 20 "$work/server.log")"
 say "ok  runtime mode: saas on port $port"
