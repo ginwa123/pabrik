@@ -7,6 +7,7 @@ import PabrikGeneralSection, {
 } from '../components/pabrik/PabrikGeneralSection.vue'
 import CompactToolGroup from '../components/tool_outputs/compact/CompactToolGroup.vue'
 import type { ToolCardData } from '../components/tool_outputs/ToolCard.vue'
+import { summarizeToolCall } from '../components/tool_outputs/_shared/toolSummary'
 import { unwrapToolOutput } from '../helpers/unwrapToolOutput'
 import { chatViewModeFrom, useChatViewStore } from '../stores/chatView'
 
@@ -14,8 +15,10 @@ interface CardOptions {
   success?: boolean
   durationMs?: number
   content?: string
+  toolCallId?: string
 }
 
+/** One tool call of a run, with the envelope the backend wrote. */
 function card(tool: string, options: CardOptions = {}): ToolCardData {
   const envelope: Record<string, unknown> = {
     tool,
@@ -33,6 +36,7 @@ function card(tool: string, options: CardOptions = {}): ToolCardData {
       role: 'tool',
       content,
       tool_name: tool,
+      tool_call_id: options.toolCallId,
     },
     content: {},
     parameters: '{}',
@@ -41,6 +45,12 @@ function card(tool: string, options: CardOptions = {}): ToolCardData {
     subAgentProgress: null,
     subAgentArgs: null,
   }
+}
+
+/** A call with the arguments the agent passed. */
+function call(tool: string, parameters: string, options: CardOptions = {}): ToolCardData {
+  const base = card(tool, options)
+  return { ...base, parameters }
 }
 
 function mountGroup(cards: ToolCardData[]) {
@@ -73,20 +83,73 @@ describe('the chat view mode', () => {
   })
 })
 
-describe('the compact group card', () => {
-  it('counts the calls of the run', () => {
-    const wrapper = mountGroup([card('read_file'), card('command')])
-    expect(wrapper.get('[data-testid="compact-tool-group-count"]').text()).toBe('2 tool calls')
+describe('the one line a tool call shows', () => {
+  it('names the tool and the file it read', () => {
+    const summary = summarizeToolCall('read_file', '{"path":"/x/y.ts"}', '{"tool":"read_file"}')
+    expect(summary.name).toBe('read_file')
+    expect(summary.primary).toBe('/x/y.ts')
+  })
+
+  it('shows the command a shell call ran', () => {
+    const summary = summarizeToolCall('command', '{"command":"ls -la"}', '{"tool":"command"}')
+    expect(summary.primary).toBe('ls -la')
+  })
+
+  it('shows the pattern a search looked for', () => {
+    const summary = summarizeToolCall('search', '{"pattern":"foo"}', '{"tool":"search"}')
+    expect(summary.primary).toBe('foo')
+  })
+
+  it('reads the arguments when they are XML', () => {
+    const summary = summarizeToolCall('command', '<command>ls</command>', '{"tool":"command"}')
+    expect(summary.primary).toBe('ls')
+  })
+
+  it('marks a call that failed', () => {
+    const envelope = JSON.stringify({
+      tool: 'command',
+      parameters: '{}',
+      success: false,
+      data: null,
+      error: 'boom',
+      v: 1,
+    })
+    const summary = summarizeToolCall('command', '{"command":"boom"}', envelope)
+    expect(summary.status).toBe('failed')
+    expect(summary.badge).toBe('failed')
+  })
+
+  it('shows the exit code of a shell call', () => {
+    const envelope = JSON.stringify({
+      tool: 'command',
+      parameters: '{}',
+      success: true,
+      data: { command: 'boom', stdout: '', stderr: '', exit_code: 1 },
+      error: null,
+      v: 1,
+    })
+    const summary = summarizeToolCall('command', '{"command":"boom"}', envelope)
+    expect(summary.badge).toBe('exit 1')
+  })
+})
+
+describe('the compact group', () => {
+  it('draws a lone call as one row, not as a group of one', () => {
+    const wrapper = mountGroup([call('read_file', '{"path":"/x/y.ts"}')])
+    expect(wrapper.find('[data-testid="compact-tool-group"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="compact-tool-row-name"]').text()).toBe('read_file')
+    expect(wrapper.get('[data-testid="compact-tool-row-primary"]').text()).toBe('/x/y.ts')
+  })
+
+  it('folds a run of calls into one group card', () => {
+    const wrapper = mountGroup([card('read_file'), card('command'), card('search')])
+    expect(wrapper.get('[data-testid="compact-tool-group-count"]').text()).toBe('3 tool calls')
+    expect(wrapper.findAll('[data-testid="compact-tool-row"]')).toHaveLength(0)
   })
 
   it('announces the failed calls of the run', () => {
     const wrapper = mountGroup([card('read_file'), card('command', { success: false })])
     expect(wrapper.get('[data-testid="compact-tool-group-failed"]').text()).toBe('1 failed')
-  })
-
-  it('announces the writes of the run', () => {
-    const wrapper = mountGroup([card('read_file'), card('write_file')])
-    expect(wrapper.get('[data-testid="compact-tool-group-writes"]').text()).toBe('1 write')
   })
 
   it('shows the total duration of the run', () => {
@@ -102,16 +165,16 @@ describe('the compact group card', () => {
     expect(wrapper.find('[data-testid="compact-tool-group-duration"]').exists()).toBe(false)
   })
 
-  it('keeps the cards folded until the group row is clicked', async () => {
+  it('unfolds the run into one row per call', async () => {
     const wrapper = mountGroup([card('read_file'), card('command')])
-    expect(wrapper.findAll('.tool-item')).toHaveLength(1)
     await wrapper.get('[data-testid="compact-tool-group-header"]').trigger('click')
-    expect(wrapper.findAll('.tool-item').length).toBeGreaterThan(1)
+    expect(wrapper.findAll('[data-testid="compact-tool-row"]')).toHaveLength(2)
   })
 
   it('opens itself when the run holds a question for the human', () => {
     const wrapper = mountGroup([card('read_file'), card('ask_user')])
-    expect(wrapper.findAll('.tool-item').length).toBeGreaterThan(1)
+    expect(wrapper.findAll('[data-testid="compact-tool-row"]')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="ask-user-card"]').exists()).toBe(true)
   })
 })
 
