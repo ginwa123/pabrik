@@ -1,0 +1,16 @@
+FROM ubuntu:24.04
+
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      ca-certificates \
+      libcurl4t64 \
+      libsqlite3-0 \
+      libssl3t64 \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY pabrik /opt/pabrik/pabrik
+COPY api-bench /opt/pabrik/api-bench
+
+ENV HOME=/pabrik-home
+
+WORKDIR /opt/pabrik
