@@ -11,6 +11,7 @@ interface CachedWorkspace {
   name: string
   icon: string
   items_count?: number
+  is_vm?: boolean
 }
 
 /** Normalizes whatever JSON was stored into the minimal `Workspace` shape the store seeds from. */
@@ -28,6 +29,7 @@ function normalizeWorkspaces(raw: unknown): Workspace[] | null {
       icon: typeof w.icon === 'string' ? w.icon : '📁',
       items: Array.isArray(w.items) && w.items.length === 0 ? [] : [],
       items_count: typeof w.items_count === 'number' ? w.items_count : undefined,
+      ...(typeof w.is_vm === 'boolean' ? { is_vm: w.is_vm } : {}),
       expanded: false,
     } as Workspace)
   }
@@ -53,6 +55,7 @@ export function writeWorkspacesCache(workspaces: Workspace[]): void {
       name: w.name,
       icon: typeof w.icon === 'string' ? w.icon : '📁',
       ...(typeof w.items_count === 'number' ? { items_count: w.items_count } : {}),
+      ...(typeof w.is_vm === 'boolean' ? { is_vm: w.is_vm } : {}),
     }))
     localStorage.setItem(userScopedKey(WORKSPACES_CACHE_KEY), JSON.stringify(slim))
   } catch {

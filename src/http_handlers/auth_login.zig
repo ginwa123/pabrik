@@ -8,6 +8,8 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const auth_common = @import("auth_common.zig");
 const provisioning = @import("workspace_provisioning.zig");
+const workspace_vm = @import("../agentic_loop/workspace_vm.zig");
+const runtime_mode = @import("../runtime_mode.zig");
 
 pub const LoginBody = struct {
     email: []const u8 = "",
@@ -124,6 +126,7 @@ pub fn authLoginHandler(
         io,
         user_id,
         di.environment,
+        workspace_vm.creationIsVm(runtime_mode.currentMode()),
     ) catch |err| blk: {
         std.log.warn("auth_login: default workspace provisioning failed for {s} (non-fatal, the sidebar will show none): {s}", .{ user_email, @errorName(err) });
         break :blk null;

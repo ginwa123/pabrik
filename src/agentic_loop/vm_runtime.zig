@@ -7,6 +7,7 @@ const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
 const runtime_mode = @import("../runtime_mode.zig");
 const workspace_scope = @import("workspace_scope.zig");
+const workspace_vm = @import("workspace_vm.zig");
 const shell = @import("../modules/agent/tools/shell.zig");
 const vmd = @import("../vmd/vmd_client.zig");
 const rpc = @import("../vmd/rpc.zig");
@@ -14,6 +15,8 @@ const policy = @import("../vmd/policy.zig");
 
 pub const Error = error{
     GuestWorkspaceUnknown,
+    /// The workspace is not VM-backed: no Firecracker, no host fallback.
+    GuestWorkspaceNotVm,
     GuestCwdOutsideWorkspace,
     GuestManagerUnavailable,
     GuestManagerRefused,
@@ -90,6 +93,7 @@ fn runGuest(
     const workspace_id = (try workspace_scope.resolveWorkspaceId(allocator, db, session_id)) orelse
         return Error.GuestWorkspaceUnknown;
     defer allocator.free(workspace_id);
+    if (!workspace_vm.isVmWorkspace(allocator, db, workspace_id)) return Error.GuestWorkspaceNotVm;
     const root = (try workspace_scope.resolveWorkspaceRoot(allocator, db, session_id)) orelse
         return Error.GuestWorkspaceUnknown;
     defer allocator.free(root);

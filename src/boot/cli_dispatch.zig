@@ -228,13 +228,15 @@ pub fn dispatchCreateAdmin(
     std.debug.print("create-admin: admin '{s}' created\n", .{email_v});
 
     // New admins get their "Default" workspace now; the first login retries
-    // via the same idempotent ensure, so a failure here stays non-fatal.
+    // via the same idempotent ensure. The CLI cannot know the deployment's
+    // mode, so the workspace is stamped VM-backed (read only in saas mode).
     const provisioned = ai_mod.http_handlers.workspace_provisioning.ensureDefaultWorkspace(
         allocator,
         &dbSqlite,
         io,
         id,
         environment,
+        true,
     ) catch |err| {
         std.log.warn("create-admin: could not provision the default workspace (non-fatal, the first login retries): {s}", .{@errorName(err)});
         return true;

@@ -111,7 +111,8 @@ fn guestFolderResponse(
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "SaaS mode serves action=list and action=search here" }) });
     }
 
-    var fs = workspace_fs.forWorkspace(allocator, workspace_id) catch |err| {
+    const di = try pabrikcore.getSingleton();
+    var fs = workspace_fs.forWorkspace(allocator, di.db, workspace_id) catch |err| {
         return res.jsonResponse(.{ .status_code = 503, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = @errorName(err) }) });
     };
     defer fs.deinit();

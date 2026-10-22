@@ -8,6 +8,8 @@ const pabrikcore = mod.pabrikcore;
 const gserverz = pabrikcore.gserverz;
 const http_response = mod.http_response;
 const auth_common = @import("auth_common.zig");
+const workspace_vm = @import("../agentic_loop/workspace_vm.zig");
+const runtime_mode = @import("../runtime_mode.zig");
 
 /// SQLite error info surfaced from the use-case to the handler.
 pub const DbErrorInfo = struct {
@@ -34,6 +36,9 @@ pub const WorkspaceGetData = struct {
     name: []const u8,
     created_at: []const u8,
     updated_at: []const u8,
+    /// Whether this workspace runs in a microVM on THIS server (Migration
+    /// 115). False on a local server, which has no Firecracker at all.
+    is_vm: bool,
 };
 
 // =====================================================================
@@ -45,6 +50,7 @@ fn useCase(
     db: *pabrikcore.sqlite.SqliteBackend,
     id: []const u8,
     owner: []const u8,
+    mode: runtime_mode.Mode,
 ) WorkspaceGetResult {
     if (id.len == 0) return .id_required;
 
@@ -52,7 +58,7 @@ fn useCase(
     // created, so we can't capture the SQLite error message.
     var rows = db.query(
         allocator,
-        "SELECT id, name, created_at, updated_at FROM workspaces WHERE id = ? AND " ++ comptime auth_common.workspaceVisibilityClause("workspaces"),
+        "SELECT id, name, created_at, updated_at, is_vm FROM workspaces WHERE id = ? AND " ++ comptime auth_common.workspaceVisibilityClause("workspaces"),
         &.{ id, owner, owner },
     ) catch |err| {
         // Build a best-effort message. The sqlite3_errmsg is not available
@@ -83,6 +89,9 @@ fn useCase(
             .name = allocator.dupe(u8, row.values[1]) catch return .out_of_memory,
             .created_at = allocator.dupe(u8, row.values[2]) catch return .out_of_memory,
             .updated_at = allocator.dupe(u8, row.values[3]) catch return .out_of_memory,
+            // The stored flag says the workspace was created by a saas server;
+            // the mode says whether there is a Firecracker here to run it in.
+            .is_vm = workspace_vm.runsInVm(mode, row.values[4].len > 0 and row.values[4][0] == '1'),
         },
     };
 }
@@ -113,7 +122,7 @@ pub fn workspaceGetHandler(
     };
     defer allocator.free(owner);
 
-    const outcome = useCase(allocator, sqlite_db, id, owner);
+    const outcome = useCase(allocator, sqlite_db, id, owner, runtime_mode.currentMode());
 
     switch (outcome) {
         .found => |data| {
@@ -121,8 +130,8 @@ pub fn workspaceGetHandler(
             // them into a fresh allocation.
             const body = try std.fmt.allocPrint(
                 allocator,
-                "{{\"id\":\"{s}\",\"name\":\"{s}\",\"created_at\":\"{s}\",\"updated_at\":\"{s}\"}}",
-                .{ data.id, data.name, data.created_at, data.updated_at },
+                "{{\"id\":\"{s}\",\"name\":\"{s}\",\"created_at\":\"{s}\",\"updated_at\":\"{s}\",\"is_vm\":{s}}}",
+                .{ data.id, data.name, data.created_at, data.updated_at, if (data.is_vm) "true" else "false" },
             );
             return res.jsonResponse(.{ .status_code = 200, .data = body });
         },

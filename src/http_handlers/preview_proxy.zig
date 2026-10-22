@@ -226,7 +226,7 @@ pub fn previewProxyHandler(
     const request_bytes = guestRequestBytes(allocator, req.method, guest_path, port, req.headers, req.body) catch |err| {
         return refuse(res, allocator, 400, @errorName(err));
     };
-    const reply = workspace_fs.previewExchange(allocator, workspace_id, port, request_bytes) catch |err| {
+    const reply = workspace_fs.previewExchange(allocator, di.db, workspace_id, port, request_bytes) catch |err| {
         return refuse(res, allocator, 502, @errorName(err));
     };
     defer reply.deinit(allocator);

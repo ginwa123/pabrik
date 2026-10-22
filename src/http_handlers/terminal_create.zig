@@ -10,6 +10,7 @@ const terminal_session = @import("terminal_session.zig");
 const terminal_guest = @import("terminal_guest.zig");
 const runtime_mode = @import("../runtime_mode.zig");
 const auth_common = @import("auth_common.zig");
+const workspace_vm = @import("../agentic_loop/workspace_vm.zig");
 
 pub const TerminalCreateError = error{
     UnsupportedPlatform,
@@ -96,6 +97,17 @@ fn createGuest(
     owner: []const u8,
 ) !gserverz.HttpResponse {
     _ = req;
+    // A workspace that is not VM-backed gets NO Firecracker: the manager is
+    // never asked, so no VM is spawned for it — and the shell never falls back
+    // to the host.
+    const di = try pabrikcore.getSingleton();
+    if (!workspace_vm.isVmWorkspace(allocator, di.db, workspace_id)) {
+        return res.jsonResponse(.{
+            .status_code = 409,
+            .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = workspace_vm.not_vm_message }),
+        });
+    }
+
     var refusal = terminal_guest.Refusal{};
     const info = terminal_guest.create(allocator, workspace_id, cwd, cols, rows, owner, &refusal) catch |err| {
         const status: u16 = switch (err) {
