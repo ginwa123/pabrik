@@ -1,0 +1,196 @@
+name: api-benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      requests:
+        description: 'requests per measured phase (c1 and cN)'
+        default: '2000'
+      concurrency:
+        description: 'concurrency of the cN phase'
+        default: '8'
+      route:
+        description: 'GET route to benchmark'
+        default: '/health'
+      min_scaling:
+        description: 'gate: throughput at cN divided by throughput at c1'
+        default: '1.2'
+      strict:
+        description: 'a performance-gate miss fails the run'
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/api_bench.py'
+      - 'scripts/api-bench.sh'
+      - 'scripts/api-bench.Containerfile'
+      - 'src/http_handlers/health.zig'
+      - 'src/http_handlers/http_response.zig'
+      - 'src/http_handlers/auth_common.zig'
+      - 'src/http_routes.zig'
+      - 'src/main.zig'
+      - 'build.zig'
+      - '.github/workflows/ci-api-benchmark.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/api_bench.py'
+      - 'scripts/api-bench.sh'
+      - 'scripts/api-bench.Containerfile'
+      - 'src/http_handlers/health.zig'
+      - 'src/http_handlers/http_response.zig'
+      - 'src/http_handlers/auth_common.zig'
+      - 'src/http_routes.zig'
+      - 'src/main.zig'
+      - 'build.zig'
+      - '.github/workflows/ci-api-benchmark.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  ZIG_VERSION: 0.16.0
+
+jobs:
+  benchmark:
+    name: GET ${{ github.event.inputs.route || '/health' }} in a fixed container spec
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: The runner can host the fixed spec
+        shell: bash
+        run: |
+          set -euo pipefail
+          cpus="$(nproc)"
+          echo "logical cpus: $cpus"
+          echo "cgroup: $(stat -fc %T /sys/fs/cgroup)"
+          docker version --format 'docker server {{.Server.Version}}'
+          if [ "$cpus" -lt 4 ]; then
+            echo "::error::this profile pins the server to cpus 0,1 and the client to cpus 2,3, so it needs 4 logical cpus; this runner reports $cpus"
+            exit 1
+          fi
+          if [ "$(stat -fc %T /sys/fs/cgroup)" != "cgroup2fs" ]; then
+            echo "::error::cgroup v2 is required for --cpuset-cpus to isolate the two containers"
+            exit 1
+          fi
+
+      - name: Install Zig ${{ env.ZIG_VERSION }}
+        uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: Cache the zig package cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/zig
+          key: v1-api-bench-zig-${{ hashFiles('build.zig.zon') }}
+          restore-keys: |
+            v1-api-bench-zig-
+
+      - name: Install the Linux build dependencies
+        run: bash scripts/ci-install-linux-deps.sh
+
+      - name: Build the server
+        shell: bash
+        run: |
+          set -euo pipefail
+          zig build install:linux -Doptimize=ReleaseFast -Dno-webapp-rebuild --summary all
+          sha256sum zig-out/bin/pabrikcore-linux-x86_64
+
+      - name: Harness unit tests
+        run: bash scripts/api-bench.sh selftest
+
+      - name: Resolve the run inputs
+        id: run
+        shell: bash
+        run: |
+          set -euo pipefail
+          requests='${{ github.event.inputs.requests }}'
+          concurrency='${{ github.event.inputs.concurrency }}'
+          route='${{ github.event.inputs.route }}'
+          min_scaling='${{ github.event.inputs.min_scaling }}'
+          strict='${{ github.event.inputs.strict }}'
+          requests="${requests:-2000}"
+          concurrency="${concurrency:-8}"
+          route="${route:-/health}"
+          min_scaling="${min_scaling:-1.2}"
+          strict="${strict:-false}"
+          case "$requests" in ''|*[!0-9]*) echo "::error::requests must be a positive integer"; exit 1 ;; esac
+          case "$concurrency" in ''|*[!0-9]*) echo "::error::concurrency must be a positive integer"; exit 1 ;; esac
+          case "$route" in /*) ;; *) echo "::error::route must start with /"; exit 1 ;; esac
+          case "$strict" in true|1) strict=1 ;; *) strict=0 ;; esac
+          {
+            echo "requests=$requests"
+            echo "concurrency=$concurrency"
+            echo "route=$route"
+            echo "min_scaling=$min_scaling"
+            echo "strict=$strict"
+            echo "out=${RUNNER_TEMP}/api-bench"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run the benchmark in the pinned container spec
+        shell: bash
+        env:
+          CONTAINER_ENGINE: docker
+          API_BENCH_REQUESTS: ${{ steps.run.outputs.requests }}
+          API_BENCH_CONCURRENCY: ${{ steps.run.outputs.concurrency }}
+          API_BENCH_ROUTE: ${{ steps.run.outputs.route }}
+          API_BENCH_MIN_SCALING: ${{ steps.run.outputs.min_scaling }}
+          API_BENCH_STRICT: ${{ steps.run.outputs.strict }}
+          API_BENCH_OUT: ${{ runner.temp }}/api-bench
+        run: bash scripts/api-bench.sh run
+
+      - name: Annotate the verdict
+        if: always()
+        shell: bash
+        env:
+          API_BENCH_OUT: ${{ runner.temp }}/api-bench
+        run: |
+          set -euo pipefail
+          report="$API_BENCH_OUT/api-bench.json"
+          if [ ! -f "$report" ]; then
+            echo "::warning::no api-bench.json was produced"
+            exit 0
+          fi
+          python3 - "$report" <<'PY'
+          import json, sys
+          report = json.load(open(sys.argv[1]))
+          gate = report["gate"]
+          print("::notice::gate %s, enforced %s, digest %s" % (
+              gate["verdict"], gate["enforced"], report["machine"]["result_sha256"]))
+          for check in gate["checks"]:
+              if check["ok"]:
+                  continue
+              level = "error" if check["name"] in gate["enforced_by"] else "warning"
+              print("::%s::%s: value %s, limit %s" % (
+                  level, check["name"], check.get("value", "-"), check.get("limit", "-")))
+          PY
+
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-benchmark-${{ github.run_id }}
+          path: ${{ runner.temp }}/api-bench
+          if-no-files-found: warn
+
+      - name: Step summary
+        if: always()
+        shell: bash
+        env:
+          API_BENCH_OUT: ${{ runner.temp }}/api-bench
+        run: |
+          set -euo pipefail
+          if [ -f "$API_BENCH_OUT/api-bench.md" ]; then
+            cat "$API_BENCH_OUT/api-bench.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "no api-bench.md was produced" >> "$GITHUB_STEP_SUMMARY"
+          fi
