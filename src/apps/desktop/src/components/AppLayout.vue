@@ -626,7 +626,6 @@ const handleNavigate = (
   // URL so a refresh preserves the user's implicit sort choice.
   sortsParam?: string,
 ) => {
-  console.log('[handleNavigate]', view)
   if (view.startsWith('chat-')) {
     const chatSessionId = view.replace(/^chat-/, '')
     // Clear any workspace-item active state — navigating to a chat wins.
@@ -942,15 +941,12 @@ const currentView = computed(() => {
   }
   // gitfile view - check only the ref (set synchronously before navigation)
   if (gitViewerFile.value) {
-    console.log('[currentView] returning gitfile, gitViewerFile:', gitViewerFile.value.path)
     return 'gitfile'
   }
   // skill view - check only the ref
   if (skillViewerSkill.value) {
-    console.log('[currentView] returning skill, skillViewerSkill:', skillViewerSkill.value.name)
     return 'skill'
   }
-  console.log('[currentView] skillViewerSkill is null, checking route')
   // code-editor view - the open file wins UNLESS a chat surface can display it itself. See
   // `chatSurfaceActive`.
   if (codeEditorFile.value && !chatSurfaceActive.value) return 'code-editor'
@@ -981,7 +977,6 @@ const currentView = computed(() => {
   // auto-rewritten on mount). The chat-open state is encoded as /chat/<taskId> on itemId when
   // view=workspace, so `currentView` returns 'workspace' for both no-chat and chat-open states.
   const view = (route.query.view as string) || 'chat'
-  console.log('[currentView] returning route view:', view)
   return view
 })
 

@@ -219,7 +219,7 @@ const sizerHeight = computed(() => {
       : total
   if (cachedSizerHeight < 0 || Math.abs(capped - cachedSizerHeight) > HYSTERESIS_PX) {
     cachedSizerHeight = capped
-    if (vsLogger.value) {
+    if (import.meta.env.DEV && vsLogger.value) {
       try {
         vsLogger.value.info({
           scrollTop: containerRef.value?.scrollTop ?? scrollTop.value,
@@ -550,7 +550,7 @@ const measureItems = () => {
     // Mark BEFORE the write: assigning .scrollTop fires a native scroll event that onScroll must
     // label as programmatic (see the counter comment above — without this, a downward compensation
     // is misread as "user scrolled up" and disengages ChatView's auto-stick).
-    if (vsLogger.value) {
+    if (import.meta.env.DEV && vsLogger.value) {
       try {
         vsLogger.value.info({
           scrollTop: prevScrollTop,
