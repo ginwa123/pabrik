@@ -6,14 +6,11 @@ RUN apt-get update \
       libcurl4t64 \
       libsqlite3-0 \
       libssl3t64 \
-      python3 \
  && rm -rf /var/lib/apt/lists/*
 
 COPY pabrik /opt/pabrik/pabrik
-COPY api_bench.py /opt/pabrik/api_bench.py
+COPY api-bench /opt/pabrik/api-bench
 
 ENV HOME=/pabrik-home
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /opt/pabrik

@@ -7,6 +7,7 @@ ENGINE="${CONTAINER_ENGINE:-docker}"
 IMAGE="${API_BENCH_IMAGE:-pabrik-api-bench:local}"
 SERVER_NAME="${API_BENCH_SERVER_NAME:-pabrik-api-bench-server}"
 PABRIK_BIN="${PABRIK_BIN:-$ROOT/zig-out/bin/pabrikcore-linux-x86_64}"
+LOADGEN_BIN="${API_BENCH_LOADGEN:-$ROOT/zig-out/bin/api-bench}"
 PORT="${API_BENCH_PORT:-18080}"
 ROUTE="${API_BENCH_ROUTE:-/health}"
 SERVER_CPUSET="${API_BENCH_SERVER_CPUSET-0,1}"
@@ -32,11 +33,11 @@ die() {
 
 usage() {
   cat <<'USAGE'
-api-bench.sh [selftest|image|run|spec]
+benchmark/run.sh [selftest|image|run|spec]
 
-  selftest   the harness unit tests, no container, no network
-  image      build the benchmark image only
-  run        build the image, then run the benchmark (default)
+  selftest   the harness unit tests (zig test), no container, no network
+  image      build the load generator and the benchmark image
+  run        build everything, then run the benchmark (default)
   spec       print the container spec this profile pins
 
 environment:
@@ -47,6 +48,8 @@ environment:
   API_BENCH_CONCURRENCY   the concurrency of the cN phase, default 8
   API_BENCH_ROUTE         GET route to benchmark, default /health
   API_BENCH_STRICT=1      a performance-gate miss fails the run
+  API_BENCH_SERVER_CPUSET empty drops --cpuset-cpus and the profile becomes quota-2cpu
+  API_BENCH_CLIENT_CPUSET empty drops --cpuset-cpus and the profile becomes quota-2cpu
 USAGE
 }
 
@@ -60,12 +63,6 @@ resolve_profile() {
   fi
 }
 
-strict_args() {
-  STRICT_ARGS=()
-  [ "${1:-0}" = "1" ] && STRICT_ARGS=(--strict)
-  return 0
-}
-
 cpuset_args() {
   local server="$1" client="$2"
   CPUSET_SERVER_ARGS=()
@@ -75,12 +72,19 @@ cpuset_args() {
   return 0
 }
 
+strict_args() {
+  STRICT_ARGS=()
+  [ "${1:-0}" = "1" ] && STRICT_ARGS=(--strict)
+  return 0
+}
+
 spec() {
   cat <<SPEC
 profile          $PROFILE
 engine           $ENGINE
 image            $IMAGE
 server binary    $PABRIK_BIN
+load generator   $LOADGEN_BIN
 route            GET $ROUTE on 127.0.0.1:$PORT
 server container --cpus $SERVER_CPUS --cpuset-cpus ${SERVER_CPUSET:-none} --memory ${MEMORY_MB}m --network none
 client container --cpus $CLIENT_CPUS --cpuset-cpus ${CLIENT_CPUSET:-none} --memory ${CLIENT_MEMORY_MB}m --network container:$SERVER_NAME
@@ -92,8 +96,8 @@ SPEC
 }
 
 selftest() {
-  command -v python3 >/dev/null 2>&1 || die "python3 is required for --selftest"
-  python3 "$ROOT/scripts/api_bench.py" --selftest
+  command -v zig >/dev/null 2>&1 || die "zig is required for the selftest"
+  ( cd "$ROOT" && zig test benchmark/api_bench.zig )
 }
 
 check_engine() {
@@ -119,13 +123,19 @@ check_cpus() {
   done
 }
 
+build_loadgen() {
+  command -v zig >/dev/null 2>&1 || die "zig is required to build the load generator"
+  printf 'api-bench: building the load generator into %s\n' "$LOADGEN_BIN"
+  ( cd "$ROOT" && zig build-exe benchmark/api_bench.zig -O ReleaseFast -target x86_64-linux-musl -femit-bin="$LOADGEN_BIN" )
+}
+
 build_image() {
   local stage
   stage="$(mktemp -d)"
   cp "$PABRIK_BIN" "$stage/pabrik"
-  cp "$ROOT/scripts/api_bench.py" "$stage/api_bench.py"
+  cp "$LOADGEN_BIN" "$stage/api-bench"
   printf 'api-bench: building %s from %s\n' "$IMAGE" "$stage"
-  if ! "$ENGINE" build -f "$ROOT/scripts/api-bench.Containerfile" -t "$IMAGE" "$stage"; then
+  if ! "$ENGINE" build -f "$ROOT/benchmark/Containerfile" -t "$IMAGE" "$stage"; then
     rm -rf "$stage"
     die "image build failed"
   fi
@@ -145,7 +155,7 @@ cleanup() {
 }
 
 run_bench() {
-  local rc digest
+  local rc digest client
   mkdir -p "$OUT_DIR"
   "$ENGINE" rm -f "$SERVER_NAME" >/dev/null 2>&1 || true
   trap cleanup EXIT INT TERM
@@ -168,7 +178,7 @@ run_bench() {
   sleep 0.5
   server_running || die "the server container exited during start-up; see $OUT_DIR/server.log"
 
-  local client="${SERVER_NAME}-client"
+  client="${SERVER_NAME}-client"
   "$ENGINE" rm -f "$client" >/dev/null 2>&1 || true
 
   set +e
@@ -180,8 +190,7 @@ run_bench() {
     --memory "${CLIENT_MEMORY_MB}m" \
     --memory-swap "${CLIENT_MEMORY_MB}m" \
     --ulimit nofile=65536:65536 \
-    --env PYTHONUNBUFFERED=1 \
-    "$IMAGE" python3 /opt/pabrik/api_bench.py \
+    "$IMAGE" /opt/pabrik/api-bench \
       --port "$PORT" \
       --route "$ROUTE" \
       --requests "$REQUESTS" \
@@ -221,6 +230,7 @@ case "$action" in
   image)
     check_engine
     check_binary
+    build_loadgen
     build_image
     ;;
   run)
@@ -228,6 +238,7 @@ case "$action" in
     check_engine
     check_binary
     check_cpus
+    build_loadgen
     build_image
     run_bench
     ;;

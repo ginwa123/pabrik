@@ -22,9 +22,10 @@ on:
   push:
     branches: [main]
     paths:
-      - 'scripts/api_bench.py'
-      - 'scripts/api-bench.sh'
-      - 'scripts/api-bench.Containerfile'
+      - 'benchmark/api_bench.zig'
+      - 'benchmark/run.sh'
+      - 'benchmark/Containerfile'
+      - 'benchmark/README.md'
       - 'src/http_handlers/health.zig'
       - 'src/http_handlers/http_response.zig'
       - 'src/http_handlers/auth_common.zig'
@@ -35,9 +36,10 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'scripts/api_bench.py'
-      - 'scripts/api-bench.sh'
-      - 'scripts/api-bench.Containerfile'
+      - 'benchmark/api_bench.zig'
+      - 'benchmark/run.sh'
+      - 'benchmark/Containerfile'
+      - 'benchmark/README.md'
       - 'src/http_handlers/health.zig'
       - 'src/http_handlers/http_response.zig'
       - 'src/http_handlers/auth_common.zig'
@@ -106,7 +108,7 @@ jobs:
           sha256sum zig-out/bin/pabrikcore-linux-x86_64
 
       - name: Harness unit tests
-        run: bash scripts/api-bench.sh selftest
+        run: zig test benchmark/api_bench.zig
 
       - name: Resolve the run inputs
         id: run
@@ -146,7 +148,7 @@ jobs:
           API_BENCH_MIN_SCALING: ${{ steps.run.outputs.min_scaling }}
           API_BENCH_STRICT: ${{ steps.run.outputs.strict }}
           API_BENCH_OUT: ${{ runner.temp }}/api-bench
-        run: bash scripts/api-bench.sh run
+        run: bash benchmark/run.sh run
 
       - name: Annotate the verdict
         if: always()
@@ -160,19 +162,14 @@ jobs:
             echo "::warning::no api-bench.json was produced"
             exit 0
           fi
-          python3 - "$report" <<'PY'
-          import json, sys
-          report = json.load(open(sys.argv[1]))
-          gate = report["gate"]
-          print("::notice::gate %s, enforced %s, digest %s" % (
-              gate["verdict"], gate["enforced"], report["machine"]["result_sha256"]))
-          for check in gate["checks"]:
-              if check["ok"]:
-                  continue
-              level = "error" if check["name"] in gate["enforced_by"] else "warning"
-              print("::%s::%s: value %s, limit %s" % (
-                  level, check["name"], check.get("value", "-"), check.get("limit", "-")))
-          PY
+          jq -r '"::notice::gate \(.gate.verdict), enforced \(.gate.enforced), digest \(.machine.result_sha256)"' "$report"
+          strict="$(jq -r '.gate.strict' "$report")"
+          jq -r '.gate.checks[] | select(.ok | not) | "\(.kind)\t\(.name)\t\(.value)\t\(.limit)"' "$report" |
+          while IFS=$'\t' read -r kind name value limit; do
+            level=warning
+            if [ "$kind" = "functional" ] || [ "$strict" = "true" ]; then level=error; fi
+            echo "::$level::$name: value $value, limit $limit"
+          done
 
       - name: Upload the report
         if: always()
