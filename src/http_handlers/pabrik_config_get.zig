@@ -137,6 +137,7 @@ pub fn makeConfigResponse(allocator: std.mem.Allocator, cfg: ConfigJson) ![]u8 {
         .notify_on_complete = cfg.notify_on_complete,
         .notify_on_error = cfg.notify_on_error,
         .web_launch_enabled = cfg.web_launch_enabled,
+        .chat_view = config.chatViewModeName(config.parseChatViewMode(cfg.chat_view)),
         .model_compaction_size_kb = cfg.model_compaction_size_kb,
         // Top-level compaction defaults - plan 2026-07-07-compaction-inline.
         .max_capacity_token_model = cfg.max_capacity_token_model,
@@ -172,6 +173,8 @@ pub const ConfigJson = struct {
     /// Opt-in web-launch flag (see LlmConfigJson in Config.zig).
     /// Defaults to `false` so a missing-on-disk config has web launch off.
     web_launch_enabled: bool = false,
+    /// How the chat draws tool calls (see LlmConfigJson in Config.zig).
+    chat_view: []const u8 = "dev",
     /// Compaction threshold in KB (see LlmConfigJson in Config.zig).
     model_compaction_size_kb: usize = 100,
     /// Optional top-level context window override (see

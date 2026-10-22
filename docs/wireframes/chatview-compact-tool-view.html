@@ -83,6 +83,7 @@
   }
   [data-ui] .setnav.on { background: var(--bg-p1); color: var(--text); font-weight: 600; }
   [data-ui] .setmain { flex: 1; padding: 20px 22px; min-width: 0; }
+  [data-ui] .setmainh { font-size: 15px; font-weight: 600; color: var(--text); margin: 0 0 10px; }
   [data-ui] .setmain h3 { margin: 0 0 16px; font-size: 18px; color: var(--text); }
   [data-ui] .setblock { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
   [data-ui] .blockhead { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 12px; }
@@ -199,10 +200,9 @@
 
 <section id="setting">
   <h2>The setting</h2>
-  <p>It goes in the <strong>Interface</strong> block of the General tab, beside
-  <strong>Browser-style tabs</strong>. That block is already the home of app-local interface
-  preferences, which is exactly what this is: a preference about how the app looks, not about how the
-  agent runs.</p>
+  <p>It goes in the <strong>General</strong> tab, next to the notifications and the retry delay, and
+  it is saved to <code>config.json</code>. That way the mode travels with the profile: the same
+  account gets the same chat on another machine, and a workspace overlay can override it.</p>
 
   <div data-ui class="settingsmock" id="settingsmock">
     <aside class="setside">
@@ -213,6 +213,21 @@
     </aside>
     <main class="setmain">
       <h3>General</h3>
+      <h4 class="setmainh">General</h4>
+      <div class="setblock">
+        <div class="blockhead">Chat view</div>
+        <div class="setrow" data-testid="row-chat-view">
+          <span class="rowtext">
+            <span class="rowtitle">Tool calls</span>
+            <span class="rowdesc">Compact folds a run of tool calls into one card. Dev keeps a full
+            card for every call. Saved to <code>config.json</code>, so it travels with the profile.</span>
+          </span>
+          <div class="seg" id="seg-view" role="radiogroup" aria-label="Chat view">
+            <button type="button" role="radio" aria-checked="true" class="on" data-mode="compact">Compact</button>
+            <button type="button" role="radio" aria-checked="false" data-mode="dev">Dev</button>
+          </div>
+        </div>
+      </div>
       <div class="setblock">
         <div class="blockhead">Interface</div>
         <div class="setrow">
@@ -223,24 +238,12 @@
             the content area. Off restores the single-view layout.</span>
           </span>
         </div>
-        <div class="setrow" data-testid="row-chat-view">
-          <span class="rowtext">
-            <span class="rowtitle">Chat view</span>
-            <span class="rowdesc">How tool calls are drawn in the chat. Compact folds a run of calls
-            into a single line and keeps a failed call in view. Dev keeps today's full card for every
-            call.</span>
-          </span>
-          <div class="seg" id="seg-view" role="radiogroup" aria-label="Chat view">
-            <button type="button" role="radio" aria-checked="true" class="on" data-mode="compact">Compact</button>
-            <button type="button" role="radio" aria-checked="false" data-mode="dev">Dev</button>
-          </div>
-        </div>
       </div>
     </main>
   </div>
 
   <p class="note">The two states of the control are the same row with the other option pressed. The
-  choice is remembered per user, the way <strong>Browser-style tabs</strong> is, and it takes effect in
+  choice is remembered in the config, next to the other operational settings, and it takes effect in
   every chat that is open, with no restart.</p>
 </section>
 
@@ -280,6 +283,7 @@
               <span class="dmeta">
                 <span class="tag bad">1 failed</span>
                 <span class="tag">1 write</span>
+                <span class="tag">42.1s</span>
               </span>
               <span class="plus" id="chev">+</span>
             </div>
@@ -379,6 +383,7 @@
         <span class="dmeta">
           <span class="tag bad">1 failed</span>
           <span class="tag">1 write</span>
+          <span class="tag">42.1s</span>
         </span>
         <span class="plus">+</span>
       </div>
@@ -454,15 +459,12 @@
 
 <section id="open">
   <h2>Open questions</h2>
-  <p>Two of these are already answered. A failed call keeps its place inside the run, and the group
-  card says how many failed; it is not lifted out of the group. And there is no toolbar switch: the
-  mode is chosen in Settings &rarr; User &rarr; General and nowhere else.</p>
+  <p>Three of these are already answered. A failed call keeps its place inside the run, and the group
+  card says how many failed; it is not lifted out of the group. There is no toolbar switch: the mode is
+  chosen in Settings &rarr; User &rarr; General and nowhere else. And the mode lives in
+  <code>config.json</code>, so it travels with the profile. The backend records how long each tool
+  call took, so the group card can say how long the run took.</p>
   <ul class="plain">
-    <li><strong>Where the preference is stored.</strong> The proposal is app-local, in the browser
-    storage of the app, the same place <strong>Browser-style tabs</strong> lives, because it is a
-    preference about the interface and not about the agent. The alternative is
-    <code>config.json</code>, which would travel with the profile and let a workspace override it.
-    Which one do you want?</li>
     <li><strong>The name.</strong> <strong>Compact</strong> already means conversation compaction in
     the composer toolbar. The two view modes are named <strong>Compact view</strong> and
     <strong>Dev view</strong>, and the toolbar control says <strong>View: Compact</strong>. Is that

@@ -40,6 +40,18 @@ pub fn wrapToolOutput(
     }
 }
 
+/// Add the wall-clock duration of a tool call to its result envelope. The
+/// envelope shape is fixed by `wrapToolOutput`, so the field goes in front of
+/// the trailing `"v":1}`. Anything that is not an envelope is returned as is.
+pub fn withDurationMs(allocator: std.mem.Allocator, envelope: []const u8, duration_ms: u64) ![]u8 {
+    const prefix = "{\"tool\":";
+    const suffix = ",\"v\":1}";
+    if (!std.mem.startsWith(u8, envelope, prefix)) return allocator.dupe(u8, envelope);
+    if (!std.mem.endsWith(u8, envelope, suffix)) return allocator.dupe(u8, envelope);
+    const head = envelope[0 .. envelope.len - suffix.len];
+    return std.fmt.allocPrint(allocator, "{s},\"duration_ms\":{d}{s}", .{ head, duration_ms, suffix });
+}
+
 // Every `execX` function below MUST end by calling `wrapToolOutput` so the
 // LLM sees a single consistent envelope: {"tool":…, "parameters":…,
 // "success":true|false, "data":{…} | null, "error":"…" | null, "v":1} The
@@ -97,6 +109,27 @@ fn normalizeDataFragment(allocator: std.mem.Allocator, data: []const u8) ![]u8 {
     }
 
     return try allocator.dupe(u8, clean);
+}
+
+test "withDurationMs - the envelope carries the duration" {
+    const allocator = testing.allocator;
+    const envelope = try wrapToolOutput(allocator, "read_file", "{\"path\":\"/x\"}", true, null, "{}");
+    defer allocator.free(envelope);
+
+    const stamped = try withDurationMs(allocator, envelope, 42);
+    defer allocator.free(stamped);
+
+    var parsed = try std.json.parseFromSlice(std.json.Value, allocator, stamped, .{});
+    defer parsed.deinit();
+    try testing.expectEqual(@as(i64, 42), parsed.value.object.get("duration_ms").?.integer);
+    try testing.expectEqual(@as(i64, 1), parsed.value.object.get("v").?.integer);
+}
+
+test "withDurationMs - a string that is not an envelope is left alone" {
+    const allocator = testing.allocator;
+    const out = try withDurationMs(allocator, "not an envelope", 42);
+    defer allocator.free(out);
+    try testing.expectEqualStrings("not an envelope", out);
 }
 
 test "wrapToolOutput - success with all fields, JSON params kept as object" {

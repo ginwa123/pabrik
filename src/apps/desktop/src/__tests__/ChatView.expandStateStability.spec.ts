@@ -5,13 +5,7 @@ import { describe, it, expect } from 'vitest'
 const readChatViewSource = async (): Promise<string> => {
   const fs = await import('node:fs/promises')
   const path = await import('node:path')
-  const chatviewPath = path.resolve(
-    __dirname,
-    '..',
-    'components',
-    'views',
-    'ChatView.vue',
-  )
+  const chatviewPath = path.resolve(__dirname, '..', 'components', 'views', 'ChatView.vue')
   return fs.readFile(chatviewPath, 'utf8')
 }
 
@@ -39,16 +33,20 @@ describe('expandedToolIds — stable per-message keys (source contract)', () => 
     // The helper MUST exist and prioritise msg.id (stable), then
     // tool_call_id (stable across the turn), then a positional
     // fallback (last resort for legacy rows with no id).
-    expect(source).toMatch(/const toolExpandKey = \(msg: Message, groupIndex: number, idx: number\): string =>/)
-    expect(source).toMatch(/return msg\.id \|\| msg\.tool_call_id \|\| `pos-\$\{groupIndex\}-\$\{idx\}`/)
+    expect(source).toMatch(
+      /const toolExpandKey = \(msg: Message, groupIndex: number, idx: number\): string =>/,
+    )
+    expect(source).toMatch(
+      /return msg\.id \|\| msg\.tool_call_id \|\| `pos-\$\{groupIndex\}-\$\{idx\}`/,
+    )
   })
 
-  it('all template usages of expandedToolIds route through toolExpandKey', async () => {
+  it('all usages of expandedToolIds route through toolExpandKey', async () => {
     const source = await readChatViewSource()
-    // Find every line that reads `expandedToolIds.has(...)`. None of them may use the old
+    // Find every read of `expandedToolIds`. None of them may use the old
     // positional `${groupIndex}-${idx}` template literal — every read must route through the
     // helper.
-    const hasUsages = source.match(/expandedToolIds\.has\([^)]*\)/g) ?? []
+    const hasUsages = source.match(/expandedToolIds(?:\.value)?\.has\([^)]*\)/g) ?? []
     expect(hasUsages.length).toBeGreaterThan(0)
     for (const usage of hasUsages) {
       expect(usage).toMatch(/toolExpandKey\(msg, groupIndex, idx\)/)
@@ -58,14 +56,16 @@ describe('expandedToolIds — stable per-message keys (source contract)', () => 
 
   it('tool-group v-for keys by message id, not array index', async () => {
     const source = await readChatViewSource()
-    // The tool group MUST v-for with a stable key:
-    //   `:key="msg.id || msg.tool_call_id || ..."`
-    // It MUST NOT be just `:key="idx"`.
-    expect(source).toMatch(
-      /v-for="\(msg, idx\) in group\.messages"\s*\n\s*:key="msg\.id \|\| msg\.tool_call_id \|\| `t-\$\{groupIndex\}-\$\{idx\}`"/,
+    // The tool group MUST v-for with a stable key. The cards carry the
+    // per-message key the helper built, so the key is the message id (or the
+    // tool_call_id) and never the array index.
+    expect(source).toMatch(/v-for="\(card, idx\) in toolCardsFor\(group, groupIndex\)"/)
+    expect(source).toMatch(/expandKey: toolExpandKey\(msg, groupIndex, idx\)/)
+    const groupBlock = source.slice(
+      source.indexOf('v-for="(card, idx) in toolCardsFor(group, groupIndex)"'),
+      source.indexOf('v-for="(card, idx) in toolCardsFor(group, groupIndex)"') + 200,
     )
-    expect(source).not.toMatch(
-      /v-for="\(msg, idx\) in group\.messages"\s*\n\s*:key="idx"/,
-    )
+    expect(groupBlock).toContain(':key="card.expandKey"')
+    expect(groupBlock).not.toContain(':key="idx"')
   })
 })

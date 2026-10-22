@@ -18,7 +18,16 @@ export interface PabrikGeneralSettings {
   /** Serve this same UI in the system browser on a random local port.
    * Mirrors `PabrikConfig.web_launch_enabled`. Default false. */
   web_launch_enabled: boolean
+  /** How the chat draws tool calls. Mirrors `PabrikConfig.chat_view`.
+   * Default "dev". */
+  chat_view: 'dev' | 'compact'
 }
+
+/** The two chat view modes, in the order they are drawn. */
+const CHAT_VIEW_OPTIONS = [
+  { value: 'dev', label: 'Dev' },
+  { value: 'compact', label: 'Compact' },
+] as const
 
 const model = defineModel<PabrikGeneralSettings>({ required: true })
 
@@ -194,6 +203,50 @@ function onRetryDelayChange(event: Event) {
           style="background-color: var(--semantic-sidebar-bg); border: 1px solid var(--color-border); color: var(--semantic-text);"
           @click="emit('copy-web')"
         >Copy</button>
+      </div>
+    </div>
+
+    <!-- Chat view card -->
+    <div
+      class="rounded-lg p-5 space-y-3"
+      style="background-color: var(--semantic-content-bg); border: 1px solid var(--color-border);"
+    >
+      <div class="flex items-center gap-2">
+        <UiIcon name="cards" size-class="w-4 h-4" />
+        <h3 class="text-body font-semibold" style="color: var(--semantic-text);">Chat view</h3>
+      </div>
+
+      <div class="flex items-start gap-3" data-testid="row-chat-view">
+        <div class="flex-1 min-w-0">
+          <div class="text-body font-medium" style="color: var(--semantic-text);">Tool calls</div>
+          <div class="text-dense mt-0.5" style="color: var(--semantic-text-muted);">
+            Compact folds a run of tool calls into one card. Dev keeps a full card for every call.
+          </div>
+        </div>
+        <div
+          class="flex gap-0.5 p-0.5 rounded-lg shrink-0"
+          role="radiogroup"
+          aria-label="Chat view"
+          style="background-color: var(--semantic-content-bg); border: 1px solid var(--color-border);"
+        >
+          <button
+            v-for="option in CHAT_VIEW_OPTIONS"
+            :key="option.value"
+            type="button"
+            role="radio"
+            :aria-checked="model.chat_view === option.value"
+            :data-testid="`chat-view-${option.value}`"
+            class="px-3 py-1 rounded-md text-dense font-medium transition-all duration-200"
+            :style="
+              model.chat_view === option.value
+                ? 'background-color: var(--semantic-active-bg); color: var(--semantic-active-text);'
+                : 'color: var(--semantic-text-muted);'
+            "
+            @click="model = { ...model, chat_view: option.value }"
+          >
+            {{ option.label }}
+          </button>
+        </div>
       </div>
     </div>
 

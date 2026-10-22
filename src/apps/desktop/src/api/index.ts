@@ -3803,6 +3803,9 @@ export interface PabrikConfig {
    * advertises the same UI in the system browser (URL pill + auto-open) and the server defaults to
    * a random local port at startup. Defaults to `false` when absent (matches `LlmConfigJson`). */
   web_launch_enabled?: boolean
+  /** How the chat draws tool calls: "dev" keeps a card per call, "compact" folds a run of calls
+   * into one card. Defaults to "dev" when absent (matches `LlmConfigJson`). */
+  chat_view?: 'dev' | 'compact' 
   // Per-profile compaction overrides (`max_capacity_tokens` /
   // `compaction_threshold_percent`) live on `PabrikAgent` (Chunk
   // 7.6) and remain there. Both layers coexist.

@@ -22,7 +22,6 @@ import {
   renderResponse,
   hasRichBlocks,
   extractRichBlocks,
-  toolPayloadPreview,
   CHAT_HTML_FRAME_RESIZE_SOURCE,
   autoResizeScript,
   growFrameToContent,
@@ -78,43 +77,11 @@ import {
   type SubAgentProgressEvent,
   type SubAgentProgressMap,
 } from '../../helpers/subagentProgress'
-import AskUser from '../tool_outputs/AskUser.vue'
-import DiffView from '../tool_outputs/_shared/DiffView.vue'
-import ReadFile from '../tool_outputs/ReadFile.vue'
-import WriteFile from '../tool_outputs/WriteFile.vue'
-import UpdateActivity from '../preview/UpdateActivity.vue'
-import Search from '../tool_outputs/Search.vue'
-import Glob from '../preview/Glob.vue'
-import TextReplace from '../tool_outputs/TextReplace.vue'
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- used in <template> as <Bash> (~line 2507); typescript-eslint doesn't always see template usages via the Vue parser
 import Bash from '../preview/Bash.vue'
 import ShellTool from '../preview/ShellTool.vue'
-import UseSkill from '../preview/UseSkill.vue'
-import SearchSkills from '../tool_outputs/SearchSkills.vue'
-import AddSkill from '../tool_outputs/AddSkill.vue'
-import EditSkill from '../tool_outputs/EditSkill.vue'
-import RemoveSkill from '../tool_outputs/RemoveSkill.vue'
-import RemoveFile from '../tool_outputs/RemoveFile.vue'
-import SpawnSubAgent from '../tool_outputs/SpawnSubAgent.vue'
-import GenerateImage from '../tool_outputs/GenerateImage.vue'
-import WebSearch from '../tool_outputs/WebSearch.vue'
-import ListSearchProviders from '../tool_outputs/ListSearchProviders.vue'
-import SetGitWorktree from '../tool_outputs/SetGitWorktree.vue'
-import SetPullRequest from '../tool_outputs/SetPullRequest.vue'
-import ReadCompactedMessages from '../tool_outputs/ReadCompactedMessages.vue'
-import KanbanMove from '../tool_outputs/KanbanMove.vue'
-import KanbanList from '../tool_outputs/KanbanList.vue'
-import ListDirectory from '../tool_outputs/ListDirectory.vue'
-import SaveMemory from '../tool_outputs/SaveMemory.vue'
-import LoadMemory from '../tool_outputs/LoadMemory.vue'
-import UpdatePlan from '../tool_outputs/UpdatePlan.vue'
-import GetPlan from '../tool_outputs/GetPlan.vue'
-import ListAgents from '../tool_outputs/ListAgents.vue'
-import UsedTools from '../tool_outputs/UsedTools.vue'
-import PresentFiles from '../tool_outputs/PresentFiles.vue'
-import ReadWorkspaceSession from '../tool_outputs/ReadWorkspaceSession.vue'
-import McpTool from '../tool_outputs/McpTool.vue'
-import ProgressiveTool from '../tool_outputs/ProgressiveTool.vue'
+import ToolCard, { type ToolCardData } from '../tool_outputs/ToolCard.vue'
+import CompactToolGroup from '../tool_outputs/compact/CompactToolGroup.vue'
 import SubAgentPeekHost from '../pabrik/SubAgentPeekHost.vue'
 import ChatRightSidebar from './chat_right_sidebar/ChatRightSidebar.vue'
 import ChatAppBar from './ChatAppBar.vue'
@@ -129,6 +96,7 @@ import type { DiffSelection } from './chat_right_sidebar/parseUnifiedDiff'
 import { useChatRightSidebar } from './chat_right_sidebar/useChatRightSidebar'
 import { useNavigationStore } from '../../stores/navigation'
 import { useAgentErrorStore } from '../../stores/agentError'
+import { useChatViewStore, chatViewModeFrom } from '../../stores/chatView'
 import type { AgentErrorEntry } from '../../stores/agentError'
 import { useInjectCodeViewer, useInjectOpenInCodeEditor } from '@/composables/useCodeEditor'
 import type { CodeViewerView } from '@/composables/useCodeEditor'
@@ -1115,6 +1083,10 @@ const loadAgents = async () => {
     // `pabrik_config_put.zig`).
     const raw = (config as { active_profile?: string | null }).active_profile
     activeAgent.value = raw && raw.length > 0 ? raw : null
+    // How the chat draws tool calls. The config this chat already fetched
+    // is the effective one (the workspace overlay merged over the user
+    // config), so the mode is the one that runs here.
+    chatView.setMode(chatViewModeFrom(config))
   } catch (err) {
     console.error('Failed to load agents:', err)
     availableAgents.value = []
@@ -1289,6 +1261,9 @@ const subAgentProgressMap = ref<SubAgentProgressMap>({})
 // diagnostics. Fed by `full` SSE events with is_error=true (workflow.zig's 3 diagnostic sites —
 // never persisted, is_skip_db=true).
 const agentErrorStore = useAgentErrorStore()
+// How the chat draws tool calls. The mode lives in config.json; the store is
+// the app's copy of it.
+const chatView = useChatViewStore()
 // Per-session derived read. Reads from the store (keyed by sessionId) so the card survives ChatView
 // remounts caused by AppLayout's :key="activeChatId" or StandardTaskChatView's
 // :key="chat-${task.id}" on session/task switches.
@@ -1568,6 +1543,20 @@ const innerToolData = (m: Message): unknown => {
 const getParametersForMessage = (m: Message): string => {
   return unwrappedByMessageId.value.get(m.id)?.parameters ?? '{}'
 }
+
+/** The cards of one tool group, in order. Both views draw the same cards. */
+const toolCardsFor = (group: MessageGroup, groupIndex: number): ToolCardData[] =>
+  group.messages.map((msg, idx) => ({
+    message: msg,
+    content: innerToolData(msg),
+    parameters: getParametersForMessage(msg),
+    expanded: expandedToolIds.value.has(toolExpandKey(msg, groupIndex, idx)),
+    expandKey: toolExpandKey(msg, groupIndex, idx),
+    subAgentProgress: msg.tool_call_id
+      ? (subAgentProgressMap.value[msg.tool_call_id] ?? null)
+      : null,
+    subAgentArgs: findSubAgentArgsForToolGroup(msg.tool_call_id, messageGroups.value, groupIndex),
+  }))
 
 const isBgUserMsg = (m: { content?: string }): boolean =>
   !!m.content && isBackgroundCommandOutput(m.content)
@@ -4069,369 +4058,29 @@ const compactSession = async () => {
 
                     <!-- ── Tool ── -->
                     <template v-else-if="group.role === 'tool'">
-                      <div class="tool-sequence">
-                        <div
-                          v-for="(msg, idx) in group.messages"
-                          :key="msg.id || msg.tool_call_id || `t-${groupIndex}-${idx}`"
-                          class="tool-item"
+                      <CompactToolGroup
+                        v-if="chatView.mode === 'compact'"
+                        :cards="toolCardsFor(group, groupIndex)"
+                        :cwd="sessionCwd"
+                        :session-id="sessionId || chatId"
+                        @toggle-expand="toggleToolExpanded"
+                        @peek="nav.openPeek"
+                        @jump-to-line="handleFallbackJumpToLine"
+                        @open-session="onOpenWorkspaceSession"
+                      />
+                      <div v-else class="tool-sequence">
+                        <ToolCard
+                          v-for="(card, idx) in toolCardsFor(group, groupIndex)"
+                          :key="card.expandKey"
+                          v-bind="card"
                           :class="idx < group.messages.length - 1 ? 'tool-item-border' : ''"
-                        >
-                          <ReadFile
-                            v-if="msg.tool_name === 'read_file'"
-                            :content="innerToolData(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                            :cwd="sessionCwd"
-                            :parameters="getParametersForMessage(msg)"
-                          />
-                          <WriteFile
-                            v-else-if="msg.tool_name === 'write_file'"
-                            :content="innerToolData(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                            :cwd="sessionCwd"
-                            :parameters="getParametersForMessage(msg)"
-                          />
-                          <UpdateActivity
-                            v-else-if="msg.tool_name === 'update_activity'"
-                            :content="innerToolData(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                            :parameters="getParametersForMessage(msg)"
-                          />
-                          <Search
-                            v-else-if="msg.tool_name === 'search'"
-                            :content="innerToolData(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                            :cwd="sessionCwd"
-                            :parameters="getParametersForMessage(msg)"
-                          />
-                          <ReadWorkspaceSession
-                            v-else-if="msg.tool_name === 'read_workspace_session'"
-                            :content="innerToolData(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                            :parameters="getParametersForMessage(msg)"
-                            @open-session="onOpenWorkspaceSession"
-                          />
-                          <Glob
-                            v-else-if="msg.tool_name === 'glob'"
-                            :content="innerToolData(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                            :cwd="sessionCwd"
-                            :parameters="getParametersForMessage(msg)"
-                          />
-                          <TextReplace
-                            v-else-if="msg.tool_name === 'text_replace'"
-                            :content="innerToolData(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                            :diffview-before="msg.diffview_before"
-                            :diffview-after="msg.diffview_after"
-                            :cwd="sessionCwd"
-                            :parameters="getParametersForMessage(msg)"
-                          />
-                          <ShellTool
-                            v-else-if="
-                              msg.tool_name === 'bash' ||
-                              msg.tool_name === 'pwsh' ||
-                              msg.tool_name === 'run_command' ||
-                              msg.tool_name === 'command'
-                            "
-                            :tool-name="
-                              msg.tool_name === 'pwsh'
-                                ? 'pwsh'
-                                : msg.tool_name === 'command'
-                                  ? 'command'
-                                  : 'bash'
-                            "
-                            :content="innerToolData(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                            :parameters="getParametersForMessage(msg)"
-                          />
-                          <UseSkill
-                            v-else-if="msg.tool_name === 'use_skill'"
-                            :content="innerToolData(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                            :parameters="getParametersForMessage(msg)"
-                          />
-                          <SearchSkills
-                            v-else-if="msg.tool_name === 'search_skills'"
-                            :content="innerToolData(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                            :parameters="getParametersForMessage(msg)"
-                          />
-                          <AddSkill
-                            v-else-if="msg.tool_name === 'add_skill'"
-                            :content="innerToolData(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                            :parameters="getParametersForMessage(msg)"
-                          />
-                          <EditSkill
-                            v-else-if="msg.tool_name === 'edit_skill'"
-                            :content="innerToolData(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                            :parameters="getParametersForMessage(msg)"
-                          />
-                          <RemoveSkill
-                            v-else-if="msg.tool_name === 'remove_skill'"
-                            :content="innerToolData(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                            :parameters="getParametersForMessage(msg)"
-                          />
-                          <RemoveFile
-                            v-else-if="msg.tool_name === 'remove_file'"
-                            :content="innerToolData(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                            :cwd="sessionCwd"
-                            :parameters="getParametersForMessage(msg)"
-                          />
-                          <SpawnSubAgent
-                            v-else-if="msg.tool_name === 'spawn_sub_agent'"
-                            :content="innerToolData(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                            :sub-agent-args="
-                              findSubAgentArgsForToolGroup(
-                                msg.tool_call_id,
-                                messageGroups,
-                                groupIndex,
-                              )
-                            "
-                            :progress="
-                              msg.tool_call_id ? subAgentProgressMap[msg.tool_call_id] : null
-                            "
-                            :parameters="getParametersForMessage(msg)"
-                            @peek="nav.openPeek($event)"
-                          />
-                          <SetGitWorktree
-                            v-else-if="msg.tool_name === 'set_git_worktree'"
-                            :content="innerToolData(msg)"
-                            :parameters="getParametersForMessage(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                          />
-                          <SetPullRequest
-                            v-else-if="msg.tool_name === 'set_pull_request'"
-                            :content="innerToolData(msg)"
-                            :parameters="getParametersForMessage(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                          />
-                          <ReadCompactedMessages
-                            v-else-if="msg.tool_name === 'read_compacted_messages'"
-                            :content="innerToolData(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                            :parameters="getParametersForMessage(msg)"
-                          />
-                          <KanbanMove
-                            v-else-if="msg.tool_name === 'kanban_move_task'"
-                            :content="innerToolData(msg)"
-                            :parameters="getParametersForMessage(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                          />
-                          <KanbanList
-                            v-else-if="msg.tool_name === 'kanban_list'"
-                            :content="innerToolData(msg)"
-                            :parameters="getParametersForMessage(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                          />
-                          <ListDirectory
-                            v-else-if="msg.tool_name === 'list_directory'"
-                            :content="innerToolData(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                            :cwd="sessionCwd"
-                            :parameters="getParametersForMessage(msg)"
-                          />
-                          <SaveMemory
-                            v-else-if="msg.tool_name === 'save_memory'"
-                            :content="innerToolData(msg)"
-                            :parameters="getParametersForMessage(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                          />
-                          <LoadMemory
-                            v-else-if="msg.tool_name === 'load_memory'"
-                            :content="innerToolData(msg)"
-                            :parameters="getParametersForMessage(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                          />
-                          <!--
-                            `update_plan` + `get_plan` (Task 8 — optional UI).
-                            These render the agent's per-session task plan as
-                            a checklist card. Both components parse the
-                            inner envelope themselves and extract the plan
-                            body from the canonical `<plan><![CDATA[...]]></plan>`
-                            block — no `parameters` prop threading needed.
-                            Self-contained (no `expanded` from the dispatcher
-                            — local toggle is enough for an optional UI).
-                          -->
-                          <UpdatePlan v-else-if="msg.tool_name === 'update_plan'" :message="msg" />
-                          <GetPlan v-else-if="msg.tool_name === 'get_plan'" :message="msg" />
-                          <ListAgents
-                            v-else-if="msg.tool_name === 'list_agents'"
-                            :message="msg"
-                          />
-                          <!--
-                            `used_tools` is the "what do I already have"
-                            counterpart to `search_tool` ("what else exists").
-                            Its payload is a flat name/description list, so it
-                            renders as a dedicated card instead of dumping
-                            `{"count":10,"tools":[…]}` into the generic
-                            fallback.
-                          -->
-                          <UsedTools v-else-if="msg.tool_name === 'used_tools'" :message="msg" />
-                          <!--
-                            `present_files` renders one inline-preview
-                            section per file (images full-width, html in
-                            a sandboxed iframe, text via the shared
-                            renderer, pdf/video/audio native) plus a
-                            download action. Cookie-based auth, so plain
-                            `<a href>` / `<img src>` / `<iframe src>`
-                            carry credentials. Expanded by default: the
-                            files ARE the answer, so the set tracks
-                            user-collapsed rows (inverted vs the other
-                            cards that track user-expanded rows).
-                          -->
-                          <PresentFiles
-                            v-else-if="msg.tool_name === 'present_files'"
-                            :content="innerToolData(msg)"
-                            :session-id="sessionId || chatId"
-                            :cwd="sessionCwd"
-                            :parameters="getParametersForMessage(msg)"
-                            :expanded="!expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                          />
-                          <!--
-                            `generate_image` is expandable. The card shows
-                            the prompt + model + size + saved file paths;
-                            the agent's NEXT tool call is `present_files`
-                            with `files=[{path=<image.path>}]` which renders
-                            the image inline. This component is informational
-                            metadata only.
-                          -->
-                          <GenerateImage
-                            v-else-if="msg.tool_name === 'generate_image'"
-                            :content="innerToolData(msg)"
-                            :parameters="getParametersForMessage(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                          />
-                          <!--
-                            `web_search` + `list_web_search_providers`.
-                            The provider's answer is UNTYPED passthrough
-                            (D13), so the search card renders one
-                            convention — a top-level `results` array — and
-                            pretty-prints anything else. The listing card
-                            shows each provider's curl TEMPLATE, which
-                            carries `{key}` and never the key itself.
-                          -->
-                          <WebSearch
-                            v-else-if="msg.tool_name === 'web_search'"
-                            :content="innerToolData(msg)"
-                            :parameters="getParametersForMessage(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                          />
-                          <ListSearchProviders
-                            v-else-if="msg.tool_name === 'list_web_search_providers'"
-                            :content="innerToolData(msg)"
-                            :parameters="getParametersForMessage(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                          />
-                          <!--
-                            Universal MCP card: ANY `mcp_*` tool (graphify, db,
-                            context7, future servers) renders here — never in
-                            the DiffView fallback below. The name check uses
-                            startsWith so new servers work with zero template
-                            changes.
-                          -->
-                          <AskUser
-                            v-else-if="msg.tool_name === 'ask_user'"
-                            :content="innerToolData(msg)"
-                            :parameters="getParametersForMessage(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                            :session-id="sessionId || chatId"
-                          />
-                          <McpTool
-                            v-else-if="msg.tool_name?.startsWith('mcp_')"
-                            :content="innerToolData(msg)"
-                            :tool-name="msg.tool_name ?? 'mcp_tool'"
-                            :parameters="getParametersForMessage(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                          />
-                          <!--
-                            Progressive discovery card: `search_tool` /
-                            `view_tool` / `use_tool` render here — never in
-                            the generic fallback below. Same expandable
-                            ToolCardHeader pattern as McpTool/ListDirectory.
-                          -->
-                          <ProgressiveTool
-                            v-else-if="
-                              msg.tool_name === 'search_tool' ||
-                              msg.tool_name === 'view_tool' ||
-                              msg.tool_name === 'use_tool'
-                            "
-                            :content="innerToolData(msg)"
-                            :tool-name="msg.tool_name ?? 'search_tool'"
-                            :parameters="getParametersForMessage(msg)"
-                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                          />
-                          <div v-else class="tool-expandable">
-                            <button
-                              class="tool-summary"
-                              @click="toggleToolExpanded(toolExpandKey(msg, groupIndex, idx))"
-                              :style="[
-                                'cursor: pointer; padding: 2px 4px; border-radius: 4px; transition: background-color 0.15s; text-align: left; width: 100%; border: none; background: transparent; font: inherit; color: inherit;',
-                                expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))
-                                  ? 'border-bottom: 1px dashed var(--color-border);'
-                                  : '',
-                              ]"
-                            >
-                              <span
-                                v-html="
-                                  renderResponse(
-                                    msg.content,
-                                    msg.role,
-                                    msg.tool_name,
-                                    msg.diffview_before,
-                                    msg.diffview_after,
-                                    msg.finish_reason,
-                                    msg.tool_calls_json,
-                                  )
-                                "
-                              ></span>
-                            </button>
-                            <div
-                              v-if="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
-                              class="tool-full-content"
-                            >
-                              <!--
-                                Render the diff only when at least one side
-                                has content. Both-empty (e.g. legacy MCP rows
-                                whose COALESCE'd "" diffview fields reach the
-                                wire) renders nothing — the previous
-                                `!== undefined` check treated "" as present
-                                and showed a "(no content)" / "(no content)"
-                                frame (see mcp_graphify_graph_stats bug).
-                                Empty-before or empty-after alone still
-                                renders so "new file" / "all deleted" stays
-                                visible.
-                              -->
-                              <DiffView
-                                v-if="msg.diffview_before || msg.diffview_after"
-                                :before="msg.diffview_before ?? ''"
-                                :after="msg.diffview_after ?? ''"
-                                :file-path="msg.tool_name"
-                                @jump-to-line="handleFallbackJumpToLine"
-                              />
-                              <!--
-                                No diff, no card: this is a tool with no
-                                registered output component, so the payload
-                                itself is the content. Pretty-printed and
-                                capped by the helper (a legacy `add_element`
-                                row reaches 52 KB). Before this, expanding an
-                                unregistered tool showed a PREVIEW of the
-                                payload or, with no diffview columns, an
-                                entirely empty body.
-                              -->
-                              <pre
-                                v-else-if="toolPayloadPreview(msg.content)"
-                                class="tool-payload text-dense font-mono whitespace-pre-wrap break-all px-2 py-1.5 m-0"
-                                :style="{ color: 'var(--semantic-text-dim)' }"
-                                data-testid="tool-payload-preview"
-                                >{{ toolPayloadPreview(msg.content) }}</pre>
-                            </div>
-                          </div>
-                        </div>
+                          :cwd="sessionCwd"
+                          :session-id="sessionId || chatId"
+                          @toggle-expand="toggleToolExpanded"
+                          @peek="nav.openPeek"
+                          @jump-to-line="handleFallbackJumpToLine"
+                          @open-session="onOpenWorkspaceSession"
+                        />
                       </div>
                     </template>
 
