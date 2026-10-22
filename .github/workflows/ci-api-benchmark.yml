@@ -14,7 +14,7 @@ on:
         default: '/health'
       min_scaling:
         description: 'gate: throughput at cN divided by throughput at c1'
-        default: '1.2'
+        default: '2.0'
       strict:
         description: 'a performance-gate miss fails the run'
         type: boolean
@@ -123,7 +123,7 @@ jobs:
           requests="${requests:-2000}"
           concurrency="${concurrency:-8}"
           route="${route:-/health}"
-          min_scaling="${min_scaling:-1.2}"
+          min_scaling="${min_scaling:-2.0}"
           strict="${strict:-false}"
           case "$requests" in ''|*[!0-9]*) echo "::error::requests must be a positive integer"; exit 1 ;; esac
           case "$concurrency" in ''|*[!0-9]*) echo "::error::concurrency must be a positive integer"; exit 1 ;; esac

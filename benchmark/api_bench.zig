@@ -14,9 +14,9 @@ pub const Config = struct {
     warmup: usize = 200,
     ready_timeout_ms: u64 = 120_000,
     recv_timeout_ms: u64 = 30_000,
-    min_scaling: f64 = 1.2,
-    max_p99_ms: f64 = 50.0,
-    min_rps: f64 = 200.0,
+    min_scaling: f64 = 2.0,
+    max_p99_ms: f64 = 5.0,
+    min_rps: f64 = 2000.0,
     strict: bool = false,
     profile: []const u8 = "",
     server_cpuset: []const u8 = "",
@@ -981,7 +981,7 @@ fn writeFile(io: std.Io, path: []const u8, contents: []const u8) !void {
 fn usage(io: std.Io) !void {
     const text =
         \\usage: api-bench --port <n> [--route /health] [--requests 2000] [--concurrency 8]
-        \\                 [--warmup 200] [--min-scaling 1.2] [--max-p99-ms 50] [--min-rps 200]
+        \\                 [--warmup 200] [--min-scaling 2] [--max-p99-ms 5] [--min-rps 2000]
         \\                 [--strict] [--profile name] [--server-cpuset 0,1] [--client-cpuset 2,3]
         \\                 [--memory-mb 2048] [--server-binary-sha256 hex]
         \\                 [--json path] [--markdown path]

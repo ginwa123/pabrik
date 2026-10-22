@@ -57,12 +57,17 @@ catch a catastrophic regression. All three are warnings unless the run is strict
 (`API_BENCH_STRICT=1`, or the `strict` input on the workflow dispatch); the functional checks are
 always enforced.
 
+On a GitHub-hosted runner (4 vCPU, the `dedicated-2cpu` profile):
+
 ```
 | gate | kind | value | limit | ok |
-| scaling.throughput | performance | 1.651 | 1.200 | yes |
-| latency.p99_c1 | performance | 0.071 | 50.000 | yes |
-| throughput.cN | performance | 30501.7 | 200.0 | yes |
+| scaling.throughput | performance | 6.132 | 2.000 | yes |
+| latency.p99_c1 | performance | 0.093 | 5.000 | yes |
+| throughput.cN | performance | 84958.400 | 2000.000 | yes |
 ```
+
+The limits are set an order of magnitude away from that baseline on purpose: this gate exists to
+catch a collapse, not to police a percentage.
 
 ## kabelweb closes a connection every 1000 requests
 
