@@ -47,9 +47,17 @@ profile print the same digest:
 deterministic result digest `…` — identical on every run of this profile, timing excluded
 ```
 
-Measured over five local runs: one digest, one body fingerprint, `rps` between 17.5k and 57k
-depending on what else the host was doing. A run with 12 CPU hogs on the box produced the same
-digest and a red *performance* gate — which is the intended split.
+Two runs of the same workflow on GitHub-hosted runners, six hours apart and 2x apart in
+throughput, printed the same digest and the same fingerprint:
+
+| run | c1 p50 | c1 rps | cN rps | digest |
+| --- | --- | --- | --- | --- |
+| first | 0.073 ms | 13855 | 84958 | `4306a02e…` |
+| second | 0.095 ms | 10539 | 40415 | `4306a02e…` |
+
+and a local run with 12 CPU hogs on the box moved rps from 37k to 18k, turned
+`scaling.throughput` red, and left the digest byte-identical. That is the intended split: the
+machine decides the numbers, never the verdict.
 
 **Advisory.** `scaling.throughput` is `throughput(cN) / throughput(c1)`, a ratio, so machine speed
 cancels out of it. `latency.p99_c1` and `throughput.cN` are deliberately loose ceilings that only
