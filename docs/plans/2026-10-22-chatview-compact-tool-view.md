@@ -52,9 +52,9 @@ ran eight tools is eight bordered rows, and the agent's answer ends up below the
 unchanged.** The only thing Compact does is fold a run of calls:
 
 - the run of consecutive tool calls (which the chat already groups into one `tool` group) is drawn
-  as **one group card** in the shape of a dev card: the violet name is `8 tool calls`, the dim
-  primary is the list of the tools in the run, and the right-hand badges are the run's summary
-  (`1 failed`, `1 write`);
+  as **one group card** in the shape of a dev card: the violet name is `8 tool calls` and the
+  right-hand badges are the run's summary (`1 failed`, `1 write`). It does not list the tools of the
+  run: once the run is folded, the names are noise and the counts are what you read;
 - clicking the group card unfolds the **dev cards**, one per call, in the same order;
 - a failed call keeps its place in the run, marked in red, and the group card says how many failed;
 - a group that holds an `ask_user` starts open, because that is the one call the human has to act
@@ -62,8 +62,8 @@ unchanged.** The only thing Compact does is fold a run of calls:
 - a running call is counted in the group card too, so a long call never looks like a call that never
   happened.
 
-Measured on the wireframe: folded, the tool block is **39px** against **311px** in the dev view for
-the same eight calls, so **8 times shorter**: one card for all eight calls. Unfolded it is 359px
+Measured on the wireframe: folded, the tool block is **24px** against **311px** in the dev view for
+the same eight calls, so **13 times shorter**: one card for all eight calls. Unfolded it is 344px
 and 9 cards, the same eight cards plus the group card on top.
 
 ### What this means for the implementation
@@ -161,8 +161,9 @@ apart: there is one chain and one card, drawn by two views.
 New file `src/apps/desktop/src/components/tool_outputs/compact/CompactToolGroup.vue`:
 
 - **the group card** — the shape of a dev card (`.chat-tool-card`): the violet name is
-  `N tool calls`, the dim primary is the tool names of the run, the right-hand badges are
-  `N failed`, `N running` and `N write`, and the `+`/`−` toggles the fold;
+  `N tool calls`, the right-hand badges are `N failed`, `N running` and `N write`, and the
+  `+`/`−` toggles the fold. It does not list the tools of the run: the names are noise once the
+  run is folded, and the counts are what you read;
 - **the fold** — the group's messages rendered as `ToolCard`s, in order, hidden by default;
 - **the open-by-default rule** — a group that holds an `ask_user` starts open.
 
@@ -171,7 +172,6 @@ The aggregates come from what the transcript already carries, and nothing more:
 | the badge | where it comes from |
 | --- | --- |
 | the number of calls | the size of the `tool` group |
-| the tool names | `msg.tool_name` on each message |
 | the number of failures | the envelope's `success: false` (`helpers/unwrapToolOutput.ts:57` returns `success` and `error`) |
 | the number of writes | the tool names `write_file`, `text_replace`, `remove_file` |
 | the number of running calls | an empty envelope with a known argument, the same test the shell card uses |

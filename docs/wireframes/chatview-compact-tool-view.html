@@ -124,6 +124,7 @@
      summary; the cards behind it ARE the dev cards, untouched. --- */
   [data-ui] .dcards { display: flex; flex-direction: column; gap: 10px; }
   [data-ui] .dgroup { cursor: pointer; }
+  [data-ui] .dmeta { margin-left: auto; display: flex; align-items: center; gap: 8px; }
   [data-ui] .dgroup:hover { border-left-color: var(--violet); }
   [data-ui] .grow { flex: 1; }
 
@@ -252,7 +253,7 @@
 
   <div class="readout" id="readout" aria-live="polite">
     <span class="rlabel">Measured from the two panes below</span>
-    <span id="readout-body">The tool block is 39px tall in Compact view and 311px in Dev view, so 8.0&times; shorter. Visible cards: 1 against 8, and the one card stands in for all 8 calls.</span>
+    <span id="readout-body">The tool block is 24px tall in Compact view and 311px in Dev view, so 13.0&times; shorter. Visible cards: 1 against 8, and the one card stands in for all 8 calls.</span>
   </div>
 
   <div class="grid2">
@@ -276,9 +277,10 @@
           >
             <div class="dhead">
               <code class="dtool">8 tool calls</code>
-              <code class="darg">read_file, search, command, write_file, read_file, command, present_files</code>
-              <span class="tag bad">1 failed</span>
-              <span class="tag">1 write</span>
+              <span class="dmeta">
+                <span class="tag bad">1 failed</span>
+                <span class="tag">1 write</span>
+              </span>
               <span class="plus" id="chev">+</span>
             </div>
           </div>
@@ -374,9 +376,10 @@
     <div class="dcard dgroup" style="margin: 2px 0 12px">
       <div class="dhead">
         <code class="dtool">8 tool calls</code>
-        <code class="darg">read_file, search, command, write_file, read_file, command, present_files</code>
-        <span class="tag bad">1 failed</span>
-        <span class="tag">1 write</span>
+        <span class="dmeta">
+          <span class="tag bad">1 failed</span>
+          <span class="tag">1 write</span>
+        </span>
         <span class="plus">+</span>
       </div>
     </div>
@@ -488,9 +491,9 @@
     There is no clip here that a video would honestly show.</p>
     <p><strong>Measured, not eyeballed.</strong> The read-out above is computed from
     <code>getBoundingClientRect()</code> in the same tick it prints. Folded, the compact pane's tool
-    block measures 39px against 311px in the dev pane, so 8.0&times; shorter: one card for all
-    eight calls. Unfolding it gives 359px and 9 cards, the same eight cards plus the group card on
-    top, and folding it back returns it to 39px. The eight cards behind the group card were also
+    block measures 24px against 311px in the dev pane, so 13.0&times; shorter: one card for all
+    eight calls. Unfolding it gives 344px and 9 cards, the same eight cards plus the group card on
+    top, and folding it back returns it to 24px. The eight cards behind the group card were also
     checked against the eight cards in the dev pane: the same tools, in the same order. The agent
     cannot look at a screenshot, so these DOM measurements are the evidence.</p>
   </div>
