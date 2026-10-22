@@ -118,6 +118,30 @@ Hand it to the account holder. The server only stores its bcrypt hash.
 temporary one and returns it. Every session that account had open is closed,
 so a session opened with the old password stops working.
 
+### Resizing a workspace's VM
+
+The console lists every workspace's microVM with the size it runs as, and can
+change it. **This needs a restart**, and that is Firecracker, not the UI:
+`machine-config` (vCPUs and RAM) is accepted only before `InstanceStart`, and
+there is no live disk resize. So a resize is: stop that workspace's VM, record
+the size it must boot with, start it again. The guest comes back in a few
+seconds; the processes inside it do not.
+
+| method | path | what it does |
+|---|---|---|
+| `GET` | `/api/admin/vms` | every workspace's VM: state, vCPUs, memory |
+| `POST` | `/api/admin/vms/:workspace/resize` | stop, resize, start |
+
+`POST` body: `{"vcpus": 2, "mem_mib": 1024}` — vCPUs `1..8`, memory
+`128..16384` MiB. The answer is the state the VM came back in (`ready`, or
+`failed` with the guest's reason). A host with no manager answers
+`503 NoVmManager` and the panel says so, instead of offering a control that
+cannot work.
+
+The size lives beside the VM: `pabrik-vmd` records it per workspace in
+`<root>/workspaces/<id>/vm.spec`, so the manager needs no database and a
+workspace with no record keeps the manager's defaults.
+
 ### The last owner
 
 An installation with no owner cannot be administered again, so the console

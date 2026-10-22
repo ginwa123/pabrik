@@ -214,6 +214,19 @@ input::placeholder { color: #8b949a; }
   color: var(--ink-2);
 }
 
+.vm-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vm-input {
+  width: 84px;
+  padding: 6px 8px;
+}
+
+.vm-state { color: var(--ink-2); }
+
 .credential { background: var(--accent-tint); }
 
 .credential-body { min-height: 88px; }

@@ -294,3 +294,99 @@ test "the_last_owner_cannot_be_switched_off" {
     defer patch.deinit();
     try testing.expectEqual(@as(u16, 409), patch.status);
 }
+
+// The VM panel answers on a host that runs no VMs: it says so rather than
+// failing, and it refuses a size outside the limits.
+test "vm_panel_reports_no_manager_and_refuses_a_bad_size" {
+    try harness.requirePabrikBin(io, gpa);
+    var h = try Harness.boot(io, gpa, .{});
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    };
+
+    {
+        var raw = try rawHttp(&h, .GET, "/api/admin/vms", null, null);
+        defer raw.deinit();
+        try testing.expectEqual(@as(u16, 200), raw.status);
+        var doc = try raw.json();
+        defer doc.deinit();
+        try testing.expectEqual(false, doc.boolean("manager").?);
+        try testing.expectEqual(@as(i64, 0), doc.int("count").?);
+        // The form is told what it may ask for.
+        const limits = doc.object("limits").?;
+        try testing.expectEqual(@as(i64, 1), limits.get("min_vcpus").?.integer);
+        try testing.expectEqual(@as(i64, 8), limits.get("max_vcpus").?.integer);
+    }
+    {
+        // A workspace the console lists comes back as TEXT, not as the row's
+        // bytes: the answer outlives the row it was read from.
+        var created = try rawHttp(&h, .POST, "/api/workspaces", "{\"name\":\"VM test\"}", null);
+        defer created.deinit();
+        try testing.expectEqual(@as(u16, 201), created.status);
+
+        var raw = try rawHttp(&h, .GET, "/api/admin/vms", null, null);
+        defer raw.deinit();
+        try testing.expectEqual(@as(u16, 200), raw.status);
+        var doc = try raw.json();
+        defer doc.deinit();
+        const listed = doc.array("vms").?.items;
+        try testing.expectEqual(@as(usize, 1), listed.len);
+        const name = listed[0].object.get("workspace_name").?;
+        switch (name) {
+            .string => |text| try testing.expectEqualStrings("VM test", text),
+            else => return error.WorkspaceNameIsNotAString,
+        }
+    }
+    {
+        // A size in range on a host with no manager: 503, not a silent no-op.
+        var raw = try rawHttp(&h, .POST, "/api/admin/vms/ws_1/resize", "{\"vcpus\":2,\"mem_mib\":1024}", null);
+        defer raw.deinit();
+        try testing.expectEqual(@as(u16, 503), raw.status);
+    }
+    {
+        // A size outside the limits is refused before the manager is asked.
+        var raw = try rawHttp(&h, .POST, "/api/admin/vms/ws_1/resize", "{\"vcpus\":99,\"mem_mib\":1024}", null);
+        defer raw.deinit();
+        try testing.expectEqual(@as(u16, 400), raw.status);
+        var doc = try raw.json();
+        defer doc.deinit();
+        try testing.expectEqualStrings("vcpus must be 1..8", doc.str("error").?);
+    }
+}
+
+// The VM panel is the owner's: 401 without a session, 403 for a non-owner.
+test "vm_panel_refuses_anonymous_and_non_owners" {
+    try harness.requirePabrikBin(io, gpa);
+    var h = try bootAuth();
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    };
+
+    {
+        var raw = try rawHttp(&h, .GET, "/api/admin/vms", null, null);
+        defer raw.deinit();
+        try testing.expectEqual(@as(u16, 401), raw.status);
+    }
+
+    try createAdmin(h.temp_dir, "owner@example.com", "supersecret123");
+    const owner_cookie = try login(&h, "owner@example.com", "supersecret123");
+    defer gpa.free(owner_cookie);
+
+    var created = try rawHttp(&h, .POST, "/api/admin/users",
+        \\{"email":"plain@example.com","name":"Plain","role":"user"}
+    , owner_cookie);
+    defer created.deinit();
+    try testing.expectEqual(@as(u16, 201), created.status);
+    var created_doc = try created.json();
+    defer created_doc.deinit();
+    const temporary = created_doc.str("temporary_password").?;
+
+    const plain_cookie = try login(&h, "plain@example.com", temporary);
+    defer gpa.free(plain_cookie);
+
+    {
+        var raw = try rawHttp(&h, .GET, "/api/admin/vms", null, plain_cookie);
+        defer raw.deinit();
+        try testing.expectEqual(@as(u16, 403), raw.status);
+    }
+}

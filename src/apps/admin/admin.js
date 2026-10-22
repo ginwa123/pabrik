@@ -5,6 +5,7 @@
 const endpoints = {
   overview: '/api/admin/overview',
   users: '/api/admin/users',
+  vms: '/api/admin/vms',
 };
 
 const el = (id) => document.getElementById(id);
@@ -133,6 +134,89 @@ function drawUsers(users) {
   el('accounts-empty').hidden = users.length !== 0;
 }
 
+function numberInput(id, value, min, max) {
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.className = 'vm-input';
+  input.value = String(value);
+  input.min = String(min);
+  input.max = String(max);
+  input.id = id;
+  return input;
+}
+
+function drawVms(vms, manager, limits) {
+  const body = el('vms-body');
+  body.textContent = '';
+  vms.forEach((vm) => {
+    const row = document.createElement('tr');
+
+    const name = cell(row, 'account-email');
+    name.textContent = vm.workspace_name || vm.workspace_id;
+
+    const state = cell(row, 'vm-state');
+    state.textContent = vm.last_error ? `${vm.state}: ${vm.last_error}` : vm.state;
+
+    const size = cell(row);
+    size.textContent = vm.vcpus ? `${vm.vcpus} vCPU / ${vm.mem_mib} MiB` : 'not running';
+
+    const action = cell(row);
+    if (manager) {
+      const form = document.createElement('div');
+      form.className = 'vm-form';
+      const vcpus = numberInput('', vm.vcpus || limits.min_vcpus, limits.min_vcpus, limits.max_vcpus);
+      const mem = numberInput('', vm.mem_mib || limits.min_mem_mib, limits.min_mem_mib, limits.max_mem_mib);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'button';
+      button.textContent = 'Restart with this size';
+      button.addEventListener('click', () => {
+        resizeVm(vm, Number(vcpus.value), Number(mem.value));
+      });
+      form.append(vcpus, mem, button);
+      action.appendChild(form);
+    }
+
+    body.appendChild(row);
+  });
+  el('vms-empty').hidden = vms.length !== 0;
+}
+
+async function loadVms() {
+  const panel = el('vms-panel');
+  try {
+    const data = await request(endpoints.vms);
+    panel.hidden = false;
+    el('vms-manager').textContent = data.manager
+      ? 'Changing vCPUs or memory restarts that workspace\'s VM: the guest comes back in a few seconds, the processes inside it do not.'
+      : 'No VM manager answered on this host, so there is nothing to size here.';
+    drawVms(data.vms || [], Boolean(data.manager), data.limits || { min_vcpus: 1, max_vcpus: 8, min_mem_mib: 128, max_mem_mib: 16384 });
+  } catch (error) {
+    // A console served by `pabrik-admin` has no manager routes at all.
+    panel.hidden = true;
+  }
+}
+
+async function resizeVm(vm, vcpus, mem_mib) {
+  const label = vm.workspace_name || vm.workspace_id;
+  try {
+    const result = await request(`${endpoints.vms}/${encodeURIComponent(vm.workspace_id)}/resize`, {
+      method: 'POST',
+      body: { vcpus: vcpus, mem_mib: mem_mib },
+    });
+    const ready = result.state === 'ready';
+    showNotice(
+      ready
+        ? `${label} is back with ${result.vcpus} vCPU / ${result.mem_mib} MiB.`
+        : `${label} did not come up: ${result.state} ${result.last_error}`,
+      !ready
+    );
+    await loadVms();
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+}
+
 function showCredential(email, password) {
   el('credential-for').textContent = email;
   el('credential-value').textContent = password;
@@ -156,6 +240,7 @@ async function refresh() {
     drawCounts(counts);
     drawUsers(list.users || []);
     clearNotice();
+    await loadVms();
   } catch (error) {
     showNotice(error.message, true);
   }

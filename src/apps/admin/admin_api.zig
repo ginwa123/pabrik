@@ -77,7 +77,7 @@ fn toJson(row: admin_store.UserRow) UserJson {
 
 const ErrorBody = struct { @"error": []const u8 };
 
-fn errorResponse(allocator: std.mem.Allocator, res: gserverz.HttpResponse, status: u16, message: []const u8) !gserverz.HttpResponse {
+pub fn errorResponse(allocator: std.mem.Allocator, res: gserverz.HttpResponse, status: u16, message: []const u8) !gserverz.HttpResponse {
     return res.jsonResponse(.{
         .status_code = status,
         .data = try std.json.Stringify.valueAlloc(allocator, ErrorBody{ .@"error" = message }, .{}),
@@ -87,7 +87,7 @@ fn errorResponse(allocator: std.mem.Allocator, res: gserverz.HttpResponse, statu
 /// The owner gate every admin endpoint opens with. A refusal is a real
 /// answer, so the error path may not be swallowed: an allocation failure
 /// must not turn into "allowed".
-fn ownerOnly(
+pub fn ownerOnly(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
     res: gserverz.HttpResponse,

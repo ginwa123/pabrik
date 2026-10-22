@@ -171,6 +171,10 @@ fn registerAdminRoutes(authed: *Group, router: *gserverz.router.Router) !void {
     try authed.post("/api/admin/users", pabrikcore.admin_app.adminUserCreateHandler);
     try authed.patch("/api/admin/users/:id", pabrikcore.admin_app.adminUserUpdateHandler);
     try authed.post("/api/admin/users/:id/password", pabrikcore.admin_app.adminUserPasswordHandler);
+
+    // The workspace VMs. `:workspace` is the workspace id, not a session id.
+    try authed.get("/api/admin/vms", ai_mod.http_handlers.adminVmsListHandler);
+    try authed.post("/api/admin/vms/:workspace/resize", ai_mod.http_handlers.adminVmResizeHandler);
 }
 
 fn registerMemoryRoutes(authed: *Group) !void {

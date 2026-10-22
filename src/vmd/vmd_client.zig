@@ -54,6 +54,9 @@ pub const WorkspaceState = struct {
     state: []u8,
     pid: i64,
     last_error: []u8,
+    /// The size the VM boots with. 0 when the daemon predates this field.
+    vcpus: u32 = 0,
+    mem_mib: u32 = 0,
 
     pub fn deinit(self: WorkspaceState, allocator: std.mem.Allocator) void {
         allocator.free(self.state);
@@ -204,6 +207,33 @@ pub const Client = struct {
                 .state = try self.allocator.dupe(u8, s.state),
                 .pid = s.pid,
                 .last_error = try self.allocator.dupe(u8, s.last_error),
+                .vcpus = s.vcpus,
+                .mem_mib = s.mem_mib,
+            },
+            .failure => |f| self.reportFailure(f),
+            else => Error.ProtocolViolation,
+        };
+    }
+
+    /// Change the size a workspace's VM runs with. Firecracker fixes vCPUs
+    /// and RAM at boot, so the daemon stops the VM and starts it again: this
+    /// call returns when the guest is up (or has failed, with its reason).
+    pub fn resize(self: *Client, workspace_id: []const u8, vcpus: u32, mem_mib: u32) !WorkspaceState {
+        var response = try self.call(.{
+            .action = .resize,
+            .id = self.takeId(),
+            .workspace_id = workspace_id,
+            .vcpus = vcpus,
+            .mem_mib = mem_mib,
+        }, long_call_guard_ms);
+        defer response.deinit();
+        return switch (response.value) {
+            .status => |s| .{
+                .state = try self.allocator.dupe(u8, s.state),
+                .pid = s.pid,
+                .last_error = try self.allocator.dupe(u8, s.last_error),
+                .vcpus = s.vcpus,
+                .mem_mib = s.mem_mib,
             },
             .failure => |f| self.reportFailure(f),
             else => Error.ProtocolViolation,

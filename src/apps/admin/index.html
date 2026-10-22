@@ -92,6 +92,23 @@
       <p class="empty" id="accounts-empty" hidden>This installation has no accounts yet.</p>
     </section>
 
+    <section class="panel" id="vms-panel" data-ui="vms" hidden>
+      <h2>Workspace VMs</h2>
+      <p class="panel-note" id="vms-manager">Every workspace runs in its own microVM.</p>
+      <table class="accounts">
+        <thead>
+          <tr>
+            <th scope="col">Workspace</th>
+            <th scope="col">State</th>
+            <th scope="col">Size</th>
+            <th scope="col"><span class="visually-hidden">Resize</span></th>
+          </tr>
+        </thead>
+        <tbody id="vms-body"></tbody>
+      </table>
+      <p class="empty" id="vms-empty" hidden>This installation runs no VMs.</p>
+    </section>
+
     <section class="panel credential" id="credential-panel" data-ui="credential">
       <h2>Handed out</h2>
       <p class="panel-note">The temporary password the console last handed out. Copy it, then clear it.</p>

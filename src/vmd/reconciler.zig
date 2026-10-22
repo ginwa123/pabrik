@@ -5,6 +5,7 @@
 const std = @import("std");
 const linux = std.os.linux;
 const policy = @import("policy.zig");
+const spec_store = @import("spec_store.zig");
 const vm_client = @import("vm_client.zig");
 
 pub const State = enum(u8) {
@@ -40,6 +41,7 @@ pub const Config = struct {
     kernel: []const u8,
     fc_bin: []const u8 = "firecracker",
     mem_mib: u32 = vm_client.default_mem_mib,
+    vcpus: u32 = vm_client.default_vcpus,
     boot_timeout_ms: u32 = vm_client.boot_timeout_ms,
     /// A VMM that has not answered `hello` within this window is `failed`, so
     /// a guest that never comes up cannot read as `starting` forever.
@@ -222,14 +224,18 @@ pub const Reconciler = struct {
         return .{ .allocator = allocator, .config = config };
     }
 
+    /// The size this workspace boots with: its own record when it has one,
+    /// the manager's defaults otherwise.
     pub fn specFor(self: *const Reconciler, workspace_id: []const u8) vm_client.Spec {
+        const override = spec_store.read(self.config.root, workspace_id);
         return .{
             .workspace_id = workspace_id,
             .base_image = self.config.base_image,
             .kernel = self.config.kernel,
             .fc_bin = self.config.fc_bin,
             .root = self.config.root,
-            .mem_mib = self.config.mem_mib,
+            .mem_mib = override.mem_mib orelse self.config.mem_mib,
+            .vcpus = override.vcpus orelse self.config.vcpus,
         };
     }
 
