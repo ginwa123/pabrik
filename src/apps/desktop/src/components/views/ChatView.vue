@@ -4847,6 +4847,11 @@ const compactSession = async () => {
   gap: 0.625rem;
 }
 
+/* The compact view's rows carry the same information in a tighter stack. */
+:deep(.tool-sequence-compact) {
+  gap: 0.125rem;
+}
+
 :deep(.tool-item) {
   padding: 0.125rem 0;
   width: 100%;
