@@ -3,6 +3,7 @@
 //! reset a password: the "forgot password" case.
 
 pub const admin_common = @import("admin_common.zig");
+pub const runtime = @import("runtime.zig");
 pub const admin_store = @import("admin_store.zig");
 pub const admin_api = @import("admin_api.zig");
 pub const admin_page = @import("admin_page.zig");
@@ -16,3 +17,12 @@ pub const adminUserPasswordHandler = admin_api.adminUserPasswordHandler;
 pub const adminPageHandler = admin_page.adminPageHandler;
 pub const adminCssHandler = admin_page.adminCssHandler;
 pub const adminJsHandler = admin_page.adminJsHandler;
+
+test {
+    // The console's own tests, for `zig build test` inside this folder.
+    _ = admin_common;
+    _ = admin_store;
+    _ = admin_api;
+    _ = admin_page;
+    _ = runtime;
+}

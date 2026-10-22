@@ -1,0 +1,33 @@
+.{
+    .name = .pabrik_admin,
+    .version = "0.0.0",
+    .fingerprint = 0x3063d2bbfff6b8e9,
+    .minimum_zig_version = "0.16.0",
+    // The two packages the console uses, taken from the copy the repo root
+    // already fetched into `zig-pkg/` (run `zig build` there once). Path
+    // dependencies are used in place, so building from this folder never
+    // unpacks vendored sources under `src/`, where the linter walks.
+    .dependencies = .{
+        .databases = .{
+            .path = "../../../zig-pkg/databases-0.0.0-vy-BCOOEBgA4OqXkX5PCHjXXN5TLeoEvXxUsou6ssolD",
+        },
+        .kabelweb = .{
+            .path = "../../../zig-pkg/kabelweb-0.0.0-vhZam0qGHQCzi7tg9e4tnQucLRoFxnrkXSsTjV_rBxal",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "main.zig",
+        "mod.zig",
+        "admin_api.zig",
+        "admin_common.zig",
+        "admin_page.zig",
+        "admin_store.zig",
+        "runtime.zig",
+        "index.html",
+        "admin.css",
+        "admin.js",
+        "README.md",
+    },
+}

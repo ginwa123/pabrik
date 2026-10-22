@@ -1245,6 +1245,19 @@ pub fn build(b: *std.Build) void {
     const databases_mod = databases_dep.module("databases");
     mod.addImport("databases", databases_mod);
 
+    // === `auth_core` (src/http_handlers/auth_core.zig) === The cookie, the
+    // token hash and the password hash as their own module: the standalone
+    // admin console links this one file instead of all of pabrik.
+    const auth_core_mod = b.createModule(.{
+        .root_source_file = b.path("src/http_handlers/auth_core.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "databases", .module = databases_mod },
+        },
+    });
+    mod.addImport("auth_core", auth_core_mod);
+
     // === Self-contained `kabelweb` package (vendored libcurl) === Mirrors
     // the `databases` package pattern.
     const kabelweb_dep = b.dependency("kabelweb", .{
@@ -2381,6 +2394,7 @@ pub fn build(b: *std.Build) void {
     // package's deps (link_libc + sqlite3.c amalgamation + openssl + libpq)
     // via the module-graph dep propagation.
     mod_tests_module.addImport("databases", databases_mod);
+    mod_tests_module.addImport("auth_core", auth_core_mod);
     // Apply platform deps directly on the module (modules accumulate deps
     // additively).
     {
@@ -3200,8 +3214,8 @@ pub fn build(b: *std.Build) void {
     // fixed-target musl, so every host compiles them; `pabrik-vmd` is Linux-only.
     build_all_step.dependOn(&install_vm_agent.step);
     build_all_step.dependOn(&install_vm_probe.step);
-build_all_step.dependOn(&install_vm_netd.step);
-if (tap_install) |step| build_all_step.dependOn(step);
+    build_all_step.dependOn(&install_vm_netd.step);
+    if (tap_install) |step| build_all_step.dependOn(step);
     if (vmd_install) |step| build_all_step.dependOn(step);
     // Make `zig build` (default) auto-fetch the vendored curl archive
     // when missing. The fetch script is idempotent — re-running on a

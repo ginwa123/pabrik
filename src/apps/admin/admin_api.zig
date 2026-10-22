@@ -2,12 +2,12 @@
 //! 401 without a usable session and 403 for a session that is not the owner.
 
 const std = @import("std");
-const pabrikcore = @import("pabrikcore");
-const gserverz = pabrikcore.gserverz;
-const http_response = @import("../../http_handlers/http_response.zig");
-const auth_common = @import("../../http_handlers/auth_common.zig");
+const database = @import("databases").database;
+const gserverz = @import("kabelweb").server;
+const auth_core = @import("auth_core");
 const admin_common = @import("admin_common.zig");
 const admin_store = @import("admin_store.zig");
+const runtime = @import("runtime.zig");
 
 /// One account as it goes on the wire.
 const UserJson = struct {
@@ -75,10 +75,12 @@ fn toJson(row: admin_store.UserRow) UserJson {
     };
 }
 
+const ErrorBody = struct { @"error": []const u8 };
+
 fn errorResponse(allocator: std.mem.Allocator, res: gserverz.HttpResponse, status: u16, message: []const u8) !gserverz.HttpResponse {
     return res.jsonResponse(.{
         .status_code = status,
-        .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = message }),
+        .data = try std.json.Stringify.valueAlloc(allocator, ErrorBody{ .@"error" = message }, .{}),
     });
 }
 
@@ -89,9 +91,10 @@ fn ownerOnly(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
     res: gserverz.HttpResponse,
-    di: *pabrikcore.App,
+    db: *database.Db,
+    auth_enabled: bool,
 ) !?gserverz.HttpResponse {
-    const access = admin_common.resolveAccess(ctx.allocator, di.db, di.auth_enabled, req.headers);
+    const access = admin_common.resolveAccess(ctx.allocator, db, auth_enabled, req.headers);
     if (access == .owner) return null;
     return try errorResponse(ctx.allocator, res, admin_common.accessStatus(access), admin_common.accessMessage(access));
 }
@@ -102,10 +105,10 @@ pub fn adminOverviewHandler(
     req: gserverz.HttpRequest,
     res: gserverz.HttpResponse,
 ) !gserverz.HttpResponse {
-    const di = try pabrikcore.getSingleton();
-    if (try ownerOnly(ctx, req, res, di)) |denied| return denied;
+    const db = runtime.db() orelse return errorResponse(ctx.allocator, res, 503, "AdminConsoleNotInstalled");
+    if (try ownerOnly(ctx, req, res, db, runtime.authEnabled())) |denied| return denied;
 
-    const counts = try admin_store.overview(ctx.allocator, di.db);
+    const counts = try admin_store.overview(ctx.allocator, db);
     const data = try std.json.Stringify.valueAlloc(ctx.allocator, OverviewResponse{
         .total_users = counts.total_users,
         .active_users = counts.active_users,
@@ -122,10 +125,10 @@ pub fn adminUsersListHandler(
     req: gserverz.HttpRequest,
     res: gserverz.HttpResponse,
 ) !gserverz.HttpResponse {
-    const di = try pabrikcore.getSingleton();
-    if (try ownerOnly(ctx, req, res, di)) |denied| return denied;
+    const db = runtime.db() orelse return errorResponse(ctx.allocator, res, 503, "AdminConsoleNotInstalled");
+    if (try ownerOnly(ctx, req, res, db, runtime.authEnabled())) |denied| return denied;
 
-    const rows = try admin_store.listUsers(ctx.allocator, di.db);
+    const rows = try admin_store.listUsers(ctx.allocator, db);
     defer admin_store.freeUsers(ctx.allocator, rows);
 
     const mapped = try ctx.allocator.alloc(UserJson, rows.len);
@@ -147,8 +150,8 @@ pub fn adminUserCreateHandler(
     req: gserverz.HttpRequest,
     res: gserverz.HttpResponse,
 ) !gserverz.HttpResponse {
-    const di = try pabrikcore.getSingleton();
-    if (try ownerOnly(ctx, req, res, di)) |denied| return denied;
+    const db = runtime.db() orelse return errorResponse(ctx.allocator, res, 503, "AdminConsoleNotInstalled");
+    if (try ownerOnly(ctx, req, res, db, runtime.authEnabled())) |denied| return denied;
 
     const body = std.json.parseFromSliceLeaky(CreateUserBody, ctx.allocator, req.body, .{
         .ignore_unknown_fields = true,
@@ -179,9 +182,9 @@ pub fn adminUserCreateHandler(
         password = generated.?;
     }
 
-    const hash = try auth_common.hashPassword(ctx.allocator, ctx.io, password);
+    const hash = try auth_core.hashPassword(ctx.allocator, ctx.io, password);
     const now = try admin_common.sqliteNow(ctx.allocator, ctx.io);
-    const row = admin_store.insertUser(ctx.allocator, di.db, id, email, body.name, role, hash, now) catch |err| switch (err) {
+    const row = admin_store.insertUser(ctx.allocator, db, id, email, body.name, role, hash, now) catch |err| switch (err) {
         error.EmailTaken => return try errorResponse(ctx.allocator, res, 409, "EmailTaken"),
         else => return err,
     };
@@ -200,8 +203,8 @@ pub fn adminUserUpdateHandler(
     req: gserverz.HttpRequest,
     res: gserverz.HttpResponse,
 ) !gserverz.HttpResponse {
-    const di = try pabrikcore.getSingleton();
-    if (try ownerOnly(ctx, req, res, di)) |denied| return denied;
+    const db = runtime.db() orelse return errorResponse(ctx.allocator, res, 503, "AdminConsoleNotInstalled");
+    if (try ownerOnly(ctx, req, res, db, runtime.authEnabled())) |denied| return denied;
 
     const id = req.params.get("id") orelse {
         return errorResponse(ctx.allocator, res, 400, "MissingUserId");
@@ -220,7 +223,7 @@ pub fn adminUserUpdateHandler(
     else
         null;
 
-    const row = admin_store.updateUser(ctx.allocator, di.db, id, role, body.is_active) catch |err| switch (err) {
+    const row = admin_store.updateUser(ctx.allocator, db, id, role, body.is_active) catch |err| switch (err) {
         error.UserNotFound => return try errorResponse(ctx.allocator, res, 404, "UserNotFound"),
         error.LastAdmin => return try errorResponse(ctx.allocator, res, 409, "LastAdminCannotBeChanged"),
         else => return err,
@@ -239,8 +242,8 @@ pub fn adminUserPasswordHandler(
     req: gserverz.HttpRequest,
     res: gserverz.HttpResponse,
 ) !gserverz.HttpResponse {
-    const di = try pabrikcore.getSingleton();
-    if (try ownerOnly(ctx, req, res, di)) |denied| return denied;
+    const db = runtime.db() orelse return errorResponse(ctx.allocator, res, 503, "AdminConsoleNotInstalled");
+    if (try ownerOnly(ctx, req, res, db, runtime.authEnabled())) |denied| return denied;
 
     const id = req.params.get("id") orelse {
         return errorResponse(ctx.allocator, res, 400, "MissingUserId");
@@ -264,12 +267,12 @@ pub fn adminUserPasswordHandler(
         password = generated.?;
     }
 
-    const hash = try auth_common.hashPassword(ctx.allocator, ctx.io, password);
-    admin_store.setPasswordHash(ctx.allocator, di.db, id, hash) catch |err| switch (err) {
+    const hash = try auth_core.hashPassword(ctx.allocator, ctx.io, password);
+    admin_store.setPasswordHash(ctx.allocator, db, id, hash) catch |err| switch (err) {
         error.UserNotFound => return try errorResponse(ctx.allocator, res, 404, "UserNotFound"),
         else => return err,
     };
-    try admin_common.revokeSessions(ctx.allocator, di.db, id);
+    try admin_common.revokeSessions(ctx.allocator, db, id);
 
     const data = try std.json.Stringify.valueAlloc(ctx.allocator, PasswordResponse{
         .user_id = id,

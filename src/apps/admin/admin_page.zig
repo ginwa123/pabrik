@@ -2,8 +2,7 @@
 //! No build step, no bundler, no framework.
 
 const std = @import("std");
-const pabrikcore = @import("pabrikcore");
-const gserverz = pabrikcore.gserverz;
+const gserverz = @import("kabelweb").server;
 
 const page_html = @embedFile("index.html");
 const page_css = @embedFile("admin.css");

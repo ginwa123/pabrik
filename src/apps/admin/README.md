@@ -16,11 +16,63 @@ src/apps/admin/
   admin_api.zig   the /api/admin endpoints
   admin_store.zig the reads and writes on `users`
   admin_common.zig who the owner is, and the pure helpers
+  runtime.zig     the database + `--auth` switch the host installs
+  mod.zig         the package's public face
+  main.zig        `pabrik-admin`, the standalone program
+  build.zig       its own build: `zig build run` right here
+  build.zig.zon   the two packages it links (SQLite, the HTTP server)
 ```
 
 ## Opening it
 
-`http://localhost:<port>/admin` — the page, its stylesheet and its script.
+Two ways to run it, and both serve the same page and the same endpoints.
+
+### Inside pabrik (a normal installation)
+
+```bash
+zig build install:linux
+./zig-out/bin/pabrikcore-linux-x86_64 --port 8080     # add --auth for a real login
+```
+
+Then open `http://127.0.0.1:8080/admin`. With `--auth` on, create the owner
+first: `pabrik create-admin --email you@example.com --password …`, sign in,
+and the console answers 401/403 to anyone else.
+
+### On its own (`pabrik-admin`)
+
+The console is also a program of its own. It links only the SQLite package
+and the HTTP server package, not pabrik, so it builds in seconds:
+
+```bash
+cd src/apps/admin
+zig build run -- --db ~/.config/pabrik/agent.db --port 8090
+```
+
+```
+pabrik-admin ready
+  console: http://127.0.0.1:8090/admin
+  database: /home/you/.config/pabrik/agent.db
+  owner: the local operator (no --auth)
+```
+
+| flag | meaning |
+|---|---|
+| `--db <path>` | the database to administer (default `~/.config/pabrik/agent.db`) |
+| `--port <n>` | the port to listen on (default `8090`) |
+| `--auth on\|off` | off (default): the local operator owns the installation. on: a `pabrik_session` cookie decides the owner |
+| `-h`, `--help` | usage |
+
+Point it at the database pabrik itself uses and it is the same console. Point
+it at a new file and it creates the `users` and `auth_sessions` tables that
+the console needs; start pabrik on that database afterwards and its
+migrations fill in the rest.
+
+`zig build test` in that folder runs the console's own 21 tests.
+
+The folder is a Zig package of its own (`build.zig`, `build.zig.zon`), which
+is why `src/http_handlers/auth_core.zig` exists: the session cookie, the token
+hash and the bcrypt hash are declared as their own module, so the standalone
+program can link that one file instead of all of pabrik.
 
 ## Who may use it
 

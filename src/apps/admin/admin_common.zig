@@ -2,8 +2,8 @@
 //! and the pure helpers every admin endpoint repeats.
 
 const std = @import("std");
-const pabrikcore = @import("pabrikcore");
-const auth_common = @import("../../http_handlers/auth_common.zig");
+const database = @import("databases").database;
+const auth_core = @import("auth_core");
 
 /// The values `users.role` may take (Migration 077).
 pub const Role = enum { admin, user, bot };
@@ -38,14 +38,14 @@ pub const Access = enum {
 /// the session's own `users.role` decides.
 pub fn resolveAccess(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.database.Db,
+    db: *database.Db,
     auth_enabled: bool,
     headers: anytype,
 ) Access {
     if (!auth_enabled) return .owner;
-    const token = auth_common.parseSessionToken(headers) orelse return .anonymous;
-    const sess = auth_common.lookupSession(allocator, db, token) orelse return .anonymous;
-    defer auth_common.freeSessionLookup(allocator, sess);
+    const token = auth_core.parseSessionToken(headers) orelse return .anonymous;
+    const sess = auth_core.lookupSession(allocator, db, token) orelse return .anonymous;
+    defer auth_core.freeSessionLookup(allocator, sess);
     if (!std.mem.eql(u8, sess.role, roleName(.admin))) return .not_owner;
     return .owner;
 }
@@ -119,7 +119,7 @@ pub fn isValidEmail(email: []const u8) bool {
 /// session that was opened with the old one still working.
 pub fn revokeSessions(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.database.Db,
+    db: *database.Db,
     user_id: []const u8,
 ) !void {
     try db.exec(

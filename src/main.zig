@@ -222,6 +222,10 @@ pub fn main(init: std.process.Init) !void {
 
     _ = try pabrikcore.setSingleton(ctxParent);
 
+    // The admin console reads its database and its `--auth` switch from here:
+    // the same wiring `pabrik-admin` does in `src/apps/admin/main.zig`.
+    pabrikcore.admin_app.runtime.install(ctxParent.db, cli.auth_enabled);
+
     // Copy the user-level config into every workspace that has not decided
     // yet, so existing workspaces open with the sections that moved to
     // Workspace settings already populated. Idempotent + best-effort.

@@ -2,10 +2,10 @@
 //! (Migration 077) and `auth_sessions` (Migration 089) and nothing else.
 
 const std = @import("std");
-const pabrikcore = @import("pabrikcore");
+const database = @import("databases").database;
 const admin_common = @import("admin_common.zig");
 
-const Db = *pabrikcore.database.Db;
+const Db = *database.Db;
 
 /// One account as the console shows it. The strings are owned by the caller.
 pub const UserRow = struct {
@@ -273,8 +273,10 @@ pub fn setPasswordHash(
 
 const testing = std.testing;
 
-/// The `users` table as Migration 077 creates it.
-fn createUsersSchema(allocator: std.mem.Allocator, db: Db) !void {
+/// Create the two tables the console reads, for a database that has none
+/// yet. A database pabrik has booted on already has them; this is what makes
+/// `pabrik-admin` usable on a fresh file.
+pub fn ensureSchema(allocator: std.mem.Allocator, db: Db) !void {
     try db.exec(allocator,
         \\CREATE TABLE IF NOT EXISTS users (
         \\    id TEXT PRIMARY KEY,
@@ -297,6 +299,11 @@ fn createUsersSchema(allocator: std.mem.Allocator, db: Db) !void {
         \\    last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP
         \\)
     , &.{});
+}
+
+/// The console's own fixtures: the schema plus the synthetic system account.
+fn createUsersSchema(allocator: std.mem.Allocator, db: Db) !void {
+    try ensureSchema(allocator, db);
     try db.exec(allocator,
         \\INSERT OR IGNORE INTO users (id, email, name, password_hash, role, is_active)
         \\VALUES ('user_system', 'system@local', 'System', '!disabled', 'admin', 0)
@@ -320,7 +327,7 @@ fn addUser(
 
 test "listUsers shows every real account and leaves the system account out" {
     const alloc = testing.allocator;
-    var db: pabrikcore.database.Db = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(testing.io, ":memory:");
     try createUsersSchema(alloc, &db);
@@ -341,7 +348,7 @@ test "listUsers shows every real account and leaves the system account out" {
 
 test "findUser answers null for an id nobody carries" {
     const alloc = testing.allocator;
-    var db: pabrikcore.database.Db = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(testing.io, ":memory:");
     try createUsersSchema(alloc, &db);
@@ -358,7 +365,7 @@ test "findUser answers null for an id nobody carries" {
 
 test "overview counts the accounts the console shows, not the system account" {
     const alloc = testing.allocator;
-    var db: pabrikcore.database.Db = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(testing.io, ":memory:");
     try createUsersSchema(alloc, &db);
@@ -375,7 +382,7 @@ test "overview counts the accounts the console shows, not the system account" {
 
 test "overview counts only the sessions that have not expired" {
     const alloc = testing.allocator;
-    var db: pabrikcore.database.Db = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(testing.io, ":memory:");
     try createUsersSchema(alloc, &db);
@@ -391,7 +398,7 @@ test "overview counts only the sessions that have not expired" {
 
 test "insertUser stores the account and refuses a second use of the email" {
     const alloc = testing.allocator;
-    var db: pabrikcore.database.Db = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(testing.io, ":memory:");
     try createUsersSchema(alloc, &db);
@@ -418,7 +425,7 @@ test "insertUser stores the account and refuses a second use of the email" {
 
 test "insertUser accepts an account with no name" {
     const alloc = testing.allocator;
-    var db: pabrikcore.database.Db = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(testing.io, ":memory:");
     try createUsersSchema(alloc, &db);
@@ -434,7 +441,7 @@ test "insertUser accepts an account with no name" {
 
 test "updateUser changes the role and whether the account may sign in" {
     const alloc = testing.allocator;
-    var db: pabrikcore.database.Db = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(testing.io, ":memory:");
     try createUsersSchema(alloc, &db);
@@ -454,7 +461,7 @@ test "updateUser changes the role and whether the account may sign in" {
 
 test "updateUser reports an id nobody carries" {
     const alloc = testing.allocator;
-    var db: pabrikcore.database.Db = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(testing.io, ":memory:");
     try createUsersSchema(alloc, &db);
@@ -464,7 +471,7 @@ test "updateUser reports an id nobody carries" {
 
 test "updateUser refuses to leave the installation without an owner" {
     const alloc = testing.allocator;
-    var db: pabrikcore.database.Db = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(testing.io, ":memory:");
     try createUsersSchema(alloc, &db);
@@ -481,7 +488,7 @@ test "updateUser refuses to leave the installation without an owner" {
 
 test "updateUser lets a second owner take over before the first one steps down" {
     const alloc = testing.allocator;
-    var db: pabrikcore.database.Db = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(testing.io, ":memory:");
     try createUsersSchema(alloc, &db);
@@ -504,7 +511,7 @@ test "updateUser lets a second owner take over before the first one steps down" 
 
 test "setPasswordHash replaces the stored hash and reports an unknown id" {
     const alloc = testing.allocator;
-    var db: pabrikcore.database.Db = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(testing.io, ":memory:");
     try createUsersSchema(alloc, &db);
