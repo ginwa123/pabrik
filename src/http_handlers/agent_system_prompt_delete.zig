@@ -87,8 +87,7 @@ pub fn agentSystemPromptDeleteHandler(
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;
-const Migration076AddAgentsAndAgentKnowledgeAndAgentTools = @import("../migrations/migration.zig").Migration076AddAgentsAndAgentKnowledgeAndAgentTools;
-const Migration080AddAgentSystemPrompt = @import("../migrations/migration.zig").Migration080AddAgentSystemPrompt;
+const Migration116 = @import("../migrations/migration.zig").Migration116UnifyAgentConfigTables;
 
 const TestCtx = struct {
     db: sqlite.SqliteBackend,
@@ -110,11 +109,10 @@ fn setupDb() !TestCtx {
         &[_][]const u8{},
     );
 
-    try Migration076AddAgentsAndAgentKnowledgeAndAgentTools.up(&db, testing.allocator);
+    try Migration116.up(&db, testing.allocator);
     // Production DBs run every migration in order — the harness must
     // mirror that, or the agent_system_prompt table (Migration 080) is
     // missing.
-    try Migration080AddAgentSystemPrompt.up(&db, testing.allocator);
 
     // Seed: 1 workspace_item of type 'agent' + matching agents row +
     // 1 system-prompt row, so the happy-path test has something to delete.
@@ -123,11 +121,11 @@ fn setupDb() !TestCtx {
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agents (id, workspace_item_id, description) VALUES ('ws_item_1', 'ws_item_1', '')",
+        "INSERT INTO agent_configs (id, workspace_item_id, item_type, description) VALUES ('ws_item_1', 'ws_item_1', 'agent', '')",
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agent_system_prompt (id, agent_id, title, content, position) VALUES ('asp_1', 'ws_item_1', 'Persona', 'You are X', 0)",
+        "INSERT INTO agent_config_system_prompt (id, config_id, title, content, position) VALUES ('asp_1', 'ws_item_1', 'Persona', 'You are X', 0)",
         &[_][]const u8{},
     );
 
@@ -140,7 +138,7 @@ fn countPrompts(
     agent_id: []const u8,
 ) !u32 {
     var q = try db.query(allocator,
-        "SELECT COUNT(*) FROM agent_system_prompt WHERE agent_id = ?",
+        "SELECT COUNT(*) FROM agent_config_system_prompt WHERE config_id = ?",
         &[_][]const u8{agent_id},
     );
     defer q.deinit();

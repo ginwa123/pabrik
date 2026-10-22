@@ -43,7 +43,7 @@ fn isConfiguredRoutineItem(
     if (workspace_item_id.len == 0) return false;
     var q = db.query(allocator,
         \\SELECT 1 FROM workspace_items WHERE id = ? AND item_type = 'routine'
-        \\AND EXISTS (SELECT 1 FROM agent_routines WHERE id = ?)
+        \\AND EXISTS (SELECT 1 FROM agent_configs WHERE id = ? AND item_type = 'routine')
     , &[_][]const u8{ workspace_item_id, workspace_item_id }) catch return false;
     defer q.deinit();
     if (q.next() catch null) |row| {
@@ -140,7 +140,7 @@ const testing = std.testing;
 // Use a fresh alias for the test section to avoid duplicate-struct-
 // member shadowing (file-level `const sqlite` already exists).
 const test_sqlite = @import("pabrikcore").sqlite;
-const Migration087CreateAgentRoutines = @import("../migrations/migration.zig").Migration087CreateAgentRoutines;
+const Migration116 = @import("../migrations/migration.zig").Migration116UnifyAgentConfigTables;
 
 const TestCtx = struct {
     db: test_sqlite.SqliteBackend,
@@ -183,7 +183,7 @@ fn setupDb() !TestCtx {
         \\    workspace_item_id TEXT NOT NULL
         \\)
     , &[_][]const u8{});
-    try Migration087CreateAgentRoutines.up(&db, alloc);
+    try Migration116.up(&db, alloc);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -214,7 +214,7 @@ fn insertRoutine(ctx: *TestCtx, id: []const u8, workspace_item_id: []const u8) !
 fn insertConfig(ctx: *TestCtx, config_id: []const u8, workspace_item_id: []const u8) !void {
     const alloc = testing.allocator;
     try ctx.db.exec(alloc,
-        "INSERT INTO agent_routines (id, workspace_item_id) VALUES (?, ?)",
+        "INSERT INTO agent_configs (id, workspace_item_id, item_type) VALUES (?, ?, 'routine')",
         &[_][]const u8{ config_id, workspace_item_id },
     );
 }
@@ -224,7 +224,7 @@ fn insertPrompt(ctx: *TestCtx, id: []const u8, routine_id: []const u8, title: []
     const pos_str = try std.fmt.allocPrint(alloc, "{d}", .{position});
     defer alloc.free(pos_str);
     try ctx.db.exec(alloc,
-        "INSERT INTO agent_routine_system_prompt (id, routine_id, title, content, position) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO agent_config_system_prompt (id, config_id, title, content, position) VALUES (?, ?, ?, ?, ?)",
         &[_][]const u8{ id, routine_id, title, content, pos_str },
     );
 }

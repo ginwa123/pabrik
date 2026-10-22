@@ -27,7 +27,7 @@ const testing = std.testing;
 // Use a fresh alias for the test section to avoid duplicate-struct-
 // member shadowing (file-level `const sqlite` already exists).
 const test_sqlite = @import("pabrikcore").sqlite;
-const Migration076 = @import("../migrations/migration.zig").Migration076AddAgentsAndAgentKnowledgeAndAgentTools;
+const Migration116 = @import("../migrations/migration.zig").Migration116UnifyAgentConfigTables;
 
 const TestCtx = struct {
     db: test_sqlite.SqliteBackend,
@@ -43,7 +43,7 @@ fn setupDb() !TestCtx {
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT, name TEXT, path TEXT, position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)", &[_][]const u8{});
-    try Migration076.up(&db, alloc);
+    try Migration116.up(&db, alloc);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -60,7 +60,7 @@ fn insertAgent(ctx: *TestCtx, agent_id: []const u8, workspace_item_id: []const u
     const alloc = testing.allocator;
     try ctx.db.exec(
         alloc,
-        "INSERT INTO agents (id, workspace_item_id) VALUES (?, ?)",
+        "INSERT INTO agent_configs (id, workspace_item_id, item_type) VALUES (?, ?, 'agent')",
         &[_][]const u8{ agent_id, workspace_item_id },
     );
 }
@@ -71,7 +71,7 @@ fn insertTool(ctx: *TestCtx, tool_id: []const u8, agent_id: []const u8, tool_nam
     const enabled_str: []const u8 = if (enabled == 1) "1" else "0";
     const sql = try std.fmt.bufPrint(
         &sql_buf,
-        "INSERT INTO agent_tools (id, agent_id, tool_name, enabled) VALUES ('{s}', '{s}', '{s}', {s})",
+        "INSERT INTO agent_config_tools (id, config_id, tool_name, enabled) VALUES ('{s}', '{s}', '{s}', {s})",
         .{ tool_id, agent_id, tool_name, enabled_str },
     );
     try ctx.db.exec(alloc, sql, &[_][]const u8{});

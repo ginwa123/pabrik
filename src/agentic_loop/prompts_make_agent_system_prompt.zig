@@ -133,8 +133,7 @@ const testing = std.testing;
 // Use a fresh alias for the test section to avoid duplicate-struct-
 // member shadowing (file-level `const sqlite` already exists).
 const test_sqlite = @import("pabrikcore").sqlite;
-const Migration076 = @import("../migrations/migration.zig").Migration076AddAgentsAndAgentKnowledgeAndAgentTools;
-const Migration080 = @import("../migrations/migration.zig").Migration080AddAgentSystemPrompt;
+const Migration116 = @import("../migrations/migration.zig").Migration116UnifyAgentConfigTables;
 
 const TestCtx = struct {
     db: test_sqlite.SqliteBackend,
@@ -171,11 +170,9 @@ fn setupDb() !TestCtx {
         \\    task_type TEXT DEFAULT 'standard'
         \\)
     , &[_][]const u8{});
-    try Migration076.up(&db, alloc);
-    // Production DBs run every migration in order — the harness must
+    try Migration116.up(&db, alloc);
     // mirror that, or the agent_system_prompt table (Migration 080) is
     // missing and prompt-row INSERTs fail.
-    try Migration080.up(&db, alloc);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -200,7 +197,7 @@ fn insertPrompt(ctx: *TestCtx, id: []const u8, agent_id: []const u8, title: []co
     const pos_str = try std.fmt.allocPrint(alloc, "{d}", .{position});
     defer alloc.free(pos_str);
     try ctx.db.exec(alloc,
-        "INSERT INTO agent_system_prompt (id, agent_id, title, content, position) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO agent_config_system_prompt (id, config_id, title, content, position) VALUES (?, ?, ?, ?, ?)",
         &[_][]const u8{ id, agent_id, title, content, pos_str },
     );
 }

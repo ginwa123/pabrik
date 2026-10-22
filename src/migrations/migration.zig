@@ -126,6 +126,8 @@ const migration_112 = @import("migration_112.zig");
 const migration_113 = @import("migration_113.zig");
 const migration_114 = @import("migration_114.zig");
 const migration_115 = @import("migration_115.zig");
+const migration_116 = @import("migration_116.zig");
+const migration_117 = @import("migration_117.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -243,6 +245,8 @@ pub const Migration112RenameTaskSkillNames = migration_112.Migration112RenameTas
 pub const Migration113AddGuestJobColumns = migration_113.Migration113AddGuestJobColumns;
 pub const Migration114AddFileAttachments = migration_114.Migration114AddFileAttachments;
 pub const Migration115AddWorkspaceIsVm = migration_115.Migration115AddWorkspaceIsVm;
+pub const Migration116UnifyAgentConfigTables = migration_116.Migration116UnifyAgentConfigTables;
+pub const Migration117DropLegacyAgentConfigTables = migration_117.Migration117DropLegacyAgentConfigTables;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -456,6 +460,13 @@ pub const allMigrations: []const Migration = &.{
     .{ .version = Migration114AddFileAttachments.version, .name = Migration114AddFileAttachments.name, .up = Migration114AddFileAttachments.up },
     // Migration 115 — a workspace records whether it is a microVM workspace.
     .{ .version = Migration115AddWorkspaceIsVm.version, .name = Migration115AddWorkspaceIsVm.name, .up = Migration115AddWorkspaceIsVm.up },
+    // Migration 116 — the three per-item-type agent-config table families
+    // (12 tables) collapse into ONE set of four. `item_type` on the parent
+    // row tells the families apart. See migration_116.zig.
+    .{ .version = Migration116UnifyAgentConfigTables.version, .name = Migration116UnifyAgentConfigTables.name, .up = Migration116UnifyAgentConfigTables.up },
+    // Migration 117 — the legacy tables the unification parked are no
+    // longer needed: drop them.
+    .{ .version = Migration117DropLegacyAgentConfigTables.version, .name = Migration117DropLegacyAgentConfigTables.name, .up = Migration117DropLegacyAgentConfigTables.up },
 };
 
 /// Register all migrations with a MigrationManager

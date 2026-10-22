@@ -71,7 +71,7 @@ fn useCase(
     // Validate kanban exists + is a kanban + has an agent_kanbans row.
     var q = db.query(allocator,
         \\SELECT 1 FROM workspace_items WHERE id = ? AND item_type = 'kanban'
-        \\AND EXISTS (SELECT 1 FROM agent_kanbans WHERE id = ?)
+        \\AND EXISTS (SELECT 1 FROM agent_configs WHERE id = ? AND item_type = 'kanban')
     , &[_][]const u8{ input.kanban_id, input.kanban_id }) catch return error.LookupFailed;
     defer q.deinit();
     const row = q.next() catch null;
@@ -156,7 +156,7 @@ pub fn agentKanbanSystemPromptCreateHandler(
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;
-const Migration081CreateAgentKanbans = @import("../migrations/migration.zig").Migration081CreateAgentKanbans;
+const Migration116 = @import("../migrations/migration.zig").Migration116UnifyAgentConfigTables;
 
 const TestCtx = struct {
     db: sqlite.SqliteBackend,
@@ -175,7 +175,7 @@ fn setupDb() !TestCtx {
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
         &[_][]const u8{},
     );
-    try Migration081CreateAgentKanbans.up(&db, testing.allocator);
+    try Migration116.up(&db, testing.allocator);
 
     // Seed: configured kanban + bare kanban + agent item.
     try db.exec(testing.allocator,
@@ -183,7 +183,7 @@ fn setupDb() !TestCtx {
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agent_kanbans (id, workspace_item_id) VALUES ('ws_item_1', 'ws_item_1')",
+        "INSERT INTO agent_configs (id, workspace_item_id, item_type) VALUES ('ws_item_1', 'ws_item_1', 'kanban')",
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,

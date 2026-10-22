@@ -2136,7 +2136,7 @@ test "execSearchDocuments: deleting what a search returned makes the next search
 /// Is `name` among the rows `seedDefaultAgentTools` wrote for `agent_id`?
 fn seededFor(db: *exec_sqlite.SqliteBackend, agent_id: []const u8, name: []const u8) !bool {
     const alloc = exec_testing.allocator;
-    var q = try db.query(alloc, "SELECT tool_name FROM agent_tools WHERE agent_id = ?", &.{agent_id});
+    var q = try db.query(alloc, "SELECT tool_name FROM agent_config_tools WHERE config_id = ?", &.{agent_id});
     defer q.deinit();
     while ((q.next() catch null)) |row| {
         defer row.deinit(alloc);
@@ -2187,7 +2187,7 @@ test "search_documents is seeded by default but delete_document is not" {
     // build (it only stands up the document schema). Same table shape the
     // registry's own seed tests use.
     try ctx.db.exec(alloc,
-        \\CREATE TABLE agent_tools (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, tool_name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(agent_id, tool_name))
+        \\CREATE TABLE agent_config_tools (id TEXT PRIMARY KEY, config_id TEXT NOT NULL, tool_name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(config_id, tool_name))
     , &.{});
 
     // `null` config is the legacy path a freshly created agent item takes.

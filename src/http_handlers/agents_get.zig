@@ -157,9 +157,7 @@ pub fn agentsGetHandler(
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;
-const Migration076AddAgentsAndAgentKnowledgeAndAgentTools = @import("../migrations/migration.zig").Migration076AddAgentsAndAgentKnowledgeAndAgentTools;
-const Migration079AddContentToAgentKnowledge = @import("../migrations/migration.zig").Migration079AddContentToAgentKnowledge;
-const Migration080AddAgentSystemPrompt = @import("../migrations/migration.zig").Migration080AddAgentSystemPrompt;
+const Migration116 = @import("../migrations/migration.zig").Migration116UnifyAgentConfigTables;
 
 const TestCtx = struct {
     db: sqlite.SqliteBackend,
@@ -180,12 +178,9 @@ fn setupDb() !TestCtx {
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
         &[_][]const u8{},
     );
-    try Migration076AddAgentsAndAgentKnowledgeAndAgentTools.up(&db, testing.allocator);
-    // Production DBs run every migration in order — the harness must
+    try Migration116.up(&db, testing.allocator);
     // mirror that, or the `content` column (Migration 079) is missing.
-    try Migration079AddContentToAgentKnowledge.up(&db, testing.allocator);
     // Same for the agent_system_prompt table (Migration 080).
-    try Migration080AddAgentSystemPrompt.up(&db, testing.allocator);
 
     // Seed: 1 agent + 2 knowledge rows + 2 enabled tools + 1 disabled tool.
     try db.exec(testing.allocator,
@@ -193,27 +188,27 @@ fn setupDb() !TestCtx {
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agents (id, workspace_item_id, description) VALUES ('ws_item_1', 'ws_item_1', 'desc')",
+        "INSERT INTO agent_configs (id, workspace_item_id, item_type, description) VALUES ('ws_item_1', 'ws_item_1', 'agent', 'desc')",
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agent_knowledge (id, agent_id, file_path, label, position) VALUES ('know_1', 'ws_item_1', '/tmp/a.md', 'A', 0)",
+        "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, position) VALUES ('know_1', 'ws_item_1', '/tmp/a.md', 'A', 0)",
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agent_knowledge (id, agent_id, file_path, label, position) VALUES ('know_2', 'ws_item_1', '/tmp/b.md', '', 1)",
+        "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, position) VALUES ('know_2', 'ws_item_1', '/tmp/b.md', '', 1)",
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agent_tools (id, agent_id, tool_name, enabled) VALUES ('at_1', 'ws_item_1', 'bash', 1)",
+        "INSERT INTO agent_config_tools (id, config_id, tool_name, enabled) VALUES ('at_1', 'ws_item_1', 'bash', 1)",
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agent_tools (id, agent_id, tool_name, enabled) VALUES ('at_2', 'ws_item_1', 'read_file', 1)",
+        "INSERT INTO agent_config_tools (id, config_id, tool_name, enabled) VALUES ('at_2', 'ws_item_1', 'read_file', 1)",
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agent_tools (id, agent_id, tool_name, enabled) VALUES ('at_3', 'ws_item_1', 'write_file', 0)",
+        "INSERT INTO agent_config_tools (id, config_id, tool_name, enabled) VALUES ('at_3', 'ws_item_1', 'write_file', 0)",
         &[_][]const u8{},
     );
 
@@ -317,7 +312,7 @@ test "useCase: returns content field for knowledge rows" {
 
     // Seed one inline-content row (position 5 → sorts first under DESC).
     try ctx.db.exec(testing.allocator,
-        "INSERT INTO agent_knowledge (id, agent_id, file_path, label, content, position) VALUES ('know_inline', 'ws_item_1', '', 'Notes', 'inline body', 5)",
+        "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, content, position) VALUES ('know_inline', 'ws_item_1', '', 'Notes', 'inline body', 5)",
         &[_][]const u8{},
     );
 
@@ -341,11 +336,11 @@ test "useCase: returns system_prompts ordered position DESC (Migration 080)" {
 
     // Seed two prompt rows: sp_low at position 0, sp_high at position 3.
     try ctx.db.exec(testing.allocator,
-        "INSERT INTO agent_system_prompt (id, agent_id, title, content, position) VALUES ('sp_low', 'ws_item_1', 'Low', 'low body', 0)",
+        "INSERT INTO agent_config_system_prompt (id, config_id, title, content, position) VALUES ('sp_low', 'ws_item_1', 'Low', 'low body', 0)",
         &[_][]const u8{},
     );
     try ctx.db.exec(testing.allocator,
-        "INSERT INTO agent_system_prompt (id, agent_id, title, content, position) VALUES ('sp_high', 'ws_item_1', 'High', 'high body', 3)",
+        "INSERT INTO agent_config_system_prompt (id, config_id, title, content, position) VALUES ('sp_high', 'ws_item_1', 'High', 'high body', 3)",
         &[_][]const u8{},
     );
 

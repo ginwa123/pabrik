@@ -163,8 +163,7 @@ pub fn agentKnowledgeUpdateHandler(
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;
-const Migration076AddAgentsAndAgentKnowledgeAndAgentTools = @import("../migrations/migration.zig").Migration076AddAgentsAndAgentKnowledgeAndAgentTools;
-const Migration079AddContentToAgentKnowledge = @import("../migrations/migration.zig").Migration079AddContentToAgentKnowledge;
+const Migration116 = @import("../migrations/migration.zig").Migration116UnifyAgentConfigTables;
 
 const TestCtx = struct {
     db: sqlite.SqliteBackend,
@@ -185,10 +184,8 @@ fn setupDb() !TestCtx {
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
         &[_][]const u8{},
     );
-    try Migration076AddAgentsAndAgentKnowledgeAndAgentTools.up(&db, testing.allocator);
-    // Production DBs run every migration in order — the harness must
+    try Migration116.up(&db, testing.allocator);
     // mirror that, or the `content` column (Migration 079) is missing.
-    try Migration079AddContentToAgentKnowledge.up(&db, testing.allocator);
 
     // Seed: 1 agent + 1 knowledge row.
     try db.exec(testing.allocator,
@@ -196,11 +193,11 @@ fn setupDb() !TestCtx {
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agents (id, workspace_item_id, description) VALUES ('ws_item_1', 'ws_item_1', '')",
+        "INSERT INTO agent_configs (id, workspace_item_id, item_type, description) VALUES ('ws_item_1', 'ws_item_1', 'agent', '')",
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agent_knowledge (id, agent_id, file_path, label, position) VALUES ('know_1', 'ws_item_1', '/tmp/orig.md', 'Original', 0)",
+        "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, position) VALUES ('know_1', 'ws_item_1', '/tmp/orig.md', 'Original', 0)",
         &[_][]const u8{},
     );
 
@@ -421,8 +418,7 @@ fn setupDb_merged() !TestCtx_merged {
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
         &[_][]const u8{},
     );
-    try Migration076AddAgentsAndAgentKnowledgeAndAgentTools.up(&db, testing.allocator);
-    try Migration079AddContentToAgentKnowledge.up(&db, testing.allocator);
+    try Migration116.up(&db, testing.allocator);
 
     // Seed: 1 agent + 1 FILE-BACKED knowledge row (the case the edit
     // dialog opens on by default).
@@ -431,11 +427,11 @@ fn setupDb_merged() !TestCtx_merged {
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agents (id, workspace_item_id, description) VALUES ('ws_item_1', 'ws_item_1', '')",
+        "INSERT INTO agent_configs (id, workspace_item_id, item_type, description) VALUES ('ws_item_1', 'ws_item_1', 'agent', '')",
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agent_knowledge (id, agent_id, file_path, label, position) VALUES ('know_1', 'ws_item_1', '/tmp/orig.md', 'Original', 0)",
+        "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, position) VALUES ('know_1', 'ws_item_1', '/tmp/orig.md', 'Original', 0)",
         &[_][]const u8{},
     );
 
@@ -485,7 +481,7 @@ test "functional: file→text switch payload {file_path:'', content} succeeds en
 
     // And the DB row itself is consistent (refetch independently).
     var q = try ctx.db.query(alloc,
-        "SELECT file_path, content FROM agent_knowledge WHERE id = 'know_1'",
+        "SELECT file_path, content FROM agent_config_knowledge WHERE id = 'know_1'",
         &[_][]const u8{},
     );
     defer q.deinit();
@@ -505,7 +501,7 @@ test "functional: text→file switch payload {file_path, content:''} succeeds en
 
     // Seed as INLINE first so we're genuinely switching text→file.
     try ctx.db.exec(alloc,
-        "UPDATE agent_knowledge SET file_path = '', content = 'original inline' WHERE id = 'know_1'",
+        "UPDATE agent_config_knowledge SET file_path = '', content = 'original inline' WHERE id = 'know_1'",
         &[_][]const u8{},
     );
 
@@ -536,7 +532,7 @@ test "functional: text→file switch payload {file_path, content:''} succeeds en
 
     // Independent refetch: content column must be '' not NULL.
     var q = try ctx.db.query(alloc,
-        "SELECT file_path, content FROM agent_knowledge WHERE id = 'know_1'",
+        "SELECT file_path, content FROM agent_config_knowledge WHERE id = 'know_1'",
         &[_][]const u8{},
     );
     defer q.deinit();

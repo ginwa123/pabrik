@@ -70,7 +70,7 @@ fn isConfiguredRoutineItem(
     if (workspace_item_id.len == 0) return false;
     var q = db.query(allocator,
         \\SELECT 1 FROM workspace_items WHERE id = ? AND item_type = 'routine'
-        \\AND EXISTS (SELECT 1 FROM agent_routines WHERE id = ?)
+        \\AND EXISTS (SELECT 1 FROM agent_configs WHERE id = ? AND item_type = 'routine')
     , &[_][]const u8{ workspace_item_id, workspace_item_id }) catch return false;
     defer q.deinit();
     if (q.next() catch null) |row| {
@@ -178,7 +178,7 @@ const testing = std.testing;
 // Use a fresh alias for the test section to avoid duplicate-struct-
 // member shadowing (file-level `const sqlite` already exists).
 const test_sqlite = @import("pabrikcore").sqlite;
-const Migration087CreateAgentRoutines = @import("../migrations/migration.zig").Migration087CreateAgentRoutines;
+const Migration116 = @import("../migrations/migration.zig").Migration116UnifyAgentConfigTables;
 
 const TestCtx = struct {
     db: test_sqlite.SqliteBackend,
@@ -221,7 +221,7 @@ fn setupDb() !TestCtx {
         \\    workspace_item_id TEXT NOT NULL
         \\)
     , &[_][]const u8{});
-    try Migration087CreateAgentRoutines.up(&db, alloc);
+    try Migration116.up(&db, alloc);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -252,7 +252,7 @@ fn insertRoutine(ctx: *TestCtx, id: []const u8, workspace_item_id: []const u8) !
 fn insertConfig(ctx: *TestCtx, config_id: []const u8, workspace_item_id: []const u8) !void {
     const alloc = testing.allocator;
     try ctx.db.exec(alloc,
-        "INSERT INTO agent_routines (id, workspace_item_id) VALUES (?, ?)",
+        "INSERT INTO agent_configs (id, workspace_item_id, item_type) VALUES (?, ?, 'routine')",
         &[_][]const u8{ config_id, workspace_item_id },
     );
 }
@@ -352,7 +352,7 @@ test "makeAgentRoutineKnowledge: renders ## Routine Knowledge section with file 
     defer alloc.free(tmp_path);
 
     try ctx.db.exec(alloc,
-        "INSERT INTO agent_routine_knowledges (id, routine_id, file_path, label, position) VALUES ('kn_1', 'ws_item_1', ?, '', 0)",
+        "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, position) VALUES ('kn_1', 'ws_item_1', ?, '', 0)",
         &[_][]const u8{tmp_path},
     );
 
@@ -382,11 +382,11 @@ test "makeAgentRoutineKnowledge: respects position DESC ordering" {
     defer alloc.free(path_high);
 
     try ctx.db.exec(alloc,
-        "INSERT INTO agent_routine_knowledges (id, routine_id, file_path, label, position) VALUES ('kn_low', 'ws_item_1', ?, '', 0)",
+        "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, position) VALUES ('kn_low', 'ws_item_1', ?, '', 0)",
         &[_][]const u8{path_low},
     );
     try ctx.db.exec(alloc,
-        "INSERT INTO agent_routine_knowledges (id, routine_id, file_path, label, position) VALUES ('kn_high', 'ws_item_1', ?, '', 100)",
+        "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, position) VALUES ('kn_high', 'ws_item_1', ?, '', 100)",
         &[_][]const u8{path_high},
     );
 
@@ -409,7 +409,7 @@ test "makeAgentRoutineKnowledge: skips unreadable file paths without leaking hea
     try insertSession(&ctx, "sess_1", "ws_item_1");
 
     try ctx.db.exec(alloc,
-        "INSERT INTO agent_routine_knowledges (id, routine_id, file_path, label, position) VALUES ('kn_bad', 'ws_item_1', '/tmp/non_existent_routine_xyz_12345.md', '', 0)",
+        "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, position) VALUES ('kn_bad', 'ws_item_1', '/tmp/non_existent_routine_xyz_12345.md', '', 0)",
         &[_][]const u8{},
     );
 
@@ -431,7 +431,7 @@ test "makeAgentRoutineKnowledge: inlines content rows without <file:> marker" {
     try insertSession(&ctx, "sess_1", "ws_item_1");
 
     try ctx.db.exec(alloc,
-        "INSERT INTO agent_routine_knowledges (id, routine_id, file_path, label, content, position) VALUES ('kn_inline', 'ws_item_1', '', 'Routine rules', 'Always keep the todo column under 10 cards.', 0)",
+        "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, content, position) VALUES ('kn_inline', 'ws_item_1', '', 'Routine rules', 'Always keep the todo column under 10 cards.', 0)",
         &[_][]const u8{},
     );
 
@@ -458,7 +458,7 @@ test "makeAgentRoutineKnowledge: resolves routine-fire sessions via workspace_ro
     try insertConfig(&ctx, "ws_item_1", "ws_item_1");
 
     try ctx.db.exec(alloc,
-        "INSERT INTO agent_routine_knowledges (id, routine_id, file_path, label, content, position) VALUES ('kn_fire', 'ws_item_1', '', 'Fire rules', 'fire knowledge marker', 0)",
+        "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, content, position) VALUES ('kn_fire', 'ws_item_1', '', 'Fire rules', 'fire knowledge marker', 0)",
         &[_][]const u8{},
     );
 

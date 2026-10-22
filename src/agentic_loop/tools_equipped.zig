@@ -511,7 +511,7 @@ fn filterToRegistry(allocator: std.mem.Allocator, names: []const []const u8) ![]
     return try out.toOwnedSlice(allocator);
 }
 
-/// Seed the `agent_tools` allowlist for `agent_id`.
+/// Seed the `agent_config_tools` allowlist for the agent config `config_id`.
 pub fn seedDefaultAgentTools(
     allocator: std.mem.Allocator,
     db: pabrikcore.database.DbOrTx,
@@ -537,7 +537,7 @@ pub fn seedDefaultAgentTools(
     }
 }
 
-/// Seed the `agent_kanban_tools` allowlist for `kanban_id`.
+/// Seed the `agent_config_tools` allowlist for the kanban config `config_id`.
 pub fn seedDefaultKanbanTools(
     allocator: std.mem.Allocator,
     db: pabrikcore.database.DbOrTx,
@@ -560,7 +560,7 @@ pub fn seedDefaultKanbanTools(
             defer allocator.free(id);
             try db.exec(
                 allocator,
-                "INSERT OR IGNORE INTO agent_kanban_tools (id, kanban_id, tool_name, enabled, created_at) VALUES (?, ?, ?, 1, datetime('now'))",
+                "INSERT OR IGNORE INTO agent_config_tools (id, config_id, tool_name, enabled, created_at) VALUES (?, ?, ?, 1, datetime('now'))",
                 &.{ id, kanban_id, tool_name },
             );
             idx += 1;
@@ -582,7 +582,7 @@ pub fn seedDefaultKanbanTools(
             defer allocator.free(id);
             try db.exec(
                 allocator,
-                "INSERT OR IGNORE INTO agent_kanban_tools (id, kanban_id, tool_name, enabled, created_at) VALUES (?, ?, ?, 1, datetime('now'))",
+                "INSERT OR IGNORE INTO agent_config_tools (id, config_id, tool_name, enabled, created_at) VALUES (?, ?, ?, 1, datetime('now'))",
                 &.{ id, kanban_id, tool_name },
             );
             idx += 1;
@@ -597,7 +597,7 @@ pub fn seedDefaultKanbanTools(
         defer allocator.free(id);
         try db.exec(
             allocator,
-            "INSERT OR IGNORE INTO agent_kanban_tools (id, kanban_id, tool_name, enabled, created_at) VALUES (?, ?, ?, 1, datetime('now'))",
+            "INSERT OR IGNORE INTO agent_config_tools (id, config_id, tool_name, enabled, created_at) VALUES (?, ?, ?, 1, datetime('now'))",
             &.{ id, kanban_id, tool_name },
         );
     }
@@ -607,7 +607,7 @@ pub fn seedDefaultKanbanTools(
         defer allocator.free(id);
         try db.exec(
             allocator,
-            "INSERT OR IGNORE INTO agent_kanban_tools (id, kanban_id, tool_name, enabled, created_at) VALUES (?, ?, ?, 1, datetime('now'))",
+            "INSERT OR IGNORE INTO agent_config_tools (id, config_id, tool_name, enabled, created_at) VALUES (?, ?, ?, 1, datetime('now'))",
             &.{ id, kanban_id, tool_name },
         );
     }
@@ -653,18 +653,14 @@ fn setupSeedDb() !SeedTestCtx {
     try db.init(io, ":memory:");
     try db.exec(
         alloc,
-        "CREATE TABLE agent_tools (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, tool_name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(agent_id, tool_name))",
-        &.{},
-    );
-    try db.exec(
-        alloc,
-        "CREATE TABLE agent_kanban_tools (id TEXT PRIMARY KEY, kanban_id TEXT NOT NULL, tool_name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(kanban_id, tool_name))",
+        "CREATE TABLE agent_config_tools (id TEXT PRIMARY KEY, config_id TEXT NOT NULL, tool_name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(config_id, tool_name))",
         &.{},
     );
     return .{ .db = db, .threaded = threaded };
 }
 
-/// Sorted tool names seeded for `owner_id` in `table`. Caller owns the
+/// Sorted tool names seeded for `owner_id` in `table` (always
+/// `agent_config_tools` now). Caller owns the
 /// returned strings + header.
 fn seededNames(
     ctx: *SeedTestCtx,
@@ -676,7 +672,7 @@ fn seededNames(
     const sql = try std.fmt.bufPrint(
         &sql_buf,
         "SELECT tool_name FROM {s} WHERE {s} = ? ORDER BY tool_name ASC",
-        .{ table, if (std.mem.eql(u8, table, "agent_tools")) "agent_id" else "kanban_id" },
+        .{ table, "config_id" },
     );
     var q = try ctx.db.query(alloc, sql, &.{owner_id});
     defer q.deinit();
@@ -705,7 +701,7 @@ test "seed: config absent (null) → agent gets exactly DEFAULT_AGENT_TOOLS" {
 
     try seedDefaultAgentTools(alloc, .{ .db = &ctx.db }, "ag_legacy", null);
 
-    const names = try seededNames(&ctx, alloc, "agent_tools", "ag_legacy");
+    const names = try seededNames(&ctx, alloc, "agent_config_tools", "ag_legacy");
     defer freeNames(alloc, names);
     try testing.expectEqual(DEFAULT_AGENT_TOOLS.len, names.len);
     // Sorted-ASC order must equal the sorted defaults (byte-identical set).
@@ -728,7 +724,7 @@ test "seed: config list replaces defaults (unknown names skipped)" {
     const cfg = [_][]const u8{ "command", "read_file", "not_a_real_tool" };
     try seedDefaultAgentTools(alloc, .{ .db = &ctx.db }, "ag_list", &cfg);
 
-    const names = try seededNames(&ctx, alloc, "agent_tools", "ag_list");
+    const names = try seededNames(&ctx, alloc, "agent_config_tools", "ag_list");
     defer freeNames(alloc, names);
     try testing.expectEqual(@as(usize, 2), names.len);
     try testing.expectEqualStrings("command", names[0]);
@@ -744,7 +740,7 @@ test "seed: config [] → zero agent rows (D2/D3 explicit-empty)" {
     const cfg = [_][]const u8{};
     try seedDefaultAgentTools(alloc, .{ .db = &ctx.db }, "ag_zero", &cfg);
 
-    const names = try seededNames(&ctx, alloc, "agent_tools", "ag_zero");
+    const names = try seededNames(&ctx, alloc, "agent_config_tools", "ag_zero");
     defer freeNames(alloc, names);
     try testing.expectEqual(@as(usize, 0), names.len);
 }
@@ -759,7 +755,7 @@ test "seed: kanban config list keeps the DEFAULT_KANBAN_TOOLS floor (deduped)" {
     const cfg = [_][]const u8{ "command", "kanban_list" };
     try seedDefaultKanbanTools(alloc, .{ .db = &ctx.db }, "kb_floor", &cfg);
 
-    const names = try seededNames(&ctx, alloc, "agent_kanban_tools", "kb_floor");
+    const names = try seededNames(&ctx, alloc, "agent_config_tools", "kb_floor");
     defer freeNames(alloc, names);
     try testing.expectEqual(@as(usize, 3), names.len);
     try testing.expectEqualStrings("command", names[0]);
@@ -776,7 +772,7 @@ test "seed: kanban config [] → zero rows (explicit-empty beats the floor)" {
     const cfg = [_][]const u8{};
     try seedDefaultKanbanTools(alloc, .{ .db = &ctx.db }, "kb_zero", &cfg);
 
-    const names = try seededNames(&ctx, alloc, "agent_kanban_tools", "kb_zero");
+    const names = try seededNames(&ctx, alloc, "agent_config_tools", "kb_zero");
     defer freeNames(alloc, names);
     try testing.expectEqual(@as(usize, 0), names.len);
 }
@@ -789,7 +785,7 @@ test "seed: kanban config absent (null) → legacy defaults + floor" {
 
     try seedDefaultKanbanTools(alloc, .{ .db = &ctx.db }, "kb_legacy", null);
 
-    const names = try seededNames(&ctx, alloc, "agent_kanban_tools", "kb_legacy");
+    const names = try seededNames(&ctx, alloc, "agent_config_tools", "kb_legacy");
     defer freeNames(alloc, names);
     try testing.expectEqual(DEFAULT_AGENT_TOOLS.len + DEFAULT_KANBAN_TOOLS.len, names.len);
     // The floor tools are present in the legacy seed.

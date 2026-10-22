@@ -137,7 +137,7 @@ fn readSystemPromptRow(allocator: std.mem.Allocator, r: anytype) !SystemPromptRo
 
 /// Is there an `agents` row with this id?
 pub fn exists(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8) bool {
-    var q = db.query(allocator, "SELECT 1 FROM agents WHERE id = ?", &.{agent_id}) catch return false;
+    var q = db.query(allocator, "SELECT 1 FROM agent_configs WHERE id = ? AND item_type = 'agent'", &.{agent_id}) catch return false;
     defer q.deinit();
     // The row owns its values[] buffer — release it, or the caller's
     // allocator leaks one allocation per exists() call.
@@ -151,7 +151,7 @@ pub fn exists(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8) bo
 /// Fetch one `agents` row by id. Returns null when absent.
 pub fn getById(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8) !?AgentRow {
     var q = db.query(allocator,
-        "SELECT id, workspace_item_id, description, IFNULL(created_at, ''), IFNULL(updated_at, '') FROM agents WHERE id = ?",
+        "SELECT id, workspace_item_id, description, IFNULL(created_at, ''), IFNULL(updated_at, '') FROM agent_configs WHERE id = ? AND item_type = 'agent'",
         &.{agent_id},
     ) catch return null;
     defer q.deinit();
@@ -163,7 +163,7 @@ pub fn getById(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8) !
 /// Update `description` and stamp `updated_at`. Returns the refetched row.
 pub fn updateDescription(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8, description: []const u8) !?AgentRow {
     db.exec(allocator,
-        "UPDATE agents SET description = ?, updated_at = datetime('now') WHERE id = ?",
+        "UPDATE agent_configs SET description = ?, updated_at = datetime('now') WHERE id = ? AND item_type = 'agent'",
         &.{ description, agent_id },
     ) catch return null;
     return getById(allocator, db, agent_id);
@@ -173,7 +173,7 @@ pub fn updateDescription(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []c
 /// string per spec D3 (1-1 enforced by `UNIQUE(workspace_item_id)`).
 pub fn insert(allocator: std.mem.Allocator, db: DbOrTx, id: []const u8, workspace_item_id: []const u8) !void {
     try db.exec(allocator,
-        "INSERT INTO agents (id, workspace_item_id) VALUES (?, ?)",
+        "INSERT INTO agent_configs (id, workspace_item_id, item_type) VALUES (?, ?, 'agent')",
         &.{ id, workspace_item_id },
     );
 }
@@ -183,9 +183,9 @@ pub fn insert(allocator: std.mem.Allocator, db: DbOrTx, id: []const u8, workspac
 /// All knowledge rows for an agent, `position DESC`.
 pub fn listKnowledge(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8) ![]KnowledgeRow {
     var q = db.query(allocator,
-        \\SELECT id, agent_id, file_path, label, content, position,
+        \\SELECT id, config_id AS agent_id, file_path, label, content, position,
         \\       IFNULL(created_at, ''), IFNULL(updated_at, '')
-        \\FROM agent_knowledge WHERE agent_id = ?
+        \\FROM agent_config_knowledge WHERE config_id = ?
         \\ORDER BY position DESC
     , &.{agent_id}) catch return &.{};
     defer q.deinit();
@@ -218,7 +218,7 @@ pub fn insertKnowledge(
     defer allocator.free(id);
 
     db.exec(allocator,
-        "INSERT INTO agent_knowledge (id, agent_id, file_path, label, content, position, created_at, updated_at) VALUES (?, ?, COALESCE(?, ''), COALESCE(?, ''), COALESCE(?, ''), COALESCE((SELECT MAX(position) FROM agent_knowledge WHERE agent_id = ?), -1) + 1, datetime('now'), datetime('now'))",
+        "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, content, position, created_at, updated_at) VALUES (?, ?, COALESCE(?, ''), COALESCE(?, ''), COALESCE(?, ''), COALESCE((SELECT MAX(position) FROM agent_config_knowledge WHERE config_id = ?), -1) + 1, datetime('now'), datetime('now'))",
         &.{ id, agent_id, file_path, label, content, agent_id },
     ) catch return null;
     return getKnowledgeById(allocator, db, id);
@@ -227,9 +227,9 @@ pub fn insertKnowledge(
 /// Fetch one knowledge row by id. Returns null when absent.
 pub fn getKnowledgeById(allocator: std.mem.Allocator, db: DbOrTx, knowledge_id: []const u8) !?KnowledgeRow {
     var q = db.query(allocator,
-        \\SELECT id, agent_id, file_path, label, content, position,
+        \\SELECT id, config_id AS agent_id, file_path, label, content, position,
         \\       IFNULL(created_at, ''), IFNULL(updated_at, '')
-        \\FROM agent_knowledge WHERE id = ?
+        \\FROM agent_config_knowledge WHERE id = ?
     , &.{knowledge_id}) catch return null;
     defer q.deinit();
     const r = (q.next() catch null) orelse return null;
@@ -249,11 +249,11 @@ pub fn updateKnowledge(
 ) !?KnowledgeRow {
     var sql: std.ArrayList(u8) = .empty;
     defer sql.deinit(allocator);
-    try sql.appendSlice(allocator, "UPDATE agent_knowledge SET updated_at = datetime('now')");
+    try sql.appendSlice(allocator, "UPDATE agent_config_knowledge SET updated_at = datetime('now')");
     if (file_path != null) try sql.appendSlice(allocator, ", file_path = COALESCE(?, '')");
     if (label != null) try sql.appendSlice(allocator, ", label = ?");
     if (content != null) try sql.appendSlice(allocator, ", content = COALESCE(?, '')");
-    try sql.appendSlice(allocator, " WHERE id = ? AND agent_id = ?");
+    try sql.appendSlice(allocator, " WHERE id = ? AND config_id = ?");
 
     var args: std.ArrayList([]const u8) = .empty;
     defer args.deinit(allocator);
@@ -270,7 +270,7 @@ pub fn updateKnowledge(
 /// Delete one knowledge row scoped to its agent.
 pub fn deleteKnowledge(allocator: std.mem.Allocator, db: DbOrTx, knowledge_id: []const u8, agent_id: []const u8) !void {
     try db.exec(allocator,
-        "DELETE FROM agent_knowledge WHERE id = ? AND agent_id = ?",
+        "DELETE FROM agent_config_knowledge WHERE id = ? AND config_id = ?",
         &.{ knowledge_id, agent_id },
     );
 }
@@ -288,7 +288,7 @@ pub fn reorderKnowledge(allocator: std.mem.Allocator, db: *database.Db, agent_id
         var pos_buf: [32]u8 = undefined;
         const pos_str = std.fmt.bufPrint(&pos_buf, "{d}", .{position}) catch "0";
         tx.exec(allocator,
-            "UPDATE agent_knowledge SET position = ?, updated_at = datetime('now') WHERE id = ? AND agent_id = ?",
+            "UPDATE agent_config_knowledge SET position = ?, updated_at = datetime('now') WHERE id = ? AND config_id = ?",
             &.{ pos_str, id, agent_id },
         ) catch return error.UpdateFailed;
     }
@@ -300,8 +300,8 @@ pub fn reorderKnowledge(allocator: std.mem.Allocator, db: *database.Db, agent_id
 /// Enabled tool names for an agent, `tool_name ASC`.
 pub fn listEnabledToolNames(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8) ![]const []const u8 {
     var q = db.query(allocator,
-        \\SELECT tool_name FROM agent_tools
-        \\WHERE agent_id = ? AND enabled = 1
+        \\SELECT tool_name FROM agent_config_tools
+        \\WHERE config_id = ? AND enabled = 1
         \\ORDER BY tool_name ASC
     , &.{agent_id}) catch return &.{};
     defer q.deinit();
@@ -321,7 +321,7 @@ pub fn listEnabledToolNames(allocator: std.mem.Allocator, db: DbOrTx, agent_id: 
 /// Every tool row for an agent (enabled and disabled), `tool_name ASC`.
 pub fn listTools(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8) ![]ToolRow {
     var q = db.query(allocator,
-        "SELECT id, agent_id, tool_name, enabled FROM agent_tools WHERE agent_id = ? ORDER BY tool_name ASC",
+        "SELECT id, config_id AS agent_id, tool_name, enabled FROM agent_config_tools WHERE config_id = ? ORDER BY tool_name ASC",
         &.{agent_id},
     ) catch return &.{};
     defer q.deinit();
@@ -346,7 +346,7 @@ pub fn insertTool(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8
     defer allocator.free(id);
 
     db.exec(allocator,
-        "INSERT INTO agent_tools (id, agent_id, tool_name, enabled, created_at) VALUES (?, ?, ?, 1, datetime('now'))",
+        "INSERT INTO agent_config_tools (id, config_id, tool_name, enabled, created_at) VALUES (?, ?, ?, 1, datetime('now'))",
         &.{ id, agent_id, tool_name },
     ) catch return null;
     return getToolById(allocator, db, id);
@@ -356,7 +356,7 @@ pub fn insertTool(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8
 /// seeding path, which is idempotent by design.
 pub fn insertToolIgnoreDuplicate(allocator: std.mem.Allocator, db: DbOrTx, id: []const u8, agent_id: []const u8, tool_name: []const u8) !void {
     try db.exec(allocator,
-        "INSERT OR IGNORE INTO agent_tools (id, agent_id, tool_name, enabled, created_at) VALUES (?, ?, ?, 1, datetime('now'))",
+        "INSERT OR IGNORE INTO agent_config_tools (id, config_id, tool_name, enabled, created_at) VALUES (?, ?, ?, 1, datetime('now'))",
         &.{ id, agent_id, tool_name },
     );
 }
@@ -364,7 +364,7 @@ pub fn insertToolIgnoreDuplicate(allocator: std.mem.Allocator, db: DbOrTx, id: [
 /// Fetch one tool row by id. Returns null when absent.
 pub fn getToolById(allocator: std.mem.Allocator, db: DbOrTx, tool_id: []const u8) !?ToolRow {
     var q = db.query(allocator,
-        "SELECT id, agent_id, tool_name, enabled FROM agent_tools WHERE id = ?",
+        "SELECT id, config_id AS agent_id, tool_name, enabled FROM agent_config_tools WHERE id = ?",
         &.{tool_id},
     ) catch return null;
     defer q.deinit();
@@ -376,7 +376,7 @@ pub fn getToolById(allocator: std.mem.Allocator, db: DbOrTx, tool_id: []const u8
 /// Delete one tool row scoped to its agent.
 pub fn deleteTool(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8, tool_name: []const u8) !void {
     try db.exec(allocator,
-        "DELETE FROM agent_tools WHERE tool_name = ? AND agent_id = ?",
+        "DELETE FROM agent_config_tools WHERE tool_name = ? AND config_id = ?",
         &.{ tool_name, agent_id },
     );
 }
@@ -386,9 +386,9 @@ pub fn deleteTool(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8
 /// All system-prompt rows for an agent, `position DESC`.
 pub fn listSystemPrompts(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8) ![]SystemPromptRow {
     var q = db.query(allocator,
-        \\SELECT id, agent_id, title, content, position,
+        \\SELECT id, config_id AS agent_id, title, content, position,
         \\       IFNULL(created_at, ''), IFNULL(updated_at, '')
-        \\FROM agent_system_prompt WHERE agent_id = ?
+        \\FROM agent_config_system_prompt WHERE config_id = ?
         \\ORDER BY position DESC
     , &.{agent_id}) catch return &.{};
     defer q.deinit();
@@ -412,7 +412,7 @@ pub fn insertSystemPrompt(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []
     defer allocator.free(id);
 
     db.exec(allocator,
-        "INSERT INTO agent_system_prompt (id, agent_id, title, content, position, created_at, updated_at) VALUES (?, ?, COALESCE(?, ''), COALESCE(?, ''), COALESCE((SELECT MAX(position) FROM agent_system_prompt WHERE agent_id = ?), -1) + 1, datetime('now'), datetime('now'))",
+        "INSERT INTO agent_config_system_prompt (id, config_id, title, content, position, created_at, updated_at) VALUES (?, ?, COALESCE(?, ''), COALESCE(?, ''), COALESCE((SELECT MAX(position) FROM agent_config_system_prompt WHERE config_id = ?), -1) + 1, datetime('now'), datetime('now'))",
         &.{ id, agent_id, title, content, agent_id },
     ) catch return null;
     return getSystemPromptById(allocator, db, id);
@@ -421,9 +421,9 @@ pub fn insertSystemPrompt(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []
 /// Fetch one system-prompt row by id. Returns null when absent.
 pub fn getSystemPromptById(allocator: std.mem.Allocator, db: DbOrTx, prompt_id: []const u8) !?SystemPromptRow {
     var q = db.query(allocator,
-        \\SELECT id, agent_id, title, content, position,
+        \\SELECT id, config_id AS agent_id, title, content, position,
         \\       IFNULL(created_at, ''), IFNULL(updated_at, '')
-        \\FROM agent_system_prompt WHERE id = ?
+        \\FROM agent_config_system_prompt WHERE id = ?
     , &.{prompt_id}) catch return null;
     defer q.deinit();
     const r = (q.next() catch null) orelse return null;
@@ -444,10 +444,10 @@ pub fn updateSystemPrompt(
 ) !?SystemPromptRow {
     var sql: std.ArrayList(u8) = .empty;
     defer sql.deinit(allocator);
-    try sql.appendSlice(allocator, "UPDATE agent_system_prompt SET updated_at = datetime('now')");
+    try sql.appendSlice(allocator, "UPDATE agent_config_system_prompt SET updated_at = datetime('now')");
     if (title != null) try sql.appendSlice(allocator, ", title = COALESCE(?, '')");
     if (content != null) try sql.appendSlice(allocator, ", content = COALESCE(?, '')");
-    try sql.appendSlice(allocator, " WHERE id = ? AND agent_id = ?");
+    try sql.appendSlice(allocator, " WHERE id = ? AND config_id = ?");
 
     var args: std.ArrayList([]const u8) = .empty;
     defer args.deinit(allocator);
@@ -463,7 +463,7 @@ pub fn updateSystemPrompt(
 /// Delete one system-prompt row scoped to its agent.
 pub fn deleteSystemPrompt(allocator: std.mem.Allocator, db: DbOrTx, prompt_id: []const u8, agent_id: []const u8) !void {
     try db.exec(allocator,
-        "DELETE FROM agent_system_prompt WHERE id = ? AND agent_id = ?",
+        "DELETE FROM agent_config_system_prompt WHERE id = ? AND config_id = ?",
         &.{ prompt_id, agent_id },
     );
 }
@@ -480,7 +480,7 @@ pub fn reorderSystemPrompts(allocator: std.mem.Allocator, db: *database.Db, agen
         var pos_buf: [32]u8 = undefined;
         const pos_str = std.fmt.bufPrint(&pos_buf, "{d}", .{position}) catch "0";
         tx.exec(allocator,
-            "UPDATE agent_system_prompt SET position = ?, updated_at = datetime('now') WHERE id = ? AND agent_id = ?",
+            "UPDATE agent_config_system_prompt SET position = ?, updated_at = datetime('now') WHERE id = ? AND config_id = ?",
             &.{ pos_str, id, agent_id },
         ) catch return error.UpdateFailed;
     }

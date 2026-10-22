@@ -87,7 +87,7 @@ pub fn agentKanbanToolsDeleteHandler(
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;
-const Migration081CreateAgentKanbans = @import("../migrations/migration.zig").Migration081CreateAgentKanbans;
+const Migration116 = @import("../migrations/migration.zig").Migration116UnifyAgentConfigTables;
 
 const TestCtx = struct {
     db: sqlite.SqliteBackend,
@@ -106,7 +106,7 @@ fn setupDb() !TestCtx {
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
         &[_][]const u8{},
     );
-    try Migration081CreateAgentKanbans.up(&db, testing.allocator);
+    try Migration116.up(&db, testing.allocator);
 
     // Seed: configured kanban + 1 enabled tool.
     try db.exec(testing.allocator,
@@ -114,11 +114,11 @@ fn setupDb() !TestCtx {
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agent_kanbans (id, workspace_item_id) VALUES ('ws_item_1', 'ws_item_1')",
+        "INSERT INTO agent_configs (id, workspace_item_id, item_type) VALUES ('ws_item_1', 'ws_item_1', 'kanban')",
         &[_][]const u8{},
     );
     try db.exec(testing.allocator,
-        "INSERT INTO agent_kanban_tools (id, kanban_id, tool_name, enabled) VALUES ('kt_1', 'ws_item_1', 'bash', 1)",
+        "INSERT INTO agent_config_tools (id, config_id, tool_name, enabled) VALUES ('kt_1', 'ws_item_1', 'bash', 1)",
         &[_][]const u8{},
     );
 
@@ -131,7 +131,7 @@ fn countTools(
     kanban_id: []const u8,
 ) !u32 {
     var q = try db.query(allocator,
-        "SELECT COUNT(*) FROM agent_kanban_tools WHERE kanban_id = ?",
+        "SELECT COUNT(*) FROM agent_config_tools WHERE config_id = ?",
         &[_][]const u8{kanban_id},
     );
     defer q.deinit();
