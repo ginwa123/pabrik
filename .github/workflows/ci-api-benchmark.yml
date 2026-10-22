@@ -156,19 +156,23 @@ jobs:
         env:
           API_BENCH_OUT: ${{ runner.temp }}/api-bench
         run: |
-          set -euo pipefail
+          set -uo pipefail
           report="$API_BENCH_OUT/api-bench.json"
           if [ ! -f "$report" ]; then
             echo "::warning::no api-bench.json was produced"
             exit 0
           fi
-          jq -r '"::notice::gate \(.gate.verdict), enforced \(.gate.enforced), digest \(.machine.result_sha256)"' "$report"
-          strict="$(jq -r '.gate.strict' "$report")"
-          jq -r '.gate.checks[] | select(.ok | not) | "\(.kind)\t\(.name)\t\(.value)\t\(.limit)"' "$report" |
-          while IFS=$'\t' read -r kind name value limit; do
-            level=warning
-            if [ "$kind" = "functional" ] || [ "$strict" = "true" ]; then level=error; fi
-            echo "::$level::$name: value $value, limit $limit"
+          if ! jq -e . "$report" > /dev/null; then
+            echo "::warning::api-bench.json is not valid json"
+            exit 0
+          fi
+          jq -r '"::notice::run digest \(.machine.result_sha256) over scenarios \(.spec.scenarios | join(", "))"' "$report"
+          jq -r '.results | to_entries[] | "::notice::\(.key): gate \(.value.gate.verdict), enforced \(.value.gate.enforced)"' "$report"
+          jq -r '.results | to_entries[] | .key as $s | .value.gate as $g
+                 | $g.checks[] | select(.ok | not)
+                 | "\(if ((.kind == "functional") or $g.strict) then "error" else "warning" end)\t\($s)\t\(.name)\t\(.value)\t\(.limit)"' "$report" |
+          while IFS=$'\t' read -r level scenario name value limit; do
+            echo "::$level::$scenario.$name: value $value, limit $limit"
           done
 
       - name: Upload the report
