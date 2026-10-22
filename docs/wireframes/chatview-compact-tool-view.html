@@ -258,9 +258,10 @@
 
 <section id="chat">
   <h2>The chat view</h2>
-  <p>The same turn, drawn twice. On the left is the proposal: one line per call, carrying the tool
-  and the argument that identifies it. On the right is today, the same eight calls as eight cards.
-  The `+` on a line opens that one call as the full card, exactly as the dev view draws it.</p>
+  <p>The same turn, drawn twice. On the left is the proposal: the turn's calls folded into one card
+  that says how many there were, how many failed and how long the run took. Click it to unfold: one
+  line per call, carrying the tool and the argument that identifies it. On the right is today, the
+  same eight calls as eight cards.</p>
 
   <div class="readout" id="readout" aria-live="polite">
     <span class="rlabel">Measured from the two panes below</span>
@@ -278,6 +279,25 @@
         <p class="bubble asst"><span class="who">Agent</span>Reading how the chat draws tool calls, then mocking the compact shape.</p>
 
         <div class="toolblock" id="compact-toolblock">
+          <div
+            class="dcard dgroup"
+            id="crow-group"
+            role="button"
+            tabindex="0"
+            aria-expanded="false"
+            aria-controls="clist"
+          >
+            <div class="dhead">
+              <code class="dtool">8 tool calls</code>
+              <span class="dmeta">
+                <span class="tag bad">1 failed</span>
+                <span class="tag">1 write</span>
+                <span class="tag">42.1s</span>
+              </span>
+              <span class="plus" id="chev">+</span>
+            </div>
+          </div>
+          <div class="dcards" id="clist" style="display:none">
           <div class="crow"><code class="ctool">read_file</code><code class="carg">src/apps/desktop/src/components/views/ChatView.vue</code><span class="grow"></span><span class="plus">+</span></div>
           <div class="crow"><code class="ctool">search</code><code class="carg">"tool-sequence" in src/apps/desktop/src</code><span class="grow"></span><span class="plus">+</span></div>
           <div class="crow"><code class="ctool">command</code><code class="carg">$ git status --short</code><span class="grow"></span><span class="plus">+</span></div>
@@ -286,6 +306,7 @@
           <div class="crow"><code class="ctool">read_file</code><code class="carg">src/apps/desktop/src/stores/tabs.ts</code><span class="grow"></span><span class="plus">+</span></div>
           <div class="crow"><code class="ctool">command</code><code class="carg">$ npm run test:unit -- --run</code><span class="grow"></span><span class="tag bad">failed</span><span class="plus">+</span></div>
           <div class="crow"><code class="ctool">present_files</code><code class="carg">chatview-compact-tool-view.html</code><span class="grow"></span><span class="plus">+</span></div>
+          </div>
         </div>
 
         <p class="bubble asst"><span class="who">Agent</span>The eight calls above are one card here.
@@ -485,6 +506,28 @@
   var mode = 'compact';
 
   function byId(id) { return document.getElementById(id); }
+
+  // ── the group row folds a turn's calls into one card ─────────────────
+  var groupBtn = byId('crow-group');
+  var list = byId('clist');
+  var chev = byId('chev');
+
+  function setList(open) {
+    list.style.display = open ? 'flex' : 'none';
+    groupBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    chev.textContent = open ? '−' : '+';
+    render();
+  }
+
+  groupBtn.addEventListener('click', function () {
+    setList(list.style.display === 'none');
+  });
+
+  groupBtn.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    setList(list.style.display === 'none');
+  });
 
   // ── a line opens the full card for that one call ─────────────────────
   Array.prototype.forEach.call(document.querySelectorAll('.crow .plus'), function (plus) {

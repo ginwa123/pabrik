@@ -34,21 +34,23 @@ ran eight tools is eight bordered rows, and the agent's answer ends up below the
 
 ### The Compact View (new)
 
-Every tool call is drawn as **one line**: the tool, the argument that identifies it, and how it
-ended. The `+` on the line opens that one call as the full dev card, in place.
+The unit is the **agent turn**, not the transcript row: a turn's tool calls fold into **one group
+card**, and the card unfolds into **one line per call**.
 
-- **a call on its own is a line, never a group card.** A chat that fires one tool per turn groups
-  every call separately, so a group card would have said "1 tool calls" and carried neither the
-  tool nor its argument — the compact view would have said less than the dev view.
-- **a run of several consecutive calls folds into one group card**: the violet name is `8 tool
-  calls`, the right-hand badges are `1 failed`, `1 write` and the run's duration, and the `+`/`−`
-  toggles the fold. Behind it are the lines of the calls.
-- **a group that holds an `ask_user` starts open**, and the question is always drawn as the full
+- **the fold follows the turn**: every tool call up to the assistant message that stops
+  (`finish_reason === 'stop'`) belongs to the same run. It has to: a chat that fires one tool per
+  turn has a thinking turn between each call, so the transcript's own grouping puts every call in a
+  group of one, and folding by row adjacency never folds anything.
+- **a turn with one call is one line**, never a group card that says "1 tool calls".
+- **unfolded, each call is one line**: the tool, the argument that identifies it, and how it ended.
+  The `+` on the line opens that one call as the full dev card, in place.
+- **a turn that holds an `ask_user` starts open**, and the question is always drawn as the full
   card, because that is the one call the human has to act on: a question you cannot see is a
   question you cannot answer.
 
-Measured on the wireframe: the tool block is **191px** against **311px** in the dev view for the
-same eight calls, so **1.6 times shorter**, with one line per call instead of one card per call.
+Measured on the wireframe: folded, the tool block is **24px** against **311px** in the dev view for
+the same eight calls — one card instead of eight. Unfolded it is 273px: the same turn, one line per
+call.
 
 ## Where the mode lives
 
