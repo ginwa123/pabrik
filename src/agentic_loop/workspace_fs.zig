@@ -661,11 +661,17 @@ test "forWorkspace: a workspace that is not VM-backed gets no Firecracker" {
     var ctx = try guestTestCtx();
     defer ctx.deinit();
 
+    if (!runtime_mode.vm_backend_available) {
+        // No VM backend on this host: there is no Firecracker to spawn at all,
+        // so the refusal is "no manager" and no VM is spawned either way.
+        try testing.expectError(Error.GuestManagerUnavailable, forWorkspace(a, &ctx.db, "w_host"));
+        return;
+    }
+
     // The refusal comes BEFORE the manager is asked, so no VM is spawned for
     // a workspace that has none.
     try testing.expectError(Error.GuestWorkspaceNotVm, forWorkspace(a, &ctx.db, "w_host"));
 
-    if (!runtime_mode.vm_backend_available) return;
     var fs = try forWorkspace(a, &ctx.db, "w1");
     defer fs.deinit();
     try testing.expectEqualStrings("w1", fs.workspace_id);
