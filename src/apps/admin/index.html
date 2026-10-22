@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin console</title>
+<link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+
+<header class="bar">
+  <div class="bar-inner">
+    <div class="bar-text">
+      <h1>Admin console</h1>
+      <p class="bar-note">Every account on this installation. The owner can change all of them.</p>
+    </div>
+    <button type="button" class="button button-light" id="new-account-button">New account</button>
+  </div>
+</header>
+
+<main class="sheet">
+
+  <p class="notice" id="notice" hidden></p>
+
+  <aside class="rail" data-ui="counts" aria-label="Installation counts">
+    <div class="tile">
+      <span class="tile-value" id="count-total">0</span>
+      <span class="tile-label">accounts</span>
+    </div>
+    <div class="tile">
+      <span class="tile-value" id="count-active">0</span>
+      <span class="tile-label">may sign in</span>
+    </div>
+    <div class="tile">
+      <span class="tile-value" id="count-owners">0</span>
+      <span class="tile-label">owners</span>
+    </div>
+    <div class="tile">
+      <span class="tile-value" id="count-bots">0</span>
+      <span class="tile-label">bots</span>
+    </div>
+    <div class="tile">
+      <span class="tile-value" id="count-sessions">0</span>
+      <span class="tile-label">live sessions</span>
+    </div>
+  </aside>
+
+  <div class="work">
+
+    <section class="panel" id="new-account-panel" data-ui="new-account">
+      <h2>New account</h2>
+      <p class="panel-note">Leave the password empty and the console mints a temporary one, shown once.</p>
+      <form class="form" id="new-account-form" autocomplete="off">
+        <label class="field">
+          <span class="field-label">Email</span>
+          <input type="email" name="email" id="new-email" placeholder="person@example.com" required>
+        </label>
+        <label class="field">
+          <span class="field-label">Name</span>
+          <input type="text" name="name" id="new-name" placeholder="Person">
+        </label>
+        <label class="field field-narrow">
+          <span class="field-label">Role</span>
+          <select name="role" id="new-role">
+            <option value="user">User</option>
+            <option value="admin">Owner</option>
+            <option value="bot">Bot</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Password</span>
+          <input type="text" name="password" id="new-password" placeholder="Temporary, if left empty">
+        </label>
+        <button type="submit" class="button button-primary">Create account</button>
+      </form>
+    </section>
+
+    <section class="panel" data-ui="accounts">
+      <h2>Accounts</h2>
+      <table class="accounts">
+        <thead>
+          <tr>
+            <th scope="col">Email</th>
+            <th scope="col">Name</th>
+            <th scope="col">Role</th>
+            <th scope="col">Status</th>
+            <th scope="col"><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody id="accounts-body"></tbody>
+      </table>
+      <p class="empty" id="accounts-empty" hidden>This installation has no accounts yet.</p>
+    </section>
+
+    <section class="panel credential" id="credential-panel" data-ui="credential">
+      <h2>Handed out</h2>
+      <p class="panel-note">The temporary password the console last handed out. Copy it, then clear it.</p>
+      <div class="credential-body" id="credential-body">
+        <p class="empty" id="credential-empty">No password has been handed out yet.</p>
+        <p class="credential-line" id="credential-line" hidden>
+          <span class="credential-for" id="credential-for"></span>
+          <code class="credential-value" id="credential-value"></code>
+          <button type="button" class="button" id="credential-clear">Clear</button>
+        </p>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<script src="/admin/admin.js"></script>
+</body>
+</html>
