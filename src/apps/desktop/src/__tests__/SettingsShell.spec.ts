@@ -53,16 +53,16 @@ describe('SettingsShell', () => {
     })
   })
 
-  it('user scope shows General only — nothing that is really per-workspace', async () => {
-    // Decision D4: General is the only setting that still applies everywhere.
-    // Profiles / MCP / Tools / Skill Evals moved to the workspace scope, and
-    // Skills / Memories were already there.
+  it('user scope shows General and Security — nothing that is really per-workspace', async () => {
+    // Decision D4: General is the only CONFIG that still applies everywhere.
+    // Security joins it because an account's password is not a workspace value.
     const router = await makeRouter('/app/settings')
     wrapper = mountShell(router, { scope: 'user', workspaceId: '' })
     await flushPromises()
 
     expect(wrapper.find('[data-testid="settings-shell"]').attributes('data-scope')).toBe('user')
     expect(wrapper.find('[data-testid="settings-nav-general"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="settings-nav-security"]').exists()).toBe(true)
     for (const id of ['pabrik', 'agents', 'mcp', 'tools', 'evals', 'skills', 'memories']) {
       expect(wrapper.find(`[data-testid="settings-nav-${id}"]`).exists()).toBe(false)
     }
