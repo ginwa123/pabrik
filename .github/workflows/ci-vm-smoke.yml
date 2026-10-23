@@ -28,6 +28,7 @@ on:
       - 'scripts/vm-guest-probe.py'
       - 'scripts/vmd-smoke.sh'
       - 'scripts/vmd-daemon-smoke.sh'
+      - 'scripts/vmd-resize-smoke.sh'
       - 'scripts/vmd-saas-smoke.sh'
       - 'scripts/saas-cwd-smoke.sh'
       - 'scripts/saas-cwd-probe.py'
@@ -100,6 +101,28 @@ jobs:
 
       - name: 'The daemon: peer auth, adoption, stop, detached jobs, reconciler'
         run: scripts/vmd-daemon-smoke.sh
+
+  resize:
+    name: a resize moves the guest (vCPUs, RAM) and keeps its disk
+    needs: preflight
+    runs-on: [self-hosted, linux, x64, kvm]
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Zig ${{ env.ZIG_VERSION }}
+        uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: 'Stop, record, start: the guest sees the new size, the disk keeps its file'
+        # Firecracker takes vCPUs and RAM only at InstanceStart, so this asserts
+        # the whole path: the CLI asks, the manager records the size in
+        # vm.spec, the VM boots again with it, and `nproc` / MemTotal INSIDE
+        # the guest agree. A manager that recorded a size and booted the old
+        # one cannot pass.
+        run: scripts/vmd-resize-smoke.sh
 
   saas:
     name: --saas boots only with a live manager, and a chat runs in its VM

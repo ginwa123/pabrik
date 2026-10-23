@@ -38,7 +38,7 @@ pub const Error = error{
     InvalidBase64,
 };
 
-pub const Action = enum { ping, exec, stop, status, spawn, probe, signal, log, fs_stat, fs_read, fs_remove, fs_write, fs_walk, tty };
+pub const Action = enum { ping, exec, stop, status, resize, spawn, probe, signal, log, fs_stat, fs_read, fs_remove, fs_write, fs_walk, tty };
 
 /// What a `tty` request does. One action rather than five, because every one of
 /// them carries the same four fields and answers with the same reply shape.
@@ -78,6 +78,10 @@ pub const Request = struct {
     /// `tty open` and `tty resize`: the window the caller wants.
     cols: u16 = 0,
     rows: u16 = 0,
+    /// `resize`: the size the workspace's VM must boot with next. Firecracker
+    /// fixes both at InstanceStart, so applying them restarts the VM.
+    vcpus: u32 = 0,
+    mem_mib: u32 = 0,
 };
 
 pub const FailureCode = enum {
@@ -181,7 +185,7 @@ pub const TtyReply = struct {
 pub const Response = union(enum) {
     pong: struct { version: []const u8 },
     ack,
-    status: struct { state: []const u8, pid: i64, last_error: []const u8 },
+    status: struct { state: []const u8, pid: i64, last_error: []const u8, vcpus: u32 = 0, mem_mib: u32 = 0 },
     exec_result: ExecResult,
     spawned: Spawned,
     probe: Probe,
@@ -362,6 +366,10 @@ pub fn encodeRequest(allocator: std.mem.Allocator, request: Request) ![]u8 {
     if (request.action == .probe or request.action == .signal) {
         try out.intField(allocator, "pid", request.pid);
     }
+    if (request.action == .resize) {
+        try out.intField(allocator, "vcpus", @intCast(request.vcpus));
+        try out.intField(allocator, "mem_mib", @intCast(request.mem_mib));
+    }
     if (request.action == .signal) {
         try out.intField(allocator, "signal", request.sig);
     }
@@ -444,6 +452,17 @@ pub fn decodeRequest(allocator: std.mem.Allocator, json: []const u8) !OwnedReque
 
     if (action == .tty) {
         try decodeTtyAction(object, aa, &request);
+        return .{ .arena = arena, .value = request };
+    }
+
+    if (action == .resize) {
+        // The size rides in the request: the daemon has no database to look it
+        // up in, and the caller is the one that decided it.
+        const vcpus = integerField(object, "vcpus") orelse return Error.BadRequest;
+        const mem_mib = integerField(object, "mem_mib") orelse return Error.BadRequest;
+        if (vcpus <= 0 or mem_mib <= 0) return Error.BadRequest;
+        request.vcpus = @intCast(vcpus);
+        request.mem_mib = @intCast(mem_mib);
         return .{ .arena = arena, .value = request };
     }
 
@@ -635,12 +654,28 @@ pub fn encodeAck(allocator: std.mem.Allocator, id: i64) ![]u8 {
 }
 
 pub fn encodeStatus(allocator: std.mem.Allocator, id: i64, state: []const u8, pid: i64, last_error: []const u8) ![]u8 {
+    return encodeStatusSized(allocator, id, state, pid, last_error, 0, 0);
+}
+
+/// `encodeStatus` with the size the workspace boots with, so a caller can show
+/// it without a second round trip.
+pub fn encodeStatusSized(
+    allocator: std.mem.Allocator,
+    id: i64,
+    state: []const u8,
+    pid: i64,
+    last_error: []const u8,
+    vcpus: u32,
+    mem_mib: u32,
+) ![]u8 {
     var out = try ObjectWriter.init(allocator);
     errdefer out.list.deinit(allocator);
     try out.strField(allocator, "type", "status");
     try out.intField(allocator, "id", id);
     try out.strField(allocator, "state", state);
     try out.intField(allocator, "pid", pid);
+    if (vcpus != 0) try out.intField(allocator, "vcpus", @intCast(vcpus));
+    if (mem_mib != 0) try out.intField(allocator, "mem_mib", @intCast(mem_mib));
     if (last_error.len > 0) try out.strField(allocator, "error", last_error);
     return out.finish(allocator);
 }
@@ -801,6 +836,8 @@ pub fn decodeResponse(
             .state = stringField(object, "state") orelse "",
             .pid = integerField(object, "pid") orelse 0,
             .last_error = stringField(object, "error") orelse "",
+            .vcpus = @intCast(@max(0, integerField(object, "vcpus") orelse 0)),
+            .mem_mib = @intCast(@max(0, integerField(object, "mem_mib") orelse 0)),
         } } };
     }
     if (std.mem.eql(u8, kind, "failure")) {
@@ -1357,6 +1394,24 @@ test "rpc: pong and status decode to their own shape" {
     }
 }
 
+test "a resize request carries the size it asks for" {
+    const allocator = testing.allocator;
+    const encoded = try encodeRequest(allocator, .{
+        .action = .resize,
+        .id = 31,
+        .workspace_id = "ws_1",
+        .vcpus = 2,
+        .mem_mib = 1024,
+    });
+    defer allocator.free(encoded);
+    var decoded = try decodeRequest(allocator, encoded);
+    defer decoded.deinit();
+    try testing.expectEqual(Action.resize, decoded.value.action);
+    try testing.expectEqualStrings("ws_1", decoded.value.workspace_id);
+    try testing.expectEqual(@as(u32, 2), decoded.value.vcpus);
+    try testing.expectEqual(@as(u32, 1024), decoded.value.mem_mib);
+}
+
 test "fs actions: a relative path crosses whole, with its offset and ceiling" {
     const allocator = testing.allocator;
     const encoded = try encodeRequest(allocator, .{
@@ -1521,8 +1576,7 @@ test "fs_read: the reply ceiling is the frame's, and a zero ask is refused" {
 
     // A frame that asks for no ceiling at all gets the file default — which is
     // not the log default, so the two actions cannot silently share one.
-    var defaulted = try decodeRequest(
-        allocator,
+    var defaulted = try decodeRequest(allocator,
         \\{"action":"fs_read","id":1,"workspace_id":"ws_1","path":"a.txt"}
     );
     defer defaulted.deinit();

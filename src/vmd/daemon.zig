@@ -8,6 +8,8 @@ const rpc = @import("rpc.zig");
 const policy = @import("policy.zig");
 const vm_client = @import("vm_client.zig");
 const reconciler_mod = @import("reconciler.zig");
+const spec_store = @import("spec_store.zig");
+const vm_limits = @import("vm_limits.zig");
 const egress_proxy = @import("egress_proxy.zig");
 const agent_service = @import("agent_service.zig");
 const proxy_rpc = @import("proxy_rpc.zig");
@@ -31,6 +33,7 @@ pub const Config = struct {
     root: []const u8,
     fc_bin: []const u8 = "firecracker",
     mem_mib: u32 = vm_client.default_mem_mib,
+    vcpus: u32 = vm_client.default_vcpus,
     /// The uid allowed to call this daemon. Null means "the daemon's own uid",
     /// which is the single-user case; a daemon started as root sets it to the
     /// server's uid.
@@ -103,6 +106,7 @@ pub const Manager = struct {
             .kernel = self.config.kernel,
             .fc_bin = self.config.fc_bin,
             .mem_mib = self.config.mem_mib,
+            .vcpus = self.config.vcpus,
             .backoff_base_ms = self.config.backoff_base_ms,
         });
     }
@@ -138,6 +142,26 @@ pub const Manager = struct {
     /// down takes the VMs with it.
     pub fn stopAll(self: *const Manager, allocator: std.mem.Allocator) !u32 {
         return self.reconciler().stopAll(allocator);
+    }
+
+    /// Stop the workspace's VM, record the size it must boot with, and start
+    /// it again. Firecracker takes vCPUs and RAM only at `InstanceStart`, so a
+    /// resize is a short restart: the guest comes back, its processes do not.
+    pub fn resize(
+        self: *const Manager,
+        allocator: std.mem.Allocator,
+        workspace_id: []const u8,
+        vcpus: u32,
+        mem_mib: u32,
+    ) !State {
+        if (!self.stopWorkspace(allocator, workspace_id)) return error.StopFailed;
+        try spec_store.write(allocator, self.config.root, workspace_id, .{ .vcpus = vcpus, .mem_mib = mem_mib });
+        // A guest that fails to come up is reported through the state, so the
+        // caller still gets the record and its reason.
+        if (self.ensure(allocator, workspace_id)) |layout| {
+            layout.deinit(allocator);
+        } else |_| {}
+        return self.state(allocator, workspace_id);
     }
 
     /// `false` means nothing was running, or that a VMM this daemon cannot
@@ -360,7 +384,19 @@ fn dispatch(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request
         .status => {
             const state = try manager.state(allocator, request.workspace_id);
             defer state.deinit(allocator);
-            return rpc.encodeStatus(allocator, request.id, state.label, state.pid, state.last_error);
+            const spec = manager.reconciler().specFor(request.workspace_id);
+            return rpc.encodeStatusSized(allocator, request.id, state.label, state.pid, state.last_error, spec.vcpus, spec.mem_mib);
+        },
+        .resize => {
+            if (vm_limits.check(request.workspace_id, request.vcpus, request.mem_mib)) |refusal| {
+                return rpc.encodeFailure(allocator, request.id, .bad_request, refusal.message());
+            }
+            const state = manager.resize(allocator, request.workspace_id, request.vcpus, request.mem_mib) catch |err| {
+                log("resize of workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
+                return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+            };
+            defer state.deinit(allocator);
+            return rpc.encodeStatusSized(allocator, request.id, state.label, state.pid, state.last_error, request.vcpus, request.mem_mib);
         },
         .stop => {
             _ = manager.stopWorkspace(allocator, request.workspace_id);

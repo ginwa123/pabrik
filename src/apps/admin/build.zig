@@ -1,0 +1,67 @@
+const std = @import("std");
+
+/// `pabrik-admin` — the admin console as a program of its own:
+/// `zig build run -- --db ~/.config/pabrik/agent.db`. It links the SQLite and
+/// HTTP-server packages only, so it builds in seconds.
+pub fn build(b: *std.Build) void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
+
+    const databases_dep = b.dependency("databases", .{
+        .target = target,
+        .optimize = optimize,
+        .db_used = "sqlite",
+    });
+    const kabelweb_dep = b.dependency("kabelweb", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const databases_mod = databases_dep.module("databases");
+    // The session/password primitives are shared with the server, so they
+    // live in `src/http_handlers/auth_core.zig`; a module may be rooted
+    // outside this folder, an `@import` path may not.
+    const auth_core_mod = b.createModule(.{
+        .root_source_file = b.path("../../http_handlers/auth_core.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "databases", .module = databases_mod },
+        },
+    });
+
+    const imports = [_]std.Build.Module.Import{
+        .{ .name = "databases", .module = databases_mod },
+        .{ .name = "kabelweb", .module = kabelweb_dep.module("kabelweb") },
+        .{ .name = "auth_core", .module = auth_core_mod },
+    };
+
+    const exe = b.addExecutable(.{
+        .name = "pabrik-admin",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("main.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+            .imports = &imports,
+        }),
+    });
+    b.installArtifact(exe);
+
+    const run = b.addRunArtifact(exe);
+    run.step.dependOn(b.getInstallStep());
+    if (b.args) |args| run.addArgs(args);
+    b.step("run", "Run the admin console").dependOn(&run.step);
+
+    const tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("mod.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+            .imports = &imports,
+        }),
+    });
+    const run_tests = b.addRunArtifact(tests);
+    b.step("test", "Run the admin console's tests").dependOn(&run_tests.step);
+}

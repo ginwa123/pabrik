@@ -33,6 +33,7 @@ pub fn registerAllOn(router: *gserverz.router.Router) !void {
     try registerTerminalRoutes(&authed, router);
     try registerStreamRoutes(&authed, router);
     try registerSystemRoutes(&authed, router);
+    try registerAdminRoutes(&authed, router);
     try registerMemoryRoutes(&authed);
     try registerConfigRoutes(&authed);
     try registerGitRoutes(&authed);
@@ -153,6 +154,27 @@ fn registerSystemRoutes(authed: *Group, router: *gserverz.router.Router) !void {
     // so this stays a literal and there is still no `:param` under this prefix
     // to shadow a later route.
     try authed.post("/api/skill-evals/results/apply", ai_mod.http_handlers.skillEvalsApplyHandler);
+}
+
+fn registerAdminRoutes(authed: *Group, router: *gserverz.router.Router) !void {
+    // The console page and its two assets are NOT behind authMiddleware:
+    // the page has to load before it can ask whether the visitor is the
+    // owner, and the endpoints answer 401/403 on their own.
+    try router.get("/admin", pabrikcore.admin_app.adminPageHandler);
+    try router.get("/admin/", pabrikcore.admin_app.adminPageHandler);
+    try router.get("/admin/admin.css", pabrikcore.admin_app.adminCssHandler);
+    try router.get("/admin/admin.js", pabrikcore.admin_app.adminJsHandler);
+
+    // The endpoints carry authMiddleware AND check the owner's role.
+    try authed.get("/api/admin/overview", pabrikcore.admin_app.adminOverviewHandler);
+    try authed.get("/api/admin/users", pabrikcore.admin_app.adminUsersListHandler);
+    try authed.post("/api/admin/users", pabrikcore.admin_app.adminUserCreateHandler);
+    try authed.patch("/api/admin/users/:id", pabrikcore.admin_app.adminUserUpdateHandler);
+    try authed.post("/api/admin/users/:id/password", pabrikcore.admin_app.adminUserPasswordHandler);
+
+    // The workspace VMs. `:workspace` is the workspace id, not a session id.
+    try authed.get("/api/admin/vms", ai_mod.http_handlers.adminVmsListHandler);
+    try authed.post("/api/admin/vms/:workspace/resize", ai_mod.http_handlers.adminVmResizeHandler);
 }
 
 fn registerMemoryRoutes(authed: *Group) !void {

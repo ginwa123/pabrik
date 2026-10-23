@@ -15,7 +15,14 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fc_bin="${FC_BIN:-firecracker}"
 guest_kernel="${GUEST_KERNEL:-$HOME/firecracker-demo/vmlinux-6.18.51}"
-port="${PABRIK_SAAS_CWD_PORT:-8080}"
+# A server left behind by a cancelled run can still hold a fixed port, and the
+# health check below would then be answered by THAT server (a different HOME, a
+# different database) while the probe talks to it. Pick a free port unless the
+# operator names one.
+pick_free_port() {
+  python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'
+}
+port="${PABRIK_SAAS_CWD_PORT:-$(pick_free_port)}"
 profile="saas-cwd-stub"
 marker="PABRIK_CWD_PROBE"
 email="cwd-probe@example.invalid"
@@ -31,6 +38,7 @@ command -v python3 >/dev/null || fail "python3 is required"
 # 8081 is this box's live dev server; this smoke must never bind or signal it.
 [ "$port" != "8081" ] || fail "port 8081 is reserved; set PABRIK_SAAS_CWD_PORT to another port"
 
+vmd="$repo_root/zig-out/bin/pabrik-vmd"
 pabrik=""
 for candidate in "$repo_root/zig-out/bin/pabrik" "$repo_root"/zig-out/bin/pabrikcore-*; do
   [ -x "$candidate" ] && { pabrik="$candidate"; break; }
@@ -48,6 +56,10 @@ host_release="$(uname -r)"
 
 work="$(mktemp -d -t pabrik-saas-cwd-smoke-XXXXXX)"
 export HOME="$work"
+# A self-hosted runner may export XDG_*: pin pabrik's config, data, state and
+# runtime dir to the smoke's HOME, or the smoke reads the operator's install
+# (their real config.json and agent.db) instead of its own.
+unset XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_RUNTIME_DIR
 pids=()
 cleanup() {
   for pid in "${pids[@]:-}"; do kill -TERM "$pid" 2>/dev/null || true; done
@@ -79,7 +91,10 @@ llm_url="http://127.0.0.1:$stub_port/v1/chat/completions"
 say "stub upstream for the model on 127.0.0.1:$stub_port"
 
 say "booting pabrik --saas --port $port"
-env PABRIK_VMD_SOCKET="$work/vmd.sock" \
+# No background model-catalog fetch: this smoke asserts on a chat turn, and a
+# fetch started at boot writes the database while the turn reads its config.
+env PABRIK_MODEL_CATALOG_FETCH=0 \
+  PABRIK_VMD_SOCKET="$work/vmd.sock" \
   PABRIK_VM_BASE_IMAGE="$work/base.ext4" \
   PABRIK_GUEST_KERNEL="$guest_kernel" \
   PABRIK_FC_BIN="$fc_bin" \
@@ -89,10 +104,13 @@ pids+=($!)
 
 server_ready() {
   grep -q 'runtime mode: saas' "$work/server.log" 2>/dev/null &&
+    # OUR server, on OUR port: another pabrik answering the health check would
+    # make every assertion below about a database this smoke never wrote.
+    grep -q "Open in your browser: http://127.0.0.1:$port/" "$work/server.log" 2>/dev/null &&
     curl -fsS "http://127.0.0.1:$port/health" >/dev/null 2>&1
 }
 for _ in $(seq 1 600); do server_ready && break; sleep 0.1; done
-server_ready || fail "pabrik --saas never became ready
+server_ready || fail "pabrik --saas never became ready on port $port (another process may hold it)
 --- server log ---
 $(tail -n 20 "$work/server.log")"
 say "ok  runtime mode: saas on port $port"
@@ -102,6 +120,7 @@ say "ok  runtime mode: saas on port $port"
 say "ok  admin $email created in the smoke HOME"
 
 say "creating a new workspace, then its FIRST chat (no kanban task)"
+[ -x "$vmd" ] || fail "no $vmd: run 'zig build vm' first"
 rc=0
 python3 "$repo_root/scripts/saas-cwd-probe.py" \
   --base-url "http://127.0.0.1:$port" \
@@ -113,11 +132,41 @@ python3 "$repo_root/scripts/saas-cwd-probe.py" \
   --guest-release "$kernel_release" \
   --host-release "$host_release" \
   --host-home "$work" \
-  --record-dir "$stub_record" || rc=$?
+  --record-dir "$stub_record" 2>&1 | tee "$work/probe.out"
+rc=${PIPESTATUS[0]}
 if [ "$rc" -ne 0 ]; then
-  printf -- '--- server log (tail) ---\n%s\n' "$(tail -n 30 "$work/server.log")" >&2
+  # The tail is one line repeated when the config never resolves, and that
+  # repetition buries everything else: show the boot, count the noise, then
+  # what is left of the running log.
+  printf -- '--- server log (boot) ---\n%s\n' "$(head -n 25 "$work/server.log" 2>/dev/null)" >&2
+  noisy="$(grep -c 'Failed to parse JSON config' "$work/server.log" 2>/dev/null || true)"
+  printf -- '--- server log ---\nconfig-parse failures: %s of %s lines\n%s\n' \
+    "${noisy:-0}" "$(wc -l <"$work/server.log" 2>/dev/null || echo 0)" \
+    "$(grep -v 'Failed to parse JSON config' "$work/server.log" 2>/dev/null | tail -n 30)" >&2
   printf -- '--- vmd log (tail) ---\n%s\n' "$(tail -n 20 "$work/vms/vmd.log" 2>/dev/null)" >&2
+  printf -- '--- the stub upstream ---\n%s\n' "$(tail -n 5 "$work/stub.log" 2>/dev/null)" >&2
+  # `json_valid` says whether the stored overlay is JSON at all, and the prefix
+  # says what it is: a turn that never reaches a model is usually a config the
+  # workflow could not parse, not a VM that did not boot.
+  printf -- '--- the accounts the server has ---\n%s\n' \
+    "$(sqlite3 "$work/.config/pabrik/agent.db" \
+      "SELECT email, role, is_active, length(COALESCE(config_json,'')), json_valid(COALESCE(config_json,'')), replace(substr(COALESCE(config_json,''),1,200), char(10), ' ') FROM users;" 2>&1 | head -10)" >&2
   fail "the probe failed (rc=$rc)"
 fi
 
-say "OK - a new workspace's first chat ran at /workspace, on the guest kernel"
+ws="$(sed -n 's/^\[saas-cwd-probe\] new workspace \(ws_[^ ]*\).*/\1/p' "$work/probe.out" | tail -1)"
+[ -n "$ws" ] || fail "the probe never reported a workspace id"
+
+say "that workspace's VM answers over the manager (pabrik-vmd exec), no model involved"
+out="$(PABRIK_VM_DIR="$work/vms" "$vmd" exec --socket "$work/vmd.sock" --workspace-id "$ws" \
+  --timeout-ms 60000 -- /bin/sh -c 'pwd; uname -r' 2>"$work/exec.err")" ||
+  fail "pabrik-vmd exec failed: $(cat "$work/exec.err")"
+expected=$'/workspace\n'"$kernel_release"
+[ "$out" = "$expected" ] ||
+  fail "the VM did not answer at /workspace on the guest kernel (want $(printf '%q' "$expected"), got $(printf '%q' "$out"))"
+case "$out" in
+  *"$work"*) fail "the command ran against the host: $out" ;;
+esac
+say "ok  $(printf '%s' "$out" | tr '\n' ' ')"
+
+say "OK - a workspace session is rooted at /workspace, and its VM answers on the guest kernel"

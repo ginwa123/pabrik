@@ -274,6 +274,9 @@ pub const boot_headless_dispatch = @import("boot/headless_dispatch.zig");
 // user-facing contract.
 pub const headless = @import("headless/mod.zig");
 pub const http_static_serve = @import("http_static/static_serve.zig");
+// The admin console: the static page under /admin and the /api/admin
+// endpoints behind it.
+pub const admin_app = @import("apps/admin/mod.zig");
 
 pub const startup = @import("startup.zig");
 pub const agentic_loop_mod = @import("agentic_loop/workflow.zig");
@@ -284,6 +287,9 @@ pub const migrations_mod = @import("migrations/mod.zig");
 test {
     _ = @import("ai_workflow/tui/test_runner.zig");
     _ = @import("modules/agent/test_runner.zig");
+    // The admin console: page, store and endpoints in one module. The
+    // `pub const admin_app` re-export above does not pull its tests in.
+    _ = @import("apps/admin/mod.zig");
     // Agent Mode helpers: impl + tests in one file. Importing these
     // makes their inline `test` blocks discoverable by `zig build test`.
     _ = @import("agentic_loop/agent_tools_allowed.zig");

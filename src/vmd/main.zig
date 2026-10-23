@@ -12,6 +12,7 @@ const agent_service = @import("agent_service.zig");
 const policy = @import("policy.zig");
 const reconciler = @import("reconciler.zig");
 const rpc = @import("rpc.zig");
+const vm_limits = @import("vm_limits.zig");
 
 const usage =
     \\usage: pabrik-vmd <command> [options]
@@ -22,6 +23,7 @@ const usage =
     \\  exec    --socket PATH --workspace-id ID [--cwd-rel R] [--timeout-ms N] -- <argv...>
     \\  status  --socket PATH --workspace-id ID
     \\  stop    --socket PATH --workspace-id ID
+    \\  resize  --socket PATH --workspace-id ID --vcpus N --mem MIB
     \\  spawn   --socket PATH --workspace-id ID [--cwd-rel R] [--log-name NAME] -- <argv...>
     \\  probe   --socket PATH --workspace-id ID --pid N
     \\  signal  --socket PATH --workspace-id ID --pid N [--signal N]
@@ -42,6 +44,9 @@ const usage =
     \\  --sweep-interval-ms N  how often every workspace is reconciled (default 15000, 0 = off)
     \\  --backoff-base-ms N  first retry delay after a failed boot (default 1000)
     \\  --mem MIB            guest memory (default 512)
+    \\  --vcpus N            guest vCPUs (default 1)
+    \\                       resize: both flags are required, and it restarts
+    \\                       the VM (Firecracker takes them at InstanceStart)
     \\  --cwd DIR            working directory inside the guest for `run` (default /workspace)
     \\  --cwd-rel R          workspace-relative directory for `exec` (default: the root)
     \\  --timeout-ms N       per-command deadline (default 10000)
@@ -69,6 +74,10 @@ const Options = struct {
     socket: []const u8 = "",
     allowed_uid: ?u32 = null,
     mem_mib: u32 = vm_client.default_mem_mib,
+    vcpus: u32 = vm_client.default_vcpus,
+    /// Whether the operator named them, so `resize` can require both.
+    mem_set: bool = false,
+    vcpus_set: bool = false,
     cwd: []const u8 = policy.guest_root,
     cwd_rel: []const u8 = "",
     timeout_ms: u32 = rpc.default_timeout_ms,
@@ -159,6 +168,11 @@ fn parse(args: []const []const u8, options: *Options) void {
             i += 1;
         } else if (std.mem.eql(u8, arg, "--mem")) {
             options.mem_mib = number(u32, "--mem", valueAt(args, i));
+            options.mem_set = true;
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--vcpus")) {
+            options.vcpus = number(u32, "--vcpus", valueAt(args, i));
+            options.vcpus_set = true;
             i += 1;
         } else if (std.mem.eql(u8, arg, "--timeout-ms")) {
             options.timeout_ms = number(u32, "--timeout-ms", valueAt(args, i));
@@ -285,6 +299,7 @@ pub fn main(init: std.process.Init) !void {
     if (std.mem.eql(u8, command, "exec")) return execCommand(init, aa, &options);
     if (std.mem.eql(u8, command, "status")) return statusCommand(init, aa, &options);
     if (std.mem.eql(u8, command, "stop")) return stopCommand(init, aa, &options);
+    if (std.mem.eql(u8, command, "resize")) return resizeCommand(init, aa, &options);
     if (std.mem.eql(u8, command, "spawn")) return spawnCommand(init, aa, &options);
     if (std.mem.eql(u8, command, "probe")) return probeCommand(init, aa, &options);
     if (std.mem.eql(u8, command, "signal")) return signalCommand(init, aa, &options);
@@ -308,6 +323,7 @@ fn run(init: std.process.Init, arena: std.mem.Allocator, options: *Options) !voi
         .fc_bin = options.fc_bin,
         .root = options.root,
         .mem_mib = options.mem_mib,
+        .vcpus = options.vcpus,
     }) catch |err| {
         emit(2, "pabrik-vmd: boot failed: {s}\n", .{@errorName(err)});
         std.process.exit(1);
@@ -375,6 +391,7 @@ fn serve(init: std.process.Init, arena: std.mem.Allocator, options: *Options) !v
         .root = options.root,
         .fc_bin = options.fc_bin,
         .mem_mib = options.mem_mib,
+        .vcpus = options.vcpus,
         .allowed_uid = options.allowed_uid,
         .sweep_interval_ms = options.sweep_interval_ms,
         .backoff_base_ms = options.backoff_base_ms,
@@ -423,6 +440,25 @@ fn stopCommand(init: std.process.Init, arena: std.mem.Allocator, options: *Optio
     var client = vmd_client.Client.init(init.gpa, options.socket);
     client.stop(options.workspace_id) catch reportClientError(&client);
     emit(1, "stopped {s}\n", .{options.workspace_id});
+}
+
+/// `resize` stops the workspace's VM, records the size it must boot with, and
+/// starts it again: Firecracker takes vCPUs and RAM only at InstanceStart.
+fn resizeCommand(init: std.process.Init, arena: std.mem.Allocator, options: *Options) !void {
+    _ = arena;
+    resolveSocket(init, options);
+    requireWorkspace(options);
+    if (!options.vcpus_set or !options.mem_set) fail("resize needs --vcpus N and --mem MIB", .{});
+    if (vm_limits.check(options.workspace_id, options.vcpus, options.mem_mib)) |refusal| {
+        fail("{s}", .{refusal.message()});
+    }
+
+    var client = vmd_client.Client.init(init.gpa, options.socket);
+    const state = client.resize(options.workspace_id, options.vcpus, options.mem_mib) catch reportClientError(&client);
+    defer state.deinit(init.gpa);
+    emit(1, "{s} pid={d} vcpus={d} mem_mib={d}\n", .{ state.state, state.pid, state.vcpus, state.mem_mib });
+    if (state.last_error.len > 0) emit(2, "pabrik-vmd: {s}\n", .{state.last_error});
+    if (!std.mem.eql(u8, state.state, "ready")) std.process.exit(1);
 }
 
 /// `spawn` needs a log name; the daemon derives the path from it.

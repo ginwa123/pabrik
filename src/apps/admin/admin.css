@@ -1,0 +1,300 @@
+/* Admin console — a plain stylesheet, no build step. */
+
+:root {
+  --paper: #e9ecee;
+  --surface: #f7f9fa;
+  --raised: #ffffff;
+  --ink: #14181b;
+  --ink-2: #4d565c;
+  --line: #ccd3d7;
+  --accent: #14605b;
+  --accent-deep: #0d4642;
+  --accent-tint: #e4efee;
+  --danger: #8c1d18;
+  --danger-tint: #f7e9e8;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+h1, h2 { margin: 0; font-weight: 600; }
+
+.bar {
+  background: var(--accent-deep);
+  color: #f2f6f6;
+  padding: 28px 24px;
+}
+
+.bar-inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.bar h1 { font-size: 32px; letter-spacing: -0.01em; }
+
+.bar-note {
+  margin: 6px 0 0;
+  max-width: 46ch;
+  color: #c6d6d5;
+}
+
+.sheet {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 24px 24px 64px;
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.notice {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: 4px;
+  background: var(--accent-tint);
+  color: var(--accent-deep);
+}
+
+.notice.is-error {
+  background: var(--danger-tint);
+  color: var(--danger);
+}
+
+.rail {
+  background: var(--surface);
+  border-radius: 4px;
+  padding: 6px 18px 10px;
+}
+
+.tile {
+  padding: 13px 0 15px;
+}
+
+.tile-value {
+  display: block;
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.tile-label {
+  display: block;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.work { min-width: 0; }
+
+.panel {
+  background: var(--surface);
+  border-radius: 4px;
+  padding: 20px 22px 22px;
+  margin-bottom: 20px;
+}
+
+.panel h2 { font-size: 20px; }
+
+.panel-note {
+  margin: 6px 0 16px;
+  color: var(--ink-2);
+  max-width: 60ch;
+}
+
+.form {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 0.7fr 1.2fr auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.field { display: block; }
+
+.field-label {
+  display: block;
+  font-size: 14px;
+  color: var(--ink-2);
+  margin-bottom: 4px;
+}
+
+input, select {
+  width: 100%;
+  font: inherit;
+  color: var(--ink);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 9px 10px;
+}
+
+input::placeholder { color: #8b949a; }
+
+.button {
+  font: inherit;
+  cursor: pointer;
+  border: 0;
+  border-radius: 4px;
+  padding: 10px 16px;
+  background: var(--raised);
+  color: var(--ink);
+}
+
+.button-primary {
+  background: var(--accent);
+  color: #f4fbfa;
+  white-space: nowrap;
+}
+
+.button-primary:hover { background: var(--accent-deep); }
+
+.button-light {
+  background: var(--raised);
+  color: var(--accent-deep);
+  white-space: nowrap;
+}
+
+.accounts {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 4px;
+}
+
+.accounts th {
+  text-align: left;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-2);
+  padding: 8px 10px;
+}
+
+.accounts td {
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.accounts tbody tr:last-child td { border-bottom: 0; }
+
+.account-email { font-weight: 500; }
+
+.account-name { color: var(--ink-2); }
+
+.role-select { width: auto; min-width: 110px; padding: 6px 8px; }
+
+.status-button {
+  font: inherit;
+  cursor: pointer;
+  border: 0;
+  border-radius: 4px;
+  padding: 6px 12px;
+  background: var(--accent-tint);
+  color: var(--accent-deep);
+}
+
+.status-button.is-off {
+  background: var(--danger-tint);
+  color: var(--danger);
+}
+
+.empty {
+  margin: 14px 0 0;
+  color: var(--ink-2);
+}
+
+.vm-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vm-input {
+  width: 84px;
+  padding: 6px 8px;
+}
+
+.vm-state { color: var(--ink-2); }
+
+.credential { background: var(--accent-tint); }
+
+.credential-body { min-height: 88px; }
+
+.credential-line {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.credential-for { color: var(--accent-deep); }
+
+code, .credential-value {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.credential-value {
+  font-size: 20px;
+  background: var(--raised);
+  border-radius: 4px;
+  padding: 8px 12px;
+  color: var(--ink);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The console arrives in one movement: the counts, then the rows. */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.panel { animation: rise 240ms ease-out both; }
+.panel:nth-of-type(2) { animation-delay: 60ms; }
+.panel:nth-of-type(3) { animation-delay: 120ms; }
+
+.tile { animation: rise 240ms ease-out both; }
+.tile:nth-child(2) { animation-delay: 45ms; }
+.tile:nth-child(3) { animation-delay: 90ms; }
+.tile:nth-child(4) { animation-delay: 135ms; }
+.tile:nth-child(5) { animation-delay: 180ms; }
+
+.accounts tbody tr { animation: rise 240ms ease-out both; }
+.accounts tbody tr:nth-child(2) { animation-delay: 45ms; }
+.accounts tbody tr:nth-child(3) { animation-delay: 90ms; }
+.accounts tbody tr:nth-child(4) { animation-delay: 135ms; }
+.accounts tbody tr:nth-child(5) { animation-delay: 180ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .panel, .tile, .accounts tbody tr { animation: none; }
+}
+
+@media (max-width: 900px) {
+  .sheet { grid-template-columns: minmax(0, 1fr); }
+  .rail {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 18px;
+  }
+  .form { grid-template-columns: 1fr 1fr; }
+  .bar-inner { flex-direction: column; }
+}
