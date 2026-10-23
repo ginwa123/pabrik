@@ -90,8 +90,7 @@ pub fn planText(allocator: std.mem.Allocator, plan: Plan) ![]u8 {
     defer allocator.free(nic);
     const ip = try bootIpHint(allocator, plan);
     defer allocator.free(ip);
-    return std.fmt.allocPrint(
-        allocator,
+    return std.fmt.allocPrint(allocator,
         \\pabrik-vm-tap: plan (nothing has been created)
         \\  1. host:  ip tuntap add dev {s} mode tap user <server uid>
         \\  2. host:  ip addr add {s}/24 dev {s} && ip link set {s} up

@@ -445,7 +445,6 @@ fn waitForTurnEnd(h: *Harness, db_path: []const u8, timeout_ms: i64) !void {
     return error.TestUnexpectedResult;
 }
 
-
 // ============================================================================
 // `mode` — the silence contract, over the wire
 // ============================================================================
