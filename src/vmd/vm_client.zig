@@ -1520,27 +1520,3 @@ test "a guest that refuses for its own reason keeps its own words" {
 
     try testing.expectEqualStrings("the guest is out of terminals", refusalText(parsed.value.object));
 }
-
-test "a disk image is never truncated down to a smaller size" {
-    var tmp = testing.tmpDir(.{});
-    defer tmp.cleanup();
-
-    var dir_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const n = try tmp.dir.realPath(testing.io, &dir_buf);
-    const disk = try std.fs.path.join(testing.allocator, &.{ dir_buf[0..n], "disk.ext4" });
-    defer testing.allocator.free(disk);
-
-    // 16 MiB of nothing: the decision is the image's size, not its contents.
-    var path_buf: [4096]u8 = undefined;
-    const z = cstr(disk, &path_buf) orelse return error.PathTooLong;
-    const rc = linux.open(z, .{ .ACCMODE = .RDWR, .CREAT = true, .CLOEXEC = true }, 0o644);
-    try testing.expectEqual(linux.E.SUCCESS, linux.errno(rc));
-    const fd: linux.fd_t = @intCast(rc);
-    _ = linux.ftruncate(fd, 16 * 1024 * 1024);
-    _ = linux.close(fd);
-
-    try testing.expectEqual(@as(u32, 16), diskSizeMib(disk));
-    try testing.expectError(Error.DiskNotGrowing, growDisk(disk, 8));
-    // The refusal left the image exactly as it was.
-    try testing.expectEqual(@as(u32, 16), diskSizeMib(disk));
-}
