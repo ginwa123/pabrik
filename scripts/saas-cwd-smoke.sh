@@ -129,8 +129,19 @@ python3 "$repo_root/scripts/saas-cwd-probe.py" \
   --host-home "$work" \
   --record-dir "$stub_record" || rc=$?
 if [ "$rc" -ne 0 ]; then
-  printf -- '--- server log (tail) ---\n%s\n' "$(tail -n 30 "$work/server.log")" >&2
+  # The tail is one line repeated when the config never resolves, and that
+  # repetition buries everything else: show the boot, count the noise, then
+  # what is left of the running log.
+  printf -- '--- server log (boot) ---\n%s\n' "$(head -n 25 "$work/server.log" 2>/dev/null)" >&2
+  noisy="$(grep -c 'Failed to parse JSON config' "$work/server.log" 2>/dev/null || true)"
+  printf -- '--- server log ---\nconfig-parse failures: %s of %s lines\n%s\n' \
+    "${noisy:-0}" "$(wc -l <"$work/server.log" 2>/dev/null || echo 0)" \
+    "$(grep -v 'Failed to parse JSON config' "$work/server.log" 2>/dev/null | tail -n 30)" >&2
   printf -- '--- vmd log (tail) ---\n%s\n' "$(tail -n 20 "$work/vms/vmd.log" 2>/dev/null)" >&2
+  printf -- '--- the stub upstream ---\n%s\n' "$(tail -n 5 "$work/stub.log" 2>/dev/null)" >&2
+  printf -- '--- the accounts the server has ---\n%s\n' \
+    "$(sqlite3 "$work/.config/pabrik/agent.db" \
+      "SELECT email, role, is_active, length(COALESCE(config_json,'')) FROM users;" 2>&1 | head -10)" >&2
   fail "the probe failed (rc=$rc)"
 fi
 
