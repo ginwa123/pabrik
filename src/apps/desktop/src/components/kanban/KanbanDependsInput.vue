@@ -157,7 +157,7 @@ function onKeydown(event: KeyboardEvent): void {
 <template>
   <div class="relative">
     <div
-      class="flex flex-wrap items-center gap-1.5 px-2 py-1.5 rounded-lg border border-[--color-border]"
+      class="flex flex-wrap items-center gap-1.5 px-2 py-1.5 rounded-lg border border-(--color-border)"
       style="background-color: var(--semantic-sidebar-bg)"
       :data-testid="`${props.testId}-container`"
     >

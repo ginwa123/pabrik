@@ -1096,7 +1096,7 @@ defineExpose({
       <div v-if="!isCollapsed" class="flex items-center gap-3">
         <button
           @click="goToSettings"
-          class="text-micro font-medium transition-colors duration-150 hover:text-[--semantic-text]"
+          class="text-micro font-medium transition-colors duration-150 hover:text-(--semantic-text)"
           style="color: var(--semantic-text-dim)"
           title="Settings"
           aria-label="Settings"
@@ -1108,7 +1108,7 @@ defineExpose({
           v-if="authEnabled"
           :disabled="loggingOut"
           @click="handleLogout"
-          class="text-micro font-medium transition-colors duration-150 hover:text-[--semantic-text]"
+          class="text-micro font-medium transition-colors duration-150 hover:text-(--semantic-text)"
           style="color: var(--semantic-text-dim)"
           title="Log out"
           aria-label="Log out"

@@ -106,7 +106,7 @@ onUpdated(() => {
   <div class="flex flex-col shrink-0" data-testid="documents-section">
     <div class="relative shrink-0">
       <div
-        class="px-[var(--sb-gutter)] h-7 flex items-center shrink-0 border-b border-[--color-border]/40"
+        class="px-[var(--sb-gutter)] h-7 flex items-center shrink-0 border-b border-(--color-border)/40"
         data-testid="documents-section-header"
         @click="toggleDocumentsSection"
       >

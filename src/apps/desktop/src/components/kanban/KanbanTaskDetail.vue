@@ -1677,7 +1677,7 @@ const isMediaLoading = computed<boolean>(() => {
         type="button"
         @click="handleClose"
         data-testid="kanban-task-detail-cancel"
-        class="px-3 py-1.5 rounded-lg text-body font-medium transition-all duration-200 hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[--color-blue]"
+        class="px-3 py-1.5 rounded-lg text-body font-medium transition-all duration-200 hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-(--color-blue)"
         style="color: var(--semantic-text-muted)"
         title="Discard and close"
       >
@@ -1693,7 +1693,7 @@ const isMediaLoading = computed<boolean>(() => {
         @click="handleRunAgent"
         :disabled="!canCommitCreate"
         data-testid="kanban-task-detail-create-and-run"
-        class="ktd-btn-quiet px-3 py-1.5 rounded-lg text-body font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:opacity-50 hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[--color-blue]"
+        class="ktd-btn-quiet px-3 py-1.5 rounded-lg text-body font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:opacity-50 hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-(--color-blue)"
         title="Create the task and start the agent. The title + description becomes the first user message. (Enter)"
       >
         <span
@@ -1721,7 +1721,7 @@ const isMediaLoading = computed<boolean>(() => {
         @click="handleSave"
         :disabled="!canCommitCreate"
         data-testid="kanban-task-detail-save"
-        class="ktd-btn-primary px-4 py-1.5 rounded-lg text-body font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:opacity-50 hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[--color-blue]"
+        class="ktd-btn-primary px-4 py-1.5 rounded-lg text-body font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:opacity-50 hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-(--color-blue)"
       >
         {{ isCreating && pendingAction === 'create' ? pendingCommitLabel : 'Create task' }}
       </button>
@@ -1732,7 +1732,7 @@ const isMediaLoading = computed<boolean>(() => {
         @click="handleSave"
         :disabled="!canSave"
         data-testid="kanban-task-detail-save"
-        class="ktd-btn-primary px-4 py-1.5 rounded-lg text-body font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:opacity-50 hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[--color-blue]"
+        class="ktd-btn-primary px-4 py-1.5 rounded-lg text-body font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:opacity-50 hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-(--color-blue)"
       >
         Save
       </button>

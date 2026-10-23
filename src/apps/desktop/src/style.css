@@ -188,7 +188,7 @@
 
   /* Selection */
   ::selection {
-    @apply bg-[--color-violet]/30 text-[--color-fg];
+    @apply bg-(--color-violet)/30 text-(--color-fg);
   }
 
   /* Scrollbar styling */

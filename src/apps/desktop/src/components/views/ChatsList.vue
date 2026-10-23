@@ -1093,11 +1093,11 @@ defineExpose({
          PINNED visible; PINNED has its own pinnedExpanded flag. -->
     <div
       v-if="pinnedItems.length > 0"
-      class="shrink-0 flex flex-col border-b border-[--color-border]/40"
+      class="shrink-0 flex flex-col border-b border-(--color-border)/40"
       data-testid="pinned-section"
     >
       <div
-        class="px-[var(--sb-gutter)] h-7 flex items-center shrink-0 border-b border-[--color-border]/40"
+        class="px-[var(--sb-gutter)] h-7 flex items-center shrink-0 border-b border-(--color-border)/40"
         data-testid="pinned-section-header"
         @click="sidebarStore.togglePinnedExpanded()"
       >
@@ -1151,7 +1151,7 @@ defineExpose({
           :data-drop-before="dragPinnedOverId === item.id && dragPinnedBefore ? 'true' : undefined"
           :data-drop-after="dragPinnedOverId === item.id && !dragPinnedBefore ? 'true' : undefined"
           class="relative w-full flex items-center px-[var(--sb-gutter)] h-[var(--sb-row)] rounded-lg text-dense transition-all duration-150 border-t border-transparent overflow-hidden text-left"
-          :class="isCurrentChat(item.id) ? 'border-[--color-border]/60' : ''"
+          :class="isCurrentChat(item.id) ? 'border-(--color-border)/60' : ''"
           :style="
             isCurrentChat(item.id)
               ? 'background: var(--semantic-active-bg); color: var(--semantic-active-text); box-shadow: inset 2px 0 0 0 var(--color-violet);'
@@ -1296,7 +1296,7 @@ defineExpose({
          from workspace items (projects), so every chat belongs to a
          workspace and the list below can stay scoped. -->
     <div
-      class="px-[var(--sb-gutter)] h-7 flex items-center shrink-0 border-b border-[--color-border]/40"
+      class="px-[var(--sb-gutter)] h-7 flex items-center shrink-0 border-b border-(--color-border)/40"
       data-testid="recent-section-header"
       @click="toggleNavSection"
     >
@@ -1363,7 +1363,7 @@ defineExpose({
             @contextmenu.prevent="onChatRowContextMenu($event, item)"
             :data-testid="`chat-row-${item.id}`"
             class="relative w-full flex items-center px-[var(--sb-gutter)] h-[var(--sb-row)] rounded-lg text-dense transition-all duration-150 border-t border-transparent overflow-hidden text-left"
-            :class="isCurrentChat(item.id) ? 'border-[--color-border]/60' : ''"
+            :class="isCurrentChat(item.id) ? 'border-(--color-border)/60' : ''"
             :style="
               isCurrentChat(item.id)
                 ? 'background: var(--semantic-active-bg); color: var(--semantic-active-text); box-shadow: inset 2px 0 0 0 var(--color-violet);'
@@ -1520,7 +1520,7 @@ defineExpose({
       <!-- Drag Resize Handle -->
       <div
         class="h-3 cursor-row-resize flex items-center justify-center group/resize shrink-0 mt-1"
-        :class="'bg-[--color-border]/20 hover:bg-[--color-border]/40 transition-colors'"
+        :class="'bg-(--color-border)/20 hover:bg-(--color-border)/40 transition-colors'"
         title="Drag to resize"
         @mousedown="startChatsResize"
       >
