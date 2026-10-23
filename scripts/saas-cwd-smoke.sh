@@ -139,9 +139,12 @@ if [ "$rc" -ne 0 ]; then
     "$(grep -v 'Failed to parse JSON config' "$work/server.log" 2>/dev/null | tail -n 30)" >&2
   printf -- '--- vmd log (tail) ---\n%s\n' "$(tail -n 20 "$work/vms/vmd.log" 2>/dev/null)" >&2
   printf -- '--- the stub upstream ---\n%s\n' "$(tail -n 5 "$work/stub.log" 2>/dev/null)" >&2
+  # `json_valid` says whether the stored overlay is JSON at all, and the prefix
+  # says what it is: a turn that never reaches a model is usually a config the
+  # workflow could not parse, not a VM that did not boot.
   printf -- '--- the accounts the server has ---\n%s\n' \
     "$(sqlite3 "$work/.config/pabrik/agent.db" \
-      "SELECT email, role, is_active, length(COALESCE(config_json,'')) FROM users;" 2>&1 | head -10)" >&2
+      "SELECT email, role, is_active, length(COALESCE(config_json,'')), json_valid(COALESCE(config_json,'')), replace(substr(COALESCE(config_json,''),1,200), char(10), ' ') FROM users;" 2>&1 | head -10)" >&2
   fail "the probe failed (rc=$rc)"
 fi
 
