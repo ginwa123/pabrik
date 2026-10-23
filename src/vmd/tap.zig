@@ -1,6 +1,6 @@
 //! `pabrik-vm-tap` — the OPT-IN privileged half of the tap-based mode. The
-//! server never holds CAP_NET_ADMIN; the vsock path needs no tap. The ioctl
-//! path is UNVERIFIED: see docs/plans/2026-10-18-network.md.
+//! server never holds CAP_NET_ADMIN; the vsock path needs no tap, and the
+//! ioctl path is UNVERIFIED.
 
 const std = @import("std");
 const linux = std.os.linux;
