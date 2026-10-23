@@ -161,25 +161,22 @@ def main(argv):
     print("[saas-cwd-probe] logged in as %s" % opts.email)
 
     stub_url = opts.llm_url
-    api.json(
-        "PUT",
-        "/api/config/pabrik",
-        {
-            "api_endpoint": stub_url,
-            "api_key": "sk-stub-cwd",
-            "model": "stub-model",
-            "url_style": "openai",
-            "active_profile": opts.profile,
-            "profiles": {
-                opts.profile: {
-                    "model": "stub-model",
-                    "base_url": stub_url,
-                    "api_key": "sk-stub-cwd",
-                    "url_style": "openai",
-                }
-            },
+    config_body = {
+        "api_endpoint": stub_url,
+        "api_key": "sk-stub-cwd",
+        "model": "stub-model",
+        "url_style": "openai",
+        "active_profile": opts.profile,
+        "profiles": {
+            opts.profile: {
+                "model": "stub-model",
+                "base_url": stub_url,
+                "api_key": "sk-stub-cwd",
+                "url_style": "openai",
+            }
         },
-    )
+    }
+    api.json("PUT", "/api/config/pabrik", config_body)
     print("[saas-cwd-probe] profile %s points at %s" % (opts.profile, stub_url))
 
     workspace, _ = api.json(
@@ -189,6 +186,12 @@ def main(argv):
     if not workspace_id:
         raise ProbeError("workspace create returned no id: %r" % (workspace,))
     print("[saas-cwd-probe] new workspace %s" % workspace_id)
+
+    # A chat in a workspace reads THAT workspace's overlay over the user's
+    # scoped base, and the scoped base deliberately carries no profiles: the
+    # workspace owns its model. Set the same profile where the turn looks.
+    api.json("PUT", "/api/workspaces/%s/config" % workspace_id, config_body)
+    print("[saas-cwd-probe] workspace %s carries profile %s" % (workspace_id, opts.profile))
 
     session_id = "sess_saas_cwd_%d" % int(time.time())
     api.json(
