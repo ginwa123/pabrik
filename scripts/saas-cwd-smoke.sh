@@ -90,7 +90,10 @@ llm_url="http://127.0.0.1:$stub_port/v1/chat/completions"
 say "stub upstream for the model on 127.0.0.1:$stub_port"
 
 say "booting pabrik --saas --port $port"
-env PABRIK_VMD_SOCKET="$work/vmd.sock" \
+# No background model-catalog fetch: this smoke asserts on a chat turn, and a
+# fetch started at boot writes the database while the turn reads its config.
+env PABRIK_MODEL_CATALOG_FETCH=0 \
+  PABRIK_VMD_SOCKET="$work/vmd.sock" \
   PABRIK_VM_BASE_IMAGE="$work/base.ext4" \
   PABRIK_GUEST_KERNEL="$guest_kernel" \
   PABRIK_FC_BIN="$fc_bin" \
