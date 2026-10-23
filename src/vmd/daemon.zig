@@ -144,17 +144,19 @@ pub const Manager = struct {
         return self.reconciler().stopAll(allocator);
     }
 
-    /// Stop the workspace's VM, record the size it must boot with, and start
-    /// it again. Firecracker takes vCPUs and RAM only at `InstanceStart`, so a
-    /// resize is a short restart: the guest comes back, its processes do not.
+    /// Stop the VM, record what it must boot with, start it again: Firecracker
+    /// takes vCPUs and RAM only at `InstanceStart`, and a disk grows only while
+    /// stopped. The guest comes back; the processes inside it do not.
     pub fn resize(
         self: *const Manager,
         allocator: std.mem.Allocator,
         workspace_id: []const u8,
         vcpus: u32,
         mem_mib: u32,
+        disk_mib: u32,
     ) !State {
         if (!self.stopWorkspace(allocator, workspace_id)) return error.StopFailed;
+        if (disk_mib != 0) try self.growDisk(allocator, workspace_id, disk_mib);
         try spec_store.write(allocator, self.config.root, workspace_id, .{ .vcpus = vcpus, .mem_mib = mem_mib });
         // A guest that fails to come up is reported through the state, so the
         // caller still gets the record and its reason.
@@ -162,6 +164,23 @@ pub const Manager = struct {
             layout.deinit(allocator);
         } else |_| {}
         return self.state(allocator, workspace_id);
+    }
+
+    /// The image's size in MiB; 0 when this workspace has never booted.
+    pub fn diskMib(self: *const Manager, allocator: std.mem.Allocator, workspace_id: []const u8) u32 {
+        const layout = self.layoutFor(allocator, workspace_id) catch return 0;
+        defer layout.deinit(allocator);
+        return vm_client.diskSizeMib(layout.disk);
+    }
+
+    /// Grow the image the workspace boots from. An image that does not exist
+    /// yet is cloned from the base first: growing nothing would leave a
+    /// filesystem-less file where the guest expects a root device.
+    fn growDisk(self: *const Manager, allocator: std.mem.Allocator, workspace_id: []const u8, disk_mib: u32) !void {
+        const layout = try self.layoutFor(allocator, workspace_id);
+        defer layout.deinit(allocator);
+        try vm_client.ensureDisk(self.config.base_image, layout.disk);
+        try vm_client.growDisk(layout.disk, disk_mib);
     }
 
     /// `false` means nothing was running, or that a VMM this daemon cannot
@@ -385,18 +404,29 @@ fn dispatch(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request
             const state = try manager.state(allocator, request.workspace_id);
             defer state.deinit(allocator);
             const spec = manager.reconciler().specFor(request.workspace_id);
-            return rpc.encodeStatusSized(allocator, request.id, state.label, state.pid, state.last_error, spec.vcpus, spec.mem_mib);
+            const disk_mib = manager.diskMib(allocator, request.workspace_id);
+            return rpc.encodeStatusSized(allocator, request.id, state.label, state.pid, state.last_error, spec.vcpus, spec.mem_mib, disk_mib);
         },
         .resize => {
             if (vm_limits.check(request.workspace_id, request.vcpus, request.mem_mib)) |refusal| {
                 return rpc.encodeFailure(allocator, request.id, .bad_request, refusal.message());
             }
-            const state = manager.resize(allocator, request.workspace_id, request.vcpus, request.mem_mib) catch |err| {
+            // The disk rule needs the image's current size, and a refusal must
+            // land BEFORE the restart: refusing after stopping would cost the
+            // guest its processes for nothing.
+            if (request.disk_mib != 0) {
+                const current_mib = manager.diskMib(allocator, request.workspace_id);
+                if (vm_limits.checkDisk(request.disk_mib, current_mib)) |refusal| {
+                    return rpc.encodeFailure(allocator, request.id, .bad_request, refusal.message());
+                }
+            }
+            const state = manager.resize(allocator, request.workspace_id, request.vcpus, request.mem_mib, request.disk_mib) catch |err| {
                 log("resize of workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
                 return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
             };
             defer state.deinit(allocator);
-            return rpc.encodeStatusSized(allocator, request.id, state.label, state.pid, state.last_error, request.vcpus, request.mem_mib);
+            const disk_mib = manager.diskMib(allocator, request.workspace_id);
+            return rpc.encodeStatusSized(allocator, request.id, state.label, state.pid, state.last_error, request.vcpus, request.mem_mib, disk_mib);
         },
         .stop => {
             _ = manager.stopWorkspace(allocator, request.workspace_id);

@@ -76,12 +76,15 @@ test "admin_page_is_served" {
         defer raw.deinit();
         try testing.expectEqual(@as(u16, 200), raw.status);
         try testing.expect(std.mem.indexOf(u8, raw.body, "Admin console") != null);
+        // The page is useless without its two assets, so it names them.
+        try testing.expect(std.mem.indexOf(u8, raw.body, "/admin/admin.css") != null);
+        try testing.expect(std.mem.indexOf(u8, raw.body, "/admin/admin.js") != null);
     }
     {
         var raw = try rawHttp(&h, .GET, "/admin/admin.css", null, null);
         defer raw.deinit();
         try testing.expectEqual(@as(u16, 200), raw.status);
-        try testing.expect(std.mem.indexOf(u8, raw.body, ".accounts") != null);
+        try testing.expect(raw.body.len > 0);
     }
     {
         var raw = try rawHttp(&h, .GET, "/admin/admin.js", null, null);
@@ -316,6 +319,8 @@ test "vm_panel_reports_no_manager_and_refuses_a_bad_size" {
         const limits = doc.object("limits").?;
         try testing.expectEqual(@as(i64, 1), limits.get("min_vcpus").?.integer);
         try testing.expectEqual(@as(i64, 8), limits.get("max_vcpus").?.integer);
+        try testing.expectEqual(@as(i64, 128), limits.get("min_disk_mib").?.integer);
+        try testing.expectEqual(@as(i64, 65536), limits.get("max_disk_mib").?.integer);
     }
     {
         // A workspace the console lists comes back as TEXT, not as the row's
@@ -336,12 +341,24 @@ test "vm_panel_reports_no_manager_and_refuses_a_bad_size" {
             .string => |text| try testing.expectEqualStrings("VM test", text),
             else => return error.WorkspaceNameIsNotAString,
         }
+        // A machine that never booted has an account of its storage, and that
+        // account is zero, not a missing field.
+        try testing.expectEqual(@as(i64, 0), listed[0].object.get("disk_mib").?.integer);
     }
     {
         // A size in range on a host with no manager: 503, not a silent no-op.
         var raw = try rawHttp(&h, .POST, "/api/admin/vms/ws_1/resize", "{\"vcpus\":2,\"mem_mib\":1024}", null);
         defer raw.deinit();
         try testing.expectEqual(@as(u16, 503), raw.status);
+    }
+    {
+        // A storage target below the floor never reaches the manager.
+        var raw = try rawHttp(&h, .POST, "/api/admin/vms/ws_1/resize", "{\"vcpus\":2,\"mem_mib\":1024,\"disk_mib\":64}", null);
+        defer raw.deinit();
+        try testing.expectEqual(@as(u16, 400), raw.status);
+        var doc = try raw.json();
+        defer doc.deinit();
+        try testing.expectEqualStrings("disk_mib must be 128..65536", doc.str("error").?);
     }
     {
         // A size outside the limits is refused before the manager is asked.

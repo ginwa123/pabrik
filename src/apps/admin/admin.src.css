@@ -1,0 +1,106 @@
+@import "tailwindcss";
+
+@source "./index.html";
+@source "./admin.js";
+
+/* The desktop app's Kanagawa Dragon palette (src/apps/desktop/src/style.css).
+   One product, one set of colours. */
+@theme {
+  --color-dim: #12120f;
+  --color-paper: #181616;
+  --color-surface: #1d1c19;
+  --color-surface-up: #282727;
+  --color-surface-hover: #2f2e2b;
+  --color-ink: #c5c9c5;
+  --color-ink-muted: #a6a69c;
+  --color-ink-dim: #7a8382;
+  --color-cream: #dcd7ba;
+  --color-accent: #87a987;
+  --color-accent-bright: #96b894;
+  --color-danger: #c4746e;
+  --color-danger-soft: #dba9a4;
+  --color-link: #8ba4b0;
+
+  --radius-card: 4px;
+
+  --animate-rise: rise 260ms ease-out both;
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-dim text-base leading-relaxed text-ink antialiased;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-link;
+  }
+}
+
+@layer components {
+  .input {
+    @apply w-full rounded-card border border-surface-up bg-dim px-3 py-2.5 text-ink;
+  }
+
+  .input::placeholder {
+    @apply text-ink-dim;
+  }
+
+  .input:hover {
+    @apply border-[#3f3e3b];
+  }
+
+  .notice {
+    @apply rounded-card bg-[#232b26] px-4 py-3.5 text-[#b7c6b7];
+  }
+
+  /* One measure for every standing note: 32rem is about 64 characters at
+     body size, which is the reading measure this console is set to. */
+  .note {
+    @apply mt-1.5 max-w-[32rem] text-ink-muted;
+  }
+
+  .notice-error {
+    @apply bg-[#2e2321] text-danger-soft;
+  }
+
+  .status-on {
+    @apply rounded-card bg-[#232b26] px-3 py-1.5 text-accent;
+  }
+
+  .status-off {
+    @apply bg-[#2e2321] text-danger-soft;
+  }
+
+  .role-select {
+    @apply rounded-card border border-surface-up bg-dim px-2 py-1.5 text-ink;
+  }
+
+  /* The last row of a table closes on the panel's own edge, not on a line. */
+  .rows tbody tr:last-child td {
+    @apply border-0;
+  }
+
+  .dialog {
+    @apply w-[min(520px,calc(100vw-32px))] rounded-lg bg-surface p-0 text-ink;
+    box-shadow: 0 24px 60px rgb(0 0 0 / 0.55); /* taste-skill-ignore: a dialog is what floats */
+  }
+
+  .dialog::backdrop {
+    @apply bg-[rgba(9,9,8,0.72)];
+  }
+}

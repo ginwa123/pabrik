@@ -56,6 +56,14 @@ pub const Error = error{
     /// The terminal's own guest process is gone: the shell exited, or the VM
     /// was restarted under it. Never a reason to boot anything.
     TtyGone,
+    /// The image could not be opened or truncated, or `resize2fs` failed on it.
+    DiskGrowFailed,
+    /// A disk resize asked for a size the image already has, or a smaller one.
+    /// The filesystem inside an image cannot give blocks back.
+    DiskNotGrowing,
+    /// No e2fsprogs on this host, so a grown image cannot be handed to its
+    /// filesystem. Named rather than guessed at.
+    ResizeToolMissing,
 };
 
 // ─── layout: the only place a path is decided ────────────────────────────
@@ -365,7 +373,7 @@ fn pathExists(path: []const u8) bool {
 
 /// The workspace's disk is its own; the base image is never booted directly,
 /// and `--reflink=auto` makes the clone O(1) on this box's btrfs.
-fn cloneBaseIfMissing(base: []const u8, disk: []const u8) !void {
+pub fn ensureDisk(base: []const u8, disk: []const u8) !void {
     if (pathExists(disk)) return;
     var base_buf: [4096]u8 = undefined;
     var disk_buf: [4096]u8 = undefined;
@@ -385,6 +393,91 @@ fn cloneBaseIfMissing(base: []const u8, disk: []const u8) !void {
     if (!linux.W.IFEXITED(status) or linux.W.EXITSTATUS(status) != 0) return Error.DiskCloneFailed;
 }
 
+/// The image's size in MiB, or 0 when there is no image yet — which is a size
+/// the console can show, not a failure.
+pub fn diskSizeMib(disk: []const u8) u32 {
+    var buf: [4096]u8 = undefined;
+    const z = cstr(disk, &buf) orelse return 0;
+    const rc = linux.open(z, .{ .ACCMODE = .RDONLY, .CLOEXEC = true }, 0);
+    if (linux.errno(rc) != .SUCCESS) return 0;
+    const fd: linux.fd_t = @intCast(rc);
+    defer _ = linux.close(fd);
+    return sizeMibOf(fd);
+}
+
+fn sizeMibOf(fd: linux.fd_t) u32 {
+    const end = linux.lseek(fd, 0, linux.SEEK.END);
+    if (linux.errno(end) != .SUCCESS) return 0;
+    const mib = @as(u64, @intCast(end)) / (1024 * 1024);
+    return if (mib > std.math.maxInt(u32)) std.math.maxInt(u32) else @intCast(mib);
+}
+
+/// Repair the image, truncate it up to `target_mib`, then hand the new blocks
+/// to the filesystem inside it. All of it needs the VM stopped, so the guest
+/// finds the bigger device at boot.
+pub fn growDisk(disk: []const u8, target_mib: u32) !void {
+    var buf: [4096]u8 = undefined;
+    const z = cstr(disk, &buf) orelse return Error.DiskGrowFailed;
+
+    const rc = linux.open(z, .{ .ACCMODE = .RDWR, .CLOEXEC = true }, 0);
+    if (linux.errno(rc) != .SUCCESS) return Error.DiskGrowFailed;
+    const fd: linux.fd_t = @intCast(rc);
+    if (target_mib <= sizeMibOf(fd)) {
+        _ = linux.close(fd);
+        return Error.DiskNotGrowing;
+    }
+
+    // A guest that was stopped, not shut down, leaves `needs_recovery` on its
+    // filesystem, and resize2fs refuses such an image outright.
+    const fsck = try runHostTool(&e2fsck_candidates, &.{ "-f", "-y" }, z);
+    // 1 is "errors corrected", which is the normal answer for a killed guest.
+    if (fsck > 2) {
+        _ = linux.close(fd);
+        return Error.DiskGrowFailed;
+    }
+
+    const trunc = linux.ftruncate(fd, @as(i64, target_mib) * 1024 * 1024);
+    _ = linux.close(fd);
+    if (linux.errno(trunc) != .SUCCESS) return Error.DiskGrowFailed;
+
+    if (try runHostTool(&resize2fs_candidates, &.{}, z) != 0) return Error.DiskGrowFailed;
+}
+
+const e2fsck_candidates = [_][]const u8{
+    "/usr/sbin/e2fsck", "/sbin/e2fsck", "/usr/bin/e2fsck", "/bin/e2fsck",
+};
+const resize2fs_candidates = [_][]const u8{
+    "/usr/sbin/resize2fs", "/sbin/resize2fs", "/usr/bin/resize2fs", "/bin/resize2fs",
+};
+
+/// e2fsprogs ships its tools in sbin, which is not on every PATH, and `execve`
+/// searches none, so the candidates are absolute. A host without them can
+/// still boot a VM; it just cannot grow a filesystem.
+fn runHostTool(candidates: []const []const u8, args: []const [*:0]const u8, path_z: [*:0]const u8) !u8 {
+    var tool_buf: [4096]u8 = undefined;
+    for (candidates) |candidate| {
+        if (!pathExists(candidate)) continue;
+        const tool = cstr(candidate, &tool_buf) orelse return Error.ResizeToolMissing;
+        var argv: [8]?[*:0]const u8 = .{null} ** 8;
+        if (args.len + 2 > argv.len) return Error.DiskGrowFailed;
+        argv[0] = tool;
+        for (args, 0..) |arg, i| argv[i + 1] = arg;
+        argv[args.len + 1] = path_z;
+        const envp = [_:null]?[*:0]const u8{ "PATH=/usr/local/sbin:/usr/sbin:/sbin:/usr/bin:/bin", null };
+        const child = linux.fork();
+        if (linux.errno(child) != .SUCCESS) return Error.DiskGrowFailed;
+        if (child == 0) {
+            _ = linux.execve(tool, @ptrCast(&argv), @ptrCast(&envp));
+            linux.exit(127);
+        }
+        var status: u32 = 0;
+        _ = linux.wait4(@intCast(child), &status, 0, null);
+        if (!linux.W.IFEXITED(status)) return Error.DiskGrowFailed;
+        return @intCast(linux.W.EXITSTATUS(status));
+    }
+    return Error.ResizeToolMissing;
+}
+
 /// Create the workspace's directory, clone the base image if needed, start the
 /// VMM, configure it, and start the instance.
 pub fn boot(allocator: std.mem.Allocator, spec: Spec) !Vm {
@@ -394,7 +487,7 @@ pub fn boot(allocator: std.mem.Allocator, spec: Spec) !Vm {
     try ensureDir(layout.dir);
     removeIfExists(layout.api_sock);
     removeIfExists(layout.vsock_sock);
-    try cloneBaseIfMissing(spec.base_image, layout.disk);
+    try ensureDisk(spec.base_image, layout.disk);
 
     const pid = try spawnFirecracker(spec, layout);
     errdefer _ = linux.kill(pid, linux.SIG.KILL);
@@ -1413,8 +1506,7 @@ pub fn readSerialExcerpt(allocator: std.mem.Allocator, layout: Layout, max_bytes
 const testing = std.testing;
 
 test "a guest that does not know the terminal action says what to do about it" {
-    var parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator,
-        "{\"type\":\"error\",\"message\":\"unknown request\"}", .{});
+    var parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, "{\"type\":\"error\",\"message\":\"unknown request\"}", .{});
     defer parsed.deinit();
 
     const text = refusalText(parsed.value.object);
@@ -1423,9 +1515,32 @@ test "a guest that does not know the terminal action says what to do about it" {
 }
 
 test "a guest that refuses for its own reason keeps its own words" {
-    var parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator,
-        "{\"type\":\"error\",\"message\":\"the guest is out of terminals\"}", .{});
+    var parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, "{\"type\":\"error\",\"message\":\"the guest is out of terminals\"}", .{});
     defer parsed.deinit();
 
     try testing.expectEqualStrings("the guest is out of terminals", refusalText(parsed.value.object));
+}
+
+test "a disk image is never truncated down to a smaller size" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var dir_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(testing.io, &dir_buf);
+    const disk = try std.fs.path.join(testing.allocator, &.{ dir_buf[0..n], "disk.ext4" });
+    defer testing.allocator.free(disk);
+
+    // 16 MiB of nothing: the decision is the image's size, not its contents.
+    var path_buf: [4096]u8 = undefined;
+    const z = cstr(disk, &path_buf) orelse return error.PathTooLong;
+    const rc = linux.open(z, .{ .ACCMODE = .RDWR, .CREAT = true, .CLOEXEC = true }, 0o644);
+    try testing.expectEqual(linux.E.SUCCESS, linux.errno(rc));
+    const fd: linux.fd_t = @intCast(rc);
+    _ = linux.ftruncate(fd, 16 * 1024 * 1024);
+    _ = linux.close(fd);
+
+    try testing.expectEqual(@as(u32, 16), diskSizeMib(disk));
+    try testing.expectError(Error.DiskNotGrowing, growDisk(disk, 8));
+    // The refusal left the image exactly as it was.
+    try testing.expectEqual(@as(u32, 16), diskSizeMib(disk));
 }

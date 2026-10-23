@@ -82,6 +82,9 @@ pub const Request = struct {
     /// fixes both at InstanceStart, so applying them restarts the VM.
     vcpus: u32 = 0,
     mem_mib: u32 = 0,
+    /// `resize`: how big the workspace's disk image must become. 0 means "leave
+    /// the image alone", which is what a caller that only sizes memory sends.
+    disk_mib: u32 = 0,
 };
 
 pub const FailureCode = enum {
@@ -185,7 +188,7 @@ pub const TtyReply = struct {
 pub const Response = union(enum) {
     pong: struct { version: []const u8 },
     ack,
-    status: struct { state: []const u8, pid: i64, last_error: []const u8, vcpus: u32 = 0, mem_mib: u32 = 0 },
+    status: struct { state: []const u8, pid: i64, last_error: []const u8, vcpus: u32 = 0, mem_mib: u32 = 0, disk_mib: u32 = 0 },
     exec_result: ExecResult,
     spawned: Spawned,
     probe: Probe,
@@ -369,6 +372,7 @@ pub fn encodeRequest(allocator: std.mem.Allocator, request: Request) ![]u8 {
     if (request.action == .resize) {
         try out.intField(allocator, "vcpus", @intCast(request.vcpus));
         try out.intField(allocator, "mem_mib", @intCast(request.mem_mib));
+        if (request.disk_mib != 0) try out.intField(allocator, "disk_mib", @intCast(request.disk_mib));
     }
     if (request.action == .signal) {
         try out.intField(allocator, "signal", request.sig);
@@ -463,6 +467,10 @@ pub fn decodeRequest(allocator: std.mem.Allocator, json: []const u8) !OwnedReque
         if (vcpus <= 0 or mem_mib <= 0) return Error.BadRequest;
         request.vcpus = @intCast(vcpus);
         request.mem_mib = @intCast(mem_mib);
+        if (integerField(object, "disk_mib")) |disk_mib| {
+            if (disk_mib < 0) return Error.BadRequest;
+            request.disk_mib = @intCast(disk_mib);
+        }
         return .{ .arena = arena, .value = request };
     }
 
@@ -654,7 +662,7 @@ pub fn encodeAck(allocator: std.mem.Allocator, id: i64) ![]u8 {
 }
 
 pub fn encodeStatus(allocator: std.mem.Allocator, id: i64, state: []const u8, pid: i64, last_error: []const u8) ![]u8 {
-    return encodeStatusSized(allocator, id, state, pid, last_error, 0, 0);
+    return encodeStatusSized(allocator, id, state, pid, last_error, 0, 0, 0);
 }
 
 /// `encodeStatus` with the size the workspace boots with, so a caller can show
@@ -667,6 +675,7 @@ pub fn encodeStatusSized(
     last_error: []const u8,
     vcpus: u32,
     mem_mib: u32,
+    disk_mib: u32,
 ) ![]u8 {
     var out = try ObjectWriter.init(allocator);
     errdefer out.list.deinit(allocator);
@@ -676,6 +685,7 @@ pub fn encodeStatusSized(
     try out.intField(allocator, "pid", pid);
     if (vcpus != 0) try out.intField(allocator, "vcpus", @intCast(vcpus));
     if (mem_mib != 0) try out.intField(allocator, "mem_mib", @intCast(mem_mib));
+    if (disk_mib != 0) try out.intField(allocator, "disk_mib", @intCast(disk_mib));
     if (last_error.len > 0) try out.strField(allocator, "error", last_error);
     return out.finish(allocator);
 }
@@ -838,6 +848,7 @@ pub fn decodeResponse(
             .last_error = stringField(object, "error") orelse "",
             .vcpus = @intCast(@max(0, integerField(object, "vcpus") orelse 0)),
             .mem_mib = @intCast(@max(0, integerField(object, "mem_mib") orelse 0)),
+            .disk_mib = @intCast(@max(0, integerField(object, "disk_mib") orelse 0)),
         } } };
     }
     if (std.mem.eql(u8, kind, "failure")) {
@@ -1402,6 +1413,7 @@ test "a resize request carries the size it asks for" {
         .workspace_id = "ws_1",
         .vcpus = 2,
         .mem_mib = 1024,
+        .disk_mib = 4096,
     });
     defer allocator.free(encoded);
     var decoded = try decodeRequest(allocator, encoded);
@@ -1410,6 +1422,34 @@ test "a resize request carries the size it asks for" {
     try testing.expectEqualStrings("ws_1", decoded.value.workspace_id);
     try testing.expectEqual(@as(u32, 2), decoded.value.vcpus);
     try testing.expectEqual(@as(u32, 1024), decoded.value.mem_mib);
+    try testing.expectEqual(@as(u32, 4096), decoded.value.disk_mib);
+}
+
+test "a resize that only names vCPUs and memory leaves the disk alone" {
+    const allocator = testing.allocator;
+    // A caller written before the disk existed sends no `disk_mib` at all; 0 is
+    // the daemon's "do not touch the image".
+    var decoded = try decodeRequest(allocator,
+        \\{"type":"request","action":"resize","id":5,"workspace_id":"ws_1","vcpus":1,"mem_mib":512}
+    );
+    defer decoded.deinit();
+    try testing.expectEqual(@as(u32, 0), decoded.value.disk_mib);
+}
+
+test "a status answer carries the disk size back" {
+    const allocator = testing.allocator;
+    const encoded = try encodeStatusSized(allocator, 12, "ready", 999, "", 4, 2048, 8192);
+    defer allocator.free(encoded);
+    var decoded = try decodeResponse(allocator, encoded);
+    defer decoded.deinit();
+    switch (decoded.value) {
+        .status => |s| {
+            try testing.expectEqual(@as(u32, 4), s.vcpus);
+            try testing.expectEqual(@as(u32, 2048), s.mem_mib);
+            try testing.expectEqual(@as(u32, 8192), s.disk_mib);
+        },
+        else => return error.TestExpectedStatus,
+    }
 }
 
 test "fs actions: a relative path crosses whole, with its offset and ceiling" {

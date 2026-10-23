@@ -1,0 +1,5 @@
+# Tailwind's file watcher ships a native binding. The CSS build does not use
+# it (only `--watch` does), so it stays unapproved: a stylesheet build must not
+# need a postinstall script to be trusted.
+allowBuilds:
+  '@parcel/watcher': false
