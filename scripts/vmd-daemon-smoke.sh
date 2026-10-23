@@ -59,6 +59,9 @@ stop_daemon() {
 client() { PABRIK_VM_DIR="$vms" "$vmd" "$@"; }
 exec_in() { client exec --socket "$sock" --workspace-id "$ws" "$@"; }
 status_of() { client status --socket "$sock" --workspace-id "$ws"; }
+# `status` prints the size the workspace boots with after the pid, so only the
+# state and pid are matched here; the size has its own smoke.
+status_starts() { case "$1" in "$2"*) return 0 ;; *) return 1 ;; esac; }
 
 start_daemon
 trap 'stop_daemon' EXIT
@@ -89,7 +92,7 @@ say "ok  $vms/workspaces/$ws/{disk.ext4,api.sock,vsock.sock,serial.log,fc.log,fc
 
 say "status reports the running VM"
 out="$(status_of)"
-[ "$out" = "ready pid=$vmm_pid" ] || fail "unexpected status: $out"
+status_starts "$out" "ready pid=$vmm_pid" || fail "unexpected status: $out"
 say "ok  status -> $out"
 
 say "the VM survives a daemon restart (the daemon adopts what it finds)"
@@ -97,7 +100,7 @@ stop_daemon
 kill -0 "$vmm_pid" 2>/dev/null || fail "the VMM died with its daemon; a VMM must outlive the manager"
 start_daemon
 out="$(status_of)"
-[ "$out" = "ready pid=$vmm_pid" ] || fail "a fresh daemon lost the VM: $out"
+status_starts "$out" "ready pid=$vmm_pid" || fail "a fresh daemon lost the VM: $out"
 out="$(exec_in --timeout-ms 20000 -- /bin/sh -c 'echo adopted' 2>/dev/null)"
 [ "$out" = "adopted" ] || fail "exec after adoption failed: $out"
 say "ok  a restarted daemon adopted vmm pid=$vmm_pid and ran a command in it"
@@ -118,7 +121,7 @@ out="$(exec_in -- /bin/sh -c 'echo persisted > /workspace/keep.txt; sync' 2>/dev
 client stop --socket "$sock" --workspace-id "$ws" >/dev/null
 kill -0 "$vmm_pid" 2>/dev/null && fail "stop left the VMM running"
 out="$(status_of)"
-[ "$out" = "absent pid=0" ] || fail "status after stop was $out"
+status_starts "$out" "absent pid=0" || fail "status after stop was $out"
 out="$(exec_in --timeout-ms 20000 -- /bin/sh -c 'cat /workspace/keep.txt' 2>/dev/null)"
 [ "$out" = "persisted" ] || fail "the sealed disk did not survive the stop: $out"
 new_pid="$(tr -d '[:space:]' < "$vms/workspaces/$ws/fc.pid")"
@@ -133,7 +136,7 @@ kill -9 "$live_pid"
 for _ in $(seq 1 50); do kill -0 "$live_pid" 2>/dev/null || break; sleep 0.1; done
 [ -e "$vms/workspaces/$ws/api.sock" ] || fail "a SIGKILLed VMM was expected to leave api.sock behind"
 out="$(status_of)"
-[ "$out" = "absent pid=0" ] || fail "status after kill -9 was $out, not absent"
+status_starts "$out" "absent pid=0" || fail "status after kill -9 was $out, not absent"
 [ -e "$vms/workspaces/$ws/api.sock" ] && fail "the stale api.sock outlived the reconcile"
 [ -e "$vms/workspaces/$ws/vsock.sock" ] && fail "the stale vsock.sock outlived the reconcile"
 out="$(exec_in --timeout-ms 20000 -- /bin/sh -c 'echo reclaimed')"
@@ -180,15 +183,18 @@ say "ok  ../escape.txt, a missing parent and a file-as-directory were all refuse
 say "a socket a VMM nobody recorded owns is refused, never unlinked"
 mv "$vms/workspaces/$ws/fc.pid" "$vms/workspaces/$ws/fc.pid.hidden"
 out="$(status_of)"
-[ "$out" = 'failed pid=0 error="api.sock is owned by a VMM this daemon has no pid for"' ] ||
-  fail "a VMM with no recorded pid was not refused: $out"
+status_starts "$out" 'failed pid=0 ' || fail "a VMM with no recorded pid was not refused: $out"
+case "$out" in
+  *'error="api.sock is owned by a VMM this daemon has no pid for"'*) ;;
+  *) fail "the refusal did not name the unaccounted socket: $out" ;;
+esac
 [ -e "$vms/workspaces/$ws/api.sock" ] || fail "the socket of an unaccounted VMM was unlinked"
 rc=0
 exec_in -- /bin/true >/dev/null 2>"$work/unaccounted.txt" || rc=$?
 [ "$rc" -ne 0 ] || fail "a command ran in a workspace the daemon cannot account for"
 mv "$vms/workspaces/$ws/fc.pid.hidden" "$vms/workspaces/$ws/fc.pid"
 out="$(status_of)"
-[ "$out" = "ready pid=$revived_pid" ] || fail "the workspace did not recover once its pid was back: $out"
+status_starts "$out" "ready pid=$revived_pid" || fail "the workspace did not recover once its pid was back: $out"
 say "ok  the unaccounted VMM kept its socket and the workspace recovered with its pid back"
 
 say "a boot that fails is recorded with its reason, then backed off instead of retried"
@@ -207,7 +213,8 @@ grep -q "refused: vm_unavailable" "$work/bad-err.txt" || fail "the refusal did n
 grep -q '^error=DiskCloneFailed' "$badroot/workspaces/demo/vmd.state" ||
   fail "the failed state did not record why: $(cat "$badroot/workspaces/demo/vmd.state")"
 out="$(PABRIK_VM_DIR="$badroot" "$vmd" status --socket "$badsock" --workspace-id demo)"
-[ "$out" = 'failed pid=0 error="the last attempt failed; waiting before the next"' ] ||
+status_starts "$out" 'failed pid=0 ' &&
+  case "$out" in *'error="the last attempt failed; waiting before the next"'*) true ;; *) false ;; esac ||
   fail "the failure was not backed off: $out"
 kill -TERM "$bad_pid" 2>/dev/null || true
 wait "$bad_pid" 2>/dev/null || true
