@@ -139,7 +139,7 @@ describe('sidebar spacing + type scale', () => {
       if (!src.includes('px-[var(--sb-gutter)] h-7')) {
         problems.push(`${name} header must sit on the gutter at 28px`)
       }
-      if (!src.includes('border-b border-[--color-border]/40')) {
+      if (!src.includes('border-b border-(--color-border)/40')) {
         problems.push(`${name} header must draw the separating rule`)
       }
     }

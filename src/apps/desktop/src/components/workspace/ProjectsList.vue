@@ -291,7 +291,7 @@ const handleItemDragEnd = () => {
 -->
     <div class="relative shrink-0" data-workspace-menu>
       <div
-        class="px-[var(--sb-gutter)] h-7 flex items-center shrink-0 border-b border-[--color-border]/40"
+        class="px-[var(--sb-gutter)] h-7 flex items-center shrink-0 border-b border-(--color-border)/40"
         data-testid="projects-section-header"
         @click="toggleProjectsSection"
       >

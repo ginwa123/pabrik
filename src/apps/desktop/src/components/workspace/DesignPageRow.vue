@@ -286,7 +286,7 @@ const handleKeydown = (event: KeyboardEvent): void => {
     -->
     <button
       type="button"
-      class="shrink-0 w-6 h-6 flex items-center justify-center rounded opacity-60 hover:opacity-100 transition-opacity hover:bg-[--semantic-active-bg] hover:text-red-400"
+      class="shrink-0 w-6 h-6 flex items-center justify-center rounded opacity-60 hover:opacity-100 transition-opacity hover:bg-(--semantic-active-bg) hover:text-red-400"
       style="color: var(--semantic-text-dim)"
       title="Delete page"
       aria-label="Delete page"
