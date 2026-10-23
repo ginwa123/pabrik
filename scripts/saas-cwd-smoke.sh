@@ -89,6 +89,16 @@ stub_port="$(cat "$work/stub.port")"
 llm_url="http://127.0.0.1:$stub_port/v1/chat/completions"
 say "stub upstream for the model on 127.0.0.1:$stub_port"
 
+# The stub profile goes in the FILE as well, before boot. In auth mode the
+# per-user row is what a turn reads first, but the singleton parsed from this
+# file is the fallback when that read comes back unparseable — and this smoke
+# is about where a chat runs, not about which config path resolves. The probe
+# still PUTs the same profile through the API, so the per-user path is
+# exercised too; this only guarantees the model is reachable.
+mkdir -p "$work/.config/pabrik"
+printf '{"api_endpoint":"%s","api_key":"sk-stub-cwd","model":"stub-model","url_style":"openai","active_profile":"%s","profiles":{"%s":{"model":"stub-model","base_url":"%s","api_key":"sk-stub-cwd","url_style":"openai"}}}\n' \
+  "$llm_url" "$profile" "$profile" "$llm_url" >"$work/.config/pabrik/config.json"
+
 say "booting pabrik --saas --port $port"
 # No background model-catalog fetch: this smoke asserts on a chat turn, and a
 # fetch started at boot writes the database while the turn reads its config.
