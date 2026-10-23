@@ -38,6 +38,7 @@ command -v python3 >/dev/null || fail "python3 is required"
 # 8081 is this box's live dev server; this smoke must never bind or signal it.
 [ "$port" != "8081" ] || fail "port 8081 is reserved; set PABRIK_SAAS_CWD_PORT to another port"
 
+vmd="$repo_root/zig-out/bin/pabrik-vmd"
 pabrik=""
 for candidate in "$repo_root/zig-out/bin/pabrik" "$repo_root"/zig-out/bin/pabrikcore-*; do
   [ -x "$candidate" ] && { pabrik="$candidate"; break; }
@@ -119,6 +120,7 @@ say "ok  runtime mode: saas on port $port"
 say "ok  admin $email created in the smoke HOME"
 
 say "creating a new workspace, then its FIRST chat (no kanban task)"
+[ -x "$vmd" ] || fail "no $vmd: run 'zig build vm' first"
 rc=0
 python3 "$repo_root/scripts/saas-cwd-probe.py" \
   --base-url "http://127.0.0.1:$port" \
@@ -130,7 +132,8 @@ python3 "$repo_root/scripts/saas-cwd-probe.py" \
   --guest-release "$kernel_release" \
   --host-release "$host_release" \
   --host-home "$work" \
-  --record-dir "$stub_record" || rc=$?
+  --record-dir "$stub_record" 2>&1 | tee "$work/probe.out"
+rc=${PIPESTATUS[0]}
 if [ "$rc" -ne 0 ]; then
   # The tail is one line repeated when the config never resolves, and that
   # repetition buries everything else: show the boot, count the noise, then
@@ -151,4 +154,19 @@ if [ "$rc" -ne 0 ]; then
   fail "the probe failed (rc=$rc)"
 fi
 
-say "OK - a new workspace's first chat ran at /workspace, on the guest kernel"
+ws="$(sed -n 's/^\[saas-cwd-probe\] new workspace \(ws_[^ ]*\).*/\1/p' "$work/probe.out" | tail -1)"
+[ -n "$ws" ] || fail "the probe never reported a workspace id"
+
+say "that workspace's VM answers over the manager (pabrik-vmd exec), no model involved"
+out="$(PABRIK_VM_DIR="$work/vms" "$vmd" exec --socket "$work/vmd.sock" --workspace-id "$ws" \
+  --timeout-ms 60000 -- /bin/sh -c 'pwd; uname -r' 2>"$work/exec.err")" ||
+  fail "pabrik-vmd exec failed: $(cat "$work/exec.err")"
+expected=$'/workspace\n'"$kernel_release"
+[ "$out" = "$expected" ] ||
+  fail "the VM did not answer at /workspace on the guest kernel (want $(printf '%q' "$expected"), got $(printf '%q' "$out"))"
+case "$out" in
+  *"$work"*) fail "the command ran against the host: $out" ;;
+esac
+say "ok  $(printf '%s' "$out" | tr '\n' ' ')"
+
+say "OK - a workspace session is rooted at /workspace, and its VM answers on the guest kernel"
