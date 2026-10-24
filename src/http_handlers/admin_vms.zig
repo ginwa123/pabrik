@@ -19,6 +19,8 @@ const VmRow = struct {
     pid: i64 = 0,
     vcpus: u32 = 0,
     mem_mib: u32 = 0,
+    /// The workspace's disk image in MiB: 0 on a workspace that never booted.
+    disk_mib: u32 = 0,
     last_error: []const u8 = "",
 };
 
@@ -30,6 +32,8 @@ const Limits = struct {
     min_mem_mib: u32 = vm_limits.min_mem_mib,
     max_mem_mib: u32 = vm_limits.max_mem_mib,
     mem_step_mib: u32 = vm_limits.mem_step_mib,
+    min_disk_mib: u32 = vm_limits.min_disk_mib,
+    max_disk_mib: u32 = vm_limits.max_disk_mib,
 };
 
 const VmsResponse = struct {
@@ -47,12 +51,16 @@ const ResizeResponse = struct {
     pid: i64 = 0,
     vcpus: u32 = 0,
     mem_mib: u32 = 0,
+    disk_mib: u32 = 0,
     last_error: []const u8 = "",
 };
 
 const ResizeBody = struct {
     vcpus: u32 = 0,
     mem_mib: u32 = 0,
+    /// 0 leaves the disk image alone, so a body written before the disk existed
+    /// still resizes what it names.
+    disk_mib: u32 = 0,
 };
 
 fn errorResponse(allocator: std.mem.Allocator, res: gserverz.HttpResponse, status: u16, message: []const u8) !gserverz.HttpResponse {
@@ -120,6 +128,7 @@ pub fn adminVmsListHandler(
         var pid: i64 = 0;
         var vcpus: u32 = 0;
         var mem: u32 = 0;
+        var disk: u32 = 0;
         var err_text: []const u8 = "";
         if (manager) {
             if (client.?.status(workspace_id)) |st| {
@@ -128,6 +137,7 @@ pub fn adminVmsListHandler(
                 pid = st.pid;
                 vcpus = st.vcpus;
                 mem = st.mem_mib;
+                disk = st.disk_mib;
                 err_text = try ctx.allocator.dupe(u8, st.last_error);
             } else |err| {
                 state_text = "unavailable";
@@ -141,6 +151,7 @@ pub fn adminVmsListHandler(
             .pid = pid,
             .vcpus = vcpus,
             .mem_mib = mem,
+            .disk_mib = disk,
             .last_error = err_text,
         });
     }
@@ -175,11 +186,18 @@ pub fn adminVmResizeHandler(
     if (vm_limits.check(workspace_id, body.vcpus, body.mem_mib)) |refusal| {
         return errorResponse(ctx.allocator, res, 400, refusal.message());
     }
+    // The range is the console's to enforce; whether the image can take the
+    // size is the manager's, because the image is where it is recorded.
+    if (body.disk_mib != 0) {
+        if (vm_limits.checkDisk(body.disk_mib, 0)) |refusal| {
+            return errorResponse(ctx.allocator, res, 400, refusal.message());
+        }
+    }
 
     var client = liveManager(ctx.allocator, di) orelse
         return errorResponse(ctx.allocator, res, 503, "NoVmManager");
 
-    const state = client.resize(workspace_id, body.vcpus, body.mem_mib) catch |err| {
+    const state = client.resize(workspace_id, body.vcpus, body.mem_mib, body.disk_mib) catch |err| {
         if (err == vmd.Error.ServerFailure) {
             if (client.lastFailure()) |failure| {
                 return errorResponse(ctx.allocator, res, 502, failure.text());
@@ -195,6 +213,7 @@ pub fn adminVmResizeHandler(
         .pid = state.pid,
         .vcpus = state.vcpus,
         .mem_mib = state.mem_mib,
+        .disk_mib = state.disk_mib,
         .last_error = state.last_error,
     }, .{});
     return res.jsonResponse(.{ .status_code = 200, .data = data });

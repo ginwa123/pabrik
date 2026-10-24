@@ -11,11 +11,17 @@ pub const max_mem_mib: u32 = 16 * 1024;
 /// Firecracker lays the guest's memory out in 128 MiB steps and refuses
 /// anything else at boot, so a value off the grid is refused here instead.
 pub const mem_step_mib: u32 = 128;
+/// The guest builder's smallest image is 128 MiB; the ceiling is a sanity
+/// bound on a `truncate`, not a limit anything measured.
+pub const min_disk_mib: u32 = 128;
+pub const max_disk_mib: u32 = 64 * 1024;
 
 pub const Refusal = enum {
     vcpus_out_of_range,
     mem_mib_out_of_range,
     mem_mib_not_aligned,
+    disk_mib_out_of_range,
+    disk_mib_not_growing,
     bad_workspace_id,
 
     pub fn message(self: Refusal) []const u8 {
@@ -23,6 +29,8 @@ pub const Refusal = enum {
             .vcpus_out_of_range => "vcpus must be 1..8",
             .mem_mib_out_of_range => "mem_mib must be 128..16384",
             .mem_mib_not_aligned => "mem_mib must be a multiple of 128",
+            .disk_mib_out_of_range => "disk_mib must be 128..65536",
+            .disk_mib_not_growing => "disk_mib must be larger than the disk already is: a workspace disk never shrinks",
             .bad_workspace_id => "workspace id must be letters, digits, '-' or '_'",
         };
     }
@@ -55,6 +63,14 @@ pub fn check(id: []const u8, vcpus: u32, mem_mib: u32) ?Refusal {
     return null;
 }
 
+/// A disk resize lands on the workspace's image, so the image's own size is the
+/// rule as well as the range. `current_mib` 0 means "no image yet".
+pub fn checkDisk(target_mib: u32, current_mib: u32) ?Refusal {
+    if (target_mib < min_disk_mib or target_mib > max_disk_mib) return .disk_mib_out_of_range;
+    if (target_mib <= current_mib) return .disk_mib_not_growing;
+    return null;
+}
+
 const testing = std.testing;
 
 test "a request inside the limits is accepted, and one outside is named" {
@@ -79,4 +95,19 @@ test "a workspace id that could escape a path is refused" {
     try testing.expect(!validWorkspaceId(""));
     try testing.expect(!validWorkspaceId("ws 1"));
     try testing.expectEqual(Refusal.bad_workspace_id, check("../etc", 2, 1024).?);
+}
+
+test "a disk resize larger than the image is accepted, and nothing else is" {
+    // The base image is 128 MiB; growing it to 512 is the ordinary case.
+    try testing.expect(checkDisk(512, 128) == null);
+    // Growing a workspace whose image does not exist yet is allowed too.
+    try testing.expect(checkDisk(1024, 0) == null);
+    // The same size is not a resize, and neither is a smaller one: the
+    // filesystem inside the image cannot give blocks back.
+    try testing.expectEqual(Refusal.disk_mib_not_growing, checkDisk(128, 128).?);
+    try testing.expectEqual(Refusal.disk_mib_not_growing, checkDisk(256, 512).?);
+    // A target off the ends of the range never reaches a `truncate`.
+    try testing.expectEqual(Refusal.disk_mib_out_of_range, checkDisk(64, 0).?);
+    try testing.expectEqual(Refusal.disk_mib_out_of_range, checkDisk(max_disk_mib + 1, 0).?);
+    try testing.expect(checkDisk(max_disk_mib, 128) == null);
 }

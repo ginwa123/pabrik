@@ -23,7 +23,7 @@ const usage =
     \\  exec    --socket PATH --workspace-id ID [--cwd-rel R] [--timeout-ms N] -- <argv...>
     \\  status  --socket PATH --workspace-id ID
     \\  stop    --socket PATH --workspace-id ID
-    \\  resize  --socket PATH --workspace-id ID --vcpus N --mem MIB
+    \\  resize  --socket PATH --workspace-id ID --vcpus N --mem MIB [--disk MIB]
     \\  spawn   --socket PATH --workspace-id ID [--cwd-rel R] [--log-name NAME] -- <argv...>
     \\  probe   --socket PATH --workspace-id ID --pid N
     \\  signal  --socket PATH --workspace-id ID --pid N [--signal N]
@@ -47,6 +47,8 @@ const usage =
     \\  --vcpus N            guest vCPUs (default 1)
     \\                       resize: both flags are required, and it restarts
     \\                       the VM (Firecracker takes them at InstanceStart)
+    \\  --disk MIB           resize only: grow the workspace's disk image. A
+    \\                       disk never shrinks and the image is the record.
     \\  --cwd DIR            working directory inside the guest for `run` (default /workspace)
     \\  --cwd-rel R          workspace-relative directory for `exec` (default: the root)
     \\  --timeout-ms N       per-command deadline (default 10000)
@@ -78,6 +80,9 @@ const Options = struct {
     /// Whether the operator named them, so `resize` can require both.
     mem_set: bool = false,
     vcpus_set: bool = false,
+    /// `resize`: the size the workspace's disk image must grow to. 0 leaves it
+    /// alone, which is what every caller but an explicit `--disk` wants.
+    disk_mib: u32 = 0,
     cwd: []const u8 = policy.guest_root,
     cwd_rel: []const u8 = "",
     timeout_ms: u32 = rpc.default_timeout_ms,
@@ -173,6 +178,9 @@ fn parse(args: []const []const u8, options: *Options) void {
         } else if (std.mem.eql(u8, arg, "--vcpus")) {
             options.vcpus = number(u32, "--vcpus", valueAt(args, i));
             options.vcpus_set = true;
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--disk")) {
+            options.disk_mib = number(u32, "--disk", valueAt(args, i));
             i += 1;
         } else if (std.mem.eql(u8, arg, "--timeout-ms")) {
             options.timeout_ms = number(u32, "--timeout-ms", valueAt(args, i));
@@ -427,9 +435,9 @@ fn statusCommand(init: std.process.Init, arena: std.mem.Allocator, options: *Opt
     const state = client.status(options.workspace_id) catch reportClientError(&client);
     defer state.deinit(init.gpa);
     if (state.last_error.len > 0) {
-        emit(1, "{s} pid={d} error=\"{s}\"\n", .{ state.state, state.pid, state.last_error });
+        emit(1, "{s} pid={d} vcpus={d} mem_mib={d} disk_mib={d} error=\"{s}\"\n", .{ state.state, state.pid, state.vcpus, state.mem_mib, state.disk_mib, state.last_error });
     } else {
-        emit(1, "{s} pid={d}\n", .{ state.state, state.pid });
+        emit(1, "{s} pid={d} vcpus={d} mem_mib={d} disk_mib={d}\n", .{ state.state, state.pid, state.vcpus, state.mem_mib, state.disk_mib });
     }
 }
 
@@ -443,7 +451,8 @@ fn stopCommand(init: std.process.Init, arena: std.mem.Allocator, options: *Optio
 }
 
 /// `resize` stops the workspace's VM, records the size it must boot with, and
-/// starts it again: Firecracker takes vCPUs and RAM only at InstanceStart.
+/// starts it again: Firecracker takes vCPUs and RAM only at InstanceStart. A
+/// `--disk` also grows the disk image, which needs the VM stopped as well.
 fn resizeCommand(init: std.process.Init, arena: std.mem.Allocator, options: *Options) !void {
     _ = arena;
     resolveSocket(init, options);
@@ -452,11 +461,16 @@ fn resizeCommand(init: std.process.Init, arena: std.mem.Allocator, options: *Opt
     if (vm_limits.check(options.workspace_id, options.vcpus, options.mem_mib)) |refusal| {
         fail("{s}", .{refusal.message()});
     }
+    if (options.disk_mib != 0) {
+        if (vm_limits.checkDisk(options.disk_mib, 0)) |refusal| {
+            fail("{s}", .{refusal.message()});
+        }
+    }
 
     var client = vmd_client.Client.init(init.gpa, options.socket);
-    const state = client.resize(options.workspace_id, options.vcpus, options.mem_mib) catch reportClientError(&client);
+    const state = client.resize(options.workspace_id, options.vcpus, options.mem_mib, options.disk_mib) catch reportClientError(&client);
     defer state.deinit(init.gpa);
-    emit(1, "{s} pid={d} vcpus={d} mem_mib={d}\n", .{ state.state, state.pid, state.vcpus, state.mem_mib });
+    emit(1, "{s} pid={d} vcpus={d} mem_mib={d} disk_mib={d}\n", .{ state.state, state.pid, state.vcpus, state.mem_mib, state.disk_mib });
     if (state.last_error.len > 0) emit(2, "pabrik-vmd: {s}\n", .{state.last_error});
     if (!std.mem.eql(u8, state.state, "ready")) std.process.exit(1);
 }

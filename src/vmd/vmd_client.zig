@@ -57,6 +57,9 @@ pub const WorkspaceState = struct {
     /// The size the VM boots with. 0 when the daemon predates this field.
     vcpus: u32 = 0,
     mem_mib: u32 = 0,
+    /// The workspace's disk image in MiB. 0 when the daemon predates the field,
+    /// or when the workspace has never booted and so has no image.
+    disk_mib: u32 = 0,
 
     pub fn deinit(self: WorkspaceState, allocator: std.mem.Allocator) void {
         allocator.free(self.state);
@@ -209,22 +212,24 @@ pub const Client = struct {
                 .last_error = try self.allocator.dupe(u8, s.last_error),
                 .vcpus = s.vcpus,
                 .mem_mib = s.mem_mib,
+                .disk_mib = s.disk_mib,
             },
             .failure => |f| self.reportFailure(f),
             else => Error.ProtocolViolation,
         };
     }
 
-    /// Change the size a workspace's VM runs with. Firecracker fixes vCPUs
-    /// and RAM at boot, so the daemon stops the VM and starts it again: this
-    /// call returns when the guest is up (or has failed, with its reason).
-    pub fn resize(self: *Client, workspace_id: []const u8, vcpus: u32, mem_mib: u32) !WorkspaceState {
+    /// Change the size a workspace's machine runs with, and how big its disk is.
+    /// The daemon stops it and starts it again, so this returns when the guest is
+    /// up (or has failed, with its reason). `disk_mib` 0 leaves the image alone.
+    pub fn resize(self: *Client, workspace_id: []const u8, vcpus: u32, mem_mib: u32, disk_mib: u32) !WorkspaceState {
         var response = try self.call(.{
             .action = .resize,
             .id = self.takeId(),
             .workspace_id = workspace_id,
             .vcpus = vcpus,
             .mem_mib = mem_mib,
+            .disk_mib = disk_mib,
         }, long_call_guard_ms);
         defer response.deinit();
         return switch (response.value) {
@@ -234,6 +239,7 @@ pub const Client = struct {
                 .last_error = try self.allocator.dupe(u8, s.last_error),
                 .vcpus = s.vcpus,
                 .mem_mib = s.mem_mib,
+                .disk_mib = s.disk_mib,
             },
             .failure => |f| self.reportFailure(f),
             else => Error.ProtocolViolation,

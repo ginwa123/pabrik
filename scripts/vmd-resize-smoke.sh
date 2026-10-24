@@ -6,6 +6,8 @@
 # drives the real manager through its own CLI and asserts the GUEST sees the
 # new size: `nproc` and `/proc/meminfo` are read INSIDE the microVM, before and
 # after, so a manager that recorded a size and booted the old one cannot pass.
+# The disk is the same idea with `df`: the image grows, `resize2fs` hands the
+# room to the filesystem, and the file the guest wrote is still there after.
 #
 # No root, no tap, no iptables.
 #
@@ -74,7 +76,12 @@ guest_nproc() { exec_in --timeout-ms 60000 -- /bin/sh -c 'nproc' 2>/dev/null | t
 guest_mem_kb() {
   exec_in --timeout-ms 60000 -- /bin/sh -c "awk '/^MemTotal/ {print \$2}' /proc/meminfo" 2>/dev/null | tr -d '[:space:]'
 }
+guest_root_kb() {
+  exec_in --timeout-ms 60000 -- /bin/sh -c "df -k / | awk 'NR==2 {print \$2}'" 2>/dev/null | tr -d '[:space:]'
+}
 vmm_pid() { tr -d '[:space:]' <"$vms/workspaces/$ws/fc.pid"; }
+# `status` also prints the size the workspace boots with.
+status_is_ready() { case "$1" in "ready pid=$2 "*) return 0 ;; *) return 1 ;; esac; }
 
 start_daemon
 trap 'stop_daemon' EXIT
@@ -150,16 +157,49 @@ fi
 grep -q "resize needs --vcpus N and --mem MIB" "$work/err.txt" ||
   fail "a missing flag was not explained: $(cat "$work/err.txt")"
 out="$(status_of)"
-[ "$out" = "ready pid=$pid_live" ] || fail "a refused resize disturbed the VM: $out"
+status_is_ready "$out" "$pid_live" || fail "a refused resize disturbed the VM: $out"
 say "ok  three refusals, and the VM is still ready pid=$pid_live"
+
+say "storage: the disk image grows and the filesystem inside it takes the room"
+disk_img="$vms/workspaces/$ws/disk.ext4"
+img_before="$(stat -c %s "$disk_img")"
+[ "$img_before" = "$((128 * 1024 * 1024))" ] ||
+  fail "the workspace image is $img_before bytes, not the 128 MiB base"
+root_before="$(guest_root_kb)"
+out="$(client resize --socket "$sock" --workspace-id "$ws" --vcpus 1 --mem 512 --disk 512)"
+case "$out" in
+  ready*disk_mib=512*) ;;
+  *) fail "the storage resize came back as: $out" ;;
+esac
+img_after="$(stat -c %s "$disk_img")"
+[ "$img_after" = "$((512 * 1024 * 1024))" ] ||
+  fail "the image is $img_after bytes after a resize to 512 MiB"
+root_after="$(guest_root_kb)"
+[ "$root_after" -gt "$((root_before * 3))" ] ||
+  fail "the guest still sees ${root_after} kB of root filesystem, was ${root_before}"
+out="$(exec_in --timeout-ms 60000 -- /bin/sh -c 'cat /workspace/size.txt' 2>/dev/null)"
+[ "$out" = "before-resize" ] || fail "growing the disk lost the workspace file: $out"
+say "ok  image $((img_before / 1048576)) -> $((img_after / 1048576)) MiB, guest root ${root_before} -> ${root_after} kB, file kept"
+
+say "storage only grows: a smaller disk is refused without a restart"
+pid_live="$(vmm_pid)"
+if client resize --socket "$sock" --workspace-id "$ws" --vcpus 1 --mem 512 --disk 256 >/dev/null 2>"$work/err.txt"; then
+  fail "a resize that shrinks the disk was accepted"
+fi
+grep -q "never shrinks" "$work/err.txt" ||
+  fail "the shrink refusal was not named: $(cat "$work/err.txt")"
+out="$(status_of)"
+status_is_ready "$out" "$pid_live" || fail "the refused shrink disturbed the VM: $out"
+[ "$(stat -c %s "$disk_img")" = "$img_after" ] || fail "the refused shrink changed the image"
+say "ok  refused, and the VM is still ready pid=$pid_live at 512 MiB of storage"
 
 say "the VM survives a resize with the daemon gone: the size is on disk, not in memory"
 stop_daemon
 start_daemon
 out="$(status_of)"
-[ "$out" = "ready pid=$pid_live" ] || fail "the VM did not outlive its daemon: $out"
+status_is_ready "$out" "$pid_live" || fail "the VM did not outlive its daemon: $out"
 out="$(exec_in --timeout-ms 60000 -- /bin/sh -c 'nproc' 2>/dev/null | tr -d '[:space:]')"
 [ "$out" = "1" ] || fail "the adopted VM reports $out vCPUs, not the recorded 1"
 say "ok  a fresh daemon adopted pid=$pid_live at the recorded size"
 
-printf '[vmd-resize-smoke] PASS  a resize moved the guest from 1 vCPU/512 MiB to 2/1024 MiB and back, keeping its disk\n'
+printf '[vmd-resize-smoke] PASS  a resize moved the guest from 1 vCPU/512 MiB to 2/1024 MiB and back, grew its disk 128 -> 512 MiB, and kept the data\n'

@@ -10,6 +10,7 @@ zig-out
 /.worktree
 
 # === Frontend dependencies + builds ===
+/src/apps/admin/node_modules
 /src/apps/kerjabot/node_modules
 /src/apps/kerjabot/dist
 /src/apps/desktop/node_modules

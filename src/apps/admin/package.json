@@ -1,0 +1,13 @@
+{
+  "name": "pabrik-admin-console",
+  "private": true,
+  "description": "The owner console's stylesheet: Tailwind input, compiled to the admin.css the Zig server embeds.",
+  "scripts": {
+    "build:css": "tailwindcss -i admin.src.css -o admin.css",
+    "watch:css": "tailwindcss -i admin.src.css -o admin.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.2.2",
+    "tailwindcss": "^4.2.2"
+  }
+}
