@@ -66,10 +66,8 @@ pub fn keyFor(layout: vm_client.Layout, buf: []u8) ?[]const u8 {
 pub const Reservation = enum { reserved, already_bound, no_room };
 
 /// Which keys already have a listener, so `ensure` is a lookup after the first
-/// call for a workspace. It used to be nothing at all: every dispatch bound a
-/// fresh socket, forked a fresh accept thread and leaked both, so one busy
-/// workspace walked the daemon into `RLIMIT_NOFILE` (1024 on this box). The
-/// daemon's own `accept4` then failed with `EMFILE`, and that ended it.
+/// call for a workspace. Without it every dispatch bound a socket and a thread
+/// and leaked both: `RLIMIT_NOFILE` filled and the manager died of `EMFILE`.
 const Registry = struct {
     lock: std.atomic.Mutex = .unlocked,
     count: usize = 0,
@@ -285,16 +283,10 @@ fn log(comptime fmt: []const u8, args: anytype) void {
 const testing = std.testing;
 
 // ─── the leak that killed the manager ────────────────────────────────────
-//
-// Every dispatch — `exec`, `tty`, `fs.*`, `spawn`, `probe`, `signal`, `log` —
-// calls `ensure`, so `ensure` has to be free after the first call. It was not:
-// each call opened a socket, forked an accept thread and leaked both. One busy
-// workspace therefore walked the daemon into `RLIMIT_NOFILE`, and the daemon's
-// own `accept4` then failed with `EMFILE` — which the accept loop turned into
-// `Error.AcceptFailed`, `main` into `exit(1)`, and left every Firecracker VMM
-// it owned running with no manager. The observable is a descriptor and a
-// thread; no fake could show either, so these tests use real sockets in a
-// per-test temp dir.
+
+// `ensure` runs on every dispatch (`exec`, `tty`, `fs.*`, `spawn`, `probe`,
+// `signal`, `log`), so it must be free after the first call. It was not: one
+// workspace filled the descriptors until `accept4` answered `EMFILE`.
 
 /// How long a test waits for the listener's answer. The accept thread is
 /// somebody else's, so the wait is a deadline, never a sleep.
@@ -387,10 +379,9 @@ fn removeTempRoot(root: []const u8, layout: vm_client.Layout) void {
     if (cstr(root, &buf)) |z| _ = linux.rmdir(z);
 }
 
-/// Counts the bytes still held, so a heap leak is an assertion and not a line
-/// in a log nobody reads. The listener's own memory is intentionally still
-/// alive when the test ends (its accept thread is detached), so the assertion
-/// is a delta across the dispatches, never "zero at the end".
+/// Counts the bytes still held, so a heap leak is an assertion and not a log
+/// line. The listener is intentionally still alive when a test ends, so the
+/// assertion is a delta across the dispatches, never "zero at the end".
 const CountingAllocator = struct {
     parent: std.mem.Allocator,
     live_bytes: usize = 0,

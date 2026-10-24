@@ -312,10 +312,9 @@ const accept_starved_backoff_ms: u32 = 100;
 pub const AcceptVerdict = enum {
     /// A signal interrupted the wait: wait again.
     retry,
-    /// The daemon is momentarily out of descriptors or buffers. This is
-    /// transient by nature and it must NEVER end the daemon: the manager is
-    /// the only process that can boot or stop a workspace's VM, so ending it
-    /// here orphans every Firecracker VMM it owns.
+    /// The daemon is momentarily out of descriptors or buffers. Transient by
+    /// nature and it must never end the daemon: the manager is the only process
+    /// that can stop a workspace's VM, so ending it here orphans every VMM.
     starved,
     /// The listening socket is not a listening socket any more. Nothing to
     /// wait for.
@@ -342,10 +341,9 @@ pub const ExitKind = enum {
     failed,
 };
 
-/// A VMM is nobody's child once this process is gone, so only a deliberate
-/// stop may leave one running. Every other exit takes the VMs down with it;
-/// otherwise a daemon that died of `EMFILE` leaves each workspace's
-/// Firecracker running with no manager at all (476 MiB of orphan, observed).
+/// A VMM is nobody's child once this process is gone, so only a deliberate stop
+/// may leave one running. Every other exit takes the VMs down with it: the
+/// failure path used to leave each workspace's Firecracker orphaned.
 pub fn exitTakesVmsDown(exit: ExitKind) bool {
     return exit != .deliberate_stop;
 }
