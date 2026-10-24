@@ -15,6 +15,8 @@ const baseAgent: AgentRow = {
   system_prompt: '',
 }
 
+const disabledAgent: AgentRow = { ...baseAgent, name: 'retired', enabled: false }
+
 async function mountOpen(component: unknown, opts?: unknown) {
   const w = mount(component as never, opts as never) as VueWrapper
   return w
@@ -155,5 +157,57 @@ describe('AgentsSection', () => {
     const setActiveBtns = wrapper.findAll('[data-testid="set-active-btn"]')
     expect(setActiveBtns.length).toBe(1)
     expect(wrapper.find('[data-testid="reset-active-btn"]').exists()).toBe(true)
+  })
+
+  it('treats a missing enabled key as enabled', async () => {
+    const wrapper = await mountOpen(AgentsSection, {
+      props: { modelValue: [baseAgent], activeAgent: null },
+    })
+    const toggle = wrapper.find('[data-testid="agent-enabled-switch-work"]')
+    expect(toggle.attributes('aria-checked')).toBe('true')
+    expect(wrapper.find('[data-testid="agent-disabled-badge"]').exists()).toBe(false)
+  })
+
+  it('emits toggleEnabled with the flipped state when the switch is clicked', async () => {
+    const wrapper = await mountOpen(AgentsSection, {
+      props: { modelValue: [baseAgent], activeAgent: null },
+    })
+    await wrapper.find('[data-testid="agent-enabled-switch-work"]').trigger('click')
+    expect(wrapper.emitted('toggleEnabled')?.[0]).toEqual(['work', false])
+  })
+
+  it('emits toggleEnabled true for a disabled agent', async () => {
+    const wrapper = await mountOpen(AgentsSection, {
+      props: { modelValue: [disabledAgent], activeAgent: null },
+    })
+    await wrapper.find('[data-testid="agent-enabled-switch-retired"]').trigger('click')
+    expect(wrapper.emitted('toggleEnabled')?.[0]).toEqual(['retired', true])
+  })
+
+  it('marks a disabled agent and says what being disabled costs', async () => {
+    const wrapper = await mountOpen(AgentsSection, {
+      props: { modelValue: [disabledAgent], activeAgent: null },
+    })
+    const toggle = wrapper.find('[data-testid="agent-enabled-switch-retired"]')
+    expect(toggle.attributes('aria-checked')).toBe('false')
+    expect(wrapper.find('[data-testid="agent-disabled-badge"]').text()).toContain('disabled')
+    const hint = wrapper.find('[data-testid="agent-disabled-hint"]')
+    expect(hint.text()).toContain('list_agents')
+    expect(hint.text()).toContain('spawn_sub_agent')
+  })
+
+  it('offers no Set active button for a disabled agent', async () => {
+    const wrapper = await mountOpen(AgentsSection, {
+      props: { modelValue: [disabledAgent], activeAgent: null },
+    })
+    expect(wrapper.find('[data-testid="set-active-btn"]').exists()).toBe(false)
+  })
+
+  it('emits duplicate with the agent name when Duplicate is clicked', async () => {
+    const wrapper = await mountOpen(AgentsSection, {
+      props: { modelValue: [baseAgent], activeAgent: null },
+    })
+    await wrapper.find('[data-testid="duplicate-btn-work"]').trigger('click')
+    expect(wrapper.emitted('duplicate')?.[0]).toEqual(['work'])
   })
 })

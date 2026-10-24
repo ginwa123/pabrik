@@ -13,8 +13,9 @@ pub const ListAgentsInput = struct {};
 /// Top-level tool definition for the LLM.
 pub const list_agents_tool_system_prompt =
     \\## List Agents Tool — Behavior
-    \\Use `list_agents` to list the agents configured in this workspace.
+    \\Use `list_agents` to list the ENABLED agents configured in this workspace.
     \\- No parameters. Returns full specs (model, tuning, system prompt) for each agent.
+    \\- Disabled agents never appear here and cannot be spawned; the user switches them on in Settings.
     \\- Call this before `spawn_sub_agent` when you are unsure which `agent_name` values exist or which one fits the job.
     \\- Absent optional tags mean 'inherits the default'. Read-only, no side effects.
     \\
@@ -25,7 +26,7 @@ pub const list_agents_tool = AgentTool{
     .function = .{
         .name = "list_agents",
         .description =
-        \\List the agents configured in this workspace, with their full specs (model, tuning, system prompt). Call this before spawn_sub_agent when unsure which agent_name values exist or which fits the job. Absent optional tags mean 'inherits the default'. Read-only, no side effects.
+        \\List the ENABLED agents configured in this workspace, with their full specs (model, tuning, system prompt). Disabled agents are never listed and cannot be spawned. Call this before spawn_sub_agent when unsure which agent_name values exist or which fits the job. Absent optional tags mean 'inherits the default'. Read-only, no side effects.
         ,
         .parameters = .{
             .type = "object",
@@ -66,6 +67,7 @@ pub fn executeListAgents(
     while (it.next()) |entry| {
         const cfg = entry.value_ptr.*;
         if (entry.key_ptr.*.len == 0) continue;
+        if (!cfg.enabled) continue;
         try rows.append(allocator, .{
             .name = entry.key_ptr.*,
             .model = cfg.model,
@@ -275,4 +277,67 @@ test "execListAgents returns a wrapped envelope naming the tool" {
     defer alloc.free(result.output);
     try exec_testing.expect(std.mem.indexOf(u8, result.output, "\"tool\":\"list_agents\"") != null);
     try exec_testing.expect(std.mem.indexOf(u8, result.output, "\"name\":\"coder\"") != null);
+}
+
+/// A live `LlmConfig` whose agents are (name, enabled) pairs — the disabled
+/// half is what `list_agents` must never show.
+fn configWithFlags(
+    allocator: std.mem.Allocator,
+    names: []const []const u8,
+    flags: []const bool,
+) !exec_config_mod.LlmConfig {
+    var cfg: exec_config_mod.LlmConfig = .{
+        .allocator = allocator,
+        .api_key = try allocator.dupe(u8, "top-key"),
+        .model = try allocator.dupe(u8, "top-model"),
+        .base_url = try allocator.dupe(u8, "https://top"),
+        .url_style = try allocator.dupe(u8, "openai"),
+        .model_compaction_size_kb = 100,
+        .retry_delay_ms = 0,
+        .max_capacity_token_model = null,
+        .compaction_threshold_percent = null,
+        .active_agent = null,
+        .mcpServers_parsed = null,
+        .mcp_servers = exec_config_mod.LlmConfig.McpServersMap.init(allocator),
+        .agents = exec_config_mod.LlmConfig.AgentsMap.init(allocator),
+        .random_names = &.{},
+    };
+    errdefer cfg.deinit();
+    for (names, flags) |name, enabled| {
+        try cfg.agents.put(try allocator.dupe(u8, name), .{
+            .model = try allocator.dupe(u8, "gpt-4o"),
+            .base_url = try allocator.dupe(u8, "https://example"),
+            .thinking = try allocator.dupe(u8, "auto"),
+            .temperature = try allocator.dupe(u8, "auto"),
+            .api_key = try allocator.dupe(u8, "sk-secret"),
+            .url_style = try allocator.dupe(u8, "openai"),
+            .system_prompt = try allocator.dupe(u8, "a persona"),
+            .enabled = enabled,
+        });
+    }
+    return cfg;
+}
+
+test "list_agents leaves a disabled agent out of the list" {
+    const alloc = exec_testing.allocator;
+    var cfg = try configWithFlags(alloc, &.{ "coder", "retired" }, &.{ true, false });
+    defer cfg.deinit();
+
+    const out = try executeListAgents(alloc, &cfg);
+    defer alloc.free(out);
+
+    try exec_testing.expect(std.mem.indexOf(u8, out, "\"count\":1") != null);
+    try exec_testing.expect(std.mem.indexOf(u8, out, "\"name\":\"coder\"") != null);
+    try exec_testing.expect(std.mem.indexOf(u8, out, "retired") == null);
+}
+
+test "list_agents reports zero when every configured agent is disabled" {
+    const alloc = exec_testing.allocator;
+    var cfg = try configWithFlags(alloc, &.{ "a", "b" }, &.{ false, false });
+    defer cfg.deinit();
+
+    const out = try executeListAgents(alloc, &cfg);
+    defer alloc.free(out);
+
+    try exec_testing.expect(std.mem.indexOf(u8, out, "\"count\":0") != null);
 }

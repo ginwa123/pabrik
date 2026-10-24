@@ -33,7 +33,7 @@ import {
 // The models.dev catalog: its status for the block below, and the manual
 // refresh. Both live in the General tab because the catalog is machine-wide —
 // it is not a per-workspace or per-agent fact.
-import { getModelCatalog, refreshModelCatalog } from '../../api'
+import { getAgentProfileInUse, getModelCatalog, refreshModelCatalog } from '../../api'
 import AgentModal, { type AgentModalValue } from './AgentModal.vue'
 import McpServerModal, { type McpServerModalValue } from './McpServerModal.vue'
 import ConfirmDialog from '../dialogs/ConfirmDialog.vue'
@@ -334,6 +334,7 @@ function syncFromConfig() {
     // render the row (it does for thinking !== "off").
     thinking_budget_tokens: p.thinking_budget_tokens ?? null,
     reasoning_effort: p.reasoning_effort ?? null,
+    enabled: p.enabled ?? true,
   }))
   activeAgent.value = c.active_profile ?? null
   agentsTouched.value = false
@@ -512,6 +513,9 @@ type AgentModalState = { mode: 'add' | 'edit'; value: AgentModalValue } | null
 type McpServerModalState = { mode: 'add' | 'edit'; value: McpServerModalValue } | null
 
 const agentModal = ref<AgentModalState>(null)
+const agentEditOriginalName = ref<string | null>(null)
+/** current key → the key this agent still has on disk (`A` after renaming A→B). */
+const agentRenameOrigins = ref<Record<string, string>>({})
 const mcpServerModal = ref<McpServerModalState>(null)
 
 const agentErrors = ref<{ name?: string; model?: string; base_url?: string; api_key?: string }>({})
@@ -524,6 +528,7 @@ function startAddAgent() {
     value: {
       name: '',
       system_prompt: '',
+      enabled: true,
       config: {
         model: '',
         base_url: '',
@@ -541,6 +546,7 @@ function startAddAgent() {
       },
     },
   }
+  agentEditOriginalName.value = null
 }
 function startEditAgent(p: AgentRow) {
   agentModal.value = {
@@ -548,6 +554,7 @@ function startEditAgent(p: AgentRow) {
     value: {
       name: p.name,
       system_prompt: p.system_prompt ?? '',
+      enabled: p.enabled ?? true,
       config: {
         model: p.model ?? '',
         base_url: p.base_url ?? '',
@@ -569,33 +576,84 @@ function startEditAgent(p: AgentRow) {
       },
     },
   }
+  agentEditOriginalName.value = p.name
 }
 function closeAgentModal() {
   agentModal.value = null
   agentErrors.value = {}
+  agentEditOriginalName.value = null
 }
-function saveAgent() {
+async function saveAgent() {
   if (!agentModal.value) return
   const v = agentModal.value.value
   const name = v.name.trim()
+  const original = agentEditOriginalName.value
   if (!name) {
     agentErrors.value = { name: 'Name is required' }
+    return
+  }
+  if (agentsList.value.some((a) => a.name === name && a.name !== original)) {
+    agentErrors.value = { name: 'An agent with this name already exists' }
     return
   }
   if (!v.config.model.trim()) {
     agentErrors.value = { model: 'Model is required' }
     return
   }
+  if (original !== null && original !== name) {
+    const usage = await getAgentProfileInUse(original).catch(() => null)
+    if (usage && usage.running > 0) {
+      const sessions = usage.running === 1 ? 'session' : 'sessions'
+      agentErrors.value = {
+        name: `"${original}" is running in ${usage.running} ${sessions} — stop it before renaming`,
+      }
+      return
+    }
+  }
   agentsTouched.value = true
-  const row = { name, ...v.config, system_prompt: v.system_prompt }
+  const row = { name, ...v.config, system_prompt: v.system_prompt, enabled: v.enabled ?? true }
   if (agentModal.value.mode === 'add') {
     agentsList.value = [...agentsList.value, row]
   } else {
-    agentsList.value = agentsList.value.map((a) => (a.name === name ? { ...a, ...row } : a))
+    const key = original ?? name
+    agentsList.value = agentsList.value.map((a) => (a.name === key ? { ...a, ...row } : a))
+    if (activeAgent.value === key && key !== name) activeAgent.value = name
+    const origins = { ...agentRenameOrigins.value }
+    const onDisk = origins[key] ?? key
+    delete origins[key]
+    if (onDisk !== name) origins[name] = onDisk
+    agentRenameOrigins.value = origins
   }
   syncToConfig()
   closeAgentModal()
 }
+
+/** A unique `<name> copy` key: `copy`, then `copy 2`, `copy 3`, … */
+function uniqueAgentCopyName(name: string): string {
+  const taken = new Set(agentsList.value.map((a) => a.name))
+  let candidate = `${name} copy`
+  for (let n = 2; taken.has(candidate); n += 1) candidate = `${name} copy ${n}`
+  return candidate
+}
+
+/** Duplicate an agent under a fresh key. The copy is a normal list entry, so
+ * nothing reaches config.json until the Save bar is used. */
+function duplicateAgent(name: string) {
+  const source = agentsList.value.find((a) => a.name === name)
+  if (!source) return
+  const copyName = uniqueAgentCopyName(name)
+  agentsTouched.value = true
+  agentsList.value = [...agentsList.value, { ...source, name: copyName }]
+  syncToConfig()
+  emit('notification', `Copied "${name}" to "${copyName}" — save to keep it`, 'success')
+}
+
+function setAgentEnabled(name: string, enabled: boolean) {
+  agentsTouched.value = true
+  agentsList.value = agentsList.value.map((a) => (a.name === name ? { ...a, enabled } : a))
+  syncToConfig()
+}
+
 function deleteAgent(name: string) {
   // Optimistic local removal; the API call is best-effort.
   const previous = agentsList.value
@@ -805,6 +863,15 @@ async function handleSave() {
   }
   try {
     await save()
+    // A rename writes the NEW key and leaves the old one in the map (the PUT
+    // merges profiles), so the stale key has to go explicitly — only now, so
+    // an abandoned edit never loses a profile.
+    const liveNames = new Set(agentsList.value.map((a) => a.name))
+    for (const [current, onDisk] of Object.entries(agentRenameOrigins.value)) {
+      if (current === onDisk || liveNames.has(onDisk)) continue
+      await source.deleteAgent(onDisk)
+    }
+    agentRenameOrigins.value = {}
     webSearchErrors.value = {}
     prevWebLaunch.value = generalSettings.value.web_launch_enabled
     useChatViewStore().setMode(generalSettings.value.chat_view)
@@ -1241,6 +1308,8 @@ const isLoading = computed(() => !loaded.value)
           @edit="startEditAgent"
           @delete="requestDeleteAgent"
           @add="startAddAgent"
+          @duplicate="duplicateAgent"
+          @toggle-enabled="setAgentEnabled"
         />
 
         <McpServersSection

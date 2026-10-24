@@ -114,6 +114,7 @@ pub const devSseEmitLlmHandler = @import("dev_sse_emit.zig").emitLlmHandler;
 // args / env / cwd (or URL + headers) before clicking Save in the MCP server
 pub const agentToolsRegistryHandler = @import("agent_tools_registry.zig").agentToolsRegistryHandler;
 pub const agentToolsListHandler = @import("agent_tools_list.zig").agentToolsListHandler;
+pub const agentProfileInUseHandler = @import("agent_profile_in_use.zig").agentProfileInUseHandler;
 pub const agentToolsCreateHandler = @import("agent_tools_create.zig").agentToolsCreateHandler;
 pub const agentToolsDeleteHandler = @import("agent_tools_delete.zig").agentToolsDeleteHandler;
 // Agent Mode system-prompt CRUD (Migration 080)

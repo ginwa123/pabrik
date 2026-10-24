@@ -215,6 +215,10 @@ pub const LlmConfig = struct {
         /// of "low" | "medium" | "high" | "auto". Validated by
         /// `parse_thinking.parseReasoningEffort`.
         reasoning_effort: ?[]const u8 = null,
+        /// False = the profile is switched OFF: `list_agents` does not offer
+        /// it and `resolveAgent` will not resolve it. Absent = enabled, so
+        /// every pre-existing config keeps its exact behaviour.
+        enabled: bool = true,
     };
 
     /// Resolved agent configuration — the output of `resolveAgent`.
@@ -791,6 +795,7 @@ pub const LlmConfig = struct {
                             &config.agents,
                             entry.key_ptr.*,
                             agent_parsed.value,
+                            profileEnabled(entry.value_ptr.*),
                             allocator,
                         );
                     }
@@ -894,8 +899,23 @@ pub const LlmConfig = struct {
         map.deinit();
     }
 
+    /// Read `enabled` out of a profile object. A non-bool degrades to ENABLED
+    /// instead of failing the whole parse, so a typo cannot erase an agent
+    /// (same rule as `mcp_servers`' `enabled`).
+    fn profileEnabled(value: json.Value) bool {
+        const obj = switch (value) {
+            .object => |o| o,
+            else => return true,
+        };
+        const field = obj.get("enabled") orelse return true;
+        return switch (field) {
+            .bool => |b| b,
+            else => true,
+        };
+    }
+
     /// Add a single profile to the map, duplicating all strings onto the allocator.
-    fn addAgent(m: *AgentsMap, name: []const u8, p: ?AgentJson, alloc: std.mem.Allocator) !void {
+    fn addAgent(m: *AgentsMap, name: []const u8, p: ?AgentJson, enabled: bool, alloc: std.mem.Allocator) !void {
         const agent = p orelse return;
 
         const key = try alloc.dupe(u8, name);
@@ -962,6 +982,7 @@ pub const LlmConfig = struct {
             // Model-thinking knobs — Anthropic budget + OpenAI effort.
             .thinking_budget_tokens = agent.thinking_budget_tokens,
             .reasoning_effort = if (agent.reasoning_effort) |re| try alloc.dupe(u8, re) else null,
+            .enabled = enabled,
         });
     }
 
@@ -1338,6 +1359,7 @@ pub const LlmConfig = struct {
                     .opencode_auto = entry.value_ptr.opencode_auto,
                     .system_prompt = entry.value_ptr.system_prompt,
                 },
+                entry.value_ptr.enabled,
                 self.allocator,
             );
         }
@@ -2232,6 +2254,14 @@ pub const LlmConfig = struct {
         return entry.value_ptr.*;
     }
 
+    /// True only when `name` is a configured agent AND it is switched on.
+    /// A disabled profile is still stored (the user can switch it back on)
+    /// but it is not offered to the model and cannot be spawned.
+    pub fn agentEnabled(self: *const LlmConfig, name: []const u8) bool {
+        const entry = self.agents.getEntry(name) orelse return false;
+        return entry.value_ptr.enabled;
+    }
+
     /// Returns true if an agent with the given name exists and has a non-empty
     /// `model` field. Use this before calling `getAgent` if you need to know
     /// whether resolution will succeed.
@@ -2406,14 +2436,14 @@ pub const LlmConfig = struct {
     }
 
     /// Resolve an agent by name for a spawn. The lookup is against the
-    /// configured agents — the same list `list_agents` shows — so a spawn
-    /// can name any configured agent.
+    /// ENABLED configured agents — a disabled profile resolves as a miss,
+    /// so `spawn_sub_agent` cannot run one.
     pub fn resolveAgent(
         self: *LlmConfig,
         agent_name: []const u8,
     ) ResolvedAgent {
         if (self.getAgent(agent_name)) |agent| {
-            return self.buildResolvedFromAgent(agent, agent_name);
+            if (agent.enabled) return self.buildResolvedFromAgent(agent, agent_name);
         }
 
         // Not found — random fallback.
@@ -3990,6 +4020,101 @@ test "resolveAgent: the agent's own system_prompt reaches the resolved config" {
     var pair = try resolveFromAgents(json_body, "reviewer");
     defer pair.cfg.deinit();
     try std.testing.expectEqualStrings("you are the reviewer", pair.resolved.system_prompt);
+}
+
+test "agents: a profile with no enabled key counts as enabled" {
+    const json_body =
+        \\{ "api_key": "k", "model": "m",
+        \\  "profiles_models": { "alpha": { "model": "M1" } }
+        \\}
+    ;
+    var cfg = try writeAndRead(resolve_alloc, resolve_io, json_body);
+    defer cfg.deinit();
+    try std.testing.expect(cfg.getAgent("alpha").?.enabled);
+    try std.testing.expect(cfg.agentEnabled("alpha"));
+}
+
+test "agents: enabled false on a profile reads back as switched off" {
+    const json_body =
+        \\{ "api_key": "k", "model": "m",
+        \\  "profiles_models": { "retired": { "model": "M1", "enabled": false } }
+        \\}
+    ;
+    var cfg = try writeAndRead(resolve_alloc, resolve_io, json_body);
+    defer cfg.deinit();
+    try std.testing.expect(!cfg.getAgent("retired").?.enabled);
+    try std.testing.expect(!cfg.agentEnabled("retired"));
+}
+
+test "agents: agentEnabled is false for a name that is not configured" {
+    const json_body =
+        \\{ "api_key": "k", "model": "m",
+        \\  "profiles_models": { "alpha": { "model": "M1" } }
+        \\}
+    ;
+    var cfg = try writeAndRead(resolve_alloc, resolve_io, json_body);
+    defer cfg.deinit();
+    try std.testing.expect(!cfg.agentEnabled("ghost"));
+}
+
+test "resolveAgent: a disabled agent cannot be resolved and falls back" {
+    const json_body =
+        \\{ "api_key": "orchestrator-key", "model": "orchestrator-model",
+        \\  "base_url": "https://orchestrator.example.com",
+        \\  "profiles_models": {
+        \\    "retired": {
+        \\      "model": "gpt-4o", "api_key": "retired-key",
+        \\      "base_url": "https://retired.example.com",
+        \\      "system_prompt": "you should never run",
+        \\      "enabled": false
+        \\    }
+        \\  }
+        \\}
+    ;
+    var pair = try resolveFromAgents(json_body, "retired");
+    defer pair.cfg.deinit();
+    const r = pair.resolved;
+    try std.testing.expect(r.is_random_fallback);
+    try std.testing.expectEqualStrings("retired", r.requested_name);
+    try std.testing.expectEqualStrings("orchestrator-model", r.model);
+    try std.testing.expectEqualStrings("orchestrator-key", r.api_key);
+    try std.testing.expectEqualStrings("", r.system_prompt);
+}
+
+test "agents: a non-bool enabled cannot erase the profile (degrades to enabled)" {
+    const json_body =
+        \\{ "api_key": "k", "model": "m",
+        \\  "profiles_models": {
+        \\    "typo": { "model": "M1", "enabled": "yes" },
+        \\    "nul": { "model": "M2", "enabled": null }
+        \\  }
+        \\}
+    ;
+    var cfg = try writeAndRead(resolve_alloc, resolve_io, json_body);
+    defer cfg.deinit();
+
+    try std.testing.expect(cfg.getAgent("typo") != null);
+    try std.testing.expect(cfg.agentEnabled("typo"));
+    try std.testing.expect(cfg.getAgent("nul") != null);
+    try std.testing.expect(cfg.agentEnabled("nul"));
+}
+
+test "agents: clone carries the enabled flag on every profile" {
+    const json_body =
+        \\{ "api_key": "k", "model": "m",
+        \\  "profiles_models": {
+        \\    "on": { "model": "M1" },
+        \\    "off": { "model": "M2", "enabled": false }
+        \\  }
+        \\}
+    ;
+    var cfg = try writeAndRead(resolve_alloc, resolve_io, json_body);
+    defer cfg.deinit();
+    var cloned = try cfg.clone();
+    defer cloned.deinit();
+
+    try std.testing.expect(cloned.agentEnabled("on"));
+    try std.testing.expect(!cloned.agentEnabled("off"));
 }
 
 // ---------------------------------------------------------------------------

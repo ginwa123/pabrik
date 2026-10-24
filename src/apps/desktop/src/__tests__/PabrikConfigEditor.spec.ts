@@ -17,12 +17,22 @@ vi.mock('../api', () => ({
   // Tools tab catalog — consumed by the agentTools store inside
   // ToolsSection; only fetched when the Tools tab mounts.
   getAgentToolsRegistry: vi.fn(),
+  // The agent modal mounts LlmConfigForm, which resolves the typed model on
+  // mount and on every debounced edit. Without these the form throws.
+  resolveModelOutcome: vi.fn(),
+  getModelCatalog: vi.fn(),
+  // The rename guard: how many running sessions are pinned to the profile.
+  getAgentProfileInUse: vi.fn(),
 }))
 
 const mockGet = api.getPabrikConfig as unknown as ReturnType<typeof vi.fn>
 const mockSave = api.savePabrikConfig as unknown as ReturnType<typeof vi.fn>
 const mockWebStatus = api.getWebStatus as unknown as ReturnType<typeof vi.fn>
 const mockRegistry = api.getAgentToolsRegistry as unknown as ReturnType<typeof vi.fn>
+const mockDeleteAgent = api.deleteAgent as unknown as ReturnType<typeof vi.fn>
+const mockProfileInUse = api.getAgentProfileInUse as unknown as ReturnType<typeof vi.fn>
+const mockResolveModel = api.resolveModelOutcome as unknown as ReturnType<typeof vi.fn>
+const mockModelCatalog = api.getModelCatalog as unknown as ReturnType<typeof vi.fn>
 
 // Catalog fixture for the Tools tab. `set_git_worktree` is NOT part
 // of the built-in defaults, so checking it is a visible edit.
@@ -43,6 +53,14 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     mockWebStatus.mockResolvedValue(null)
     mockRegistry.mockReset()
     mockRegistry.mockResolvedValue({ tools: TOOLS_REGISTRY })
+    mockDeleteAgent.mockReset()
+    mockDeleteAgent.mockResolvedValue({ success: true })
+    mockProfileInUse.mockReset()
+    mockProfileInUse.mockResolvedValue({ name: 'work', running: 0, sessions: [] })
+    mockResolveModel.mockReset()
+    mockResolveModel.mockResolvedValue({ kind: 'error', message: 'unknown model' })
+    mockModelCatalog.mockReset()
+    mockModelCatalog.mockResolvedValue({ models: [], total: 0, state: 'absent' })
     Object.defineProperty(globalThis, 'localStorage', {
       value: makeLocalStorageStub(),
       writable: true,
@@ -686,5 +704,231 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     const savedConfig = mockSave.mock.calls[0]![0] as Record<string, unknown>
     expect(savedConfig).not.toHaveProperty('tools')
     expect(savedConfig.notify_on_error).toBe(true)
+  })
+
+  // ─── Disable / duplicate / create an agent ──────────────────────────
+  it('switching an agent off writes enabled:false for that profile only', async () => {
+    mockGet.mockResolvedValueOnce({
+      profiles: { work: { model: 'm' }, home: { model: 'm2' } },
+    })
+    mockSave.mockResolvedValueOnce({ success: true })
+    const wrapper = await mountAt('agents')
+
+    await wrapper.find('[data-testid="agent-enabled-switch-work"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="save-btn"]').trigger('click')
+    await flushPromises()
+
+    expect(mockSave).toHaveBeenCalledTimes(1)
+    const profiles = (mockSave.mock.calls[0]![0] as Record<string, unknown>).profiles as Record<
+      string,
+      Record<string, unknown>
+    >
+    expect(profiles.work!.enabled).toBe(false)
+    expect(profiles.home!.enabled).toBe(true)
+  })
+
+  it('a profile stored with enabled:false hydrates a switched-off row that saves unchanged', async () => {
+    mockGet.mockResolvedValueOnce({
+      profiles: { retired: { model: 'm', enabled: false } },
+    })
+    mockSave.mockResolvedValueOnce({ success: true })
+    const wrapper = await mountAt('agents')
+
+    expect(
+      wrapper.find('[data-testid="agent-enabled-switch-retired"]').attributes('aria-checked'),
+    ).toBe('false')
+
+    await wrapper.find('[data-testid="duplicate-btn-retired"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="save-btn"]').trigger('click')
+    await flushPromises()
+
+    const profiles = (mockSave.mock.calls[0]![0] as Record<string, unknown>).profiles as Record<
+      string,
+      Record<string, unknown>
+    >
+    expect(profiles.retired!.enabled).toBe(false)
+    expect(profiles['retired copy']!.enabled).toBe(false)
+  })
+
+  it('duplicate copies the whole agent under a "<name> copy" key', async () => {
+    mockGet.mockResolvedValueOnce({
+      profiles: { work: { model: 'gpt-4o', system_prompt: 'be strict' } },
+    })
+    mockSave.mockResolvedValueOnce({ success: true })
+    const wrapper = await mountAt('agents')
+
+    await wrapper.find('[data-testid="duplicate-btn-work"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="save-btn"]').trigger('click')
+    await flushPromises()
+
+    const profiles = (mockSave.mock.calls[0]![0] as Record<string, unknown>).profiles as Record<
+      string,
+      Record<string, unknown>
+    >
+    expect(Object.keys(profiles).sort()).toEqual(['work', 'work copy'])
+    expect(profiles['work copy']!.model).toBe('gpt-4o')
+    expect(profiles['work copy']!.system_prompt).toBe('be strict')
+  })
+
+  it('duplicating the same agent twice never collides on the key', async () => {
+    mockGet.mockResolvedValueOnce({ profiles: { work: { model: 'm' } } })
+    mockSave.mockResolvedValueOnce({ success: true })
+    const wrapper = await mountAt('agents')
+
+    await wrapper.find('[data-testid="duplicate-btn-work"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="duplicate-btn-work"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="save-btn"]').trigger('click')
+    await flushPromises()
+
+    const profiles = (mockSave.mock.calls[0]![0] as Record<string, unknown>).profiles as Record<
+      string,
+      Record<string, unknown>
+    >
+    expect(Object.keys(profiles).sort()).toEqual(['work', 'work copy', 'work copy 2'])
+  })
+
+  it('refuses to create a second agent with a name that is already taken', async () => {
+    mockGet.mockResolvedValueOnce({ profiles: { work: { model: 'm' } } })
+    const wrapper = await mountAt('agents')
+
+    await wrapper.find('[data-testid="add-btn"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="name-input"]').setValue('work')
+    await wrapper.find('[data-testid="model-input"]').setValue('m2')
+    await wrapper.find('[data-testid="modal-save"]').trigger('click')
+    await flushPromises()
+
+    // Still one row, and the copy is NOT queued into the PUT body.
+    expect(wrapper.findAll('[data-testid="agent-list"] > li').length).toBe(1)
+    expect(wrapper.text()).toContain('already exists')
+  })
+
+  it('renaming an agent saves the new key and deletes the stale one only on Save', async () => {
+    mockGet.mockResolvedValueOnce({ profiles: { work: { model: 'm' } } })
+    mockSave.mockResolvedValueOnce({ success: true })
+    const wrapper = await mountAt('agents')
+
+    await wrapper.find('[data-testid="edit-btn"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="name-input"]').setValue('day job')
+    await wrapper.find('[data-testid="modal-save"]').trigger('click')
+    await flushPromises()
+
+    // Nothing hits the server until the Save bar is used: an abandoned rename
+    // must not leave the profile deleted under its old key.
+    expect(mockDeleteAgent).not.toHaveBeenCalled()
+
+    await wrapper.find('[data-testid="save-btn"]').trigger('click')
+    await flushPromises()
+
+    const profiles = (mockSave.mock.calls[0]![0] as Record<string, unknown>).profiles as Record<
+      string,
+      Record<string, unknown>
+    >
+    expect(Object.keys(profiles)).toEqual(['day job'])
+    expect(profiles['day job']!.model).toBe('m')
+    expect(mockDeleteAgent).toHaveBeenCalledWith('work')
+  })
+
+  it('refuses to rename an agent a worker is still running', async () => {
+    mockGet.mockResolvedValueOnce({ profiles: { work: { model: 'm' } } })
+    mockProfileInUse.mockResolvedValueOnce({
+      name: 'work',
+      running: 2,
+      sessions: [
+        { id: 's1', cwd: '/repo', sub_agent: false },
+        { id: 'child', cwd: '/repo', sub_agent: true },
+      ],
+    })
+    const wrapper = await mountAt('agents')
+
+    await wrapper.find('[data-testid="edit-btn"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="name-input"]').setValue('day job')
+    await wrapper.find('[data-testid="modal-save"]').trigger('click')
+    await flushPromises()
+
+    // The modal stays open with the reason; the list and the disk are untouched.
+    expect(wrapper.find('[data-testid="name-input"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('is running in 2 sessions')
+    expect(wrapper.findAll('[data-testid="agent-list"] > li').length).toBe(1)
+    expect(wrapper.find('[data-testid="agent-list"]').text()).toContain('work')
+    expect(mockSave).not.toHaveBeenCalled()
+    expect(mockDeleteAgent).not.toHaveBeenCalled()
+  })
+
+  it('allows the rename once nothing is running the agent', async () => {
+    mockGet.mockResolvedValueOnce({ profiles: { work: { model: 'm' } } })
+    mockSave.mockResolvedValueOnce({ success: true })
+    const wrapper = await mountAt('agents')
+
+    await wrapper.find('[data-testid="edit-btn"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="name-input"]').setValue('day job')
+    await wrapper.find('[data-testid="modal-save"]').trigger('click')
+    await flushPromises()
+
+    expect(mockProfileInUse).toHaveBeenCalledWith('work')
+    await wrapper.find('[data-testid="save-btn"]').trigger('click')
+    await flushPromises()
+
+    const profiles = (mockSave.mock.calls[0]![0] as Record<string, unknown>).profiles as Record<
+      string,
+      Record<string, unknown>
+    >
+    expect(Object.keys(profiles)).toEqual(['day job'])
+  })
+
+  it('renaming an agent back to its stored name deletes nothing', async () => {
+    mockGet.mockResolvedValueOnce({ profiles: { work: { model: 'm' } } })
+    mockSave.mockResolvedValueOnce({ success: true })
+    const wrapper = await mountAt('agents')
+
+    const renameTo = async (to: string) => {
+      await wrapper.find('[data-testid="edit-btn"]').trigger('click')
+      await flushPromises()
+      await wrapper.find('[data-testid="name-input"]').setValue(to)
+      await wrapper.find('[data-testid="modal-save"]').trigger('click')
+      await flushPromises()
+    }
+    await renameTo('temp')
+    await renameTo('work')
+
+    await wrapper.find('[data-testid="save-btn"]').trigger('click')
+    await flushPromises()
+
+    const profiles = (mockSave.mock.calls[0]![0] as Record<string, unknown>).profiles as Record<
+      string,
+      Record<string, unknown>
+    >
+    expect(Object.keys(profiles)).toEqual(['work'])
+    expect(mockDeleteAgent).not.toHaveBeenCalled()
+  })
+
+  it('a newly added agent is created enabled', async () => {
+    mockGet.mockResolvedValueOnce({ profiles: {} })
+    mockSave.mockResolvedValueOnce({ success: true })
+    const wrapper = await mountAt('agents')
+
+    await wrapper.find('[data-testid="add-btn"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="name-input"]').setValue('fresh')
+    await wrapper.find('[data-testid="model-input"]').setValue('m3')
+    await wrapper.find('[data-testid="modal-save"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="save-btn"]').trigger('click')
+    await flushPromises()
+
+    const profiles = (mockSave.mock.calls[0]![0] as Record<string, unknown>).profiles as Record<
+      string,
+      Record<string, unknown>
+    >
+    expect(profiles.fresh!.model).toBe('m3')
+    expect(profiles.fresh!.enabled).toBe(true)
   })
 })
