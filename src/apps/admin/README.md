@@ -78,6 +78,14 @@ where they say.
 - **Handed out** is not a section: it appears above the open one, only while a
   temporary password exists to copy.
 
+`GET /api/admin/vms` is part of the full server only: `pabrik-admin` links
+neither the manager nor the workspaces table, so it has no such endpoint. The
+page asks for it once at load, and when the answer is `404` it drops the
+Machines entry and says where machines live ("Machines come from the pabrik
+server; this console runs without it") instead of showing a table it cannot
+fill. Under the full server in local mode the section is there, and every row
+says `no manager`: only `--saas` runs the machines the Resize menu acts on.
+
 ## Opening it
 
 Two ways to run it, and both serve the same page and the same endpoints.

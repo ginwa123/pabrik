@@ -21,7 +21,9 @@
 
     <nav data-ui="sections" aria-label="Console sections" class="console-nav animate-rise rounded-card bg-surface p-2.5 motion-reduce:animate-none">
       <button type="button" class="nav-item" data-section="accounts" aria-pressed="true">Accounts</button>
-      <button type="button" class="nav-item" data-section="machines" aria-pressed="false">Machines</button>
+      <button type="button" id="nav-machines" class="nav-item" data-section="machines" aria-pressed="false">Machines</button>
+
+      <p id="nav-note" class="mt-1 mb-2 px-3 text-sm text-ink-muted" hidden></p>
 
       <div class="console-figures mt-3 grid grid-cols-2 gap-x-4 gap-y-4 px-3 pt-3 pb-2">
         <div>
@@ -90,7 +92,7 @@
     <section data-ui="machines" id="section-machines" aria-labelledby="machines-title" class="animate-rise rounded-card bg-surface p-6 motion-reduce:animate-none" hidden>
       <h2 id="machines-title" class="text-xl font-semibold">Workspace machines</h2>
       <p id="machines-note" class="note" hidden></p>
-      <div class="mt-4 overflow-x-auto">
+      <div id="machines-table" class="mt-4 overflow-x-auto">
         <table class="rows w-full border-collapse text-left">
           <thead>
             <tr>

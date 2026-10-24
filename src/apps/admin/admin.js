@@ -23,6 +23,9 @@ const el = (id) => document.getElementById(id);
 
 let currentSection = 'accounts';
 let machinesLoaded = false;
+/// False once the machines endpoint has answered 404: a console that links no
+/// manager has no such endpoint, and it must not offer a section it cannot serve.
+let machinesAvailable = true;
 
 function showNotice(message, isError) {
   const notice = el('notice');
@@ -93,7 +96,8 @@ function cell(row, className) {
 /* ── the console's navigation: one section at a time ────────────────────── */
 
 function showSection(name) {
-  currentSection = SECTIONS.includes(name) ? name : 'accounts';
+  const wanted = name === 'machines' && !machinesAvailable ? 'accounts' : name;
+  currentSection = SECTIONS.includes(wanted) ? wanted : 'accounts';
   SECTIONS.forEach((section) => {
     el(`section-${section}`).hidden = section !== currentSection;
   });
@@ -336,13 +340,23 @@ async function loadMachines() {
     }
     drawMachines(data.vms || [], manager, limits);
   } catch (error) {
-    // A console served by `pabrik-admin` has no manager routes at all; any
-    // other failure is worth showing instead of swallowing.
+    // `pabrik-admin` links neither the manager nor the workspaces table, so it
+    // has no machines endpoint at all: offer no section it cannot serve, and say
+    // where machines live instead.
+    if (error.status === 404) {
+      machinesAvailable = false;
+      el('nav-machines').hidden = true;
+      el('section-machines').hidden = true;
+      const where = el('nav-note');
+      where.textContent = 'Machines come from the pabrik server; this console runs without it.';
+      where.hidden = false;
+      showSection('accounts');
+      return;
+    }
     note.hidden = false;
-    note.textContent = error.status === 404
-      ? 'This console has no machines to show: the endpoint is not part of this build.'
-      : `These machines could not be read: ${error.message}`;
-    drawMachines([], false, {});
+    note.textContent = `These machines could not be read: ${error.message}`;
+    el('machines-table').hidden = true;
+    el('machines-empty').hidden = true;
   }
 }
 
@@ -451,4 +465,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   showSection(window.location.hash.replace('#', '') || 'accounts');
   refresh();
+  // Probed once at load, not on first click: a console without the endpoint
+  // must not show a Machines entry that goes nowhere.
+  loadMachines();
 });
