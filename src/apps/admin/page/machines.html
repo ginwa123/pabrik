@@ -1,0 +1,45 @@
+<!-- The machines section. Each Resize button carries the size its machine runs
+     as, so the dialog needs no second request. -->
+{% if machines_shown %}
+    <section data-ui="machines" id="section-machines" aria-labelledby="machines-title" class="animate-rise rounded-card bg-surface p-6 motion-reduce:animate-none">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+        <h2 id="machines-title" class="text-xl font-semibold">Workspace machines</h2>
+{% if searchable %}        <input class="input shrink-0 sm:w-64" id="machines-search" type="search"
+               placeholder="Search workspaces" aria-label="Search workspaces"
+               autocomplete="off" spellcheck="false">
+{% endif %}      </div>
+{% if note %}      <p id="machines-note" class="note">{{ note }}</p>
+{% endif %}      <div class="mt-4 overflow-x-auto">
+        <table class="rows w-full border-collapse text-left">
+          <thead>
+            <tr>
+              <th scope="col" class="px-3 py-2.5 text-sm font-semibold text-ink-muted">Workspace</th>
+              <th scope="col" class="px-3 py-2.5 text-sm font-semibold text-ink-muted">State</th>
+              <th scope="col" class="px-3 py-2.5 text-sm font-semibold text-ink-muted">vCPUs</th>
+              <th scope="col" class="px-3 py-2.5 text-sm font-semibold text-ink-muted">Memory</th>
+              <th scope="col" class="px-3 py-2.5 text-sm font-semibold text-ink-muted">Storage</th>
+              <th scope="col" class="px-3 py-2.5 text-sm font-semibold text-ink-muted"><span class="sr-only">Resize</span></th>
+            </tr>
+          </thead>
+          <tbody id="machines-body">
+{% if machines %}{% for m in machines %}            <tr class="animate-rise motion-reduce:animate-none">
+              <td class="cell font-medium text-cream">{{ m.name }}</td>
+              <td class="cell text-ink-muted">{% if m.last_error %}{{ m.state }}: {{ m.last_error }}{% else %}{{ m.state }}{% endif %}</td>
+              <td class="cell tabular-nums">{% if m.vcpus %}{{ m.vcpus }}{% else %}none{% endif %}</td>
+              <td class="cell tabular-nums">{{ m.memory }}</td>
+              <td class="cell tabular-nums">{{ m.storage }}</td>
+              <td class="cell">
+{% if manager %}                <button type="button" class="rounded-card px-3 py-1.5 text-link transition-colors hover:bg-surface-up" data-action="resize"
+                        data-workspace="{{ m.id }}" data-name="{{ m.name }}"
+                        data-vcpus="{{ m.vcpus }}" data-mem-mib="{{ m.mem_mib }}" data-disk-mib="{{ m.disk_mib }}">Resize</button>
+{% endif %}              </td>
+            </tr>
+{% endfor %}{% endif %}          </tbody>
+        </table>
+      </div>
+      <p id="machines-empty" class="mt-4 text-ink-muted"{% if machines %} hidden{% endif %}>This installation runs no machines yet.</p>
+    </section>
+    <!-- The limits the manager enforces, so the dialog can refuse a size before
+         it is sent. The values are integers, so this is valid JSON as written. -->
+    <script type="application/json" id="resize-limits">{"min_vcpus": {{ min_vcpus }}, "max_vcpus": {{ max_vcpus }}, "min_mem_mib": {{ min_mem_mib }}, "max_mem_mib": {{ max_mem_mib }}, "mem_step_mib": {{ mem_step_mib }}, "min_disk_mib": {{ min_disk_mib }}, "max_disk_mib": {{ max_disk_mib }}}</script>
+{% endif %}
