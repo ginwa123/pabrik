@@ -6,6 +6,14 @@
 /* The desktop app's Kanagawa Dragon palette (src/apps/desktop/src/style.css).
    One product, one set of colours. */
 @theme {
+  /* The text face. It was never declared, so the console fell through the
+     browser's own list to DejaVu Sans on a Linux desktop: wide, badly hinted at
+     UI sizes, and the reason the page reads as spaced out. Real UI faces first,
+     then whatever the platform calls its own. */
+  --font-sans: "Inter", "Adwaita Sans", -apple-system, BlinkMacSystemFont,
+    "Segoe UI Variable Text", "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "Noto Sans", sans-serif;
+
   --color-dim: #12120f;
   --color-paper: #181616;
   --color-surface: #1d1c19;
@@ -120,11 +128,84 @@
   }
 
   .dialog {
-    @apply w-[min(520px,calc(100vw-32px))] rounded-lg bg-surface p-0 text-ink;
+    /* Tailwind's reset zeroes the margin on everything, which drops the UA's
+       `margin: auto` and pins a modal to the top-left corner. Put it back: with
+       the UA's `inset: 0` it is what centres the dialog in the viewport. */
+    @apply inset-0 m-auto w-[min(520px,calc(100vw-32px))] rounded-lg bg-surface p-0 text-ink;
     box-shadow: 0 24px 60px rgb(0 0 0 / 0.55); /* taste-skill-ignore: a dialog is what floats */
   }
 
   .dialog::backdrop {
     @apply bg-[rgba(9,9,8,0.72)];
+  }
+
+  /* A size field: the number is typed, the presets sit one click away. The
+     value is read in the unit printed at the end of the control, so the
+     dialog speaks one unit and the labels say what it is. */
+  .field {
+    @apply grid gap-1.5;
+  }
+
+  .field-label {
+    @apply text-sm text-ink-muted;
+  }
+
+  .field-error {
+    @apply text-sm text-danger-soft;
+  }
+
+  .combo {
+    @apply relative;
+  }
+
+  .combo-input {
+    @apply w-full rounded-card border border-surface-up bg-dim py-2.5 pl-3 pr-20 text-ink tabular-nums;
+  }
+
+  .combo-input:hover {
+    @apply border-[#3f3e3b];
+  }
+
+  .combo-input[aria-invalid="true"] {
+    @apply border-danger;
+  }
+
+  .combo-unit {
+    @apply pointer-events-none absolute top-1/2 right-9 -translate-y-1/2 text-sm text-ink-dim;
+  }
+
+  .combo-toggle {
+    @apply absolute top-1/2 right-2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-card text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink;
+  }
+
+  .combo-pop {
+    @apply absolute inset-x-0 top-[calc(100%+6px)] z-20 rounded-card bg-surface-up p-1;
+    box-shadow: 0 14px 30px rgb(0 0 0 / 0.45); /* taste-skill-ignore: a menu is what floats */
+  }
+
+  /* The list opens upward when the dialog has no room left below the field;
+     JS measures that and sets `data-place`. */
+  .combo-pop[data-place="up"] {
+    @apply top-auto bottom-[calc(100%+6px)];
+  }
+
+  .combo-list {
+    @apply max-h-56 overflow-y-auto overscroll-contain;
+  }
+
+  .combo-option {
+    @apply flex cursor-pointer items-baseline justify-between gap-4 rounded-card px-3 py-2 text-ink transition-colors;
+  }
+
+  .combo-option[data-active="true"] {
+    @apply bg-surface-hover text-cream;
+  }
+
+  .combo-option-note {
+    @apply text-sm text-ink-dim;
+  }
+
+  .combo-note {
+    @apply px-3 py-2 text-sm text-ink-muted;
   }
 }

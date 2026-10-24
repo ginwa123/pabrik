@@ -11,7 +11,7 @@
 
 <header class="bg-paper">
   <div class="mx-auto max-w-[1180px] px-5 pt-7 pb-6 sm:px-7">
-    <h1 class="animate-rise text-[30px] font-semibold leading-tight tracking-[-0.01em] text-cream motion-reduce:animate-none">Admin console</h1>
+    <h1 class="animate-rise text-[30px] font-semibold leading-tight tracking-[-0.02em] text-cream motion-reduce:animate-none">Admin console</h1>
   </div>
 </header>
 
@@ -88,7 +88,12 @@
     </section>
 
     <section data-ui="machines" id="section-machines" aria-labelledby="machines-title" class="animate-rise rounded-card bg-surface p-6 motion-reduce:animate-none" hidden>
-      <h2 id="machines-title" class="text-xl font-semibold">Workspace machines</h2>
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+        <h2 id="machines-title" class="text-xl font-semibold">Workspace machines</h2>
+        <input class="input shrink-0 sm:w-64" id="machines-search" type="search" hidden
+               placeholder="Search workspaces" aria-label="Search workspaces"
+               autocomplete="off" spellcheck="false">
+      </div>
       <p id="machines-note" class="note" hidden></p>
       <div class="mt-4 overflow-x-auto">
         <table class="rows w-full border-collapse text-left">
@@ -144,22 +149,65 @@
 </dialog>
 
 <dialog id="resize-dialog" aria-labelledby="resize-title" class="dialog">
-  <form id="resize-form" class="grid gap-4 p-6">
+  <form id="resize-form" class="grid gap-4 p-6" autocomplete="off">
     <h2 id="resize-title" class="text-xl font-semibold">Resize machine</h2>
     <p class="max-w-[32rem] text-ink-muted">The machine restarts to take a new size: its processes stop, and the workspace comes back in a few seconds.</p>
-    <label class="grid gap-1.5">
-      <span class="text-sm text-ink-muted">vCPUs</span>
-      <select class="input" id="resize-vcpus"></select>
-    </label>
-    <label class="grid gap-1.5">
-      <span class="text-sm text-ink-muted">Memory</span>
-      <select class="input" id="resize-memory"></select>
-    </label>
-    <label class="grid gap-1.5">
-      <span class="text-sm text-ink-muted">Storage</span>
-      <select class="input" id="resize-storage"></select>
-    </label>
-    <p class="max-w-[32rem] text-ink-muted">Storage only grows: the disk inside the machine cannot give space back.</p>
+
+    <div class="field">
+      <label class="field-label" for="resize-vcpus">vCPUs</label>
+      <div class="combo">
+        <input class="combo-input" id="resize-vcpus" type="text" role="combobox" inputmode="numeric"
+               autocomplete="off" spellcheck="false" aria-expanded="false"
+               aria-controls="resize-vcpus-list" aria-autocomplete="list">
+        <span class="combo-unit" aria-hidden="true">vCPU</span>
+        <button type="button" class="combo-toggle" tabindex="-1" aria-hidden="true" data-combo-toggle>
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg>
+        </button>
+        <div class="combo-pop" hidden data-combo-pop>
+          <ul class="combo-list" id="resize-vcpus-list" role="listbox" aria-label="vCPU sizes" data-combo-list></ul>
+          <p class="combo-note" hidden data-combo-note>No preset matches. Enter uses the number you type.</p>
+        </div>
+      </div>
+      <p class="field-error" id="resize-vcpus-error" role="alert" hidden></p>
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="resize-memory">Memory</label>
+      <div class="combo">
+        <input class="combo-input" id="resize-memory" type="text" role="combobox" inputmode="decimal"
+               autocomplete="off" spellcheck="false" aria-expanded="false"
+               aria-controls="resize-memory-list" aria-autocomplete="list">
+        <span class="combo-unit" aria-hidden="true">GiB</span>
+        <button type="button" class="combo-toggle" tabindex="-1" aria-hidden="true" data-combo-toggle>
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg>
+        </button>
+        <div class="combo-pop" hidden data-combo-pop>
+          <ul class="combo-list" id="resize-memory-list" role="listbox" aria-label="Memory sizes" data-combo-list></ul>
+          <p class="combo-note" hidden data-combo-note>No preset matches. Enter uses the number you type.</p>
+        </div>
+      </div>
+      <p class="field-error" id="resize-memory-error" role="alert" hidden></p>
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="resize-storage">Storage</label>
+      <div class="combo">
+        <input class="combo-input" id="resize-storage" type="text" role="combobox" inputmode="decimal"
+               autocomplete="off" spellcheck="false" aria-expanded="false"
+               aria-controls="resize-storage-list" aria-autocomplete="list">
+        <span class="combo-unit" aria-hidden="true">GiB</span>
+        <button type="button" class="combo-toggle" tabindex="-1" aria-hidden="true" data-combo-toggle>
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg>
+        </button>
+        <div class="combo-pop" hidden data-combo-pop>
+          <ul class="combo-list" id="resize-storage-list" role="listbox" aria-label="Storage sizes" data-combo-list></ul>
+          <p class="combo-note" hidden data-combo-note>No preset matches. Enter uses the number you type.</p>
+        </div>
+      </div>
+      <p class="field-error" id="resize-storage-error" role="alert" hidden></p>
+    </div>
+
+    <p class="max-w-[32rem] text-ink-muted">Storage only grows: the disk inside the machine cannot give space back. Leave it empty to keep the disk as it is.</p>
     <div class="mt-1 flex justify-end gap-3">
       <button type="button" id="resize-cancel" class="rounded-card bg-surface-up px-4 py-2.5 transition-colors hover:bg-surface-hover">Cancel</button>
       <button type="submit" id="resize-submit" class="rounded-card bg-accent px-4 py-2.5 font-semibold text-dim transition-colors hover:bg-accent-bright disabled:opacity-60">Restart with this size</button>

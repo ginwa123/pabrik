@@ -73,7 +73,8 @@ where they say.
 
 - **Accounts** — the table, plus the *New account* dialog behind the one
   primary action in the masthead.
-- **Machines** — every workspace's machine with its **Resize** menu. Sizes and
+- **Machines** — every workspace's machine with its **Resize** menu, and a
+  search box that narrows the list by name, id or state as you type. Sizes and
   the restart come from `pabrik-vmd`, so this section needs `--vmd-socket` (or
   `PABRIK_VMD_SOCKET`, or the runtime dir's socket). Without one it says why and
   offers no control.
@@ -206,6 +207,14 @@ before `InstanceStart`, and the disk can only be grown with the machine
 stopped. So a resize is: stop that workspace's VM, apply the size, start it
 again. The guest comes back in a few seconds; the processes inside it do not.
 
+Each of the three fields is a combobox: the presets are one click away, and any
+number can be typed instead. Memory and storage are read in **GiB** (`0.5` is
+512 MiB) and a unit typed with the number wins over the field's own, so
+`512 MiB` and `0.5 GiB` are the same request. An empty storage field means
+"leave the disk alone". A value the manager would refuse — off the 128 MiB
+memory grid, under the disk the machine already has, outside the ranges below —
+is named under the field and never reaches the server.
+
 | method | path | what it does |
 |---|---|---|
 | `GET` | `/api/admin/vms` | every workspace's machine: state, vCPUs, memory, storage |
@@ -279,7 +288,9 @@ CHROME_PATH=~/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome \
 | `inspect.mjs` `#machines` @1440/768/390 | 0 FAIL, 1 WARN |
 | `inspect.mjs` @390 alone | 0 FAIL, 0 WARN |
 
-What the inspector measured: one typeface (system-ui), body 16px / 1.63, the
+What the inspector measured: one typeface (the `--font-sans` stack — Inter or
+Adwaita Sans where they exist, the platform's own face otherwise, never the
+DejaVu fallback the undeclared stack used to land on), body 16px / 1.63, the
 title at 30px on one line at every width, 77 words on the section, no console
 errors, no sideways scroll.
 
