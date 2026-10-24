@@ -62,6 +62,22 @@ binary has to build without Node, and a machine that runs an installation
 should never need a CSS toolchain. Rebuild after any class change, or the page
 serves the previous stylesheet.
 
+## One section at a time
+
+The console is a rail plus **one** section, not every panel at once: an
+operator comes to do one thing, and a wall of counts, a form and two tables is
+the opposite of that. The rail (left at desktop, two buttons on a phone) holds
+the sections and the counts; each section is addressable by hash
+(`/admin#accounts`, `/admin#machines`), so back/forward and a pasted link land
+where they say.
+
+- **Accounts** — the table, plus the *New account* dialog behind the one
+  primary action in the masthead.
+- **Machines** — every workspace's machine with its **Resize** menu, loaded the
+  first time the section is opened.
+- **Handed out** is not a section: it appears above the open one, only while a
+  temporary password exists to copy.
+
 ## Opening it
 
 Two ways to run it, and both serve the same page and the same endpoints.
@@ -229,33 +245,39 @@ laws do, and both scanners were run against the live console.
 node <taste-skill>/scripts/lint.mjs src/apps/admin/index.html \
   src/apps/admin/admin.src.css src/apps/admin/admin.js
 CHROME_PATH=~/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome \
-  node <taste-skill>/scripts/inspect.mjs http://127.0.0.1:8083/admin
+  node <taste-skill>/scripts/inspect.mjs "http://127.0.0.1:8083/admin#accounts" \
+  --allow few-pictures,still-page
 ```
 
-| scanner | reading |
+| view | reading |
 |---|---|
 | `lint.mjs` | 0 FAIL, 0 WARN |
-| `inspect.mjs` @1440/768/390 | 0 FAIL, 2 WARN |
+| `inspect.mjs` `#accounts` @1440/768/390 | 0 FAIL, 1 WARN |
+| `inspect.mjs` `#machines` @1440/768/390 | 0 FAIL, 1 WARN |
+| `inspect.mjs` @390 alone | 0 FAIL, 0 WARN |
 
 What the inspector measured: one typeface (system-ui), body 16px / 1.63, the
-title at 30px on one line at every width, 4 interface fragments, 1.5 screens,
-no console errors, no sideways scroll.
+title at 30px on one line at every width, 77 words on the section, no console
+errors, no sideways scroll.
 
-The two warnings are landing-page rules that an operator console does not
-answer, and each one is kept with its reason:
+Two rules are allowed by name, and this is the whole reason:
 
-- **no-real-pictures** — a console has no subject's world to photograph. Its
-  pictures are the interface fragments it is made of, and it has four.
-- **no-footage** — the same. A video of a table of accounts would be a
-  decoration, and the house rules ban decoration.
+- **few-pictures** — the rule wants four picture-sized fragments on a page
+  that scrolls. A sectioned console renders one section at a time, so it has
+  two (`console-nav`, the open section) and cannot have four without showing
+  the sections the navigation exists to hide.
+- **still-page** — the motion floor of 16 elements is a landing-page figure.
+  The console moves seven things, once: the masthead, the rail, the section and
+  its rows, over 260ms, and `prefers-reduced-motion` drops all of it. Nothing
+  loops, because a console that keeps moving is a console nobody can read.
 
-The console moves once, when it arrives: the counts, the panels and the rows
-rise into place over 260ms, staggered by 30-40ms, and `prefers-reduced-motion`
-drops all of it. Nothing loops, because a console that keeps moving is a
-console nobody can read. The motion floor of 16 is a landing-page figure.
+Kept as a documented warning: **no-footage**. Also absent with its reason:
+`no-real-pictures` (a console has no subject's world to photograph; its
+pictures are the interface fragments it is made of).
 
 Three lines keep a flagged pattern on purpose, each marked
 `taste-skill-ignore` where it sits: the dialog's shadow (a dialog is what
 floats), the table rows' bottom rule (real table rows), and nothing else.
+
 
 

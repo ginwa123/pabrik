@@ -5,9 +5,10 @@
 const endpoints = {
   overview: '/api/admin/overview',
   users: '/api/admin/users',
-  vms: '/api/admin/vms',
+  machines: '/api/admin/vms',
 };
 
+const SECTIONS = ['accounts', 'machines'];
 const MEMORY_LADDER_MIB = [256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384];
 const STORAGE_LADDER_MIB = [256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536];
 
@@ -19,6 +20,9 @@ const ROW = 'animate-rise motion-reduce:animate-none';
 const QUIET_BUTTON = 'rounded-card px-3 py-1.5 text-link transition-colors hover:bg-surface-up';
 
 const el = (id) => document.getElementById(id);
+
+let currentSection = 'accounts';
+let machinesLoaded = false;
 
 function showNotice(message, isError) {
   const notice = el('notice');
@@ -84,6 +88,22 @@ function cell(row, className) {
   if (className) td.className = className;
   row.appendChild(td);
   return td;
+}
+
+/* ── the console's navigation: one section at a time ────────────────────── */
+
+function showSection(name) {
+  currentSection = SECTIONS.includes(name) ? name : 'accounts';
+  SECTIONS.forEach((section) => {
+    el(`section-${section}`).hidden = section !== currentSection;
+  });
+  document.querySelectorAll('.nav-item').forEach((button) => {
+    button.setAttribute('aria-pressed', String(button.dataset.section === currentSection));
+  });
+  if (window.location.protocol.startsWith('http')) {
+    window.history.replaceState(null, '', `#${currentSection}`);
+  }
+  if (currentSection === 'machines' && !machinesLoaded) loadMachines();
 }
 
 /* ── counts ─────────────────────────────────────────────────────────────── */
@@ -222,10 +242,10 @@ function resizeButton(vm, limits) {
   return button;
 }
 
-function drawVms(vms, manager, limits) {
-  const body = el('vms-body');
+function drawMachines(machines, manager, limits) {
+  const body = el('machines-body');
   body.textContent = '';
-  vms.forEach((vm) => {
+  machines.forEach((vm) => {
     const row = document.createElement('tr');
     row.className = ROW;
 
@@ -251,7 +271,7 @@ function drawVms(vms, manager, limits) {
 
     body.appendChild(row);
   });
-  el('vms-empty').hidden = vms.length !== 0;
+  el('machines-empty').hidden = machines.length !== 0;
 }
 
 let resizeTarget = null;
@@ -278,7 +298,7 @@ async function submitResize(event) {
   const submit = el('resize-submit');
   submit.disabled = true;
   try {
-    const result = await request(`${endpoints.vms}/${encodeURIComponent(vm.workspace_id)}/resize`, {
+    const result = await request(`${endpoints.machines}/${encodeURIComponent(vm.workspace_id)}/resize`, {
       method: 'POST',
       body,
     });
@@ -290,7 +310,7 @@ async function submitResize(event) {
         : `${label} did not come up: ${result.state} ${result.last_error}`,
       !ready
     );
-    await loadVms();
+    await loadMachines();
   } catch (error) {
     showNotice(error.message, true);
   } finally {
@@ -298,27 +318,26 @@ async function submitResize(event) {
   }
 }
 
-async function loadVms() {
-  const panel = el('vms-panel');
+async function loadMachines() {
+  machinesLoaded = true;
   try {
-    const data = await request(endpoints.vms);
-    panel.hidden = false;
+    const data = await request(endpoints.machines);
     const manager = Boolean(data.manager);
     const limits = data.limits || {};
-    el('vms-note').textContent = manager
+    el('machines-note').textContent = manager
       ? 'A resize restarts that workspace: the machine comes back in a few seconds, the processes inside it do not. Storage only grows.'
       : 'No VM manager answers on this host, so there is nothing to size here. Start pabrik with the manager and reload.';
-    drawVms(data.vms || [], manager, limits);
+    drawMachines(data.vms || [], manager, limits);
   } catch (error) {
     // A console served by `pabrik-admin` has no manager routes at all; any
     // other failure is worth showing instead of swallowing.
     if (error.status === 404) {
-      panel.hidden = true;
+      el('machines-note').textContent = 'This console has no machines to show: the endpoint is not part of this build.';
+      drawMachines([], false, {});
       return;
     }
-    panel.hidden = false;
-    el('vms-note').textContent = `This panel could not be read: ${error.message}`;
-    drawVms([], false, {});
+    el('machines-note').textContent = `These machines could not be read: ${error.message}`;
+    drawMachines([], false, {});
   }
 }
 
@@ -347,7 +366,7 @@ async function refresh() {
     drawCounts(counts);
     drawUsers(list.users || []);
     clearNotice();
-    await loadVms();
+    if (machinesLoaded) await loadMachines();
   } catch (error) {
     showNotice(error.message, true);
   }
@@ -394,6 +413,8 @@ async function createAccount(event) {
   try {
     const created = await request(endpoints.users, { method: 'POST', body });
     el('new-account-form').reset();
+    el('account-dialog').close();
+    showSection('accounts');
     if (created.temporary_password) {
       showCredential(created.user.email, created.temporary_password);
     }
@@ -403,16 +424,26 @@ async function createAccount(event) {
   }
 }
 
-function focusNewAccount() {
+function openAccountDialog() {
+  el('account-dialog').showModal();
   el('new-email').focus();
-  el('new-email').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.nav-item').forEach((button) => {
+    button.addEventListener('click', () => showSection(button.dataset.section));
+  });
   el('new-account-form').addEventListener('submit', createAccount);
-  el('new-account-button').addEventListener('click', focusNewAccount);
+  el('new-account-button').addEventListener('click', openAccountDialog);
+  el('account-cancel').addEventListener('click', () => el('account-dialog').close());
   el('resize-form').addEventListener('submit', submitResize);
   el('resize-cancel').addEventListener('click', () => el('resize-dialog').close());
   el('credential-clear').addEventListener('click', clearCredential);
+  // A section is addressable: back/forward and a pasted `#machines` both land
+  // on the section they name.
+  window.addEventListener('hashchange', () => {
+    showSection(window.location.hash.replace('#', '') || 'accounts');
+  });
+  showSection(window.location.hash.replace('#', '') || 'accounts');
   refresh();
 });

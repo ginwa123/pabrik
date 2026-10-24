@@ -90,6 +90,30 @@
     @apply rounded-card border border-surface-up bg-dim px-2 py-1.5 text-ink;
   }
 
+  /* The console's own navigation: one section at a time, the open one marked by
+     a step in tone rather than a line or a pill. */
+  .nav-item {
+    @apply mb-1 flex w-full items-center rounded-card px-3 py-3 text-left font-medium text-ink-muted transition-colors hover:bg-surface-up hover:text-ink;
+  }
+
+  .nav-item[aria-pressed="true"] {
+    @apply bg-surface-up text-cream;
+  }
+
+  @media (max-width: 1023px) {
+    .console-nav {
+      @apply grid grid-cols-2 gap-2;
+    }
+
+    .console-nav .nav-item {
+      @apply mb-0 justify-center;
+    }
+
+    .console-nav .console-figures {
+      @apply col-span-2 mt-1;
+    }
+  }
+
   /* The last row of a table closes on the panel's own edge, not on a line. */
   .rows tbody tr:last-child td {
     @apply border-0;

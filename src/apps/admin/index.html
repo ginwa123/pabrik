@@ -10,7 +10,7 @@
 <body>
 
 <header class="bg-paper">
-  <div class="mx-auto flex max-w-[1180px] flex-col gap-6 px-5 py-8 sm:flex-row sm:items-start sm:justify-between sm:px-7">
+  <div class="mx-auto flex max-w-[1180px] flex-col gap-5 px-5 py-7 sm:flex-row sm:items-start sm:justify-between sm:px-7">
     <div class="animate-rise motion-reduce:animate-none">
       <h1 class="text-[30px] font-semibold leading-tight tracking-[-0.01em] text-cream">Admin console</h1>
       <p class="mt-2 max-w-[30rem] text-ink-muted">Accounts on this installation, and the machines their workspaces run in.</p>
@@ -19,71 +19,55 @@
   </div>
 </header>
 
-<main class="mx-auto grid max-w-[1180px] gap-6 px-5 pt-7 pb-16 sm:px-7 lg:grid-cols-[320px_minmax(0,1fr)] lg:items-start lg:gap-7">
+<main class="mx-auto grid max-w-[1180px] gap-6 px-5 pt-6 pb-16 sm:px-7 lg:grid-cols-[300px_minmax(0,1fr)] lg:items-start lg:gap-7">
 
-  <p id="notice" role="status" class="notice lg:col-span-2" hidden></p>
+  <div class="flex flex-col gap-4 lg:sticky lg:top-6">
 
-  <div class="flex flex-col gap-6">
+    <nav data-ui="sections" aria-label="Console sections" class="console-nav animate-rise rounded-card bg-surface p-2.5 motion-reduce:animate-none">
+      <button type="button" class="nav-item" data-section="accounts" aria-pressed="true">Accounts</button>
+      <button type="button" class="nav-item" data-section="machines" aria-pressed="false">Machines</button>
 
-    <section data-ui="counts" aria-labelledby="counts-title" class="animate-rise rounded-card bg-surface p-6 [animation-delay:60ms] motion-reduce:animate-none">
-      <h2 id="counts-title" class="text-xl font-semibold">This installation</h2>
-      <div class="mt-5 grid gap-5">
-        <div class="animate-rise [animation-delay:90ms] motion-reduce:animate-none">
-          <span class="block text-[30px] font-semibold leading-none tabular-nums text-cream" id="count-total">0</span>
-          <span class="mt-1.5 block text-ink-muted">accounts</span>
+      <div class="console-figures mt-3 grid grid-cols-2 gap-x-4 gap-y-4 px-3 pt-3 pb-2">
+        <div>
+          <span class="block text-2xl font-semibold leading-none tabular-nums text-cream" id="count-total">0</span>
+          <span class="mt-1 block text-sm text-ink-muted">accounts</span>
         </div>
-        <div class="animate-rise [animation-delay:120ms] motion-reduce:animate-none">
-          <span class="block text-[30px] font-semibold leading-none tabular-nums text-cream" id="count-active">0</span>
-          <span class="mt-1.5 block text-ink-muted">may sign in</span>
+        <div>
+          <span class="block text-2xl font-semibold leading-none tabular-nums text-cream" id="count-active">0</span>
+          <span class="mt-1 block text-sm text-ink-muted">may sign in</span>
         </div>
-        <div class="animate-rise [animation-delay:150ms] motion-reduce:animate-none">
-          <span class="block text-[30px] font-semibold leading-none tabular-nums text-cream" id="count-owners">0</span>
-          <span class="mt-1.5 block text-ink-muted">owners</span>
+        <div>
+          <span class="block text-2xl font-semibold leading-none tabular-nums text-cream" id="count-owners">0</span>
+          <span class="mt-1 block text-sm text-ink-muted">owners</span>
         </div>
-        <div class="animate-rise [animation-delay:180ms] motion-reduce:animate-none">
-          <span class="block text-[30px] font-semibold leading-none tabular-nums text-cream" id="count-bots">0</span>
-          <span class="mt-1.5 block text-ink-muted">bots</span>
+        <div>
+          <span class="block text-2xl font-semibold leading-none tabular-nums text-cream" id="count-bots">0</span>
+          <span class="mt-1 block text-sm text-ink-muted">bots</span>
         </div>
-        <div class="animate-rise [animation-delay:210ms] motion-reduce:animate-none">
-          <span class="block text-[30px] font-semibold leading-none tabular-nums text-cream" id="count-sessions">0</span>
-          <span class="mt-1.5 block text-ink-muted">live sessions</span>
+        <div class="col-span-2">
+          <span class="block text-2xl font-semibold leading-none tabular-nums text-cream" id="count-sessions">0</span>
+          <span class="mt-1 block text-sm text-ink-muted">live sessions</span>
         </div>
       </div>
-    </section>
-
-    <section data-ui="new-account" aria-labelledby="new-account-title" class="animate-rise rounded-card bg-surface p-6 [animation-delay:120ms] motion-reduce:animate-none">
-      <h2 id="new-account-title" class="text-xl font-semibold">New account</h2>
-      <p class="note">Leave the password empty and the console mints a temporary one, shown once.</p>
-      <form id="new-account-form" autocomplete="off" class="mt-5 grid gap-3">
-        <label class="grid gap-1.5">
-          <span class="text-sm text-ink-muted">Email</span>
-          <input class="input" type="email" name="email" id="new-email" placeholder="person@example.com" required>
-        </label>
-        <label class="grid gap-1.5">
-          <span class="text-sm text-ink-muted">Name</span>
-          <input class="input" type="text" name="name" id="new-name" placeholder="Person">
-        </label>
-        <label class="grid gap-1.5">
-          <span class="text-sm text-ink-muted">Role</span>
-          <select class="input" name="role" id="new-role">
-            <option value="user">User</option>
-            <option value="admin">Owner</option>
-            <option value="bot">Bot</option>
-          </select>
-        </label>
-        <label class="grid gap-1.5">
-          <span class="text-sm text-ink-muted">Password</span>
-          <input class="input" type="text" name="password" id="new-password" placeholder="Temporary, if left empty">
-        </label>
-        <button type="submit" class="mt-2 rounded-card bg-accent px-4 py-3 font-semibold text-dim transition-colors hover:bg-accent-bright">Create account</button>
-      </form>
-    </section>
+    </nav>
 
   </div>
 
-  <div class="flex min-w-0 flex-col gap-6">
+  <div class="min-w-0">
 
-    <section data-ui="accounts" aria-labelledby="accounts-title" class="animate-rise rounded-card bg-surface p-6 [animation-delay:150ms] motion-reduce:animate-none">
+    <p id="notice" class="notice mb-4" role="status" hidden></p>
+
+    <section data-ui="credential" id="credential-panel" aria-labelledby="credential-title" class="mb-4 rounded-card bg-surface p-6" hidden>
+      <h2 id="credential-title" class="text-xl font-semibold">Handed out</h2>
+      <p class="note">The temporary password the console last minted, shown once. Copy it before you close this panel.</p>
+      <div class="mt-4 flex flex-wrap items-center gap-4">
+        <span id="credential-for" class="text-ink-muted"></span>
+        <code id="credential-value" class="rounded-card bg-dim px-3.5 py-2 font-mono text-xl text-cream"></code>
+        <button type="button" id="credential-clear" class="rounded-card bg-surface-up px-4 py-2.5 transition-colors hover:bg-surface-hover">Hide it</button>
+      </div>
+    </section>
+
+    <section data-ui="accounts" id="section-accounts" aria-labelledby="accounts-title" class="animate-rise rounded-card bg-surface p-6 motion-reduce:animate-none">
       <h2 id="accounts-title" class="text-xl font-semibold">Accounts</h2>
       <p class="note">Every real account. Change a role, switch one off, or hand out a new password.</p>
       <div class="mt-4 overflow-x-auto">
@@ -103,9 +87,9 @@
       <p id="accounts-empty" class="mt-4 text-ink-muted" hidden>This installation has no accounts yet.</p>
     </section>
 
-    <section data-ui="vms" id="vms-panel" aria-labelledby="vms-title" class="animate-rise rounded-card bg-surface p-6 [animation-delay:180ms] motion-reduce:animate-none" hidden>
-      <h2 id="vms-title" class="text-xl font-semibold">Workspace machines</h2>
-      <p id="vms-note" class="note">Each workspace runs in its own machine.</p>
+    <section data-ui="machines" id="section-machines" aria-labelledby="machines-title" class="animate-rise rounded-card bg-surface p-6 motion-reduce:animate-none" hidden>
+      <h2 id="machines-title" class="text-xl font-semibold">Workspace machines</h2>
+      <p id="machines-note" class="note">Each workspace runs in its own machine.</p>
       <div class="mt-4 overflow-x-auto">
         <table class="rows w-full border-collapse text-left">
           <thead>
@@ -118,25 +102,46 @@
               <th scope="col" class="px-3 py-2.5 text-sm font-semibold text-ink-muted"><span class="sr-only">Resize</span></th>
             </tr>
           </thead>
-          <tbody id="vms-body"></tbody>
+          <tbody id="machines-body"></tbody>
         </table>
       </div>
-      <p id="vms-empty" class="mt-4 text-ink-muted" hidden>This installation runs no machines yet.</p>
-    </section>
-
-    <section data-ui="credential" id="credential-panel" aria-labelledby="credential-title" class="animate-rise rounded-card bg-surface p-6 [animation-delay:210ms] motion-reduce:animate-none" hidden>
-      <h2 id="credential-title" class="text-xl font-semibold">Handed out</h2>
-      <p class="note">The temporary password the console last minted, shown once. Copy it before you close this panel.</p>
-      <div class="mt-4 flex flex-wrap items-center gap-4">
-        <span id="credential-for" class="text-ink-muted"></span>
-        <code id="credential-value" class="rounded-card bg-dim px-3.5 py-2 font-mono text-xl text-cream"></code>
-        <button type="button" id="credential-clear" class="rounded-card bg-surface-up px-4 py-2.5 transition-colors hover:bg-surface-hover">Hide it</button>
-      </div>
+      <p id="machines-empty" class="mt-4 text-ink-muted" hidden>This installation runs no machines yet.</p>
     </section>
 
   </div>
 
 </main>
+
+<dialog id="account-dialog" aria-labelledby="account-dialog-title" class="dialog">
+  <form id="new-account-form" class="grid gap-4 p-6" autocomplete="off">
+    <h2 id="account-dialog-title" class="text-xl font-semibold">New account</h2>
+    <p class="max-w-[32rem] text-ink-muted">Leave the password empty and the console mints a temporary one, shown once.</p>
+    <label class="grid gap-1.5">
+      <span class="text-sm text-ink-muted">Email</span>
+      <input class="input" type="email" name="email" id="new-email" placeholder="person@example.com" required>
+    </label>
+    <label class="grid gap-1.5">
+      <span class="text-sm text-ink-muted">Name</span>
+      <input class="input" type="text" name="name" id="new-name" placeholder="Person">
+    </label>
+    <label class="grid gap-1.5">
+      <span class="text-sm text-ink-muted">Role</span>
+      <select class="input" name="role" id="new-role">
+        <option value="user">User</option>
+        <option value="admin">Owner</option>
+        <option value="bot">Bot</option>
+      </select>
+    </label>
+    <label class="grid gap-1.5">
+      <span class="text-sm text-ink-muted">Password</span>
+      <input class="input" type="text" name="password" id="new-password" placeholder="Temporary, if left empty">
+    </label>
+    <div class="mt-1 flex justify-end gap-3">
+      <button type="button" id="account-cancel" class="rounded-card bg-surface-up px-4 py-2.5 transition-colors hover:bg-surface-hover">Cancel</button>
+      <button type="submit" class="rounded-card bg-accent px-4 py-2.5 font-semibold text-dim transition-colors hover:bg-accent-bright">Create account</button>
+    </div>
+  </form>
+</dialog>
 
 <dialog id="resize-dialog" aria-labelledby="resize-title" class="dialog">
   <form id="resize-form" class="grid gap-4 p-6">
