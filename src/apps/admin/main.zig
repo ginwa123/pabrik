@@ -88,25 +88,20 @@ fn defaultDbPath(allocator: std.mem.Allocator, io: std.Io, environ: *const std.p
     return std.fs.path.join(allocator, &.{ home, ".config", "pabrik", "agent.db" });
 }
 
-/// The manager socket an operator did not name: `$PABRIK_VMD_SOCKET` if it is
-/// set, else the runtime dir's `pabrik-vmd.sock` when that file exists. A
-/// socket that is not there is "no machines", not a reason to refuse to start.
-fn defaultVmdSocket(allocator: std.mem.Allocator, io: std.Io, environ: *const std.process.Environ.Map) ?[]const u8 {
+/// The manager socket an operator did not name, in the same order the server
+/// resolves it: `$PABRIK_VMD_SOCKET`, then the session's runtime dir, then
+/// `/tmp`. A socket nobody answers on is not a failure here — the machines
+/// section names the path it tried.
+fn defaultVmdSocket(allocator: std.mem.Allocator, environ: *const std.process.Environ.Map) ?[]const u8 {
     if (environ.get("PABRIK_VMD_SOCKET")) |given| {
         if (given.len > 0) return given;
     }
-    const runtime_dir = environ.get("XDG_RUNTIME_DIR") orelse return null;
-    const path = std.fmt.allocPrint(allocator, "{s}/pabrik-vmd.sock", .{runtime_dir}) catch return null;
-    var dir = std.Io.Dir.openDirAbsolute(io, runtime_dir, .{}) catch {
-        allocator.free(path);
-        return null;
-    };
-    defer dir.close(io);
-    _ = dir.statFile(io, "pabrik-vmd.sock", .{}) catch {
-        allocator.free(path);
-        return null;
-    };
-    return path;
+    if (environ.get("XDG_RUNTIME_DIR")) |dir| {
+        if (dir.len > 0) {
+            return std.fmt.allocPrint(allocator, "{s}/pabrik-vmd.sock", .{dir}) catch null;
+        }
+    }
+    return "/tmp/pabrik-vmd.sock";
 }
 
 fn usersTableExists(allocator: std.mem.Allocator, db: *database.Db) bool {
@@ -178,7 +173,7 @@ pub fn main(init: std.process.Init) !void {
     runtime.install(&db, options.auth_enabled);
     defer runtime.uninstall();
 
-    const vmd_socket = options.vmd_socket orelse defaultVmdSocket(allocator, io, init.environ_map);
+    const vmd_socket = options.vmd_socket orelse defaultVmdSocket(allocator, init.environ_map);
     admin_machines.installSocket(vmd_socket);
 
     const address = try gserverz.Address.init("127.0.0.1", options.port);

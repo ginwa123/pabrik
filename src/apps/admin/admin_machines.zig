@@ -18,11 +18,12 @@ pub fn installSocket(path: ?[]const u8) void {
     socket_path = path;
 }
 
-/// Why this console cannot reach a manager, in the words the page shows.
-fn refusal() []const u8 {
+/// Why this console cannot reach a manager, in the words the page shows. It
+/// names the socket it tried: "which one?" is the operator's next question.
+fn refusal(allocator: std.mem.Allocator) ![]const u8 {
     if (!vmd.supported) return "this console was built for another platform; the manager is Linux-only";
-    if (socket_path == null) return "no manager socket was given (--vmd-socket, or PABRIK_VMD_SOCKET)";
-    return "no pabrik-vmd answers on that socket";
+    const path = socket_path orelse return "no manager socket was given (--vmd-socket, or PABRIK_VMD_SOCKET)";
+    return std.fmt.allocPrint(allocator, "no pabrik-vmd answers on {s} (pass --vmd-socket to point the console at it)", .{path});
 }
 
 /// One workspace's machine, as the panel draws it.
@@ -96,11 +97,11 @@ pub fn listHandler(
     if (try admin_api.ownerOnly(ctx, req, res, db, runtime.authEnabled())) |denied| return denied;
 
     if (comptime !vmd.supported) {
-        return respond(ctx, res, .{ .manager = false, .manager_reason = refusal() });
+        return respond(ctx, res, .{ .manager = false, .manager_reason = try refusal(ctx.allocator) });
     }
 
     var client = liveClient(ctx.allocator) orelse {
-        return respond(ctx, res, .{ .manager = false, .manager_reason = refusal() });
+        return respond(ctx, res, .{ .manager = false, .manager_reason = try refusal(ctx.allocator) });
     };
 
     const rows = try admin_store.listWorkspaces(ctx.allocator, db);
@@ -148,7 +149,7 @@ pub fn resizeHandler(
     if (try admin_api.ownerOnly(ctx, req, res, db, runtime.authEnabled())) |denied| return denied;
 
     if (comptime !vmd.supported) {
-        return admin_api.errorResponse(ctx.allocator, res, 503, refusal());
+        return admin_api.errorResponse(ctx.allocator, res, 503, try refusal(ctx.allocator));
     }
 
     const workspace_id = req.params.get("workspace") orelse {
@@ -169,7 +170,7 @@ pub fn resizeHandler(
     }
 
     var client = liveClient(ctx.allocator) orelse {
-        return admin_api.errorResponse(ctx.allocator, res, 503, refusal());
+        return admin_api.errorResponse(ctx.allocator, res, 503, try refusal(ctx.allocator));
     };
     const state = client.resize(workspace_id, body.vcpus, body.mem_mib, body.disk_mib) catch |err| {
         if (err == vmd.Error.ServerFailure) {

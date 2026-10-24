@@ -106,7 +106,7 @@ pabrik-admin ready
 | `--db <path>` | the database to administer (default `~/.config/pabrik/agent.db`) |
 | `--port <n>` | the port to listen on (default `8090`) |
 | `--auth on\|off` | off (default): the local operator owns the installation. on: a `pabrik_session` cookie decides the owner |
-| `--vmd-socket <path>` | the manager's socket, so Machines can list and resize. Default: `$PABRIK_VMD_SOCKET`, else `$XDG_RUNTIME_DIR/pabrik-vmd.sock` when that file exists. Without one the section explains itself and offers nothing |
+| `--vmd-socket <path>` | the manager's socket, so Machines can list and resize. Default, in the same order the server resolves it: `$PABRIK_VMD_SOCKET`, then `$XDG_RUNTIME_DIR/pabrik-vmd.sock`, then `/tmp/pabrik-vmd.sock`. A socket nobody answers on is not fatal: the section names the path it tried |
 | `-h`, `--help` | usage |
 
 With `--auth` on, create the owner first (`pabrik create-admin --email
@@ -153,8 +153,10 @@ load before it can ask who is asking.
 
 `GET /api/admin/vms` lists every workspace with the state its machine is in.
 The state, the vCPUs, the memory and the disk come from `pabrik-vmd`, which is
-another process: the console talks to it over its socket (`--vmd-socket`, or
-`$PABRIK_VMD_SOCKET`, or `$XDG_RUNTIME_DIR/pabrik-vmd.sock` when it exists).
+another process: the console talks to it over its socket. `--vmd-socket` names
+one; without it the console looks where the server looks
+(`$PABRIK_VMD_SOCKET`, then `$XDG_RUNTIME_DIR/pabrik-vmd.sock`, then
+`/tmp/pabrik-vmd.sock`), which is where `pabrik --saas` starts its manager.
 
 ```json
 { "manager": true,
