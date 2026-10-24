@@ -1,0 +1,43 @@
+<!-- The accounts section. `users` is the view's context, so the rows are already
+     in the document; the text is escaped by the engine. -->
+{% if accounts_shown %}
+    <section data-ui="accounts" id="section-accounts" aria-labelledby="accounts-title" class="animate-rise rounded-card bg-surface p-6 motion-reduce:animate-none">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+        <h2 id="accounts-title" class="text-xl font-semibold">Accounts</h2>
+        <button type="button" id="new-account-button" class="shrink-0 rounded-card bg-accent px-4 py-2.5 font-semibold text-dim transition-colors hover:bg-accent-bright">New account</button>
+      </div>
+      <div class="mt-4 overflow-x-auto">
+        <table class="rows w-full border-collapse text-left">
+          <thead>
+            <tr>
+              <th scope="col" class="px-3 py-2.5 text-sm font-semibold text-ink-muted">Email</th>
+              <th scope="col" class="px-3 py-2.5 text-sm font-semibold text-ink-muted">Name</th>
+              <th scope="col" class="px-3 py-2.5 text-sm font-semibold text-ink-muted">Role</th>
+              <th scope="col" class="px-3 py-2.5 text-sm font-semibold text-ink-muted">Status</th>
+              <th scope="col" class="px-3 py-2.5 text-sm font-semibold text-ink-muted"><span class="sr-only">Password</span></th>
+            </tr>
+          </thead>
+          <tbody id="accounts-body">
+{% if users %}{% for user in users %}            <tr class="animate-rise motion-reduce:animate-none">
+              <td class="cell font-medium text-cream">{{ user.email }}</td>
+              <td class="cell text-ink-muted">{% if user.name %}{{ user.name }}{% else %}No name{% endif %}</td>
+              <td class="cell">
+                <select class="role-select" data-action="role" data-user-id="{{ user.id }}" aria-label="Role for {{ user.email }}">
+                  <option value="user"{% if user.role == 'user' %} selected{% endif %}>User</option>
+                  <option value="admin"{% if user.role == 'admin' %} selected{% endif %}>Owner</option>
+                  <option value="bot"{% if user.role == 'bot' %} selected{% endif %}>Bot</option>
+                </select>
+              </td>
+              <td class="cell">
+                <button type="button" class="{% if user.active %}status-on{% else %}status-on status-off{% endif %}" data-action="toggle-active" data-user-id="{{ user.id }}" aria-label="Switch {{ user.email }} {% if user.active %}off{% else %}on{% endif %}">{% if user.active %}Active{% else %}Disabled{% endif %}</button>
+              </td>
+              <td class="cell">
+                <button type="button" class="rounded-card px-3 py-1.5 text-link transition-colors hover:bg-surface-up" data-action="reset-password" data-user-id="{{ user.id }}">Reset password</button>
+              </td>
+            </tr>
+{% endfor %}{% endif %}          </tbody>
+        </table>
+      </div>
+      <p id="accounts-empty" class="mt-4 text-ink-muted"{% if users %} hidden{% endif %}>This installation has no accounts yet.</p>
+    </section>
+{% endif %}
