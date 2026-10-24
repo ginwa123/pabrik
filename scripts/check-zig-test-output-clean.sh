@@ -91,10 +91,21 @@ parse_summary() { # parse_summary <log>
 
 # ── The scan ───────────────────────────────────────────────────────────
 #
-# One pass, four shapes, `-n` so the report points at a line of the log.
+# A raw print carries no `[scope] (level):` prefix, so the shapes alone miss
+# it (Windows CI: `terminal: this host's pseudoconsole never produced a
+# byte …`). Match the BLOCK instead — its `<step> w` header through its
+# `failed command:` tail — and report every line inside it, whatever a
+# future site prints. awk keeps the line numbers, so the report still points
+# at a line of the log.
 offenders() { # offenders <log>
-  grep -nE '^(\[[a-zA-Z_]+\] \((warn|info|debug|err)\):|failed command: |!! |[ |`+-]*run test w$|test .* w$)' \
-    "$1" 2>/dev/null \
+  awk '
+    { sub(/\r$/, "") }
+    / w$/ && ($0 ~ /^[ |`+-]*test/ || $0 ~ /^[ |`+-]*run test/) { in_block = 1; print; next }
+    /^failed command: / { print; in_block = 0; next }
+    in_block && !/^[[:space:]]*$/ { print; next }
+    /^\[[a-zA-Z_]+\] \((warn|info|debug|err)\):/ { print; next }
+    /^!! / { print; next }
+  ' "$1" 2>/dev/null \
     | { if [ -s "$ALLOW_FILE" ]; then grep -vE -f "$ALLOW_FILE" || true; else cat; fi; } \
     || true
 }
@@ -218,6 +229,28 @@ LOG
     echo "selftest: --allow leaked past its own patterns"; return 1
   fi
 
+  # A raw print with no log prefix (the Windows pseudoconsole fallback) is not a
+  # shape the scan knows; it is caught because it sits inside a `… w` block.
+  unprefixed="$SELFTEST_TMP/unprefixed.log"
+  cat >"$unprefixed" <<'LOG'
+test
++- test mod_tests shard 2/2 (3265 tests) w
+terminal: this host's pseudoconsole never produced a byte; using the pipe backend instead
+failed command: PATH="C:/vcpkg"
+Build Summary: 14/14 steps succeeded; 4798/4798 tests passed
+LOG
+  unprefixed_report="$(check_log "$unprefixed" 2>&1 || true)"
+  check_log "$unprefixed" >/dev/null 2>&1 && { echo "selftest: an unprefixed block line was accepted"; return 1; }
+  case "$unprefixed_report" in
+    *"pseudoconsole never produced a byte"*) ;;
+    *) echo "selftest: the report did not quote the unprefixed line"; return 1 ;;
+  esac
+
+  # Windows CI writes CRLF; a `<step> w` header must still be recognised.
+  crlf="$SELFTEST_TMP/crlf.log"
+  printf 'test\r\n+- test mod_tests shard 2/2 (3265 tests) w\r\nterminal: pipe backend instead\r\nfailed command: PATH="C:/vcpkg"\r\nBuild Summary: 14/14 steps succeeded; 4798/4798 tests passed\r\n' >"$crlf"
+  check_log "$crlf" >/dev/null 2>&1 && { echo "selftest: a CRLF block was accepted"; return 1; }
+
   # A Windows `failed command:` is 4 KB of PATH; the report must stay readable.
   long="$SELFTEST_TMP/long.log"
   {
@@ -230,7 +263,7 @@ LOG
   longest="$(printf '%s\n' "$long_report" | awk '{ if (length($0) > m) m = length($0) } END { print m + 0 }')"
   [ "$longest" -le 220 ] || { echo "selftest: the report echoed a $longest-byte line"; return 1; }
 
-  echo "ok selftest: clean, warn block, raw print, red run, unmeasurable, allow hit, allow miss, 4 KB line reported short"
+  echo "ok selftest: clean, warn block, raw print, red run, unmeasurable, allow hit, allow miss, unprefixed block line reported, CRLF block reported, 4 KB line reported short"
 }
 
 main() {

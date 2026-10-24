@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const loggermod = @import("../modules/logger/Logger.zig");
 
 /// Which pseudo-terminal backend this host has.
 ///
@@ -955,8 +956,9 @@ fn createSessionWin(io: std.Io, cwd: []const u8, workspace_id: []const u8, shell
     var spawned: WinSpawn = if (createSessionConPty(eff_cwd, dims, shell_path)) |s| s else |err| switch (err) {
         error.PseudoConsoleUnusable => blk: {
             // Loud on purpose: an operator reading a log must not have to
-            // guess why their terminal has no prompt.
-            std.debug.print(
+            // guess why their terminal has no prompt. `debugPrint` keeps that
+            // and drops it from a test, where every Windows CI run drives it.
+            loggermod.debugPrint(
                 "terminal: this host's pseudoconsole never produced a byte and its client did not survive " ++
                     "initialisation (see terminal_session.zig); creating the session with the pipe backend instead " ++
                     "— input, output and exit work, but there is no prompt echo, no ANSI and no window resize\n",
