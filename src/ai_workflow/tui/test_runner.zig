@@ -114,6 +114,7 @@ test {
     _ = @import("../../http_handlers/agent_knowledge_reorder.zig"); // PATCH /agents/:id/knowledge/reorder (Task 6)
     _ = @import("../../http_handlers/agent_tools_registry.zig"); // GET /agent-tools/registry (Task 7)
     _ = @import("../../http_handlers/agent_tools_list.zig"); // GET /agents/:id/tools (Task 7)
+    _ = @import("../../http_handlers/agent_profile_in_use.zig"); // GET /agent-profiles/:name/in-use
     _ = @import("../../http_handlers/agent_tools_create.zig"); // POST /agents/:id/tools (Task 8)
     _ = @import("../../http_handlers/agent_tools_delete.zig"); // DELETE /agents/:id/tools/:id (Task 8)
     _ = @import("../../http_handlers/agent_system_prompt_create.zig"); // POST /agents/:id/system_prompt (Migration 080)

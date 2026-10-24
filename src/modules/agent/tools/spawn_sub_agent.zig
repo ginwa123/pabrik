@@ -66,7 +66,7 @@ pub const spawn_sub_agent_tool = AgentTool{
         \\- Explorer-code sub-agent (read-only: read_file, glob, search, semantic_search, web_search): NO new worktree — it shares your cwd.
         \\- Writer/editor sub-agent (anything that creates or modifies files): you MUST tell it explicitly in "instruction" to call `set_git_worktree` FIRST with a path under `.worktree/worktrees_agent_<randomname>`, do all file work inside that worktree, then return a summary of changed files and whether it pushed. Its "tools" MUST include "set_git_worktree" plus the write tools it needs.
         \\
-        \\AGENT_NAME (REQUIRED): the name of a configured agent, from the list `list_agents` shows. Call `list_agents` first if you are unsure which names exist or which fits; absent optional tags there mean "inherits the default". The spawned sub-agent takes that agent's model, base_url, api_key, url_style, thinking, temperature and system_prompt (injected as its "## Your Active Agent Configuration" block). The name is also the label on the result XML's <agent name="...">. If the name is NOT found, a random "agent-{16 hex chars}" name is used with the orchestrator's default model / api_key / base_url / url_style and no specialized system prompt, and the affected <agent> tag carries random_fallback="true".
+        \\AGENT_NAME (REQUIRED): the name of a configured agent, from the list `list_agents` shows. Call `list_agents` first if you are unsure which names exist or which fits; absent optional tags there mean "inherits the default". A DISABLED agent is absent from that list and behaves exactly like an unknown name: it cannot be spawned. The spawned sub-agent takes that agent's model, base_url, api_key, url_style, thinking, temperature and system_prompt (injected as its "## Your Active Agent Configuration" block). The name is also the label on the result XML's <agent name="...">. If the name is NOT found, a random "agent-{16 hex chars}" name is used with the orchestrator's default model / api_key / base_url / url_style and no specialized system prompt, and the affected <agent> tag carries random_fallback="true".
         \\
         \\Optional per sub-agent:
         \\- "timeout_seconds": on expiry the sub-agent is terminated and returns an error. Default: no timeout (runs until completion).
@@ -281,7 +281,6 @@ fn parseSubAgentsFromValue(
 test {
     // Tests live in spawn_sub_agent_test.zig.
 }
-
 
 test "parse_sub_agents - inherited_context 'last:3' is parsed into SubAgentInput" {
     const alloc = std.testing.allocator;
@@ -777,4 +776,3 @@ test "slugifySubAgentName keeps URL-safe chars, space->underscore" {
     defer alloc.free(s5);
     try testing.expectEqualStrings("agent", s5);
 }
-

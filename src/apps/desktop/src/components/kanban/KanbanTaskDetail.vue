@@ -806,13 +806,15 @@ const loadAgents = async () => {
     const config = wsId ? await api.getWorkspaceConfig(wsId) : await api.getPabrikConfig()
     const agents = (config.profiles ?? {}) as Record<
       string,
-      { model?: string; base_url?: string }
+      { model?: string; base_url?: string; enabled?: boolean }
     >
-    availableAgents.value = Object.entries(agents).map(([name, p]) => ({
-      name,
-      model: p.model ?? '',
-      base_url: p.base_url ?? '',
-    }))
+    availableAgents.value = Object.entries(agents)
+      .filter(([, p]) => p.enabled !== false)
+      .map(([name, p]) => ({
+        name,
+        model: p.model ?? '',
+        base_url: p.base_url ?? '',
+      }))
   } catch (err) {
     console.error('Failed to load agents:', err)
     availableAgents.value = []

@@ -3,6 +3,7 @@ import LlmConfigModal, { type LlmConfigModalValue } from './LlmConfigModal.vue'
 
 export interface AgentModalValue extends LlmConfigModalValue {
   system_prompt: string
+  enabled?: boolean
 }
 
 const props = defineProps<{
@@ -18,7 +19,11 @@ const emit = defineEmits<{
 }>()
 
 function updateBase(v: LlmConfigModalValue) {
-  emit('update:modelValue', { ...v, system_prompt: props.modelValue.system_prompt })
+  emit('update:modelValue', {
+    ...props.modelValue,
+    ...v,
+    system_prompt: props.modelValue.system_prompt,
+  })
 }
 function updateSystemPrompt(val: string) {
   emit('update:modelValue', { ...props.modelValue, system_prompt: val })
@@ -30,7 +35,7 @@ function updateSystemPrompt(val: string) {
     :model-value="modelValue"
     :errors="errors"
     :title="mode === 'add' ? 'Add agent' : 'Edit agent'"
-    :name-editable="mode === 'add'"
+    :name-editable="true"
     extra-slot-name="extra"
     max-width-class="max-w-2xl"
     @update:model-value="updateBase"
