@@ -106,6 +106,10 @@ fn registerRoutes(router: *gserverz.router.Router) !void {
     try router.post("/api/admin/users", admin_api.adminUserCreateHandler);
     try router.patch("/api/admin/users/:id", admin_api.adminUserUpdateHandler);
     try router.post("/api/admin/users/:id/password", admin_api.adminUserPasswordHandler);
+
+    // Read-only: this program links no manager, so it can list the workspaces in
+    // the database and nothing more.
+    try router.get("/api/admin/vms", admin_api.adminVmsListHandler);
 }
 
 pub fn main(init: std.process.Init) !void {

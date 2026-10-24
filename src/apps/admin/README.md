@@ -74,7 +74,9 @@ where they say.
 - **Accounts** — the table, plus the *New account* dialog behind the one
   primary action in the masthead.
 - **Machines** — every workspace's machine with its **Resize** menu, loaded the
-  first time the section is opened.
+  first time the section is opened. A machine's size and the menu come from the
+  manager, so `pabrik-admin` lists the workspaces read-only and says
+  `no manager` (see the endpoints below).
 - **Handed out** is not a section: it appears above the open one, only while a
   temporary password exists to copy.
 
@@ -151,6 +153,28 @@ load before it can ask who is asking.
 | `POST` | `/api/admin/users` | create an account |
 | `PATCH` | `/api/admin/users/:id` | change the role, or switch the account off |
 | `POST` | `/api/admin/users/:id/password` | reset a password |
+| `GET` | `/api/admin/vms` | the workspaces in this database, read-only (see below) |
+
+### Machines, from a console with no manager
+
+`pabrik-admin` links SQLite and the HTTP server, not pabrik, so it has no
+manager and cannot see a machine's size or restart one. It can still say which
+workspaces exist: `GET /api/admin/vms` reads `workspaces` and answers every row
+as `no manager`.
+
+```json
+{ "manager": false,
+  "vms": [ { "workspace_id": "ws_…", "workspace_name": "kabelweb",
+             "state": "no manager", "pid": 0, "vcpus": 0, "mem_mib": 0,
+             "disk_mib": 0, "last_error": "" } ],
+  "count": 1 }
+```
+
+`manager: false` is what stops the page from offering a resize it could never
+perform. A database the console created for itself (it only needs `users`) has
+no `workspaces` table at all, and that answers `count: 0` rather than an error.
+The full server owns the same path with a live manager, the real sizes and the
+resize endpoint; run it to size a machine.
 
 ### Creating an account
 

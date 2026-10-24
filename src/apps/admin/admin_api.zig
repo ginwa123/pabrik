@@ -280,3 +280,54 @@ pub fn adminUserPasswordHandler(
     }, .{});
     return res.jsonResponse(.{ .status_code = 200, .data = data });
 }
+
+// ─── the machines section, for a console with no manager ────────────────────
+
+/// One workspace as the console's machines section shows it. This program links
+/// no manager, so the machine is always `no manager`: the row is real, the VM
+/// behind it is not this program's to see or to resize.
+const MachineJson = struct {
+    workspace_id: []const u8,
+    workspace_name: []const u8,
+    state: []const u8 = "no manager",
+    pid: i64 = 0,
+    vcpus: u32 = 0,
+    mem_mib: u32 = 0,
+    disk_mib: u32 = 0,
+    last_error: []const u8 = "",
+};
+
+/// What the section needs to draw a table. `manager` is false by construction,
+/// which is what stops the page from offering a resize it could never perform.
+const MachinesResponse = struct {
+    manager: bool = false,
+    vms: []const MachineJson,
+    count: u32,
+};
+
+/// `GET /api/admin/vms` — every workspace in this database, for a console that
+/// cannot reach a manager. The full server answers the same path with a live
+/// manager and the size each machine runs at.
+pub fn adminVmsListHandler(
+    ctx: gserverz.HttpContext,
+    req: gserverz.HttpRequest,
+    res: gserverz.HttpResponse,
+) !gserverz.HttpResponse {
+    const db = runtime.db() orelse return errorResponse(ctx.allocator, res, 503, "AdminConsoleNotInstalled");
+    if (try ownerOnly(ctx, req, res, db, runtime.authEnabled())) |denied| return denied;
+
+    const rows = try admin_store.listWorkspaces(ctx.allocator, db);
+    defer admin_store.freeWorkspaces(ctx.allocator, rows);
+
+    const mapped = try ctx.allocator.alloc(MachineJson, rows.len);
+    defer ctx.allocator.free(mapped);
+    for (rows, 0..) |row, i| {
+        mapped[i] = .{ .workspace_id = row.id, .workspace_name = row.name };
+    }
+
+    const data = try std.json.Stringify.valueAlloc(ctx.allocator, MachinesResponse{
+        .vms = mapped,
+        .count = @intCast(rows.len),
+    }, .{});
+    return res.jsonResponse(.{ .status_code = 200, .data = data });
+}
