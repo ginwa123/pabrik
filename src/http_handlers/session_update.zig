@@ -102,10 +102,9 @@ pub fn sessionUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
     llm_history.updateSessionLastHumanTouchedAt(
         allocator, sqlite_db, session_id, null,
     ) catch |stamp_err| {
-        std.log.warn(
-            "session_update: stamp last_human_touched_at failed (non-fatal): {s}",
-            .{@errorName(stamp_err)},
-        );
+        if (root_mod.loggermod.getGlobal()) |logger| {
+            logger.warnFmt("session_update: stamp last_human_touched_at failed (non-fatal): {s}", .{@errorName(stamp_err)});
+        }
     };
 
     const data = try http_response.makeSessionUpdateResponse(allocator, .{

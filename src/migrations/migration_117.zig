@@ -1,5 +1,6 @@
 const std = @import("std");
 const common = @import("common.zig");
+const loggermod = @import("../modules/logger/Logger.zig");
 
 const SqliteBackend = common.SqliteBackend;
 
@@ -61,10 +62,11 @@ pub const Migration117DropLegacyAgentConfigTables = struct {
             if (legacy_rows < 0) continue;
             const unified_rows = rowCount(db, allocator, unified);
             if (unified_rows < legacy_rows) {
-                std.log.warn(
-                    "Migration117: keeping {s} — {s} holds {d} rows but {s} holds only {d}",
-                    .{ legacy, unified, legacy_rows, legacy, unified_rows },
-                );
+                if (loggermod.getGlobal()) |logger| {
+                    logger.warnFmt("Migration117: keeping {s} — {s} holds {d} rows but {s} holds only {d}", .{
+                        legacy, unified, legacy_rows, legacy, unified_rows,
+                    });
+                }
                 return;
             }
         }

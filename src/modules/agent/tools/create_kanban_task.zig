@@ -555,7 +555,9 @@ pub fn executeKanbanTaskToJSON(
         task_id,
         null,
     ) catch |err| {
-        std.log.warn("create_kanban_task: stamp last_human_touched_at failed (non-fatal): {s}", .{@errorName(err)});
+        if (pabrikcore.loggermod.getGlobal()) |logger| {
+            logger.warnFmt("create_kanban_task: stamp last_human_touched_at failed (non-fatal): {s}", .{@errorName(err)});
+        }
     };
 
     // 11.

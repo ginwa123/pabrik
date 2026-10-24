@@ -139,10 +139,9 @@ fn useCase(
         input.task_id,
         null,
     ) catch |err| {
-        std.log.warn(
-            "tasks_move: stamp last_human_touched_at failed (non-fatal): {s}",
-            .{@errorName(err)},
-        );
+        if (pabrikcore.loggermod.getGlobal()) |logger| {
+            logger.warnFmt("tasks_move: stamp last_human_touched_at failed (non-fatal): {s}", .{@errorName(err)});
+        }
     };
 
     return .{ .moved = try std.json.Stringify.valueAlloc(allocator, MoveTaskResponse{

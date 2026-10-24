@@ -152,10 +152,9 @@ fn updateTaskHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: 
         task_id,
         null,
     ) catch |err| {
-        std.log.warn(
-            "task_update: stamp last_human_touched_at failed (non-fatal): {s}",
-            .{@errorName(err)},
-        );
+        if (pabrikcore.loggermod.getGlobal()) |logger| {
+            logger.warnFmt("task_update: stamp last_human_touched_at failed (non-fatal): {s}", .{@errorName(err)});
+        }
     };
 
     return res.jsonResponse(.{ .status_code = 200, .data = try std.fmt.allocPrint(allocator, "{{\"success\":true,\"id\":\"{s}\"}}", .{result.task_id}) });
