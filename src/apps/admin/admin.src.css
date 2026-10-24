@@ -99,12 +99,13 @@
   }
 
   /* The console's own navigation: one section at a time, the open one marked by
-     a step in tone rather than a line or a pill. */
+     a step in tone rather than a line or a pill. The items are links — the
+     section is a path, so the browser does the navigating. */
   .nav-item {
-    @apply mb-1 flex w-full items-center rounded-card px-3 py-3 text-left font-medium text-ink-muted transition-colors hover:bg-surface-up hover:text-ink;
+    @apply mb-1 flex w-full items-center rounded-card px-3 py-3 text-left font-medium text-ink-muted no-underline transition-colors hover:bg-surface-up hover:text-ink;
   }
 
-  .nav-item[aria-pressed="true"] {
+  .nav-item[aria-current="page"] {
     @apply bg-surface-up text-cream;
   }
 
@@ -125,6 +126,13 @@
   /* The last row of a table closes on the panel's own edge, not on a line. */
   .rows tbody tr:last-child td {
     @apply border-0;
+  }
+
+  /* One cell of a real table. The row rule is the table's, which is the one
+     place a line belongs; every cell in both tables asks for this instead of
+     spelling the utilities out per column. */
+  .cell {
+    @apply border-b border-surface-up px-3 py-3 align-middle; /* taste-skill-ignore: real table rows */
   }
 
   .dialog {

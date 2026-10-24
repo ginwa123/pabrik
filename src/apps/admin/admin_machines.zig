@@ -3,6 +3,7 @@
 //! (`pabrik-vmd`); without its socket the section says why and offers nothing.
 
 const std = @import("std");
+const database = @import("databases").database;
 const gserverz = @import("kabelweb").server;
 
 const admin_api = @import("admin_api.zig");
@@ -24,6 +25,70 @@ fn refusal(allocator: std.mem.Allocator) ![]const u8 {
     if (!vmd.supported) return "this console was built for another platform; the manager is Linux-only";
     const path = socket_path orelse return "no manager socket was given (--vmd-socket, or PABRIK_VMD_SOCKET)";
     return std.fmt.allocPrint(allocator, "no pabrik-vmd answers on {s} (pass --vmd-socket to point the console at it)", .{path});
+}
+
+/// One workspace's machine, as the panel draws it and as the resize dialog
+/// reads it off the row's `data-*` attributes.
+pub const Machine = struct {
+    workspace_id: []const u8,
+    workspace_name: []const u8,
+    state: []const u8,
+    pid: i64 = 0,
+    vcpus: u32 = 0,
+    mem_mib: u32 = 0,
+    disk_mib: u32 = 0,
+    last_error: []const u8 = "",
+};
+
+/// What the manager answered, once. Both the JSON endpoint and the rendered
+/// page read this, so they can never disagree about what exists.
+pub const Snapshot = struct {
+    /// False means "do not offer a resize": the page reads this first.
+    manager: bool = false,
+    /// Why `manager` is false. Empty when it is true.
+    reason: []const u8 = "",
+    machines: []const Machine = &.{},
+};
+
+/// Every workspace, with the state its machine is in. Without a manager the
+/// list is empty and `reason` says why, so nothing draws a machine it cannot
+/// see. The strings are owned by `allocator`.
+pub fn snapshot(allocator: std.mem.Allocator, db: *database.Db) !Snapshot {
+    if (comptime !vmd.supported) {
+        return .{ .manager = false, .reason = "this console was built for another platform; the manager is Linux-only" };
+    }
+    var client = liveClient(allocator) orelse {
+        return .{ .manager = false, .reason = try refusal(allocator) };
+    };
+
+    const rows = try admin_store.listWorkspaces(allocator, db);
+    defer admin_store.freeWorkspaces(allocator, rows);
+
+    var machines: std.ArrayList(Machine) = .empty;
+    errdefer machines.deinit(allocator);
+    for (rows) |row| {
+        const id = try allocator.dupe(u8, row.id);
+        const name = try allocator.dupe(u8, row.name);
+        const state = client.status(row.id) catch {
+            try machines.append(allocator, .{
+                .workspace_id = id,
+                .workspace_name = name,
+                .state = "unavailable",
+            });
+            continue;
+        };
+        try machines.append(allocator, .{
+            .workspace_id = id,
+            .workspace_name = name,
+            .state = try allocator.dupe(u8, state.state),
+            .pid = state.pid,
+            .vcpus = state.vcpus,
+            .mem_mib = state.mem_mib,
+            .disk_mib = state.disk_mib,
+            .last_error = try allocator.dupe(u8, state.last_error),
+        });
+    }
+    return .{ .manager = true, .machines = try machines.toOwnedSlice(allocator) };
 }
 
 /// One workspace's machine, as the panel draws it.
@@ -96,45 +161,28 @@ pub fn listHandler(
     const db = runtime.db() orelse return admin_api.errorResponse(ctx.allocator, res, 503, "AdminConsoleNotInstalled");
     if (try admin_api.ownerOnly(ctx, req, res, db, runtime.authEnabled())) |denied| return denied;
 
-    if (comptime !vmd.supported) {
-        return respond(ctx, res, .{ .manager = false, .manager_reason = try refusal(ctx.allocator) });
+    const snap = try snapshot(ctx.allocator, db);
+    if (!snap.manager) {
+        return respond(ctx, res, .{ .manager = false, .manager_reason = snap.reason });
     }
 
-    var client = liveClient(ctx.allocator) orelse {
-        return respond(ctx, res, .{ .manager = false, .manager_reason = try refusal(ctx.allocator) });
-    };
-
-    const rows = try admin_store.listWorkspaces(ctx.allocator, db);
-    defer admin_store.freeWorkspaces(ctx.allocator, rows);
-
-    var machines: std.ArrayList(MachineJson) = .empty;
-    defer machines.deinit(ctx.allocator);
-    for (rows) |row| {
-        const state = client.status(row.id) catch {
-            try machines.append(ctx.allocator, .{
-                .workspace_id = row.id,
-                .workspace_name = row.name,
-                .state = "unavailable",
-            });
-            continue;
+    const mapped = try ctx.allocator.alloc(MachineJson, snap.machines.len);
+    for (snap.machines, 0..) |machine, i| {
+        mapped[i] = .{
+            .workspace_id = machine.workspace_id,
+            .workspace_name = machine.workspace_name,
+            .state = machine.state,
+            .pid = machine.pid,
+            .vcpus = machine.vcpus,
+            .mem_mib = machine.mem_mib,
+            .disk_mib = machine.disk_mib,
+            .last_error = machine.last_error,
         };
-        defer state.deinit(ctx.allocator);
-        try machines.append(ctx.allocator, .{
-            .workspace_id = row.id,
-            .workspace_name = row.name,
-            .state = try ctx.allocator.dupe(u8, state.state),
-            .pid = state.pid,
-            .vcpus = state.vcpus,
-            .mem_mib = state.mem_mib,
-            .disk_mib = state.disk_mib,
-            .last_error = try ctx.allocator.dupe(u8, state.last_error),
-        });
     }
-
     return respond(ctx, res, .{
         .manager = true,
-        .vms = machines.items,
-        .count = @intCast(machines.items.len),
+        .vms = mapped,
+        .count = @intCast(mapped.len),
     });
 }
 

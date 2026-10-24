@@ -1,9 +1,9 @@
 <!doctype html>
-<!-- The shell: the document head, the masthead, the rail with its counts, the
-     notice, and the panel a freshly minted password lands in. `admin_page.zig`
-     joins these parts into the one page the console serves. This comment sits
-     after the doctype on purpose: anything above it, even a comment, puts the
-     document in quirks mode. -->
+<!-- The shell: the document head, the masthead, the rail, the notice, and the
+     panel a freshly minted password lands in. The counts come from the view's
+     context, so the page arrives with its numbers already in it. This comment
+     sits after the doctype on purpose: anything above it, even a comment, puts
+     the document in quirks mode. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -24,29 +24,31 @@
 
   <div class="flex flex-col gap-4 lg:sticky lg:top-6">
 
+    <!-- A section is a path, so the rail is made of links: the browser does the
+         navigating, the back button works, and nothing needs the script. -->
     <nav data-ui="sections" aria-label="Console sections" class="console-nav animate-rise rounded-card bg-surface p-2.5 motion-reduce:animate-none">
-      <button type="button" class="nav-item" data-section="accounts" aria-pressed="true">Accounts</button>
-      <button type="button" class="nav-item" data-section="machines" aria-pressed="false">Machines</button>
+      <a class="nav-item" href="/admin/accounts" data-section="accounts"{% if accounts_shown %} aria-current="page"{% endif %}>Accounts</a>
+      <a class="nav-item" href="/admin/machines" data-section="machines"{% if machines_shown %} aria-current="page"{% endif %}>Machines</a>
 
       <div class="console-figures mt-3 grid grid-cols-2 gap-x-4 gap-y-4 px-3 pt-3 pb-2">
         <div>
-          <span class="block text-2xl font-semibold leading-none tabular-nums text-cream" id="count-total">0</span>
+          <span class="block text-2xl font-semibold leading-none tabular-nums text-cream" id="count-total">{{ count_total }}</span>
           <span class="mt-1 block text-sm text-ink-muted">accounts</span>
         </div>
         <div>
-          <span class="block text-2xl font-semibold leading-none tabular-nums text-cream" id="count-active">0</span>
+          <span class="block text-2xl font-semibold leading-none tabular-nums text-cream" id="count-active">{{ count_active }}</span>
           <span class="mt-1 block text-sm text-ink-muted">may sign in</span>
         </div>
         <div>
-          <span class="block text-2xl font-semibold leading-none tabular-nums text-cream" id="count-owners">0</span>
+          <span class="block text-2xl font-semibold leading-none tabular-nums text-cream" id="count-owners">{{ count_owners }}</span>
           <span class="mt-1 block text-sm text-ink-muted">owners</span>
         </div>
         <div>
-          <span class="block text-2xl font-semibold leading-none tabular-nums text-cream" id="count-bots">0</span>
+          <span class="block text-2xl font-semibold leading-none tabular-nums text-cream" id="count-bots">{{ count_bots }}</span>
           <span class="mt-1 block text-sm text-ink-muted">bots</span>
         </div>
         <div class="col-span-2">
-          <span class="block text-2xl font-semibold leading-none tabular-nums text-cream" id="count-sessions">0</span>
+          <span class="block text-2xl font-semibold leading-none tabular-nums text-cream" id="count-sessions">{{ count_sessions }}</span>
           <span class="mt-1 block text-sm text-ink-muted">live sessions</span>
         </div>
       </div>
@@ -56,8 +58,10 @@
 
   <div class="min-w-0">
 
-    <p id="notice" class="notice mb-4" role="status" hidden></p>
+    <p id="notice" class="notice mb-4" role="status"{% if not page_notice %} hidden{% endif %}>{{ page_notice }}</p>
 
+    <!-- Shown only when the console has a password to hand over; the script
+         fills it from the mutation that minted one. -->
     <section data-ui="credential" id="credential-panel" aria-labelledby="credential-title" class="mb-4 rounded-card bg-surface p-6" hidden>
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
         <h2 id="credential-title" class="text-xl font-semibold">Handed out</h2>
@@ -69,4 +73,3 @@
         <span class="text-sm text-ink-muted">shown once</span>
       </div>
     </section>
-
