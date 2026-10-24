@@ -320,23 +320,28 @@ async function submitResize(event) {
 
 async function loadMachines() {
   machinesLoaded = true;
+  const note = el('machines-note');
   try {
     const data = await request(endpoints.machines);
     const manager = Boolean(data.manager);
     const limits = data.limits || {};
-    el('machines-note').textContent = manager
-      ? 'A resize restarts that workspace: the machine comes back in a few seconds, the processes inside it do not. Storage only grows.'
-      : 'No VM manager answers on this host, so there is nothing to size here. Start pabrik with the manager and reload.';
+    // The panel is a table; it only explains itself when there is something to
+    // explain, because the resize dialog already says what a resize costs.
+    if (manager) {
+      note.hidden = true;
+      note.textContent = '';
+    } else {
+      note.hidden = false;
+      note.textContent = 'No VM manager answers on this host, so there is nothing to size here. Start pabrik with the manager and reload.';
+    }
     drawMachines(data.vms || [], manager, limits);
   } catch (error) {
     // A console served by `pabrik-admin` has no manager routes at all; any
     // other failure is worth showing instead of swallowing.
-    if (error.status === 404) {
-      el('machines-note').textContent = 'This console has no machines to show: the endpoint is not part of this build.';
-      drawMachines([], false, {});
-      return;
-    }
-    el('machines-note').textContent = `These machines could not be read: ${error.message}`;
+    note.hidden = false;
+    note.textContent = error.status === 404
+      ? 'This console has no machines to show: the endpoint is not part of this build.'
+      : `These machines could not be read: ${error.message}`;
     drawMachines([], false, {});
   }
 }

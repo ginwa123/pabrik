@@ -10,12 +10,8 @@
 <body>
 
 <header class="bg-paper">
-  <div class="mx-auto flex max-w-[1180px] flex-col gap-5 px-5 py-7 sm:flex-row sm:items-start sm:justify-between sm:px-7">
-    <div class="animate-rise motion-reduce:animate-none">
-      <h1 class="text-[30px] font-semibold leading-tight tracking-[-0.01em] text-cream">Admin console</h1>
-      <p class="mt-2 max-w-[30rem] text-ink-muted">Accounts on this installation, and the machines their workspaces run in.</p>
-    </div>
-    <button type="button" id="new-account-button" class="animate-rise rounded-card bg-accent px-4 py-2.5 font-semibold text-dim transition-colors hover:bg-accent-bright motion-reduce:animate-none">New account</button>
+  <div class="mx-auto max-w-[1180px] px-5 pt-7 pb-6 sm:px-7">
+    <h1 class="animate-rise text-[30px] font-semibold leading-tight tracking-[-0.01em] text-cream motion-reduce:animate-none">Admin console</h1>
   </div>
 </header>
 
@@ -58,18 +54,22 @@
     <p id="notice" class="notice mb-4" role="status" hidden></p>
 
     <section data-ui="credential" id="credential-panel" aria-labelledby="credential-title" class="mb-4 rounded-card bg-surface p-6" hidden>
-      <h2 id="credential-title" class="text-xl font-semibold">Handed out</h2>
-      <p class="note">The temporary password the console last minted, shown once. Copy it before you close this panel.</p>
-      <div class="mt-4 flex flex-wrap items-center gap-4">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+        <h2 id="credential-title" class="text-xl font-semibold">Handed out</h2>
+        <button type="button" id="credential-clear" class="shrink-0 rounded-card bg-surface-up px-4 py-2 transition-colors hover:bg-surface-hover">Hide it</button>
+      </div>
+      <div class="mt-3 flex flex-wrap items-center gap-3">
         <span id="credential-for" class="text-ink-muted"></span>
         <code id="credential-value" class="rounded-card bg-dim px-3.5 py-2 font-mono text-xl text-cream"></code>
-        <button type="button" id="credential-clear" class="rounded-card bg-surface-up px-4 py-2.5 transition-colors hover:bg-surface-hover">Hide it</button>
+        <span class="text-sm text-ink-muted">shown once</span>
       </div>
     </section>
 
     <section data-ui="accounts" id="section-accounts" aria-labelledby="accounts-title" class="animate-rise rounded-card bg-surface p-6 motion-reduce:animate-none">
-      <h2 id="accounts-title" class="text-xl font-semibold">Accounts</h2>
-      <p class="note">Every real account. Change a role, switch one off, or hand out a new password.</p>
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+        <h2 id="accounts-title" class="text-xl font-semibold">Accounts</h2>
+        <button type="button" id="new-account-button" class="shrink-0 rounded-card bg-accent px-4 py-2.5 font-semibold text-dim transition-colors hover:bg-accent-bright">New account</button>
+      </div>
       <div class="mt-4 overflow-x-auto">
         <table class="rows w-full border-collapse text-left">
           <thead>
@@ -89,7 +89,7 @@
 
     <section data-ui="machines" id="section-machines" aria-labelledby="machines-title" class="animate-rise rounded-card bg-surface p-6 motion-reduce:animate-none" hidden>
       <h2 id="machines-title" class="text-xl font-semibold">Workspace machines</h2>
-      <p id="machines-note" class="note">Each workspace runs in its own machine.</p>
+      <p id="machines-note" class="note" hidden></p>
       <div class="mt-4 overflow-x-auto">
         <table class="rows w-full border-collapse text-left">
           <thead>
