@@ -673,9 +673,13 @@ build.
 ### The rule
 
 - A reference resolves when the file exists **at the repository root** or
-  **relative to the directory of the file that holds the comment**. The
-  frontend's own `src/apps/desktop/docs/comment-length-policy.md` is
-  reachable that way, and the rule leaves it alone.
+  in **a directory between the file that holds the comment and that
+  root**. The frontend's own
+  `src/apps/desktop/docs/comment-length-policy.md` is reachable that way,
+  and the rule leaves it alone.
+- Both checks are anchored at the repository root, never at the process's
+  working directory. A gate whose verdict depends on where it was invoked
+  from is not a gate.
 - Every dead reference on a line is reported, not just the first.
 
 ### What is NOT banned
@@ -688,6 +692,30 @@ build.
 - **A document that exists.** Pointing at a live document is the point.
 - **Paths outside `docs/`.** The rule is about the documents this repo
   keeps in `docs/`, not about every path mentioned in the tree.
+
+### Which files are scanned
+
+The file set is **git's**: the scan runs
+`git ls-files --cached --others --exclude-standard` over `src/`, `tests/`
+and `tools/` (plus `build.zig`) and keeps `.zig`, `.ts` and `.vue`. Staged
+and untracked-but-kept files are both in scope, so a new file is checked;
+anything `.gitignore` excludes is not.
+
+That distinction is load-bearing. The scan used to be a bare `os.walk`,
+and `os.walk` does not read `.gitignore`. A local `pnpm install` then
+dropped a vendored SDK into `src/apps/mcp_hello_world/node_modules/`,
+whose `.d.ts` header says `@see docs/protocol.md` — a promise made by a
+third party, about a document in somebody else's tree. The gate failed on
+it, blocking every commit on a machine that had installed the
+dependencies while CI, with no `node_modules`, stayed green. The same walk
+also read the generated, ignored
+`src/apps/desktop_app/embedded/webapp_assets.zig`.
+
+Both are files this repo does not own, so both are out of scope, and git
+— which already knows the answer, from `.gitignore`, `.git/info/exclude`
+and `core.excludesFile` — is what decides. A hardcoded `node_modules`
+skip would fix today's report and miss the generated file, the next
+`dist/`, and whatever the next tool writes.
 
 ### How it is scanned
 
@@ -708,8 +736,11 @@ python3 scripts/lint-no-dead-doc-refs.py --selftest  # the scanner against fixtu
 python3 scripts/lint-no-dead-doc-refs.py              # the gate: fail on any hit
 ```
 
-Exit codes: `0` clean, `1` findings, `2` a usage error. The selftest
-runs first in CI for the same reason `ci-change-filter.sh` runs its own:
+Exit codes: `0` clean, `1` findings, `2` a usage error **or a file set
+that could not be enumerated** (no `git` on PATH, or not a work tree).
+That second case is a failure and not an empty list, for the same reason
+as the interpreter check below. The selftest runs first in CI for the
+same reason `ci-change-filter.sh` runs its own:
 **a scanner that has quietly stopped matching is a silent outage**, and
 the only way to notice is to check it against known input on every
 invocation.
