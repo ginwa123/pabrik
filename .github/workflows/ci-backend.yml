@@ -955,15 +955,14 @@ jobs:
           cd src/apps/admin
           zig build test --summary all
 
-      - name: Admin console functional slice (Linux)
-        # The Zig functional corpus is not part of `zig build test`; this runs
-        # the console's slice of it. Linux only: the suite boots real servers,
-        # and the Windows/macOS cells gate the unit suites above.
+      - name: vmd unit tests (Linux)
+        # The daemon is Linux-only, so its suite is not part of `zig build test`
+        # elsewhere. The console's own tests run in the step above, in the
+        # package it now owns alone.
         if: runner.os == 'Linux'
         timeout-minutes: 30
         run: |
           zig build test:vmd --summary all -Dno-webapp-rebuild
-          zig build functional-test:zig:admin --summary all -Dno-webapp-rebuild
 
       - name: Skipped-test ceiling (zig build test)
         # Every platform's `zig build test` prints
