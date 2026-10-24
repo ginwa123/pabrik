@@ -3691,6 +3691,9 @@ export interface PabrikAgent {
    * Mirrors `LlmProfile.reasoning_effort`. Hidden when `thinking === "off"`. Server-side validation
    * via `parse_thinking.parseReasoningEffort` (low|medium|high|auto). */
   reasoning_effort?: 'low' | 'medium' | 'high' | 'auto' | null
+  /** False = the agent is switched off: `list_agents` does not offer it, `spawn_sub_agent` cannot
+   * run it, and the agent pickers hide it. Absent/true = enabled (every old config keeps working). */
+  enabled?: boolean
 }
 
 export interface McpHeader {
@@ -3872,6 +3875,21 @@ export interface AgentDeleteResponse {
   profile_name: string
   active_profile_was_cleared?: boolean
   error_message?: string
+}
+
+/** Running sessions bound to an agent profile — the rename guard. `running > 0` means a worker
+ * is mid-run on this agent, so renaming it would leave that session pinned to a name that no
+ * longer exists. GET /api/agent-profiles/:name/in-use */
+export interface AgentProfileInUse {
+  name: string
+  running: number
+  sessions: { id: string; sub_agent: boolean }[]
+}
+
+export async function getAgentProfileInUse(name: string): Promise<AgentProfileInUse> {
+  return await apiFetch<AgentProfileInUse>(
+    `/agent-profiles/${encodeURIComponent(name)}/in-use`,
+  )
 }
 
 /**  * DELETE /api/config/pabrik/profiles/:name Removes a profile from `config.json` and live-reloads

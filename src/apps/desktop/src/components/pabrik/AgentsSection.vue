@@ -28,6 +28,8 @@ const emit = defineEmits<{
   edit: [agent: AgentRow]
   delete: [name: string]
   add: []
+  duplicate: [name: string]
+  toggleEnabled: [name: string, enabled: boolean]
 }>()
 
 // Track explicit collapses so every agent starts expanded. Using the
@@ -57,6 +59,11 @@ function toggleExpand(key: string): void {
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   return `${Math.round(n / 1_000)}k`
+}
+
+/** Absent `enabled` means enabled — every pre-existing profile keeps working. */
+function isEnabled(agent: AgentRow): boolean {
+  return agent.enabled !== false
 }
 
 /** Line 2 of the row: the context window and the compaction threshold. */
@@ -161,6 +168,13 @@ function rowSummary(agent: AgentRow): string {
                 class="text-micro px-1.5 h-5 inline-flex items-center rounded font-mono"
                 style="background-color: var(--color-violet); color: #181616;"
               >active</span>
+              <span
+                v-if="!isEnabled(agent)"
+                data-testid="agent-disabled-badge"
+                class="text-micro px-1.5 h-5 inline-flex items-center rounded font-mono"
+                style="color: var(--semantic-text-dim); border: 1px solid var(--color-border);"
+                >disabled</span
+              >
               <span style="flex: 1"></span>
             </div>
             <!-- Model + the two facts that decide what this agent does. The
@@ -176,13 +190,44 @@ function rowSummary(agent: AgentRow): string {
           </div>
           <div class="flex items-center gap-1.5 shrink-0">
             <button
-              v-if="activeAgent !== agent.name"
+              type="button"
+              role="switch"
+              :aria-checked="isEnabled(agent)"
+              :aria-label="`Enable agent ${agent.name}`"
+              :data-testid="`agent-enabled-switch-${agent.name}`"
+              :title="isEnabled(agent) ? 'Disable this agent' : 'Enable this agent'"
+              @click="emit('toggleEnabled', agent.name, !isEnabled(agent))"
+              class="relative w-9 h-5 rounded-full shrink-0 transition-colors duration-150"
+              :style="{
+                backgroundColor: isEnabled(agent) ? 'var(--color-violet)' : 'var(--semantic-content-bg)',
+                border: '1px solid ' + (isEnabled(agent) ? 'var(--color-violet)' : 'var(--color-border)'),
+              }"
+            >
+              <span
+                aria-hidden="true"
+                class="absolute top-1/2 w-3.5 h-3.5 rounded-full transition-all duration-150"
+                :style="{
+                  transform: 'translateY(-50%)',
+                  left: isEnabled(agent) ? '19px' : '3px',
+                  backgroundColor: isEnabled(agent) ? 'var(--color-bg)' : 'var(--semantic-text-muted)',
+                }"
+              />
+            </button>
+            <button
+              v-if="activeAgent !== agent.name && isEnabled(agent)"
               type="button"
               data-testid="set-active-btn"
               @click="emit('setActive', agent.name)"
               class="px-2.5 h-7 rounded-md text-dense border transition-colors duration-150"
               style="border-color: var(--color-border); color: var(--semantic-text-muted); background-color: transparent;"
             >Set active</button>
+            <button
+              type="button"
+              :data-testid="`duplicate-btn-${agent.name}`"
+              @click="emit('duplicate', agent.name)"
+              class="px-2.5 h-7 rounded-md text-dense border transition-colors duration-150"
+              style="border-color: var(--color-border); color: var(--semantic-text-muted); background-color: transparent;"
+            >Duplicate</button>
             <button
               type="button"
               data-testid="edit-btn"
@@ -208,6 +253,16 @@ function rowSummary(agent: AgentRow): string {
           class="border-t px-4 py-3"
           style="border-color: var(--color-border);"
         >
+          <div
+            v-if="!isEnabled(agent)"
+            data-testid="agent-disabled-hint"
+            class="text-dense py-1"
+            style="color: var(--semantic-text-muted);"
+          >
+            Disabled — hidden from <span style="font-family: var(--font-mono)">list_agents</span> and
+            from the agent pickers; <span style="font-family: var(--font-mono)">spawn_sub_agent</span>
+            cannot run it. Its settings are kept.
+          </div>
           <div
             v-if="!agent.system_prompt"
             class="text-dense italic py-1"

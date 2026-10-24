@@ -294,6 +294,7 @@ fn registerAgentRoutes(authed: *Group) !void {
     try authed.patch("/api/agents/:agent_id/system_prompt/reorder", ai_mod.http_handlers.agentSystemPromptReorderHandler);
     try authed.patch("/api/agents/:agent_id/system_prompt/:prompt_id", ai_mod.http_handlers.agentSystemPromptUpdateHandler);
     try authed.delete("/api/agents/:agent_id/system_prompt/:prompt_id", ai_mod.http_handlers.agentSystemPromptDeleteHandler);
+    try authed.get("/api/agent-profiles/:name/in-use", ai_mod.http_handlers.agentProfileInUseHandler);
     try authed.get("/api/agent-tools/registry", ai_mod.http_handlers.agentToolsRegistryHandler);
     try authed.get("/api/agents/:agent_id/tools", ai_mod.http_handlers.agentToolsListHandler);
     try authed.post("/api/agents/:agent_id/tools", ai_mod.http_handlers.agentToolsCreateHandler);

@@ -1071,14 +1071,16 @@ const loadAgents = async () => {
     const config = wsId ? await api.getWorkspaceConfig(wsId) : await api.getPabrikConfig()
     const agents = (config.profiles ?? {}) as Record<
       string,
-      { model?: string; base_url?: string; url_style?: string }
+      { model?: string; base_url?: string; url_style?: string; enabled?: boolean }
     >
-    availableAgents.value = Object.entries(agents).map(([name, p]) => ({
-      name,
-      model: p.model ?? '',
-      base_url: p.base_url ?? '',
-      url_style: p.url_style ?? '',
-    }))
+    availableAgents.value = Object.entries(agents)
+      .filter(([, p]) => p.enabled !== false)
+      .map(([name, p]) => ({
+        name,
+        model: p.model ?? '',
+        base_url: p.base_url ?? '',
+        url_style: p.url_style ?? '',
+      }))
     // `active_profile` is the user-chosen default from Settings. Empty
     // string → null (matches the backend's PUT coercion in
     // `pabrik_config_put.zig`).
