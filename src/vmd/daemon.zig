@@ -304,8 +304,50 @@ fn listenUnix(path: []const u8) !linux.fd_t {
     return fd;
 }
 
-/// The accept loop. One thread per connection, so a long build in one
-/// workspace cannot stall another's `ls`; the only shared state is on disk.
+/// How long the accept loop pauses after an accept that ran out of
+/// descriptors, before it tries again.
+const accept_starved_backoff_ms: u32 = 100;
+
+/// What a failed `accept4` means for the daemon's life.
+pub const AcceptVerdict = enum {
+    /// A signal interrupted the wait: wait again.
+    retry,
+    /// The daemon is momentarily out of descriptors or buffers. Transient by
+    /// nature and it must never end the daemon: the manager is the only process
+    /// that can stop a workspace's VM, so ending it here orphans every VMM.
+    starved,
+    /// The listening socket is not a listening socket any more. Nothing to
+    /// wait for.
+    fatal,
+};
+
+pub fn acceptVerdict(err: linux.E) AcceptVerdict {
+    return switch (err) {
+        .INTR => .retry,
+        .AGAIN, .CONNABORTED, .MFILE, .NFILE, .NOBUFS, .NOMEM, .PERM => .starved,
+        else => .fatal,
+    };
+}
+
+/// What a manager's exit does to the VMs it owns.
+pub const ExitKind = enum {
+    /// SIGTERM / SIGINT: "stop the daemon". The VMs STAY, because a daemon
+    /// that is started again adopts them — the contract
+    /// `scripts/vmd-daemon-smoke.sh` asserts.
+    deliberate_stop,
+    /// SIGUSR1: the service that owns this daemon is going away.
+    service_gone,
+    /// The accept loop could not go on.
+    failed,
+};
+
+/// A VMM is nobody's child once this process is gone, so only a deliberate stop
+/// may leave one running. Every other exit takes the VMs down with it: the
+/// failure path used to leave each workspace's Firecracker orphaned.
+pub fn exitTakesVmsDown(exit: ExitKind) bool {
+    return exit != .deliberate_stop;
+}
+
 pub fn serve(allocator: std.mem.Allocator, config: Config) !void {
     installSignalHandlers();
     unlinkIfExists(config.socket_path);
@@ -323,26 +365,51 @@ pub fn serve(allocator: std.mem.Allocator, config: Config) !void {
         };
         if (sweeper) |thread| thread.detach();
     }
+
+    if (acceptLoop(fd, manager)) |_| {
+        const exit: ExitKind = if (taking_vms_down.load(.seq_cst)) .service_gone else .deliberate_stop;
+        if (exitTakesVmsDown(exit)) takeVmsDown(manager);
+    } else |err| {
+        log("the accept loop failed: {s}", .{@errorName(err)});
+        if (exitTakesVmsDown(.failed)) takeVmsDown(manager);
+        return err;
+    }
+}
+
+/// One thread per connection, so a long build in one workspace cannot stall
+/// another's `ls`; the only shared state is on disk.
+fn acceptLoop(fd: linux.fd_t, manager: Manager) !void {
     while (!stopping.load(.seq_cst)) {
         const rc = linux.accept4(fd, null, null, linux.SOCK.CLOEXEC);
         const err = linux.errno(rc);
-        if (err == .INTR) continue;
-        if (err != .SUCCESS) return Error.AcceptFailed;
-        const conn: linux.fd_t = @intCast(rc);
-        const thread = std.Thread.spawn(.{}, serveConnection, .{ manager, conn }) catch {
-            _ = linux.close(conn);
+        if (err == .SUCCESS) {
+            const conn: linux.fd_t = @intCast(rc);
+            const thread = std.Thread.spawn(.{}, serveConnection, .{ manager, conn }) catch {
+                _ = linux.close(conn);
+                continue;
+            };
+            thread.detach();
             continue;
-        };
-        thread.detach();
+        }
+        switch (acceptVerdict(err)) {
+            .retry => continue,
+            .starved => {
+                log("accept: {s}; the daemon stays up and retries", .{@tagName(err)});
+                sleepMs(accept_starved_backoff_ms);
+                continue;
+            },
+            .fatal => return Error.AcceptFailed,
+        }
     }
+}
 
-    if (taking_vms_down.load(.seq_cst)) {
-        const stopped = manager.stopAll(allocator) catch |err| blk: {
-            log("shutdown: could not stop every workspace VM: {s}", .{@errorName(err)});
-            break :blk 0;
-        };
-        if (stopped > 0) log("shutdown: stopped {d} workspace VM(s)", .{stopped});
-    }
+/// Stop every workspace VM this daemon owns.
+fn takeVmsDown(manager: Manager) void {
+    const stopped = manager.stopAll(manager.allocator) catch |err| {
+        log("shutdown: could not stop every workspace VM: {s}", .{@errorName(err)});
+        return;
+    };
+    if (stopped > 0) log("shutdown: stopped {d} workspace VM(s)", .{stopped});
 }
 
 /// The reconciler's clock: one pass over every workspace per interval. It
@@ -840,4 +907,37 @@ fn log(comptime fmt: []const u8, args: anytype) void {
     var buf: [1024]u8 = undefined;
     const text = std.fmt.bufPrint(&buf, "pabrik-vmd: " ++ fmt ++ "\n", args) catch return;
     writeAll(2, text);
+}
+
+// ─── tests ───────────────────────────────────────────────────────────────
+
+const testing = std.testing;
+
+test "an accept that ran out of descriptors keeps the daemon alive" {
+    // The incident: a leaked listener per dispatch filled the descriptor table,
+    // `accept4` answered EMFILE, and the daemon exited — leaving every VMM it
+    // owned running with no manager.
+    try testing.expectEqual(AcceptVerdict.starved, acceptVerdict(.MFILE));
+    try testing.expectEqual(AcceptVerdict.starved, acceptVerdict(.NFILE));
+    try testing.expectEqual(AcceptVerdict.starved, acceptVerdict(.NOBUFS));
+    try testing.expectEqual(AcceptVerdict.starved, acceptVerdict(.NOMEM));
+    try testing.expectEqual(AcceptVerdict.starved, acceptVerdict(.CONNABORTED));
+}
+
+test "an interrupted accept waits again instead of ending the daemon" {
+    try testing.expectEqual(AcceptVerdict.retry, acceptVerdict(.INTR));
+}
+
+test "a listening socket that is gone ends the accept loop" {
+    try testing.expectEqual(AcceptVerdict.fatal, acceptVerdict(.BADF));
+    try testing.expectEqual(AcceptVerdict.fatal, acceptVerdict(.NOTSOCK));
+    try testing.expectEqual(AcceptVerdict.fatal, acceptVerdict(.INVAL));
+}
+
+test "a daemon that died takes its workspace VMs down, one that was told to stop leaves them" {
+    // Only a deliberate stop leaves a VMM running for the next daemon to
+    // adopt; a manager that failed must not orphan it.
+    try testing.expect(exitTakesVmsDown(.failed));
+    try testing.expect(exitTakesVmsDown(.service_gone));
+    try testing.expect(!exitTakesVmsDown(.deliberate_stop));
 }

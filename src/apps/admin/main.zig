@@ -89,9 +89,8 @@ fn defaultDbPath(allocator: std.mem.Allocator, io: std.Io, environ: *const std.p
 }
 
 /// The manager socket an operator did not name, in the same order the server
-/// resolves it: `$PABRIK_VMD_SOCKET`, then the session's runtime dir, then
-/// `/tmp`. A socket nobody answers on is not a failure here — the machines
-/// section names the path it tried.
+/// resolves it: `$PABRIK_VMD_SOCKET`, then the runtime dir, then `/tmp`. A
+/// socket nobody answers on is not a failure — the machines section says so.
 fn defaultVmdSocket(allocator: std.mem.Allocator, environ: *const std.process.Environ.Map) ?[]const u8 {
     if (environ.get("PABRIK_VMD_SOCKET")) |given| {
         if (given.len > 0) return given;
