@@ -30,8 +30,8 @@ b52b68118ed5ef4e59547e6d5dd29630e4ac33fa30e48b2795d78441ce925466  https://dl-cdn
 f0823de7c6d45859aeb6a7facfc5cfbf2dadb83ad4f27c794cb6ecc74e578cee  https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/brotli-libs-1.2.0-r1.apk  dev
 0e626fa97cf937fda7bba4ed4dde8e2f2dbb5083ac34e02180cec0c4eba9351b  https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/busybox-1.37.0-r31.apk  dev
 93f803ae5db6b729c0f66f4afba6e907ccc17d7d5f8b8c3d25bdb4636de2c48a  https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/busybox-binsh-1.37.0-r31.apk  dev
-d33f9058111586cea83cb3cca78d24efb36a45e6466fd0228f66e791f1cb79ed  https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/ca-certificates-20260909-r0.apk  dev
-a35f8cf2366d90294d0bb089af565fd17f3fa03721e61bcc7f02ed3d8334e7ea  https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/ca-certificates-bundle-20260909-r0.apk  dev
+ca8de7a7469e2a04b9008eb728d6de1a6da691e09e3379d83dfd77bbfce4e3f9  https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/ca-certificates-20261020-r0.apk  dev
+bb008f6d214b6af7576324659856fb63dc8dcb4373f8345ff706388696f1254d  https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/ca-certificates-bundle-20261020-r0.apk  dev
 123fdeadc5ec884b897787f98d865492bf70402697b251cd1f3591a00b8c9d73  https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/c-ares-1.34.8-r0.apk  dev
 5d5c394ba9805bc2af0cd7ffee8b66c9e541ff37a5629515cd2d3ce28aa0b5ac  https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/cargo-1.96.1-r0.apk  dev
 788e956c6e961ad9415a5df49f37fe6dd8abcdbce62d9ba1812b934b0b400fc5  https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/clang21-libs-21.1.8-r3.apk  dev

@@ -1,5 +1,4 @@
-// Functional wire verification for `command`'s `is_stop` parameter. Plan:
-// docs/plans/2026-10-14-command-is-stop-persistence.md (§2).
+// Functional wire verification for `command`'s `is_stop` parameter.
 
 const std = @import("std");
 const testing = std.testing;

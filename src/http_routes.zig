@@ -27,7 +27,7 @@ pub fn registerAllOn(router: *gserverz.router.Router) !void {
     // Order is load-bearing — see the file header. Each function below
     // registers one domain's routes, verbatim and in the order they were
     // registered when this table lived inline in `main`.
-    try registerAuthRoutes(router);
+    try registerAuthRoutes(router, &authed);
     try registerSessionRoutes(&authed);
     try registerWorkerRoutes(&authed);
     try registerTerminalRoutes(&authed, router);
@@ -49,10 +49,13 @@ pub fn registerAllOn(router: *gserverz.router.Router) !void {
     try registerPreviewRoutes(&authed);
 }
 
-fn registerAuthRoutes(router: *gserverz.router.Router) !void {
+fn registerAuthRoutes(router: *gserverz.router.Router, authed: *Group) !void {
     try router.post("/api/auth/login", ai_mod.http_handlers.authLoginHandler);
     try router.post("/api/auth/logout", ai_mod.http_handlers.authLogoutHandler);
     try router.get("/api/auth/me", ai_mod.http_handlers.authMeHandler);
+    // On `authed`: a password change needs the session it is rotating, so the
+    // middleware rejects an expired cookie before the handler re-checks it.
+    try authed.post("/api/auth/password", ai_mod.http_handlers.authChangePasswordHandler);
     // // try authed.get("/api/stream/:session_id/disconnect",
     // http_handlers.sseDisconnectHandler, .{}); // try
     // authed.post("/api/stream/:session_id/disconnect",

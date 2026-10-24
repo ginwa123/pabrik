@@ -1,6 +1,5 @@
 //! Static multicall fixture for the guest image: the protocol tests need
-//! *something* to exec, and the product image ships a busybox instead (see
-//! docs/plans/2026-10-17-workspace-is-a-microvm.md §20).
+//! *something* to exec, and the product image ships a busybox instead.
 
 const std = @import("std");
 const linux = std.os.linux;
