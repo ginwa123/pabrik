@@ -176,11 +176,6 @@ pub fn boot(
 
     try pabrikcore.setSingleton(ctx);
 
-    // Same one-shot seeding as the server boot. Headless has no auth
-    // (see `ctx.auth_enabled = false` above), so it always takes the
-    // file-mode path.
-    server_boot.seedWorkspaceSettingsFromUserConfig(allocator, io, @constCast(environment), &db_handles.db, false);
-
     // models.dev catalog, same as the server boot: a local DB read plus the
     // detached hourly sync. Without this the CLI runs with no catalog and every
     // model falls back to the built-in 200k window.

@@ -3902,9 +3902,9 @@ export async function deleteAgent(name: string): Promise<AgentDeleteResponse> {
   )
 }
 
-/**  * `DELETE /api/workspaces/:workspace_id/config/profiles/:name` Removes the profile from this
- * workspace's overlay AND from the user config it inherits from, so deleting it from the workspace
- * Profiles list actually removes it (dropping it from the overlay alone would inherit it back). */
+/**  * `DELETE /api/workspaces/:workspace_id/config/profiles/:name` Removes the profile from THIS
+ * workspace's own settings. The user-scope config is never touched: a workspace starts with no
+ * profiles of its own, so there is nothing to inherit back. */
 export async function deleteWorkspaceAgent(
   workspaceId: string,
   name: string,

@@ -131,75 +131,68 @@ test "workspace_config_route_answers_the_config_handler" {
     const id = try createWorkspace(&h, "Route Probe");
     defer gpa.free(id);
 
-    // A 200 whose body carries `profiles` is the config handler's shape (the
-    // helper asserts it).
+    // The helper asserts the config SHAPE (`retry_delay_ms` + this route).
+    // The extra assertion: a workspace created a moment ago carries no
+    // profiles of its own, not even the stub the harness booted with.
     var got = try getWorkspaceConfig(&h, id);
     defer got.doc.deinit();
     defer got.r.deinit();
-    // The stub profile the harness booted with is what this fresh workspace
-    // resolves to - the point here is the SHAPE, which the helper asserts.
-    const profiles = got.doc.object("profiles") orelse return error.NoProfiles;
-    try testing.expect(profiles.get("stub") != null);
+    const profiles = got.doc.object("profiles");
+    try testing.expect(profiles == null or profiles.?.count() == 0);
 }
 
 // ============================================================================
-// Creation: a new workspace takes its OWN copy of the scoped settings
+// Creation: a new workspace starts EMPTY - nothing copied, nothing inherited
 // ============================================================================
 
-test "workspace_config_copies_the_user_config_at_creation" {
+test "workspace_config_is_empty_at_creation" {
     var h = try boot();
     defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    // The creator ALREADY has profiles, tools and a search provider. None of
+    // it may appear in a workspace created from here on.
     try putUserConfig(&h);
 
-    const id = try createWorkspace(&h, "Copied");
+    const id = try createWorkspace(&h, "Empty At Birth");
     defer gpa.free(id);
 
     var got = try getWorkspaceConfig(&h, id);
     defer got.doc.deinit();
     defer got.r.deinit();
 
-    // The profiles this workspace owns, copied from the user config when it
-    // was created - they are what a run here uses.
-    const profiles = got.doc.object("profiles") orelse return error.NoProfiles;
-    try testing.expect(profiles.get("stub") != null);
-    try testing.expect(profiles.get("extra") != null);
-    try testing.expectEqualStrings("extra", got.doc.str("active_profile").?);
-    // The General keys stay shared with the user config.
+    const profiles = got.doc.object("profiles");
+    try testing.expect(profiles == null or profiles.?.count() == 0);
+    const tools = try toolNames(&got.doc);
+    defer gpa.free(tools);
+    try testing.expectEqual(@as(usize, 0), tools.len);
+    try testing.expect(got.doc.str("active_profile") == null);
+    try testing.expect(got.doc.get("web_search") == null or got.doc.get("web_search").? == .null);
+
+    // The General keys were never workspace-scoped, so they still come from
+    // the user document - that is what "empty" leaves in place.
     try testing.expectEqual(true, got.doc.boolean("notify_on_complete").?);
     try testing.expectEqual(@as(i64, 1234), got.doc.int("retry_delay_ms").?);
 }
 
-test "workspace_config_does_not_follow_a_later_user_config_change" {
+test "workspace_config_does_not_adopt_profiles_the_user_adds_later" {
     var h = try boot();
     defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
-    try putUserConfig(&h);
 
-    const id = try createWorkspace(&h, "Frozen");
+    try clearUserProfiles(&h);
+    const id = try createWorkspace(&h, "Stays Empty");
     defer gpa.free(id);
 
-    // The user edits their own settings afterwards: a new profile, and a
-    // different active one.
-    try putUserConfigBody(&h,
-        \\{"profiles":{"stub":{"model":"stub-model","base_url":"http://127.0.0.1:1","api_key":"stub-key-not-real"},
-        \\ "added":{"model":"added-model","base_url":"http://127.0.0.1:1","api_key":"added-key-not-real"}},
-        \\ "active_profile":"stub",
-        \\ "tools":["command","glob"],
-        \\ "notify_on_complete":true,
-        \\ "retry_delay_ms":4321}
-    );
+    // ...and the user adds them afterwards. A read must NOT fill the
+    // workspace from the user document: an empty workspace is a decision.
+    try putUserConfig(&h);
 
     var got = try getWorkspaceConfig(&h, id);
     defer got.doc.deinit();
     defer got.r.deinit();
-    const profiles = got.doc.object("profiles") orelse return error.NoProfiles;
-    // The workspace kept its own copy...
-    try testing.expect(profiles.get("stub") != null);
-    try testing.expect(profiles.get("extra") != null);
-    // ...the profile added afterwards is NOT inherited...
-    try testing.expect(profiles.get("added") == null);
-    try testing.expectEqualStrings("extra", got.doc.str("active_profile").?);
-    // ...and General still tracks the user config.
-    try testing.expectEqual(@as(i64, 4321), got.doc.int("retry_delay_ms").?);
+    const profiles = got.doc.object("profiles");
+    try testing.expect(profiles == null or profiles.?.count() == 0);
+    try testing.expect(got.doc.str("active_profile") == null);
+    // General still tracks the user document.
+    try testing.expectEqual(@as(i64, 1234), got.doc.int("retry_delay_ms").?);
 }
 
 // ============================================================================
@@ -293,16 +286,14 @@ test "workspace_config_put_refuses_a_body_with_nothing_workspace_scoped" {
         defer r.deinit();
     }
     {
-        // The refusal changed nothing: the workspace still resolves to the
-        // user's own list.
+        // The refusal changed nothing: the workspace still has no tools of
+        // its own (and does not borrow the user's).
         var got = try getWorkspaceConfig(&h, id);
         defer got.doc.deinit();
         defer got.r.deinit();
         const tools = try toolNames(&got.doc);
         defer gpa.free(tools);
-        try testing.expectEqual(@as(usize, 2), tools.len);
-        try testing.expectEqualStrings("command", tools[0]);
-        try testing.expectEqualStrings("glob", tools[1]);
+        try testing.expectEqual(@as(usize, 0), tools.len);
     }
     {
         var r = try h.http(io, .PUT, path, .{ .json_body = "{\"tools\":", .expect = &.{400} });
@@ -388,12 +379,14 @@ test "workspace_config_is_isolated_per_workspace" {
         try testing.expectEqualStrings("stub", a.doc.str("active_profile").?);
     }
     {
-        // Beta was never touched: it must still be inheriting, not borrowing
-        // Alpha's override.
+        // Beta was never touched: it must be EMPTY, not borrowing Alpha's
+        // override and not adopting the user's `extra`.
         var b = try getWorkspaceConfig(&h, ws_b);
         defer b.doc.deinit();
         defer b.r.deinit();
-        try testing.expectEqualStrings("extra", b.doc.str("active_profile").?);
+        try testing.expect(b.doc.str("active_profile") == null);
+        const profiles = b.doc.object("profiles");
+        try testing.expect(profiles == null or profiles.?.count() == 0);
     }
 }
 
@@ -409,8 +402,15 @@ test "workspace_config_masks_the_web_search_key" {
     const id = try createWorkspace(&h, "Masking");
     defer gpa.free(id);
 
-    // The workspace inherits the user's providers, so this is the surface the
-    // key would leak through if the response builder were forked.
+    // The workspace starts empty, so it has to hold the provider itself for
+    // this surface to be the one the key could leak through.
+    {
+        const path = try wsPath(gpa, id, "");
+        defer gpa.free(path);
+        var r = try h.http(io, .PUT, path, .{ .json_body = USER_CONFIG, .expect = &.{200} });
+        defer r.deinit();
+    }
+
     var got = try getWorkspaceConfig(&h, id);
     defer got.doc.deinit();
     defer got.r.deinit();
@@ -567,6 +567,18 @@ test "workspace_profile_delete_is_404_for_a_name_that_is_nowhere" {
     const id = try createWorkspace(&h, "DeleteGhost");
     defer gpa.free(id);
 
+    // The workspace needs a list for the 404 to prove it left one alone.
+    {
+        const body =
+            \\{"profiles":{"stub":{"model":"stub-model","base_url":"http://127.0.0.1:1","api_key":"stub-key-not-real"},
+            \\ "extra":{"model":"extra-model","base_url":"http://127.0.0.1:1","api_key":"extra-key-not-real"}}}
+        ;
+        const path = try wsPath(gpa, id, "");
+        defer gpa.free(path);
+        var r = try h.http(io, .PUT, path, .{ .json_body = body, .expect = &.{200} });
+        defer r.deinit();
+    }
+
     {
         var r = try deleteWorkspaceProfile(&h, id, "ghost", &.{404});
         defer r.deinit();
@@ -593,12 +605,23 @@ test "workspace_profile_delete_clears_the_active_profile_it_named" {
     const id = try createWorkspace(&h, "DeleteActive");
     defer gpa.free(id);
 
+    // The workspace's OWN active profile, which is the one a delete clears.
+    {
+        const body =
+            \\{"profiles":{"extra":{"model":"extra-model","base_url":"http://127.0.0.1:1","api_key":"extra-key-not-real"}},
+            \\ "active_profile":"extra"}
+        ;
+        const path = try wsPath(gpa, id, "");
+        defer gpa.free(path);
+        var r = try h.http(io, .PUT, path, .{ .json_body = body, .expect = &.{200} });
+        defer r.deinit();
+    }
+
     {
         var r = try deleteWorkspaceProfile(&h, id, "extra", &.{200});
         defer r.deinit();
         var doc = try r.json();
         defer doc.deinit();
-        // `extra` IS the user config's active profile.
         try testing.expectEqual(true, doc.boolean("active_profile_was_cleared") orelse return error.NoFlag);
     }
 
@@ -643,82 +666,6 @@ test "workspace_profile_delete_leaves_another_workspaces_own_profile_alone" {
     }
 }
 
-// ============================================================================
-// A workspace created before the user had profiles shows them once they exist
-// ============================================================================
-
-test "workspace_config_shows_the_user_profiles_a_workspace_was_created_without" {
-    var h = try boot();
-    defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
-
-    // The user has no profiles yet, so the copy this workspace takes is empty.
-    try clearUserProfiles(&h);
-    const id = try createWorkspace(&h, "Late Profiles");
-    defer gpa.free(id);
-
-    // Now they add some. The workspace's empty copy is not a decision, so the
-    // model picker and the Profiles list must offer them.
-    try putUserConfig(&h);
-
-    var got = try getWorkspaceConfig(&h, id);
-    defer got.doc.deinit();
-    defer got.r.deinit();
-
-    const profiles = got.doc.object("profiles") orelse return error.NoProfiles;
-    try testing.expect(profiles.get("stub") != null);
-    try testing.expect(profiles.get("extra") != null);
-    try testing.expectEqualStrings("extra", got.doc.str("active_profile").?);
-    // General keys keep coming from the user document.
-    try testing.expectEqual(true, got.doc.boolean("notify_on_complete").?);
-    try testing.expectEqual(@as(i64, 1234), got.doc.int("retry_delay_ms").?);
-}
-
-// ============================================================================
-// A profile a workspace only inherits is still deletable there
-// ============================================================================
-
-test "workspace_config_deletes_a_profile_the_workspace_only_inherits" {
-    var h = try boot();
-    defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
-
-    try clearUserProfiles(&h);
-    const inheriting = try createWorkspace(&h, "Inherits");
-    defer gpa.free(inheriting);
-    try putUserConfig(&h);
-
-    {
-        var before = try getWorkspaceConfig(&h, inheriting);
-        defer before.doc.deinit();
-        defer before.r.deinit();
-        const profiles = before.doc.object("profiles") orelse return error.NoProfiles;
-        try testing.expect(profiles.get("extra") != null);
-    }
-
-    // The list a read renders is the list the user must be able to edit.
-    var deleted = try deleteWorkspaceProfile(&h, inheriting, "extra", &.{200});
-    defer deleted.deinit();
-
-    {
-        var after = try getWorkspaceConfig(&h, inheriting);
-        defer after.doc.deinit();
-        defer after.r.deinit();
-        const profiles = after.doc.object("profiles") orelse return error.NoProfiles;
-        try testing.expect(profiles.get("extra") == null);
-        try testing.expect(profiles.get("stub") != null);
-    }
-
-    // ...and the user document did not move: a workspace created now still
-    // starts with both profiles.
-    const fresh = try createWorkspace(&h, "Fresh");
-    defer gpa.free(fresh);
-    var fresh_cfg = try getWorkspaceConfig(&h, fresh);
-    defer fresh_cfg.doc.deinit();
-    defer fresh_cfg.r.deinit();
-    const fresh_profiles = fresh_cfg.doc.object("profiles") orelse return error.NoProfiles;
-    try testing.expect(fresh_profiles.get("extra") != null);
-    try testing.expect(fresh_profiles.get("stub") != null);
-}
-
 test "workspace_config_keeps_the_last_profile_a_workspace_deleted_deleted" {
     var h = try boot();
     defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
@@ -731,6 +678,17 @@ test "workspace_config_keeps_the_last_profile_a_workspace_deleted_deleted" {
     );
     const id = try createWorkspace(&h, "Only Profile");
     defer gpa.free(id);
+
+    {
+        const body =
+            \\{"profiles":{"only":{"model":"only-model","base_url":"http://127.0.0.1:1","api_key":"only-key-not-real"}},
+            \\ "active_profile":"only"}
+        ;
+        const path = try wsPath(gpa, id, "");
+        defer gpa.free(path);
+        var r = try h.http(io, .PUT, path, .{ .json_body = body, .expect = &.{200} });
+        defer r.deinit();
+    }
 
     var deleted = try deleteWorkspaceProfile(&h, id, "only", &.{200});
     defer deleted.deinit();

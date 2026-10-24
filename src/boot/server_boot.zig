@@ -14,8 +14,6 @@ const static_files = @import("../modules/static_files.zig");
 const shutdown = @import("shutdown.zig");
 const db_config = @import("db_config.zig");
 const static_serve = @import("../http_static/static_serve.zig");
-const config_mod = @import("../modules/config/Config.zig");
-const workspace_config = @import("../agentic_loop/workspace_config.zig");
 const model_catalog_refresh = @import("../agentic_loop/model_catalog_refresh.zig");
 
 /// Ignore SIGPIPE process-wide (non-Windows). A peer vanishing mid-write
@@ -219,48 +217,6 @@ pub fn runMigrations(allocator: std.mem.Allocator, db: *database.Db) !void {
     defer mm.deinit();
     try migration.registerAllMigrations(&mm);
     try mm.runMigrations();
-}
-
-/// Give every UNDECIDED workspace a copy of the user-level config.
-pub fn seedWorkspaceSettingsFromUserConfig(
-    allocator: std.mem.Allocator,
-    io: std.Io,
-    env: *std.process.Environ.Map,
-    db: *database.Db,
-    auth_enabled: bool,
-) void {
-    if (auth_enabled) {
-        const users_report = workspace_config.seedWorkspacesForUsers(allocator, db);
-        std.log.info("workspace config seeding: copied each user's config into {d} workspace(s); {d} already decided", .{ users_report.seeded, users_report.already_decided });
-        return;
-    }
-
-    const config_path = config_mod.getDefaultConfigPath(allocator, env) catch |err| {
-        std.log.warn("workspace config seeding: cannot resolve the config path: {s}", .{@errorName(err)});
-        return;
-    };
-    defer allocator.free(config_path);
-
-    // No config.json at all (a fresh install) is the ordinary first-boot
-    // case, not a failure - there is simply nothing to copy.
-    const file = std.Io.Dir.openFileAbsolute(io, config_path, .{}) catch return;
-    defer file.close(io);
-
-    var read_buffer: [4096]u8 = undefined;
-    var reader = file.reader(io, &read_buffer);
-    const content = reader.interface.allocRemaining(allocator, .limited(1024 * 1024)) catch |err| {
-        std.log.warn("workspace config seeding: cannot read {s}: {s}", .{ config_path, @errorName(err) });
-        return;
-    };
-    defer allocator.free(content);
-
-    const report = workspace_config.seedWorkspaces(allocator, db, content) catch |err| {
-        std.log.warn("workspace config seeding: {s}", .{@errorName(err)});
-        return;
-    };
-    if (report.seeded > 0) {
-        std.log.info("workspace config seeding: copied the user config into {d} workspace(s); {d} already decided", .{ report.seeded, report.already_decided });
-    }
 }
 
 /// Build the `--static-dir DIR` config: absolutize first (`openDirAbsolute`

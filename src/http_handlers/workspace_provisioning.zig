@@ -7,7 +7,6 @@ const auth_common = @import("auth_common.zig");
 const process = @import("helpers").process;
 const getCurrentProcessId = process.getCurrentProcessId;
 const workspace_default = @import("workspace_items_default.zig");
-const workspace_config = @import("../agentic_loop/workspace_config.zig");
 
 /// The name every automatically provisioned workspace gets. Cosmetic — clients
 /// select by id and a user may rename it — but it is what a brand-new account
@@ -114,9 +113,6 @@ pub fn createWorkspaceRow(
     } else |err| {
         std.log.warn("workspace_provisioning: default project ensure failed (non-fatal, the items list will heal it): {s}", .{@errorName(err)});
     }
-
-    const auth_enabled = if (pabrikcore.getSingleton()) |di| di.auth_enabled else |_| false;
-    workspace_config.seedNewWorkspace(allocator, io, db, environment, auth_enabled, owner, id);
 
     // DUPE the name, never hand back the caller's slice or a comptime string:
     // `ProvisionedWorkspace.deinit` frees both fields unconditionally.
