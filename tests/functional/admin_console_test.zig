@@ -79,6 +79,13 @@ test "admin_page_is_served" {
         // The page is useless without its two assets, so it names them.
         try testing.expect(std.mem.indexOf(u8, raw.body, "/admin/admin.css") != null);
         try testing.expect(std.mem.indexOf(u8, raw.body, "/admin/admin.js") != null);
+        // The console is an owner-only surface. The server installs the policy
+        // for every response, not this handler, so this reads what actually
+        // ships: framing is refused and there is a policy at all.
+        const csp = raw.header("Content-Security-Policy") orelse return error.MissingCsp;
+        try testing.expect(std.mem.indexOf(u8, csp, "frame-ancestors 'none'") != null);
+        try testing.expectEqualStrings("DENY", raw.header("X-Frame-Options").?);
+        try testing.expectEqualStrings("nosniff", raw.header("X-Content-Type-Options").?);
     }
     {
         var raw = try rawHttp(&h, .GET, "/admin/admin.css", null, null);

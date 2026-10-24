@@ -129,7 +129,7 @@ pub fn layoutFor(allocator: std.mem.Allocator, spec: Spec) !Layout {
 }
 
 /// `mkdir -p`: every component, EEXIST tolerated.
-fn ensureDir(path: []const u8) !void {
+pub fn ensureDir(path: []const u8) !void {
     var buf: [4096]u8 = undefined;
     if (path.len >= buf.len) return Error.MkdirFailed;
     @memcpy(buf[0..path.len], path);

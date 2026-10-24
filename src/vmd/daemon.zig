@@ -63,6 +63,25 @@ pub const State = struct {
 
 // ─── the manager: workspace id in, derived paths out ────────────────────
 
+/// A resize runs e2fsck and resize2fs on the image, so two must never overlap.
+/// The reconciler's flock is on the workspace directory and a resize calls into
+/// it, so the resize takes its own file instead.
+fn lockResize(dir: []const u8) ?linux.fd_t {
+    // A workspace that never booted has no directory yet, and a resize may be
+    // the first thing that ever asks for one.
+    vm_client.ensureDir(dir) catch return null;
+    var path_buf: [4096]u8 = undefined;
+    const path = std.fmt.bufPrintZ(&path_buf, "{s}/resize.lock", .{dir}) catch return null;
+    const rc = linux.open(path, .{ .ACCMODE = .RDWR, .CREAT = true, .CLOEXEC = true }, 0o600);
+    if (linux.errno(rc) != .SUCCESS) return null;
+    const fd: linux.fd_t = @intCast(rc);
+    if (linux.errno(linux.flock(fd, std.posix.LOCK.EX)) != .SUCCESS) {
+        _ = linux.close(fd);
+        return null;
+    }
+    return fd;
+}
+
 pub const Manager = struct {
     allocator: std.mem.Allocator,
     config: Config,
@@ -155,6 +174,13 @@ pub const Manager = struct {
         mem_mib: u32,
         disk_mib: u32,
     ) !State {
+        // This daemon serves each connection on its own thread, so a second
+        // resize can arrive mid-grow. See `lockResize`.
+        const resizing = try self.layoutFor(allocator, workspace_id);
+        defer resizing.deinit(allocator);
+        const lock_fd = lockResize(resizing.dir) orelse return error.ResizeLockFailed;
+        defer _ = linux.close(lock_fd);
+
         if (!self.stopWorkspace(allocator, workspace_id)) return error.StopFailed;
         if (disk_mib != 0) try self.growDisk(allocator, workspace_id, disk_mib);
         try spec_store.write(allocator, self.config.root, workspace_id, .{ .vcpus = vcpus, .mem_mib = mem_mib });
