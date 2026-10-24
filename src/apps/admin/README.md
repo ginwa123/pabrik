@@ -26,7 +26,7 @@ src/apps/admin/
   mod.zig         the package's public face
   main.zig        `pabrik-admin`, the standalone program
   build.zig       its own build: `zig build run` right here
-  build.zig.zon   the two packages it links (SQLite, the HTTP server)
+  build.zig.zon   the packages it links (SQLite, the HTTP server)
 ```
 
 ## The look
@@ -73,36 +73,24 @@ where they say.
 
 - **Accounts** — the table, plus the *New account* dialog behind the one
   primary action in the masthead.
-- **Machines** — every workspace's machine with its **Resize** menu, loaded the
-  first time the section is opened. A machine's size and the menu come from the
-  manager, so `pabrik-admin` lists the workspaces read-only and says
-  `no manager` (see the endpoints below).
+- **Machines** — every workspace's machine with its **Resize** menu. Sizes and
+  the restart come from `pabrik-vmd`, so this section needs `--vmd-socket` (or
+  `PABRIK_VMD_SOCKET`, or the runtime dir's socket). Without one it says why and
+  offers no control.
 - **Handed out** is not a section: it appears above the open one, only while a
   temporary password exists to copy.
 
 ## Opening it
 
-Two ways to run it, and both serve the same page and the same endpoints.
-
-### Inside pabrik (a normal installation)
-
-```bash
-zig build install:linux
-./zig-out/bin/pabrikcore-linux-x86_64 --port 8080     # add --auth for a real login
-```
-
-Then open `http://127.0.0.1:8080/admin`. With `--auth` on, create the owner
-first: `pabrik create-admin --email you@example.com --password …`, sign in,
-and the console answers 401/403 to anyone else.
-
-### On its own (`pabrik-admin`)
-
-The console is also a program of its own. It links only the SQLite package
-and the HTTP server package, not pabrik, so it builds in seconds:
+The console is a program of its own. `pabrik` — the server that runs the
+agents — serves none of it: no `/admin` page, no `/api/admin/*`. It links only
+the SQLite package, the HTTP server package and the manager client, so it
+builds in seconds:
 
 ```bash
 cd src/apps/admin
-zig build run -- --db ~/.config/pabrik/agent.db --port 8090
+zig build run -- --db ~/.config/pabrik/agent.db --port 8090 \
+  --vmd-socket /run/user/$(id -u)/pabrik-vmd.sock
 ```
 
 ```
@@ -110,6 +98,7 @@ pabrik-admin ready
   console: http://127.0.0.1:8090/admin
   database: /home/you/.config/pabrik/agent.db
   owner: the local operator (no --auth)
+  machines: /run/user/1000/pabrik-vmd.sock
 ```
 
 | flag | meaning |
@@ -117,7 +106,12 @@ pabrik-admin ready
 | `--db <path>` | the database to administer (default `~/.config/pabrik/agent.db`) |
 | `--port <n>` | the port to listen on (default `8090`) |
 | `--auth on\|off` | off (default): the local operator owns the installation. on: a `pabrik_session` cookie decides the owner |
+| `--vmd-socket <path>` | the manager's socket, so Machines can list and resize. Default: `$PABRIK_VMD_SOCKET`, else `$XDG_RUNTIME_DIR/pabrik-vmd.sock` when that file exists. Without one the section explains itself and offers nothing |
 | `-h`, `--help` | usage |
+
+With `--auth` on, create the owner first (`pabrik create-admin --email
+you@example.com --password …`), sign in, and the console answers 401/403 to
+anyone else.
 
 Point it at the database pabrik itself uses and it is the same console. Point
 it at a new file and it creates the `users` and `auth_sessions` tables that
@@ -155,26 +149,29 @@ load before it can ask who is asking.
 | `POST` | `/api/admin/users/:id/password` | reset a password |
 | `GET` | `/api/admin/vms` | the workspaces in this database, read-only (see below) |
 
-### Machines, from a console with no manager
+### Machines, and the manager behind them
 
-`pabrik-admin` links SQLite and the HTTP server, not pabrik, so it has no
-manager and cannot see a machine's size or restart one. It can still say which
-workspaces exist: `GET /api/admin/vms` reads `workspaces` and answers every row
-as `no manager`.
+`GET /api/admin/vms` lists every workspace with the state its machine is in.
+The state, the vCPUs, the memory and the disk come from `pabrik-vmd`, which is
+another process: the console talks to it over its socket (`--vmd-socket`, or
+`$PABRIK_VMD_SOCKET`, or `$XDG_RUNTIME_DIR/pabrik-vmd.sock` when it exists).
 
 ```json
-{ "manager": false,
+{ "manager": true,
   "vms": [ { "workspace_id": "ws_…", "workspace_name": "kabelweb",
-             "state": "no manager", "pid": 0, "vcpus": 0, "mem_mib": 0,
-             "disk_mib": 0, "last_error": "" } ],
-  "count": 1 }
+             "state": "ready", "pid": 733578, "vcpus": 2,
+             "mem_mib": 1024, "disk_mib": 512, "last_error": "" } ],
+  "count": 1,
+  "limits": { "min_vcpus": 1, "max_vcpus": 8, "min_mem_mib": 128,
+              "max_mem_mib": 16384, "mem_step_mib": 128,
+              "min_disk_mib": 128, "max_disk_mib": 65536 } }
 ```
 
-`manager: false` is what stops the page from offering a resize it could never
-perform. A database the console created for itself (it only needs `users`) has
-no `workspaces` table at all, and that answers `count: 0` rather than an error.
-The full server owns the same path with a live manager, the real sizes and the
-resize endpoint; run it to size a machine.
+`manager` is the page's permission to offer a resize. With no socket, or a
+socket nobody answers on, it is `false`, the list is empty and
+`manager_reason` says which of the two it was; a database the console created
+for itself has no `workspaces` table and that is an empty list too, not an
+error.
 
 ### Creating an account
 
@@ -199,9 +196,9 @@ so a session opened with the old password stops working.
 
 ### Resizing a workspace's machine
 
-The **Workspace machines** panel lists every workspace with the size its
-machine runs as, and each row has a **Resize** menu: vCPUs, memory, and
-storage in one dialog. **This restarts that workspace**, and that is
+The **Machines** section lists every workspace with the size its machine runs
+as, and each row has a **Resize** menu: vCPUs, memory, and storage in one
+dialog. **This restarts that workspace**, and that is
 Firecracker, not the UI: `machine-config` (vCPUs and RAM) is accepted only
 before `InstanceStart`, and the disk can only be grown with the machine
 stopped. So a resize is: stop that workspace's VM, apply the size, start it
@@ -223,9 +220,9 @@ again. The guest comes back in a few seconds; the processes inside it do not.
   leave the disk alone.
 
 The answer is the state the machine came back in (`ready`, or `failed` with
-the guest's reason) plus the sizes it now runs with. A host with no manager
-answers `503 NoVmManager` and the panel says so, instead of offering a control
-that cannot work.
+the guest's reason) plus the sizes it now runs with. With no manager socket the
+endpoint answers `503` with the same reason the list carries, and the page
+never offers a control that cannot work.
 
 Memory and vCPUs live beside the VM: `pabrik-vmd` records them per workspace
 in `<root>/workspaces/<id>/vm.spec`, so the manager needs no database and a

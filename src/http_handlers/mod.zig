@@ -65,10 +65,6 @@ pub const authMeHandler = @import("auth_session.zig").authMeHandler;
 // `POST /api/auth/password` — the signed-in user rotates their own password.
 pub const authChangePasswordHandler = @import("auth_password.zig").authChangePasswordHandler;
 pub const authMiddleware = @import("auth_middleware.zig").authMiddleware;
-// The admin console's VM panel: the workspace VMs and the resize that
-// restarts one with a new size.
-pub const adminVmsListHandler = @import("admin_vms.zig").adminVmsListHandler;
-pub const adminVmResizeHandler = @import("admin_vms.zig").adminVmResizeHandler;
 pub const authIsAuthorized = @import("auth_middleware.zig").isAuthorized;
 
 // Workspace handlers (stub implementations for desktop app compatibility)

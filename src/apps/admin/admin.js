@@ -331,8 +331,11 @@ async function loadMachines() {
       note.hidden = true;
       note.textContent = '';
     } else {
+      // The endpoint says which kind of "no manager" it is; that sentence is the
+      // only thing standing between an operator and a mystery.
       note.hidden = false;
-      note.textContent = 'No VM manager answers on this host, so there is nothing to size here. Start pabrik with the manager and reload.';
+      note.textContent = data.manager_reason
+        || 'No VM manager answers on this host, so there is nothing to size here.';
     }
     drawMachines(data.vms || [], manager, limits);
   } catch (error) {

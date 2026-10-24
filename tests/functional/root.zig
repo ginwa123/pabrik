@@ -7,7 +7,6 @@ pub const harness = @import("harness.zig");
 
 // -- Suites ----------------------------------------------------------------
 // One `const` per ported suite.
-const admin_console_test = @import("admin_console_test.zig");
 const agent_add_mcp_server_test = @import("agent_add_mcp_server_test.zig");
 const agent_create_kanban_task_session_test = @import("agent_create_kanban_task_session_test.zig");
 const agent_kanbans_test = @import("agent_kanbans_test.zig");
@@ -164,7 +163,6 @@ const workspace_routines_test = @import("workspace_routines_test.zig");
 const workspace_secrets_test = @import("workspace_secrets_test.zig");
 
 pub const suites = .{
-    admin_console_test,
     agent_add_mcp_server_test,
     agent_create_kanban_task_session_test,
     agent_kanbans_test,

@@ -7,6 +7,7 @@ const database = @import("databases").database;
 const gserverz = @import("kabelweb").server;
 
 const admin_api = @import("admin_api.zig");
+const admin_machines = @import("admin_machines.zig");
 const admin_page = @import("admin_page.zig");
 const admin_store = @import("admin_store.zig");
 const runtime = @import("runtime.zig");
@@ -17,6 +18,9 @@ const Options = struct {
     db_path: ?[]const u8 = null,
     port: u16 = default_port,
     auth_enabled: bool = false,
+    /// Where `pabrik-vmd` listens. Absent means "no machines section": this
+    /// program links no manager of its own.
+    vmd_socket: ?[]const u8 = null,
 };
 
 fn printUsage() void {
@@ -52,6 +56,10 @@ fn parseOptions(allocator: std.mem.Allocator, args: std.process.Args) !?Options 
             out.port = std.fmt.parseInt(u16, raw, 10) catch return error.InvalidPort;
             continue;
         }
+        if (std.mem.eql(u8, arg, "--vmd-socket")) {
+            out.vmd_socket = it.next() orelse return error.VmdSocketValueMissing;
+            continue;
+        }
         if (std.mem.eql(u8, arg, "--auth")) {
             const raw = it.next() orelse return error.AuthValueMissing;
             if (std.mem.eql(u8, raw, "on")) {
@@ -78,6 +86,27 @@ fn defaultDbPath(allocator: std.mem.Allocator, io: std.Io, environ: *const std.p
     try home_dir.createDirPath(io, ".config/pabrik");
 
     return std.fs.path.join(allocator, &.{ home, ".config", "pabrik", "agent.db" });
+}
+
+/// The manager socket an operator did not name: `$PABRIK_VMD_SOCKET` if it is
+/// set, else the runtime dir's `pabrik-vmd.sock` when that file exists. A
+/// socket that is not there is "no machines", not a reason to refuse to start.
+fn defaultVmdSocket(allocator: std.mem.Allocator, io: std.Io, environ: *const std.process.Environ.Map) ?[]const u8 {
+    if (environ.get("PABRIK_VMD_SOCKET")) |given| {
+        if (given.len > 0) return given;
+    }
+    const runtime_dir = environ.get("XDG_RUNTIME_DIR") orelse return null;
+    const path = std.fmt.allocPrint(allocator, "{s}/pabrik-vmd.sock", .{runtime_dir}) catch return null;
+    var dir = std.Io.Dir.openDirAbsolute(io, runtime_dir, .{}) catch {
+        allocator.free(path);
+        return null;
+    };
+    defer dir.close(io);
+    _ = dir.statFile(io, "pabrik-vmd.sock", .{}) catch {
+        allocator.free(path);
+        return null;
+    };
+    return path;
 }
 
 fn usersTableExists(allocator: std.mem.Allocator, db: *database.Db) bool {
@@ -107,9 +136,11 @@ fn registerRoutes(router: *gserverz.router.Router) !void {
     try router.patch("/api/admin/users/:id", admin_api.adminUserUpdateHandler);
     try router.post("/api/admin/users/:id/password", admin_api.adminUserPasswordHandler);
 
-    // Read-only: this program links no manager, so it can list the workspaces in
-    // the database and nothing more.
-    try router.get("/api/admin/vms", admin_api.adminVmsListHandler);
+    // The machines section. Without a socket the handlers say so and the page
+    // offers no control, which is the honest answer for a console that was
+    // never told where the manager lives.
+    try router.get("/api/admin/vms", admin_machines.listHandler);
+    try router.post("/api/admin/vms/:workspace/resize", admin_machines.resizeHandler);
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -147,14 +178,22 @@ pub fn main(init: std.process.Init) !void {
     runtime.install(&db, options.auth_enabled);
     defer runtime.uninstall();
 
+    const vmd_socket = options.vmd_socket orelse defaultVmdSocket(allocator, io, init.environ_map);
+    admin_machines.installSocket(vmd_socket);
+
     const address = try gserverz.Address.init("127.0.0.1", options.port);
     var gs = try gserverz.GinwaServer.init(allocator, io, address);
     defer gs.deinit();
     try registerRoutes(&gs.router);
 
     std.debug.print(
-        "pabrik-admin ready\n  console: http://127.0.0.1:{d}/admin\n  database: {s}\n  owner: {s}\n",
-        .{ options.port, db_path, if (options.auth_enabled) "the signed-in admin account" else "the local operator (no --auth)" },
+        "pabrik-admin ready\n  console: http://127.0.0.1:{d}/admin\n  database: {s}\n  owner: {s}\n  machines: {s}\n",
+        .{
+            options.port,
+            db_path,
+            if (options.auth_enabled) "the signed-in admin account" else "the local operator (no --auth)",
+            if (vmd_socket) |path| path else "no manager socket (accounts only)",
+        },
     );
     try gs.listenEventLoop(.{});
 }

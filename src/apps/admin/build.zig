@@ -30,10 +30,20 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    // The manager face: a client for `pabrik-vmd`'s socket plus the limits a
+    // resize may ask for. Rooted in `src/vmd/` so it can reach its own files;
+    // on a host that is not Linux it compiles to "not supported" instead.
+    const manager_mod = b.createModule(.{
+        .root_source_file = b.path("../../vmd/manager.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const imports = [_]std.Build.Module.Import{
         .{ .name = "databases", .module = databases_mod },
         .{ .name = "kabelweb", .module = kabelweb_dep.module("kabelweb") },
         .{ .name = "auth_core", .module = auth_core_mod },
+        .{ .name = "vmd_manager", .module = manager_mod },
     };
 
     const exe = b.addExecutable(.{
