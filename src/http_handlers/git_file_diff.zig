@@ -2,6 +2,9 @@ const std = @import("std");
 const http_response = @import("http_response.zig");
 const photon = @import("pabrikcore");
 const gserverz = photon.gserverz;
+// The one containment rule, shared with `/api/files/download` and the
+// `present_files` tool.
+const file_sandbox = @import("../modules/agent/tools/file_sandbox.zig");
 
 /// Git file read response. The per-file DIFF endpoint that used to live here
 /// (`GET /api/git/file/diff?path=&file=&staged=`) is GONE.
@@ -35,8 +38,24 @@ pub fn gitFileReadHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, 
     };
     defer allocator.free(file_path);
 
+    // Containment: the request means "a file inside this directory", so
+    // canonicalize both sides (the helper also rejects a `..` segment).
+    const safe_path = file_sandbox.resolveInsideRoot(io, allocator, path_param, file_path, file_sandbox.nativeStyle()) catch |err| {
+        return res.jsonResponse(.{ .status_code = 403, .data = try http_response.makeGitStatusErrorResponse(allocator, @errorName(err)) });
+    };
+    defer allocator.free(safe_path);
+
+    // `?path=/` made every absolute path "inside the repo" — refuse it.
+    const root_canon = std.Io.Dir.realPathFileAbsoluteAlloc(io, path_param, allocator) catch null;
+    defer if (root_canon) |p| allocator.free(p);
+    if (root_canon) |p| {
+        if (isFilesystemRoot(p)) {
+            return res.jsonResponse(.{ .status_code = 403, .data = try http_response.makeGitStatusErrorResponse(allocator, "path must be a repository, not a filesystem root") });
+        }
+    }
+
     // Open the file using std.Io.Dir
-    const file = std.Io.Dir.openFileAbsolute(io, file_path, .{}) catch |err| {
+    const file = std.Io.Dir.openFileAbsolute(io, safe_path, .{}) catch |err| {
         return res.jsonResponse(.{ .status_code = 404, .data = try http_response.makeGitStatusErrorResponse(allocator, @errorName(err)) });
     };
     defer file.close(io);
@@ -50,6 +69,16 @@ pub fn gitFileReadHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, 
     const response = GitFileReadResponse{ .content = content, .encoding = "utf-8" };
 
     return res.jsonResponse(.{ .status_code = 200, .data = try makeGitFileReadResponse(allocator, response) });
+}
+
+/// `/`, `C:`, `C:\` — a directory that contains everything is not a project
+/// root, and treating it as one authorises every path on the box.
+fn isFilesystemRoot(p: []const u8) bool {
+    if (p.len == 0) return false;
+    if (std.mem.eql(u8, p, "/")) return true;
+    if (p.len == 2 and p[1] == ':') return true;
+    if (p.len == 3 and p[1] == ':' and (p[2] == '\\' or p[2] == '/')) return true;
+    return false;
 }
 
 /// Custom JSON serialization for GitFileReadResponse

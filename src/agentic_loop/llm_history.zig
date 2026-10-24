@@ -290,9 +290,10 @@ pub fn getSessionListWithCursor(
     try where_parts.append(allocator, "s.id NOT LIKE '%subagent%'");
 
     if (cwd) |dir| {
-        const frag = try std.fmt.allocPrint(allocator, "s.cwd = '{s}'", .{dir});
-        try owned_where_fragments.append(allocator, frag);
-        try where_parts.append(allocator, frag);
+        // Bound, never interpolated: `?cwd=` used to reach `'{s}'` and turn
+        // the WHERE into `... OR 1=1`, defeating the owner clause below.
+        try where_parts.append(allocator, "s.cwd = ?");
+        try id_binds.append(allocator, dir);
     }
 
     if (workspace_ids) |ids| {
@@ -351,8 +352,10 @@ pub fn getSessionListWithCursor(
         .agent => "COALESCE(h.agent, 'Agent')",
         .updated_at => "s.updated_at",
     };
-    const cursor_filter = if (cursor) |c|
-        try std.fmt.allocPrint(allocator, " AND {s} {s} '{s}'", .{ cursor_column, if (sort_direction == .asc) ">" else "<", c })
+    // Bound: `?cursor=` sat between hard quotes, so `x' OR 1=1 OR <col> < 'x`
+    // returned every session in the install.
+    const cursor_filter = if (cursor) |_|
+        try std.fmt.allocPrint(allocator, " AND {s} {s} ?", .{ cursor_column, if (sort_direction == .asc) ">" else "<" })
     else
         try allocator.dupe(u8, "");
     defer allocator.free(cursor_filter);
@@ -380,7 +383,14 @@ pub fn getSessionListWithCursor(
     , .{ where_with_cursor, order_by, limit });
     defer allocator.free(sql_final);
 
-    var rows = try db.query(allocator, sql_final, id_binds.items);
+    // The cursor is a bind for the MAIN query only: the count query below
+    // shares `id_binds` but has no cursor predicate.
+    var main_binds = std.ArrayList([]const u8).empty;
+    defer main_binds.deinit(allocator);
+    try main_binds.appendSlice(allocator, id_binds.items);
+    if (cursor) |c| try main_binds.append(allocator, c);
+
+    var rows = try db.query(allocator, sql_final, main_binds.items);
     defer rows.deinit();
 
     var sessions = std.ArrayList(SessionInfo).empty;
@@ -5149,8 +5159,10 @@ pub fn listWorkspaceItemTasksWithCursor(
     );
     defer allocator.free(order_by);
 
-    // Cursor: encoded as "<sort_value>|<id>" by the handler. Split it into
-    // the sort-field value (compared first) and the id (tiebreaker).
+    // Cursor "<sort_value>|<id>": split, then BIND both halves — as literals
+    // they escaped the `workspace_item_id` scope of the WHERE below.
+    var cursor_binds: [3][]const u8 = undefined;
+    var cursor_bind_count: usize = 0;
     const cursor_clause: []u8 = blk: {
         const c = cursor orelse break :blk try allocator.dupe(u8, "");
         const pipe_idx = std.mem.indexOfScalar(u8, c, '|') orelse
@@ -5162,10 +5174,14 @@ pub fn listWorkspaceItemTasksWithCursor(
             .desc => "<",
             .asc => ">",
         };
+        cursor_binds[0] = sort_value;
+        cursor_binds[1] = sort_value;
+        cursor_binds[2] = id_value;
+        cursor_bind_count = 3;
         break :blk try std.fmt.allocPrint(
             allocator,
-            " AND t.is_pinned = 0 AND ({s} {s} '{s}' OR ({s} = '{s}' AND t.id {s} '{s}'))",
-            .{ sort_col, cmp, sort_value, sort_col, sort_value, cmp, id_value },
+            " AND t.is_pinned = 0 AND ({s} {s} ? OR ({s} = ? AND t.id {s} ?))",
+            .{ sort_col, cmp, sort_col, cmp },
         );
     };
     defer allocator.free(cursor_clause);
@@ -5222,6 +5238,10 @@ pub fn listWorkspaceItemTasksWithCursor(
     var binds = std.ArrayList([]const u8).empty;
     defer binds.deinit(allocator);
     try binds.append(allocator, workspace_item_id);
+    // Cursor binds come immediately after the workspace scope: the clause is
+    // emitted before column_id and q in the SQL above, so the bind order must
+    // mirror it.
+    for (cursor_binds[0..cursor_bind_count]) |v| try binds.append(allocator, v);
     if (column_id) |cid| {
         if (cid.len > 0) {
             try binds.append(allocator, cid);
