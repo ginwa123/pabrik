@@ -103,8 +103,11 @@ command -v debugfs >/dev/null || fail "debugfs missing (e2fsprogs)"
 # payload may be a binary or a symlink to one, so only ownership is asserted.
 payload=()
 if [ "$tier" = dev ]; then
-  payload+=(/usr/bin/git /usr/bin/node /usr/bin/python3 /usr/bin/cargo /usr/bin/zig)
+  payload+=(/usr/bin/node /usr/bin/python3 /usr/bin/cargo /usr/bin/zig)
 fi
+# git is in EVERY tier: a workspace is a git checkout, and under --saas every
+# git command runs in the guest, so a base image without git cannot clone.
+payload+=(/usr/bin/git)
 # The in-guest network forwarder is the guest's only way out of the VM.
 payload+=(/usr/bin/pabrik-vm-netd)
 payload+=("${extra[@]:-}")
