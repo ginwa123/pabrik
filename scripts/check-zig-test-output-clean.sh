@@ -104,7 +104,9 @@ report_offenders() { # report_offenders <log>
   found="$(offenders "$1")"
   [ -n "$found" ] || return 0
   echo "x a GREEN 'zig build test' printed $(printf '%s\n' "$found" | wc -l | tr -d ' ') line(s) that are not a test result:" >&2
-  printf '%s\n' "$found" | sed -e 's/^/    /' >&2
+  # `cut`: a Windows `failed command:` line carries the whole PATH (4 KB) and
+  # buries every other line of the report.
+  printf '%s\n' "$found" | cut -c1-200 | sed -e 's/^/    /' >&2
   cat >&2 <<'MSG'
 
   Each of those is a PASSING test's stderr, which Zig relays under a `run test w`
@@ -216,7 +218,19 @@ LOG
     echo "selftest: --allow leaked past its own patterns"; return 1
   fi
 
-  echo "ok selftest: clean, warn block, raw print, red run, unmeasurable, allow hit, allow miss"
+  # A Windows `failed command:` is 4 KB of PATH; the report must stay readable.
+  long="$SELFTEST_TMP/long.log"
+  {
+    printf 'test\n+- run test w\nfailed command: PATH="'
+    head -c 4000 /dev/zero | tr '\0' 'x'
+    printf '"\nBuild Summary: 28/28 steps succeeded; 4987/4991 tests passed\n'
+  } >"$long"
+  long_report="$(check_log "$long" 2>&1 || true)"
+  check_log "$long" >/dev/null 2>&1 && { echo "selftest: a 4 KB failed-command line was accepted"; return 1; }
+  longest="$(printf '%s\n' "$long_report" | awk '{ if (length($0) > m) m = length($0) } END { print m + 0 }')"
+  [ "$longest" -le 220 ] || { echo "selftest: the report echoed a $longest-byte line"; return 1; }
+
+  echo "ok selftest: clean, warn block, raw print, red run, unmeasurable, allow hit, allow miss, 4 KB line reported short"
 }
 
 main() {
