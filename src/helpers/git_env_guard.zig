@@ -32,7 +32,9 @@ pub fn ambientGitEnvOverride() ?[]const u8 {
 /// Call before the first git spawn in a fixture: fails the test instead of committing into a real repo.
 pub fn requireCleanGitEnv() error{AmbientGitEnvRedirect}!void {
     if (ambientGitEnvOverride()) |name| {
-        std.debug.print("\n!! refusing fixture git: {s} is set !!\n", .{name});
+        // `zig build test` relays stderr from a PASSING test as a `run test w`
+        // block, and the guard's own test trips this on purpose: gate on is_test.
+        if (!builtin.is_test) std.debug.print("\n!! refusing fixture git: {s} is set !!\n", .{name});
         return error.AmbientGitEnvRedirect;
     }
 }

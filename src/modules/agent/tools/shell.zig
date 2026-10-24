@@ -5,6 +5,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const helpers = @import("helpers");
 const schemas = @import("schemas.zig");
+const loggermod = @import("../../logger/Logger.zig");
 
 const sanitizeControlChars = helpers.sanitize_control_chars;
 
@@ -502,10 +503,9 @@ fn settleReader(state: *Reader, thread: ?std.Thread, deadline_ns: u64, label: []
             state.abandoned.store(true, .release);
             state.unlock();
             _ = abandoned_reader_count.fetchAdd(1, .monotonic);
-            std.log.warn(
-                "shell: a process that outlived the deadline kill still holds the {s} pipe; returning the timeout result without waiting for it",
-                .{label},
-            );
+            if (loggermod.getGlobal()) |logger| {
+                logger.warnFmt("shell: a process that outlived the deadline kill still holds the {s} pipe; returning the timeout result without waiting for it", .{label});
+            }
             return .reader;
         }
         state.unlock();

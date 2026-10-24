@@ -181,7 +181,9 @@ fn loadOne(
     defer parsed.deinit();
     if (!parsed.value.loaded or parsed.value.content.len == 0) return null;
     if (std.mem.indexOf(u8, parsed.value.content, "</skill") != null) {
-        std.log.warn("slash_skill_expand: skill '{s}' body contains a closing tag, leaving token literal", .{name});
+        if (pabrikcore.loggermod.getGlobal()) |logger| {
+            logger.warnFmt("slash_skill_expand: skill '{s}' body contains a closing tag, leaving token literal", .{name});
+        }
         return null;
     }
     return try allocator.dupe(u8, parsed.value.content);

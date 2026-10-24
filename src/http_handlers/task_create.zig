@@ -366,7 +366,9 @@ fn createStandardTask(
     // Chunk 5 of kanban-task-notification-icon: creating a card is a human
     // touch.
     ai_mod.llm_history.updateTaskLastHumanTouchedAt(allocator, db, task_id, null) catch |err| {
-        std.log.warn("task_create: stamp last_human_touched_at failed (non-fatal): {s}", .{@errorName(err)});
+        if (pabrikcore.loggermod.getGlobal()) |logger| {
+            logger.warnFmt("task_create: stamp last_human_touched_at failed (non-fatal): {s}", .{@errorName(err)});
+        }
     };
     // NOTE: do NOT `defer task.deinit(allocator)` here.
 

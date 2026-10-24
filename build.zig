@@ -2450,6 +2450,12 @@ pub fn build(b: *std.Build) void {
             .filters = filters,
         });
         const run_shard = b.addRunArtifact(shard_tests);
+        // A failure block is printed under the step NAME: unnamed, it says a
+        // bare `run test` and hides which shard failed. Name it after the
+        // shard so the block points at `zig build test:shard:<i>`.
+        run_shard.setName(b.fmt("test mod_tests shard {d}/{d} ({d} tests)", .{
+            i + 1, shards.len, filters.len,
+        }));
         // Windows: ensure vcpkg bin (libcurl.dll, sqlite3.dll,
         // libssl-3-x64.dll, libcrypto-3-x64.dll, libpq.dll, …) is on PATH at
         // test runtime — see `prependVcpkgBinToPath` doc comment.
@@ -2469,6 +2475,7 @@ pub fn build(b: *std.Build) void {
     if (!use_filters) {
         const mod_tests = b.addTest(.{ .root_module = mod_tests_module });
         const run_mod_tests = b.addRunArtifact(mod_tests);
+        run_mod_tests.setName(b.fmt("test mod_tests (all {d})", .{shard_entries.len}));
         prependVcpkgBinToPath(b, run_mod_tests);
         test_step.dependOn(&run_mod_tests.step);
     }
@@ -2484,6 +2491,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     const run_run_captured_tests = b.addRunArtifact(run_captured_tests);
+    run_run_captured_tests.setName("test helpers run_captured");
     test_step.dependOn(&run_run_captured_tests.step);
     b.step("test:helpers:run_captured", "Run run_captured helper tests").dependOn(&run_run_captured_tests.step);
 
@@ -2499,6 +2507,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     const run_test_path_tests = b.addRunArtifact(test_path_tests);
+    run_test_path_tests.setName("test helpers test_path");
     test_step.dependOn(&run_test_path_tests.step);
     b.step("test:helpers:test_path", "Run test_path helper tests")
         .dependOn(&run_test_path_tests.step);
@@ -2514,6 +2523,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     const run_ansi_tests = b.addRunArtifact(ansi_tests);
+    run_ansi_tests.setName("test helpers ansi");
     test_step.dependOn(&run_ansi_tests.step);
     b.step("test:helpers:ansi", "Run ansi (ANSI escape stripper) helper tests")
         .dependOn(&run_ansi_tests.step);
@@ -2528,6 +2538,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     const run_git_env_guard_tests = b.addRunArtifact(git_env_guard_tests);
+    run_git_env_guard_tests.setName("test helpers git_env_guard");
     test_step.dependOn(&run_git_env_guard_tests.step);
     b.step("test:helpers:git_env_guard", "Run git_env_guard helper tests")
         .dependOn(&run_git_env_guard_tests.step);
@@ -2632,6 +2643,7 @@ pub fn build(b: *std.Build) void {
             }),
         });
         const run_vmd_tests = b.addRunArtifact(vmd_tests);
+        run_vmd_tests.setName("test vmd");
         vmd_test_step.dependOn(&run_vmd_tests.step);
         test_step.dependOn(&run_vmd_tests.step);
     }

@@ -990,6 +990,25 @@ jobs:
             --summary "$RUNNER_TEMP/zig-test/summary.log" \
             --platform "$platform"
 
+      - name: Test-output cleanliness (zig build test)
+        # A GREEN `zig build test` must print nothing but build.zig's own
+        # `[test]` header lines. Zig relays ANY stderr from a PASSING test as a
+        # `run test w` block that has the same shape as a failure but neither
+        # the failing test's name nor its counts, so the noise it dumped made a
+        # green suite read as a broken one (measured on main: exit 0, 4987/4991
+        # tests passed, eighteen such lines). This step fails when a logger
+        # line, a `failed command:` tail or a fixture's `!!` print reappears,
+        # and reuses the log the test step already teed — no second run.
+        #
+        # A line the tree genuinely cannot silence (a vendored package's own
+        # print) is admitted with an explicit `--allow <regex>` here, so the
+        # exception is a diff a reviewer sees.
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash scripts/check-zig-test-output-clean.sh \
+            --summary "$RUNNER_TEMP/zig-test/summary.log"
+
       - name: Cross-target compile check (desktop app per-OS branches)
         # Compiles the desktop app's Windows + macOS branches FROM LINUX. A
         # per-OS branch is otherwise only ever compiled on that OS's runner, so

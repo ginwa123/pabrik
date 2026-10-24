@@ -5,6 +5,7 @@ const Io = std.Io;
 const LLMModels = @import("../agent/LLMModels.zig");
 const model_catalog = @import("../../agentic_loop/model_catalog.zig");
 const helpers = @import("helpers");
+const loggermod = @import("../logger/Logger.zig");
 const parse_thinking = @import("parse_thinking.zig");
 
 /// Skill Evals — the agent evaluates the skills it actually used.
@@ -2707,22 +2708,22 @@ pub fn getDefaultConfigDir(allocator: std.mem.Allocator, environment: *std.proce
     switch (builtin.os.tag) {
         .windows => {
             const appdata = environment.get("APPDATA") orelse {
-                std.log.warn("APPDATA environment variable not set", .{});
+                if (loggermod.getGlobal()) |logger| logger.warnFmt("APPDATA environment variable not set", .{});
                 return error.ConfigDirNotFound;
             };
             if (!std.fs.path.isAbsolute(appdata)) {
-                std.log.warn("APPDATA is not an absolute path: {s}", .{appdata});
+                if (loggermod.getGlobal()) |logger| logger.warnFmt("APPDATA is not an absolute path: {s}", .{appdata});
                 return error.ConfigDirNotFound;
             }
             return std.fs.path.join(allocator, &[_][]const u8{ appdata, app_name });
         },
         .macos => {
             const home = environment.get("HOME") orelse {
-                std.log.warn("HOME environment variable not set", .{});
+                if (loggermod.getGlobal()) |logger| logger.warnFmt("HOME environment variable not set", .{});
                 return error.HomeNotFound;
             };
             if (!std.fs.path.isAbsolute(home)) {
-                std.log.warn("HOME is not an absolute path: {s}", .{home});
+                if (loggermod.getGlobal()) |logger| logger.warnFmt("HOME is not an absolute path: {s}", .{home});
                 return error.HomeNotFound;
             }
             return std.fs.path.join(allocator, &[_][]const u8{
@@ -2732,17 +2733,17 @@ pub fn getDefaultConfigDir(allocator: std.mem.Allocator, environment: *std.proce
         else => {
             if (environment.get("XDG_CONFIG_HOME")) |xdg_config| {
                 if (!std.fs.path.isAbsolute(xdg_config)) {
-                    std.log.warn("XDG_CONFIG_HOME is not an absolute path: {s}", .{xdg_config});
+                    if (loggermod.getGlobal()) |logger| logger.warnFmt("XDG_CONFIG_HOME is not an absolute path: {s}", .{xdg_config});
                     return error.ConfigDirNotFound;
                 }
                 return std.fs.path.join(allocator, &[_][]const u8{ xdg_config, app_name });
             }
             const home = environment.get("HOME") orelse {
-                std.log.warn("HOME environment variable not set", .{});
+                if (loggermod.getGlobal()) |logger| logger.warnFmt("HOME environment variable not set", .{});
                 return error.MissingRequiredField;
             };
             if (!std.fs.path.isAbsolute(home)) {
-                std.log.warn("HOME is not an absolute path: {s}", .{home});
+                if (loggermod.getGlobal()) |logger| logger.warnFmt("HOME is not an absolute path: {s}", .{home});
                 return error.MissingRequiredField;
             }
             return std.fs.path.join(allocator, &[_][]const u8{ home, ".config", app_name });

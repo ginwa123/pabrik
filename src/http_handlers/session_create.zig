@@ -395,10 +395,9 @@ pub fn useCase(alloc: std.mem.Allocator, io: std.Io, di: *pabrikcore.App, parsed
         session_id,
         null,
     ) catch |stamp_err| {
-        std.log.warn(
-            "session_create: stamp last_human_touched_at failed (non-fatal): {s}",
-            .{@errorName(stamp_err)},
-        );
+        if (pabrikcore.loggermod.getGlobal()) |logger| {
+            logger.warnFmt("session_create: stamp last_human_touched_at failed (non-fatal): {s}", .{@errorName(stamp_err)});
+        }
     };
 
     return ResponseSession{
