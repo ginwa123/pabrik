@@ -24,8 +24,7 @@
 
   <div class="flex flex-col gap-4 lg:sticky lg:top-6">
 
-    <!-- A section is a path, so the rail is made of links: the browser does the
-         navigating, the back button works, and nothing needs the script. -->
+    <!-- A section is a path, so the rail is links: the browser navigates. -->
     <nav data-ui="sections" aria-label="Console sections" class="console-nav animate-rise rounded-card bg-surface p-2.5 motion-reduce:animate-none">
       <a class="nav-item" href="/admin/accounts" data-section="accounts"{% if accounts_shown %} aria-current="page"{% endif %}>Accounts</a>
       <a class="nav-item" href="/admin/machines" data-section="machines"{% if machines_shown %} aria-current="page"{% endif %}>Machines</a>
@@ -60,8 +59,7 @@
 
     <p id="notice" class="notice mb-4" role="status"{% if not page_notice %} hidden{% endif %}>{{ page_notice }}</p>
 
-    <!-- Shown only when the console has a password to hand over; the script
-         fills it from the mutation that minted one. -->
+    <!-- Shown only when a write handed back a password; the script fills it. -->
     <section data-ui="credential" id="credential-panel" aria-labelledby="credential-title" class="mb-4 rounded-card bg-surface p-6" hidden>
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
         <h2 id="credential-title" class="text-xl font-semibold">Handed out</h2>

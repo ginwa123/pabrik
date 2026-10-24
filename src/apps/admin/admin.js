@@ -1,14 +1,9 @@
 'use strict';
 
-// The console's whole client. The page arrives rendered — the accounts, the
-// machines and the counts are in the HTML — so this file does only what a page
-// cannot: open the resize dialog, refuse a size the manager would refuse, and
-// send the writes.
-//
-// Every write ends the same way: remember what to say, then ask for the page
-// again, so the server draws the new state. That is post/redirect/get; with no
-// session to hang a message on, the message waits in the browser's own session
-// storage.
+// The console's whole client. The page arrives rendered, so this file does only
+// what a page cannot: the resize dialog, the search over the rows it was sent,
+// and the writes. Every write ends in a reload — post/redirect/get, with
+// sessionStorage standing in for the message cookie there is no session for.
 
 const endpoints = {
   users: '/api/admin/users',
@@ -620,7 +615,6 @@ function wireMachines() {
     });
   }
 
-  // The search narrows rows the server already sent; nothing is fetched for it.
   const input = el('machines-search');
   if (!input || !body) return;
   const rows = Array.from(body.querySelectorAll('tr'));
@@ -695,7 +689,6 @@ function wireAccountDialog() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  // The three size fields: a number that is typed, and the presets beside it.
   combos.vcpus = setupCombo('resize-vcpus', 'vcpu');
   combos.memory = setupCombo('resize-memory', 'gib');
   combos.storage = setupCombo('resize-storage', 'gib');

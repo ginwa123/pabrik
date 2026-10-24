@@ -1,6 +1,5 @@
-<!-- The accounts section: the table, one row per account, and the sentence that
-     says there are none. `users` is the view's context, so the rows are already
-     in the document the server sends. -->
+<!-- The accounts section. `users` is the view's context, so the rows are already
+     in the document; the text is escaped by the engine. -->
 {% if accounts_shown %}
     <section data-ui="accounts" id="section-accounts" aria-labelledby="accounts-title" class="animate-rise rounded-card bg-surface p-6 motion-reduce:animate-none">
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">

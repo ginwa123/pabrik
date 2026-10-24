@@ -1,8 +1,6 @@
-//! The admin console's HTTP face: the page, its stylesheet, its script.
-//!
-//! The page is a server-rendered view — `admin_views.zig` reads what the
-//! section shows and renders it — so this file only decides who is asking,
-//! which section was asked for, and how the answer is served.
+//! The admin console's HTTP face: who is asking, which section they asked for,
+//! and the stylesheet and script that go with it. The page itself is rendered by
+//! `admin_views.zig`.
 
 const std = @import("std");
 const gserverz = @import("kabelweb").server;

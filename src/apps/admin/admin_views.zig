@@ -1,9 +1,6 @@
 //! The console's view layer: read what the page shows, hand it to the templates
-//! as a context, and get HTML back.
-//!
-//! The page is rendered on the server, so it arrives with its rows and counts
-//! already in it. The browser fetches no data of its own: one request, and the
-//! document it returns is the document the operator reads.
+//! as a context, and get HTML back. The page therefore arrives with its rows and
+//! counts in it, and the browser fetches no data of its own.
 
 const std = @import("std");
 const database = @import("databases").database;
@@ -255,9 +252,18 @@ test "the machines page explains a manager it cannot reach, and offers nothing" 
 
     try testing.expect(contains(html, "id=\"section-machines\""));
     try testing.expect(!contains(html, "id=\"section-accounts\""));
-    // No socket is installed in a test, so the section says which one it tried
-    // and draws no Resize button.
-    try testing.expect(contains(html, "no manager socket was given"));
+    // Why there is no manager differs by platform, so gate on the same
+    // `vmd.supported` that `snapshot` gates on: Linux looked for a socket and
+    // found none, everywhere else the manager was never built in.
+    if (comptime vmd.supported) {
+        try testing.expect(contains(html, "no manager socket was given"));
+    } else {
+        try testing.expect(contains(html, "built for another platform"));
+    }
+    // Whatever the platform, the section explains itself: an empty table with no
+    // reason is the one outcome that would leave an operator stuck.
+    try testing.expect(contains(html, "id=\"machines-note\""));
+    try testing.expect(!contains(html, "<p id=\"machines-note\" class=\"note\"></p>"));
     try testing.expect(!contains(html, "data-action=\"resize\""));
     // The limits still travel with the page, as its own JSON.
     try testing.expect(contains(html, "id=\"resize-limits\""));
@@ -334,10 +340,9 @@ test "every template part parses, and the entry includes all of them" {
 }
 
 test "a machine row carries every number its Resize button needs" {
-    // A test host has no manager, so the machines section is rendered here with
-    // one fabricated machine. That is the only way to pin the row's markup, and
-    // the dialog is driven entirely by it: lose an attribute and Resize opens on
-    // the wrong size, or none.
+    // No manager on a test host, so the section is rendered with one fabricated
+    // machine: the only way to pin the row's markup, which is what the dialog
+    // reads. Lose an attribute and Resize opens on the wrong size, or none.
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
