@@ -1,5 +1,6 @@
 //! Data access for the admin console. Everything here talks to `users`
-//! (Migration 077) and `auth_sessions` (Migration 089) and nothing else.
+//! (Migration 077) and `auth_sessions` (Migration 089), plus the read-only
+//! `workspaces` listing the machines section needs.
 
 const std = @import("std");
 const database = @import("databases").database;
@@ -525,4 +526,107 @@ test "setPasswordHash replaces the stored hash and reports an unknown id" {
     try testing.expectEqualStrings("new-hash", row.values[0]);
 
     try testing.expectError(error.UserNotFound, setPasswordHash(alloc, &db, "user_zz", "x"));
+}
+
+// ─── workspaces: read-only, for the machines section ────────────────────────
+
+/// One workspace as far as a console without a manager can know it: the row in
+/// the database. The machine behind it belongs to a manager this program does
+/// not link, which is why every row says `no manager`.
+pub const WorkspaceRow = struct {
+    id: []const u8,
+    name: []const u8,
+};
+
+pub fn freeWorkspaces(allocator: std.mem.Allocator, rows: []WorkspaceRow) void {
+    for (rows) |row| {
+        allocator.free(row.id);
+        allocator.free(row.name);
+    }
+    allocator.free(rows);
+}
+
+/// Every workspace, by name. A database the console created for itself has no
+/// `workspaces` table (it only ever needs `users`), and that is an empty list,
+/// not a failure: the console still works, it just has nothing to list.
+pub fn listWorkspaces(allocator: std.mem.Allocator, db: Db) ![]WorkspaceRow {
+    if (!try tableExists(allocator, db, "workspaces")) return allocator.alloc(WorkspaceRow, 0);
+
+    var q = try db.query(
+        allocator,
+        "SELECT id, COALESCE(name, '') FROM workspaces ORDER BY name, id",
+        &.{},
+    );
+    defer q.deinit();
+
+    var out: std.ArrayList(WorkspaceRow) = .empty;
+    errdefer {
+        for (out.items) |row| {
+            allocator.free(row.id);
+            allocator.free(row.name);
+        }
+        out.deinit(allocator);
+    }
+    while (try q.next()) |row| {
+        defer row.deinit(allocator);
+        if (row.values.len < 2) continue;
+        try out.append(allocator, .{
+            .id = try allocator.dupe(u8, row.values[0]),
+            .name = try allocator.dupe(u8, row.values[1]),
+        });
+    }
+    return out.toOwnedSlice(allocator);
+}
+
+fn tableExists(allocator: std.mem.Allocator, db: Db, name: []const u8) !bool {
+    var q = try db.query(
+        allocator,
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
+        &[_][]const u8{name},
+    );
+    defer q.deinit();
+    const row = (try q.next()) orelse return false;
+    defer row.deinit(allocator);
+    if (row.values.len < 1) return false;
+    const count = std.fmt.parseInt(i64, row.values[0], 10) catch 0;
+    return count > 0;
+}
+
+fn addWorkspace(allocator: std.mem.Allocator, db: Db, id: []const u8, name: []const u8) !void {
+    try db.exec(allocator,
+        \\INSERT INTO workspaces (id, name) VALUES (?, ?)
+    , &[_][]const u8{ id, name });
+}
+
+test "listWorkspaces lists every workspace, by name" {
+    const alloc = testing.allocator;
+    var db: database.Db = .{};
+    defer db.deinit();
+    try db.init(testing.io, ":memory:");
+    try db.exec(alloc,
+        \\CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT)
+    , &.{});
+    try addWorkspace(alloc, &db, "ws_b", "kabelweb");
+    try addWorkspace(alloc, &db, "ws_a", "pabrik saas");
+
+    const rows = try listWorkspaces(alloc, &db);
+    defer freeWorkspaces(alloc, rows);
+
+    try testing.expectEqual(@as(usize, 2), rows.len);
+    try testing.expectEqualStrings("ws_b", rows[0].id);
+    try testing.expectEqualStrings("kabelweb", rows[0].name);
+    try testing.expectEqualStrings("ws_a", rows[1].id);
+    try testing.expectEqualStrings("pabrik saas", rows[1].name);
+}
+
+test "a database with no workspaces table lists nothing instead of failing" {
+    const alloc = testing.allocator;
+    var db: database.Db = .{};
+    defer db.deinit();
+    try db.init(testing.io, ":memory:");
+    try createUsersSchema(alloc, &db);
+
+    const rows = try listWorkspaces(alloc, &db);
+    defer freeWorkspaces(alloc, rows);
+    try testing.expectEqual(@as(usize, 0), rows.len);
 }
