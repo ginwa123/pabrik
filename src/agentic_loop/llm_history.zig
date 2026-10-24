@@ -290,8 +290,8 @@ pub fn getSessionListWithCursor(
     try where_parts.append(allocator, "s.id NOT LIKE '%subagent%'");
 
     if (cwd) |dir| {
-        // Bound, never interpolated: `?cwd=` used to reach `'{s}'` and turn
-        // the WHERE into `... OR 1=1`, defeating the owner clause below.
+        // A bind, not a literal: an injected `OR` here re-scopes the whole
+        // WHERE past the owner clause appended below.
         try where_parts.append(allocator, "s.cwd = ?");
         try id_binds.append(allocator, dir);
     }
@@ -352,8 +352,6 @@ pub fn getSessionListWithCursor(
         .agent => "COALESCE(h.agent, 'Agent')",
         .updated_at => "s.updated_at",
     };
-    // Bound: `?cursor=` sat between hard quotes, so `x' OR 1=1 OR <col> < 'x`
-    // returned every session in the install.
     const cursor_filter = if (cursor) |_|
         try std.fmt.allocPrint(allocator, " AND {s} {s} ?", .{ cursor_column, if (sort_direction == .asc) ">" else "<" })
     else
@@ -5159,8 +5157,9 @@ pub fn listWorkspaceItemTasksWithCursor(
     );
     defer allocator.free(order_by);
 
-    // Cursor "<sort_value>|<id>": split, then BIND both halves — as literals
-    // they escaped the `workspace_item_id` scope of the WHERE below.
+    // Cursor "<sort_value>|<id>": both halves are binds, or the value drops out
+    // of the `workspace_item_id` scope below. sort_value binds twice — the
+    // clause compares it twice — then id.
     var cursor_binds: [3][]const u8 = undefined;
     var cursor_bind_count: usize = 0;
     const cursor_clause: []u8 = blk: {
@@ -10108,4 +10107,155 @@ test "saveMessage: user envelope carries owner identity, assistant carries profi
         const got = parsed.value.object.get(c.key) orelse return error.KeyMissing;
         try testing.expectEqualStrings(c.want, got.string);
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Behaviour: `cwd` and `cursor` arrive from HTTP query strings, so a filter
+// value must never change the shape of the WHERE clause it lands in.
+
+/// Two sessions in different directories, owned by different users.
+fn setupOwnedSessionsDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+    const alloc = testing.allocator;
+    var threaded = std.Io.Threaded.init(alloc, .{});
+    errdefer threaded.deinit();
+    var db: sqlite.SqliteBackend = .{};
+    errdefer db.deinit();
+    try db.init(threaded.io(), ":memory:");
+
+    try db.exec(alloc,
+        \\CREATE TABLE sessions (
+        \\    id TEXT PRIMARY KEY,
+        \\    name TEXT NOT NULL,
+        \\    status TEXT NOT NULL DEFAULT 'active',
+        \\    cwd TEXT NOT NULL DEFAULT '',
+        \\    user_id TEXT,
+        \\    created_at DATETIME,
+        \\    updated_at DATETIME,
+        \\    selected_profile_model TEXT,
+        \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
+        \\    last_finish_reason TEXT,
+        \\    last_human_touched_at_nano INTEGER,
+        \\    git_worktree_cwd TEXT,
+        \\    is_pinned INTEGER NOT NULL DEFAULT 0,
+        \\    pinned_position INTEGER NOT NULL DEFAULT 0
+        \\)
+    , &.{});
+    try db.exec(alloc, "CREATE TABLE llm_history (id TEXT PRIMARY KEY, session_id TEXT, agent TEXT)", &.{});
+    // The list's correlated subquery reads this table, so it must exist.
+    try db.exec(alloc, "CREATE TABLE workspace_item_tasks (id TEXT PRIMARY KEY, name TEXT, workspace_item_id TEXT)", &.{});
+    try db.exec(alloc,
+        \\INSERT INTO sessions (id, name, cwd, user_id, created_at, updated_at) VALUES
+        \\  ('s_mine', 'Mine', '/work/a', 'user_a', '2026-09-20 00:00:00', '2026-09-20 00:00:00'),
+        \\  ('s_theirs', 'Theirs', '/work/b', 'user_b', '2026-09-21 00:00:00', '2026-09-21 00:00:00')
+    , &.{});
+    return .{ .db = db, .threaded = threaded };
+}
+
+fn freeSessionList(alloc: std.mem.Allocator, result: anytype) void {
+    for (result.sessions) |session| session.deinit(alloc);
+    alloc.free(result.sessions);
+}
+
+test "a cwd filter returns only the sessions in that directory" {
+    const alloc = testing.allocator;
+    var ctx = try setupOwnedSessionsDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    const result = try getSessionListWithCursor(
+        alloc,
+        &ctx.db,
+        null,
+        null,
+        "/work/a",
+        null,
+        "user_a",
+        10,
+        null,
+        .created_at,
+        .desc,
+    );
+    defer freeSessionList(alloc, result);
+
+    try testing.expectEqual(@as(usize, 1), result.sessions.len);
+    try testing.expectEqualStrings("s_mine", result.sessions[0].session_id);
+    try testing.expectEqual(@as(u32, 1), result.total);
+}
+
+test "a cwd filter carrying an OR does not reveal another owner's sessions" {
+    const alloc = testing.allocator;
+    var ctx = try setupOwnedSessionsDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    const result = try getSessionListWithCursor(
+        alloc,
+        &ctx.db,
+        null,
+        null,
+        "x' OR 1=1 OR s.cwd='x",
+        null,
+        "user_a",
+        10,
+        null,
+        .created_at,
+        .desc,
+    );
+    defer freeSessionList(alloc, result);
+
+    try testing.expectEqual(@as(usize, 0), result.sessions.len);
+}
+
+test "a cursor carrying an OR does not widen the session list" {
+    const alloc = testing.allocator;
+    var ctx = try setupOwnedSessionsDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    // The system user sees every row, so the cursor is the only filter that
+    // could fail here: a literal comparison keeps both rows out.
+    const result = try getSessionListWithCursor(
+        alloc,
+        &ctx.db,
+        null,
+        null,
+        null,
+        null,
+        auth_common.system_user_id,
+        10,
+        "0' OR 1=1 OR s.created_at < '0",
+        .created_at,
+        .desc,
+    );
+    defer freeSessionList(alloc, result);
+
+    try testing.expectEqual(@as(usize, 0), result.sessions.len);
+}
+
+test "a task cursor carrying an OR does not escape the item's tasks" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    try ctx.db.exec(alloc,
+        \\INSERT INTO workspace_item_tasks (id, name, workspace_item_id, updated_at) VALUES
+        \\  ('task_a', 'A', 'wi_1', '2026-09-20 00:00:00'),
+        \\  ('task_b', 'B', 'wi_1', '2026-09-21 00:00:00')
+    , &.{});
+
+    const page = try listWorkspaceItemTasksWithCursor(
+        alloc,
+        &ctx.db,
+        "wi_1",
+        10,
+        "0' OR 1=1 OR t.updated_at < '0|1",
+        .updated_at,
+        .desc,
+        null,
+        null,
+    );
+    defer freeTasks(alloc, page.tasks);
+
+    try testing.expectEqual(@as(usize, 0), page.tasks.len);
 }
