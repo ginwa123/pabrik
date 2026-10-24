@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-@source "./index.html";
+@source "./page";
 @source "./admin.js";
 
 /* The desktop app's Kanagawa Dragon palette (src/apps/desktop/src/style.css).

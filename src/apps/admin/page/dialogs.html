@@ -1,0 +1,104 @@
+<!-- The two dialogs. The two closing tags come first: the shell opened <main>
+     and its content column, and a modal belongs outside the page's grid. -->
+  </div>
+
+</main>
+
+<dialog id="account-dialog" aria-labelledby="account-dialog-title" class="dialog">
+  <form id="new-account-form" class="grid gap-4 p-6" autocomplete="off">
+    <h2 id="account-dialog-title" class="text-xl font-semibold">New account</h2>
+    <p class="max-w-[32rem] text-ink-muted">Leave the password empty and the console mints a temporary one, shown once.</p>
+    <label class="grid gap-1.5">
+      <span class="text-sm text-ink-muted">Email</span>
+      <input class="input" type="email" name="email" id="new-email" placeholder="person@example.com" required>
+    </label>
+    <label class="grid gap-1.5">
+      <span class="text-sm text-ink-muted">Name</span>
+      <input class="input" type="text" name="name" id="new-name" placeholder="Person">
+    </label>
+    <label class="grid gap-1.5">
+      <span class="text-sm text-ink-muted">Role</span>
+      <select class="input" name="role" id="new-role">
+        <option value="user">User</option>
+        <option value="admin">Owner</option>
+        <option value="bot">Bot</option>
+      </select>
+    </label>
+    <label class="grid gap-1.5">
+      <span class="text-sm text-ink-muted">Password</span>
+      <input class="input" type="text" name="password" id="new-password" placeholder="Temporary, if left empty">
+    </label>
+    <div class="mt-1 flex justify-end gap-3">
+      <button type="button" id="account-cancel" class="rounded-card bg-surface-up px-4 py-2.5 transition-colors hover:bg-surface-hover">Cancel</button>
+      <button type="submit" class="rounded-card bg-accent px-4 py-2.5 font-semibold text-dim transition-colors hover:bg-accent-bright">Create account</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="resize-dialog" aria-labelledby="resize-title" class="dialog">
+  <form id="resize-form" class="grid gap-4 p-6" autocomplete="off">
+    <h2 id="resize-title" class="text-xl font-semibold">Resize machine</h2>
+    <p class="max-w-[32rem] text-ink-muted">The machine restarts to take a new size: its processes stop, and the workspace comes back in a few seconds.</p>
+
+    <div class="field">
+      <label class="field-label" for="resize-vcpus">vCPUs</label>
+      <div class="combo">
+        <input class="combo-input" id="resize-vcpus" type="text" role="combobox" inputmode="numeric"
+               autocomplete="off" spellcheck="false" aria-expanded="false"
+               aria-controls="resize-vcpus-list" aria-autocomplete="list">
+        <span class="combo-unit" aria-hidden="true">vCPU</span>
+        <button type="button" class="combo-toggle" tabindex="-1" aria-hidden="true" data-combo-toggle>
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg>
+        </button>
+        <div class="combo-pop" hidden data-combo-pop>
+          <ul class="combo-list" id="resize-vcpus-list" role="listbox" aria-label="vCPU sizes" data-combo-list></ul>
+          <p class="combo-note" hidden data-combo-note>No preset matches. Enter uses the number you type.</p>
+        </div>
+      </div>
+      <p class="field-error" id="resize-vcpus-error" role="alert" hidden></p>
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="resize-memory">Memory</label>
+      <div class="combo">
+        <input class="combo-input" id="resize-memory" type="text" role="combobox" inputmode="decimal"
+               autocomplete="off" spellcheck="false" aria-expanded="false"
+               aria-controls="resize-memory-list" aria-autocomplete="list">
+        <span class="combo-unit" aria-hidden="true">GiB</span>
+        <button type="button" class="combo-toggle" tabindex="-1" aria-hidden="true" data-combo-toggle>
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg>
+        </button>
+        <div class="combo-pop" hidden data-combo-pop>
+          <ul class="combo-list" id="resize-memory-list" role="listbox" aria-label="Memory sizes" data-combo-list></ul>
+          <p class="combo-note" hidden data-combo-note>No preset matches. Enter uses the number you type.</p>
+        </div>
+      </div>
+      <p class="field-error" id="resize-memory-error" role="alert" hidden></p>
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="resize-storage">Storage</label>
+      <div class="combo">
+        <input class="combo-input" id="resize-storage" type="text" role="combobox" inputmode="decimal"
+               autocomplete="off" spellcheck="false" aria-expanded="false"
+               aria-controls="resize-storage-list" aria-autocomplete="list">
+        <span class="combo-unit" aria-hidden="true">GiB</span>
+        <button type="button" class="combo-toggle" tabindex="-1" aria-hidden="true" data-combo-toggle>
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg>
+        </button>
+        <div class="combo-pop" hidden data-combo-pop>
+          <ul class="combo-list" id="resize-storage-list" role="listbox" aria-label="Storage sizes" data-combo-list></ul>
+          <p class="combo-note" hidden data-combo-note>No preset matches. Enter uses the number you type.</p>
+        </div>
+      </div>
+      <p class="field-error" id="resize-storage-error" role="alert" hidden></p>
+    </div>
+
+    <p class="max-w-[32rem] text-ink-muted">Storage only grows: the disk inside the machine cannot give space back. Leave it empty to keep the disk as it is.</p>
+    <div class="mt-1 flex justify-end gap-3">
+      <button type="button" id="resize-cancel" class="rounded-card bg-surface-up px-4 py-2.5 transition-colors hover:bg-surface-hover">Cancel</button>
+      <button type="submit" id="resize-submit" class="rounded-card bg-accent px-4 py-2.5 font-semibold text-dim transition-colors hover:bg-accent-bright disabled:opacity-60">Restart with this size</button>
+    </div>
+  </form>
+</dialog>
+

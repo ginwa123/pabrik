@@ -1,0 +1,27 @@
+<!-- The machines section: the search box and the table the manager fills. -->
+    <section data-ui="machines" id="section-machines" aria-labelledby="machines-title" class="animate-rise rounded-card bg-surface p-6 motion-reduce:animate-none" hidden>
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+        <h2 id="machines-title" class="text-xl font-semibold">Workspace machines</h2>
+        <input class="input shrink-0 sm:w-64" id="machines-search" type="search" hidden
+               placeholder="Search workspaces" aria-label="Search workspaces"
+               autocomplete="off" spellcheck="false">
+      </div>
+      <p id="machines-note" class="note" hidden></p>
+      <div class="mt-4 overflow-x-auto">
+        <table class="rows w-full border-collapse text-left">
+          <thead>
+            <tr>
+              <th scope="col" class="px-3 py-2.5 text-sm font-semibold text-ink-muted">Workspace</th>
+              <th scope="col" class="px-3 py-2.5 text-sm font-semibold text-ink-muted">State</th>
+              <th scope="col" class="px-3 py-2.5 text-sm font-semibold text-ink-muted">vCPUs</th>
+              <th scope="col" class="px-3 py-2.5 text-sm font-semibold text-ink-muted">Memory</th>
+              <th scope="col" class="px-3 py-2.5 text-sm font-semibold text-ink-muted">Storage</th>
+              <th scope="col" class="px-3 py-2.5 text-sm font-semibold text-ink-muted"><span class="sr-only">Resize</span></th>
+            </tr>
+          </thead>
+          <tbody id="machines-body"></tbody>
+        </table>
+      </div>
+      <p id="machines-empty" class="mt-4 text-ink-muted" hidden>This installation runs no machines yet.</p>
+    </section>
+

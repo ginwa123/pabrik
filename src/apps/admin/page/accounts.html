@@ -1,0 +1,23 @@
+<!-- The accounts section: the table, and the one action that adds a row. -->
+    <section data-ui="accounts" id="section-accounts" aria-labelledby="accounts-title" class="animate-rise rounded-card bg-surface p-6 motion-reduce:animate-none">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+        <h2 id="accounts-title" class="text-xl font-semibold">Accounts</h2>
+        <button type="button" id="new-account-button" class="shrink-0 rounded-card bg-accent px-4 py-2.5 font-semibold text-dim transition-colors hover:bg-accent-bright">New account</button>
+      </div>
+      <div class="mt-4 overflow-x-auto">
+        <table class="rows w-full border-collapse text-left">
+          <thead>
+            <tr>
+              <th scope="col" class="px-3 py-2.5 text-sm font-semibold text-ink-muted">Email</th>
+              <th scope="col" class="px-3 py-2.5 text-sm font-semibold text-ink-muted">Name</th>
+              <th scope="col" class="px-3 py-2.5 text-sm font-semibold text-ink-muted">Role</th>
+              <th scope="col" class="px-3 py-2.5 text-sm font-semibold text-ink-muted">Status</th>
+              <th scope="col" class="px-3 py-2.5 text-sm font-semibold text-ink-muted"><span class="sr-only">Password</span></th>
+            </tr>
+          </thead>
+          <tbody id="accounts-body"></tbody>
+        </table>
+      </div>
+      <p id="accounts-empty" class="mt-4 text-ink-muted" hidden>This installation has no accounts yet.</p>
+    </section>
+

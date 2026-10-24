@@ -120,8 +120,16 @@ fn usersTableExists(allocator: std.mem.Allocator, db: *database.Db) bool {
 fn registerRoutes(router: *gserverz.router.Router) !void {
     // The page loads without a session: it has to ask who is asking. The
     // endpoints answer 401/403 themselves, so no middleware is needed.
+    //
+    // A section is a path, not a `#fragment`, so each one is a route that
+    // serves the same document; the script reads `location.pathname` to decide
+    // which section that document shows.
     try router.get("/admin", admin_page.adminPageHandler);
     try router.get("/admin/", admin_page.adminPageHandler);
+    try router.get("/admin/accounts", admin_page.adminPageHandler);
+    try router.get("/admin/accounts/", admin_page.adminPageHandler);
+    try router.get("/admin/machines", admin_page.adminPageHandler);
+    try router.get("/admin/machines/", admin_page.adminPageHandler);
     try router.get("/admin/admin.css", admin_page.adminCssHandler);
     try router.get("/admin/admin.js", admin_page.adminJsHandler);
 

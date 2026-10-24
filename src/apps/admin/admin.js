@@ -9,6 +9,11 @@ const endpoints = {
 };
 
 const SECTIONS = ['accounts', 'machines'];
+const DEFAULT_SECTION = 'accounts';
+/// Where the console lives. A section is a real path under it, not a
+/// `#fragment`, so the address bar, a pasted link and the back button all name
+/// the same thing.
+const BASE_PATH = '/admin';
 const MEMORY_LADDER_MIB = [256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384];
 const STORAGE_LADDER_MIB = [256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536];
 
@@ -106,18 +111,34 @@ function cell(row, className) {
 
 /* ── the console's navigation: one section at a time ────────────────────── */
 
+/// The section the address bar is asking for. `/admin` and `/admin/` are the
+/// front door and show Accounts; anything that is not a section falls back to
+/// it too, so a stale bookmark still lands somewhere useful.
+function sectionFromPath() {
+  const path = window.location.pathname.replace(/\/+$/, '');
+  const name = path.startsWith(`${BASE_PATH}/`) ? path.slice(BASE_PATH.length + 1) : '';
+  return SECTIONS.includes(name) ? name : DEFAULT_SECTION;
+}
+
 function showSection(name) {
-  currentSection = SECTIONS.includes(name) ? name : 'accounts';
+  currentSection = SECTIONS.includes(name) ? name : DEFAULT_SECTION;
   SECTIONS.forEach((section) => {
     el(`section-${section}`).hidden = section !== currentSection;
   });
   document.querySelectorAll('.nav-item').forEach((button) => {
     button.setAttribute('aria-pressed', String(button.dataset.section === currentSection));
   });
-  if (window.location.protocol.startsWith('http')) {
-    window.history.replaceState(null, '', `#${currentSection}`);
-  }
   if (currentSection === 'machines' && !machinesLoaded) loadMachines();
+}
+
+/// A click on the rail: draw the section, and give it the address it names —
+/// unless that is already the address being shown, so clicking the open section
+/// does not stack history entries.
+function goToSection(name) {
+  showSection(name);
+  if (!window.location.protocol.startsWith('http')) return;
+  if (sectionFromPath() === currentSection) return;
+  window.history.pushState({ section: currentSection }, '', `${BASE_PATH}/${currentSection}`);
 }
 
 /* ── counts ─────────────────────────────────────────────────────────────── */
@@ -772,7 +793,7 @@ async function createAccount(event) {
     const created = await request(endpoints.users, { method: 'POST', body });
     el('new-account-form').reset();
     el('account-dialog').close();
-    showSection('accounts');
+    goToSection('accounts');
     if (created.temporary_password) {
       showCredential(created.user.email, created.temporary_password);
     }
@@ -789,7 +810,7 @@ function openAccountDialog() {
 
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.nav-item').forEach((button) => {
-    button.addEventListener('click', () => showSection(button.dataset.section));
+    button.addEventListener('click', () => goToSection(button.dataset.section));
   });
   // The three size fields: a number that is typed, and the presets beside it.
   combos.vcpus = setupCombo('resize-vcpus', 'vcpu');
@@ -814,11 +835,11 @@ document.addEventListener('DOMContentLoaded', () => {
   el('resize-form').addEventListener('submit', submitResize);
   el('resize-cancel').addEventListener('click', () => el('resize-dialog').close());
   el('credential-clear').addEventListener('click', clearCredential);
-  // A section is addressable: back/forward and a pasted `#machines` both land
-  // on the section they name.
-  window.addEventListener('hashchange', () => {
-    showSection(window.location.hash.replace('#', '') || 'accounts');
+  // A section is addressable: a pasted `/admin/machines` and the back button
+  // both land on the section they name.
+  window.addEventListener('popstate', () => {
+    showSection(sectionFromPath());
   });
-  showSection(window.location.hash.replace('#', '') || 'accounts');
+  showSection(sectionFromPath());
   refresh();
 });

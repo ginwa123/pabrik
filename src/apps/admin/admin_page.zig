@@ -1,12 +1,44 @@
-//! The admin console page: three static files, embedded in the binary.
-//! No build step, no bundler, no framework.
+//! The admin console page: static files, embedded in the binary. No build step,
+//! no bundler, no framework.
+//!
+//! The page itself is five parts under `page/`, joined here at comptime. That
+//! keeps one HTTP response — nothing is fetched or templated at runtime — while
+//! each part stays small enough to read on its own.
 
 const std = @import("std");
 const gserverz = @import("kabelweb").server;
 
-const page_html = @embedFile("index.html");
+const part_shell = @embedFile("page/shell.html");
+const part_accounts = @embedFile("page/accounts.html");
+const part_machines = @embedFile("page/machines.html");
+const part_dialogs = @embedFile("page/dialogs.html");
+const part_foot = @embedFile("page/foot.html");
+
 const page_css = @embedFile("admin.css");
 const page_js = @embedFile("admin.js");
+
+/// The document, in the order the parts appear in it. `++` is a comptime
+/// concatenation, so the parts are joined when the binary is built.
+const page_html = part_shell ++ part_accounts ++ part_machines ++ part_dialogs ++ part_foot;
+
+/// Every path that serves that one document: the front door, and each section
+/// as a real path rather than a `#fragment`. The trailing slash is the same
+/// page, the way `/admin/` already was.
+const page_paths = [_][]const u8{
+    "/admin",
+    "/admin/",
+    "/admin/accounts",
+    "/admin/accounts/",
+    "/admin/machines",
+    "/admin/machines/",
+};
+
+fn isPage(path: []const u8) bool {
+    for (page_paths) |candidate| {
+        if (std.mem.eql(u8, path, candidate)) return true;
+    }
+    return false;
+}
 
 /// One file the console serves.
 pub const Asset = struct {
@@ -16,7 +48,7 @@ pub const Asset = struct {
 
 /// The file a request path maps to, or null when it is not one of ours.
 pub fn assetFor(path: []const u8) ?Asset {
-    if (std.mem.eql(u8, path, "/admin") or std.mem.eql(u8, path, "/admin/")) {
+    if (isPage(path)) {
         return .{ .body = page_html, .content_type = "text/html; charset=utf-8" };
     }
     if (std.mem.eql(u8, path, "/admin/admin.css")) {
@@ -36,7 +68,7 @@ fn serve(allocator: std.mem.Allocator, asset: Asset) gserverz.HttpResponse {
         .withHeader("X-Content-Type-Options", "nosniff");
 }
 
-/// `GET /admin` — the console itself.
+/// `GET /admin` and `GET /admin/:section` — the console itself.
 pub fn adminPageHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -91,4 +123,49 @@ test "the console answers the page, the stylesheet and the script, and nothing e
     try testing.expectEqualStrings(page.body, assetFor("/admin/").?.body);
     try testing.expect(assetFor("/admin/other") == null);
     try testing.expect(assetFor("/api/admin/users") == null);
+}
+
+test "each section is a path of its own, served the same document" {
+    const page = assetFor("/admin").?;
+    for ([_][]const u8{
+        "/admin/",
+        "/admin/accounts",
+        "/admin/accounts/",
+        "/admin/machines",
+        "/admin/machines/",
+    }) |path| {
+        const asset = assetFor(path) orelse {
+            std.debug.print("no page at {s}\n", .{path});
+            return error.NotServed;
+        };
+        try testing.expectEqualStrings("text/html; charset=utf-8", asset.content_type);
+        try testing.expectEqualStrings(page.body, asset.body);
+    }
+    // A section that does not exist is not a page, and neither is a path that
+    // walks past one.
+    try testing.expect(assetFor("/admin/overview") == null);
+    try testing.expect(assetFor("/admin/accounts/extra") == null);
+    try testing.expect(assetFor("/admin/machines/x") == null);
+}
+
+test "the document is the five parts, in order, and it closes" {
+    const page = assetFor("/admin").?;
+    const shell = std.mem.indexOf(u8, page.body, "<nav data-ui=\"sections\"") orelse return error.MissingShell;
+    const accounts = std.mem.indexOf(u8, page.body, "id=\"section-accounts\"") orelse return error.MissingAccounts;
+    const machines = std.mem.indexOf(u8, page.body, "id=\"section-machines\"") orelse return error.MissingMachines;
+    const dialogs = std.mem.indexOf(u8, page.body, "id=\"resize-dialog\"") orelse return error.MissingDialogs;
+    const script = std.mem.indexOf(u8, page.body, "<script src=\"/admin/admin.js\">") orelse return error.MissingScript;
+
+    try testing.expect(shell < accounts);
+    try testing.expect(accounts < machines);
+    try testing.expect(machines < dialogs);
+    try testing.expect(dialogs < script);
+
+    // Every part made it in whole: the first line of each, and the last of the
+    // document.
+    try testing.expect(std.mem.startsWith(u8, page.body, "<!doctype html>\n"));
+    try testing.expect(std.mem.endsWith(u8, page.body, "</html>\n"));
+    try testing.expect(std.mem.indexOf(u8, page.body, "id=\"new-account-form\"") != null);
+    try testing.expect(std.mem.indexOf(u8, page.body, "id=\"machines-search\"") != null);
+    try testing.expect(std.mem.indexOf(u8, page.body, "id=\"credential-panel\"") != null);
 }
