@@ -136,6 +136,10 @@ pub const Manager = struct {
         // dials for the agent the moment the kernel starts, and the request
         // below only returns once the guest is up (or has failed).
         const layout = try self.layoutFor(allocator, workspace_id);
+        // The egress listener lives in the workspace's directory, which the
+        // reconciler only creates when it boots: on a FIRST dispatch the bind
+        // failed on a missing directory and the guest's first dial was reset.
+        vm_client.ensureWorkspaceDir(layout) catch {};
         egress_proxy.ensure(self.allocator, layout, self.config.host_listeners);
         agent_service.ensure(self.allocator, layout, self.agent);
         const record = try self.reconciler().request(allocator, workspace_id);
