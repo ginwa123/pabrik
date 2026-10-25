@@ -103,7 +103,7 @@ if grep -q "runtime mode" "$work/refusal.log"; then fail "a refused mode still b
 say "ok  exit 2, naming both pabrik-vmd and the missing guest image"
 
 say "saas starts its own manager when none is running"
-"$repo_root/scripts/build-guest-image.sh" --out "$work/base.ext4" --size 128M >/dev/null
+"$repo_root/scripts/build-guest-image.sh" --out "$work/base.ext4" >/dev/null
 sock="$work/auto.sock"
 export PABRIK_VMD_SOCKET="$sock"
 export PABRIK_VM_BASE_IMAGE="$work/base.ext4"

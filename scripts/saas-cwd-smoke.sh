@@ -72,7 +72,7 @@ trap cleanup EXIT
 
 say "guest kernel $guest_kernel -> release $kernel_release (host $host_release)"
 say "assembling the guest image"
-"$repo_root/scripts/build-guest-image.sh" --out "$work/base.ext4" --size 128M | tail -1
+"$repo_root/scripts/build-guest-image.sh" --out "$work/base.ext4" | tail -1
 
 stub_record="$work/stub"
 python3 "$repo_root/scripts/stub_llm_server.py" \

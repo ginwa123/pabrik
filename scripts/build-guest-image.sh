@@ -46,8 +46,23 @@ cache="${PABRIK_VM_CACHE:-$HOME/.cache/pabrik-vm}"
 in_container=0
 # The builder is Fedora minimal too: one distribution end to end, so a package
 # name means the same thing to the build as it does inside the guest.
-builder_image="registry.fedoraproject.org/fedora-minimal:41@sha256:686fd91f9e23938f77994804ec4ca15302e44a18db778c631a5fecb1ab6b199a"
+builder_image="registry.fedoraproject.org/fedora-minimal:44@sha256:863d92bd4419f079bddf6a6cbdd6b3a1428568f72c6e242a215d5102502af0c9"
 builder_packages="bash tar gzip xz e2fsprogs"
+# The Fedora release the guest and the builder both track. A release that has
+# gone EOL is archived: its package trees answer 404 and dnf retries dead URLs
+# until the build gives up, which is why this follows a served release.
+fedora_release="44"
+# Fedora's metalink is the default source of mirrors. When a network cannot
+# reach mirrors.fedoraproject.org, or the metalink answers for a release that
+# has moved, `PABRIK_DNF_REPO_BASE` points dnf straight at a mirror root:
+# `PABRIK_DNF_REPO_BASE=https://dl.fedoraproject.org/pub/fedora/linux`.
+dnf_repo_args=()
+if [ -n "${PABRIK_DNF_REPO_BASE:-}" ]; then
+  dnf_repo_args=(--disablerepo='*'
+    "--repofrompath=pabrel,${PABRIK_DNF_REPO_BASE}/releases/${fedora_release}/Everything/x86_64/os/"
+    "--repofrompath=pabupd,${PABRIK_DNF_REPO_BASE}/updates/${fedora_release}/Everything/x86_64/")
+fi
+
 # What every tier gets: a shell, git (a workspace IS a checkout), TLS trust, and
 # the handful of tools a workload and the smoke test reach for.
 base_rpms=(git-core ca-certificates curl nmap-ncat procps-ng iproute tar gzip which)
@@ -155,7 +170,7 @@ host_can_install() { command -v dnf >/dev/null 2>&1 && [ "$(id -u)" = 0 ]; }
 run_selftest() {
   local tmp ok=0 bad=0 h1 h2 u1 u2
   tmp="$(mktemp -d)"
-  h1="fba506811bbdcc8915ea3515268c23158ab1f449d4929aab19ec08c7bee4d693"
+  h1="2e405ab2b84155c32887f07ed1b259b342acda7547272607c1d18eb7cd1af961"
   h2="0e626fa97cf937fda7bba4ed4dde8e2f2dbb5083ac34e02180cec0c4eba9351b"
   u1="https://example.invalid/fedora-minimal.oci.tar.xz"
   u2="https://example.invalid/thing.rpm"
@@ -411,9 +426,9 @@ printf '%s\n' "$rpms" | sed 's/^/    /'
 # shellcheck disable=SC2086  # deliberate word list
 # Parallel downloads: a package set this size on one connection is the slowest
 # thing this script does, and dnf's default of 3 leaves the mirror idle.
-if ! dnf -q -y --installroot="$work" --releasever=41 \
+if ! dnf -q -y --installroot="$work" --releasever="$fedora_release" \
     --setopt=install_weak_deps=False --setopt=max_parallel_downloads=10 \
-    install $rpms >"$work.dnf.log" 2>&1; then
+    "${dnf_repo_args[@]}" install $rpms >"$work.dnf.log" 2>&1; then
   tail -25 "$work.dnf.log" >&2
   fail "dnf could not install the package set"
 fi
