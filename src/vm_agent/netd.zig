@@ -417,6 +417,13 @@ fn readHead(fd: linux.fd_t, buf: []u8) ?Head {
     return null;
 }
 
+/// The bytes a client sent in the same read as its head. They belong to the
+/// tunnel: a client may pipeline a TLS ClientHello straight after `CONNECT`
+/// instead of waiting for the `200`, and dropping them fails the handshake.
+fn pipelinedBytes(got: Head) []const u8 {
+    return got.buffered[got.head.len..];
+}
+
 /// A request line's method, target and version, or null when one is missing.
 fn parseRequestLine(line: []const u8) ?RequestLine {
     const text = std.mem.trim(u8, line, " \t\r\n");
@@ -637,6 +644,12 @@ fn serveTcpClient(conn_fd: linux.fd_t) void {
     }
     if (dest.kind == .connect) {
         if (!writeAll(conn_fd, established)) return;
+        // TLS over the tunnel starts here: whatever the client pipelined behind
+        // its CONNECT line is already in this read.
+        if (!writeAll(egress_fd, pipelinedBytes(got))) {
+            _ = writeAll(conn_fd, bad_gateway);
+            return;
+        }
     } else {
         // Into the tunnel: the rewritten request line, then the caller's own
         // header lines and the blank line, then any body that arrived with
@@ -644,7 +657,7 @@ fn serveTcpClient(conn_fd: linux.fd_t) void {
         const rest_at = if (line_end < got.head.len) line_end + 1 else got.head.len;
         if (!writeAll(egress_fd, fixed[0..fixed_len]) or
             !writeAll(egress_fd, got.head[rest_at..]) or
-            !writeAll(egress_fd, got.buffered[got.head.len..]))
+            !writeAll(egress_fd, pipelinedBytes(got)))
         {
             _ = writeAll(conn_fd, bad_gateway);
             return;
@@ -827,6 +840,22 @@ test "servfailFrom echoes the query with RCODE 2 and no records" {
     try std.testing.expectEqualSlices(u8, query[12..], reply[12..]);
     // Shorter than a DNS header: there is nothing to echo.
     try std.testing.expectEqual(@as(?[]const u8, null), servfailFrom(query[0..4], &out));
+}
+
+test "bytes that arrived with the head go into the tunnel" {
+    // A CONNECT whose TLS ClientHello came in the same read: the head ends at
+    // the blank line and everything after it is the client's handshake.
+    const connect = "CONNECT github.com:443 HTTP/1.1\r\nHost: github.com:443\r\n\r\n";
+    var one_read: [connect.len + 6]u8 = undefined;
+    @memcpy(one_read[0..connect.len], connect);
+    @memcpy(one_read[connect.len..], "\x16\x03\x01\x02\x00\x01");
+    const got = Head{ .head = one_read[0..connect.len], .buffered = &one_read };
+    try std.testing.expectEqualSlices(u8, "\x16\x03\x01\x02\x00\x01", pipelinedBytes(got));
+
+    // A head that is alone in its read has nothing to forward, and a head with
+    // a body does not leak the body into the tunnel twice.
+    const alone = Head{ .head = one_read[0..connect.len], .buffered = one_read[0..connect.len] };
+    try std.testing.expectEqual(@as(usize, 0), pipelinedBytes(alone).len);
 }
 
 test "headEnd finds either blank line without eating a body" {
