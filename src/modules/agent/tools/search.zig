@@ -1448,12 +1448,6 @@ pub const search_tool = AgentTool{
     },
 };
 
-test {
-    // Tests removed - see search_test.zig (registered in
-    // src/modules/agent/test_runner.zig) for the 14+ edge case tests
-    // that exercise this tool.
-}
-
 const builtin = @import("builtin");
 const testing = std.testing;
 

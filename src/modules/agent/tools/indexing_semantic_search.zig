@@ -963,8 +963,7 @@ pub fn search(
 }
 
 // ===== Tests merged from indexing_semantic_search_test.zig (2026-09-29
-// flatten) ===== NOTE: this suite is still NOT registered (see
-// src/modules/agent/test_runner.zig).
+// flatten) =====
 const testing = std.testing;
 
 // ============================================================================
