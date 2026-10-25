@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const linux = std.os.linux;
+const backoff = @import("backoff.zig");
 const egress = @import("egress_env.zig");
 
 // ─── constants ───────────────────────────────────────────────────────────
@@ -75,6 +76,14 @@ const tenant_readable_mode: u32 = 0o644;
 /// `wait4`'s WNOHANG: reaping must never block the listeners.
 const wno_hang: u32 = 1;
 
+/// What an `https://` request line gets: it cannot be served, and the bare
+/// `400` this replaced left clients guessing. busybox `wget https://…` sends
+/// exactly this, so it is told to tunnel instead of retrying blind.
+const needs_connect =
+    "HTTP/1.1 501 Not Implemented\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n" ++
+    "an https:// URL in a plain request line cannot be proxied: this client is not tunnelling.\n" ++
+    "Use a client that sends CONNECT (git, curl, python, apk) — busybox wget cannot.\n";
+
 /// Answers netd writes itself. Each one closes the connection: a proxied
 /// exchange is never reused for a second request.
 const bad_request = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
@@ -119,8 +128,9 @@ const RequestLine = struct {
     version: []const u8,
 };
 
-/// The three shapes a request target can have as far as netd is concerned.
-const DestKind = enum { connect, absolute, bad };
+/// The shapes a request target can have. `https_absolute` cannot work: an
+/// `https://` URL in a plain request line means the client is not tunnelling.
+const DestKind = enum { connect, absolute, https_absolute, bad };
 
 /// Where a request is bound: the egress host and port, and for absolute form
 /// the origin-form path the request line has to be rewritten to.
@@ -466,6 +476,16 @@ fn parseDest(method: []const u8, target: []const u8) Dest {
         const port: u16 = if (colon) |at| (parsePort(target[at + 1 ..]) orelse 0) else 443;
         return .{ .kind = .connect, .host = host, .port = port, .origin = "" };
     }
+    if (std.ascii.startsWithIgnoreCase(target, "https://")) {
+        const rest = target["https://".len..];
+        const end = std.mem.indexOfAny(u8, rest, "/?") orelse rest.len;
+        const authority = rest[0..end];
+        if (authority.len == 0) return .{ .kind = .bad, .host = "", .port = 0, .origin = "" };
+        const colon = std.mem.indexOfScalar(u8, authority, ':');
+        const host = if (colon) |at| authority[0..at] else authority;
+        const port: u16 = if (colon) |at| (parsePort(authority[at + 1 ..]) orelse 0) else 443;
+        return .{ .kind = .https_absolute, .host = host, .port = port, .origin = "" };
+    }
     if (std.ascii.startsWithIgnoreCase(target, "http://")) {
         const rest = target["http://".len..];
         const end = std.mem.indexOfAny(u8, rest, "/?") orelse rest.len;
@@ -595,6 +615,10 @@ fn serveTcpClient(conn_fd: linux.fd_t) void {
         _ = writeAll(conn_fd, bad_request);
         return;
     }
+    if (dest.kind == .https_absolute) {
+        _ = writeAll(conn_fd, needs_connect);
+        return;
+    }
     // A CONNECT whose authority is missing still names its host in `Host:`.
     const host = if (dest.host.len > 0) dest.host else (hostHeader(got.head) orelse "");
     var hs: [handshake_max]u8 = undefined;
@@ -655,14 +679,14 @@ fn serveTcpClient(conn_fd: linux.fd_t) void {
 
 /// Accept one client and fork it. The parent closes its copy of the accepted
 /// fd at once, so only the child owns the connection.
-fn acceptAndFork(listen_fd: linux.fd_t) void {
+fn acceptAndFork(listen_fd: linux.fd_t) bool {
     const rc = linux.accept(listen_fd, null, null);
-    if (linux.errno(rc) != .SUCCESS) return;
+    if (linux.errno(rc) != .SUCCESS) return false;
     const conn_fd: linux.fd_t = @intCast(rc);
     const fork_rc = linux.fork();
     if (linux.errno(fork_rc) != .SUCCESS) {
         _ = linux.close(conn_fd);
-        return;
+        return false;
     }
     if (fork_rc == 0) {
         _ = linux.close(listen_fd);
@@ -672,6 +696,7 @@ fn acceptAndFork(listen_fd: linux.fd_t) void {
         childExit();
     }
     _ = linux.close(conn_fd);
+    return true;
 }
 
 /// Reap every child that has finished, without ever waiting on one.
@@ -715,19 +740,20 @@ fn dnsOverVsock(query: []const u8, out: []u8) ?[]const u8 {
 /// One datagram on the resolver socket, answered from the same socket. The
 /// exchange is serial in the parent: it is a bounded round trip, and forking
 /// per datagram would cost more than it saves.
-fn dnsExchange(udp_fd: linux.fd_t) void {
+fn dnsExchange(udp_fd: linux.fd_t) bool {
     var query: [dns_query_max]u8 = undefined;
     var peer: linux.sockaddr.in = .{ .port = 0, .addr = 0 };
     var peer_len: linux.socklen_t = @sizeOf(linux.sockaddr.in);
     const rc = linux.recvfrom(udp_fd, &query, query.len, 0, @ptrCast(&peer), &peer_len);
-    if (linux.errno(rc) != .SUCCESS) return;
+    if (linux.errno(rc) != .SUCCESS) return false;
     const got = query[0..rc];
     // Shorter than a DNS header: nothing to answer, nothing to echo.
-    if (got.len < dns_header_bytes) return;
+    if (got.len < dns_header_bytes) return false;
 
     var answer: [dns_reply_max]u8 = undefined;
-    const reply = dnsOverVsock(got, &answer) orelse (servfailFrom(got, &answer) orelse return);
+    const reply = dnsOverVsock(got, &answer) orelse (servfailFrom(got, &answer) orelse return false);
     _ = linux.sendto(udp_fd, reply.ptr, reply.len, 0, @ptrCast(&peer), peer_len);
+    return true;
 }
 
 // ─── listeners ───────────────────────────────────────────────────────────
@@ -745,8 +771,11 @@ pub fn main() void {
     listen_udp = bindLoopbackUdp(dns_port);
     logLine(if (listen_udp != null) "dns listening on 127.0.0.1:53" else "MISSING dns listener");
 
-    // One loop over both listeners plus a tick, so neither starves the other
-    // and children are reaped even when nothing is arriving.
+    // One loop over both listeners plus a tick. A listener that is readable
+    // but yields nothing (EMFILE, a reset between poll and accept) waits before
+    // the next pass: `poll` re-arms instantly, so this loop would own the vCPU.
+    var tcp_failures: u32 = 0;
+    var dns_failures: u32 = 0;
     while (true) {
         var fds = [2]linux.pollfd{
             .{ .fd = listen_tcp orelse -1, .events = linux.POLL.IN, .revents = 0 },
@@ -755,8 +784,16 @@ pub fn main() void {
         const rc = linux.poll(&fds, fds.len, tick_ms);
         reapChildren();
         if (linux.errno(rc) != .SUCCESS) continue;
-        if (fds[0].fd >= 0 and ready(fds[0])) acceptAndFork(fds[0].fd);
-        if (fds[1].fd >= 0 and ready(fds[1])) dnsExchange(fds[1].fd);
+        if (fds[0].fd >= 0 and ready(fds[0])) {
+            const took = acceptAndFork(fds[0].fd);
+            tcp_failures = if (took) 0 else tcp_failures + 1;
+            if (!took) sleepMs(backoff.afterTurn(false, tcp_failures));
+        }
+        if (fds[1].fd >= 0 and ready(fds[1])) {
+            const served = dnsExchange(fds[1].fd);
+            dns_failures = if (served) 0 else dns_failures + 1;
+            if (!served) sleepMs(backoff.afterTurn(false, dns_failures));
+        }
     }
 }
 
@@ -798,6 +835,14 @@ test "parseDest covers CONNECT, absolute form and the rest" {
 
     try std.testing.expectEqual(DestKind.bad, parseDest("GET", "/index.html").kind);
     try std.testing.expectEqual(DestKind.bad, parseDest("GET", "http://").kind);
+
+    // What busybox `wget https://…` sends: an https URL in a plain request
+    // line, i.e. no tunnel. It must be told so, not answered with a 400.
+    const h = parseDest("GET", "https://github.com/ginwa123/pabrik/info/refs?x=1");
+    try std.testing.expectEqual(DestKind.https_absolute, h.kind);
+    try std.testing.expectEqualStrings("github.com", h.host);
+    try std.testing.expectEqual(@as(u16, 443), h.port);
+    try std.testing.expectEqual(DestKind.bad, parseDest("GET", "https://").kind);
 }
 
 test "handshakeLine refuses an unusable host or port" {

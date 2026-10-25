@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const linux = std.os.linux;
+const backoff = @import("backoff.zig");
 const egress = @import("egress_env.zig");
 
 const vsock_af: u32 = 40;
@@ -11,6 +12,8 @@ const af_inet: u32 = 2;
 const sock_stream: u32 = 1;
 const cid_any: u32 = 0xFFFF_FFFF;
 const agent_port: u32 = 5000;
+/// The accept loop's poll slice: long enough that an idle workspace sleeps.
+const accept_slice_ms: i32 = 1000;
 const max_frame: usize = 64 * 1024;
 const read_chunk: usize = 4096;
 const arena_bytes: usize = 16 * 1024;
@@ -64,6 +67,14 @@ fn writeBytes(fd: linux.fd_t, bytes: []const u8) bool {
         off += rc;
     }
     return true;
+}
+
+fn sleepMs(ms: u64) void {
+    const ts = linux.timespec{
+        .sec = @intCast(ms / 1000),
+        .nsec = @intCast((ms % 1000) * std.time.ns_per_ms),
+    };
+    _ = linux.nanosleep(&ts, null);
 }
 
 fn logLine(bytes: []const u8) void {
@@ -1771,13 +1782,30 @@ pub fn main() void {
     }
     logLine("listening on vsock port 5000");
 
+    // Wait on the listener, never call `accept` bare: a failure that repeats
+    // must cost a tick, not the vCPU — a spinning PID 1 starves every command.
+    // The happy path stays silent: a serial write is a vmexit, a poll is not news.
+    var failures: u32 = 0;
     while (true) {
+        var pfd = [1]linux.pollfd{
+            .{ .fd = listen_fd, .events = linux.POLL.IN, .revents = 0 },
+        };
+        const poll_rc = linux.poll(&pfd, pfd.len, accept_slice_ms);
+        if (linux.errno(poll_rc) != .SUCCESS) continue;
+        if (poll_rc == 0) continue;
+        if (pfd[0].revents & (linux.POLL.IN | linux.POLL.HUP | linux.POLL.ERR) == 0) continue;
         var peer: SockaddrVm = undefined;
         var peer_len: linux.socklen_t = @sizeOf(SockaddrVm);
         const conn_rc = linux.accept(listen_fd, @ptrCast(&peer), &peer_len);
-        if (linux.errno(conn_rc) != .SUCCESS) continue;
-        logLine("vsock connection accepted");
+        if (linux.errno(conn_rc) != .SUCCESS) {
+            failures += 1;
+            // Log the first one and then rarely: a broken listener must be
+            // visible without a line per attempt.
+            if (failures == 1 or failures % 64 == 0) logLine("MISSING vsock accept; backing off");
+            sleepMs(backoff.afterTurn(false, failures));
+            continue;
+        }
+        failures = 0;
         serve(@intCast(conn_rc));
-        logLine("vsock connection closed");
     }
 }
