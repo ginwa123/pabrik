@@ -46,6 +46,7 @@ const is_worker_cancelled_mod = @import("is_worker_cancelled.zig");
 const is_worker_running_mod = @import("is_worker_running.zig");
 const mark_history_not_for_llmrun_mod = @import("markHistoryNotForLLMRun.zig");
 const retry_delay_ms_mod = @import("retry_delay_ms.zig");
+const session_lock = @import("session_lock.zig");
 const session_skills_mod = @import("session_skills.zig");
 const tool_eligibility = @import("tool_eligibility.zig");
 const progressive_catalog = @import("progressive_catalog.zig");
@@ -630,32 +631,55 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
     else
         initial_agent_state.temperature;
 
-    // Check if session is already running (exists in worker table).
-    const is_worker_running = isWorkerRunning(parent_allocator, db, copy_session_id);
-    if (is_worker_running) {
+    // Claim the session's single run slot. One compare-and-swap statement, so
+    // ten workers claiming ten sessions do not queue on SQLite's single writer
+    // slot the way a held write transaction would. No lease means another run
+    // owns this session right now.
+    const run_lease: session_lock.RunLease = (blk: {
+        const claim = session_lock.acquire(.{
+            .allocator = parent_allocator,
+            .db = db,
+            .session_id = copy_session_id,
+            .working_directory = copy_cwd,
+        }) catch |err| {
+            logger.errFmt(
+                "[CHECKPOINT] session lock acquire failed session_id={s}: {s}",
+                .{ copy_session_id, @errorName(err) },
+            );
+            break :blk null;
+        };
+        break :blk switch (claim) {
+            .acquired => |lease| lease,
+            .busy => null,
+        };
+    }) orelse {
         logger.infoFmt(
             "[CHECKPOINT] worker busy, queueing message session_id={s} msg_len={d} image_urls_len={d}",
             .{ copy_session_id, copy_message.len, copy_image_urls.len },
         );
-        // Session is already running, queue the message
-        try insertQueueMessage(InsertQueueMessageInput{
-            .allocator = parent_allocator,
-            .db = db,
-            .logger = logger,
-            .session_id = copy_session_id,
-            .message = copy_message,
-            .image_url = copy_image_urls,
-            .video_url = copy_video_urls,
-            .file_attachments = copy_file_attachments,
-            .event_bus = event_bus,
-            .is_emit_sse = true,
-        });
+        // A trigger run (boot resume, background-completion wake) carries no
+        // message of its own: losing the slot means the session is already
+        // being worked on, so there is nothing to hand over.
+        if (!params.skip_initial_queue_message) {
+            try insertQueueMessage(InsertQueueMessageInput{
+                .allocator = parent_allocator,
+                .db = db,
+                .logger = logger,
+                .session_id = copy_session_id,
+                .message = copy_message,
+                .image_url = copy_image_urls,
+                .video_url = copy_video_urls,
+                .file_attachments = copy_file_attachments,
+                .event_bus = event_bus,
+                .is_emit_sse = true,
+            });
+        }
         is_have_queue_message = true;
         return;
-    }
+    };
     logger.infoFmt(
-        "[CHECKPOINT] new worker slot acquired session_id={s} cwd={s}",
-        .{ copy_session_id, copy_cwd },
+        "[CHECKPOINT] new worker slot acquired session_id={s} cwd={s} run_token={s}",
+        .{ copy_session_id, copy_cwd, run_lease.token },
     );
     defer {
         deleteWorker(.{
@@ -665,6 +689,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             .session_id = copy_session_id,
             .event_bus = event_bus,
             .is_emit_sse = true,
+            .run_token = run_lease.token,
         }) catch |err| {
             logger.errFmt("Failed to delete worker: {s}", .{@errorName(err)});
         };
@@ -742,6 +767,26 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
     while (true) {
         _ = arenaAllocatorWhileLoop.reset(.free_all);
 
+        // This iteration's flags and the lease check come back from ONE
+        // statement, so they cannot disagree. A run that lost the session (a
+        // newer run claimed it, or a cancel removed the row) leaves here
+        // instead of racing the owner.
+        const iteration = session_lock.beginIteration(allocator, db, copy_session_id, run_lease.token) catch |err| {
+            logger.errFmt(
+                "[CHECKPOINT] session lock check failed session_id={s}: {s} — leaving the loop",
+                .{ copy_session_id, @errorName(err) },
+            );
+            break;
+        };
+        const iter_state = iteration orelse {
+            logger.infoFmt(
+                "[CHECKPOINT] session lease not ours any more session_id={s} — leaving the loop",
+                .{copy_session_id},
+            );
+            break;
+        };
+        const is_auto_retry_until_stop: bool = iter_state.is_auto_retry_until_stop;
+
         touchCheckpointWorkers(.{
             .allocator = allocator,
             .db = db,
@@ -752,18 +797,6 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             .cwd = copy_cwd,
             .is_sub_agent = copy_is_sub_agent,
         });
-
-        const is_auto_retry_until_stop: bool = blk: {
-            var flag_rows = db.query(allocator, "SELECT COALESCE(is_auto_retry_until_stop, '0') FROM sessions WHERE id = ?", &.{copy_session_id}) catch break :blk false;
-            // Owns a pooled reader until `deinit`; draining `next()` does not return it.
-            defer flag_rows.deinit();
-            const flag_row = flag_rows.next() catch break :blk false;
-            if (flag_row) |row| {
-                defer row.deinit(allocator);
-                break :blk std.mem.eql(u8, row.values[0], "1");
-            }
-            break :blk false;
-        };
 
         last_iter_start_ns = std.Io.Timestamp.now(io, .real).nanoseconds;
 
@@ -822,12 +855,9 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             .{ copy_session_id, loop_counter, retry_count, eff.model },
         );
 
-        // Check cancellation using DB
-        if (isWorkerCancelled(IsWorkerCancelledInput{
-            .allocator = allocator,
-            .db = db,
-            .session_id = copy_session_id,
-        })) {
+        // Cancellation, read in the iteration transaction above — BEFORE
+        // `touchCheckpointWorkers` resets the flag on the row.
+        if (iter_state.is_cancelled) {
             logger.infoFmt("WORKFLOW CANCELLED while looping back for next API call...", .{});
             break;
         }
@@ -1419,6 +1449,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                     .session_id = copy_session_id,
                     .event_bus = event_bus,
                     .is_emit_sse = true,
+                    .run_token = run_lease.token,
                 });
 
                 logger.infoFmt(
@@ -1464,6 +1495,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                         .session_id = copy_session_id,
                         .event_bus = event_bus,
                         .is_emit_sse = true,
+                        .run_token = run_lease.token,
                     });
                     break;
                 }
@@ -1490,6 +1522,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                         .session_id = copy_session_id,
                         .event_bus = event_bus,
                         .is_emit_sse = true,
+                        .run_token = run_lease.token,
                     });
                     break;
                 }

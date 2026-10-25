@@ -14,6 +14,11 @@ pub const DeleteWorkerInput = struct {
     session_id: []const u8,
     event_bus: ?*event_bus_mod.EventBus,
     is_emit_sse: bool,
+    /// A workflow run's lease (see `session_lock.zig`). When set, only the row
+    /// carrying THIS token is removed — a run that lost its slot must not
+    /// delete the row another run now owns. Empty means "delete the row for
+    /// this session", which is what the cancel/teardown paths want.
+    run_token: []const u8 = "",
 };
 
 pub fn deleteWorker(
@@ -26,8 +31,11 @@ pub fn deleteWorker(
     const event_bus = obj.event_bus;
     const logger = obj.logger;
 
-    const sql = "DELETE FROM worker WHERE id = ?";
-    try db.exec(allocator, sql, &.{session_id});
+    if (obj.run_token.len > 0) {
+        try db.exec(allocator, "DELETE FROM worker WHERE id = ? AND run_token = ?", &.{ session_id, obj.run_token });
+    } else {
+        try db.exec(allocator, "DELETE FROM worker WHERE id = ?", &.{session_id});
+    }
 
     if (is_emit_sse) {
         if (event_bus) |ev| {
@@ -59,7 +67,7 @@ fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try db.exec(alloc,
-        \\CREATE TABLE worker (id TEXT PRIMARY KEY, session_id TEXT)
+        \\CREATE TABLE worker (id TEXT PRIMARY KEY, session_id TEXT, run_token TEXT NOT NULL DEFAULT '')
     , &.{});
     return .{ .db = db, .threaded = threaded };
 }
@@ -172,4 +180,53 @@ test "deleteWorker with is_emit_sse=false short-circuits before any event_bus ac
         .event_bus = null,
         .is_emit_sse = false,
     });
+}
+
+test "deleteWorker with a matching run_token removes the row" {
+    var s = try setupDb();
+    defer s.db.deinit();
+    defer s.threaded.deinit();
+    try s.db.exec(testing.allocator,
+        "INSERT INTO worker (id, session_id, run_token) VALUES ('s1', 's1', 'run-a')",
+        &.{});
+
+    try deleteWorker(.{
+        .allocator = testing.allocator,
+        .db = &s.db,
+        .logger = null,
+        .session_id = "s1",
+        .event_bus = null,
+        .is_emit_sse = false,
+        .run_token = "run-a",
+    });
+
+    var q = try s.db.query(testing.allocator, "SELECT 1 FROM worker WHERE id = 's1'", &.{});
+    defer q.deinit();
+    if (try q.next()) |row| {
+        defer row.deinit(testing.allocator);
+        return error.DeleteShouldHaveRemovedRow;
+    }
+}
+
+test "deleteWorker with a stale run_token leaves the row a newer run owns" {
+    var s = try setupDb();
+    defer s.db.deinit();
+    defer s.threaded.deinit();
+    try s.db.exec(testing.allocator,
+        "INSERT INTO worker (id, session_id, run_token) VALUES ('s1', 's1', 'run-b')",
+        &.{});
+
+    try deleteWorker(.{
+        .allocator = testing.allocator,
+        .db = &s.db,
+        .logger = null,
+        .session_id = "s1",
+        .event_bus = null,
+        .is_emit_sse = false,
+        .run_token = "run-a",
+    });
+
+    var row = try s.db.queryRow(testing.allocator, "SELECT run_token FROM worker WHERE id = 's1'", &.{});
+    defer row.deinit(testing.allocator);
+    try testing.expectEqualStrings("run-b", row.values[0]);
 }

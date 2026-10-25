@@ -348,6 +348,13 @@ pub fn main(init: std.process.Init) !void {
     _ = try event_bus.subscribe(ai_mod.ai_workflow.RunParamsNew, "ai_worker_flow", ai_mod.ai_workflow.CallbackAiWorkerFlow.callback);
     ctxParent.server.sse_manager.on_disconnect = ai_mod.handleClientDisconnect;
 
+    // Durability: a `worker` row is a turn a previous process was in the middle
+    // of. Restart those (sub-agent workers excluded) — the run lease makes this
+    // safe even when a session is somehow already claimed: that run gets
+    // `.busy` and leaves the loop instead of running a second loop. Emitted
+    // AFTER the subscription above, or there is no listener to run it.
+    pabrikcore.resume_workers_on_boot.resumeWorkersOnBoot(ctxParent);
+
     std.debug.print("Agent is ready to serve!\n", .{});
     // The browser URL, on every boot path — not just web-launch mode.
     std.debug.print("Open in your browser: http://127.0.0.1:{d}/\n", .{port});

@@ -128,6 +128,7 @@ const migration_114 = @import("migration_114.zig");
 const migration_115 = @import("migration_115.zig");
 const migration_116 = @import("migration_116.zig");
 const migration_117 = @import("migration_117.zig");
+const migration_118 = @import("migration_118.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -247,6 +248,7 @@ pub const Migration114AddFileAttachments = migration_114.Migration114AddFileAtta
 pub const Migration115AddWorkspaceIsVm = migration_115.Migration115AddWorkspaceIsVm;
 pub const Migration116UnifyAgentConfigTables = migration_116.Migration116UnifyAgentConfigTables;
 pub const Migration117DropLegacyAgentConfigTables = migration_117.Migration117DropLegacyAgentConfigTables;
+pub const Migration118AddWorkerRunToken = migration_118.Migration118AddWorkerRunToken;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -467,6 +469,9 @@ pub const allMigrations: []const Migration = &.{
     // Migration 117 — the legacy tables the unification parked are no
     // longer needed: drop them.
     .{ .version = Migration117DropLegacyAgentConfigTables.version, .name = Migration117DropLegacyAgentConfigTables.name, .up = Migration117DropLegacyAgentConfigTables.up },
+    // Migration 118 — `worker.run_token`: the per-session run lease the
+    // workflow claims in a transaction, so one session runs one loop.
+    .{ .version = Migration118AddWorkerRunToken.version, .name = Migration118AddWorkerRunToken.name, .up = Migration118AddWorkerRunToken.up },
 };
 
 /// Register all migrations with a MigrationManager
