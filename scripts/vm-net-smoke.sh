@@ -146,6 +146,21 @@ if [ "$host_has_net" = 1 ]; then
   grep -q 'outcome=allowed' "$egress_log" || fail "the public GET was not allowed"
   grep -qi '<html\|<!doctype\|example' "$work/probe-public.txt" || fail "the public GET returned nothing"
   ok "public GET with no manual env: the guest supplied the proxy"
+
+  say "a CONNECT that pipelines its request gets an answer (TLS starts this way)"
+  # A TLS client may send CONNECT and its ClientHello in one write; anything
+  # that arrived with the head has to reach the tunnel or the handshake hangs
+  # with a 200 and no reply. Port 80 exercises the same path with plain HTTP.
+  exec_in /bin/sh -c \
+    'printf "CONNECT example.com:80 HTTP/1.1\r\nHost: example.com\r\n\r\nGET / HTTP/1.0\r\nHost: example.com\r\n\r\n" | timeout 20 nc 127.0.0.1 3128 | head -c 900' \
+    >"$work/probe-pipelined-connect.txt" 2>&1 || true
+  tr -d '\r' <"$work/probe-pipelined-connect.txt" | grep -E 'Connection Established|title' | head -3 | sed 's/^/    /'
+  grep -q 'Connection Established' "$work/probe-pipelined-connect.txt" \
+    || fail "the pipelined CONNECT was not established"
+  # The body is the proof: it can only arrive if the pipelined request reached
+  # the origin, which is exactly what used to be dropped.
+  grep -qi 'Example Domain' "$work/probe-pipelined-connect.txt" \
+    || fail "the request pipelined behind CONNECT never reached the origin"
 else
   echo "    (this host has no internet: skipping the public GET)"
 fi
