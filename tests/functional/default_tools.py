@@ -11,7 +11,7 @@ find that out. `search_documents` (2026-10-02) repeated the cycle once
 more.
 
 The backend's list is `DEFAULT_AGENT_TOOLS`, plus `DEFAULT_KANBAN_TOOLS`
-for kanban items — `src/agentic_loop/tools_equipped.zig`. Both are seeded
+for kanban items — `src/modules/agent/tools/tools_equipped.zig`. Both are seeded
 once at creation by `workspace_items_create_agent.zig` /
 `workspace_items_create_kanban.zig`; nothing backfills them on read, so a
 fresh item is the only place this is observable.

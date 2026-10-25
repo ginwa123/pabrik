@@ -155,7 +155,7 @@ const background_process = @import("../../../agentic_loop/background_process.zig
 const guest_jobs = @import("../../../agentic_loop/guest_jobs.zig");
 const shell_tool = pabrikcore.shell_tool;
 const wrapToolOutput = tools.wrapToolOutput;
-const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+const error_explain = @import("tools_error_explain.zig");
 /// Cap on ONE `read`. Matches the tool schema's documented default.
 pub const default_max_bytes: usize = process_tool_mod.DEFAULT_MAX_BYTES;
 

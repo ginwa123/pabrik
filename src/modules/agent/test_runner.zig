@@ -103,4 +103,8 @@ test {
     // `exec_bash_args` is a shared arg parser, `exec_list_web_search_providers` has no def.
     _ = @import("tools/exec_bash_args.zig");
     _ = @import("tools/exec_list_web_search_providers.zig");
+    _ = @import("tools/tools_args_repair.zig");
+    _ = @import("tools/tools_equipped.zig");
+    _ = @import("tools/tools_error_explain.zig");
+    _ = @import("tools/tools_wrap_output.zig");
 }

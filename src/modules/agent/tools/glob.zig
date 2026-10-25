@@ -2116,7 +2116,7 @@ const ToolExecResult = tools.ToolExecResult;
 const agent = exec_pabrikcore.agent;
 const glob_tool_mod = exec_pabrikcore.glob_tool;
 const wrapToolOutput = tools.wrapToolOutput;
-const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+const error_explain = @import("tools_error_explain.zig");
 const exec_path_validate = @import("helpers").path_validate;
 const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
 

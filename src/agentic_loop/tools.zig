@@ -5,9 +5,9 @@ const logger_mod = pabrikcore.loggermod;
 const sqlite = pabrikcore.sqlite;
 const config_mod = pabrikcore.config;
 
-pub const all_agent_tools = @import("tools_equipped.zig").equips;
-pub const wrapToolOutput = @import("tools_wrap_output.zig").wrapToolOutput;
-pub const withDurationMs = @import("tools_wrap_output.zig").withDurationMs;
+pub const all_agent_tools = @import("../modules/agent/tools/tools_equipped.zig").equips;
+pub const wrapToolOutput = @import("../modules/agent/tools/tools_wrap_output.zig").wrapToolOutput;
+pub const withDurationMs = @import("../modules/agent/tools/tools_wrap_output.zig").withDurationMs;
 
 // Re-export every migrated exec function. Tool_Registry.zig references
 // these via `agentic_loop_mod.tools.execXxx` etc.

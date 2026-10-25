@@ -94,7 +94,7 @@ test "pwsh_available returns false when pwsh is not on PATH" {
 }
 
 test "command-only registry: the model is offered exactly one shell tool, named command" {
-    const tools_equipped = @import("../../../agentic_loop/tools_equipped.zig");
+    const tools_equipped = @import("tools_equipped.zig");
 
     // Post-unify contract (2026-09-04): the tool surface is ONE shell tool.
     var command_entries: usize = 0;

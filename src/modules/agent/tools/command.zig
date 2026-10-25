@@ -458,7 +458,7 @@ const background_watcher = @import("../../../agentic_loop/background_watcher.zig
 const wrapToolOutput = tools.wrapToolOutput;
 const bash_args = @import("exec_bash_args.zig");
 const vm_runtime = @import("../../../agentic_loop/vm_runtime.zig");
-const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+const error_explain = @import("tools_error_explain.zig");
 /// What `runWithContext` hands back: the LLM-facing payload, plus the
 /// loop-control request parsed out of the same arguments.
 pub const RunResult = struct {

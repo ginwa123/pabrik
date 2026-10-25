@@ -1049,7 +1049,7 @@ const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = exec_pabrikcore.agent;
 const wrapToolOutput = tools.wrapToolOutput;
-const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+const error_explain = @import("tools_error_explain.zig");
 pub fn execGenerateImage(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     // 1. Parse the LLM-provided JSON arguments.
     const parsed = std.json.parseFromSlice(

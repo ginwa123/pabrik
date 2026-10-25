@@ -80,7 +80,7 @@ test {
     _ = @import("../modules/agent/tools/text_replace.zig");
     // Windows absolute paths in tool-call `arguments`: models emit the
     // separators as raw `\`, which is invalid JSON.
-    _ = @import("tools_args_repair.zig");
+    _ = @import("../modules/agent/tools/tools_args_repair.zig");
     _ = @import("../modules/agent/tools/remove_file.zig");
     _ = @import("../modules/agent/tools/glob.zig");
     _ = @import("../modules/agent/tools/search.zig");
@@ -91,7 +91,7 @@ test {
     // task_1787855066467_8 — bash/pwsh lenient JSON argument parser.
     _ = @import("../modules/agent/tools/exec_bash_args.zig");
     // Shared model-facing error explanations.
-    _ = @import("tools_error_explain.zig");
+    _ = @import("../modules/agent/tools/tools_error_explain.zig");
     _ = @import("../modules/agent/tools/command.zig");
     _ = @import("../modules/agent/tools/command.zig");
     _ = @import("../modules/agent/tools/command.zig");

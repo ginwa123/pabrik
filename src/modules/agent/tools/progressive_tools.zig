@@ -300,7 +300,7 @@ test "every progressive tool carries a non-empty system_prompt" {
 
 const pabrikcore = @import("pabrikcore");
 const tools = @import("../../../agentic_loop/tools.zig");
-const tools_equipped = @import("../../../agentic_loop/tools_equipped.zig");
+const tools_equipped = @import("tools_equipped.zig");
 const llm_history = @import("../../../agentic_loop/llm_history.zig");
 const progressive_catalog = @import("../../../agentic_loop/progressive_catalog.zig");
 const ToolExecContext = tools.ToolExecContext;

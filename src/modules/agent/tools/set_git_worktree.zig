@@ -2308,7 +2308,7 @@ const ToolExecResult = tools.ToolExecResult;
 const agent = exec_pabrikcore.agent;
 const llm_history = exec_pabrikcore.llm_history;
 const wrapToolOutput = tools.wrapToolOutput;
-const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+const error_explain = @import("tools_error_explain.zig");
 const path_validate = @import("helpers").path_validate;
 pub fn execSetGitWorktree(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     const parsed = std.json.parseFromSlice(

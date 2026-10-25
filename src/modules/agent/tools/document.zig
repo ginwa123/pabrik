@@ -917,7 +917,7 @@ const exec_documents_store = exec_pabrikcore.documents_store;
 const exec_workspace_scope = exec_pabrikcore.workspace_scope;
 const document_events = exec_pabrikcore.document_events;
 const wrapToolOutput = tools.wrapToolOutput;
-const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+const error_explain = @import("tools_error_explain.zig");
 /// The inner tool payload read back at the exec wrapper: a refusal in `"error"`, or the row a
 /// mutation touched (which the `documents` SSE channel needs). Slices borrow from `parsed` — free
 /// it only after `wrapToolOutput`.
@@ -2146,7 +2146,7 @@ fn seededFor(db: *exec_sqlite.SqliteBackend, agent_id: []const u8, name: []const
 }
 
 test "document tools are offered to the model and resolve to dispatchable registry entries" {
-    const tools_equipped = @import("../../../agentic_loop/tools_equipped.zig");
+    const tools_equipped = @import("tools_equipped.zig");
     const names = [_][]const u8{ "add_document", "edit_document", "delete_document", "search_documents" };
 
     // `equips()` is the list the workflow hands the LLM and
@@ -2176,7 +2176,7 @@ test "document tools are offered to the model and resolve to dispatchable regist
 }
 
 test "search_documents is seeded by default but delete_document is not" {
-    const tools_equipped = @import("../../../agentic_loop/tools_equipped.zig");
+    const tools_equipped = @import("tools_equipped.zig");
 
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();

@@ -95,9 +95,7 @@ and no separate `<file>_test.zig` files. The 3 exceptions that stay at
 | `sse_on_event_send_session.zig` | impl + inline tests | |
 | `sse.zig` | impl + inline tests | |
 | `tools.zig` | impl + inline tests | Tool registry. |
-| `tools_equipped.zig` | impl + inline tests | Tool default-state. |
 | `tools_exec_*.zig` (×40+) | impl + inline tests | Per-tool exec logic. |
-| `tools_wrap_output.zig` | impl + inline tests | |
 | `update_session_name.zig` | impl + inline tests | |
 | `update_task_name.zig` | — | (placeholder) |
 | `update_worker.zig` | impl + inline tests | |
