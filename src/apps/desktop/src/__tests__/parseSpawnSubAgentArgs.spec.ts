@@ -1,5 +1,13 @@
-import { describe, it, expect } from 'vitest'
-import { parseSpawnSubAgentArgs } from '../helpers/parseSpawnSubAgentArgs'
+import { describe, it, expect, vi } from 'vitest'
+import { indexSpawnSubAgentArgs, parseSpawnSubAgentArgs } from '../helpers/parseSpawnSubAgentArgs'
+
+const spawnCall = (id: string, subAgents: unknown, name = 'spawn_sub_agent') => ({
+  id,
+  type: 'function',
+  function: { name, arguments: JSON.stringify({ sub_agents: subAgents }) },
+})
+
+const VALID = [{ agent_name: 'reviewer', instruction: 'do x', tools: ['read_file'] }]
 
 describe('parseSpawnSubAgentArgs', () => {
   it('returns null when toolCallsJson is null', () => {
@@ -246,5 +254,78 @@ describe('parseSpawnSubAgentArgs', () => {
         timeout_seconds: 600,
       },
     ])
+  })
+})
+
+describe('indexSpawnSubAgentArgs', () => {
+  it('keys every spawn call of one message by its tool_call_id', () => {
+    const json = JSON.stringify([
+      spawnCall('call_a', VALID),
+      spawnCall('call_b', [{ agent_name: 'explorer', instruction: 'y', tools: ['glob'] }]),
+    ])
+
+    const index = indexSpawnSubAgentArgs(json)
+
+    expect([...index.keys()].sort()).toEqual(['call_a', 'call_b'])
+    expect(index.get('call_b')).toEqual([
+      { agent_name: 'explorer', instruction: 'y', tools: ['glob'] },
+    ])
+  })
+
+  it('leaves out a call that is not a spawn', () => {
+    const json = JSON.stringify([
+      spawnCall('call_a', VALID),
+      spawnCall('call_b', VALID, 'read_file'),
+    ])
+
+    expect([...indexSpawnSubAgentArgs(json).keys()]).toEqual(['call_a'])
+  })
+
+  it('leaves out a spawn whose arguments cannot be read', () => {
+    const json = JSON.stringify([
+      spawnCall('call_a', VALID),
+      {
+        id: 'call_b',
+        type: 'function',
+        function: { name: 'spawn_sub_agent', arguments: '{not json' },
+      },
+      { id: 'call_c', type: 'function', function: { name: 'spawn_sub_agent' } },
+    ])
+
+    expect([...indexSpawnSubAgentArgs(json).keys()]).toEqual(['call_a'])
+  })
+
+  it('returns an empty index for a payload it cannot read', () => {
+    expect(indexSpawnSubAgentArgs(null).size).toBe(0)
+    expect(indexSpawnSubAgentArgs('').size).toBe(0)
+    expect(indexSpawnSubAgentArgs('{not json').size).toBe(0)
+    expect(indexSpawnSubAgentArgs('{"a":1}').size).toBe(0)
+  })
+
+  it('agrees with parseSpawnSubAgentArgs for every call of the message', () => {
+    const json = JSON.stringify([
+      spawnCall('call_a', VALID),
+      spawnCall('call_b', [{ instruction: 'no agent name', tools: ['glob'] }]),
+      spawnCall('call_c', VALID, 'command'),
+    ])
+
+    const index = indexSpawnSubAgentArgs(json)
+
+    for (const id of ['call_a', 'call_b', 'call_c']) {
+      expect(index.get(id)).toEqual(parseSpawnSubAgentArgs(json, id) ?? undefined)
+    }
+  })
+
+  it('reads the payload once no matter how many spawn calls it holds', () => {
+    const json = JSON.stringify(
+      Array.from({ length: 8 }, (_, i) => spawnCall(`call_${i}`, VALID)),
+    )
+    const parse = vi.spyOn(JSON, 'parse')
+
+    indexSpawnSubAgentArgs(json)
+
+    const reads = parse.mock.calls.filter((call) => call[0] === json).length
+    parse.mockRestore()
+    expect(reads).toBe(1)
   })
 })
