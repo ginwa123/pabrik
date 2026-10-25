@@ -1758,6 +1758,13 @@ fn serve(conn_fd: linux.fd_t) void {
     }
 }
 
+/// One connection, served to the end and closed: every request gets its own, so
+/// a turn that does not close leaks a descriptor per command.
+fn serveConnection(conn_fd: linux.fd_t) void {
+    serve(conn_fd);
+    _ = linux.close(conn_fd);
+}
+
 pub fn main() void {
     writeAll(1, "\n[pabrik-vm-agent] booting as PID 1\n");
     logLine(if (mountPseudo("proc", "/proc")) "mounted proc" else "MISSING proc");
@@ -1806,6 +1813,155 @@ pub fn main() void {
             continue;
         }
         failures = 0;
-        serve(@intCast(conn_rc));
+        serveConnection(@intCast(conn_rc));
     }
+}
+
+// ─── tests ───────────────────────────────────────────────────────────────
+
+/// Every handler logs to the serial console on fd 1, and under a test runner
+/// fd 1 is the runner's own pipe: point it at /dev/null for the turn.
+fn muteSerial() ?linux.fd_t {
+    const devnull = linux.open("/dev/null", .{ .ACCMODE = .WRONLY }, 0);
+    if (linux.errno(devnull) != .SUCCESS) return null;
+    const saved = linux.dup(1);
+    if (linux.errno(saved) != .SUCCESS) {
+        _ = linux.close(@intCast(devnull));
+        return null;
+    }
+    _ = linux.dup2(@intCast(devnull), 1);
+    _ = linux.close(@intCast(devnull));
+    return @intCast(saved);
+}
+
+fn unmuteSerial(saved: ?linux.fd_t) void {
+    const fd = saved orelse return;
+    _ = linux.dup2(fd, 1);
+    _ = linux.close(fd);
+}
+
+/// The descriptors 0..255 that are open right now, so a leak test can count a
+/// delta instead of trusting a number.
+fn liveDescriptors() usize {
+    var live: usize = 0;
+    var fd: i32 = 0;
+    while (fd < 256) : (fd += 1) {
+        if (linux.errno(linux.fcntl(fd, linux.F.GETFD, 0)) == .SUCCESS) live += 1;
+    }
+    return live;
+}
+
+/// A connected stream pair: the agent's end and the daemon's end.
+fn socketPair() ?[2]linux.fd_t {
+    var fds: [2]linux.fd_t = .{ -1, -1 };
+    if (linux.errno(linux.socketpair(linux.AF.UNIX, linux.SOCK.STREAM, 0, &fds)) != .SUCCESS) return null;
+    return fds;
+}
+
+/// A read that would block forever is a hung test, not a failing one: give the
+/// caller's end a deadline so a missing reply returns null.
+fn setReceiveTimeout(fd: linux.fd_t, ms: i64) void {
+    const tv = linux.timeval{
+        .sec = @intCast(@divTrunc(ms, 1000)),
+        .usec = @intCast(@mod(ms, 1000) * 1000),
+    };
+    _ = linux.setsockopt(fd, linux.SOL.SOCKET, linux.SO.RCVTIMEO, @ptrCast(&tv), @sizeOf(linux.timeval));
+}
+
+/// One frame, framed the way the daemon frames it: length, then payload.
+fn sendFrame(fd: linux.fd_t, payload: []const u8) bool {
+    var header: [4]u8 = undefined;
+    std.mem.writeInt(u32, &header, @intCast(payload.len), .big);
+    return writeBytes(fd, &header) and writeBytes(fd, payload);
+}
+
+/// Read one frame's payload, or null at a clean end or a broken peer.
+fn readFrame(fd: linux.fd_t, out: []u8) ?[]u8 {
+    var header: [4]u8 = undefined;
+    if (!readExact(fd, &header)) return null;
+    const len = std.mem.readInt(u32, &header, .big);
+    if (len == 0 or len > out.len) return null;
+    if (!readExact(fd, out[0..len])) return null;
+    return out[0..len];
+}
+
+test "a served connection is closed, not left open" {
+    const pair = socketPair() orelse return error.SkipZigTest;
+    const agent_end = pair[0];
+    const caller_end = pair[1];
+    setReceiveTimeout(caller_end, 2000);
+    defer _ = linux.close(caller_end);
+
+    try std.testing.expect(sendFrame(caller_end, "{\"type\":\"hello\"}"));
+    // The peer half-closes after its one frame, which is what ends `serve`.
+    _ = linux.shutdown(caller_end, linux.SHUT.WR);
+    const muted = muteSerial();
+    serveConnection(agent_end);
+    unmuteSerial(muted);
+
+    var reply_buf: [512]u8 = undefined;
+    const answer = readFrame(caller_end, &reply_buf) orelse return error.NoReply;
+    try std.testing.expectEqualStrings(hello_json, answer);
+    // The descriptor the agent used is gone: closing it again is EBADF, and no
+    // other call ran in between that could have taken the number back.
+    try std.testing.expectEqual(linux.E.BADF, linux.errno(linux.close(agent_end)));
+}
+
+test "sixty turns do not grow the descriptor table" {
+    // The regression this pins: one descriptor per command is a workspace that
+    // stops answering after ~1020 of them.
+    const baseline = liveDescriptors();
+    var turn: usize = 0;
+    while (turn < 60) : (turn += 1) {
+        const pair = socketPair() orelse return error.SkipZigTest;
+        setReceiveTimeout(pair[1], 2000);
+        try std.testing.expect(sendFrame(pair[1], "{\"type\":\"hello\"}"));
+        _ = linux.shutdown(pair[1], linux.SHUT.WR);
+        const muted = muteSerial();
+        serveConnection(pair[0]);
+        unmuteSerial(muted);
+        _ = linux.close(pair[1]);
+    }
+    try std.testing.expectEqual(baseline, liveDescriptors());
+}
+
+test "a malformed frame is answered and the connection still closes" {
+    const pair = socketPair() orelse return error.SkipZigTest;
+    const agent_end = pair[0];
+    const caller_end = pair[1];
+    setReceiveTimeout(caller_end, 2000);
+    defer _ = linux.close(caller_end);
+
+    try std.testing.expect(sendFrame(caller_end, "not json"));
+    _ = linux.shutdown(caller_end, linux.SHUT.WR);
+    const muted = muteSerial();
+    serveConnection(agent_end);
+    unmuteSerial(muted);
+
+    var reply_buf: [512]u8 = undefined;
+    const answer = readFrame(caller_end, &reply_buf) orelse return error.NoReply;
+    try std.testing.expect(std.mem.indexOf(u8, answer, "bad json frame") != null);
+    try std.testing.expectEqual(linux.E.BADF, linux.errno(linux.close(agent_end)));
+}
+
+test "an oversized frame is refused without a reply, and the connection closes" {
+    const pair = socketPair() orelse return error.SkipZigTest;
+    const agent_end = pair[0];
+    const caller_end = pair[1];
+    setReceiveTimeout(caller_end, 2000);
+    defer _ = linux.close(caller_end);
+
+    // A length the agent refuses to read at all: it must not wait for a body
+    // that is never coming.
+    var header: [4]u8 = undefined;
+    std.mem.writeInt(u32, &header, @intCast(max_frame + 1), .big);
+    try std.testing.expect(writeBytes(caller_end, &header));
+    _ = linux.shutdown(caller_end, linux.SHUT.WR);
+    const muted = muteSerial();
+    serveConnection(agent_end);
+    unmuteSerial(muted);
+
+    var reply_buf: [64]u8 = undefined;
+    try std.testing.expect(readFrame(caller_end, &reply_buf) == null);
+    try std.testing.expectEqual(linux.E.BADF, linux.errno(linux.close(agent_end)));
 }
