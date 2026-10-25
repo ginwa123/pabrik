@@ -87,7 +87,9 @@ exec_in() {
 say "boot the workspace and check what netd set up"
 out="$(exec_in /bin/sh -c 'id -u; cat /etc/resolv.conf; . /etc/os-release && echo $ID' 2>/dev/null)"
 printf '%s\n' "$out" | sed 's/^/    /'
-printf '%s\n' "$out" | head -1 | grep -qx 1000 || fail "the guest workload is not uid 1000"
+# Inside its own VM the workload is root (a container's bargain); the host never
+# runs it. It is what lets `dnf install` work in the workspace's terminal.
+printf '%s\n' "$out" | head -1 | grep -qx 0 || fail "the guest workload is not root inside the guest"
 printf '%s\n' "$out" | grep -q '^nameserver 127.0.0.1$' || fail "netd did not write /etc/resolv.conf"
 # The distribution the image is built from, asserted where it matters: in the guest.
 printf '%s\n' "$out" | grep -qx 'fedora' || fail "the guest is not Fedora: $(printf '%s' "$out" | tail -1)"

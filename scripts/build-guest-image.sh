@@ -18,7 +18,7 @@
 # Usage: scripts/build-guest-image.sh --out IMG [--tier base|dev]
 #                                     [--agent BIN] [--probe BIN] [--netd BIN]
 #                                     [--size SIZE]
-#                                     [--payload DIR] [--cache DIR]
+#                                     [--payload DIR] [--zig-cache DIR] [--cache DIR]
 #                                     [--in-container] [--selftest]
 
 set -euo pipefail
@@ -35,6 +35,7 @@ probe_given=0
 netd_bin=""
 netd_given=0
 payload=""
+zig_cache=""
 
 # The uid and gid the guest agent runs a workload as (src/vm_agent/main.zig,
 # `default_uid`). /workspace is that workload's $HOME and the directory whose
@@ -268,6 +269,7 @@ while [ $# -gt 0 ]; do
     --probe) probe_bin="$2"; probe_given=1; shift 2 ;;
     --netd) netd_bin="$2"; netd_given=1; shift 2 ;;
     --payload) payload="$2"; shift 2 ;;
+    --zig-cache) zig_cache="$2"; shift 2 ;;
     --size) size="$2"; shift 2 ;;
     --cache) cache="$2"; shift 2 ;;
     --in-container) in_container=1; shift ;;
@@ -288,6 +290,7 @@ abs() { case "$1" in /*) printf '%s\n' "$1" ;; *) printf '%s/%s\n' "$PWD" "$1" ;
 [ -z "$netd_bin" ] || netd_bin="$(abs "$netd_bin")"
 [ -z "$out" ] || out="$(abs "$out")"
 [ -z "$payload" ] || payload="$(abs "$payload")"
+[ -z "$zig_cache" ] || zig_cache="$(abs "$zig_cache")"
 [ -n "$out" ] || fail "--out IMG is required"
 
 # The container hop is about capability: dnf has to run as root (chroot for
@@ -316,6 +319,7 @@ if [ "$(id -u)" != 0 ] && { [ "$in_container" = 1 ] || [ "$needs_builder" = 1 ];
   [ -z "$probe_bin" ] || args+=(--probe "$probe_bin")
   [ -z "$netd_bin" ] || args+=(--netd "$netd_bin")
   [ -z "$payload" ] || args+=(--payload "$payload")
+  [ -z "$zig_cache" ] || args+=(--zig-cache "$zig_cache")
   quoted=""
   for a in "${args[@]}"; do quoted+=" $(printf '%q' "$a")"; done
   mounts=()
@@ -325,6 +329,7 @@ if [ "$(id -u)" != 0 ] && { [ "$in_container" = 1 ] || [ "$needs_builder" = 1 ];
   # re-downloading it on every attempt is the slowest part of this script.
   mkdir -p "$cache/dnf"
   mounts+=(-v "$cache/dnf:/var/cache/dnf")
+  if [ -n "$zig_cache" ]; then mounts+=(-v "$zig_cache:$zig_cache:ro"); fi
   exec "$engine" run --rm "${mounts[@]}" \
     "$builder_image" \
     sh -euc "dnf -q -y install $builder_packages >/dev/null && exec bash $self_path$quoted"
@@ -470,6 +475,19 @@ if [ -n "$payload" ]; then
   mkdir -p "$work/opt/bench"
   cp -a "$payload/." "$work/opt/bench/"
   say "payload $(find "$work/opt/bench" -mindepth 1 | wc -l) filesystem objects in /opt/bench from $payload"
+fi
+
+# A warm Zig package cache. Zig's package fetcher does not read http_proxy (its
+# `initDefaultProxies` has no callers in the compiler's own fetch path), so a
+# `zig build` in the workspace cannot reach github through the egress tunnel at
+# all. Shipping the packages it would fetch makes the build work with no network
+# — `ZIG_GLOBAL_CACHE_DIR` points here (see src/vm_agent/main.zig `exec_env`).
+if [ -n "$zig_cache" ]; then
+  mkdir -p "$work/opt/zig-cache/p"
+  if [ -d "$zig_cache/p" ]; then
+    cp -f "$zig_cache"/p/*.tar.gz "$work/opt/zig-cache/p/" 2>/dev/null || true
+  fi
+  say "zig package cache: $(find "$work/opt/zig-cache" -type f | wc -l) archives in /opt/zig-cache"
 fi
 
 mkdir -p "$work/workspace" "$work/proc" "$work/sys" "$work/dev" "$work/tmp"
