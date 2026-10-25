@@ -193,6 +193,21 @@ def selftest():
             failures += 1
             print(f'  FAIL {desc}: expected {expected!r}, got {got!r}')
 
+    def fixture_git(repo, *args, check=True):
+        """Git in a FIXTURE repo, with the caller's GIT_* environment removed.
+
+        A pre-commit hook runs under `git commit`, and a commit made from a
+        LINKED WORKTREE exports `GIT_INDEX_FILE`. Inherited, it makes this
+        `git add` write into the CALLER's index instead of the fixture's: a
+        phantom `src/tracked.zig` entry then exists with no file on disk, the
+        next commit records it, and CI's own scan fails on a fixture nobody
+        wrote. Scrubbing the prefix is what keeps the fixture disposable.
+        """
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith('GIT_')}
+        return subprocess.run(['git', '-C', repo, *args], check=check,
+                              capture_output=True, env=env)
+
     with tempfile.TemporaryDirectory() as tmp:
         # 1. a comment pointing at a document that does not exist
         p = os.path.join(tmp, 'a.zig')
@@ -247,8 +262,7 @@ def selftest():
     #    the exact mechanism the scan has to obey — not a hardcoded list of
     #    directory names.
     with tempfile.TemporaryDirectory() as repo:
-        subprocess.run(['git', '-C', repo, 'init', '-q'], check=True,
-                       capture_output=True)
+        fixture_git(repo, 'init', '-q')
         open(os.path.join(repo, '.gitignore'), 'w').write(
             'node_modules/\ngen_deps.zig\n')
 
@@ -264,8 +278,7 @@ def selftest():
         vendored = put(
             'src/apps/mcp_hello_world/node_modules/sdk/progressExample.d.ts',
             '/**\n * @see docs/protocol.md\n */\n')
-        subprocess.run(['git', '-C', repo, 'add', 'src/tracked.zig'],
-                       check=True, capture_output=True)
+        fixture_git(repo, 'add', 'src/tracked.zig')
 
         def findings(root):
             out = []
@@ -295,8 +308,8 @@ def selftest():
               findings(repo))
         # A fixture is only worth its name if git really ignores it: assert
         # that, so the two checks above cannot pass on a wrong .gitignore.
-        ignored = [subprocess.run(['git', '-C', repo, 'check-ignore', '-q', p],
-                                  check=False).returncode
+        ignored = [fixture_git(repo, 'check-ignore', '-q', p,
+                              check=False).returncode
                    for p in (vendored, generated)]
         check('the unused fixtures are git-ignored', [0, 0], ignored)
 
