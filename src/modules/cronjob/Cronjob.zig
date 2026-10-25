@@ -252,7 +252,3 @@ pub fn cleanupOldProcesses(allocator: std.mem.Allocator, io: std.Io, db_path: []
     // For now, we return 0 and the caller can query if needed
     return 0;
 }
-
-test {
-    _ = @import("ProcessChecker.zig");
-}

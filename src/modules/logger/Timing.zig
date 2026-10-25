@@ -89,8 +89,7 @@ pub fn timestampCompact(allocator: std.mem.Allocator, io: std.Io) ![]const u8 {
 // Tests
 
 // The timing tests that used to live in timing_test.zig are now inline at the
-// bottom of this file (2026-09-29 flatten); logger/test_runner.zig imports
-// this file directly.
+// bottom of this file (2026-09-29 flatten).
 
 // ===== Tests merged from timing_test.zig (2026-09-29 flatten) =====
 test "timestampMs returns reasonable value" {

@@ -35,13 +35,6 @@ pub fn parseCommand(argv: []const []const u8) args.ParseError!Command {
     };
 }
 
-test {
-    _ = args;
-    _ = boot;
-    _ = run;
-    _ = sessions;
-}
-
 test "parseCommand: maps every Outcome variant onto a Command" {
     try std.testing.expect((try parseCommand(&.{"help"})) == .help);
     try std.testing.expect((try parseCommand(&.{}) == .help));
