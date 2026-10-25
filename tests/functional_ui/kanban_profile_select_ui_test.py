@@ -138,6 +138,33 @@ def _seed_profiles(h: UIHarness) -> None:
     (config_dir / "config.json").write_text(json.dumps(profile, indent=2))
 
 
+def _seed_workspace_profiles(h: UIHarness, workspace_id: str) -> None:
+    """Save the same two profiles in THIS workspace.
+
+    The dialog's picker reads `GET /api/workspaces/:id/config`, and a
+    workspace owns its profile list: a new one is empty, so the seed has to be
+    written here or the dropdown renders nothing.
+    """
+    agents = {
+        "900ribu": {
+            "model": "claude-sonnet-4-5-stub",
+            "base_url": "http://127.0.0.1:1",
+            "api_key": "stub-not-real",
+        },
+        "alpha": {
+            "model": "alpha-stub-model",
+            "base_url": "http://127.0.0.1:1",
+            "api_key": "stub-not-real",
+        },
+    }
+    h.http(
+        "PUT",
+        f"/api/workspaces/{workspace_id}/config",
+        json_body={"profiles": agents, "active_profile": "alpha"},
+        expect=200,
+    )
+
+
 def _kanban_url(h: UIHarness, workspace_id: str, kanban_id: str) -> str:
     """Route shape mirrors kanban_lifecycle_ui_test.py."""
     return h.web_url(
@@ -220,6 +247,7 @@ def test_dialog_create_task_persists_picked_profile_in_db(
     _seed_profiles(h)
 
     ws_id = _create_workspace(h)
+    _seed_workspace_profiles(h, ws_id)
     kanban_id = _create_kanban(h, ws_id)
 
     page.goto(_kanban_url(h, ws_id, kanban_id), wait_until="domcontentloaded", timeout=60000)
@@ -369,6 +397,7 @@ def test_dialog_create_and_run_persists_picked_profile_in_db(
     _seed_profiles(h)
 
     ws_id = _create_workspace(h)
+    _seed_workspace_profiles(h, ws_id)
     kanban_id = _create_kanban(h, ws_id)
 
     page.goto(_kanban_url(h, ws_id, kanban_id), wait_until="domcontentloaded", timeout=60000)
@@ -457,6 +486,7 @@ def test_dialog_picked_profile_surfaces_in_chatview_chip(
     _seed_profiles(h)
 
     ws_id = _create_workspace(h)
+    _seed_workspace_profiles(h, ws_id)
     kanban_id = _create_kanban(h, ws_id)
 
     page.goto(_kanban_url(h, ws_id, kanban_id), wait_until="domcontentloaded", timeout=60000)

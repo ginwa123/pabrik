@@ -58,15 +58,16 @@ SLACK_PX = 2
 LAST_PROFILE = f"profile-slot-{PROFILE_COUNT:02d}"
 
 
-def _seed_profiles(h, count: int = PROFILE_COUNT) -> None:
-    """Write a stub config.json carrying ``count`` profiles.
+def _seed_profiles(h, workspace_id: str, count: int = PROFILE_COUNT) -> None:
+    """Give ``count`` profiles to the USER document and to this WORKSPACE.
 
-    The backend reads config.json fresh per request (see
-    `pabrik_config_get.zig` — no caching) and maps the on-disk
-    `profiles_models` key to the wire's `profiles`, so a post-boot write is
-    picked up by the chat's `GET /api/workspaces/:id/config` without a
-    restart. The config dir is OS-dependent (`getDefaultConfigDir`), so mirror
-    the backend's lookup the same way `kanban_profile_select_ui_test.py` does.
+    The chat's picker reads `GET /api/workspaces/:id/config`, and a workspace
+    starts with no profiles of its own: nothing is copied from the user
+    document and nothing is inherited on read. So the list the picker renders
+    is exactly what was saved in the workspace (the `PUT` below); config.json
+    stays in step because the rest of the chat still reads it. The config dir
+    is OS-dependent (`getDefaultConfigDir`), so mirror the backend's lookup the
+    same way `kanban_profile_select_ui_test.py` does.
     """
     if sys.platform == "darwin":
         config_dir = h.temp_dir / "Library" / "Application Support" / "pabrik"
@@ -94,6 +95,12 @@ def _seed_profiles(h, count: int = PROFILE_COUNT) -> None:
             indent=2,
         )
     )
+    h.http(
+        "PUT",
+        f"/api/workspaces/{workspace_id}/config",
+        json_body={"profiles": profiles, "active_profile": "profile-slot-01"},
+        expect=200,
+    )
 
 
 def _open_chat(ui_harness, page, session_id: str) -> None:
@@ -105,7 +112,7 @@ def _open_chat(ui_harness, page, session_id: str) -> None:
         seed.seed_session(conn, session_id, "Picker scroll")
         bind_session_workspace(conn, workspace_id, session_id)
         seed.seed_user_message(conn, session_id, "hello")
-    _seed_profiles(h)
+    _seed_profiles(h, workspace_id)
     open_chatview(page, h, workspace_id, session_id, timeout_ms=60000)
     # The chip is `:disabled` until the session resolves, and its `title`
     # carries the loaded profile count — that is our readiness gate.

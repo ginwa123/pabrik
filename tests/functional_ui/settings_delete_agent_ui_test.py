@@ -3,8 +3,7 @@
 Regression for task_1792162309659_0 ("Delete profile not work"). The Agents
 list only exists in WORKSPACE settings (`/app/:workspaceId/settings`), and pre-fix
 its `deleteProfile` was a no-op stub: the row vanished locally, no request was
-sent, and the next load brought it back — a workspace overlay that OMITS a
-agent still inherits it from the user config the merge layers it over.
+sent, and the next load brought it back from the workspace's own list.
 
 The wire-level tests in `tests/functional/workspace_config_test.zig` pin the
 endpoint. This one pins what the user actually reported: the click, and the row
@@ -50,6 +49,31 @@ def _create_workspace(h: UIHarness, name: str) -> str:
     return h.http("POST", "/api/workspaces", json_body={"name": name}, expect=201).json()["id"]
 
 
+def _seed_workspace_agents(h: UIHarness, workspace_id: str, names: list[str]) -> None:
+    """Save the same agents in THIS workspace's own list.
+
+    The Agents section reads `GET /api/workspaces/:id/config`, and a workspace
+    starts with no agents of its own: nothing is copied from the user document
+    and nothing is inherited on read.
+    """
+    agents = {
+        name: {
+            "model": f"{name}-model",
+            "base_url": "http://127.0.0.1:1",
+            "api_key": "stub-not-real",
+            "url_style": "openai",
+            "system_prompt": "",
+        }
+        for name in names
+    }
+    h.http(
+        "PUT",
+        f"/api/workspaces/{workspace_id}/config",
+        json_body={"profiles": agents, "active_profile": names[0]},
+        expect=200,
+    )
+
+
 def _agent_rows(page):
     return page.locator('[data-testid="agent-list"] > li')
 
@@ -70,6 +94,7 @@ def test_deleting_an_agent_removes_it_and_it_stays_gone_after_a_reload(
     _seed_agents(h, ["doomed", "keeper"])
 
     workspace_id = _create_workspace(h, "delete-agent-ws")
+    _seed_workspace_agents(h, workspace_id, ["doomed", "keeper"])
 
     page.goto(
         h.web_url(f"/app/{workspace_id}/settings?section=agents"),
@@ -96,7 +121,7 @@ def test_deleting_an_agent_removes_it_and_it_stays_gone_after_a_reload(
     assert _row_names(page) == ["keeper"], f"the row survived the delete: {_row_names(page)!r}"
 
     # The reload is the regression: pre-fix the agent came back here (no
-    # request was sent at all, and the overlay merge would have re-inherited it).
+    # request was sent at all, so the stored list still held it).
     page.reload(wait_until="domcontentloaded")
     page.wait_for_selector('[data-testid="agent-list"] > li', timeout=30000)
     rows_after_reload = _row_names(page)
