@@ -150,6 +150,14 @@ else
   echo "    (this host has no internet: skipping the public GET)"
 fi
 
+say "an https:// URL without CONNECT is refused BY NAME, not with a bare 400"
+exec_in /bin/sh -c 'wget -S -O- -T 10 https://example.com/ 2>&1 | head -6' \
+  >"$work/probe-https-noconnect.txt" 2>&1 || true
+head -6 "$work/probe-https-noconnect.txt" | sed 's/^/    /'
+grep -q '501 Not Implemented' "$work/probe-https-noconnect.txt" \
+  || fail "an https URL without CONNECT did not get the explanatory 501"
+ok "told the client to tunnel, and nothing was dialled"
+
 say "the guest resolver answers over vsock (or answers SERVFAIL, which is an answer)"
 exec_in /bin/sh -c 'nslookup example.com 127.0.0.1 2>&1 | head -5' >"$work/probe-dns.txt" 2>&1 || true
 cat "$work/probe-dns.txt" | sed 's/^/    /'
