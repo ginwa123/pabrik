@@ -123,7 +123,7 @@ import ImagePreview from '../preview/ImagePreview.vue'
 import WorktreeMenu from '../workspace/WorktreeMenu.vue'
 import CreatePrDialog from '../dialogs/CreatePrDialog.vue'
 import CreateWorktreeDialog from '../dialogs/CreateWorktreeDialog.vue'
-import { parseSpawnSubAgentArgs } from '../../helpers/parseSpawnSubAgentArgs'
+import { indexSpawnSubAgentArgs } from '../../helpers/parseSpawnSubAgentArgs'
 import type { SubAgentArgs } from '../../helpers/parseSpawnSubAgentArgs'
 import { ICON_PATHS } from '../ui/icons'
 import UiIcon from '../ui/UiIcon.vue'
@@ -1573,6 +1573,23 @@ const compactRuns = computed((): Map<number, ToolCardData[]> => {
   return runs
 })
 
+/** Every spawn_sub_agent call of the transcript, keyed by tool_call_id. Built once per transcript
+ * change — one parse per assistant message — so a card reads its spawn args instead of walking
+ * the transcript. */
+const subAgentArgsByToolCallId = computed((): Map<string, SubAgentArgs[]> => {
+  const index = new Map<string, SubAgentArgs[]>()
+  for (const group of messageGroups.value) {
+    if (group.role !== 'assistant') continue
+    for (const msg of group.messages) {
+      if (typeof msg.tool_calls_json !== 'string') continue
+      for (const [toolCallId, args] of indexSpawnSubAgentArgs(msg.tool_calls_json)) {
+        index.set(toolCallId, args)
+      }
+    }
+  }
+  return index
+})
+
 /** The cards of one tool group, in order. Both views draw the same cards. */
 const toolCardsFor = (group: MessageGroup, groupIndex: number): ToolCardData[] =>
   group.messages.map((msg, idx) => ({
@@ -1584,7 +1601,9 @@ const toolCardsFor = (group: MessageGroup, groupIndex: number): ToolCardData[] =
     subAgentProgress: msg.tool_call_id
       ? (subAgentProgressMap.value[msg.tool_call_id] ?? null)
       : null,
-    subAgentArgs: findSubAgentArgsForToolGroup(msg.tool_call_id, messageGroups.value, groupIndex),
+    subAgentArgs: msg.tool_call_id
+      ? (subAgentArgsByToolCallId.value.get(msg.tool_call_id) ?? null)
+      : null,
   }))
 
 const renderMessageHtml = (msg: Message): string =>
@@ -1686,30 +1705,6 @@ const groupToolNames = computed((): (string | null)[] => {
     return null
   })
 })
-
-// ─── Inherited Context: thread sub_agents args from assistant message to tool result.
-function findSubAgentArgsForToolGroup(
-  toolCallId: string | undefined,
-  groups: MessageGroup[],
-  currentGroupIndex: number,
-): SubAgentArgs[] | null {
-  if (!toolCallId) return null
-  // Walk backwards from the current group
-  for (let i = currentGroupIndex - 1; i >= 0; i--) {
-    const g = groups[i]
-    if (!g) continue
-    if (g.role !== 'assistant') continue
-    for (const msg of g.messages) {
-      // 2026-08-24 wire-shape fix: typeof guard — parseSpawnSubAgentArgs
-      // JSON.parses this value; a non-string (legacy array shape) would
-      // throw inside the computed. Non-strings simply yield no badge.
-      if (typeof msg.tool_calls_json !== 'string') continue
-      const args = parseSpawnSubAgentArgs(msg.tool_calls_json, toolCallId)
-      if (args) return args
-    }
-  }
-  return null
-}
 
 // ─── Bubble Visibility ──────────────────────────────────────────────────────── Check if a message
 // has visible text content (i.e. content that survives stripThinkingTags and is non-empty after
