@@ -1806,6 +1806,11 @@ pub fn main() void {
             continue;
         }
         failures = 0;
-        serve(@intCast(conn_rc));
+        const conn_fd: linux.fd_t = @intCast(conn_rc);
+        serve(conn_fd);
+        // One fresh connection per request: not closing it leaked a descriptor
+        // per RPC, so after ~1020 commands `accept` failed with EMFILE for good
+        // and the workspace stopped answering ("the VM failed to start").
+        _ = linux.close(conn_fd);
     }
 }
