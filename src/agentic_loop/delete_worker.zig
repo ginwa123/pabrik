@@ -14,10 +14,9 @@ pub const DeleteWorkerInput = struct {
     session_id: []const u8,
     event_bus: ?*event_bus_mod.EventBus,
     is_emit_sse: bool,
-    /// A workflow run's lease (see `session_lock.zig`). When set, only the row
-    /// carrying THIS token is removed — a run that lost its slot must not
-    /// delete the row another run now owns. Empty means "delete the row for
-    /// this session", which is what the cancel/teardown paths want.
+    /// The run's lease (see `session_lock.zig`): when set, only the row with
+    /// THIS token is removed, so a run that lost its slot cannot delete the
+    /// winner's row. Empty means "any row for this session" (cancel paths).
     run_token: []const u8 = "",
 };
 

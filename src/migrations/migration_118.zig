@@ -4,10 +4,8 @@ const common = @import("common.zig");
 const SqliteBackend = common.SqliteBackend;
 const addColumnIfMissing = common.addColumnIfMissing;
 
-/// Migration 118 — `worker.run_token` is the per-session run lease. A run
-/// claims it with one compare-and-swap statement (see `session_lock.zig`), so
-/// two runs for the same session can never both own the row. Empty means
-/// unowned: a stale row from a dead process, or a row that never had a lease.
+/// Migration 118 — `worker.run_token`: the per-session run lease, claimed by one
+/// compare-and-swap statement (see `session_lock.zig`). Empty means unowned.
 pub const Migration118AddWorkerRunToken = struct {
     pub const version: u32 = 118;
     pub const name = "add_worker_run_token";

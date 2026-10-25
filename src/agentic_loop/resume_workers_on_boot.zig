@@ -1,26 +1,12 @@
-//! Restart the runs a previous process left behind: every `worker` row is a
-//! session whose turn was cut off by a restart.
-//!
-//! Three rules, in order:
-//!   1. Sub-agent workers are never resumed. A sub-agent is a child of a turn
-//!      that no longer exists; its parent re-derives it if it still needs one.
-//!   2. A turn that already ended cleanly is not resumed. `stop` / `awaiting_user`
-//!      with nothing queued means the row is a leftover, not an interrupted
-//!      turn — resuming it would spend an LLM call on nothing.
-//!   3. Everything else keeps its session: the row's stale lease is cleared and
-//!      a run is emitted for it.
-//!
-//! The lease, not this module, is what guarantees one loop per session. If a
-//! resumed run meets a session another thread already claimed, `acquire`
-//! answers `.busy` and the run returns immediately (see `session_lock.zig`).
-//! Boot takes ownership of the rows here because nothing in this process is
-//! running yet; if another pabrik holds the same database, its loop notices the
-//! stolen lease on its next iteration and hands the session over.
+//! Restart the turns a previous process left mid-flight: a `worker` row is a
+//! session whose run was cut off. Sub-agent workers, live owners and cleanly
+//! finished turns are skipped — see `decide`, which is the whole policy.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 
 const sqlite = pabrikcore.sqlite;
+const session_lock = @import("session_lock.zig");
 const testing = std.testing;
 
 /// A `worker` row plus the session fields a resumed run needs.
@@ -35,6 +21,7 @@ pub const Candidate = struct {
     parent_session_id: []const u8,
     sub_agent_name: []const u8,
     has_queued_message: bool,
+    run_token: []const u8,
 };
 
 /// A sub-agent session names its parent (Migration 091). The parent row in the
@@ -52,10 +39,24 @@ pub fn isCleanTurnEnd(last_finish_reason: []const u8) bool {
         std.mem.eql(u8, last_finish_reason, "awaiting_user");
 }
 
-pub fn shouldResume(candidate: Candidate) bool {
-    if (isSubAgentWorker(candidate.parent_session_id, candidate.sub_agent_name, candidate.session_id)) return false;
-    if (candidate.has_queued_message) return true;
-    return !isCleanTurnEnd(candidate.last_finish_reason);
+pub const Decision = enum {
+    /// The previous owner is gone and the turn was cut off: restart it.
+    restart,
+    /// Another live process still owns the lease — leave the session alone.
+    skip_live_owner,
+    skip_sub_agent,
+    skip_finished,
+};
+
+/// What boot should do with one row. `owner_alive` comes from the pid embedded
+/// in the lease (`session_lock.isOwnerAlive`): a second pabrik on another port
+/// must NOT steal a session the first one is still running.
+pub fn decide(candidate: Candidate, owner_alive: bool) Decision {
+    if (isSubAgentWorker(candidate.parent_session_id, candidate.sub_agent_name, candidate.session_id)) return .skip_sub_agent;
+    if (owner_alive) return .skip_live_owner;
+    if (candidate.has_queued_message) return .restart;
+    if (isCleanTurnEnd(candidate.last_finish_reason)) return .skip_finished;
+    return .restart;
 }
 
 const select_sql =
@@ -68,7 +69,8 @@ const select_sql =
     \\       COALESCE(s.last_finish_reason, ''),
     \\       COALESCE(s.parent_session_id, ''),
     \\       COALESCE(s.sub_agent_name, ''),
-    \\       EXISTS (SELECT 1 FROM session_queue_messages q WHERE q.session_id = w.id)
+    \\       EXISTS (SELECT 1 FROM session_queue_messages q WHERE q.session_id = w.id),
+    \\       COALESCE(w.run_token, '')
     \\FROM worker w
     \\LEFT JOIN sessions s ON s.id = w.session_id
     \\ORDER BY w.last_activity_nano DESC;
@@ -88,9 +90,23 @@ pub fn resumeWorkersOnBoot(di: *pabrikcore.App) void {
     };
 
     for (candidates) |candidate| {
-        if (!shouldResume(candidate)) {
-            clearWorkerRow(di, allocator, candidate.session_id);
-            continue;
+        switch (decide(candidate, session_lock.isOwnerAlive(candidate.run_token))) {
+            .skip_live_owner => {
+                logger.infoFmt(
+                    "[resume_workers_on_boot] session {s} is owned by a live run_token={s} — leaving it",
+                    .{ candidate.session_id, candidate.run_token },
+                );
+                continue;
+            },
+            .skip_sub_agent => {
+                clearWorkerRow(di, allocator, candidate.session_id);
+                continue;
+            },
+            .skip_finished => {
+                clearWorkerRow(di, allocator, candidate.session_id);
+                continue;
+            },
+            .restart => {},
         }
 
         logger.infoFmt(
@@ -141,6 +157,7 @@ pub fn readCandidates(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend) !
             .parent_session_id = try allocator.dupe(u8, row.values[7]),
             .sub_agent_name = try allocator.dupe(u8, row.values[8]),
             .has_queued_message = std.mem.eql(u8, row.values[9], "1"),
+            .run_token = try allocator.dupe(u8, row.values[10]),
         });
     }
     return out.toOwnedSlice(allocator);
@@ -214,25 +231,26 @@ fn plain(session_id: []const u8, last_finish_reason: []const u8) Candidate {
         .parent_session_id = "",
         .sub_agent_name = "",
         .has_queued_message = false,
+        .run_token = "",
     };
 }
 
 test "an interrupted turn is resumed" {
-    try testing.expect(shouldResume(plain("s1", "tool_calls")));
+    try testing.expectEqual(Decision.restart, decide(plain("s1", "tool_calls"), false));
 }
 
-test "a cleanly finished turn with nothing queued is not resumed" {
-    try testing.expect(!shouldResume(plain("s1", "stop")));
+test "a cleanly finished turn with nothing queued is left alone" {
+    try testing.expectEqual(Decision.skip_finished, decide(plain("s1", "stop"), false));
 }
 
-test "a cleanly finished turn waiting on the user is not resumed" {
-    try testing.expect(!shouldResume(plain("s1", "awaiting_user")));
+test "a cleanly finished turn waiting on the user is left alone" {
+    try testing.expectEqual(Decision.skip_finished, decide(plain("s1", "awaiting_user"), false));
 }
 
 test "a cleanly finished turn with a queued message is resumed" {
     var c = plain("s1", "stop");
     c.has_queued_message = true;
-    try testing.expect(shouldResume(c));
+    try testing.expectEqual(Decision.restart, decide(c, false));
 }
 
 test "a sub-agent worker is never resumed" {
@@ -240,7 +258,20 @@ test "a sub-agent worker is never resumed" {
     c.parent_session_id = "parent";
     c.sub_agent_name = "researcher";
     c.has_queued_message = true;
-    try testing.expect(!shouldResume(c));
+    try testing.expectEqual(Decision.skip_sub_agent, decide(c, false));
+}
+
+test "a session a live process still owns is left alone" {
+    var c = plain("shared", "tool_calls");
+    c.run_token = "run-4242-1-2";
+    c.has_queued_message = true;
+    try testing.expectEqual(Decision.skip_live_owner, decide(c, true));
+}
+
+test "the same session is resumed once its owner is gone" {
+    var c = plain("shared", "tool_calls");
+    c.run_token = "run-4242-1-2";
+    try testing.expectEqual(Decision.restart, decide(c, false));
 }
 
 test "a session pointing at itself is a parent, not a sub-agent" {
@@ -275,7 +306,8 @@ test "readCandidates returns the session fields a resumed run needs" {
     try testing.expectEqualStrings("u1", got[0].user_id);
     try testing.expectEqualStrings("tool_calls", got[0].last_finish_reason);
     try testing.expect(!got[0].has_queued_message);
-    try testing.expect(shouldResume(got[0]));
+    try testing.expectEqualStrings("stale-token", got[0].run_token);
+    try testing.expectEqual(Decision.restart, decide(got[0], false));
 }
 
 test "readCandidates reports a pending queued message for the session" {
@@ -298,7 +330,7 @@ test "readCandidates reports a pending queued message for the session" {
     const got = try readCandidates(alloc, &ctx.db);
 
     try testing.expect(got[0].has_queued_message);
-    try testing.expect(shouldResume(got[0]));
+    try testing.expectEqual(Decision.restart, decide(got[0], false));
 }
 
 test "readCandidates falls back to defaults when the session row is gone" {

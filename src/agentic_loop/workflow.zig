@@ -631,10 +631,9 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
     else
         initial_agent_state.temperature;
 
-    // Claim the session's single run slot. One compare-and-swap statement, so
-    // ten workers claiming ten sessions do not queue on SQLite's single writer
-    // slot the way a held write transaction would. No lease means another run
-    // owns this session right now.
+    // Claim the session's single run slot with one compare-and-swap statement —
+    // never a held write transaction, or ten workers would queue on SQLite's
+    // single writer slot. No lease means another run owns this session.
     const run_lease: session_lock.RunLease = (blk: {
         const claim = session_lock.acquire(.{
             .allocator = parent_allocator,
@@ -767,10 +766,9 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
     while (true) {
         _ = arenaAllocatorWhileLoop.reset(.free_all);
 
-        // This iteration's flags and the lease check come back from ONE
-        // statement, so they cannot disagree. A run that lost the session (a
-        // newer run claimed it, or a cancel removed the row) leaves here
-        // instead of racing the owner.
+        // The iteration's flags and the lease check come back from ONE
+        // statement, so they cannot disagree: a run that lost the session
+        // leaves here instead of racing the owner.
         const iteration = session_lock.beginIteration(allocator, db, copy_session_id, run_lease.token) catch |err| {
             logger.errFmt(
                 "[CHECKPOINT] session lock check failed session_id={s}: {s} — leaving the loop",

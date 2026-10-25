@@ -1,23 +1,10 @@
-//! One run thread per session, enforced by an OPTIMISTIC lock.
-//!
-//! The `worker` row is the lock and `worker.run_token` is the lease: the run
-//! that stamped a non-empty token owns the session, everyone else is `.busy`.
-//!
-//! Why optimistic and not a transaction: SQLite has exactly ONE writer slot
-//! per database. A `BEGIN IMMEDIATE` claim would make every session's claim
-//! wait behind every other session's write — with ten workers looping that is
-//! ten writers queueing on a slot meant for one. So nothing here opens a
-//! transaction: the claim is a single statement whose `WHERE` clause IS the
-//! compare (`... WHERE id = ? AND run_token = ''`), and the write either
-//! matched the row or it did not. One statement is atomic in SQLite, so the
-//! compare-and-swap needs no lock of its own.
-//!
-//! The lease, not a held lock, is what spans the LLM call (minutes). Reading it
-//! is one ordinary SELECT, which in WAL mode does not block writers and is not
-//! blocked by them — so ten workers checking their lease cost nothing.
+//! One run thread per session, enforced by an OPTIMISTIC lock: the `worker` row
+//! is the lock, `worker.run_token` is the lease, and the claim is one
+//! compare-and-swap statement — no transaction, because SQLite has one writer.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const helpers = @import("helpers");
 
 const sqlite = pabrikcore.sqlite;
 const testing = std.testing;
@@ -55,7 +42,30 @@ var token_counter = std.atomic.Value(u64).init(0);
 fn newRunToken(allocator: std.mem.Allocator, io: std.Io) ![]const u8 {
     const now_ns = std.Io.Timestamp.now(io, .real).nanoseconds;
     const n = token_counter.fetchAdd(1, .monotonic);
-    return std.fmt.allocPrint(allocator, "run-{d}-{d}", .{ now_ns, n });
+    // `run-<pid>-<nanos>-<n>`: the pid lets a second process ask whether the
+    // owner is still alive before it takes a lease over (see `isOwnerAlive`).
+    return std.fmt.allocPrint(allocator, "run-{d}-{d}-{d}", .{
+        helpers.process_status.getCurrentProcessIdInt(),
+        now_ns,
+        n,
+    });
+}
+
+/// The pid embedded in a lease token, or null when the token was written by an
+/// older build (or is empty).
+pub fn ownerPid(token: []const u8) ?i32 {
+    var it = std.mem.splitScalar(u8, token, '-');
+    if (!std.mem.eql(u8, it.next() orelse return null, "run")) return null;
+    const pid_text = it.next() orelse return null;
+    const pid = std.fmt.parseInt(i32, pid_text, 10) catch return null;
+    return if (pid > 0) pid else null;
+}
+
+/// Is the process that wrote `token` still running? A token with no pid (an
+/// older build) answers `false`, so a boot may take it over.
+pub fn isOwnerAlive(token: []const u8) bool {
+    const pid = ownerPid(token) orelse return false;
+    return helpers.process_status.isProcessRunning(pid);
 }
 
 /// Take over a row that carries no lease (a fresh row, or one a previous
@@ -336,6 +346,33 @@ test "ten sessions claim and hold their leases at the same time" {
         const state = (try beginIteration(alloc, &ctx.db, session_id, token)).?;
         try testing.expect(!state.is_cancelled);
     }
+}
+
+test "ownerPid reads the pid a lease was stamped with" {
+    try testing.expectEqual(@as(?i32, 4242), ownerPid("run-4242-1792928286959659946-0"));
+    try testing.expectEqual(@as(?i32, null), ownerPid(""));
+    try testing.expectEqual(@as(?i32, null), ownerPid("stale-token"));
+    try testing.expectEqual(@as(?i32, null), ownerPid("run-notapid-1-2"));
+}
+
+test "isOwnerAlive says no for a lease with no pid in it" {
+    try testing.expect(!isOwnerAlive("stale-token"));
+}
+
+test "acquire stamps the current pid into the lease it returns" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var ctx = try setupDb(alloc);
+    defer teardown(&ctx);
+
+    const held = (try acquire(.{ .allocator = alloc, .db = &ctx.db, .session_id = "s1", .working_directory = "/tmp" })).acquired;
+
+    try testing.expectEqual(
+        @as(?i32, helpers.process_status.getCurrentProcessIdInt()),
+        ownerPid(held.token),
+    );
+    try testing.expect(isOwnerAlive(held.token));
 }
 
 test "beginIteration reports the iteration state while the lease is ours" {
