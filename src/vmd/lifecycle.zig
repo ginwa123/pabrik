@@ -211,6 +211,14 @@ fn goneForReal(pid: i32) bool {
     return err == .SUCCESS or err == .PERM;
 }
 
+/// Off Linux there is no manager to signal: the pid is forgotten and the stop
+/// reports nothing_to_stop without touching another process.
+fn expectSpawnedStopIsANoOp(timeout_ms: u32) !void {
+    rememberSpawned(4242);
+    try testing.expectEqual(Outcome.nothing_to_stop, stopSpawned(timeout_ms));
+    try testing.expectEqual(@as(?i32, null), spawnedPid());
+}
+
 test "a manager that leaves on the first signal is not killed" {
     var fake = Fake{};
     const env = fakeEnv(&fake);
@@ -239,6 +247,7 @@ test "no manager means nothing is signalled" {
 }
 
 test "the manager this process started is stopped when the service closes" {
+    if (comptime builtin.os.tag != .linux) return expectSpawnedStopIsANoOp(5_000);
     const pid = try forkWaiter(false);
     rememberSpawned(pid);
     try testing.expectEqual(@as(?i32, pid), spawnedPid());
@@ -249,6 +258,7 @@ test "the manager this process started is stopped when the service closes" {
 }
 
 test "a manager that ignores every signal does not outlive the service" {
+    if (comptime builtin.os.tag != .linux) return expectSpawnedStopIsANoOp(200);
     const pid = try forkWaiter(true);
     rememberSpawned(pid);
 
