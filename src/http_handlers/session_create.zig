@@ -91,10 +91,6 @@ pub fn sessionCreateHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
     const di = try pabrikcore.getSingleton();
 
     {
-        const prefix_len = @min(200, req.body.len);
-        const prefix = if (prefix_len > 0) req.body[0..prefix_len] else "";
-        // Use {s} for the prefix slice; escape control chars by printing length + prefix
-        std.debug.print("DEBUG_HANDLER: req.body.len={}, body_start_200={s}\n", .{ req.body.len, prefix });
         // 35 MB: fits the 25 MB video cap (base64 inflates ~33% → ~33.3 MB
         // wire) plus JSON envelope overhead.
         if (req.body.len > 35 * 1024 * 1024) {

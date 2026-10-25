@@ -276,6 +276,10 @@ pub const headless = @import("headless/mod.zig");
 pub const http_static_serve = @import("http_static/static_serve.zig");
 pub const startup = @import("startup.zig");
 pub const agentic_loop_mod = @import("agentic_loop/workflow.zig");
+// The per-session run lease: one workflow loop per session (Migration 118).
+pub const session_lock = @import("agentic_loop/session_lock.zig");
+// Boot durability: restart the turns a previous process left mid-flight.
+pub const resume_workers_on_boot = @import("agentic_loop/resume_workers_on_boot.zig");
 
 pub const notifications_mod = @import("modules/notification/notifications.zig");
 pub const migrations_mod = @import("migrations/mod.zig");

@@ -1358,7 +1358,7 @@ pub const Agent = struct {
 
     pub fn log_fmt(self: Agent, comptime level: LogLevel, comptime fmt: []const u8, args: anytype) void {
         const msg = std.fmt.allocPrint(self.allocator, fmt, args) catch {
-            std.debug.print("fmt alloc failed\n", .{});
+            logger_mod.debugPrint("fmt alloc failed\n", .{});
             return;
         };
         defer self.allocator.free(msg);

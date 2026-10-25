@@ -318,7 +318,7 @@ pub fn main(init: std.process.Init) !void {
     pabrikcore.signal_handlers.installShutdownHandlers(shutdown.handleShutdownSignal);
 
     if (tls_ctx) |ctx| gs.setTlsCtx(ctx);
-    if (cli.enable_h2c) std.debug.print("HTTP/2 (h2c) enabled on this port (HTTP/1.1 clients unaffected)\n", .{});
+    if (cli.enable_h2c) pabrikcore.loggermod.debugPrint("HTTP/2 (h2c) enabled on this port (HTTP/1.1 clients unaffected)\n", .{});
 
     var static_dir_cfg: ?*static_files.StaticDirConfig = null;
     defer if (static_dir_cfg) |cfg| server_boot.freeStaticDir(allocator, cfg);
@@ -348,13 +348,18 @@ pub fn main(init: std.process.Init) !void {
     _ = try event_bus.subscribe(ai_mod.ai_workflow.RunParamsNew, "ai_worker_flow", ai_mod.ai_workflow.CallbackAiWorkerFlow.callback);
     ctxParent.server.sse_manager.on_disconnect = ai_mod.handleClientDisconnect;
 
-    std.debug.print("Agent is ready to serve!\n", .{});
+    // Durability: a `worker` row is a turn a dead process left mid-flight.
+    // Restart those — AFTER the subscription above, or nothing listens, and
+    // sub-agent workers / live owners are skipped by the resume itself.
+    pabrikcore.resume_workers_on_boot.resumeWorkersOnBoot(ctxParent);
+
+    pabrikcore.loggermod.debugPrint("Agent is ready to serve!\n", .{});
     // The browser URL, on every boot path — not just web-launch mode.
-    std.debug.print("Open in your browser: http://127.0.0.1:{d}/\n", .{port});
+    pabrikcore.loggermod.debugPrint("Open in your browser: http://127.0.0.1:{d}/\n", .{port});
     if (ctxParent.static_dir_path != null) {
-        std.debug.print("App: http://127.0.0.1:{d}/app\n", .{port});
+        pabrikcore.loggermod.debugPrint("App: http://127.0.0.1:{d}/app\n", .{port});
     } else {
-        std.debug.print("Health check: http://127.0.0.1:{d}/health\n", .{port});
+        pabrikcore.loggermod.debugPrint("Health check: http://127.0.0.1:{d}/health\n", .{port});
     }
 
     const boot_unix = std.Io.Clock.now(.real, io).toSeconds();
@@ -365,7 +370,7 @@ pub fn main(init: std.process.Init) !void {
         null,
         boot_unix,
     ) catch |err| {
-        std.debug.print("Failed to register heartbeat cron: {s}\n", .{@errorName(err)});
+        std.log.err("Failed to register heartbeat cron: {s}", .{@errorName(err)});
     };
     _ = gs.cronjob_manager.register(
         "* * * * *",
@@ -374,7 +379,7 @@ pub fn main(init: std.process.Init) !void {
         null,
         boot_unix,
     ) catch |err| {
-        std.debug.print("Failed to register cleanup_stale_background_process cron: {s}\n", .{@errorName(err)});
+        std.log.err("Failed to register cleanup_stale_background_process cron: {s}", .{@errorName(err)});
     };
     try gs.listenEventLoop(.{ .dispatch_mode = .worker_pool });
 

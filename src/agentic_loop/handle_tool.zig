@@ -1028,7 +1028,7 @@ pub fn handle_tool(
 
             // Dispatch to the appropriate handler
             const exec_result = dispatchTool(ctx, tool_call) catch |err| {
-                std.debug.print("DEBUG: dispatchTool failed with error: {s}\n", .{@errorName(err)});
+                logger_mod.debugPrint("DEBUG: dispatchTool failed with error: {s}\n", .{@errorName(err)});
                 const err_msg = try std.fmt.allocPrint(allocator, "{s} failed: {s}", .{
                     tool_call.function.name,
                     @errorName(err),
