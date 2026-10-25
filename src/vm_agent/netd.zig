@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const linux = std.os.linux;
+const egress = @import("egress_env.zig");
 
 // ─── constants ───────────────────────────────────────────────────────────
 
@@ -68,8 +69,9 @@ const iff_running: i16 = 0x40;
 const char_dev: u32 = 0o020000;
 const resolv_path = "/etc/resolv.conf";
 const resolv_text = "nameserver 127.0.0.1\noptions timeout:2 attempts:3 ndots:2\n";
-/// Readable by any tenant process, writable only by root.
-const resolv_mode: u32 = 0o644;
+/// Readable by any tenant process, writable only by root. The egress profile
+/// is the same: every workload has to read it, only root may rewrite it.
+const tenant_readable_mode: u32 = 0o644;
 /// `wait4`'s WNOHANG: reaping must never block the listeners.
 const wno_hang: u32 = 1;
 
@@ -342,11 +344,25 @@ fn writeResolvConf() bool {
     _ = linux.mkdir("/etc", 0o755);
     var buf: [64]u8 = undefined;
     const path = cstr(resolv_path, &buf) orelse return false;
-    const rc = linux.open(path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, resolv_mode);
+    const rc = linux.open(path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, tenant_readable_mode);
     if (linux.errno(rc) != .SUCCESS) return false;
     const fd: linux.fd_t = @intCast(rc);
     defer _ = linux.close(fd);
     return writeAll(fd, resolv_text);
+}
+
+/// Write the egress profile: every login shell gets the proxy the workload is
+/// handed at exec time, so `sh -l` and the terminal tab reach the host too.
+fn writeProfileScript() bool {
+    _ = linux.mkdir("/etc", 0o755);
+    _ = linux.mkdir("/etc/profile.d", 0o755);
+    var buf: [128]u8 = undefined;
+    const path = cstr(egress.profile_path, &buf) orelse return false;
+    const rc = linux.open(path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, tenant_readable_mode);
+    if (linux.errno(rc) != .SUCCESS) return false;
+    const fd: linux.fd_t = @intCast(rc);
+    defer _ = linux.close(fd);
+    return writeAll(fd, egress.profile_script);
 }
 
 /// A connected AF_VSOCK stream to the host, retried on `ECONNREFUSED` because
@@ -722,6 +738,7 @@ pub fn main() void {
     ensureDev();
     logLine(if (bringLoopbackUp()) "lo up" else "MISSING lo up");
     logLine(if (writeResolvConf()) "resolv.conf written" else "MISSING resolv.conf");
+    logLine(if (writeProfileScript()) "egress profile written" else "MISSING egress profile");
 
     listen_tcp = bindLoopbackTcp(proxy_port);
     logLine(if (listen_tcp != null) "proxy listening on 127.0.0.1:3128" else "MISSING proxy listener");

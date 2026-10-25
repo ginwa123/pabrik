@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const linux = std.os.linux;
+const egress = @import("egress_env.zig");
 
 const vsock_af: u32 = 40;
 const af_inet: u32 = 2;
@@ -166,11 +167,20 @@ fn cstr(src: []const u8, dst: []u8) ?[*:0]const u8 {
     return @ptrCast(dst.ptr);
 }
 
+/// What a workload's process is started with. The guest has no network device,
+/// so the loopback proxy is the only egress: without these four a `git clone`
+/// dials the internet directly and gets `ENETUNREACH`.
 const exec_env = [_:null]?[*:0]const u8{
     "PATH=/bin:/usr/bin",
     "HOME=/workspace",
     "LANG=C",
     "TERM=dumb",
+    egress.http_proxy,
+    egress.https_proxy,
+    egress.http_proxy_upper,
+    egress.https_proxy_upper,
+    egress.no_proxy,
+    egress.no_proxy_upper,
 };
 
 fn execChild(req: *const ExecRequest, out_write: linux.fd_t, err_write: linux.fd_t) noreturn {
@@ -1023,6 +1033,12 @@ const tty_env = [_:null]?[*:0]const u8{
     "LANG=C",
     "TERM=xterm-256color",
     "PS1=\\w \\$ ",
+    egress.http_proxy,
+    egress.https_proxy,
+    egress.http_proxy_upper,
+    egress.https_proxy_upper,
+    egress.no_proxy,
+    egress.no_proxy_upper,
 };
 
 /// One live terminal: the agent's handle on the process that owns it. The pty

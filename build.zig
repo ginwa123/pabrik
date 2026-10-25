@@ -2600,6 +2600,24 @@ pub fn build(b: *std.Build) void {
     vm_step.dependOn(&install_vm_netd.step);
     b.getInstallStep().dependOn(&install_vm_netd.step);
 
+    // The guest binaries run inside the VM, so their unit tests are compiled
+    // for the HOST: `test:vm` is the only place netd's and the egress env's
+    // tests ever run.
+    if (target.result.os.tag == .linux) {
+        const vm_tests = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("src/vm_agent/tests.zig"),
+                .target = target,
+                .optimize = optimize,
+            }),
+        });
+        const run_vm_tests = b.addRunArtifact(vm_tests);
+        run_vm_tests.setName("test vm");
+        b.step("test:vm", "Run the guest-side unit tests (netd, egress env) on the host")
+            .dependOn(&run_vm_tests.step);
+        test_step.dependOn(&run_vm_tests.step);
+    }
+
     // === pabrik-vmd (src/vmd/main.zig) — the workspace VM manager ===
     // Linux-only: it speaks to a unix socket and forks a VMM, and the tests
     // that drive it need /dev/kvm (scripts/vmd-smoke.sh, scripts/vmd-daemon-smoke.sh).

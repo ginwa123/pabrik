@@ -122,17 +122,30 @@ exec_in /bin/sh -c \
 grep -q 'outcome=not declared' "$egress_log" || fail "the undeclared host was not refused"
 ok "refused as undeclared"
 
+say "the guest hands the egress proxy to the workload, with no env of its own"
+out="$(exec_in /bin/sh -c 'printf "%s\n" "$http_proxy" "$https_proxy" "$no_proxy"' 2>/dev/null)"
+printf '%s\n' "$out" | sed 's/^/    /'
+printf '%s\n' "$out" | grep -qx 'http://127.0.0.1:3128' \
+  || fail "the workload's own env has no http_proxy, so nothing can use the tunnel"
+login_out="$(exec_in /bin/sh -l -c 'printf "%s" "$https_proxy"' 2>/dev/null | tail -1)"
+[ "$login_out" = "http://127.0.0.1:3128" ] \
+  || fail "a login shell did not source /etc/profile.d/pabrik-egress.sh (got '$login_out')"
+exec_in /bin/sh -c 'git --version' >"$work/probe-git.txt" 2>&1 \
+  || fail "the image has no git: a workspace could not clone anything"
+head -1 "$work/probe-git.txt" | sed 's/^/    /'
+ok "exec env, the login-shell profile and git are all in the base tier"
+
 say "a declared host is resolved on the host and dialled"
 host_has_net=0
 curl -sS -m 5 -o /dev/null http://example.com/ >/dev/null 2>&1 && host_has_net=1
 if [ "$host_has_net" = 1 ]; then
-  exec_in /bin/sh -c \
-    'http_proxy=http://127.0.0.1:3128 wget -q -O- -T 15 http://example.com/ 2>&1 | head -c 200' \
+  # No `http_proxy=` on this command line: the guest has to supply it.
+  exec_in /bin/sh -c 'wget -q -O- -T 15 http://example.com/ 2>&1 | head -c 200' \
     >"$work/probe-public.txt" 2>&1 || true
   head -c 200 "$work/probe-public.txt" | sed 's/^/    /'
   grep -q 'outcome=allowed' "$egress_log" || fail "the public GET was not allowed"
   grep -qi '<html\|<!doctype\|example' "$work/probe-public.txt" || fail "the public GET returned nothing"
-  ok "public GET through the proxy, resolve-then-connect"
+  ok "public GET with no manual env: the guest supplied the proxy"
 else
   echo "    (this host has no internet: skipping the public GET)"
 fi

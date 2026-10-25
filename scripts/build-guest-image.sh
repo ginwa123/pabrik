@@ -97,6 +97,15 @@ manifest_plan() { # <manifest> <tier>
     role="${role:-rootfs}"
     case "$role" in
       rootfs) ;;
+      all)
+        case "$url" in
+          *.apk) ;;
+          *)
+            printf 'manifest: the all role is for apk packages, and %s is not one\n' "$url" >&2
+            return 1
+            ;;
+        esac
+        ;;
       dev)
         case "$want" in dev) ;; *) continue ;; esac
         case "$url" in
@@ -121,6 +130,14 @@ manifest_plan() { # <manifest> <tier>
   fi
 }
 
+# Whether this tier installs pinned packages, i.e. needs apk and root ownership.
+# `all` applies to every tier, `dev` only to the dev one.
+tier_needs_apk() { # <manifest> <tier>
+  # `grep` without -q on purpose: -q closes the pipe on the first match, and
+  # `set -o pipefail` reads the writer's SIGPIPE as a failed pipeline.
+  manifest_plan "$1" "$2" | grep -E '^(all|dev) ' >/dev/null
+}
+
 run_selftest() {
   local tmp ok=0 bad=0 h1 h2 u1 u2
   tmp="$(mktemp -d)"
@@ -128,11 +145,12 @@ run_selftest() {
   h2="0e626fa97cf937fda7bba4ed4dde8e2f2dbb5083ac34e02180cec0c4eba9351b"
   u1="https://example.invalid/base.tar.gz"
   u2="https://example.invalid/thing.apk"
-  printf '%s  %s\n%s  %s  dev\n' "$h1" "$u1" "$h2" "$u2" >"$tmp/good"
+  printf '%s  %s\n%s  %s  dev\n%s  %s  all\n' "$h1" "$u1" "$h2" "$u2" "$h2" "$u2" >"$tmp/good"
   printf '%s  %s\n' "${h1:0:63}" "$u1" >"$tmp/short"
   printf '%s  %s\n' "$(printf '%s' "$h1" | tr 'a-f' 'A-F')" "$u1" >"$tmp/upper"
   printf '%s  %s  weird\n' "$h1" "$u1" >"$tmp/role"
   printf '%s  %s  dev\n' "$h1" "$u1" >"$tmp/dev-tar"
+  printf '%s  %s  all\n' "$h1" "$u1" >"$tmp/all-tar"
   printf '%s  %s  rootfs  extra\n' "$h1" "$u1" >"$tmp/columns"
   printf '# only a comment\n' >"$tmp/empty"
   printf '%s  \n' "$h1" >"$tmp/no-url"
@@ -165,15 +183,17 @@ run_selftest() {
       printf '  ok   %s is refused\n' "$1"
     fi
   }
-  check "the base tier takes the extracted rootfs artifact" \
-    "rootfs $h1 $u1" "$(manifest_plan "$tmp/good" base)"
-  check "the dev tier adds the pinned package" \
-    "$(printf 'rootfs %s %s\ndev %s %s' "$h1" "$u1" "$h2" "$u2")" \
+  check "the base tier takes the extracted rootfs artifact and every all package" \
+    "$(printf 'rootfs %s %s\nall %s %s' "$h1" "$u1" "$h2" "$u2")" \
+    "$(manifest_plan "$tmp/good" base)"
+  check "the dev tier adds the pinned package on top of the all packages" \
+    "$(printf 'rootfs %s %s\ndev %s %s\nall %s %s' "$h1" "$u1" "$h2" "$u2" "$h2" "$u2")" \
     "$(manifest_plan "$tmp/good" dev)"
   rejects "a 63-char checksum" "$tmp/short" base
   rejects "an uppercase checksum" "$tmp/upper" base
   rejects "an unknown role" "$tmp/role" base
   rejects "a dev entry that is not an apk" "$tmp/dev-tar" dev
+  rejects "an all entry that is not an apk" "$tmp/all-tar" base
   rejects "a fourth column" "$tmp/columns" base
   rejects "a comment-only manifest" "$tmp/empty" dev
   rejects "an entry with no URL" "$tmp/no-url" base
@@ -201,9 +221,13 @@ run_selftest() {
     "$(manifest_plan "$manifest" dev | grep -c '^rootfs ')"
   check "every committed dev entry is an apk package" "0" \
     "$(manifest_plan "$manifest" dev | awk '$1 == "dev" && $3 !~ /\.apk$/ { n++ } END { print n + 0 }')"
-  check "the committed dev set carries git nodejs python3 rust and zig" "5" \
+  check "the committed dev set carries nodejs python3 rust and zig" "4" \
     "$(manifest_plan "$manifest" dev | awk '$1 == "dev" { print $3 }' \
-      | grep -cE '/(git|nodejs|python3|rust|zig)-[0-9]')"
+      | grep -cE '/(nodejs|python3|rust|zig)-[0-9]')"
+  check "every committed all entry is an apk package" "0" \
+    "$(manifest_plan "$manifest" dev | awk '$1 == "all" && $3 !~ /\.apk$/ { n++ } END { print n + 0 }')"
+  check "the committed BASE tier carries git, so a workspace can clone" "1" \
+    "$(manifest_plan "$manifest" base | awk '$1 == "all" { print $3 }' | grep -cE '/git-[0-9]')"
 
   rm -rf "$tmp"
   printf '[guest-image] selftest: %d ok, %d failed\n' "$ok" "$bad"
@@ -241,7 +265,15 @@ abs() { case "$1" in /*) printf '%s\n' "$1" ;; *) printf '%s/%s\n' "$PWD" "$1" ;
 [ -z "$payload" ] || payload="$(abs "$payload")"
 [ -n "$out" ] || fail "--out IMG is required"
 
-if [ "$in_container" = 1 ] && [ "$(id -u)" != 0 ]; then
+# The container hop is about capability, not privilege: installing pinned
+# packages needs `apk`, which only the builder image has. Root is NOT required —
+# unprivileged apk installs with --no-chown/--no-scripts, and the ownership
+# check below already keeps a rootless image from being called shippable.
+needs_builder=0
+if tier_needs_apk "$manifest" "$tier" && ! command -v apk >/dev/null; then
+  needs_builder=1
+fi
+if [ "$(id -u)" != 0 ] && { [ "$in_container" = 1 ] || [ "$needs_builder" = 1 ]; }; then
   engine="${PABRIK_CONTAINER_ENGINE:-}"
   if [ -z "$engine" ]; then
     if docker info >/dev/null 2>&1; then
@@ -284,9 +316,8 @@ command -v sha256sum >/dev/null || fail "sha256sum missing"
 command -v curl >/dev/null || command -v wget >/dev/null || fail "curl or wget missing"
 [ -f "$agent_bin" ] || fail "no agent at $agent_bin - run 'zig build vm' first"
 [ -f "$bootstrap_bin" ] || fail "no bootstrap at $bootstrap_bin - run 'zig build vm' first"
-if [ "$tier" = dev ]; then
-  command -v apk >/dev/null || fail "the dev tier installs its packages with apk-tools; run with --in-container"
-  [ "$(id -u)" = 0 ] || fail "the dev tier needs root to set package ownership in the rootfs; run with --in-container"
+if tier_needs_apk "$manifest" "$tier"; then
+  command -v apk >/dev/null || fail "the $tier tier installs pinned packages with apk-tools; run with --in-container"
 fi
 
 payload="$(payload_dir "$payload")" || fail "the payload above is not usable"
@@ -313,6 +344,10 @@ while read -r role hash url; do
   actual="$(sha256sum "$file" | cut -d' ' -f1)"
   [ "$actual" = "$hash" ] || fail "sha256 mismatch for $(basename "$url"): manifest=$hash actual=$actual"
   case "$role" in
+    all)
+      say "verified $(basename "$url") sha256=${hash:0:16} (every-tier package)"
+      packages+=("$file")
+      ;;
     dev)
       say "verified $(basename "$url") sha256=${hash:0:16} (dev package)"
       packages+=("$file")
@@ -335,8 +370,12 @@ if [ "${#packages[@]}" -gt 0 ]; then
   # No repository at all, so these FILES are the only source apk may pick from,
   # and `--force-non-repository` is apk's own way of being told "install them
   # anyway". Alpine's signature still verifies against the builder's keyring.
-  apk add --root "$work" --repositories-file /dev/null --no-network --force-non-repository \
-    "${packages[@]}" || fail "apk could not install the pinned package set"
+  # Unprivileged, `--no-chown`/`--no-scripts` are what keep apk working: chown
+  # and package triggers are the only two steps it cannot do without root, and
+  # the ownership check below already refuses to call such an image shippable.
+  apk_install=(add --root "$work" --repositories-file /dev/null --no-network --force-non-repository)
+  [ "$(id -u)" = 0 ] || apk_install+=(--no-chown --no-scripts)
+  apk "${apk_install[@]}" "${packages[@]}" || fail "apk could not install the pinned package set"
 fi
 
 # ─── our own side ────────────────────────────────────────────────────────
