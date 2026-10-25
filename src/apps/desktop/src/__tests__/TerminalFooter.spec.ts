@@ -1,10 +1,6 @@
-/** Behaviour tests for the window-level terminal footer: the strip opens the
- * dialog, the dialog lists the live shells grouped per workspace, and picking
- * one turns the dialog into that terminal. */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 
-// ─── xterm fakes (jsdom has no layout/canvas for the real renderer) ─────────
 const { FakeTerminal, FakeFitAddon } = vi.hoisted(() => {
   class FakeTerminal {
     static instances: FakeTerminal[] = []
@@ -36,6 +32,9 @@ const { FakeTerminal, FakeFitAddon } = vi.hoisted(() => {
 
   class FakeFitAddon {
     fit() {}
+    proposeDimensions() {
+      return { cols: 80, rows: 24 }
+    }
   }
 
   return { FakeTerminal, FakeFitAddon }
@@ -44,7 +43,6 @@ const { FakeTerminal, FakeFitAddon } = vi.hoisted(() => {
 vi.mock('@xterm/xterm', () => ({ Terminal: FakeTerminal }))
 vi.mock('@xterm/addon-fit', () => ({ FitAddon: FakeFitAddon }))
 
-// ─── WebSocket fake ─────────────────────────────────────────────────────────
 const { FakeWebSocket } = vi.hoisted(() => {
   type Handler = ((event: never) => void) | null
   class FakeWebSocket {
@@ -90,17 +88,18 @@ const { FakeWebSocket } = vi.hoisted(() => {
 
 vi.stubGlobal('WebSocket', FakeWebSocket)
 
-// ─── API fake ───────────────────────────────────────────────────────────────
+interface Row {
+  id: string
+  workspace_id: string
+  cwd: string
+  cols: number
+  rows: number
+  exited: boolean
+  backend: string
+}
+
 const apiState = {
-  sessions: [] as Array<{
-    id: string
-    workspace_id: string
-    cwd: string
-    cols: number
-    rows: number
-    exited: boolean
-    backend: string
-  }>,
+  sessions: [] as Row[],
   nextId: 0,
 }
 
@@ -123,14 +122,21 @@ vi.mock('../api', () => ({
     return { id, pid: 900 + apiState.nextId }
   }),
   listTerminalSessions: vi.fn(async () => apiState.sessions),
+  deleteTerminalSession: vi.fn(async (id: string) => {
+    apiState.sessions = apiState.sessions.filter((s) => s.id !== id)
+    return { ok: true }
+  }),
   sendTerminalInput: vi.fn(async () => ({ ok: true, bytes: 3 })),
   resizeTerminal: vi.fn(async () => ({ ok: true, cols: 80, rows: 24 })),
 }))
 
 import TerminalFooter from '../components/shell/TerminalFooter.vue'
 import { createTerminalSession } from '../api'
+import { makeLocalStorageStub } from './helpers'
 
-const flush = async (rounds = 5) => {
+const HEIGHT_KEY = 'pabrik-terminal-panel-height'
+
+const flush = async (rounds = 6) => {
   for (let i = 0; i < rounds; i++) {
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
@@ -138,7 +144,7 @@ const flush = async (rounds = 5) => {
 
 const WORKSPACES = [
   { id: 'ws_1', name: 'Pabrik SaaS' },
-  { id: 'ws_2', name: 'Kabelweb' },
+  { id: 'ws_2', name: 'Kabelweb', items: [{ path: '/home/ginwa/kabelweb' }] },
 ]
 
 const mountFooter = () =>
@@ -150,10 +156,18 @@ const mountFooter = () =>
     },
   })
 
-const q = (selector: string) => document.body.querySelector(selector)
-const qAll = (selector: string) => Array.from(document.body.querySelectorAll(selector))
+const openPanel = async (wrapper: ReturnType<typeof mountFooter>) => {
+  await wrapper.find('[data-testid="terminal-footer-open"]').trigger('click')
+  await flush()
+}
 
-describe('the terminal footer', () => {
+const tabIds = (wrapper: ReturnType<typeof mountFooter>) =>
+  wrapper.findAll('[data-testid="terminal-tab"]').map((tab) => tab.attributes('data-session'))
+
+const socketIds = () =>
+  FakeWebSocket.instances.map((socket) => new URL(socket.url).searchParams.get('id'))
+
+describe('the terminal dock', () => {
   beforeEach(() => {
     FakeTerminal.instances = []
     FakeWebSocket.instances = []
@@ -188,40 +202,81 @@ describe('the terminal footer', () => {
       },
     ]
     document.body.innerHTML = ''
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: makeLocalStorageStub(),
+      writable: true,
+      configurable: true,
+    })
     vi.clearAllMocks()
   })
 
-  it('opens a dialog that lists the live shells grouped per workspace', async () => {
+  it('reports how many shells are running on the strip', async () => {
     const wrapper = mountFooter()
     await flush()
 
-    // The strip carries the count of the shells that are running.
     expect(wrapper.find('[data-testid="terminal-footer-count"]').text()).toBe('2')
-
-    await wrapper.find('[data-testid="terminal-footer-open"]').trigger('click')
-    await flush()
-
-    const groups = qAll('[data-testid="terminal-footer-group"]')
-    expect(groups).toHaveLength(2)
-    // The group heading names the workspace, and the row under it belongs
-    // to that workspace.
-    const names = qAll('[data-testid="terminal-footer-group-name"]').map((n) =>
-      n.textContent?.trim(),
-    )
-    expect(names).toEqual(['Pabrik SaaS', 'Kabelweb'])
-    const rows = qAll('[data-testid="terminal-footer-row"]')
-    expect(rows.map((r) => (r as HTMLElement).dataset.session)).toEqual([
-      'term-1',
-      'term-3',
-      'term-2',
-    ])
-    expect((rows[0] as HTMLElement).dataset.workspace).toBe('ws_1')
-    expect((rows[2] as HTMLElement).dataset.workspace).toBe('ws_2')
 
     wrapper.unmount()
   })
 
-  it('shows a shell whose workspace is gone, dimmed, instead of hiding it', async () => {
+  it('docks the panel inside the window instead of opening a dialog over it', async () => {
+    const wrapper = mountFooter()
+    await flush()
+    await openPanel(wrapper)
+
+    const panel = wrapper.find('[data-testid="terminal-panel"]')
+    expect(panel.exists()).toBe(true)
+    expect(panel.attributes('role')).toBe('region')
+    expect(panel.attributes('class')).not.toContain('fixed')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="terminal-footer-dialog"]').exists()).toBe(false)
+    expect(panel.element.parentElement).toBe(
+      wrapper.find('[data-testid="terminal-footer"]').element.parentElement,
+    )
+
+    wrapper.unmount()
+  })
+
+  it('attaches a shell that is already running when the panel opens', async () => {
+    const wrapper = mountFooter()
+    await flush()
+    await openPanel(wrapper)
+
+    expect(socketIds()).toEqual(['term-1'])
+    expect(FakeTerminal.instances).toHaveLength(1)
+
+    wrapper.unmount()
+  })
+
+  it('puts one tab per shell in the header, shells of a workspace together', async () => {
+    const wrapper = mountFooter()
+    await flush()
+    await openPanel(wrapper)
+
+    expect(tabIds(wrapper)).toEqual(['term-1', 'term-3', 'term-2'])
+    expect(wrapper.findAll('[data-testid="terminal-tab"]')[0]?.attributes('data-active')).toBe('true')
+
+    wrapper.unmount()
+  })
+
+  it('attaches the shell a tab names and drops the socket of the tab left behind', async () => {
+    const wrapper = mountFooter()
+    await flush()
+    await openPanel(wrapper)
+
+    await wrapper.find('[data-testid="terminal-tab"][data-session="term-2"]').trigger('click')
+    await flush()
+
+    expect(socketIds()).toEqual(['term-1', 'term-2'])
+    expect(FakeWebSocket.instances[0]?.closed).toBe(true)
+    expect(FakeWebSocket.instances[1]?.closed).toBe(false)
+    expect(FakeTerminal.instances[0]?.disposed).toBe(true)
+    expect(wrapper.find('[data-session="term-2"]').attributes('data-active')).toBe('true')
+
+    wrapper.unmount()
+  })
+
+  it('keeps a shell whose workspace is gone, marked and dimmed', async () => {
     apiState.sessions = [
       ...apiState.sessions,
       {
@@ -236,56 +291,30 @@ describe('the terminal footer', () => {
     ]
     const wrapper = mountFooter()
     await flush()
-    await wrapper.find('[data-testid="terminal-footer-open"]').trigger('click')
+    await openPanel(wrapper)
+
+    const tab = wrapper.find('[data-testid="terminal-tab"][data-session="term-9"]')
+    expect(tab.exists()).toBe(true)
+    expect(tab.attributes('data-orphan')).toBe('true')
+    expect(tab.attributes('title')).toContain('workspace deleted')
+
+    await tab.trigger('click')
     await flush()
 
-    // The shell still runs, so it is listed — and it says the truth about
-    // the workspace that owned it.
-    expect(q('[data-session="term-9"]')).not.toBeNull()
-    expect(q('[data-testid="terminal-footer-group-gone"]')?.textContent).toContain(
-      'workspace deleted',
-    )
-    const row = q('[data-session="term-9"]') as HTMLElement
-    expect(Number(row.style.opacity)).toBeLessThan(1)
+    expect(socketIds()).toContain('term-9')
+    expect(wrapper.find('[data-testid="terminal-orphan"]').text()).toContain('workspace deleted')
 
     wrapper.unmount()
   })
 
-  it('turns the dialog into the terminal when a shell is picked', async () => {
+  it('marks the tab of a shell that has exited', async () => {
     const wrapper = mountFooter()
     await flush()
-    await wrapper.find('[data-testid="terminal-footer-open"]').trigger('click')
-    await flush()
+    await openPanel(wrapper)
 
-    ;(q('[data-session="term-1"]') as HTMLElement).click()
-    await flush()
-
-    // The list is replaced by the session it named, and the shell is
-    // attached to THAT session.
-    expect(q('[data-testid="terminal-footer-list"]')).toBeNull()
-    expect(q('[data-testid="terminal-footer-terminal"]')).not.toBeNull()
-    expect(FakeWebSocket.instances.map((s) => s.url).join(' ')).toContain('id=term-1')
-    expect(FakeTerminal.instances).toHaveLength(1)
-
-    wrapper.unmount()
-  })
-
-  it('puts the list back when the back arrow is pressed', async () => {
-    const wrapper = mountFooter()
-    await flush()
-    await wrapper.find('[data-testid="terminal-footer-open"]').trigger('click')
-    await flush()
-    ;(q('[data-session="term-1"]') as HTMLElement).click()
-    await flush()
-
-    ;(q('[data-testid="terminal-footer-back"]') as HTMLElement).click()
-    await flush()
-
-    expect(q('[data-testid="terminal-footer-list"]')).not.toBeNull()
-    expect(q('[data-testid="terminal-footer-terminal"]')).toBeNull()
-    // The socket to the shell is closed: the shell keeps running on the
-    // server, the footer just stops watching it.
-    expect(FakeWebSocket.instances.every((s) => s.closed)).toBe(true)
+    const tab = wrapper.find('[data-testid="terminal-tab"][data-session="term-3"]')
+    expect(tab.attributes('data-exited')).toBe('true')
+    expect(tab.attributes('title')).toContain('exited')
 
     wrapper.unmount()
   })
@@ -293,30 +322,157 @@ describe('the terminal footer', () => {
   it('starts a new shell in the workspace the app is on', async () => {
     const wrapper = mountFooter()
     await flush()
-    await wrapper.find('[data-testid="terminal-footer-open"]').trigger('click')
-    await flush()
+    await openPanel(wrapper)
 
-    ;(q('[data-testid="terminal-footer-new"]') as HTMLElement).click()
+    await wrapper.find('[data-testid="terminal-new"]').trigger('click')
     await flush()
 
     expect(createTerminalSession).toHaveBeenCalledWith('ws_1', '/home/ginwa/pabrik', {})
-    // The new shell is opened, not merely created.
-    expect(q('[data-testid="terminal-footer-terminal"]')).not.toBeNull()
+    expect(tabIds(wrapper)).toContain('term-new-1')
+    expect(socketIds()).toContain('term-new-1')
+    expect(wrapper.find('[data-session="term-new-1"]').attributes('data-active')).toBe('true')
 
     wrapper.unmount()
   })
 
-  it('starts a new shell in the workspace of the group it was pressed in', async () => {
+  it('starts a new shell in a workspace picked from the header menu', async () => {
     const wrapper = mountFooter()
     await flush()
-    await wrapper.find('[data-testid="terminal-footer-open"]').trigger('click')
+    await openPanel(wrapper)
+
+    await wrapper.find('[data-testid="terminal-new-menu"]').trigger('click')
+    await flush()
+    await wrapper
+      .find('[data-testid="terminal-new-in-workspace"][data-workspace-id="ws_2"]')
+      .trigger('click')
     await flush()
 
-    const groupNew = qAll('[data-testid="terminal-footer-group-new"]')[1] as HTMLElement
-    groupNew.click()
+    expect(createTerminalSession).toHaveBeenCalledWith('ws_2', '/home/ginwa/kabelweb', {})
+    expect(tabIds(wrapper)).toContain('term-new-1')
+
+    wrapper.unmount()
+  })
+
+  it('closes the socket when the panel closes while the shell keeps running', async () => {
+    const wrapper = mountFooter()
+    await flush()
+    await openPanel(wrapper)
+
+    await wrapper.find('[data-testid="terminal-close"]').trigger('click')
     await flush()
 
-    expect(createTerminalSession).toHaveBeenCalledWith('ws_2', '', {})
+    expect(wrapper.find('[data-testid="terminal-panel"]').exists()).toBe(false)
+    expect(FakeWebSocket.instances.every((socket) => socket.closed)).toBe(true)
+    expect(wrapper.find('[data-testid="terminal-footer-count"]').text()).toBe('2')
+
+    wrapper.unmount()
+  })
+
+  it('drops the tab and the socket of a killed shell, and watches the next one', async () => {
+    const wrapper = mountFooter()
+    await flush()
+    await openPanel(wrapper)
+
+    await wrapper.find('[data-testid="terminal-kill"]').trigger('click')
+    await flush()
+
+    expect(tabIds(wrapper)).not.toContain('term-1')
+    expect(FakeWebSocket.instances[0]?.closed).toBe(true)
+    expect(socketIds()).toEqual(['term-1', 'term-2'])
+
+    wrapper.unmount()
+  })
+
+  it('grows the panel when the top edge is dragged and remembers the height', async () => {
+    const wrapper = mountFooter()
+    await flush()
+    await openPanel(wrapper)
+
+    const panel = wrapper.find('[data-testid="terminal-panel"]')
+    expect(panel.attributes('style')).toContain('height: 280px')
+
+    wrapper
+      .find('[data-testid="terminal-panel-resize"]')
+      .element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientY: 400 }))
+    document.dispatchEvent(new MouseEvent('mousemove', { clientY: 300 }))
+    document.dispatchEvent(new MouseEvent('mouseup'))
+    await flush()
+
+    expect(panel.attributes('style')).toContain('height: 380px')
+    expect(localStorage.getItem(HEIGHT_KEY)).toBe('380')
+
+    wrapper.unmount()
+  })
+
+  it('stops a dragged height at what the window can hold', async () => {
+    const wrapper = mountFooter()
+    await flush()
+    await openPanel(wrapper)
+
+    const ceiling = Math.round(window.innerHeight * 0.8)
+    wrapper
+      .find('[data-testid="terminal-panel-resize"]')
+      .element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientY: 300 }))
+    document.dispatchEvent(new MouseEvent('mousemove', { clientY: -5000 }))
+    document.dispatchEvent(new MouseEvent('mouseup'))
+    await flush()
+
+    expect(wrapper.find('[data-testid="terminal-panel"]').attributes('style')).toContain(
+      `height: ${ceiling}px`,
+    )
+
+    wrapper.unmount()
+  })
+
+  it('reopens the panel at the height of the last drag', async () => {
+    localStorage.setItem(HEIGHT_KEY, '360')
+    const wrapper = mountFooter()
+    await flush()
+    await openPanel(wrapper)
+
+    expect(wrapper.find('[data-testid="terminal-panel"]').attributes('style')).toContain(
+      'height: 360px',
+    )
+
+    wrapper.unmount()
+  })
+
+  it('maximizes the panel and restores it to the dragged height', async () => {
+    const wrapper = mountFooter()
+    await flush()
+    await openPanel(wrapper)
+
+    await wrapper.find('[data-testid="terminal-maximize"]').trigger('click')
+    await flush()
+    expect(wrapper.find('[data-testid="terminal-panel"]').attributes('style')).toContain(
+      'height: 70vh',
+    )
+
+    await wrapper.find('[data-testid="terminal-maximize"]').trigger('click')
+    await flush()
+    expect(wrapper.find('[data-testid="terminal-panel"]').attributes('style')).toContain(
+      'height: 280px',
+    )
+
+    wrapper.unmount()
+  })
+
+  it('offers a workspace to start the first shell in when nothing is running', async () => {
+    apiState.sessions = []
+    const wrapper = mountFooter()
+    await flush()
+    await openPanel(wrapper)
+
+    expect(wrapper.find('[data-testid="terminal-empty"]').exists()).toBe(true)
+    expect(tabIds(wrapper)).toEqual([])
+
+    await wrapper
+      .find('[data-testid="terminal-empty-new"][data-workspace-id="ws_2"]')
+      .trigger('click')
+    await flush()
+
+    expect(createTerminalSession).toHaveBeenCalledWith('ws_2', '/home/ginwa/kabelweb', {})
+    expect(tabIds(wrapper)).toEqual(['term-new-1'])
 
     wrapper.unmount()
   })

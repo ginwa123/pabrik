@@ -1006,7 +1006,7 @@ defineExpose({
 
 <template>
   <aside
-    class="h-screen flex flex-col relative transition-all duration-200 ease-out select-none"
+    class="h-full flex flex-col relative transition-all duration-200 ease-out select-none"
     :style="{
       width: isCollapsed ? '64px' : sidebarWidth + 'px',
       backgroundColor: 'var(--semantic-sidebar-bg)',
