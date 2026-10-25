@@ -35,7 +35,7 @@ say "building pabrik-vmd (zig build vmd)"
 [ -x "$vmd" ] || fail "zig build vmd left no $vmd"
 
 say "assembling the guest image"
-"$repo_root/scripts/build-guest-image.sh" --out "$image" --size 128M | tail -1
+"$repo_root/scripts/build-guest-image.sh" --out "$image" | tail -1
 
 daemon_pid=""
 start_daemon() {

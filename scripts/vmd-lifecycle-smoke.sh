@@ -45,7 +45,7 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$work/vms"
-"$repo_root/scripts/build-guest-image.sh" --out "$work/base.ext4" --size 128M >/dev/null
+"$repo_root/scripts/build-guest-image.sh" --out "$work/base.ext4" >/dev/null
 
 export HOME="$work"
 export PABRIK_VMD_SOCKET="$sock"

@@ -6,7 +6,7 @@
 #
 # Proves WITHOUT any internet access:
 #   1. netd starts in the guest, brings `lo` up, writes /etc/resolv.conf and
-#      listens on 127.0.0.1:3128 / 127.0.0.1:53
+#      listens on 127.0.0.1:3128 / 127.0.0.1:53 — in a Fedora guest
 #   2. a guest dial to 127.0.0.1:8081 (the control plane's port) is refused by
 #      the HOST's egress proxy, and the audit log says why
 #   3. a guest dial to a host the workspace did not declare is refused too
@@ -62,7 +62,7 @@ say "build the VM trio and the daemon"
 [ -x "$vmd" ] || fail "zig build vmd did not produce $vmd"
 
 say "guest image (base tier, rootless)"
-"$repo_root/scripts/build-guest-image.sh" --out "$image" --size 128M >/dev/null
+"$repo_root/scripts/build-guest-image.sh" --out "$image" >/dev/null
 # The image must carry the forwarder, or the guest has no way out at all.
 debugfs -R 'stat /usr/bin/pabrik-vm-netd' "$image" 2>/dev/null | grep -q 'Type: regular' \
   || fail "the image has no /usr/bin/pabrik-vm-netd"
@@ -85,10 +85,12 @@ exec_in() {
 }
 
 say "boot the workspace and check what netd set up"
-out="$(exec_in /bin/sh -c 'id -u; cat /etc/resolv.conf; busybox --list | grep -c .' 2>/dev/null)"
+out="$(exec_in /bin/sh -c 'id -u; cat /etc/resolv.conf; . /etc/os-release && echo $ID' 2>/dev/null)"
 printf '%s\n' "$out" | sed 's/^/    /'
 printf '%s\n' "$out" | head -1 | grep -qx 1000 || fail "the guest workload is not uid 1000"
 printf '%s\n' "$out" | grep -q '^nameserver 127.0.0.1$' || fail "netd did not write /etc/resolv.conf"
+# The distribution the image is built from, asserted where it matters: in the guest.
+printf '%s\n' "$out" | grep -qx 'fedora' || fail "the guest is not Fedora: $(printf '%s' "$out" | tail -1)"
 
 serial="$vms/workspaces/$ws/serial.log"
 for want in 'netd started' 'lo up' 'proxy listening on 127.0.0.1:3128' 'dns listening on 127.0.0.1:53'; do
@@ -108,7 +110,7 @@ printf 'example.com 80\n' >"$vms/workspaces/$ws/egress.allow"
 
 say "a dial to the control plane's own port is refused by the host"
 exec_in /bin/sh -c \
-  'http_proxy=http://127.0.0.1:3128 wget -q -O- -T 5 http://127.0.0.1:8081/health 2>&1 || echo refused' \
+  'http_proxy=http://127.0.0.1:3128 curl -sS -m 8 http://127.0.0.1:8081/health 2>&1 || echo refused' \
   >"$work/probe-cp.txt" 2>&1 || true
 cat "$work/probe-cp.txt" | sed 's/^/    /'
 grep -qi 'refused\|403\|forbidden' "$work/probe-cp.txt" || fail "the dial to 127.0.0.1:8081 was not refused"
@@ -117,7 +119,7 @@ ok "refused by policy, and the audit log agrees"
 
 say "a dial to an undeclared host is refused before any resolution"
 exec_in /bin/sh -c \
-  'http_proxy=http://127.0.0.1:3128 wget -q -O- -T 5 http://not.declared.example/ 2>&1 || echo refused' \
+  'http_proxy=http://127.0.0.1:3128 curl -sS -m 8 http://not.declared.example/ 2>&1 || echo refused' \
   >"$work/probe-undeclared.txt" 2>&1 || true
 grep -q 'outcome=not declared' "$egress_log" || fail "the undeclared host was not refused"
 ok "refused as undeclared"
@@ -140,7 +142,7 @@ host_has_net=0
 curl -sS -m 5 -o /dev/null http://example.com/ >/dev/null 2>&1 && host_has_net=1
 if [ "$host_has_net" = 1 ]; then
   # No `http_proxy=` on this command line: the guest has to supply it.
-  exec_in /bin/sh -c 'wget -q -O- -T 15 http://example.com/ 2>&1 | head -c 200' \
+  exec_in /bin/sh -c 'curl -sS -m 15 http://example.com/ 2>&1 | head -c 200' \
     >"$work/probe-public.txt" 2>&1 || true
   head -c 200 "$work/probe-public.txt" | sed 's/^/    /'
   grep -q 'outcome=allowed' "$egress_log" || fail "the public GET was not allowed"
@@ -166,7 +168,7 @@ else
 fi
 
 say "an https:// URL without CONNECT is refused BY NAME, not with a bare 400"
-exec_in /bin/sh -c 'wget -S -O- -T 10 https://example.com/ 2>&1 | head -6' \
+exec_in /bin/sh -c 'curl -sS -m 10 https://example.com/ 2>&1 | head -6' \
   >"$work/probe-https-noconnect.txt" 2>&1 || true
 head -6 "$work/probe-https-noconnect.txt" | sed 's/^/    /'
 grep -q '501 Not Implemented' "$work/probe-https-noconnect.txt" \
@@ -174,9 +176,9 @@ grep -q '501 Not Implemented' "$work/probe-https-noconnect.txt" \
 ok "told the client to tunnel, and nothing was dialled"
 
 say "the guest resolver answers over vsock (or answers SERVFAIL, which is an answer)"
-exec_in /bin/sh -c 'nslookup example.com 127.0.0.1 2>&1 | head -5' >"$work/probe-dns.txt" 2>&1 || true
+exec_in /bin/sh -c 'getent hosts example.com 2>&1 | head -3' >"$work/probe-dns.txt" 2>&1 || true
 cat "$work/probe-dns.txt" | sed 's/^/    /'
-grep -qi 'address\|servfail\|nxdomain\|name:' "$work/probe-dns.txt" \
+grep -qiE '^[0-9]+\.[0-9]+|servfail|nxdomain' "$work/probe-dns.txt" \
   || fail "the guest resolver produced no answer at all: $(cat "$work/probe-dns.txt")"
 grep -q 'dns=' "$egress_log" || fail "the audit log has no resolver line"
 ok "the resolver answered through the host"
@@ -185,7 +187,7 @@ say "the preview tunnel: proxy.exchange -> the guest's port.forward -> a guest s
 # A DETACHED job, because the agent's frame loop is serial: a foreground exec
 # would hold the one connection every other guest op has to share.
 PABRIK_VM_DIR="$vms" "$vmd" spawn --socket "$sock" --workspace-id "$ws" --log-name ncsrv -- \
-  /bin/sh -c "while true; do printf 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 11\r\n\r\nhello there' | nc -l -p 3000; done" \
+  /bin/sh -c "while true; do printf 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 11\r\n\r\nhello there' | nc -l 3000; done" \
   >/dev/null 2>&1 || fail "could not start the guest's test server"
 sleep 3
 printf '3000\n' >"$vms/workspaces/$ws/preview.ports"

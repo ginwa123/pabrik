@@ -32,7 +32,7 @@ say "building pabrik-vmd (zig build vmd)"
 say "pabrik-vmd bytes=$(stat -c %s "$vmd")"
 
 say "assembling the guest image"
-"$repo_root/scripts/build-guest-image.sh" --out "$work/base.ext4" --size 128M | tail -2
+"$repo_root/scripts/build-guest-image.sh" --out "$work/base.ext4" | tail -2
 
 run() { PABRIK_VM_DIR="$vms" "$vmd" run --workspace-id "$ws" --base-image "$work/base.ext4" \
   --kernel "$guest_kernel" --fc "$fc_bin" "$@"; }

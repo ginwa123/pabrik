@@ -19,7 +19,7 @@
 # ~128 MiB before any package is added (Alpine's minirootfs is ~8 MiB), so the
 # base image is 1 GiB and a workspace disk is a copy of that.
 #
-# Version pinning: `releases/41/Container/...` is an immutable Fedora release
+# Version pinning: `releases/44/Container/...` is an immutable Fedora release
 # path — published release artifacts are never rewritten, the same guarantee the
 # Alpine pin relied on. Never use a `latest`/`updates` path here.
-fba506811bbdcc8915ea3515268c23158ab1f449d4929aab19ec08c7bee4d693  https://download.fedoraproject.org/pub/fedora/linux/releases/41/Container/x86_64/images/Fedora-Container-Base-Generic-Minimal-41-1.4.x86_64.oci.tar.xz  rootfs
+2e405ab2b84155c32887f07ed1b259b342acda7547272607c1d18eb7cd1af961  https://download.fedoraproject.org/pub/fedora/linux/releases/44/Container/x86_64/images/Fedora-Container-Base-Generic-Minimal-44-1.7.x86_64.oci.tar.xz  rootfs
