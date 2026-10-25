@@ -56,7 +56,7 @@ const tick_ms: i32 = 1000;
 
 /// The egress tunnel is retried five times, 200 ms apart, on ECONNREFUSED:
 /// the host's listener may still be starting when the first client arrives.
-const connect_attempts: usize = 5;
+const connect_attempts: usize = 15;
 const connect_retry_ms: u64 = 200;
 const listen_backlog: u32 = 64;
 
@@ -375,8 +375,9 @@ fn writeProfileScript() bool {
     return writeAll(fd, egress.profile_script);
 }
 
-/// A connected AF_VSOCK stream to the host, retried on `ECONNREFUSED` because
-/// the host's listener may still be coming up when the first client arrives.
+/// A connected AF_VSOCK stream to the host, retried for up to 3 s: the host
+/// side of a hybrid-vsock port appears on the guest's first dial, and until it
+/// does `connect` answers ECONNREFUSED (a new workspace's first fetch got 502).
 fn connectVsock(port: u32) ?linux.fd_t {
     var attempt: usize = 0;
     while (attempt < connect_attempts) : (attempt += 1) {
@@ -387,7 +388,25 @@ fn connectVsock(port: u32) ?linux.fd_t {
         const err = linux.errno(linux.connect(fd, @ptrCast(&addr), @sizeOf(SockaddrVm)));
         if (err == .SUCCESS) return fd;
         _ = linux.close(fd);
-        if (err != .CONNREFUSED) return null;
+        if (attempt == connect_attempts - 1) {
+            logLine(switch (err) {
+                .CONNREFUSED => "MISSING egress dial: ECONNREFUSED",
+                .CONNRESET => "MISSING egress dial: ECONNRESET",
+                .CONNABORTED => "MISSING egress dial: ECONNABORTED",
+                .AGAIN => "MISSING egress dial: EAGAIN",
+                .TIMEDOUT => "MISSING egress dial: ETIMEDOUT",
+                .NOENT => "MISSING egress dial: ENOENT",
+                .OPNOTSUPP => "MISSING egress dial: EOPNOTSUPP",
+                .PERM => "MISSING egress dial: EPERM",
+                .INVAL => "MISSING egress dial: EINVAL",
+                .NODEV => "MISSING egress dial: ENODEV",
+                else => "MISSING egress dial: other errno",
+            });
+        }
+        switch (err) {
+            .CONNREFUSED, .CONNRESET, .CONNABORTED, .AGAIN, .TIMEDOUT, .NOENT => {},
+            else => return null,
+        }
         sleepMs(connect_retry_ms);
     }
     return null;
@@ -604,6 +623,15 @@ fn denyClient(conn_fd: linux.fd_t, reason: []const u8) void {
     _ = writeAll(conn_fd, reply);
 }
 
+/// Dial the host once at boot and drop it: the guest-to-host vsock pairing is
+/// set up on the first dial, so paying that here keeps it out of a workload's
+/// first request (which is where it used to surface, as a 502).
+fn warmEgress(port: u32) bool {
+    const fd = connectVsock(port) orelse return false;
+    _ = linux.close(fd);
+    return true;
+}
+
 /// One client connection, in its own forked child: read the head, work out
 /// the destination, open the egress tunnel, then relay until either side ends.
 fn serveTcpClient(conn_fd: linux.fd_t) void {
@@ -783,6 +811,7 @@ pub fn main() void {
     logLine(if (listen_tcp != null) "proxy listening on 127.0.0.1:3128" else "MISSING proxy listener");
     listen_udp = bindLoopbackUdp(dns_port);
     logLine(if (listen_udp != null) "dns listening on 127.0.0.1:53" else "MISSING dns listener");
+    logLine(if (warmEgress(egress_port) and warmEgress(resolver_port)) "egress tunnel primed" else "MISSING egress tunnel");
 
     // One loop over both listeners plus a tick. A listener that is readable
     // but yields nothing (EMFILE, a reset between poll and accept) waits before
