@@ -907,6 +907,16 @@ fn resolveImport(alloc: std.mem.Allocator, from_dir: []const u8, target: []const
     return out.toOwnedSlice(alloc) catch null;
 }
 
+/// `@import("…")` is a Zig string literal, so a host walker's `\\` separator
+/// would read as an escape. Every path in this manifest speaks '/'.
+fn forwardSlashes(alloc: std.mem.Allocator, path: []const u8) []const u8 {
+    const copy = alloc.dupe(u8, path) catch @panic("OOM");
+    for (copy) |*c| {
+        if (c.* == '\\') c.* = '/';
+    }
+    return copy;
+}
+
 fn internPath(
     alloc: std.mem.Allocator,
     pool: *std.StringHashMap([]const u8),
@@ -955,16 +965,18 @@ fn emitTestManifest(b: *std.Build) void {
     }) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.path, ".zig")) continue;
-        if (std.mem.eql(u8, entry.path, "test_manifest.zig")) continue;
+        const rel = forwardSlashes(alloc, entry.path);
+        defer alloc.free(rel);
+        if (std.mem.eql(u8, rel, "test_manifest.zig")) continue;
         const bytes = entry.dir.readFileAlloc(b.graph.io, entry.basename, alloc, .unlimited) catch continue;
         defer alloc.free(bytes);
 
         if (hasTestDecl(bytes)) {
-            test_files.append(alloc, internPath(alloc, &pool, &owned_paths, entry.path)) catch @panic("OOM");
+            test_files.append(alloc, internPath(alloc, &pool, &owned_paths, rel)) catch @panic("OOM");
         }
 
-        const from = internPath(alloc, &pool, &owned_paths, entry.path);
-        const from_dir = std.fs.path.dirname(entry.path) orelse "";
+        const from = internPath(alloc, &pool, &owned_paths, rel);
+        const from_dir = if (std.mem.lastIndexOfScalar(u8, rel, '/')) |slash| rel[0..slash] else "";
         var lines = std.mem.splitScalar(u8, bytes, '\n');
         while (lines.next()) |raw_line| {
             const code = if (std.mem.indexOf(u8, raw_line, "//")) |i| raw_line[0..i] else raw_line;
