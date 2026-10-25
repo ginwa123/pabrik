@@ -6,7 +6,7 @@ const auth_common = @import("auth_common.zig");
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const kanban_model = @import("../agentic_loop/kanban_model.zig");
-const tools_equipped = @import("../agentic_loop/tools_equipped.zig");
+const tools_equipped = @import("../modules/agent/tools/tools_equipped.zig");
 const on_event_sent_kanban = pabrikcore.ai_mod.on_event_sent_kanban;
 const helpers = @import("helpers");
 

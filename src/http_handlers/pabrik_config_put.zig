@@ -8,7 +8,7 @@ const config = pabrikcore.config;
 const user_config_store = pabrikcore.user_config_store;
 const web_search_mask = @import("web_search_mask.zig");
 const parse_thinking_mod = pabrikcore.parse_thinking;
-const tools_equipped = @import("../agentic_loop/tools_equipped.zig");
+const tools_equipped = @import("../modules/agent/tools/tools_equipped.zig");
 const LlmConfig = config.LlmConfig;
 
 /// Parse the PUT body into a `ConfigInput`.

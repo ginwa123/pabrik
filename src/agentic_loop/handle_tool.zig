@@ -4,7 +4,7 @@ const agent = pabrik.agent;
 const logger_mod = pabrik.loggermod;
 const sqlite = pabrik.sqlite;
 const config_mod = pabrik.config;
-const tools_equipped = @import("tools_equipped.zig");
+const tools_equipped = @import("../modules/agent/tools/tools_equipped.zig");
 const tools = @import("tools.zig");
 const llm_history = @import("llm_history.zig");
 const SaveSkill = llm_history.saveSkill;
@@ -30,10 +30,10 @@ const insertLLMHistories = @import("insert_llm_histories.zig").inserLLMHistories
 const skill_evals_db = @import("skill_evals_db.zig");
 
 // ============================================================================
-// TOOL REGISTRY - Single source of truth: tools_equipped.zig
+// TOOL REGISTRY - Single source of truth: modules/agent/tools/tools_equipped.zig
 // ============================================================================
 
-/// Re-export from the canonical registry (`tools_equipped.zig`).
+/// Re-export from the canonical registry (`modules/agent/tools/tools_equipped.zig`).
 pub const TOOL_REGISTRY = tools_equipped.UNIFIED_TOOL_REGISTRY;
 
 /// Context passed to all tool handlers

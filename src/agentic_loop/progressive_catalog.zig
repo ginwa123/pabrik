@@ -525,7 +525,7 @@ test "buildCatalog: the browsing meta-tools are never offered as catalog entries
     // The real registry: it CONTAINS the three meta-tools (they are injected
     // by the workflow), so without an explicit exclusion they would show up
     // as things to discover — letting the agent find search_tool with
-    const registered = @import("tools_equipped.zig").equips(a);
+    const registered = @import("../modules/agent/tools/tools_equipped.zig").equips(a);
     const catalog = try buildCatalog(a, registered, NONE_ENABLED, false, null, &.{}, "agent");
     try testing.expect(catalog.len > 0);
     for (catalog) |entry| {

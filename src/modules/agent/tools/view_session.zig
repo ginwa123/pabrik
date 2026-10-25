@@ -806,7 +806,7 @@ const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = exec_pabrikcore.agent;
 const wrapToolOutput = tools.wrapToolOutput;
-const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+const error_explain = @import("tools_error_explain.zig");
 const view_session_mod = exec_pabrikcore.view_session;
 
 pub fn execViewSession(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {

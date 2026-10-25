@@ -5,7 +5,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
-const tools_equipped = @import("../agentic_loop/tools_equipped.zig");
+const tools_equipped = @import("../modules/agent/tools/tools_equipped.zig");
 const helpers = @import("helpers");
 const agent_kanban_db = @import("../models/agent_kanban.db.zig");
 

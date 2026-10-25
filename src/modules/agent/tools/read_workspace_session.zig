@@ -1273,7 +1273,7 @@ const ToolExecResult = tools.ToolExecResult;
 const agent = exec_pabrikcore.agent;
 const read_workspace_session_mod = exec_pabrikcore.read_workspace_session_tool;
 const wrapToolOutput = tools.wrapToolOutput;
-const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+const error_explain = @import("tools_error_explain.zig");
 pub fn execReadWorkspaceSession(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     const parsed = std.json.parseFromSlice(
         read_workspace_session_mod.ReadWorkspaceSessionInput,

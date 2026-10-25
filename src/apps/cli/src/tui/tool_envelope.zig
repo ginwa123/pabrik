@@ -1,5 +1,5 @@
 //! Parse the JSON tool envelope produced by
-//! `src/agentic_loop/tools_wrap_output.zig`.
+//! `src/modules/agent/tools/tools_wrap_output.zig`.
 
 const std = @import("std");
 const testing = std.testing;

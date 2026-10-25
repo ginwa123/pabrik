@@ -369,7 +369,7 @@ const exec_ReadFileOptions = pabrikcore.read_file.ReadFileOptions;
 const exec_readFile = pabrikcore.read_file.readFile;
 const exec_toJSONSuccess = pabrikcore.read_file.toJSONSuccess;
 const wrapToolOutput = tools.wrapToolOutput;
-const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+const error_explain = @import("tools_error_explain.zig");
 const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
 const exec_path_validate = @import("helpers").path_validate;
 pub fn execReadFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {

@@ -937,7 +937,7 @@ const agent = pabrikcore.agent;
 const present_files_mod = pabrikcore.ai_mod.present_files;
 const exec_file_sandbox = pabrikcore.ai_mod.file_sandbox;
 const wrapToolOutput = tools.wrapToolOutput;
-const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+const error_explain = @import("tools_error_explain.zig");
 const exec_path_validate = @import("helpers").path_validate;
 pub fn execPresentFiles(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     const parsed = std.json.parseFromSlice(

@@ -204,7 +204,7 @@ const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = exec_pabrikcore.agent;
 const wrapToolOutput = tools.wrapToolOutput;
-const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+const error_explain = @import("tools_error_explain.zig");
 const run_session_mod = exec_pabrikcore.run_session;
 
 /// JSON body of a refusal, as the tool-result text.

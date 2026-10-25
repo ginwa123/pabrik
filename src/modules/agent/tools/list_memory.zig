@@ -300,7 +300,7 @@ const ToolExecResult = tools.ToolExecResult;
 const agent = pabrikcore.agent;
 const list_memory_mod = pabrikcore.list_memory_tool;
 const wrapToolOutput = tools.wrapToolOutput;
-const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+const error_explain = @import("tools_error_explain.zig");
 pub fn execListMemory(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     // Memories are global only — no cwd involvement. The env comes from ctx
     // (same path as list_skills); on null we emit an error-tagged XML so the
