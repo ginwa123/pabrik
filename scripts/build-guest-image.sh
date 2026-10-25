@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
-# Assemble the guest rootfs image: pinned artifacts from guest-image.manifest,
-# plus `pabrik-vm-agent` as /init, the in-guest network forwarder, and
-# (optionally) the protocol probe fixture.
+# Assemble the guest rootfs image from Fedora minimal, plus `pabrik-vm-agent`
+# as /init, the in-guest network forwarder, and (optionally) the probe fixture.
 #
-# Nothing here compiles Zig. `zig build vm` produces the two binaries and this
-# script refuses to invent its own command line for them, so the image hash
-# transitively pins the agent's source the same way it pins the Alpine bytes.
+# Nothing here compiles Zig. `zig build vm` produces the binaries and this script
+# refuses to invent its own command line for them, so the image hash transitively
+# pins the agent's source the same way it pins the Fedora bytes.
 #
-# Ownership: restoring root ownership needs root, so a shippable image is built
-# with `--in-container`, which re-runs this script inside a pinned Alpine image.
-# Rootless it still builds, but the whole base lands owned by the calling uid and
-# the script says so.
+# Two pins, and they are different in kind:
+#   * the ROOTFS is a hash-pinned Fedora release artifact (guest-image.manifest);
+#   * the PACKAGE SET is the explicit list below, and the image records what
+#     dnf actually installed in /etc/pabrik-image-rpms. Per-rpm hash pinning is
+#     the follow-up: Fedora release packages are immutable, repository indexes
+#     are not.
+# Everything else runs inside a rootless builder container: dnf needs to chroot
+# for scriptlets, and the image must record 0:0 ownership.
 #
 # Usage: scripts/build-guest-image.sh --out IMG [--tier base|dev]
 #                                     [--agent BIN] [--probe BIN] [--netd BIN]
@@ -41,17 +44,29 @@ guest_gid=1000
 size=""
 cache="${PABRIK_VM_CACHE:-$HOME/.cache/pabrik-vm}"
 in_container=0
-builder_image="docker.io/library/alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6"
-builder_packages="bash=5.3.9-r1 e2fsprogs=1.47.4-r0"
-fetch_timeout=300
+# The builder is Fedora minimal too: one distribution end to end, so a package
+# name means the same thing to the build as it does inside the guest.
+builder_image="registry.fedoraproject.org/fedora-minimal:41@sha256:686fd91f9e23938f77994804ec4ca15302e44a18db778c631a5fecb1ab6b199a"
+builder_packages="bash tar gzip xz e2fsprogs"
+# What every tier gets: a shell, git (a workspace IS a checkout), TLS trust, and
+# the handful of tools a workload and the smoke test reach for.
+base_rpms=(git-core ca-certificates curl nmap-ncat procps-ng iproute tar gzip which)
+# What only the dev tier adds: a toolchain, the package manager's friends.
+dev_rpms=(gcc gcc-c++ make python3 nodejs npm vim-enhanced)
+# A Fedora release archive is ~50 MB and the mirrors are not always fast, so the
+# download gets a long leash; the hash check is what makes it trustworthy.
+fetch_timeout=900
 
 say() { printf '[guest-image] %s\n' "$*"; }
 fail() { printf '[guest-image] FAIL %s\n' "$*" >&2; exit 1; }
 
+# Fedora minimal is ~128 MiB of rootfs before a single package is added, against
+# Alpine's ~8 MiB, so the base image is 1 GiB: the old 128 MiB would not hold the
+# rootfs, and a workspace disk is a copy of this file.
 default_size() {
   case "$1" in
     dev) printf '2048M\n' ;;
-    *) printf '128M\n' ;;
+    *) printf '1024M\n' ;;
   esac
 }
 
@@ -96,25 +111,18 @@ manifest_plan() { # <manifest> <tier>
     fi
     role="${role:-rootfs}"
     case "$role" in
-      rootfs) ;;
-      all)
+      rootfs)
         case "$url" in
-          *.apk) ;;
+          *.tar | *.tar.gz | *.tar.xz | *.tgz) ;;
           *)
-            printf 'manifest: the all role is for apk packages, and %s is not one\n' "$url" >&2
+            printf 'manifest: the rootfs role takes an archive, and %s is not one\n' "$url" >&2
             return 1
             ;;
         esac
         ;;
-      dev)
-        case "$want" in dev) ;; *) continue ;; esac
-        case "$url" in
-          *.apk) ;;
-          *)
-            printf 'manifest: the dev role is for apk packages, and %s is not one\n' "$url" >&2
-            return 1
-            ;;
-        esac
+      all | dev)
+        printf 'manifest: packages are listed in this script now, not here (%s)\n' "$url" >&2
+        return 1
         ;;
       *)
         printf 'manifest: unknown role %s for %s\n' "$role" "$url" >&2
@@ -130,27 +138,34 @@ manifest_plan() { # <manifest> <tier>
   fi
 }
 
-# Whether this tier installs pinned packages, i.e. needs apk and root ownership.
-# `all` applies to every tier, `dev` only to the dev one.
-tier_needs_apk() { # <manifest> <tier>
-  # `grep` without -q on purpose: -q closes the pipe on the first match, and
-  # `set -o pipefail` reads the writer's SIGPIPE as a failed pipeline.
-  manifest_plan "$1" "$2" | grep -E '^(all|dev) ' >/dev/null
+# The packages this tier installs, one name per line. Every tier gets the base
+# set; the dev tier adds its own.
+tier_rpms() { # <tier>
+  printf '%s\n' "${base_rpms[@]}"
+  [ "$1" = dev ] && printf '%s\n' "${dev_rpms[@]}"
+  return 0
 }
+
+# Whether the host can do the install itself: only a Fedora host has dnf, and the
+# install must run as root anyway (chroot for scriptlets, 0:0 ownership), so a
+# container hop is the normal path, not the exception.
+host_can_install() { command -v dnf >/dev/null 2>&1 && [ "$(id -u)" = 0 ]; }
+
 
 run_selftest() {
   local tmp ok=0 bad=0 h1 h2 u1 u2
   tmp="$(mktemp -d)"
-  h1="c5ca053cfe1d85c5b96dff8b9bc57045f7f184a30ffb6b65776409ca90388677"
+  h1="fba506811bbdcc8915ea3515268c23158ab1f449d4929aab19ec08c7bee4d693"
   h2="0e626fa97cf937fda7bba4ed4dde8e2f2dbb5083ac34e02180cec0c4eba9351b"
-  u1="https://example.invalid/base.tar.gz"
-  u2="https://example.invalid/thing.apk"
-  printf '%s  %s\n%s  %s  dev\n%s  %s  all\n' "$h1" "$u1" "$h2" "$u2" "$h2" "$u2" >"$tmp/good"
+  u1="https://example.invalid/fedora-minimal.oci.tar.xz"
+  u2="https://example.invalid/thing.rpm"
+  printf '%s  %s\n' "$h1" "$u1" >"$tmp/good"
   printf '%s  %s\n' "${h1:0:63}" "$u1" >"$tmp/short"
   printf '%s  %s\n' "$(printf '%s' "$h1" | tr 'a-f' 'A-F')" "$u1" >"$tmp/upper"
   printf '%s  %s  weird\n' "$h1" "$u1" >"$tmp/role"
-  printf '%s  %s  dev\n' "$h1" "$u1" >"$tmp/dev-tar"
-  printf '%s  %s  all\n' "$h1" "$u1" >"$tmp/all-tar"
+  printf '%s  %s  all\n' "$h2" "$u2" >"$tmp/all-rpm"
+  printf '%s  %s  dev\n' "$h2" "$u2" >"$tmp/dev-rpm"
+  printf '%s  %s\n' "$h1" "https://example.invalid/thing.rpm" >"$tmp/not-archive"
   printf '%s  %s  rootfs  extra\n' "$h1" "$u1" >"$tmp/columns"
   printf '# only a comment\n' >"$tmp/empty"
   printf '%s  \n' "$h1" >"$tmp/no-url"
@@ -173,7 +188,6 @@ run_selftest() {
       printf '  ok   %s is refused\n' "$1"
     fi
   }
-
   refuses_path() { # <what> <path>
     if payload_dir "$2" >/dev/null 2>&1; then
       bad=$((bad + 1))
@@ -183,21 +197,20 @@ run_selftest() {
       printf '  ok   %s is refused\n' "$1"
     fi
   }
-  check "the base tier takes the extracted rootfs artifact and every all package" \
-    "$(printf 'rootfs %s %s\nall %s %s' "$h1" "$u1" "$h2" "$u2")" \
-    "$(manifest_plan "$tmp/good" base)"
-  check "the dev tier adds the pinned package on top of the all packages" \
-    "$(printf 'rootfs %s %s\ndev %s %s\nall %s %s' "$h1" "$u1" "$h2" "$u2" "$h2" "$u2")" \
-    "$(manifest_plan "$tmp/good" dev)"
+  check "the rootfs archive is what the manifest plans" \
+    "rootfs $h1 $u1" "$(manifest_plan "$tmp/good" base)"
+  check "the same plan for the dev tier: the archive, nothing else" \
+    "rootfs $h1 $u1" "$(manifest_plan "$tmp/good" dev)"
   rejects "a 63-char checksum" "$tmp/short" base
   rejects "an uppercase checksum" "$tmp/upper" base
   rejects "an unknown role" "$tmp/role" base
-  rejects "a dev entry that is not an apk" "$tmp/dev-tar" dev
-  rejects "an all entry that is not an apk" "$tmp/all-tar" base
+  rejects "an all package in the manifest" "$tmp/all-rpm" base
+  rejects "a dev package in the manifest" "$tmp/dev-rpm" dev
+  rejects "a rootfs that is not an archive" "$tmp/not-archive" base
   rejects "a fourth column" "$tmp/columns" base
   rejects "a comment-only manifest" "$tmp/empty" dev
   rejects "an entry with no URL" "$tmp/no-url" base
-  check "the base image default size" "128M" "$(default_size base)"
+  check "the base image default size" "1024M" "$(default_size base)"
   check "the dev image default size" "2048M" "$(default_size dev)"
 
   mkdir -p "$tmp/payload"
@@ -217,17 +230,14 @@ run_selftest() {
     "-v /r:/r:ro -v /c:/c -v /o:/o" \
     "$(container_mounts /r /c /o /r/payload | tr '\n' ' ' | sed 's/ $//')"
 
-  check "the committed manifest pins exactly one extracted base" "1" \
-    "$(manifest_plan "$manifest" dev | grep -c '^rootfs ')"
-  check "every committed dev entry is an apk package" "0" \
-    "$(manifest_plan "$manifest" dev | awk '$1 == "dev" && $3 !~ /\.apk$/ { n++ } END { print n + 0 }')"
-  check "the committed dev set carries nodejs python3 rust and zig" "4" \
-    "$(manifest_plan "$manifest" dev | awk '$1 == "dev" { print $3 }' \
-      | grep -cE '/(nodejs|python3|rust|zig)-[0-9]')"
-  check "every committed all entry is an apk package" "0" \
-    "$(manifest_plan "$manifest" dev | awk '$1 == "all" && $3 !~ /\.apk$/ { n++ } END { print n + 0 }')"
-  check "the committed BASE tier carries git, so a workspace can clone" "1" \
-    "$(manifest_plan "$manifest" base | awk '$1 == "all" { print $3 }' | grep -cE '/git-[0-9]')"
+  check "the committed manifest pins exactly one rootfs archive" "1" \
+    "$(manifest_plan "$manifest" base | grep -c '^rootfs ')"
+  check "the pinned rootfs is a Fedora release archive" "1" \
+    "$(manifest_plan "$manifest" base | grep -c 'fedora.*\.oci\.tar\.xz$')"
+  check "the base set carries git" "1" "$(tier_rpms base | grep -cx 'git-core')"
+  check "the base set carries TLS trust" "1" "$(tier_rpms base | grep -cx 'ca-certificates')"
+  check "the dev tier is the base set plus its own" "1" \
+    "$([ "$(tier_rpms dev | wc -l)" -gt "$(tier_rpms base | wc -l)" ] && echo 1 || echo 0)"
 
   rm -rf "$tmp"
   printf '[guest-image] selftest: %d ok, %d failed\n' "$ok" "$bad"
@@ -265,12 +275,11 @@ abs() { case "$1" in /*) printf '%s\n' "$1" ;; *) printf '%s/%s\n' "$PWD" "$1" ;
 [ -z "$payload" ] || payload="$(abs "$payload")"
 [ -n "$out" ] || fail "--out IMG is required"
 
-# The container hop is about capability, not privilege: installing pinned
-# packages needs `apk`, which only the builder image has. Root is NOT required —
-# unprivileged apk installs with --no-chown/--no-scripts, and the ownership
-# check below already keeps a rootless image from being called shippable.
+# The container hop is about capability: dnf has to run as root (chroot for
+# scriptlets, 0:0 ownership inside the image), and this distribution's package
+# manager is the builder's, not the host's.
 needs_builder=0
-if tier_needs_apk "$manifest" "$tier" && ! command -v apk >/dev/null; then
+if [ "${#base_rpms[@]}" -gt 0 ] && ! host_can_install; then
   needs_builder=1
 fi
 if [ "$(id -u)" != 0 ] && { [ "$in_container" = 1 ] || [ "$needs_builder" = 1 ]; }; then
@@ -297,9 +306,13 @@ if [ "$(id -u)" != 0 ] && { [ "$in_container" = 1 ] || [ "$needs_builder" = 1 ];
   mounts=()
   while IFS= read -r mount; do mounts+=("$mount"); done \
     < <(container_mounts "$repo_root" "$cache" "$out_dir" "$payload")
+  # Keep dnf's downloads between builds: a Fedora package set is ~100 MB, and
+  # re-downloading it on every attempt is the slowest part of this script.
+  mkdir -p "$cache/dnf"
+  mounts+=(-v "$cache/dnf:/var/cache/dnf")
   exec "$engine" run --rm "${mounts[@]}" \
     "$builder_image" \
-    sh -euc "apk add --no-cache $builder_packages >/dev/null && exec bash $self_path$quoted"
+    sh -euc "dnf -q -y install $builder_packages >/dev/null && exec bash $self_path$quoted"
 fi
 
 [ -n "$out" ] || fail "--out IMG is required"
@@ -316,8 +329,8 @@ command -v sha256sum >/dev/null || fail "sha256sum missing"
 command -v curl >/dev/null || command -v wget >/dev/null || fail "curl or wget missing"
 [ -f "$agent_bin" ] || fail "no agent at $agent_bin - run 'zig build vm' first"
 [ -f "$bootstrap_bin" ] || fail "no bootstrap at $bootstrap_bin - run 'zig build vm' first"
-if tier_needs_apk "$manifest" "$tier"; then
-  command -v apk >/dev/null || fail "the $tier tier installs pinned packages with apk-tools; run with --in-container"
+if ! host_can_install; then
+  fail "installing packages needs dnf and root inside the builder: run with --in-container"
 fi
 
 payload="$(payload_dir "$payload")" || fail "the payload above is not usable"
@@ -327,8 +340,45 @@ work="$(dirname "$out")/rootfs"
 rm -rf "$work"
 mkdir -p "$work" "$cache" "$(dirname "$out")"
 
+# A Fedora release artifact is an OCI image archive, not a rootfs tarball:
+# index.json names the image manifest, and that manifest's one layer IS the
+# rootfs. Unpacking it here (as root) is also what records 0:0 ownership.
+unpack_oci() { # <archive> <dest>
+  local archive="$1" dest="$2" tmp manifest blob layer magic rc
+  tmp="$(mktemp -d)" || return 1
+  if ! tar -xf "$archive" -C "$tmp" 2>/dev/null; then
+    rm -rf "$tmp"
+    return 1
+  fi
+  manifest="$(sed -n 's/.*"digest":"\(sha256:[0-9a-f]\{64\}\)".*/\1/p' "$tmp/index.json" 2>/dev/null | head -1)"
+  blob="$tmp/blobs/sha256/${manifest#sha256:}"
+  if [ -z "$manifest" ] || [ ! -f "$blob" ]; then
+    rm -rf "$tmp"
+    return 1
+  fi
+  # Exactly two digests in the manifest: the config and the one layer. Any other
+  # shape is an image this script has not been taught, so it refuses rather than
+  # unpacking half a rootfs.
+  if [ "$(grep -o '"digest":"sha256:[0-9a-f]\{64\}"' "$blob" | wc -l)" -ne 2 ]; then
+    rm -rf "$tmp"
+    return 1
+  fi
+  layer="$tmp/blobs/sha256/$(sed -n 's/.*"digest":"\(sha256:[0-9a-f]\{64\}\)".*/\1/p' "$blob" | tail -1 | sed 's/^sha256://')"
+  if [ ! -f "$layer" ]; then
+    rm -rf "$tmp"
+    return 1
+  fi
+  magic="$(head -c2 "$layer" | od -An -tx1 | tr -d ' \n')"
+  case "$magic" in
+    1f8b) tar -xzf "$layer" -C "$dest" ;;
+    *) tar -xf "$layer" -C "$dest" ;;
+  esac
+  rc=$?
+  rm -rf "$tmp"
+  return $rc
+}
+
 # ─── fetch, verify, then act on the role ─────────────────────────────────
-packages=()
 while read -r role hash url; do
   [ -n "$role" ] || continue
   file="$cache/$(basename "$url")"
@@ -343,40 +393,35 @@ while read -r role hash url; do
   fi
   actual="$(sha256sum "$file" | cut -d' ' -f1)"
   [ "$actual" = "$hash" ] || fail "sha256 mismatch for $(basename "$url"): manifest=$hash actual=$actual"
-  case "$role" in
-    all)
-      say "verified $(basename "$url") sha256=${hash:0:16} (every-tier package)"
-      packages+=("$file")
-      ;;
-    dev)
-      say "verified $(basename "$url") sha256=${hash:0:16} (dev package)"
-      packages+=("$file")
-      ;;
-    rootfs)
-      say "verified $(basename "$url") sha256=${hash:0:16}"
-      extract=(-xzf "$file" -C "$work")
-      [ "$(id -u)" = 0 ] || extract+=(--no-same-owner)
-      tar "${extract[@]}" || fail "extracting $(basename "$url") failed"
-      ;;
-  esac
+  say "verified $(basename "$url") sha256=${hash:0:16}"
+  case "$(basename "$url")" in
+    *.oci.tar.xz | *.oci.tar) unpack_oci "$file" "$work" ;;
+    *) tar -xf "$file" -C "$work" ;;
+  esac || fail "extracting $(basename "$url") failed"
 done <<<"$plan"
 
-# /bin/sh is an ABSOLUTE symlink to /bin/busybox, so a host-side -x on it
-# follows the HOST path and lies. Check the real file instead.
-[ -f "$work/bin/busybox" ] || fail "the extracted rootfs has no /bin/busybox"
+# Fedora's /bin is a symlink into /usr/bin, so the assertion is about the shell
+# the agent's tty and every `exec /bin/sh` resolve to, not a busybox path.
+[ -x "$work/usr/bin/bash" ] || fail "the extracted rootfs has no /usr/bin/bash"
+[ -e "$work/usr/bin/dnf" ] || fail "the extracted rootfs has no dnf, so no packages can be added"
 
-if [ "${#packages[@]}" -gt 0 ]; then
-  say "installing ${#packages[@]} pinned packages with apk add --root"
-  # No repository at all, so these FILES are the only source apk may pick from,
-  # and `--force-non-repository` is apk's own way of being told "install them
-  # anyway". Alpine's signature still verifies against the builder's keyring.
-  # Unprivileged, `--no-chown`/`--no-scripts` are what keep apk working: chown
-  # and package triggers are the only two steps it cannot do without root, and
-  # the ownership check below already refuses to call such an image shippable.
-  apk_install=(add --root "$work" --repositories-file /dev/null --no-network --force-non-repository)
-  [ "$(id -u)" = 0 ] || apk_install+=(--no-chown --no-scripts)
-  apk "${apk_install[@]}" "${packages[@]}" || fail "apk could not install the pinned package set"
+rpms="$(tier_rpms "$tier")"
+say "installing the $tier package set with dnf --installroot"
+printf '%s\n' "$rpms" | sed 's/^/    /'
+# shellcheck disable=SC2086  # deliberate word list
+# Parallel downloads: a package set this size on one connection is the slowest
+# thing this script does, and dnf's default of 3 leaves the mirror idle.
+if ! dnf -q -y --installroot="$work" --releasever=41 \
+    --setopt=install_weak_deps=False --setopt=max_parallel_downloads=10 \
+    install $rpms >"$work.dnf.log" 2>&1; then
+  tail -25 "$work.dnf.log" >&2
+  fail "dnf could not install the package set"
 fi
+say "dnf installed $(rpm --root "$work" -qa | wc -l) packages in total"
+# Provenance: what this image actually holds. The rootfs is hash-pinned; the
+# packages are this list resolved against Fedora 41 on the day of the build.
+rpm --root "$work" -qa --qf '%{name}-%{version}-%{release}.%{arch}\n' | sort \
+  >"$work/etc/pabrik-image-rpms"
 
 # ─── our own side ────────────────────────────────────────────────────────
 # /init is the BOOTSTRAP: it asks the host for the current agent and execs
@@ -423,18 +468,14 @@ if [ "$(id -u)" = 0 ]; then
     [ "$(stat -c '%u:%g' "$work/opt/bench")" = "0:0" ] \
       || fail "a root build must own /opt/bench as 0:0, and it is $(stat -c '%u:%g' "$work/opt/bench")"
   fi
-  [ "$(stat -c '%u:%g' "$work/bin/busybox")" = "0:0" ] \
-    || fail "a root build must own the base as 0:0, and /bin/busybox is $(stat -c '%u:%g' "$work/bin/busybox")"
+  [ "$(stat -c '%u:%g' "$work/usr/bin/bash")" = "0:0" ] \
+    || fail "a root build must own the base as 0:0, and /usr/bin/bash is $(stat -c '%u:%g' "$work/usr/bin/bash")"
   chown "$guest_uid:$guest_gid" "$work/workspace"
   [ "$(stat -c '%u:%g' "$work/workspace")" = "$guest_uid:$guest_gid" ] \
     || fail "a root build must own /workspace as $guest_uid:$guest_gid, and it is $(stat -c '%u:%g' "$work/workspace")"
   [ "$(stat -c '%u:%g' "$work/init")" = "0:0" ] \
     || fail "a root build must own /init as 0:0"
   say "base owned by 0:0, as a shippable image requires"
-else
-  say "WARNING /workspace will be owned by uid $(id -u), and the guest workload is uid $guest_uid"
-  say "WARNING built unprivileged: base files are owned by uid $(id -u), so a"
-  say "WARNING uid-$(id -u) workload inside the guest can rewrite the base. Use --in-container."
 fi
 
 rm -f "$out"

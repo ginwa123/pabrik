@@ -3,9 +3,9 @@
 # root, no loop mount, no VM. This is the outside view `build-guest-image.sh`
 # cannot take of its own output, and the one CI can run on a hosted runner.
 #
-# The checks that matter are ownership (a rootless build leaves the whole base
-# owned by the builder's uid, so a guest workload could rewrite /bin/busybox)
-# and presence (the tier's own binaries really are in the sealed disk).
+# The checks that matter are ownership (an unrooted build would leave the base
+# writable by the guest workload) and presence (the tier's own binaries really
+# are in the sealed disk).
 #
 # Usage: scripts/check-guest-image.sh --image IMG [--tier base|dev]
 #                                     [--require PATH] [--selftest]
@@ -103,11 +103,14 @@ command -v debugfs >/dev/null || fail "debugfs missing (e2fsprogs)"
 # payload may be a binary or a symlink to one, so only ownership is asserted.
 payload=()
 if [ "$tier" = dev ]; then
-  payload+=(/usr/bin/node /usr/bin/python3 /usr/bin/cargo /usr/bin/zig)
+  payload+=(/usr/bin/node /usr/bin/python3 /usr/bin/gcc /usr/bin/make)
 fi
 # git is in EVERY tier: a workspace is a git checkout, and under --saas every
 # git command runs in the guest, so a base image without git cannot clone.
 payload+=(/usr/bin/git)
+# dnf is what makes a workspace able to install anything of its own, and it is
+# the reason this image is a distribution rather than a static busybox.
+payload+=(/usr/bin/dnf)
 # The in-guest network forwarder is the guest's only way out of the VM.
 payload+=(/usr/bin/pabrik-vm-netd)
 payload+=("${extra[@]:-}")
@@ -116,8 +119,11 @@ say "image $image sha256=$(sha256sum "$image" | cut -d' ' -f1)"
 say "tier  $tier"
 expect /init regular 0:0
 [ "$stat_mode" = 0755 ] || fail "/init is mode $stat_mode, and the kernel needs 0755"
-expect /bin/busybox regular 0:0
-expect /bin/sh symlink 0:0
+# Fedora's /bin is a symlink into /usr/bin, so the shell the agent execs is the
+# real file to assert.
+expect /usr/bin/bash regular 0:0
+expect /usr/bin/sh symlink 0:0
+expect /usr/bin/git regular 0:0
 # A root build that never hands the tenant's own directory over leaves it 0:0.
 expect /workspace directory 1000:1000
 
