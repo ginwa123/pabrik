@@ -125,9 +125,7 @@ fn loadOverlay(
 ) ?[]u8 {
     return workspace_config.workspaceOverlay(
         allocator,
-        di.io,
         di.db,
-        di.environment,
         di.auth_enabled,
         owner,
         workspace_id,
@@ -204,14 +202,14 @@ pub fn workspaceConfigPutHandler(
     // `req.body` is `[]const u8` here (an absent body is the empty slice),
     // not an optional - do not reach for `orelse`.
     const body = req.body;
-    // An empty body is "inherit": the same thing the settings page sends when
-    // the user resets a workspace to the user-level config.
+    // An empty body means "this workspace has NO scoped settings": the row is
+    // kept (so the state is a decision, not an accident) with a NULL body.
     if (std.mem.trim(u8, body, " \t\r\n").len == 0) {
         store.clear(allocator, di.db, owner, workspace_id) catch
             return errorResponse(res, allocator, error.QueryFailed);
         return res.jsonResponse(.{
             .status_code = 200,
-            .data = try okResponse(allocator, "workspace config inherits the user config"),
+            .data = try okResponse(allocator, "workspace config cleared"),
         });
     }
 

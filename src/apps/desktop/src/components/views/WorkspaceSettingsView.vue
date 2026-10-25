@@ -5,8 +5,9 @@
 
   The config sections edit THIS workspace's own row
   (`/api/workspaces/:id/config`): profiles, MCP servers, tools, skill evals
-  and web search are workspace-scoped, so a workspace gets its own copy when
-  it is created and never reads them from the user config.
+  and web search are workspace-scoped, and a brand-new workspace starts
+  EMPTY - nothing is copied from the user config and nothing is inherited
+  on read, so these sections show only what was saved here.
 
   Skills are rows scoped to one workspace (`GET
   /workspaces/:id/skills`), so the panel binds the route workspace — not

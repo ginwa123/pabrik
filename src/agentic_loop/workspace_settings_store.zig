@@ -22,7 +22,7 @@ pub fn isEmptyOverlay(json_text: []const u8) bool {
 }
 
 /// The raw overlay JSON for `(owner, workspace_id)`, or null when that
-/// workspace inherits everything from the user-level config.
+/// workspace has no scoped settings of its own.
 pub fn loadRaw(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -65,8 +65,8 @@ pub fn saveRaw(
     , &[_][]const u8{ owner, workspace_id, config_json });
 }
 
-/// Record "this workspace inherits the user-level config", so the workspace
-/// inherits again AND the one-shot backfill leaves it alone.
+/// Record "this workspace has NO scoped settings": the row is kept with a NULL
+/// body, which every reader treats as empty - and which no later pass refills.
 pub fn clear(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -224,14 +224,14 @@ test "an empty or `{}` overlay records an explicit inherit, not an empty object"
     try testing.expectEqual(@as(i64, 1), try rowCount(&ctx));
 }
 
-test "an undecided workspace has no row, so the backfill may seed it" {
+test "an untouched workspace and a cleared one both read as empty" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer teardown(&ctx);
 
-    // The distinction `hasRow` exists for: never-decided (false, seedable)
-    // vs. explicitly-inherited (true, leave alone). Same `loadRaw` answer,
-    // opposite backfill decisions.
+    // `hasRow` still separates "nobody configured this" from "someone
+    // cleared it", but both answers to `loadRaw` are the same: no scoped
+    // settings at all.
     try testing.expect(!try hasRow(alloc, &ctx.db, FILE_MODE_OWNER, "ws_new"));
     try testing.expect(!try hasOverlay(alloc, &ctx.db, FILE_MODE_OWNER, "ws_new"));
 

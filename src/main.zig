@@ -222,11 +222,6 @@ pub fn main(init: std.process.Init) !void {
 
     _ = try pabrikcore.setSingleton(ctxParent);
 
-    // Copy the user-level config into every workspace that has not decided
-    // yet, so existing workspaces open with the sections that moved to
-    // Workspace settings already populated. Idempotent + best-effort.
-    server_boot.seedWorkspaceSettingsFromUserConfig(allocator, io, environment, dbSqlite, cli.auth_enabled);
-
     // `mode="background_persistence"` services die with the pabrik that owns
     // them.
     if (background_process.sweepServicesOnBoot(dbSqlite, io, allocator)) |sweep| {
