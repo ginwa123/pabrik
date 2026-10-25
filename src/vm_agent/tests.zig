@@ -3,6 +3,7 @@
 //! root for the HOST and these imports are what pull each file's tests in.
 
 test {
+    _ = @import("backoff.zig");
     _ = @import("egress_env.zig");
     _ = @import("netd.zig");
 }
