@@ -9,6 +9,10 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# The work dir holds an extracted guest rootfs, whose 0555 dirs defeat a plain
+# `rm -rf`; this helper is the one place that knows how to remove it.
+# shellcheck source=scripts/smoke-workdir.sh
+. "$repo_root/scripts/smoke-workdir.sh"
 fc_bin="${FC_BIN:-firecracker}"
 guest_kernel="${GUEST_KERNEL:-$HOME/firecracker-demo/vmlinux-6.18.51}"
 work="${PABRIK_VM_WORKDIR:-${TMPDIR:-/tmp}/pabrik-vmd-smoke}"
@@ -23,7 +27,7 @@ fail() { printf '[vmd-smoke] FAIL %s\n' "$*" >&2; exit 1; }
 [ -f "$guest_kernel" ] || fail "guest kernel not found: $guest_kernel (set GUEST_KERNEL)"
 command -v "$fc_bin" >/dev/null || fail "firecracker not found: $fc_bin"
 
-rm -rf "$work"
+pabrik_wipe_workdir "$work"
 mkdir -p "$work"
 
 say "building pabrik-vmd (zig build vmd)"

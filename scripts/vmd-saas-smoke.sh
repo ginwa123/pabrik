@@ -13,6 +13,10 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# The work dir holds an extracted guest rootfs, whose 0555 dirs defeat a plain
+# `rm -rf`; this helper is the one place that knows how to remove it.
+# shellcheck source=scripts/smoke-workdir.sh
+. "$repo_root/scripts/smoke-workdir.sh"
 fc_bin="${FC_BIN:-firecracker}"
 guest_kernel="${GUEST_KERNEL:-$HOME/firecracker-demo/vmlinux-6.18.51}"
 port=8080
@@ -46,7 +50,7 @@ cleanup() {
   for pid in "${pids[@]:-}"; do kill -TERM "$pid" 2>/dev/null || true; done
   sleep 0.3
   for pid in "${pids[@]:-}"; do kill -KILL "$pid" 2>/dev/null || true; done
-  rm -rf "$work"
+  pabrik_wipe_workdir "$work"
 }
 trap cleanup EXIT
 

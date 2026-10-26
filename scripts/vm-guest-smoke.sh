@@ -13,6 +13,10 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# The work dir holds an extracted guest rootfs, whose 0555 dirs defeat a plain
+# `rm -rf`; this helper is the one place that knows how to remove it.
+# shellcheck source=scripts/smoke-workdir.sh
+. "$repo_root/scripts/smoke-workdir.sh"
 fc_bin="${FC_BIN:-firecracker}"
 guest_kernel="${GUEST_KERNEL:-$HOME/firecracker-demo/vmlinux-6.18.51}"
 work="${PABRIK_VM_WORKDIR:-${TMPDIR:-/tmp}/pabrik-vm-smoke}"
@@ -41,7 +45,7 @@ command -v debugfs >/dev/null || fail "debugfs missing (e2fsprogs)"
 [ -f "$repo_root/scripts/guest-image.manifest" ] || fail "guest-image.manifest missing"
 command -v python3 >/dev/null || fail "python3 missing"
 
-rm -rf "$work"
+pabrik_wipe_workdir "$work"
 mkdir -p "$work"
 say "kernel  $guest_kernel sha256=$(sha256sum "$guest_kernel" | cut -c1-16)"
 
