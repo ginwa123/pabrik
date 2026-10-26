@@ -267,7 +267,9 @@ test "the machines page explains a manager it cannot reach, and offers nothing" 
     try testing.expect(!contains(html, "data-action=\"resize\""));
     // The limits still travel with the page, as its own JSON.
     try testing.expect(contains(html, "id=\"resize-limits\""));
-    try testing.expect(contains(html, "\"max_vcpus\": 8"));
+    var limits_buf: [64]u8 = undefined;
+    const ceiling = try std.fmt.bufPrint(&limits_buf, "\"max_vcpus\": {d}", .{vmd.limits.max_vcpus});
+    try testing.expect(contains(html, ceiling));
 }
 
 test "a name with markup in it is escaped, not injected" {
