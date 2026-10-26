@@ -349,6 +349,10 @@ pub fn waitGone(pid: linux.pid_t, timeout_ms: u32) bool {
 pub const user_hz: u64 = 100;
 
 fn readSmallFile(path: []const u8, buf: []u8) ?usize {
+    // Off Linux there is no /proc and the raw syscalls below are meaningless:
+    // issuing them reads as "cannot tell", which is exactly what a caller must
+    // never mistake for zero.
+    if (comptime @import("builtin").os.tag != .linux) return null;
     var path_buf: [64]u8 = undefined;
     if (path.len >= path_buf.len) return null;
     @memcpy(path_buf[0..path.len], path);
