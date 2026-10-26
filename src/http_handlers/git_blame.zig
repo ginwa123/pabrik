@@ -2,6 +2,7 @@ const std = @import("std");
 const http_response = @import("http_response.zig");
 const pabrik_core = @import("pabrikcore");
 const gserverz = pabrik_core.gserverz;
+const git_route = @import("git_route.zig");
 
 /// Max blamed lines per response — bounds the payload on huge files.
 /// The parser stops emitting after this many lines (never a partial line).
@@ -124,18 +125,14 @@ pub fn gitBlameHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeGitStatusErrorResponse(allocator, "Missing file parameter") });
     };
 
-    const git_check = std.process.run(allocator, io, .{
-        .argv = &.{ "git", "-C", path_param, "rev-parse", "--git-dir" },
-    }) catch |err| {
+    const git_check = git_route.run(allocator, io, path_param, &.{ "rev-parse", "--git-dir" }, .{}) catch |err| {
         return res.jsonResponse(.{ .status_code = 500, .data = try http_response.makeGitStatusErrorResponse(allocator, @errorName(err)) });
     };
     if (git_check.term.exited != 0) {
         return res.jsonResponse(.{ .status_code = 200, .data = try makeBlameResponse(allocator, false, &.{}) });
     }
 
-    const blame_result = std.process.run(allocator, io, .{
-        .argv = &.{ "git", "-C", path_param, "blame", "--porcelain", "--", file_param },
-    }) catch |err| {
+    const blame_result = git_route.run(allocator, io, path_param, &.{ "blame", "--porcelain", "--", file_param }, .{}) catch |err| {
         return res.jsonResponse(.{ .status_code = 500, .data = try http_response.makeGitStatusErrorResponse(allocator, @errorName(err)) });
     };
     if (blame_result.term.exited != 0) {

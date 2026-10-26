@@ -3,6 +3,7 @@ const testing = std.testing;
 const http_response = @import("http_response.zig");
 const pabrik_core = @import("pabrikcore");
 const gserverz = pabrik_core.gserverz;
+const git_route = @import("git_route.zig");
 const run_captured = @import("helpers").run_captured;
 
 /// Wall-clock budget per git invocation.
@@ -41,9 +42,7 @@ pub fn useCase(
     // `message` travels as the VALUE of `-m`, never as a flag, so a message
     // like `--help` commits literally instead of printing git usage (probed
     // by the functional test). No shell is involved at any point — argv only.
-    const commit_argv = [_][]const u8{ "git", "-C", path, "commit", "-m", message };
-    var commit_res = run_captured.run(allocator, io, &commit_argv, .{
-        .cwd = path,
+    var commit_res = git_route.run(allocator, io, path, &.{ "commit", "-m", message }, .{
         .max_output_bytes = MAX_OUTPUT_BYTES,
         .timeout_ms = GIT_TIMEOUT_MS,
     }) catch {
@@ -81,9 +80,7 @@ pub fn useCase(
         return error.GitFailed;
     }
 
-    const rev_argv = [_][]const u8{ "git", "-C", path, "rev-parse", "HEAD" };
-    var rev_res = run_captured.run(allocator, io, &rev_argv, .{
-        .cwd = path,
+    var rev_res = git_route.run(allocator, io, path, &.{ "rev-parse", "HEAD" }, .{
         .max_output_bytes = MAX_OUTPUT_BYTES,
         .timeout_ms = GIT_TIMEOUT_MS,
     }) catch {
