@@ -18,8 +18,11 @@ const max_frame: usize = 64 * 1024;
 const read_chunk: usize = 4096;
 const arena_bytes: usize = 16 * 1024;
 const max_argv: usize = 64;
-const default_uid: u32 = 1000;
-const default_gid: u32 = 1000;
+/// The workspace is the tenant's own machine, so inside it they are root — the
+/// same bargain a container makes; the host never runs a workload. Without it
+/// `dnf install` in the workspace's own terminal demands superuser privileges.
+const default_uid: u32 = 0;
+const default_gid: u32 = 0;
 const max_timeout_ms: u32 = 600_000;
 const default_budget: usize = 256 * 1024;
 /// `wait4`'s WNOHANG: probe must never block PID 1.
@@ -192,6 +195,7 @@ const exec_env = [_:null]?[*:0]const u8{
     egress.https_proxy_upper,
     egress.no_proxy,
     egress.no_proxy_upper,
+    "ZIG_GLOBAL_CACHE_DIR=/opt/zig-cache",
 };
 
 fn execChild(req: *const ExecRequest, out_write: linux.fd_t, err_write: linux.fd_t) noreturn {
@@ -1050,6 +1054,7 @@ const tty_env = [_:null]?[*:0]const u8{
     egress.https_proxy_upper,
     egress.no_proxy,
     egress.no_proxy_upper,
+    "ZIG_GLOBAL_CACHE_DIR=/opt/zig-cache",
 };
 
 /// One live terminal: the agent's handle on the process that owns it. The pty
