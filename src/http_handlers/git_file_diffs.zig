@@ -2,6 +2,7 @@ const std = @import("std");
 const http_response = @import("http_response.zig");
 const pabrik_core = @import("pabrikcore");
 const gserverz = pabrik_core.gserverz;
+const git_route = @import("git_route.zig");
 
 /// Batch file diff endpoint — collapses the SidebarDiffPanel N+1 fan-out (one
 /// `GET /api/git/file/diff` per changed file) into at most 2 git spawns.
@@ -289,16 +290,16 @@ pub fn gitFileDiffsHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
     defer unstaged.deinit(allocator);
 
     if (folder_mode) {
-        var argv = std.ArrayList([]const u8).empty;
-        defer argv.deinit(allocator);
+        var args = std.ArrayList([]const u8).empty;
+        defer args.deinit(allocator);
         // `-uall` lists untracked FILES, not the untracked directory that
         // `git status --porcelain` reports by default — otherwise every
         // untracked folder collapses to one `dir/` entry and gets no diff.
-        argv.appendSlice(allocator, &.{ "git", "-C", parsed.path, "status", "--porcelain", "-uall" }) catch {};
+        args.appendSlice(allocator, &.{ "status", "--porcelain", "-uall" }) catch {};
         if (folder.len > 0) {
-            argv.appendSlice(allocator, &.{ "--", folder }) catch {};
+            args.appendSlice(allocator, &.{ "--", folder }) catch {};
         }
-        if (std.process.run(allocator, io, .{ .argv = argv.items })) |result| {
+        if (git_route.run(allocator, io, parsed.path, args.items, .{})) |result| {
             defer allocator.free(result.stderr);
             defer allocator.free(result.stdout);
             if (result.term.exited == 0 or result.term.exited == 1) {
@@ -335,17 +336,17 @@ pub fn gitFileDiffsHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
     var staged_out: []u8 = &.{};
     var unstaged_out: []u8 = &.{};
     if (staged.items.len > 0) {
-        var argv = std.ArrayList([]const u8).empty;
-        defer argv.deinit(allocator);
-        argv.appendSlice(allocator, &.{ "git", "-C", parsed.path, "diff", "--cached" }) catch {};
-        if (whole_file) argv.append(allocator, WHOLE_FILE_UNIFIED_FLAG) catch {};
-        argv.append(allocator, "--") catch {};
+        var args = std.ArrayList([]const u8).empty;
+        defer args.deinit(allocator);
+        args.appendSlice(allocator, &.{ "diff", "--cached" }) catch {};
+        if (whole_file) args.append(allocator, WHOLE_FILE_UNIFIED_FLAG) catch {};
+        args.append(allocator, "--") catch {};
         if (folder_mode) {
-            if (folder.len > 0) argv.append(allocator, folder) catch {};
+            if (folder.len > 0) args.append(allocator, folder) catch {};
         } else {
-            argv.appendSlice(allocator, staged.items) catch {};
+            args.appendSlice(allocator, staged.items) catch {};
         }
-        if (std.process.run(allocator, io, .{ .argv = argv.items })) |result| {
+        if (git_route.run(allocator, io, parsed.path, args.items, .{})) |result| {
             defer allocator.free(result.stderr);
             if (result.term.exited == 0 or result.term.exited == 1) {
                 staged_out = result.stdout;
@@ -355,17 +356,17 @@ pub fn gitFileDiffsHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
         } else |_| {}
     }
     if (unstaged.items.len > 0) {
-        var argv = std.ArrayList([]const u8).empty;
-        defer argv.deinit(allocator);
-        argv.appendSlice(allocator, &.{ "git", "-C", parsed.path, "diff" }) catch {};
-        if (whole_file) argv.append(allocator, WHOLE_FILE_UNIFIED_FLAG) catch {};
-        argv.append(allocator, "--") catch {};
+        var args = std.ArrayList([]const u8).empty;
+        defer args.deinit(allocator);
+        args.appendSlice(allocator, &.{ "diff" }) catch {};
+        if (whole_file) args.append(allocator, WHOLE_FILE_UNIFIED_FLAG) catch {};
+        args.append(allocator, "--") catch {};
         if (folder_mode) {
-            if (folder.len > 0) argv.append(allocator, folder) catch {};
+            if (folder.len > 0) args.append(allocator, folder) catch {};
         } else {
-            argv.appendSlice(allocator, unstaged.items) catch {};
+            args.appendSlice(allocator, unstaged.items) catch {};
         }
-        if (std.process.run(allocator, io, .{ .argv = argv.items })) |result| {
+        if (git_route.run(allocator, io, parsed.path, args.items, .{})) |result| {
             defer allocator.free(result.stderr);
             if (result.term.exited == 0 or result.term.exited == 1) {
                 unstaged_out = result.stdout;

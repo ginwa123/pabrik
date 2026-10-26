@@ -3,6 +3,7 @@ const pabrik_core = @import("pabrikcore");
 const mod = @import("mod.zig");
 const http_response = mod.http_response;
 const gserverz = pabrik_core.gserverz;
+const git_route = @import("git_route.zig");
 
 /// Git file change structure
 pub const GitFileChange = struct {
@@ -90,9 +91,7 @@ fn expandUntrackedDirectories(allocator: std.mem.Allocator, io: std.Io, untracke
 
         // Get files inside this untracked directory
         // Use git ls-files --others --exclude-standard <dir>
-        const result = std.process.run(allocator, io, .{
-            .argv = &.{ "git", "-C", path_param, "ls-files", "--others", "--exclude-standard", dir },
-        }) catch continue;
+        const result = git_route.run(allocator, io, path_param, &.{ "ls-files", "--others", "--exclude-standard", dir }, .{}) catch continue;
 
         if (result.term.exited != 0) continue;
 
@@ -133,9 +132,7 @@ pub fn gitChangesHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, r
     };
 
     // Check if we're in a git repo by running git rev-parse --git-dir with -C
-    const git_check = std.process.run(allocator, io, .{
-        .argv = &.{ "git", "-C", path_param, "rev-parse", "--git-dir" },
-    }) catch |err| {
+    const git_check = git_route.run(allocator, io, path_param, &.{ "rev-parse", "--git-dir" }, .{}) catch |err| {
         return res.jsonResponse(.{ .status_code = 500, .data = try http_response.makeGitStatusErrorResponse(allocator, @errorName(err)) });
     };
 
@@ -149,17 +146,13 @@ pub fn gitChangesHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, r
     }
 
     // Get current branch using: git -C <path> branch --show-current
-    const branch_result = std.process.run(allocator, io, .{
-        .argv = &.{ "git", "-C", path_param, "branch", "--show-current" },
-    }) catch |err| {
+    const branch_result = git_route.run(allocator, io, path_param, &.{ "branch", "--show-current" }, .{}) catch |err| {
         return res.jsonResponse(.{ .status_code = 500, .data = try http_response.makeGitStatusErrorResponse(allocator, @errorName(err)) });
     };
     const branch_name = std.mem.trim(u8, branch_result.stdout, " \n\r");
 
     // Get status using: git -C <path> status --porcelain
-    const status_result = std.process.run(allocator, io, .{
-        .argv = &.{ "git", "-C", path_param, "status", "--porcelain" },
-    }) catch |err| {
+    const status_result = git_route.run(allocator, io, path_param, &.{ "status", "--porcelain" }, .{}) catch |err| {
         return res.jsonResponse(.{ .status_code = 500, .data = try http_response.makeGitStatusErrorResponse(allocator, @errorName(err)) });
     };
 

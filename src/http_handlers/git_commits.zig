@@ -2,6 +2,7 @@ const std = @import("std");
 const http_response = @import("http_response.zig");
 const pabrik_core = @import("pabrikcore");
 const gserverz = pabrik_core.gserverz;
+const git_route = @import("git_route.zig");
 const validateRepoPath = @import("git_branches_list.zig").validateRepoPath;
 
 /// One commit row. All slices borrow from the use-case arena — the
@@ -160,22 +161,16 @@ fn listCommitsUseCase(
     limit: usize,
     skip: usize,
 ) !CommitsListResult {
-    const git_dir_check = std.process.run(allocator, io, .{
-        .argv = &.{ "git", "-C", path, "rev-parse", "--git-dir" },
-    }) catch return error.NotARepository;
+    const git_dir_check = git_route.run(allocator, io, path, &.{ "rev-parse", "--git-dir" }, .{}) catch return error.NotARepository;
     if (git_dir_check.term.exited != 0) return error.NotARepository;
 
-    const branch_result = std.process.run(allocator, io, .{
-        .argv = &.{ "git", "-C", path, "branch", "--show-current" },
-    }) catch return error.NotARepository;
+    const branch_result = git_route.run(allocator, io, path, &.{ "branch", "--show-current" }, .{}) catch return error.NotARepository;
     const branch = std.mem.trim(u8, branch_result.stdout, " \n\r\t");
 
     // Best-effort total for the `N of TOTAL` footer. Zero when the repo
     // has no commits yet or the count fails.
     var total_count: i64 = 0;
-    if (std.process.run(allocator, io, .{
-        .argv = &.{ "git", "-C", path, "rev-list", "--count", "HEAD" },
-    })) |count_result| {
+    if (git_route.run(allocator, io, path, &.{ "rev-list", "--count", "HEAD" }, .{})) |count_result| {
         if (count_result.term.exited == 0) {
             total_count = std.fmt.parseInt(i64, std.mem.trim(u8, count_result.stdout, " \n\r\t"), 10) catch 0;
         }
@@ -183,9 +178,7 @@ fn listCommitsUseCase(
 
     const limit_buf = try std.fmt.allocPrint(allocator, "--max-count={d}", .{limit});
     const skip_buf = try std.fmt.allocPrint(allocator, "--skip={d}", .{skip});
-    const log_result = std.process.run(allocator, io, .{
-        .argv = &.{ "git", "-C", path, "log", skip_buf, limit_buf, "--format=" ++ log_format },
-    }) catch return error.NotARepository;
+    const log_result = git_route.run(allocator, io, path, &.{ "log", skip_buf, limit_buf, "--format=" ++ log_format }, .{}) catch return error.NotARepository;
     if (log_result.term.exited != 0) return error.NotARepository;
 
     const commits = try parseLogRecords(allocator, log_result.stdout);
@@ -259,18 +252,14 @@ pub fn gitCommitDetailHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = err_msg }) });
     }
 
-    const git_dir_check = std.process.run(allocator, io, .{
-        .argv = &.{ "git", "-C", path_param, "rev-parse", "--git-dir" },
-    }) catch {
+    const git_dir_check = git_route.run(allocator, io, path_param, &.{ "rev-parse", "--git-dir" }, .{}) catch {
         return res.jsonResponse(.{ .status_code = 404, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "not a git repository" }) });
     };
     if (git_dir_check.term.exited != 0) {
         return res.jsonResponse(.{ .status_code = 404, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "not a git repository" }) });
     }
 
-    const show_result = std.process.run(allocator, io, .{
-        .argv = &.{ "git", "-C", path_param, "show", "-s", "--format=" ++ log_format, sha_param },
-    }) catch {
+    const show_result = git_route.run(allocator, io, path_param, &.{ "show", "-s", "--format=" ++ log_format, sha_param }, .{}) catch {
         return res.jsonResponse(.{ .status_code = 404, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "commit not found" }) });
     };
     if (show_result.term.exited != 0) {
@@ -283,9 +272,7 @@ pub fn gitCommitDetailHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
     const c = parsed[0];
 
     var files: []const CommitFileEntry = &.{};
-    if (std.process.run(allocator, io, .{
-        .argv = &.{ "git", "-C", path_param, "diff-tree", "--no-commit-id", "--name-status", "-r", c.sha },
-    })) |diff_result| {
+    if (git_route.run(allocator, io, path_param, &.{ "diff-tree", "--no-commit-id", "--name-status", "-r", c.sha }, .{})) |diff_result| {
         if (diff_result.term.exited == 0) {
             files = try parseNameStatus(allocator, diff_result.stdout);
         }
@@ -351,9 +338,7 @@ pub fn gitCommitFileDiffHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReq
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = err_msg }) });
     }
 
-    const git_dir_check = std.process.run(allocator, io, .{
-        .argv = &.{ "git", "-C", path_param, "rev-parse", "--git-dir" },
-    }) catch {
+    const git_dir_check = git_route.run(allocator, io, path_param, &.{ "rev-parse", "--git-dir" }, .{}) catch {
         return res.jsonResponse(.{ .status_code = 404, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "not a git repository" }) });
     };
     if (git_dir_check.term.exited != 0) {
@@ -361,9 +346,7 @@ pub fn gitCommitFileDiffHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReq
     }
 
     // Resolve the SHA first so an unknown ref is a 404, not an empty diff.
-    const verify_result = std.process.run(allocator, io, .{
-        .argv = &.{ "git", "-C", path_param, "rev-parse", "--verify", sha_param },
-    }) catch {
+    const verify_result = git_route.run(allocator, io, path_param, &.{ "rev-parse", "--verify", sha_param }, .{}) catch {
         return res.jsonResponse(.{ .status_code = 404, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "commit not found" }) });
     };
     if (verify_result.term.exited != 0) {
@@ -372,18 +355,14 @@ pub fn gitCommitFileDiffHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReq
 
     var diff_content: []const u8 = "";
     const parent_ref = try std.fmt.allocPrint(allocator, "{s}^", .{sha_param});
-    if (std.process.run(allocator, io, .{
-        .argv = &.{ "git", "-C", path_param, "diff", parent_ref, sha_param, "--", file_param },
-    })) |diff_result| {
+    if (git_route.run(allocator, io, path_param, &.{ "diff", parent_ref, sha_param, "--", file_param }, .{})) |diff_result| {
         if (diff_result.term.exited == 0 or diff_result.term.exited == 1) {
             diff_content = diff_result.stdout;
         }
     } else |_| {}
     if (diff_content.len == 0) {
         // Root commit (no parent) or merge — `git show` always renders.
-        if (std.process.run(allocator, io, .{
-            .argv = &.{ "git", "-C", path_param, "show", "--format=", sha_param, "--", file_param },
-        })) |show_result| {
+        if (git_route.run(allocator, io, path_param, &.{ "show", "--format=", sha_param, "--", file_param }, .{})) |show_result| {
             if (show_result.term.exited == 0 or show_result.term.exited == 1) {
                 diff_content = show_result.stdout;
             }

@@ -2,6 +2,7 @@ const std = @import("std");
 const http_response = @import("http_response.zig");
 const pabrik_core = @import("pabrikcore");
 const gserverz = pabrik_core.gserverz;
+const git_route = @import("git_route.zig");
 
 /// Domain error set for the branch-list use case.
 const BranchListError = error{NotARepository};
@@ -139,26 +140,19 @@ fn listBranchesUseCase(
     path: []const u8,
 ) !BranchListResult {
     // 1) Confirm it's a git repo.
-    const git_dir_check = std.process.run(allocator, io, .{
-        .argv = &.{ "git", "-C", path, "rev-parse", "--git-dir" },
-    }) catch return error.NotARepository;
+    const git_dir_check = git_route.run(allocator, io, path, &.{ "rev-parse", "--git-dir" }, .{}) catch return error.NotARepository;
     if (git_dir_check.term.exited != 0) return error.NotARepository;
 
     // 2) Current branch. Empty in a bare repo / detached HEAD.
-    const current_result = std.process.run(allocator, io, .{
-        .argv = &.{ "git", "-C", path, "branch", "--show-current" },
-    }) catch return error.NotARepository;
+    const current_result = git_route.run(allocator, io, path, &.{ "branch", "--show-current" }, .{}) catch return error.NotARepository;
     const current_branch = std.mem.trim(u8, current_result.stdout, " \n\r\t");
 
     // 3) Every local + remote-tracking ref, with symbolic refs flagged
     //    in the third column so parseRefRows can drop them.
-    const refs_result = std.process.run(allocator, io, .{
-        .argv = &.{
-            "git",          "-C",                                                 path,
-            "for-each-ref", "--format=%(refname)%09%(refname:short)%09%(symref)", "refs/heads",
-            "refs/remotes",
-        },
-    }) catch return error.NotARepository;
+    const refs_result = git_route.run(allocator, io, path, &.{
+        "for-each-ref", "--format=%(refname)%09%(refname:short)%09%(symref)", "refs/heads",
+        "refs/remotes",
+    }, .{}) catch return error.NotARepository;
     if (refs_result.term.exited != 0) return error.NotARepository;
 
     const parsed = try parseRefRows(allocator, refs_result.stdout);
