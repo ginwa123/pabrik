@@ -40,6 +40,7 @@ const SKILL = {
   content: 'body',
   asset_count: 0,
   is_can_auto_improve: false,
+  metadata: [],
 }
 
 function seedWorkspace(id = WS_ID): void {
@@ -143,7 +144,14 @@ describe('SkillsSettings — the selected skill is a URL param', () => {
     replaceMock.mockClear()
 
     createSkillMock.mockResolvedValue({
-      skill: { name: 'my-skill', description: '', content: '', asset_count: 0, is_can_auto_improve: true },
+      skill: {
+        name: 'my-skill',
+        description: '',
+        content: '',
+        asset_count: 0,
+        is_can_auto_improve: true,
+        metadata: [],
+      },
     })
     await wrapper.find('[data-testid="new-skill-btn"]').trigger('click')
     await flushPromises()

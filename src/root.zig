@@ -219,8 +219,12 @@ pub const vmd_lifecycle = @import("vmd/lifecycle.zig");
 pub const agent_memories = @import("agentic_loop/agent_memories.zig");
 /// Workspace-scoped document storage (Migration 098).
 pub const documents_store = @import("agentic_loop/documents_store.zig");
-/// Workspace-scoped skill storage (Migration 101).
+/// Workspace-scoped skill storage (Migration 101 + 119).
 pub const skills_store = @import("agentic_loop/skills_store.zig");
+/// THE parser/renderer for a SKILL.md `---` frontmatter block. Shared by
+/// the importer, `add_skill`/`edit_skill`, the migration-119 backfill and
+/// the store's projection into `skill_metadata`.
+pub const skill_frontmatter = @import("agentic_loop/skill_frontmatter.zig");
 /// Workspace-scoped secret storage (Migration 103).
 pub const secrets_store = @import("agentic_loop/secrets_store.zig");
 // Per-workspace config overlay: the sparse JSON merge rule and the

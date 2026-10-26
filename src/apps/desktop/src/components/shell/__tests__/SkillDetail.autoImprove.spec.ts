@@ -38,6 +38,7 @@ function detail(isCanAutoImprove: boolean) {
       content: '# pdf skill',
       asset_count: 0,
       is_can_auto_improve: isCanAutoImprove,
+      metadata: [],
     },
     error_message: '',
   }

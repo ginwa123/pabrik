@@ -8,12 +8,14 @@ const ToolParameters = schemas.ToolParameters;
 const AgentToolFunction = schemas.AgentToolFunction;
 const AgentTool = schemas.AgentTool;
 const pabrikcore = @import("pabrikcore");
-const sqlite = pabrikcore.sqlite;
 const skills_store = pabrikcore.skills_store;
 const workspace_scope = pabrikcore.workspace_scope;
-/// `skills.zig` next to this file is the BODY layer (frontmatter parsing
-/// and bundle materialisation), not a tool definition.
+/// `skills.zig` next to this file is the BODY layer (bundle
+/// materialisation), not a tool definition.
 const skills = @import("skills.zig");
+/// THE frontmatter parser/renderer, shared with the importer and with the
+/// `skill_metadata` projection in the store.
+const frontmatter = pabrikcore.skill_frontmatter;
 const helpers = @import("helpers");
 const testing = std.testing;
 const migration = @import("../../../migrations/migration.zig");
@@ -185,6 +187,14 @@ pub const UseSkillInput = struct {
     name: []const u8 = "",
 };
 
+/// One `skill_metadata` row as the model sees it. The key is already in
+/// `content`, but the parsed value is not: `tags` and `license` reach the
+/// model as data instead of as a block to re-read.
+pub const SkillMetadataJSON = struct {
+    key: []const u8,
+    value: []const u8,
+};
+
 /// JSON payload for `use_skill` results. `asset_dir` is `null` for a
 /// single-file skill: there is no directory in that case at all, rather
 /// than an empty one that would read as "a bundle with nothing in it".
@@ -192,6 +202,9 @@ pub const UseSkillJSON = struct {
     skill_name: []const u8,
     content: []const u8,
     loaded: bool,
+    /// The skill's `skill_metadata`, key-ordered. Empty for a skill whose
+    /// frontmatter carries nothing but its name and description.
+    metadata: []const SkillMetadataJSON = &.{},
     /// Absolute path of the materialised companion files, when the skill
     /// is a bundle. This is a MATERIALISATION created per load, not a
     /// location of record — it may be reaped between turns.
@@ -209,6 +222,7 @@ pub const UseSkillOutput = struct {
     skill_name: []const u8 = "",
     content: []const u8 = "",
     loaded: bool = false,
+    metadata: []const SkillMetadataJSON = &.{},
     asset_dir: ?[]const u8 = null,
     asset_count: usize = 0,
     @"error": ?[]const u8 = null,
@@ -298,6 +312,9 @@ pub fn execute_use_skill_to_string(
         asset_count = materialized.file_count;
     }
 
+    const metadata = try loadMetadataJSON(allocator, db, workspace_id, name);
+    defer freeMetadataJSON(allocator, metadata);
+
     const clean_name = try helpers.sanitize_control_chars(allocator, name);
     defer allocator.free(clean_name);
     const clean_content = try helpers.sanitize_control_chars(allocator, row.content);
@@ -309,11 +326,54 @@ pub fn execute_use_skill_to_string(
         .skill_name = clean_name,
         .content = clean_content,
         .loaded = true,
+        .metadata = metadata,
         .asset_dir = clean_dir,
         .asset_count = asset_count,
         .@"error" = null,
         .available_skills = null,
     }, .{});
+}
+
+/// A skill's stored metadata, projected onto the wire shape. Owned; free
+/// with `freeMetadataJSON`. A store failure yields an empty list rather
+/// than an error: the body the caller already has IS the instruction set,
+/// and the metadata is an extra, not the point of the call.
+fn loadMetadataJSON(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    workspace_id: []const u8,
+    name: []const u8,
+) ![]SkillMetadataJSON {
+    const rows = skills_store.listMetadata(allocator, db, workspace_id, name) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.QueryFailed, error.WorkspaceIdNameRequired => return &.{},
+    };
+    defer skills_store.freeSkillMetadataRows(allocator, rows);
+
+    const out = try allocator.alloc(SkillMetadataJSON, rows.len);
+    errdefer allocator.free(out);
+    var filled: usize = 0;
+    errdefer for (out[0..filled]) |entry| {
+        allocator.free(entry.key);
+        allocator.free(entry.value);
+    };
+
+    for (rows, 0..) |row, i| {
+        out[i] = .{
+            .key = try allocator.dupe(u8, row.key),
+            .value = try allocator.dupe(u8, row.value),
+        };
+        filled = i + 1;
+    }
+    return out;
+}
+
+fn freeMetadataJSON(allocator: std.mem.Allocator, metadata: []const SkillMetadataJSON) void {
+    for (metadata) |entry| {
+        allocator.free(entry.key);
+        allocator.free(entry.value);
+    }
+    if (metadata.len > 0) allocator.free(metadata);
 }
 
 /// The not-found payload: the truthful "there is no such skill here" shape,
@@ -471,64 +531,6 @@ pub fn execute_remove_skill_to_string(
 // `add_skill` / `edit_skill` are the only tools a model calls with
 // hand-written prose, and the two mistakes it makes most are both handled
 
-/// A leading `---` … `---` frontmatter block split off `content`. Both
-/// slices point into the input; nothing is allocated.
-const FrontmatterSplit = struct {
-    /// The text between the fences (no fences), or "" when `content` did
-    /// not open with a frontmatter block.
-    frontmatter: []const u8,
-    /// Everything after the closing fence — the whole input when there
-    /// was no frontmatter block.
-    body: []const u8,
-};
-
-/// Split a leading YAML frontmatter block off `content`.
-fn splitLeadingFrontmatter(content: []const u8) FrontmatterSplit {
-    const none: FrontmatterSplit = .{ .frontmatter = "", .body = content };
-    if (!std.mem.startsWith(u8, content, "---\n")) return none;
-
-    const rest = content["---\n".len..];
-    var idx: usize = 0;
-    while (std.mem.indexOfScalarPos(u8, rest, idx, '-')) |i| {
-        idx = i + 1;
-        if (i != 0 and rest[i - 1] != '\n') continue;
-        if (!std.mem.startsWith(u8, rest[i..], "---")) continue;
-
-        var end = i + 3;
-        if (end < rest.len and rest[end] == '\r') end += 1;
-        if (end < rest.len and rest[end] == '\n') end += 1;
-        // `---x` is not a closing fence; only EOF / `\n` / `\r\n` is.
-        if (end != rest.len and end != i + 4 and end != i + 5) continue;
-
-        return .{ .frontmatter = rest[0..i], .body = rest[end..] };
-    }
-    return none;
-}
-
-/// Read `key: value` out of a frontmatter block. Borrowed, trimmed, with one
-/// layer of matching quotes removed. Null when the key is absent or its value
-/// is empty.
-fn frontmatterField(frontmatter: []const u8, key: []const u8) ?[]const u8 {
-    var lines = std.mem.splitScalar(u8, frontmatter, '\n');
-    while (lines.next()) |line| {
-        const trimmed = std.mem.trim(u8, line, " \t\r");
-        if (!std.mem.startsWith(u8, trimmed, key)) continue;
-        const after = trimmed[key.len..];
-        // Guards `name` matching a `names:` line.
-        if (after.len == 0 or after[0] != ':') continue;
-
-        var value = std.mem.trim(u8, after[1..], " \t\r");
-        if (value.len >= 2 and value[0] == '"' and value[value.len - 1] == '"') {
-            value = value[1 .. value.len - 1];
-        } else if (value.len >= 2 and value[0] == '\'' and value[value.len - 1] == '\'') {
-            value = value[1 .. value.len - 1];
-        }
-        if (value.len == 0) return null;
-        return value;
-    }
-    return null;
-}
-
 /// The first of `args` that is not empty, else null. Borrowed.
 fn firstNonEmpty(args: []const ?[]const u8) ?[]const u8 {
     for (args) |maybe| {
@@ -635,12 +637,18 @@ pub fn executeAddSkillToString(
 ) ![]const u8 {
     // `SkillWriteToolRule` shows the skill format as a `---` frontmatter
     // block, so models routinely paste one into `content`.
-    const split = splitLeadingFrontmatter(input.content);
-    const fm: ?[]const u8 = if (split.frontmatter.len != 0) split.frontmatter else null;
+    var incoming = try frontmatter.parse(allocator, input.content);
+    defer incoming.deinit(allocator);
 
-    const name = firstNonEmpty(&.{ input.name, if (fm) |f| frontmatterField(f, "name") else null });
-    const description = firstNonEmpty(&.{ input.description, if (fm) |f| frontmatterField(f, "description") else null });
-    const content = split.body;
+    const name = firstNonEmpty(&.{
+        input.name,
+        if (incoming.header.name.len > 0) incoming.header.name else null,
+    });
+    const description = firstNonEmpty(&.{
+        input.description,
+        if (incoming.header.description.len > 0) incoming.header.description else null,
+    });
+    const content = incoming.body;
 
     // Every message names the argument AND what to send, because the old
     // ones ("Description cannot be empty") told the model nothing and it
@@ -688,11 +696,8 @@ pub fn executeAddSkillToString(
         return try lockedSkillJSON(allocator, "add_skill", resolved_name);
     }
 
-    const file_content = buildSkillContent(allocator, resolved);
+    const file_content = try buildSkillContent(allocator, resolved, incoming.pairs);
     defer allocator.free(file_content);
-    if (file_content.len == 0) {
-        return try toolErrorJSON(allocator, "add_skill", resolved_name, "add_skill: could not build the skill content.");
-    }
 
     const written = skills_store.upsertSkill(allocator, db, .{
         .workspace_id = workspace_id,
@@ -718,61 +723,19 @@ pub fn executeAddSkillToString(
     }, .{});
 }
 
-/// Build skill content with YAML frontmatter.
-pub fn buildSkillContent(allocator: std.mem.Allocator, input: AddSkillInput) []const u8 {
-    // Escape quotes in description for YAML string
-    const escaped_desc = addSkillEscapeYamlString(allocator, input.description);
-    defer allocator.free(escaped_desc);
-
-    // Build the content: frontmatter + separator + content
-    const total_len = 15 + input.name.len + 16 + escaped_desc.len + 5 + input.content.len + 1;
-    var result = std.ArrayList(u8).initCapacity(allocator, total_len) catch return "";
-    errdefer result.deinit(allocator);
-
-    result.appendSlice(allocator, "---\n") catch return "";
-    result.appendSlice(allocator, "name: ") catch return "";
-    result.appendSlice(allocator, input.name) catch return "";
-    result.appendSlice(allocator, "\n") catch return "";
-    result.appendSlice(allocator, "description: \"") catch return "";
-    result.appendSlice(allocator, escaped_desc) catch return "";
-    result.appendSlice(allocator, "\"\n") catch return "";
-    result.appendSlice(allocator, "---\n") catch return "";
-    result.appendSlice(allocator, input.content) catch return "";
-    result.append(allocator, '\n') catch return "";
-
-    return result.toOwnedSlice(allocator) catch return "";
-}
-
-/// Escape special characters in a YAML string value
-/// Handles: double quotes, backslashes
-fn addSkillEscapeYamlString(allocator: std.mem.Allocator, s: []const u8) []const u8 {
-    var needs_escape = false;
-
-    // Check if escaping is needed
-    for (s) |c| {
-        if (c == '"' or c == '\\') {
-            needs_escape = true;
-            break;
-        }
-    }
-
-    if (!needs_escape) {
-        return allocator.dupe(u8, s) catch return s;
-    }
-
-    // Build escaped string
-    var result = std.ArrayList(u8).initCapacity(allocator, s.len + 16) catch return s;
-    errdefer result.deinit(allocator);
-
-    for (s) |c| {
-        switch (c) {
-            '"' => result.appendSlice(allocator, "\\\"") catch return s,
-            '\\' => result.appendSlice(allocator, "\\\\") catch return s,
-            else => result.append(allocator, c) catch return s,
-        }
-    }
-
-    return result.toOwnedSlice(allocator) catch return s;
+/// Build skill content with the generated `---` block, plus whatever
+/// metadata `pairs` carries. A model that pastes `tags:`/`origin:` into
+/// `content` keeps them: they become `skill_metadata` rows when the store
+/// projects this body.
+pub fn buildSkillContent(
+    allocator: std.mem.Allocator,
+    input: AddSkillInput,
+    pairs: []const frontmatter.Pair,
+) error{OutOfMemory}![]const u8 {
+    return frontmatter.render(allocator, .{
+        .name = input.name,
+        .description = input.description,
+    }, pairs, input.content);
 }
 
 // ─── edit_skill ───
@@ -889,9 +852,10 @@ pub fn executeEditSkillToString(
     // A `description:` carried in `content`'s frontmatter counts as a
     // supplied description, so the model is not told "nothing to change"
     // for sending one field in the place it was taught to.
-    const split = splitLeadingFrontmatter(input.content orelse "");
-    const fm: ?[]const u8 = if (split.frontmatter.len != 0) split.frontmatter else null;
-    const lifted_description: ?[]const u8 = if (fm) |f| frontmatterField(f, "description") else null;
+    var incoming = try frontmatter.parse(allocator, input.content orelse "");
+    defer incoming.deinit(allocator);
+    const lifted_description: ?[]const u8 =
+        if (incoming.header.description.len > 0) incoming.header.description else null;
 
     if (input.description == null and input.content == null) {
         return try toolErrorJSON(allocator, "edit_skill", name, EDIT_SKILL_NOTHING_TO_CHANGE);
@@ -919,9 +883,20 @@ pub fn executeEditSkillToString(
 
     const new_description = firstNonEmpty(&.{ input.description, lifted_description }) orelse existing.description;
 
+    // The STORED body still carries its own fence, so a new body with no
+    // frontmatter can rebuild the block from it. Rendering name+description
+    // alone is what used to delete `origin`, `tags` and `license` on every
+    // body-only edit.
+    var stored = try frontmatter.parse(allocator, existing.content);
+    defer stored.deinit(allocator);
+
     // Only a supplied body triggers a frontmatter rebuild.
     const patch: skills_store.UpdateSkillArgs = if (input.content) |_| blk: {
-        const rebuilt = try buildEditSkillContent(allocator, name, new_description, split.body);
+        const pairs = if (incoming.has_fence) incoming.pairs else stored.pairs;
+        const rebuilt = try frontmatter.render(allocator, .{
+            .name = name,
+            .description = new_description,
+        }, pairs, incoming.body);
         break :blk .{ .description = new_description, .content = rebuilt };
     } else blk: {
         break :blk .{ .description = new_description };
@@ -951,59 +926,6 @@ pub fn executeEditSkillToString(
         .edited = true,
         .@"error" = null,
     }, .{});
-}
-
-/// Build skill content with YAML frontmatter. Same generated block as
-/// `buildSkillContent`; the `!`-returning spelling the write path uses.
-fn buildEditSkillContent(allocator: std.mem.Allocator, name: []const u8, description: []const u8, content: []const u8) ![]const u8 {
-    const escaped_desc = try editSkillEscapeYamlString(allocator, description);
-    defer allocator.free(escaped_desc);
-
-    const total_len = 15 + name.len + 16 + escaped_desc.len + 5 + content.len + 1;
-    var result = try std.ArrayList(u8).initCapacity(allocator, total_len);
-    errdefer result.deinit(allocator);
-
-    try result.appendSlice(allocator, "---\n");
-    try result.appendSlice(allocator, "name: ");
-    try result.appendSlice(allocator, name);
-    try result.appendSlice(allocator, "\n");
-    try result.appendSlice(allocator, "description: \"");
-    try result.appendSlice(allocator, escaped_desc);
-    try result.appendSlice(allocator, "\"\n");
-    try result.appendSlice(allocator, "---\n");
-    try result.appendSlice(allocator, content);
-    try result.append(allocator, '\n');
-
-    return result.toOwnedSlice(allocator);
-}
-
-/// Escape special characters in a YAML string value
-/// Handles: double quotes, backslashes
-fn editSkillEscapeYamlString(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
-    var needs_escape = false;
-    for (s) |c| {
-        if (c == '"' or c == '\\') {
-            needs_escape = true;
-            break;
-        }
-    }
-
-    if (!needs_escape) {
-        return allocator.dupe(u8, s);
-    }
-
-    var result = std.ArrayList(u8).empty;
-    errdefer result.deinit(allocator);
-
-    for (s) |c| {
-        switch (c) {
-            '"' => try result.appendSlice(allocator, "\\\""),
-            '\\' => try result.appendSlice(allocator, "\\\\"),
-            else => try result.append(allocator, c),
-        }
-    }
-
-    return result.toOwnedSlice(allocator);
 }
 
 // ============================================================================
@@ -1045,6 +967,7 @@ fn setupSkillsDb() !TestCtx {
         \\INSERT INTO workspace_item_tasks (id, name, workspace_item_id) VALUES ('s1', 'T1', 'i1'), ('s2', 'T2', 'i2')
     , &.{});
     try migration.Migration102CreateSkills.up(&db, alloc);
+    try migration.Migration119CreateSkillMetadata.up(&db, alloc);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -1070,42 +993,6 @@ fn parseJson(comptime T: type, alloc: std.mem.Allocator, raw: []const u8) !std.j
 }
 
 // ─── argument resolution (kept: these are the two live model mistakes) ───
-
-test "splitLeadingFrontmatter - splits a fenced block, leaves everything else alone" {
-    const with_fm = "---\nname: foo\ndescription: \"bar\"\n---\n## Body\n";
-    const s = splitLeadingFrontmatter(with_fm);
-    try testing.expectEqualStrings("name: foo\ndescription: \"bar\"\n", s.frontmatter);
-    try testing.expectEqualStrings("## Body\n", s.body);
-
-    // No fence at the head → the whole input is the body.
-    const bare = splitLeadingFrontmatter("## Body\n\n---\nnot a fence\n");
-    try testing.expectEqualStrings("", bare.frontmatter);
-    try testing.expectEqualStrings("## Body\n\n---\nnot a fence\n", bare.body);
-
-    // Unterminated fence → not treated as frontmatter (never a guess).
-    const open = splitLeadingFrontmatter("---\nname: foo\n");
-    try testing.expectEqualStrings("", open.frontmatter);
-
-    // Closing fence at EOF (no trailing newline) still splits.
-    const eof = splitLeadingFrontmatter("---\nname: foo\n---");
-    try testing.expectEqualStrings("name: foo\n", eof.frontmatter);
-    try testing.expectEqualStrings("", eof.body);
-
-    // `---x` is not a fence.
-    const notfence = splitLeadingFrontmatter("---\nname: foo\n---x\nbody");
-    try testing.expectEqualStrings("", notfence.frontmatter);
-}
-
-test "frontmatterField - reads values, strips quotes, rejects near-misses" {
-    const fm = "name: foo-bar\ndescription: \"Use when X.\"\nnames: wrong-key\nempty:\n";
-    try testing.expectEqualStrings("foo-bar", frontmatterField(fm, "name").?);
-    try testing.expectEqualStrings("Use when X.", frontmatterField(fm, "description").?);
-    // `name` must not match the `names:` line.
-    try testing.expectEqualStrings("right", frontmatterField("names: wrong-key\nname: right\n", "name").?);
-    // An empty value is no value.
-    try testing.expect(frontmatterField("empty:\n", "empty") == null);
-    try testing.expect(frontmatterField("name: foo\n", "description") == null);
-}
 
 // ─── add_skill ───
 
@@ -1294,11 +1181,11 @@ test "add_skill - a path-like name is refused with a message naming the rule" {
 
 test "add_skill - buildSkillContent generates the block unchanged" {
     const alloc = testing.allocator;
-    const content = buildSkillContent(alloc, .{
+    const content = try buildSkillContent(alloc, .{
         .name = "test-skill",
         .description = "Test \"description\" with quotes and\\backslash",
         .content = "Test content",
-    });
+    }, &.{});
     defer alloc.free(content);
 
     try testing.expect(std.mem.indexOf(u8, content, "name: test-skill") != null);
@@ -2285,6 +2172,7 @@ fn setupDb() !exec_TestCtx {
         \\INSERT INTO workspace_item_tasks (id, name, workspace_item_id) VALUES ('s1', 'T1', 'i1'), ('s2', 'T2', 'i2')
     , &.{});
     try exec_migration.Migration102CreateSkills.up(&db, alloc);
+    try exec_migration.Migration119CreateSkillMetadata.up(&db, alloc);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -2834,3 +2722,122 @@ test "execEditSkill: a locked skill is a refusal at the envelope, and the body s
     try exec_testing.expectEqualStrings("KEEPME", survivor.content);
 }
 
+
+// ─── metadata through the tool boundary ───
+
+test "add_skill keeps the metadata a pasted frontmatter carries" {
+    const alloc = testing.allocator;
+    var ctx = try setupSkillsDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    // Models are taught the skill format as a `---` block, so they paste one.
+    // `name`/`description` are lifted out of it; the rest must survive as
+    // `skill_metadata` rows instead of being thrown away by the regenerated
+    // fence.
+    const added = try executeAddSkillToString(alloc, &ctx.db, "s1", .{
+        .name = "tagged",
+        .description = "One sentence.",
+        .content =
+        \\---
+        \\name: tagged
+        \\description: One sentence.
+        \\tags: [workflow]
+        \\origin: ECC
+        \\---
+        \\## When to Use
+        \\
+        \\Body.
+        ,
+    });
+    defer alloc.free(added);
+
+    const used = try execute_use_skill_to_string(alloc, testing.io, &ctx.db, "s1", .{ .name = "tagged" });
+    defer alloc.free(used);
+    var parsed = try parseJson(UseSkillOutput, alloc, used);
+    defer parsed.deinit();
+
+    try testing.expect(parsed.value.loaded);
+    try testing.expectEqual(@as(usize, 2), parsed.value.metadata.len);
+    try testing.expectEqualStrings("origin", parsed.value.metadata[0].key);
+    try testing.expectEqualStrings("ECC", parsed.value.metadata[0].value);
+    try testing.expectEqualStrings("tags", parsed.value.metadata[1].key);
+    try testing.expectEqualStrings("[workflow]", parsed.value.metadata[1].value);
+}
+
+test "edit_skill with a body-only patch KEEPS the stored metadata" {
+    const alloc = testing.allocator;
+    var ctx = try setupSkillsDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try seedSkill(alloc, &ctx.db, "ws_1", "tagged", "One sentence.", "---\nname: tagged\ndescription: \"One sentence.\"\ntags: [workflow]\nlicense: MIT\n---\nOld body.\n");
+
+    // The rewrite carries no fence. Rebuilding the block from name and
+    // description alone used to DELETE `tags` and `license` here, silently.
+    const out = try executeEditSkillToString(alloc, &ctx.db, "s1", .{
+        .skill_name = "tagged",
+        .content = "## New body\n\nRewritten.\n",
+    });
+    defer alloc.free(out);
+    var parsed = try parseJson(EditSkillOutput, alloc, out);
+    defer parsed.deinit();
+    try testing.expect(parsed.value.updated);
+
+    const used = try execute_use_skill_to_string(alloc, testing.io, &ctx.db, "s1", .{ .name = "tagged" });
+    defer alloc.free(used);
+    var used_out = try parseJson(UseSkillOutput, alloc, used);
+    defer used_out.deinit();
+
+    try testing.expectEqual(@as(usize, 2), used_out.value.metadata.len);
+    try testing.expectEqualStrings("license", used_out.value.metadata[0].key);
+    try testing.expectEqualStrings("tags", used_out.value.metadata[1].key);
+    try testing.expect(std.mem.indexOf(u8, used_out.value.content, "Rewritten.") != null);
+    try testing.expect(std.mem.indexOf(u8, used_out.value.content, "Old body.") == null);
+}
+
+test "edit_skill with a new fence REPLACES the stored metadata" {
+    const alloc = testing.allocator;
+    var ctx = try setupSkillsDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try seedSkill(alloc, &ctx.db, "ws_1", "tagged", "One sentence.", "---\nname: tagged\ndescription: \"One sentence.\"\ntags: [workflow]\n---\nOld body.\n");
+
+    // A fence in the new body IS the new metadata: the model rewrote it, so
+    // the old `tags` must not survive next to the new ones.
+    const out = try executeEditSkillToString(alloc, &ctx.db, "s1", .{
+        .skill_name = "tagged",
+        .content = "---\ntags: [review]\n---\nNew body.\n",
+    });
+    defer alloc.free(out);
+    var parsed = try parseJson(EditSkillOutput, alloc, out);
+    defer parsed.deinit();
+    try testing.expect(parsed.value.updated);
+
+    const used = try execute_use_skill_to_string(alloc, testing.io, &ctx.db, "s1", .{ .name = "tagged" });
+    defer alloc.free(used);
+    var used_out = try parseJson(UseSkillOutput, alloc, used);
+    defer used_out.deinit();
+
+    try testing.expectEqual(@as(usize, 1), used_out.value.metadata.len);
+    try testing.expectEqualStrings("tags", used_out.value.metadata[0].key);
+    try testing.expectEqualStrings("[review]", used_out.value.metadata[0].value);
+}
+
+test "use_skill reports an empty metadata list for a skill that has none" {
+    const alloc = testing.allocator;
+    var ctx = try setupSkillsDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try seedSkill(alloc, &ctx.db, "ws_1", "plain", "One sentence.", "## Body\n");
+
+    const used = try execute_use_skill_to_string(alloc, testing.io, &ctx.db, "s1", .{ .name = "plain" });
+    defer alloc.free(used);
+    var used_out = try parseJson(UseSkillOutput, alloc, used);
+    defer used_out.deinit();
+
+    try testing.expect(used_out.value.loaded);
+    try testing.expectEqual(@as(usize, 0), used_out.value.metadata.len);
+}

@@ -1418,13 +1418,22 @@ pub fn makeFrontendLogListResponse(allocator: std.mem.Allocator, logs: []const F
     );
 }
 
-/// One skill as it goes on the wire: the body plus the companion count.
+/// One `skill_metadata` row as it goes on the wire: a SKILL.md frontmatter
+/// key that has no column of its own (`origin`, `tags`, `license`, …).
+pub const SkillMetadataEntry = struct {
+    key: []const u8,
+    value: []const u8,
+};
+
+/// One skill as it goes on the wire: the body, the companion count, and the
+/// metadata the `skills` columns do not carry.
 pub const SkillDetailResponse = struct {
     name: []const u8,
     description: []const u8,
     content: []const u8,
     asset_count: usize,
     is_can_auto_improve: bool,
+    metadata: []const SkillMetadataEntry,
 };
 
 /// Map a `skills_store.SkillRow` (or any struct with the same fields) into
@@ -1437,5 +1446,6 @@ pub fn makeSkillDetailResponse(skill: anytype) SkillDetailResponse {
         .content = skill.content,
         .asset_count = skill.asset_count,
         .is_can_auto_improve = skill.is_can_auto_improve,
+        .metadata = skill.metadata,
     };
 }

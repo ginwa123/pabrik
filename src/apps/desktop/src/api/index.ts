@@ -2388,6 +2388,13 @@ export interface Skill {
   is_can_auto_improve: boolean
 }
 
+/** One SKILL.md frontmatter key that has no column of its own (`origin`, `tags`, `license`, …).
+ * Read from the `skill_metadata` table, so nothing has to re-parse the fence in `content`. */
+export interface SkillMetadata {
+  key: string
+  value: string
+}
+
 export interface SkillDetail {
   name: string
   description: string
@@ -2398,6 +2405,9 @@ export interface SkillDetail {
   asset_count: number
   /** False = the human pinned this skill: every agent write tool refuses it. */
   is_can_auto_improve: boolean
+  /** The skill's `skill_metadata`, key-ordered. Empty when the frontmatter carries nothing but
+   * `name` and `description`. Editable through `content`: the fence is stored verbatim. */
+  metadata: SkillMetadata[]
 }
 
 export interface SkillListResponse {

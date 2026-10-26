@@ -129,6 +129,7 @@ const migration_115 = @import("migration_115.zig");
 const migration_116 = @import("migration_116.zig");
 const migration_117 = @import("migration_117.zig");
 const migration_118 = @import("migration_118.zig");
+const migration_119 = @import("migration_119.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -249,6 +250,7 @@ pub const Migration115AddWorkspaceIsVm = migration_115.Migration115AddWorkspaceI
 pub const Migration116UnifyAgentConfigTables = migration_116.Migration116UnifyAgentConfigTables;
 pub const Migration117DropLegacyAgentConfigTables = migration_117.Migration117DropLegacyAgentConfigTables;
 pub const Migration118AddWorkerRunToken = migration_118.Migration118AddWorkerRunToken;
+pub const Migration119CreateSkillMetadata = migration_119.Migration119CreateSkillMetadata;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -472,6 +474,9 @@ pub const allMigrations: []const Migration = &.{
     // Migration 118 — `worker.run_token`: the per-session run lease the
     // workflow claims in a transaction, so one session runs one loop.
     .{ .version = Migration118AddWorkerRunToken.version, .name = Migration118AddWorkerRunToken.name, .up = Migration118AddWorkerRunToken.up },
+    // Migration 119 — `skill_metadata`: the SKILL.md frontmatter keys with
+    // no dedicated column become rows, derived from `skills.content`.
+    .{ .version = Migration119CreateSkillMetadata.version, .name = Migration119CreateSkillMetadata.name, .up = Migration119CreateSkillMetadata.up },
 };
 
 /// Register all migrations with a MigrationManager

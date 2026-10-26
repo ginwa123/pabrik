@@ -38,7 +38,27 @@ pub const SkillUpdateInput = struct {
 pub const SkillUpdateOutput = struct {
     /// Owned; free with `skills_store.freeSkillRow`.
     skill: skills_store.SkillRow,
+    /// Owned; free with `skills_store.freeSkillMetadataRows`. A patch that
+    /// rewrites the body re-derives this, so it is not the set the caller
+    /// sent.
+    metadata: []skills_store.SkillMetadataRow = &.{},
 };
+
+/// The skill plus the metadata projected from its body. Shared by the
+/// patch path and the no-op path so both answer with the same shape.
+fn withMetadata(
+    allocator: std.mem.Allocator,
+    db: *pabrikcore.sqlite.SqliteBackend,
+    workspace_id: []const u8,
+    row: skills_store.SkillRow,
+) SkillUpdateError!SkillUpdateOutput {
+    const metadata = skills_store.listMetadata(allocator, db, workspace_id, row.name) catch |err| switch (err) {
+        error.QueryFailed => return error.QueryFailed,
+        error.OutOfMemory => return error.OutOfMemory,
+        error.WorkspaceIdNameRequired => return error.WorkspaceIdRequired,
+    };
+    return .{ .skill = row, .metadata = metadata };
+}
 
 // =====================================================================
 // Use case
@@ -66,7 +86,12 @@ fn useCase(
     // keep a skill is not to write it: no UPDATE means the row is returned
     // as-is and `updated_at` does not advance either.
     if (input.body.description == null and input.body.content == null and input.body.is_can_auto_improve == null) {
-        return .{ .skill = try readRow(allocator, db, input.workspace_id, input.skill_name) };
+        return withMetadata(
+            allocator,
+            db,
+            input.workspace_id,
+            try readRow(allocator, db, input.workspace_id, input.skill_name),
+        );
     }
 
     const row = skills_store.updateSkill(allocator, db, input.workspace_id, input.skill_name, .{
@@ -81,7 +106,7 @@ fn useCase(
         error.UpdateFailed => return error.UpdateFailed,
         error.OutOfMemory => return error.OutOfMemory,
     };
-    return .{ .skill = row };
+    return withMetadata(allocator, db, input.workspace_id, row);
 }
 
 /// `skills_store.getSkillByName` narrowed to this handler's error set.
@@ -170,6 +195,13 @@ pub fn skillUpdateHandler(
         });
     };
     defer skills_store.freeSkillRow(allocator, output.skill);
+    defer skills_store.freeSkillMetadataRows(allocator, output.metadata);
+
+    const entries = try allocator.alloc(http_response.SkillMetadataEntry, output.metadata.len);
+    defer allocator.free(entries);
+    for (output.metadata, 0..) |meta, i| {
+        entries[i] = .{ .key = meta.key, .value = meta.value };
+    }
 
     const data = try std.json.Stringify.valueAlloc(allocator, .{
         .skill = http_response.makeSkillDetailResponse(.{
@@ -181,6 +213,7 @@ pub fn skillUpdateHandler(
             // touch, or the caller would render a blank instruction set.
             .asset_count = 0,
             .is_can_auto_improve = output.skill.is_can_auto_improve,
+            .metadata = entries,
         }),
     }, .{});
     return res.jsonResponse(.{ .status_code = 200, .data = data });
@@ -213,6 +246,7 @@ fn setupDb() !TestCtx {
     try db.init(io, ":memory:");
 
     try migration.Migration102CreateSkills.up(&db, testing.allocator);
+    try migration.Migration119CreateSkillMetadata.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -255,6 +289,7 @@ test "useCase: patches the description and keeps the body it does not mention" {
         .body = .{ .description = "new description" },
     });
     defer skills_store.freeSkillRow(alloc, output.skill);
+    defer skills_store.freeSkillMetadataRows(alloc, output.metadata);
 
     // Without the load-current-first step inside the store, a
     // description-only patch would blank the instruction set — which IS
@@ -276,6 +311,7 @@ test "useCase: patches the body and keeps the description it does not mention" {
         .body = .{ .content = "new body" },
     });
     defer skills_store.freeSkillRow(alloc, output.skill);
+    defer skills_store.freeSkillMetadataRows(alloc, output.metadata);
 
     try testing.expectEqualStrings("the description that must survive", output.skill.description);
     try testing.expectEqualStrings("new body", output.skill.content);
@@ -297,6 +333,7 @@ test "useCase: an explicit empty string clears the field rather than keeping it"
         .body = .{ .description = "" },
     });
     defer skills_store.freeSkillRow(alloc, output.skill);
+    defer skills_store.freeSkillMetadataRows(alloc, output.metadata);
 
     try testing.expectEqualStrings("", output.skill.description);
     try testing.expectEqualStrings("a body", output.skill.content);
@@ -322,6 +359,7 @@ test "useCase: a body with neither field keeps the stored row, untouched" {
         .body = .{},
     });
     defer skills_store.freeSkillRow(alloc, output.skill);
+    defer skills_store.freeSkillMetadataRows(alloc, output.metadata);
 
     // "Omitted means keep" is only honest if nothing at all moved: the
     // values stay AND updated_at stays, because no write happened.
@@ -343,6 +381,7 @@ test "useCase: a matching name in the body is accepted and changes nothing" {
         .body = .{ .name = "pdf", .content = "new body" },
     });
     defer skills_store.freeSkillRow(alloc, output.skill);
+    defer skills_store.freeSkillMetadataRows(alloc, output.metadata);
 
     try testing.expectEqualStrings("pdf", output.skill.name);
     try testing.expectEqualStrings("new body", output.skill.content);
@@ -477,6 +516,7 @@ test "useCase: a flag-only patch toggles the lock and keeps the body" {
         .body = .{ .is_can_auto_improve = false },
     });
     defer skills_store.freeSkillRow(alloc, locked.skill);
+    defer skills_store.freeSkillMetadataRows(alloc, locked.metadata);
 
     try testing.expect(!locked.skill.is_can_auto_improve);
     try testing.expectEqualStrings("a description", locked.skill.description);
@@ -488,6 +528,7 @@ test "useCase: a flag-only patch toggles the lock and keeps the body" {
         .body = .{ .is_can_auto_improve = true },
     });
     defer skills_store.freeSkillRow(alloc, unlocked.skill);
+    defer skills_store.freeSkillMetadataRows(alloc, unlocked.metadata);
     try testing.expect(unlocked.skill.is_can_auto_improve);
     try testing.expectEqualStrings("the body that must survive", unlocked.skill.content);
 }
@@ -516,6 +557,7 @@ test "useCase: the human editor still edits a LOCKED skill" {
         .body = .{ .content = "human-edited body" },
     });
     defer skills_store.freeSkillRow(alloc, output.skill);
+    defer skills_store.freeSkillMetadataRows(alloc, output.metadata);
 
     try testing.expectEqualStrings("human-edited body", output.skill.content);
     try testing.expect(!output.skill.is_can_auto_improve);
