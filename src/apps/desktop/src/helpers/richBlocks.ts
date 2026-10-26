@@ -1,11 +1,11 @@
 /** One renderable slice of an assistant turn. `payload` is markdown text, `<html>` inner markup, or
- * Mermaid/PlantUML source — never the wrapper tags themselves. */
+ * Mermaid/PlantUML/D2 source — never the wrapper tags themselves. */
 export interface RichSegment {
-  kind: 'markdown' | 'html' | 'mermaid' | 'plantuml'
+  kind: 'markdown' | 'html' | 'mermaid' | 'plantuml' | 'd2'
   payload: string
 }
 
-/** Every wrapper the response-formatting prompt teaches (`<html>`, `<mermaid>`, `<plantuml>`) plus
+/** Every wrapper the response-formatting prompt teaches (`<html>`, `<mermaid>`, `<plantuml>`, `<d2>`) plus
  * the fences models reach for anyway. Each alternative pairs a whole-match group with a body group,
  * so one scan yields both the kind and the payload. */
 const RICH_BLOCK_SOURCE =
@@ -13,7 +13,9 @@ const RICH_BLOCK_SOURCE =
   '|(<mermaid>([\\s\\S]*?)<\\/mermaid>)' +
   '|(<plantuml>([\\s\\S]*?)<\\/plantuml>)' +
   '|(```mermaid[ \\t]*\\r?\\n([\\s\\S]*?)```)' +
-  '|(```plantuml[ \\t]*\\r?\\n([\\s\\S]*?)```)'
+  '|(```plantuml[ \\t]*\\r?\\n([\\s\\S]*?)```)' +
+  '|(<d2>([\\s\\S]*?)<\\/d2>)' +
+  '|(```d2[ \\t]*\\r?\\n([\\s\\S]*?)```)'
 
 /** Body-group index → kind. */
 const BLOCK_KINDS: readonly (readonly [number, RichSegment['kind']])[] = [
@@ -22,6 +24,8 @@ const BLOCK_KINDS: readonly (readonly [number, RichSegment['kind']])[] = [
   [6, 'plantuml'],
   [8, 'mermaid'],
   [10, 'plantuml'],
+  [12, 'd2'],
+  [14, 'd2'],
 ]
 
 const SCAN_RE = new RegExp(RICH_BLOCK_SOURCE, 'gi')

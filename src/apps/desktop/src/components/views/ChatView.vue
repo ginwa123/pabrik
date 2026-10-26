@@ -120,6 +120,7 @@ import AgentErrorCard from '../chat/AgentErrorCard.vue'
 import ChatAttachments from '../chat/ChatAttachments.vue'
 import MermaidDiagram from '../chat/MermaidDiagram.vue'
 import PlantUmlDiagram from '../chat/PlantUmlDiagram.vue'
+import D2Diagram from '../chat/D2Diagram.vue'
 import UserPillRail, { type UserPill } from '../chat/UserPillRail.vue'
 import ChatScrollSlider from '../chat/ChatScrollSlider.vue'
 import { pickActivePillIndex, isPillGroup, estimateViewportEnd } from '../chat/activePill'
@@ -4178,6 +4179,10 @@ const compactSession = async () => {
                               />
                               <PlantUmlDiagram
                                 v-else-if="seg.kind === 'plantuml' && seg.payload"
+                                :source="seg.payload"
+                              />
+                              <D2Diagram
+                                v-else-if="seg.kind === 'd2' && seg.payload"
                                 :source="seg.payload"
                               />
                             </template>

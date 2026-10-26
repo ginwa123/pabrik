@@ -3,6 +3,7 @@ import { extractRichBlocks, hasRichBlocks } from '../richBlocks'
 
 const MERMAID_SOURCE = 'flowchart TD\n  A[Prompt] --> B[Diagram]'
 const PLANTUML_SOURCE = '@startuml\nAlice -> Bob: hello\n@enduml'
+const D2_SOURCE = 'a: Alpha -> b: Beta'
 
 describe('hasRichBlocks', () => {
   it('is false for absent, empty and plain markdown content', () => {
@@ -25,6 +26,12 @@ describe('hasRichBlocks', () => {
     expect(hasRichBlocks(`<plantuml>${PLANTUML_SOURCE}</plantuml>`)).toBe(true)
     expect(hasRichBlocks('```plantuml\n' + PLANTUML_SOURCE + '\n```')).toBe(true)
     expect(hasRichBlocks('<plantuml>@startuml\nA -> B')).toBe(false)
+  })
+
+  it('recognises a closed <d2> block and a ```d2 fence', () => {
+    expect(hasRichBlocks(`<d2>${D2_SOURCE}</d2>`)).toBe(true)
+    expect(hasRichBlocks('```d2\n' + D2_SOURCE + '\n```')).toBe(true)
+    expect(hasRichBlocks('<d2>a -> b')).toBe(false)
   })
 
   it('is false for a tag whose closing half has not streamed in yet', () => {
@@ -97,6 +104,13 @@ describe('extractRichBlocks', () => {
     expect(extractRichBlocks(content)).toEqual([
       { kind: 'plantuml', payload: PLANTUML_SOURCE },
       { kind: 'mermaid', payload: MERMAID_SOURCE },
+    ])
+  })
+
+  it('takes a <d2> block and a ```d2 fence as d2 segments', () => {
+    expect(extractRichBlocks(`<d2>${D2_SOURCE}</d2>`)).toEqual([{ kind: 'd2', payload: D2_SOURCE }])
+    expect(extractRichBlocks('```d2\n' + D2_SOURCE + '\n```')).toEqual([
+      { kind: 'd2', payload: D2_SOURCE },
     ])
   })
 

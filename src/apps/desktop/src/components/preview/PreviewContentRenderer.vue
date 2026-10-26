@@ -1,6 +1,6 @@
 <!--
   PreviewContentRenderer — shared renderer for rich text content
-  (markdown / text / code / image / html).
+  (markdown / text / code / image / html, plus a diagram file rendered as a diagram).
 
   Renders fetched or inline text content inside the chat bubble (used by
   PresentFiles for per-file text previews). Supports 5 content types
@@ -13,7 +13,7 @@
   full-width page when the inline view truncates.
 
   Props:
-    - `contentType`: one of 'markdown' | 'text' | 'code' | 'image' | 'html' | 'mermaid'.
+    - `contentType`: 'markdown' | 'text' | 'code' | 'image' | 'html' | 'mermaid' | 'plantuml' | 'd2'.
     - `args`: object with `content`, `title`, `caption`, `language` fields.
       `content` is the raw payload. `title` renders above. `caption`
       renders below. `language` selects the code fence hint (matches the
@@ -33,6 +33,8 @@
     | html          | <iframe sandbox="allow-scripts" srcdoc=...> +  |
     |               | (inline only) "Open full preview" → button  |
     | mermaid       | <MermaidDiagram :source="c">                 |
+    | plantuml      | <PlantUmlDiagram :source="c">                |
+    | d2            | <D2Diagram :source="c">                      |
     | (anything else) | empty container (defensive)              |
 
   Security note for the `html` branch:
@@ -56,6 +58,7 @@ import {
 } from '@/helpers'
 import MermaidDiagram from '../chat/MermaidDiagram.vue'
 import PlantUmlDiagram from '../chat/PlantUmlDiagram.vue'
+import D2Diagram from '../chat/D2Diagram.vue'
 
 export interface PreviewArgs {
   content?: string
@@ -66,7 +69,7 @@ export interface PreviewArgs {
 
 const props = withDefaults(
   defineProps<{
-    contentType: 'markdown' | 'text' | 'code' | 'image' | 'html' | 'mermaid'
+    contentType: 'markdown' | 'text' | 'code' | 'image' | 'html' | 'mermaid' | 'plantuml' | 'd2'
     args: PreviewArgs
     /**      * Layout variant (kept for backward compat). Only `'inline'` is used — compact chat-bubble
      * layout that auto-resizes to fit the iframe's content height, plus an "Open in new tab" button
@@ -253,6 +256,14 @@ function openInNewTab() {
       <MermaidDiagram :source="args.content ?? ''" />
     </div>
 
+    <div v-else-if="contentType === 'plantuml'" data-testid="preview-plantuml">
+      <PlantUmlDiagram :source="args.content ?? ''" />
+    </div>
+
+    <div v-else-if="contentType === 'd2'" data-testid="preview-d2">
+      <D2Diagram :source="args.content ?? ''" />
+    </div>
+
     <!--
       Markdown / text / code / image content (non-html) flow through
       the branches below. An `html` SEGMENT of a presented markdown file
@@ -266,7 +277,7 @@ function openInNewTab() {
       <template v-for="(seg, sIdx) in markdownSegments" :key="sIdx">
         <!-- eslint-disable-next-line vue/no-v-html -->
         <span
-          v-if="seg.kind !== 'mermaid' && seg.kind !== 'plantuml' && seg.payload"
+          v-if="seg.kind !== 'mermaid' && seg.kind !== 'plantuml' && seg.kind !== 'd2' && seg.payload"
           v-html="marked.parse(seg.payload, { async: false })"
         ></span>
         <MermaidDiagram v-else-if="seg.kind === 'mermaid' && seg.payload" :source="seg.payload" />
@@ -274,6 +285,7 @@ function openInNewTab() {
           v-else-if="seg.kind === 'plantuml' && seg.payload"
           :source="seg.payload"
         />
+        <D2Diagram v-else-if="seg.kind === 'd2' && seg.payload" :source="seg.payload" />
       </template>
     </div>
 

@@ -336,6 +336,42 @@ describe('PresentFiles', () => {
     expect(inline.find('[data-testid="preview-mermaid"]').exists()).toBe(true)
     expect(renderMock.mock.calls[0]?.[1]).toBe(MERMAID_SOURCE)
   })
+
+  it('plantuml files (.puml) render through the PlantUML block, not as source text', async () => {
+    const source = '@startuml\nA -> B\n@enduml'
+    fetchMock.mockImplementationOnce(
+      async () => ({ ok: true, status: 200, text: async () => source }) as Response,
+    )
+    const wrapper = mountCard({
+      status: 'presented',
+      count: 1,
+      files: [
+        { path: '/tmp/flow.puml', bytes: 24, mime: 'application/octet-stream', label: 'flow.puml' },
+      ],
+    })
+    await flushPromises()
+
+    const inline = wrapper.find('[data-testid="present-files-inline-text-0"]')
+    expect(inline.find('[data-testid="preview-plantuml"]').exists()).toBe(true)
+  })
+
+  it('d2 files (.d2) render through the D2 block, not as source text', async () => {
+    fetchMock.mockImplementationOnce(
+      async () =>
+        ({ ok: true, status: 200, text: async () => 'a: Alpha -> b: Beta' }) as Response,
+    )
+    const wrapper = mountCard({
+      status: 'presented',
+      count: 1,
+      files: [
+        { path: '/tmp/graph.d2', bytes: 20, mime: 'application/octet-stream', label: 'graph.d2' },
+      ],
+    })
+    await flushPromises()
+
+    const inline = wrapper.find('[data-testid="present-files-inline-text-0"]')
+    expect(inline.find('[data-testid="preview-d2"]').exists()).toBe(true)
+  })
 })
 
 /** Loading-space reserves (scroll pop-in fix). Text/html/pdf/image previews resolve asynchronously

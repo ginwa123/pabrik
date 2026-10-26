@@ -44,6 +44,7 @@ export {
   plantumlSvgUrl,
   resolvePlantumlServer,
 } from './plantuml'
+export { D2_DEFAULT_SERVER, d2SvgUrl, encodeD2, resolveD2Server } from './d2'
 export { toolPayloadPreview, TOOL_PAYLOAD_PREVIEW_MAX } from './toolPayloadPreview'
 export { formatCompactTokens } from './formatCompact'
 export {

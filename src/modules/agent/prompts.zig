@@ -1315,6 +1315,11 @@ test "ResponseFormatting routes content to a surface and colours it by role" {
     try std.testing.expect(contains(prompt, "</plantuml>"));
     try std.testing.expect(contains(prompt, "skinparam backgroundColor"));
 
+    // D2 renders remotely too, and its dark theme is a source-level `vars` block.
+    try std.testing.expect(contains(prompt, "<d2>"));
+    try std.testing.expect(contains(prompt, "</d2>"));
+    try std.testing.expect(contains(prompt, "theme-id: 200"));
+
     // 2. Colour is EXPECTED, from the app's own Kanagawa Dragon accent tokens
     // (helpers/mermaid.ts MERMAID_PALETTE_FALLBACK, ChatView's
     // HTML_FRAME_PALETTE_FALLBACK) — one accent per role.
