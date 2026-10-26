@@ -3091,6 +3091,27 @@ test "buildJsonOpenAIRequest omits 'user' field when userIdentifier is empty" {
     try testing.expect(std.mem.indexOf(u8, body, "\"user\":") == null);
 }
 
+test "the command tool's provider payload teaches the service recipe" {
+    var a = Agent.init(testing.allocator, testing.io);
+    a.model = "test-model";
+    defer a.deinit();
+
+    const tools = [_]AgentTool{@import("tools/command.zig").command_tool};
+    const body = try a.buildJsonOpenAIRequest(.{ .tools = &tools, .messages = &.{} }, false);
+    defer testing.allocator.free(body);
+
+    try testing.expect(std.mem.indexOf(u8, body, "background_persistence") != null);
+    try testing.expect(std.mem.indexOf(u8, body, "Never detach by hand") != null);
+    try testing.expect(std.mem.indexOf(u8, body, "ONE `foreground` call per thing") != null);
+    for ([_][]const u8{ "`&`", "`nohup`", "`setsid`", "`Start-Process`", "`-RedirectStandardOutput`" }) |idiom| {
+        if (std.mem.indexOf(u8, body, idiom) == null) {
+            std.debug.print("\n!! {s} is no longer forbidden in what the model receives\n", .{idiom});
+            return error.HandRolledDetachAllowed;
+        }
+    }
+    try testing.expect(std.mem.indexOf(u8, body, "system_prompt") == null);
+}
+
 test "buildJsonAnthropicRequest includes metadata.user_id when userIdentifier is set" {
     var a = makeAgentUserId(HARDCODED_USER_ID);
     a.UrlStyle = "anthropic";

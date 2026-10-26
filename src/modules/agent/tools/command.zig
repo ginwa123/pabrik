@@ -74,7 +74,7 @@ pub const command_tool_system_prompt =
     \\## Command Tool — Behavior
     \\Host picks the shell: `bash` on Linux/macOS, `pwsh` on Windows (silent `cmd.exe /c` fallback when pwsh is missing).
     \\Do NOT prefix commands with a shell `timeout` utility — `timeout` (required, max 600) is the only deadline. Bound output with `| head -n <N>` / `| tail -n <N>` (bash) or `| Select-Object -First <N>` (pwsh).
-    \\Pick `mode` deliberately — it is the difference between blocking your turn and not: `foreground` (default, returns the output inline), `background` (detaches AND queues you a message when it exits — use it for a long build, a test run, a migration), `background_persistence` (detaches and stays SILENT — use it for a dev server or a long-lived watcher, then read its log yourself). Never start a dev server in `foreground` or `background`: a server does not exit, so the only thing `background` would ever queue you is its death, and `foreground` would block until the deadline kills it. Under cmd.exe: no `| head -n`, use cmd syntax (dir / where / type / %VAR% / && / double-quoted URLs).
+    \\Pick `mode` deliberately — it is the difference between blocking your turn and not: `foreground` (default, returns the output inline), `background` (detaches AND queues you a message when it exits — use it for a long build, a test run, a migration), `background_persistence` (detaches and stays SILENT — use it for a server, an API, a dev server or a watcher, then read and stop it with `process`). A long-running process is ONE `background_persistence` call plus one `foreground` call per request; never a hand-rolled detach inside `command` (`&`, `nohup`, `setsid`, `disown`, `Start-Process`, `-RedirectStandardOutput`) and never start + request + query bundled into a single call — `process` cannot see such a process, and a `foreground` call would block until the deadline kills the server. Under cmd.exe: no `| head -n`, use cmd syntax (dir / where / type / %VAR% / && / double-quoted URLs).
     \\Set `is_stop=true` to end YOUR turn after this call: the command still runs and any `background=true` process keeps running, but the loop returns to the user instead of calling the model again. Put your final answer in the message content — a `tool_calls` turn normally carries none, so without it the turn ends on a bare tool card.
     \\
 ;
@@ -91,9 +91,13 @@ pub const command_tool = AgentTool{
         \\- `timeout`: REQUIRED, the ONLY deadline. No shell `timeout` prefix — do not add one.
         \\- Bound output: `| head -n <N>` / `| tail -n <N>` (bash) or `| Select-Object -First <N>` (pwsh); under cmd.exe use max_lines / findstr / more.
         \\- Prefer `search` / `read_file` / `glob` over shell rg/grep/find; inside a shell use `rg` / `fd` / `tree`.
-        \\- No unbounded output, no destructive commands. Long work goes in `mode`.
+        \\- No unbounded output, no destructive commands. Long work goes in `mode` (see below).
         \\- Web fetch: use the `agent-browser` CLI.
         \\- End your turn with `is_stop=true`; kills nothing.
+        \\
+        \\## Servers and other long-running processes
+        \\Anything that does not exit on its own (API, dev server, worker): ONE `mode="background_persistence"` call with the plain start command (`go run ./cmd/api`) — it returns a PID + log path and frees your turn — then ONE `foreground` call per thing you do to it (`curl` the endpoint, the query, reading the log), and `process` to read or stop it.
+        \\Never detach by hand in `command` (`&`, `nohup`, `setsid`, `disown`, `Start-Process`, `-RedirectStandardOutput`): `process` cannot see such a process, so you can neither read nor stop it, and `foreground` kills it at the deadline anyway. Never bundle start + request + query into one call — when it fails you cannot tell which step broke.
         \\
         \\## Platform notes
         \\Install pwsh via `winget install Microsoft.PowerShell` (Windows) or brew/snap (macOS/Linux); without it, spawning a command fails with `FileNotFound`. Under cmd.exe: double-quote URLs, `%NAME%` env vars, `&&` chaining, `dir` / `where` / `type`.
@@ -145,10 +149,10 @@ pub const command_tool = AgentTool{
                     .type = "string",
                     .description =
                     \\How this command relates to your turn. Default: "foreground".
-                    \\- "foreground": runs now, output inline; REQUIRES timeout (1-600). For short work (ls, cat, git status, rg, a quick build) — a server here is killed at the deadline.
-                    \\- "background": detaches; a message is QUEUED to you the moment it exits. For bounded work you must be told about — a long build, a test run, a migration. A server here reports only its death.
-                    \\- "background_persistence": detaches and stays SILENT. For a dev server (`pnpm run dev`, `vite`) or a watcher until you or the user stop it; read its output with a foreground `tail -n 50 <log path>`. A bounded job here is never reported as finished.
-                    \\Both detached modes ignore `timeout` (the process outlives the call — stopping it is on you) and return a PID + log path.
+                    \\- "foreground": runs now, output inline; REQUIRES timeout (1-600). Short work only (ls, cat, git status, rg, a quick build) — a server here is killed at the deadline.
+                    \\- "background": detaches and QUEUES you a message when it exits. Bounded work you must be told about: a long build, a test run, a migration. A server reports only its death.
+                    \\- "background_persistence": detaches and stays SILENT. A server, API, dev server or watcher — read it and stop it with `process`. A bounded job here is never reported as finished.
+                    \\Both detached modes ignore `timeout` and return a PID + log path; they are the ONLY correct way to start a server — never hand-roll a detach (`&`, `nohup`, `Start-Process`).
                     ,
                 },
                 .{

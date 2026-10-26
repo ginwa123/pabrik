@@ -130,6 +130,11 @@ extern "kernel32" fn GetExitCodeProcess(
     lpExitCode: *u32,
 ) callconv(.winapi) std.os.windows.BOOL;
 
+// std 0.16 does not export GetProcessId; kernel32 is always linked on Windows.
+extern "kernel32" fn GetProcessId(
+    process: std.os.windows.HANDLE,
+) callconv(.winapi) std.os.windows.DWORD;
+
 /// Wall-clock grace period after SIGKILL during which we wait for the kernel
 /// to reap the spawned process group. 2 seconds is enough for normal process
 /// groups to die and be reaped; D-state descendants (uninterruptible sleep)
@@ -1067,13 +1072,18 @@ fn spawn_detached_native(
     };
 }
 
-/// The numeric PID to report for a freshly spawned child, or null on a host
-/// where `Child.Id` is not an integer (Windows: a HANDLE, which is not
-/// meaningful to the caller and is what `background_watcher` re-resolves).
+/// Pid of a freshly spawned child, or null when the host has no pid concept.
+/// Windows' `Child.Id` is a HANDLE, so the number is asked of the OS there.
 fn childPidForLog(child: std.process.Child) ?u32 {
     const id_opt = child.id orelse return null;
-    const T = @TypeOf(id_opt);
-    if (@typeInfo(T) != .int) return null;
+    if (comptime @typeInfo(@TypeOf(id_opt)) != .int) {
+        if (comptime builtin.os.tag == .windows) {
+            const pid = GetProcessId(id_opt);
+            // 0 means the handle is not (or no longer) a live process.
+            return if (pid == 0) null else @intCast(pid);
+        }
+        return null;
+    }
     return @intCast(id_opt);
 }
 
@@ -1418,6 +1428,35 @@ test "spawn_detached_native: pid == pgid, the log is the child's own stdout, and
     // ...and once it IS reaped the signal probe finally agrees, so a caller
     // that reaps first reads the truth either way.
     try testing.expect(!processAliveForTest(pid));
+}
+
+test "spawn_detached_native: a service reports a numeric pid on Windows too" {
+    if (comptime builtin.os.tag != .windows) return;
+
+    const allocator = testing.allocator;
+    const io = std.testing.io;
+    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const cwd_len = try std.Io.Dir.cwd().realPath(io, &cwd_buf);
+
+    const out = try execute_shell(allocator, io, &.{ "cmd.exe", "/c" }, .{
+        .command = "ping -n 60 127.0.0.1",
+        .cwd = cwd_buf[0..cwd_len],
+        .mode = .background_persistence,
+    });
+    defer {
+        allocator.free(out.command);
+        allocator.free(out.stdout);
+        allocator.free(out.stderr);
+    }
+
+    try testing.expect(std.mem.startsWith(u8, out.stdout, "PID: "));
+    const nl = std.mem.indexOfScalar(u8, out.stdout, '\n') orelse return error.NoNewline;
+    const pid = try std.fmt.parseInt(u32, out.stdout[5..nl], 10);
+    try testing.expect(pid > 0);
+    const log_at = std.mem.indexOf(u8, out.stdout, "Log: ") orelse return error.NoLogLine;
+    try testing.expect(std.mem.endsWith(u8, std.mem.trim(u8, out.stdout[log_at + "Log: ".len ..], " \r\n"), ".log"));
+
+    try testing.expect(stopDetachedProcess(allocator, io, pid));
 }
 
 /// POSIX `getpgid(2)`.
