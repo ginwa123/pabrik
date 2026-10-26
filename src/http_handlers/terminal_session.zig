@@ -31,8 +31,8 @@ pub const buffer_cap: usize = 256 * 1024;
 /// One poll drains at most this many bytes (32 x 8 KiB reads).
 pub const max_drain_bytes_per_call: usize = 256 * 1024;
 pub const max_drain_iters: usize = 32;
-/// Capacity slack before we give memory back: len stays at `buffer_cap`, but
-/// ArrayList capacity can double once on the way up.
+/// Capacity slack before we give memory back: an append grows to ~1.5x what it
+/// asked for, so a buffer can sit above this while still holding under the cap.
 pub const buffer_capacity_slack: usize = 64 * 1024;
 pub const default_cols: u16 = 80;
 pub const default_rows: u16 = 24;
@@ -1459,13 +1459,16 @@ fn appendLocked(s: *Session, bytes: []const u8) void {
     shrinkCapacityLocked(s);
 }
 
-/// Give bloated capacity back after a burst. Len stays at the cap;
-/// only the spare allocation is released so the next burst doesn't
-/// remap from a pinned 512 KiB+ base under memory pressure.
+/// Give a bloated buffer's spare allocation back, keeping every byte. The target
+/// is the LIVE length, never `buffer_cap`: a target past `items.len` trips the
+/// assert in `shrinkAndFree`, and with asserts off it serves bytes never held.
+pub fn shrinkBufferToLen(buf: *std.ArrayList(u8), gpa: std.mem.Allocator) void {
+    if (buf.capacity <= buffer_cap + buffer_capacity_slack) return;
+    buf.shrinkAndFree(gpa, buf.items.len);
+}
+
 fn shrinkCapacityLocked(s: *Session) void {
-    if (s.buf.capacity > buffer_cap + buffer_capacity_slack) {
-        s.buf.shrinkAndFree(g_alloc, buffer_cap);
-    }
+    shrinkBufferToLen(&s.buf, g_alloc);
 }
 
 /// Non-blocking child reaping. Sets `exited`/`exit_code` exactly once.
@@ -2185,6 +2188,33 @@ test "tailKeepStart keeps only the tail of oversized chunks" {
     try testing.expectEqual(@as(usize, 0), tailKeepStart(buffer_cap, buffer_cap));
     try testing.expectEqual(@as(usize, 1), tailKeepStart(buffer_cap + 1, buffer_cap));
     try testing.expectEqual(@as(usize, 8192), tailKeepStart(buffer_cap + 8192, buffer_cap));
+}
+
+test "shrinkBufferToLen gives the spare allocation back without touching the bytes" {
+    var buf = std.ArrayList(u8).empty;
+    defer buf.deinit(testing.allocator);
+    const chunk = try testing.allocator.alloc(u8, 32 * 1024);
+    defer testing.allocator.free(chunk);
+    @memset(chunk, 'q');
+
+    // Append until capacity overshoots the slack while the buffer is still
+    // shorter than the cap: the state a shrink target of `buffer_cap` aborts on.
+    var appends: usize = 0;
+    while (buf.capacity <= buffer_cap + buffer_capacity_slack or buf.items.len >= buffer_cap) {
+        if (appends == 64) return error.TestUnexpectedResult;
+        appends += 1;
+        try buf.appendSlice(testing.allocator, chunk);
+    }
+    const before = try testing.allocator.dupe(u8, buf.items);
+    defer testing.allocator.free(before);
+    const filled = buf.items.len;
+    try testing.expect(buf.capacity > filled);
+
+    shrinkBufferToLen(&buf, testing.allocator);
+
+    try testing.expectEqual(filled, buf.items.len);
+    try testing.expectEqual(filled, buf.capacity);
+    try testing.expectEqualSlices(u8, before, buf.items);
 }
 
 test "shouldReap mirrors the sweep victim rule" {

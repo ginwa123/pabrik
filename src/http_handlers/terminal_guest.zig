@@ -446,9 +446,7 @@ fn appendLocked(s: *Session, bytes: []const u8) void {
         s.buf.items.len -= drop;
         s.base += drop;
     }
-    if (s.buf.capacity > terminal_session.buffer_cap + terminal_session.buffer_capacity_slack) {
-        s.buf.shrinkAndFree(g_alloc, terminal_session.buffer_cap);
-    }
+    terminal_session.shrinkBufferToLen(&s.buf, g_alloc);
 }
 
 /// The exit code the shell reported, when it has exited.
@@ -730,6 +728,37 @@ test "the guest buffer drops the oldest bytes once past the cap" {
     try testing.expectEqual(@as(usize, terminal_session.buffer_cap), len);
     try testing.expectEqual(@as(u64, 4096), base);
     try testing.expectEqual(@as(u64, big.len), total);
+}
+
+test "a burst past the cap keeps the newest bytes and does not abort the process" {
+    const s = try insertSessionForTest("ws_1", "user_test");
+    defer removeSessionForTest(s);
+
+    const chunk = try testing.allocator.alloc(u8, policy.max_tty_chunk);
+    defer testing.allocator.free(chunk);
+
+    // 16 x 32 KiB guest chunks, the largest a read returns. Capacity overshoots
+    // the slack one append BEFORE the stream fills the cap: the aborting state.
+    mutexLock(&s.mutex);
+    var i: usize = 0;
+    while (i < 16) : (i += 1) {
+        @memset(chunk, 'a' + @as(u8, @intCast(i)));
+        appendLocked(s, chunk);
+    }
+    const len = s.buf.items.len;
+    const total = s.total;
+    const base = s.base;
+    const kept = try testing.allocator.dupe(u8, s.buf.items);
+    s.mutex.unlock();
+    defer testing.allocator.free(kept);
+
+    try testing.expectEqual(terminal_session.buffer_cap, len);
+    try testing.expectEqual(@as(u64, 16 * policy.max_tty_chunk), total);
+    try testing.expectEqual(total - terminal_session.buffer_cap, base);
+    // The window that survives is the newest cap-sized tail: the last eight
+    // chunks, in order, with nothing left of the seven before them.
+    try testing.expectEqual(@as(u8, 'a' + 8), kept[0]);
+    try testing.expectEqual(@as(u8, 'a' + 15), kept[kept.len - 1]);
 }
 
 test "a foreign caller cannot reach another owner's guest terminal" {
