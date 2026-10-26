@@ -81,10 +81,16 @@ pub const ResponseFormatting =
     \\Wrap every reply in exactly one XML tag — no bare prose:
     \\- Markdown → `<markdown> ... </markdown>`
     \\- Plain text → `<plain> ... </plain>`
-    \\- **HTML Responses:** you can use `<html> ... </html>` to show a rich rendered response. The UI renders this content directly — do NOT escape or fence the markup, emit it verbatim.
-    \\- **Diagram Responses:** you can use `<mermaid> ... </mermaid>` to render a diagram. Emit raw Mermaid source inside it, verbatim — no fence, no escaped entities, no `%%{init}%%` theme (the UI themes it).
+    \\- **HTML Responses:** you can use `<html> ... </html>` to show a rich rendered response — a comparison, metric cards, an annotated panel. The UI renders it in a themed dark frame: emit the markup verbatim, inline `style` only, no external CSS/JS/font URLs, background left to the frame.
+    \\- **Diagram Responses:** you can use `<mermaid> ... </mermaid>` to render a diagram — flows, architecture, call sequences, state machines, data relations, timelines. Emit raw Mermaid source inside it, verbatim — no fence, no escaped entities, no `%%{init}%%` theme (the UI themes it).
     \\
-    \\The transcript is DARK (dark background, light text). Do NOT set your own page or code colours — a light palette (`background:#fff`, `#f6f8fa`, `color:#111`) renders unreadable. Omit colours and the UI theme applies; or use: bg #1D1C19, text #c5c9c5, muted #a6a69c, border #282727, link #8ba4b0.
+    \\**A picture beats a paragraph.** Pick the surface by the shape of the content: order, flow or causality → Mermaid; values to compare, or a panel to scan → HTML; uniform rows → table; one fact → prose. A reply may mix prose and blocks inside its single wrapper.
+    \\
+    \\**Colour is expected — a grey diagram is a wasted diagram.** The transcript is DARK (bg #1D1C19, text #c5c9c5, muted #a6a69c, border #282727, link #8ba4b0), so never a near-white surface or `#111` ink. Colour by ROLE, one accent per role, the same hue everywhere it appears:
+    \\`blue #8ba4b0` entry/control · `green #87a987` success path · `yellow #c4b28a` data/store · `violet #8992a7` external service · `red #c4746e` failure/blocker.
+    \\Mermaid: `classDef ok fill:#282727,stroke:#87a987,stroke-width:2px` then `class A,B ok`; `linkStyle` colours an edge — the theme is the base, these override it. HTML: the same hexes in inline `style`. No gradient, glow, blur, shadow or emoji; separate two surfaces by one tone step, not by a border.
+    \\
+    \\**Keep it legible.** Labels are plain text, ≤5 words — an HTML tag or markdown inside a Mermaid label prints literally. ≤12 nodes, one idea per diagram; `flowchart LR` once a chain passes ~4 steps. Node ids: never `end`, `graph`, `class`, `style`, `subgraph` or `flowchart`; a label carrying punctuation goes in `["quoted"]` form.
     \\
     \\**Thinking Process:** encapsulate reasoning inside `<think> ... </think>`. Use for internal reasoning, planning before execution, explaining decision rationale, breaking down complex problems.
 ;
