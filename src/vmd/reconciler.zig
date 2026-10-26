@@ -7,6 +7,7 @@ const linux = std.os.linux;
 const policy = @import("policy.zig");
 const spec_store = @import("spec_store.zig");
 const vm_client = @import("vm_client.zig");
+const activity = @import("activity.zig");
 
 pub const State = enum(u8) {
     absent,
@@ -34,6 +35,10 @@ pub const State = enum(u8) {
 
 pub const default_sweep_interval_ms: u32 = 15_000;
 pub const default_backoff_base_ms: i64 = 1_000;
+/// Thirty minutes: the window a workspace may sit unused before its VM is
+/// stopped. Chosen so a coffee break never costs a cold boot, and so the RAM
+/// of a workspace nobody has touched since yesterday is not held all day.
+pub const default_idle_stop_ms: u32 = 1_800_000;
 
 pub const Config = struct {
     root: []const u8,
@@ -49,6 +54,20 @@ pub const Config = struct {
     backoff_base_ms: i64 = default_backoff_base_ms,
     backoff_max_ms: i64 = 60_000,
     stop_timeout_ms: u32 = 5_000,
+    /// How long a workspace's VM may go unused before its VMM is stopped. 0
+    /// disables the idle reaper, which is the kill switch: today's behaviour
+    /// with no code revert.
+    idle_stop_ms: u32 = default_idle_stop_ms,
+    /// A VMM younger than this is never reaped, whatever its readings say: the
+    /// first command after a boot is allowed to arrive.
+    idle_grace_ms: u32 = 60_000,
+    /// Guest CPU in one sweep window that still counts as activity. An idle
+    /// Firecracker with halted vCPUs reads ~0, so this only has to clear noise.
+    idle_cpu_ms: u32 = 50,
+    /// How long a detached job nobody has looked at is still believed in. Four
+    /// idle windows: long enough that a real build is never dropped early,
+    /// short enough that a job that died unseen cannot pin a VM forever.
+    job_trust_ms: i64 = 4 * @as(i64, default_idle_stop_ms),
 };
 
 /// The retry delay after `attempts` consecutive failures: exponential from the
@@ -118,6 +137,41 @@ pub fn decide(obs: Observation, config: Config) Decision {
     }
     if (obs.pid != 0) return .reclaim_then_boot;
     return .boot;
+}
+
+/// The readings the idle reaper decides on: all measured, none inferred. A
+/// field that could not be read is null, and null is never idle — keeping a VM
+/// costs RAM, taking one down wrongly costs somebody's build.
+pub const IdleObservation = struct {
+    recorded: State = .absent,
+    since_ms: i64 = 0,
+    now_ms: i64 = 0,
+    /// When the daemon last served a request that carries work for this
+    /// workspace. Null means it has no idea (a fresh daemon), which is not idle.
+    last_work_ms: ?i64 = null,
+    in_flight: u32 = 0,
+    live_jobs: u32 = 0,
+    /// Guest CPU over the last sweep window. Null means unreadable or the first
+    /// sample after a boot: cannot tell, so not idle.
+    cpu_delta_ms: ?u64 = null,
+};
+
+/// Is this workspace's VM holding memory nobody is using? Pure: no clock, no
+/// socket, no pid. Every veto is separate so a test can prove each one alone
+/// keeps a VM up.
+pub fn isIdle(obs: IdleObservation, config: Config) bool {
+    if (config.idle_stop_ms == 0) return false;
+    if (obs.recorded != .ready) return false;
+    // The fail-safe direction: a reading this daemon does not have is not
+    // evidence of idleness.
+    const last_work = obs.last_work_ms orelse return false;
+    const cpu = obs.cpu_delta_ms orelse return false;
+    if (obs.now_ms - obs.since_ms < config.idle_grace_ms) return false;
+    if (obs.now_ms - last_work < config.idle_stop_ms) return false;
+    if (obs.in_flight != 0) return false;
+    if (obs.live_jobs != 0) return false;
+    if (cpu >= config.idle_cpu_ms) return false;
+    return true;
 }
 
 fn refuse(reason: Reason, obs: Observation, config: Config, message: []const u8) Decision {
@@ -206,12 +260,21 @@ pub const Env = struct {
     waitGone: *const fn (ctx: *anyopaque, pid: i64, timeout_ms: u32) bool = realWaitGone,
     boot: *const fn (ctx: *anyopaque, allocator: std.mem.Allocator, spec: vm_client.Spec) anyerror!i64 = realBoot,
     waitReady: *const fn (ctx: *anyopaque, layout: vm_client.Layout, timeout_ms: u32) anyerror!void = realWaitReady,
+    /// The VMM's own numbers: real /proc in production, a fixed reading under a
+    /// test — a test's pid is not a live VMM, so /proc can never answer for it.
+    cpuTicks: *const fn (ctx: *anyopaque, pid: i64) ?u64 = realCpuTicks,
+    rssMib: *const fn (ctx: *anyopaque, pid: i64) ?u32 = realRssMib,
     /// Blocking `flock` on the workspace directory: two callers must not bind
     /// one disk. `tryLock` is the sweeper's, and skips a workspace in flight.
     lock: *const fn (ctx: *anyopaque, dir: []const u8) anyerror!i64 = realLock,
     tryLock: *const fn (ctx: *anyopaque, dir: []const u8) ?i64 = realTryLock,
     unlock: *const fn (ctx: *anyopaque, fd: i64) void = realUnlock,
+    /// Says one thing about one workspace: the daemon's log, or nothing at all
+    /// under a unit test, which is the default.
+    logReaped: *const fn (ctx: *anyopaque, workspace_id: []const u8, idle_ms: i64, rss_mib: u32) void = realLogReaped,
 };
+
+fn realLogReaped(_: *anyopaque, _: []const u8, _: i64, _: u32) void {}
 
 pub const Error = error{ StateFileFailed, ReadDirFailed };
 
@@ -298,7 +361,12 @@ pub const Reconciler = struct {
 
         const fd = try self.env.lock(self.env.ctx, layout.dir);
         defer self.env.unlock(self.env.ctx, fd);
+        return self.stopLocked(allocator, layout);
+    }
 
+    /// The same stop under a lock the caller already holds. The idle reaper
+    /// arrives holding the sweep's try-lock and must never take a second one.
+    fn stopLocked(self: *const Reconciler, allocator: std.mem.Allocator, layout: vm_client.Layout) !Record {
         const pid = vm_client.readPid(layout) orelse 0;
         var ended = true;
         if (pid != 0 and self.env.pidAlive(self.env.ctx, pid)) {
@@ -357,9 +425,10 @@ pub const Reconciler = struct {
         return stopped;
     }
 
-    /// One pass over every workspace on this box: reclaim the dead, mark the
-    /// ones that failed, leave the busy alone.
-    pub fn sweep(self: *const Reconciler, allocator: std.mem.Allocator) !Sweep {
+    /// One pass over every workspace: reclaim the dead, count the rest, and —
+    /// with activity readings — stop the VMs nobody is using. The lock is a
+    /// TRY: a workspace somebody is using belongs to them, never waited for.
+    pub fn sweep(self: *const Reconciler, allocator: std.mem.Allocator, opts: SweepOptions) !Sweep {
         const root = try std.fmt.allocPrint(allocator, "{s}/workspaces", .{self.config.root});
         defer allocator.free(root);
 
@@ -373,11 +442,69 @@ pub const Reconciler = struct {
         var report = Sweep{};
         for (names.items) |name| {
             if (!policy.workspaceIdValid(name)) continue;
-            const record = self.observe(allocator, name) catch continue;
-            defer record.deinit(allocator);
-            report.count(record.state);
+            const layout = self.layoutFor(allocator, name) catch continue;
+            defer layout.deinit(allocator);
+            vm_client.ensureWorkspaceDir(layout) catch {};
+
+            const fd = self.env.tryLock(self.env.ctx, layout.dir) orelse {
+                report.busy += 1;
+                continue;
+            };
+            {
+                defer self.env.unlock(self.env.ctx, fd);
+                const record = self.observeLocked(allocator, layout) catch continue;
+                defer record.deinit(allocator);
+                report.count(record.state);
+                if (opts.activity) |act| self.reapLocked(allocator, name, layout, record, act, &report);
+            }
         }
         return report;
+    }
+
+    /// Stop this workspace's VMM if nothing has used it for a whole idle
+    /// window. Called with the sweep's lock held and the record that pass just
+    /// observed, so one pass costs one `hello` and one decision.
+    fn reapLocked(
+        self: *const Reconciler,
+        allocator: std.mem.Allocator,
+        workspace_id: []const u8,
+        layout: vm_client.Layout,
+        record: Record,
+        act: *activity.Activity,
+        report: *Sweep,
+    ) void {
+        if (self.config.idle_stop_ms == 0) return;
+        if (record.state != .ready or record.pid <= 0) return;
+
+        const now = self.env.nowMs(self.env.ctx);
+        const ticks = self.env.cpuTicks(self.env.ctx, record.pid);
+        const snapshot = act.sample(workspace_id, now, ticks, self.config.job_trust_ms) orelse return;
+        const idle = isIdle(.{
+            .recorded = record.state,
+            .since_ms = record.since_ms,
+            .now_ms = now,
+            .last_work_ms = snapshot.last_work_ms,
+            .in_flight = snapshot.in_flight,
+            .live_jobs = snapshot.live_jobs,
+            .cpu_delta_ms = snapshot.cpu_delta_ms,
+        }, self.config);
+        if (!idle) return;
+
+        // Read the RSS BEFORE the kill: afterwards there is no /proc entry left
+        // to ask, and the number is the only thing that makes this feature
+        // visible in a log.
+        const rss_mib = self.env.rssMib(self.env.ctx, record.pid) orelse 0;
+        const stopped = self.stopLocked(allocator, layout) catch return;
+        defer stopped.deinit(allocator);
+        if (stopped.state != .absent) {
+            // The VMM would not die, or an unaccounted one still owns its
+            // socket. `failed` is the honest record there, and the next sweep
+            // decides again — never a kill loop, never a wrong `absent`.
+            return;
+        }
+        report.reaped += 1;
+        report.reaped_mib += rss_mib;
+        self.env.logReaped(self.env.ctx, workspace_id, now - snapshot.last_work_ms, rss_mib);
     }
 
     fn observeLocked(self: *const Reconciler, allocator: std.mem.Allocator, layout: vm_client.Layout) !Record {
@@ -504,11 +631,17 @@ pub const Reconciler = struct {
 };
 
 pub const Sweep = struct {
-    workspaces: u32 = 0,
-    ready: u32 = 0,
+    workspaces: u32 = 0,    ready: u32 = 0,
     starting: u32 = 0,
     absent: u32 = 0,
     failed: u32 = 0,
+    /// Workspaces whose VM was stopped for being idle this pass, and the RSS
+    /// they were holding when they went.
+    reaped: u32 = 0,
+    reaped_mib: u32 = 0,
+    /// Workspaces somebody else held the lock on: never waited for, never
+    /// guessed about.
+    busy: u32 = 0,
 
     pub fn count(self: *Sweep, state: State) void {
         self.workspaces += 1;
@@ -519,6 +652,13 @@ pub const Sweep = struct {
             .failed => self.failed += 1,
         }
     }
+};
+
+/// What a sweep is allowed to do beyond counting. The daemon passes its
+/// activity readings, which turns the pass into the idle reaper; a test that
+/// only wants the count passes `.{}` and reaps nothing.
+pub const SweepOptions = struct {
+    activity: ?*activity.Activity = null,
 };
 
 fn absentRecord(allocator: std.mem.Allocator) !Record {
@@ -681,6 +821,16 @@ fn realWaitReady(_: *anyopaque, layout: vm_client.Layout, timeout_ms: u32) anyer
     return vm_client.waitReady(layout, timeout_ms);
 }
 
+fn realCpuTicks(_: *anyopaque, pid: i64) ?u64 {
+    if (pid <= 0) return null;
+    return vm_client.cpuTicks(@intCast(pid));
+}
+
+fn realRssMib(_: *anyopaque, pid: i64) ?u32 {
+    if (pid <= 0) return null;
+    return vm_client.rssMib(@intCast(pid));
+}
+
 fn realLock(_: *anyopaque, dir: []const u8) anyerror!i64 {
     const fd = openDirFd(dir) orelse return Error.StateFileFailed;
     errdefer _ = linux.close(fd);
@@ -717,6 +867,21 @@ const Fake = struct {
     /// which is what the single-workspace cases want.
     live: [8]i64 = .{0} ** 8,
     live_count: usize = 0,
+    /// What /proc would say about this fake's VMM. A constant means a sweep
+    /// reads ZERO CPU for it: a quiet guest.
+    cpu_ticks: ?u64 = 100,
+    rss_mib: ?u32 = 78,
+    reaps_logged: u32 = 0,
+
+    fn cpuTicks(ctx: *anyopaque, _: i64) ?u64 {
+        return me(ctx).cpu_ticks;
+    }
+    fn rssMib(ctx: *anyopaque, _: i64) ?u32 {
+        return me(ctx).rss_mib;
+    }
+    fn logReaped(ctx: *anyopaque, _: []const u8, _: i64, _: u32) void {
+        me(ctx).reaps_logged += 1;
+    }
 
     fn markLive(self: *Fake, pid: i64) void {
         self.live[self.live_count] = pid;
@@ -783,6 +948,9 @@ fn testReconciler(fake: *Fake, root: []const u8) Reconciler {
         .waitGone = Fake.waitGone,
         .boot = Fake.boot,
         .waitReady = Fake.waitReady,
+        .cpuTicks = Fake.cpuTicks,
+        .rssMib = Fake.rssMib,
+        .logReaped = Fake.logReaped,
         .lock = realLock,
         .tryLock = realTryLock,
         .unlock = realUnlock,
@@ -1133,8 +1301,176 @@ test "a sweep counts every workspace and skips names that are not ids" {
     const rec = testReconciler(&fake, scratch.root);
     const alloc = std.testing.allocator;
 
-    const report = try rec.sweep(alloc);
+    const report = try rec.sweep(alloc, .{});
     try std.testing.expectEqual(@as(u32, 2), report.workspaces);
     try std.testing.expectEqual(@as(u32, 2), report.absent);
     try std.testing.expectEqual(@as(u32, 0), report.ready);
+}
+
+// ─── idle: every veto alone keeps a VM up ────────────────────────────────
+
+const idle_config = Config{ .root = "/vm", .base_image = "b", .kernel = "k" };
+
+/// An observation that IS idle, so each test can break exactly one reading.
+fn idleBaseline() IdleObservation {
+    return .{
+        .recorded = .ready,
+        .since_ms = 0,
+        .now_ms = 10_000_000,
+        .last_work_ms = 1_000_000,
+        .in_flight = 0,
+        .live_jobs = 0,
+        .cpu_delta_ms = 0,
+    };
+}
+
+test "a quiet, unused workspace is idle" {
+    try std.testing.expect(isIdle(idleBaseline(), idle_config));
+}
+
+test "a request in flight is never idle" {
+    var obs = idleBaseline();
+    obs.in_flight = 1;
+    try std.testing.expect(!isIdle(obs, idle_config));
+}
+
+test "a detached job is never idle" {
+    var obs = idleBaseline();
+    obs.live_jobs = 1;
+    try std.testing.expect(!isIdle(obs, idle_config));
+}
+
+test "recent work is never idle" {
+    var obs = idleBaseline();
+    obs.last_work_ms = obs.now_ms - 1_000;
+    try std.testing.expect(!isIdle(obs, idle_config));
+}
+
+test "a VMM younger than the grace window is never idle" {
+    var obs = idleBaseline();
+    obs.since_ms = obs.now_ms - 1_000;
+    try std.testing.expect(!isIdle(obs, idle_config));
+}
+
+test "a guest burning CPU is never idle" {
+    var obs = idleBaseline();
+    obs.cpu_delta_ms = idle_config.idle_cpu_ms;
+    try std.testing.expect(!isIdle(obs, idle_config));
+}
+
+test "a workspace that is not ready is never idle" {
+    inline for ([_]State{ .absent, .starting, .failed }) |state| {
+        var obs = idleBaseline();
+        obs.recorded = state;
+        try std.testing.expect(!isIdle(obs, idle_config));
+    }
+}
+
+test "a reading the daemon does not have is never idle" {
+    // The fail-safe direction: no last-work clock, or no CPU sample, is not
+    // evidence that nobody is using the VM.
+    var no_work = idleBaseline();
+    no_work.last_work_ms = null;
+    try std.testing.expect(!isIdle(no_work, idle_config));
+
+    var no_cpu = idleBaseline();
+    no_cpu.cpu_delta_ms = null;
+    try std.testing.expect(!isIdle(no_cpu, idle_config));
+}
+
+test "a zero idle window turns the reaper off entirely" {
+    var config = idle_config;
+    config.idle_stop_ms = 0;
+    try std.testing.expect(!isIdle(idleBaseline(), config));
+}
+
+// ─── idle: the sweep that reaps ──────────────────────────────────────────
+
+/// A workspace whose VM is up, adopted, and has been quiet for a long time.
+fn quietWorkspace(scratch: *Scratch, act: *activity.Activity) !void {
+    try scratch.write("demo", "fc.pid", "4242\n");
+    try scratch.write("demo", "vmd.state", "state=ready\npid=4242\nattempts=1\nsince_ms=1000\n");
+    act.enter("demo", 1_000_000);
+    act.leave("demo", 1_000_000);
+}
+
+test "a quiet workspace is reaped, and its record lands in absent" {
+    var scratch = try Scratch.init("reap");
+    defer scratch.deinit();
+    var fake = Fake{ .alive = true, .hello = true, .now = 5_000_000 };
+    const rec = testReconciler(&fake, scratch.root);
+    const alloc = std.testing.allocator;
+    var act = activity.Activity.init(alloc);
+    defer act.deinit();
+    try quietWorkspace(&scratch, &act);
+
+    // The first pass only TAKES the CPU sample: a delta needs two readings, so
+    // a freshly booted VM can never be reaped on the sweep that met it.
+    _ = try rec.sweep(alloc, .{ .activity = &act });
+    try std.testing.expectEqual(@as(u32, 0), fake.kills);
+
+    fake.now = 5_015_000;
+    const report = try rec.sweep(alloc, .{ .activity = &act });
+    try std.testing.expectEqual(@as(u32, 1), report.reaped);
+    try std.testing.expectEqual(@as(u32, 78), report.reaped_mib);
+    try std.testing.expectEqual(@as(u32, 1), fake.kills);
+    try std.testing.expectEqual(@as(u32, 1), fake.reaps_logged);
+
+    // `absent` is the whole point: `.failed` would never boot again.
+    const after = try rec.read(alloc, "demo");
+    defer after.deinit(alloc);
+    try std.testing.expectEqual(State.absent, after.state);
+}
+
+test "a workspace with a live detached job is left alone" {
+    var scratch = try Scratch.init("reap-job");
+    defer scratch.deinit();
+    var fake = Fake{ .alive = true, .hello = true, .now = 5_000_000 };
+    const rec = testReconciler(&fake, scratch.root);
+    const alloc = std.testing.allocator;
+    var act = activity.Activity.init(alloc);
+    defer act.deinit();
+    try quietWorkspace(&scratch, &act);
+    act.addJob("demo", 900, 5_000_000);
+
+    _ = try rec.sweep(alloc, .{ .activity = &act });
+    fake.now = 5_015_000;
+    const report = try rec.sweep(alloc, .{ .activity = &act });
+    try std.testing.expectEqual(@as(u32, 0), report.reaped);
+    try std.testing.expectEqual(@as(u32, 0), fake.kills);
+}
+
+test "a workspace used a minute ago is left alone" {
+    var scratch = try Scratch.init("reap-recent");
+    defer scratch.deinit();
+    var fake = Fake{ .alive = true, .hello = true, .now = 5_000_000 };
+    const rec = testReconciler(&fake, scratch.root);
+    const alloc = std.testing.allocator;
+    var act = activity.Activity.init(alloc);
+    defer act.deinit();
+    try quietWorkspace(&scratch, &act);
+    act.enter("demo", 4_940_000);
+    act.leave("demo", 4_940_000);
+
+    _ = try rec.sweep(alloc, .{ .activity = &act });
+    fake.now = 5_015_000;
+    const report = try rec.sweep(alloc, .{ .activity = &act });
+    try std.testing.expectEqual(@as(u32, 0), report.reaped);
+    try std.testing.expectEqual(@as(u32, 0), fake.kills);
+}
+
+test "the reaper never touches a workspace with no VM to stop" {
+    var scratch = try Scratch.init("reap-absent");
+    defer scratch.deinit();
+    var fake = Fake{ .now = 5_000_000 };
+    const rec = testReconciler(&fake, scratch.root);
+    const alloc = std.testing.allocator;
+    var act = activity.Activity.init(alloc);
+    defer act.deinit();
+    try quietWorkspace(&scratch, &act);
+
+    const report = try rec.sweep(alloc, .{ .activity = &act });
+    try std.testing.expectEqual(@as(u32, 0), report.reaped);
+    try std.testing.expectEqual(@as(u32, 0), fake.kills);
+    try std.testing.expectEqual(@as(u32, 1), report.absent);
 }

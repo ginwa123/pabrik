@@ -40,6 +40,27 @@ pub const Error = error{
 
 pub const Action = enum { ping, exec, stop, status, resize, spawn, probe, signal, log, fs_stat, fs_read, fs_remove, fs_write, fs_walk, tty };
 
+/// Whether this action carries work into a workspace's guest: `status` and
+/// `ping` only read the state file, and the console polls them for every
+/// workspace, so counting them as use would pin every VM. `stop` is not use.
+pub fn carriesWork(action: Action) bool {
+    return switch (action) {
+        .ping, .status, .stop => false,
+        else => true,
+    };
+}
+
+test "a status poll is not work, a command is" {
+    try testing.expect(!carriesWork(.ping));
+    try testing.expect(!carriesWork(.status));
+    try testing.expect(!carriesWork(.stop));
+    try testing.expect(carriesWork(.exec));
+    try testing.expect(carriesWork(.spawn));
+    try testing.expect(carriesWork(.tty));
+    try testing.expect(carriesWork(.fs_read));
+    try testing.expect(carriesWork(.resize));
+}
+
 /// What a `tty` request does. One action rather than five, because every one of
 /// them carries the same four fields and answers with the same reply shape.
 pub const TtyOp = enum { open, read, write, resize, close };
