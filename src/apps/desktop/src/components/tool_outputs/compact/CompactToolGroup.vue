@@ -1,14 +1,17 @@
 <script setup lang="ts">
-/** CompactToolGroup — a run of tool calls. A lone call is one row; a run of
- * several folds into one group card that unfolds into the rows. */
+/** CompactToolGroup — a run of tool calls and the thoughts between them. A lone
+ * call is one row; a run of several folds into one group card that unfolds into
+ * the rows. */
 import { computed, ref } from 'vue'
 
 import { tryUnwrapToolOutput } from '@/helpers/unwrapToolOutput'
+import type { CompactChainItem } from './chain'
+import CompactThoughtRow from './CompactThoughtRow.vue'
 import CompactToolRow from './CompactToolRow.vue'
 import ToolCard, { type ToolCardData } from '../ToolCard.vue'
 
 const props = defineProps<{
-  cards: ToolCardData[]
+  items: CompactChainItem[]
   cwd: string
   sessionId: string
 }>()
@@ -20,15 +23,18 @@ const emit = defineEmits<{
   'open-session': [sessionId: string]
 }>()
 
+const cards = computed((): ToolCardData[] =>
+  props.items.flatMap((item) => (item.kind === 'tool' ? [item.card] : [])),
+)
 const envelopes = computed(() =>
-  props.cards.map((card) => tryUnwrapToolOutput(card.message.content)),
+  cards.value.map((card) => tryUnwrapToolOutput(card.message.content)),
 )
 const failedCount = computed(
   () => envelopes.value.filter((envelope) => envelope !== null && !envelope.success).length,
 )
 const writeCount = computed(
   () =>
-    props.cards.filter((card) =>
+    cards.value.filter((card) =>
       ['write_file', 'text_replace', 'remove_file'].includes(card.message.tool_name ?? ''),
     ).length,
 )
@@ -47,10 +53,10 @@ function isFullCard(card: ToolCardData): boolean {
   return card.expanded || card.message.tool_name === 'ask_user'
 }
 
-const isRun = computed(() => props.cards.length > 1)
+const isRun = computed(() => cards.value.length > 1)
 /** A run that holds a question for the human starts open: a question you
  * cannot see is a question you cannot answer. */
-const open = ref(props.cards.some((card) => card.message.tool_name === 'ask_user'))
+const open = ref(cards.value.some((card) => card.message.tool_name === 'ask_user'))
 
 function toggle(): void {
   open.value = !open.value
@@ -58,7 +64,7 @@ function toggle(): void {
 </script>
 
 <template>
-  <div class="tool-sequence tool-sequence-compact">
+  <div class="tool-sequence tool-sequence-compact" data-testid="compact-tool-chain">
     <div v-if="isRun" class="tool-item">
       <div class="chat-tool-card" data-testid="compact-tool-group">
         <div
@@ -111,10 +117,11 @@ function toggle(): void {
     </div>
 
     <template v-if="!isRun || open">
-      <template v-for="card in cards" :key="card.expandKey">
+      <template v-for="(item, idx) in items" :key="item.key">
         <ToolCard
-          v-if="isFullCard(card)"
-          v-bind="card"
+          v-if="item.kind === 'tool' && isFullCard(item.card)"
+          v-bind="item.card"
+          :class="idx < items.length - 1 ? 'tool-item-border' : ''"
           :cwd="cwd"
           :session-id="sessionId"
           @toggle-expand="emit('toggle-expand', $event)"
@@ -122,12 +129,14 @@ function toggle(): void {
           @jump-to-line="emit('jump-to-line', $event)"
           @open-session="emit('open-session', $event)"
         />
-        <div v-else class="tool-item">
+        <div v-else class="tool-item" :class="idx < items.length - 1 ? 'tool-item-border' : ''">
+          <CompactThoughtRow v-if="item.kind === 'thought'" :text="item.text" />
           <CompactToolRow
-            :tool="card.message.tool_name ?? 'tool'"
-            :parameters="card.parameters"
-            :content="card.message.content"
-            @expand="emit('toggle-expand', card.expandKey)"
+            v-else
+            :tool="item.card.message.tool_name ?? 'tool'"
+            :parameters="item.card.parameters"
+            :content="item.card.message.content"
+            @expand="emit('toggle-expand', item.card.expandKey)"
           />
         </div>
       </template>
