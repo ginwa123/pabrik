@@ -1,23 +1,31 @@
 /** One renderable slice of an assistant turn. `payload` is markdown text, `<html>` inner markup, or
- * Mermaid source — never the wrapper tags themselves. */
+ * Mermaid/PlantUML/D2 source — never the wrapper tags themselves. */
 export interface RichSegment {
-  kind: 'markdown' | 'html' | 'mermaid'
+  kind: 'markdown' | 'html' | 'mermaid' | 'plantuml' | 'd2'
   payload: string
 }
 
-/** Every wrapper the response-formatting prompt teaches (`<html>`, `<mermaid>`) plus the ```mermaid
- * fence models reach for anyway. Each alternative pairs a whole-match group with a body group, so
- * one scan yields both the kind and the payload. */
+/** Every wrapper the response-formatting prompt teaches (`<html>`, `<mermaid>`, `<plantuml>`, `<d2>`) plus
+ * the fences models reach for anyway. Each alternative pairs a whole-match group with a body group,
+ * so one scan yields both the kind and the payload. */
 const RICH_BLOCK_SOURCE =
   '(<html>([\\s\\S]*?)<\\/html>)' +
   '|(<mermaid>([\\s\\S]*?)<\\/mermaid>)' +
-  '|(```mermaid[ \\t]*\\r?\\n([\\s\\S]*?)```)'
+  '|(<plantuml>([\\s\\S]*?)<\\/plantuml>)' +
+  '|(```mermaid[ \\t]*\\r?\\n([\\s\\S]*?)```)' +
+  '|(```plantuml[ \\t]*\\r?\\n([\\s\\S]*?)```)' +
+  '|(<d2>([\\s\\S]*?)<\\/d2>)' +
+  '|(```d2[ \\t]*\\r?\\n([\\s\\S]*?)```)'
 
 /** Body-group index → kind. */
-const BLOCK_KINDS: readonly (readonly [number, 'html' | 'mermaid'])[] = [
+const BLOCK_KINDS: readonly (readonly [number, RichSegment['kind']])[] = [
   [2, 'html'],
   [4, 'mermaid'],
-  [6, 'mermaid'],
+  [6, 'plantuml'],
+  [8, 'mermaid'],
+  [10, 'plantuml'],
+  [12, 'd2'],
+  [14, 'd2'],
 ]
 
 const SCAN_RE = new RegExp(RICH_BLOCK_SOURCE, 'gi')
@@ -26,8 +34,8 @@ const DETECT_RE = new RegExp(RICH_BLOCK_SOURCE, 'i')
 
 const prose = (payload: string): RichSegment => ({ kind: 'markdown', payload })
 
-/** True when the turn carries at least one CLOSED `<html>`/`<mermaid>` block or mermaid fence. An
- * unclosed tag mid-stream does not count — it falls through to the legacy markdown path. */
+/** True when the turn carries at least one CLOSED rich block or fence. An unclosed tag mid-stream
+ * does not count — it falls through to the legacy markdown path. */
 export const hasRichBlocks = (content: string | undefined): boolean =>
   !!content && DETECT_RE.test(content)
 
