@@ -1928,7 +1928,7 @@ const SkillSaveInfo = tools.SkillSaveInfo;
 const agent = exec_pabrikcore.agent;
 const exec_skills_store = exec_pabrikcore.skills_store;
 const wrapToolOutput = tools.wrapToolOutput;
-const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+const error_explain = @import("tools_error_explain.zig");
 /// Probe an inner JSON payload for a top-level `"error"` key. The returned
 /// slice borrows from `parsed` — keep it alive through the `wrapToolOutput`
 /// call, then `deinit`.

@@ -846,6 +846,206 @@ fn collectTestShardEntries(b: *std.Build) []const TestShardEntry {
     return collected;
 }
 
+/// Subtrees that ship as their own package. Their files are still listed when
+/// the mod_tests module imports them (`src/vmd` reaches it through
+/// `vm_runtime`), so this list can never silently drop a test that runs today.
+const test_manifest_other_modules = [_][]const u8{
+    "apps/",
+    "helpers/",
+    "vmd/",
+    "vm_agent/",
+    "modules/gilvec_db/",
+};
+
+fn testManifestOtherModule(path: []const u8) bool {
+    for (test_manifest_other_modules) |prefix| {
+        if (std.mem.startsWith(u8, path, prefix)) return true;
+    }
+    return false;
+}
+
+/// A top-level `test` decl, named or anonymous, detected exactly the way
+/// `collectTestShardEntries` detects the named ones.
+fn hasTestDecl(bytes: []const u8) bool {
+    var lines = std.mem.splitScalar(u8, bytes, '\n');
+    while (lines.next()) |raw_line| {
+        const line = std.mem.trimStart(u8, raw_line, " \t\r");
+        if (!std.mem.startsWith(u8, line, "test")) continue;
+        if (line.len == 4) continue;
+        if (!std.ascii.isWhitespace(line[4])) continue;
+        return true;
+    }
+    return false;
+}
+
+/// Resolve `target` against `from_dir`, both relative to `src/`, and return the
+/// normalised path. Null when the target leaves `src/` or is a named module.
+fn resolveImport(alloc: std.mem.Allocator, from_dir: []const u8, target: []const u8) ?[]const u8 {
+    if (target.len == 0 or target[0] == '/') return null;
+    if (!std.mem.endsWith(u8, target, ".zig")) return null;
+    var parts: std.ArrayList([]const u8) = .empty;
+    defer parts.deinit(alloc);
+    var it = std.mem.tokenizeScalar(u8, from_dir, '/');
+    while (it.next()) |part| parts.append(alloc, part) catch return null;
+    var target_it = std.mem.tokenizeScalar(u8, target, '/');
+    while (target_it.next()) |part| {
+        if (std.mem.eql(u8, part, ".")) continue;
+        if (std.mem.eql(u8, part, "..")) {
+            if (parts.items.len == 0) return null;
+            _ = parts.pop();
+            continue;
+        }
+        parts.append(alloc, part) catch return null;
+    }
+    if (parts.items.len == 0) return null;
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(alloc);
+    for (parts.items, 0..) |part, i| {
+        if (i != 0) out.append(alloc, '/') catch return null;
+        out.appendSlice(alloc, part) catch return null;
+    }
+    return out.toOwnedSlice(alloc) catch null;
+}
+
+/// `@import("…")` is a Zig string literal, so a host walker's `\\` separator
+/// would read as an escape. Every path in this manifest speaks '/'.
+fn forwardSlashes(alloc: std.mem.Allocator, path: []const u8) []const u8 {
+    const copy = alloc.dupe(u8, path) catch @panic("OOM");
+    for (copy) |*c| {
+        if (c.* == '\\') c.* = '/';
+    }
+    return copy;
+}
+
+fn internPath(
+    alloc: std.mem.Allocator,
+    pool: *std.StringHashMap([]const u8),
+    owned: *std.ArrayList([]const u8),
+    path: []const u8,
+) []const u8 {
+    if (pool.get(path)) |existing| return existing;
+    const copy = alloc.dupe(u8, path) catch @panic("OOM");
+    owned.append(alloc, copy) catch @panic("OOM");
+    pool.put(copy, copy) catch @panic("OOM");
+    return copy;
+}
+
+/// Write `src/test_manifest.zig`: one `_ = @import` per test-bearing file the
+/// mod_tests module can compile, so writing a test is the only step needed to
+/// run it. It lands in the source tree because an import cannot leave the module.
+fn emitTestManifest(b: *std.Build) void {
+    const alloc = b.allocator;
+
+    var owned_paths: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (owned_paths.items) |path| alloc.free(path);
+        owned_paths.deinit(alloc);
+    }
+    var pool: std.StringHashMap([]const u8) = .init(alloc);
+    defer pool.deinit();
+
+    var src_dir = std.Io.Dir.cwd().openDir(b.graph.io, "src", .{ .iterate = true }) catch |err| {
+        fatalConfig("cannot open src/ to emit the test manifest: {s}", .{@errorName(err)});
+    };
+    defer src_dir.close(b.graph.io);
+
+    var walker = src_dir.walk(alloc) catch |err| {
+        fatalConfig("cannot walk src/ to emit the test manifest: {s}", .{@errorName(err)});
+    };
+    defer walker.deinit();
+
+    var test_files: std.ArrayList([]const u8) = .empty;
+    defer test_files.deinit(alloc);
+    const Edge = struct { from: []const u8, to: []const u8 };
+    var edges: std.ArrayList(Edge) = .empty;
+    defer edges.deinit(alloc);
+
+    while (walker.next(b.graph.io) catch |err| {
+        fatalConfig("cannot walk src/ to emit the test manifest: {s}", .{@errorName(err)});
+    }) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.path, ".zig")) continue;
+        const rel = forwardSlashes(alloc, entry.path);
+        defer alloc.free(rel);
+        if (std.mem.eql(u8, rel, "test_manifest.zig")) continue;
+        const bytes = entry.dir.readFileAlloc(b.graph.io, entry.basename, alloc, .unlimited) catch continue;
+        defer alloc.free(bytes);
+
+        if (hasTestDecl(bytes)) {
+            test_files.append(alloc, internPath(alloc, &pool, &owned_paths, rel)) catch @panic("OOM");
+        }
+
+        const from = internPath(alloc, &pool, &owned_paths, rel);
+        const from_dir = if (std.mem.lastIndexOfScalar(u8, rel, '/')) |slash| rel[0..slash] else "";
+        var lines = std.mem.splitScalar(u8, bytes, '\n');
+        while (lines.next()) |raw_line| {
+            const code = if (std.mem.indexOf(u8, raw_line, "//")) |i| raw_line[0..i] else raw_line;
+            var rest = code;
+            while (std.mem.indexOf(u8, rest, "@import(\"")) |at| {
+                const tail = rest[at + "@import(\"".len ..];
+                const close = std.mem.indexOfScalar(u8, tail, '"') orelse break;
+                rest = tail[close..];
+                const resolved = resolveImport(alloc, from_dir, tail[0..close]) orelse continue;
+                defer alloc.free(resolved);
+                edges.append(alloc, .{
+                    .from = from,
+                    .to = internPath(alloc, &pool, &owned_paths, resolved),
+                }) catch @panic("OOM");
+            }
+        }
+    }
+
+    var reachable: std.StringHashMap(void) = .init(alloc);
+    defer reachable.deinit();
+    var queue: std.ArrayList([]const u8) = .empty;
+    defer queue.deinit(alloc);
+    const root_path = internPath(alloc, &pool, &owned_paths, "root.zig");
+    reachable.put(root_path, {}) catch @panic("OOM");
+    queue.append(alloc, root_path) catch @panic("OOM");
+    var head: usize = 0;
+    while (head < queue.items.len) : (head += 1) {
+        const current = queue.items[head];
+        for (edges.items) |edge| {
+            if (!std.mem.eql(u8, edge.from, current)) continue;
+            if (reachable.contains(edge.to)) continue;
+            reachable.put(edge.to, {}) catch @panic("OOM");
+            queue.append(alloc, edge.to) catch @panic("OOM");
+        }
+    }
+
+    var listed: std.ArrayList([]const u8) = .empty;
+    defer listed.deinit(alloc);
+    for (test_files.items) |path| {
+        // `root.zig` is the import site; the manifest's own `test` block would
+        // make it import itself.
+        if (std.mem.eql(u8, path, "root.zig")) continue;
+        if (testManifestOtherModule(path) and !reachable.contains(path)) continue;
+        listed.append(alloc, path) catch @panic("OOM");
+    }
+    std.mem.sort([]const u8, listed.items, {}, struct {
+        fn lessThan(_: void, a: []const u8, c: []const u8) bool {
+            return std.mem.lessThan(u8, a, c);
+        }
+    }.lessThan);
+
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(alloc);
+    out.appendSlice(alloc, "test {\n") catch @panic("OOM");
+    for (listed.items) |path| {
+        const line = std.fmt.allocPrint(alloc, "    _ = @import(\"{s}\");\n", .{path}) catch @panic("OOM");
+        defer alloc.free(line);
+        out.appendSlice(alloc, line) catch @panic("OOM");
+    }
+    out.appendSlice(alloc, "}\n") catch @panic("OOM");
+
+    std.Io.Dir.cwd().writeFile(b.graph.io, .{
+        .sub_path = "src/test_manifest.zig",
+        .data = out.items,
+    }) catch |err| {
+        fatalConfig("cannot write src/test_manifest.zig: {s}", .{@errorName(err)});
+    };
+}
+
 /// Group tests whose `--test-filter` would otherwise drag each other into two
 /// shards, then longest-processing-time-first across the groups. The grouping
 /// is what keeps the split safe.
@@ -2426,6 +2626,7 @@ pub fn build(b: *std.Build) void {
         "Number of parallel shards for `zig build test` (default: min(8, cpus/2); 1 = single binary, legacy behaviour)",
     ) orelse default_shards;
 
+    emitTestManifest(b);
     const shard_entries = collectTestShardEntries(b);
     // One shard means "no filters at all": pass the whole suite through a
     // single unfiltered compile, which is both faster (one compile) and the

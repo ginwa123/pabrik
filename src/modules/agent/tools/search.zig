@@ -1448,12 +1448,6 @@ pub const search_tool = AgentTool{
     },
 };
 
-test {
-    // Tests removed - see search_test.zig (registered in
-    // src/modules/agent/test_runner.zig) for the 14+ edge case tests
-    // that exercise this tool.
-}
-
 const builtin = @import("builtin");
 const testing = std.testing;
 
@@ -3994,7 +3988,7 @@ const ToolExecResult = tools.ToolExecResult;
 const agent = pabrikcore.agent;
 const search_tool_mod = pabrikcore.search_tool;
 const wrapToolOutput = tools.wrapToolOutput;
-const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+const error_explain = @import("tools_error_explain.zig");
 const path_validate = @import("helpers").path_validate;
 const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
 const vmd_policy = @import("../../../vmd/policy.zig");

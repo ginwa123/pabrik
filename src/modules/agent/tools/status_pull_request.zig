@@ -766,7 +766,7 @@ const agent = pabrikcore.agent;
 const llm_history = pabrikcore.llm_history;
 const exec_pr_provider = pabrikcore.pr_provider;
 const wrapToolOutput = tools.wrapToolOutput;
-const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+const error_explain = @import("tools_error_explain.zig");
 /// The guest git budget: what the module's own host spawns spend, so a reply
 /// that would fit on the host fits over the RPC too.
 const git_timeout_ms: u32 = 20_000;

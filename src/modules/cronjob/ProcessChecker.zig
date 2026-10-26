@@ -81,8 +81,12 @@ test "process status conversion" {
 }
 
 test "check process status for init" {
-    // PID 1 (init/systemd) should always be running on Linux
     const status = checkProcessStatus(1);
+    if (@import("builtin").os.tag == .windows) {
+        // Windows has no PID 1, so the OpenProcess lookup finds nothing.
+        try std.testing.expect(status == .completed);
+        return;
+    }
     try std.testing.expect(status == .running);
 }
 

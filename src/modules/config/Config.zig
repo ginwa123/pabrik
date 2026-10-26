@@ -2947,13 +2947,6 @@ test "resolveSessionAgentCompat: mirrors old resolveSessionProfile semantics" {
     try std.testing.expectEqualStrings("alpha-model", p.model);
 }
 
-test {
-    // config_test.zig's tests are inline at the bottom of this file
-    // (2026-09-29 flatten); parse_thinking_test.zig's landed in
-    // parse_thinking.zig, which still needs a discovery edge.
-    _ = @import("parse_thinking.zig");
-}
-
 // ===== Tests merged from config_test.zig (2026-09-29 flatten) =====
 test "config module imports" {
     // Sanity check: the module is importable.

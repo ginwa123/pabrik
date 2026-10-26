@@ -4,7 +4,7 @@ const agent = pabrik.agent;
 const logger_mod = pabrik.loggermod;
 const sqlite = pabrik.sqlite;
 const config_mod = pabrik.config;
-const tools_equipped = @import("tools_equipped.zig");
+const tools_equipped = @import("../modules/agent/tools/tools_equipped.zig");
 const tools = @import("tools.zig");
 const llm_history = @import("llm_history.zig");
 const SaveSkill = llm_history.saveSkill;
@@ -30,10 +30,10 @@ const insertLLMHistories = @import("insert_llm_histories.zig").inserLLMHistories
 const skill_evals_db = @import("skill_evals_db.zig");
 
 // ============================================================================
-// TOOL REGISTRY - Single source of truth: tools_equipped.zig
+// TOOL REGISTRY - Single source of truth: modules/agent/tools/tools_equipped.zig
 // ============================================================================
 
-/// Re-export from the canonical registry (`tools_equipped.zig`).
+/// Re-export from the canonical registry (`modules/agent/tools/tools_equipped.zig`).
 pub const TOOL_REGISTRY = tools_equipped.UNIFIED_TOOL_REGISTRY;
 
 /// Context passed to all tool handlers
@@ -2388,10 +2388,13 @@ test "secrets: the shell echo case is scrubbed too (shell.zig puts the command i
     // `shell.zig`'s `result_to_json` serializes `result.command` into the
     // result `data`, so the fully substituted command comes straight back —
     // alongside the envelope's own `parameters` and the shell's stdout.
+    var cwd_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const cwd_len = try env.tmp.dir.realPath(std.testing.io, &cwd_buf);
+    const cwd_json = try std.json.Stringify.valueAlloc(allocator, cwd_buf[0..cwd_len], .{});
     const args = try std.fmt.allocPrint(
         allocator,
-        "{{\"command\":\"echo {{{{SECRETS:TOK}}}}\",\"cwd\":\"/tmp\",\"timeout\":60}}",
-        .{},
+        "{{\"command\":\"echo {{{{SECRETS:TOK}}}}\",\"cwd\":{s},\"timeout\":60}}",
+        .{cwd_json},
     );
     const tc = agent.ToolCall{ .id = "call_secrets_shell", .function = .{ .name = "command", .arguments = args } };
 

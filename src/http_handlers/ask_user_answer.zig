@@ -8,7 +8,7 @@ const http_response = @import("http_response.zig");
 const gserverz = pabrikcore.gserverz;
 const ask_user_mod = pabrikcore.ask_user;
 const ask_user_pending = pabrikcore.ask_user_pending;
-const wrapToolOutput = @import("../agentic_loop/tools_wrap_output.zig").wrapToolOutput;
+const wrapToolOutput = @import("../modules/agent/tools/tools_wrap_output.zig").wrapToolOutput;
 
 pub const AnswerError = error{
     MissingSessionId,

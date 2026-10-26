@@ -161,6 +161,7 @@ core.*
 
 
 src/apps/desktop_app/embedded/webapp_assets.zig
+src/test_manifest.zig
 
 # Kotlin compiler session/error scratch written next to the Gradle project.
 src/apps/android_mobile/.kotlin/

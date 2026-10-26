@@ -1,9 +1,9 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
-const tools = @import("tools.zig");
+const tools = @import("../../../agentic_loop/tools.zig");
 
 const helpers = @import("helpers");
-const agent_db = @import("../models/agent.db.zig");
+const agent_db = @import("../../../models/agent.db.zig");
 const agent = pabrikcore.agent;
 const AgentTool = pabrikcore.agent.AgentTool;
 
@@ -52,7 +52,7 @@ const update_plan_mod = pabrikcore.update_plan;
 const get_plan_mod = pabrikcore.get_plan;
 const list_agents_mod = pabrikcore.list_agents;
 const used_tools_mod = pabrikcore.used_tools;
-const run_skill_eval_mod = @import("run_skill_eval.zig");
+const run_skill_eval_mod = @import("../../../agentic_loop/run_skill_eval.zig");
 // 2026-08-28 — add_mcp_server agent tool (Step 5 of
 // 2026-08-28-add-mcp-server-agent-tool.md).
 const add_mcp_server_mod = pabrikcore.add_mcp_server;

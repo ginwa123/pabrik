@@ -82,14 +82,6 @@ pub const workspaceItemsListHandler = @import("workspace_items_get.zig").workspa
 pub const workspaceItemsGetHandler = @import("workspace_items_get.zig").workspaceItemsGetHandler;
 pub const workspaceDefaultProjectHandler = @import("workspace_items_default.zig").workspaceDefaultProjectHandler;
 
-test {
-    // The implementation file's OWN inline tests.
-    _ = @import("workspace_items_default.zig");
-
-    // web_search_mask: key masking + provider validation for the config
-    // handlers. Its tests only run if something imports it.
-    _ = @import("web_search_mask.zig");
-}
 pub const workspaceItemsUpdateHandler = @import("workspace_items_update.zig").workspaceItemsUpdateHandler;
 pub const workspaceItemsReorderHandler = @import("workspace_items_reorder.zig").workspaceItemsReorderHandler;
 pub const workspaceItemsDeleteHandler = @import("workspace_items_delete.zig").workspaceItemsDeleteHandler;

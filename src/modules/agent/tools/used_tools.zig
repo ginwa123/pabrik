@@ -104,7 +104,7 @@ test "executeUsedTools: preserves input order" {
 const exec_testing = std.testing;
 const pabrikcore = @import("pabrikcore");
 const exec_tools = @import("../../../agentic_loop/tools.zig");
-const tools_equipped = @import("../../../agentic_loop/tools_equipped.zig");
+const tools_equipped = @import("tools_equipped.zig");
 const tool_eligibility = @import("../../../agentic_loop/tool_eligibility.zig");
 const llm_history = @import("../../../agentic_loop/llm_history.zig");
 const migration = @import("../../../migrations/migration.zig");
@@ -115,7 +115,7 @@ const ToolExecResult = exec_tools.ToolExecResult;
 const agent = pabrikcore.agent;
 const ask_user_mod = pabrikcore.ask_user;
 const wrapToolOutput = exec_tools.wrapToolOutput;
-const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+const error_explain = @import("tools_error_explain.zig");
 /// Resolve the session's effective tool list (mirror of
 /// `workflow.filterAndMergeTools`, minus the MCP-null branch which is handled
 /// by the live cache lookup below).

@@ -1525,7 +1525,7 @@ test "buildMessages: the mandates hold a byte-identical prefix across sessions" 
 test "the tools the mandates name are really in the equipped set" {
     // A mandate that names a tool the agent does not carry is a lie the model
     // can do nothing about.
-    const tools_equipped = @import("../../agentic_loop/tools_equipped.zig");
+    const tools_equipped = @import("tools/tools_equipped.zig");
     const equipped = tools_equipped.equips(std.testing.allocator);
     defer std.testing.allocator.free(equipped);
     const named = [_][]const u8{

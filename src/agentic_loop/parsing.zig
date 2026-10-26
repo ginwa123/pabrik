@@ -2,7 +2,7 @@ const std = @import("std");
 const testing = std.testing;
 const pabrikcore = @import("pabrikcore");
 const LLMHistory = @import("llm_history_row.zig").LLMHistory;
-const args_repair = @import("tools_args_repair.zig");
+const args_repair = @import("../modules/agent/tools/tools_args_repair.zig");
 const file_attachments = @import("file_attachments.zig");
 
 const agent = pabrikcore.agent;

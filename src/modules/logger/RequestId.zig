@@ -146,8 +146,7 @@ pub fn generateSessionId() SessionId {
 // Tests
 
 // The request-id tests that used to live in request_id_test.zig are now
-// inline at the bottom of this file (2026-09-29 flatten);
-// logger/test_runner.zig imports this file directly.
+// inline at the bottom of this file (2026-09-29 flatten).
 
 // ===== Tests merged from request_id_test.zig (2026-09-29 flatten) =====
 test "RequestId has correct format" {

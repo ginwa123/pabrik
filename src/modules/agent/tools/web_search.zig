@@ -1045,7 +1045,7 @@ const exec_config_mod = pabrikcore.config;
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const wrapToolOutput = tools.wrapToolOutput;
-const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+const error_explain = @import("tools_error_explain.zig");
 const exec_testing = std.testing;
 const exec_Providers = exec_config_mod.LlmConfig.WebSearchProvidersMap;
 fn fail(ctx: ToolExecContext, tc: agent.ToolCall, msg: []const u8) !ToolExecResult {
