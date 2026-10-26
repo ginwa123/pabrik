@@ -6,6 +6,8 @@ const mcp_scope = @import("mcp_scope.zig");
 
 const MAX_HEADER_BYTES: usize = 8 * 1024;
 
+pub const default_max_entries: usize = 64;
+
 /// Hard cap on a Content-Length framed body.
 const MAX_BODY_BYTES: usize = 10 * 1024 * 1024;
 
@@ -34,6 +36,7 @@ pub const StdioError = error{
     ConcurrentAccess,
     OutOfMemory,
     NameTooLong,
+    TooManyChildren,
 };
 
 // ============================================================================
@@ -653,7 +656,19 @@ const Entry = struct {
     dirty: std.atomic.Value(bool) = .init(false),
     /// Serializes whole request/response transactions against this one child.
     io_mutex: std.atomic.Mutex = .unlocked,
+    /// What `client` was spawned from. A changed argv means a different
+    /// server, so the child must be replaced instead of reused.
+    digest: u64 = 0,
 };
+
+fn argvDigest(argv: []const []const u8) u64 {
+    var hasher = std.hash.Wyhash.init(0);
+    for (argv) |arg| {
+        hasher.update(&.{mcp_scope.sep});
+        hasher.update(arg);
+    }
+    return hasher.final();
+}
 
 fn mutexLock(m: *std.atomic.Mutex) void {
     while (!m.tryLock()) std.atomic.spinLoopHint();
@@ -735,6 +750,10 @@ pub const StdioRegistry = struct {
     /// from the arena.
     entries: std.StringHashMap(*Entry),
     mutex: std.atomic.Mutex = .unlocked,
+    /// Ceiling on live children across every tenant. A workspace that can
+    /// spawn unbounded processes is a denial of service against a process
+    /// that serves all of them.
+    max_entries: usize = default_max_entries,
 
     pub fn init(parent_allocator: std.mem.Allocator, io: std.Io) StdioRegistry {
         return .{
@@ -799,6 +818,10 @@ pub const StdioRegistry = struct {
         const scoped_key = opts.scope.keyInto(name, &key_buf) orelse return StdioError.NameTooLong;
         mutexLock(&self.mutex);
         const entry = self.entries.get(scoped_key) orelse blk: {
+            if (self.entries.count() >= self.max_entries) {
+                self.mutex.unlock();
+                return StdioError.TooManyChildren;
+            }
             const client_slot = self.allocClientSlot() catch {
                 self.mutex.unlock();
                 return StdioError.OutOfMemory;
@@ -849,7 +872,8 @@ pub const StdioRegistry = struct {
         // Phase 3 — nobody else can be touching this child, so respawn
         // (or spawn, for an entry created above) without any further
         // locking.
-        if (!entry.has_client or entry.dirty.load(.acquire) or entry.client.is_dead) {
+        const digest = argvDigest(argv);
+        if (!entry.has_client or entry.dirty.load(.acquire) or entry.client.is_dead or entry.digest != digest) {
             if (entry.has_client) entry.client.deinit();
             // Allocating from the registry arena is NOT thread-safe, and the
             // registry lock is already released.
@@ -864,6 +888,7 @@ pub const StdioRegistry = struct {
             };
             entry.client = slot;
             entry.has_client = true;
+            entry.digest = digest;
             entry.dirty.store(false, .release);
         }
         return .{ .registry = self, .entry = entry, .name = name };
@@ -879,6 +904,28 @@ pub const StdioRegistry = struct {
         while (it.next()) |kv| {
             if (!mcp_scope.matchesName(kv.key_ptr.*, name)) continue;
             kv.value_ptr.*.dirty.store(true, .release);
+        }
+    }
+
+    /// Drop every tenant's cached child for `name` and kill it.
+    pub fn evictName(self: *StdioRegistry, name: []const u8, allocator: std.mem.Allocator) void {
+        mutexLock(&self.mutex);
+        defer self.mutex.unlock();
+        const doomed = allocator.alloc([]const u8, self.entries.count()) catch return;
+        defer allocator.free(doomed);
+        var count: usize = 0;
+        var it = self.entries.iterator();
+        while (it.next()) |kv| {
+            if (!mcp_scope.matchesName(kv.key_ptr.*, name)) continue;
+            doomed[count] = kv.key_ptr.*;
+            count += 1;
+        }
+        for (doomed[0..count]) |key| {
+            if (self.entries.fetchRemove(key)) |kv| {
+                mutexLock(&kv.value.io_mutex);
+                if (kv.value.has_client) kv.value.client.deinit();
+                kv.value.io_mutex.unlock();
+            }
         }
     }
 
@@ -1358,6 +1405,58 @@ test "invalidating a server name respawns it for every tenant that declared it" 
 
     try testing.expect(a_before != a_after);
     try testing.expect(b_before != b_after);
+}
+
+test "a changed argv replaces the child instead of reusing the old one" {
+    var reg = StdioRegistry.init(testing.allocator, testing.io);
+    defer reg.deinit();
+    const tenant = mcp_scope.Scope{ .owner = "u_a", .workspace_id = "ws_1" };
+
+    var first = try reg.acquire("files", echo_argv(), .{ .scope = tenant });
+    const before = first.client();
+    first.release();
+
+    var second = try reg.acquire("files", sigtermIgnoringArgv(), .{ .scope = tenant });
+    const after = second.client();
+    second.release();
+
+    try testing.expect(before != after);
+    try testing.expectEqual(@as(usize, 1), reg.entries.count());
+}
+
+test "evicting a server name drops every tenant's child" {
+    var reg = StdioRegistry.init(testing.allocator, testing.io);
+    defer reg.deinit();
+    const tenant_a = mcp_scope.Scope{ .owner = "u_a", .workspace_id = "ws_1" };
+    const tenant_b = mcp_scope.Scope{ .owner = "u_b", .workspace_id = "ws_1" };
+
+    var la = try reg.acquire("files", echo_argv(), .{ .scope = tenant_a });
+    la.release();
+    var lb = try reg.acquire("files", echo_argv(), .{ .scope = tenant_b });
+    lb.release();
+    var keep = try reg.acquire("search", echo_argv(), .{ .scope = tenant_a });
+    keep.release();
+
+    reg.evictName("files", testing.allocator);
+
+    try testing.expectEqual(@as(usize, 1), reg.entries.count());
+}
+
+test "a registry at its ceiling refuses another child and keeps the ones it has" {
+    var reg = StdioRegistry.init(testing.allocator, testing.io);
+    defer reg.deinit();
+    reg.max_entries = 2;
+
+    var a = try reg.acquire("a", echo_argv(), .{});
+    a.release();
+    var b = try reg.acquire("b", echo_argv(), .{});
+    b.release();
+
+    try testing.expectError(StdioError.TooManyChildren, reg.acquire("c", echo_argv(), .{}));
+
+    var a_again = try reg.acquire("a", echo_argv(), .{});
+    a_again.release();
+    try testing.expectEqual(@as(usize, 2), reg.entries.count());
 }
 
 test "StdioRegistry.dropAndRespawn returns a different client" {

@@ -34,6 +34,28 @@ pub fn storedIsVm(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, works
     return r.values[0][0] == '1';
 }
 
+/// Where an MCP server process runs. Derived from the runtime mode, never
+/// from configuration: `--saas` means this deployment has a microVM per
+/// workspace, so every MCP server runs inside it.
+pub const McpPlacement = enum { host, guest };
+
+pub fn mcpPlacement(mode: runtime_mode.Mode) McpPlacement {
+    return if (mode == .saas) .guest else .host;
+}
+
+/// The placement this process uses now, with an operator kill switch. The
+/// switch exists for rollout only and is not user configuration.
+pub fn mcpPlacementNow(environment: ?*const std.process.Environ.Map) McpPlacement {
+    if (environment) |env| {
+        if (env.get(mcp_guest_env)) |value| {
+            if (std.mem.eql(u8, value, "0")) return .host;
+        }
+    }
+    return mcpPlacement(runtime_mode.currentMode());
+}
+
+pub const mcp_guest_env = "PABRIK_MCP_GUEST";
+
 /// Whether this process may put the workspace in a VM.
 pub fn isVmWorkspace(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, workspace_id: []const u8) bool {
     return runsInVm(runtime_mode.currentMode(), storedIsVm(allocator, db, workspace_id));
@@ -118,4 +140,22 @@ test "a saas server runs only its VM-backed workspaces" {
 
     try testing.expect(isVmWorkspace(alloc, &db, "ws_vm"));
     try testing.expect(!isVmWorkspace(alloc, &db, "ws_host"));
+}
+
+test "local mode keeps MCP on the host and saas puts it in the guest" {
+    try testing.expectEqual(McpPlacement.host, mcpPlacement(.local));
+    try testing.expectEqual(McpPlacement.guest, mcpPlacement(.saas));
+}
+
+test "the operator kill switch forces the host in saas mode" {
+    var map = std.process.Environ.Map.init(testing.allocator);
+    defer map.deinit();
+    try map.put(mcp_guest_env, "0");
+    try testing.expectEqual(McpPlacement.host, mcpPlacementNow(&map));
+}
+
+test "with no switch the process mode decides" {
+    var map = std.process.Environ.Map.init(testing.allocator);
+    defer map.deinit();
+    try testing.expectEqual(mcpPlacement(runtime_mode.currentMode()), mcpPlacementNow(&map));
 }
