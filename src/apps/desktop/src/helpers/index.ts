@@ -38,6 +38,12 @@ export type { PrefetchDecision, PrefetchInput, PrefetchSkip } from './prefetchOl
 export { renderResponse, renderStreamingResponse, renderMarkdown } from './renderResponse'
 export { extractRichBlocks, hasRichBlocks } from './richBlocks'
 export type { RichSegment } from './richBlocks'
+export {
+  PLANTUML_DEFAULT_SERVER,
+  encodePlantuml,
+  plantumlSvgUrl,
+  resolvePlantumlServer,
+} from './plantuml'
 export { toolPayloadPreview, TOOL_PAYLOAD_PREVIEW_MAX } from './toolPayloadPreview'
 export { formatCompactTokens } from './formatCompact'
 export {

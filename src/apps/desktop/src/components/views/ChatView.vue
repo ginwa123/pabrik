@@ -119,6 +119,7 @@ import { hasSkillEnvelope, splitSkillEnvelope } from '../../helpers/skillEnvelop
 import AgentErrorCard from '../chat/AgentErrorCard.vue'
 import ChatAttachments from '../chat/ChatAttachments.vue'
 import MermaidDiagram from '../chat/MermaidDiagram.vue'
+import PlantUmlDiagram from '../chat/PlantUmlDiagram.vue'
 import UserPillRail, { type UserPill } from '../chat/UserPillRail.vue'
 import ChatScrollSlider from '../chat/ChatScrollSlider.vue'
 import { pickActivePillIndex, isPillGroup, estimateViewportEnd } from '../chat/activePill'
@@ -4173,6 +4174,10 @@ const compactSession = async () => {
                               ></iframe>
                               <MermaidDiagram
                                 v-else-if="seg.kind === 'mermaid' && seg.payload"
+                                :source="seg.payload"
+                              />
+                              <PlantUmlDiagram
+                                v-else-if="seg.kind === 'plantuml' && seg.payload"
                                 :source="seg.payload"
                               />
                             </template>

@@ -55,6 +55,7 @@ import {
   readAutoResizeHeight,
 } from '@/helpers'
 import MermaidDiagram from '../chat/MermaidDiagram.vue'
+import PlantUmlDiagram from '../chat/PlantUmlDiagram.vue'
 
 export interface PreviewArgs {
   content?: string
@@ -265,10 +266,14 @@ function openInNewTab() {
       <template v-for="(seg, sIdx) in markdownSegments" :key="sIdx">
         <!-- eslint-disable-next-line vue/no-v-html -->
         <span
-          v-if="seg.kind !== 'mermaid' && seg.payload"
+          v-if="seg.kind !== 'mermaid' && seg.kind !== 'plantuml' && seg.payload"
           v-html="marked.parse(seg.payload, { async: false })"
         ></span>
         <MermaidDiagram v-else-if="seg.kind === 'mermaid' && seg.payload" :source="seg.payload" />
+        <PlantUmlDiagram
+          v-else-if="seg.kind === 'plantuml' && seg.payload"
+          :source="seg.payload"
+        />
       </template>
     </div>
 

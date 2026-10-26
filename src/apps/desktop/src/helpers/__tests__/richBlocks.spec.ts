@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { extractRichBlocks, hasRichBlocks } from '../richBlocks'
 
 const MERMAID_SOURCE = 'flowchart TD\n  A[Prompt] --> B[Diagram]'
+const PLANTUML_SOURCE = '@startuml\nAlice -> Bob: hello\n@enduml'
 
 describe('hasRichBlocks', () => {
   it('is false for absent, empty and plain markdown content', () => {
@@ -18,6 +19,12 @@ describe('hasRichBlocks', () => {
   it('recognises a closed <mermaid> block and a ```mermaid fence', () => {
     expect(hasRichBlocks(`<mermaid>${MERMAID_SOURCE}</mermaid>`)).toBe(true)
     expect(hasRichBlocks('```mermaid\n' + MERMAID_SOURCE + '\n```')).toBe(true)
+  })
+
+  it('recognises a closed <plantuml> block and a ```plantuml fence', () => {
+    expect(hasRichBlocks(`<plantuml>${PLANTUML_SOURCE}</plantuml>`)).toBe(true)
+    expect(hasRichBlocks('```plantuml\n' + PLANTUML_SOURCE + '\n```')).toBe(true)
+    expect(hasRichBlocks('<plantuml>@startuml\nA -> B')).toBe(false)
   })
 
   it('is false for a tag whose closing half has not streamed in yet', () => {
@@ -70,6 +77,25 @@ describe('extractRichBlocks', () => {
 
   it('takes a ```mermaid fence as a mermaid block, without the fence lines', () => {
     expect(extractRichBlocks('```mermaid\n' + MERMAID_SOURCE + '\n```')).toEqual([
+      { kind: 'mermaid', payload: MERMAID_SOURCE },
+    ])
+  })
+
+  it('takes a <plantuml> block and a ```plantuml fence as plantuml segments', () => {
+    expect(extractRichBlocks(`<plantuml>${PLANTUML_SOURCE}</plantuml>`)).toEqual([
+      { kind: 'plantuml', payload: PLANTUML_SOURCE },
+    ])
+    expect(extractRichBlocks('```plantuml\n' + PLANTUML_SOURCE + '\n```')).toEqual([
+      { kind: 'plantuml', payload: PLANTUML_SOURCE },
+    ])
+  })
+
+  it('does not read a plantuml fence as a mermaid one, or the reverse', () => {
+    const content =
+      '<plantuml>' + PLANTUML_SOURCE + '</plantuml>\n```mermaid\n' +
+      MERMAID_SOURCE + '\n```'
+    expect(extractRichBlocks(content)).toEqual([
+      { kind: 'plantuml', payload: PLANTUML_SOURCE },
       { kind: 'mermaid', payload: MERMAID_SOURCE },
     ])
   })

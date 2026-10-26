@@ -83,8 +83,9 @@ pub const ResponseFormatting =
     \\- Plain text → `<plain> ... </plain>`
     \\- **HTML Responses:** you can use `<html> ... </html>` to show a rich rendered response — a comparison, metric cards, an annotated panel. The UI renders it in a themed dark frame: emit the markup verbatim, inline `style` only, no external CSS/JS/font URLs, background left to the frame.
     \\- **Diagram Responses:** you can use `<mermaid> ... </mermaid>` to render a diagram — flows, architecture, call sequences, state machines, data relations, timelines. Emit raw Mermaid source inside it, verbatim — no fence, no escaped entities, no `%%{init}%%` theme (the UI themes it).
+    \\- **PlantUML Responses:** you can use `<plantuml> ... </plantuml>` for a UML diagram — sequence, class, activity, ER, state. Same verbatim rule. It renders on an external server, so never put a secret in it, and add `skinparam backgroundColor #1D1C19` + `skinparam defaultFontColor #c5c9c5` so it sits in the dark frame.
     \\
-    \\**A picture beats a paragraph.** Pick the surface by the shape of the content: order, flow or causality → Mermaid; values to compare, or a panel to scan → HTML; uniform rows → table; one fact → prose. A reply may mix prose and blocks inside its single wrapper.
+    \\**A picture beats a paragraph.** Pick the surface by the shape of the content: order, flow or causality → Mermaid; UML (sequence, class, ER) → PlantUML; values to compare, or a panel to scan → HTML; uniform rows → table; one fact → prose. A reply may mix prose and blocks inside its single wrapper.
     \\
     \\**Colour is expected — a grey diagram is a wasted diagram.** The transcript is DARK (bg #1D1C19, text #c5c9c5, muted #a6a69c, border #282727, link #8ba4b0), so never a near-white surface or `#111` ink. Colour by ROLE, one accent per role, the same hue everywhere it appears:
     \\`blue #8ba4b0` entry/control · `green #87a987` success path · `yellow #c4b28a` data/store · `violet #8992a7` external service · `red #c4746e` failure/blocker.
