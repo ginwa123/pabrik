@@ -8,8 +8,6 @@ const egress = @import("egress.zig");
 const vm_client = @import("vm_client.zig");
 const wire = @import("vm_wire");
 
-/// The ports a guest's forwarder dials, from the shared contract: netd's
-/// constants are these, and nothing here picks a number of its own.
 pub const egress_port: u32 = wire.egress_port;
 pub const resolver_port: u32 = wire.resolver_port;
 pub const handshake_prefix = "PABRIK-EGRESS/1 ";

@@ -1419,9 +1419,6 @@ pub fn build(b: *std.Build) void {
 
     // Cross-platform Homebrew / vcpkg prefix options.
 
-    // The guest↔host vsock contract (`src/vm_wire.zig`): one module, imported
-    // by both binaries, because Zig refuses an import that leaves a module's
-    // root directory — `src/vm_agent` and `src/vmd` cannot reach `src/` by path.
     const wire_host = b.createModule(.{
         .root_source_file = b.path("src/vm_wire.zig"),
         .target = target,
@@ -2764,8 +2761,6 @@ pub fn build(b: *std.Build) void {
         .os_tag = .linux,
         .abi = .musl,
     });
-    // The same contract module, built for the guest: `src/vm_agent` is its own
-    // module root, so a relative path back to `src/` is refused by the compiler.
     const wire_guest = b.createModule(.{
         .root_source_file = b.path("src/vm_wire.zig"),
         .target = guest_target,

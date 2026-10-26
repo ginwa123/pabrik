@@ -7,8 +7,6 @@ const linux = std.os.linux;
 const policy = @import("policy.zig");
 const wire = @import("vm_wire");
 
-/// The guest's listener and this side's frame ceiling both come from the shared
-/// contract, so the two halves of the wire cannot drift apart.
 pub const agent_port: u32 = wire.agent_port;
 pub const max_frame: usize = wire.max_frame;
 /// Opening a terminal forks a guest process that must bind its own listener, so

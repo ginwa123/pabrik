@@ -17,7 +17,6 @@ const on_disk_agent = "/init.agent";
 /// How long the hand-off may take before the disk's agent is used instead.
 const handoff_timeout_ms: u64 = 20_000;
 
-/// The `OK <bytes>` head line's ceiling, and the agent transfer's.
 const max_head_bytes: usize = 64;
 const max_agent_bytes: usize = 64 * 1024 * 1024;
 
@@ -114,9 +113,6 @@ pub fn parseHead(line: []const u8) ?usize {
     return len;
 }
 
-/// The host may still be opening its listener when the guest dials, and the
-/// disk's agent is right there — so every failure is worth the shared retry,
-/// not just a refused connection.
 fn connectVsock(port: u32) ?linux.fd_t {
     var attempt: usize = 0;
     var last_errno: linux.E = .SUCCESS;

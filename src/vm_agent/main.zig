@@ -13,8 +13,6 @@ const af_inet: u32 = 2;
 const sock_stream: u32 = 1;
 /// The accept loop's poll slice: long enough that an idle workspace sleeps.
 const accept_slice_ms: i32 = 1000;
-/// The frame ceiling, its length prefix and the port come from the shared
-/// contract, so the host's reader and this writer cannot disagree about them.
 const max_frame = wire.max_frame;
 const read_chunk: usize = 4096;
 const arena_bytes: usize = 16 * 1024;
@@ -32,8 +30,6 @@ const wno_hang: u32 = 1;
 /// one: 16 KiB of bytes is ~22 KiB of base64, comfortably inside `max_frame`.
 const job_log_dir = "/tmp/pabrik";
 const log_read_chunk: usize = 16 * 1024;
-/// The reply formatter's buffer is exactly one frame: a reply that would not fit
-/// one cannot be written, so the ceiling is structural here and not a guess.
 const reply_buf_bytes: usize = wire.max_frame;
 
 /// The in-guest network forwarder: loopback, the resolver config, and the two
@@ -446,8 +442,6 @@ fn runReadLog(conn_fd: linux.fd_t, id: i64, path: []const u8, offset: i64, max_b
 // ─── file RPC ────────────────────────────────────────────────────────────
 
 const workspace_root = "/workspace";
-/// The most bytes one `fs.read` reply may carry: the shared reply budget, which
-/// is what keeps its base64 form inside one frame.
 const fs_read_chunk: usize = wire.max_reply_chunk;
 const max_fs_path: usize = 1024;
 /// `RESOLVE_BENEATH`: every component is resolved under the workspace fd, so a
@@ -457,8 +451,6 @@ const resolve_beneath: u64 = 0x08;
 const o_directory: u64 = 0o200000;
 /// `AT_REMOVEDIR`: `unlinkat`'s "this is a directory" flag.
 const at_removedir: u64 = 0x200;
-/// One `fs.write` frame's bytes: half the reply budget, so the request frame
-/// the host sends back stays inside one frame with its envelope.
 const fs_write_chunk: usize = 32 * 1024;
 const o_wronly: u64 = 0o1;
 const o_creat: u64 = 0o100;
@@ -771,9 +763,6 @@ const WalkDir = struct {
     }
 };
 
-/// The frame a streamed walk reply is built in, by hand: the agent has no
-/// allocator, so the reply's ceiling is this buffer — one frame, less the room
-/// `full` already reserves for escaping and the `]}` closer.
 const walk_frame_bytes: usize = wire.max_frame - 8 * 1024;
 
 /// A streamed `fs.walk` reply. Entries are appended until the frame is full or
@@ -1954,8 +1943,6 @@ test "every base64 reply chunk fits one frame once encoded" {
     for ([_]usize{ read_chunk, log_read_chunk, fs_read_chunk, tty_chunk, port_forward_chunk }) |chunk| {
         try std.testing.expect(wire.encodedReplyFits(chunk));
     }
-    // The regression this pins: a 64 KiB read encodes to ~87 KiB, which the
-    // host's reader refused as FrameTooLarge — every SaaS file read failed.
     try std.testing.expect(!wire.encodedReplyFits(64 * 1024));
 }
 

@@ -361,8 +361,6 @@ pub const Fs = struct {
     }
 };
 
-/// The guest's per-reply ceiling is the wire's reply budget: asking for more is
-/// capped by the guest anyway, and a bigger reply could not cross one frame.
 const vmd_read_chunk: usize = vm_wire.max_reply_chunk;
 
 /// The substrate a workspace tree has on this build. A `--saas` process runs a
@@ -758,8 +756,6 @@ test "forSession: saas with no resolvable workspace fails closed" {
 test "the guest read chunk is the wire's reply budget, so one reply is one frame" {
     try std.testing.expectEqual(vm_wire.max_reply_chunk, vmd_read_chunk);
     try std.testing.expect(vm_wire.encodedReplyFits(vmd_read_chunk));
-    // The regression this pins: 64 KiB of bytes encode to ~87 KiB, which the
-    // host's reader refused as FrameTooLarge — every SaaS file read failed.
     try std.testing.expect(!vm_wire.encodedReplyFits(64 * 1024));
 }
 

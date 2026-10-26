@@ -11,8 +11,6 @@ const wire = @import("vm_wire");
 
 // ─── constants ───────────────────────────────────────────────────────────
 
-/// netd is the guest half of the host's two listeners, so their ports are the
-/// shared contract's and not netd's to re-declare.
 const egress_port: u32 = wire.egress_port;
 const resolver_port: u32 = wire.resolver_port;
 const af_inet: u32 = 2;
@@ -54,8 +52,6 @@ const relay_idle_ms: u32 = 120_000;
 /// The listener loop's tick, which is also how often children are reaped.
 const tick_ms: i32 = 1000;
 
-/// The egress tunnel is retried on a connection the host has not opened yet;
-/// how many tries and how far apart is the shared dial policy.
 const listen_backlog: u32 = 64;
 
 /// `SIOCGIFFLAGS`/`SIOCSIFFLAGS` on an `ifreq`, and the two flags netd sets.
