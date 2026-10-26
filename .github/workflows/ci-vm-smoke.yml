@@ -3,7 +3,7 @@
 # §20 finding 5). They therefore belong on a self-hosted Linux runner that has
 # /dev/kvm, a `firecracker` binary and a guest kernel.
 #
-# Two deliberate properties:
+# Three deliberate properties:
 #
 # 1. This workflow is NOT part of ci.yml's `ci-ok`. A job waiting for a runner
 #    nobody has registered would sit queued forever and hold every merge, so the
@@ -15,10 +15,40 @@
 #    neither. The `PABRIK_FC_BIN` and `PABRIK_GUEST_KERNEL` repository variables
 #    override the paths below, and an empty value falls back to the smoke
 #    script's own default rather than to an empty path.
+# 3. It runs on `push` to main as well as on a pull request. The PR run proves
+#    the branch; ONLY the push run is a post-merge baseline. Without it a merge
+#    that touched a VM path was never exercised on main at all — 13 of the 25
+#    commits on main before 2026-10-26 changed a file in the filter below and
+#    produced no vm-smoke run, so a red main was indistinguishable from an
+#    untested one. The filter is the same one the PR trigger uses, so this fires
+#    only when a VM-relevant file actually landed.
 name: vm-smoke
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/guest-image.manifest'
+      - 'scripts/build-guest-image.sh'
+      - 'scripts/vm-guest-smoke.sh'
+      - 'scripts/vm-guest-probe.py'
+      - 'scripts/vmd-smoke.sh'
+      - 'scripts/vmd-daemon-smoke.sh'
+      - 'scripts/vmd-resize-smoke.sh'
+      - 'scripts/vmd-saas-smoke.sh'
+      - 'scripts/saas-cwd-smoke.sh'
+      - 'scripts/saas-cwd-probe.py'
+      - 'scripts/smoke-workdir.sh'
+      - 'scripts/stub_llm_server.py'
+      - 'src/agentic_loop/workspace_scope.zig'
+      - 'src/agentic_loop/vm_runtime.zig'
+      - 'src/http_handlers/session_create.zig'
+      - 'src/http_handlers/kanban_tasks_create.zig'
+      - 'src/vm_agent/**'
+      - 'src/vmd/**'
+      - 'build.zig'
+      - '.github/workflows/ci-vm-smoke.yml'
   pull_request:
     branches: [main]
     paths:
@@ -32,6 +62,7 @@ on:
       - 'scripts/vmd-saas-smoke.sh'
       - 'scripts/saas-cwd-smoke.sh'
       - 'scripts/saas-cwd-probe.py'
+      - 'scripts/smoke-workdir.sh'
       - 'scripts/stub_llm_server.py'
       - 'src/agentic_loop/workspace_scope.zig'
       - 'src/agentic_loop/vm_runtime.zig'
