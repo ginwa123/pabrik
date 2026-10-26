@@ -5,15 +5,18 @@
 const std = @import("std");
 const linux = std.os.linux;
 const policy = @import("policy.zig");
+const wire = @import("vm_wire");
 
-pub const agent_port: u32 = 5000;
+/// The guest's listener and this side's frame ceiling both come from the shared
+/// contract, so the two halves of the wire cannot drift apart.
+pub const agent_port: u32 = wire.agent_port;
+pub const max_frame: usize = wire.max_frame;
 /// Opening a terminal forks a guest process that must bind its own listener, so
 /// it gets more than a plain RPC's budget and less than a boot's.
 const tty_open_guard_ms: u32 = 10_000;
 /// A terminal read/write/resize is answered from a running process, never from
 /// a boot: a peer that has not answered by now is not going to.
 const tty_call_guard_ms: u32 = 5_000;
-pub const max_frame: usize = 64 * 1024;
 /// One `fs.write` frame's bytes. The agent refuses more than this, and a
 /// 64 KiB frame cannot hold much more once base64 and the envelope are paid
 /// for, so the two ends agree on one number.
@@ -733,7 +736,7 @@ fn buildExecFrame(buf: []u8, request: ExecRequest) ![]const u8 {
 
 fn sendFrame(fd: linux.fd_t, payload: []const u8) !void {
     var header: [4]u8 = undefined;
-    std.mem.writeInt(u32, &header, @intCast(payload.len), .big);
+    wire.frameHeader(payload.len, &header);
     try writeAll(fd, &header);
     try writeAll(fd, payload);
 }
@@ -741,7 +744,7 @@ fn sendFrame(fd: linux.fd_t, payload: []const u8) !void {
 fn readFrame(fd: linux.fd_t, buf: *[max_frame]u8) ![]const u8 {
     var header: [4]u8 = undefined;
     try readExact(fd, &header);
-    const len = std.mem.readInt(u32, &header, .big);
+    const len = wire.framePayloadLen(&header);
     if (len == 0 or len > max_frame) return Error.FrameTooLarge;
     try readExact(fd, buf[0..len]);
     return buf[0..len];
@@ -1626,4 +1629,23 @@ test "a pid that is not there has no CPU clock and no RSS" {
     try testing.expectEqual(@as(?u32, null), rssMib(-1));
     // And a pid that cannot exist answers null rather than 0: "cannot tell".
     try testing.expectEqual(@as(?u64, null), cpuTicks(2_147_483_640));
+}
+
+test "a guest reply over the frame ceiling is refused, not truncated" {
+    var fds: [2]linux.fd_t = .{ -1, -1 };
+    try testing.expectEqual(linux.E.SUCCESS, linux.errno(linux.socketpair(linux.AF.UNIX, linux.SOCK.STREAM, 0, &fds)));
+    defer _ = linux.close(fds[0]);
+    defer _ = linux.close(fds[1]);
+
+    var header: [4]u8 = undefined;
+    wire.frameHeader(max_frame + 1, &header);
+    try writeAll(fds[1], &header);
+
+    var payload: [max_frame]u8 = undefined;
+    try testing.expectError(Error.FrameTooLarge, readFrame(fds[0], &payload));
+}
+
+test "the four vsock ports are consecutive: listener, two dials, the hand-off" {
+    const ports = [_]u32{ agent_port, wire.egress_port, wire.resolver_port, wire.agent_service_port };
+    for (ports, 0..) |port, i| try testing.expectEqual(5000 + @as(u32, @intCast(i)), port);
 }

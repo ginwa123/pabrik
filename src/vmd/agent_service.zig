@@ -5,9 +5,11 @@
 const std = @import("std");
 const linux = std.os.linux;
 const vm_client = @import("vm_client.zig");
+const wire = @import("vm_wire");
 
-/// The vsock port the guest's bootstrap dials.
-pub const agent_port: u32 = 5003;
+/// The vsock port a guest's bootstrap dials for the agent it should run: the
+/// guest's half of this number is `src/vm_agent/bootstrap.zig`.
+pub const agent_port: u32 = wire.agent_service_port;
 
 /// What the guest asks for.
 pub const request_line = "AGENT\n";
