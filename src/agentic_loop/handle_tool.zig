@@ -2388,10 +2388,13 @@ test "secrets: the shell echo case is scrubbed too (shell.zig puts the command i
     // `shell.zig`'s `result_to_json` serializes `result.command` into the
     // result `data`, so the fully substituted command comes straight back —
     // alongside the envelope's own `parameters` and the shell's stdout.
+    var cwd_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const cwd_len = try env.tmp.dir.realPath(std.testing.io, &cwd_buf);
+    const cwd_json = try std.json.Stringify.valueAlloc(allocator, cwd_buf[0..cwd_len], .{});
     const args = try std.fmt.allocPrint(
         allocator,
-        "{{\"command\":\"echo {{{{SECRETS:TOK}}}}\",\"cwd\":\"/tmp\",\"timeout\":60}}",
-        .{},
+        "{{\"command\":\"echo {{{{SECRETS:TOK}}}}\",\"cwd\":{s},\"timeout\":60}}",
+        .{cwd_json},
     );
     const tc = agent.ToolCall{ .id = "call_secrets_shell", .function = .{ .name = "command", .arguments = args } };
 

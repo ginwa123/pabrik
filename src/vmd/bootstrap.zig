@@ -442,6 +442,15 @@ test "argvFor: the agent is handed to the manager when there is one" {
     try testing.expectEqualStrings("/opt/pabrik/pabrik-vm-agent", argv[13]);
 }
 
+/// The candidate lists are built with `std.fs.path.join`, so the expectations
+/// have to be too: a join is host-separated and a literal "/" is not a path
+/// on Windows.
+fn expectPath(parts: []const []const u8, actual: []const u8) !void {
+    const expected = try std.fs.path.join(testing.allocator, parts);
+    defer testing.allocator.free(expected);
+    try testing.expectEqualStrings(expected, actual);
+}
+
 test "agentCandidates: the env override, then the binary beside the manager" {
     const a = testing.allocator;
     var env = std.process.Environ.Map.init(a);
@@ -453,7 +462,7 @@ test "agentCandidates: the env override, then the binary beside the manager" {
 
     try testing.expectEqual(@as(usize, 2), list.items.len);
     try testing.expectEqualStrings("/custom/pabrik-vm-agent", list.items[0]);
-    try testing.expectEqualStrings("/opt/pabrik/pabrik-vm-agent", list.items[1]);
+    try expectPath(&.{ "/opt/pabrik", "pabrik-vm-agent" }, list.items[1]);
 }
 
 test "vmdCandidates: env override, beside the binary, then PATH order" {
@@ -467,9 +476,14 @@ test "vmdCandidates: env override, beside the binary, then PATH order" {
 
     var list = try vmdCandidates(a, &env, "/opt/pabrik");
     defer freeCandidates(&list, a);
-    const expected = [_][]const u8{ "/custom/pabrik-vmd", "/opt/pabrik/pabrik-vmd", "/first/pabrik-vmd", "/second/pabrik-vmd" };
+    const expected = [_][]const []const u8{
+        &.{"/custom/pabrik-vmd"},
+        &.{ "/opt/pabrik", "pabrik-vmd" },
+        &.{ "/first", "pabrik-vmd" },
+        &.{ "/second", "pabrik-vmd" },
+    };
     try testing.expectEqual(expected.len, list.items.len);
-    for (expected, 0..) |path_expected, i| try testing.expectEqualStrings(path_expected, list.items[i]);
+    for (expected, 0..) |parts, i| try expectPath(parts, list.items[i]);
 }
 
 test "vmdCandidates: no env override means beside the binary first" {
@@ -479,7 +493,7 @@ test "vmdCandidates: no env override means beside the binary first" {
     var list = try vmdCandidates(a, &env, "/opt/pabrik");
     defer freeCandidates(&list, a);
     try testing.expectEqual(@as(usize, 1), list.items.len);
-    try testing.expectEqualStrings("/opt/pabrik/pabrik-vmd", list.items[0]);
+    try expectPath(&.{ "/opt/pabrik", "pabrik-vmd" }, list.items[0]);
 }
 
 test "baseImageCandidates: env, VM root, then the image-build cache" {
@@ -490,9 +504,13 @@ test "baseImageCandidates: env, VM root, then the image-build cache" {
 
     var list = try baseImageCandidates(a, &env, "/home/dev", "/vms");
     defer freeCandidates(&list, a);
-    const expected = [_][]const u8{ "/explicit/base.ext4", "/vms/base.ext4", "/home/dev/.cache/pabrik-vm/images/base.ext4" };
+    const expected = [_][]const []const u8{
+        &.{"/explicit/base.ext4"},
+        &.{ "/vms", "base.ext4" },
+        &.{ "/home/dev", ".cache", "pabrik-vm", "images", "base.ext4" },
+    };
     try testing.expectEqual(expected.len, list.items.len);
-    for (expected, 0..) |path, i| try testing.expectEqualStrings(path, list.items[i]);
+    for (expected, 0..) |parts, i| try expectPath(parts, list.items[i]);
 }
 
 test "kernelCandidates and fcCandidates: the same precedence, artifact by artifact" {
@@ -505,13 +523,13 @@ test "kernelCandidates and fcCandidates: the same precedence, artifact by artifa
     var kernels = try kernelCandidates(a, &env, "/home/dev", "/vms");
     defer freeCandidates(&kernels, a);
     try testing.expectEqualStrings("/explicit/vmlinux", kernels.items[0]);
-    try testing.expectEqualStrings("/vms/vmlinux", kernels.items[1]);
-    try testing.expectEqualStrings("/home/dev/.cache/pabrik-vm/vmlinux", kernels.items[2]);
+    try expectPath(&.{ "/vms", "vmlinux" }, kernels.items[1]);
+    try expectPath(&.{ "/home/dev", ".cache", "pabrik-vm", "vmlinux" }, kernels.items[2]);
 
     var firecrackers = try fcCandidates(a, &env, "/home/dev");
     defer freeCandidates(&firecrackers, a);
     try testing.expectEqualStrings("/explicit/firecracker", firecrackers.items[0]);
-    try testing.expectEqualStrings("/home/dev/firecracker-demo/firecracker", firecrackers.items[firecrackers.items.len - 1]);
+    try expectPath(&.{ "/home/dev", "firecracker-demo", "firecracker" }, firecrackers.items[firecrackers.items.len - 1]);
 }
 
 test "vmRoot: PABRIK_VM_DIR wins over the home default the manager uses" {
@@ -521,7 +539,7 @@ test "vmRoot: PABRIK_VM_DIR wins over the home default the manager uses" {
 
     const fallback = try vmRoot(a, &env, "/home/dev");
     defer a.free(fallback);
-    try testing.expectEqualStrings("/home/dev/.local/share/pabrik/vms", fallback);
+    try expectPath(&.{ "/home/dev", ".local", "share", "pabrik", "vms" }, fallback);
 
     try env.put("PABRIK_VM_DIR", "/srv/pabrik/vms");
     const explicit = try vmRoot(a, &env, "/home/dev");
