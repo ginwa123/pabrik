@@ -105,6 +105,8 @@ pub const document_tool = @import("modules/agent/tools/document.zig");
 // `@import("kabelweb").client`; the dep is added in build.zig).
 pub const loggermod = @import("modules/logger/Logger.zig");
 pub const mcp_stdio = @import("modules/agent/mcp/mcp/mcp_stdio.zig");
+pub const mcp_scope = @import("modules/agent/mcp/mcp/mcp_scope.zig");
+pub const mcp_session_scope = @import("agentic_loop/mcp_session_scope.zig");
 pub const mcp_http = @import("modules/agent/mcp/mcp/mcp_http.zig");
 pub const mcp_types = @import("modules/agent/mcp/mcp/mcp_types.zig");
 

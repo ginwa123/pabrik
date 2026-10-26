@@ -18,6 +18,7 @@ const ask_user_mod = pabrikcore.ask_user;
 const notifications = pabrikcore.notifications_mod;
 
 const sqlite = pabrikcore.sqlite;
+const mcp_session_scope = @import("mcp_session_scope.zig");
 const migration_mod = pabrikcore.migrations_mod.migration;
 const migration = migration_mod;
 const config_mod = pabrikcore.config;
@@ -372,10 +373,14 @@ fn fetchMcpToolsFresh(
             mcp_cancel_thunk.state = b.*;
         }
         defer mcp_cancel_thunk.state = null;
+        var scope_arena = std.heap.ArenaAllocator.init(parent_allocator);
+        defer scope_arena.deinit();
+        const scope = mcp_session_scope.resolve(scope_arena.allocator(), db, copy_session_id);
         break :blk build_msg_prompt.buildMCPToolsRun(
             parent_allocator,
             initial_config.mcpServers() orelse .null,
             if (box) |_| &mcp_cancel_thunk.call else null,
+            scope,
         );
     } catch |err| blk: {
         logger.errFmt("Failed to load MCP tools: {s}", .{@errorName(err)});

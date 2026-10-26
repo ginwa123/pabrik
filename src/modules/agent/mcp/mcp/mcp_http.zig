@@ -3,6 +3,7 @@
 //! the stdio transport's `mcp_stdio.zig`: 1.
 
 const std = @import("std");
+const mcp_scope = @import("mcp_scope.zig");
 const builtin = @import("builtin");
 const mcp_types = @import("mcp_types.zig");
 const custom_http_client_mod = @import("kabelweb").client;
@@ -302,24 +303,29 @@ fn parseLastSseData(allocator: std.mem.Allocator, body: []const u8) ![]u8 {
     return error.InvalidSseEvent;
 }
 
-/// Process-global cache of `HttpClient` instances, one per server name.
-/// Mirrors `mcp_stdio.StdioRegistry`'s shape — lazy init, clean shutdown.
+/// Process-global cache of `HttpClient` instances, one per (tenant scope,
+/// server name). Mirrors `mcp_stdio.StdioRegistry`'s shape — lazy init, clean
+/// shutdown.
 pub const HttpRegistry = struct {
     allocator: std.mem.Allocator,
-    /// Keys (server names) and values (HttpClient pointers) are both
-    /// allocated from the registry's arena — they're freed when the
-    /// arena deinits.
+    /// Keys (scoped server names) and values are both allocated from the
+    /// registry's arena — they're freed when the arena deinits.
     arena: std.heap.ArenaAllocator,
     threaded: ?*std.Io.Threaded = null,
-    entries: std.StringHashMap(*HttpClient),
+    entries: std.StringHashMap(Cached),
     mutex: std.atomic.Mutex = .unlocked,
+
+    pub const Cached = struct {
+        client: *HttpClient,
+        digest: u64,
+    };
 
     pub fn init(parent_allocator: std.mem.Allocator) HttpRegistry {
         return .{
             .allocator = parent_allocator,
             .arena = std.heap.ArenaAllocator.init(parent_allocator),
             .threaded = null,
-            .entries = std.StringHashMap(*HttpClient).init(parent_allocator),
+            .entries = std.StringHashMap(Cached).init(parent_allocator),
         };
     }
 
@@ -329,44 +335,93 @@ pub const HttpRegistry = struct {
         // Free each cached client's resources.
         var it = self.entries.iterator();
         while (it.next()) |kv| {
-            kv.value_ptr.*.deinit();
+            kv.value_ptr.*.client.deinit();
         }
         self.entries.deinit();
         if (self.threaded) |t| t.deinit();
         self.arena.deinit();
     }
 
-    /// Get the cached client for `name`, or build a new one and
-    /// cache it. Threadsafe.
-    pub fn getOrConnect(self: *HttpRegistry, name: []const u8, url: []const u8, custom_headers: []const custom_http_client_mod.Header) !*HttpClient {
-        mutexLock(&self.mutex);
-        defer self.mutex.unlock();
-        if (self.entries.get(name)) |c| return c;
+    fn digestOf(url: []const u8, custom_headers: []const custom_http_client_mod.Header) u64 {
+        var hasher = std.hash.Wyhash.init(0);
+        hasher.update(url);
+        for (custom_headers) |h| {
+            hasher.update(&.{mcp_scope.sep});
+            hasher.update(h.name);
+            hasher.update("=");
+            hasher.update(h.value);
+        }
+        return hasher.final();
+    }
 
+    fn build(self: *HttpRegistry, url: []const u8, custom_headers: []const custom_http_client_mod.Header) !*HttpClient {
         const alloc = self.arena.allocator();
         const client = try alloc.create(HttpClient);
-        const key_dup = try alloc.dupe(u8, name);
-        // Deep-dupe the headers (structs AND strings): the caller's Header
-        // slice is per-run memory (stack buf + run-arena strings) that dies
-        // with the run, while the cached client must stay valid for the
         const hdrs_dup = try alloc.alloc(custom_http_client_mod.Header, custom_headers.len);
         for (custom_headers, 0..) |h, i| hdrs_dup[i] = .{
             .name = try alloc.dupe(u8, h.name),
             .value = try alloc.dupe(u8, h.value),
         };
         client.* = try HttpClient.init(alloc, url, hdrs_dup);
-        try self.entries.put(key_dup, client);
+        return client;
+    }
+
+    /// Get the cached client for this tenant's `name`, or build a new one and
+    /// cache it. Threadsafe.
+    pub fn getOrConnect(
+        self: *HttpRegistry,
+        name: []const u8,
+        url: []const u8,
+        custom_headers: []const custom_http_client_mod.Header,
+        scope: mcp_scope.Scope,
+    ) !*HttpClient {
+        var key_buf: [mcp_scope.max_key_bytes]u8 = undefined;
+        const scoped_key = scope.keyInto(name, &key_buf) orelse return error.NameTooLong;
+        const digest = digestOf(url, custom_headers);
+
+        mutexLock(&self.mutex);
+        defer self.mutex.unlock();
+        if (self.entries.getPtr(scoped_key)) |cached| {
+            if (cached.digest == digest) return cached.client;
+            cached.client.deinit();
+            cached.client = try self.build(url, custom_headers);
+            cached.digest = digest;
+            return cached.client;
+        }
+
+        const key_dup = try self.arena.allocator().dupe(u8, scoped_key);
+        const client = try self.build(url, custom_headers);
+        try self.entries.put(key_dup, .{ .client = client, .digest = digest });
         return client;
     }
 
     /// Evict one cached client by server name (plan: mcp-fetch-once-cache).
     /// HTTP equivalent of `StdioRegistry.markStale`: the next `getOrConnect`
     /// rebuilds the client with the new URL/headers.
+    pub fn evictName(self: *HttpRegistry, name: []const u8) void {
+        mutexLock(&self.mutex);
+        defer self.mutex.unlock();
+        var doomed: [64][]const u8 = undefined;
+        var count: usize = 0;
+        var it = self.entries.iterator();
+        while (it.next()) |kv| {
+            if (!mcp_scope.matchesName(kv.key_ptr.*, name)) continue;
+            if (count >= doomed.len) break;
+            doomed[count] = kv.key_ptr.*;
+            count += 1;
+        }
+        for (doomed[0..count]) |key| {
+            if (self.entries.fetchRemove(key)) |kv| {
+                kv.value.client.deinit();
+            }
+        }
+    }
+
     pub fn evict(self: *HttpRegistry, name: []const u8) void {
         mutexLock(&self.mutex);
         defer self.mutex.unlock();
         if (self.entries.fetchRemove(name)) |kv| {
-            kv.value.deinit();
+            kv.value.client.deinit();
             // NOTE: key + client backing memory lives in the registry
             // arena and is reclaimed at `deinit` — same as before, no
             // per-evict free. Entries map removal is the correctness fix.
@@ -819,27 +874,93 @@ test "HttpClient.init: different URLs create independent clients" {
     try testing.expectEqualStrings("http://b/mcp", b.url);
 }
 
-test "HttpRegistry: getOrConnect returns same client for same name" {
+test "a cached client is reused while its url and headers are unchanged" {
     var reg = HttpRegistry.init(testing.allocator);
     defer reg.deinit();
-    const c1 = try reg.getOrConnect("alpha", "http://127.0.0.1:1/mcp", &.{});
-    const c2 = try reg.getOrConnect("alpha", "http://127.0.0.1:2/mcp", &.{});
+    const headers = [_]custom_http_client_mod.Header{
+        .{ .name = "Authorization", .value = "Bearer a" },
+    };
+    const c1 = try reg.getOrConnect("alpha", "http://127.0.0.1:1/mcp", &headers, .{});
+    const c2 = try reg.getOrConnect("alpha", "http://127.0.0.1:1/mcp", &headers, .{});
     try testing.expectEqual(@intFromPtr(c1), @intFromPtr(c2));
+}
+
+test "a changed url rebuilds the client instead of reusing the old one" {
+    var reg = HttpRegistry.init(testing.allocator);
+    defer reg.deinit();
+    const c1 = try reg.getOrConnect("alpha", "http://127.0.0.1:1/mcp", &.{}, .{});
+    const c2 = try reg.getOrConnect("alpha", "http://127.0.0.1:2/mcp", &.{}, .{});
+    try testing.expect(c1 != c2);
+    try testing.expectEqualStrings("http://127.0.0.1:2/mcp", c2.url);
+}
+
+test "a changed token rebuilds the client so the old token cannot be reused" {
+    var reg = HttpRegistry.init(testing.allocator);
+    defer reg.deinit();
+    const with_a = [_]custom_http_client_mod.Header{
+        .{ .name = "Authorization", .value = "Bearer tenant-a" },
+    };
+    const with_b = [_]custom_http_client_mod.Header{
+        .{ .name = "Authorization", .value = "Bearer tenant-b" },
+    };
+    const c1 = try reg.getOrConnect("alpha", "http://127.0.0.1:1/mcp", &with_a, .{});
+    const c2 = try reg.getOrConnect("alpha", "http://127.0.0.1:1/mcp", &with_b, .{});
+    try testing.expect(c1 != c2);
+    try testing.expectEqualStrings("Bearer tenant-b", c2.custom_headers[0].value);
+}
+
+test "two tenants using one server name get their own client and their own token" {
+    var reg = HttpRegistry.init(testing.allocator);
+    defer reg.deinit();
+    const tenant_a = mcp_scope.Scope{ .owner = "u_a", .workspace_id = "ws_1" };
+    const tenant_b = mcp_scope.Scope{ .owner = "u_b", .workspace_id = "ws_1" };
+    const token_a = [_]custom_http_client_mod.Header{
+        .{ .name = "Authorization", .value = "Bearer tenant-a" },
+    };
+    const token_b = [_]custom_http_client_mod.Header{
+        .{ .name = "Authorization", .value = "Bearer tenant-b" },
+    };
+
+    const a = try reg.getOrConnect("files", "http://127.0.0.1:1/mcp", &token_a, tenant_a);
+    const b = try reg.getOrConnect("files", "http://127.0.0.1:1/mcp", &token_b, tenant_b);
+
+    try testing.expect(a != b);
+    try testing.expectEqualStrings("Bearer tenant-a", a.custom_headers[0].value);
+    try testing.expectEqualStrings("Bearer tenant-b", b.custom_headers[0].value);
+    try testing.expectEqual(@as(usize, 2), reg.entries.count());
+}
+
+test "evicting a tenant's server leaves the same-named server of another tenant alive" {
+    var reg = HttpRegistry.init(testing.allocator);
+    defer reg.deinit();
+    const tenant_a = mcp_scope.Scope{ .owner = "u_a", .workspace_id = "ws_1" };
+    const tenant_b = mcp_scope.Scope{ .owner = "u_b", .workspace_id = "ws_1" };
+    const a = try reg.getOrConnect("files", "http://127.0.0.1:1/mcp", &.{}, tenant_a);
+    const b = try reg.getOrConnect("files", "http://127.0.0.1:1/mcp", &.{}, tenant_b);
+
+    var key_buf: [mcp_scope.max_key_bytes]u8 = undefined;
+    const key_a = tenant_a.keyInto("files", &key_buf).?;
+    reg.evict(key_a);
+
+    const b_again = try reg.getOrConnect("files", "http://127.0.0.1:1/mcp", &.{}, tenant_b);
+    try testing.expectEqual(@intFromPtr(b), @intFromPtr(b_again));
+    try testing.expectEqual(@as(usize, 1), reg.entries.count());
+    _ = a;
 }
 
 test "HttpRegistry: getOrConnect returns different clients for different names" {
     var reg = HttpRegistry.init(testing.allocator);
     defer reg.deinit();
-    const a = try reg.getOrConnect("a", "http://127.0.0.1:1/mcp", &.{});
-    const b = try reg.getOrConnect("b", "http://127.0.0.1:1/mcp", &.{});
+    const a = try reg.getOrConnect("a", "http://127.0.0.1:1/mcp", &.{}, .{});
+    const b = try reg.getOrConnect("b", "http://127.0.0.1:1/mcp", &.{}, .{});
     try testing.expect(a != b);
 }
 
 test "HttpRegistry: deinit cleans up registered clients without leaking" {
     var reg = HttpRegistry.init(testing.allocator);
-    _ = try reg.getOrConnect("a", "http://127.0.0.1:1/mcp", &.{});
-    _ = try reg.getOrConnect("b", "http://127.0.0.1:2/mcp", &.{});
-    _ = try reg.getOrConnect("c", "http://127.0.0.1:3/mcp", &.{});
+    _ = try reg.getOrConnect("a", "http://127.0.0.1:1/mcp", &.{}, .{});
+    _ = try reg.getOrConnect("b", "http://127.0.0.1:2/mcp", &.{}, .{});
+    _ = try reg.getOrConnect("c", "http://127.0.0.1:3/mcp", &.{}, .{});
     reg.deinit();
     // No assertion needed — the test passes if no leak is reported
     // by zig's DebugAllocator (this is the default in debug builds).

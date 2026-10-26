@@ -10,6 +10,7 @@ const config_mod = pabrik_mod.config;
 const mcp_stdio = pabrik_mod.mcp_stdio;
 const mcp_http = pabrik_mod.mcp_http;
 const is_worker_cancelled_mod = @import("is_worker_cancelled.zig");
+const mcp_session_scope = @import("mcp_session_scope.zig");
 
 /// Session identity that owns a `tools/call`, so the Stop button can reach
 /// the lease wait and the transport reads/writes.
@@ -198,10 +199,18 @@ pub fn handle_mcp_tool_run(
     // registry keeps the client alive for the process lifetime (the arena
     // memory is freed at process exit).
     const http_registry = pabrik_mod.mcpHttpRegistry(allocator);
+    var scope_arena = std.heap.ArenaAllocator.init(allocator);
+    defer scope_arena.deinit();
+    const scope = mcp_session_scope.resolve(
+        scope_arena.allocator(),
+        if (opts.cancel_session) |s| s.db else null,
+        if (opts.cancel_session) |s| s.session_id else null,
+    );
     const http_client = http_registry.getOrConnect(
         server_name,
         url,
         custom_headers,
+        scope,
     ) catch |err| {
         logger.errFmt("MCP HTTP client build failed: {s}", .{@errorName(err)});
         return error.FailedToCallMCPServer;
@@ -300,6 +309,13 @@ fn callViaStdio(
     // stdio transport: long-lived child per server, lazy spawn + respawn.
     // Via the singleton struct (see root.zig `mcpStdioRegistry`).
     const reg = pabrik_mod.mcpStdioRegistry(allocator);
+    var scope_arena = std.heap.ArenaAllocator.init(allocator);
+    defer scope_arena.deinit();
+    const scope = mcp_session_scope.resolve(
+        scope_arena.allocator(),
+        if (opts.cancel_session) |s| s.db else null,
+        if (opts.cancel_session) |s| s.session_id else null,
+    );
 
     // Retry loop for cold-start / stale child. Use NDJSON framing (like
     // the discovery path) — Python and Node SDKs both default to NDJSON.
@@ -321,6 +337,7 @@ fn callViaStdio(
         var lease = reg.acquire(server_name, argv, .{
             .wait_ns = opts.lease_wait_ns,
             .is_cancelled = cancel_fn,
+            .scope = scope,
         }) catch |err| {
             logger.errFmt("stdio MCP lease failed for {s}.{s}: {s}", .{ server_name, tool_name, @errorName(err) });
             last_err = err;

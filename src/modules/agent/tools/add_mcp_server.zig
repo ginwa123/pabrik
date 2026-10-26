@@ -1172,11 +1172,15 @@ fn listAndAppendToolsHttp(
         header_count += 1;
     }
 
+    var scope_arena = std.heap.ArenaAllocator.init(ctx.allocator);
+    defer scope_arena.deinit();
+    const scope = exec_pabrikcore.mcp_session_scope.resolve(scope_arena.allocator(), ctx.db, ctx.session_id);
     const http_registry = exec_pabrikcore.mcpHttpRegistry(ctx.allocator);
     const http_client = http_registry.getOrConnect(
         server_name,
         url,
         std_header_buf[0..header_count],
+        scope,
     ) catch return inner_json;
 
     const mcp_tools = exec_pabrikcore.mcp_http.listTools(ctx.allocator, http_client) catch return inner_json;

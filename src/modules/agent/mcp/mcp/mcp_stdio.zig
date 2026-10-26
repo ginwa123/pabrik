@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const mcp_scope = @import("mcp_scope.zig");
 
 const MAX_HEADER_BYTES: usize = 8 * 1024;
 
@@ -32,6 +33,7 @@ pub const StdioError = error{
     /// concurrent access to the same client.
     ConcurrentAccess,
     OutOfMemory,
+    NameTooLong,
 };
 
 // ============================================================================
@@ -719,6 +721,7 @@ pub const AcquireOptions = struct {
     /// 0 = wait indefinitely.
     wait_ns: u64 = 0,
     is_cancelled: ?*const fn () bool = null,
+    scope: mcp_scope.Scope = .{},
 };
 
 pub const StdioRegistry = struct {
@@ -792,13 +795,15 @@ pub const StdioRegistry = struct {
         opts: AcquireOptions,
     ) StdioError!Lease {
         // Phase 1 — registry lock, held only for map + arena work.
+        var key_buf: [mcp_scope.max_key_bytes]u8 = undefined;
+        const scoped_key = opts.scope.keyInto(name, &key_buf) orelse return StdioError.NameTooLong;
         mutexLock(&self.mutex);
-        const entry = self.entries.get(name) orelse blk: {
+        const entry = self.entries.get(scoped_key) orelse blk: {
             const client_slot = self.allocClientSlot() catch {
                 self.mutex.unlock();
                 return StdioError.OutOfMemory;
             };
-            const key_dup = self.arena.allocator().dupe(u8, name) catch {
+            const key_dup = self.arena.allocator().dupe(u8, scoped_key) catch {
                 self.mutex.unlock();
                 return StdioError.OutOfMemory;
             };
@@ -870,8 +875,10 @@ pub const StdioRegistry = struct {
     pub fn markStale(self: *StdioRegistry, name: []const u8) void {
         mutexLock(&self.mutex);
         defer self.mutex.unlock();
-        if (self.entries.getPtr(name)) |entry_ptr| {
-            entry_ptr.*.dirty.store(true, .release);
+        var it = self.entries.iterator();
+        while (it.next()) |kv| {
+            if (!mcp_scope.matchesName(kv.key_ptr.*, name)) continue;
+            kv.value_ptr.*.dirty.store(true, .release);
         }
     }
 
@@ -880,12 +887,15 @@ pub const StdioRegistry = struct {
     /// owns it.
     pub fn dropAndRespawn(
         self: *StdioRegistry,
+        scope: mcp_scope.Scope,
         name: []const u8,
         argv: []const []const u8,
     ) !*StdioClient {
+        var key_buf: [mcp_scope.max_key_bytes]u8 = undefined;
+        const scoped_key = scope.keyInto(name, &key_buf) orelse return StdioError.NameTooLong;
         mutexLock(&self.mutex);
         defer self.mutex.unlock();
-        if (self.entries.fetchRemove(name)) |kv| {
+        if (self.entries.fetchRemove(scoped_key)) |kv| {
             // Take the entry lock before killing: a concurrent `acquire` may
             // be blocked on it and about to dereference this very client.
             mutexLock(&kv.value.io_mutex);
@@ -893,7 +903,7 @@ pub const StdioRegistry = struct {
             kv.value.io_mutex.unlock();
         }
         const client_slot = try self.allocClientSlot();
-        const key_dup = try self.arena.allocator().dupe(u8, name);
+        const key_dup = try self.arena.allocator().dupe(u8, scoped_key);
         const new_entry = try self.arena.allocator().create(Entry);
         client_slot.* = try StdioClient.init(self.arena.allocator(), self.io, argv);
         new_entry.* = .{ .client = client_slot, .dirty = .init(false) };
@@ -1271,13 +1281,92 @@ test "acquire with different names returns different clients" {
     try testing.expect(a != lb.client());
 }
 
+test "two tenants declaring the same server name get two child processes" {
+    var reg = StdioRegistry.init(testing.allocator, testing.io);
+    defer reg.deinit();
+    const tenant_a = mcp_scope.Scope{ .owner = "u_a", .workspace_id = "ws_1" };
+    const tenant_b = mcp_scope.Scope{ .owner = "u_b", .workspace_id = "ws_1" };
+
+    var la = try reg.acquire("files", echo_argv(), .{ .scope = tenant_a });
+    const a = la.client();
+    la.release();
+
+    var lb = try reg.acquire("files", echo_argv(), .{ .scope = tenant_b });
+    const b = lb.client();
+    lb.release();
+
+    try testing.expect(a != b);
+    try testing.expectEqual(@as(usize, 2), reg.entries.count());
+}
+
+test "one tenant asking twice for the same server keeps a single child" {
+    var reg = StdioRegistry.init(testing.allocator, testing.io);
+    defer reg.deinit();
+    const tenant = mcp_scope.Scope{ .owner = "u_a", .workspace_id = "ws_1" };
+
+    var first = try reg.acquire("files", echo_argv(), .{ .scope = tenant });
+    const a = first.client();
+    first.release();
+
+    var second = try reg.acquire("files", echo_argv(), .{ .scope = tenant });
+    const b = second.client();
+    second.release();
+
+    try testing.expectEqual(@intFromPtr(a), @intFromPtr(b));
+    try testing.expectEqual(@as(usize, 1), reg.entries.count());
+}
+
+test "another tenant's in-flight call does not block this tenant's lease" {
+    var reg = StdioRegistry.init(testing.allocator, testing.io);
+    defer reg.deinit();
+    const tenant_a = mcp_scope.Scope{ .owner = "u_a", .workspace_id = "ws_1" };
+    const tenant_b = mcp_scope.Scope{ .owner = "u_b", .workspace_id = "ws_1" };
+
+    var held = try reg.acquire("files", sigtermIgnoringArgv(), .{ .scope = tenant_a });
+    defer held.release();
+
+    var other = try reg.acquire("files", echo_argv(), .{
+        .scope = tenant_b,
+        .wait_ns = 200 * std.time.ns_per_ms,
+    });
+    defer other.release();
+
+    try testing.expect(held.client() != other.client());
+}
+
+test "invalidating a server name respawns it for every tenant that declared it" {
+    var reg = StdioRegistry.init(testing.allocator, testing.io);
+    defer reg.deinit();
+    const tenant_a = mcp_scope.Scope{ .owner = "u_a", .workspace_id = "ws_1" };
+    const tenant_b = mcp_scope.Scope{ .owner = "u_b", .workspace_id = "ws_1" };
+
+    var la = try reg.acquire("files", echo_argv(), .{ .scope = tenant_a });
+    const a_before = la.client();
+    la.release();
+    var lb = try reg.acquire("files", echo_argv(), .{ .scope = tenant_b });
+    const b_before = lb.client();
+    lb.release();
+
+    reg.markStale("files");
+
+    var la2 = try reg.acquire("files", echo_argv(), .{ .scope = tenant_a });
+    const a_after = la2.client();
+    la2.release();
+    var lb2 = try reg.acquire("files", echo_argv(), .{ .scope = tenant_b });
+    const b_after = lb2.client();
+    lb2.release();
+
+    try testing.expect(a_before != a_after);
+    try testing.expect(b_before != b_after);
+}
+
 test "StdioRegistry.dropAndRespawn returns a different client" {
     var reg = StdioRegistry.init(testing.allocator, testing.io);
     defer reg.deinit();
     var l1 = try reg.acquire("x", echo_argv(), .{});
     const c1 = l1.client();
     l1.release();
-    const c2 = try reg.dropAndRespawn("x", echo_argv());
+    const c2 = try reg.dropAndRespawn(.{}, "x", echo_argv());
     try testing.expect(c1 != c2);
 }
 

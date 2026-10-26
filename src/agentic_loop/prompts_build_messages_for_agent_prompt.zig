@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const json = std.json;
 const pabrikcore = @import("pabrikcore");
 const mcp_stdio = pabrikcore.mcp_stdio;
+const mcp_scope = pabrikcore.mcp_scope;
 const mcp_http = pabrikcore.mcp_http;
 const mcp_types = pabrikcore.mcp_types;
 const agent = pabrikcore.agent;
@@ -426,6 +427,7 @@ pub fn buildMCPToolsRun(
     allocator: std.mem.Allocator,
     mcpServers: std.json.Value,
     cancel_fn: ?*const fn () bool,
+    scope: mcp_scope.Scope,
 ) !?[]tool_models.AgentTool {
     // Check if mcpServers is configured
     const mcp_servers = switch (mcpServers) {
@@ -461,7 +463,7 @@ pub fn buildMCPToolsRun(
             // per-call timeouts. We forward the workflow's cancel-callback so
             // the Stop button propagates within one syscall of the cancel.
             const deadline_ns: u64 = 30 * std.time.ns_per_s;
-            const stdio_tools = fetchToolsFromServerStdio(allocator, server_name, server_obj, deadline_ns, cancel_fn) catch |err| {
+            const stdio_tools = fetchToolsFromServerStdio(allocator, server_name, server_obj, deadline_ns, cancel_fn, scope) catch |err| {
                 std.log.info("Failed to fetch MCP tools from stdio server '{s}': {s}", .{ server_name, @errorName(err) });
                 continue;
             };
@@ -515,6 +517,7 @@ pub fn buildMCPToolsRun(
             server_name,
             url,
             std_header_slice,
+            scope,
         ) catch |err| {
             std.log.warn("Failed to get HTTP client for MCP server {s}: {s}", .{ server_name, @errorName(err) });
             continue;
@@ -615,6 +618,7 @@ fn fetchToolsFromServerStdio(
     server_obj: std.json.ObjectMap,
     deadline_ns: u64,
     cancel_fn: ?*const fn () bool,
+    scope: mcp_scope.Scope,
 ) ![]tool_models.AgentTool {
     // Build argv from the config.
     var argv_list: std.ArrayList([]const u8) = .empty;
@@ -657,6 +661,7 @@ fn fetchToolsFromServerStdio(
         var lease = reg.acquire(server_name, argv, .{
             .wait_ns = 60 * std.time.ns_per_s,
             .is_cancelled = cancel_fn,
+            .scope = scope,
         }) catch |err| {
             // Busy is not a spawn failure — retrying stacks the budget ten
             // times over. Report it instead.
@@ -1459,24 +1464,24 @@ const mcp_stdio_handshake_reply =
 ;
 
 test "buildMCPToolsRun: null input returns null (no servers configured)" {
-    const result = try buildMCPToolsRun(testing.allocator, .null, null);
+    const result = try buildMCPToolsRun(testing.allocator, .null, null, .{});
     try testing.expect(result == null);
 }
 
 test "buildMCPToolsRun: non-object input returns null" {
     const arr = std.json.Value{ .array = std.json.Array.init(testing.allocator) };
-    const result = try buildMCPToolsRun(testing.allocator, arr, null);
+    const result = try buildMCPToolsRun(testing.allocator, arr, null, .{});
     try testing.expect(result == null);
 
     const str = std.json.Value{ .string = "not-an-object" };
-    const result2 = try buildMCPToolsRun(testing.allocator, str, null);
+    const result2 = try buildMCPToolsRun(testing.allocator, str, null, .{});
     try testing.expect(result2 == null);
 }
 
 test "buildMCPToolsRun: empty object returns empty slice (not null)" {
     var obj = try std.json.ObjectMap.init(testing.allocator, &.{}, &.{});
     defer obj.deinit(testing.allocator);
-    const result = try buildMCPToolsRun(testing.allocator, .{ .object = obj }, null);
+    const result = try buildMCPToolsRun(testing.allocator, .{ .object = obj }, null, .{});
     try testing.expect(result != null);
     defer testing.allocator.free(result.?);
     try testing.expectEqual(@as(usize, 0), result.?.len);
@@ -1492,7 +1497,7 @@ test "buildMCPToolsRun: non-object server entry is skipped" {
         var it = obj.iterator();
         while (it.next()) |kv| testing.allocator.free(kv.key_ptr.*);
     }
-    const result = try buildMCPToolsRun(testing.allocator, .{ .object = obj }, null);
+    const result = try buildMCPToolsRun(testing.allocator, .{ .object = obj }, null, .{});
     try testing.expect(result != null);
     defer testing.allocator.free(result.?);
     try testing.expectEqual(@as(usize, 0), result.?.len);
@@ -1507,7 +1512,7 @@ test "buildMCPToolsRun: server with neither command nor url is skipped" {
     const key = try testing.allocator.dupe(u8, "empty");
     defer testing.allocator.free(key);
     try outer.put(testing.allocator, key, .{ .object = server_obj });
-    const result = try buildMCPToolsRun(testing.allocator, .{ .object = outer }, null);
+    const result = try buildMCPToolsRun(testing.allocator, .{ .object = outer }, null, .{});
     try testing.expect(result != null);
     defer testing.allocator.free(result.?);
     try testing.expectEqual(@as(usize, 0), result.?.len);
@@ -1522,7 +1527,7 @@ test "buildMCPToolsRun: stdio server with bogus command is skipped (no crash)" {
     ;
     var parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, json_text, .{});
     defer parsed.deinit();
-    const result = try buildMCPToolsRun(testing.allocator, parsed.value, null);
+    const result = try buildMCPToolsRun(testing.allocator, parsed.value, null, .{});
     try testing.expect(result != null);
     defer testing.allocator.free(result.?);
     try testing.expectEqual(@as(usize, 0), result.?.len);
@@ -1535,7 +1540,7 @@ test "buildMCPToolsRun: stdio server with empty command is skipped" {
     ;
     var parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, json_text, .{});
     defer parsed.deinit();
-    const result = try buildMCPToolsRun(testing.allocator, parsed.value, null);
+    const result = try buildMCPToolsRun(testing.allocator, parsed.value, null, .{});
     try testing.expect(result != null);
     defer testing.allocator.free(result.?);
     // Empty command → MCPServerCommandNotFound → skipped
@@ -1581,7 +1586,7 @@ test "buildMCPToolsRun: disabled servers are skipped (enabled server's tools onl
     try outer.put(testing.allocator, try testing.allocator.dupe(u8, "ena"), .{ .object = ena_obj });
     try outer.put(testing.allocator, try testing.allocator.dupe(u8, "dis"), .{ .object = dis_obj });
 
-    const result = try buildMCPToolsRun(testing.allocator, .{ .object = outer }, null);
+    const result = try buildMCPToolsRun(testing.allocator, .{ .object = outer }, null, .{});
     // Kills the spawned `sh` children + frees the registry arena (same
     // cleanup the bogus-command test does for its failed spawns).
     defer mcp_stdio.StdioRegistry.deinitGlobal();
@@ -1653,7 +1658,7 @@ test "fetchToolsFromServerStdio: empty command returns MCPServerCommandNotFound 
     // Fast-failure path — no child spawned, no global registry touched.
     var empty_obj = try std.json.ObjectMap.init(testing.allocator, &.{}, &.{});
     defer empty_obj.deinit(testing.allocator);
-    const err = fetchToolsFromServerStdio(testing.allocator, "srv", empty_obj, 1_000_000_000, null);
+    const err = fetchToolsFromServerStdio(testing.allocator, "srv", empty_obj, 1_000_000_000, null, .{});
     try testing.expectError(error.MCPServerCommandNotFound, err);
 }
 
@@ -1662,7 +1667,7 @@ test "fetchToolsFromServerStdio: missing command field returns MCPServerCommandN
     defer obj.deinit(testing.allocator);
     // Has url but no command — fetchToolsFromServerStdio only looks at
     // command/args, so empty argv → CommandNotFound
-    const err = fetchToolsFromServerStdio(testing.allocator, "srv", obj, 1_000_000_000, null);
+    const err = fetchToolsFromServerStdio(testing.allocator, "srv", obj, 1_000_000_000, null, .{});
     try testing.expectError(error.MCPServerCommandNotFound, err);
 }
 
