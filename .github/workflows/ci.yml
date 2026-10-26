@@ -353,6 +353,89 @@ jobs:
         shell: bash
         run: zig build zginlint:check
 
+  # ── 1c. PostgreSQL backend ──────────────────────────────────────────
+  # `-Ddb_used=sqlite` is the default build, so every other job proves the
+  # sqlite backend and NOTHING proved the postgres one. `--database=postgres`
+  # is now a runtime flag, so this job is what keeps it honest: the backend
+  # is compiled (libpq via scripts/ci-install-linux-deps.sh), and the
+  # backend-agnostic suite in `zig build test:db` runs against a real server.
+  #
+  # It is a job of its own rather than a step in `backend-linux` for the
+  # same reason the functional shards are: a service container, a
+  # POSTGRES_TEST_CONNINFO and a `-Ddb_used` override would otherwise
+  # change what the Linux cell tests on every platform.
+  backend-postgres:
+    name: backend (postgres)
+    needs: [changes, lint]
+    if: ${{ needs.lint.result == 'success' && needs.changes.outputs.heavy == 'true' && !cancelled() }}
+    runs-on: ubuntu-24.04
+    # A cold `databases` package build (libpq, no sqlite3.c) plus two tiny
+    # test binaries. The 30 is for a cold package cache, not for the tests.
+    timeout-minutes: 30
+    services:
+      postgres:
+        # Pinned, not `postgres:latest`: a major-version bump changes the
+        # SQL the backend accepts, and this job exists to pin that down.
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: pabrik
+          POSTGRES_PASSWORD: pabrik
+          POSTGRES_DB: pabrik
+        ports:
+          - 5432:5432
+        # `zig build` starts the moment the step runs, so the server has to
+        # be accepting connections BEFORE it. The health check is what the
+        # service wait keys on.
+        options: >-
+          --health-cmd "pg_isready -U pabrik -d pabrik"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      # Read by the `databases` package (ruangsql#13) to pick the instance a
+      # temp database is created on. The TCP form, not the socket: the
+      # container publishes 5432 on the runner's loopback.
+      POSTGRES_TEST_CONNINFO: host=127.0.0.1 port=5432 user=pabrik password=pabrik dbname=pabrik
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Zig ${{ env.ZIG_VERSION }}
+        uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: Cache the Zig package cache
+        # Keyed on build.zig.zon for the same reason the backend cell is: the
+        # `databases` and `kabelweb` pins are what a cold cache re-fetches.
+        # A distinct suffix so this job does not evict the cells' entries.
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/zig
+          key: v1-zig-global-ubuntu-24.04-postgres-${{ hashFiles('build.zig.zon') }}
+          restore-keys: |
+            v1-zig-global-ubuntu-24.04-
+
+      - name: Install system dependencies
+        # Same shared list as the backend cell, which is also where libpq-dev
+        # comes from — the `-Ddb_used=sqlite,postgres` build links it.
+        run: bash scripts/ci-install-linux-deps.sh
+
+      - name: Database tests (sqlite backend)
+        # The default build: the same source, the same assertions, the
+        # sqlite half of `createTempDb`.
+        run: zig build test:db
+
+      - name: Database tests (postgres backend)
+        # `PABRIK_DB_TESTS_REQUIRE_SERVER` turns "no server reachable" from a
+        # SKIP into a FAILURE: every test in `test:db` can skip itself when
+        # `tempDbAvailable()` says there is no instance, so without this a
+        # green run could mean "skipped all 23". The service container is
+        # waited on by its health check before the job starts.
+        env:
+          PABRIK_DB_TESTS_REQUIRE_SERVER: '1'
+        run: zig build test:db -Ddb_used=sqlite,postgres
+
   # ── 2. Backend, one job per platform ────────────────────────────────
   # Three calls of the same reusable workflow instead of one 3-cell
   # matrix. The `if` says three things at once, and each is load-bearing:
@@ -1067,6 +1150,7 @@ jobs:
       - changes
       - lint
       - zginlint
+      - backend-postgres
       - backend-linux
       - backend-macos
       - backend-windows
@@ -1104,6 +1188,7 @@ jobs:
             changes=${{ needs.changes.result }}
             lint=${{ needs.lint.result }}
             zginlint=${{ needs.zginlint.result }}
+            backend-postgres=${{ needs.backend-postgres.result }}
             backend-linux=${{ needs.backend-linux.result }}
             backend-macos=${{ needs.backend-macos.result }}
             backend-windows=${{ needs.backend-windows.result }}

@@ -7,6 +7,7 @@ const pabrikcore = @import("pabrikcore");
 
 const headless = @import("../headless/mod.zig");
 const cli_flags = @import("../cli/flags.zig");
+const db_target = @import("db_target.zig");
 
 /// `pabrik headless {run,sessions,messages,help}`.
 pub fn dispatchHeadless(
@@ -26,25 +27,33 @@ pub fn dispatchHeadless(
     defer rest.deinit(allocator);
     while (it.next()) |a| try rest.append(allocator, a);
 
-    // `--log-file` is a global flag, so it is pulled out before the verb
-    // parser sees the argv — the same strip-globals-first shape
-    // `pabrikcli`'s main.zig uses.
+    // `--log-file` and the `--database*` family are stripped before the verb
+    // parser sees the argv: no verb parser owns either, and the same
+    // strip-globals-first shape `pabrikcli`'s main.zig uses.
+    var db_request: db_target.Request = .{};
+    var without_db: std.ArrayList([]const u8) = .empty;
+    defer without_db.deinit(allocator);
+    db_target.parseArgs(allocator, rest.items, &db_request, &without_db) catch |err| {
+        db_target.reportArgError(rest.items, err);
+        return true;
+    };
+
     var log_file: ?[]const u8 = null;
     var verb_argv: std.ArrayList([]const u8) = .empty;
     defer verb_argv.deinit(allocator);
     {
         const log_file_flag = cli_flags.word("log-file");
         var i: usize = 0;
-        while (i < rest.items.len) : (i += 1) {
-            if (std.mem.eql(u8, rest.items[i], log_file_flag)) {
+        while (i < without_db.items.len) : (i += 1) {
+            if (std.mem.eql(u8, without_db.items[i], log_file_flag)) {
                 i += 1;
-                if (i >= rest.items.len) {
+                if (i >= without_db.items.len) {
                     std.log.err("headless: --log-file requires a value", .{});
                     return true;
                 }
-                log_file = rest.items[i];
+                log_file = without_db.items[i];
             } else {
-                try verb_argv.append(allocator, rest.items[i]);
+                try verb_argv.append(allocator, without_db.items[i]);
             }
         }
     }
@@ -61,9 +70,9 @@ pub fn dispatchHeadless(
             try w.interface.writeAll(headless.args.HELP_TEXT);
             try w.interface.flush();
         },
-        .run => |a| try runTurn(allocator, io, environment, a, log_file),
-        .sessions => |a| try listSessions(allocator, io, environment, a, log_file),
-        .messages => |a| try listMessages(allocator, io, environment, a, log_file),
+        .run => |a| try runTurn(allocator, io, environment, a, log_file, db_request),
+        .sessions => |a| try listSessions(allocator, io, environment, a, log_file, db_request),
+        .messages => |a| try listMessages(allocator, io, environment, a, log_file, db_request),
     }
     return true;
 }
@@ -77,12 +86,13 @@ fn runTurn(
     environment: *const std.process.Environ.Map,
     a: headless.args.RunArgs,
     log_file: ?[]const u8,
+    db_request: db_target.Request,
 ) !void {
     // Declared HERE, not returned by value: `App.db` / `.event_bus`
     // point into this struct, so it must live in the
     // caller's frame. See the `boot.zig` module header.
     var backend: headless.boot.Backend = undefined;
-    headless.boot.boot(&backend, allocator, io, environment, .{ .log_file = log_file }) catch |err| {
+    headless.boot.boot(&backend, allocator, io, environment, .{ .log_file = log_file, .db_request = db_request }) catch |err| {
         std.log.err("headless: boot failed: {s}", .{@errorName(err)});
         std.process.exit(1);
     };
@@ -134,12 +144,13 @@ fn listSessions(
     environment: *const std.process.Environ.Map,
     a: headless.args.SessionsArgs,
     log_file: ?[]const u8,
+    db_request: db_target.Request,
 ) !void {
     // Declared HERE, not returned by value: `App.db` / `.event_bus`
     // point into this struct, so it must live in the
     // caller's frame. See the `boot.zig` module header.
     var backend: headless.boot.Backend = undefined;
-    headless.boot.boot(&backend, allocator, io, environment, .{ .log_file = log_file }) catch |err| {
+    headless.boot.boot(&backend, allocator, io, environment, .{ .log_file = log_file, .db_request = db_request }) catch |err| {
         std.log.err("headless: boot failed: {s}", .{@errorName(err)});
         std.process.exit(1);
     };
@@ -176,12 +187,13 @@ fn listMessages(
     environment: *const std.process.Environ.Map,
     a: headless.args.MessagesArgs,
     log_file: ?[]const u8,
+    db_request: db_target.Request,
 ) !void {
     // Declared HERE, not returned by value: `App.db` / `.event_bus`
     // point into this struct, so it must live in the
     // caller's frame. See the `boot.zig` module header.
     var backend: headless.boot.Backend = undefined;
-    headless.boot.boot(&backend, allocator, io, environment, .{ .log_file = log_file }) catch |err| {
+    headless.boot.boot(&backend, allocator, io, environment, .{ .log_file = log_file, .db_request = db_request }) catch |err| {
         std.log.err("headless: boot failed: {s}", .{@errorName(err)});
         std.process.exit(1);
     };

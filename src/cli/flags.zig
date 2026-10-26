@@ -4,9 +4,10 @@
 
 const std = @import("std");
 
-/// Which command owns a flag. `db` is the `--db-*=` override family, which
-/// `boot/db_config.zig` applies to the SQLite policy.
-pub const Scope = enum { global, db, service, create_admin, headless };
+/// Which command owns a flag. `db` is the `--db-*=` family `boot/db_config.zig`
+/// applies to the SQLite policy; `db_target` is the `--database*=` family
+/// `boot/db_target.zig` pulls out of argv before a scope parser sees it.
+pub const Scope = enum { global, db, db_target, service, create_admin, headless };
 
 /// The value type a `.store` flag parses its text into. `mode` is a named
 /// on/off pair (`--http2 h2c|off`), so its target field is a bool.
@@ -206,6 +207,38 @@ pub const flags = [_]Flag{
         .value_name = "N",
         .help = "How long an idle reader is kept before it is closed",
         .default_text = "30000",
+    },
+    .{
+        .long = "database",
+        .scopes = &.{.db_target},
+        .action = .store,
+        .kind = .text,
+        .syntax = .equals,
+        .fields = &.{"database"},
+        .value_name = "sqlite|postgres",
+        .help = "Database backend to open",
+        .default_text = "sqlite",
+    },
+    .{
+        .long = "database-path",
+        .scopes = &.{.db_target},
+        .action = .store,
+        .kind = .text,
+        .syntax = .equals,
+        .fields = &.{"database_path"},
+        .value_name = "PATH",
+        .help = "SQLite file to open (default: the app data dir)",
+    },
+    .{
+        .long = "database-conninfo",
+        .scopes = &.{.db_target},
+        .action = .store,
+        .kind = .text,
+        .syntax = .equals,
+        .fields = &.{"database_conninfo"},
+        .value_name = "CONNINFO",
+        .help = "libpq conninfo or postgres:// URL (postgres backend only)",
+        .default_text = "$PABRIK_DATABASE_CONNINFO",
     },
     .{
         .long = "graceful-timeout-ms",
@@ -489,7 +522,8 @@ pub fn stripDashes(typed: []const u8) []const u8 {
 const testing = std.testing;
 
 test "a scope's help block names every flag that scope parses" {
-    inline for ([_]Scope{ .global, .db, .service, .create_admin, .headless }) |scope| {
+    @setEvalBranchQuota(100_000);
+    inline for ([_]Scope{ .global, .db, .db_target, .service, .create_admin, .headless }) |scope| {
         const block = comptime usageBlock(scope, "");
         inline for (flags) |f| {
             if (comptime hasScope(f, scope)) {

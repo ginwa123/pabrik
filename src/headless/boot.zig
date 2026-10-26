@@ -6,6 +6,7 @@ const pabrikcore = @import("pabrikcore");
 const gserverz = @import("kabelweb").server;
 
 const server_boot = @import("../boot/server_boot.zig");
+const db_target = @import("../boot/db_target.zig");
 
 /// Everything a headless run needs, in the order it must be torn down. MUST
 /// be declared by the caller and passed to `boot` as an out-param — see the
@@ -53,7 +54,7 @@ pub const Backend = struct {
         pabrikcore.loggermod.deinitGlobal(io);
         allocator.free(self.log_file_path);
 
-        self.db_handles.deinit(allocator);
+        self.db_handles.deinit();
     }
 
     /// End the process with `code`, without unwinding.
@@ -68,6 +69,8 @@ pub const BootOptions = struct {
     /// default `main.zig` uses, so a headless run's log lands where an
     /// operator already looks for one.
     log_file: ?[]const u8 = null,
+    /// Which backend to open and where it lives. Empty = the compiled backend.
+    db_request: db_target.Request = .{},
 };
 
 /// Boot the backend into caller-owned `out`. Phases before the routine
@@ -104,11 +107,11 @@ pub fn boot(
     // ─── Database ─── Same open + migration chain as the server. A headless
     // run therefore sees the same schema, and a migration that breaks the
     // server breaks headless mode too — which is the point.
-    var db_handles = server_boot.openDatabase(allocator, io, @constCast(environment), &.{}) catch |err| {
+    var db_handles = server_boot.openDatabase(allocator, io, @constCast(environment), opts.db_request, &.{}) catch |err| {
         std.log.err("headless: failed to open the database: {s}", .{@errorName(err)});
         return error.BootFailed;
     };
-    errdefer db_handles.deinit(allocator);
+    errdefer db_handles.deinit();
 
     // ─── Log paths ───
     const log_file_path = if (opts.log_file) |p|

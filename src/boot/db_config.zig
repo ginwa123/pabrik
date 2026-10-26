@@ -158,6 +158,22 @@ pub fn resolve(overrides: []const Override) databases.database.SqliteConfig {
     return cfg;
 }
 
+/// The postgres connection policy pabrik opens its database with: a pool sized
+/// for a desktop workload, under a server-side cap that a refused connection can
+/// recover from. Empty on a sqlite-only build, where the module is not compiled.
+pub const postgres_best: databases.database.PostgresConfig = if (databases.database.backend_is_postgres) .{
+    .conns = 7,
+    .max_conns = 32,
+    .conn_wait_ms = 5_000,
+    .max_idle_time_ms = 60_000,
+} else .{};
+
+/// Both backends' policies at once, so an open call site stays identical whichever
+/// `-Ddb_used` list the app was built with. The `--db-*` knobs tune the sqlite half.
+pub fn resolveConfig(overrides: []const Override) databases.database.Config {
+    return .{ .sqlite = resolve(overrides), .postgres = postgres_best };
+}
+
 /// The user-facing message for an `OverrideError`, naming the offending flag.
 pub fn reportOverrideError(arg: []const u8, err: OverrideError) void {
     switch (err) {

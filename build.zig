@@ -753,6 +753,9 @@ fn collectTestShardEntries(b: *std.Build) []const TestShardEntry {
     }) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.path, ".zig")) continue;
+        // `test:db` runs this one in its own module, so sharding it here would
+        // schedule filters that match nothing.
+        if (std.mem.endsWith(u8, entry.path, "db_tests.zig")) continue;
 
         // `entry.dir` + `entry.basename`, not cwd + `entry.path`: the
         // walker's paths are relative to the directory it was opened on
@@ -855,6 +858,7 @@ const test_manifest_other_modules = [_][]const u8{
     "vmd/",
     "vm_agent/",
     "modules/gilvec_db/",
+    "testing/db_tests.zig",
 };
 
 fn testManifestOtherModule(path: []const u8) bool {
@@ -2680,6 +2684,32 @@ pub fn build(b: *std.Build) void {
         prependVcpkgBinToPath(b, run_mod_tests);
         test_step.dependOn(&run_mod_tests.step);
     }
+
+    // The backend-agnostic database tests, in a module of their own: it
+    // reaches only `boot/db_target.zig` + `testing/test_db.zig`, so the SAME
+    // step compiles under `-Ddb_used=sqlite` and `-Ddb_used=sqlite,postgres`.
+    const db_tests_module = b.createModule(.{
+        .root_source_file = b.path("src/testing/db_tests.zig"),
+        .target = test_target,
+        .optimize = optimize,
+    });
+    db_tests_module.addImport("pabrikcore", mod_tests_module);
+    db_tests_module.addImport("helpers", helpers_mod);
+    db_tests_module.addImport("databases", databases_mod);
+    {
+        db_tests_module.linkSystemLibrary("c", .{});
+        db_tests_module.link_libc = true;
+        if (test_target.result.os.tag == .linux) {
+            db_tests_module.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
+        }
+    }
+    const db_tests = b.addTest(.{ .root_module = db_tests_module });
+    const run_db_tests = b.addRunArtifact(db_tests);
+    run_db_tests.setName("test db backend (db_target + temp-db harness)");
+    prependVcpkgBinToPath(b, run_db_tests);
+    test_step.dependOn(&run_db_tests.step);
+    b.step("test:db", "Run the backend-agnostic database tests (--database=* resolution + temp-db harness); honours -Ddb_used")
+        .dependOn(&run_db_tests.step);
 
     // `run_captured.zig` lives in the standalone `helpers` PACKAGE, so its
     // inline tests are not reachable from `src/root.zig` and the mod_tests
