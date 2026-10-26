@@ -7,6 +7,10 @@ import * as api from '../api'
 import PabrikConfigEditor from '../components/pabrik/PabrikConfigEditor.vue'
 import { makeLocalStorageStub } from './helpers'
 
+// The autosave window is a wall-clock wait in the app; mount it at 0 so a spec settles the PUT
+// with a microtask drain instead of sleeping.
+vi.mock('../composables/autosaveDelay', () => ({ AUTOSAVE_DELAY_MS: 0 }))
+
 vi.mock('../api', () => ({
   getPabrikConfig: vi.fn(),
   savePabrikConfig: vi.fn(),
@@ -33,6 +37,14 @@ const mockDeleteAgent = api.deleteAgent as unknown as ReturnType<typeof vi.fn>
 const mockProfileInUse = api.getAgentProfileInUse as unknown as ReturnType<typeof vi.fn>
 const mockResolveModel = api.resolveModelOutcome as unknown as ReturnType<typeof vi.fn>
 const mockModelCatalog = api.getModelCatalog as unknown as ReturnType<typeof vi.fn>
+
+/** With a 0 ms autosave window the PUT starts inside the edit handler, so a few microtask turns
+ * settle it: the save, the re-snapshot, and the follow-up agent-key cleanup. */
+async function settleAutosave() {
+  await flushPromises()
+  await flushPromises()
+  await flushPromises()
+}
 
 // Catalog fixture for the Tools tab. `set_git_worktree` is NOT part
 // of the built-in defaults, so checking it is a visible edit.
@@ -126,14 +138,11 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     mockSave.mockResolvedValueOnce({ success: true })
     const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
     await flushPromises()
-    // Make a real edit so the save bar appears. Switching tabs used to be enough BY ACCIDENT - the
-    // Profiles section emitted an update while hydrating, which happened to mark the config dirty.
+    // Make a real edit so the config is written back. Switching tabs used to be enough BY ACCIDENT
+    // - the Profiles section emitted an update while hydrating, which happened to mark it dirty.
     await wrapper.find('[data-testid="toggle-notify-on-complete"]').setValue(true)
-    await flushPromises()
-    expect(wrapper.find('[data-testid="save-btn"]').exists()).toBe(true)
-    // Save the agent-only config.
-    await wrapper.find('[data-testid="save-btn"]').trigger('click')
-    await flushPromises()
+    // The change reaches the server on its own — there is no Save button left to press.
+    await settleAutosave()
     expect(mockSave).toHaveBeenCalledTimes(1)
     const savedConfig = mockSave.mock.calls[0]![0] as Record<string, unknown>
     for (const key of [
@@ -189,8 +198,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     await flushPromises()
 
     // Save changes and verify the prompt landed on 'work' only.
-    await wrapper.find('[data-testid="save-btn"]').trigger('click')
-    await flushPromises()
+    await settleAutosave()
     expect(mockSave).toHaveBeenCalledTimes(1)
     const savedConfig = mockSave.mock.calls[0]![0] as Record<string, unknown>
     const agents = savedConfig.profiles as Record<string, Record<string, unknown>>
@@ -246,6 +254,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     const wrapper = await mountAt('agents')
     await flushPromises()
     await wrapper.find('[data-testid="reset-active-btn"]').trigger('click')
+    await settleAutosave()
 
     // After the failed save, the local activeProfile should still
     // reflect the original value (rolled back from the optimistic null).
@@ -298,7 +307,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     expect(wrapper.find('[data-testid="pill-web-url"]').text()).toContain('http://127.0.0.1:51234/')
   })
 
-  it('toggling notify_on_error in the General tab flips dirty=true and round-trips through save', async () => {
+  it('toggling notify_on_error in the General tab reaches the server on its own', async () => {
     mockGet.mockResolvedValueOnce({
       notify_on_complete: false,
       notify_on_error: false,
@@ -309,20 +318,18 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
     await flushPromises()
 
-    // The save bar should be hidden (dirty=false on first load).
-    expect(wrapper.find('[data-testid="save-bar"]').exists()).toBe(false)
+    // Nothing has been written yet, so there is nothing to report.
+    expect(wrapper.find('[data-testid="save-status"]').exists()).toBe(false)
 
-    // Toggle notify_on_error ON.
+    // Toggle notify_on_error ON — no button, no confirmation step.
     const toggle = wrapper.find('[data-testid="toggle-notify-on-error"]')
     await toggle.setValue(true)
     await flushPromises()
 
-    // Now the dirty pill should appear.
-    expect(wrapper.find('[data-testid="save-bar"]').exists()).toBe(true)
+    // The strip is up while the change is on its way.
+    expect(wrapper.find('[data-testid="save-status"]').exists()).toBe(true)
 
-    // Click Save — the PUT body must carry notify_on_error: true.
-    await wrapper.find('[data-testid="save-btn"]').trigger('click')
-    await flushPromises()
+    await settleAutosave()
     expect(mockSave).toHaveBeenCalledTimes(1)
     const savedConfig = mockSave.mock.calls[0]![0] as Record<string, unknown>
     expect(savedConfig.notify_on_error).toBe(true)
@@ -331,6 +338,46 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     expect(savedConfig.notify_on_complete).toBe(false)
     expect(savedConfig.retry_delay_ms).toBe(0)
     expect(savedConfig.web_launch_enabled).toBe(false)
+    // And the user is told it landed.
+    expect(wrapper.find('[data-testid="save-status-text"]').text()).toBe('Saved')
+  })
+
+  it('reports a rejected change in the strip instead of claiming it was saved', async () => {
+    mockGet.mockResolvedValueOnce({ notify_on_complete: false, notify_on_error: false })
+    mockSave.mockRejectedValueOnce(new Error('HTTP 500'))
+    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
+    await flushPromises()
+
+    await wrapper.find('[data-testid="toggle-notify-on-error"]').setValue(true)
+    await settleAutosave()
+
+    expect(wrapper.find('[data-testid="save-status-text"]').text()).toContain("Couldn't save")
+    expect(wrapper.find('[data-testid="save-status-text"]').text()).toContain('HTTP 500')
+
+    // The edit is still unsaved, so the next one carries BOTH changes to the server.
+    mockSave.mockResolvedValueOnce({ success: true })
+    await wrapper.find('[data-testid="toggle-notify-on-complete"]').setValue(true)
+    await settleAutosave()
+
+    expect(mockSave.mock.calls.at(-1)![0]).toMatchObject({
+      notify_on_error: true,
+      notify_on_complete: true,
+    })
+    expect(wrapper.find('[data-testid="save-status-text"]').text()).toBe('Saved')
+  })
+
+  it('offers no Save or Reset control: a change needs no confirmation', async () => {
+    mockGet.mockResolvedValueOnce({ notify_on_complete: false })
+    mockSave.mockResolvedValueOnce({ success: true })
+    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
+    await flushPromises()
+
+    await wrapper.find('[data-testid="toggle-notify-on-complete"]').setValue(true)
+    await settleAutosave()
+
+    expect(wrapper.text()).not.toContain('Save changes')
+    expect(wrapper.find('[data-testid="save-btn"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="reset-btn"]').exists()).toBe(false)
   })
 
   it('typing into the retry-delay input round-trips to retry_delay_ms in the PUT body', async () => {
@@ -350,8 +397,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     await flushPromises()
 
     // Save.
-    await wrapper.find('[data-testid="save-btn"]').trigger('click')
-    await flushPromises()
+    await settleAutosave()
     expect(mockSave).toHaveBeenCalledTimes(1)
     const savedConfig = mockSave.mock.calls[0]![0] as Record<string, unknown>
     expect(savedConfig.retry_delay_ms).toBe(5000)
@@ -407,8 +453,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     await wrapper.find('[data-testid="toggle-notify-on-error"]').setValue(true)
     await flushPromises()
 
-    await wrapper.find('[data-testid="save-btn"]').trigger('click')
-    await flushPromises()
+    await settleAutosave()
     expect(mockSave).toHaveBeenCalledTimes(1)
     const savedConfig = mockSave.mock.calls[0]![0] as Record<string, unknown>
     expect(savedConfig.notify_on_complete).toBe(true)
@@ -449,8 +494,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
 
       await wrapper.find('[data-testid="toggle-web-launch"]').setValue(true)
       await flushPromises()
-      await wrapper.find('[data-testid="save-btn"]').trigger('click')
-      await flushPromises()
+      await settleAutosave()
 
       expect(mockSave).toHaveBeenCalledTimes(1)
       const savedConfig = mockSave.mock.calls[0]![0] as Record<string, unknown>
@@ -482,8 +526,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     await toggles[1]!.trigger('click')
     await flushPromises()
 
-    await wrapper.find('[data-testid="save-btn"]').trigger('click')
-    await flushPromises()
+    await settleAutosave()
     expect(mockSave).toHaveBeenCalledTimes(1)
     const savedConfig = mockSave.mock.calls[0]![0] as Record<string, Record<string, unknown>>
     const servers = savedConfig.mcp_servers as Record<string, Record<string, unknown>>
@@ -505,8 +548,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     await wrapper.find('[data-testid="toggle-btn"]').trigger('click')
     await flushPromises()
 
-    await wrapper.find('[data-testid="save-btn"]').trigger('click')
-    await flushPromises()
+    await settleAutosave()
     expect(mockSave).toHaveBeenCalledTimes(1)
     const savedConfig = mockSave.mock.calls[0]![0] as Record<string, Record<string, unknown>>
     const servers = savedConfig.mcp_servers as Record<string, Record<string, unknown>>
@@ -624,7 +666,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     expect(wrapper.find('[data-testid="tools-section"]').text()).toContain('1 of 3 tools selected')
   })
 
-  it('checking a tool flips dirty and round-trips tools through the PUT body', async () => {
+  it('checking a tool writes the explicit list to the server', async () => {
     mockGet.mockResolvedValueOnce({
       notify_on_complete: false,
       notify_on_error: false,
@@ -634,26 +676,25 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     mockSave.mockResolvedValueOnce({ success: true })
     const wrapper = await mountAt('tools')
 
-    // Untouched checklist (null) → nothing to write, save bar hidden.
-    expect(wrapper.find('[data-testid="save-bar"]').exists()).toBe(false)
+    // Untouched checklist (null) → nothing to write, nothing to report.
+    expect(wrapper.find('[data-testid="save-status"]').exists()).toBe(false)
 
     // set_git_worktree is not in the built-in defaults — checking it
     // writes the full explicit list (defaults ∩ registry + it).
     await wrapper.find('[data-testid="row-set_git_worktree"] input').setValue(true)
     await flushPromises()
-    expect(wrapper.find('[data-testid="save-bar"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="save-status"]').exists()).toBe(true)
 
-    await wrapper.find('[data-testid="save-btn"]').trigger('click')
-    await flushPromises()
+    await settleAutosave()
     expect(mockSave).toHaveBeenCalledTimes(1)
     const savedConfig = mockSave.mock.calls[0]![0] as Record<string, unknown>
     expect(savedConfig.tools).toEqual(['command', 'glob', 'set_git_worktree'])
   })
 
-  it('mounts the save bar ABOVE the scrollable content, not below it', async () => {
-    // The bar used to be the last child of the editor, so the only save/reset controls sat below a
-    // section the user has to scroll through. It is now the first thing after the Form/JSON toggle,
-    // which is what keeps the actions reachable from any scroll position.
+  it('pins the autosave status ABOVE the scrollable content, not below it', async () => {
+    // The strip used to be the last child of the editor, so what it reported sat below a section the
+    // user has to scroll through. It is now the first thing after the Form/JSON toggle, which is what
+    // keeps it in sight from any scroll position.
     mockGet.mockResolvedValueOnce({
       notify_on_complete: false,
       notify_on_error: false,
@@ -663,11 +704,11 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
     await flushPromises()
 
-    // Make a real edit so the bar renders at all.
+    // Make a real edit so the strip renders at all.
     await wrapper.find('[data-testid="toggle-notify-on-error"]').setValue(true)
     await flushPromises()
 
-    const bar = wrapper.find('[data-testid="save-bar"]')
+    const bar = wrapper.find('[data-testid="save-status"]')
     expect(bar.exists()).toBe(true)
 
     const content = wrapper.find('.overflow-y-auto')
@@ -698,8 +739,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     // not carry a `tools` key at all (backend: null/absent = no change).
     await wrapper.find('[data-testid="toggle-notify-on-error"]').setValue(true)
     await flushPromises()
-    await wrapper.find('[data-testid="save-btn"]').trigger('click')
-    await flushPromises()
+    await settleAutosave()
     expect(mockSave).toHaveBeenCalledTimes(1)
     const savedConfig = mockSave.mock.calls[0]![0] as Record<string, unknown>
     expect(savedConfig).not.toHaveProperty('tools')
@@ -716,8 +756,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
 
     await wrapper.find('[data-testid="agent-enabled-switch-work"]').trigger('click')
     await flushPromises()
-    await wrapper.find('[data-testid="save-btn"]').trigger('click')
-    await flushPromises()
+    await settleAutosave()
 
     expect(mockSave).toHaveBeenCalledTimes(1)
     const profiles = (mockSave.mock.calls[0]![0] as Record<string, unknown>).profiles as Record<
@@ -741,8 +780,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
 
     await wrapper.find('[data-testid="duplicate-btn-retired"]').trigger('click')
     await flushPromises()
-    await wrapper.find('[data-testid="save-btn"]').trigger('click')
-    await flushPromises()
+    await settleAutosave()
 
     const profiles = (mockSave.mock.calls[0]![0] as Record<string, unknown>).profiles as Record<
       string,
@@ -761,8 +799,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
 
     await wrapper.find('[data-testid="duplicate-btn-work"]').trigger('click')
     await flushPromises()
-    await wrapper.find('[data-testid="save-btn"]').trigger('click')
-    await flushPromises()
+    await settleAutosave()
 
     const profiles = (mockSave.mock.calls[0]![0] as Record<string, unknown>).profiles as Record<
       string,
@@ -781,11 +818,9 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     await wrapper.find('[data-testid="duplicate-btn-work"]').trigger('click')
     await flushPromises()
     await wrapper.find('[data-testid="duplicate-btn-work"]').trigger('click')
-    await flushPromises()
-    await wrapper.find('[data-testid="save-btn"]').trigger('click')
-    await flushPromises()
+    await settleAutosave()
 
-    const profiles = (mockSave.mock.calls[0]![0] as Record<string, unknown>).profiles as Record<
+    const profiles = (mockSave.mock.calls.at(-1)![0] as Record<string, unknown>).profiles as Record<
       string,
       Record<string, unknown>
     >
@@ -808,7 +843,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     expect(wrapper.text()).toContain('already exists')
   })
 
-  it('renaming an agent saves the new key and deletes the stale one only on Save', async () => {
+  it('renaming an agent writes the new key and removes the stale one', async () => {
     mockGet.mockResolvedValueOnce({ profiles: { work: { model: 'm' } } })
     mockSave.mockResolvedValueOnce({ success: true })
     const wrapper = await mountAt('agents')
@@ -817,16 +852,9 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     await flushPromises()
     await wrapper.find('[data-testid="name-input"]').setValue('day job')
     await wrapper.find('[data-testid="modal-save"]').trigger('click')
-    await flushPromises()
+    await settleAutosave()
 
-    // Nothing hits the server until the Save bar is used: an abandoned rename
-    // must not leave the profile deleted under its old key.
-    expect(mockDeleteAgent).not.toHaveBeenCalled()
-
-    await wrapper.find('[data-testid="save-btn"]').trigger('click')
-    await flushPromises()
-
-    const profiles = (mockSave.mock.calls[0]![0] as Record<string, unknown>).profiles as Record<
+    const profiles = (mockSave.mock.calls.at(-1)![0] as Record<string, unknown>).profiles as Record<
       string,
       Record<string, unknown>
     >
@@ -874,8 +902,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     await flushPromises()
 
     expect(mockProfileInUse).toHaveBeenCalledWith('work')
-    await wrapper.find('[data-testid="save-btn"]').trigger('click')
-    await flushPromises()
+    await settleAutosave()
 
     const profiles = (mockSave.mock.calls[0]![0] as Record<string, unknown>).profiles as Record<
       string,
@@ -884,9 +911,9 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     expect(Object.keys(profiles)).toEqual(['day job'])
   })
 
-  it('renaming an agent back to its stored name deletes nothing', async () => {
+  it('renaming an agent back to its stored name lands on one profile under that name', async () => {
     mockGet.mockResolvedValueOnce({ profiles: { work: { model: 'm' } } })
-    mockSave.mockResolvedValueOnce({ success: true })
+    mockSave.mockResolvedValue({ success: true })
     const wrapper = await mountAt('agents')
 
     const renameTo = async (to: string) => {
@@ -894,20 +921,17 @@ describe('PabrikConfigEditor (orchestrator)', () => {
       await flushPromises()
       await wrapper.find('[data-testid="name-input"]').setValue(to)
       await wrapper.find('[data-testid="modal-save"]').trigger('click')
-      await flushPromises()
+      await settleAutosave()
     }
     await renameTo('temp')
     await renameTo('work')
 
-    await wrapper.find('[data-testid="save-btn"]').trigger('click')
-    await flushPromises()
-
-    const profiles = (mockSave.mock.calls[0]![0] as Record<string, unknown>).profiles as Record<
+    const profiles = (mockSave.mock.calls.at(-1)![0] as Record<string, unknown>).profiles as Record<
       string,
       Record<string, unknown>
     >
     expect(Object.keys(profiles)).toEqual(['work'])
-    expect(mockDeleteAgent).not.toHaveBeenCalled()
+    expect(profiles.work!.model).toBe('m')
   })
 
   it('a newly added agent is created enabled', async () => {
@@ -921,8 +945,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     await wrapper.find('[data-testid="model-input"]').setValue('m3')
     await wrapper.find('[data-testid="modal-save"]').trigger('click')
     await flushPromises()
-    await wrapper.find('[data-testid="save-btn"]').trigger('click')
-    await flushPromises()
+    await settleAutosave()
 
     const profiles = (mockSave.mock.calls[0]![0] as Record<string, unknown>).profiles as Record<
       string,

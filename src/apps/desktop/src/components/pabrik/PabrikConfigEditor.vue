@@ -1,19 +1,20 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import {
   getWebStatus,
-  savePabrikConfig,
   type McpServer,
   type PabrikConfig,
   type PabrikAgent,
 } from '../../api'
 import { usePabrikConfig } from '../../composables/usePabrikConfig'
+import { AUTOSAVE_DELAY_MS } from '../../composables/autosaveDelay'
+import { useDebouncedRunner } from '../../composables/useDebouncedRunner'
 import { useRoute, useRouter } from 'vue-router'
 import { useTabsStore } from '../../stores/tabs'
 import { useChatViewStore } from '../../stores/chatView'
 
-import PabrikSaveBar from './PabrikSaveBar.vue'
+import PabrikSaveStatus from './PabrikSaveStatus.vue'
 import PabrikGeneralSection, { type PabrikGeneralSettings } from './PabrikGeneralSection.vue'
 import AgentsSection, { type AgentRow } from './AgentsSection.vue'
 import McpServersSection from './McpServersSection.vue'
@@ -69,13 +70,6 @@ const props = withDefaults(
 
 const source = props.source ?? userConfigSource()
 
-// Expose saveSettings / resetSettings so the parent can trigger them
-// (preserves the previous defineExpose surface).
-defineExpose({
-  saveSettings: () => handleSave(),
-  resetSettings: () => handleReset(),
-})
-
 // ─── Tab state ──────────────────────────────────────────────────────────── Plan
 // 2026-08-24-config-simplify-remove-defaults: 'defaults' tab removed.
 const TAB_STORAGE_KEY = 'pabrik-settings-active-tab'
@@ -112,8 +106,25 @@ const jsonProblem = computed<string | null>(() => {
 })
 
 // ─── Central config (usePabrikConfig composable) ──────────────────────────
-const { config, loaded, dirty, unsavedCount, saving, setConfig, save, reset } =
-  usePabrikConfig(source)
+const { config, loaded, dirty, saving, setConfig, save } = usePabrikConfig(source)
+
+// Autosave. Every edit handler funnels into `schedule()`, so the change itself is the trigger — no
+// Save button, and no `watch()` (banned here: a reaction must live in the handler that caused it).
+const saveError = ref<string | null>(null)
+const savedOnce = ref(false)
+const autosave = useDebouncedRunner(AUTOSAVE_DELAY_MS, persist)
+
+const saveState = computed<'idle' | 'saving' | 'saved' | 'error'>(() => {
+  if (saving.value) return 'saving'
+  if (saveError.value !== null) return 'error'
+  if (dirty.value) return 'saving'
+  return savedOnce.value ? 'saved' : 'idle'
+})
+
+// Leaving the page mid-debounce must still persist, or the last field the user touched is lost.
+onBeforeUnmount(() => {
+  void autosave.flush()
+})
 
 // ─── Tab mode ──────────────────────────────────────────────────────────── This one is an app
 // preference, not part of the server config: the tab set is client-side state, so it is
@@ -224,13 +235,13 @@ function onJsonInput() {
 }
 
 /** Fold the textarea into the in-memory config, then re-hydrate the sections. Written straight to
- * `config` rather than through `setConfig`: `setConfig` re-snapshots, which would mark this edit as
- * already-saved and hide the save bar. */
+ * `config` rather than through `setConfig`, which re-snapshots and would mark the edit saved. */
 function applyJson(): boolean {
   if (jsonProblem.value !== null) return false
   config.value = JSON.parse(jsonText.value) as PabrikConfig
   syncFromConfig()
   jsonApplied.value = true
+  autosave.schedule()
   return true
 }
 
@@ -354,15 +365,14 @@ function syncFromConfig() {
     notify_on_complete: c.notify_on_complete ?? false,
     notify_on_error: c.notify_on_error ?? false,
     // Treat `undefined` (missing key) and explicit 0 the same way so
-    // the dirty pill doesn't flash on first load when the field is
-    // absent from config.json.
+    // hydrating an absent field is not read as an edit.
     retry_delay_ms: c.retry_delay_ms ?? 0,
     // Plan 2026-09-10-web-launch-toggle: browser-mode flag, same
     // `?? false` hydration as the notify toggles.
     web_launch_enabled: c.web_launch_enabled ?? false,
     chat_view: c.chat_view === 'compact' ? 'compact' : 'dev',
   }
-  // Remember the persisted flag so handleSave can detect the OFF→ON
+  // Remember the persisted flag so the autosave can detect the OFF→ON
   // transition for the one-time browser auto-open.
   prevWebLaunch.value = generalSettings.value.web_launch_enabled
 
@@ -456,8 +466,8 @@ function syncToConfig() {
   config.value = {
     ...c,
     // Plan 2026-08-25-notify-on-error-and-retry-ms-in-settings: the three operational settings are
-    // driven by the General tab (`generalSettings`). Always write them through so toggling surfaces
-    // in the dirty pill + save bar.
+    // driven by the General tab (`generalSettings`). Always write them through so toggling one
+    // reaches the autosave as the edit it is.
     notify_on_complete: generalSettings.value.notify_on_complete,
     notify_on_error: generalSettings.value.notify_on_error,
     retry_delay_ms: generalSettings.value.retry_delay_ms,
@@ -497,6 +507,7 @@ function syncToConfig() {
     // written through and replaces the whole stored list.
     ...(toolsList.value !== null ? { tools: toolsList.value } : {}),
   }
+  autosave.schedule()
 }
 
 function agentsToRecord(list: AgentRow[]): Record<string, PabrikAgent> {
@@ -636,8 +647,8 @@ function uniqueAgentCopyName(name: string): string {
   return candidate
 }
 
-/** Duplicate an agent under a fresh key. The copy is a normal list entry, so
- * nothing reaches config.json until the Save bar is used. */
+/** Duplicate an agent under a fresh key. The copy is a normal list entry, so it
+ * reaches config.json through the autosave like every other edit. */
 function duplicateAgent(name: string) {
   const source = agentsList.value.find((a) => a.name === name)
   if (!source) return
@@ -645,7 +656,7 @@ function duplicateAgent(name: string) {
   agentsTouched.value = true
   agentsList.value = [...agentsList.value, { ...source, name: copyName }]
   syncToConfig()
-  emit('notification', `Copied "${name}" to "${copyName}" — save to keep it`, 'success')
+  emit('notification', `Copied "${name}" to "${copyName}"`, 'success')
 }
 
 function setAgentEnabled(name: string, enabled: boolean) {
@@ -776,8 +787,7 @@ function toggleMcpServer(name: string) {
 }
 
 // ToolsSection always emits the FULL explicit array — write it to
-// the section ref and re-serialize so the save bar sees the change
-// immediately.
+// the section ref and re-serialize so the autosave picks the change up.
 function handleToolsChange(list: string[]) {
   toolsList.value = list
   syncToConfig()
@@ -797,106 +807,89 @@ function addWebSearchRow() {
   syncToConfig()
 }
 
-// ─── Set active (instant — no dirty pill, immediate save) ───────────────
-const isSettingActive = ref(false)
+// ─── Set active (instant — the choice cannot wait out the debounce) ──────
 async function setActiveAgent(name: string) {
   activeAgent.value = name
   syncToConfig()
-  isSettingActive.value = true
-  try {
-    await savePabrikConfig({ ...config.value, active_profile: name } as PabrikConfig)
-    emit('notification', `Active agent set to "${name}"`, 'success')
-  } catch (err) {
-    emit(
-      'notification',
-      `Failed to set active: ${err instanceof Error ? err.message : String(err)}`,
-      'error',
-    )
-  } finally {
-    isSettingActive.value = false
-  }
+  if ((await persistNow()) !== null) return
+  emit('notification', `Active agent set to "${name}"`, 'success')
 }
 
-// Clear the active agent — same instant-save path as setActiveAgent, but writes
-// `active_profile: ""` (empty string) to config.json.
+// Clearing writes `active_profile: ""` — an ABSENT key means "no change" to the
+// backend, so omitting it would leave the old agent active.
 async function clearActiveAgent() {
   const previous = activeAgent.value
   activeAgent.value = null
+  if (config.value) config.value.active_profile = ''
   syncToConfig()
-  isSettingActive.value = true
-  try {
-    await savePabrikConfig({ ...config.value, active_profile: '' } as PabrikConfig)
+  if ((await persistNow()) === null) {
     emit('notification', `Active agent cleared — using top-level config`, 'success')
-  } catch (err) {
-    activeAgent.value = previous // optimistic-rollback on failure
-    syncToConfig()
-    emit(
-      'notification',
-      `Failed to clear active: ${err instanceof Error ? err.message : String(err)}`,
-      'error',
-    )
-  } finally {
-    isSettingActive.value = false
-  }
-}
-
-// ─── Save / Reset ────────────────────────────────────────────────────────
-async function handleSave() {
-  // In JSON mode the textarea can hold edits that were never applied, and
-  // saving without them would report success while quietly dropping what the
-  // user typed. Apply first, and refuse to save if the text is unusable.
-  if (mode.value === 'json' && jsonText.value.trim().length > 0 && !applyJson()) {
-    emit('notification', 'Fix the JSON before saving', 'error')
     return
   }
-  // Capture the OFF→ON transition BEFORE save (prevWebLaunch tracks the
-  // last persisted flag; generalSettings holds the pending edit).
-  const autoOpen = generalSettings.value.web_launch_enabled && !prevWebLaunch.value
+  activeAgent.value = previous
+  if (config.value) config.value.active_profile = previous ?? ''
+  syncToConfig()
+}
+
+// ─── Autosave ───────────────────────────────────────────────────────────
+/** Write the config now and report the outcome. Never rejects: a failure lands in `saveError`, so
+ * the status strip and the web-search rows can show it. */
+async function persist(): Promise<string | null> {
+  if (!config.value || !dirty.value) return null
+  saveError.value = null
   // Pre-flight the web search rows against the rules the backend enforces. A provider the backend
-  // would refuse would otherwise be written to disk and then silently dropped by the runtime's
-  // parser — the agent would report "no providers configured" while the user has one on screen.
+  // would refuse would otherwise reach disk and then be dropped by the runtime's parser.
   const rowErrors = validateWebSearchRows(webSearchRows.value)
   if (Object.keys(rowErrors).length > 0) {
     webSearchErrors.value = rowErrors
-    emit('notification', 'Fix the highlighted web search providers before saving', 'error')
-    return
+    saveError.value = 'fix the highlighted web search providers first'
+    return saveError.value
   }
-  try {
-    await save()
-    // A rename writes the NEW key and leaves the old one in the map (the PUT
-    // merges profiles), so the stale key has to go explicitly — only now, so
-    // an abandoned edit never loses a profile.
-    const liveNames = new Set(agentsList.value.map((a) => a.name))
-    for (const [current, onDisk] of Object.entries(agentRenameOrigins.value)) {
-      if (current === onDisk || liveNames.has(onDisk)) continue
-      await source.deleteAgent(onDisk)
-    }
-    agentRenameOrigins.value = {}
-    webSearchErrors.value = {}
-    prevWebLaunch.value = generalSettings.value.web_launch_enabled
-    useChatViewStore().setMode(generalSettings.value.chat_view)
-    await refreshWebStatus()
-    emit('notification', 'Settings saved', 'success')
-    // Plan 2026-09-10-web-launch-toggle: auto-open the browser once on the OFF→ON transition. Fired
-    // from the Save click (a user gesture) so popup-blockers let it through; the pill's Open button
-    // remains the reliable path if it is ever blocked.
-    if (autoOpen && webUrl.value) openWeb()
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    // Pin the message onto the row it names. The toast still fires — the
-    // user may be on another tab — but a provider the backend rejected
-    // must never reach the user as a generic "Save failed".
+  // Capture the OFF→ON transition BEFORE the PUT (prevWebLaunch is the last persisted flag).
+  const autoOpen = generalSettings.value.web_launch_enabled && !prevWebLaunch.value
+  const failure = await save().then(
+    () => null,
+    (error: unknown) => (error instanceof Error ? error.message : String(error)),
+  )
+  if (failure !== null) {
+    saveError.value = failure
     webSearchErrors.value = {
       ...webSearchErrors.value,
-      ...webSearchRowErrorsFromMessage(message, webSearchRows.value),
+      ...webSearchRowErrorsFromMessage(failure, webSearchRows.value),
     }
-    emit('notification', `Save failed: ${message}`, 'error')
+    emit('notification', `Save failed: ${failure}`, 'error')
+    return failure
   }
+  savedOnce.value = true
+  webSearchErrors.value = {}
+  prevWebLaunch.value = generalSettings.value.web_launch_enabled
+  useChatViewStore().setMode(generalSettings.value.chat_view)
+  await refreshWebStatus()
+  await removeRenamedAgentKeys()
+  if (autoOpen) openWeb()
+  return null
 }
 
-function handleReset() {
-  reset()
-  syncFromConfig()
+/** Run whatever the debounce is holding and report how it went. */
+async function persistNow(): Promise<string | null> {
+  await autosave.flush()
+  return saveError.value
+}
+
+/** A rename writes the NEW key and leaves the old one in the map (the PUT merges profiles), so the
+ * stale key has to go — only after a successful write, so an abandoned edit loses nothing. */
+async function removeRenamedAgentKeys(): Promise<void> {
+  const liveNames = new Set(agentsList.value.map((agent) => agent.name))
+  const stale = Object.entries(agentRenameOrigins.value)
+    .filter(([current, onDisk]) => current !== onDisk && !liveNames.has(onDisk))
+    .map(([, onDisk]) => onDisk)
+  agentRenameOrigins.value = {}
+  for (const onDisk of stale) {
+    await source.deleteAgent(onDisk).catch((error: unknown) => {
+      const reason = error instanceof Error ? error.message : String(error)
+      emit('notification', `Could not remove the old agent "${onDisk}": ${reason}`, 'error')
+    })
+  }
 }
 
 // ─── Web launch (browser mode) ────────────────────────────────────────── Plan
@@ -1057,20 +1050,11 @@ const isLoading = computed(() => !loaded.value)
         </button>
       </div>
 
-      <!-- Save bar (only when dirty). Pinned to the TOP of the pane, above
-           the scrollable content: the actions stay reachable no matter how
-           far down the section the user has scrolled, and the count of
-           unsaved changes is the first thing they see when they come back
-           to the page. It is a `shrink-0` flex item OUTSIDE the scrolling
-           region, so it does not scroll away with the content. -->
+      <!-- Autosave status, pinned to the TOP of the pane above the scrollable
+           content: it is a `shrink-0` flex item OUTSIDE the scrolling region,
+           so it does not scroll away with the section. -->
       <div class="shrink-0">
-        <PabrikSaveBar
-          :dirty="dirty"
-          :unsaved-count="unsavedCount"
-          :saving="saving"
-          @reset="handleReset"
-          @save="handleSave"
-        />
+        <PabrikSaveStatus :state="saveState" :message="saveError ?? ''" />
       </div>
 
       <!-- Raw JSON view. Shows the WHOLE config in memory - which in the
@@ -1132,7 +1116,7 @@ const isLoading = computed(() => !loaded.value)
             Apply
           </button>
           <span v-if="jsonApplied" class="text-dense" style="color: var(--semantic-text-muted)">
-            Applied — Save writes it.
+            Applied — saving automatically.
           </span>
         </div>
       </div>

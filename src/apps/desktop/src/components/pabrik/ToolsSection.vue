@@ -413,7 +413,7 @@ function selectNone() {
       endpoint — the checklist cannot contain names the backend does not know. Pills:
       <span style="color: var(--color-yellow)">main-agent only</span> never reach sub-agents;
       <span style="color: var(--color-violet)">mode floor</span> tools are always re-added in kanban
-      mode. Selection persists through the shared Settings save bar (<code
+      mode. Selection is written by the Settings autosave (<code
         style="font-family: var(--font-mono)"
         >PUT /api/config/pabrik</code
       >). Deep link: <code style="font-family: var(--font-mono)">/app/settings?section=tools</code>.

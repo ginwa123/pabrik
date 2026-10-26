@@ -11,6 +11,10 @@ import PabrikConfigEditor from '../components/pabrik/PabrikConfigEditor.vue'
 import { workspaceConfigSource } from '../helpers/configSource'
 import { makeLocalStorageStub } from './helpers'
 
+// The autosave window is a wall-clock wait in the app; mount it at 0 so a spec settles the PUT
+// with a microtask drain instead of sleeping.
+vi.mock('../composables/autosaveDelay', () => ({ AUTOSAVE_DELAY_MS: 0 }))
+
 vi.mock('../api', () => ({
   getPabrikConfig: vi.fn(),
   savePabrikConfig: vi.fn(),
@@ -39,6 +43,14 @@ async function makeRouter(query: Record<string, string> = {}) {
   await router.push({ path: '/app/settings', query })
   await router.isReady()
   return router
+}
+
+/** With a 0 ms autosave window the PUT starts inside the edit handler, so a few microtask turns
+ * settle it. */
+async function settleAutosave() {
+  await flushPromises()
+  await flushPromises()
+  await flushPromises()
 }
 
 function mountEditor(options: Parameters<typeof mount>[1] = {}) {
@@ -119,7 +131,7 @@ describe('PabrikConfigEditor — JSON mode', () => {
     expect((wrapper.find('[data-testid="config-json-apply"]').element as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it('applies valid JSON to the config, which marks it dirty and reaches the save body', async () => {
+  it('applies valid JSON to the config, which then saves itself', async () => {
     mockGet.mockResolvedValueOnce({ active_profile: 'work', tools: ['read_file'] })
     mockSave.mockResolvedValueOnce({ success: true })
     const wrapper = mountEditor()
@@ -132,21 +144,16 @@ describe('PabrikConfigEditor — JSON mode', () => {
     )
     await flushPromises()
     await wrapper.find('[data-testid="config-json-apply"]').trigger('click')
-    await flushPromises()
+    await settleAutosave()
 
-    // Applying is an EDIT, not a save: the bar must appear so the user can
-    // still choose to discard it. (A `setConfig` here would have re-snapshotted
-    // and hidden the bar - that is the trap this pins.)
-    expect(wrapper.find('[data-testid="save-btn"]').exists()).toBe(true)
-
-    await wrapper.find('[data-testid="save-btn"]').trigger('click')
-    await flushPromises()
+    // Applying is an EDIT, not a write of its own — it reaches the server through the autosave,
+    // which is what makes `setConfig` (re-snapshot = "already saved") the trap this pins.
     expect(mockSave).toHaveBeenCalledTimes(1)
     const body = mockSave.mock.calls[0]![0] as Record<string, unknown>
     expect(body.tools).toEqual(['read_file', 'bash'])
   })
 
-  it('refuses to SAVE with unapplied, invalid JSON on screen', async () => {
+  it('never writes text that was typed into the JSON box but never applied', async () => {
     mockGet.mockResolvedValueOnce({ active_profile: 'work' })
     const wrapper = mountEditor()
     await flushPromises()
@@ -155,22 +162,13 @@ describe('PabrikConfigEditor — JSON mode', () => {
 
     await wrapper.find('[data-testid="config-json-textarea"]').setValue('{ oops')
     await flushPromises()
+    await settleAutosave()
 
-    // Make the config dirty through the JSON path's Apply... which is blocked, so dirty must come
-    // from somewhere else to expose the trap: apply valid text, then break it again. The bar is up,
-    // the text is unusable, and a naive Save would report success while dropping the text.
-    await wrapper.find('[data-testid="config-json-textarea"]').setValue('{"active_profile":"work","tools":[]}')
-    await flushPromises()
-    await wrapper.find('[data-testid="config-json-apply"]').trigger('click')
-    await flushPromises()
-    await wrapper.find('[data-testid="config-json-textarea"]').setValue('{ oops')
-    await flushPromises()
-
-    await wrapper.find('[data-testid="save-btn"]').trigger('click')
-    await flushPromises()
-
+    // Nothing was applied, so nothing is pending and the unusable text never reaches the wire.
     expect(mockSave).not.toHaveBeenCalled()
-    expect(wrapper.emitted('notification')?.at(-1)).toEqual(['Fix the JSON before saving', 'error'])
+    expect(
+      (wrapper.find('[data-testid="config-json-apply"]').element as HTMLButtonElement).disabled,
+    ).toBe(true)
   })
 
   it('deep-links ?mode=json and writes the param on a mode switch', async () => {
@@ -268,8 +266,7 @@ describe('PabrikConfigEditor — workspace scope', () => {
     await wrapper.find('[data-testid="row-set_git_worktree"] input').setValue(true)
     await flushPromises()
 
-    await wrapper.find('[data-testid="save-btn"]').trigger('click')
-    await flushPromises()
+    await settleAutosave()
     expect(mockSaveWs).toHaveBeenCalledTimes(1)
     expect(mockSave).not.toHaveBeenCalled()
     expect(mockSaveWs.mock.calls[0]![0]).toBe('ws_1')

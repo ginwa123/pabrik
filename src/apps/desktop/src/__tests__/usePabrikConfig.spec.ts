@@ -1,6 +1,6 @@
-/**  * Unit tests for the `usePabrikConfig` composable. Mocks the `getPabrikConfig` and
+/** Unit tests for the `usePabrikConfig` composable. Mocks the `getPabrikConfig` and
  * `savePabrikConfig` API functions (NOT `global.fetch`) so we can assert the composable's load /
- * save / reset / dirty behavior in isolation. */
+ * save / dirty behavior in isolation. */
 import { nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -53,21 +53,6 @@ describe('usePabrikConfig', () => {
     expect(dirty.value).toBe(true)
   })
 
-  it('counts unsaved field changes in unsavedCount', async () => {
-    mockGet.mockResolvedValueOnce({
-      active_profile: 'work',
-      retry_delay_ms: 0,
-    })
-    const { config, unsavedCount, load } = usePabrikConfig()
-    await load()
-    if (config.value) {
-      config.value.active_profile = 'home' // 1 change
-      config.value.retry_delay_ms = 5000   // 2 changes
-    }
-    await nextTick()
-    expect(unsavedCount.value).toBeGreaterThanOrEqual(2)
-  })
-
   it('save() calls savePabrikConfig and clears dirty on success', async () => {
     mockGet.mockResolvedValueOnce({ active_profile: 'work' })
     mockSave.mockResolvedValueOnce({ success: true })
@@ -81,6 +66,28 @@ describe('usePabrikConfig', () => {
     expect(dirty.value).toBe(false)
   })
 
+  it('stays dirty when a field is edited while the save is in flight', async () => {
+    mockGet.mockResolvedValueOnce({ active_profile: 'work' })
+    let release: () => void = () => {}
+    mockSave.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        release = resolve
+      }),
+    )
+    const { config, dirty, load, save } = usePabrikConfig()
+    await load()
+    if (config.value) config.value.active_profile = 'home'
+    await nextTick()
+
+    const saving = save()
+    if (config.value) config.value.active_profile = 'away'
+    release()
+    await saving
+
+    expect(mockSave).toHaveBeenCalledWith(expect.objectContaining({ active_profile: 'home' }))
+    expect(dirty.value).toBe(true)
+  })
+
   it('save() throws and keeps dirty=true on API failure', async () => {
     mockGet.mockResolvedValueOnce({ active_profile: 'work' })
     mockSave.mockRejectedValueOnce(new Error('HTTP 500'))
@@ -90,17 +97,5 @@ describe('usePabrikConfig', () => {
     await nextTick()
     await expect(save()).rejects.toThrow('HTTP 500')
     expect(dirty.value).toBe(true)
-  })
-
-  it('reset() restores the snapshot and clears dirty', async () => {
-    mockGet.mockResolvedValueOnce({ active_profile: 'work' })
-    const { config, dirty, load, reset } = usePabrikConfig()
-    await load()
-    if (config.value) config.value.active_profile = 'home'
-    await nextTick()
-    expect(dirty.value).toBe(true)
-    reset()
-    expect(config.value?.active_profile).toBe('work')
-    expect(dirty.value).toBe(false)
   })
 })

@@ -201,7 +201,7 @@
       "count": 2
     },
     "local/no-try-catch": {
-      "count": 13
+      "count": 10
     }
   },
   "src/components/preview/BackgroundCommandsPopup.vue": {
@@ -598,7 +598,7 @@
       "count": 1
     },
     "local/no-try-catch": {
-      "count": 3
+      "count": 2
     }
   },
   "src/composables/useAgentDelete.ts": {
