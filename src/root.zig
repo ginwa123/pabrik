@@ -117,6 +117,7 @@ pub const document_events = @import("agentic_loop/document_events.zig");
 pub const skill_evals_drift = @import("agentic_loop/skill_evals_drift.zig");
 pub const add_skill = skill_tools;
 pub const edit_skill = skill_tools;
+pub const set_skill_metadata = skill_tools;
 pub const set_git_worktree = @import("modules/agent/tools/set_git_worktree.zig");
 pub const set_pull_request = @import("modules/agent/tools/set_pull_request.zig");
 pub const status_pull_request = @import("modules/agent/tools/status_pull_request.zig");

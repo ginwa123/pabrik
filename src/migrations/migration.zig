@@ -130,6 +130,7 @@ const migration_116 = @import("migration_116.zig");
 const migration_117 = @import("migration_117.zig");
 const migration_118 = @import("migration_118.zig");
 const migration_119 = @import("migration_119.zig");
+const migration_120 = @import("migration_120.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -251,6 +252,7 @@ pub const Migration116UnifyAgentConfigTables = migration_116.Migration116UnifyAg
 pub const Migration117DropLegacyAgentConfigTables = migration_117.Migration117DropLegacyAgentConfigTables;
 pub const Migration118AddWorkerRunToken = migration_118.Migration118AddWorkerRunToken;
 pub const Migration119CreateSkillMetadata = migration_119.Migration119CreateSkillMetadata;
+pub const Migration120GrantSetSkillMetadata = migration_120.Migration120GrantSetSkillMetadata;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -477,6 +479,10 @@ pub const allMigrations: []const Migration = &.{
     // Migration 119 — `skill_metadata`: the SKILL.md frontmatter keys with
     // no dedicated column become rows, derived from `skills.content`.
     .{ .version = Migration119CreateSkillMetadata.version, .name = Migration119CreateSkillMetadata.name, .up = Migration119CreateSkillMetadata.up },
+    // Migration 120 — grant `set_skill_metadata` to every config that already
+    // has `edit_skill`. A new tool NAME does not reach an existing agent: its
+    // allowlist rows are already seeded, so only a migration can add one.
+    .{ .version = Migration120GrantSetSkillMetadata.version, .name = Migration120GrantSetSkillMetadata.name, .up = Migration120GrantSetSkillMetadata.up },
 };
 
 /// Register all migrations with a MigrationManager

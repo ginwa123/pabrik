@@ -5,14 +5,9 @@ const frontmatter = @import("../agentic_loop/skill_frontmatter.zig");
 const Backend = common.Backend;
 const helpers = @import("helpers");
 
-/// Migration 119 — `skill_metadata`: one row per key of a skill's `---`
-/// frontmatter, so metadata is a table instead of a block every reader
-/// re-scans out of `skills.content`.
-///
-/// The three keys that already have a column on `skills` (`name`,
-/// `description`, `is_can_auto_improve`) are NOT mirrored here. Two homes
-/// for one fact drift; the column is the indexed one and it is part of the
-/// natural key, so it wins.
+/// Migration 119 — `skill_metadata`: one row per non-column frontmatter key,
+/// so metadata is a table instead of a block every reader re-scans out of
+/// `skills.content`. Promoted keys stay columns: one fact, one home.
 pub const Migration119CreateSkillMetadata = struct {
     pub const version: u32 = 119;
     pub const name = "create_skill_metadata";
@@ -38,10 +33,9 @@ pub const Migration119CreateSkillMetadata = struct {
         try backfill(db, allocator);
     }
 
-    /// Every skill already stored keeps its frontmatter inside `content`, so
-    /// adding the table late loses nothing: parse each body once and insert
-    /// the keys it carries. A body with no fence, or with nothing but the
-    /// promoted keys, inserts no row — that is a legal skill, not an error.
+    /// Stored skills keep their frontmatter inside `content`, so adding the
+    /// table late loses nothing. A body with no fence inserts no row: that is
+    /// a legal skill, not an error.
     fn backfill(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         var q = try db.query(allocator, "SELECT id, COALESCE(content, '') FROM skills", &[_][]const u8{});
         defer q.deinit();

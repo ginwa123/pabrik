@@ -19,11 +19,9 @@ pub const SkillDetailInput = struct {
     skill_name: []const u8,
 };
 
-/// The row as it goes on the wire. `asset_count` rather than the asset list:
-/// the dialog shows "11 companion files", and shipping every companion body
-/// to render that number would put the whole bundle in the response payload.
-/// `metadata` is the frontmatter the `skills` columns do not carry, and it is
-/// read from `skill_metadata` rather than re-parsed out of `content`.
+/// The row as it goes on the wire. `asset_count`, not the asset list: the
+/// dialog shows "11 companion files" and shipping every body to render that
+/// number would put the bundle in the payload. `metadata` comes from the table.
 pub const SkillDetailRow = struct {
     name: []const u8,
     description: []const u8,

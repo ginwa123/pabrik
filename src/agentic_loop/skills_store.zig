@@ -1,13 +1,6 @@
-//! Workspace-scoped skill storage (Migration 101 + 119): `skills`,
-//! `skill_assets` and `skill_metadata`, shared by the HTTP handlers and the
-//! agent tools. ONE rule: `workspace_id` is a parameter in every `WHERE`, so
-//! isolation is SQL-side.
-//!
-//! `skill_metadata` is a PROJECTION of the `---` frontmatter inside
-//! `skills.content`, not a second place to author it: every write that
-//! touches `content` re-derives it in the same transaction (`projectMetadata`).
-//! The three keys that have a column (`name`, `description`,
-//! `is_can_auto_improve`) are never mirrored into the table.
+//! Workspace-scoped skill storage (Migrations 101 + 119), and ONE rule:
+//! `workspace_id` is a parameter in every `WHERE`, so isolation is SQL-side.
+//! `skill_metadata` projects the fence in `content`; it is never authored.
 
 const std = @import("std");
 const sqlite = @import("pabrikcore").sqlite;

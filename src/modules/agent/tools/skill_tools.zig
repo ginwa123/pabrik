@@ -1,5 +1,5 @@
 //! Skill agent tools: `search_skills` + `use_skill` + `remove_skill` +
-//! `add_skill` + `edit_skill`.
+//! `add_skill` + `edit_skill` + `set_skill_metadata`.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -81,6 +81,14 @@ pub fn toolErrorJSON(
             .skill_name = clean_name,
             .name = clean_name,
             .created = false,
+            .@"error" = clean_err,
+        }, .{});
+    }
+    if (std.mem.eql(u8, tool_name, "set_skill_metadata")) {
+        return try std.json.Stringify.valueAlloc(allocator, SkillMetadataOutput{
+            .skill_name = clean_name,
+            .updated = false,
+            .metadata = &.{},
             .@"error" = clean_err,
         }, .{});
     }
@@ -334,10 +342,9 @@ pub fn execute_use_skill_to_string(
     }, .{});
 }
 
-/// A skill's stored metadata, projected onto the wire shape. Owned; free
-/// with `freeMetadataJSON`. A store failure yields an empty list rather
-/// than an error: the body the caller already has IS the instruction set,
-/// and the metadata is an extra, not the point of the call.
+/// A skill's stored metadata on the wire shape. Owned; free with
+/// `freeMetadataJSON`. A store failure yields an empty list, not an error:
+/// the body the caller already has IS the instruction set.
 fn loadMetadataJSON(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -724,9 +731,8 @@ pub fn executeAddSkillToString(
 }
 
 /// Build skill content with the generated `---` block, plus whatever
-/// metadata `pairs` carries. A model that pastes `tags:`/`origin:` into
-/// `content` keeps them: they become `skill_metadata` rows when the store
-/// projects this body.
+/// metadata `pairs` carries: a model that pastes `tags:`/`origin:` into
+/// `content` keeps them, and the store projects them into rows.
 pub fn buildSkillContent(
     allocator: std.mem.Allocator,
     input: AddSkillInput,
@@ -884,9 +890,8 @@ pub fn executeEditSkillToString(
     const new_description = firstNonEmpty(&.{ input.description, lifted_description }) orelse existing.description;
 
     // The STORED body still carries its own fence, so a new body with no
-    // frontmatter can rebuild the block from it. Rendering name+description
-    // alone is what used to delete `origin`, `tags` and `license` on every
-    // body-only edit.
+    // frontmatter can rebuild the block from it; rendering name+description
+    // alone is what used to delete `origin`/`tags`/`license`.
     var stored = try frontmatter.parse(allocator, existing.content);
     defer stored.deinit(allocator);
 
@@ -926,6 +931,329 @@ pub fn executeEditSkillToString(
         .edited = true,
         .@"error" = null,
     }, .{});
+}
+
+
+// ─── set_skill_metadata ───
+
+/// One key to write. `value` is stored verbatim, in the body's fence; an
+/// empty value is a key with no value, which is legal in YAML.
+pub const SkillMetadataEntry = struct {
+    key: []const u8 = "",
+    value: []const u8 = "",
+};
+
+/// Input for `set_skill_metadata`. Both lists default to empty, so a call
+/// that omits one still parses and is answered by name instead of
+/// `error.MissingField`.
+pub const SetSkillMetadataInput = struct {
+    /// Skill identifier (required). The exact name `search_skills` reported.
+    skill_name: []const u8 = "",
+    /// Keys to set or overwrite. Applied on top of what is already stored.
+    metadata: []const SkillMetadataEntry = &.{},
+    /// Keys to drop. A key the skill does not have is a no-op.
+    remove: []const []const u8 = &.{},
+};
+
+pub const set_skill_metadata_tool_system_prompt =
+    \\## Set Skill Metadata Tool — Behavior
+    \\Use `set_skill_metadata` to change a skill's frontmatter keys — `tags`, `license`, `origin`, `allowed-tools`, anything beyond its name and description.
+    \\- `metadata` sets or overwrites keys; `remove` drops them. Send at least one; both may be sent in one call.
+    \\- It MERGES: a key you do not mention keeps the value it already has. You never restate the ones you are not changing.
+    \\- It never touches the instruction body — the stored markdown stays byte-identical, so this is the call for a one-key edit. `edit_skill` replaces the body and is for prose.
+    \\- `name` and `description` are not metadata: rename nothing, and change the description with `edit_skill`.
+    \\- `is_can_auto_improve` is not metadata either — the human owns that lock. Ask them to toggle it in the workspace's Skills settings.
+    \\- A skill with auto-improve off is LOCKED: this call is refused and nothing is written. Do not retry it.
+    \\- The result returns the skill's metadata AFTER the write, so you can verify without a second call.
+    \\
+;
+
+pub const set_skill_metadata_tool = AgentTool{
+    .type = "function",
+    .function = .{
+        .name = "set_skill_metadata",
+        .description =
+        \\Change a skill's metadata keys WITHOUT touching its body: `metadata` sets or overwrites keys (`tags`, `license`, `origin`, …), `remove` drops them.
+        \\
+        \\- Use this instead of `edit_skill` to change one key — `edit_skill` rewrites the whole fence AND the body, so a metadata-only edit there risks the instructions.
+        \\
+        \\- `name` and `description` are not metadata (use `edit_skill`), and the auto-improve lock belongs to the human. A locked skill refuses this call.
+        ,
+        .parameters = .{
+            .type = "object",
+            .properties = &.{
+                .{
+                    .name = "skill_name",
+                    .type = "string",
+                    .description = "The skill's name, exactly as `search_skills` reported it (e.g. 'my-workflow').",
+                },
+                .{
+                    .name = "metadata",
+                    .type = "array",
+                    .description = "Keys to set, as `{key,value}` objects: `[{\"key\":\"license\",\"value\":\"MIT\"}]`. Merged onto the stored keys — unmentioned keys keep their value. Omit to only remove.",
+                },
+                .{
+                    .name = "remove",
+                    .type = "array",
+                    .description = "Keys to drop, as plain strings: `[\"origin\"]`. A key that is not stored is a no-op. Omit to only set.",
+                },
+            },
+            .required = &.{"skill_name"},
+        },
+        .system_prompt = set_skill_metadata_tool_system_prompt,
+    },
+};
+
+/// Actionable `set_skill_metadata` failures. Exposed for tests.
+pub const SET_SKILL_METADATA_MISSING_NAME =
+    "set_skill_metadata: `skill_name` is required. Send the exact skill name `search_skills` reported (e.g. \"my-workflow\"). Run `search_skills` if you are unsure the skill exists.";
+pub const SET_SKILL_METADATA_BAD_NAME =
+    "set_skill_metadata: `skill_name` must be a single name — letters, digits, dots, dashes, underscores; no slashes, spaces, or leading/trailing dot. It is the skill's primary key, not a path. Got: '";
+pub const SET_SKILL_METADATA_NOTHING_TO_CHANGE =
+    "set_skill_metadata: nothing to change — send `metadata` (keys to set), `remove` (keys to drop), or both. Setting a value the skill already holds is not an edit, and removing a key it does not have does nothing.";
+pub const SET_SKILL_METADATA_NOT_FOUND =
+    "set_skill_metadata: no skill named '";
+/// `name`, `description` and `is_can_auto_improve` are columns, not rows.
+/// Naming the right tool for each is the whole point of the refusal.
+pub const SET_SKILL_METADATA_PROMOTED =
+    "set_skill_metadata: '";
+pub const SET_SKILL_METADATA_BAD_KEY =
+    "set_skill_metadata: '";
+pub const SET_SKILL_METADATA_DUPLICATE =
+    "set_skill_metadata: '";
+
+/// JSON payload for `set_skill_metadata` results. `metadata` is the skill's
+/// metadata AFTER the write — the model verifies in the same turn instead of
+/// spending a `use_skill` on it.
+pub const SkillMetadataOutput = struct {
+    skill_name: []const u8 = "",
+    updated: bool = false,
+    metadata: []const SkillMetadataJSON = &.{},
+    @"error": ?[]const u8 = null,
+};
+
+fn metadataKeyIsAllowed(
+    allocator: std.mem.Allocator,
+    tool_name: []const u8,
+    skill_name: []const u8,
+    key: []const u8,
+) !?[]const u8 {
+    if (frontmatter.isPromoted(key)) {
+        const msg = try std.fmt.allocPrint(
+            allocator,
+            "{s}{s}' is not metadata — `name`, `description` and `is_can_auto_improve` are columns on the skill row. Change `description` with `edit_skill`; the auto-improve lock belongs to the human, who toggles it in the workspace's Skills settings. Nothing was written.",
+            .{ SET_SKILL_METADATA_PROMOTED, key },
+        );
+        defer allocator.free(msg);
+        return try toolErrorJSON(allocator, tool_name, skill_name, msg);
+    }
+    if (!frontmatter.isValidKey(key)) {
+        const msg = try std.fmt.allocPrint(
+            allocator,
+            "{s}{s}' is not a legal metadata key — one token of letters, digits, dot, dash or underscore, no spaces and no colon. Example: 'tags'. Nothing was written.",
+            .{ SET_SKILL_METADATA_BAD_KEY, key },
+        );
+        defer allocator.free(msg);
+        return try toolErrorJSON(allocator, tool_name, skill_name, msg);
+    }
+    return null;
+}
+
+fn pairIndex(pairs: []const frontmatter.Pair, key: []const u8) ?usize {
+    for (pairs, 0..) |pair, i| {
+        if (std.mem.eql(u8, pair.key, key)) return i;
+    }
+    return null;
+}
+
+/// True when both sets hold the same keys with the same values. Order-free:
+/// the merged list keeps the stored order and appends new keys, so a
+/// positional comparison would call a pure re-send a change.
+fn samePairSet(a: []const frontmatter.Pair, b: []const frontmatter.Pair) bool {
+    if (a.len != b.len) return false;
+    for (b) |pair| {
+        const i = pairIndex(a, pair.key) orelse return false;
+        if (!std.mem.eql(u8, a[i].value, pair.value)) return false;
+    }
+    return true;
+}
+
+/// Execute `set_skill_metadata`. Returns an inner JSON string the exec
+/// wrapper embeds. Caller owns the returned memory and must free it.
+pub fn executeSetSkillMetadataToString(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    caller_session_id: []const u8,
+    input: SetSkillMetadataInput,
+) ![]const u8 {
+    const name = std.mem.trim(u8, input.skill_name, " \t\n\r");
+    if (name.len == 0) {
+        return try toolErrorJSON(allocator, "set_skill_metadata", "", SET_SKILL_METADATA_MISSING_NAME);
+    }
+    if (!skills_store.isValidSkillName(name)) {
+        const msg = try std.fmt.allocPrint(allocator, "{s}{s}'", .{ SET_SKILL_METADATA_BAD_NAME, name });
+        defer allocator.free(msg);
+        return try toolErrorJSON(allocator, "set_skill_metadata", name, msg);
+    }
+    if (input.metadata.len == 0 and input.remove.len == 0) {
+        return try toolErrorJSON(allocator, "set_skill_metadata", name, SET_SKILL_METADATA_NOTHING_TO_CHANGE);
+    }
+
+    // Every key is checked BEFORE the row is read: a refusal must not depend
+    // on what happens to be stored.
+    for (input.metadata, 0..) |entry, i| {
+        if (try metadataKeyIsAllowed(allocator, "set_skill_metadata", name, entry.key)) |refusal| return refusal;
+        for (input.metadata[0..i]) |earlier| {
+            if (!std.mem.eql(u8, earlier.key, entry.key)) continue;
+            const msg = try std.fmt.allocPrint(
+                allocator,
+                "{s}{s}' appears twice in `metadata`. Send each key once — the second value would silently win. Nothing was written.",
+                .{ SET_SKILL_METADATA_DUPLICATE, entry.key },
+            );
+            defer allocator.free(msg);
+            return try toolErrorJSON(allocator, "set_skill_metadata", name, msg);
+        }
+    }
+    for (input.remove) |key| {
+        if (try metadataKeyIsAllowed(allocator, "set_skill_metadata", name, key)) |refusal| return refusal;
+    }
+
+    const workspace_id = (try resolveWorkspaceScope(allocator, db, caller_session_id)) orelse
+        return try scopeErrorJSON(allocator, "set_skill_metadata", caller_session_id);
+    defer allocator.free(workspace_id);
+
+    const existing = skills_store.getSkillByName(allocator, db, workspace_id, name) catch |err| switch (err) {
+        error.NotFound => {
+            const msg = try std.fmt.allocPrint(allocator, "{s}{s}' exists in this workspace. Run search_skills to list the installed names.", .{ SET_SKILL_METADATA_NOT_FOUND, name });
+            defer allocator.free(msg);
+            return try toolErrorJSON(allocator, "set_skill_metadata", name, msg);
+        },
+        error.QueryFailed => return try toolErrorJSON(allocator, "set_skill_metadata", name, "Could not read this workspace's skills (database error)."),
+        error.OutOfMemory => return error.OutOfMemory,
+        error.WorkspaceIdNameRequired => return try toolErrorJSON(allocator, "set_skill_metadata", name, SET_SKILL_METADATA_BAD_NAME),
+    };
+    defer skills_store.freeSkillRow(allocator, existing);
+
+    if (!existing.is_can_auto_improve) {
+        return try lockedSkillJSON(allocator, "set_skill_metadata", name);
+    }
+
+    // The stored body is the source of truth, so the merge starts from the
+    // pairs it parses to — not from the table, which is only a projection of
+    // them. `stored.body` goes back out byte-identical.
+    var stored = try frontmatter.parse(allocator, existing.content);
+    defer stored.deinit(allocator);
+
+    var merged: std.ArrayList(frontmatter.Pair) = .empty;
+    defer merged.deinit(allocator);
+    // The strings this call allocates; the rest are borrowed from `stored`,
+    // which `stored.deinit` frees on its own.
+    var owned: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (owned.items) |slice| allocator.free(slice);
+        owned.deinit(allocator);
+    }
+
+    for (stored.pairs) |pair| {
+        var removed = false;
+        for (input.remove) |key| {
+            if (std.mem.eql(u8, key, pair.key)) {
+                removed = true;
+                break;
+            }
+        }
+        if (removed) continue;
+        try merged.append(allocator, pair);
+    }
+
+    for (input.metadata) |entry| {
+        const value = try allocator.dupe(u8, entry.value);
+        try owned.append(allocator, value);
+        if (pairIndex(merged.items, entry.key)) |i| {
+            merged.items[i].value = value;
+            continue;
+        }
+        const key = try allocator.dupe(u8, entry.key);
+        try owned.append(allocator, key);
+        try merged.append(allocator, .{ .key = key, .value = value });
+    }
+
+    if (samePairSet(stored.pairs, merged.items)) {
+        return try toolErrorJSON(allocator, "set_skill_metadata", name, SET_SKILL_METADATA_NOTHING_TO_CHANGE);
+    }
+
+    const rebuilt = try frontmatter.render(allocator, .{
+        .name = existing.name,
+        .description = existing.description,
+    }, merged.items, stored.body);
+    defer allocator.free(rebuilt);
+
+    // Body unchanged, fence rewritten: `updateSkill` re-projects the
+    // metadata from `rebuilt` in the same transaction.
+    const updated = skills_store.updateSkill(allocator, db, workspace_id, name, .{ .content = rebuilt }) catch |err| switch (err) {
+        error.NotFound => {
+            const msg = try std.fmt.allocPrint(allocator, "{s}{s}' exists in this workspace. Run search_skills to list the installed names.", .{ SET_SKILL_METADATA_NOT_FOUND, name });
+            defer allocator.free(msg);
+            return try toolErrorJSON(allocator, "set_skill_metadata", name, msg);
+        },
+        error.NothingToChange => return try toolErrorJSON(allocator, "set_skill_metadata", name, SET_SKILL_METADATA_NOTHING_TO_CHANGE),
+        error.WorkspaceIdNameRequired => return try toolErrorJSON(allocator, "set_skill_metadata", name, SET_SKILL_METADATA_BAD_NAME),
+        error.ContentTooLarge => return try toolErrorJSON(allocator, "set_skill_metadata", name, "set_skill_metadata: the rewritten body would exceed the 2 MiB per-skill cap."),
+        error.UpdateFailed => return try toolErrorJSON(allocator, "set_skill_metadata", name, "set_skill_metadata: the skill could not be written (database error)."),
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    defer skills_store.freeSkillRow(allocator, updated);
+
+    const metadata = try loadMetadataJSON(allocator, db, workspace_id, name);
+    defer freeMetadataJSON(allocator, metadata);
+
+    const clean_name = try helpers.sanitize_control_chars(allocator, name);
+    defer allocator.free(clean_name);
+    return try std.json.Stringify.valueAlloc(allocator, SkillMetadataOutput{
+        .skill_name = clean_name,
+        .updated = true,
+        .metadata = metadata,
+        .@"error" = null,
+    }, .{});
+}
+
+pub fn execSetSkillMetadata(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
+    const parsed = std.json.parseFromSlice(
+        SetSkillMetadataInput,
+        ctx.allocator,
+        tc.function.arguments,
+        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
+    ) catch |err| {
+        const err_msg = try describeParseFailure(ctx.allocator, tc.function.arguments, err, "set_skill_metadata failed to parse its arguments");
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "set_skill_metadata", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer parsed.deinit();
+
+    const inner = executeSetSkillMetadataToString(
+        ctx.allocator,
+        ctx.db,
+        ctx.session_id,
+        parsed.value,
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "set_skill_metadata", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer ctx.allocator.free(inner);
+
+    if (std.json.parseFromSlice(SkillMetadataOutput, ctx.allocator, inner, .{ .allocate = .alloc_always, .ignore_unknown_fields = true })) |parsed_inner| {
+        defer parsed_inner.deinit();
+        if (parsed_inner.value.@"error") |err_msg| {
+            const output = try wrapToolOutput(ctx.allocator, "set_skill_metadata", tc.function.arguments, false, err_msg, inner);
+            return ToolExecResult{ .output = output, .output_allocated = true };
+        }
+    } else |_| {}
+
+    const output = try wrapToolOutput(ctx.allocator, "set_skill_metadata", tc.function.arguments, true, null, inner);
+    return ToolExecResult{ .output = output, .output_allocated = true };
 }
 
 // ============================================================================
@@ -2731,10 +3059,9 @@ test "add_skill keeps the metadata a pasted frontmatter carries" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Models are taught the skill format as a `---` block, so they paste one.
-    // `name`/`description` are lifted out of it; the rest must survive as
-    // `skill_metadata` rows instead of being thrown away by the regenerated
-    // fence.
+    // Models are taught the format as a `---` block, so they paste one:
+    // `name`/`description` are lifted, and the rest must survive as rows
+    // instead of being thrown away by the regenerated fence.
     const added = try executeAddSkillToString(alloc, &ctx.db, "s1", .{
         .name = "tagged",
         .description = "One sentence.",
@@ -2840,4 +3167,230 @@ test "use_skill reports an empty metadata list for a skill that has none" {
 
     try testing.expect(used_out.value.loaded);
     try testing.expectEqual(@as(usize, 0), used_out.value.metadata.len);
+}
+
+// ─── set_skill_metadata through the tool boundary ───
+
+test "set_skill_metadata sets one key, merges with the stored ones, and leaves the body byte-identical" {
+    const alloc = testing.allocator;
+    var ctx = try setupSkillsDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const body = "## When to Use\n\nRun `scripts/convert.py`.\n";
+    const seeded = try std.fmt.allocPrint(
+        alloc,
+        "---\nname: tagged\ndescription: \"One sentence.\"\ntags: [workflow]\n---\n{s}",
+        .{body},
+    );
+    defer alloc.free(seeded);
+    try seedSkill(alloc, &ctx.db, "ws_1", "tagged", "One sentence.", seeded);
+
+    const out = try executeSetSkillMetadataToString(alloc, &ctx.db, "s1", .{
+        .skill_name = "tagged",
+        .metadata = &.{.{ .key = "license", .value = "MIT" }},
+    });
+    defer alloc.free(out);
+    var parsed = try parseJson(SkillMetadataOutput, alloc, out);
+    defer parsed.deinit();
+
+    try testing.expect(parsed.value.updated);
+    // `tags` was not mentioned and survives: the tool merges, it does not
+    // replace the set.
+    try testing.expectEqual(@as(usize, 2), parsed.value.metadata.len);
+    try testing.expectEqualStrings("license", parsed.value.metadata[0].key);
+    try testing.expectEqualStrings("MIT", parsed.value.metadata[0].value);
+    try testing.expectEqualStrings("tags", parsed.value.metadata[1].key);
+
+    const row = try skills_store.getSkillByName(alloc, &ctx.db, "ws_1", "tagged");
+    defer skills_store.freeSkillRow(alloc, row);
+    // The whole point of a separate tool: the instruction body is untouched.
+    try testing.expect(std.mem.endsWith(u8, row.content, body));
+    try testing.expectEqualStrings("One sentence.", row.description);
+}
+
+test "set_skill_metadata with remove drops exactly that key and keeps the rest" {
+    const alloc = testing.allocator;
+    var ctx = try setupSkillsDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try seedSkill(alloc, &ctx.db, "ws_1", "tagged", "One sentence.", "---\nname: tagged\ndescription: \"One sentence.\"\ntags: [workflow]\nlicense: MIT\n---\nBody.\n");
+
+    const out = try executeSetSkillMetadataToString(alloc, &ctx.db, "s1", .{
+        .skill_name = "tagged",
+        .remove = &.{"license"},
+    });
+    defer alloc.free(out);
+    var parsed = try parseJson(SkillMetadataOutput, alloc, out);
+    defer parsed.deinit();
+
+    try testing.expect(parsed.value.updated);
+    try testing.expectEqual(@as(usize, 1), parsed.value.metadata.len);
+    try testing.expectEqualStrings("tags", parsed.value.metadata[0].key);
+
+    const row = try skills_store.getSkillByName(alloc, &ctx.db, "ws_1", "tagged");
+    defer skills_store.freeSkillRow(alloc, row);
+    try testing.expect(std.mem.indexOf(u8, row.content, "license") == null);
+    try testing.expect(std.mem.endsWith(u8, row.content, "Body.\n"));
+}
+
+test "set_skill_metadata adds a fence to a body that never had one, keeping every byte of it" {
+    const alloc = testing.allocator;
+    var ctx = try setupSkillsDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const body = "## Body\n\nProse written through the HTTP route.\n";
+    try seedSkill(alloc, &ctx.db, "ws_1", "bare", "One sentence.", body);
+
+    const out = try executeSetSkillMetadataToString(alloc, &ctx.db, "s1", .{
+        .skill_name = "bare",
+        .metadata = &.{.{ .key = "origin", .value = "ECC" }},
+    });
+    defer alloc.free(out);
+    var parsed = try parseJson(SkillMetadataOutput, alloc, out);
+    defer parsed.deinit();
+    try testing.expect(parsed.value.updated);
+
+    const row = try skills_store.getSkillByName(alloc, &ctx.db, "ws_1", "bare");
+    defer skills_store.freeSkillRow(alloc, row);
+    try testing.expect(std.mem.startsWith(u8, row.content, "---\nname: bare"));
+    try testing.expect(std.mem.endsWith(u8, row.content, body));
+}
+
+test "set_skill_metadata refuses a column key and names the tool that owns it" {
+    const alloc = testing.allocator;
+    var ctx = try setupSkillsDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try seedSkill(alloc, &ctx.db, "ws_1", "tagged", "One sentence.", "---\nname: tagged\ndescription: \"One sentence.\"\n---\nBody.\n");
+
+    const out = try executeSetSkillMetadataToString(alloc, &ctx.db, "s1", .{
+        .skill_name = "tagged",
+        .metadata = &.{.{ .key = "description", .value = "Rewritten by metadata" }},
+    });
+    defer alloc.free(out);
+    var parsed = try parseJson(SkillMetadataOutput, alloc, out);
+    defer parsed.deinit();
+
+    try testing.expect(!parsed.value.updated);
+    const err = parsed.value.@"error" orelse return error.ExpectedRefusal;
+    // The guidance the refusal exists for: say which tool does own the field.
+    try testing.expect(std.mem.indexOf(u8, err, "edit_skill") != null);
+    try testing.expect(std.mem.indexOf(u8, err, "is_can_auto_improve") != null);
+
+    // Nothing was written.
+    const row = try skills_store.getSkillByName(alloc, &ctx.db, "ws_1", "tagged");
+    defer skills_store.freeSkillRow(alloc, row);
+    try testing.expectEqualStrings("One sentence.", row.description);
+}
+
+test "set_skill_metadata refuses the same key twice instead of letting the last one win" {
+    const alloc = testing.allocator;
+    var ctx = try setupSkillsDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try seedSkill(alloc, &ctx.db, "ws_1", "tagged", "One sentence.", "---\nname: tagged\ndescription: \"One sentence.\"\n---\nBody.\n");
+
+    const out = try executeSetSkillMetadataToString(alloc, &ctx.db, "s1", .{
+        .skill_name = "tagged",
+        .metadata = &.{
+            .{ .key = "tags", .value = "[a]" },
+            .{ .key = "tags", .value = "[b]" },
+        },
+    });
+    defer alloc.free(out);
+    var parsed = try parseJson(SkillMetadataOutput, alloc, out);
+    defer parsed.deinit();
+
+    try testing.expect(!parsed.value.updated);
+    const err = parsed.value.@"error" orelse return error.ExpectedRefusal;
+    try testing.expect(std.mem.indexOf(u8, err, "twice") != null);
+}
+
+test "set_skill_metadata reports NothingToChange when the value is already stored" {
+    const alloc = testing.allocator;
+    var ctx = try setupSkillsDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try seedSkill(alloc, &ctx.db, "ws_1", "tagged", "One sentence.", "---\nname: tagged\ndescription: \"One sentence.\"\nlicense: MIT\n---\nBody.\n");
+
+    const out = try executeSetSkillMetadataToString(alloc, &ctx.db, "s1", .{
+        .skill_name = "tagged",
+        .metadata = &.{.{ .key = "license", .value = "MIT" }},
+    });
+    defer alloc.free(out);
+    var parsed = try parseJson(SkillMetadataOutput, alloc, out);
+    defer parsed.deinit();
+
+    // A silent success would teach the model that a no-op edit is an edit.
+    try testing.expect(!parsed.value.updated);
+    try testing.expectEqualStrings(SET_SKILL_METADATA_NOTHING_TO_CHANGE, parsed.value.@"error" orelse "");
+}
+
+test "set_skill_metadata refuses a LOCKED skill and writes nothing" {
+    const alloc = testing.allocator;
+    var ctx = try setupSkillsDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const pinned = try skills_store.upsertSkill(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .name = "pinned",
+        .description = "One sentence.",
+        .content = "---\nname: pinned\ndescription: \"One sentence.\"\n---\nBody.\n",
+        .is_can_auto_improve = false,
+    });
+    defer skills_store.freeSkillRow(alloc, pinned);
+
+    const out = try executeSetSkillMetadataToString(alloc, &ctx.db, "s1", .{
+        .skill_name = "pinned",
+        .metadata = &.{.{ .key = "license", .value = "MIT" }},
+    });
+    defer alloc.free(out);
+    var parsed = try parseJson(SkillMetadataOutput, alloc, out);
+    defer parsed.deinit();
+
+    try testing.expect(!parsed.value.updated);
+    const err = parsed.value.@"error" orelse return error.ExpectedRefusal;
+    try testing.expect(std.mem.indexOf(u8, err, "locked") != null);
+
+    const rows = try skills_store.listMetadata(alloc, &ctx.db, "ws_1", "pinned");
+    defer skills_store.freeSkillMetadataRows(alloc, rows);
+    try testing.expectEqual(@as(usize, 0), rows.len);
+}
+
+test "execSetSkillMetadata: the wrapper parses the array argument and reports success" {
+    const alloc = exec_testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try exec_seedSkill(alloc, &ctx.db, "ws_1", "tagged", "One sentence.", "---\nname: tagged\ndescription: \"One sentence.\"\n---\nBody line.\n");
+
+    // The wire shape a model actually sends: an array of {key,value} objects.
+    const result = try execSetSkillMetadata(
+        makeTestCtx(alloc, &ctx.db, "s1"),
+        fakeToolCall("set_skill_metadata", "{\"skill_name\":\"tagged\",\"metadata\":[{\"key\":\"license\",\"value\":\"MIT\"}]}"),
+    );
+    defer alloc.free(result.output);
+    var env = try parseEnvelope(alloc, result.output);
+    defer env.deinit();
+
+    try exec_testing.expect(env.success);
+    try exec_testing.expect(env.err == null);
+
+    const row = try exec_skills_store.getSkillByName(alloc, &ctx.db, "ws_1", "tagged");
+    defer exec_skills_store.freeSkillRow(alloc, row);
+    try exec_testing.expect(std.mem.endsWith(u8, row.content, "Body line.\n"));
+
+    const rows = try exec_skills_store.listMetadata(alloc, &ctx.db, "ws_1", "tagged");
+    defer exec_skills_store.freeSkillMetadataRows(alloc, rows);
+    try exec_testing.expectEqual(@as(usize, 1), rows.len);
+    try exec_testing.expectEqualStrings("license", rows[0].key);
+    try exec_testing.expectEqualStrings("MIT", rows[0].value);
 }

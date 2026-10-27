@@ -48,7 +48,7 @@ pub const SkillUpdateOutput = struct {
 /// patch path and the no-op path so both answer with the same shape.
 fn withMetadata(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     workspace_id: []const u8,
     row: skills_store.SkillRow,
 ) SkillUpdateError!SkillUpdateOutput {

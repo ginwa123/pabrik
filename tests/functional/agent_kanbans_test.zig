@@ -42,6 +42,7 @@ const EXPECTED_KANBAN_SEEDED_TOOLS = [_][]const u8{
     "search_documents",
     "search_skills",
     "search_tool",
+    "set_skill_metadata",
     "spawn_sub_agent",
     "text_replace",
     "update_plan",

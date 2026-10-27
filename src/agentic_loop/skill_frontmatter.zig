@@ -1,20 +1,6 @@
-//! THE parser and renderer for the `---` block at the top of a skill body.
-//!
-//! Two hand-written parsers used to live on either side of the skill write
-//! path — one in `modules/agent/tools/skills.zig` for the importer, one in
-//! `skill_tools.zig` for `add_skill`/`edit_skill` — and they disagreed about
-//! duplicate keys and about what a value is. Everything that needs to read
-//! or write frontmatter goes through this file instead.
-//!
-//! Three keys are PROMOTED: `name`, `description` and `is_can_auto_improve`
-//! have columns on `skills`, so `parse` lifts them into `Header` and never
-//! repeats them in `pairs`. Everything else is metadata, and metadata is a
-//! table row (`skill_metadata`), not a block somebody re-scans per request.
-//!
-//! The body keeps its fence: `skills.content` is stored byte-exact because a
-//! `skill_eval` identity is sha256(body), so this module never rewrites a
-//! body on its own — `render` is only called by a caller that is already
-//! replacing it.
+//! THE parser/renderer of a skill body's `---` block, shared by the importer,
+//! the write tools and the `skill_metadata` projection. Bodies stay byte-exact:
+//! a `skill_eval` identity is sha256(content).
 
 const std = @import("std");
 
@@ -113,7 +99,10 @@ fn splitFence(content: []const u8) ?Fence {
     return null;
 }
 
-fn isValidKey(key: []const u8) bool {
+/// True when `key` can be a metadata key: a single token, no colon, no
+/// spaces. Shared so the parser and the metadata tool cannot disagree about
+/// what a key is.
+pub fn isValidKey(key: []const u8) bool {
     if (key.len == 0 or key.len > MAX_KEY_BYTES) return false;
     if (!std.ascii.isAlphanumeric(key[0]) and key[0] != '_') return false;
     for (key) |c| {
@@ -178,10 +167,9 @@ fn freePairs(allocator: std.mem.Allocator, pairs: []const Pair) void {
     if (pairs.len > 0) allocator.free(pairs);
 }
 
-/// Parse the frontmatter of `content`. Never fails on malformed input: a
-/// line that is not `key: value` is not metadata, and an unusable body
-/// still yields `has_fence = false` so the caller falls back to the whole
-/// input as the body.
+/// Parse `content`'s frontmatter. Never fails on malformed input: a line
+/// that is not `key: value` is not metadata, and an unusable body yields
+/// `has_fence = false` so the caller falls back to the whole input as body.
 pub fn parse(allocator: std.mem.Allocator, content: []const u8) error{OutOfMemory}!Parsed {
     const fence = splitFence(content) orelse return .{ .body = content };
 
@@ -299,12 +287,8 @@ fn appendQuoted(allocator: std.mem.Allocator, out: *std.ArrayList(u8), value: []
 }
 
 /// A whole skill body: the fence rebuilt from `header` + `pairs`, then
-/// `body` verbatim.
-///
-/// `is_can_auto_improve` is never written: the lock is a column, and
-/// re-emitting it would change the sha256 of every body on every edit.
-/// Promoted keys in `pairs` are skipped for the same reason — the header
-/// already carries them.
+/// `body` verbatim. Promoted keys are skipped — including
+/// `is_can_auto_improve`, which is the human's lock, not a body field.
 pub fn render(
     allocator: std.mem.Allocator,
     header: Header,

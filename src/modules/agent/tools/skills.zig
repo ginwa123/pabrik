@@ -1,9 +1,6 @@
-//! Skill BODY helpers: bundle materialisation.
-//!
-//! Frontmatter is NOT parsed here any more. `pabrikcore.skill_frontmatter`
-//! is the single parser, shared with the importer, `add_skill`/`edit_skill`
-//! and the `skill_metadata` projection, so the two halves of the write path
-//! cannot disagree about what a key or a value is.
+//! Skill BODY helpers: bundle materialisation. Frontmatter is not parsed
+//! here: `pabrikcore.skill_frontmatter` is the single parser, so the two
+//! halves of the write path cannot disagree.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

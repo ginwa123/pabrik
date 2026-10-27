@@ -50,6 +50,7 @@ const BUILTIN_DEFAULT_TOOLS: readonly string[] = [
   'remove_skill',
   'add_skill',
   'edit_skill',
+  'set_skill_metadata',
   'search_skills',
   'spawn_sub_agent',
   'list_agents',

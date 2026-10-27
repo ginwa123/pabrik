@@ -35,6 +35,7 @@ pub const execUseSkill = @import("../modules/agent/tools/skill_tools.zig").execU
 pub const execRemoveSkill = @import("../modules/agent/tools/skill_tools.zig").execRemoveSkill;
 pub const execAddSkill = @import("../modules/agent/tools/skill_tools.zig").execAddSkill;
 pub const execEditSkill = @import("../modules/agent/tools/skill_tools.zig").execEditSkill;
+pub const execSetSkillMetadata = @import("../modules/agent/tools/skill_tools.zig").execSetSkillMetadata;
 pub const execRemoveFile = @import("../modules/agent/tools/remove_file.zig").execRemoveFile;
 pub const execSetGitWorktree = @import("../modules/agent/tools/set_git_worktree.zig").execSetGitWorktree;
 pub const execSetPullRequest = @import("../modules/agent/tools/set_pull_request.zig").execSetPullRequest;
