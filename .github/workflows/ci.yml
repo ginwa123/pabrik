@@ -507,6 +507,10 @@ jobs:
         # conversion, tracked here run by run. Drop `continue-on-error` and
         # this becomes the blocking gate the Linux cell already has.
         continue-on-error: true
+        # The same conninfo `test:db` uses: every setup that opens a database
+        # resolves a scratch schema on this instance.
+        env:
+          POSTGRES_TEST_CONNINFO: host=127.0.0.1 port=5432 user=pabrik password=pabrik dbname=pabrik
         run: zig build test -Ddb_used=sqlite,postgres -Dno-webapp-rebuild --summary all
 
   # ── 2. Backend, one job per platform ────────────────────────────────

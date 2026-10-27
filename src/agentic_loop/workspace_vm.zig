@@ -3,6 +3,7 @@
 //! before they ask the manager for a Firecracker.
 
 const std = @import("std");
+const test_db = @import("pabrikcore").test_db;
 const builtin = @import("builtin");
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
@@ -87,7 +88,7 @@ fn setupDb(alloc: std.mem.Allocator) !database.Db {
     errdefer db.deinit();
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
     try db.exec(alloc,
         \\CREATE TABLE workspaces (id TEXT PRIMARY KEY, is_vm INTEGER NOT NULL DEFAULT 0)
     , &[_][]const u8{});
@@ -121,7 +122,7 @@ test "a schema without the column keeps the pre-Migration-115 behaviour" {
     defer db.deinit();
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
     try db.exec(alloc, "CREATE TABLE workspaces (id TEXT PRIMARY KEY)", &[_][]const u8{});
 
     // Every workspace of a saas deployment was a VM workspace before the

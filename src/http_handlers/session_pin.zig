@@ -4,6 +4,7 @@
 const std = @import("std");
 const http_response = @import("http_response.zig");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 
 pub const SessionPinError = error{
@@ -139,7 +140,7 @@ fn setupPinDb() !struct { db: pabrikcore.database.Db, threaded: std.Io.Threaded 
     const io = threaded.io();
     var db: pabrikcore.database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     try db.exec(alloc,
         \\CREATE TABLE sessions (
         \\  id TEXT PRIMARY KEY,

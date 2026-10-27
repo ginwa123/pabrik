@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
@@ -309,7 +310,7 @@ fn setupDbWithLogs() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try pabrikcore.migrations_mod.migration.Migration064AddFrontendLogs.up(&db, alloc);
     // Production DBs also run Migration 075, which renames `logs.created_at`

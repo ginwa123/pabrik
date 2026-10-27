@@ -758,6 +758,7 @@ test "execute run path surfaces an auth-failure stderr instead of not-found" {
 // The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const tools = @import("../../../agentic_loop/tools.zig");
 const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
 const ToolExecContext = tools.ToolExecContext;
@@ -953,7 +954,7 @@ fn setupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     var manager = migration.MigrationManager.init(alloc, &db);
     defer manager.deinit();

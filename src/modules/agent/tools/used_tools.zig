@@ -103,6 +103,7 @@ test "executeUsedTools: preserves input order" {
 
 const exec_testing = std.testing;
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const exec_tools = @import("../../../agentic_loop/tools.zig");
 const tools_equipped = @import("tools_equipped.zig");
 const tool_eligibility = @import("../../../agentic_loop/tool_eligibility.zig");
@@ -218,7 +219,7 @@ fn setupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     var manager = migration.MigrationManager.init(alloc, &db);
     defer manager.deinit();

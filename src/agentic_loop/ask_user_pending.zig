@@ -3,6 +3,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
@@ -555,7 +556,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     // The Migration 088 shape: `answer` / `resolved_at` NULL-able on purpose.
     try db.exec(alloc,
         \\CREATE TABLE session_pending_question (

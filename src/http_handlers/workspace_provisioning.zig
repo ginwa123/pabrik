@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const auth_common = @import("auth_common.zig");
@@ -170,7 +171,7 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // `workspaces` in its Migration 027 + 077 shape: `position` drives the
     // listing order and `user_id` is the pre-Migration-100 owner column.

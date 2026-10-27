@@ -3,6 +3,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
@@ -581,7 +582,7 @@ test "runBatch enforces the cap before touching the singleton" {
     defer threaded.deinit();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
 
     // `expectError` cannot be used here: it would still evaluate the call, so
     // the real assertion is that the oversized batch comes back as an error

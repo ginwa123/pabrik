@@ -6,6 +6,7 @@ const ToolParameters = schemas.ToolParameters;
 const AgentToolFunction = schemas.AgentToolFunction;
 const AgentTool = schemas.AgentTool;
 const pabrik = @import("pabrikcore");
+const test_db = pabrik.test_db;
 const sqlite = pabrik.sqlite;
 const database = pabrik.database;
 const git_hardening = @import("helpers").git_hardening;
@@ -2426,7 +2427,7 @@ fn sessionDb(allocator: std.mem.Allocator, root: []const u8) !SessionDb {
     errdefer threaded.deinit();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
 
     try db.exec(allocator, "CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT NOT NULL, status TEXT, cwd TEXT, workspace_id TEXT)", &.{});
     try db.exec(allocator, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT, name TEXT, path TEXT, position INTEGER)", &.{});

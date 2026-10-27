@@ -1,5 +1,6 @@
 const std = @import("std");
 const root_mod = @import("pabrikcore");
+const test_db = root_mod.test_db;
 const sqlite = root_mod.sqlite;
 const database = root_mod.database;
 // NOTE: NOT `root_mod.helpers.process_status`.
@@ -784,7 +785,7 @@ fn setupCtx() !TestCtx {
 
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     var manager = migration.MigrationManager.init(testing.allocator, &db);
     defer manager.deinit();

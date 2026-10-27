@@ -1,10 +1,12 @@
 const std = @import("std");
 const databases = @import("databases");
+const helpers = @import("helpers");
 
 pub const database = databases.database;
 pub const TempDb = database.TempDb;
 
 pub const require_env = "PABRIK_DB_TESTS_REQUIRE_SERVER";
+pub const conninfo_env = "POSTGRES_TEST_CONNINFO";
 
 pub fn available() bool {
     return database.tempDbAvailable();
@@ -28,4 +30,144 @@ pub fn createWith(allocator: std.mem.Allocator, config: database.Config) !TempDb
 
 pub fn handle(temp: *TempDb) *database.Db {
     return &temp.db;
+}
+
+/// A postgres test database is a SCHEMA, not a database: creating one per test
+/// would cost a `CREATE DATABASE` (and a leftover) for every setup. One schema
+/// per test process, wiped on every open, gives a `:memory:`-fresh schema.
+const schema_prefix = "pabrik_test_";
+
+var base_conninfo: ?[]const u8 = null;
+var swept: bool = false;
+var schema_name: ?[]const u8 = null;
+
+fn longLived() std.mem.Allocator {
+    return std.heap.page_allocator;
+}
+
+fn pidAlive(pid: []const u8) bool {
+    var buf: [64]u8 = undefined;
+    const path = std.fmt.bufPrintZ(&buf, "/proc/{s}", .{pid}) catch return true;
+    return std.c.access(path.ptr, 0) == 0;
+}
+
+fn ensureBaseConninfo() ![]const u8 {
+    if (base_conninfo) |base| return base;
+
+    if (std.c.getenv(conninfo_env)) |raw| {
+        const base = try longLived().dupe(u8, std.mem.span(raw));
+        base_conninfo = base;
+        return base;
+    }
+    var temp = try database.createTempDb(longLived(), .{});
+    const base = try longLived().dupe(u8, temp.base_conninfo);
+    temp.deinit();
+    base_conninfo = base;
+    return base;
+}
+
+fn ensureSchemaName() ![]const u8 {
+    if (schema_name) |name| return name;
+    const name = try std.fmt.allocPrint(longLived(), "{s}{d}", .{ schema_prefix, helpers.process_status.getCurrentProcessIdInt() });
+    schema_name = name;
+    return name;
+}
+
+/// Drop the schemas a previous, now-dead test process left behind. Without
+/// this the instance collects one schema per shard run, for ever.
+fn dropDeadSchemas(db: *database.Db) void {
+    var doomed: std.ArrayList([]u8) = .empty;
+    defer {
+        for (doomed.items) |name| longLived().free(name);
+        doomed.deinit(longLived());
+    }
+
+    // The rows must be closed BEFORE the drops: an open iterator holds a
+    // reader connection, and `exec` wants the writer.
+    {
+        var rows = db.query(
+            longLived(),
+            "SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE 'pabrik_test_%'",
+            &.{},
+        ) catch return;
+        defer rows.deinit();
+
+        while (rows.next() catch null) |row| {
+            defer row.deinit(longLived());
+            const suffix = row.values[0][schema_prefix.len..];
+            if (pidAlive(suffix)) continue;
+            const copy = longLived().dupe(u8, row.values[0]) catch continue;
+            doomed.append(longLived(), copy) catch continue;
+        }
+    }
+
+    for (doomed.items) |name| {
+        var buf: [256]u8 = undefined;
+        const sql = std.fmt.bufPrint(&buf, "DROP SCHEMA IF EXISTS {s} CASCADE", .{name}) catch continue;
+        db.exec(longLived(), sql, &.{}) catch {};
+    }
+}
+
+/// Open a database the way the compiled backend can, with a fresh schema:
+/// `:memory:` on sqlite, a per-process schema on postgres. This is what the
+/// test setups call instead of `db.init(io, ":memory:")`.
+pub fn openMemory(db: *database.Db, io: std.Io) !void {
+    if (!database.backend_is_postgres) return db.init(io, ":memory:");
+
+    const base = try ensureBaseConninfo();
+    const schema = try ensureSchemaName();
+    const conninfo = try std.fmt.allocPrintSentinel(
+        longLived(),
+        "{s} options=-csearch_path={s}",
+        .{ std.mem.trimEnd(u8, base, " "), schema },
+        0,
+    );
+
+    try db.init(io, conninfo);
+    if (!swept) {
+        swept = true;
+        dropDeadSchemas(db);
+    }
+
+    var buf: [256]u8 = undefined;
+    const drop = try std.fmt.bufPrint(&buf, "DROP SCHEMA IF EXISTS {s} CASCADE", .{schema});
+    try db.exec(longLived(), drop, &.{});
+    const make = try std.fmt.bufPrint(&buf, "CREATE SCHEMA {s}", .{schema});
+    try db.exec(longLived(), make, &.{});
+}
+
+test "openMemory hands out a database the compiled backend can write to" {
+    const testing = std.testing;
+    var db: database.Db = .{};
+    defer db.deinit();
+
+    try openMemory(&db, testing.io);
+
+    try db.exec(testing.allocator, "CREATE TABLE probe (v TEXT NOT NULL)", &.{});
+    try db.exec(testing.allocator, "INSERT INTO probe (v) VALUES (?)", &.{"written"});
+
+    var row = try db.queryRow(testing.allocator, "SELECT v FROM probe", &.{});
+    defer row.deinit(testing.allocator);
+    try testing.expectEqualStrings("written", row.values[0]);
+}
+
+test "openMemory starts every caller on an empty database" {
+    const testing = std.testing;
+
+    {
+        var first: database.Db = .{};
+        defer first.deinit();
+        try openMemory(&first, testing.io);
+        try first.exec(testing.allocator, "CREATE TABLE leftover (v TEXT NOT NULL)", &.{});
+        try first.exec(testing.allocator, "INSERT INTO leftover (v) VALUES (?)", &.{"still here"});
+    }
+
+    var second: database.Db = .{};
+    defer second.deinit();
+    try openMemory(&second, testing.io);
+    try second.exec(testing.allocator, "CREATE TABLE leftover (v TEXT NOT NULL)", &.{});
+
+    var row = try second.queryRow(testing.allocator, "SELECT COUNT(*) FROM leftover", &.{});
+    defer row.deinit(testing.allocator);
+    try testing.expectEqualStrings("0", row.values[0]);
 }

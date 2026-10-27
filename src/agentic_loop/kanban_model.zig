@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 /// Re-exported so a caller holding a slice returned by `incompleteDependencies`
@@ -569,7 +570,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     return .{ .db = db, .threaded = threaded };
 }
@@ -1025,7 +1026,7 @@ fn setupDbDescription() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     // Migration 051 needs `workspace_items` (FK target) and
     // `workspace_item_tasks` (ALTER TABLE target).
     try db.exec(alloc,
@@ -1229,7 +1230,7 @@ fn setupDbCopy() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     // Migration 051 needs `workspace_items` (FK target) and
     // `workspace_item_tasks` (ALTER TABLE target).
     try db.exec(alloc,
@@ -1432,7 +1433,7 @@ fn setupGateDb() !GateDb {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
 
     try db.exec(alloc,
         \\CREATE TABLE kanban_columns (

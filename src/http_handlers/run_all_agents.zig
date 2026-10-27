@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const auth_common = @import("auth_common.zig");
 const gserverz = pabrikcore.gserverz;
 const sqlite = pabrikcore.sqlite;
@@ -275,7 +276,7 @@ fn setupDb() !TestDb {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     return .{ .db = db, .threaded = threaded };
 }

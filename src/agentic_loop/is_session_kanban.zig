@@ -1,5 +1,6 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
@@ -28,7 +29,7 @@ pub fn isSessionKanban(allocator: std.mem.Allocator, db: *database.Db, session_i
     return is_kanban;
 }
 
-/// Open a fresh in-memory sqlite DB with `db.init(io, ":memory:")`.
+/// Open a fresh in-memory sqlite DB with `test_db.openMemory(&db, io)`.
 /// Tests call `s.db.exec(...)` to lay down their own schema.
 fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
@@ -38,7 +39,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     return .{ .db = db, .threaded = threaded };
 }

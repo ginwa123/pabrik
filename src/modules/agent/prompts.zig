@@ -1,4 +1,5 @@
 const std = @import("std");
+const test_db = @import("pabrikcore").test_db;
 const builtin = @import("builtin");
 const prompts = @import("prompts/prompts.zig");
 const memory_prompts = @import("prompts/memory.zig");
@@ -1424,7 +1425,7 @@ fn setupPromptDb() !PromptDbCtx {
     errdefer threaded.deinit();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
     var manager = prompt_migration.MigrationManager.init(alloc, &db);
     defer manager.deinit();
     try prompt_migration.registerAllMigrations(&manager);

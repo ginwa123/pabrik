@@ -6,6 +6,7 @@ const std = @import("std");
 const testing = std.testing;
 const http_response = @import("http_response.zig");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const ai_mod = pabrikcore.ai_mod;
 const llm_history = ai_mod.llm_history;
@@ -130,7 +131,7 @@ fn setupDbWithTagsForHandler() !struct { db: pabrikcore.database.Db, threaded: s
     const io = threaded.io();
     var db: pabrikcore.database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)", &.{});
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (

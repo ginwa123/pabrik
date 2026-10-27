@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const pabrik_mod = @import("pabrikcore");
+const test_db = pabrik_mod.test_db;
 const agent = pabrik_mod.agent;
 const logger_mod = pabrik_mod.loggermod;
 const sqlite = pabrik_mod.sqlite;
@@ -704,7 +705,7 @@ test "handle_mcp_tool_run: a cancelled session stops waiting for a busy stdio se
     // The Stop button's state, read from where the loop writes it: the worker row.
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(fx.io, ":memory:");
+    try test_db.openMemory(&db, fx.io);
     try db.exec(testing.allocator, "CREATE TABLE worker (id TEXT PRIMARY KEY, cancelled INTEGER DEFAULT 0)", &.{});
     try db.exec(testing.allocator, "INSERT INTO worker (id, cancelled) VALUES ('sess_cancelled', 1)", &.{});
 
@@ -734,7 +735,7 @@ test "handle_mcp_tool_run: a session that is NOT cancelled still waits out the b
 
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(fx.io, ":memory:");
+    try test_db.openMemory(&db, fx.io);
     try db.exec(testing.allocator, "CREATE TABLE worker (id TEXT PRIMARY KEY, cancelled INTEGER DEFAULT 0)", &.{});
     try db.exec(testing.allocator, "INSERT INTO worker (id, cancelled) VALUES ('sess_live', 0)", &.{});
 

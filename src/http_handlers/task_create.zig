@@ -6,6 +6,7 @@ const std = @import("std");
 const http_response = @import("http_response.zig");
 const auth_common = @import("auth_common.zig");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const ai_mod = pabrikcore.ai_mod;
 const memories_mod = pabrikcore.memories;
@@ -777,7 +778,7 @@ test "task_create: unattended sessions row carries the requesting owner" {
     const io = threaded.io();
     var db: pabrikcore.database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     var manager = migration_mod.MigrationManager.init(alloc, &db);
     defer manager.deinit();
     try migration_mod.registerAllMigrations(&manager);

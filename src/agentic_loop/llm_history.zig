@@ -2,6 +2,7 @@ const model_catalog = @import("model_catalog.zig");
 const std = @import("std");
 const testing = std.testing;
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const dialect = pabrikcore.dialect;
@@ -5527,7 +5528,7 @@ fn setupDbWithTagsForKanban() !struct { db: database.Db, threaded: std.Io.Thread
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Minimal schema: workspace_items + workspace_item_tasks with the
     // tags column (Migration 067). We don't run all 66 prior migrations
@@ -5736,7 +5737,7 @@ fn setupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)", &.{});
     try db.exec(alloc,
@@ -6691,7 +6692,7 @@ fn sessionUpdateSetupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Canonical post-Migration-063 schema (matches
     // migration_063_runtime_test.zig).
@@ -6876,7 +6877,7 @@ fn getSessionListSetupDb() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // llm_history — only the columns the rewritten query reads.
     try db.exec(alloc,
@@ -7275,7 +7276,7 @@ test "updateTaskLastHumanTouchedAt stamps the unix-ms value on the task" {
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Minimal tables Migration 065 needs (parent + task).
     try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)", &.{});
@@ -7305,7 +7306,7 @@ test "updateTaskLastHumanTouchedAt overwrites on repeated calls" {
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)", &.{});
     try db.exec(alloc, "CREATE TABLE workspace_item_tasks (id TEXT PRIMARY KEY, name TEXT, workspace_item_id TEXT, last_human_touched_at_nano INTEGER)", &.{});
@@ -7335,7 +7336,7 @@ test "updateSessionLastHumanTouchedAt stamps the unix-ms value on the session" {
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Minimal sessions table that already declares the Migration 082
     // column (so the writer doesn't have to run migrations in tests).
@@ -7365,7 +7366,7 @@ test "updateSessionLastHumanTouchedAt with now_unix_ms=null reads the real clock
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE sessions (
@@ -7403,7 +7404,7 @@ test "updateSessionLastHumanTouchedAt is a no-op for unknown session_id" {
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE sessions (
@@ -7433,7 +7434,7 @@ test "updateSessionLastHumanTouchedAt is idempotent on repeated calls with the s
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE sessions (
@@ -7461,7 +7462,7 @@ test "updateSessionLastHumanTouchedAt overwrites on repeated calls with a newer 
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE sessions (
@@ -7489,7 +7490,7 @@ test "updateSessionLastHumanTouchedAt skips empty session_id (no SQL bind)" {
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE sessions (
@@ -7583,7 +7584,7 @@ test "getSessionListWithCursor converts unix-ms storage to SQLite datetime on th
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Minimal schema with the Migration 082 column.
     try db.exec(alloc,
@@ -7659,7 +7660,7 @@ test "getSessionListWithCursor returns empty string for NULL last_human_touched_
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE sessions (
@@ -7727,7 +7728,7 @@ test "getSessionListWithCursor derives needs_human_review for the sidebar status
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE sessions (
@@ -7845,7 +7846,7 @@ test "getSessionListWithCursor pages on the sort field's column, not created_at"
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE sessions (
@@ -7946,7 +7947,7 @@ test "getSessionListWithCursor keeps the created_at filter when sorting by creat
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE sessions (
@@ -8021,7 +8022,7 @@ test "getSessionListWithCursor: workspace_ids bounds sessions AND total (count h
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE sessions (
@@ -8144,7 +8145,7 @@ test "needs_human_review predicate returns 1 when finish_reason='stop' AND no hu
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Parent table + task table with the Migration 065 column +
     // sessions table to JOIN against.
@@ -8209,7 +8210,7 @@ test "needs_human_review predicate returns 0 when human touched AFTER the AI fin
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)", &.{});
     try db.exec(alloc,
@@ -8263,7 +8264,7 @@ test "needs_human_review predicate returns 0 when finish_reason is 'tool_calls' 
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)", &.{});
     try db.exec(alloc,
@@ -8314,7 +8315,7 @@ test "needs_human_review predicate returns 0 when no sessions row exists for the
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)", &.{});
     try db.exec(alloc,
@@ -8358,7 +8359,7 @@ fn llmHistorySearchFtsQuerySafetySetupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Walk every production migration so the schema (including `messages_fts`
     // + its triggers) matches what production runs.
@@ -8484,7 +8485,7 @@ fn llmHistorySearchMessagesFtsSetupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE llm_history (
@@ -8936,7 +8937,7 @@ fn llmHistoryCompactedMessagesSetupDb() !struct {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE llm_history (
@@ -9218,7 +9219,7 @@ test "saveMessage: writes a correct-year (2026-ish) created_iso from current tim
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE llm_history (
@@ -9301,7 +9302,7 @@ test "saveMessage: created_at column is stored as Unix microseconds (length <= 1
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE llm_history (
@@ -9387,7 +9388,7 @@ fn llmHistoryToolCallLoadingSetupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Walk every production migration (001 → 068) so the schema matches
     // production. Manual schema setup drifts the moment a migration lands;
@@ -9596,7 +9597,7 @@ fn llmHistoryWorkerInfoSetupDb() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Minimal `sessions` schema (matches the columns touched by
     // `getActiveWorker`'s JOIN). `git_worktree_cwd` (Migration 046)
@@ -9792,7 +9793,7 @@ fn progressiveSetupDb() !ProgressiveTestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     try db.exec(alloc,
         \\CREATE TABLE session_progressive_tool (
         \\    session_id TEXT NOT NULL,
@@ -9933,7 +9934,7 @@ test "saveMessage: user envelope carries owner identity, assistant carries profi
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE llm_history (
@@ -10099,7 +10100,7 @@ fn setupOwnedSessionsDb() !struct { db: database.Db, threaded: std.Io.Threaded }
     errdefer threaded.deinit();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
 
     try db.exec(alloc,
         \\CREATE TABLE sessions (

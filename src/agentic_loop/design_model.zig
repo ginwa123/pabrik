@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const helpers = @import("helpers");
@@ -3079,7 +3080,7 @@ fn setupGeometryBatchDbAndItem() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
@@ -3353,7 +3354,7 @@ fn setupReparentDbAndItem() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
@@ -3779,7 +3780,7 @@ fn setupReparentBatchDbAndItem() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
@@ -4222,7 +4223,7 @@ fn setupMoveBatchDbAndItem() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
@@ -4826,7 +4827,7 @@ fn setupMoveToPageDbAndItem() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
@@ -5320,7 +5321,7 @@ fn setupUpdatePageDbAndItem() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
@@ -5481,7 +5482,7 @@ fn addElementParentSetupDbAndItem() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
@@ -5785,7 +5786,7 @@ fn deletePageSetupDb() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // SQLite has FK enforcement OFF by default; the production code's comment
     // on deletePage says it relies on `ON DELETE CASCADE` to remove the
@@ -6208,7 +6209,7 @@ fn deleteParentSetupDbAndItem() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
@@ -6461,7 +6462,7 @@ fn groupSetupDbAndItem() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
@@ -6796,7 +6797,7 @@ fn parentIdSetupDbAndItem() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
@@ -7043,7 +7044,7 @@ fn reorderSetupDb() !struct {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
@@ -7326,7 +7327,7 @@ fn setElementParentSetupDbAndItem() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
@@ -7603,7 +7604,7 @@ fn designModelSetupDbAndItem() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // workspace_items. `path` is required by setDesignPage (returns
     // ItemPathMissing if NULL/empty).
