@@ -5220,6 +5220,9 @@ export async function getBackgroundProcessLog(
 export interface TerminalSession {
   id: string
   pid: number
+  /** Which console the session actually got: `posix-pty`, `conpty`, `pipe`
+   * (the degraded Windows fallback, no VT input) or `guest-pty`. */
+  backend: string
 }
 
 export interface TerminalOutput {

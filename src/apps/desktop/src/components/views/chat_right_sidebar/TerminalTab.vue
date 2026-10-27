@@ -3,6 +3,7 @@ import { onMounted, onUnmounted, onUpdated, ref } from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import UiIcon from '../../ui/UiIcon.vue'
+import { inputForBackend } from '../../../helpers/terminalInput'
 import '@xterm/xterm/css/xterm.css'
 import {
   ApiError,
@@ -31,6 +32,8 @@ interface TermSession {
   id: string
   pid: number
   label: string
+  /** The console the server gave this session; `pipe` has no VT input. */
+  backend: string
 }
 
 const container = ref<HTMLElement | null>(null)
@@ -111,6 +114,17 @@ const clearWsRetry = () => {
     wsRetryTimer = null
   }
 }
+
+const activeBackend = (): string =>
+  sessions.value.find((s) => s.id === activeId.value)?.backend ?? ''
+
+// A pipe-backed shell has no console to echo into and no VT input, so a TUI
+// there is a picture of a shell it cannot type into. Say so instead of letting
+// the user conclude the terminal is broken.
+const connectedStatus = (): string =>
+  activeBackend() === 'pipe'
+    ? 'connected · pipe backend (no TUI: this host has no pseudoconsole)'
+    : 'connected'
 
 const wsBackoffDelay = (attempt: number): number => {
   const exp = Math.min(WS_BASE_DELAY_MS * 2 ** (attempt - 1), WS_MAX_DELAY_MS)
@@ -202,7 +216,7 @@ const connectWs = () => {
     wsOpened = true
     wsAttempt = 0
     clearWsRetry()
-    status.value = 'connected'
+    status.value = connectedStatus()
   }
   socket.onmessage = (event) => {
     if (ws !== socket) return
@@ -266,15 +280,17 @@ const reclaimGoneSession = (notice: string) => {
 const sendInput = (data: string) => {
   const id = activeId.value
   if (!id || (id && exitedIds.value.has(id))) return
+  const payload = inputForBackend(activeBackend(), data)
+  if (payload.length === 0) return
   if (ws && wsOpened && ws.readyState === WebSocket.OPEN) {
     try {
-      ws.send(JSON.stringify({ type: 'input', data }))
+      ws.send(JSON.stringify({ type: 'input', data: payload }))
       return
     } catch {
       // Fall through to REST.
     }
   }
-  sendTerminalInput(id, data).catch(() => {
+  sendTerminalInput(id, payload).catch(() => {
     status.value = 'input failed — retrying…'
   })
 }
@@ -375,7 +391,12 @@ const newSession = async () => {
       return
     }
     sessionCounter += 1
-    sessions.value.push({ id: session.id, pid: session.pid, label: `term ${sessionCounter}` })
+    sessions.value.push({
+      id: session.id,
+      pid: session.pid,
+      label: `term ${sessionCounter}`,
+      backend: session.backend,
+    })
     saveStored()
     switchSession(session.id)
   } catch (err) {
@@ -407,7 +428,7 @@ const restoreSessions = async () => {
     if (disposed) return
     try {
       await getTerminalOutput(s.id, 0)
-      alive.push({ id: s.id, pid: 0, label: s.label })
+      alive.push({ id: s.id, pid: 0, label: s.label, backend: '' })
     } catch {
       // 404/gone (or transient failure) — drop the id.
     }

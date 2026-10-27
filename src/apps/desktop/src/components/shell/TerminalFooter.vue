@@ -13,6 +13,7 @@ import {
   sendTerminalInput,
 } from '../../api'
 import type { TerminalSessionSummary } from '../../api'
+import { inputForBackend } from '../../helpers/terminalInput'
 
 interface WorkspaceRef {
   id: string
@@ -229,7 +230,10 @@ const connectWs = () => {
     wsOpened = true
     wsAttempt = 0
     clearWsRetry()
-    status.value = 'connected'
+    status.value =
+      activeSession.value?.backend === 'pipe'
+        ? 'connected · pipe backend (no TUI: this host has no pseudoconsole)'
+        : 'connected'
   }
   socket.onmessage = (event) => {
     if (ws !== socket) return
@@ -267,8 +271,10 @@ const sendControl = (payload: unknown): boolean => {
 const sendInput = (data: string) => {
   const id = activeId.value
   if (!id) return
-  if (sendControl({ type: 'input', data })) return
-  void sendTerminalInput(id, data).catch((cause: unknown) => {
+  const payload = inputForBackend(activeSession.value?.backend ?? '', data)
+  if (payload.length === 0) return
+  if (sendControl({ type: 'input', data: payload })) return
+  void sendTerminalInput(id, payload).catch((cause: unknown) => {
     error.value = cause instanceof Error ? cause.message : 'input failed'
   })
 }
