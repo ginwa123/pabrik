@@ -9,6 +9,14 @@ Two bugs this guards, both seen in the real app:
    fires one tool per turn has a thinking turn between each call — so every
    group held one call. The fold has to follow the TURN (every call until the
    assistant stops), not the row adjacency.
+3. The folded view BLINKED: a turn's groups that draw nothing (the calls the
+   card already holds, and the thoughts it swallowed) drew an empty wrapper per
+   group, and `VirtualScroller.measureItems` skipped every 0px row (`h > 0`), so
+   each of them kept its ~67px PLACEHOLDER in the height model forever. The
+   sizer overshot the real content by thousands of px, the tail cap tried to
+   clamp it, the clamp moved `scrollTop`, and ChatView re-stuck on the growth —
+   every frame, forever: ~13 000 DOM mutations and a `scrollTop` cycling through
+   503 / 1019 / 2123 in 12 s of an IDLE transcript.
 
 Each test:
 1. Boots a fresh pabrik + Vite (the ``ui_harness`` fixture).
@@ -229,6 +237,181 @@ def test_a_row_opens_the_full_card(ui_harness: UIHarness, page) -> None:
     )
     assert page.locator(".chat-tool-card").count() == 2, (
         "the `+` on a row must open the dev card for that one call"
+    )
+
+
+# A transcript long enough to actually scroll: the fold leaves several empty wrappers per turn, and
+# the blink only shows once enough of them have piled up a placeholder height.
+TURNS = 16
+
+# How long the transcript must stay untouched before it counts as settled, and the patience we give
+# it to get there. A repainting view never reaches the quiet window.
+IDLE_QUIET_MS = 700
+IDLE_MAX_MS = 8000
+
+# `maxTailGap` on the ChatView <VirtualScroller>: the sizer may reserve this much empty space below
+# the real content by design. Anything beyond it is a model that does not describe the content.
+TAIL_GAP_SLACK_PX = 100 + 8
+
+
+def _seed_turns(h: UIHarness, workspace_id: str, session_id: str, turns: int) -> None:
+    """Seed `turns` agent turns; each one thinks, calls, thinks, calls, then stops."""
+    seed = DbSeed(_seed_db_path(h))
+    with seed.connect() as conn:
+        seed.seed_session(conn, session_id, "Compact View", cwd=str(h.temp_dir))
+        bind_session_workspace(conn, workspace_id, session_id)
+        for turn in range(turns):
+            seed.seed_user_message(conn, session_id, text=f"turn {turn}: read it and tell me")
+            for index, (tool, parameters) in enumerate(CALLS):
+                call_id = f"tc_{turn}_{tool}_{index}"
+                seed.seed_assistant_message(
+                    conn,
+                    session_id,
+                    text="",
+                    finish_reason="tool_calls",
+                    reasoning_content=f"Thinking about turn {turn} step {index + 1}",
+                    tool_calls=[
+                        {
+                            "id": call_id,
+                            "type": "function",
+                            "function": {"name": tool, "arguments": json.dumps(parameters)},
+                        }
+                    ],
+                )
+                envelope = {
+                    "tool": tool,
+                    "parameters": parameters,
+                    "success": True,
+                    "data": {},
+                    "error": None,
+                    "v": 1,
+                    "duration_ms": 1200 * (index + 1),
+                }
+                seed.seed_tool_result(
+                    conn,
+                    session_id,
+                    tool_call_id=call_id,
+                    tool_name=tool,
+                    content=json.dumps(envelope),
+                )
+            seed.seed_assistant_message(conn, session_id, text=f"Done {turn}.", finish_reason="stop")
+
+
+# Counts what the transcript does while NOTHING happens: DOM mutations, the scroll positions the
+# reader passes through, and how far the sizer's height model sits from the content it describes.
+_SETTLE_PROBE = r"""
+async (args) => {
+  const quietMs = args.quietMs;
+  const maxMs = args.maxMs;
+  const scroller = document.querySelector('.messages-scroll-hide-native .virtual-scroller')
+    || document.querySelector('.virtual-scroller');
+  if (!scroller) return { error: 'no scroller' };
+  const sizer = scroller.querySelector('.virtual-scroller-sizer');
+  const content = scroller.querySelector('.virtual-scroller-content');
+  const targets = {};
+  let mutations = 0;
+  let added = 0;
+  let removed = 0;
+  let lastMutationAt = performance.now();
+  const mark = (name, node) => {
+    const tag = node && node.nodeType === 1 ? node.tagName.toLowerCase() : 'text';
+    const key = name + ':' + tag;
+    targets[key] = (targets[key] || 0) + 1;
+  };
+  const mo = new MutationObserver((records) => {
+    for (const record of records) {
+      mutations += 1;
+      lastMutationAt = performance.now();
+      if (record.type === 'childList') {
+        added += record.addedNodes.length;
+        removed += record.removedNodes.length;
+        for (const node of record.addedNodes) mark('insert', node);
+      } else {
+        mark('attribute', record.target);
+      }
+    }
+  });
+  mo.observe(scroller, { childList: true, subtree: true, attributes: true, characterData: true });
+  const scrollTops = new Set([Math.round(scroller.scrollTop)]);
+  const startedAt = performance.now();
+  let settledAfterMs = null;
+  while (performance.now() - startedAt < maxMs) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    scrollTops.add(Math.round(scroller.scrollTop));
+    if (performance.now() - lastMutationAt >= quietMs) {
+      settledAfterMs = Math.round(performance.now() - startedAt);
+      break;
+    }
+  }
+  mo.disconnect();
+  const transform = content ? content.style.transform || '' : '';
+  const match = transform.match(/translate3d\(0px,\s*(-?[\d.]+)px/);
+  const topSpacer = match ? Math.round(parseFloat(match[1])) : 0;
+  const contentHeight = content ? Math.round(content.offsetHeight) : 0;
+  const children = content ? Array.from(content.children) : [];
+  return {
+    settledAfterMs: settledAfterMs,
+    mutations: mutations,
+    added: added,
+    removed: removed,
+    hotspots: Object.entries(targets).sort((a, b) => b[1] - a[1]).slice(0, 4),
+    scrollTops: Array.from(scrollTops).sort((a, b) => a - b),
+    sizerHeight: sizer ? Math.round(parseFloat(sizer.style.height) || 0) : 0,
+    realContentBottom: topSpacer + contentHeight,
+    zeroHeightItems: children.filter((child) => child.getBoundingClientRect().height < 1).length,
+    renderedItems: children.length,
+  };
+}
+"""
+
+
+def test_the_compact_view_settles_instead_of_repainting(ui_harness: UIHarness, page) -> None:
+    """An idle compact transcript must stop repainting.
+
+    The reported blink: the fold leaves every other group of a turn drawing an empty wrapper, and
+    those 0px rows were never measured, so the height model held a placeholder for each of them. The
+    sizer overshot the real content, the tail cap clamped it, the clamp moved the reader, ChatView
+    re-stuck on the growth — and the VirtualScroller re-rendered its whole window every frame.
+    """
+    h = ui_harness
+    session_id = "sess_compact_view_blink_001"
+    workspace_id = create_workspace(h)
+    _write_config(h, "compact")
+    _seed_turns(h, workspace_id, session_id, TURNS)
+
+    open_chatview(page, h, workspace_id, session_id)
+    page.locator('[data-testid="compact-tool-group"]').first.wait_for(timeout=30000)
+    # The mount's own autoscroll is legitimate churn; judge the state it lands in.
+    page.wait_for_timeout(800)
+
+    probe = page.evaluate(_SETTLE_PROBE, {"quietMs": IDLE_QUIET_MS, "maxMs": IDLE_MAX_MS})
+    overshoot = probe["sizerHeight"] - probe["realContentBottom"]
+
+    assert probe["zeroHeightItems"] > 0, (
+        "the fixture must reproduce the report: the fold leaves groups that draw nothing, "
+        f"got {probe['renderedItems']} rendered items with no empty one"
+    )
+    # Both numbers in every message: the model overshoot is what makes the view loop, and the loop
+    # is what the human sees, so a red run has to report the blink it caused.
+    idle_report = (
+        f"repainted forever: {probe['mutations']} mutations "
+        f"({probe['added']} nodes inserted, {probe['removed']} removed) in {IDLE_MAX_MS}ms, "
+        f"scrollTop cycling through {probe['scrollTops']}, hotspots {probe['hotspots']}"
+        if probe["settledAfterMs"] is None
+        else f"settled after {probe['settledAfterMs']}ms"
+    )
+
+    assert overshoot <= TAIL_GAP_SLACK_PX, (
+        "the height model must describe the content: the sizer reserves "
+        f"{probe['sizerHeight']}px for content that ends at {probe['realContentBottom']}px "
+        f"({overshoot}px of empty space, max {TAIL_GAP_SLACK_PX}) — the unmeasured empty groups "
+        f"are holding placeholder heights; the transcript {idle_report}"
+    )
+    assert probe["settledAfterMs"] is not None, (
+        f"an idle transcript must stop repainting, but it {idle_report}"
+    )
+    assert len(probe["scrollTops"]) == 1, (
+        f"the reader's position must hold still while idle, got scrollTops {probe['scrollTops']}"
     )
 
 

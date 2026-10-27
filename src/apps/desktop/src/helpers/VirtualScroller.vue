@@ -427,11 +427,27 @@ let settledBottom: number | null = null
 // clientHeight` — describes the ESTIMATE, not the content.
 let hasMeasuredItems = false
 
+/** Whether this DOM reports geometry at all. jsdom answers 0 for EVERY element, so there a 0px item
+ * cannot be told apart from an item that draws nothing — and storing those zeros would collapse the
+ * whole model onto the estimate floor. Probed once, off-screen. */
+let layoutReportsGeometry: boolean | null = null
+const hasRealLayout = (): boolean => {
+  if (layoutReportsGeometry !== null) return layoutReportsGeometry
+  const probe = document.createElement('div')
+  probe.style.cssText = 'position:absolute;left:-9999px;top:0;width:1px;height:1px'
+  document.body.appendChild(probe)
+  layoutReportsGeometry = probe.offsetHeight > 0
+  probe.remove()
+  return layoutReportsGeometry
+}
+
 const measureItems = () => {
   if (!containerRef.value) return
   const content = containerRef.value.querySelector('.virtual-scroller-content')
   if (!content) return
   let changed = false
+  // A 0px row is a MEASUREMENT only where the DOM really reports geometry (see `hasRealLayout`).
+  const zeroIsMeasured = hasRealLayout()
   // ── Scroll-anchor compensation (2026-08-23; v2 prefix-delta 2026-09-23) ── Writing
   // heights/estimates for items ABOVE the viewport mutates the transform origin (topSpacer) without
   // moving scrollTop — content under the viewport teleports.
@@ -468,7 +484,10 @@ const measureItems = () => {
     }
     const h = el.offsetHeight
     renderedChildrenSum += h > 0 ? quantizePx(h) : 0
-    if (h > 0) {
+    // An item that draws NOTHING is measured 0px: the compact fold turns a turn's other groups into
+    // empty wrappers, and a placeholder for each inflated the model until the tail cap fought the
+    // re-stick every frame (the compact blink). Hence `zeroIsMeasured`.
+    if (h > 0 || zeroIsMeasured) {
       // P1 perf: quantize to integer px. Fractional offsetHeights under
       // sub-pixel layout re-quantize differently between our prefix sums
       // and the browser's layout → ±1px spacer drift → micro-jitter.
@@ -508,8 +527,9 @@ const measureItems = () => {
     // the content rather than the estimate (see `hasMeasuredItems`).
     hasMeasuredItems = true
     // Feed the adaptive estimator so future unmeasured items inherit a
-    // realistic median instead of the static prop guess.
-    heightEstimator.observe(heightPx)
+    // realistic median instead of the static prop guess. An empty item is NOT a
+    // sample: a transcript full of folded turns would drag the median to zero.
+    if (heightPx > 0) heightEstimator.observe(heightPx)
     // Track the measurement frontier: the learned median is only
     // trusted for items at or before this index (see estimateHeight).
     if (realIndex > maxMeasuredIndex) maxMeasuredIndex = realIndex
