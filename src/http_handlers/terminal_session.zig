@@ -176,6 +176,12 @@ const PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE: usize = 0x00020016;
 const EXTENDED_STARTUPINFO_PRESENT: DWORD = 0x00080000;
 /// `HANDLE_FLAG_INHERIT`.
 const HANDLE_FLAG_INHERIT: DWORD = 0x00000001;
+/// `CREATE_NEW_PROCESS_GROUP` — the pipe shell leads a process group of its own,
+/// which is the only handle a console signal can be aimed at.
+const CREATE_NEW_PROCESS_GROUP: DWORD = 0x00000200;
+/// `CTRL_BREAK_EVENT` — the signal a process GROUP accepts (`CTRL_C_EVENT`
+/// cannot be generated for one).
+const CTRL_BREAK_EVENT: DWORD = 1;
 /// `STARTF_USESTDHANDLES` — "the hStd* fields are the child's standard
 /// handles, use THEM". Load-bearing on both Windows backends: without it the
 /// OS quietly duplicates the CALLER's standard handles into a console-flagged
@@ -197,6 +203,7 @@ extern "kernel32" fn TerminateProcess(hProcess: HANDLE, uExitCode: c_uint) callc
 extern "kernel32" fn WaitForSingleObject(hHandle: HANDLE, dwMilliseconds: DWORD) callconv(.winapi) DWORD;
 extern "kernel32" fn GetExitCodeProcess(hProcess: HANDLE, lpExitCode: *DWORD) callconv(.winapi) WINBOOL;
 extern "kernel32" fn SetHandleInformation(hObject: HANDLE, dwMask: DWORD, dwFlags: DWORD) callconv(.winapi) WINBOOL;
+extern "kernel32" fn GenerateConsoleCtrlEvent(dwCtrlEvent: DWORD, dwProcessGroupId: DWORD) callconv(.winapi) WINBOOL;
 extern "kernel32" fn SearchPathW(lpPath: ?[*:0]const u16, lpFileName: [*:0]const u16, lpExtension: ?[*:0]const u16, nBufferLength: DWORD, lpBuffer: [*]u16, lpFilePart: ?*?[*]u16) callconv(.winapi) DWORD;
 extern "kernel32" fn InitializeProcThreadAttributeList(lpAttributeList: ?*anyopaque, dwAttributeCount: DWORD, dwFlags: DWORD, lpSize: *usize) callconv(.winapi) WINBOOL;
 extern "kernel32" fn UpdateProcThreadAttribute(lpAttributeList: *anyopaque, dwFlags: DWORD, attribute: usize, lpValue: *const anyopaque, cbSize: usize, lpPreviousValue: ?*anyopaque, lpReturnSize: ?*usize) callconv(.winapi) WINBOOL;
@@ -1250,6 +1257,19 @@ fn pseudoconsoleIsLive(out_read: HANDLE, proc: HANDLE) bool {
 // Windows pipe backend — the fallback behind `error.PseudoConsoleUnusable`
 //
 
+/// The argv a pipe-backed shell needs, by executable name: a pipe carries the
+/// command TEXT, not keystrokes, so the shell must neither echo the committed
+/// line a second time nor print a prompt for nobody.
+pub fn pipeShellArgs(shell_path: []const u8) []const u8 {
+    const cut = std.mem.lastIndexOfAny(u8, shell_path, "\\/") orelse 0;
+    const name = if (cut == 0) shell_path else shell_path[cut + 1 ..];
+    if (std.ascii.eqlIgnoreCase(name, "cmd.exe")) return " /Q";
+    if (std.ascii.eqlIgnoreCase(name, "powershell.exe") or std.ascii.eqlIgnoreCase(name, "pwsh.exe")) {
+        return " -NoLogo -Command -";
+    }
+    return "";
+}
+
 /// Returns the PLAIN `SessionError`: unlike the pseudoconsole path there is
 /// nothing to fall back FROM, so `PseudoConsoleUnusable` is not in its set
 /// and the caller's `try` cannot smuggle it out.
@@ -1260,20 +1280,17 @@ fn createSessionPipeWin(eff_cwd: []const u8, dims: Dims, shell_path: []const u8)
     const cwd_z = try utf8ToWide(&cwd_w, eff_cwd);
     const shell_z = try utf8ToWide(&shell_w, shell_path);
 
-    // cmd.exe echoes every line it reads from a pipe, which would print each
-    // command twice now that the server echoes the typing; `/Q` turns that off.
-    // The argument is cmd.exe's alone — any other shell is named on its own.
-    const calm = std.ascii.eqlIgnoreCase(std.fs.path.basename(shell_path), "cmd.exe");
-    var cmdline_w: [std.fs.max_path_bytes + 8]u16 = undefined;
+    // A pipe echoes nothing useful on its own: the server already echoed the
+    // typing, so the shell must not echo the committed line a second time.
+    const extra = pipeShellArgs(shell_path);
+    var cmdline_w: [std.fs.max_path_bytes + 32]u16 = undefined;
     cmdline_w[0] = '"';
     @memcpy(cmdline_w[1..][0..shell_z.len], shell_z);
     cmdline_w[1 + shell_z.len] = '"';
     var n: usize = 2 + shell_z.len;
-    if (calm) {
-        for (" /Q") |c| {
-            cmdline_w[n] = c;
-            n += 1;
-        }
+    for (extra) |c| {
+        cmdline_w[n] = c;
+        n += 1;
     }
     cmdline_w[n] = 0;
     const cmdline: [:0]u16 = cmdline_w[0..n :0];
@@ -1336,7 +1353,7 @@ fn createSessionPipeWin(eff_cwd: []const u8, dims: Dims, shell_path: []const u8)
     var pi: ProcessInformation = undefined;
     // bInheritHandles = 1: the three handles above are the only inheritable
     // ones, so exactly they cross.
-    if (CreateProcessW(null, cmdline.ptr, null, null, 1, 0, null, cwd_z.ptr, &si.StartupInfo, &pi) == 0) return error.SpawnFailed;
+    if (CreateProcessW(null, cmdline.ptr, null, null, 1, CREATE_NEW_PROCESS_GROUP, null, cwd_z.ptr, &si.StartupInfo, &pi) == 0) return error.SpawnFailed;
     child = pi;
 
     // The child owns its ends now; ours would only keep the pipes alive
@@ -1588,15 +1605,30 @@ fn writeInputPipeWin(s: *Session, h: HANDLE, data: []const u8) SessionError!usiz
     defer shell.deinit(g_alloc);
     var view = std.ArrayList(u8).empty;
     defer view.deinit(g_alloc);
-    pipeDiscipline(&s.line, g_alloc, data, &shell, &view) catch return error.OutOfMemory;
+    const interrupts = pipeDiscipline(&s.line, g_alloc, data, &shell, &view) catch return error.OutOfMemory;
     if (shell.items.len > 0) _ = try writeRawAll(h, shell.items);
     if (view.items.len > 0) appendEchoLocked(s, view.items);
+    if (interrupts > 0) raiseInterrupt(s, interrupts);
     return data.len;
 }
 
+/// Ctrl-C over a pipe: the byte cannot travel, because nothing on the far side
+/// reads keystrokes. The console raises the signal at the shell's own process
+/// group instead (`CREATE_NEW_PROCESS_GROUP`), which is how a real console does
+/// it — a host with no console simply has nothing to raise it on.
+fn raiseInterrupt(s: *Session, times: usize) void {
+    if (s.child_pid <= 0) return;
+    const group: DWORD = @intCast(s.child_pid);
+    var raised: usize = 0;
+    while (raised < times) : (raised += 1) {
+        _ = GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, group);
+    }
+}
+
 /// What one token of client input asks for. `report` is the terminal answering
-/// its own queries, not a keystroke.
-pub const PipeKind = enum { text, enter, backspace, control, report };
+/// its own queries, not a keystroke; `interrupt` is Ctrl-C, the one control byte
+/// a pipe CAN deliver — as a console signal, not as text.
+pub const PipeKind = enum { text, enter, backspace, control, interrupt, report };
 
 pub const PipeToken = struct { kind: PipeKind, len: usize };
 
@@ -1609,6 +1641,7 @@ pub fn pipeTokenAt(data: []const u8, i: usize) PipeToken {
     if (b == '\r' or b == '\n') return .{ .kind = .enter, .len = 1 };
     if (b == 0x7f or b == 0x08) return .{ .kind = .backspace, .len = 1 };
     if (b == 0x1b) return .{ .kind = .report, .len = escapeSequenceLen(data, i) };
+    if (b == 0x03) return .{ .kind = .interrupt, .len = 1 };
     if (b < 0x20) return .{ .kind = .control, .len = 1 };
     return .{ .kind = .text, .len = 1 };
 }
@@ -1640,13 +1673,15 @@ fn escapeSequenceLen(data: []const u8, i: usize) usize {
 /// One client chunk through the pipe backend's line discipline: `shell`
 /// receives what the shell must read, `view` what the user must see echoed. A
 /// report reaches neither — the console it reports on does not exist here.
+/// Returns the number of Ctrl-C tokens, which the caller raises as a signal.
 pub fn pipeDiscipline(
     line: *std.ArrayList(u8),
     allocator: std.mem.Allocator,
     data: []const u8,
     shell: *std.ArrayList(u8),
     view: *std.ArrayList(u8),
-) !void {
+) !usize {
+    var interrupts: usize = 0;
     var i: usize = 0;
     while (i < data.len) {
         const token = pipeTokenAt(data, i);
@@ -1663,6 +1698,11 @@ pub fn pipeDiscipline(
                     try view.appendSlice(allocator, "\x08 \x08");
                 }
             },
+            .interrupt => {
+                interrupts += 1;
+                line.clearRetainingCapacity();
+                try view.appendSlice(allocator, "^C\r\n");
+            },
             .text => {
                 try line.append(allocator, data[i]);
                 try view.append(allocator, data[i]);
@@ -1671,6 +1711,7 @@ pub fn pipeDiscipline(
         }
         i += token.len;
     }
+    return interrupts;
 }
 
 /// Bytes the trailing UTF-8 codepoint of `line` occupies, or null when there is
@@ -2672,13 +2713,10 @@ test "ctrl-c stops a full-screen program and leaves the shell running" {
             const info = try createSession(testing.io, "", "ws_test", null, 80, 24, "user_test");
             defer destroySession(info.id) catch {};
             const s = getSession(info.id) orelse return error.SessionNotFound;
-            if (std.mem.eql(u8, info.backend, backend_conpty)) {
-                _ = try writeInput(s, "ping -n 30 127.0.0.1\r");
-                sleepMillis(500);
-                _ = try writeInput(s, "\x03");
-            } else {
-                _ = try writeInput(s, "\x03");
-            }
+            sleepMillis(500);
+            _ = try writeInput(s, "ping -n 30 127.0.0.1\r");
+            sleepMillis(500);
+            _ = try writeInput(s, "\x03");
             _ = try writeInput(s, "echo ALIVE-7\r");
             try expectMarker(s, "ALIVE-7", 100);
         },
@@ -2686,11 +2724,19 @@ test "ctrl-c stops a full-screen program and leaves the shell running" {
     }
 }
 
-test "ctrl-c is a keystroke, never text, on a pipe-backed shell" {
-    const run = try runPipe(testing.allocator, &.{ "sl", "\x03", "eep 1\r" });
+test "ctrl-c clears the pending line and asks for a signal, not for text" {
+    const run = try runPipe(testing.allocator, &.{ "rm -rf build", "\x03", "ls\r" });
     defer freePipeRun(testing.allocator, run);
-    try testing.expectEqualStrings("sleep 1\r\n", run.shell);
-    try testing.expectEqualStrings("sleep 1\r\n", run.view);
+    try testing.expectEqual(@as(usize, 1), run.interrupts);
+    try testing.expectEqualStrings("ls\r\n", run.shell);
+    try testing.expectEqualStrings("rm -rf build^C\r\nls\r\n", run.view);
+}
+
+test "a pipe shell refuses to echo the committed line a second time" {
+    try testing.expectEqualStrings(" /Q", pipeShellArgs("cmd.exe"));
+    try testing.expectEqualStrings(" -NoLogo -Command -", pipeShellArgs("powershell.exe"));
+    try testing.expectEqualStrings(" -NoLogo -Command -", pipeShellArgs("C:\\Program Files\\PowerShell\\7\\pwsh.exe"));
+    try testing.expectEqualStrings("", pipeShellArgs("bash.exe"));
 }
 
 // ---------------------------------------------------------------------
@@ -2734,7 +2780,7 @@ test "an UNC COMSPEC counts as an absolute path on every host" {
     try testing.expect(!isWindowsAbsolutePath("C:cmd.exe"));
 }
 
-const PipeRun = struct { line: []u8, shell: []u8, view: []u8 };
+const PipeRun = struct { line: []u8, shell: []u8, view: []u8, interrupts: usize };
 
 fn runPipe(allocator: std.mem.Allocator, chunks: []const []const u8) !PipeRun {
     var line = std.ArrayList(u8).empty;
@@ -2743,11 +2789,13 @@ fn runPipe(allocator: std.mem.Allocator, chunks: []const []const u8) !PipeRun {
     errdefer shell.deinit(allocator);
     var view = std.ArrayList(u8).empty;
     errdefer view.deinit(allocator);
-    for (chunks) |chunk| try pipeDiscipline(&line, allocator, chunk, &shell, &view);
+    var interrupts: usize = 0;
+    for (chunks) |chunk| interrupts += try pipeDiscipline(&line, allocator, chunk, &shell, &view);
     return .{
         .line = try line.toOwnedSlice(allocator),
         .shell = try shell.toOwnedSlice(allocator),
         .view = try view.toOwnedSlice(allocator),
+        .interrupts = interrupts,
     };
 }
 
@@ -2801,7 +2849,7 @@ test "backspace erases one character from the line and the view" {
 }
 
 test "a control byte the pipe cannot deliver leaves the line untouched" {
-    const run = try runPipe(testing.allocator, &.{ "ec", "\x03", "ho\r" });
+    const run = try runPipe(testing.allocator, &.{ "ec", "\x1a", "ho\r" });
     defer freePipeRun(testing.allocator, run);
     try testing.expectEqualStrings("echo\r\n", run.shell);
 }
