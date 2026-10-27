@@ -6,15 +6,14 @@ const std = @import("std");
 const linux = std.os.linux;
 const backoff = @import("backoff.zig");
 const egress = @import("egress_env.zig");
+const vsock = @import("vsock.zig");
+const wire = @import("vm_wire");
 
-const vsock_af: u32 = 40;
 const af_inet: u32 = 2;
 const sock_stream: u32 = 1;
-const cid_any: u32 = 0xFFFF_FFFF;
-const agent_port: u32 = 5000;
 /// The accept loop's poll slice: long enough that an idle workspace sleeps.
 const accept_slice_ms: i32 = 1000;
-const max_frame: usize = 64 * 1024;
+const max_frame = wire.max_frame;
 const read_chunk: usize = 4096;
 const arena_bytes: usize = 16 * 1024;
 const max_argv: usize = 64;
@@ -31,9 +30,7 @@ const wno_hang: u32 = 1;
 /// one: 16 KiB of bytes is ~22 KiB of base64, comfortably inside `max_frame`.
 const job_log_dir = "/tmp/pabrik";
 const log_read_chunk: usize = 16 * 1024;
-/// The reply formatter's buffer. A `log.chunk`/`fs.read` reply is base64, so it
-/// is bigger than the bytes it carries — 64 KiB of bytes needs 88 KiB of text.
-const reply_buf_bytes: usize = 128 * 1024;
+const reply_buf_bytes: usize = wire.max_frame;
 
 /// The in-guest network forwarder: loopback, the resolver config, and the two
 /// proxies the tenant's traffic leaves through.
@@ -46,15 +43,6 @@ const port_forward_timeout = linux.timeval{ .sec = 5, .usec = 0 };
 
 const hello_json = "{\"type\":\"hello\",\"agent\":\"pabrik-vm-agent\",\"version\":\"0.2\"}";
 const bye_json = "{\"type\":\"bye\"}";
-
-/// Kernel layout: 2 + 2 + 4 + 4 bytes plus 4 of zero padding = 16.
-const SockaddrVm = extern struct {
-    family: u16,
-    reserved: u16 = 0,
-    port: u32,
-    cid: u32,
-    zero: [4]u8 = .{0} ** 4,
-};
 
 // ─── transport ───────────────────────────────────────────────────────────
 
@@ -98,7 +86,7 @@ fn readExact(fd: linux.fd_t, buf: []u8) bool {
 
 fn writeFrame(fd: linux.fd_t, payload: []const u8) void {
     var header: [4]u8 = undefined;
-    std.mem.writeInt(u32, &header, @intCast(payload.len), .big);
+    wire.frameHeader(payload.len, &header);
     writeAll(fd, &header);
     writeAll(fd, payload);
 }
@@ -454,7 +442,7 @@ fn runReadLog(conn_fd: linux.fd_t, id: i64, path: []const u8, offset: i64, max_b
 // ─── file RPC ────────────────────────────────────────────────────────────
 
 const workspace_root = "/workspace";
-const fs_read_chunk: usize = 64 * 1024;
+const fs_read_chunk: usize = wire.max_reply_chunk;
 const max_fs_path: usize = 1024;
 /// `RESOLVE_BENEATH`: every component is resolved under the workspace fd, so a
 /// symlink that leaves the workspace is `EXDEV` rather than a read of something
@@ -463,8 +451,6 @@ const resolve_beneath: u64 = 0x08;
 const o_directory: u64 = 0o200000;
 /// `AT_REMOVEDIR`: `unlinkat`'s "this is a directory" flag.
 const at_removedir: u64 = 0x200;
-/// One `fs.write` frame's bytes. A frame is 64 KiB and base64 costs 4 bytes
-/// per 3, so the envelope has room; the caller pages a file through this.
 const fs_write_chunk: usize = 32 * 1024;
 const o_wronly: u64 = 0o1;
 const o_creat: u64 = 0o100;
@@ -777,9 +763,7 @@ const WalkDir = struct {
     }
 };
 
-/// The frame a streamed walk reply is built in, by hand: the agent has no
-/// allocator, so the reply's ceiling is this buffer's.
-const walk_frame_bytes: usize = 56 * 1024;
+const walk_frame_bytes: usize = wire.max_frame - 8 * 1024;
 
 /// A streamed `fs.walk` reply. Entries are appended until the frame is full or
 /// the per-frame cap is reached, then the frame is written and a fresh one
@@ -1109,19 +1093,10 @@ fn ttySetWinsize(master: linux.fd_t, cols: u16, rows: u16) bool {
 }
 
 fn ttyListen(port: u32) ?linux.fd_t {
-    const rc = linux.socket(vsock_af, sock_stream, 0);
-    if (linux.errno(rc) != .SUCCESS) return null;
-    const fd: linux.fd_t = @intCast(rc);
-    var addr = SockaddrVm{ .family = vsock_af, .port = port, .cid = cid_any };
-    if (linux.errno(linux.bind(fd, @ptrCast(&addr), @sizeOf(SockaddrVm))) != .SUCCESS) {
-        _ = linux.close(fd);
-        return null;
-    }
-    if (linux.errno(linux.listen(fd, 4)) != .SUCCESS) {
-        _ = linux.close(fd);
-        return null;
-    }
-    return fd;
+    return switch (vsock.listen(port, wire.cid_any, 4)) {
+        .fd => |fd| fd,
+        .errno => null,
+    };
 }
 
 /// Tell the agent why no terminal exists, then leave. The agent forwards this
@@ -1256,7 +1231,7 @@ fn ttyReplyWrite(conn_fd: linux.fd_t, master: linux.fd_t, data_b64: []const u8) 
 fn ttyServeOne(conn_fd: linux.fd_t, master: linux.fd_t, shell_pid: i64) bool {
     var header: [4]u8 = undefined;
     if (!readExact(conn_fd, &header)) return true;
-    const len = std.mem.readInt(u32, &header, .big);
+    const len = wire.framePayloadLen(&header);
     if (len == 0 or len > max_frame) return true;
     var payload: [max_frame]u8 = undefined;
     if (!readExact(conn_fd, payload[0..len])) return true;
@@ -1364,7 +1339,7 @@ fn ttyReadReport(status_fd: linux.fd_t, buf: []u8) ?[]const u8 {
     }
     var header: [4]u8 = undefined;
     if (!readExact(status_fd, &header)) return null;
-    const len = std.mem.readInt(u32, &header, .big);
+    const len = wire.framePayloadLen(&header);
     if (len == 0 or len > buf.len) return null;
     if (!readExact(status_fd, buf[0..len])) return null;
     return buf[0..len];
@@ -1756,7 +1731,7 @@ fn serve(conn_fd: linux.fd_t) void {
     while (true) {
         var header: [4]u8 = undefined;
         if (!readExact(conn_fd, &header)) return;
-        const len = std.mem.readInt(u32, &header, .big);
+        const len = wire.framePayloadLen(&header);
         if (len == 0 or len > max_frame) return;
         if (!readExact(conn_fd, payload[0..len])) return;
         serveRequest(conn_fd, payload[0..len]);
@@ -1778,21 +1753,14 @@ pub fn main() void {
     ensureDev();
     startNetd();
 
-    const sock_rc = linux.socket(vsock_af, sock_stream, 0);
-    if (linux.errno(sock_rc) != .SUCCESS) {
-        logLine("vsock socket failed");
-        while (true) _ = linux.pause();
-    }
-    const listen_fd: linux.fd_t = @intCast(sock_rc);
-
-    var addr = SockaddrVm{ .family = vsock_af, .port = agent_port, .cid = cid_any };
-    if (linux.errno(linux.bind(listen_fd, @ptrCast(&addr), @sizeOf(SockaddrVm))) != .SUCCESS or
-        linux.errno(linux.listen(listen_fd, 4)) != .SUCCESS)
-    {
-        logLine("vsock listen failed");
-        while (true) _ = linux.pause();
-    }
-    logLine("listening on vsock port 5000");
+    const listen_fd = switch (vsock.listen(wire.agent_port, wire.cid_any, 4)) {
+        .fd => |fd| fd,
+        .errno => {
+            logLine("vsock listen failed");
+            while (true) _ = linux.pause();
+        },
+    };
+    logLine("listening on the agent's vsock port");
 
     // Wait on the listener, never call `accept` bare: a failure that repeats
     // must cost a tick, not the vCPU — a spinning PID 1 starves every command.
@@ -1806,8 +1774,8 @@ pub fn main() void {
         if (linux.errno(poll_rc) != .SUCCESS) continue;
         if (poll_rc == 0) continue;
         if (pfd[0].revents & (linux.POLL.IN | linux.POLL.HUP | linux.POLL.ERR) == 0) continue;
-        var peer: SockaddrVm = undefined;
-        var peer_len: linux.socklen_t = @sizeOf(SockaddrVm);
+        var peer: vsock.Addr = undefined;
+        var peer_len: linux.socklen_t = @sizeOf(vsock.Addr);
         const conn_rc = linux.accept(listen_fd, @ptrCast(&peer), &peer_len);
         if (linux.errno(conn_rc) != .SUCCESS) {
             failures += 1;
@@ -1876,7 +1844,7 @@ fn setReceiveTimeout(fd: linux.fd_t, ms: i64) void {
 /// One frame, framed the way the daemon frames it: length, then payload.
 fn sendFrame(fd: linux.fd_t, payload: []const u8) bool {
     var header: [4]u8 = undefined;
-    std.mem.writeInt(u32, &header, @intCast(payload.len), .big);
+    wire.frameHeader(payload.len, &header);
     return writeBytes(fd, &header) and writeBytes(fd, payload);
 }
 
@@ -1884,7 +1852,7 @@ fn sendFrame(fd: linux.fd_t, payload: []const u8) bool {
 fn readFrame(fd: linux.fd_t, out: []u8) ?[]u8 {
     var header: [4]u8 = undefined;
     if (!readExact(fd, &header)) return null;
-    const len = std.mem.readInt(u32, &header, .big);
+    const len = wire.framePayloadLen(&header);
     if (len == 0 or len > out.len) return null;
     if (!readExact(fd, out[0..len])) return null;
     return out[0..len];
@@ -1959,7 +1927,7 @@ test "an oversized frame is refused without a reply, and the connection closes" 
     // A length the agent refuses to read at all: it must not wait for a body
     // that is never coming.
     var header: [4]u8 = undefined;
-    std.mem.writeInt(u32, &header, @intCast(max_frame + 1), .big);
+    wire.frameHeader(max_frame + 1, &header);
     try std.testing.expect(writeBytes(caller_end, &header));
     _ = linux.shutdown(caller_end, linux.SHUT.WR);
     const muted = muteSerial();
@@ -1969,4 +1937,15 @@ test "an oversized frame is refused without a reply, and the connection closes" 
     var reply_buf: [64]u8 = undefined;
     try std.testing.expect(readFrame(caller_end, &reply_buf) == null);
     try std.testing.expectEqual(linux.E.BADF, linux.errno(linux.close(agent_end)));
+}
+
+test "every base64 reply chunk fits one frame once encoded" {
+    for ([_]usize{ read_chunk, log_read_chunk, fs_read_chunk, tty_chunk, port_forward_chunk }) |chunk| {
+        try std.testing.expect(wire.encodedReplyFits(chunk));
+    }
+    try std.testing.expect(!wire.encodedReplyFits(64 * 1024));
+}
+
+test "a streamed walk frame and its closer still fit one frame" {
+    try std.testing.expect(walk_frame_bytes + 2 <= wire.max_frame);
 }

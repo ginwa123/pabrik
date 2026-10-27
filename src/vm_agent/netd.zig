@@ -6,15 +6,13 @@ const std = @import("std");
 const linux = std.os.linux;
 const backoff = @import("backoff.zig");
 const egress = @import("egress_env.zig");
+const vsock = @import("vsock.zig");
+const wire = @import("vm_wire");
 
 // ─── constants ───────────────────────────────────────────────────────────
 
-/// The host's two vsock listeners: egress on 5001, the resolver on 5002.
-const egress_port: u32 = 5001;
-const resolver_port: u32 = 5002;
-/// The host's CID in virtio-vsock, and the guest's own AF_VSOCK number.
-const cid_host: u32 = 2;
-const vsock_af: u32 = 40;
+const egress_port: u32 = wire.egress_port;
+const resolver_port: u32 = wire.resolver_port;
 const af_inet: u32 = 2;
 
 /// Where netd listens for the tenant: the proxy and the resolver.
@@ -54,10 +52,6 @@ const relay_idle_ms: u32 = 120_000;
 /// The listener loop's tick, which is also how often children are reaped.
 const tick_ms: i32 = 1000;
 
-/// The egress tunnel is retried five times, 200 ms apart, on ECONNREFUSED:
-/// the host's listener may still be starting when the first client arrives.
-const connect_attempts: usize = 15;
-const connect_retry_ms: u64 = 200;
 const listen_backlog: u32 = 64;
 
 /// `SIOCGIFFLAGS`/`SIOCSIFFLAGS` on an `ifreq`, and the two flags netd sets.
@@ -96,15 +90,6 @@ var listen_tcp: ?linux.fd_t = null;
 var listen_udp: ?linux.fd_t = null;
 
 // ─── shapes ──────────────────────────────────────────────────────────────
-
-/// Kernel layout: 2 + 2 + 4 + 4 bytes plus 4 of zero padding = 16.
-const SockaddrVm = extern struct {
-    family: u16,
-    reserved: u16 = 0,
-    port: u32,
-    cid: u32,
-    zero: [4]u8 = .{0} ** 4,
-};
 
 /// `struct ifreq` as these two ioctls see it: 16 bytes of name, the flags,
 /// then padding out to the 40-byte view the kernel reads.
@@ -380,15 +365,12 @@ fn writeProfileScript() bool {
 /// does `connect` answers ECONNREFUSED (a new workspace's first fetch got 502).
 fn connectVsock(port: u32) ?linux.fd_t {
     var attempt: usize = 0;
-    while (attempt < connect_attempts) : (attempt += 1) {
-        const rc = linux.socket(vsock_af, linux.SOCK.STREAM, 0);
-        if (linux.errno(rc) != .SUCCESS) return null;
-        const fd: linux.fd_t = @intCast(rc);
-        var addr = SockaddrVm{ .family = vsock_af, .port = port, .cid = cid_host };
-        const err = linux.errno(linux.connect(fd, @ptrCast(&addr), @sizeOf(SockaddrVm)));
-        if (err == .SUCCESS) return fd;
-        _ = linux.close(fd);
-        if (attempt == connect_attempts - 1) {
+    while (attempt < vsock.dial_attempts) : (attempt += 1) {
+        const err = switch (vsock.connect(port, wire.cid_host)) {
+            .fd => |fd| return fd,
+            .errno => |e| e,
+        };
+        if (attempt == vsock.dial_attempts - 1) {
             logLine(switch (err) {
                 .CONNREFUSED => "MISSING egress dial: ECONNREFUSED",
                 .CONNRESET => "MISSING egress dial: ECONNRESET",
@@ -407,7 +389,7 @@ fn connectVsock(port: u32) ?linux.fd_t {
             .CONNREFUSED, .CONNRESET, .CONNABORTED, .AGAIN, .TIMEDOUT, .NOENT => {},
             else => return null,
         }
-        sleepMs(connect_retry_ms);
+        sleepMs(vsock.dial_retry_ms);
     }
     return null;
 }

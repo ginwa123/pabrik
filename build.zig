@@ -1419,11 +1419,18 @@ pub fn build(b: *std.Build) void {
 
     // Cross-platform Homebrew / vcpkg prefix options.
 
+    const wire_host = b.createModule(.{
+        .root_source_file = b.path("src/vm_wire.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const mod = b.addModule("pabrikcore", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .imports = &.{
             .{ .name = "helpers", .module = helpers_mod },
+            .{ .name = "vm_wire", .module = wire_host },
         },
     });
 
@@ -2590,6 +2597,7 @@ pub fn build(b: *std.Build) void {
     mod_tests_module.addImport("pabrikcore", mod_tests_module);
     mod_tests_module.addImport("kabelweb", kabelweb_mod);
     mod_tests_module.addImport("helpers", helpers_mod);
+    mod_tests_module.addImport("vm_wire", wire_host);
     // Same `databases` import as `mod` — tests that touch sqlite3 get the
     // package's deps (link_libc + sqlite3.c amalgamation + openssl + libpq)
     // via the module-graph dep propagation.
@@ -2753,12 +2761,18 @@ pub fn build(b: *std.Build) void {
         .os_tag = .linux,
         .abi = .musl,
     });
+    const wire_guest = b.createModule(.{
+        .root_source_file = b.path("src/vm_wire.zig"),
+        .target = guest_target,
+        .optimize = optimize,
+    });
     const vm_agent_exe = b.addExecutable(.{
         .name = "pabrik-vm-agent",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/vm_agent/main.zig"),
             .target = guest_target,
             .optimize = optimize,
+            .imports = &.{.{ .name = "vm_wire", .module = wire_guest }},
         }),
     });
     // The guest's `/init`: it asks the host for the current agent and execs
@@ -2770,6 +2784,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/vm_agent/bootstrap.zig"),
             .target = guest_target,
             .optimize = optimize,
+            .imports = &.{.{ .name = "vm_wire", .module = wire_guest }},
         }),
     });
     const vm_probe_exe = b.addExecutable(.{
@@ -2786,6 +2801,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/vm_agent/netd.zig"),
             .target = guest_target,
             .optimize = optimize,
+            .imports = &.{.{ .name = "vm_wire", .module = wire_guest }},
         }),
     });
     const install_vm_netd = b.addInstallArtifact(vm_netd_exe, .{});
@@ -2810,6 +2826,7 @@ pub fn build(b: *std.Build) void {
                 .root_source_file = b.path("src/vm_agent/tests.zig"),
                 .target = target,
                 .optimize = optimize,
+                .imports = &.{.{ .name = "vm_wire", .module = wire_host }},
             }),
         });
         const run_vm_tests = b.addRunArtifact(vm_tests);
@@ -2833,6 +2850,7 @@ pub fn build(b: *std.Build) void {
                 .root_source_file = b.path("src/vmd/main.zig"),
                 .target = target,
                 .optimize = optimize,
+                .imports = &.{.{ .name = "vm_wire", .module = wire_host }},
             }),
         });
         const install_vmd = b.addInstallArtifact(vmd_exe, .{});
@@ -2859,6 +2877,7 @@ pub fn build(b: *std.Build) void {
                 .root_source_file = b.path("src/vmd/main.zig"),
                 .target = target,
                 .optimize = optimize,
+                .imports = &.{.{ .name = "vm_wire", .module = wire_host }},
             }),
         });
         const run_vmd_tests = b.addRunArtifact(vmd_tests);

@@ -9,6 +9,7 @@ const runtime_mode = @import("../runtime_mode.zig");
 const workspace_scope = @import("workspace_scope.zig");
 const workspace_vm = @import("workspace_vm.zig");
 const vmd = @import("../vmd/vmd_client.zig");
+const vm_wire = @import("vm_wire");
 const proxy_rpc = @import("../vmd/proxy_rpc.zig");
 const policy = @import("../vmd/policy.zig");
 const fs_policy = @import("../vmd/fs_policy.zig");
@@ -360,9 +361,7 @@ pub const Fs = struct {
     }
 };
 
-/// The guest's per-reply ceiling. Matches the daemon's default so a caller
-/// asking for more does not simply get refused.
-const vmd_read_chunk: usize = 64 * 1024;
+const vmd_read_chunk: usize = vm_wire.max_reply_chunk;
 
 /// The substrate a workspace tree has on this build. A `--saas` process runs a
 /// tenant tree in its VM or not at all: a host with no VM backend compiled in
@@ -752,6 +751,12 @@ test "forSession: saas with no resolvable workspace fails closed" {
     var ctx = try guestTestCtx();
     defer ctx.deinit();
     try testing.expectError(Error.GuestWorkspaceUnknown, forSession(testing.allocator, &ctx.db, "no-such-session"));
+}
+
+test "the guest read chunk is the wire's reply budget, so one reply is one frame" {
+    try std.testing.expectEqual(vm_wire.max_reply_chunk, vmd_read_chunk);
+    try std.testing.expect(vm_wire.encodedReplyFits(vmd_read_chunk));
+    try std.testing.expect(!vm_wire.encodedReplyFits(64 * 1024));
 }
 
 test "readAll: a path outside the workspace is refused before any RPC" {

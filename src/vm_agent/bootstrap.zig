@@ -4,13 +4,8 @@
 
 const std = @import("std");
 const linux = std.os.linux;
-
-/// The host's vsock port that serves the agent.
-const agent_port: u32 = 5003;
-
-/// The host's CID in virtio-vsock.
-const cid_host: u32 = 2;
-const vsock_af: u16 = 40;
+const vsock = @import("vsock.zig");
+const wire = @import("vm_wire");
 
 /// Where the fetched agent is written, and the name it is exec'd under. The
 /// DISK's root, not /tmp: a guest may mount /tmp noexec.
@@ -22,22 +17,8 @@ const on_disk_agent = "/init.agent";
 /// How long the hand-off may take before the disk's agent is used instead.
 const handoff_timeout_ms: u64 = 20_000;
 
-/// The host's listener may still be coming up when the guest dials — but the
-/// disk's agent is right there, so the wait is short.
-const connect_attempts: usize = 15;
-const connect_retry_ms: u64 = 200;
-
 const max_head_bytes: usize = 64;
 const max_agent_bytes: usize = 64 * 1024 * 1024;
-
-/// `struct sockaddr_vm` as the kernel reads it (the netd's shape).
-const SockaddrVm = extern struct {
-    family: u16,
-    reserved: u16 = 0,
-    port: u32,
-    cid: u32,
-    zero: [4]u8 = .{0} ** 4,
-};
 
 pub fn main() !void {
     // The host first: the current agent, with every action it knows.
@@ -56,7 +37,7 @@ fn say(comptime fmt: []const u8, args: anytype) void {
 }
 
 fn fetchAndExec() bool {
-    const fd = connectVsock(agent_port) orelse return false;
+    const fd = connectVsock(wire.agent_service_port) orelse return false;
     defer _ = linux.close(fd);
     say("bootstrap: connected to the host", .{});
     if (!writeAll(fd, "AGENT\n")) {
@@ -135,19 +116,13 @@ pub fn parseHead(line: []const u8) ?usize {
 fn connectVsock(port: u32) ?linux.fd_t {
     var attempt: usize = 0;
     var last_errno: linux.E = .SUCCESS;
-    while (attempt < connect_attempts) : (attempt += 1) {
-        const rc = linux.socket(vsock_af, linux.SOCK.STREAM, 0);
-        if (linux.errno(rc) != .SUCCESS) return null;
-        const fd: linux.fd_t = @intCast(rc);
-        var addr = SockaddrVm{ .family = vsock_af, .port = port, .cid = cid_host };
-        const err = linux.errno(linux.connect(fd, @ptrCast(&addr), @sizeOf(SockaddrVm)));
-        if (err == .SUCCESS) return fd;
-        _ = linux.close(fd);
-        // The host's listener may not be up yet, and the guest's vsock
-        // device may not be ready either — so every failure is worth a
-        // retry, not just a refused connection.
+    while (attempt < vsock.dial_attempts) : (attempt += 1) {
+        const err = switch (vsock.connect(port, wire.cid_host)) {
+            .fd => |fd| return fd,
+            .errno => |e| e,
+        };
         last_errno = err;
-        _ = linux.nanosleep(&.{ .sec = 0, .nsec = connect_retry_ms * std.time.ns_per_ms }, null);
+        _ = linux.nanosleep(&.{ .sec = 0, .nsec = vsock.dial_retry_ms * std.time.ns_per_ms }, null);
     }
     say("bootstrap: no agent from the host (errno {d})", .{@intFromEnum(last_errno)});
     return null;
