@@ -35,12 +35,12 @@ pub const Migration084ReplaceRoutinesWithWorkspaceRoutines = struct {
             \\    instruction TEXT NOT NULL DEFAULT '',
             \\    schedule TEXT NOT NULL DEFAULT '',
             \\    enabled INTEGER NOT NULL DEFAULT 1,
-            \\    last_run_at DATETIME,
-            \\    next_run_at DATETIME,
+            \\    last_run_at TIMESTAMP,
+            \\    next_run_at TIMESTAMP,
             \\    last_status TEXT NOT NULL DEFAULT 'idle',
             \\    last_error TEXT NOT NULL DEFAULT '',
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE
             \\)
         , &[_][]const u8{});

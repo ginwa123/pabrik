@@ -222,14 +222,14 @@ fn setupSchema(alloc: std.mem.Allocator, db: *database.Db) !void {
         \\  password_hash TEXT NOT NULL,
         \\  role TEXT NOT NULL DEFAULT 'user',
         \\  is_active INTEGER NOT NULL DEFAULT 1,
-        \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        \\  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
     , &[_][]const u8{});
     try db.exec(alloc,
         \\CREATE TABLE auth_sessions (
         \\  token_hash TEXT PRIMARY KEY,
         \\  user_id TEXT NOT NULL,
-        \\  expires_at DATETIME NOT NULL
+        \\  expires_at TIMESTAMP NOT NULL
         \\)
     , &[_][]const u8{});
 }

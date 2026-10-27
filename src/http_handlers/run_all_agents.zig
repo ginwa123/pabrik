@@ -288,7 +288,7 @@ fn setupColumnSchema(ctx: *TestDb) !void {
     try ctx.db.exec(alloc,
         \\CREATE TABLE kanban_columns (
         \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT,
-        \\    position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+        \\    position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
     , &.{});
     try ctx.db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (

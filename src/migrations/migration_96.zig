@@ -24,7 +24,7 @@ pub const Migration096CreateSessionSkillEvents = struct {
             \\    content_hash TEXT NOT NULL DEFAULT '',
             \\    loop_index INTEGER NOT NULL DEFAULT 0,
             \\    llm_history_id TEXT NOT NULL DEFAULT '',
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             \\)
         , &[_][]const u8{});
 

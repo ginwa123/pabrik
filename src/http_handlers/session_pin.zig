@@ -146,8 +146,8 @@ fn setupPinDb() !struct { db: pabrikcore.database.Db, threaded: std.Io.Threaded 
         \\  name TEXT NOT NULL DEFAULT '',
         \\  status TEXT NOT NULL DEFAULT 'active',
         \\  cwd TEXT NOT NULL DEFAULT '',
-        \\  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\  is_pinned INTEGER NOT NULL DEFAULT 0,
         \\  pinned_position INTEGER NOT NULL DEFAULT 0
         \\)
@@ -159,7 +159,7 @@ fn setupPinDb() !struct { db: pabrikcore.database.Db, threaded: std.Io.Threaded 
         \\  workspace_item_id TEXT NOT NULL DEFAULT '',
         \\  is_pinned INTEGER NOT NULL DEFAULT 0,
         \\  pinned_position INTEGER NOT NULL DEFAULT 0,
-        \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        \\  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
     , &.{});
     try db.exec(alloc, "INSERT INTO sessions (id, name) VALUES ('s1', 'One'), ('s2', 'Two')", &.{});

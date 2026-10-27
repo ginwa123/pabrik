@@ -336,8 +336,8 @@ fn setupDb() !TestCtx {
         \\CREATE TABLE workspaces (
         \\  id TEXT PRIMARY KEY,
         \\  name TEXT NOT NULL,
-        \\  created_at DATETIME,
-        \\  updated_at DATETIME,
+        \\  created_at TIMESTAMP,
+        \\  updated_at TIMESTAMP,
         \\  position INTEGER,
         \\  user_id TEXT,
         \\  is_vm INTEGER NOT NULL DEFAULT 0
@@ -351,7 +351,7 @@ fn setupDb() !TestCtx {
         \\  workspace_id TEXT NOT NULL,
         \\  user_id TEXT NOT NULL,
         \\  role TEXT NOT NULL DEFAULT 'viewer',
-        \\  joined_at DATETIME,
+        \\  joined_at TIMESTAMP,
         \\  invited_by TEXT,
         \\  PRIMARY KEY (workspace_id, user_id)
         \\)
@@ -364,8 +364,8 @@ fn setupDb() !TestCtx {
         \\  name TEXT,
         \\  path TEXT,
         \\  position INTEGER,
-        \\  created_at DATETIME,
-        \\  updated_at DATETIME
+        \\  created_at TIMESTAMP,
+        \\  updated_at TIMESTAMP
         \\)
     , &.{});
 

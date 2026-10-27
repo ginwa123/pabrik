@@ -316,7 +316,7 @@ fn setupDb() !TestDb {
         \\CREATE TABLE kanban_columns (
         \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT, description TEXT NOT NULL DEFAULT '',
         \\    position INTEGER, is_done INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
     , &.{});
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
@@ -330,7 +330,7 @@ fn setupDb() !TestDb {
     try db.exec(alloc,
         \\CREATE TABLE kanban_task_dependencies (
         \\    task_id TEXT NOT NULL, depends_on_task_id TEXT NOT NULL,
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\    PRIMARY KEY (task_id, depends_on_task_id))
     , &.{});
 

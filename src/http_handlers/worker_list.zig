@@ -177,7 +177,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
         \\    working_directory TEXT,
         \\    last_activity_nano INTEGER,
         \\    last_activity_description TEXT,
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\    cancelled INTEGER DEFAULT 0,
         \\    user_id TEXT
         \\)
@@ -387,7 +387,7 @@ test "repeated listings hand their pooled reader back instead of exhausting the 
         \\    working_directory TEXT,
         \\    last_activity_nano INTEGER,
         \\    last_activity_description TEXT,
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\    cancelled INTEGER DEFAULT 0,
         \\    user_id TEXT
         \\)

@@ -19,7 +19,7 @@ pub const Migration019CreateWorkerTable = struct {
             \\    working_directory TEXT,
             \\    last_activity INTEGER DEFAULT (strftime('%s', 'now')),
             \\    last_activity_description TEXT,
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             \\)
         , &[_][]const u8{});
 

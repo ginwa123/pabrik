@@ -23,7 +23,7 @@ pub const Migration100AddWorkspaceMembers = struct {
             \\    workspace_id TEXT NOT NULL,
             \\    user_id TEXT NOT NULL,
             \\    role TEXT NOT NULL DEFAULT 'viewer' CHECK (role IN ('owner', 'admin', 'editor', 'viewer')),
-            \\    joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            \\    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    invited_by TEXT,
             \\    PRIMARY KEY (workspace_id, user_id)
             \\)

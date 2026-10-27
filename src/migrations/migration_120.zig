@@ -59,7 +59,7 @@ fn setupDb() !TestCtx {
         \\    config_id TEXT NOT NULL,
         \\    tool_name TEXT NOT NULL,
         \\    enabled INTEGER NOT NULL DEFAULT 1,
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\    UNIQUE (config_id, tool_name)
         \\)
     , &[_][]const u8{});

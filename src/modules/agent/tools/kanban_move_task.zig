@@ -583,7 +583,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
         \\CREATE TABLE kanban_task_dependencies (
         \\  task_id TEXT NOT NULL,
         \\  depends_on_task_id TEXT NOT NULL,
-        \\  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\  PRIMARY KEY (task_id, depends_on_task_id)
         \\)
     , &.{});

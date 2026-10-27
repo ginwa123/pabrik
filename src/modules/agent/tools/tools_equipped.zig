@@ -661,7 +661,7 @@ fn setupSeedDb() !SeedTestCtx {
     try db.init(io, ":memory:");
     try db.exec(
         alloc,
-        "CREATE TABLE agent_config_tools (id TEXT PRIMARY KEY, config_id TEXT NOT NULL, tool_name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(config_id, tool_name))",
+        "CREATE TABLE agent_config_tools (id TEXT PRIMARY KEY, config_id TEXT NOT NULL, tool_name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE(config_id, tool_name))",
         &.{},
     );
     return .{ .db = db, .threaded = threaded };

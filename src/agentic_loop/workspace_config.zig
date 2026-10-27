@@ -638,8 +638,8 @@ fn setupOverlayDb() !OverlayCtx {
         \\  owner TEXT NOT NULL DEFAULT '',
         \\  workspace_id TEXT NOT NULL,
         \\  config_json TEXT,
-        \\  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\  PRIMARY KEY (owner, workspace_id)
         \\)
     , &.{});

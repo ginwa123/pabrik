@@ -18,8 +18,8 @@ pub const Migration034CreateWorkspaceItemTasks = struct {
             \\    id TEXT PRIMARY KEY,
             \\    name TEXT NOT NULL,
             \\    workspace_item_id TEXT NOT NULL,
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             \\)
         , &[_][]const u8{});
         try db.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_workspace_item_tasks_item ON workspace_item_tasks(workspace_item_id)", &[_][]const u8{});

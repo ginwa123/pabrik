@@ -180,8 +180,8 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
         \\  name TEXT NOT NULL DEFAULT '',
         \\  position INTEGER,
         \\  user_id TEXT,
-        \\  created_at DATETIME,
-        \\  updated_at DATETIME,
+        \\  created_at TIMESTAMP,
+        \\  updated_at TIMESTAMP,
         \\  is_vm INTEGER NOT NULL DEFAULT 0
         \\)
     , &[_][]const u8{});
@@ -193,7 +193,7 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
         \\  workspace_id TEXT NOT NULL,
         \\  user_id TEXT NOT NULL,
         \\  role TEXT NOT NULL DEFAULT 'viewer' CHECK (role IN ('owner', 'admin', 'editor', 'viewer')),
-        \\  joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\  joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\  invited_by TEXT,
         \\  PRIMARY KEY (workspace_id, user_id)
         \\)
@@ -211,8 +211,8 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
         \\  path TEXT,
         \\  position INTEGER NOT NULL DEFAULT 0,
         \\  is_default INTEGER NOT NULL DEFAULT 0,
-        \\  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        \\  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
     , &[_][]const u8{});
     try db.exec(alloc,
@@ -225,8 +225,8 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
         \\  workspace_item_id TEXT NOT NULL UNIQUE,
         \\  item_type TEXT NOT NULL,
         \\  description TEXT,
-        \\  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        \\  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
     , &[_][]const u8{});
     try db.exec(alloc,
@@ -235,7 +235,7 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
         \\  config_id TEXT NOT NULL,
         \\  tool_name TEXT NOT NULL,
         \\  enabled INTEGER NOT NULL DEFAULT 1,
-        \\  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        \\  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
     , &[_][]const u8{});
 

@@ -20,8 +20,8 @@ pub const Migration070AddAgentMemories = struct {
             \\    id TEXT PRIMARY KEY,
             \\    content TEXT NOT NULL,
             \\    tags TEXT NOT NULL DEFAULT '',
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             \\)
         , &[_][]const u8{});
 

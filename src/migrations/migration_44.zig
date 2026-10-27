@@ -27,12 +27,12 @@ pub const Migration044AddRoutines = struct {
             \\    schedule TEXT NOT NULL,
             \\    initial_prompt TEXT NOT NULL,
             \\    enabled INTEGER NOT NULL DEFAULT 1,
-            \\    last_run_at DATETIME,
-            \\    next_run_at DATETIME NOT NULL,
+            \\    last_run_at TIMESTAMP,
+            \\    next_run_at TIMESTAMP NOT NULL,
             \\    last_status TEXT,
             \\    last_error TEXT,
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    FOREIGN KEY (task_id) REFERENCES workspace_item_tasks(id) ON DELETE CASCADE
             \\)
         , &[_][]const u8{});

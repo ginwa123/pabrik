@@ -17,8 +17,8 @@ pub const Migration087CreateAgentRoutines = struct {
             \\    id TEXT PRIMARY KEY,
             \\    workspace_item_id TEXT NOT NULL UNIQUE,
             \\    description TEXT NOT NULL DEFAULT '',
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE
             \\)
         , &[_][]const u8{});
@@ -34,8 +34,8 @@ pub const Migration087CreateAgentRoutines = struct {
             \\    label TEXT NOT NULL DEFAULT '',
             \\    content TEXT NOT NULL DEFAULT '',
             \\    position INTEGER NOT NULL DEFAULT 0,
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    FOREIGN KEY (routine_id) REFERENCES agent_routines(id) ON DELETE CASCADE
             \\)
         , &[_][]const u8{});
@@ -53,8 +53,8 @@ pub const Migration087CreateAgentRoutines = struct {
             \\    title TEXT NOT NULL DEFAULT '',
             \\    content TEXT NOT NULL DEFAULT '',
             \\    position INTEGER NOT NULL DEFAULT 0,
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    FOREIGN KEY (routine_id) REFERENCES agent_routines(id) ON DELETE CASCADE
             \\)
         , &[_][]const u8{});
@@ -71,7 +71,7 @@ pub const Migration087CreateAgentRoutines = struct {
             \\    routine_id TEXT NOT NULL,
             \\    tool_name TEXT NOT NULL,
             \\    enabled INTEGER NOT NULL DEFAULT 1,
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    FOREIGN KEY (routine_id) REFERENCES agent_routines(id) ON DELETE CASCADE
             \\)
         , &[_][]const u8{});

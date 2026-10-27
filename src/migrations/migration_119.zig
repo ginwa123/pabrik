@@ -19,8 +19,8 @@ pub const Migration119CreateSkillMetadata = struct {
             \\    skill_id TEXT NOT NULL,
             \\    key TEXT NOT NULL,
             \\    value TEXT NOT NULL DEFAULT '',
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    UNIQUE (skill_id, key),
             \\    FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
             \\)

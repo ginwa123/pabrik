@@ -22,7 +22,7 @@ pub const Migration001CreateLLMHistory = struct {
             \\    tool_results_json TEXT,
             \\    finish_reason TEXT,
             \\    usage_json TEXT,
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             \\)
         , &[_][]const u8{});
 

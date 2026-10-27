@@ -27,9 +27,9 @@ pub const Migration077AddUsersAndRbacSchema = struct {
             \\    password_hash TEXT NOT NULL,
             \\    role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('admin', 'user', 'bot')),
             \\    is_active INTEGER NOT NULL DEFAULT 1,
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            \\    last_login_at DATETIME DEFAULT NULL
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            \\    last_login_at TIMESTAMP DEFAULT NULL
             \\)
         , &[_][]const u8{});
 
@@ -41,8 +41,8 @@ pub const Migration077AddUsersAndRbacSchema = struct {
             \\    slug TEXT NOT NULL UNIQUE,
             \\    description TEXT NOT NULL DEFAULT '',
             \\    is_active INTEGER NOT NULL DEFAULT 1,
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    created_by TEXT
             \\)
         , &[_][]const u8{});
@@ -53,7 +53,7 @@ pub const Migration077AddUsersAndRbacSchema = struct {
             \\    user_id TEXT NOT NULL,
             \\    user_company_id TEXT NOT NULL,
             \\    role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'admin', 'member', 'guest')),
-            \\    joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            \\    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    invited_by TEXT,
             \\    PRIMARY KEY (user_id, user_company_id)
             \\)

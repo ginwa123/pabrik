@@ -19,8 +19,8 @@ pub const Migration098CreateDocuments = struct {
             \\    title TEXT NOT NULL DEFAULT '',
             \\    content TEXT NOT NULL DEFAULT '',
             \\    format TEXT NOT NULL DEFAULT 'markdown',
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
             \\)
         , &[_][]const u8{});

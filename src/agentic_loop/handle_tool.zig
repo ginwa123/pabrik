@@ -2060,7 +2060,7 @@ fn secretsSetup(allocator: std.mem.Allocator) !SecretsFixture {
         \\  id TEXT PRIMARY KEY,
         \\  name TEXT,
         \\  cwd TEXT,
-        \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        \\  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
     , &.{});
     try db.exec(allocator,
@@ -2088,8 +2088,8 @@ fn secretsSetup(allocator: std.mem.Allocator) !SecretsFixture {
         \\  workspace_id TEXT NOT NULL,
         \\  name TEXT NOT NULL,
         \\  value TEXT NOT NULL,
-        \\  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        \\  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
     , &.{});
 

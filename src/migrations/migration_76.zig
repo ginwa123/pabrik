@@ -16,7 +16,7 @@ pub const Migration076CreateSessionPlan = struct {
             \\CREATE TABLE IF NOT EXISTS session_plan (
             \\    session_id TEXT PRIMARY KEY,
             \\    plan_md TEXT NOT NULL DEFAULT '',
-            \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             \\)
         , &[_][]const u8{});
         // No FK on session_id (matches session_activity Migration 073 precedent).

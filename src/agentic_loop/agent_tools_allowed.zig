@@ -43,7 +43,7 @@ fn setupDb() !TestCtx {
     var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
-    try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT, name TEXT, path TEXT, position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)", &[_][]const u8{});
+    try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT, name TEXT, path TEXT, position INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)", &[_][]const u8{});
     try Migration116.up(&db, alloc);
     return .{ .db = db, .threaded = threaded };
 }

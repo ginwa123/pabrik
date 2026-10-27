@@ -19,8 +19,8 @@ pub const Migration080AddAgentSystemPrompt = struct {
             \\    title TEXT NOT NULL DEFAULT '',
             \\    content TEXT NOT NULL DEFAULT '',
             \\    position INTEGER NOT NULL DEFAULT 0,
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
             \\)
         , &[_][]const u8{});

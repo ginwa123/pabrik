@@ -287,17 +287,17 @@ fn setupDb() !TestCtx {
     // post-migration-018 schema.
     try db.exec(
         testing.allocator,
-        "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+        "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         &[_][]const u8{},
     );
     try db.exec(
         testing.allocator,
-        "CREATE TABLE agent_configs (id TEXT PRIMARY KEY, workspace_item_id TEXT NOT NULL UNIQUE, item_type TEXT NOT NULL, description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+        "CREATE TABLE agent_configs (id TEXT PRIMARY KEY, workspace_item_id TEXT NOT NULL UNIQUE, item_type TEXT NOT NULL, description TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         &[_][]const u8{},
     );
     try db.exec(
         testing.allocator,
-        "CREATE TABLE agent_config_tools (id TEXT PRIMARY KEY, config_id TEXT NOT NULL, tool_name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+        "CREATE TABLE agent_config_tools (id TEXT PRIMARY KEY, config_id TEXT NOT NULL, tool_name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         &[_][]const u8{},
     );
 

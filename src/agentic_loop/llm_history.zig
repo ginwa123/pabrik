@@ -6666,8 +6666,8 @@ fn sessionUpdateSetupDb() !TestCtx {
         \\    name TEXT NOT NULL,
         \\    status TEXT NOT NULL DEFAULT 'active',
         \\    cwd TEXT,
-        \\    created_at DATETIME,
-        \\    updated_at DATETIME,
+        \\    created_at TIMESTAMP,
+        \\    updated_at TIMESTAMP,
         \\    selected_profile_model TEXT,
         \\    git_worktree_cwd TEXT,
         \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
@@ -6855,7 +6855,7 @@ fn getSessionListSetupDb() !struct {
         \\    tool_results_json TEXT,
         \\    finish_reason TEXT,
         \\    usage_json TEXT,
-        \\    created_at_nano DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\    created_at_nano TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\    agent TEXT DEFAULT 'Agent'
         \\)
     , &.{});
@@ -7616,8 +7616,8 @@ test "getSessionListWithCursor converts unix-ms storage to SQLite datetime on th
         \\    name TEXT NOT NULL,
         \\    status TEXT NOT NULL DEFAULT 'active',
         \\    cwd TEXT NOT NULL DEFAULT '',
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\    selected_profile_model TEXT,
         \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
         \\    last_finish_reason TEXT,
@@ -7681,8 +7681,8 @@ test "getSessionListWithCursor returns empty string for NULL last_human_touched_
         \\    name TEXT NOT NULL,
         \\    status TEXT NOT NULL DEFAULT 'active',
         \\    cwd TEXT NOT NULL DEFAULT '',
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\    selected_profile_model TEXT,
         \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
         \\    last_finish_reason TEXT,
@@ -7739,8 +7739,8 @@ test "getSessionListWithCursor derives needs_human_review for the sidebar status
         \\    name TEXT NOT NULL,
         \\    status TEXT NOT NULL DEFAULT 'active',
         \\    cwd TEXT NOT NULL DEFAULT '',
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\    selected_profile_model TEXT,
         \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
         \\    last_finish_reason TEXT,
@@ -7847,8 +7847,8 @@ test "getSessionListWithCursor pages on the sort field's column, not created_at"
         \\    name TEXT NOT NULL,
         \\    status TEXT NOT NULL DEFAULT 'active',
         \\    cwd TEXT NOT NULL DEFAULT '',
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\    selected_profile_model TEXT,
         \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
         \\    last_finish_reason TEXT,
@@ -7938,8 +7938,8 @@ test "getSessionListWithCursor keeps the created_at filter when sorting by creat
         \\    name TEXT NOT NULL,
         \\    status TEXT NOT NULL DEFAULT 'active',
         \\    cwd TEXT NOT NULL DEFAULT '',
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\    selected_profile_model TEXT,
         \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
         \\    last_finish_reason TEXT,
@@ -8013,8 +8013,8 @@ test "getSessionListWithCursor: workspace_ids bounds sessions AND total (count h
         \\    name TEXT NOT NULL,
         \\    status TEXT NOT NULL DEFAULT 'active',
         \\    cwd TEXT NOT NULL DEFAULT '',
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\    selected_profile_model TEXT,
         \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
         \\    last_finish_reason TEXT,
@@ -8127,7 +8127,7 @@ test "needs_human_review predicate returns 1 when finish_reason='stop' AND no hu
         \\  name TEXT,
         \\  status TEXT,
         \\  last_finish_reason TEXT,
-        \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\  git_worktree_cwd TEXT
         \\)
     , &.{});
@@ -8186,7 +8186,7 @@ test "needs_human_review predicate returns 0 when human touched AFTER the AI fin
         \\CREATE TABLE sessions (
         \\  id TEXT PRIMARY KEY, name TEXT, status TEXT,
         \\  last_finish_reason TEXT,
-        \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\  git_worktree_cwd TEXT
         \\)
     , &.{});
@@ -8248,7 +8248,7 @@ test "needs_human_review predicate returns 0 when finish_reason is 'tool_calls' 
         \\CREATE TABLE sessions (
         \\  id TEXT PRIMARY KEY, name TEXT, status TEXT,
         \\  last_finish_reason TEXT,
-        \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\  git_worktree_cwd TEXT
         \\)
     , &.{});
@@ -8304,7 +8304,7 @@ test "needs_human_review predicate returns 0 when no sessions row exists for the
         \\)
     , &.{});
     try db.exec(alloc,
-        "CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT, status TEXT, last_finish_reason TEXT, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, git_worktree_cwd TEXT)",
+        "CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT, status TEXT, last_finish_reason TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, git_worktree_cwd TEXT)",
         &.{});
     try db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('wi_1','ws_1','kanban')",
@@ -9635,7 +9635,7 @@ fn llmHistoryWorkerInfoSetupDb() !struct {
         \\    working_directory TEXT,
         \\    last_activity_nano INTEGER DEFAULT (strftime('%s', 'now')),
         \\    last_activity_description TEXT,
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
     , &.{});
 
@@ -10130,8 +10130,8 @@ fn setupOwnedSessionsDb() !struct { db: database.Db, threaded: std.Io.Threaded }
         \\    status TEXT NOT NULL DEFAULT 'active',
         \\    cwd TEXT NOT NULL DEFAULT '',
         \\    user_id TEXT,
-        \\    created_at DATETIME,
-        \\    updated_at DATETIME,
+        \\    created_at TIMESTAMP,
+        \\    updated_at TIMESTAMP,
         \\    selected_profile_model TEXT,
         \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
         \\    last_finish_reason TEXT,

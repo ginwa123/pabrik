@@ -20,7 +20,7 @@ pub const Migration073AddSessionActivity = struct {
             \\    id TEXT PRIMARY KEY,
             \\    session_id TEXT NOT NULL,
             \\    description TEXT NOT NULL,
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             \\)
         , &[_][]const u8{});
 

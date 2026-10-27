@@ -448,12 +448,12 @@ fn setupDb() !TestCtx {
     , &[_][]const u8{});
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
-        \\    id TEXT PRIMARY KEY, name TEXT, workspace_item_id TEXT, created_at DATETIME, updated_at DATETIME, task_type TEXT
+        \\    id TEXT PRIMARY KEY, name TEXT, workspace_item_id TEXT, created_at TIMESTAMP, updated_at TIMESTAMP, task_type TEXT
         \\)
     , &[_][]const u8{});
     try db.exec(alloc,
         \\CREATE TABLE kanban_columns (
-        \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT, description TEXT NOT NULL DEFAULT '', position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT, description TEXT NOT NULL DEFAULT '', position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
     , &[_][]const u8{});
     try db.exec(alloc,

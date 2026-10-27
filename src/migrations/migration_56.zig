@@ -25,8 +25,8 @@ pub const Migration056UpgradeDesignPagesToFileModel = struct {
             \\    x INTEGER NOT NULL DEFAULT 0,
             \\    y INTEGER NOT NULL DEFAULT 0,
             \\    position INTEGER NOT NULL DEFAULT 0,
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE
             \\)
         , &[_][]const u8{});
@@ -56,8 +56,8 @@ pub const Migration056UpgradeDesignPagesToFileModel = struct {
             \\    height INTEGER NOT NULL DEFAULT 667,
             \\    z_index INTEGER NOT NULL DEFAULT 0,
             \\    position INTEGER NOT NULL DEFAULT 0,
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    FOREIGN KEY (page_id) REFERENCES design_pages(id) ON DELETE CASCADE
             \\)
         , &[_][]const u8{});

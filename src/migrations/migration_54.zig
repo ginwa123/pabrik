@@ -41,7 +41,7 @@ pub const Migration054MakeSessionQueueMessageNullable = struct {
             \\    session_id TEXT NOT NULL,
             \\    message TEXT,
             \\    image_url TEXT,
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             \\)
         , &[_][]const u8{});
 
