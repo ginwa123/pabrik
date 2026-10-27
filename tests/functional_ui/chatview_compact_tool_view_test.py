@@ -432,3 +432,266 @@ def test_dev_view_still_draws_the_cards(ui_harness: UIHarness, page) -> None:
     assert page.locator('[data-testid="compact-tool-row"]').count() == 0, (
         "the dev view must not draw the compact rows"
     )
+
+
+# ─── What the turn SAYS: the answer it ends with, and the narration on the way there ─────────────
+
+# The sentence the agent writes before each call, on every tool-calling turn.
+NARRATIONS = (
+    "I will start by reading the alpha file.",
+    "Now let me look at the directory.",
+)
+ANSWER = "The totals are wrong because the tax column is never filled."
+QUESTION = "Which database should I read, billing or archive?"
+
+
+def _envelope(
+    tool: str, parameters: object, data: object, duration_ms: int | None = None
+) -> str:
+    body: dict[str, object] = {
+        "tool": tool,
+        "parameters": parameters,
+        "success": True,
+        "data": data,
+        "error": None,
+        "v": 1,
+    }
+    if duration_ms is not None:
+        body["duration_ms"] = duration_ms
+    return json.dumps(body)
+
+
+def _seed_narrated_turn(h: UIHarness, workspace_id: str, session_id: str) -> None:
+    """One turn that narrates before each call and answers at the end."""
+    seed = DbSeed(_seed_db_path(h))
+    with seed.connect() as conn:
+        seed.seed_session(conn, session_id, "Compact View", cwd=str(h.temp_dir))
+        bind_session_workspace(conn, workspace_id, session_id)
+        seed.seed_user_message(conn, session_id, text="why are the bill totals wrong?")
+        for index, (tool, parameters) in enumerate(CALLS):
+            call_id = f"tc_narrated_{index}"
+            narration = NARRATIONS[index] if index < len(NARRATIONS) else ""
+            seed.seed_assistant_message(
+                conn,
+                session_id,
+                text=narration,
+                finish_reason="tool_calls",
+                tool_calls=[
+                    {
+                        "id": call_id,
+                        "type": "function",
+                        "function": {"name": tool, "arguments": json.dumps(parameters)},
+                    }
+                ],
+            )
+            seed.seed_tool_result(
+                conn,
+                session_id,
+                tool_call_id=call_id,
+                tool_name=tool,
+                content=_envelope(tool, parameters, {}, duration_ms=1200),
+            )
+        seed.seed_assistant_message(conn, session_id, text=ANSWER, finish_reason="stop")
+
+
+def test_only_the_answer_the_turn_ended_with_stands_in_the_transcript(
+    ui_harness: UIHarness, page
+) -> None:
+    """A line the agent wrote on the way to a call is not its answer."""
+    h = ui_harness
+    session_id = "sess_compact_view_narration_001"
+    workspace_id = create_workspace(h)
+    _write_config(h, "compact")
+    _seed_narrated_turn(h, workspace_id, session_id)
+
+    open_chatview(page, h, workspace_id, session_id)
+    page.locator('[data-testid="compact-tool-group"]').first.wait_for(timeout=20000)
+
+    body = page.locator("body").inner_text()
+    for narration in NARRATIONS:
+        assert narration not in body, (
+            f"the narration on the way to a call must not stack above the card, "
+            f"got {narration!r} in {body!r}"
+        )
+    assert ANSWER in body, (
+        f"the answer the turn ended with must stay in the transcript, got {body!r}"
+    )
+
+
+def test_the_narration_lives_inside_the_card(ui_harness: UIHarness, page) -> None:
+    """Unfolded, the narration is one line per sentence, in the order it happened."""
+    h = ui_harness
+    session_id = "sess_compact_view_narration_002"
+    workspace_id = create_workspace(h)
+    _write_config(h, "compact")
+    _seed_narrated_turn(h, workspace_id, session_id)
+
+    open_chatview(page, h, workspace_id, session_id)
+    page.locator('[data-testid="compact-tool-group-header"]').first.click()
+    page.locator('[data-testid="compact-narration-row"]').first.wait_for(timeout=10000)
+
+    inside = page.evaluate(
+        """() => document.querySelectorAll(
+             '[data-testid="compact-tool-chain"] [data-testid="compact-narration-row"]').length"""
+    )
+    assert inside == len(NARRATIONS), (
+        f"every line the agent wrote on the way to a call must draw INSIDE the chain, "
+        f"got {inside} of {len(NARRATIONS)}"
+    )
+    previews = page.locator('[data-testid="compact-narration-preview"]').all_text_contents()
+    assert previews == list(NARRATIONS), f"each line must carry its own text, got {previews}"
+    whole = page.locator("body").inner_text()
+    for narration in NARRATIONS:
+        assert whole.count(narration) == 1, (
+            f"{narration!r} must be drawn once, got {whole.count(narration)}"
+        )
+
+
+def test_a_question_for_the_human_stays_visible(ui_harness: UIHarness, page) -> None:
+    """`ask_user` ends the turn by asking, so the question it wrote must stay on screen."""
+    h = ui_harness
+    session_id = "sess_compact_view_question_001"
+    workspace_id = create_workspace(h)
+    _write_config(h, "compact")
+
+    seed = DbSeed(_seed_db_path(h))
+    with seed.connect() as conn:
+        seed.seed_session(conn, session_id, "Compact View", cwd=str(h.temp_dir))
+        bind_session_workspace(conn, workspace_id, session_id)
+        seed.seed_user_message(conn, session_id, text="why are the bill totals wrong?")
+        seed.seed_assistant_message(
+            conn,
+            session_id,
+            text=QUESTION,
+            finish_reason="tool_calls",
+            tool_calls=[
+                {
+                    "id": "tc_ask",
+                    "type": "function",
+                    "function": {
+                        "name": "ask_user",
+                        "arguments": json.dumps(
+                            {"question": QUESTION, "options": ["billing", "archive"]}
+                        ),
+                    },
+                }
+            ],
+        )
+        seed.seed_tool_result(
+            conn,
+            session_id,
+            tool_call_id="tc_ask",
+            tool_name="ask_user",
+            content=_envelope(
+                "ask_user",
+                {"question": QUESTION},
+                {
+                    "status": "pending",
+                    "question_id": "q_ui_compact_1",
+                    "question": QUESTION,
+                    "options": ["billing", "archive"],
+                },
+            ),
+        )
+
+    open_chatview(page, h, workspace_id, session_id)
+    page.locator('[data-testid="ask-user-card"]').first.wait_for(timeout=20000)
+
+    body = page.locator("body").inner_text()
+    assert QUESTION in body, (
+        f"the question the turn ended by asking must stay in the transcript, got {body!r}"
+    )
+
+
+def test_a_presented_file_keeps_its_own_card(ui_harness: UIHarness, page) -> None:
+    """`present_files` IS what the agent is showing, so it never folds into a row."""
+    h = ui_harness
+    session_id = "sess_compact_view_present_001"
+    workspace_id = create_workspace(h)
+    _write_config(h, "compact")
+
+    report = h.temp_dir / "report.txt"
+    report.write_bytes(b"presented bytes\n")
+
+    seed = DbSeed(_seed_db_path(h))
+    with seed.connect() as conn:
+        seed.seed_session(conn, session_id, "Compact View", cwd=str(h.temp_dir))
+        bind_session_workspace(conn, workspace_id, session_id)
+        seed.seed_user_message(conn, session_id, text="read it and show me the report")
+        for index, (tool, parameters) in enumerate(CALLS[:2]):
+            call_id = f"tc_present_run_{index}"
+            seed.seed_assistant_message(
+                conn,
+                session_id,
+                text="",
+                finish_reason="tool_calls",
+                tool_calls=[
+                    {
+                        "id": call_id,
+                        "type": "function",
+                        "function": {"name": tool, "arguments": json.dumps(parameters)},
+                    }
+                ],
+            )
+            seed.seed_tool_result(
+                conn,
+                session_id,
+                tool_call_id=call_id,
+                tool_name=tool,
+                content=_envelope(tool, parameters, {}, duration_ms=900),
+            )
+        seed.seed_assistant_message(
+            conn,
+            session_id,
+            text="",
+            finish_reason="tool_calls",
+            tool_calls=[
+                {
+                    "id": "tc_present",
+                    "type": "function",
+                    "function": {
+                        "name": "present_files",
+                        "arguments": json.dumps({"files": [{"path": str(report)}]}),
+                    },
+                }
+            ],
+        )
+        seed.seed_tool_result(
+            conn,
+            session_id,
+            tool_call_id="tc_present",
+            tool_name="present_files",
+            content=_envelope(
+                "present_files",
+                {"files": [{"path": str(report)}]},
+                {
+                    "status": "presented",
+                    "count": 1,
+                    "files": [
+                        {
+                            "path": str(report),
+                            "bytes": report.stat().st_size,
+                            "mime": "text/plain",
+                            "label": "report",
+                        }
+                    ],
+                },
+            ),
+        )
+        seed.seed_assistant_message(
+            conn, session_id, text="Here is the report.", finish_reason="stop"
+        )
+
+    open_chatview(page, h, workspace_id, session_id)
+    page.locator('[data-testid="present-files-card"]').first.wait_for(timeout=20000)
+
+    count = page.locator('[data-testid="compact-tool-group-count"]').first.inner_text()
+    assert count.strip() == "2 tool calls", (
+        f"only the calls that fold belong in the count, got {count!r}"
+    )
+    page.locator('[data-testid="compact-tool-group-header"]').first.click()
+    page.locator('[data-testid="compact-tool-row"]').first.wait_for(timeout=10000)
+    names = page.locator('[data-testid="compact-tool-row-name"]').all_text_contents()
+    assert "present_files" not in names, (
+        f"a presented file must keep its own card, not become a chain row, got {names}"
+    )
