@@ -6,6 +6,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
+const dialect = @import("pabrikcore").dialect;
 const migration = @import("../migrations/migration.zig");
 const llm_history = @import("llm_history.zig");
 
@@ -121,10 +122,18 @@ pub fn getMemoryById(
     id: []const u8,
     workspace_id: []const u8,
 ) !?MemoryRow {
-    var q = try db.query(allocator,
-        "SELECT id, content, tags, COALESCE(workspace_id, ''), COALESCE(created_at, ''), COALESCE(updated_at, '') " ++
+    var created_buf: [128]u8 = undefined;
+    var updated_buf: [128]u8 = undefined;
+    const created_expr = try dialect.timestampText(&created_buf, "created_at");
+    const updated_expr = try dialect.timestampText(&updated_buf, "updated_at");
+    const select = try std.fmt.allocPrint(
+        allocator,
+        "SELECT id, content, tags, COALESCE(workspace_id, ''), COALESCE({s}, ''), COALESCE({s}, '') " ++
             "FROM agent_memories WHERE id = ? AND workspace_id = ?",
-        &.{ id, workspace_id });
+        .{ created_expr, updated_expr },
+    );
+    defer allocator.free(select);
+    var q = try db.query(allocator, select, &.{ id, workspace_id });
     defer q.deinit();
 
     const row = (try q.next()) orelse return null;
@@ -194,8 +203,8 @@ pub fn loadMemoriesByFts(
 ) ![]MemoryHit {
     if (opts.query.len == 0) return allocator.alloc(MemoryHit, 0);
 
-    // Sanitize the FTS5 query — same helper workspace history search uses.
-    const sanitized_query = try llm_history.escapeFtsQuery(allocator, opts.query);
+    // Sanitize the query — same tokenizer the workspace history search uses.
+    const sanitized_query = try llm_history.searchQueryText(allocator, opts.query);
     defer allocator.free(sanitized_query);
     // Empty after sanitization (query was all FTS5 operators) — bail
     // before FTS5 sees `MATCH ''` and throws "empty query".
@@ -205,25 +214,44 @@ pub fn loadMemoriesByFts(
     var sql: std.ArrayList(u8) = .empty;
     defer sql.deinit(allocator);
 
-    // Wrap FTS5 access in a subquery because SQLite virtual tables have
-    // restrictions on what SQL features they accept (notably window functions
-    // like `COUNT(*) OVER ()`).
-    try sql.appendSlice(allocator,
-        \\SELECT
-        \\    id, tags, snippet, created_at, updated_at,
-        \\    COUNT(*) OVER () AS total_count
-        \\FROM (
-        \\    SELECT
-        \\        m.id AS id, m.tags AS tags,
-        \\        snippet(agent_memories_fts, 0, '[', ']', '...', 10) AS snippet,
-        \\        COALESCE(m.created_at, '') AS created_at,
-        \\        COALESCE(m.updated_at, '') AS updated_at,
-        \\        rank AS fts_rank
-        \\    FROM agent_memories_fts
-        \\    JOIN agent_memories m ON m.rowid = agent_memories_fts.rowid
-        \\    WHERE agent_memories_fts MATCH ?
-        \\      AND m.workspace_id = ?
-    );
+    // The subquery is the only engine-specific part: sqlite reads the FTS5
+    // index, postgres ranks `to_tsvector` and headlines it. Both wrap it
+    // because sqlite's virtual tables reject `COUNT(*) OVER ()` directly.
+    if (dialect.is_postgres) {
+        try sql.appendSlice(allocator,
+            \\SELECT
+            \\    id, tags, snippet, created_at, updated_at,
+            \\    COUNT(*) OVER () AS total_count
+            \\FROM (
+            \\    SELECT
+            \\        m.id AS id, m.tags AS tags,
+            \\        ts_headline('simple'::regconfig, m.content, q.tsq,
+            \\                    'StartSel=[, StopSel=], MaxWords=10, MinWords=3') AS snippet,
+            \\        COALESCE(to_char(m.created_at, 'YYYY-MM-DD HH24:MI:SS'), '') AS created_at,
+            \\        COALESCE(to_char(m.updated_at, 'YYYY-MM-DD HH24:MI:SS'), '') AS updated_at,
+            \\        -ts_rank(to_tsvector('simple'::regconfig, COALESCE(m.content, '') || ' ' || COALESCE(m.tags, '')), q.tsq) AS fts_rank
+            \\    FROM agent_memories m, to_tsquery('simple'::regconfig, ?) AS q(tsq)
+            \\    WHERE to_tsvector('simple'::regconfig, COALESCE(m.content, '') || ' ' || COALESCE(m.tags, '')) @@ q.tsq
+            \\      AND m.workspace_id = ?
+        );
+    } else {
+        try sql.appendSlice(allocator,
+            \\SELECT
+            \\    id, tags, snippet, created_at, updated_at,
+            \\    COUNT(*) OVER () AS total_count
+            \\FROM (
+            \\    SELECT
+            \\        m.id AS id, m.tags AS tags,
+            \\        snippet(agent_memories_fts, 0, '[', ']', '...', 10) AS snippet,
+            \\        COALESCE(m.created_at, '') AS created_at,
+            \\        COALESCE(m.updated_at, '') AS updated_at,
+            \\        rank AS fts_rank
+            \\    FROM agent_memories_fts
+            \\    JOIN agent_memories m ON m.rowid = agent_memories_fts.rowid
+            \\    WHERE agent_memories_fts MATCH ?
+            \\      AND m.workspace_id = ?
+        );
+    }
 
     var binds: std.ArrayList([]const u8) = .empty;
     var tag_patterns: std.ArrayList([]u8) = .empty;
@@ -458,7 +486,7 @@ test "saveMemory: inserts a new row with auto-generated mem_<16-hex> id" {
 
     const row = try saveMemory(alloc, &ctx.db, .{
         .content = "the user's preferred LLM is claude-sonnet-4-5",
-        .tags = &.{"preferences", "user"},
+        .tags = &.{ "preferences", "user" },
     });
     defer freeMemoryRow(alloc, row);
 
@@ -473,9 +501,7 @@ test "saveMemory: inserts a new row with auto-generated mem_<16-hex> id" {
     try testing.expect(row.updated_at.len > 0);
 
     // Verify the row is actually in the DB.
-    var q = try ctx.db.query(alloc,
-        "SELECT content, tags FROM agent_memories WHERE id = ?",
-        &.{row.id});
+    var q = try ctx.db.query(alloc, "SELECT content, tags FROM agent_memories WHERE id = ?", &.{row.id});
     defer q.deinit();
     const db_row = (try q.next()) orelse return error.RowNotInserted;
     defer db_row.deinit(alloc);
@@ -511,9 +537,7 @@ test "saveMemory: appends a new row on every call (never overwrites)" {
     try testing.expectEqualStrings(first.content, second.content);
 
     // Verify TWO rows in the DB (append, not UPSERT).
-    var q = try ctx.db.query(alloc,
-        "SELECT COUNT(*) FROM agent_memories WHERE content = ?",
-        &.{"original content"});
+    var q = try ctx.db.query(alloc, "SELECT COUNT(*) FROM agent_memories WHERE content = ?", &.{"original content"});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
     defer row.deinit(alloc);
@@ -610,12 +634,12 @@ test "loadMemoriesByFts: AND-filters by tags" {
 
     const row1 = try saveMemory(alloc, &ctx.db, .{
         .content = "memory one with model preference",
-        .tags = &.{"preferences", "user"},
+        .tags = &.{ "preferences", "user" },
     });
     defer freeMemoryRow(alloc, row1);
     const row2 = try saveMemory(alloc, &ctx.db, .{
         .content = "memory two with project context",
-        .tags = &.{"preferences", "project"},
+        .tags = &.{ "preferences", "project" },
     });
     defer freeMemoryRow(alloc, row2);
     const row3 = try saveMemory(alloc, &ctx.db, .{

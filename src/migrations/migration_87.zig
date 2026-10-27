@@ -6,6 +6,7 @@ const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
+const dialect = common.dialect;
 
 pub const Migration087CreateAgentRoutines = struct {
     pub const version: u32 = 87;
@@ -83,18 +84,10 @@ pub const Migration087CreateAgentRoutines = struct {
             &[_][]const u8{});
 
         // Backfill parent rows for routines predating this migration.
-        {
-            var q = try db.query(allocator,
-                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'workspace_items'",
+        if (try dialect.tableExists(.{ .db = db }, allocator, "workspace_items")) {
+            try db.exec(allocator,
+                dialect.insert_ignore_prefix ++ " INTO agent_routines (id, workspace_item_id) SELECT id, id FROM workspace_items WHERE item_type = 'routine'" ++ dialect.conflict_ignore,
                 &[_][]const u8{});
-            defer q.deinit();
-            const has_items_table = try q.next();
-            if (has_items_table) |r| r.deinit(allocator);
-            if (has_items_table != null) {
-                try db.exec(allocator,
-                    "INSERT OR IGNORE INTO agent_routines (id, workspace_item_id) SELECT id, id FROM workspace_items WHERE item_type = 'routine'",
-                    &[_][]const u8{});
-            }
         }
     }
 };

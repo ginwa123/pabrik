@@ -6,6 +6,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
+const dialect = pabrikcore.dialect;
 
 const model = @import("model.zig");
 const cron = @import("cron.zig");
@@ -20,11 +21,9 @@ pub fn resetStuckRunning(allocator: std.mem.Allocator, db: *database.Db) !void {
     const err_msg = "process killed (restart detected)";
     const copy = try allocator.dupe(u8, err_msg);
     defer allocator.free(copy);
-    _ = try db.exec(allocator,
-        \\UPDATE workspace_routines
-        \\   SET last_status = 'failed', last_error = ?, updated_at = datetime('now')
-        \\ WHERE last_status = 'running'
-    , &.{copy});
+    const sql = "UPDATE workspace_routines SET last_status = 'failed', last_error = ?, updated_at = " ++
+        dialect.now_stamp ++ " WHERE last_status = 'running'";
+    _ = try db.exec(allocator, sql, &.{copy});
 }
 
 /// Recompute `next_run_at` for every enabled routine from the cron

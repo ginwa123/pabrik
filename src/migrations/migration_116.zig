@@ -2,6 +2,7 @@ const std = @import("std");
 const common = @import("common.zig");
 
 const Backend = common.Backend;
+const dialect = common.dialect;
 
 /// Migration 116 — ONE agent-config table set for the three item families.
 /// The twelve old per-item-type tables collapse into four; `item_type` on
@@ -28,22 +29,17 @@ pub const Migration116UnifyAgentConfigTables = struct {
 
     /// Does a table with this name exist in the schema?
     fn tableExists(db: *Backend, allocator: std.mem.Allocator, table_name: []const u8) bool {
-        var q = db.query(
-            allocator,
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
-            &[_][]const u8{table_name},
-        ) catch return false;
-        defer q.deinit();
-        const row = (q.next() catch null) orelse return false;
-        row.deinit(allocator);
-        return true;
+        return dialect.tableExists(.{ .db = db }, allocator, table_name) catch false;
     }
 
-    /// Run `copy_sql` only when `source_table` exists. A fresh install has
-    /// none of the old tables — the copy is then a no-op, not an error.
+    /// Run `copy_sql` only when `source_table` exists — a fresh install has
+    /// none of the old tables. The dialect supplies the verb and the end:
+    /// `INSERT OR IGNORE`, or `INSERT ... ON CONFLICT DO NOTHING`.
     fn copyFrom(db: *Backend, allocator: std.mem.Allocator, source_table: []const u8, copy_sql: []const u8) !void {
         if (!tableExists(db, allocator, source_table)) return;
-        try db.exec(allocator, copy_sql, &[_][]const u8{});
+        const sql = try std.fmt.allocPrint(allocator, "{s}{s}{s}", .{ dialect.insert_ignore_prefix, copy_sql, dialect.conflict_ignore });
+        defer allocator.free(sql);
+        try db.exec(allocator, sql, &[_][]const u8{});
     }
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
@@ -59,12 +55,8 @@ pub const Migration116UnifyAgentConfigTables = struct {
             \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE
             \\)
         , &[_][]const u8{});
-        try db.exec(allocator,
-            "CREATE INDEX IF NOT EXISTS idx_agent_configs_workspace_item_id ON agent_configs(workspace_item_id)",
-            &[_][]const u8{});
-        try db.exec(allocator,
-            "CREATE INDEX IF NOT EXISTS idx_agent_configs_item_type ON agent_configs(item_type)",
-            &[_][]const u8{});
+        try db.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_agent_configs_workspace_item_id ON agent_configs(workspace_item_id)", &[_][]const u8{});
+        try db.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_agent_configs_item_type ON agent_configs(item_type)", &[_][]const u8{});
 
         try db.exec(allocator,
             \\CREATE TABLE IF NOT EXISTS agent_config_knowledge (
@@ -79,12 +71,8 @@ pub const Migration116UnifyAgentConfigTables = struct {
             \\    FOREIGN KEY (config_id) REFERENCES agent_configs(id) ON DELETE CASCADE
             \\)
         , &[_][]const u8{});
-        try db.exec(allocator,
-            "CREATE INDEX IF NOT EXISTS idx_agent_config_knowledge_config_id ON agent_config_knowledge(config_id)",
-            &[_][]const u8{});
-        try db.exec(allocator,
-            "CREATE INDEX IF NOT EXISTS idx_agent_config_knowledge_config_position ON agent_config_knowledge(config_id, position DESC)",
-            &[_][]const u8{});
+        try db.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_agent_config_knowledge_config_id ON agent_config_knowledge(config_id)", &[_][]const u8{});
+        try db.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_agent_config_knowledge_config_position ON agent_config_knowledge(config_id, position DESC)", &[_][]const u8{});
 
         try db.exec(allocator,
             \\CREATE TABLE IF NOT EXISTS agent_config_tools (
@@ -96,12 +84,8 @@ pub const Migration116UnifyAgentConfigTables = struct {
             \\    FOREIGN KEY (config_id) REFERENCES agent_configs(id) ON DELETE CASCADE
             \\)
         , &[_][]const u8{});
-        try db.exec(allocator,
-            "CREATE INDEX IF NOT EXISTS idx_agent_config_tools_config_id ON agent_config_tools(config_id)",
-            &[_][]const u8{});
-        try db.exec(allocator,
-            "CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_config_tools_config_tool ON agent_config_tools(config_id, tool_name)",
-            &[_][]const u8{});
+        try db.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_agent_config_tools_config_id ON agent_config_tools(config_id)", &[_][]const u8{});
+        try db.exec(allocator, "CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_config_tools_config_tool ON agent_config_tools(config_id, tool_name)", &[_][]const u8{});
 
         try db.exec(allocator,
             \\CREATE TABLE IF NOT EXISTS agent_config_system_prompt (
@@ -115,26 +99,22 @@ pub const Migration116UnifyAgentConfigTables = struct {
             \\    FOREIGN KEY (config_id) REFERENCES agent_configs(id) ON DELETE CASCADE
             \\)
         , &[_][]const u8{});
-        try db.exec(allocator,
-            "CREATE INDEX IF NOT EXISTS idx_agent_config_system_prompt_config_id ON agent_config_system_prompt(config_id)",
-            &[_][]const u8{});
-        try db.exec(allocator,
-            "CREATE INDEX IF NOT EXISTS idx_agent_config_system_prompt_config_position ON agent_config_system_prompt(config_id, position DESC)",
-            &[_][]const u8{});
+        try db.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_agent_config_system_prompt_config_id ON agent_config_system_prompt(config_id)", &[_][]const u8{});
+        try db.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_agent_config_system_prompt_config_position ON agent_config_system_prompt(config_id, position DESC)", &[_][]const u8{});
 
         // ─── Backfill: the three parents ──────────────────────────────
         // `id` and `workspace_item_id` are copied verbatim (spec D3: they
         // are the same string); the UNIQUE on `workspace_item_id` stays.
         try copyFrom(db, allocator, "agents",
-            \\INSERT OR IGNORE INTO agent_configs (id, workspace_item_id, item_type, description, created_at, updated_at)
+            \\ INTO agent_configs (id, workspace_item_id, item_type, description, created_at, updated_at)
             \\SELECT id, workspace_item_id, 'agent', description, created_at, updated_at FROM agents
         );
         try copyFrom(db, allocator, "agent_kanbans",
-            \\INSERT OR IGNORE INTO agent_configs (id, workspace_item_id, item_type, description, created_at, updated_at)
+            \\ INTO agent_configs (id, workspace_item_id, item_type, description, created_at, updated_at)
             \\SELECT id, workspace_item_id, 'kanban', description, created_at, updated_at FROM agent_kanbans
         );
         try copyFrom(db, allocator, "agent_routines",
-            \\INSERT OR IGNORE INTO agent_configs (id, workspace_item_id, item_type, description, created_at, updated_at)
+            \\ INTO agent_configs (id, workspace_item_id, item_type, description, created_at, updated_at)
             \\SELECT id, workspace_item_id, 'routine', description, created_at, updated_at FROM agent_routines
         );
 
@@ -142,41 +122,41 @@ pub const Migration116UnifyAgentConfigTables = struct {
         // The old owner column (`agent_id` / `kanban_id` / `routine_id`)
         // becomes `config_id`.
         try copyFrom(db, allocator, "agent_knowledge",
-            \\INSERT OR IGNORE INTO agent_config_knowledge (id, config_id, file_path, label, content, position, created_at, updated_at)
+            \\ INTO agent_config_knowledge (id, config_id, file_path, label, content, position, created_at, updated_at)
             \\SELECT id, agent_id, file_path, label, content, position, created_at, updated_at FROM agent_knowledge
         );
         try copyFrom(db, allocator, "agent_kanban_knowledges",
-            \\INSERT OR IGNORE INTO agent_config_knowledge (id, config_id, file_path, label, content, position, created_at, updated_at)
+            \\ INTO agent_config_knowledge (id, config_id, file_path, label, content, position, created_at, updated_at)
             \\SELECT id, kanban_id, file_path, label, content, position, created_at, updated_at FROM agent_kanban_knowledges
         );
         try copyFrom(db, allocator, "agent_routine_knowledges",
-            \\INSERT OR IGNORE INTO agent_config_knowledge (id, config_id, file_path, label, content, position, created_at, updated_at)
+            \\ INTO agent_config_knowledge (id, config_id, file_path, label, content, position, created_at, updated_at)
             \\SELECT id, routine_id, file_path, label, content, position, created_at, updated_at FROM agent_routine_knowledges
         );
 
         try copyFrom(db, allocator, "agent_tools",
-            \\INSERT OR IGNORE INTO agent_config_tools (id, config_id, tool_name, enabled, created_at)
+            \\ INTO agent_config_tools (id, config_id, tool_name, enabled, created_at)
             \\SELECT id, agent_id, tool_name, enabled, created_at FROM agent_tools
         );
         try copyFrom(db, allocator, "agent_kanban_tools",
-            \\INSERT OR IGNORE INTO agent_config_tools (id, config_id, tool_name, enabled, created_at)
+            \\ INTO agent_config_tools (id, config_id, tool_name, enabled, created_at)
             \\SELECT id, kanban_id, tool_name, enabled, created_at FROM agent_kanban_tools
         );
         try copyFrom(db, allocator, "agent_routine_tools",
-            \\INSERT OR IGNORE INTO agent_config_tools (id, config_id, tool_name, enabled, created_at)
+            \\ INTO agent_config_tools (id, config_id, tool_name, enabled, created_at)
             \\SELECT id, routine_id, tool_name, enabled, created_at FROM agent_routine_tools
         );
 
         try copyFrom(db, allocator, "agent_system_prompt",
-            \\INSERT OR IGNORE INTO agent_config_system_prompt (id, config_id, title, content, position, created_at, updated_at)
+            \\ INTO agent_config_system_prompt (id, config_id, title, content, position, created_at, updated_at)
             \\SELECT id, agent_id, title, content, position, created_at, updated_at FROM agent_system_prompt
         );
         try copyFrom(db, allocator, "agent_kanban_system_prompt",
-            \\INSERT OR IGNORE INTO agent_config_system_prompt (id, config_id, title, content, position, created_at, updated_at)
+            \\ INTO agent_config_system_prompt (id, config_id, title, content, position, created_at, updated_at)
             \\SELECT id, kanban_id, title, content, position, created_at, updated_at FROM agent_kanban_system_prompt
         );
         try copyFrom(db, allocator, "agent_routine_system_prompt",
-            \\INSERT OR IGNORE INTO agent_config_system_prompt (id, config_id, title, content, position, created_at, updated_at)
+            \\ INTO agent_config_system_prompt (id, config_id, title, content, position, created_at, updated_at)
             \\SELECT id, routine_id, title, content, position, created_at, updated_at FROM agent_routine_system_prompt
         );
 

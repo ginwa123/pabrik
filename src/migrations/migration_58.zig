@@ -6,12 +6,21 @@ const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
+const dialect = common.dialect;
 
 pub const Migration058AddLlmHistoryFts = struct {
     pub const version: u32 = 58;
     pub const name = "add_llm_history_fts";
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
+        if (dialect.is_postgres) {
+            try db.exec(allocator,
+                \\CREATE INDEX IF NOT EXISTS idx_llm_history_fts
+                \\ON llm_history USING gin (to_tsvector('simple'::regconfig, COALESCE(response_content, '')))
+            , &[_][]const u8{});
+            return;
+        }
+
         // FTS5 virtual table.
         try db.exec(allocator,
             \\CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(

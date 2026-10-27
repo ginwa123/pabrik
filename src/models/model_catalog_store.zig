@@ -4,6 +4,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
+const dialect = pabrikcore.dialect;
 const catalog = @import("../agentic_loop/model_catalog.zig");
 
 const Allocator = std.mem.Allocator;
@@ -25,7 +26,7 @@ pub const SaveStats = struct {
 /// deliberate: a refresh is a snapshot of an external source of truth, and a
 /// model deleted upstream must disappear here too.
 pub fn saveCatalog(db: *database.Db, alloc: Allocator, cat: *const catalog.Catalog) !SaveStats {
-    try db.exec(alloc, "BEGIN IMMEDIATE", &.{});
+    try db.exec(alloc, dialect.begin_write, &.{});
     errdefer db.exec(alloc, "ROLLBACK", &.{}) catch {};
 
     try db.exec(alloc, "DELETE FROM model_catalog_models", &.{});
@@ -33,11 +34,11 @@ pub fn saveCatalog(db: *database.Db, alloc: Allocator, cat: *const catalog.Catal
     try db.exec(alloc, "DELETE FROM model_catalog_meta", &.{});
 
     const provider_sql =
-        \\INSERT OR REPLACE INTO model_catalog_providers (id, name, base_url, url_style, env_json)
+        \\INSERT INTO model_catalog_providers (id, name, base_url, url_style, env_json)
         \\VALUES (?, ?, ?, ?, ?)
     ;
     const model_sql =
-        \\INSERT OR REPLACE INTO model_catalog_models
+        \\INSERT INTO model_catalog_models
         \\  (provider_id, model_id, name, context_window, output_tokens, reasoning,
         \\   effort_json, budget_min, temperature, cost_input, cost_output)
         \\VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -86,7 +87,7 @@ pub fn saveCatalog(db: *database.Db, alloc: Allocator, cat: *const catalog.Catal
     var counts_buf: [24]u8 = undefined;
     var ms_buf: [24]u8 = undefined;
     try db.exec(alloc,
-        \\INSERT OR REPLACE INTO model_catalog_meta
+        \\INSERT INTO model_catalog_meta
         \\  (id, schema_version, source, fetched_at_ms, provider_count, model_count)
         \\VALUES (1, ?, ?, ?, ?, ?)
     , &.{
@@ -190,7 +191,7 @@ pub fn loadCatalog(db: *database.Db, alloc: Allocator) !?*catalog.Catalog {
             \\       context_window, output_tokens, COALESCE(reasoning, 'none'),
             \\       COALESCE(effort_json, '[]'), budget_min, temperature,
             \\       cost_input, cost_output
-            \\FROM model_catalog_models ORDER BY rowid
+            \\FROM model_catalog_models ORDER BY provider_id, model_id
         , &.{});
         defer rows.deinit();
 

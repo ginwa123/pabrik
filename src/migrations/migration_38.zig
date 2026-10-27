@@ -6,6 +6,7 @@ const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
+const dialect = common.dialect;
 
 pub const Migration038DropToolResultsJson = struct {
     pub const version: u32 = 38;
@@ -17,7 +18,7 @@ pub const Migration038DropToolResultsJson = struct {
         try db.exec(allocator, "ALTER TABLE llm_history RENAME TO llm_history_old", &[_][]const u8{});
 
         // Step 2: Create new table without tool_results_json column
-        try db.exec(allocator,
+        const ddl = try std.fmt.allocPrint(allocator,
             \\CREATE TABLE IF NOT EXISTS llm_history (
             \\    id TEXT PRIMARY KEY,
             \\    session_id TEXT NOT NULL,
@@ -26,7 +27,7 @@ pub const Migration038DropToolResultsJson = struct {
             \\    tool_calls_json TEXT,
             \\    finish_reason TEXT,
             \\    usage_json TEXT,
-            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            \\    created_at {s},
             \\    role TEXT DEFAULT 'assistant',
             \\    reasoning_content TEXT,
             \\    is_feed_to_llm INTEGER DEFAULT 1,
@@ -46,7 +47,9 @@ pub const Migration038DropToolResultsJson = struct {
             \\    diffview_after TEXT,
             \\    image_url TEXT
             \\)
-        , &[_][]const u8{});
+        , .{dialect.epoch_default});
+        defer allocator.free(ddl);
+        try db.exec(allocator, ddl, &[_][]const u8{});
 
         // Step 3: Copy data from old table (excluding tool_results_json column)
         try db.exec(allocator,

@@ -6,6 +6,7 @@ const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
+const dialect = common.dialect;
 
 pub const Migration077AddUsersAndRbacSchema = struct {
     pub const version: u32 = 77;
@@ -103,12 +104,14 @@ pub const Migration077AddUsersAndRbacSchema = struct {
             "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)",
             &[_][]const u8{});
 
-        // 7. Default user_system — INSERT OR IGNORE makes it idempotent.
+        // 7. Default user_system — the conflict clause makes it idempotent.
         //    See the spec §3.6 for the full reasoning (password_hash
         //    sentinel, is_active=0, system@local reserved per RFC 6762).
         try tx.exec(allocator,
-            "INSERT OR IGNORE INTO users (id, email, name, password_hash, role, is_active) " ++
-                "VALUES ('user_system', 'system@local', 'System', '!disabled', 'admin', 0)",
+            dialect.insert_ignore_prefix ++
+                " INTO users (id, email, name, password_hash, role, is_active) " ++
+                "VALUES ('user_system', 'system@local', 'System', '!disabled', 'admin', 0)" ++
+                dialect.conflict_ignore,
             &[_][]const u8{});
 
         // 8. Backfill — convert every legacy row (workspaces, sessions) WHERE

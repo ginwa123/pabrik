@@ -6,6 +6,7 @@ const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
+const dialect = common.dialect;
 
 pub const Migration070AddAgentMemories = struct {
     pub const version: u32 = 70;
@@ -31,7 +32,16 @@ pub const Migration070AddAgentMemories = struct {
                 "ON agent_memories(updated_at DESC)",
             &[_][]const u8{});
 
-        // 3. FTS5 virtual table. NON-external-content so `snippet()` works.
+        // 3. The search index. Postgres keeps it in a GIN over `tsvector`,
+        //    sqlite in an FTS5 virtual table.
+        if (dialect.is_postgres) {
+            try db.exec(allocator,
+                \\CREATE INDEX IF NOT EXISTS idx_agent_memories_fts
+                \\ON agent_memories USING gin (to_tsvector('simple'::regconfig, COALESCE(content, '') || ' ' || COALESCE(tags, '')))
+            , &[_][]const u8{});
+            return;
+        }
+
         try db.exec(allocator,
             \\CREATE VIRTUAL TABLE IF NOT EXISTS agent_memories_fts USING fts5(
             \\    content,

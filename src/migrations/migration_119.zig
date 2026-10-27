@@ -4,6 +4,7 @@ const frontmatter = @import("../agentic_loop/skill_frontmatter.zig");
 
 const Backend = common.Backend;
 const helpers = @import("helpers");
+const dialect = common.dialect;
 
 /// Migration 119 — `skill_metadata`: one row per non-column frontmatter key,
 /// so metadata is a table instead of a block every reader re-scans out of
@@ -60,10 +61,13 @@ pub const Migration119CreateSkillMetadata = struct {
                 defer allocator.free(id);
                 index += 1;
 
-                try tx.exec(allocator,
-                    \\INSERT OR IGNORE INTO skill_metadata (id, skill_id, key, value, created_at, updated_at)
-                    \\VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                , &[_][]const u8{ id, row.values[0], pair.key, pair.value });
+                const insert = try std.fmt.allocPrint(
+                    allocator,
+                    \\{s} INTO skill_metadata (id, skill_id, key, value, created_at, updated_at)
+                    \\VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP){s}
+                , .{ dialect.insert_ignore_prefix, dialect.conflict_ignore });
+                defer allocator.free(insert);
+                try tx.exec(allocator, insert, &[_][]const u8{ id, row.values[0], pair.key, pair.value });
             }
         }
 

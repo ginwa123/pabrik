@@ -6,6 +6,7 @@ const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
+const dialect = common.dialect;
 
 pub const Migration099RenameListSkillsTool = struct {
     pub const version: u32 = 99;
@@ -13,15 +14,7 @@ pub const Migration099RenameListSkillsTool = struct {
 
     /// True when `name` is a table in this database.
     fn tableExists(allocator: std.mem.Allocator, db: *Backend, table: []const u8) !bool {
-        var q = try db.query(
-            allocator,
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
-            &[_][]const u8{table},
-        );
-        defer q.deinit();
-        const row = (try q.next()) orelse return false;
-        defer row.deinit(allocator);
-        return std.mem.eql(u8, row.values[0], "1");
+        return dialect.tableExists(.{ .db = db }, allocator, table);
     }
 
     fn renameIn(allocator: std.mem.Allocator, db: *Backend, table: []const u8, owner_col: []const u8) !void {
@@ -30,10 +23,10 @@ pub const Migration099RenameListSkillsTool = struct {
         // A plain `UPDATE ...
         const sql = try std.fmt.allocPrint(
             allocator,
-            \\INSERT OR IGNORE INTO {s} (id, {s}, tool_name, enabled, created_at)
+            \\{s} INTO {s} (id, {s}, tool_name, enabled, created_at)
             \\SELECT id || '_m099', {s}, 'search_skills', enabled, created_at
-            \\FROM {s} WHERE tool_name = 'list_skills'
-        , .{ table, owner_col, owner_col, table });
+            \\FROM {s} WHERE tool_name = 'list_skills'{s}
+        , .{ dialect.insert_ignore_prefix, table, owner_col, owner_col, table, dialect.conflict_ignore });
         defer allocator.free(sql);
         try db.exec(allocator, sql, &[_][]const u8{});
 

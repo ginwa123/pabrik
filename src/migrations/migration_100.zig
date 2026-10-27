@@ -6,6 +6,7 @@ const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
+const dialect = common.dialect;
 
 pub const Migration100AddWorkspaceMembers = struct {
     pub const version: u32 = 100;
@@ -35,11 +36,14 @@ pub const Migration100AddWorkspaceMembers = struct {
         try tx.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON workspace_members(user_id, workspace_id)", &[_][]const u8{});
 
         // Backfill.
-        try tx.exec(allocator,
-            \\INSERT OR IGNORE INTO workspace_members (workspace_id, user_id, role, joined_at)
-            \\SELECT id, COALESCE(NULLIF(user_id, ''), 'user_system'), 'owner', datetime('now')
-            \\FROM workspaces
-        , &[_][]const u8{});
+        const backfill = try std.fmt.allocPrint(
+            allocator,
+            \\{s} INTO workspace_members (workspace_id, user_id, role, joined_at)
+            \\SELECT id, COALESCE(NULLIF(user_id, ''), 'user_system'), 'owner', {s}
+            \\FROM workspaces{s}
+        , .{ dialect.insert_ignore_prefix, dialect.now_stamp, dialect.conflict_ignore });
+        defer allocator.free(backfill);
+        try tx.exec(allocator, backfill, &[_][]const u8{});
 
         try tx.commit();
 

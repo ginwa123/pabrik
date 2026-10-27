@@ -1,8 +1,9 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
-const sqlite_mod = pabrikcore.sqlite;
 
 pub const Backend = pabrikcore.database.Db;
+pub const is_postgres = dialect.is_postgres;
+pub const dialect = pabrikcore.dialect;
 
 pub const Migration = struct {
     version: u32,
@@ -59,8 +60,7 @@ pub const MigrationManager = struct {
     }
 };
 
-/// Add a column to a table if it doesn't already exist. SQLite's `ALTER TABLE
-/// ...
+/// Add `column` with `definition` unless the table already has it.
 pub fn addColumnIfMissing(
     db: pabrikcore.database.DbOrTx,
     allocator: std.mem.Allocator,
@@ -68,68 +68,31 @@ pub fn addColumnIfMissing(
     column: []const u8,
     definition: []const u8,
 ) !void {
-    // Stack-buffer the two SQL strings. Both are tiny — a few dozen
-    // bytes each. Avoiding the heap keeps the helper zero-alloc and
-    // safe to call from any migration.
-    var check_buf: [256]u8 = undefined;
-    const check_sql = std.fmt.bufPrint(
-        &check_buf,
-        "SELECT 1 FROM pragma_table_info('{s}') WHERE name = '{s}'",
-        .{ table, column },
-    ) catch return error.BufferTooSmall;
-    var q = try db.query(allocator, check_sql, &.{});
-    defer q.deinit();
-    if ((try q.next())) |row| {
-        // Row returned (column exists) — free the row's values (allocated via
-        // `allocator` per Sqlite.zig:267) before returning.
-        row.deinit(allocator);
-        return;
-    }
-    // column does not exist — fall through to ALTER below.
+    if (try dialect.columnExists(db, allocator, table, column)) return;
 
     var ddl_buf: [256]u8 = undefined;
-    const ddl = std.fmt.bufPrint(
-        &ddl_buf,
-        "ALTER TABLE {s} ADD COLUMN {s}",
-        .{ table, definition },
-    ) catch return error.BufferTooSmall;
+    const ddl = std.fmt.bufPrint(&ddl_buf, "ALTER TABLE {s} ADD COLUMN {s}", .{ table, definition }) catch
+        return error.BufferTooSmall;
     try db.exec(allocator, ddl, &.{});
 }
 
-/// Drop a column from a table if it exists. SQLite's `ALTER TABLE ...
+/// Drop `column` if the table still has it.
 pub fn dropColumnIfExists(
     db: pabrikcore.database.DbOrTx,
     allocator: std.mem.Allocator,
     table: []const u8,
     column: []const u8,
 ) !void {
-    var check_buf: [256]u8 = undefined;
-    const check_sql = std.fmt.bufPrint(
-        &check_buf,
-        "SELECT 1 FROM pragma_table_info('{s}') WHERE name = '{s}'",
-        .{ table, column },
-    ) catch return error.BufferTooSmall;
-    var q = try db.query(allocator, check_sql, &.{});
-    defer q.deinit();
-    const row = (try q.next()) orelse {
-        // Column doesn't exist — no-op.
-        return;
-    };
-    // Column exists — free the row's values before issuing the
-    // DROP statement (see addColumnIfMissing for the rationale).
-    row.deinit(allocator);
+    if (!try dialect.columnExists(db, allocator, table, column)) return;
 
     var ddl_buf: [256]u8 = undefined;
-    const ddl = std.fmt.bufPrint(
-        &ddl_buf,
-        "ALTER TABLE {s} DROP COLUMN {s}",
-        .{ table, column },
-    ) catch return error.BufferTooSmall;
+    const ddl = std.fmt.bufPrint(&ddl_buf, "ALTER TABLE {s} DROP COLUMN {s}", .{ table, column }) catch
+        return error.BufferTooSmall;
     try db.exec(allocator, ddl, &.{});
 }
 
-/// Rename a column on a table if the old column exists and the new column
-/// does NOT exist.
+/// Rename `old_column` to `new_column`, unless the old name is gone or the
+/// new one already exists — either way the migration has nothing left to do.
 pub fn renameColumnIfExists(
     db: pabrikcore.database.DbOrTx,
     allocator: std.mem.Allocator,
@@ -137,44 +100,11 @@ pub fn renameColumnIfExists(
     old_column: []const u8,
     new_column: []const u8,
 ) !void {
-    // Probe: does the OLD column exist?
-    var old_buf: [256]u8 = undefined;
-    const old_check = std.fmt.bufPrint(
-        &old_buf,
-        "SELECT 1 FROM pragma_table_info('{s}') WHERE name = '{s}'",
-        .{ table, old_column },
-    ) catch return error.BufferTooSmall;
-    var q_old = try db.query(allocator, old_check, &.{});
-    defer q_old.deinit();
-    const old_row = (try q_old.next()) orelse {
-        // OLD column doesn't exist — no-op (fresh-DB already has
-        // the new name, or a re-run after the rename succeeded).
-        return;
-    };
-    // OLD column exists — free the row's values before the next probe.
-    old_row.deinit(allocator);
+    if (!try dialect.columnExists(db, allocator, table, old_column)) return;
+    if (try dialect.columnExists(db, allocator, table, new_column)) return;
 
-    // Probe: does the NEW column already exist?
-    var new_buf: [256]u8 = undefined;
-    const new_check = std.fmt.bufPrint(
-        &new_buf,
-        "SELECT 1 FROM pragma_table_info('{s}') WHERE name = '{s}'",
-        .{ table, new_column },
-    ) catch return error.BufferTooSmall;
-    var q_new = try db.query(allocator, new_check, &.{});
-    defer q_new.deinit();
-    const new_row = (try q_new.next()) orelse {
-        // NEW column does NOT exist — proceed with the RENAME below.
-        // Fall through.
-        var ddl_buf: [256]u8 = undefined;
-        const ddl = std.fmt.bufPrint(
-            &ddl_buf,
-            "ALTER TABLE {s} RENAME COLUMN {s} TO {s}",
-            .{ table, old_column, new_column },
-        ) catch return error.BufferTooSmall;
-        try db.exec(allocator, ddl, &.{});
-        return;
-    };
-    // NEW column already exists — defensive no-op.
-    new_row.deinit(allocator);
+    var ddl_buf: [256]u8 = undefined;
+    const ddl = std.fmt.bufPrint(&ddl_buf, "ALTER TABLE {s} RENAME COLUMN {s} TO {s}", .{ table, old_column, new_column }) catch
+        return error.BufferTooSmall;
+    try db.exec(allocator, ddl, &.{});
 }

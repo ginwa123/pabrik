@@ -2,6 +2,7 @@ const std = @import("std");
 const common = @import("common.zig");
 
 const Backend = common.Backend;
+const dialect = common.dialect;
 const addColumnIfMissing = common.addColumnIfMissing;
 
 /// Migration 111: the `kanban_task_dependencies` edge table, plus
@@ -86,16 +87,5 @@ fn columnExists(
     table: []const u8,
     column: []const u8,
 ) !bool {
-    var q = try db.query(
-        allocator,
-        "SELECT 1 FROM pragma_table_info(?) WHERE name = ?",
-        &[_][]const u8{ table, column },
-    );
-    defer q.deinit();
-
-    if (try q.next()) |row| {
-        row.deinit(allocator);
-        return true;
-    }
-    return false;
+    return dialect.columnExists(.{ .db = db }, allocator, table, column);
 }

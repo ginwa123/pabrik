@@ -6,6 +6,7 @@ const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
+const dialect = common.dialect;
 
 /// Migration 065 — Add `workspace_item_tasks.last_human_touched_at`. Used by
 /// the kanban card UI to decide whether to show the "AI finished — awaiting
@@ -23,7 +24,7 @@ pub const Migration065AddTaskHumanTouchedAt = struct {
             // name + type — `addColumnIfMissing` uses this verbatim as `ALTER
             // TABLE {table} ADD COLUMN {definition}`, so omitting the column
             // name would create a column literally named "INTEGER".
-            "last_human_touched_at INTEGER",
+            "last_human_touched_at " ++ dialect.epoch_type,
         );
     }
 };

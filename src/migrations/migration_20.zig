@@ -6,6 +6,7 @@ const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
+const dialect = common.dialect;
 
 pub const Migration020AddWorkerExtraFields = struct {
     pub const version: u32 = 20;
@@ -16,7 +17,7 @@ pub const Migration020AddWorkerExtraFields = struct {
         // canonical `worker` schema), so fresh-DB users would crash with
         // "duplicate column name" if we ran the ADD COLUMN unconditionally.
         try addColumnIfMissing(.{ .db = db }, allocator, "worker", "working_directory", "working_directory TEXT");
-        try addColumnIfMissing(.{ .db = db }, allocator, "worker", "last_activity", "last_activity INTEGER DEFAULT (strftime('%s', 'now'))");
+        try addColumnIfMissing(.{ .db = db }, allocator, "worker", "last_activity", "last_activity " ++ dialect.epoch_default);
         try addColumnIfMissing(.{ .db = db }, allocator, "worker", "last_activity_description", "last_activity_description TEXT");
     }
 };

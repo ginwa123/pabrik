@@ -4,6 +4,7 @@ const testing = std.testing;
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
+const dialect = pabrikcore.dialect;
 const agent = pabrikcore.agent;
 const logger_mod = pabrikcore.loggermod;
 const helpers = @import("helpers");
@@ -440,8 +441,7 @@ pub fn getSessionListWithCursor(
     // Count query: the SAME filter as the main query (shared where_clause),
     // aliased `s` so the `s.`-prefixed fragments apply verbatim, and WITHOUT
     // the cursor — `total` is the full filtered size that the cursor
-    const count_sql: []u8 = try std.fmt.allocPrint(allocator,
-        "SELECT COUNT(*) FROM sessions s WHERE {s}", .{where_clause});
+    const count_sql: []u8 = try std.fmt.allocPrint(allocator, "SELECT COUNT(*) FROM sessions s WHERE {s}", .{where_clause});
     defer allocator.free(count_sql);
 
     var count_rows = try db.query(allocator, count_sql, id_binds.items);
@@ -2095,44 +2095,65 @@ pub fn getMessagesByIds(
     return try results.toOwnedSlice(allocator);
 }
 
-/// Full-text search over `llm_history.response_content` using SQLite FTS5.
-/// Joins the `messages_fts` virtual table to `llm_history` and returns ranked
-/// hits with a 10-token snippet around each match.
+/// Walks the tokens of a search query: alphanumerics and `_`, everything else
+/// is a boundary. Shared by both engines' query builders.
+const Tokenizer = struct {
+    query: []const u8,
+    at: usize = 0,
+
+    fn next(self: *Tokenizer) ?[]const u8 {
+        while (self.at < self.query.len and !isTokenChar(self.query[self.at])) self.at += 1;
+        if (self.at >= self.query.len) return null;
+        const start = self.at;
+        while (self.at < self.query.len and isTokenChar(self.query[self.at])) self.at += 1;
+        return self.query[start..self.at];
+    }
+
+    fn isTokenChar(c: u8) bool {
+        return std.ascii.isAlphanumeric(c) or c == '_';
+    }
+};
+
+/// The query text sqlite's FTS5 `MATCH` takes: every token a quoted phrase,
+/// OR-ed together, so an operator in the user's text cannot break the parser.
 pub fn escapeFtsQuery(allocator: std.mem.Allocator, query: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(allocator);
 
-    // Walk the query, splitting on whitespace OR FTS5 operator chars (every
-    // non-alphanumeric except `_`).
+    var it = Tokenizer{ .query = query };
     var first_token = true;
-    var in_token = false;
-    var i: usize = 0;
-    while (i < query.len) : (i += 1) {
-        const c = query[i];
-        // Token char: alphanumeric or underscore. Anything else is a
-        // token boundary (whitespace OR FTS5 operator).
-        const is_token_char = std.ascii.isAlphanumeric(c) or c == '_';
-        if (is_token_char) {
-            if (!in_token) {
-                // Open a new token — wrap it in phrase quotes.
-                if (!first_token) try out.appendSlice(allocator, " OR ");
-                try out.append(allocator, '"');
-                first_token = false;
-                in_token = true;
-            }
-            try out.append(allocator, c);
-        } else {
-            if (in_token) {
-                // Close the current token.
-                try out.append(allocator, '"');
-                in_token = false;
-            }
-        }
+    while (it.next()) |token| {
+        if (!first_token) try out.appendSlice(allocator, " OR ");
+        try out.append(allocator, '"');
+        try out.appendSlice(allocator, token);
+        try out.append(allocator, '"');
+        first_token = false;
     }
-    // Close any token still open at EOF.
-    if (in_token) try out.append(allocator, '"');
-
     return out.toOwnedSlice(allocator);
+}
+
+/// The query text postgres' `to_tsquery` takes: the same tokens, OR-ed.
+/// `to_tsquery` rejects the phrase quotes FTS5 wants, so bare lexemes.
+pub fn escapeTsQuery(allocator: std.mem.Allocator, query: []const u8) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+
+    var it = Tokenizer{ .query = query };
+    var first_token = true;
+    while (it.next()) |token| {
+        if (!first_token) try out.appendSlice(allocator, " | ");
+        try out.appendSlice(allocator, token);
+        first_token = false;
+    }
+    return out.toOwnedSlice(allocator);
+}
+
+/// The engine's query text for `query`: FTS5 phrases or a postgres tsquery.
+pub fn searchQueryText(allocator: std.mem.Allocator, query: []const u8) ![]u8 {
+    return if (dialect.is_postgres)
+        escapeTsQuery(allocator, query)
+    else
+        escapeFtsQuery(allocator, query);
 }
 
 // ---------------------------------------------------------------------------
@@ -2244,7 +2265,7 @@ pub fn searchMessagesFts(
     // Sanitize the user query so plain text with FTS5 operators (`.`, `-`,
     // `:`) doesn't blow up the MATCH parser. See `escapeFtsQuery` for the
     // full rationale and the exact transformation.
-    const sanitized_query = try escapeFtsQuery(allocator, query);
+    const sanitized_query = try searchQueryText(allocator, query);
     defer allocator.free(sanitized_query);
     // Empty after sanitization (query was all FTS5 operators) — bail
     // before FTS5 sees `MATCH ''` and throws "empty query".
@@ -2252,29 +2273,48 @@ pub fn searchMessagesFts(
 
     var sql: std.ArrayList(u8) = .empty;
     defer sql.deinit(allocator);
-    // Wrap FTS5 access in a subquery so the COUNT(*) OVER () window function
-    // runs over the regular subquery result, not directly over the FTS5
-    // virtual table.
-    try sql.appendSlice(allocator,
-        \\SELECT
-        \\    id, session_id, role, snippet, tool_call_id, tool_name, created_at,
-        \\    COUNT(*) OVER () AS total
-        \\FROM (
-        \\    SELECT
-        \\        h.id AS id, h.session_id AS session_id,
-        \\        COALESCE(h.role, 'assistant') AS role,
-        \\        snippet(messages_fts, 0, '[', ']', '...', 10) AS snippet,
-        \\        h.tool_call_id AS tool_call_id,
-        \\        h.tool_name AS tool_name,
-        // Prefer the populated `created_iso` string over the raw nanosecond
-        // epoch so the returned `created_at` is readable and matches the
-        // `YYYY-MM-DD HH:MM:SS` format `since`/`until` already accept.
-        \\        COALESCE(NULLIF(h.created_iso, ''), h.created_at_nano, '') AS created_at,
-        \\        rank AS fts_rank
-        \\    FROM messages_fts
-        \\    JOIN llm_history h ON h.rowid = messages_fts.rowid
-        \\    WHERE messages_fts MATCH ?
-    );
+    // The subquery is the only engine-specific part: sqlite reads the FTS5
+    // index through `messages_fts`, postgres ranks `to_tsvector` directly.
+    if (dialect.is_postgres) {
+        try sql.appendSlice(allocator,
+            \\SELECT
+            \\    id, session_id, role, snippet, tool_call_id, tool_name, created_at,
+            \\    COUNT(*) OVER () AS total
+            \\FROM (
+            \\    SELECT
+            \\        h.id AS id, h.session_id AS session_id,
+            \\        COALESCE(h.role, 'assistant') AS role,
+            \\        ts_headline('simple'::regconfig, COALESCE(h.response_content, ''), q.tsq,
+            \\                    'StartSel=[, StopSel=], MaxWords=10, MinWords=3') AS snippet,
+            \\        h.tool_call_id AS tool_call_id,
+            \\        h.tool_name AS tool_name,
+            \\        COALESCE(NULLIF(h.created_iso, ''), CAST(h.created_at_nano AS TEXT), '') AS created_at,
+            \\        -ts_rank(to_tsvector('simple'::regconfig, COALESCE(h.response_content, '')), q.tsq) AS fts_rank
+            \\    FROM llm_history h, to_tsquery('simple'::regconfig, ?) AS q(tsq)
+            \\    WHERE to_tsvector('simple'::regconfig, COALESCE(h.response_content, '')) @@ q.tsq
+        );
+    } else {
+        // Wrap FTS5 access in a subquery so the COUNT(*) OVER () window
+        // function runs over the regular subquery result, not directly over
+        // the FTS5 virtual table.
+        try sql.appendSlice(allocator,
+            \\SELECT
+            \\    id, session_id, role, snippet, tool_call_id, tool_name, created_at,
+            \\    COUNT(*) OVER () AS total
+            \\FROM (
+            \\    SELECT
+            \\        h.id AS id, h.session_id AS session_id,
+            \\        COALESCE(h.role, 'assistant') AS role,
+            \\        snippet(messages_fts, 0, '[', ']', '...', 10) AS snippet,
+            \\        h.tool_call_id AS tool_call_id,
+            \\        h.tool_name AS tool_name,
+            \\        COALESCE(NULLIF(h.created_iso, ''), h.created_at_nano, '') AS created_at,
+            \\        rank AS fts_rank
+            \\    FROM messages_fts
+            \\    JOIN llm_history h ON h.rowid = messages_fts.rowid
+            \\    WHERE messages_fts MATCH ?
+        );
+    }
 
     var bind_values: std.ArrayList([]const u8) = .empty;
     defer bind_values.deinit(allocator);
@@ -2811,7 +2851,8 @@ pub fn recordSessionActivity(
     const id = try std.fmt.allocPrint(allocator, "{}", .{std.Io.Timestamp.now(io, .real).nanoseconds});
     defer allocator.free(id);
 
-    try db.exec(allocator,
+    try db.exec(
+        allocator,
         "INSERT INTO session_activity (id, session_id, description) VALUES (?, ?, ?)",
         &.{ id, session_id, description },
     );
@@ -6601,10 +6642,8 @@ test "getWorkspaceItemTaskById joins sessions for unattended flag + worktree cwd
     try insertTask(&ctx, alloc, "task_s", "with session", "", "[]");
     // Session row sharing the task id (project convention task.id ==
     // session.id): unattended ON, AI finished, worktree bound.
-    try ctx.db.exec(alloc,
-        "INSERT INTO sessions (id, is_auto_retry_until_stop, last_finish_reason, updated_at, git_worktree_cwd) " ++
-        "VALUES ('task_s', '1', 'stop', datetime('now'), '/tmp/worktree-x')",
-        &.{});
+    try ctx.db.exec(alloc, "INSERT INTO sessions (id, is_auto_retry_until_stop, last_finish_reason, updated_at, git_worktree_cwd) " ++
+        "VALUES ('task_s', '1', 'stop', datetime('now'), '/tmp/worktree-x')", &.{});
 
     const opt = try getWorkspaceItemTaskById(alloc, &ctx.db, "wi_1", "task_s");
     try testing.expect(opt != null);
@@ -6625,10 +6664,8 @@ test "getWorkspaceItemTaskById returns media flags and cwd passthrough" {
     defer ctx.threaded.deinit();
 
     try insertTask(&ctx, alloc, "task_img", "with images", "", "[]");
-    try ctx.db.exec(alloc,
-        "UPDATE workspace_item_tasks SET image_urls = 'data:image/png;base64,AAA||data:image/png;base64,BBB', cwd = '/tmp/proj' " ++
-        "WHERE id = 'task_img'",
-        &.{});
+    try ctx.db.exec(alloc, "UPDATE workspace_item_tasks SET image_urls = 'data:image/png;base64,AAA||data:image/png;base64,BBB', cwd = '/tmp/proj' " ++
+        "WHERE id = 'task_img'", &.{});
 
     const opt = try getWorkspaceItemTaskById(alloc, &ctx.db, "wi_1", "task_img");
     try testing.expect(opt != null);
@@ -6646,8 +6683,6 @@ test "getWorkspaceItemTaskById returns media flags and cwd passthrough" {
 // ════════════════════════════════════════════════════════════════════════════
 // Inlined from session_update_test.zig
 // ════════════════════════════════════════════════════════════════════════════
-
-
 
 fn sessionUpdateSetupDb() !TestCtx {
     const alloc = testing.allocator;
@@ -6825,7 +6860,6 @@ test "updateSessionSubAgentInfo: stamps sub-agent name and parent" {
 // Inlined from get_session_list_test.zig
 // ════════════════════════════════════════════════════════════════════════════
 
-
 // ─── Test helpers ─────────────────────────────────────────────────────────
 
 /// Open a fresh in-memory sqlite DB with `llm_history` and `sessions` tables
@@ -6873,10 +6907,8 @@ fn getSessionListSetupDb() !struct {
     // The covering index added in Migration 048. We create it inline
     // (rather than running the migration) to keep this test focused on
     // the rewritten SQL, not on migration plumbing.
-    try db.exec(alloc,
-        "CREATE INDEX idx_llm_history_created_session " ++
-            "ON llm_history(created_at_nano DESC, session_id)",
-        &.{});
+    try db.exec(alloc, "CREATE INDEX idx_llm_history_created_session " ++
+        "ON llm_history(created_at_nano DESC, session_id)", &.{});
 
     return .{ .db = db, .threaded = threaded };
 }
@@ -6923,18 +6955,12 @@ test "getSessionList inner subquery returns sessions in created_at DESC order" {
 
     // Three sessions, distinct created_at values. Newest first by
     // insert order means s_jan < s_feb < s_mar.
-    try ctx.db.exec(alloc,
-        "INSERT INTO llm_history (id, session_id, model, created_at_nano) " ++
-            "VALUES ('h1', 's_jan', 'm1', '2024-01-01 00:00:00')",
-        &.{});
-    try ctx.db.exec(alloc,
-        "INSERT INTO llm_history (id, session_id, model, created_at_nano) " ++
-            "VALUES ('h2', 's_feb', 'm1', '2024-02-01 00:00:00')",
-        &.{});
-    try ctx.db.exec(alloc,
-        "INSERT INTO llm_history (id, session_id, model, created_at_nano) " ++
-            "VALUES ('h3', 's_mar', 'm1', '2024-03-01 00:00:00')",
-        &.{});
+    try ctx.db.exec(alloc, "INSERT INTO llm_history (id, session_id, model, created_at_nano) " ++
+        "VALUES ('h1', 's_jan', 'm1', '2024-01-01 00:00:00')", &.{});
+    try ctx.db.exec(alloc, "INSERT INTO llm_history (id, session_id, model, created_at_nano) " ++
+        "VALUES ('h2', 's_feb', 'm1', '2024-02-01 00:00:00')", &.{});
+    try ctx.db.exec(alloc, "INSERT INTO llm_history (id, session_id, model, created_at_nano) " ++
+        "VALUES ('h3', 's_mar', 'm1', '2024-03-01 00:00:00')", &.{});
 
     // Exact inner subquery the production rewrite uses (see
     // zig getSessionList). Asserts the order is the
@@ -7036,14 +7062,10 @@ test "getSessionList agent field is from the latest message in the session" {
 
     // Two messages for the same session. The OLDER one is agent='A', the
     // NEWER one is agent='B'.
-    try ctx.db.exec(alloc,
-        "INSERT INTO llm_history (id, session_id, model, agent, created_at_nano) " ++
-            "VALUES ('h_old', 's1', 'm1', 'A', '2024-01-01 00:00:00')",
-        &.{});
-    try ctx.db.exec(alloc,
-        "INSERT INTO llm_history (id, session_id, model, agent, created_at_nano) " ++
-            "VALUES ('h_new', 's1', 'm1', 'B', '2024-02-01 00:00:00')",
-        &.{});
+    try ctx.db.exec(alloc, "INSERT INTO llm_history (id, session_id, model, agent, created_at_nano) " ++
+        "VALUES ('h_old', 's1', 'm1', 'A', '2024-01-01 00:00:00')", &.{});
+    try ctx.db.exec(alloc, "INSERT INTO llm_history (id, session_id, model, agent, created_at_nano) " ++
+        "VALUES ('h_new', 's1', 'm1', 'B', '2024-02-01 00:00:00')", &.{});
 
     // Exact correlated subquery the production rewrite uses (see
     // zig getSessionList). Asserts the new "agent of the
@@ -7130,8 +7152,6 @@ test "getSessionList inner subquery uses idx_llm_history_created_session (EXPLAI
 // ════════════════════════════════════════════════════════════════════════════
 // Inlined from llm_history_is_input_output_test.zig
 // ════════════════════════════════════════════════════════════════════════════
-
-
 
 fn llmHistoryIsInputOutputMakeResponse(messages: []SessionMessage) SessionMessageResponse {
     return .{
@@ -7244,7 +7264,6 @@ test "buildSessionMessagesJson emits true/false values in both directions" {
 // Inlined from llm_history_notification_test.zig
 // ════════════════════════════════════════════════════════════════════════════
 
-
 // ───────────────────────────────────────────────────────────────────────
 // 1. updateTaskLastHumanTouchedAt is callable + persists the value
 // ───────────────────────────────────────────────────────────────────────
@@ -7259,32 +7278,20 @@ test "updateTaskLastHumanTouchedAt stamps the unix-ms value on the task" {
     try db.init(io, ":memory:");
 
     // Minimal tables Migration 065 needs (parent + task).
-    try db.exec(alloc,
-        "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)",
-        &.{});
-    try db.exec(alloc,
-        "CREATE TABLE workspace_item_tasks (id TEXT PRIMARY KEY, name TEXT, workspace_item_id TEXT)",
-        &.{});
-    try db.exec(alloc,
-        "INSERT INTO workspace_items (id, workspace_id, item_type) " ++
-        "VALUES ('wi_1', 'ws_1', 'chat')",
-        &.{});
-    try db.exec(alloc,
-        "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) " ++
-        "VALUES ('task_1', 'T1', 'wi_1')",
-        &.{});
+    try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)", &.{});
+    try db.exec(alloc, "CREATE TABLE workspace_item_tasks (id TEXT PRIMARY KEY, name TEXT, workspace_item_id TEXT)", &.{});
+    try db.exec(alloc, "INSERT INTO workspace_items (id, workspace_id, item_type) " ++
+        "VALUES ('wi_1', 'ws_1', 'chat')", &.{});
+    try db.exec(alloc, "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) " ++
+        "VALUES ('task_1', 'T1', 'wi_1')", &.{});
 
     // Before stamp — column doesn't exist yet (Migration 065 not run).
-    try db.exec(alloc,
-        "ALTER TABLE workspace_item_tasks ADD COLUMN last_human_touched_at_nano INTEGER",
-        &.{});
+    try db.exec(alloc, "ALTER TABLE workspace_item_tasks ADD COLUMN last_human_touched_at_nano INTEGER", &.{});
 
     const now_ms: i64 = 1_786_500_000_000;
     try updateTaskLastHumanTouchedAt(alloc, &db, "task_1", now_ms);
 
-    var q = try db.query(alloc,
-        "SELECT last_human_touched_at_nano FROM workspace_item_tasks WHERE id = 'task_1'",
-        &.{});
+    var q = try db.query(alloc, "SELECT last_human_touched_at_nano FROM workspace_item_tasks WHERE id = 'task_1'", &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
     defer row.deinit(alloc);
@@ -7300,27 +7307,17 @@ test "updateTaskLastHumanTouchedAt overwrites on repeated calls" {
     defer db.deinit();
     try db.init(io, ":memory:");
 
-    try db.exec(alloc,
-        "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)",
-        &.{});
-    try db.exec(alloc,
-        "CREATE TABLE workspace_item_tasks (id TEXT PRIMARY KEY, name TEXT, workspace_item_id TEXT, last_human_touched_at_nano INTEGER)",
-        &.{});
-    try db.exec(alloc,
-        "INSERT INTO workspace_items (id, workspace_id, item_type) " ++
-        "VALUES ('wi_1', 'ws_1', 'chat')",
-        &.{});
-    try db.exec(alloc,
-        "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) " ++
-        "VALUES ('task_1', 'T1', 'wi_1')",
-        &.{});
+    try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)", &.{});
+    try db.exec(alloc, "CREATE TABLE workspace_item_tasks (id TEXT PRIMARY KEY, name TEXT, workspace_item_id TEXT, last_human_touched_at_nano INTEGER)", &.{});
+    try db.exec(alloc, "INSERT INTO workspace_items (id, workspace_id, item_type) " ++
+        "VALUES ('wi_1', 'ws_1', 'chat')", &.{});
+    try db.exec(alloc, "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) " ++
+        "VALUES ('task_1', 'T1', 'wi_1')", &.{});
 
     try updateTaskLastHumanTouchedAt(alloc, &db, "task_1", 100);
     try updateTaskLastHumanTouchedAt(alloc, &db, "task_1", 500);
 
-    var q = try db.query(alloc,
-        "SELECT last_human_touched_at_nano FROM workspace_item_tasks WHERE id = 'task_1'",
-        &.{});
+    var q = try db.query(alloc, "SELECT last_human_touched_at_nano FROM workspace_item_tasks WHERE id = 'task_1'", &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
     defer row.deinit(alloc);
@@ -7349,16 +7346,12 @@ test "updateSessionLastHumanTouchedAt stamps the unix-ms value on the session" {
         \\    last_human_touched_at_nano INTEGER
         \\)
     , &.{});
-    try db.exec(alloc,
-        "INSERT INTO sessions (id, name) VALUES ('sess_1', 'Hello')",
-        &.{});
+    try db.exec(alloc, "INSERT INTO sessions (id, name) VALUES ('sess_1', 'Hello')", &.{});
 
     const now_ms: i64 = 1_786_500_000_000;
     try updateSessionLastHumanTouchedAt(alloc, &db, "sess_1", now_ms);
 
-    var q = try db.query(alloc,
-        "SELECT last_human_touched_at_nano FROM sessions WHERE id = 'sess_1'",
-        &.{});
+    var q = try db.query(alloc, "SELECT last_human_touched_at_nano FROM sessions WHERE id = 'sess_1'", &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
     defer row.deinit(alloc);
@@ -7381,9 +7374,7 @@ test "updateSessionLastHumanTouchedAt with now_unix_ms=null reads the real clock
         \\    last_human_touched_at_nano INTEGER
         \\)
     , &.{});
-    try db.exec(alloc,
-        "INSERT INTO sessions (id, name) VALUES ('sess_real', 'Real')",
-        &.{});
+    try db.exec(alloc, "INSERT INTO sessions (id, name) VALUES ('sess_real', 'Real')", &.{});
 
     // Stamp with null — should read real clock and produce a recent
     // unix-ms value (not 0, not NULL).
@@ -7391,9 +7382,7 @@ test "updateSessionLastHumanTouchedAt with now_unix_ms=null reads the real clock
     try updateSessionLastHumanTouchedAt(alloc, &db, "sess_real", null);
     const after_ms = unixMillisNow();
 
-    var q = try db.query(alloc,
-        "SELECT last_human_touched_at_nano FROM sessions WHERE id = 'sess_real'",
-        &.{});
+    var q = try db.query(alloc, "SELECT last_human_touched_at_nano FROM sessions WHERE id = 'sess_real'", &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
     defer row.deinit(alloc);
@@ -7430,9 +7419,7 @@ test "updateSessionLastHumanTouchedAt is a no-op for unknown session_id" {
     try updateSessionLastHumanTouchedAt(alloc, &db, "unknown_id", 12345);
 
     // Sanity: still zero rows.
-    var q = try db.query(alloc,
-        "SELECT COUNT(*) FROM sessions",
-        &.{});
+    var q = try db.query(alloc, "SELECT COUNT(*) FROM sessions", &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
     defer row.deinit(alloc);
@@ -7455,16 +7442,12 @@ test "updateSessionLastHumanTouchedAt is idempotent on repeated calls with the s
         \\    last_human_touched_at_nano INTEGER
         \\)
     , &.{});
-    try db.exec(alloc,
-        "INSERT INTO sessions (id, name) VALUES ('sess_idem', 'Idem')",
-        &.{});
+    try db.exec(alloc, "INSERT INTO sessions (id, name) VALUES ('sess_idem', 'Idem')", &.{});
 
     try updateSessionLastHumanTouchedAt(alloc, &db, "sess_idem", 999);
     try updateSessionLastHumanTouchedAt(alloc, &db, "sess_idem", 999);
 
-    var q = try db.query(alloc,
-        "SELECT last_human_touched_at_nano FROM sessions WHERE id = 'sess_idem'",
-        &.{});
+    var q = try db.query(alloc, "SELECT last_human_touched_at_nano FROM sessions WHERE id = 'sess_idem'", &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
     defer row.deinit(alloc);
@@ -7487,16 +7470,12 @@ test "updateSessionLastHumanTouchedAt overwrites on repeated calls with a newer 
         \\    last_human_touched_at_nano INTEGER
         \\)
     , &.{});
-    try db.exec(alloc,
-        "INSERT INTO sessions (id, name) VALUES ('sess_overwrite', 'Overwrite')",
-        &.{});
+    try db.exec(alloc, "INSERT INTO sessions (id, name) VALUES ('sess_overwrite', 'Overwrite')", &.{});
 
     try updateSessionLastHumanTouchedAt(alloc, &db, "sess_overwrite", 100);
     try updateSessionLastHumanTouchedAt(alloc, &db, "sess_overwrite", 500);
 
-    var q = try db.query(alloc,
-        "SELECT last_human_touched_at_nano FROM sessions WHERE id = 'sess_overwrite'",
-        &.{});
+    var q = try db.query(alloc, "SELECT last_human_touched_at_nano FROM sessions WHERE id = 'sess_overwrite'", &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
     defer row.deinit(alloc);
@@ -7524,15 +7503,12 @@ test "updateSessionLastHumanTouchedAt skips empty session_id (no SQL bind)" {
     try updateSessionLastHumanTouchedAt(alloc, &db, "", 999);
 
     // No row was affected. The session table is empty.
-    var q = try db.query(alloc,
-        "SELECT COUNT(*) FROM sessions",
-        &.{});
+    var q = try db.query(alloc, "SELECT COUNT(*) FROM sessions", &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
     defer row.deinit(alloc);
     try testing.expectEqualStrings("0", row.values[0]);
 }
-
 
 // Wire format - Migration 082: last_human_touched_at on the JSON wire.
 
@@ -7553,11 +7529,11 @@ test "buildSessionListJson emits last_human_touched_at when the row has a value 
         .selected_profile_model = try alloc.dupe(u8, ""),
         .is_auto_retry_until_stop = try alloc.dupe(u8, "0"),
         .last_finish_reason = try alloc.dupe(u8, ""),
-                    // The mapper test injects the wire shape directly (NOT
-                    // the raw unix-ms from the column).
-            .last_human_touched_at = try alloc.dupe(u8, "2026-08-29 10:00:00"),
-            .git_worktree_cwd = try alloc.dupe(u8, ""),
-            .git_branch = try alloc.dupe(u8, ""),
+        // The mapper test injects the wire shape directly (NOT
+        // the raw unix-ms from the column).
+        .last_human_touched_at = try alloc.dupe(u8, "2026-08-29 10:00:00"),
+        .git_worktree_cwd = try alloc.dupe(u8, ""),
+        .git_branch = try alloc.dupe(u8, ""),
     };
     defer sess.deinit(alloc);
 
@@ -7651,7 +7627,17 @@ test "getSessionListWithCursor converts unix-ms storage to SQLite datetime on th
 
     // Run the SELECT.
     const result = getSessionListWithCursor(
-        alloc, &db, null, null, null, null, auth_common.system_user_id, 10, null, .created_at, .desc,
+        alloc,
+        &db,
+        null,
+        null,
+        null,
+        null,
+        auth_common.system_user_id,
+        10,
+        null,
+        .created_at,
+        .desc,
     ) catch return error.QueryFailed;
     defer {
         for (result.sessions) |s| s.deinit(alloc);
@@ -7713,14 +7699,24 @@ test "getSessionListWithCursor returns empty string for NULL last_human_touched_
     , &.{});
 
     const result = getSessionListWithCursor(
-        alloc, &db, null, null, null, null, auth_common.system_user_id, 10, null, .created_at, .desc,
+        alloc,
+        &db,
+        null,
+        null,
+        null,
+        null,
+        auth_common.system_user_id,
+        10,
+        null,
+        .created_at,
+        .desc,
     ) catch return error.QueryFailed;
     defer {
         for (result.sessions) |s| s.deinit(alloc);
         alloc.free(result.sessions);
     }
 
-try testing.expectEqual(@as(usize, 1), result.sessions.len);
+    try testing.expectEqual(@as(usize, 1), result.sessions.len);
     try testing.expectEqualStrings("", result.sessions[0].last_human_touched_at);
 }
 
@@ -7780,7 +7776,17 @@ test "getSessionListWithCursor derives needs_human_review for the sidebar status
     , &.{});
 
     const result = getSessionListWithCursor(
-        alloc, &db, null, null, null, null, auth_common.system_user_id, 10, null, .created_at, .desc,
+        alloc,
+        &db,
+        null,
+        null,
+        null,
+        null,
+        auth_common.system_user_id,
+        10,
+        null,
+        .created_at,
+        .desc,
     ) catch return error.QueryFailed;
     defer {
         for (result.sessions) |s| s.deinit(alloc);
@@ -7884,7 +7890,17 @@ test "getSessionListWithCursor pages on the sort field's column, not created_at"
 
     // Page 1, newest two by updated_at.
     const page1 = getSessionListWithCursor(
-        alloc, &db, null, null, null, null, auth_common.system_user_id, 2, null, .updated_at, .desc,
+        alloc,
+        &db,
+        null,
+        null,
+        null,
+        null,
+        auth_common.system_user_id,
+        2,
+        null,
+        .updated_at,
+        .desc,
     ) catch return error.QueryFailed;
     defer {
         for (page1.sessions) |s| s.deinit(alloc);
@@ -8052,7 +8068,17 @@ test "getSessionListWithCursor: workspace_ids bounds sessions AND total (count h
     scoped[0] = "s_keep_a";
     scoped[1] = "s_keep_b";
     const scoped_result = try getSessionListWithCursor(
-        alloc, &db, null, null, null, scoped, auth_common.system_user_id, 50, null, .created_at, .desc,
+        alloc,
+        &db,
+        null,
+        null,
+        null,
+        scoped,
+        auth_common.system_user_id,
+        50,
+        null,
+        .created_at,
+        .desc,
     );
     defer {
         for (scoped_result.sessions) |s| s.deinit(alloc);
@@ -8065,7 +8091,17 @@ test "getSessionListWithCursor: workspace_ids bounds sessions AND total (count h
     // total. Also proves we never emit `IN ()` (a syntax error that
     // would make this db.query throw instead of returning 0 rows).
     const empty_result = try getSessionListWithCursor(
-        alloc, &db, null, null, null, &.{}, auth_common.system_user_id, 50, null, .created_at, .desc,
+        alloc,
+        &db,
+        null,
+        null,
+        null,
+        &.{},
+        auth_common.system_user_id,
+        50,
+        null,
+        .created_at,
+        .desc,
     );
     defer {
         for (empty_result.sessions) |s| s.deinit(alloc);
@@ -8077,7 +8113,17 @@ test "getSessionListWithCursor: workspace_ids bounds sessions AND total (count h
     // null: global list unchanged (back-compat with pre-scoping
     // callers — SQL and binds are identical to before the param).
     const global_result = try getSessionListWithCursor(
-        alloc, &db, null, null, null, null, auth_common.system_user_id, 50, null, .created_at, .desc,
+        alloc,
+        &db,
+        null,
+        null,
+        null,
+        null,
+        auth_common.system_user_id,
+        50,
+        null,
+        .created_at,
+        .desc,
     );
     defer {
         for (global_result.sessions) |s| s.deinit(alloc);
@@ -8102,9 +8148,7 @@ test "needs_human_review predicate returns 1 when finish_reason='stop' AND no hu
 
     // Parent table + task table with the Migration 065 column +
     // sessions table to JOIN against.
-    try db.exec(alloc,
-        "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)",
-        &.{});
+    try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)", &.{});
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
         \\  id TEXT PRIMARY KEY,
@@ -8132,18 +8176,12 @@ test "needs_human_review predicate returns 1 when finish_reason='stop' AND no hu
         \\)
     , &.{});
 
-    try db.exec(alloc,
-        "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('wi_1','ws_1','kanban')",
-        &.{});
-    try db.exec(alloc,
-        "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) " ++
-        "VALUES ('task_awaiting', 'T1', 'wi_1')",
-        &.{});
+    try db.exec(alloc, "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('wi_1','ws_1','kanban')", &.{});
+    try db.exec(alloc, "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) " ++
+        "VALUES ('task_awaiting', 'T1', 'wi_1')", &.{});
     // AI finished on this task 1 hour ago.
-    try db.exec(alloc,
-        "INSERT INTO sessions (id, name, status, last_finish_reason, updated_at) " ++
-        "VALUES ('task_awaiting', 'T1', 'idle', 'stop', datetime('now', '-1 hour'))",
-        &.{});
+    try db.exec(alloc, "INSERT INTO sessions (id, name, status, last_finish_reason, updated_at) " ++
+        "VALUES ('task_awaiting', 'T1', 'idle', 'stop', datetime('now', '-1 hour'))", &.{});
 
     // Replicate the production SQL CASE.
     var q = try db.query(alloc,
@@ -8173,9 +8211,7 @@ test "needs_human_review predicate returns 0 when human touched AFTER the AI fin
     defer db.deinit();
     try db.init(io, ":memory:");
 
-    try db.exec(alloc,
-        "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)",
-        &.{});
+    try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)", &.{});
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
         \\  id TEXT PRIMARY KEY, name TEXT, workspace_item_id TEXT,
@@ -8190,23 +8226,17 @@ test "needs_human_review predicate returns 0 when human touched AFTER the AI fin
         \\  git_worktree_cwd TEXT
         \\)
     , &.{});
-    try db.exec(alloc,
-        "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('wi_1','ws_1','kanban')",
-        &.{});
+    try db.exec(alloc, "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('wi_1','ws_1','kanban')", &.{});
 
     // AI finished 1 hour ago.
-    try db.exec(alloc,
-        "INSERT INTO sessions (id, name, status, last_finish_reason, updated_at) " ++
-        "VALUES ('task_reviewed', 'T', 'idle', 'stop', datetime('now', '-1 hour'))",
-        &.{});
+    try db.exec(alloc, "INSERT INTO sessions (id, name, status, last_finish_reason, updated_at) " ++
+        "VALUES ('task_reviewed', 'T', 'idle', 'stop', datetime('now', '-1 hour'))", &.{});
     // Human touched 10 seconds ago (clearly after the AI's finish).
     const now_ms: i64 = 2_000_000_000_000; // year 2033 in unix-ms
     var t_buf: [32]u8 = undefined;
     const t_str = std.fmt.bufPrint(&t_buf, "{d}", .{now_ms}) catch @panic("bufPrint failed formatting the fixed fixture timestamp");
-    try db.exec(alloc,
-        "INSERT INTO workspace_item_tasks (id, name, workspace_item_id, last_human_touched_at_nano) " ++
-        "VALUES ('task_reviewed', 'T', 'wi_1', ?)",
-        &[_][]const u8{t_str});
+    try db.exec(alloc, "INSERT INTO workspace_item_tasks (id, name, workspace_item_id, last_human_touched_at_nano) " ++
+        "VALUES ('task_reviewed', 'T', 'wi_1', ?)", &[_][]const u8{t_str});
 
     var q = try db.query(alloc,
         \\SELECT CASE
@@ -8235,9 +8265,7 @@ test "needs_human_review predicate returns 0 when finish_reason is 'tool_calls' 
     defer db.deinit();
     try db.init(io, ":memory:");
 
-    try db.exec(alloc,
-        "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)",
-        &.{});
+    try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)", &.{});
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
         \\  id TEXT PRIMARY KEY, name TEXT, workspace_item_id TEXT,
@@ -8252,18 +8280,12 @@ test "needs_human_review predicate returns 0 when finish_reason is 'tool_calls' 
         \\  git_worktree_cwd TEXT
         \\)
     , &.{});
-    try db.exec(alloc,
-        "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('wi_1','ws_1','kanban')",
-        &.{});
-    try db.exec(alloc,
-        "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) " ++
-        "VALUES ('task_tools', 'T', 'wi_1')",
-        &.{});
+    try db.exec(alloc, "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('wi_1','ws_1','kanban')", &.{});
+    try db.exec(alloc, "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) " ++
+        "VALUES ('task_tools', 'T', 'wi_1')", &.{});
     // Agent is mid-tool-call, not finished yet.
-    try db.exec(alloc,
-        "INSERT INTO sessions (id, name, status, last_finish_reason, updated_at) " ++
-        "VALUES ('task_tools', 'T', 'active', 'tool_calls', datetime('now'))",
-        &.{});
+    try db.exec(alloc, "INSERT INTO sessions (id, name, status, last_finish_reason, updated_at) " ++
+        "VALUES ('task_tools', 'T', 'active', 'tool_calls', datetime('now'))", &.{});
 
     var q = try db.query(alloc,
         \\SELECT CASE
@@ -8294,24 +8316,16 @@ test "needs_human_review predicate returns 0 when no sessions row exists for the
     defer db.deinit();
     try db.init(io, ":memory:");
 
-    try db.exec(alloc,
-        "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)",
-        &.{});
+    try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)", &.{});
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
         \\  id TEXT PRIMARY KEY, name TEXT, workspace_item_id TEXT,
         \\  last_human_touched_at_nano INTEGER
         \\)
     , &.{});
-    try db.exec(alloc,
-        "CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT, status TEXT, last_finish_reason TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, git_worktree_cwd TEXT)",
-        &.{});
-    try db.exec(alloc,
-        "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('wi_1','ws_1','kanban')",
-        &.{});
-    try db.exec(alloc,
-        "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) VALUES ('task_empty','T','wi_1')",
-        &.{});
+    try db.exec(alloc, "CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT, status TEXT, last_finish_reason TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, git_worktree_cwd TEXT)", &.{});
+    try db.exec(alloc, "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('wi_1','ws_1','kanban')", &.{});
+    try db.exec(alloc, "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) VALUES ('task_empty','T','wi_1')", &.{});
 
     var q = try db.query(alloc,
         \\SELECT CASE
@@ -8336,7 +8350,6 @@ test "needs_human_review predicate returns 0 when no sessions row exists for the
 // ════════════════════════════════════════════════════════════════════════════
 
 const migration = @import("../migrations/migration.zig");
-
 
 fn llmHistorySearchFtsQuerySafetySetupDb() !TestCtx {
     const alloc = testing.allocator;
@@ -8367,8 +8380,7 @@ fn teardown(ctx: *TestCtx) void {
 fn insertRow(ctx: *TestCtx, id: []const u8, content: []const u8) !void {
     const alloc = testing.allocator;
     var sql_buf: [512]u8 = undefined;
-    const stmt = try std.fmt.bufPrint(sql_buf[0..],
-        "INSERT INTO llm_history (id, session_id, model, role, response_content) " ++
+    const stmt = try std.fmt.bufPrint(sql_buf[0..], "INSERT INTO llm_history (id, session_id, model, role, response_content) " ++
         "VALUES ('{s}','s_1','test-model','user','{s}')", .{ id, content });
     try ctx.db.exec(alloc, stmt, &.{});
 }
@@ -8390,11 +8402,9 @@ test "searchMessagesFts: dotted identifier handle_tool.zig returns the inserted 
     defer teardown(&ctx);
     const alloc = testing.allocator;
 
-    try insertRow(&ctx, "h1",
-        "the agentic_loop/handle_tool.zig has broken imports that we need to fix");
+    try insertRow(&ctx, "h1", "the agentic_loop/handle_tool.zig has broken imports that we need to fix");
 
-    const hits = try searchMessagesFts(alloc, &ctx.db,
-        "handle_tool.zig", .{});
+    const hits = try searchMessagesFts(alloc, &ctx.db, "handle_tool.zig", .{});
     defer freeHits(alloc, hits);
 
     try testing.expectEqual(@as(usize, 1), hits.len);
@@ -8407,11 +8417,9 @@ test "searchMessagesFts: hyphenated date 2026-08-06 returns the inserted row" {
     const alloc = testing.allocator;
 
     // Use a date-format string the user might search for verbatim
-    try insertRow(&ctx, "h_date",
-        "log entry on 2026-08-06 says the build is green");
+    try insertRow(&ctx, "h_date", "log entry on 2026-08-06 says the build is green");
 
-    const hits = try searchMessagesFts(alloc, &ctx.db,
-        "2026-08-06", .{});
+    const hits = try searchMessagesFts(alloc, &ctx.db, "2026-08-06", .{});
     defer freeHits(alloc, hits);
 
     try testing.expectEqual(@as(usize, 1), hits.len);
@@ -8423,14 +8431,12 @@ test "searchMessagesFts: column-syntax colon agentic_loop/handle_tool.zig:18 ret
     defer teardown(&ctx);
     const alloc = testing.allocator;
 
-    try insertRow(&ctx, "h_col",
-        "the bug at agentic_loop/handle_tool.zig:18 references the broken import");
+    try insertRow(&ctx, "h_col", "the bug at agentic_loop/handle_tool.zig:18 references the broken import");
 
     // This is the exact query the user tried. Without the fix, FTS5
     // sees the trailing `:18` as a column-name filter on a column that
     // does not exist and returns SQLITE_ERROR.
-    const hits = try searchMessagesFts(alloc, &ctx.db,
-        "agentic_loop/handle_tool.zig:18", .{});
+    const hits = try searchMessagesFts(alloc, &ctx.db, "agentic_loop/handle_tool.zig:18", .{});
     defer freeHits(alloc, hits);
 
     try testing.expect(hits.len >= 1);
@@ -8444,8 +8450,7 @@ test "searchMessagesFts: dotted short word SPEC.md returns the inserted row" {
 
     try insertRow(&ctx, "h_spec", "see SPEC.md for the full design");
 
-    const hits = try searchMessagesFts(alloc, &ctx.db,
-        "SPEC.md", .{});
+    const hits = try searchMessagesFts(alloc, &ctx.db, "SPEC.md", .{});
     defer freeHits(alloc, hits);
 
     try testing.expectEqual(@as(usize, 1), hits.len);
@@ -8461,8 +8466,7 @@ test "searchMessagesFts: plain words still match (regression guard)" {
 
     try insertRow(&ctx, "h_plain", "the login bug needs fixing urgently");
 
-    const hits = try searchMessagesFts(alloc, &ctx.db,
-        "login bug", .{});
+    const hits = try searchMessagesFts(alloc, &ctx.db, "login bug", .{});
     defer freeHits(alloc, hits);
 
     try testing.expectEqual(@as(usize, 1), hits.len);
@@ -8472,8 +8476,6 @@ test "searchMessagesFts: plain words still match (regression guard)" {
 // ════════════════════════════════════════════════════════════════════════════
 // Inlined from llm_history_search_messages_fts_test.zig
 // ════════════════════════════════════════════════════════════════════════════
-
-
 
 fn llmHistorySearchMessagesFtsSetupDb() !TestCtx {
     const alloc = testing.allocator;
@@ -8536,17 +8538,16 @@ fn llmHistorySearchMessagesFtsSetupDb() !TestCtx {
 
 test "searchMessagesFts: returns hits ranked by relevance" {
     var s = try llmHistorySearchMessagesFtsSetupDb();
-    defer { s.db.deinit(); s.threaded.deinit(); }
+    defer {
+        s.db.deinit();
+        s.threaded.deinit();
+    }
     const alloc = testing.allocator;
 
-    try s.db.exec(alloc,
-        "INSERT INTO llm_history (id, session_id, role, response_content) " ++
-        "VALUES ('h1','s_1','user','the login bug needs fixing urgently')",
-        &.{});
-    try s.db.exec(alloc,
-        "INSERT INTO llm_history (id, session_id, role, response_content) " ++
-        "VALUES ('h2','s_1','user','all tests pass')",
-        &.{});
+    try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content) " ++
+        "VALUES ('h1','s_1','user','the login bug needs fixing urgently')", &.{});
+    try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content) " ++
+        "VALUES ('h2','s_1','user','all tests pass')", &.{});
 
     const hits = try searchMessagesFts(alloc, &s.db, "login bug", .{});
     defer {
@@ -8566,14 +8567,15 @@ test "searchMessagesFts: returns hits ranked by relevance" {
 
 test "searchMessagesFts: filters by session_id" {
     var s = try llmHistorySearchMessagesFtsSetupDb();
-    defer { s.db.deinit(); s.threaded.deinit(); }
+    defer {
+        s.db.deinit();
+        s.threaded.deinit();
+    }
     const alloc = testing.allocator;
 
-    try s.db.exec(alloc,
-        "INSERT INTO llm_history (id, session_id, role, response_content) " ++
+    try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content) " ++
         "VALUES ('h1','s_a','user','the bug is fixed')", &.{});
-    try s.db.exec(alloc,
-        "INSERT INTO llm_history (id, session_id, role, response_content) " ++
+    try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content) " ++
         "VALUES ('h2','s_b','user','a different bug exists')", &.{});
 
     const hits = try searchMessagesFts(alloc, &s.db, "bug", .{
@@ -8593,14 +8595,15 @@ test "searchMessagesFts: filters by session_id" {
 
 test "searchMessagesFts: filters by role" {
     var s = try llmHistorySearchMessagesFtsSetupDb();
-    defer { s.db.deinit(); s.threaded.deinit(); }
+    defer {
+        s.db.deinit();
+        s.threaded.deinit();
+    }
     const alloc = testing.allocator;
 
-    try s.db.exec(alloc,
-        "INSERT INTO llm_history (id, session_id, role, response_content) " ++
+    try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content) " ++
         "VALUES ('h1','s_1','user','user asked about password reset')", &.{});
-    try s.db.exec(alloc,
-        "INSERT INTO llm_history (id, session_id, role, response_content) " ++
+    try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content) " ++
         "VALUES ('h2','s_1','assistant','the password reset feature')", &.{});
 
     const hits = try searchMessagesFts(alloc, &s.db, "password", .{
@@ -8620,17 +8623,18 @@ test "searchMessagesFts: filters by role" {
 
 test "searchMessagesFts: respects limit" {
     var s = try llmHistorySearchMessagesFtsSetupDb();
-    defer { s.db.deinit(); s.threaded.deinit(); }
+    defer {
+        s.db.deinit();
+        s.threaded.deinit();
+    }
     const alloc = testing.allocator;
 
     var i: usize = 0;
     while (i < 10) : (i += 1) {
         const id_buf = try std.fmt.allocPrint(alloc, "h_{d}", .{i});
         defer alloc.free(id_buf);
-        try s.db.exec(alloc,
-            "INSERT INTO llm_history (id, session_id, role, response_content) " ++
-            "VALUES (?, 's_1', 'user', 'common keyword here')",
-            &.{id_buf});
+        try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content) " ++
+            "VALUES (?, 's_1', 'user', 'common keyword here')", &.{id_buf});
     }
 
     const hits = try searchMessagesFts(alloc, &s.db, "common", .{
@@ -8649,11 +8653,13 @@ test "searchMessagesFts: respects limit" {
 
 test "searchMessagesFts: returns empty array when no matches" {
     var s = try llmHistorySearchMessagesFtsSetupDb();
-    defer { s.db.deinit(); s.threaded.deinit(); }
+    defer {
+        s.db.deinit();
+        s.threaded.deinit();
+    }
     const alloc = testing.allocator;
 
-    try s.db.exec(alloc,
-        "INSERT INTO llm_history (id, session_id, role, response_content) " ++
+    try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content) " ++
         "VALUES ('h1','s_1','user','nothing relevant here')", &.{});
 
     const hits = try searchMessagesFts(alloc, &s.db, "monkeywrench", .{});
@@ -8664,14 +8670,15 @@ test "searchMessagesFts: returns empty array when no matches" {
 
 test "searchMessagesFts: tool_call_id and tool_name surfaced for tool-role hits" {
     var s = try llmHistorySearchMessagesFtsSetupDb();
-    defer { s.db.deinit(); s.threaded.deinit(); }
+    defer {
+        s.db.deinit();
+        s.threaded.deinit();
+    }
     const alloc = testing.allocator;
 
-    try s.db.exec(alloc,
-        "INSERT INTO llm_history (id, session_id, role, response_content, " ++
+    try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, " ++
         "tool_call_id, tool_name) " ++
-        "VALUES ('h1','s_1','tool','exit code 42','tc_1','bash')",
-        &.{});
+        "VALUES ('h1','s_1','tool','exit code 42','tc_1','bash')", &.{});
 
     const hits = try searchMessagesFts(alloc, &s.db, "exit code", .{});
     defer {
@@ -8690,15 +8697,16 @@ test "searchMessagesFts: tool_call_id and tool_name surfaced for tool-role hits"
 
 test "getCompactedMessages: include_all=true returns live AND compacted rows" {
     var s = try llmHistorySearchMessagesFtsSetupDb();
-    defer { s.db.deinit(); s.threaded.deinit(); }
+    defer {
+        s.db.deinit();
+        s.threaded.deinit();
+    }
     const alloc = testing.allocator;
 
     // Seed: 1 live (is_feed_to_llm=1) + 1 compacted (is_feed_to_llm=0)
-    try s.db.exec(alloc,
-        "INSERT INTO llm_history (id, session_id, role, response_content, is_feed_to_llm) " ++
+    try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, is_feed_to_llm) " ++
         "VALUES ('live_1','s_full','user','live message',1)", &.{});
-    try s.db.exec(alloc,
-        "INSERT INTO llm_history (id, session_id, role, response_content, is_feed_to_llm) " ++
+    try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, is_feed_to_llm) " ++
         "VALUES ('compact_1','s_full','assistant','compacted message',0)", &.{});
 
     // Default behavior (include_all=false): only compacted.
@@ -8733,7 +8741,10 @@ test "getCompactedMessages: include_all=true returns live AND compacted rows" {
 
 test "searchMessagesFts: filters by since using ISO date string (regression for since/until bug)" {
     var s = try llmHistorySearchMessagesFtsSetupDb();
-    defer { s.db.deinit(); s.threaded.deinit(); }
+    defer {
+        s.db.deinit();
+        s.threaded.deinit();
+    }
     const alloc = testing.allocator;
 
     // Seed: two messages at known microsecond timestamps.
@@ -8742,18 +8753,14 @@ test "searchMessagesFts: filters by since using ISO date string (regression for 
 
     // Production code in `saveMessage` computes `created_iso` from
     // `created_at` via libc `localtime_r` + `strftime`.
-    try s.db.exec(alloc,
-        "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
+    try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
         "VALUES ('h_old','s1','user','old message',?,datetime(substr(?,1,10),'unixepoch'))", &.{ old_micros, old_micros });
-    try s.db.exec(alloc,
-        "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
+    try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
         "VALUES ('h_new','s1','user','new message',?,datetime(substr(?,1,10),'unixepoch'))", &.{ new_micros, new_micros });
 
     // Compute the ISO date for `new_micros` using the SAME expression the
     // migration uses — that's what `created_iso` will contain.
-    var iso_q = try s.db.queryRow(alloc,
-        "SELECT datetime(? / 1000000, 'unixepoch')",
-        &.{new_micros});
+    var iso_q = try s.db.queryRow(alloc, "SELECT datetime(? / 1000000, 'unixepoch')", &.{new_micros});
     defer iso_q.deinit(alloc);
     const new_iso = iso_q.values[0];
 
@@ -8776,25 +8783,24 @@ test "searchMessagesFts: filters by since using ISO date string (regression for 
 
 test "searchMessagesFts: filters by until using ISO date string (regression for since/until bug)" {
     var s = try llmHistorySearchMessagesFtsSetupDb();
-    defer { s.db.deinit(); s.threaded.deinit(); }
+    defer {
+        s.db.deinit();
+        s.threaded.deinit();
+    }
     const alloc = testing.allocator;
 
     const old_micros: []const u8 = "1780000000000000";
     const new_micros: []const u8 = "1785000000000000";
 
-    try s.db.exec(alloc,
-        "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
+    try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
         "VALUES ('h_old','s1','user','old message',?,datetime(substr(?,1,10),'unixepoch'))", &.{ old_micros, old_micros });
-    try s.db.exec(alloc,
-        "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
+    try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
         "VALUES ('h_new','s1','user','new message',?,datetime(substr(?,1,10),'unixepoch'))", &.{ new_micros, new_micros });
 
     // Compute the ISO for `old_micros` — `until=old_iso` should keep only h_old.
     // Use the same `substr(_,1,10)` expression as the inserted rows so
     // the lex comparison matches exactly.
-    var iso_q = try s.db.queryRow(alloc,
-        "SELECT datetime(substr(? ,1, 10), 'unixepoch')",
-        &.{old_micros});
+    var iso_q = try s.db.queryRow(alloc, "SELECT datetime(substr(? ,1, 10), 'unixepoch')", &.{old_micros});
     defer iso_q.deinit(alloc);
     const old_iso = iso_q.values[0];
 
@@ -8814,21 +8820,21 @@ test "searchMessagesFts: filters by until using ISO date string (regression for 
 
 test "searchMessagesFts: since AND until together produce a date range (regression)" {
     var s = try llmHistorySearchMessagesFtsSetupDb();
-    defer { s.db.deinit(); s.threaded.deinit(); }
+    defer {
+        s.db.deinit();
+        s.threaded.deinit();
+    }
     const alloc = testing.allocator;
 
     const old_micros: []const u8 = "1780000000000000";
     const mid_micros: []const u8 = "1783000000000000";
     const new_micros: []const u8 = "1785000000000000";
 
-    try s.db.exec(alloc,
-        "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
+    try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
         "VALUES ('h_old','s1','user','old message',?,datetime(substr(?,1,10),'unixepoch'))", &.{ old_micros, old_micros });
-    try s.db.exec(alloc,
-        "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
+    try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
         "VALUES ('h_mid','s1','user','mid message',?,datetime(substr(?,1,10),'unixepoch'))", &.{ mid_micros, mid_micros });
-    try s.db.exec(alloc,
-        "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
+    try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
         "VALUES ('h_new','s1','user','new message',?,datetime(substr(?,1,10),'unixepoch'))", &.{ new_micros, new_micros });
 
     // Use the same substr(_,1,10) expression as the inserted rows so the
@@ -8869,7 +8875,10 @@ test "searchMessagesFts: since AND until together produce a date range (regressi
 
 test "searchMessagesFts: created_at is a readable ISO timestamp, not a nanosecond epoch" {
     var s = try llmHistorySearchMessagesFtsSetupDb();
-    defer { s.db.deinit(); s.threaded.deinit(); }
+    defer {
+        s.db.deinit();
+        s.threaded.deinit();
+    }
     const alloc = testing.allocator;
 
     // Seed both columns the way production writes them: `created_at_nano`
@@ -8877,8 +8886,7 @@ test "searchMessagesFts: created_at is a readable ISO timestamp, not a nanosecon
     // string `saveMessage` populates.
     const nano: []const u8 = "1790706338823948836";
     const iso: []const u8 = "2026-09-30 19:53:35";
-    try s.db.exec(alloc,
-        "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
+    try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
         "VALUES ('h_ts','s1','user','readable timestamp check',?,?)", &.{ nano, iso });
 
     const hits = try searchMessagesFts(alloc, &s.db, "readable timestamp", .{});
@@ -8917,7 +8925,6 @@ test "searchMessagesFts: created_at is a readable ISO timestamp, not a nanosecon
 // ════════════════════════════════════════════════════════════════════════════
 // Inlined from llm_history_compacted_messages_test.zig
 // ════════════════════════════════════════════════════════════════════════════
-
 
 fn llmHistoryCompactedMessagesSetupDb() !struct {
     db: database.Db,
@@ -8990,9 +8997,7 @@ fn llmHistoryCompactedMessagesSeedMessage(
     const created_iso_len: usize = blk: {
         if (created_at.len >= 10 and std.mem.indexOfScalar(u8, created_at, '-') == null) {
             // Looks like a microsecond integer — convert via SQLite.
-            var q = try db.queryRow(alloc,
-                "SELECT datetime(? / 1000000, 'unixepoch')",
-                &.{created_at});
+            var q = try db.queryRow(alloc, "SELECT datetime(? / 1000000, 'unixepoch')", &.{created_at});
             defer q.deinit(alloc);
             const iso = q.values[0];
             const len = iso.len;
@@ -9117,9 +9122,7 @@ test "getCompactedMessages: filters by since using ISO date string (regression)"
 
     // Compute the ISO for `new_micros` using the SAME expression the
     // migration uses — that's what `created_iso` will contain.
-    var iso_q = try s.db.queryRow(alloc,
-        "SELECT datetime(? / 1000000, 'unixepoch')",
-        &.{new_micros});
+    var iso_q = try s.db.queryRow(alloc, "SELECT datetime(? / 1000000, 'unixepoch')", &.{new_micros});
     defer iso_q.deinit(alloc);
     const new_iso = iso_q.values[0];
 
@@ -9148,9 +9151,7 @@ test "getCompactedMessages: filters by until using ISO date string (regression)"
     try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h_old", "sess_1", "user", "old", 0, old_micros);
     try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h_new", "sess_1", "user", "new", 0, new_micros);
 
-    var iso_q = try s.db.queryRow(alloc,
-        "SELECT datetime(? / 1000000, 'unixepoch')",
-        &.{old_micros});
+    var iso_q = try s.db.queryRow(alloc, "SELECT datetime(? / 1000000, 'unixepoch')", &.{old_micros});
     defer iso_q.deinit(alloc);
     const old_iso = iso_q.values[0];
 
@@ -9281,8 +9282,7 @@ test "saveMessage: writes a correct-year (2026-ish) created_iso from current tim
         .is_output = false,
     });
 
-    var q = try db.query(alloc,
-        "SELECT created_iso FROM llm_history WHERE session_id = 'sess_regression'", &.{});
+    var q = try db.query(alloc, "SELECT created_iso FROM llm_history WHERE session_id = 'sess_regression'", &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
     defer row.deinit(alloc);
@@ -9365,8 +9365,7 @@ test "saveMessage: created_at column is stored as Unix microseconds (length <= 1
         .is_output = false,
     });
 
-    var q = try db.query(alloc,
-        "SELECT created_at_nano FROM llm_history WHERE session_id = 'sess_micros'", &.{});
+    var q = try db.query(alloc, "SELECT created_at_nano FROM llm_history WHERE session_id = 'sess_micros'", &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
     defer row.deinit(alloc);
@@ -9380,8 +9379,6 @@ test "saveMessage: created_at column is stored as Unix microseconds (length <= 1
 // ════════════════════════════════════════════════════════════════════════════
 // Inlined from llm_history_tool_call_loading_test.zig
 // ════════════════════════════════════════════════════════════════════════════
-
-
 
 fn llmHistoryToolCallLoadingSetupDb() !TestCtx {
     const alloc = testing.allocator;
@@ -9413,8 +9410,7 @@ fn llmHistoryToolCallLoadingTeardown(ctx: *TestCtx) void {
 /// `sessions` row before llm_history rows reference its id.
 fn llmHistoryToolCallLoadingCreateSession(ctx: *TestCtx, session_id: []const u8) !void {
     var buf: [256]u8 = undefined;
-    const stmt = try std.fmt.bufPrint(buf[0..],
-        "INSERT INTO sessions (id, name) VALUES ('{s}', 'test-session')", .{session_id});
+    const stmt = try std.fmt.bufPrint(buf[0..], "INSERT INTO sessions (id, name) VALUES ('{s}', 'test-session')", .{session_id});
     try ctx.db.exec(ctx.alloc, stmt, &.{});
 }
 
@@ -9433,10 +9429,8 @@ test "saveToolResultPlaceholder inserts row with is_loading=1 and empty content"
     const new_id = try saveToolResultPlaceholder(ctx.alloc, ctx.threaded.io(), &ctx.db, opts);
     defer ctx.alloc.free(new_id);
 
-    var q = try ctx.db.query(ctx.alloc,
-        "SELECT response_content, is_loading, is_feed_to_llm " ++
-            "FROM llm_history WHERE tool_call_id = ?",
-        &.{"tcA"});
+    var q = try ctx.db.query(ctx.alloc, "SELECT response_content, is_loading, is_feed_to_llm " ++
+        "FROM llm_history WHERE tool_call_id = ?", &.{"tcA"});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
     defer row.deinit(ctx.alloc);
@@ -9497,9 +9491,7 @@ test "updateToolResultById on a non-existent tool_call_id is a no-op (no error)"
         .diffview_after = null,
     });
 
-    var q = try ctx.db.query(ctx.alloc,
-        "SELECT 1 FROM llm_history WHERE tool_call_id = ?",
-        &.{"tc_ghost"});
+    var q = try ctx.db.query(ctx.alloc, "SELECT 1 FROM llm_history WHERE tool_call_id = ?", &.{"tc_ghost"});
     defer q.deinit();
     try testing.expect((try q.next()) == null);
 }
@@ -9527,9 +9519,7 @@ test "resolveStaleLoadingToolResults replaces all stranded placeholders with int
 
     // All 3 should now have is_loading=0 and an interrupted-style content.
     for ([_][]const u8{ "tcA", "tcB", "tcC" }) |tc| {
-        var q = try ctx.db.query(ctx.alloc,
-            "SELECT response_content, is_loading FROM llm_history WHERE tool_call_id = ?",
-            &.{tc});
+        var q = try ctx.db.query(ctx.alloc, "SELECT response_content, is_loading FROM llm_history WHERE tool_call_id = ?", &.{tc});
         defer q.deinit();
         const row = (try q.next()) orelse return error.RowMissing;
         defer row.deinit(ctx.alloc);
@@ -9570,10 +9560,8 @@ test "resolveStaleLoadingToolResults only touches the target session" {
     try resolveStaleLoadingToolResults(ctx.alloc, &ctx.db, "sess_1");
 
     // sess_1:tc_sess_1_x is interrupted.
-    var q1 = try ctx.db.query(ctx.alloc,
-        "SELECT response_content, is_loading FROM llm_history " ++
-            "WHERE session_id = ? AND tool_call_id = ?",
-        &.{ "sess_1", "tc_sess_1_x" });
+    var q1 = try ctx.db.query(ctx.alloc, "SELECT response_content, is_loading FROM llm_history " ++
+        "WHERE session_id = ? AND tool_call_id = ?", &.{ "sess_1", "tc_sess_1_x" });
     defer q1.deinit();
     const row1 = (try q1.next()) orelse return error.RowMissing;
     defer row1.deinit(ctx.alloc);
@@ -9581,10 +9569,8 @@ test "resolveStaleLoadingToolResults only touches the target session" {
     try testing.expect(std.mem.indexOf(u8, row1.values[0], "interrupted") != null);
 
     // sess_2:tc_sess_2_y is still is_loading=1 with empty content.
-    var q2 = try ctx.db.query(ctx.alloc,
-        "SELECT is_loading, response_content FROM llm_history " ++
-            "WHERE session_id = ? AND tool_call_id = ?",
-        &.{ "sess_2", "tc_sess_2_y" });
+    var q2 = try ctx.db.query(ctx.alloc, "SELECT is_loading, response_content FROM llm_history " ++
+        "WHERE session_id = ? AND tool_call_id = ?", &.{ "sess_2", "tc_sess_2_y" });
     defer q2.deinit();
     const row2 = (try q2.next()) orelse return error.RowMissing;
     defer row2.deinit(ctx.alloc);
@@ -9595,7 +9581,6 @@ test "resolveStaleLoadingToolResults only touches the target session" {
 // ════════════════════════════════════════════════════════════════════════════
 // Inlined from llm_history_worker_info_test.zig
 // ════════════════════════════════════════════════════════════════════════════
-
 
 /// Open a fresh in-memory sqlite DB with the minimum schema needed for
 /// `getActiveWorker` + `getWorkerBySessionId` (the `worker` + `sessions`
@@ -9651,14 +9636,10 @@ test "getActiveWorker returns git_worktree_cwd from joined sessions row" {
     defer ctx.threaded.deinit();
 
     // Insert a session that has a bound worktree (Migration 046 semantics).
-    try ctx.db.exec(alloc,
-        "INSERT INTO sessions (id, name, git_worktree_cwd) VALUES ('s1', 'test', '/home/me/.worktrees/feature-x')",
-        &.{});
+    try ctx.db.exec(alloc, "INSERT INTO sessions (id, name, git_worktree_cwd) VALUES ('s1', 'test', '/home/me/.worktrees/feature-x')", &.{});
     // Insert a worker row pointing at that session.
-    try ctx.db.exec(alloc,
-        "INSERT INTO worker (id, session_id, working_directory, last_activity_description) " ++
-        "VALUES ('w1', 's1', '/home/me', 'working on the feature')",
-        &.{});
+    try ctx.db.exec(alloc, "INSERT INTO worker (id, session_id, working_directory, last_activity_description) " ++
+        "VALUES ('w1', 's1', '/home/me', 'working on the feature')", &.{});
 
     const workers = try getActiveWorker(alloc, &ctx.db);
     defer {
@@ -9731,8 +9712,7 @@ test "WorkerInfo.deinit frees git_worktree_cwd without leaking" {
 
     // Populated git_worktree_cwd — the case that would leak if deinit forgot
     // the field. The `testing.allocator` will flag any leaked allocation.
-    try ctx.db.exec(alloc,
-        "INSERT INTO sessions (id, name, git_worktree_cwd) VALUES ('s1', 't', '/some/abs/path')", &.{});
+    try ctx.db.exec(alloc, "INSERT INTO sessions (id, name, git_worktree_cwd) VALUES ('s1', 't', '/some/abs/path')", &.{});
     try ctx.db.exec(alloc, "INSERT INTO worker (id, session_id) VALUES ('w1', 's1')", &.{});
 
     const workers = try getActiveWorker(alloc, &ctx.db);
@@ -9753,10 +9733,8 @@ test "getWorkerBySessionId returns git_worktree_cwd from joined session" {
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    try ctx.db.exec(alloc,
-        "INSERT INTO sessions (id, name, git_worktree_cwd) VALUES ('s1', 't', '/worktree/path')", &.{});
-    try ctx.db.exec(alloc,
-        "INSERT INTO worker (id, session_id, last_activity_description) VALUES ('w1', 's1', 'hello')", &.{});
+    try ctx.db.exec(alloc, "INSERT INTO sessions (id, name, git_worktree_cwd) VALUES ('s1', 't', '/worktree/path')", &.{});
+    try ctx.db.exec(alloc, "INSERT INTO worker (id, session_id, last_activity_description) VALUES ('w1', 's1', 'hello')", &.{});
 
     const opt = try getWorkerBySessionId(alloc, &ctx.db, "s1");
     var worker = (opt orelse return error.ExpectedWorker);

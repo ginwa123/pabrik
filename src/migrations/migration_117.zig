@@ -3,6 +3,7 @@ const common = @import("common.zig");
 const loggermod = @import("../modules/logger/Logger.zig");
 
 const Backend = common.Backend;
+const dialect = common.dialect;
 
 /// Migration 117 — drop the twelve `*_legacy_v116` agent-config tables.
 /// The drop is GUARDED: the legacy tables survive unless the unified set
@@ -28,15 +29,7 @@ pub const Migration117DropLegacyAgentConfigTables = struct {
     };
 
     fn tableExists(db: *Backend, allocator: std.mem.Allocator, table_name: []const u8) bool {
-        var q = db.query(
-            allocator,
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
-            &[_][]const u8{table_name},
-        ) catch return false;
-        defer q.deinit();
-        const row = (q.next() catch null) orelse return false;
-        row.deinit(allocator);
-        return true;
+        return dialect.tableExists(.{ .db = db }, allocator, table_name) catch false;
     }
 
     /// How many rows does `table_name` hold? -1 when the table is absent.
@@ -75,7 +68,7 @@ pub const Migration117DropLegacyAgentConfigTables = struct {
             const legacy = pair[0];
             if (!tableExists(db, allocator, legacy)) continue;
             var buf: [256]u8 = undefined;
-            const sql = std.fmt.bufPrint(&buf, "DROP TABLE IF EXISTS {s}", .{legacy}) catch
+            const sql = std.fmt.bufPrint(&buf, "DROP TABLE IF EXISTS {s}{s}", .{ legacy, dialect.drop_cascade }) catch
                 return error.DropFailed;
             try db.exec(allocator, sql, &[_][]const u8{});
         }
