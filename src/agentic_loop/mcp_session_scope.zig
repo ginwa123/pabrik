@@ -1,13 +1,13 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
-const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const mcp_scope = @import("../modules/agent/mcp/mcp/mcp_scope.zig");
 
 pub const Scope = mcp_scope.Scope;
 
 pub fn resolve(
     allocator: std.mem.Allocator,
-    db: ?*sqlite.SqliteBackend,
+    db: ?*database.Db,
     session_id: ?[]const u8,
 ) Scope {
     const backend = db orelse return .{};
@@ -31,8 +31,8 @@ pub fn resolve(
 
 const testing = std.testing;
 
-fn setupDb(alloc: std.mem.Allocator) !sqlite.SqliteBackend {
-    var db: sqlite.SqliteBackend = .{};
+fn setupDb(alloc: std.mem.Allocator) !database.Db {
+    var db: database.Db = .{};
     errdefer db.deinit();
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
