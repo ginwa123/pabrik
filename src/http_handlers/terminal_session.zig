@@ -176,6 +176,12 @@ const PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE: usize = 0x00020016;
 const EXTENDED_STARTUPINFO_PRESENT: DWORD = 0x00080000;
 /// `HANDLE_FLAG_INHERIT`.
 const HANDLE_FLAG_INHERIT: DWORD = 0x00000001;
+/// `CREATE_NEW_PROCESS_GROUP` — the pipe shell leads a process group of its own,
+/// which is the only handle a console signal can be aimed at.
+const CREATE_NEW_PROCESS_GROUP: DWORD = 0x00000200;
+/// `CTRL_BREAK_EVENT` — the signal a process GROUP accepts (`CTRL_C_EVENT`
+/// cannot be generated for one).
+const CTRL_BREAK_EVENT: DWORD = 1;
 /// `STARTF_USESTDHANDLES` — "the hStd* fields are the child's standard
 /// handles, use THEM". Load-bearing on both Windows backends: without it the
 /// OS quietly duplicates the CALLER's standard handles into a console-flagged
@@ -197,6 +203,8 @@ extern "kernel32" fn TerminateProcess(hProcess: HANDLE, uExitCode: c_uint) callc
 extern "kernel32" fn WaitForSingleObject(hHandle: HANDLE, dwMilliseconds: DWORD) callconv(.winapi) DWORD;
 extern "kernel32" fn GetExitCodeProcess(hProcess: HANDLE, lpExitCode: *DWORD) callconv(.winapi) WINBOOL;
 extern "kernel32" fn SetHandleInformation(hObject: HANDLE, dwMask: DWORD, dwFlags: DWORD) callconv(.winapi) WINBOOL;
+extern "kernel32" fn GenerateConsoleCtrlEvent(dwCtrlEvent: DWORD, dwProcessGroupId: DWORD) callconv(.winapi) WINBOOL;
+extern "kernel32" fn SearchPathW(lpPath: ?[*:0]const u16, lpFileName: [*:0]const u16, lpExtension: ?[*:0]const u16, nBufferLength: DWORD, lpBuffer: [*]u16, lpFilePart: ?*?[*]u16) callconv(.winapi) DWORD;
 extern "kernel32" fn InitializeProcThreadAttributeList(lpAttributeList: ?*anyopaque, dwAttributeCount: DWORD, dwFlags: DWORD, lpSize: *usize) callconv(.winapi) WINBOOL;
 extern "kernel32" fn UpdateProcThreadAttribute(lpAttributeList: *anyopaque, dwFlags: DWORD, attribute: usize, lpValue: *const anyopaque, cbSize: usize, lpPreviousValue: ?*anyopaque, lpReturnSize: ?*usize) callconv(.winapi) WINBOOL;
 extern "kernel32" fn DeleteProcThreadAttributeList(lpAttributeList: *anyopaque) callconv(.winapi) void;
@@ -768,18 +776,55 @@ fn allocId() SessionError![]u8 {
     return std.fmt.allocPrint(g_alloc, "term-{x}", .{n}) catch return error.OutOfMemory;
 }
 
+/// The shells a Windows host prefers, best first. `clear`, `ls`, `cat` and
+/// `rm` are PowerShell's; an interactive cmd.exe has none of them.
+pub const windows_shell_names = [_][]const u8{ "pwsh.exe", "powershell.exe" };
+/// The cmd.exe every Windows machine has, even one with no `%COMSPEC%`.
+pub const windows_cmd_exe: []const u8 = "C:\\Windows\\System32\\cmd.exe";
+
+/// Windows path rules for a Windows env var, so the check means the same thing
+/// on the host that reads `%COMSPEC%` and in a test running on Linux.
+pub fn isWindowsAbsolutePath(p: []const u8) bool {
+    if (p.len >= 3 and std.ascii.isAlphabetic(p[0]) and p[1] == ':' and (p[2] == '\\' or p[2] == '/')) return true;
+    return p.len >= 3 and (p[0] == '\\' or p[0] == '/') and (p[1] == '\\' or p[1] == '/');
+}
+
+/// The shell a Windows host gets when the client names none.
+pub fn pickWindowsShellName(comptime resolve: fn ([]const u8) bool, comspec: ?[]const u8) []const u8 {
+    for (windows_shell_names) |name| {
+        if (resolve(name)) return name;
+    }
+    if (comspec) |s| {
+        if (isWindowsAbsolutePath(s)) return s;
+    }
+    return windows_cmd_exe;
+}
+
+/// Resolve `name` the way `CreateProcessW` would, into `out` as UTF-8. Null
+/// when the search path has no such executable (or `out` cannot hold its path).
+fn searchPath(name: []const u8, out: []u8) ?[]const u8 {
+    var name_w: [32]u16 = undefined;
+    const name_z = utf8ToWide(&name_w, name) catch return null;
+    var path_w: [std.fs.max_path_bytes]u16 = undefined;
+    const rc = SearchPathW(null, name_z.ptr, null, @intCast(path_w.len), &path_w, null);
+    if (rc == 0 or @as(usize, rc) > path_w.len) return null;
+    const n = std.unicode.utf16LeToUtf8(out, path_w[0..rc]) catch return null;
+    return out[0..n];
+}
+
+fn onSearchPath(name: []const u8) bool {
+    var found: [std.fs.max_path_bytes]u8 = undefined;
+    return searchPath(name, &found) != null;
+}
+
 /// The default shell for this host. POSIX: `$SHELL`, then `/bin/bash`.
-/// Windows: `%COMSPEC%`, then the System32 path a machine that has no
-/// COMSPEC still has one at. UTF-8 in, UTF-8 out — the create path
-fn defaultShell() []const u8 {
+/// Windows: PowerShell (`pwsh`, then the 5.1 every machine ships), then
+/// `%COMSPEC%`. The result points into `buf` or at static/env memory.
+fn defaultShell(buf: []u8) []const u8 {
     if (comptime pty_backend == .conpty) {
-        // `cmd.exe` is what a Windows console gives you, and COMSPEC is
-        // where Explorer/the OS points at it.
-        if (getenv("COMSPEC")) |s| {
-            const span = std.mem.span(s);
-            if (span.len > 0 and std.fs.path.isAbsolute(span)) return span;
-        }
-        return "C:\\Windows\\System32\\cmd.exe";
+        const comspec: ?[]const u8 = if (getenv("COMSPEC")) |s| std.mem.span(s) else null;
+        const name = pickWindowsShellName(onSearchPath, comspec);
+        return searchPath(name, buf) orelse name;
     }
     // $SHELL via libc (no allocator, no std.posix.getenv in 0.16).
     if (getenv("SHELL")) |s| {
@@ -815,10 +860,11 @@ fn createSessionPosix(io: std.Io, cwd: []const u8, workspace_id: []const u8, she
     sweepIdle();
     try checkSessionCapacity();
 
+    var shell_buf: [std.fs.max_path_bytes]u8 = undefined;
     const shell_path: []const u8 = blk: {
         const s = shell_opt orelse "";
         if (s.len > 0) break :blk s;
-        break :blk defaultShell();
+        break :blk defaultShell(&shell_buf);
     };
 
     var win = Winsize{ .ws_row = dims.rows, .ws_col = dims.cols, .ws_xpixel = 0, .ws_ypixel = 0 };
@@ -947,10 +993,11 @@ fn createSessionWin(io: std.Io, cwd: []const u8, workspace_id: []const u8, shell
     sweepIdle();
     try checkSessionCapacity();
 
+    var shell_buf: [std.fs.max_path_bytes]u8 = undefined;
     const shell_path: []const u8 = blk: {
         const s = shell orelse "";
         if (s.len > 0) break :blk s;
-        break :blk defaultShell();
+        break :blk defaultShell(&shell_buf);
     };
 
     var spawned: WinSpawn = if (createSessionConPty(eff_cwd, dims, shell_path)) |s| s else |err| switch (err) {
@@ -1068,12 +1115,12 @@ fn createSessionConPty(eff_cwd: []const u8, dims: Dims, shell_path: []const u8) 
     const cmdline: [:0]u16 = cmdline_w[0 .. 2 + shell_z.len :0];
 
     // ---- pipes -------------------------------------------------------
-    // `bInheritHandle` is 1 only so the console can pick them up; every
-    // flag is cleared again below. A null HANDLE is "absent", so the
+    // bInheritHandle is 0 here, unlike the pipe backend (where the pipes ARE
+    // the child's standard handles): the attribute wires this child's console.
     var sa = SecurityAttributes{
         .nLength = @sizeOf(SecurityAttributes),
         .lpSecurityDescriptor = null,
-        .bInheritHandle = 1,
+        .bInheritHandle = 0,
     };
 
     var in_read_h: ?HANDLE = null;
@@ -1110,14 +1157,6 @@ fn createSessionConPty(eff_cwd: []const u8, dims: Dims, shell_path: []const u8) 
         out_read_h = r;
         out_write_h = w;
     }
-    // NOTHING crosses into the child by inheritance: the pseudoconsole
-    // attribute is what wires the child's console, and an inherited copy
-    // of the write end would keep the input pipe open after we close it.
-    _ = SetHandleInformation(in_read_h.?, HANDLE_FLAG_INHERIT, 0);
-    _ = SetHandleInformation(in_write_h.?, HANDLE_FLAG_INHERIT, 0);
-    _ = SetHandleInformation(out_read_h.?, HANDLE_FLAG_INHERIT, 0);
-    _ = SetHandleInformation(out_write_h.?, HANDLE_FLAG_INHERIT, 0);
-
     {
         var pc: HANDLE = undefined;
         // COORD is X-then-Y and X is the COLUMN count.
@@ -1153,8 +1192,8 @@ fn createSessionConPty(eff_cwd: []const u8, dims: Dims, shell_path: []const u8) 
             cmdline.ptr,
             null,
             null,
-            1, // bInheritHandles — no handle is flagged inheritable; the
-            // console, not inheritance, wires the child.
+            0, // bInheritHandles: no handle is inheritable, so asking for
+            // inheritance only lets the OS duplicate the caller's own.
             EXTENDED_STARTUPINFO_PRESENT,
             null, // lpEnvironment: inherit ours
             cwd_z.ptr,
@@ -1193,9 +1232,10 @@ fn createSessionConPty(eff_cwd: []const u8, dims: Dims, shell_path: []const u8) 
     return .{ .handles = handles, .pid = pi.dwProcessId };
 }
 
-/// How long a fresh pseudoconsole gets to produce its first byte (and how
-/// finely we look), before we decide it is not servicing its client.
-const conpty_probe_ms: usize = 1500;
+/// How long a fresh pseudoconsole gets to produce its first byte, and how
+/// finely we look. A shell that is still loading its profile is not a broken
+/// console, and PowerShell's first prompt on a cold host is seconds away.
+const conpty_probe_ms: usize = 8000;
 const conpty_probe_step_ms: usize = 25;
 
 /// Does this pseudoconsole actually work?
@@ -1217,6 +1257,19 @@ fn pseudoconsoleIsLive(out_read: HANDLE, proc: HANDLE) bool {
 // Windows pipe backend — the fallback behind `error.PseudoConsoleUnusable`
 //
 
+/// The argv a pipe-backed shell needs, by executable name: a pipe carries the
+/// command TEXT, not keystrokes, so the shell must neither echo the committed
+/// line a second time nor print a prompt for nobody.
+pub fn pipeShellArgs(shell_path: []const u8) []const u8 {
+    const cut = std.mem.lastIndexOfAny(u8, shell_path, "\\/") orelse 0;
+    const name = if (cut == 0) shell_path else shell_path[cut + 1 ..];
+    if (std.ascii.eqlIgnoreCase(name, "cmd.exe")) return " /Q";
+    if (std.ascii.eqlIgnoreCase(name, "powershell.exe") or std.ascii.eqlIgnoreCase(name, "pwsh.exe")) {
+        return " -NoLogo -Command -";
+    }
+    return "";
+}
+
 /// Returns the PLAIN `SessionError`: unlike the pseudoconsole path there is
 /// nothing to fall back FROM, so `PseudoConsoleUnusable` is not in its set
 /// and the caller's `try` cannot smuggle it out.
@@ -1227,20 +1280,17 @@ fn createSessionPipeWin(eff_cwd: []const u8, dims: Dims, shell_path: []const u8)
     const cwd_z = try utf8ToWide(&cwd_w, eff_cwd);
     const shell_z = try utf8ToWide(&shell_w, shell_path);
 
-    // cmd.exe echoes every line it reads from a pipe, which would print each
-    // command twice now that the server echoes the typing; `/Q` turns that off.
-    // The argument is cmd.exe's alone — any other shell is named on its own.
-    const calm = std.ascii.eqlIgnoreCase(std.fs.path.basename(shell_path), "cmd.exe");
-    var cmdline_w: [std.fs.max_path_bytes + 8]u16 = undefined;
+    // A pipe echoes nothing useful on its own: the server already echoed the
+    // typing, so the shell must not echo the committed line a second time.
+    const extra = pipeShellArgs(shell_path);
+    var cmdline_w: [std.fs.max_path_bytes + 32]u16 = undefined;
     cmdline_w[0] = '"';
     @memcpy(cmdline_w[1..][0..shell_z.len], shell_z);
     cmdline_w[1 + shell_z.len] = '"';
     var n: usize = 2 + shell_z.len;
-    if (calm) {
-        for (" /Q") |c| {
-            cmdline_w[n] = c;
-            n += 1;
-        }
+    for (extra) |c| {
+        cmdline_w[n] = c;
+        n += 1;
     }
     cmdline_w[n] = 0;
     const cmdline: [:0]u16 = cmdline_w[0..n :0];
@@ -1303,7 +1353,7 @@ fn createSessionPipeWin(eff_cwd: []const u8, dims: Dims, shell_path: []const u8)
     var pi: ProcessInformation = undefined;
     // bInheritHandles = 1: the three handles above are the only inheritable
     // ones, so exactly they cross.
-    if (CreateProcessW(null, cmdline.ptr, null, null, 1, 0, null, cwd_z.ptr, &si.StartupInfo, &pi) == 0) return error.SpawnFailed;
+    if (CreateProcessW(null, cmdline.ptr, null, null, 1, CREATE_NEW_PROCESS_GROUP, null, cwd_z.ptr, &si.StartupInfo, &pi) == 0) return error.SpawnFailed;
     child = pi;
 
     // The child owns its ends now; ours would only keep the pipes alive
@@ -1547,32 +1597,119 @@ fn writeInputWin(s: *Session, data: []const u8) SessionError!usize {
     return writeInputPipeWin(s, h, data);
 }
 
-/// The line discipline a pipe does not have: a pipe-backed cmd.exe echoes a line
+/// The line discipline a pipe does not have: a pipe-backed shell echoes a line
 /// only when it COMMITS and treats DEL as an ordinary character, so the server
 /// keeps the line, echoes the typing, and hands over the line + CRLF on Enter.
 fn writeInputPipeWin(s: *Session, h: HANDLE, data: []const u8) SessionError!usize {
-    for (data) |b| {
-        if (b == '\r' or b == '\n') {
-            _ = try writeRawAll(h, s.line.items);
-            _ = try writeRawAll(h, "\r\n");
-            s.line.clearRetainingCapacity();
-            appendEchoLocked(s, "\r\n");
-            continue;
-        }
-        if (b == 0x7f or b == 0x08) {
-            const drop = eraseCodepoint(s.line.items) orelse continue;
-            s.line.items.len -= drop;
-            appendEchoLocked(s, "\x08 \x08");
-            continue;
-        }
-        // Control bytes (Ctrl+C, arrows, Tab) are DROPPED: a pipe carries no
-        // signals and no console history, so forwarding them would only put
-        // invisible junk into the line the shell runs.
-        if (b < 0x20) continue;
-        try s.line.append(g_alloc, b);
-        appendEchoLocked(s, &[_]u8{b});
-    }
+    var shell = std.ArrayList(u8).empty;
+    defer shell.deinit(g_alloc);
+    var view = std.ArrayList(u8).empty;
+    defer view.deinit(g_alloc);
+    const interrupts = pipeDiscipline(&s.line, g_alloc, data, &shell, &view) catch return error.OutOfMemory;
+    if (shell.items.len > 0) _ = try writeRawAll(h, shell.items);
+    if (view.items.len > 0) appendEchoLocked(s, view.items);
+    if (interrupts > 0) raiseInterrupt(s, interrupts);
     return data.len;
+}
+
+/// Ctrl-C over a pipe: the byte cannot travel, so the console raises the signal
+/// at the shell's own process group (`CREATE_NEW_PROCESS_GROUP`) — how a real
+/// console does it. A host with no console has nothing to raise it on.
+fn raiseInterrupt(s: *Session, times: usize) void {
+    if (s.child_pid <= 0) return;
+    const group: DWORD = @intCast(s.child_pid);
+    var raised: usize = 0;
+    while (raised < times) : (raised += 1) {
+        _ = GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, group);
+    }
+}
+
+/// What one token of client input asks for. `report` is the terminal answering
+/// its own queries, not a keystroke; `interrupt` is Ctrl-C, the one control byte
+/// a pipe CAN deliver — as a console signal, not as text.
+pub const PipeKind = enum { text, enter, backspace, control, interrupt, report };
+
+pub const PipeToken = struct { kind: PipeKind, len: usize };
+
+/// Classify the client token at `i`. A pipe carries no VT input, so a report
+/// (`ESC`-introduced: DA1, CPR, mode reports, mouse) can only ever land in the
+/// command line as its own visible payload — `[?2004;2$y` on screen.
+pub fn pipeTokenAt(data: []const u8, i: usize) PipeToken {
+    std.debug.assert(i < data.len);
+    const b = data[i];
+    if (b == '\r' or b == '\n') return .{ .kind = .enter, .len = 1 };
+    if (b == 0x7f or b == 0x08) return .{ .kind = .backspace, .len = 1 };
+    if (b == 0x1b) return .{ .kind = .report, .len = escapeSequenceLen(data, i) };
+    if (b == 0x03) return .{ .kind = .interrupt, .len = 1 };
+    if (b < 0x20) return .{ .kind = .control, .len = 1 };
+    return .{ .kind = .text, .len = 1 };
+}
+
+/// Bytes of the `ESC`-introduced sequence at `i`: `ESC [` to its final byte,
+/// `ESC ]` to BEL or ST, any other `ESC x` pair. A sequence the chunk ends in
+/// the middle of swallows the rest of the chunk.
+fn escapeSequenceLen(data: []const u8, i: usize) usize {
+    var j = i + 1;
+    if (j >= data.len) return data.len - i;
+    switch (data[j]) {
+        '[' => {
+            j += 1;
+            while (j < data.len and !(data[j] >= 0x40 and data[j] <= 0x7e)) j += 1;
+            return if (j < data.len) j + 1 - i else data.len - i;
+        },
+        ']' => {
+            j += 1;
+            while (j < data.len) : (j += 1) {
+                if (data[j] == 0x07) return j + 1 - i;
+                if (data[j] == 0x1b and j + 1 < data.len and data[j + 1] == '\\') return j + 2 - i;
+            }
+            return data.len - i;
+        },
+        else => return 2,
+    }
+}
+
+/// One client chunk through the pipe backend's line discipline: `shell` gets
+/// what the shell must read, `view` what the user must see. A report reaches
+/// neither; the returned count is Ctrl-C tokens the caller raises as a signal.
+pub fn pipeDiscipline(
+    line: *std.ArrayList(u8),
+    allocator: std.mem.Allocator,
+    data: []const u8,
+    shell: *std.ArrayList(u8),
+    view: *std.ArrayList(u8),
+) !usize {
+    var interrupts: usize = 0;
+    var i: usize = 0;
+    while (i < data.len) {
+        const token = pipeTokenAt(data, i);
+        switch (token.kind) {
+            .enter => {
+                try shell.appendSlice(allocator, line.items);
+                try shell.appendSlice(allocator, "\r\n");
+                line.clearRetainingCapacity();
+                try view.appendSlice(allocator, "\r\n");
+            },
+            .backspace => {
+                if (eraseCodepoint(line.items)) |drop| {
+                    line.items.len -= drop;
+                    try view.appendSlice(allocator, "\x08 \x08");
+                }
+            },
+            .interrupt => {
+                interrupts += 1;
+                line.clearRetainingCapacity();
+                try view.appendSlice(allocator, "^C\r\n");
+            },
+            .text => {
+                try line.append(allocator, data[i]);
+                try view.append(allocator, data[i]);
+            },
+            .control, .report => {},
+        }
+        i += token.len;
+    }
+    return interrupts;
 }
 
 /// Bytes the trailing UTF-8 codepoint of `line` occupies, or null when there is
@@ -2552,6 +2689,167 @@ test "a caller with no identity lists every shell (auth off)" {
         if (std.mem.eql(u8, row.id, owned_id)) saw = true;
     }
     try testing.expect(saw);
+}
+
+// ---------------------------------------------------------------------
+// A full-screen program, and the one keystroke that must stop it.
+
+test "ctrl-c stops a full-screen program and leaves the shell running" {
+    switch (pty_backend) {
+        .posix_pty => {
+            const info = try createSession(testing.io, "/tmp", "ws_test", "/bin/sh", 80, 24, "user_test");
+            defer destroySession(info.id) catch {};
+            const s = getSession(info.id) orelse return error.SessionNotFound;
+            sleepMillis(500);
+            _ = try writeInput(s, "sleep 30\r");
+            sleepMillis(300);
+            _ = try writeInput(s, "\x03");
+            _ = try writeInput(s, "printf \"ALIVE-%s\\n\" 7\r");
+            try expectMarker(s, "ALIVE-7", 100);
+        },
+        .conpty => {
+            const info = try createSession(testing.io, "", "ws_test", null, 80, 24, "user_test");
+            defer destroySession(info.id) catch {};
+            const s = getSession(info.id) orelse return error.SessionNotFound;
+            sleepMillis(500);
+            _ = try writeInput(s, "ping -n 30 127.0.0.1\r");
+            sleepMillis(500);
+            _ = try writeInput(s, "\x03");
+            _ = try writeInput(s, "echo ALIVE-7\r");
+            try expectMarker(s, "ALIVE-7", 100);
+        },
+        .none => return error.UnsupportedPlatform,
+    }
+}
+
+test "ctrl-c clears the pending line and asks for a signal, not for text" {
+    const run = try runPipe(testing.allocator, &.{ "rm -rf build", "\x03", "ls\r" });
+    defer freePipeRun(testing.allocator, run);
+    try testing.expectEqual(@as(usize, 1), run.interrupts);
+    try testing.expectEqualStrings("ls\r\n", run.shell);
+    try testing.expectEqualStrings("rm -rf build^C\r\nls\r\n", run.view);
+}
+
+test "a pipe shell refuses to echo the committed line a second time" {
+    try testing.expectEqualStrings(" /Q", pipeShellArgs("cmd.exe"));
+    try testing.expectEqualStrings(" -NoLogo -Command -", pipeShellArgs("powershell.exe"));
+    try testing.expectEqualStrings(" -NoLogo -Command -", pipeShellArgs("C:\\Program Files\\PowerShell\\7\\pwsh.exe"));
+    try testing.expectEqualStrings("", pipeShellArgs("bash.exe"));
+}
+
+// ---------------------------------------------------------------------
+// Windows shell choice + the pipe backend's input discipline.
+
+fn noShellInstalled(_: []const u8) bool {
+    return false;
+}
+
+fn powershellInstalled(name: []const u8) bool {
+    return std.mem.eql(u8, name, "powershell.exe");
+}
+
+fn everyShellInstalled(_: []const u8) bool {
+    return true;
+}
+
+test "a Windows host with pwsh gets pwsh" {
+    try testing.expectEqualStrings("pwsh.exe", pickWindowsShellName(everyShellInstalled, "C:\\Windows\\System32\\cmd.exe"));
+}
+
+test "a Windows host with only PowerShell 5.1 gets powershell.exe" {
+    try testing.expectEqualStrings("powershell.exe", pickWindowsShellName(powershellInstalled, "C:\\Windows\\System32\\cmd.exe"));
+}
+
+test "a Windows host with no PowerShell keeps its COMSPEC" {
+    try testing.expectEqualStrings("D:\\tools\\cmd.exe", pickWindowsShellName(noShellInstalled, "D:\\tools\\cmd.exe"));
+}
+
+test "a Windows host with neither keeps System32's cmd.exe" {
+    try testing.expectEqualStrings(windows_cmd_exe, pickWindowsShellName(noShellInstalled, null));
+    try testing.expectEqualStrings(windows_cmd_exe, pickWindowsShellName(noShellInstalled, "cmd.exe"));
+    try testing.expectEqualStrings(windows_cmd_exe, pickWindowsShellName(noShellInstalled, "tools\\cmd.exe"));
+}
+
+test "an UNC COMSPEC counts as an absolute path on every host" {
+    try testing.expectEqualStrings("\\\\server\\share\\cmd.exe", pickWindowsShellName(noShellInstalled, "\\\\server\\share\\cmd.exe"));
+    try testing.expect(isWindowsAbsolutePath("C:\\Windows\\cmd.exe"));
+    try testing.expect(isWindowsAbsolutePath("C:/Windows/cmd.exe"));
+    try testing.expect(!isWindowsAbsolutePath("cmd.exe"));
+    try testing.expect(!isWindowsAbsolutePath("C:cmd.exe"));
+}
+
+const PipeRun = struct { line: []u8, shell: []u8, view: []u8, interrupts: usize };
+
+fn runPipe(allocator: std.mem.Allocator, chunks: []const []const u8) !PipeRun {
+    var line = std.ArrayList(u8).empty;
+    errdefer line.deinit(allocator);
+    var shell = std.ArrayList(u8).empty;
+    errdefer shell.deinit(allocator);
+    var view = std.ArrayList(u8).empty;
+    errdefer view.deinit(allocator);
+    var interrupts: usize = 0;
+    for (chunks) |chunk| interrupts += try pipeDiscipline(&line, allocator, chunk, &shell, &view);
+    return .{
+        .line = try line.toOwnedSlice(allocator),
+        .shell = try shell.toOwnedSlice(allocator),
+        .view = try view.toOwnedSlice(allocator),
+        .interrupts = interrupts,
+    };
+}
+
+fn freePipeRun(allocator: std.mem.Allocator, run: PipeRun) void {
+    allocator.free(run.line);
+    allocator.free(run.shell);
+    allocator.free(run.view);
+}
+
+test "a pipe shell echoes the typing and commits the line on Enter" {
+    const run = try runPipe(testing.allocator, &.{ "ls -l", "\r" });
+    defer freePipeRun(testing.allocator, run);
+    try testing.expectEqualStrings("", run.line);
+    try testing.expectEqualStrings("ls -l\r\n", run.shell);
+    try testing.expectEqualStrings("ls -l\r\n", run.view);
+}
+
+test "a mode report from the terminal is neither echoed nor typed into the line" {
+    const run = try runPipe(testing.allocator, &.{ "\x1b[?2004;2$y", "hi", "\x1b[1;1R", "\r" });
+    defer freePipeRun(testing.allocator, run);
+    try testing.expectEqualStrings("hi\r\n", run.shell);
+    try testing.expectEqualStrings("hi\r\n", run.view);
+}
+
+test "an arrow key does not leave its [A payload in the line" {
+    const run = try runPipe(testing.allocator, &.{ "e", "\x1b[A", "cho hi", "\r" });
+    defer freePipeRun(testing.allocator, run);
+    try testing.expectEqualStrings("echo hi\r\n", run.shell);
+    try testing.expectEqualStrings("echo hi\r\n", run.view);
+}
+
+test "an SGR mouse report is one report, not seven typed characters" {
+    const token = pipeTokenAt("\x1b[<35;29;89M", 0);
+    try testing.expectEqual(PipeKind.report, token.kind);
+    try testing.expectEqual(@as(usize, 12), token.len);
+}
+
+test "an OSC title reaches the shell as nothing at all" {
+    const run = try runPipe(testing.allocator, &.{"\x1b]0;my title\x07"});
+    defer freePipeRun(testing.allocator, run);
+    try testing.expectEqualStrings("", run.line);
+    try testing.expectEqualStrings("", run.shell);
+    try testing.expectEqualStrings("", run.view);
+}
+
+test "backspace erases one character from the line and the view" {
+    const run = try runPipe(testing.allocator, &.{ "ca", "\x7f", "t\r" });
+    defer freePipeRun(testing.allocator, run);
+    try testing.expectEqualStrings("ct\r\n", run.shell);
+    try testing.expectEqualStrings("ca\x08 \x08t\r\n", run.view);
+}
+
+test "a control byte the pipe cannot deliver leaves the line untouched" {
+    const run = try runPipe(testing.allocator, &.{ "ec", "\x1a", "ho\r" });
+    defer freePipeRun(testing.allocator, run);
+    try testing.expectEqualStrings("echo\r\n", run.shell);
 }
 
 test "the list of a workspace with no shell is empty" {
