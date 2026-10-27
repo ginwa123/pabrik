@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, onUpdated, ref } from 'vue'
 import { Effect, Either } from 'effect'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -93,6 +93,8 @@ const workspaceName = (workspaceId: string): string => {
   return workspaceId === '' ? 'No workspace' : workspaceId
 }
 
+const currentWorkspace = computed(() => workspaceOf(props.activeWorkspaceId ?? ''))
+
 const orderedSessions = computed<TerminalSessionSummary[]>(() => {
   const buckets = new Map<string, TerminalSessionSummary[]>()
   const order: string[] = []
@@ -104,10 +106,28 @@ const orderedSessions = computed<TerminalSessionSummary[]>(() => {
       order.push(session.workspace_id)
     }
   }
+  const currentId = props.activeWorkspaceId ?? ''
+  const currentAt = order.indexOf(currentId)
+  if (currentAt > 0) {
+    order.splice(currentAt, 1)
+    order.unshift(currentId)
+  }
   return order.flatMap((workspaceId) =>
     (buckets.get(workspaceId) ?? []).slice().sort((a, b) => a.id.localeCompare(b.id)),
   )
 })
+
+const orderedWorkspaces = computed<WorkspaceRef[]>(() => {
+  const current = currentWorkspace.value
+  if (!current) return props.workspaces
+  return [current, ...props.workspaces.filter((workspace) => workspace.id !== current.id)]
+})
+
+const emptyNote = computed(() =>
+  currentWorkspace.value
+    ? `No shell in ${currentWorkspace.value.name}. Nothing spawns until you start one.`
+    : 'No shell is running. Nothing spawns until you start one.',
+)
 
 const liveCount = computed(() => sessions.value.filter((s) => !s.exited).length)
 const activeSession = computed(() => sessions.value.find((s) => s.id === activeId.value) ?? null)
@@ -328,17 +348,29 @@ const stopTerminal = () => {
   status.value = ''
 }
 
-const attachAnySession = async () => {
-  const candidate = orderedSessions.value.find((s) => !s.exited) ?? orderedSessions.value[0]
+const liveSessionInWorkspace = (workspaceId: string): TerminalSessionSummary | null =>
+  orderedSessions.value.find(
+    (session) => session.workspace_id === workspaceId && !session.exited,
+  ) ?? null
+
+const attachableSession = (): TerminalSessionSummary | null => {
+  const current = currentWorkspace.value
+  if (current) return liveSessionInWorkspace(current.id)
+  return orderedSessions.value.find((s) => !s.exited) ?? orderedSessions.value[0] ?? null
+}
+
+const attachWorkspaceSession = async () => {
+  const candidate = attachableSession()
   if (!candidate) return
   await startTerminal(candidate.id)
 }
 
 const openPanel = async () => {
   open.value = true
+  followedWorkspace = props.activeWorkspaceId ?? ''
   await refresh()
   await nextTick()
-  await attachAnySession()
+  await attachWorkspaceSession()
 }
 
 const closePanel = () => {
@@ -363,6 +395,21 @@ const clearOutput = () => {
   term?.clear()
 }
 
+/** The workspace the footer has already followed — `onUpdated` fires on ANY re-render. */
+let followedWorkspace = props.activeWorkspaceId ?? ''
+
+const followWorkspace = async () => {
+  const workspaceId = props.activeWorkspaceId ?? ''
+  if (workspaceId === followedWorkspace) return
+  followedWorkspace = workspaceId
+  if (!open.value || !currentWorkspace.value) return
+  if (activeSession.value?.workspace_id === workspaceId) return
+  await refresh()
+  const target = liveSessionInWorkspace(workspaceId)
+  if (target) await selectSession(target.id)
+  else stopTerminal()
+}
+
 const killActive = async () => {
   const id = activeId.value
   if (!id) return
@@ -372,7 +419,7 @@ const killActive = async () => {
   })
   await refresh()
   await nextTick()
-  await attachAnySession()
+  await attachWorkspaceSession()
 }
 
 const cwdFor = (workspaceId: string): string => {
@@ -473,6 +520,8 @@ onMounted(() => {
     if (document.visibilityState === 'visible') void refresh()
   }, REFRESH_MS)
 })
+
+onUpdated(followWorkspace)
 
 onUnmounted(() => {
   disposed = true
@@ -644,22 +693,24 @@ onUnmounted(() => {
       </div>
 
       <div class="flex-1 min-h-0 relative" style="background-color: var(--color-bg-dim)">
+        <div ref="termContainer" class="absolute inset-0 pl-2 pt-1" data-testid="terminal-xterm"></div>
         <div
-          v-if="orderedSessions.length === 0"
+          v-if="!activeId"
           class="absolute inset-0 flex flex-col items-center justify-center gap-3 px-4"
           data-testid="terminal-empty"
         >
-          <p class="text-meta" style="color: var(--semantic-text-dim)">
-            No shell is running. Nothing spawns until you start one.
+          <p class="text-meta text-center" style="color: var(--semantic-text-dim)">
+            {{ emptyNote }}
           </p>
           <div class="flex flex-wrap items-center justify-center gap-2">
             <button
-              v-for="workspace in props.workspaces"
+              v-for="workspace in orderedWorkspaces"
               :key="workspace.id"
               type="button"
               class="px-3 py-1 rounded text-dense hover:opacity-80 disabled:opacity-40"
               style="background-color: var(--semantic-active-bg); color: var(--semantic-text)"
               :data-workspace-id="workspace.id"
+              :data-current="workspace.id === (props.activeWorkspaceId ?? '') ? 'true' : 'false'"
               data-testid="terminal-empty-new"
               :disabled="busy"
               @click="newTerminal(workspace.id)"
@@ -668,12 +719,6 @@ onUnmounted(() => {
             </button>
           </div>
         </div>
-        <div
-          v-else
-          ref="termContainer"
-          class="absolute inset-0 pl-2 pt-1"
-          data-testid="terminal-xterm"
-        ></div>
       </div>
 
       <div
@@ -711,6 +756,13 @@ onUnmounted(() => {
         <span>Terminal</span>
         <UiIcon :name="open ? 'chevron-down' : 'chevron-up'" size-class="w-3 h-3" />
       </button>
+      <span
+        v-if="currentWorkspace"
+        class="text-meta truncate max-w-40"
+        style="color: var(--semantic-text-dim)"
+        data-testid="terminal-footer-workspace"
+        >{{ currentWorkspace.name }}</span
+      >
       <span class="flex-1"></span>
       <span class="text-meta whitespace-nowrap" style="color: var(--semantic-text-dim)">
         <span data-testid="terminal-footer-count">{{ liveCount }}</span>
