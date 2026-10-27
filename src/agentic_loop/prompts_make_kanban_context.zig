@@ -10,7 +10,7 @@ const MAX_TASKS_PER_ITEM: u32 = 5;
 /// agent to call `kanban_list` + `kanban_move_task` at start and complete.
 pub fn makeKanbanContext(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     tools: []const pabrikcore.tool_models.AgentTool,
 ) ![]const u8 {
@@ -117,7 +117,7 @@ pub fn makeKanbanContext(
 /// Look up the workspace context for a session.
 fn getWorkspaceContext(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !?WorkspaceContext {
     if (session_id.len == 0) return null;
@@ -351,7 +351,7 @@ const WorkspaceContext = struct {
 /// slice)`.
 fn listColumns(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_item_id: []const u8,
 ) ![]KanbanColumn {
     var q = try db.query(allocator,
@@ -426,9 +426,10 @@ fn hasToolByName(tools: []const pabrikcore.tool_models.AgentTool, name: []const 
 
 const testing = std.testing;
 const test_sqlite = @import("pabrikcore").sqlite;
+const database = @import("pabrikcore").database;
 
 const TestCtx = struct {
-    db: test_sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -437,7 +438,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: test_sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try db.exec(alloc,
@@ -487,7 +488,7 @@ fn insertColumnWithDescription(ctx: *TestCtx, col_id: []const u8, item_id: []con
     const alloc = testing.allocator;
     const pos_str = try std.fmt.allocPrint(alloc, "{d}", .{pos});
     defer alloc.free(pos_str);
-    // SqliteBackend.exec binds "" as NULL (empty-slice-as-NULL pitfall),
+    // Backend.exec binds "" as NULL (empty-slice-as-NULL pitfall),
     // which violates NOT NULL on description. Omit the column when empty
     // so DEFAULT '' applies — mirrors production's INSERT without description.
     if (desc.len == 0) {

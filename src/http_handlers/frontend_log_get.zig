@@ -5,6 +5,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const http_response = @import("http_response.zig");
 
 // =====================================================================
@@ -240,7 +241,7 @@ fn useCase(
     defer logs_list.deinit(allocator);
 
     while (true) {
-        // `rows.next()` returns the raw SqliteBackend.Error set; map any
+        // `rows.next()` returns the raw Backend.Error set; map any
         // failure to our domain `QueryFailed` so the function can return
         // FrontendLogGetError instead of leaking sqlite errors.
         const row_opt = rows.next() catch |e| {
@@ -388,7 +389,7 @@ const testing = std.testing;
 /// Open a fresh in-memory sqlite DB with the `logs` table loaded.
 /// Mirrors `frontend_log_post_test.zig::setupDbWithLogs`.
 fn setupDbWithLogs() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 } {
     const alloc = testing.allocator;
@@ -396,7 +397,7 @@ fn setupDbWithLogs() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -418,7 +419,7 @@ fn setupDbWithLogs() !struct {
 /// level. Mirrors the use-case's INSERT shape (sans dedup — we
 /// always insert fresh rows here).
 fn insertLog(
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     alloc: std.mem.Allocator,
     id: []const u8,
     created_at_us: i64,
@@ -446,7 +447,7 @@ const SelectedLogRow = struct {
 /// and ORDER BY/LIMIT shape. Returns owned slices — caller frees via
 /// `alloc.free(slice)` then `defer rows.deinit()`.
 fn selectLogs(
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     alloc: std.mem.Allocator,
     where_clause: []const u8,
     limit: u32,

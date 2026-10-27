@@ -82,7 +82,7 @@ test "reorderPinnedSessions assigns DESC positions in display order" {
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    var db: pabrikcore.sqlite.SqliteBackend = .{};
+    var db: pabrikcore.database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
     try db.exec(alloc,

@@ -3,6 +3,7 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const helpers = @import("helpers");
 const design_io = @import("design_io.zig");
 const on_event_sent_design = @import("on_event_sent_design.zig");
@@ -80,7 +81,7 @@ pub const SetDesignPageError = error{
 /// otherwise a new row is inserted.
 pub fn setDesignPage(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     input: SetDesignPageInput,
 ) anyerror![]u8 {
     if (input.page_name.len == 0) return error.BadPageName;
@@ -181,7 +182,7 @@ pub fn setDesignPage(
 /// the owned id slice on hit, or `null` when no such page exists.
 fn findPageIdByName(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     item_id: []const u8,
     page_name: []const u8,
 ) !?[]u8 {
@@ -212,7 +213,7 @@ pub const UpdateDesignPageInput = struct {
 /// tool.
 pub fn updateDesignPage(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     input: UpdateDesignPageInput,
 ) anyerror!DesignPage {
     if (input.page_id.len == 0) return error.PageIdRequired;
@@ -316,7 +317,7 @@ pub fn updateDesignPage(
 /// the item has no pages, the slice has length 0 (not an error).
 pub fn listPages(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     item_id: []const u8,
 ) (sqlite.Error || std.mem.Allocator.Error)![]DesignPage {
     var q = try db.query(allocator,
@@ -467,7 +468,7 @@ pub const AddElementError = error{
 /// to disk and inserts the corresponding metadata row.
 pub fn addElement(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     io: std.Io,
     input: AddElementInput,
 ) anyerror![]u8 {
@@ -575,7 +576,7 @@ pub fn addElement(
         id, input.page_id, input.name, file_path,
         x_str, y_str, width_str, height_str, input.page_id,
         elem_type_str, rotation_str, input.fill, corner_radius_str, opacity_str,
-        // SqliteBackend.exec binds an empty slice as SQL NULL — that's
+        // Backend.exec binds an empty slice as SQL NULL — that's
         // exactly what we want for `parent_id = ?` (nullable column) when the
         // user did not pass parent_id.
         parent_id_to_bind,
@@ -666,7 +667,7 @@ pub const RepositionMode = enum {
 /// fields are left unchanged.
 pub fn updateElement(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     input: UpdateElementInput,
 ) anyerror![]u8 {
     // 0.
@@ -943,7 +944,7 @@ pub const MoveElementsWithDescendantsBatchError = error{
 
 pub fn updateElementsBatch(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     input: BatchGeometryUpdateInput,
 ) anyerror![]DesignElement {
     if (input.updates.len == 0) return error.EmptyUpdates;
@@ -1112,7 +1113,7 @@ pub fn updateElementsBatch(
 
 pub fn moveElementsWithDescendantsBatch(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     input: MoveElementsWithDescendantsBatchInput,
 ) anyerror![]DesignElement {
     if (input.items.len == 0) return error.EmptyItems;
@@ -1388,7 +1389,7 @@ pub const MoveElementToPageError = error{
 
 pub fn moveElementToPage(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     input: MoveElementToPageInput,
 ) anyerror![]DesignElement {
     // 1. Same-page guard. Cheap, fail fast.
@@ -1631,7 +1632,7 @@ pub const GroupElementsError = error{
 /// Single transaction — all-or-nothing.
 pub fn groupElements(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     input: GroupElementsInput,
 ) anyerror![]u8 {
     if (input.child_ids.len < 2) return error.BadChildId;
@@ -1767,7 +1768,7 @@ pub fn groupElements(
     defer allocator.free(file_path);
 
     // mkdir -p the page directory (createDirPath is Io's mkdir-p). Use the
-    // SqliteBackend's io — we don't take io as a parameter because the LLM
+    // Backend's io — we don't take io as a parameter because the LLM
     // tool path (set_design_page) passes db without an io handle.
     std.Io.Dir.cwd().createDirPath(db.io, page_dir) catch return error.FileWriteFailed;
 
@@ -1893,7 +1894,7 @@ pub const ReparentElementsError = error{
 /// round-trip instead of N parallel PUTs.
 pub fn reparentElements(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     input: ReparentElementsInput,
 ) anyerror![]DesignElement {
     if (input.element_ids.len == 0) return error.EmptyElementIds;
@@ -2017,7 +2018,7 @@ pub fn reparentElements(
         const new_position = max_pos_value + 1;
 
         // The new_parent_id to bind: empty string when top-level
-        // (SqliteBackend.exec binds "" as NULL — the COALESCE
+        // (Backend.exec binds "" as NULL — the COALESCE
         // convention used everywhere in this codebase).
         const new_parent_to_bind: []const u8 = if (input.new_parent_id) |p| p else "";
         const new_position_str = try std.fmt.allocPrint(allocator, "{d}", .{new_position});
@@ -2135,7 +2136,7 @@ pub const ReorderError = error{
 /// top-to-bottom z-order.
 pub fn reorderElements(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     input: ReorderInput,
 ) ReorderError![]DesignElement {
     if (input.element_ids.len == 0) return error.BadElementId;
@@ -2317,7 +2318,7 @@ pub const UngroupError = error{
 /// parent (or NULL if top-level), delete the group's row.
 pub fn ungroupElements(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     input: UngroupInput,
 ) UngroupError![]DesignElement {
     // 1. Look up the group element. Verify it's a group/frame.
@@ -2415,7 +2416,7 @@ pub fn ungroupElements(
 /// an owned slice; caller MUST release with `freeElements(allocator, slice)`.
 pub fn listElements(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     page_id: []const u8,
 ) anyerror![]DesignElement {
     var q = try db.query(allocator,
@@ -2486,7 +2487,7 @@ pub fn listElements(
 /// `ElementNotFound` if no such row exists.
 pub fn getElement(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     element_id: []const u8,
 ) anyerror!DesignElement {
     var q = try db.query(allocator,
@@ -2573,7 +2574,7 @@ pub const PageWithElements = struct {
 /// `PageNotFound` if no page with that id exists.
 pub fn getPageWithElements(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     page_id: []const u8,
 ) anyerror!PageWithElements {
     // 1. Fetch the page row.
@@ -2621,7 +2622,7 @@ pub fn getPageWithElements(
 /// result's `deinit` + `allocator.free(slice)`).
 pub fn listPagesWithElements(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     item_id: []const u8,
 ) anyerror![]PageWithElements {
     const pages = try listPages(allocator, db, item_id);
@@ -2702,7 +2703,7 @@ pub const SetElementParentError = error{
 /// Cycle detection for reparent operations. Returns `true` iff reparenting
 /// `element_id` to be a child of `new_parent_id` would close a cycle — i.e.
 pub fn wouldCreateCycle(
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     allocator: std.mem.Allocator,
     element_id: []const u8,
     new_parent_id: []const u8,
@@ -2729,7 +2730,7 @@ pub fn wouldCreateCycle(
 /// Behaviour: 1. Look up `element_id`'s current page_id + parent_id.
 pub fn setElementParent(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     element_id: []const u8,
     new_parent_id: ?[]const u8,
 ) anyerror!void {
@@ -2827,7 +2828,7 @@ pub fn setElementParent(
 /// such element existed.
 pub fn deleteElement(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     element_id: []const u8,
 ) anyerror!bool {
     // Look up file_path + workspace_id + item_id + page_id BEFORE delete so
@@ -2897,7 +2898,7 @@ pub fn deleteElement(
 pub fn deletePage(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     page_id: []const u8,
 ) anyerror!bool {
     _ = io; // Per-file deletion uses design_io.deleteFileIfExists which doesn't need an Io.
@@ -3000,7 +3001,7 @@ pub fn deletePage(
 pub fn loadElementHtml(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     element_id: []const u8,
 ) anyerror![]u8 {
     var q = try db.query(allocator,
@@ -3020,14 +3021,14 @@ pub fn loadElementHtml(
 
 const testing_geometry = std.testing;
 
-fn teardownGeometryBatchDb(db: *sqlite.SqliteBackend, threaded: *std.Io.Threaded) void {
+fn teardownGeometryBatchDb(db: *database.Db, threaded: *std.Io.Threaded) void {
     db.deinit();
     threaded.deinit();
 }
 
 fn insertElementRaw(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     page_id: []const u8,
     name: []const u8,
     x: i64,
@@ -3066,7 +3067,7 @@ fn insertElementRaw(
 }
 
 fn setupGeometryBatchDbAndItem() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_id: []const u8,
     item_path: []u8,
@@ -3076,7 +3077,7 @@ fn setupGeometryBatchDbAndItem() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -3340,7 +3341,7 @@ test "updateElementsBatch accepts a single field per update (no other fields req
 const testing_reparent = std.testing;
 
 fn setupReparentDbAndItem() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_id: []const u8,
     item_path: []u8,
@@ -3350,7 +3351,7 @@ fn setupReparentDbAndItem() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -3425,7 +3426,7 @@ fn setupReparentDbAndItem() !struct {
     };
 }
 
-fn teardownReparentDb(db: *sqlite.SqliteBackend, threaded: *std.Io.Threaded) void {
+fn teardownReparentDb(db: *database.Db, threaded: *std.Io.Threaded) void {
     db.deinit();
     threaded.deinit();
 }
@@ -3765,7 +3766,7 @@ test "updateElement without reposition leaves position unchanged" {
 const testing_reparent_batch = std.testing;
 
 fn setupReparentBatchDbAndItem() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_id: []const u8,
     item_path: []u8,
@@ -3776,7 +3777,7 @@ fn setupReparentBatchDbAndItem() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -3859,7 +3860,7 @@ fn setupReparentBatchDbAndItem() !struct {
     };
 }
 
-fn teardownReparentBatchDb(db: *sqlite.SqliteBackend, threaded: *std.Io.Threaded) void {
+fn teardownReparentBatchDb(db: *database.Db, threaded: *std.Io.Threaded) void {
     db.deinit();
     threaded.deinit();
 }
@@ -4208,7 +4209,7 @@ test "reparentElements returns BadElementId when an id does not exist" {
 const testing_move_batch = std.testing;
 
 fn setupMoveBatchDbAndItem() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_id: []const u8,
     item_path: []u8,
@@ -4219,7 +4220,7 @@ fn setupMoveBatchDbAndItem() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -4302,7 +4303,7 @@ fn setupMoveBatchDbAndItem() !struct {
     };
 }
 
-fn teardownMoveBatchDb(db: *sqlite.SqliteBackend, threaded: *std.Io.Threaded) void {
+fn teardownMoveBatchDb(db: *database.Db, threaded: *std.Io.Threaded) void {
     db.deinit();
     threaded.deinit();
 }
@@ -4310,7 +4311,7 @@ fn teardownMoveBatchDb(db: *sqlite.SqliteBackend, threaded: *std.Io.Threaded) vo
 /// Read an element's current x back from the DB (test fixture).
 fn moveBatchReadX(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     element_id: []const u8,
 ) !i64 {
     var q = try db.query(alloc,
@@ -4324,7 +4325,7 @@ fn moveBatchReadX(
 
 fn moveBatchReadY(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     element_id: []const u8,
 ) !i64 {
     var q = try db.query(alloc,
@@ -4338,7 +4339,7 @@ fn moveBatchReadY(
 
 fn moveBatchReadWidth(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     element_id: []const u8,
 ) !i64 {
     var q = try db.query(alloc,
@@ -4809,7 +4810,7 @@ test "moveElementsWithDescendantsBatch handles deeply nested subtree (depth 3+)"
 const testing_move_to_page = std.testing;
 
 fn setupMoveToPageDbAndItem() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_id: []const u8,
     item_path: []u8,
@@ -4823,7 +4824,7 @@ fn setupMoveToPageDbAndItem() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -4913,7 +4914,7 @@ fn setupMoveToPageDbAndItem() !struct {
     };
 }
 
-fn teardownMoveToPageDb(db: *sqlite.SqliteBackend, threaded: *std.Io.Threaded) void {
+fn teardownMoveToPageDb(db: *database.Db, threaded: *std.Io.Threaded) void {
     db.deinit();
     threaded.deinit();
 }
@@ -4922,7 +4923,7 @@ fn teardownMoveToPageDb(db: *sqlite.SqliteBackend, threaded: *std.Io.Threaded) v
 /// string when NULL is stored).
 fn moveToPageReadPageId(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     element_id: []const u8,
 ) ![]u8 {
     var q = try db.query(alloc,
@@ -4938,7 +4939,7 @@ fn moveToPageReadPageId(
 /// string when NULL is stored).
 fn moveToPageReadParentId(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     element_id: []const u8,
 ) ![]u8 {
     var q = try db.query(alloc,
@@ -5307,7 +5308,7 @@ test "moveElementToPage rejects ElementNotFound (element not on source page)" {
 const testing_update_page = std.testing;
 
 fn setupUpdatePageDbAndItem() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_id: []u8,
     page_id: []u8,
@@ -5317,7 +5318,7 @@ fn setupUpdatePageDbAndItem() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -5371,7 +5372,7 @@ fn setupUpdatePageDbAndItem() !struct {
 }
 
 fn teardownUpdatePage(
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     threaded: *std.Io.Threaded,
     item_id: []u8,
     page_id: []u8,
@@ -5468,7 +5469,7 @@ const testing = std.testing;
 /// Open a fresh in-memory sqlite DB with the minimum tables needed for
 /// the design SQL. Mirrors `design_model_parent_id_test.zig::addElementParentSetupDbAndItem`.
 fn addElementParentSetupDbAndItem() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_id: []const u8,
     item_path: []u8,
@@ -5478,7 +5479,7 @@ fn addElementParentSetupDbAndItem() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -5553,7 +5554,7 @@ fn addElementParentSetupDbAndItem() !struct {
     };
 }
 
-fn addElementParentTeardown(db: *sqlite.SqliteBackend, threaded: *std.Io.Threaded) void {
+fn addElementParentTeardown(db: *database.Db, threaded: *std.Io.Threaded) void {
     db.deinit();
     threaded.deinit();
 }
@@ -5773,7 +5774,7 @@ const ITEM_ID = "item_design_delete_page_test";
 /// Includes `workspace_items.path` so we can also confirm the new code
 /// path works when the item row is deleted FIRST (no path lookup).
 fn deletePageSetupDb() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_path: []u8,
 } {
@@ -5782,7 +5783,7 @@ fn deletePageSetupDb() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -5859,7 +5860,7 @@ fn deletePageSetupDb() !struct {
 /// so deletePage's rmdir step has something to remove.
 fn deletePageInsertElementWithDiskFile(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     io: std.Io,
     id: []const u8,
     page_id: []const u8,
@@ -5900,7 +5901,7 @@ fn deletePageInsertElementWithDiskFile(
     return file_path;
 }
 
-fn deletePagePageIdExists(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, page_id: []const u8) !bool {
+fn deletePagePageIdExists(alloc: std.mem.Allocator, db: *database.Db, page_id: []const u8) !bool {
     var q = try db.query(alloc,
         "SELECT 1 FROM design_pages WHERE id = ?",
         &.{page_id});
@@ -5913,7 +5914,7 @@ fn deletePagePageIdExists(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, p
     return false;
 }
 
-fn deletePageElementIdExists(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, id: []const u8) !bool {
+fn deletePageElementIdExists(alloc: std.mem.Allocator, db: *database.Db, id: []const u8) !bool {
     var q = try db.query(alloc,
         "SELECT 1 FROM design_page_elements WHERE id = ?",
         &.{id});
@@ -6195,7 +6196,7 @@ test "deletePage preserves a user-dropped file inside the page directory" {
 /// Same shape as design_model_test.zig::deleteParentSetupDbAndItem (kept inline
 /// so this file is self-contained for the static checks).
 fn deleteParentSetupDbAndItem() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_id: []const u8,
     item_path: []u8,
@@ -6205,7 +6206,7 @@ fn deleteParentSetupDbAndItem() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -6284,7 +6285,7 @@ fn deleteParentSetupDbAndItem() !struct {
 /// parent_id) so we can build a parent + N children tree.
 fn deleteParentInsertElement(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     page_id: []const u8,
     name: []const u8,
@@ -6314,7 +6315,7 @@ fn deleteParentInsertElement(
 
 /// Read parent_id of a row by id. Returns "NULL" when the column is
 /// empty (NULL).
-fn deleteParentParentIdOf(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, id: []const u8) ![]u8 {
+fn deleteParentParentIdOf(alloc: std.mem.Allocator, db: *database.Db, id: []const u8) ![]u8 {
     var q = try db.query(alloc,
         "SELECT COALESCE(parent_id, 'NULL') FROM design_page_elements WHERE id = ?",
         &.{id});
@@ -6448,7 +6449,7 @@ test "deleteElement of a parent with no children just deletes the row" {
 /// for the design SQL. Same shape as
 /// `design_model_test.zig::groupSetupDbAndItem`.
 fn groupSetupDbAndItem() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_id: []const u8,
     item_path: []u8,
@@ -6458,7 +6459,7 @@ fn groupSetupDbAndItem() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -6535,7 +6536,7 @@ fn groupSetupDbAndItem() !struct {
 
 /// Insert one design element with explicit (x, y, width, height) and
 /// the given name. Returns the generated elem_<id>.
-fn groupInsertChild(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, page_id: []const u8, name: []const u8, x: i64, y: i64, w: i64, h: i64) ![]u8 {
+fn groupInsertChild(alloc: std.mem.Allocator, db: *database.Db, page_id: []const u8, name: []const u8, x: i64, y: i64, w: i64, h: i64) ![]u8 {
     // db.exec binds only TEXT — stringify the integer columns.
     const x_str = try std.fmt.allocPrint(alloc, "{d}", .{x});
     defer alloc.free(x_str);
@@ -6783,7 +6784,7 @@ test "updateElement with parent_id = null leaves existing parent_id unchanged" {
 /// for the design SQL. Mirrors `design_model_test.zig::parentIdSetupDbAndItem`
 /// (kept inline here so this file stays self-contained).
 fn parentIdSetupDbAndItem() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_id: []const u8,
     item_path: []u8,
@@ -6793,7 +6794,7 @@ fn parentIdSetupDbAndItem() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -7032,7 +7033,7 @@ test "listElements returns parent_id for every element" {
 /// reads. Mirrors `design_model_group_test.zig::setupDbAndItem` (without
 /// the workspaces + items FK tails that reorderElements doesn't touch).
 fn reorderSetupDb() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     alloc: std.mem.Allocator,
 } {
@@ -7040,7 +7041,7 @@ fn reorderSetupDb() !struct {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -7100,7 +7101,7 @@ fn reorderTeardown(s: *@TypeOf(reorderSetupDb() catch @panic("reorderSetupDb fai
 
 /// Insert a design element at a given z_index. Returns the id (duplicated
 /// into the caller's allocator; safe to free with `freeId`).
-fn reorderInsertEl(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, page_id: []const u8, id: []const u8, z: i64) ![]u8 {
+fn reorderInsertEl(alloc: std.mem.Allocator, db: *database.Db, page_id: []const u8, id: []const u8, z: i64) ![]u8 {
     const z_str = try std.fmt.allocPrint(alloc, "{d}", .{z});
     defer alloc.free(z_str);
     try db.exec(alloc,
@@ -7111,7 +7112,7 @@ fn reorderInsertEl(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, page_id:
 }
 
 /// Read an element's z_index by id. Returns null if not found.
-fn reorderReadZ(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, id: []const u8) !?i64 {
+fn reorderReadZ(alloc: std.mem.Allocator, db: *database.Db, id: []const u8) !?i64 {
     var q = try db.query(alloc, "SELECT z_index FROM design_page_elements WHERE id = ?", &.{id});
     defer q.deinit();
     if (try q.next()) |row| {
@@ -7313,7 +7314,7 @@ test "reorderElements returned slice contains the rows in their new top-to-botto
 /// Open a fresh in-memory sqlite DB with the minimum tables needed for
 /// the design SQL. Same shape as `design_model_add_element_parent_test.zig`.
 fn setElementParentSetupDbAndItem() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_id: []const u8,
     item_path: []u8,
@@ -7323,7 +7324,7 @@ fn setElementParentSetupDbAndItem() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -7398,7 +7399,7 @@ fn setElementParentSetupDbAndItem() !struct {
     };
 }
 
-fn setElementParentTeardown(db: *sqlite.SqliteBackend, threaded: *std.Io.Threaded) void {
+fn setElementParentTeardown(db: *database.Db, threaded: *std.Io.Threaded) void {
     db.deinit();
     threaded.deinit();
 }
@@ -7590,7 +7591,7 @@ test "setElementParent rejects non-existent element_id" {
 /// functions need: `workspace_items` + `design_pages` +
 /// `design_page_elements`.
 fn designModelSetupDbAndItem() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_id: []const u8,
     item_path: []u8,
@@ -7600,7 +7601,7 @@ fn designModelSetupDbAndItem() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

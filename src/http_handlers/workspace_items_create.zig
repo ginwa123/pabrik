@@ -37,7 +37,7 @@ const WorkspaceItemsCreateResult = struct {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    sqlite_db: *pabrikcore.sqlite.SqliteBackend,
+    sqlite_db: *pabrikcore.database.Db,
     io: std.Io,
     workspace_id: []const u8,
     body: []const u8,

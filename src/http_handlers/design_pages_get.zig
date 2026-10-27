@@ -28,7 +28,7 @@ pub const DesignPageGetResult = []const u8; // pre-serialized JSON
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     page_id: []const u8,
 ) DesignPageGetError!DesignPageGetResult {
     if (page_id.len == 0) return error.PageIdRequired;

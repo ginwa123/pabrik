@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
@@ -11,7 +11,7 @@ pub const Migration042AddWorkspaceItemTasksUpdatedAtIndex = struct {
     pub const version: u32 = 42;
     pub const name = "add_workspace_item_tasks_updated_at_index";
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         // Hot read path for the workspace-item tasks endpoint when
         // sort_by=updated_at (the new default). Mirrors
         // idx_workspace_item_tasks_item_created (Migration 041).

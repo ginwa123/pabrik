@@ -1,5 +1,6 @@
 const std = @import("std");
 const sqlite = @import("pabrikcore").sqlite;
+const database = @import("pabrikcore").database;
 
 pub const Mode = union(enum) {
     none,
@@ -62,7 +63,7 @@ const HEADER =
 /// a Markdown block.
 pub fn formatHistory(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     parent_session_id: []const u8,
     mode: Mode,
@@ -94,7 +95,7 @@ const HistoryRow = struct {
 
 fn fetchUserAssistantMessages(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     parent_session_id: []const u8,
     mode: Mode,
 ) ![]HistoryRow {
@@ -325,7 +326,7 @@ test "isSubagent - case-sensitive (different case is treated as different)" {
 const pabrikcore = @import("pabrikcore");
 
 fn setupDb() !struct {
-    db: pabrikcore.sqlite.SqliteBackend,
+    db: pabrikcore.database.Db,
     threaded: std.Io.Threaded,
 } {
     const alloc = std.testing.allocator;
@@ -333,7 +334,7 @@ fn setupDb() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: pabrikcore.sqlite.SqliteBackend = .{};
+    var db: pabrikcore.database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -352,7 +353,7 @@ fn setupDb() !struct {
 
 fn seedMessage(
     alloc: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     id: []const u8,
     session_id: []const u8,
     created_at: []const u8,

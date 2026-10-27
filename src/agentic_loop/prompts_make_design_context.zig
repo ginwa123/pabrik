@@ -1,6 +1,7 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const llm_history = @import("llm_history.zig");
 const design_model = @import("design_model.zig");
 
@@ -14,7 +15,7 @@ const MAX_DESIGN_PAGES: u32 = 10;
 /// 'design'`).
 pub fn buildDesignCanvasPrompt(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]const u8 {
     if (session_id.len == 0) return allocator.dupe(u8, "");

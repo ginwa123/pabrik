@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const sqlite = @import("pabrikcore").sqlite;
+const database = @import("pabrikcore").database;
 const helpers = @import("helpers");
 /// Migration 101, imported (never re-typed) so the tests below run
 /// against the real schema. A store/DDL mismatch fails here rather
@@ -178,7 +179,7 @@ pub fn isValidSkillName(name: []const u8) bool {
 /// `UNIQUE (workspace_id, name)` index, so the listing needs no second index.
 pub fn listSkills(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
 ) ListSkillsError![]SkillRow {
     if (workspace_id.len == 0) return error.WorkspaceIdRequired;
@@ -207,7 +208,7 @@ pub fn listSkills(
 /// workspace" error: saying it exists would leak a foreign row.
 pub fn getSkillByName(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     name: []const u8,
 ) GetSkillError!SkillRow {
@@ -230,7 +231,7 @@ pub fn getSkillByName(
 /// hang off; `ON CONFLICT` leaves `id` alone, or they would orphan.
 pub fn upsertSkill(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     args: UpsertSkillArgs,
 ) UpsertSkillError!SkillRow {
     if (args.workspace_id.len == 0 or args.name.len == 0) return error.WorkspaceIdNameRequired;
@@ -271,7 +272,7 @@ pub fn upsertSkill(
 /// `updated_at` always advances so a re-import is visible as a change.
 pub fn updateSkill(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     name: []const u8,
     patch: UpdateSkillArgs,
@@ -311,7 +312,7 @@ pub fn updateSkill(
 /// DELETE is explicit because `PRAGMA foreign_keys` is off project-wide.
 pub fn deleteSkill(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     name: []const u8,
 ) DeleteSkillError!void {
@@ -345,7 +346,7 @@ pub fn deleteSkill(
 /// materialised directory is written in a stable order.
 pub fn listAssets(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     name: []const u8,
 ) ListAssetsError![]SkillAssetRow {
@@ -375,7 +376,7 @@ pub fn listAssets(
 /// whose file is gone must lose its row rather than linger half-written.
 pub fn replaceAssets(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     name: []const u8,
     assets: []const SkillAssetInput,
@@ -463,7 +464,7 @@ pub fn freeSkillAssetRows(allocator: std.mem.Allocator, rows: []SkillAssetRow) v
 const testing = std.testing;
 
 const StoreTestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -473,7 +474,7 @@ fn setupStoreDb() !StoreTestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     errdefer db.deinit();
@@ -767,7 +768,7 @@ test "skills_store rejects a missing workspace id before touching SQL" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // An empty workspace_id must NOT reach the query: `SqliteBackend.exec`
+    // An empty workspace_id must NOT reach the query: `Backend.exec`
     // binds "" as SQL NULL, and `workspace_id` is NOT NULL.
     try testing.expectError(
         error.WorkspaceIdNameRequired,

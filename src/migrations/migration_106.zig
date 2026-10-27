@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 
 /// Migration 106 - create the models.dev model catalog cache. The catalog is
 /// 227 providers / 8,562 models of pure metadata: each model's context
@@ -10,7 +10,7 @@ pub const Migration106CreateModelCatalog = struct {
     pub const version: u32 = 106;
     pub const name = "create_model_catalog";
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         try db.exec(allocator,
             \\CREATE TABLE IF NOT EXISTS model_catalog_providers (
             \\    id TEXT NOT NULL PRIMARY KEY,

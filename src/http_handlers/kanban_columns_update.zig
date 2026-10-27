@@ -51,7 +51,7 @@ pub const KanbanColumnUpdateResult = []const u8; // pre-serialized JSON
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: KanbanColumnUpdateInput,
 ) KanbanColumnUpdateError!KanbanColumnUpdateResult {
     if (input.item_id.len == 0) return error.ItemIdRequired;

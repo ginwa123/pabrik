@@ -36,7 +36,14 @@ pub fn isRequested() bool {
 /// "database is locked" report carries the ACTUAL configuration.
 /// No-op on a postgres build (that backend has no pragmas to read back).
 pub fn logSqliteConfig(allocator: std.mem.Allocator, db: *database.Db) void {
-    if (database.backend_is_postgres) return;
+    if (comptime database.backend_is_postgres) {
+        std.log.info("postgres: backend=PgConnPool (conninfo in the boot line above)", .{});
+    } else {
+        logSqlitePolicy(allocator, db);
+    }
+}
+
+fn logSqlitePolicy(allocator: std.mem.Allocator, db: *database.Db) void {
     const applied = db.readConfig(allocator) catch |err| {
         std.log.warn("sqlite: could not read back connection config ({s})", .{@errorName(err)});
         return;
@@ -48,30 +55,19 @@ pub fn logSqliteConfig(allocator: std.mem.Allocator, db: *database.Db) void {
         applied.wal_autocheckpoint_pages,
         applied.journal_size_limit_bytes,
     });
-    // The reader pool is a separate set of decisions from the pragmas, and
-    // the only warning it produces ("reader pool unavailable (PoolExhausted);
-    // serving this read on the write connection") is unreadable without them.
     var pool_buf: [128]u8 = undefined;
     const pool_line = db_config.describeReaderPool(&pool_buf) catch return;
     std.log.info("sqlite: {s}", .{pool_line});
-    // The two knobs that decide how much RAM the pool can commit to, logged
-    // from the LIVE pool rather than from `db_config.best`, so a `--db-*`
-    // override is visible in the boot log instead of only in the source.
-
-    // `cache_size_kb` is per connection and the pool is elastic, so the
-    // number that matters is the product with the concurrency reached.
-    if (!database.backend_is_postgres) {
-        const live = db.pool.cfg;
-        std.log.info(
-            "sqlite: page_cache={d}KiB/conn mmap={d}MiB/conn idle_reap={d}ms readers_now={d}",
-            .{
-                live.cache_size_kb,
-                live.mmap_size_bytes / (1024 * 1024),
-                live.max_idle_time_ms,
-                db.pool.count(),
-            },
-        );
-    }
+    const live = db.pool.cfg;
+    std.log.info(
+        "sqlite: page_cache={d}KiB/conn mmap={d}MiB/conn idle_reap={d}ms readers_now={d}",
+        .{
+            live.cache_size_kb,
+            live.mmap_size_bytes / (1024 * 1024),
+            live.max_idle_time_ms,
+            db.pool.count(),
+        },
+    );
 }
 
 test "shutdown: signal with no server only sets the requested flag" {

@@ -27,7 +27,7 @@ pub const DesignPageDeleteError = error{
 fn useCase(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     page_id: []const u8,
 ) DesignPageDeleteError!void {
     if (page_id.len == 0) return error.PageIdRequired;

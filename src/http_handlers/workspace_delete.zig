@@ -47,7 +47,7 @@ const WorkspaceDeleteResult = struct {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    sqlite_db: *pabrikcore.sqlite.SqliteBackend,
+    sqlite_db: *pabrikcore.database.Db,
     id: []const u8,
     auth_enabled: bool,
     headers: anytype,
@@ -143,9 +143,10 @@ fn useCase(
 
 const testing = std.testing;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 
 const DeleteCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -153,7 +154,7 @@ fn setupDeleteDb() !DeleteCtx {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
     try db.exec(alloc,

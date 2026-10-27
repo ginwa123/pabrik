@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
@@ -14,7 +14,7 @@ pub const Migration066AddDesignPageTaskFk = struct {
     pub const version: u32 = 66;
     pub const name = "add_design_page_task_fk";
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         // 1. Add the column. Nullable — backfilled below; new
         //    INSERTs from `design_model.setDesignPage` populate it
         //    at create time.

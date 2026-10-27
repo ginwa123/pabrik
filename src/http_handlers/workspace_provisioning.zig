@@ -3,6 +3,7 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const auth_common = @import("auth_common.zig");
 const process = @import("helpers").process;
 const getCurrentProcessId = process.getCurrentProcessId;
@@ -54,7 +55,7 @@ pub fn generateWorkspaceId(allocator: std.mem.Allocator, io: std.Io) ![]const u8
 /// its own creator.
 pub fn insertWorkspace(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     name: []const u8,
     owner: []const u8,
@@ -90,7 +91,7 @@ pub fn insertWorkspace(
 /// provisioning hook both go through it, so neither can drift.
 pub fn createWorkspaceRow(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     io: std.Io,
     name: []const u8,
     owner: []const u8,
@@ -124,7 +125,7 @@ pub fn createWorkspaceRow(
 /// Returns the created row otherwise.
 pub fn ensureDefaultWorkspace(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     io: std.Io,
     user_id: []const u8,
     environment: ?*const std.process.Environ.Map,
@@ -137,7 +138,7 @@ pub fn ensureDefaultWorkspace(
 
 /// True when `user_id` has a membership row of its own. The predicate is
 /// deliberately `user_id = ?` and NOT "can this user see any workspace".
-fn ownsAnyWorkspace(db: *sqlite.SqliteBackend, allocator: std.mem.Allocator, user_id: []const u8) bool {
+fn ownsAnyWorkspace(db: *database.Db, allocator: std.mem.Allocator, user_id: []const u8) bool {
     var q = db.query(allocator,
         \\SELECT 1 FROM workspace_members WHERE user_id = ? LIMIT 1
     , &[_][]const u8{user_id}) catch return false;
@@ -152,7 +153,7 @@ fn ownsAnyWorkspace(db: *sqlite.SqliteBackend, allocator: std.mem.Allocator, use
 const testing = std.testing;
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     env: std.process.Environ.Map,
 
@@ -167,7 +168,7 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -251,7 +252,7 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
 /// Count rows in `workspaces` whose WHERE clause needs the id interpolated.
 /// `template` is a comptime fmt string with one `{{s}}` per argument.
 fn countWorkspacesFmt(
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     alloc: std.mem.Allocator,
     comptime template: []const u8,
     ids: anytype,
@@ -265,7 +266,7 @@ fn countWorkspacesFmt(
     return std.fmt.parseInt(u32, row.values[0], 10);
 }
 
-fn countMembersOf(db: *sqlite.SqliteBackend, alloc: std.mem.Allocator, user_id: []const u8) !u32 {
+fn countMembersOf(db: *database.Db, alloc: std.mem.Allocator, user_id: []const u8) !u32 {
     var q = try db.query(alloc,
         \\SELECT COUNT(*) FROM workspace_members WHERE user_id = ?
     , &[_][]const u8{user_id});
@@ -448,7 +449,7 @@ test "ensureDefaultWorkspace: two users each get their own, neither sees the oth
 /// Read a single text column, interpolating ids that the code under test
 /// generated (never user input).
 fn scalarTextFmt(
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     alloc: std.mem.Allocator,
     comptime template: []const u8,
     ids: anytype,
@@ -465,7 +466,7 @@ fn scalarTextFmt(
 /// Read a single integer column, interpolating ids that the code under test
 /// generated (never user input).
 fn scalarI64Fmt(
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     alloc: std.mem.Allocator,
     comptime template: []const u8,
     ids: anytype,

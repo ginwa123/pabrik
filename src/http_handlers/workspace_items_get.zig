@@ -69,7 +69,7 @@ pub fn workspaceItemsListHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRe
     return res.jsonResponse(.{ .status_code = 200, .data = try http_response.makeWorkspaceItemListObjectResponse(allocator, items) });
 }
 
-fn useCaseList(allocator: std.mem.Allocator, sqlite_db: *pabrikcore.sqlite.SqliteBackend, workspace_id: []const u8) WorkspaceItemsListError![]const llm_history.WorkspaceItemInfo {
+fn useCaseList(allocator: std.mem.Allocator, sqlite_db: *pabrikcore.database.Db, workspace_id: []const u8) WorkspaceItemsListError![]const llm_history.WorkspaceItemInfo {
     return ai_mod.workspace_items.listWorkspaceItems(allocator, sqlite_db, workspace_id) catch {
         return error.DatabaseError;
     };
@@ -115,7 +115,7 @@ pub fn workspaceItemsGetHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReq
     }) });
 }
 
-fn useCaseGet(allocator: std.mem.Allocator, sqlite_db: *pabrikcore.sqlite.SqliteBackend, item_id: []const u8) WorkspaceItemsGetError!llm_history.WorkspaceItemInfo {
+fn useCaseGet(allocator: std.mem.Allocator, sqlite_db: *pabrikcore.database.Db, item_id: []const u8) WorkspaceItemsGetError!llm_history.WorkspaceItemInfo {
     const opt = ai_mod.workspace_items.getWorkspaceItem(allocator, sqlite_db, item_id) catch {
         return error.DatabaseError;
     };

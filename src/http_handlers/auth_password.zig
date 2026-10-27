@@ -6,6 +6,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const http_response = @import("http_response.zig");
 const auth_common = @import("auth_common.zig");
 
@@ -34,7 +35,7 @@ pub const Outcome = union(enum) {
 
 fn countRows(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     sql: []const u8,
     argv: []const []const u8,
 ) !usize {
@@ -50,7 +51,7 @@ fn countRows(
 /// returning how many rows went. An empty `keep_token_hash` revokes all.
 fn revokeSessions(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     user_id: []const u8,
     keep_token_hash: []const u8,
 ) !usize {
@@ -73,7 +74,7 @@ fn revokeSessions(
 /// value: it identifies the session that asked and therefore survives.
 pub fn changePassword(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     io: std.Io,
     user_id: []const u8,
     current_token: ?[]const u8,
@@ -212,7 +213,7 @@ pub fn authChangePasswordHandler(
 
 const testing = std.testing;
 
-fn setupSchema(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend) !void {
+fn setupSchema(alloc: std.mem.Allocator, db: *database.Db) !void {
     try db.exec(alloc,
         \\CREATE TABLE users (
         \\  id TEXT PRIMARY KEY,
@@ -233,19 +234,19 @@ fn setupSchema(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend) !void {
     , &[_][]const u8{});
 }
 
-fn insertUser(db: *sqlite.SqliteBackend, alloc: std.mem.Allocator, io: std.Io, user_id: []const u8, password: []const u8) !void {
+fn insertUser(db: *database.Db, alloc: std.mem.Allocator, io: std.Io, user_id: []const u8, password: []const u8) !void {
     const hash = try auth_common.hashPassword(alloc, io, password);
     defer alloc.free(hash);
     try db.exec(alloc, "INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)", &[_][]const u8{ user_id, user_id, hash });
 }
 
-fn insertSession(db: *sqlite.SqliteBackend, alloc: std.mem.Allocator, raw_token: []const u8, user_id: []const u8) !void {
+fn insertSession(db: *database.Db, alloc: std.mem.Allocator, raw_token: []const u8, user_id: []const u8) !void {
     var hash: [64]u8 = undefined;
     auth_common.sha256Hex(raw_token, &hash);
     try db.exec(alloc, "INSERT INTO auth_sessions (token_hash, user_id, expires_at) VALUES (?, ?, datetime('now', '+1 day'))", &[_][]const u8{ hash[0..], user_id });
 }
 
-fn storedHash(db: *sqlite.SqliteBackend, alloc: std.mem.Allocator, user_id: []const u8) ![]u8 {
+fn storedHash(db: *database.Db, alloc: std.mem.Allocator, user_id: []const u8) ![]u8 {
     var q = try db.query(alloc, "SELECT password_hash FROM users WHERE id = ?", &[_][]const u8{user_id});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
@@ -253,7 +254,7 @@ fn storedHash(db: *sqlite.SqliteBackend, alloc: std.mem.Allocator, user_id: []co
     return alloc.dupe(u8, row.values[0]);
 }
 
-fn sessionCount(db: *sqlite.SqliteBackend, alloc: std.mem.Allocator, user_id: []const u8) !usize {
+fn sessionCount(db: *database.Db, alloc: std.mem.Allocator, user_id: []const u8) !usize {
     return countRows(
         alloc,
         db,
@@ -262,7 +263,7 @@ fn sessionCount(db: *sqlite.SqliteBackend, alloc: std.mem.Allocator, user_id: []
     );
 }
 
-fn sessionSurvives(db: *sqlite.SqliteBackend, alloc: std.mem.Allocator, raw_token: []const u8) !bool {
+fn sessionSurvives(db: *database.Db, alloc: std.mem.Allocator, raw_token: []const u8) !bool {
     var hash: [64]u8 = undefined;
     auth_common.sha256Hex(raw_token, &hash);
     const n = try countRows(
@@ -277,13 +278,13 @@ fn sessionSurvives(db: *sqlite.SqliteBackend, alloc: std.mem.Allocator, raw_toke
 const Ctx = struct {
     alloc: std.mem.Allocator,
     threaded: std.Io.Threaded,
-    db: sqlite.SqliteBackend,
+    db: database.Db,
 
     fn open() !Ctx {
         const alloc = testing.allocator;
         var threaded = std.Io.Threaded.init(alloc, .{});
         errdefer threaded.deinit();
-        var db: sqlite.SqliteBackend = .{};
+        var db: database.Db = .{};
         errdefer db.deinit();
         try db.init(threaded.io(), ":memory:");
         try setupSchema(alloc, &db);

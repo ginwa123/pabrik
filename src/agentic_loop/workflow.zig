@@ -18,6 +18,7 @@ const ask_user_mod = pabrikcore.ask_user;
 const notifications = pabrikcore.notifications_mod;
 
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const migration_mod = pabrikcore.migrations_mod.migration;
 const migration = migration_mod;
 const config_mod = pabrikcore.config;
@@ -30,7 +31,7 @@ const agent_db = @import("../models/agent.db.zig");
 const json = std.json;
 
 const event_bus_mod = pabrikcore.event_bus;
-const SqliteBackend = pabrikcore.sqlite.SqliteBackend;
+const Backend = pabrikcore.database.Db;
 
 const compact_message_mod = @import("workflow_compact_message.zig");
 const delete_queue_worker_mod = @import("delete_queue_worker.zig");
@@ -197,7 +198,7 @@ pub const CallbackAiWorkerFlow = struct {
 pub const RunAgenticMultiStepInput = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     logger: *logger_mod.Logger,
     event_bus: *event_bus_mod.EventBus,
     di: *pabrikcore.App,
@@ -209,7 +210,7 @@ pub const RunAgenticMultiStepInput = struct {
 // workflow's `while (true)` loop in `runAgenticMultiStepnew` previously used
 fn re_read_selected_profile_model(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     fallback: []const u8,
 ) []const u8 {
@@ -233,7 +234,7 @@ fn re_read_selected_profile_model(
 // ───────────────────────── In-memory SQLite with the full migration chain
 // applied (so the `sessions` table has the `selected_profile_model` column
 const ReReadTestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -242,7 +243,7 @@ fn re_read_setupDb() !ReReadTestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -262,7 +263,7 @@ fn re_read_teardown(ctx: *ReReadTestCtx) void {
 /// Touch the checkpoint worker rows for one loop iteration.
 const TouchCheckpointWorkersInput = struct {
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     logger: *logger_mod.Logger,
     event_bus: *event_bus_mod.EventBus,
     session_id: []const u8,
@@ -343,14 +344,14 @@ fn touchCheckpointWorkers(input: TouchCheckpointWorkersInput) void {
 /// mcp-fetch-once-cache).
 fn fetchMcpToolsFresh(
     parent_allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     copy_session_id: []const u8,
     initial_config: *config_mod.LlmConfig,
     logger: *logger_mod.Logger,
 ) ?[]pabrikcore.tool_models.AgentTool {
     return (blk: {
         const McpCancelCtx = struct {
-            db: *sqlite.SqliteBackend,
+            db: *database.Db,
             session_id: []const u8,
         };
         const mcp_cancel_thunk = struct {
@@ -387,7 +388,7 @@ fn fetchMcpToolsFresh(
 /// `Agent.zig` must not depend on sqlite/config, so it takes a plain `?*const
 /// fn () bool` and the workflow supplies this one.
 const LlmCancelCtx = struct {
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     io: std.Io,
 };
@@ -434,7 +435,7 @@ const llm_cancel_thunk = struct {
 const FlushCancelledInput = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     logger: *logger_mod.Logger,
     event_bus: *event_bus_mod.EventBus,
     cwd: []const u8,
@@ -1146,7 +1147,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         }
 
         var messagesLists: std.ArrayList(agent.AgentMessage) = .empty;
-        const db_messages = try getLLMHistories(*SqliteBackend, .{
+        const db_messages = try getLLMHistories(*Backend, .{
             .allocator = allocator,
             .db = db,
             .session_id = copy_session_id,
@@ -1586,7 +1587,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
 /// should (still) be allowed to run.
 fn sessionNameIsPlaceholder(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) bool {
     // A read error must NOT answer "still a placeholder": this predicate
@@ -1620,7 +1621,7 @@ fn generateSessionNameNew(
     session_id: []const u8,
     logger: *logger_mod.Logger,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     event_bus: *event_bus_mod.EventBus,
 ) void {
     // Find the first user message from db_messages (TUIHistory)
@@ -1740,7 +1741,7 @@ fn clampDetail(detail: []const u8, max_len: usize) []const u8 {
 
 fn saveRetryAttemptMessage(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     event_bus: *event_bus_mod.EventBus,
     logger: *logger_mod.Logger,
     io: std.Io,
@@ -2199,12 +2200,12 @@ pub const RunParamsNew = struct {
 /// Walk ALL migrations from 001 → latest (per project memory
 /// `llm-history-test-use-migrations-module.md`). No hand-rolled
 /// CREATE TABLE — the migration chain is the source of truth.
-fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -2327,7 +2328,7 @@ test "end-to-end: compaction envelope is queryable via getCompactedMessages" {
 /// `agent_tools` table and overwrite `out_allowed_tools` with the
 fn maybeOverrideAllowedToolsForAgent(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     out_allowed_tools: *[]const u8,
 ) !bool {
@@ -2370,7 +2371,7 @@ fn maybeOverrideAllowedToolsForAgent(
 /// workspace_item is a kanban WITH an `agent_kanbans` row.
 fn maybeOverrideAllowedToolsForKanban(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     out_allowed_tools: *[]const u8,
 ) !bool {
@@ -2431,7 +2432,7 @@ fn maybeOverrideAllowedToolsForKanban(
 /// belongs to a routine WITH an `agent_routines` row.
 fn maybeOverrideAllowedToolsForRoutine(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     out_allowed_tools: *[]const u8,
 ) !bool {
@@ -2854,7 +2855,7 @@ test "progressive tool search: equipping a built-in makes it appear in the next 
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
-    var db: SqliteBackend = .{};
+    var db: Backend = .{};
     defer db.deinit();
     try db.init(threaded.io(), ":memory:");
     try db.exec(alloc,
@@ -2948,7 +2949,7 @@ test "progressive tool search: an MCP tool is invisible until equipped, then app
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
-    var db: SqliteBackend = .{};
+    var db: Backend = .{};
     defer db.deinit();
     try db.init(threaded.io(), ":memory:");
     try db.exec(alloc,
@@ -2996,7 +2997,7 @@ test "progressive tool search: an MCP tool is invisible until equipped, then app
 /// updated_at, selected_profile_model, is_auto_retry_until_stop).
 fn re_read_insertSession(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     selected_profile_model: []const u8,
 ) !void {
@@ -3136,7 +3137,7 @@ test "flushCancelledPartial persists the streamed partial as a cancelled turn" {
     defer threaded.deinit();
     const io = threaded.io();
 
-    var db: SqliteBackend = .{};
+    var db: Backend = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
 
@@ -3286,7 +3287,7 @@ test "generateSessionNameNew: name call failure leaves the placeholder name and 
     defer arena.deinit();
     const a = arena.allocator();
 
-    const messages = try getLLMHistories(*SqliteBackend, .{
+    const messages = try getLLMHistories(*Backend, .{
         .allocator = a,
         .db = &s.db,
         .session_id = session_id,

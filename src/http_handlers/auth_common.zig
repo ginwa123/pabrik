@@ -74,7 +74,7 @@ pub fn isSharedOwner(user_id: []const u8) bool {
 /// owner.
 pub fn sessionExistsById(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     session_id: []const u8,
 ) bool {
     if (session_id.len == 0) return false;
@@ -95,7 +95,7 @@ pub fn sessionExistsById(
 /// True when `workspace_id` exists AND the given owner may see it.
 pub fn canSeeWorkspace(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     workspace_id: []const u8,
     owner: []const u8,
 ) bool {
@@ -118,7 +118,7 @@ pub fn canSeeWorkspace(
 /// AND the given owner may see it.
 pub fn canSeeSession(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     session_id: []const u8,
     owner: []const u8,
 ) bool {
@@ -140,7 +140,7 @@ pub fn canSeeSession(
 /// Resolve the owner id for the current request, server-side.
 pub fn resolveRequestUserId(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     auth_enabled: bool,
     headers: anytype,
 ) ![]const u8 {
@@ -170,7 +170,7 @@ pub fn resolveOwnerInto(buf: []u8, headers: anytype) ?[]const u8 {
 /// process-global singleton is authoritative.
 pub fn requestUserConfig(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     auth_enabled: bool,
     headers: anytype,
 ) ?*pabrikcore.config.LlmConfig {
@@ -268,7 +268,7 @@ test "canSeeSession: own + shared visible, another user's hidden, system sees al
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    var db: pabrikcore.sqlite.SqliteBackend = .{};
+    var db: pabrikcore.database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
     try db.exec(alloc, "CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT)", &.{});
@@ -307,7 +307,7 @@ test "resolveRequestUserId maps a valid cookie to the owning user" {
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    var db: pabrikcore.sqlite.SqliteBackend = .{};
+    var db: pabrikcore.database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
 
@@ -405,7 +405,7 @@ test "workspaceVisibilityClause never reads workspaces.user_id" {
 }
 
 test "normaliseOwnerId maps an empty owner to the sentinel, never NULL" {
-    // SqliteBackend.exec binds an empty slice as SQL NULL, and
+    // Backend.exec binds an empty slice as SQL NULL, and
     // workspace_members.user_id is NOT NULL. Binding a raw empty owner is a
     // runtime constraint violation — this helper is what prevents it.
     try std.testing.expectEqualStrings(system_user_id, normaliseOwnerId(""));

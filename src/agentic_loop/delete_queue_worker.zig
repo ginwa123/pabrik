@@ -3,12 +3,13 @@ const pabrikcore = @import("pabrikcore");
 const SseEvent = @import("sse.zig").SseEvent;
 
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const event_bus_mod = pabrikcore.event_bus;
 const testing = std.testing;
 
 pub const DeleteQueueMessagesInput = struct {
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     is_emit_sse: bool,
     event_bus: ?*event_bus_mod.EventBus,
     session_id: []const u8,
@@ -66,12 +67,12 @@ pub fn deleteQueuedMessage(
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
-fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try db.exec(alloc,

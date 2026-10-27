@@ -5,6 +5,7 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const gserverz = pabrikcore.gserverz;
 const design_model = @import("../agentic_loop/design_model.zig");
 const http_response = @import("http_response.zig");
@@ -68,7 +69,7 @@ pub const UseCaseInput = struct {
 
 pub fn useCase(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     input: UseCaseInput,
 ) DesignElementsMoveBatchError!MoveBatchOutput {
     if (input.items.len == 0) return error.EmptyItems;
@@ -219,7 +220,7 @@ fn makeErrorJson(allocator: std.mem.Allocator, message: []const u8) ![]u8 {
 const testing_handler = std.testing;
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_id: []const u8,
     item_path: []u8,
@@ -234,7 +235,7 @@ fn teardownHandlerMoveBatchDb(ctx: *TestCtx) void {
 
 fn insertHandlerMoveBatchElement(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     page_id: []const u8,
     name: []const u8,
     x: i64,
@@ -283,7 +284,7 @@ fn setupHandlerMoveBatchDb() !TestCtx {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

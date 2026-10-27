@@ -5,6 +5,7 @@ const schemas = @import("schemas.zig");
 const AgentTool = schemas.AgentTool;
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const design_model = pabrikcore.ai_mod.design_model;
 const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
@@ -316,7 +317,7 @@ fn validateParentIdShape(allocator: std.mem.Allocator, parent_id: []const u8) !?
 /// Execute the `add_element` tool. Returns a JSON string for the LLM.
 pub fn executeAddElementToString(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     io: std.Io,
     input: AddElementInput,
 ) ![]u8 {
@@ -551,7 +552,7 @@ test "errorJSON on bad page_id returns an error object" {
 // ─── DB integration behavioral tests (in-memory SQLite) ────────────────
 
 fn setupDbWithPage() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_id: []u8,
     page_id: []u8,
@@ -560,7 +561,7 @@ fn setupDbWithPage() !struct {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

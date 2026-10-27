@@ -451,6 +451,7 @@ const pabrikcore = @import("pabrikcore");
 const tools = @import("../../../agentic_loop/tools.zig");
 const exec_builtin = @import("builtin");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = pabrikcore.agent;
@@ -479,7 +480,7 @@ pub fn runWithContext(
     allocator: std.mem.Allocator,
     io: std.Io,
     tool_call: agent.ToolCall,
-    db: ?*sqlite.SqliteBackend,
+    db: ?*database.Db,
     session_id: ?[]const u8,
 ) !RunResult {
     const input = switch (bash_args.parseShellArgs(allocator, tool_call.function.arguments)) {

@@ -5,6 +5,7 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const gserverz = pabrikcore.gserverz;
 const design_model = @import("../agentic_loop/design_model.zig");
 const http_response = @import("http_response.zig");
@@ -65,7 +66,7 @@ pub const MoveToPageOutput = struct {
 
 pub fn useCase(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     input: UseCaseInput,
 ) DesignElementsMoveToPageError!MoveToPageOutput {
     const updated = design_model.moveElementToPage(allocator, db, .{
@@ -219,7 +220,7 @@ const testing_handler = std.testing;
 /// move-batch handler.
 fn insertHandlerMoveToPageElement(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     page_id: []const u8,
     name: []const u8,
@@ -258,7 +259,7 @@ fn insertHandlerMoveToPageElement(
 }
 
 const HandlerTestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_id: []const u8,
     item_path: []u8,
@@ -270,7 +271,7 @@ fn setupHandlerMoveToPageDb() !HandlerTestCtx {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

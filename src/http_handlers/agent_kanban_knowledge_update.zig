@@ -58,7 +58,7 @@ pub const KnowledgeUpdateOutput = struct {
 /// Update an existing knowledge row.
 pub fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: KnowledgeUpdateInput,
 ) KnowledgeUpdateError!KnowledgeUpdateOutput {
     if (input.kanban_id.len == 0 or input.knowledge_id.len == 0) {
@@ -153,11 +153,12 @@ pub fn agentKanbanKnowledgeUpdateHandler(
 // impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
+const database = @import("pabrikcore").database;
 const testing = std.testing;
 const Migration116 = @import("../migrations/migration.zig").Migration116UnifyAgentConfigTables;
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -165,7 +166,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

@@ -6,6 +6,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const http_response = @import("http_response.zig");
 
 // =====================================================================
@@ -53,7 +54,7 @@ pub const StopAllAgentsOutcome = struct {
 /// List every task id in `column_id`, then run `stopper` per id.
 pub fn stopAllAgentsWithStopper(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     column_id: []const u8,
     stopper: TaskStopper,
 ) !StopAllAgentsOutcome {
@@ -137,7 +138,7 @@ pub fn stopAllAgentsWithStopper(
 
 const LiveCtx = struct {
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
 };
 
 fn liveStop(ptr: ?*anyopaque, task_id: []const u8) PerTaskResult {
@@ -154,7 +155,7 @@ fn liveStop(ptr: ?*anyopaque, task_id: []const u8) PerTaskResult {
 /// then `cancelSession` (running ⇒ stopped, error ⇒ failed).
 pub fn stopAllAgentsUseCase(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     column_id: []const u8,
 ) !StopAllAgentsOutcome {
     var live = LiveCtx{ .allocator = allocator, .db = db };
@@ -243,7 +244,7 @@ const testing = std.testing;
 // =====================================================================
 
 const TestDb = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 
     fn deinit(self: *TestDb) void {
@@ -258,7 +259,7 @@ fn setupDb() !TestDb {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -305,7 +306,7 @@ fn seedThreeTaskColumn(ctx: *TestDb) !void {
 /// worker row) ⇒ skipped, scripted fail-list ⇒ failed, otherwise ⇒
 /// stopped. Never touches the real `cancelled` flag.
 const FakeCtx = struct {
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     fail_ids: []const []const u8 = &.{},
 };
 
@@ -337,7 +338,7 @@ test "stopAllAgents rejects empty column_id" {
     var fake = FakeCtx{ .db = &ctx.db };
 
     // Empty-slice-as-NULL rule: "" must never reach a `WHERE id = ?`
-    // binding (SqliteBackend binds "" as SQL NULL). The use-case
+    // binding (Backend binds "" as SQL NULL). The use-case
     // validates first and returns EmptyColumnId.
     const result = stopAllAgentsWithStopper(
         testing.allocator,

@@ -7,6 +7,7 @@ const schemas = @import("schemas.zig");
 const AgentTool = schemas.AgentTool;
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
 const tags_validation = @import("../../../http_handlers/tags_validation.zig");
@@ -211,7 +212,7 @@ pub const CreateKanbanTaskOutput = struct {
 /// rather than asked for.
 fn lookupItemProjectPath(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     item_id: []const u8,
 ) ![]u8 {
     var q = db.query(
@@ -237,7 +238,7 @@ fn lookupItemProjectPath(
 /// string when the parent isn't a kanban (or doesn't exist).
 fn validateItemTypeIsKanban(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     item_id: []const u8,
 ) !?[]u8 {
     var q = db.query(
@@ -283,7 +284,7 @@ fn validateItemTypeIsKanban(
 /// on failure. Caller uses `if (try resolveTargetColumnId(...)) |err| return err;`.
 fn resolveTargetColumnId(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     item_id: []const u8,
     input_column_id: ?[]const u8,
 ) !?[]u8 {
@@ -353,7 +354,7 @@ fn resolveTargetColumnId(
 /// null). Heap-owned; caller frees via `defer allocator.free`.
 fn fetchTargetColumnId(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     item_id: []const u8,
     input_column_id: ?[]const u8,
 ) ![]u8 {
@@ -378,7 +379,7 @@ fn fetchTargetColumnId(
 /// Returns 0 when the column is empty. Falls back to 0 on DB error.
 fn computeNextPosition(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     column_id: []const u8,
 ) i64 {
     var q = db.query(
@@ -399,7 +400,7 @@ fn computeNextPosition(
 /// Execute the tool. Returns a JSON string for the LLM.
 pub fn executeKanbanTaskToJSON(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     input: CreateKanbanTaskInput,
 ) ![]u8 {
     // 1. Validate required fields.
@@ -683,12 +684,12 @@ fn contains(haystack: []const u8, needle: []const u8) bool {
 /// Open a fresh in-memory SQLite DB. Caller owns the returned
 /// `db` + `threaded` and must `defer s.threaded.deinit();
 /// defer s.db.deinit();`.
-fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -817,7 +818,7 @@ fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
 
 /// Count rows in `workspace_item_tasks` matching `WHERE id = ?`.
 /// Used to assert the tool inserted exactly one row.
-fn taskRowExists(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, task_id: []const u8) !bool {
+fn taskRowExists(alloc: std.mem.Allocator, db: *database.Db, task_id: []const u8) !bool {
     var q = try db.query(
         alloc,
         "SELECT 1 FROM workspace_item_tasks WHERE id = ?",
@@ -831,7 +832,7 @@ fn taskRowExists(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, task_id: [
 
 /// Read the first column of the first row returned by `sql`. Returns a
 /// heap-owned slice; caller frees with `alloc.free`.
-fn readColumn(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, sql: []const u8, args: []const []const u8) ![]u8 {
+fn readColumn(alloc: std.mem.Allocator, db: *database.Db, sql: []const u8, args: []const []const u8) ![]u8 {
     var q = try db.query(alloc, sql, args);
     defer q.deinit();
     const row = (try q.next()) orelse return try alloc.dupe(u8, "");

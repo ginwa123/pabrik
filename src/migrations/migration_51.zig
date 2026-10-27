@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
@@ -11,7 +11,7 @@ pub const Migration051AddKanban = struct {
     pub const version: u32 = 51;
     pub const name = "add_kanban";
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         // Workspace Item Kanban feature — Chunk 1 (Migration 051). Adds the
         // kanban_columns table and the two column-reference columns on
         // workspace_item_tasks.

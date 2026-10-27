@@ -6,6 +6,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const run_captured = @import("helpers").run_captured;
 const host_fixture = @import("helpers").host_fixture;
 const xml_escape = @import("helpers").xml_escape;
@@ -124,7 +125,7 @@ pub fn fetchGitState(allocator: std.mem.Allocator, io: std.Io, dir: []const u8) 
 pub fn fetchGitStateFor(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     dir: []const u8,
 ) !?GitState {
@@ -520,7 +521,7 @@ const CanaryRepo = struct {
     fx: host_fixture.Fixture,
     repo: []u8,
     sentinel: []u8,
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 
     fn deinit(self: *CanaryRepo) void {
@@ -575,7 +576,7 @@ fn canaryRepo() !CanaryRepo {
 
     var threaded = std.Io.Threaded.init(allocator, .{});
     errdefer threaded.deinit();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
     try db.exec(allocator,

@@ -58,7 +58,7 @@ pub fn parseMaxBytes(raw: ?[]const u8) usize {
 
 pub fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     io: std.Io,
     session_id: []const u8,
     pid: u32,
@@ -266,7 +266,7 @@ const testing = std.testing;
 const migration = @import("../migrations/migration.zig");
 
 const TestCtx = struct {
-    db: pabrikcore.sqlite.SqliteBackend,
+    db: pabrikcore.database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -275,7 +275,7 @@ fn setupDb() !TestCtx {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: pabrikcore.sqlite.SqliteBackend = .{};
+    var db: pabrikcore.database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -293,7 +293,7 @@ fn teardownDb(ctx: *TestCtx) void {
 }
 
 fn insertBgRow(
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     session_id: []const u8,
     pid: u32,
     command: []const u8,

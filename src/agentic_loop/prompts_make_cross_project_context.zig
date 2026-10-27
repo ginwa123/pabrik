@@ -4,7 +4,7 @@ const sqlite = @import("pabrikcore").sqlite;
 /// Build the dynamic sibling-cwd list for the cross-project prompt.
 pub fn makeCrossProjectCwdContext(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]const u8 {
     if (session_id.len == 0) return allocator.dupe(u8, "");
@@ -69,7 +69,7 @@ const Anchor = struct {
 
 fn resolveAnchor(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !?Anchor {
     var q = try db.query(allocator,
@@ -91,9 +91,10 @@ fn resolveAnchor(
 
 const testing = std.testing;
 const test_sqlite = @import("pabrikcore").sqlite;
+const database = @import("pabrikcore").database;
 
 const TestCtx = struct {
-    db: test_sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -102,7 +103,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: test_sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try db.exec(alloc,

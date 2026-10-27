@@ -6,6 +6,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const design_model = @import("../agentic_loop/design_model.zig");
 const http_response = @import("http_response.zig");
 
@@ -34,7 +35,7 @@ pub const ResizeOutput = struct {
 
 pub fn useCase(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     element_id: []const u8,
     x: ?i64,
     y: ?i64,
@@ -164,7 +165,7 @@ const testing = std.testing;
 const testing_alloc = testing.allocator;
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_id: []const u8,
     page_id: []u8,
@@ -186,7 +187,7 @@ fn setupResizeCtx() !TestCtx {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -227,7 +228,7 @@ fn setupResizeCtx() !TestCtx {
 
 fn insertResizeElement(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     page_id: []const u8,
     name: []const u8,
     x: i64,
@@ -387,23 +388,23 @@ test "useCase returns ElementNotFound for an unknown element_id" {
     try testing.expectError(error.ElementNotFound, result);
 }
 
-fn readX(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, id: []const u8) !i64 {
+fn readX(alloc: std.mem.Allocator, db: *database.Db, id: []const u8) !i64 {
     return try readInt(alloc, db, id, "x");
 }
 
-fn readY(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, id: []const u8) !i64 {
+fn readY(alloc: std.mem.Allocator, db: *database.Db, id: []const u8) !i64 {
     return try readInt(alloc, db, id, "y");
 }
 
-fn readWidth(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, id: []const u8) !i64 {
+fn readWidth(alloc: std.mem.Allocator, db: *database.Db, id: []const u8) !i64 {
     return try readInt(alloc, db, id, "width");
 }
 
-fn readHeight(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, id: []const u8) !i64 {
+fn readHeight(alloc: std.mem.Allocator, db: *database.Db, id: []const u8) !i64 {
     return try readInt(alloc, db, id, "height");
 }
 
-fn readInt(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, id: []const u8, col: []const u8) !i64 {
+fn readInt(alloc: std.mem.Allocator, db: *database.Db, id: []const u8, col: []const u8) !i64 {
     const sql = try std.fmt.allocPrint(alloc, "SELECT {s} FROM design_page_elements WHERE id = ?", .{col});
     defer alloc.free(sql);
     var q = try db.query(alloc, sql, &.{id});

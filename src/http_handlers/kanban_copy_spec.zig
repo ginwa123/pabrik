@@ -44,7 +44,7 @@ pub const CopySpecResult = []const u8;
 /// Copy the source kanban's column spec to the target kanban. Steps: 1.
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: CopySpecInput,
 ) CopySpecError!CopySpecResult {
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;

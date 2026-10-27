@@ -47,7 +47,7 @@ pub const UpdateHtmlOutput = struct {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     element_id: []const u8,
     html: []const u8,
 ) DesignElementHtmlUpdateError!UpdateHtmlOutput {

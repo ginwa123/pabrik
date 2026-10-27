@@ -102,7 +102,7 @@ fn parseInput(query: anytype) TasksListInput {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     io: std.Io,
     input: TasksListInput,
 ) TasksListError!TasksListResult {
@@ -295,7 +295,7 @@ pub fn tasksListHandler(
 /// the git_branch lookup when a task has no worktree bound.
 fn fetchWorkspaceItemPath(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     item_id: []const u8,
 ) ![]u8 {
     var rows = db.query(

@@ -421,6 +421,14 @@ jobs:
         # comes from — the `-Ddb_used=sqlite,postgres` build links it.
         run: bash scripts/ci-install-linux-deps.sh
 
+      - name: Compile the app with the postgres backend
+        # The TYPE-level gate. Every `db:` parameter in the tree is now
+        # `*database.Db`, so re-introducing a `sqlite.SqliteBackend`
+        # annotation breaks this step instead of surfacing later as a
+        # postgres-only mystery. It compiles the whole binary; it does not
+        # run it (the migration DDL is still sqlite-flavoured).
+        run: zig build -Ddb_used=sqlite,postgres -Dno-webapp-rebuild
+
       - name: Database tests (sqlite backend)
         # The default build: the same source, the same assertions, the
         # sqlite half of `createTempDb`.

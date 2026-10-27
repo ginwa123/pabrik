@@ -685,12 +685,12 @@ fn unavailableResult(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
 const exec_testing = std.testing;
 const tools_mod = @import("../../../agentic_loop/tools.zig");
 
-fn setupDb() !struct { db: pabrikcore.sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+fn setupDb() !struct { db: pabrikcore.database.Db, threaded: std.Io.Threaded } {
     const alloc = exec_testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: pabrikcore.sqlite.SqliteBackend = .{};
+    var db: pabrikcore.database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try db.exec(alloc,
@@ -726,7 +726,7 @@ const CtxHolder = struct {
         self: *CtxHolder,
         allocator: std.mem.Allocator,
         io: std.Io,
-        db: *pabrikcore.sqlite.SqliteBackend,
+        db: *pabrikcore.database.Db,
         is_sub_agent: bool,
     ) ToolExecContext {
         self.logger = pabrikcore.loggermod.Logger.init(allocator, io, .{

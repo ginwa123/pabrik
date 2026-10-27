@@ -67,7 +67,7 @@ pub const CreateColumnOutput = struct {
 /// Create a kanban column. Steps: 1. Validate `item_id` and `name`. 2.
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: CreateColumnInput,
 ) KanbanColumnCreateError!CreateColumnOutput {
     // 1. Validate. These are business rules: an empty `item_id`

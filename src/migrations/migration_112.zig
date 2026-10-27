@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 const renameColumnIfExists = common.renameColumnIfExists;
 
 /// One task may ask for several skills, so Migration 110's column is renamed
@@ -11,7 +11,7 @@ pub const Migration112RenameTaskSkillNames = struct {
     pub const version: u32 = 112;
     pub const name = "rename_task_skill_names";
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         try renameColumnIfExists(
             .{ .db = db },
             allocator,

@@ -5,6 +5,7 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 /// `parseYamlFrontmatter` is used HERE and nowhere else in the read path:
 /// this is the one moment the description moves out of the body and into
 /// the `description` column. Every later read takes the column.
@@ -122,7 +123,7 @@ pub const ImportError = skills_store.ListSkillsError ||
 pub fn importFromDir(
     io: std.Io,
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     skills_dir: []const u8,
 ) ImportError!ImportReport {
@@ -136,7 +137,7 @@ pub fn importFromDir(
 pub fn importFromTargets(
     io: std.Io,
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     targets: []const DirTarget,
 ) ImportError!ImportReport {
     var report: ImportReport = .{};
@@ -563,7 +564,7 @@ pub fn isSafeRelPath(rel_path: []const u8) bool {
 
 fn writeSkills(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     loaded: []const LoadedSkill,
     report: *ImportReport,
@@ -605,7 +606,7 @@ const testing = std.testing;
 const migration = @import("../migrations/migration.zig");
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -615,7 +616,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

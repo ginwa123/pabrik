@@ -1052,7 +1052,7 @@ const exec_testing = std.testing;
 /// working directory" and "outside it" are real paths on every CI OS.
 const ExecEnv = struct {
     threaded: std.Io.Threaded,
-    db: pabrikcore.sqlite.SqliteBackend,
+    db: pabrikcore.database.Db,
     inside: std.testing.TmpDir,
     outside: std.testing.TmpDir,
     inside_abs: []const u8,
@@ -1129,7 +1129,7 @@ fn exec_realPathOf(allocator: std.mem.Allocator, dir: std.Io.Dir) ![]u8 {
 fn setupExecEnv(allocator: std.mem.Allocator) !ExecEnv {
     var threaded = std.Io.Threaded.init(allocator, .{});
     errdefer threaded.deinit();
-    var db: pabrikcore.sqlite.SqliteBackend = .{};
+    var db: pabrikcore.database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
     // Only the two columns the sandbox root resolver reads; nullable, like

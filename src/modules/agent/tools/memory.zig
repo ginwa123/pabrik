@@ -16,7 +16,7 @@ const testing = std.testing;
 const migration = @import("../../../migrations/migration.zig");
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -25,7 +25,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -118,7 +118,7 @@ pub const save_memory_tool = AgentTool{
 /// returned slice and must free it with `allocator.free()`.
 pub fn executeSaveMemory(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     input: SaveMemoryInput,
     workspace_id: []const u8,
 ) ![]const u8 {
@@ -355,7 +355,7 @@ pub const load_memory_tool = AgentTool{
 /// returned slice and must free it with `allocator.free()`.
 pub fn executeLoadMemory(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     input: LoadMemoryInput,
     workspace_id: []const u8,
 ) ![]const u8 {
@@ -435,7 +435,7 @@ pub fn executeLoadMemory(
 /// By-id branch of `executeLoadMemory`.
 fn executeById(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     input: LoadMemoryInput,
     workspace_id: []const u8,
 ) ![]u8 {
@@ -652,8 +652,8 @@ test "neither *Input struct has a workspace_id field" {
     // The resolved scope travels as a separate trailing argument, not on the
     // struct.
     comptime {
-        const SaveFn = *const fn (std.mem.Allocator, *sqlite.SqliteBackend, SaveMemoryInput, []const u8) anyerror![]const u8;
-        const LoadFn = *const fn (std.mem.Allocator, *sqlite.SqliteBackend, LoadMemoryInput, []const u8) anyerror![]const u8;
+        const SaveFn = *const fn (std.mem.Allocator, *database.Db, SaveMemoryInput, []const u8) anyerror![]const u8;
+        const LoadFn = *const fn (std.mem.Allocator, *database.Db, LoadMemoryInput, []const u8) anyerror![]const u8;
         const save_fn: SaveFn = &executeSaveMemory;
         const load_fn: LoadFn = &executeLoadMemory;
         _ = save_fn;
@@ -1610,6 +1610,7 @@ const tools = @import("../../../agentic_loop/tools.zig");
 const exec_migration = @import("../../../migrations/migration.zig");
 const workspace_scope = @import("../../../agentic_loop/workspace_scope.zig");
 const exec_sqlite = exec_pabrikcore.sqlite;
+const database = exec_pabrikcore.database;
 const exec_agent_memories = exec_pabrikcore.agent_memories;
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
@@ -1727,7 +1728,7 @@ pub fn execLoadMemory(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult 
 // ─── tests ───
 
 const exec_TestCtx = struct {
-    db: exec_sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -1736,7 +1737,7 @@ fn exec_setupDb() !exec_TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: exec_sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -1747,7 +1748,7 @@ fn exec_setupDb() !exec_TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
-fn makeTestCtx(allocator: std.mem.Allocator, db: *exec_sqlite.SqliteBackend) ToolExecContext {
+fn makeTestCtx(allocator: std.mem.Allocator, db: *database.Db) ToolExecContext {
     var dummy_f32: f32 = 0.0;
     var dummy_bool: bool = false;
     return .{
@@ -1835,7 +1836,7 @@ test "execSaveMemory: empty content surfaces inner error as success=false" {
 /// Link a session id to a workspace the deterministic way:
 /// `workspace_item_tasks.id` IS the session id, so the exact-task branch
 /// of `resolveWorkspaceId` resolves without touching the cwd heuristic.
-fn linkSessionToWorkspace(alloc: std.mem.Allocator, db: *exec_sqlite.SqliteBackend, session_id: []const u8, workspace_id: []const u8, item_id: []const u8) !void {
+fn linkSessionToWorkspace(alloc: std.mem.Allocator, db: *database.Db, session_id: []const u8, workspace_id: []const u8, item_id: []const u8) !void {
     try db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type, name, path) " ++
             "VALUES (?, ?, 'kanban', 'test', ?)",
@@ -1847,7 +1848,7 @@ fn linkSessionToWorkspace(alloc: std.mem.Allocator, db: *exec_sqlite.SqliteBacke
     );
 }
 
-fn ctxForSession(allocator: std.mem.Allocator, db: *exec_sqlite.SqliteBackend, session_id: []const u8) ToolExecContext {
+fn ctxForSession(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) ToolExecContext {
     var base = makeTestCtx(allocator, db);
     base.session_id = session_id;
     return base;

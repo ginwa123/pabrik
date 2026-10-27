@@ -2,6 +2,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const logger_mod = pabrikcore.loggermod;
 const helpers = @import("helpers");
 const onEventSendWorkers = @import("sse_send_event_worker.zig").onEventSendWorkers;
@@ -10,7 +11,7 @@ const testing = std.testing;
 
 pub const UpsertWorkerInput = struct {
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     logger: ?*logger_mod.Logger,
     worker_id: []const u8,
     session_id: []const u8,
@@ -135,12 +136,12 @@ pub fn updateWorker(obj: UpsertWorkerInput) !void {
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
-fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try db.exec(alloc,
@@ -338,7 +339,7 @@ test "updateWorker names cancelled on INSERT, so a default-less column still sta
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(threaded.io(), ":memory:");
 
@@ -423,7 +424,7 @@ test "updateWorker ON CONFLICT still refreshes last_activity_nano (the heart-bea
     try testing.expect(stamped > 1_600_000_000);
 }
 
-fn isCancelled(db: *sqlite.SqliteBackend, id: []const u8) bool {
+fn isCancelled(db: *database.Db, id: []const u8) bool {
     var q = db.query(testing.allocator, "SELECT cancelled FROM worker WHERE id = ?", &.{id}) catch return false;
     defer q.deinit();
     const row = (q.next() catch return false) orelse return false;

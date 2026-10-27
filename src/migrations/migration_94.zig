@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
@@ -11,7 +11,7 @@ pub const Migration094AddDefaultProjectToWorkspaceItems = struct {
     pub const version: u32 = 94;
     pub const name = "add_default_project_to_workspace_items";
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         // NOT NULL DEFAULT 0 is the only shape SQLite accepts when adding a
         // column to an existing table, and it has the property we want for
         // free: every pre-existing row reads back as 0 (an ordinary project)

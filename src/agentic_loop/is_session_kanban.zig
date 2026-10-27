@@ -2,9 +2,10 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const testing = std.testing;
 
-pub fn isSessionKanban(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8) !bool {
+pub fn isSessionKanban(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) !bool {
     var is_kanban: bool = false;
     // Filter on `wit.id` (the canonical session id for kanban / routine tasks
     // per Migration 052's `task.id == session.id` convention), not on
@@ -29,13 +30,13 @@ pub fn isSessionKanban(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, 
 
 /// Open a fresh in-memory sqlite DB with `db.init(io, ":memory:")`.
 /// Tests call `s.db.exec(...)` to lay down their own schema.
-fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -45,7 +46,7 @@ fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
 /// Lay down the two tables `isTaskKanban` joins on. No `session_id` column —
 /// the schema matches post-Migration 052 production. The function filters on
 /// `wit.id` which doubles as the session id for kanban / routine tasks.
-fn seedSchema(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend) !void {
+fn seedSchema(alloc: std.mem.Allocator, db: *database.Db) !void {
     try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)", &.{});
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (

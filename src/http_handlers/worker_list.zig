@@ -27,7 +27,7 @@ pub const WorkerListResult = struct {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: WorkerListInput,
     owner: []const u8,
 ) WorkerListError!WorkerListResult {
@@ -158,15 +158,16 @@ pub fn workerListHandler(
 
 const testing = std.testing;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 
 /// Production shape of `worker` after migrations 019/020/075/093 + the
 /// `cancelled` column. `user_id` is read by the owner-visibility clause, so a
 /// table without it would not exercise the scoped query at all.
-fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
     try db.exec(alloc,
@@ -185,7 +186,7 @@ fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
 }
 
 fn seedWorker(
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     arena_alloc: std.mem.Allocator,
     id: []const u8,
     session_id: []const u8,
@@ -201,7 +202,7 @@ fn seedWorker(
 /// and never frees either, so the tests hand it an arena instead of
 /// `testing.allocator` — otherwise every test would fail on a leak that the
 fn listAs(
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     arena_alloc: std.mem.Allocator,
     input: WorkerListInput,
     owner: []const u8,
@@ -368,7 +369,7 @@ test "repeated listings hand their pooled reader back instead of exhausting the 
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     // ONE reader, and a budget short enough to fail fast: with a single
     // reader, a second listing that finds the pool empty has no way to grow

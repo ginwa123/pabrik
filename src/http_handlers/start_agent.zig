@@ -7,6 +7,7 @@ const auth_common = @import("auth_common.zig");
 const gserverz = pabrikcore.gserverz;
 const ai_mod = pabrikcore.ai_mod;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const http_response = @import("http_response.zig");
 
 // =====================================================================
@@ -28,7 +29,7 @@ pub const StartAgentOutcome = union(enum) {
 /// new user message.
 pub fn startAgentUseCase(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     di: *pabrikcore.App,
     task_id: []const u8,
     owner: []const u8,

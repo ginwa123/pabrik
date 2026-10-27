@@ -23,10 +23,10 @@ const migration = @import("../../../migrations/migration.zig");
 /// Resolve the calling session's workspace.
 pub fn resolveWorkspaceScope(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     caller_session_id: []const u8,
 ) !?[]u8 {
-    // Rejected BEFORE any DB access: `SqliteBackend.exec` binds a
+    // Rejected BEFORE any DB access: `Backend.exec` binds a
     // zero-length slice as SQL NULL, so querying with "" is not a
     // harmless no-op.
     if (caller_session_id.len == 0) return null;
@@ -251,7 +251,7 @@ pub const use_skill_tool = AgentTool{
 pub fn execute_use_skill_to_string(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     caller_session_id: []const u8,
     input: UseSkillInput,
 ) ![]const u8 {
@@ -321,7 +321,7 @@ pub fn execute_use_skill_to_string(
 /// point.
 fn useSkillNotFound(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     name: []const u8,
 ) ![]const u8 {
@@ -411,7 +411,7 @@ pub const remove_skill_tool = AgentTool{
 /// embeds. Caller owns the returned memory and must free it.
 pub fn execute_remove_skill_to_string(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     caller_session_id: []const u8,
     input: RemoveSkillInput,
 ) ![]const u8 {
@@ -629,7 +629,7 @@ pub const AddSkillOutput = struct {
 /// embeds. Caller owns the returned memory and must free it.
 pub fn executeAddSkillToString(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     caller_session_id: []const u8,
     input: AddSkillInput,
 ) ![]const u8 {
@@ -872,7 +872,7 @@ pub const EditSkillOutput = struct {
 /// embeds. Caller owns the returned memory and must free it.
 pub fn executeEditSkillToString(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     caller_session_id: []const u8,
     input: EditSkillInput,
 ) ![]const u8 {
@@ -1011,7 +1011,7 @@ fn editSkillEscapeYamlString(allocator: std.mem.Allocator, s: []const u8) ![]con
 // ============================================================================
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -1023,7 +1023,7 @@ fn setupSkillsDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try db.exec(alloc,
@@ -1050,7 +1050,7 @@ fn setupSkillsDb() !TestCtx {
 
 fn seedSkill(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     name: []const u8,
     description: []const u8,
@@ -1216,7 +1216,7 @@ test "add_skill - an empty description round-trips as \"\" (the COALESCE(NULLIF)
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Seeded with no description at all: `SqliteBackend.exec` binds a
+    // Seeded with no description at all: `Backend.exec` binds a
     // zero-length slice as SQL NULL, which used to violate NOT NULL and
     // surface as a failed write.
     try seedSkill(alloc, &ctx.db, "ws_1", "no-desc", "", "## Body\n");
@@ -1786,7 +1786,7 @@ test "schema contract: use_skill is keyed by name, not by path" {
 
 fn seedLockedSkill(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     name: []const u8,
     content: []const u8,
@@ -2251,10 +2251,11 @@ pub fn execEditSkill(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
 // ============================================================================
 
 const exec_sqlite = exec_pabrikcore.sqlite;
+const database = exec_pabrikcore.database;
 const exec_migration = @import("../../../migrations/migration.zig");
 
 const exec_TestCtx = struct {
-    db: exec_sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -2263,7 +2264,7 @@ fn setupDb() !exec_TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: exec_sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try db.exec(alloc,
@@ -2287,7 +2288,7 @@ fn setupDb() !exec_TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
-fn makeTestCtx(alloc: std.mem.Allocator, db: *exec_sqlite.SqliteBackend, session_id: []const u8) ToolExecContext {
+fn makeTestCtx(alloc: std.mem.Allocator, db: *database.Db, session_id: []const u8) ToolExecContext {
     var dummy_f32: f32 = 0.0;
     var dummy_bool: bool = false;
     return .{
@@ -2439,7 +2440,7 @@ fn parseEnvelope(allocator: std.mem.Allocator, raw: []const u8) !Envelope {
 
 fn exec_seedSkill(
     alloc: std.mem.Allocator,
-    db: *exec_sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     name: []const u8,
     description: []const u8,

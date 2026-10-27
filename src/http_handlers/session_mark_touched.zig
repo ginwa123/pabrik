@@ -31,7 +31,7 @@ pub const MarkSessionTouchedResponse = struct {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     session_id: []const u8,
 ) MarkSessionTouchedError!MarkSessionTouchedResult {
     if (session_id.len == 0) return error.SessionIdRequired;

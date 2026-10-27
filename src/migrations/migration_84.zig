@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
@@ -14,7 +14,7 @@ pub const Migration084ReplaceRoutinesWithWorkspaceRoutines = struct {
     pub const version: u32 = 84;
     pub const name = "replace_routines_with_workspace_routines";
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         // 1. Normalize leftovers so no task claims a deleted mode.
         try db.exec(allocator,
             "UPDATE workspace_item_tasks SET task_type = 'standard' WHERE task_type = 'routine'",

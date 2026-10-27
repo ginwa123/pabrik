@@ -3,6 +3,7 @@ const http_response = @import("http_response.zig");
 const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const auth_common = @import("auth_common.zig");
 const workspace_vm = @import("../agentic_loop/workspace_vm.zig");
 const runtime_mode = @import("../runtime_mode.zig");
@@ -80,14 +81,14 @@ pub fn workspacesListHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReques
     return res.jsonResponse(.{ .status_code = 200, .data = try std.json.Stringify.valueAlloc(allocator, response, .{}) });
 }
 
-fn useCase(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, include_items: bool, owner: []const u8, mode: runtime_mode.Mode) WorkspacesListError!WorkspacesListResponse {
+fn useCase(alloc: std.mem.Allocator, db: *database.Db, include_items: bool, owner: []const u8, mode: runtime_mode.Mode) WorkspacesListError!WorkspacesListResponse {
     return fetchWorkspacesList(alloc, db, include_items, owner, mode) catch |err| {
         std.log.err("Failed to fetch workspaces: {s}", .{@errorName(err)});
         return error.DatabaseError;
     };
 }
 
-fn fetchWorkspacesList(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, include_items: bool, owner: []const u8, mode: runtime_mode.Mode) !WorkspacesListResponse {
+fn fetchWorkspacesList(alloc: std.mem.Allocator, db: *database.Db, include_items: bool, owner: []const u8, mode: runtime_mode.Mode) !WorkspacesListResponse {
     // Fetch the workspaces this request may see first.
     var rows = try db.query(
         alloc,
@@ -318,7 +319,7 @@ fn fetchWorkspacesList(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, incl
 const testing = std.testing;
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -327,7 +328,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

@@ -100,9 +100,10 @@ pub fn designElementsUngroupHandler(
 
 const testing = std.testing;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 
 fn setupDb() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     alloc: std.mem.Allocator,
 } {
@@ -110,7 +111,7 @@ fn setupDb() !struct {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -168,14 +169,14 @@ fn teardown(s: *@TypeOf(setupDb() catch @panic("setupDb failed in the design_ele
     s.threaded.deinit();
 }
 
-fn insertGroup(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, page_id: []const u8, id: []const u8) !void {
+fn insertGroup(alloc: std.mem.Allocator, db: *database.Db, page_id: []const u8, id: []const u8) !void {
     try db.exec(alloc,
         "INSERT INTO design_page_elements (id, page_id, name, type) " ++
         "VALUES (?, ?, ?, 'group')",
         &.{ id, page_id, id });
 }
 
-fn insertChild(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, page_id: []const u8, id: []const u8, parent_id: []const u8, x: i64, y: i64) !void {
+fn insertChild(alloc: std.mem.Allocator, db: *database.Db, page_id: []const u8, id: []const u8, parent_id: []const u8, x: i64, y: i64) !void {
     const x_str = try std.fmt.allocPrint(alloc, "{d}", .{x});
     defer alloc.free(x_str);
     const y_str = try std.fmt.allocPrint(alloc, "{d}", .{y});
@@ -186,7 +187,7 @@ fn insertChild(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, page_id: []c
         &.{ id, page_id, id, parent_id, x_str, y_str });
 }
 
-fn readParentId(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, id: []const u8) !?[]u8 {
+fn readParentId(alloc: std.mem.Allocator, db: *database.Db, id: []const u8) !?[]u8 {
     var q = try db.query(alloc,
         "SELECT COALESCE(parent_id, '<NULL>') FROM design_page_elements WHERE id = ?",
         &.{id});
@@ -199,7 +200,7 @@ fn readParentId(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, id: []const
     return null;
 }
 
-fn rowExists(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, id: []const u8) !bool {
+fn rowExists(alloc: std.mem.Allocator, db: *database.Db, id: []const u8) !bool {
     var q = try db.query(alloc, "SELECT 1 FROM design_page_elements WHERE id = ?", &.{id});
     defer q.deinit();
     if (try q.next()) |row| {
@@ -209,7 +210,7 @@ fn rowExists(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, id: []const u8
     return false;
 }
 
-fn countChildrenOf(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, parent_id: []const u8) !usize {
+fn countChildrenOf(alloc: std.mem.Allocator, db: *database.Db, parent_id: []const u8) !usize {
     var q = try db.query(alloc, "SELECT COUNT(*) FROM design_page_elements WHERE parent_id = ?", &.{parent_id});
     defer q.deinit();
     if (try q.next()) |row| {

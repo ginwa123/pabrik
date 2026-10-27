@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 
 /// Migration 113 — a detached job can belong to a workspace VM. The table
 /// recorded a HOST pid; a row for a job that ran inside a VM needs that VM and
@@ -10,7 +10,7 @@ pub const Migration113AddGuestJobColumns = struct {
     pub const version: u32 = 113;
     pub const name = "add_background_process_guest_columns";
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         try common.addColumnIfMissing(.{ .db = db }, allocator, "session_background_process", "vm_id", "vm_id TEXT NOT NULL DEFAULT ''");
         try common.addColumnIfMissing(.{ .db = db }, allocator, "session_background_process", "guest_pid", "guest_pid INTEGER NOT NULL DEFAULT 0");
     }
@@ -21,7 +21,7 @@ const testing = std.testing;
 test "Migration113 adds the two guest columns and leaves host rows at the default" {
     const alloc = testing.allocator;
 
-    var db: SqliteBackend = .{};
+    var db: Backend = .{};
     defer db.deinit();
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
@@ -61,7 +61,7 @@ test "Migration113 adds the two guest columns and leaves host rows at the defaul
 test "Migration113 replaying is a no-op" {
     const alloc = testing.allocator;
 
-    var db: SqliteBackend = .{};
+    var db: Backend = .{};
     defer db.deinit();
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();

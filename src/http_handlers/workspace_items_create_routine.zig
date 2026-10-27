@@ -75,7 +75,7 @@ pub const WorkspaceItemsCreateRoutineResult = []const u8; // pre-serialized JSON
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: WorkspaceItemsCreateRoutineInput,
 ) WorkspaceItemsCreateRoutineError!WorkspaceItemsCreateRoutineResult {
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;
@@ -92,7 +92,7 @@ fn useCase(
     }
 
     // Compute next_run_at when scheduled + enabled. Empty schedule or
-    // disabled → NULL (bound as "" — SqliteBackend.exec binds empty
+    // disabled → NULL (bound as "" — Backend.exec binds empty
     // slices as SQL NULL).
     var next_run_at: []const u8 = "";
     // Owned only when computed; freed below after the INSERT dupes it
@@ -123,7 +123,7 @@ fn useCase(
     ) catch return error.DatabaseError;
 
     // COALESCE(NULLIF(?, ''), '') guards the NOT NULL DEFAULT '' columns:
-    // SqliteBackend.exec binds empty slices as SQL NULL, which would violate
+    // Backend.exec binds empty slices as SQL NULL, which would violate
     // the constraint (see memory `sqlite-backend-empty-slice-binds-as-null`).
     const enabled_str: []const u8 = if (input.body.enabled) "1" else "0";
     tx.exec(allocator,
@@ -174,7 +174,7 @@ fn useCase(
 /// (mirrors `workspace_items_create_agent.zig::readInsertedPosition`).
 fn readInsertedPosition(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     item_id: []const u8,
 ) i64 {
     var q = db.query(allocator,
@@ -281,12 +281,13 @@ pub fn workspaceItemsCreateRoutineHandler(
 // ─── Tests ──────────────────────────────────────────────────────────────
 
 const sqlite = @import("pabrikcore").sqlite;
+const database = @import("pabrikcore").database;
 const testing = std.testing;
 const Migration084ReplaceRoutinesWithWorkspaceRoutines = @import("../migrations/migration.zig").Migration084ReplaceRoutinesWithWorkspaceRoutines;
 const Migration116 = @import("../migrations/migration.zig").Migration116UnifyAgentConfigTables;
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -294,7 +295,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

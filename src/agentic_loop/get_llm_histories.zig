@@ -3,8 +3,9 @@ const pabrikcore = @import("pabrikcore");
 const LLMHistory = @import("llm_history_row.zig").LLMHistory;
 
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const testing = std.testing;
-const SqliteBackend = sqlite.SqliteBackend;
+const Backend = database.Db;
 
 pub fn GetLLMHistoriesInput(comptime DB: type) type {
     return struct {
@@ -163,12 +164,12 @@ const IdxDiffviewAfter = 24;
 const IdxImageUrl = 25;
 const IdxToolCallId = 26;
 
-fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     // Minimum schema that satisfies the production SELECT.
@@ -217,7 +218,7 @@ fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
 /// Insert a llm_history row with sensible defaults. Caller can override
 /// individual fields by passing custom `image_url`, `is_feed_to_llm`, etc.
 fn seedRow(
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     session_id: []const u8,
     created_at: []const u8,
@@ -236,7 +237,7 @@ test "getLLMHistories returns an empty slice when there are no rows" {
     var s = try setupDb();
     defer s.db.deinit();
     defer s.threaded.deinit();
-    const result = try getLLMHistories(*SqliteBackend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s1" });
+    const result = try getLLMHistories(*Backend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s1" });
     defer testing.allocator.free(result);
     try testing.expectEqual(@as(usize, 0), result.len);
 }
@@ -251,7 +252,7 @@ test "getLLMHistories returns rows for the matching session_id in created_at ASC
     try seedRow(&s.db, "h3", "s2", "2025-06-01 00:00:00"); // different session
     try seedRow(&s.db, "h4", "s1", "2024-06-01 00:00:00");
 
-    const result = try getLLMHistories(*SqliteBackend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s1" });
+    const result = try getLLMHistories(*Backend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s1" });
     defer {
         freeHistories(result);
         testing.allocator.free(result);
@@ -269,7 +270,7 @@ test "getLLMHistories LEFT JOIN falls back to empty session_name when no session
     try seedRow(&s.db, "h1", "orphan", "2025-01-01 00:00:00");
     // No row in `sessions` for "orphan" — COALESCE returns ''.
 
-    const result = try getLLMHistories(*SqliteBackend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "orphan" });
+    const result = try getLLMHistories(*Backend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "orphan" });
     defer {
         freeHistories(result);
         testing.allocator.free(result);
@@ -285,7 +286,7 @@ test "getLLMHistories LEFT JOIN populates session_name when the session row exis
     try s.db.exec(testing.allocator, "INSERT INTO sessions (id, name) VALUES ('s_named', 'My Chat')", &.{});
     try seedRow(&s.db, "h1", "s_named", "2025-01-01 00:00:00");
 
-    const result = try getLLMHistories(*SqliteBackend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s_named" });
+    const result = try getLLMHistories(*Backend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s_named" });
     defer {
         freeHistories(result);
         testing.allocator.free(result);
@@ -300,7 +301,7 @@ test "getLLMHistories parses numeric fields (loop_index, tokens, temperature)" {
     try s.db.exec(testing.allocator, "INSERT INTO llm_history (id, session_id, created_at_nano, loop_index, prompt_tokens, completion_tokens, total_tokens, temperature) " ++
         "VALUES ('h', 's', '2025-01-01', 7, 100, 50, 150, 0.7)", &.{});
 
-    const result = try getLLMHistories(*SqliteBackend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s" });
+    const result = try getLLMHistories(*Backend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s" });
     defer {
         freeHistories(result);
         testing.allocator.free(result);
@@ -319,7 +320,7 @@ test "getLLMHistories parses bool flags (is_input, is_output, is_thinking)" {
     try s.db.exec(testing.allocator, "INSERT INTO llm_history (id, session_id, created_at_nano, is_input, is_output, is_thinking) " ++
         "VALUES ('h', 's', '2025-01-01', 1, 0, 1)", &.{});
 
-    const result = try getLLMHistories(*SqliteBackend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s" });
+    const result = try getLLMHistories(*Backend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s" });
     defer {
         freeHistories(result);
         testing.allocator.free(result);
@@ -338,7 +339,7 @@ test "getLLMHistories filters out rows where is_feed_to_llm = 0" {
     try s.db.exec(testing.allocator, "INSERT INTO llm_history (id, session_id, created_at_nano, is_feed_to_llm) " ++
         "VALUES ('h_no',  's', '2025-01-02', 0)", &.{});
 
-    const result = try getLLMHistories(*SqliteBackend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s" });
+    const result = try getLLMHistories(*Backend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s" });
     defer {
         freeHistories(result);
         testing.allocator.free(result);
@@ -354,7 +355,7 @@ test "getLLMHistories includes rows where is_feed_to_llm is NULL (treats NULL as
     try s.db.exec(testing.allocator, "INSERT INTO llm_history (id, session_id, created_at_nano, is_feed_to_llm) " ++
         "VALUES ('h_null', 's', '2025-01-01', NULL)", &.{});
 
-    const result = try getLLMHistories(*SqliteBackend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s" });
+    const result = try getLLMHistories(*Backend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s" });
     defer {
         freeHistories(result);
         testing.allocator.free(result);
@@ -370,7 +371,7 @@ test "getLLMHistories splits pipe-separated image_url into image_urls array" {
     try s.db.exec(testing.allocator, "INSERT INTO llm_history (id, session_id, created_at_nano, image_url) " ++
         "VALUES ('h', 's', '2025-01-01', 'url1||url2||url3')", &.{});
 
-    const result = try getLLMHistories(*SqliteBackend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s" });
+    const result = try getLLMHistories(*Backend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s" });
     defer {
         freeHistories(result);
         testing.allocator.free(result);
@@ -388,7 +389,7 @@ test "getLLMHistories image_urls is null when image_url column is empty" {
     try s.db.exec(testing.allocator, "INSERT INTO llm_history (id, session_id, created_at_nano, image_url) " ++
         "VALUES ('h', 's', '2025-01-01', '')", &.{});
 
-    const result = try getLLMHistories(*SqliteBackend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s" });
+    const result = try getLLMHistories(*Backend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s" });
     defer {
         freeHistories(result);
         testing.allocator.free(result);
@@ -403,7 +404,7 @@ test "getLLMHistories keeps a single image_url as a one-element array (no leadin
     try s.db.exec(testing.allocator, "INSERT INTO llm_history (id, session_id, created_at_nano, image_url) " ++
         "VALUES ('h', 's', '2025-01-01', 'only-one')", &.{});
 
-    const result = try getLLMHistories(*SqliteBackend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s" });
+    const result = try getLLMHistories(*Backend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s" });
     defer {
         freeHistories(result);
         testing.allocator.free(result);
@@ -419,7 +420,7 @@ test "getLLMHistories sets nullable fields to null when DB column is empty" {
     try seedRow(&s.db, "h", "s", "2025-01-01 00:00:00");
     // All nullable columns are empty by default in the seedRow call.
 
-    const result = try getLLMHistories(*SqliteBackend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s" });
+    const result = try getLLMHistories(*Backend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s" });
     defer {
         freeHistories(result);
         testing.allocator.free(result);
@@ -440,7 +441,7 @@ test "getLLMHistories populates nullable fields when DB has content" {
         "diffview_before, diffview_after, tool_call_id) " ++
         "VALUES ('h', 's', '2025-01-01', 'r', 'p', 'b', 'a', 't')", &.{});
 
-    const result = try getLLMHistories(*SqliteBackend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s" });
+    const result = try getLLMHistories(*Backend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s" });
     defer {
         freeHistories(result);
         testing.allocator.free(result);

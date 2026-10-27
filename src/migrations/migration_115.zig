@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 const addColumnIfMissing = common.addColumnIfMissing;
 
 /// Migration 115 — a workspace records whether it is a microVM workspace.
@@ -11,7 +11,7 @@ pub const Migration115AddWorkspaceIsVm = struct {
     pub const version: u32 = 115;
     pub const name = "add_workspace_is_vm";
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         try addColumnIfMissing(
             .{ .db = db },
             allocator,
@@ -33,8 +33,8 @@ pub const Migration115AddWorkspaceIsVm = struct {
 
 const testing = std.testing;
 
-fn setupDb(alloc: std.mem.Allocator) !SqliteBackend {
-    var db: SqliteBackend = .{};
+fn setupDb(alloc: std.mem.Allocator) !Backend {
+    var db: Backend = .{};
     errdefer db.deinit();
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();

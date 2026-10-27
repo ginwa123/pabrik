@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
@@ -13,7 +13,7 @@ pub const Migration072ExtractKanbanTable = struct {
     pub const version: u32 = 72;
     pub const name = "extract_kanban_table";
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         // Wrap in a tx (db.begin/tx.exec/tx.commit) so the CREATE+INSERT+DROP
         // sequence is atomic.
         var tx = try db.begin();

@@ -64,7 +64,7 @@ pub const TaskUpdateError = error{
 const TaskUpdateInput = struct {
     task_id: []const u8,
     body: http_response.TaskUpdateRequest,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
 };
 
 /// Result of a successful task update. The handler serializes the
@@ -342,7 +342,7 @@ fn useCase(allocator: std.mem.Allocator, input: TaskUpdateInput) TaskUpdateError
 /// row is gone.
 fn fetchTaskItemId(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     task_id: []const u8,
 ) ![]u8 {
     var q = try db.query(allocator,

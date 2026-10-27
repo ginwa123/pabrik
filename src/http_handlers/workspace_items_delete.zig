@@ -50,7 +50,7 @@ const WorkspaceItemsDeleteResult = struct {
 fn useCase(
     allocator: std.mem.Allocator,
     io: std.Io,
-    sqlite_db: *pabrikcore.sqlite.SqliteBackend,
+    sqlite_db: *pabrikcore.database.Db,
     item_id: []const u8,
 ) WorkspaceItemsDeleteError!WorkspaceItemsDeleteResult {
     // Check if item exists first

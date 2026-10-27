@@ -26,7 +26,7 @@ pub const TasksGetResult = []const u8; // pre-serialized JSON
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     io: std.Io,
     item_id: []const u8,
     task_id: []const u8,
@@ -116,7 +116,7 @@ pub fn tasksGetHandler(
         });
     }
 
-    // Empty-slice-as-NULL binding rule: SqliteBackend binds "" as SQL
+    // Empty-slice-as-NULL binding rule: Backend binds "" as SQL
     // NULL, which would turn `WHERE t.id = ?` into `WHERE t.id IS
     // NULL` (always false, silently). Guard before any DB call.
     const task_id = req.params.get("task_id") orelse "";
@@ -155,7 +155,7 @@ pub fn tasksGetHandler(
 /// the git_branch lookup when a task has no worktree bound.
 fn fetchWorkspaceItemPath(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     item_id: []const u8,
 ) ![]u8 {
     var rows = db.query(

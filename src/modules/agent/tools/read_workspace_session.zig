@@ -3,6 +3,7 @@ const schemas = @import("schemas.zig");
 const AgentTool = schemas.AgentTool;
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const llm_history = pabrikcore.llm_history;
 const workspace_scope = pabrikcore.workspace_scope;
 const helpers = @import("helpers");
@@ -195,7 +196,7 @@ fn withoutCallerSession(
 pub fn execute_read_workspace_session(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     caller_session_id: []const u8,
     input: ReadWorkspaceSessionInput,
 ) ![]const u8 {
@@ -277,7 +278,7 @@ const SessionMeta = struct {
 
 fn executeList(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     caller_session_id: []const u8,
     input: ReadWorkspaceSessionInput,
 ) ![]const u8 {
@@ -394,7 +395,7 @@ fn executeList(
 /// First 100 chars of the latest user message in a session ("" when none).
 fn latestUserPreview(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]u8 {
     var rows = try db.query(allocator,
@@ -412,7 +413,7 @@ fn latestUserPreview(
 
 fn executeSearch(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     ws_ids: ?[][]u8,
     within_session_id: ?[]const u8,
     feed_filter: llm_history.FeedFilter,
@@ -613,7 +614,7 @@ fn isIdInWorkspace(
 
 fn sessionNames(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     hits: []const llm_history.SearchHit,
 ) !std.StringHashMapUnmanaged([]u8) {
     var map: std.StringHashMapUnmanaged([]u8) = .empty;
@@ -666,7 +667,7 @@ fn sessionNames(
 
 fn executeRead(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     feed_filter: llm_history.FeedFilter,
     input: ReadWorkspaceSessionInput,
@@ -826,7 +827,7 @@ fn hasResultId(results: std.json.Array, id: []const u8) bool {
 }
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -835,7 +836,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

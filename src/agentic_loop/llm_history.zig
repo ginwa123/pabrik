@@ -3,6 +3,7 @@ const std = @import("std");
 const testing = std.testing;
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const agent = pabrikcore.agent;
 const logger_mod = pabrikcore.loggermod;
 const helpers = @import("helpers");
@@ -151,7 +152,7 @@ pub const SessionBroadcastInfo = struct {
 /// Get a list of sessions from the database
 pub fn getSessionList(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     status: ?[]const u8,
     agent_type: ?[]const u8,
     limit: u32,
@@ -255,7 +256,7 @@ pub fn getSessionList(
 /// workspace's sessions (as resolved by
 pub fn getSessionListWithCursor(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     status: ?[]const u8,
     agent_type: ?[]const u8,
     cwd: ?[]const u8,
@@ -573,7 +574,7 @@ fn jsonAppendEscaped(allocator: std.mem.Allocator, out: *std.ArrayList(u8), inpu
 /// Get a single session by ID
 pub fn get_session(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !?SessionDetail {
     const sql =
@@ -617,7 +618,7 @@ pub fn get_session(
 /// Returns null if no history exists for the session
 pub fn getLatestFinishReason(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !?[]const u8 {
     const sql = "SELECT finish_reason FROM llm_history WHERE session_id = ? AND finish_reason IS NOT NULL AND finish_reason != '' ORDER BY created_at_nano DESC LIMIT 1";
@@ -742,7 +743,7 @@ fn parseRowBool(s: []const u8) bool {
 /// handler) from `sessions.selected_profile_model` via
 pub fn getSessionMessagesSorted(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     limit: u32,
     cursor: ?[]const u8,
@@ -1047,7 +1048,7 @@ pub fn getSessionMessagesSorted(
 /// Read `sessions.selected_profile_model` for one session.
 pub fn getSessionProfileName(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]const u8 {
     var rows = try db.query(
@@ -1077,7 +1078,7 @@ pub const SessionPrFields = struct {
 
 pub fn getSessionPrFields(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !SessionPrFields {
     var rows = try db.query(
@@ -1124,7 +1125,7 @@ pub fn resolveSessionProfile(
 /// Get the total count of messages for a session
 fn getTotalMessageCountForSession(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ?u32 {
     const sql = "SELECT COUNT(*) FROM llm_history WHERE session_id = ?";
@@ -1143,7 +1144,7 @@ fn getTotalMessageCountForSession(
 /// Get the maximum total_tokens for a session (from messages with is_feed_to_llm = 1)
 fn getMaxTotalTokensForSession(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !u32 {
     const sql =
@@ -1364,7 +1365,7 @@ pub fn buildSessionMessagesXml(
 /// Create a new session in the database
 pub fn createSession(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     agent_type: []const u8,
     model: []const u8,
     temperature: f32,
@@ -1441,7 +1442,7 @@ pub const SaveMessageInput = struct {
 pub fn saveMessage(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     input: SaveMessageInput,
 ) !void {
     // Get the current timestamp ONCE (two separate `Timestamp.now` calls can
@@ -1547,7 +1548,7 @@ pub fn saveMessage(
 
     const copy_session_id = try allocator.dupe(u8, input.session_id);
     defer allocator.free(copy_session_id);
-    // Never bind an empty model: `SqliteBackend.exec` binds a zero-length
+    // Never bind an empty model: `Backend.exec` binds a zero-length
     // slice as SQL NULL, which violates `model TEXT NOT NULL` and fails the
     // whole INSERT. See llm_history_model_guard.zig.
     const copy_model = try allocator.dupe(u8, model_guard.resolve(input.model));
@@ -1618,7 +1619,7 @@ pub fn saveMessage(
 
     // Join multiple video URLs with || delimiter (empty string binds as
     // '' literal downstream — never pass a zero-length slice as a bind
-    // arg since SqliteBackend.exec binds "" as NULL).
+    // arg since Backend.exec binds "" as NULL).
     var video_urls_str: []const u8 = "";
     var copy_video_urls: ?[]u8 = null;
     if (input.video_urls) |urls| {
@@ -1650,7 +1651,7 @@ pub fn saveMessage(
 
 pub fn getMessages(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]TUIHistory {
     var results: std.ArrayList(TUIHistory) = .empty;
@@ -1916,7 +1917,7 @@ pub const SearchHit = struct {
 /// Return messages for the given session.
 pub fn getCompactedMessages(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     opts: CompactedMessagesOptions,
 ) ![]CompactedMessage {
@@ -2034,7 +2035,7 @@ pub fn getCompactedMessages(
 /// Look up messages by id alone, without a `session_id` filter.
 pub fn getMessagesByIds(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     ids: []const []const u8,
 ) ![]CompactedMessage {
     if (ids.len == 0) return &.{};
@@ -2234,7 +2235,7 @@ test "escapeFtsQuery: realistic multi-word recall query (regression for task_178
 
 pub fn searchMessagesFts(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     query: []const u8,
     opts: SearchOptions,
 ) ![]SearchHit {
@@ -2375,7 +2376,7 @@ pub fn searchMessagesFts(
 
 pub fn getLatestMessage(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !?TUIHistory {
     const sql =
@@ -2489,7 +2490,7 @@ pub fn getLatestMessage(
 /// `getLatestMessage` (ORDER BY created_at_nano DESC LIMIT 1), which returns
 pub fn getMessageById(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     id: []const u8,
 ) !?TUIHistory {
@@ -2603,7 +2604,7 @@ pub fn getMessageById(
 
 pub fn get_sessions_by_dir(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     cwd: []const u8,
 ) ![]SessionInfo {
     var results: std.ArrayList(SessionInfo) = .empty;
@@ -2638,7 +2639,7 @@ pub fn get_sessions_by_dir(
 /// Returns null if no sessions exist for that directory
 pub fn getLatestSessionByDir(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     cwd: []const u8,
 ) !?SessionInfo {
     const sql = "SELECT s.id, s.name, s.status, s.cwd, COALESCE(s.created_at, ''), COALESCE(s.updated_at, ''), COALESCE(h.agent, '') FROM sessions s LEFT JOIN llm_history h ON s.id = h.session_id WHERE s.cwd = ? GROUP BY s.id ORDER BY s.created_at DESC LIMIT 1";
@@ -2680,7 +2681,7 @@ pub const AgentState = struct {
 
 pub fn get_current_agent_by_session_id(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !AgentState {
     const sql = "SELECT COALESCE(agent, 'Agent'), COALESCE(temperature, 0), COALESCE(is_thinking, 1) FROM llm_history WHERE session_id = ? ORDER BY created_at_nano DESC LIMIT 1";
@@ -2736,7 +2737,7 @@ pub const WorkerInfo = struct {
 /// Get all active workers with their info.
 pub fn getActiveWorker(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
 ) ![]WorkerInfo {
     const sql =
         \\SELECT
@@ -2778,7 +2779,7 @@ pub fn getActiveWorker(
 /// Update worker's last activity timestamp with description
 pub fn updateWorkerActivityWithDescription(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     worker_id: []const u8,
     description: []const u8,
 ) !void {
@@ -2803,7 +2804,7 @@ pub fn updateWorkerActivityWithDescription(
 pub fn recordSessionActivity(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     description: []const u8,
 ) !void {
@@ -2819,7 +2820,7 @@ pub fn recordSessionActivity(
 /// Remove a worker
 pub fn removeWorker(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     worker_id: []const u8,
 ) !void {
     const sql = "DELETE FROM worker WHERE id = ?";
@@ -2837,7 +2838,7 @@ pub fn removeWorker(
     }) catch {};
 }
 
-pub fn deleteAllWorkers(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend) !void {
+pub fn deleteAllWorkers(allocator: std.mem.Allocator, db: *database.Db) !void {
     const sql = "DELETE FROM worker";
     try db.exec(allocator, sql, &.{});
 }
@@ -2845,7 +2846,7 @@ pub fn deleteAllWorkers(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend)
 /// Delete a worker by session_id and emit SSE "deleted" event for each affected row
 pub fn deleteWorkerBySessionId(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !void {
     // Capture affected worker IDs BEFORE deleting so we can emit one event per row
@@ -2880,7 +2881,7 @@ pub fn deleteWorkerBySessionId(
     }
 }
 
-pub fn deleteAllQueuedMessages(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend) !void {
+pub fn deleteAllQueuedMessages(allocator: std.mem.Allocator, db: *database.Db) !void {
     const sql = "DELETE FROM session_queue_messages";
     try db.exec(allocator, sql, &.{});
 }
@@ -2888,7 +2889,7 @@ pub fn deleteAllQueuedMessages(allocator: std.mem.Allocator, db: *sqlite.SqliteB
 /// Delete all queued messages for a session
 pub fn deleteQueuedMessagesBySessionId(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !void {
     const sql = "DELETE FROM session_queue_messages WHERE session_id = ?";
@@ -2900,7 +2901,7 @@ pub fn deleteQueuedMessagesBySessionId(
 /// or when the session/worker has been cancelled).
 pub fn getWorkerBySessionId(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !?WorkerInfo {
     const sql =
@@ -2938,7 +2939,7 @@ pub fn getWorkerBySessionId(
 /// `session_id` column holds the task's id.
 pub fn isTaskRunning(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     task_id: []const u8,
 ) bool {
     const sql = "SELECT 1 FROM worker WHERE session_id = ? LIMIT 1";
@@ -2952,7 +2953,7 @@ pub fn isTaskRunning(
 /// Cancel a session (set cancelled flag)
 pub fn cancelSession(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !void {
     const sql = "UPDATE worker SET cancelled = 1 WHERE id = ?";
@@ -2987,7 +2988,7 @@ pub const UpdateToolResultOptions = struct {
 pub fn saveToolResultPlaceholder(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     opts: SaveToolResultPlaceholderOptions,
 ) ![]const u8 {
     const id = try std.fmt.allocPrint(allocator, "{}", .{std.Io.Timestamp.now(io, .real).nanoseconds});
@@ -3040,7 +3041,7 @@ pub fn saveToolResultPlaceholder(
 pub fn updateToolResultById(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     opts: UpdateToolResultOptions,
 ) !void {
@@ -3072,7 +3073,7 @@ pub fn updateToolResultById(
 /// tool_call_id contract is satisfied after an agent crash.
 pub fn resolveStaleLoadingToolResults(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !void {
     // The placeholder content is empty (Phase 1 inserts); replace it with the
@@ -3100,7 +3101,7 @@ pub const QueuedMessage = struct {
 /// Caller must free the returned slice
 pub fn getQueueMessages(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !?std.ArrayList(QueuedMessage) {
     const select_sql = "SELECT message, image_url, COALESCE(video_url, '') FROM session_queue_messages WHERE session_id = ? ORDER BY created_at ASC";
@@ -3185,7 +3186,7 @@ pub const SessionTableInfo = struct {
 /// (workflow keeps retrying past the 10-attempt TooManyRetries bail).
 pub fn create_session(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     name: []const u8,
     is_auto_retry_until_stop: []const u8,
@@ -3244,7 +3245,7 @@ pub fn create_session(
 /// is_auto_retry_until_stop='0', empty selected_profile_model).
 pub fn ensureSessionExists(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !bool {
     const existing = (try getSession(allocator, db, session_id)) orelse {
@@ -3259,7 +3260,7 @@ pub fn ensureSessionExists(
 /// Get a session by id
 pub fn getSession(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
 ) !?SessionTableInfo {
     const sql =
@@ -3313,7 +3314,7 @@ pub fn getSession(
 /// schema omits the new columns. Returns empty sub-agent identity.
 fn getSessionLegacy(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
 ) !?SessionTableInfo {
     const sql =
@@ -3355,7 +3356,7 @@ fn getSessionLegacy(
 /// Update session status
 pub fn update_session_status(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     new_status: []const u8,
 ) !void {
@@ -3385,7 +3386,7 @@ pub fn update_session_status(
 /// Update session name
 pub fn updateSessionName(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     new_name: []const u8,
 ) !void {
@@ -3415,7 +3416,7 @@ pub fn updateSessionName(
 /// Rename a workspace item task.
 pub fn updateTaskName(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     new_name: []const u8,
 ) !void {
@@ -3440,7 +3441,7 @@ pub fn updateTaskName(
 /// `value` must be "1" or "0" — handler layer validates the input shape.
 pub fn updateSessionAutoRetryUntilStop(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     value: []const u8,
 ) !void {
@@ -3474,7 +3475,7 @@ pub fn updateSessionAutoRetryUntilStop(
 /// (Migration 063).
 pub fn updateSessionLastFinishReason(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     finish_reason: []const u8,
 ) !void {
@@ -3486,7 +3487,7 @@ pub fn updateSessionLastFinishReason(
 /// Stamp `last_human_touched_at = <unix_ms>` on a task.
 pub fn updateTaskLastHumanTouchedAt(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     task_id: []const u8,
     now_unix_ms: ?i64,
 ) !void {
@@ -3507,7 +3508,7 @@ pub fn updateTaskLastHumanTouchedAt(
 /// `updateTaskLastHumanTouchedAt` (which targets `workspace_item_tasks`).
 pub fn updateSessionLastHumanTouchedAt(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     now_unix_ms: ?i64,
 ) !void {
@@ -3566,7 +3567,7 @@ test "unixMillisNow: returns positive value within sane range (catches macOS sus
 /// LlmConfig.profiles_models). Pass empty string or null to clear.
 pub fn updateSessionSelectedProfileModel(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     selected_profile_model: ?[]const u8,
 ) !void {
@@ -3599,7 +3600,7 @@ pub fn updateSessionSelectedProfileModel(
 /// parent_session_id links back to the spawner.
 pub fn updateSessionSubAgentInfo(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     sub_agent_name: []const u8,
     parent_session_id: []const u8,
@@ -3618,7 +3619,7 @@ pub fn updateSessionSubAgentInfo(
 /// session has no binding or no row — the caller then works in `cwd`.
 pub fn getSessionGitWorktreeCwd(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]u8 {
     var rows = try db.query(
@@ -3637,7 +3638,7 @@ pub fn getSessionGitWorktreeCwd(
 /// ChatsList sidebar updates its 🌳 badge in real time.
 pub fn updateSessionGitWorktreeCwd(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     git_worktree_cwd: ?[]const u8,
 ) !void {
@@ -3668,7 +3669,7 @@ pub fn updateSessionGitWorktreeCwd(
 /// clear.
 pub fn updateSessionPrUrl(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     pr_url: ?[]const u8,
     pr_provider: ?[]const u8,
@@ -3700,7 +3701,7 @@ pub fn updateSessionPrUrl(
 /// Delete a session by id
 pub fn delete_session(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
 ) !void {
     const sql = "DELETE FROM sessions WHERE id = ?";
@@ -3725,7 +3726,7 @@ pub fn delete_session(
 /// List all sessions
 pub fn list_sessions(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
 ) ![]SessionTableInfo {
     const sql = "SELECT id, name, status, COALESCE(selected_profile_model, ''), COALESCE(cwd, ''), COALESCE(created_at, ''), COALESCE(updated_at, ''), COALESCE(git_worktree_cwd, ''), COALESCE(pr_url, ''), COALESCE(pr_provider, ''), COALESCE(is_auto_retry_until_stop, '0'), COALESCE(last_finish_reason, ''), COALESCE(sub_agent_name, ''), COALESCE(parent_session_id, '') FROM sessions ORDER BY id";
 
@@ -3769,7 +3770,7 @@ pub fn list_sessions(
 /// Check if a skill is already loaded in the database
 pub fn isSkillLoaded(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     skill_name: []const u8,
 ) !bool {
@@ -3789,7 +3790,7 @@ pub fn isSkillLoaded(
 /// Save a loaded skill to the database for persistence
 pub fn saveSkill(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     logger: *logger_mod.Logger,
     session_id: []const u8,
     skill_name: []const u8,
@@ -3818,7 +3819,7 @@ pub const SkillInfo = struct {
 /// Get all skills loaded for a session
 pub fn getSessionSkills(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]SkillInfo {
     if (session_id.len == 0) return &.{};
@@ -3868,7 +3869,7 @@ pub const ProgressiveToolInfo = struct {
 /// uses this for the "already equipped → do not insert" rule.
 pub fn isProgressiveToolEquipped(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     tool_name: []const u8,
 ) !bool {
@@ -3889,7 +3890,7 @@ pub fn isProgressiveToolEquipped(
 /// actually INSERTed.
 pub fn saveProgressiveTool(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     logger: *logger_mod.Logger,
     session_id: []const u8,
     tool_name: []const u8,
@@ -3897,7 +3898,7 @@ pub fn saveProgressiveTool(
 ) !bool {
     if (session_id.len == 0 or tool_name.len == 0) return false;
 
-    // COALESCE on server_name is REQUIRED, not cosmetic: SqliteBackend binds
+    // COALESCE on server_name is REQUIRED, not cosmetic: Backend binds
     // an empty `[]const u8` as SQL NULL, and `server_name` is NOT NULL — so a
     // built-in (always passed with "") would violate the constraint and
     const sql = "INSERT OR IGNORE INTO session_progressive_tool (session_id, tool_name, server_name, loaded_at_nano) VALUES (?, ?, COALESCE(?, ''), strftime('%s', 'now'))";
@@ -3918,7 +3919,7 @@ pub fn saveProgressiveTool(
 /// the slice.
 pub fn getProgressiveTools(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]ProgressiveToolInfo {
     if (session_id.len == 0) return &.{};
@@ -3953,7 +3954,7 @@ pub fn getProgressiveTools(
 /// future "unload" affordance; the normal path never removes a row.
 pub fn deleteProgressiveTool(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     tool_name: []const u8,
 ) !void {
@@ -3995,7 +3996,7 @@ pub const WorkspaceItemInfo = struct {
 /// Create a new workspace item
 pub fn createWorkspaceItem(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     workspace_id: []const u8,
     item_type: []const u8,
@@ -4013,7 +4014,7 @@ pub fn createWorkspaceItem(
 /// Get a workspace item by id
 pub fn getWorkspaceItem(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
 ) !?WorkspaceItemInfo {
     const sql = "SELECT id, workspace_id, item_type, name, path, created_at, updated_at, is_default FROM workspace_items WHERE id = ?";
@@ -4042,7 +4043,7 @@ pub fn getWorkspaceItem(
 /// Update workspace item
 pub fn updateWorkspaceItem(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     workspace_id: []const u8,
     item_type: []const u8,
@@ -4054,7 +4055,7 @@ pub fn updateWorkspaceItem(
 /// Update only the `path` column of a workspace item.
 pub fn updateWorkspaceItemPath(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     path: ?[]const u8,
 ) !void {
@@ -4070,7 +4071,7 @@ pub fn updateWorkspaceItemPath(
 /// Update only the `name` column of a workspace item.
 pub fn updateWorkspaceItemName(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     name: []const u8,
 ) !void {
@@ -4081,7 +4082,7 @@ pub fn updateWorkspaceItemName(
 /// Delete a workspace item by id
 pub fn deleteWorkspaceItem(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
 ) !void {
     const sql = "DELETE FROM workspace_items WHERE id = ?";
@@ -4092,7 +4093,7 @@ pub fn deleteWorkspaceItem(
 /// wi.id ASC`.
 pub fn listWorkspaceItems(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
 ) ![]WorkspaceItemInfo {
     const sql = "SELECT wi.id, wi.workspace_id, wi.item_type, wi.name, wi.path, wi.created_at, wi.updated_at, wi.is_default FROM workspace_items wi WHERE wi.workspace_id = ? ORDER BY wi.position DESC, wi.id ASC";
@@ -4128,7 +4129,7 @@ pub fn listWorkspaceItems(
 /// list: `wi.position DESC, wi.id ASC`.
 pub fn listAllWorkspaceItems(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
 ) ![]WorkspaceItemInfo {
     const sql = "SELECT wi.id, wi.workspace_id, wi.item_type, wi.name, wi.path, wi.created_at, wi.updated_at FROM workspace_items wi ORDER BY wi.position DESC, wi.id ASC";
 
@@ -4228,7 +4229,7 @@ pub const WorkspaceContext = struct {
 /// Look up the workspace context for a session.
 pub fn getWorkspaceContext(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !?WorkspaceContext {
     if (session_id.len == 0) return null;
@@ -4538,7 +4539,7 @@ pub const KanbanTagSuggestionsPage = struct {
 /// Create a new workspace item task
 pub fn createWorkspaceItemTask(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     name: []const u8,
     workspace_item_id: []const u8,
@@ -4598,7 +4599,7 @@ pub fn createWorkspaceItemTask(
         }
 
         // Migration 067 — same dynamic-SQL builder pattern for tags. Note:
-        // empty string MUST be a SQL '' literal — see the SqliteBackend.exec
+        // empty string MUST be a SQL '' literal — see the Backend.exec
         // empty-slice-binds-as-NULL rule cited above.
         if (tags) |t| {
             if (t.len == 0) {
@@ -4652,7 +4653,7 @@ pub fn createWorkspaceItemTask(
 
         // Migration 112 — same dynamic-SQL builder pattern for the skill
         // names. Empty string MUST be a SQL '' literal (see the
-        // SqliteBackend.exec empty-slice-binds-as-NULL rule above).
+        // Backend.exec empty-slice-binds-as-NULL rule above).
         if (skill_names) |sk| {
             if (sk.len == 0) {
                 try cols_buf.appendSlice(allocator, ", skill_names");
@@ -4708,7 +4709,7 @@ pub fn createWorkspaceItemTask(
 /// Get a workspace item task by id
 pub fn getWorkspaceItemTask(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
 ) !?WorkspaceItemTaskInfo {
     // Column index map for `row.values[N]`: 0: id 1: name 2:
@@ -4746,7 +4747,7 @@ pub fn getWorkspaceItemTask(
 /// Update workspace item task
 pub fn updateWorkspaceItemTask(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     name: ?[]const u8,
 ) !void {
@@ -4779,7 +4780,7 @@ pub fn updateWorkspaceItemTask(
 /// Delete a workspace item task by id
 pub fn deleteWorkspaceItemTask(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
 ) !void {
     const sql = "DELETE FROM workspace_item_tasks WHERE id = ?";
@@ -4789,7 +4790,7 @@ pub fn deleteWorkspaceItemTask(
 /// Set or clear the `is_pinned` flag for a single task.
 pub fn setTaskPinned(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     is_pinned: bool,
 ) !i64 {
@@ -4843,7 +4844,7 @@ pub fn setTaskPinned(
 /// Set or clear the `is_pinned` flag for a single session (Migration 104).
 pub fn setSessionPinned(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     is_pinned: bool,
 ) !i64 {
@@ -4905,7 +4906,7 @@ pub fn setSessionPinned(
 /// ids.
 pub fn reorderPinnedSessions(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     ordered_ids: []const []const u8,
 ) !void {
     if (ordered_ids.len == 0) return;
@@ -4928,7 +4929,7 @@ pub fn reorderPinnedSessions(
 /// Reorder the pinned subset of a single workspace item.
 pub fn reorderPinnedTasks(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_item_id: []const u8,
     ordered_ids: []const []const u8,
 ) !void {
@@ -4954,7 +4955,7 @@ pub fn reorderPinnedTasks(
 /// List all workspace item tasks by workspace_item_id
 pub fn listWorkspaceItemTasks(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_item_id: []const u8,
 ) ![]WorkspaceItemTaskInfo {
     // Migration 062: added `t.description` to the SELECT column list,
@@ -5029,7 +5030,7 @@ fn escapeLikePattern(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
 /// text).
 pub fn getWorkspaceItemTaskById(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_item_id: []const u8,
     task_id: []const u8,
 ) !?WorkspaceItemTaskInfo {
@@ -5098,7 +5099,7 @@ pub const TaskMedia = struct {
 
 pub fn getWorkspaceItemTaskMedia(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_item_id: []const u8,
     task_id: []const u8,
 ) !?TaskMedia {
@@ -5118,7 +5119,7 @@ pub fn getWorkspaceItemTaskMedia(
 
 pub fn listWorkspaceItemTasksWithCursor(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_item_id: []const u8,
     limit: u32,
     cursor: ?[]const u8,
@@ -5334,7 +5335,7 @@ pub fn listWorkspaceItemTasksWithCursor(
 /// Used by the kanban task detail dialog autocomplete dropdown.
 pub fn listKanbanDistinctTags(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     workspace_item_id: []const u8,
     limit: u32,
     offset: u32,
@@ -5414,7 +5415,7 @@ pub fn listKanbanDistinctTags(
 /// Get all active sessions for SSE broadcast
 pub fn getSessionsForBroadcast(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
 ) ![]SessionBroadcastInfo {
     const sql = "SELECT s.id, COALESCE(s.name, ''), COALESCE(s.status, 'active'), COALESCE(s.cwd, ''), COALESCE(s.created_at, ''), COALESCE(s.updated_at, ''), COALESCE(h.agent, 'Agent'), COALESCE(s.selected_profile_model, ''), COALESCE(s.git_worktree_cwd, ''), COALESCE(s.pr_url, ''), COALESCE(s.pr_provider, ''), COALESCE(s.sub_agent_name, ''), COALESCE(s.parent_session_id, '') FROM sessions s LEFT JOIN llm_history h ON s.id = h.session_id ORDER BY s.updated_at DESC";
 
@@ -5465,12 +5466,12 @@ pub fn freeSessionsForBroadcast(allocator: std.mem.Allocator, sessions: []Sessio
     allocator.free(sessions);
 }
 
-pub fn updateSessionUpdatedAt(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8) !void {
+pub fn updateSessionUpdatedAt(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) !void {
     const sql = "UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?";
     try db.exec(allocator, sql, &.{session_id});
 }
 
-pub fn updateWorkspaceUpdatedAt(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8) !void {
+pub fn updateWorkspaceUpdatedAt(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) !void {
     const sql = "UPDATE workspace_item_tasks SET updated_at = datetime('now') WHERE id = ?";
     try db.exec(allocator, sql, &.{session_id});
 }
@@ -5478,12 +5479,12 @@ pub fn updateWorkspaceUpdatedAt(allocator: std.mem.Allocator, db: *sqlite.Sqlite
 // ===================================================================== Tests
 // for listKanbanDistinctTags
 
-fn setupDbWithTagsForKanban() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+fn setupDbWithTagsForKanban() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -5504,8 +5505,8 @@ fn setupDbWithTagsForKanban() !struct { db: sqlite.SqliteBackend, threaded: std.
     return .{ .db = db, .threaded = threaded };
 }
 
-fn insertKanbanTask(db: *sqlite.SqliteBackend, alloc: std.mem.Allocator, id: []const u8, item_id: []const u8, tags_json: []const u8) !void {
-    // SqliteBackend.exec binds empty `[]const u8` as SQL NULL — which would
+fn insertKanbanTask(db: *database.Db, alloc: std.mem.Allocator, id: []const u8, item_id: []const u8, tags_json: []const u8) !void {
+    // Backend.exec binds empty `[]const u8` as SQL NULL — which would
     // fail the NOT NULL constraint on `tags`.
     if (tags_json.len == 0) {
         try db.exec(alloc, "INSERT INTO workspace_item_tasks (id, workspace_item_id, tags) VALUES (?, ?, '')", &.{ id, item_id });
@@ -5515,7 +5516,7 @@ fn insertKanbanTask(db: *sqlite.SqliteBackend, alloc: std.mem.Allocator, id: []c
 }
 
 fn insertKanbanTaskWithUpdatedAt(
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     alloc: std.mem.Allocator,
     id: []const u8,
     item_id: []const u8,
@@ -5677,7 +5678,7 @@ test "listKanbanDistinctTags skips rows with malformed tags JSON (defensive)" {
 // Inline behavioural tests for the kanban task search q-parameter Per project
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     /// Allocator (the testing.allocator) — needed by the tool-call-loading
     /// test that has to allocate row data via `createSession` and
@@ -5692,7 +5693,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -6653,7 +6654,7 @@ fn sessionUpdateSetupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -6831,7 +6832,7 @@ test "updateSessionSubAgentInfo: stamps sub-agent name and parent" {
 /// present (matching the production schema columns that `getSessionList`
 /// reads), plus the `idx_llm_history_created_session` index from Migration
 fn getSessionListSetupDb() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 } {
     const alloc = testing.allocator;
@@ -6839,7 +6840,7 @@ fn getSessionListSetupDb() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -6885,7 +6886,7 @@ fn getSessionListSetupDb() !struct {
 /// individual columns.
 fn runAndCollect(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     sql: []const u8,
     args: []const []const u8,
     expected_len: usize,
@@ -7253,7 +7254,7 @@ test "updateTaskLastHumanTouchedAt stamps the unix-ms value on the task" {
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
 
@@ -7295,7 +7296,7 @@ test "updateTaskLastHumanTouchedAt overwrites on repeated calls" {
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
 
@@ -7335,7 +7336,7 @@ test "updateSessionLastHumanTouchedAt stamps the unix-ms value on the session" {
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
 
@@ -7369,7 +7370,7 @@ test "updateSessionLastHumanTouchedAt with now_unix_ms=null reads the real clock
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
 
@@ -7411,7 +7412,7 @@ test "updateSessionLastHumanTouchedAt is a no-op for unknown session_id" {
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
 
@@ -7443,7 +7444,7 @@ test "updateSessionLastHumanTouchedAt is idempotent on repeated calls with the s
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
 
@@ -7475,7 +7476,7 @@ test "updateSessionLastHumanTouchedAt overwrites on repeated calls with a newer 
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
 
@@ -7507,7 +7508,7 @@ test "updateSessionLastHumanTouchedAt skips empty session_id (no SQL bind)" {
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
 
@@ -7604,7 +7605,7 @@ test "getSessionListWithCursor converts unix-ms storage to SQLite datetime on th
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
 
@@ -7670,7 +7671,7 @@ test "getSessionListWithCursor returns empty string for NULL last_human_touched_
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
 
@@ -7728,7 +7729,7 @@ test "getSessionListWithCursor derives needs_human_review for the sidebar status
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
 
@@ -7836,7 +7837,7 @@ test "getSessionListWithCursor pages on the sort field's column, not created_at"
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
 
@@ -7927,7 +7928,7 @@ test "getSessionListWithCursor keeps the created_at filter when sorting by creat
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
 
@@ -8002,7 +8003,7 @@ test "getSessionListWithCursor: workspace_ids bounds sessions AND total (count h
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
 
@@ -8095,7 +8096,7 @@ test "needs_human_review predicate returns 1 when finish_reason='stop' AND no hu
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
 
@@ -8168,7 +8169,7 @@ test "needs_human_review predicate returns 0 when human touched AFTER the AI fin
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
 
@@ -8230,7 +8231,7 @@ test "needs_human_review predicate returns 0 when finish_reason is 'tool_calls' 
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
 
@@ -8289,7 +8290,7 @@ test "needs_human_review predicate returns 0 when no sessions row exists for the
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
 
@@ -8342,7 +8343,7 @@ fn llmHistorySearchFtsQuerySafetySetupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -8479,7 +8480,7 @@ fn llmHistorySearchMessagesFtsSetupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -8919,14 +8920,14 @@ test "searchMessagesFts: created_at is a readable ISO timestamp, not a nanosecon
 
 
 fn llmHistoryCompactedMessagesSetupDb() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -8972,7 +8973,7 @@ fn llmHistoryCompactedMessagesTeardownDb(s: *@TypeOf(llmHistoryCompactedMessages
 
 fn llmHistoryCompactedMessagesSeedMessage(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     sess: []const u8,
     role: []const u8,
@@ -9214,7 +9215,7 @@ test "saveMessage: writes a correct-year (2026-ish) created_iso from current tim
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
 
@@ -9298,7 +9299,7 @@ test "saveMessage: created_at column is stored as Unix microseconds (length <= 1
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
 
@@ -9387,7 +9388,7 @@ fn llmHistoryToolCallLoadingSetupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -9600,7 +9601,7 @@ test "resolveStaleLoadingToolResults only touches the target session" {
 /// `getActiveWorker` + `getWorkerBySessionId` (the `worker` + `sessions`
 /// tables, the latter with `git_worktree_cwd` from Migration 046).
 fn llmHistoryWorkerInfoSetupDb() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 } {
     const alloc = testing.allocator;
@@ -9608,7 +9609,7 @@ fn llmHistoryWorkerInfoSetupDb() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -9802,7 +9803,7 @@ test "getWorkerBySessionId returns worker with empty git_worktree_cwd for orphan
 // =============================================================================
 
 const ProgressiveTestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -9811,7 +9812,7 @@ fn progressiveSetupDb() !ProgressiveTestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try db.exec(alloc,
@@ -9952,7 +9953,7 @@ test "saveMessage: user envelope carries owner identity, assistant carries profi
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
 
@@ -10114,11 +10115,11 @@ test "saveMessage: user envelope carries owner identity, assistant carries profi
 // value must never change the shape of the WHERE clause it lands in.
 
 /// Two sessions in different directories, owned by different users.
-fn setupOwnedSessionsDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+fn setupOwnedSessionsDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
 

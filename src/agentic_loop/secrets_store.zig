@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const sqlite = @import("pabrikcore").sqlite;
+const database = @import("pabrikcore").database;
 const helpers = @import("helpers");
 
 /// Longest legal secret name.
@@ -85,7 +86,7 @@ fn rowFromValues(allocator: std.mem.Allocator, values: []const []const u8) !Secr
 /// Every secret in one workspace, ordered by name. Never selects `value`.
 pub fn listSecrets(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
 ) SecretsError![]SecretRow {
     if (workspace_id.len == 0) return error.WorkspaceIdRequired;
@@ -112,7 +113,7 @@ pub fn listSecrets(
 /// One secret, scoped to `workspace_id`. Never selects `value`.
 pub fn getSecret(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     secret_id: []const u8,
 ) SecretsError!SecretRow {
@@ -133,7 +134,7 @@ pub fn getSecret(
 /// Insert a secret and return it with its canonical id and timestamps.
 pub fn createSecret(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     args: CreateSecretArgs,
 ) SecretsError!SecretRow {
     if (args.workspace_id.len == 0) return error.WorkspaceIdRequired;
@@ -190,7 +191,7 @@ pub fn createSecret(
 /// updates nothing.
 pub fn updateSecret(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     args: UpdateSecretArgs,
 ) SecretsError!SecretRow {
     if (args.workspace_id.len == 0) return error.WorkspaceIdRequired;
@@ -229,7 +230,7 @@ pub fn updateSecret(
 /// `error.NotFound` and deletes nothing.
 pub fn deleteSecret(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     secret_id: []const u8,
 ) SecretsError!void {
@@ -255,7 +256,7 @@ pub fn deleteSecret(
 /// only function the agent-facing paths may call.
 pub fn listSecretNames(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
 ) SecretsError![][]u8 {
     if (workspace_id.len == 0) return error.WorkspaceIdRequired;
@@ -281,7 +282,7 @@ pub fn listSecretNames(
 /// substitution path may call.
 pub fn loadSecretValues(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     names: []const []const u8,
 ) SecretsError![]SecretValueRow {
@@ -324,7 +325,7 @@ pub fn loadSecretValues(
 /// Whether `(workspace_id, name)` is already taken. Used both as the
 /// create-time pre-check and as the classifier after a failed INSERT.
 fn nameExists(
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     allocator: std.mem.Allocator,
     workspace_id: []const u8,
     name: []const u8,
@@ -395,7 +396,7 @@ pub fn freeSecretValueRows(allocator: std.mem.Allocator, rows: []SecretValueRow)
 const testing = std.testing;
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -404,7 +405,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -465,7 +466,7 @@ test "createSecret rejects an empty name before it reaches the database" {
     var ctx = try setupDb();
     defer teardown(&ctx);
 
-    // `SqliteBackend.exec` binds "" as SQL NULL, so a name check that ran
+    // `Backend.exec` binds "" as SQL NULL, so a name check that ran
     // after the INSERT would surface as a constraint error instead.
     try testing.expectError(error.NameRequired, createSecret(alloc, &ctx.db, .{
         .workspace_id = "ws_1",

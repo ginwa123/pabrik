@@ -26,7 +26,7 @@ pub const DesignElementDeleteError = error{
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     element_id: []const u8,
 ) DesignElementDeleteError!void {
     if (element_id.len == 0) return error.ElementIdRequired;

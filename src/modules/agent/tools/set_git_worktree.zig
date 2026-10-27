@@ -7,6 +7,7 @@ const AgentToolFunction = schemas.AgentToolFunction;
 const AgentTool = schemas.AgentTool;
 const pabrik = @import("pabrikcore");
 const sqlite = pabrik.sqlite;
+const database = pabrik.database;
 const git_hardening = @import("helpers").git_hardening;
 const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
 const runtime_mode = @import("../../../runtime_mode.zig");
@@ -822,7 +823,7 @@ pub fn rewriteGitStderr(
 /// directory to remove.
 fn readExistingWorktreeCwd(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]u8 {
     const sql = "SELECT COALESCE(s.git_worktree_cwd, '') FROM sessions s WHERE s.id = ?";
@@ -1064,7 +1065,7 @@ fn runGitWorktreeRemove(
 pub fn executeSetGitWorktreeToString(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     cwd: []const u8,
     session_id: []const u8,
     input: SetGitWorktreeInput,
@@ -2411,7 +2412,7 @@ fn extractJsonPath(allocator: std.mem.Allocator, inner: []const u8) ?[]u8 {
 /// A database whose session `s1` resolves to `root`'s workspace, so the route
 /// has something to answer from. Local mode never reads it.
 const SessionDb = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 
     fn deinit(self: *SessionDb) void {
@@ -2423,7 +2424,7 @@ const SessionDb = struct {
 fn sessionDb(allocator: std.mem.Allocator, root: []const u8) !SessionDb {
     var threaded = std.Io.Threaded.init(allocator, .{});
     errdefer threaded.deinit();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
 

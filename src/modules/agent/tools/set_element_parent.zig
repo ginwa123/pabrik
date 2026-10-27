@@ -6,6 +6,7 @@ const schemas = @import("schemas.zig");
 const AgentTool = schemas.AgentTool;
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const design_model = pabrikcore.ai_mod.design_model;
 const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
@@ -105,7 +106,7 @@ fn validateElementIdShape(allocator: std.mem.Allocator, element_id: []const u8) 
 /// Execute the `set_element_parent` tool. Returns a JSON string for the LLM.
 pub fn executeSetElementParentToString(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     input: SetElementParentInput,
 ) ![]u8 {
     // 0. Input validation (shape only — DB validation runs after).
@@ -149,7 +150,7 @@ const testing = std.testing;
 /// shape as the other test files (`setupDbAndItem`) — copied locally
 /// for self-containment.
 fn setupDbAndItem() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_id: []const u8,
     item_path: []u8,
@@ -159,7 +160,7 @@ fn setupDbAndItem() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -232,7 +233,7 @@ fn setupDbAndItem() !struct {
     };
 }
 
-fn teardown(db: *sqlite.SqliteBackend, threaded: *std.Io.Threaded) void {
+fn teardown(db: *database.Db, threaded: *std.Io.Threaded) void {
     db.deinit();
     threaded.deinit();
 }

@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
@@ -11,7 +11,7 @@ pub const Migration076AddAgentsAndAgentKnowledgeAndAgentTools = struct {
     pub const version: u32 = 78;
     pub const name = "add_agents_and_agent_knowledge_and_agent_tools";
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         // 1. `agents` — 1-1 with `workspace_items` (UNIQUE
         // workspace_item_id).
         try db.exec(allocator,

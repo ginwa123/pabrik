@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
@@ -14,7 +14,7 @@ pub const Migration061FixCreatedIsoYear = struct {
     pub const version: u32 = 61;
     pub const name = "fix_llm_history_created_iso_year";
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         // UPDATE WHERE clause matches three categories: 1. created_iso IS
         // NULL 2. created_iso = '' 3. created_iso has a year that doesn't
         // match any plausible Unix‑timestamp year — i.e.

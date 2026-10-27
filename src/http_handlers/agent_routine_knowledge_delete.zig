@@ -31,7 +31,7 @@ pub const KnowledgeDeleteInput = struct {
 /// arena (production HTTP handler) and `testing.allocator` (unit tests).
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: KnowledgeDeleteInput,
 ) KnowledgeDeleteError!void {
     if (input.routine_id.len == 0 or input.knowledge_id.len == 0) {
@@ -86,11 +86,12 @@ pub fn agentRoutineKnowledgeDeleteHandler(
 // impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
+const database = @import("pabrikcore").database;
 const testing = std.testing;
 const Migration116 = @import("../migrations/migration.zig").Migration116UnifyAgentConfigTables;
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -98,7 +99,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -126,7 +127,7 @@ fn setupDb() !TestCtx {
 }
 
 fn countKnowledge(
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     allocator: std.mem.Allocator,
     routine_id: []const u8,
 ) !u32 {
