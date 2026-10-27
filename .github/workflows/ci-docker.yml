@@ -262,6 +262,16 @@ jobs:
           $dlls = Get-ChildItem $ctx -Filter "*.dll"
           if ($dlls.Count -lt 1) { throw "no runtime DLLs in the release zip; a bare pabrik.exe cannot load" }
           Write-Host ("staged pabrik.exe + {0} dll(s)" -f $dlls.Count)
+          foreach ($name in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "concrt140.dll", "vcomp140.dll")) {
+            $source = Join-Path $env:SystemRoot ("System32\" + $name)
+            if (Test-Path $source) {
+              Copy-Item $source (Join-Path $ctx $name) -Force
+              Write-Host ("staged " + $name)
+            }
+          }
+          if (-not (Test-Path (Join-Path $ctx "vcruntime140.dll"))) {
+            throw "vcruntime140.dll is not on this runner; the vcpkg-built DLLs cannot load without the VC++ runtime"
+          }
           "PABRIK_DOCKER_CONTEXT=$ctx" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Log in to GHCR
@@ -282,7 +292,7 @@ jobs:
           docker build --file Dockerfile.windows --tag $tag $env:PABRIK_DOCKER_CONTEXT
           if ($LASTEXITCODE -ne 0) { throw "docker build failed" }
           docker run --rm $tag --help
-          if ($LASTEXITCODE -ne 0) { throw "the image could not run pabrik.exe --help" }
+          if ($LASTEXITCODE -ne 0) { throw ("the image could not run pabrik.exe --help (exit " + $LASTEXITCODE + ")") }
 
       - name: Boot the Windows image
         shell: pwsh
