@@ -448,10 +448,11 @@ test "renderSearchResult emits no tier and no path on any row" {
 // End-to-end against the store: the flattening must not widen the set.
 
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const migration = @import("../migrations/migration.zig");
 
 const StoreTestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -463,16 +464,17 @@ fn setupStoreDb() !StoreTestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try migration.Migration102CreateSkills.up(&db, alloc);
+    try migration.Migration119CreateSkillMetadata.up(&db, alloc);
     return .{ .db = db, .threaded = threaded };
 }
 
 fn seedSkill(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     name: []const u8,
     description: []const u8,

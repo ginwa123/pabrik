@@ -13,6 +13,7 @@ const migration = @import("../migrations/mod.zig").migration;
 const static_files = @import("../modules/static_files.zig");
 const shutdown = @import("shutdown.zig");
 const db_config = @import("db_config.zig");
+const db_target = @import("db_target.zig");
 const static_serve = @import("../http_static/static_serve.zig");
 const model_catalog_refresh = @import("../agentic_loop/model_catalog_refresh.zig");
 
@@ -181,18 +182,18 @@ pub fn setupTlsCtx(
 }
 
 pub const DatabaseHandles = struct {
-    db_path: [:0]const u8,
+    target: db_target.Target,
     db: database.Db,
 
-    pub fn deinit(self: *DatabaseHandles, allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *DatabaseHandles) void {
         self.db.deinit();
-        allocator.free(self.db_path);
+        self.target.deinit();
     }
 };
 
-/// Resolve the DB path, open it with `boot/db_config.zig`'s measured policy
-/// (WAL + `.full`, elastic reader pooling, 512 KiB page cache per connection,
-/// 256 MiB mmap window), log the live config, and run migrations.
+/// Resolve the backend `request` names (default: the one this build compiled
+/// in), open it with `boot/db_config.zig`'s measured policy, log the target,
+/// and run migrations.
 pub fn openDatabase(
     //
     // `overrides` are the `--db-*` flags from argv; an empty slice means the
@@ -200,16 +201,25 @@ pub fn openDatabase(
     allocator: std.mem.Allocator,
     io: std.Io,
     env: *std.process.Environ.Map,
+    request: db_target.Request,
     overrides: []const db_config.Override,
 ) !DatabaseHandles {
-    const db_path = try helpers.db_path.getDbPath(allocator, io, env);
-    errdefer allocator.free(db_path);
+    var target = try db_target.openTarget(allocator, io, env, request);
+    errdefer target.deinit();
+
+    var line_buf: [512]u8 = undefined;
+    if (target.describe(&line_buf)) |line| {
+        std.log.info("{s}", .{line});
+    } else |_| {
+        std.log.info("database: backend={s} source={s}", .{ target.backend.text(), target.origin.text() });
+    }
+
     var db: database.Db = .{};
     errdefer db.deinit();
-    try database.openWithConfig(&db, io, .{ .sqlite_path = db_path }, db_config.resolve(overrides));
+    try database.openConfigured(&db, io, target.openConfig(), db_config.resolveConfig(overrides));
     shutdown.logSqliteConfig(allocator, &db);
     try runMigrations(allocator, &db);
-    return .{ .db_path = db_path, .db = db };
+    return .{ .target = target, .db = db };
 }
 
 pub fn runMigrations(allocator: std.mem.Allocator, db: *database.Db) !void {

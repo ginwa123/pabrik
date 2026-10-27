@@ -6,6 +6,7 @@ const schemas = @import("schemas.zig");
 const AgentTool = schemas.AgentTool;
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const design_model = pabrikcore.ai_mod.design_model;
 const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
@@ -135,7 +136,7 @@ pub fn validateItemIdShape(allocator: std.mem.Allocator, item_id: []const u8) !?
 /// Execute the `set_design_page` tool. Returns a JSON string for the LLM.
 pub fn executeSetDesignPageToString(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     input: SetDesignPageInput,
 ) ![]u8 {
     // 0. Detect the four known LLM id-confusion mistakes. Runs BEFORE
@@ -457,12 +458,12 @@ test "errorJSON on missing field returns an error object" {
 
 /// Set up an in-memory SQLite with the v6 design schema (workspace_items +
 /// design_pages + design_page_elements with the 11 Migration 057 columns).
-fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded, item_id: []u8, item_path: []u8 } {
+fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded, item_id: []u8, item_path: []u8 } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

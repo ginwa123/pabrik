@@ -91,7 +91,7 @@ pub const CreateElementOutput = struct {
 /// Create a design element. Steps: 1. Validate `page_id` and `name`. 2.
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     io: std.Io,
     input: CreateElementInput,
 ) DesignElementCreateError!CreateElementOutput {

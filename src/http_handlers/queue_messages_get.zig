@@ -35,7 +35,7 @@ pub const QueueMessagesResult = []const u8; // pre-serialized JSON
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     session_id: []const u8,
 ) QueueMessagesError!QueueMessagesResult {
     const select_sql = "SELECT id, message FROM session_queue_messages WHERE session_id = ? ORDER BY created_at ASC";

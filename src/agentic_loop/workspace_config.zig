@@ -4,6 +4,7 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 
 /// Merge `overlay_json` over `base_json`, returning a newly allocated JSON
 /// object text.
@@ -236,7 +237,7 @@ const settings_store = @import("workspace_settings_store.zig");
 pub fn baseConfigText(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     environment: ?*const std.process.Environ.Map,
     auth_enabled: bool,
     owner: []const u8,
@@ -265,7 +266,7 @@ pub fn baseConfigText(
 pub fn scopedBaseConfigText(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     environment: ?*const std.process.Environ.Map,
     auth_enabled: bool,
     owner: []const u8,
@@ -334,7 +335,7 @@ pub fn withRemovedProfile(
 /// scoped settings - which is what makes a brand-new workspace start empty.
 pub fn workspaceOverlay(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     auth_enabled: bool,
     owner: []const u8,
     workspace_id: []const u8,
@@ -620,7 +621,7 @@ test "a config with nothing to copy yields {}, never junk" {
 // ─── the read path ─────────────────────────────────────────────────────────
 
 const OverlayCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -628,7 +629,7 @@ fn setupOverlayDb() !OverlayCtx {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
     try db.exec(alloc, "CREATE TABLE workspaces (id TEXT PRIMARY KEY)", &.{});

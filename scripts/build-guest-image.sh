@@ -19,7 +19,8 @@
 #                                     [--agent BIN] [--probe BIN] [--netd BIN]
 #                                     [--size SIZE]
 #                                     [--payload DIR] [--zig-cache DIR] [--cache DIR]
-#                                     [--in-container] [--selftest]
+#                                     [--in-container] [--no-image-cache]
+#                                     [--selftest]
 
 set -euo pipefail
 
@@ -45,6 +46,7 @@ guest_gid=1000
 size=""
 cache="${PABRIK_VM_CACHE:-$HOME/.cache/pabrik-vm}"
 in_container=0
+image_cache=1
 # The builder is Fedora minimal too: one distribution end to end, so a package
 # name means the same thing to the build as it does inside the guest.
 builder_image="registry.fedoraproject.org/fedora-minimal:44@sha256:863d92bd4419f079bddf6a6cbdd6b3a1428568f72c6e242a215d5102502af0c9"
@@ -105,6 +107,55 @@ payload_dir() { # <path> -> the path, or a build stop
     return 1
   fi
   [ -z "$1" ] || printf '%s\n' "$1"
+}
+
+# ─── the image cache ─────────────────────────────────────────────────────
+# A cold build downloads a Fedora package set and unpacks a hash-pinned rootfs.
+# One `ci-vm-smoke` run asks for this image five times for one commit — the two
+# --saas jobs, the protocol job, the resize job and the net smoke — so the same
+# megabytes crossed the wire five times over. The key is a hash of every input
+# that can change the image's bytes: the manifest, this script, the builder
+# image and release, the tier and its size, and the four guest binaries. A hit
+# replaces fetch + dnf + mkfs with one copy.
+#
+# `--payload` and `--zig-cache` are inputs this key does not cover (a bench
+# payload is a whole tree), so naming either one disables the cache: a wrong
+# hit is a broken image, and correctness outranks the megabytes.
+image_cache_key() {
+  {
+    sha256sum "$manifest" "$self_path"
+    printf '%s\n' "$builder_image" "$fedora_release" "$tier" "$size"
+    cache_bin "$bootstrap_bin" "$repo_root/zig-out/bin/pabrik-vm-bootstrap"
+    cache_bin "$agent_bin" "$repo_root/zig-out/bin/pabrik-vm-agent"
+    cache_bin "$netd_bin" "$repo_root/zig-out/bin/pabrik-vm-netd"
+    cache_bin "$probe_bin" "$repo_root/zig-out/bin/pabrik-probe"
+  } | sha256sum | cut -d' ' -f1
+}
+
+# The binaries' defaults are resolved AFTER the container hop (a --probe that
+# was named but is missing has to stay a build stop), so the key applies the
+# same defaults itself rather than mutating what the hop forwards.
+cache_bin() { # <given path> <default path> -> "<path> <sha256|->"
+  local path="${1:-$2}" sum=-
+  [ ! -f "$path" ] || sum="$(sha256sum "$path" | cut -d' ' -f1)"
+  printf '%s %s\n' "$path" "$sum"
+}
+
+# A 1 GiB base image and a 2 GiB dev image per key, and every commit that
+# touches the agent produces a new key: without a bound the cache would fill the
+# runner's disk. Keep the newest few and let the rest go.
+prune_image_cache() { # <dir> <keep>
+  local dir="$1" keep="$2" i=0 f b
+  [ -d "$dir" ] || return 0
+  while IFS= read -r f; do
+    b="${f##*/}"
+    # Only the cache's own key files are ours to delete: 64 hex chars + .ext4.
+    # Anything else in this directory belongs to the operator, not to us.
+    case "${b%.ext4}" in *[!0-9a-f]*) continue ;; esac
+    [ "${#b}" -eq 69 ] || continue
+    i=$((i + 1))
+    [ "$i" -le "$keep" ] || rm -f "$f"
+  done < <(ls -1t "$dir"/*.ext4 2>/dev/null)
 }
 
 # The manifest, as a plan: one `role hash url` line per artifact that this tier
@@ -252,6 +303,18 @@ run_selftest() {
     "$(manifest_plan "$manifest" base | grep -c 'fedora.*\.oci\.tar\.xz$')"
   check "the base set carries git" "1" "$(tier_rpms base | grep -cx 'git-core')"
   check "the base set carries TLS trust" "1" "$(tier_rpms base | grep -cx 'ca-certificates')"
+
+  # The image cache is only as good as its key: it has to be a sha256 (so the
+  # filename is safe) and it has to change when an input the image depends on
+  # changes, or a stale image is served as a fresh one.
+  saved_tier="$tier" saved_size="$size"
+  tier=base size="$(default_size base)" key_base="$(image_cache_key)"
+  tier=dev size="$(default_size dev)" key_dev="$(image_cache_key)"
+  tier="$saved_tier" size="$saved_size"
+  check "the image cache key is a sha256" "1" \
+    "$(printf '%s' "$key_base" | grep -cE '^[0-9a-f]{64}$')"
+  check "a different tier is a different image cache key" "1" \
+    "$([ "$key_base" != "$key_dev" ] && echo 1 || echo 0)"
   check "the dev tier is the base set plus its own" "1" \
     "$([ "$(tier_rpms dev | wc -l)" -gt "$(tier_rpms base | wc -l)" ] && echo 1 || echo 0)"
 
@@ -273,6 +336,7 @@ while [ $# -gt 0 ]; do
     --size) size="$2"; shift 2 ;;
     --cache) cache="$2"; shift 2 ;;
     --in-container) in_container=1; shift ;;
+    --no-image-cache) image_cache=0; shift ;;
     --selftest) run_selftest; exit 0 ;;
     *) fail "unknown argument: $1" ;;
   esac
@@ -292,6 +356,29 @@ abs() { case "$1" in /*) printf '%s\n' "$1" ;; *) printf '%s/%s\n' "$PWD" "$1" ;
 [ -z "$payload" ] || payload="$(abs "$payload")"
 [ -z "$zig_cache" ] || zig_cache="$(abs "$zig_cache")"
 [ -n "$out" ] || fail "--out IMG is required"
+
+# The cache is checked BEFORE the container hop, because a hit needs neither
+# dnf nor root: on a warm key this script never starts a container at all.
+[ "${PABRIK_VM_IMAGE_CACHE:-1}" = 0 ] && image_cache=0
+if [ "$image_cache" = 1 ] && { [ -n "$payload" ] || [ -n "$zig_cache" ]; }; then
+  image_cache=0
+fi
+image_key=""
+if [ "$image_cache" = 1 ]; then
+  image_key="$(image_cache_key)"
+  cached_image="$cache/images/$image_key.ext4"
+  if [ -f "$cached_image" ]; then
+    say "cache hit $image_key"
+    mkdir -p "$(dirname "$out")"
+    cp --reflink=auto -f "$cached_image" "$out" 2>/dev/null || cp -f "$cached_image" "$out"
+    touch "$cached_image"
+    say "tier    $tier"
+    say "image   $out ($size, sha256=$(sha256sum "$out" | cut -d' ' -f1))"
+    say "OK $out ready"
+    exit 0
+  fi
+  say "cache miss $image_key"
+fi
 
 # The container hop is about capability: dnf has to run as root (chroot for
 # scriptlets, 0:0 ownership inside the image), and this distribution's package
@@ -320,6 +407,11 @@ if [ "$(id -u)" != 0 ] && { [ "$in_container" = 1 ] || [ "$needs_builder" = 1 ];
   [ -z "$netd_bin" ] || args+=(--netd "$netd_bin")
   [ -z "$payload" ] || args+=(--payload "$payload")
   [ -z "$zig_cache" ] || args+=(--zig-cache "$zig_cache")
+  # The hop is a NEW process inside the container, so a decision taken up here
+  # is not inherited: `podman run` passes no environment unless told to, and
+  # PABRIK_VM_IMAGE_CACHE would silently stop applying after the exec. Forward
+  # the resolved decision as the flag that cannot be lost.
+  [ "$image_cache" = 1 ] || args+=(--no-image-cache)
   quoted=""
   for a in "${args[@]}"; do quoted+=" $(printf '%q' "$a")"; done
   mounts=()
@@ -327,12 +419,19 @@ if [ "$(id -u)" != 0 ] && { [ "$in_container" = 1 ] || [ "$needs_builder" = 1 ];
     < <(container_mounts "$repo_root" "$cache" "$out_dir" "$payload")
   # Keep dnf's downloads between builds: a Fedora package set is ~100 MB, and
   # re-downloading it on every attempt is the slowest part of this script.
-  mkdir -p "$cache/dnf"
-  mounts+=(-v "$cache/dnf:/var/cache/dnf")
+  #
+  # The path matters. The builder is Fedora 44, whose `dnf` is dnf5 5.4.x, and
+  # dnf5 keeps its cache in /var/cache/libdnf5 — /var/cache/dnf does not even
+  # exist in the image. Mounting the old path left an empty directory on the
+  # host and re-downloaded the same rpms on every build, which is exactly what
+  # this mount is supposed to prevent.
+  mkdir -p "$cache/libdnf5"
+  mounts+=(-v "$cache/libdnf5:/var/cache/libdnf5")
   if [ -n "$zig_cache" ]; then mounts+=(-v "$zig_cache:$zig_cache:ro"); fi
   exec "$engine" run --rm "${mounts[@]}" \
     "$builder_image" \
-    sh -euc "dnf -q -y install $builder_packages >/dev/null && exec bash $self_path$quoted"
+    sh -euc "dnf -q -y --setopt=keepcache=True install $builder_packages >/dev/null \
+      && exec bash $self_path$quoted"
 fi
 
 [ -n "$out" ] || fail "--out IMG is required"
@@ -431,8 +530,13 @@ printf '%s\n' "$rpms" | sed 's/^/    /'
 # shellcheck disable=SC2086  # deliberate word list
 # Parallel downloads: a package set this size on one connection is the slowest
 # thing this script does, and dnf's default of 3 leaves the mirror idle.
+# `cachedir` points at the persistent cache, not at the throwaway installroot:
+# dnf otherwise downloads the package set into $work/var/cache and throws it
+# away with $work, so the cache mounted above only ever helped the builder's
+# own packages. `keepcache` is what makes the rpms survive the transaction.
 if ! dnf -q -y --installroot="$work" --releasever="$fedora_release" \
     --setopt=install_weak_deps=False --setopt=max_parallel_downloads=10 \
+    --setopt=keepcache=True --setopt=cachedir="$cache/libdnf5" \
     "${dnf_repo_args[@]}" install $rpms >"$work.dnf.log" 2>&1; then
   tail -25 "$work.dnf.log" >&2
   fail "dnf could not install the package set"
@@ -520,4 +624,16 @@ say "tier    $tier"
 say "image   $out ($size, sha256=$(sha256sum "$out" | cut -d' ' -f1))"
 say "agent   $(stat -c '%s bytes, owner %u:%g' "$work/init"), sha256=$(sha256sum "$work/init" | cut -d' ' -f1)"
 say "entries $(find "$work" -mindepth 1 | wc -l) filesystem objects"
+if [ "$image_cache" = 1 ]; then
+  mkdir -p "$cache/images"
+  cache_tmp="$cache/images/.$image_key.ext4.$$"
+  if cp --reflink=auto -f "$out" "$cache_tmp" 2>/dev/null || cp -f "$out" "$cache_tmp"; then
+    mv -f "$cache_tmp" "$cache/images/$image_key.ext4"
+    prune_image_cache "$cache/images" 3
+    say "cache store $image_key"
+  else
+    rm -f "$cache_tmp"
+    say "cache store failed (continuing without it)"
+  fi
+fi
 say "OK $out ready"

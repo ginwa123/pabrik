@@ -31,7 +31,7 @@ pub const SessionLatestData = struct {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     cwd: []const u8,
 ) SessionLatestError!SessionLatestResult {
     // Local arena isolates allocations to this use-case so the

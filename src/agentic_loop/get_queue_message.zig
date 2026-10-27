@@ -2,6 +2,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const testing = std.testing;
 
 pub const QueuedMessage = struct {
@@ -14,7 +15,7 @@ pub const QueuedMessage = struct {
 
 pub const GetQueueMessageInput = struct {
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 };
 
@@ -73,12 +74,12 @@ pub fn getQueueMessages(
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
-fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     // The real schema also has `created_at DEFAULT (datetime('now'))`,
@@ -100,7 +101,7 @@ fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
 /// Insert one queued message at a fixed created_at so the ORDER BY is
 /// deterministic regardless of how fast the tests run.
 fn seedMsg(
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session: []const u8,
     id: []const u8,
     msg: []const u8,

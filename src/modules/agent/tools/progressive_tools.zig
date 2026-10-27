@@ -598,6 +598,7 @@ pub fn execUseTool(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
 // ============================================================================
 
 const test_sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const Migration085 = @import("../../../migrations/migration.zig").Migration085AddSessionProgressiveTool;
 
 /// The `data.tools` rows of a rendered envelope result — the catalog rows
@@ -641,7 +642,7 @@ fn searchCall(args_json: []const u8) agent.ToolCall {
 /// One `search_tool` dispatch against the REAL registry, with `read_file` and
 /// `search_tool` enabled (so both are legitimately absent from the catalog) and
 /// everything else discoverable.
-fn searchToolOutput(a: std.mem.Allocator, db: *test_sqlite.SqliteBackend, io: std.Io, args_json: []const u8) ![]const u8 {
+fn searchToolOutput(a: std.mem.Allocator, db: *database.Db, io: std.Io, args_json: []const u8) ![]const u8 {
     var dummy_f32: f32 = 0.0;
     var dummy_bool: bool = false;
     const ctx = ToolExecContext{
@@ -673,7 +674,7 @@ test "execSearchTool: a regex finds tools a literal substring could not, end to 
 
     var threaded = std.Io.Threaded.init(exec_testing.allocator, .{});
     defer threaded.deinit();
-    var db: test_sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(threaded.io(), ":memory:");
     try Migration085.up(&db, exec_testing.allocator);
@@ -721,7 +722,7 @@ test "execSearchTool: limit/offset page the matches and report the true total" {
 
     var threaded = std.Io.Threaded.init(exec_testing.allocator, .{});
     defer threaded.deinit();
-    var db: test_sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(threaded.io(), ":memory:");
     try Migration085.up(&db, exec_testing.allocator);
@@ -798,7 +799,7 @@ const exec_testing = std.testing;
 /// is registered but not enabled, i.e. discoverable, which is the only state
 fn useToolResult(
     a: std.mem.Allocator,
-    db: *test_sqlite.SqliteBackend,
+    db: *database.Db,
     io: std.Io,
     logger: *pabrikcore.loggermod.Logger,
     args_json: []const u8,
@@ -861,7 +862,7 @@ test "execUseTool: equipping a catalog tool persists the row and reports it back
 
     var threaded = std.Io.Threaded.init(exec_testing.allocator, .{});
     defer threaded.deinit();
-    var db: test_sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(threaded.io(), ":memory:");
     try Migration085.up(&db, exec_testing.allocator);

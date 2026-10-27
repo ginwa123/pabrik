@@ -5,10 +5,12 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const runtime_mode = @import("../runtime_mode.zig");
 const workspace_scope = @import("workspace_scope.zig");
 const workspace_vm = @import("workspace_vm.zig");
 const vmd = @import("../vmd/vmd_client.zig");
+const vm_wire = @import("vm_wire");
 const proxy_rpc = @import("../vmd/proxy_rpc.zig");
 const policy = @import("../vmd/policy.zig");
 const fs_policy = @import("../vmd/fs_policy.zig");
@@ -360,9 +362,7 @@ pub const Fs = struct {
     }
 };
 
-/// The guest's per-reply ceiling. Matches the daemon's default so a caller
-/// asking for more does not simply get refused.
-const vmd_read_chunk: usize = 64 * 1024;
+const vmd_read_chunk: usize = vm_wire.max_reply_chunk;
 
 /// The substrate a workspace tree has on this build. A `--saas` process runs a
 /// tenant tree in its VM or not at all: a host with no VM backend compiled in
@@ -381,7 +381,7 @@ pub fn substrate(mode: runtime_mode.Mode, backend_available: bool) Substrate {
 /// reading the host — including when this build has no VM backend at all.
 pub fn forSession(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !?Fs {
     switch (substrate(runtime_mode.currentMode(), runtime_mode.vm_backend_available)) {
@@ -408,7 +408,7 @@ pub fn forSession(
     };
 }
 
-pub fn forWorkspace(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, workspace_id: []const u8) !Fs {
+pub fn forWorkspace(allocator: std.mem.Allocator, db: *database.Db, workspace_id: []const u8) !Fs {
     if (!policy.workspaceIdValid(workspace_id)) return Error.GuestWorkspaceUnknown;
     if (substrate(runtime_mode.currentMode(), runtime_mode.vm_backend_available) != .guest) {
         return Error.GuestManagerUnavailable;
@@ -429,7 +429,7 @@ pub fn forWorkspace(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, wor
 /// and the same failure — `--saas` with an unowned path is an error, never the host.
 pub fn forPath(
     allocator: std.mem.Allocator,
-    db: ?*sqlite.SqliteBackend,
+    db: ?*database.Db,
     abs_path: []const u8,
 ) !?Fs {
     switch (substrate(runtime_mode.currentMode(), runtime_mode.vm_backend_available)) {
@@ -438,11 +438,11 @@ pub fn forPath(
         .guest => {},
     }
 
-    const database = db orelse return Error.GuestWorkspaceUnknown;
-    const match = (try workspace_scope.resolveWorkspaceForPath(allocator, database, abs_path)) orelse
+    const db_handle = db orelse return Error.GuestWorkspaceUnknown;
+    const match = (try workspace_scope.resolveWorkspaceForPath(allocator, db_handle, abs_path)) orelse
         return Error.GuestWorkspaceUnknown;
     errdefer match.deinit(allocator);
-    if (!workspace_vm.isVmWorkspace(allocator, database, match.workspace_id)) return Error.GuestWorkspaceNotVm;
+    if (!workspace_vm.isVmWorkspace(allocator, db_handle, match.workspace_id)) return Error.GuestWorkspaceNotVm;
     const socket = runtime_mode.socketPath() orelse return Error.GuestManagerUnavailable;
     const socket_copy = try allocator.dupe(u8, socket);
     return .{
@@ -483,7 +483,7 @@ pub const Route = union(enum) {
 /// the days before the seam existed; `--saas` is the guest or a refusal.
 pub fn routeForSession(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) Route {
     if (runtime_mode.currentMode() != .saas) return .host;
@@ -495,7 +495,7 @@ pub fn routeForSession(
 /// that have a path and no session.
 pub fn routeForPath(
     allocator: std.mem.Allocator,
-    db: ?*sqlite.SqliteBackend,
+    db: ?*database.Db,
     abs_path: []const u8,
 ) Route {
     if (runtime_mode.currentMode() != .saas) return .host;
@@ -508,7 +508,7 @@ pub fn routeForPath(
 /// exactly like every other guest call here.
 pub fn previewExchange(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     port: u16,
     request_bytes: []const u8,
@@ -543,7 +543,7 @@ fn managerError(err: anyerror) anyerror {
 const testing = std.testing;
 
 const GuestTestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 
     fn deinit(self: *GuestTestCtx) void {
@@ -555,7 +555,7 @@ const GuestTestCtx = struct {
 fn guestTestCtx() !GuestTestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
 
@@ -752,6 +752,12 @@ test "forSession: saas with no resolvable workspace fails closed" {
     var ctx = try guestTestCtx();
     defer ctx.deinit();
     try testing.expectError(Error.GuestWorkspaceUnknown, forSession(testing.allocator, &ctx.db, "no-such-session"));
+}
+
+test "the guest read chunk is the wire's reply budget, so one reply is one frame" {
+    try std.testing.expectEqual(vm_wire.max_reply_chunk, vmd_read_chunk);
+    try std.testing.expect(vm_wire.encodedReplyFits(vmd_read_chunk));
+    try std.testing.expect(!vm_wire.encodedReplyFits(64 * 1024));
 }
 
 test "readAll: a path outside the workspace is refused before any RPC" {

@@ -3,6 +3,7 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const logger_mod = pabrikcore.loggermod;
 const event_bus_mod = pabrikcore.event_bus;
 const bg_proc = pabrikcore.ai_mod.background_process;
@@ -49,7 +50,7 @@ fn defaultGuestProbe(allocator: std.mem.Allocator, job: guest_jobs.GuestJob, boo
 pub const WatchCoreArgs = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     logger: ?*logger_mod.Logger,
     event_bus: ?*event_bus_mod.EventBus,
     session_id: []const u8,
@@ -346,7 +347,7 @@ fn spawnWatcherWithPoll(
 // ─── Tests (inline, project convention) ──────────────────────────────────────
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 
     fn deinit(self: *TestCtx) void {
@@ -361,7 +362,7 @@ fn setupCtx() !TestCtx {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

@@ -40,7 +40,7 @@ pub const SecretsCreateOutput = struct {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: SecretsCreateInput,
 ) SecretsCreateError!SecretsCreateOutput {
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;
@@ -155,11 +155,12 @@ pub fn secretsCreateHandler(
 // ─── Tests ──────────────────────────────────────────────────────────────
 
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const testing = std.testing;
 const migration = @import("../migrations/migration.zig");
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -167,7 +168,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -308,7 +309,7 @@ test "useCase: value \"\" is ValueRequired, a 400 — never a 500 constraint err
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // `SqliteBackend.exec` binds a zero-length slice as SQL NULL, and `value
+    // `Backend.exec` binds a zero-length slice as SQL NULL, and `value
     // TEXT NOT NULL` rejects NULL — so without the store's pre-check this
     // exact request would answer 500 "DB error" for what is really a blank
     try testing.expectError(

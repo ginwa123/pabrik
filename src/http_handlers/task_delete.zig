@@ -27,7 +27,7 @@ pub const TaskDeleteOutcome = union(enum) {
 pub fn deleteTaskUseCase(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     task_id: []const u8,
 ) !TaskDeleteOutcome {
     // 1. Look up the task so we can:
@@ -91,7 +91,7 @@ pub fn deleteTaskUseCase(
 /// `worker` whose `session_id = task_id`).
 fn getRunningWorkerId(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     task_id: []const u8,
 ) ![]const u8 {
     const sql = "SELECT id FROM worker WHERE session_id = ? LIMIT 1";

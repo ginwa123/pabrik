@@ -168,11 +168,12 @@ pub fn designElementsReorderHandler(
 
 const testing = std.testing;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 
 const design_elements_reorder = @This();
 
 fn setupDb() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     alloc: std.mem.Allocator,
 } {
@@ -180,7 +181,7 @@ fn setupDb() !struct {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -238,7 +239,7 @@ fn teardown(s: *@TypeOf(setupDb() catch @panic("setupDb failed in the design_ele
     s.threaded.deinit();
 }
 
-fn insertEl(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, page_id: []const u8, id: []const u8, z: i64) !void {
+fn insertEl(alloc: std.mem.Allocator, db: *database.Db, page_id: []const u8, id: []const u8, z: i64) !void {
     const z_str = try std.fmt.allocPrint(alloc, "{d}", .{z});
     defer alloc.free(z_str);
     try db.exec(alloc,
@@ -247,7 +248,7 @@ fn insertEl(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, page_id: []cons
         &.{ id, page_id, id, z_str });
 }
 
-fn readZ(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, id: []const u8) !?i64 {
+fn readZ(alloc: std.mem.Allocator, db: *database.Db, id: []const u8) !?i64 {
     var q = try db.query(alloc, "SELECT z_index FROM design_page_elements WHERE id = ?", &.{id});
     defer q.deinit();
     if (try q.next()) |row| {

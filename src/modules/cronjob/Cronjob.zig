@@ -3,6 +3,7 @@ const process_checker = @import("ProcessChecker.zig");
 // `databases` is the self-contained sqlite3 package — propagated to
 // this module via mod.addImport("databases", ...) in build.zig.
 const sqlite = @import("databases").sqlite;
+const database = @import("databases").database;
 
 /// Cronjob configuration
 pub const CronjobConfig = struct {
@@ -75,7 +76,7 @@ pub const Cronjob = struct {
 /// Check all running background processes and update their status in the database
 fn checkAndUpdateProcesses(allocator: std.mem.Allocator, io: std.Io, db_path: []const u8) !void {
     // Open database connection
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     
     // Convert db_path to null-terminated string
     const db_path_z = try allocator.dupeZ(u8, db_path);
@@ -144,7 +145,7 @@ fn checkAndUpdateProcesses(allocator: std.mem.Allocator, io: std.Io, db_path: []
 
 /// Get the status of a specific background process
 pub fn getProcessStatus(allocator: std.mem.Allocator, io: std.Io, db_path: []const u8, session_id: []const u8, pid: i32) !?[]const u8 {
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     
     const db_path_z = try allocator.dupeZ(u8, db_path);
     defer allocator.free(db_path_z);
@@ -168,7 +169,7 @@ pub fn getProcessStatus(allocator: std.mem.Allocator, io: std.Io, db_path: []con
 
 /// Get all background processes for a session
 pub fn getSessionProcesses(allocator: std.mem.Allocator, io: std.Io, db_path: []const u8, session_id: []const u8) !std.ArrayList(ProcessRecord) {
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     
     const db_path_z = try allocator.dupeZ(u8, db_path);
     defer allocator.free(db_path_z);
@@ -228,7 +229,7 @@ pub const ProcessRecord = struct {
 
 /// Clean up completed/stopped processes older than a certain time
 pub fn cleanupOldProcesses(allocator: std.mem.Allocator, io: std.Io, db_path: []const u8, older_than_seconds: i64) !usize {
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     
     const db_path_z = try allocator.dupeZ(u8, db_path);
     defer allocator.free(db_path_z);

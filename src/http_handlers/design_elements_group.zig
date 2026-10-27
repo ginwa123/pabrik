@@ -76,7 +76,7 @@ pub const GroupElementsOutput = struct {
 /// Group 2+ elements into a new parent.
 pub fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: GroupElementsInput,
 ) DesignElementsGroupError!GroupElementsOutput {
     if (input.page_id.len == 0) return error.PageIdRequired;
@@ -284,6 +284,7 @@ pub fn designElementsGroupHandler(
 const testing = std.testing;
 const design_elements_group = @This();
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 
 // ─── Test fixtures (mirrors `design_model_group_test.zig`) ─────────────────
 
@@ -291,7 +292,7 @@ const sqlite = pabrikcore.sqlite;
 /// the design SQL, plus a workspace_item with a tmpdir-backed path so
 /// `design_model.groupElements` can write the new group's HTML file.
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_id: []const u8,
     item_path: []u8,
@@ -303,7 +304,7 @@ fn setupDbAndItem() !TestCtx {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -381,7 +382,7 @@ fn setupDbAndItem() !TestCtx {
 /// Returns the generated id (heap-owned; caller frees).
 fn insertChild(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     page_id: []const u8,
     name: []const u8,
     x: i64,

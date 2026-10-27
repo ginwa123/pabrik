@@ -3,6 +3,7 @@ const schemas = @import("schemas.zig");
 const AgentTool = schemas.AgentTool;
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const workspace_scope = pabrikcore.workspace_scope;
 const helpers = @import("helpers");
 const sanitize = helpers.sanitize_control_chars;
@@ -62,7 +63,7 @@ fn parseI64(v: []const u8) i64 {
     return std.fmt.parseInt(i64, v, 10) catch 0;
 }
 
-fn countScalar(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, sql: []const u8, binds: []const []const u8) !u32 {
+fn countScalar(allocator: std.mem.Allocator, db: *database.Db, sql: []const u8, binds: []const []const u8) !u32 {
     var rows = try db.query(allocator, sql, binds);
     defer rows.deinit();
     if (try rows.next()) |row| {
@@ -74,7 +75,7 @@ fn countScalar(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, sql: []c
 
 /// One owned string from a single-row scalar query, or "" when there is no
 /// row.
-fn scalar(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, sql: []const u8, binds: []const []const u8) ![]u8 {
+fn scalar(allocator: std.mem.Allocator, db: *database.Db, sql: []const u8, binds: []const []const u8) ![]u8 {
     var rows = try db.query(allocator, sql, binds);
     defer rows.deinit();
     if (try rows.next()) |row| {
@@ -104,7 +105,7 @@ const TaskDetail = struct {
 
 /// The kanban/agent task this session IS, when it is a task chat. A session
 /// id doubles as the task id (Migration 052), so the join is by id.
-fn taskDetail(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8) !?TaskDetail {
+fn taskDetail(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) !?TaskDetail {
     var rows = try db.query(allocator,
         \\SELECT t.id, COALESCE(t.name, ''), COALESCE(t.cwd, ''), wi.id,
         \\       COALESCE(wi.item_type, ''), COALESCE(wi.name, '')
@@ -141,7 +142,7 @@ const WorkerDetail = struct {
 
 /// The live `worker` row, when a turn is executing. `is_running` is derived
 /// from the same row, so the two can never disagree.
-fn workerDetail(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8) !?WorkerDetail {
+fn workerDetail(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) !?WorkerDetail {
     var rows = try db.query(allocator,
         \\SELECT COALESCE(working_directory, ''), COALESCE(last_activity_nano, 0),
         \\       COALESCE(last_activity_description, '')
@@ -210,7 +211,7 @@ const SessionDetail = struct {
 
 /// Read every column view_session reports for one session, or null when the
 /// row is gone. Reads only; the caller owns the result.
-fn loadSessionDetail(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8) !?SessionDetail {
+fn loadSessionDetail(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) !?SessionDetail {
     var rows = try db.query(allocator,
         \\SELECT id, COALESCE(name, ''), COALESCE(status, ''), COALESCE(cwd, ''),
         \\       COALESCE(git_worktree_cwd, ''), COALESCE(selected_profile_model, ''),
@@ -312,7 +313,7 @@ fn deniedJSON(allocator: std.mem.Allocator, session_id: []const u8) ![]u8 {
 /// Execute view_session. Returns a JSON string for the LLM.
 pub fn execute_view_session(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     caller_session_id: []const u8,
     input: ViewSessionInput,
 ) ![]const u8 {
@@ -478,7 +479,7 @@ fn parseTestJson(alloc: std.mem.Allocator, out: []const u8) !std.json.Parsed(std
 }
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -486,7 +487,7 @@ fn setupDb() !TestCtx {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
 

@@ -5,6 +5,7 @@ const std = @import("std");
 const testing = std.testing;
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const logger_mod = pabrikcore.loggermod;
 const migration = @import("../migrations/migration.zig");
 
@@ -73,7 +74,7 @@ const offered_buckets = [_][]const u8{ "skills", "global_skills", "local_skills"
 /// Append one ledger row.
 pub fn insertEvent(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     args: SkillToolEventArgs,
     skill_name: []const u8,
     kind: SkillEventKind,
@@ -163,7 +164,7 @@ fn logDebug(logger: ?*logger_mod.Logger, comptime fmt: []const u8, args: anytype
 
 pub fn recordSkillToolEvents(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     logger: ?*logger_mod.Logger,
     args: SkillToolEventArgs,
 ) void {
@@ -174,6 +175,7 @@ pub fn recordSkillToolEvents(
         std.mem.eql(u8, args.tool_name, "search_skills") or
         std.mem.eql(u8, args.tool_name, "add_skill") or
         std.mem.eql(u8, args.tool_name, "edit_skill") or
+        std.mem.eql(u8, args.tool_name, "set_skill_metadata") or
         std.mem.eql(u8, args.tool_name, "remove_skill");
     if (!is_skill_tool) return;
 
@@ -234,7 +236,7 @@ pub fn recordSkillToolEvents(
 
     const kind: SkillEventKind = if (std.mem.eql(u8, args.tool_name, "add_skill"))
         .created
-    else if (std.mem.eql(u8, args.tool_name, "edit_skill"))
+    else if (std.mem.eql(u8, args.tool_name, "edit_skill") or std.mem.eql(u8, args.tool_name, "set_skill_metadata"))
         .edited
     else
         .removed;
@@ -247,7 +249,7 @@ pub fn recordSkillToolEvents(
 // ─── tests ───────────────────────────────────────────────────────────────
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -255,7 +257,7 @@ fn setupDb() !TestCtx {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
     var manager = migration.MigrationManager.init(alloc, &db);
@@ -265,7 +267,7 @@ fn setupDb() !TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
-fn countEvents(db: *sqlite.SqliteBackend, alloc: std.mem.Allocator, session_id: []const u8) !i64 {
+fn countEvents(db: *database.Db, alloc: std.mem.Allocator, session_id: []const u8) !i64 {
     var q = try db.query(alloc,
         "SELECT COUNT(*) FROM session_skill_events WHERE session_id = ?",
         &.{session_id});
@@ -276,7 +278,7 @@ fn countEvents(db: *sqlite.SqliteBackend, alloc: std.mem.Allocator, session_id: 
 }
 
 fn eventCount(
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     alloc: std.mem.Allocator,
     session_id: []const u8,
     event: []const u8,
@@ -445,29 +447,38 @@ test "a listed skill and a loaded skill coexist for the same name" {
     try testing.expectEqual(@as(i64, 1), try eventCount(&ctx.db, alloc, "sess_1", "loaded"));
 }
 
-test "recordSkillToolEvents handles add/edit/remove" {
+test "recordSkillToolEvents handles add/edit/metadata/remove" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    const cases = [_]struct { tool: []const u8, event: []const u8, result: []const u8 }{
-        .{ .tool = "add_skill", .event = "created", .result =
+    const cases = [_]struct { tool: []const u8, result: []const u8 }{
+        .{ .tool = "add_skill", .result =
         \\{"tool":"add_skill","success":true,"data":{"skill_name":"new-skill","name":"new-skill","created":true,"path":"/p"},"error":null,"v":1}
         },
-        .{ .tool = "edit_skill", .event = "edited", .result =
+        .{ .tool = "edit_skill", .result =
         \\{"tool":"edit_skill","success":true,"data":{"skill_name":"new-skill","name":"new-skill","updated":true,"path":"/p"},"error":null,"v":1}
         },
-        .{ .tool = "remove_skill", .event = "removed", .result =
+        .{ .tool = "set_skill_metadata", .result =
+        \\{"tool":"set_skill_metadata","success":true,"data":{"skill_name":"new-skill","updated":true,"metadata":[{"key":"license","value":"MIT"}]},"error":null,"v":1}
+        },
+        .{ .tool = "remove_skill", .result =
         \\{"tool":"remove_skill","success":true,"data":{"skill_name":"new-skill","removed":true,"path":"/p"},"error":null,"v":1}
         },
     };
 
     for (cases) |c| {
         recordSkillToolEvents(alloc, &ctx.db, null, testArgs(ctx.threaded.io(), "sess_1", c.tool, c.result));
-        try testing.expectEqual(@as(i64, 1), try eventCount(&ctx.db, alloc, "sess_1", c.event));
     }
-    try testing.expectEqual(@as(i64, 3), try countEvents(&ctx.db, alloc, "sess_1"));
+
+    try testing.expectEqual(@as(i64, 4), try countEvents(&ctx.db, alloc, "sess_1"));
+    try testing.expectEqual(@as(i64, 1), try eventCount(&ctx.db, alloc, "sess_1", "created"));
+    try testing.expectEqual(@as(i64, 1), try eventCount(&ctx.db, alloc, "sess_1", "removed"));
+    // A metadata write is a write to the row, so it lands as `edited` beside
+    // `edit_skill` — the ledger would otherwise show a skill changing with no
+    // event explaining it.
+    try testing.expectEqual(@as(i64, 2), try eventCount(&ctx.db, alloc, "sess_1", "edited"));
 }
 
 test "recordSkillToolEvents tolerates a payload it cannot parse" {
@@ -692,7 +703,7 @@ pub const FactClaim = enum {
 /// Claim the right to compute the intrinsic half for one exact question.
 pub fn claimFact(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     skill_key: []const u8,
     content_hash: []const u8,
@@ -755,7 +766,7 @@ fn parseScore(raw: []const u8) u8 {
 /// be mistaken for a verdict, so every read goes through here.
 pub fn readFact(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     skill_key: []const u8,
     content_hash: []const u8,
     context_key: []const u8,
@@ -790,7 +801,7 @@ pub fn readFact(
 /// Take over a lease whose owner has been gone longer than `lease_seconds`.
 pub fn stealFact(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     skill_key: []const u8,
     content_hash: []const u8,
     context_key: []const u8,
@@ -825,7 +836,7 @@ pub const FactValues = struct {
 /// so a stolen lease cannot be overwritten by the original owner waking up.
 pub fn publishFact(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     fact_id: []const u8,
     values: FactValues,
 ) !bool {
@@ -887,7 +898,7 @@ pub const JudgeValues = struct {
 /// Write the judge tier's half onto one result row.
 pub fn updateJudgeResult(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     result_id: []const u8,
     values: JudgeValues,
 ) !bool {
@@ -947,7 +958,7 @@ pub const JudgeScores = struct {
 
 pub fn readJudgeScores(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     result_id: []const u8,
 ) !?JudgeScores {
     var q = try db.query(allocator,
@@ -974,7 +985,7 @@ pub fn readJudgeScores(
 /// input to the judge — it is what makes the session-relative half computable
 pub fn sessionTaskContext(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     max_bytes: usize,
 ) ![]u8 {
@@ -1002,7 +1013,7 @@ pub fn sessionTaskContext(
 /// Claim the one self-prompted run a session is allowed.
 pub fn claimRun(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     session_id: []const u8,
     trigger: []const u8,
@@ -1033,7 +1044,7 @@ pub fn claimRun(
 /// guarantees a single owner per `(session, trigger)`.
 pub fn finishRun(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     run_id: []const u8,
     status: []const u8,
     total_tokens: u32,
@@ -1065,7 +1076,7 @@ pub const ApplyClaim = enum {
 /// both write the skill.
 pub fn claimApply(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     result_id: []const u8,
     action: []const u8,
 ) !ApplyClaim {
@@ -1082,7 +1093,7 @@ pub fn claimApply(
 /// Give an apply claim back.
 pub fn releaseApply(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     result_id: []const u8,
 ) !void {
     try db.exec(allocator,
@@ -1094,7 +1105,7 @@ pub fn releaseApply(
 /// than deleted so the UI can offer a re-evaluate.
 pub fn markResultStale(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     result_id: []const u8,
 ) !void {
     try db.exec(allocator,
@@ -1104,7 +1115,7 @@ pub fn markResultStale(
     , &.{result_id});
 }
 
-fn resultExists(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, result_id: []const u8) !bool {
+fn resultExists(allocator: std.mem.Allocator, db: *database.Db, result_id: []const u8) !bool {
     var q = try db.query(allocator, "SELECT 1 FROM skill_eval_results WHERE id = ?", &.{result_id});
     defer q.deinit();
     const row = (try q.next()) orelse return false;
@@ -1466,7 +1477,7 @@ pub const SessionSkillUse = struct {
 /// The skills one session was OFFERED and the ones it actually READ.
 pub fn sessionSkillSet(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]SessionSkillUse {
     var out: std.ArrayList(SessionSkillUse) = .empty;
@@ -1626,7 +1637,7 @@ pub const RunFilter = struct {
 /// building SQL text.
 pub fn listRuns(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     filter: RunFilter,
 ) ![]RunRow {
     const limit_str = try std.fmt.allocPrint(allocator, "{d}", .{filter.limit});
@@ -1736,7 +1747,7 @@ const result_projection =
 
 pub fn listResults(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     run_id: []const u8,
 ) ![]ResultRow {
     var q = try db.query(allocator, result_projection ++
@@ -1762,7 +1773,7 @@ pub fn listResults(
 /// session's repo, not wherever the server process was started.
 pub fn readResultById(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     result_id: []const u8,
 ) !?ResultRow {
     var q = try db.query(allocator, result_projection ++
@@ -1777,7 +1788,7 @@ pub fn readResultById(
 /// `values[N]` onto the field `result_projection` puts in column N. Read the
 /// two together: a column added to one and not the other mis-maps silently --
 /// every value is a string, so nothing about the call site would complain.
-fn mapResultRow(allocator: std.mem.Allocator, row: sqlite.SqliteBackend.Row) !ResultRow {
+fn mapResultRow(allocator: std.mem.Allocator, row: database.Db.Row) !ResultRow {
     return .{
         .id = try allocator.dupe(u8, row.values[0]),
         .run_id = try allocator.dupe(u8, row.values[1]),
@@ -1817,7 +1828,7 @@ pub const VerdictCount = struct {
 /// Verdict tally, for the UI's "needs attention" badge.
 pub fn verdictCounts(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]VerdictCount {
     var q = try db.query(allocator,
@@ -1962,7 +1973,7 @@ test "verdictCounts tallies per verdict and totals the whole table when unfilter
 
 // ─── the judge tier's storage ─────────────────────────────────────────────
 
-fn seedResultRow(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, id: []const u8, verdict: []const u8) !void {
+fn seedResultRow(alloc: std.mem.Allocator, db: *database.Db, id: []const u8, verdict: []const u8) !void {
     try db.exec(alloc,
         \\INSERT INTO skill_eval_results (id, run_id, skill_key, skill_name, session_id, status, verdict, rationale)
         \\VALUES (?, 'run_j', 'global:foo', 'foo', 'sess_j', 'done', ?, 'Tier 0 found no problem')

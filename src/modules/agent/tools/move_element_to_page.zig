@@ -6,6 +6,7 @@ const schemas = @import("schemas.zig");
 const AgentTool = schemas.AgentTool;
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const design_model = pabrikcore.ai_mod.design_model;
 const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
@@ -118,7 +119,7 @@ fn validateInputShape(allocator: std.mem.Allocator, input: MoveElementToPageInpu
 /// LLM.
 pub fn executeMoveElementToPageToString(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     active_page_id: []const u8,
     input: MoveElementToPageInput,
 ) ![]u8 {
@@ -185,7 +186,7 @@ const testing = std.testing;
 // =====================================================================
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_id: []const u8,
     item_path: []u8,
@@ -197,7 +198,7 @@ fn setupDb() !TestCtx {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

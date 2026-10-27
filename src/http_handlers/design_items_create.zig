@@ -49,7 +49,7 @@ pub const WorkspaceItemsCreateDesignResult = []const u8; // pre-serialized JSON
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: WorkspaceItemsCreateDesignInput,
 ) WorkspaceItemsCreateDesignError!WorkspaceItemsCreateDesignResult {
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;

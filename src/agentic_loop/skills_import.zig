@@ -1,14 +1,14 @@
-//! One-shot migration of the two on-disk skill directories into Migration
-//! 101's `skills` and `skill_assets` tables. 39 skills are installed today:
+//! One-shot migration of the two on-disk skill directories into the `skills`,
+//! `skill_assets` and `skill_metadata` tables. 39 skills are installed today:
 //! 22 under `~/.config/pabrik/skills/` and 17 under `<cwd>/.pabrik/skills/`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
-const sqlite = pabrikcore.sqlite;
-/// `parseYamlFrontmatter` is used HERE and nowhere else in the read path:
-/// this is the one moment the description moves out of the body and into
-/// the `description` column. Every later read takes the column.
-const skill_mod = pabrikcore.skill_mod;
+const database = pabrikcore.database;
+/// `frontmatter.parse` is used HERE and in the write tools: this is the one
+/// moment the promoted keys move out of the body and into their columns, and
+/// the rest of the block becomes `skill_metadata` rows.
+const frontmatter = @import("skill_frontmatter.zig");
 const skills_store = @import("skills_store.zig");
 
 /// The file that makes a directory a skill.
@@ -122,7 +122,7 @@ pub const ImportError = skills_store.ListSkillsError ||
 pub fn importFromDir(
     io: std.Io,
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     skills_dir: []const u8,
 ) ImportError!ImportReport {
@@ -136,7 +136,7 @@ pub fn importFromDir(
 pub fn importFromTargets(
     io: std.Io,
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     targets: []const DirTarget,
 ) ImportError!ImportReport {
     var report: ImportReport = .{};
@@ -187,6 +187,10 @@ const LoadedSkill = struct {
     /// `isValidSkillName`, else the directory name.
     name: []const u8,
     description: []const u8,
+    /// The body's `is_can_auto_improve:` when it declares one. It only wins
+    /// on the FIRST import: `upsertSkill` deliberately leaves the column
+    /// alone on conflict, so a re-import cannot undo a human's unlock.
+    is_can_auto_improve: ?bool = null,
     /// Byte-exact SKILL.MD, frontmatter included.
     body: []const u8,
     /// Companion files, `rel_path` relative to the SKILL DIRECTORY (so
@@ -341,45 +345,34 @@ fn loadSkill(
     }
     errdefer allocator.free(body);
 
-    // Name and description.
-    var row_name: ?[]const u8 = null;
-    var row_description: ?[]const u8 = null;
-    errdefer {
-        if (row_name) |n| allocator.free(n);
-        if (row_description) |d| allocator.free(d);
-    }
+    // Name, description and the lock: the promoted keys, plus the metadata
+    // the callers below re-derive from `body` rather than re-parse here.
+    var parsed = try frontmatter.parse(allocator, body);
+    defer parsed.deinit(allocator);
 
-    if (skill_mod.parseYamlFrontmatter(allocator, body)) |parsed| {
-        defer {
-            allocator.free(parsed.name);
-            allocator.free(parsed.description);
+    var row_name: ?[]const u8 = null;
+    errdefer if (row_name) |n| allocator.free(n);
+
+    if (parsed.header.name.len > 0 and skills_store.isValidSkillName(parsed.header.name)) {
+        if (!std.mem.eql(u8, parsed.header.name, dir_name)) {
+            std.log.debug(
+                "skills_import: '{s}' declares name '{s}'; the declared name wins",
+                .{ dir_name, parsed.header.name },
+            );
         }
-        if (skills_store.isValidSkillName(parsed.name)) {
-            if (!std.mem.eql(u8, parsed.name, dir_name)) {
-                std.log.debug(
-                    "skills_import: '{s}' declares name '{s}'; the declared name wins",
-                    .{ dir_name, parsed.name },
-                );
-            }
-            row_name = try allocator.dupe(u8, parsed.name);
-        } else {
+        row_name = try allocator.dupe(u8, parsed.header.name);
+    } else {
+        if (parsed.header.name.len > 0) {
             std.log.info(
                 "skills_import: '{s}' declares unusable name '{s}'; using the directory name",
-                .{ dir_name, parsed.name },
+                .{ dir_name, parsed.header.name },
             );
-            row_name = try allocator.dupe(u8, dir_name);
         }
-        row_description = try allocator.dupe(u8, parsed.description);
-    } else {
-        std.log.info(
-            "skills_import: '{s}' has no parseable frontmatter; importing with an empty description",
-            .{dir_name},
-        );
         row_name = try allocator.dupe(u8, dir_name);
-        row_description = try allocator.dupe(u8, "");
     }
     const name = row_name.?;
-    const description = row_description.?;
+    const description = try allocator.dupe(u8, parsed.header.description);
+    errdefer allocator.free(description);
 
     var assets: std.ArrayList(skills_store.SkillAssetInput) = .empty;
     errdefer {
@@ -403,6 +396,7 @@ fn loadSkill(
     try loaded.append(allocator, .{
         .name = name,
         .description = description,
+        .is_can_auto_improve = parsed.header.is_can_auto_improve,
         .body = body,
         .assets = owned_assets,
     });
@@ -563,7 +557,7 @@ pub fn isSafeRelPath(rel_path: []const u8) bool {
 
 fn writeSkills(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     loaded: []const LoadedSkill,
     report: *ImportReport,
@@ -588,6 +582,7 @@ fn writeSkills(
             .name = skill.name,
             .description = skill.description,
             .content = skill.body,
+            .is_can_auto_improve = skill.is_can_auto_improve,
         });
         skills_store.freeSkillRow(allocator, written);
 
@@ -605,7 +600,7 @@ const testing = std.testing;
 const migration = @import("../migrations/migration.zig");
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -615,11 +610,12 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
     try migration.Migration102CreateSkills.up(&db, testing.allocator);
+    try migration.Migration119CreateSkillMetadata.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -1103,4 +1099,82 @@ test "skills_import replaces a companion set rather than merging it" {
 
     try testing.expectEqual(@as(usize, 0), second.assets_written);
     try testing.expectEqual(@as(usize, 0), try countRows(&ctx, "SELECT COUNT(*) FROM skill_assets"));
+}
+
+test "skills_import records the frontmatter keys it does not promote" {
+    const alloc = testing.allocator;
+    var threaded = std.Io.Threaded.init(alloc, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var tmp = testing.tmpDir(.{ .iterate = true });
+    defer tmp.cleanup();
+    try writeFixture(io, tmp.dir, "pdf/SKILL.MD",
+        \\---
+        \\name: pdf
+        \\description: Work with PDFs.
+        \\origin: ECC
+        \\tags: [workflow, documents]
+        \\license: Proprietary. LICENSE.txt has complete terms
+        \\---
+        \\Run scripts/convert.py.
+    );
+
+    const report = try importFromTargets(io, alloc, &ctx.db, &.{
+        .{ .open_dir = tmp.dir, .workspace_ids = &.{"ws_a"} },
+    });
+    defer freeImportReport(alloc, report);
+    try testing.expectEqual(@as(usize, 1), report.skills_written);
+
+    const rows = try store.listMetadata(alloc, &ctx.db, "ws_a", "pdf");
+    defer store.freeSkillMetadataRows(alloc, rows);
+
+    // The filename says SKILL.MD and the body is stored byte-exact, but a
+    // reader no longer has to open it: the three keys with no column are
+    // rows, key-ordered.
+    try testing.expectEqual(@as(usize, 3), rows.len);
+    try testing.expectEqualStrings("license", rows[0].key);
+    try testing.expectEqualStrings("origin", rows[1].key);
+    try testing.expectEqualStrings("ECC", rows[1].value);
+    try testing.expectEqualStrings("tags", rows[2].key);
+    try testing.expectEqualStrings("[workflow, documents]", rows[2].value);
+}
+
+test "skills_import pins a skill whose body declares is_can_auto_improve: false" {
+    const alloc = testing.allocator;
+    var threaded = std.Io.Threaded.init(alloc, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var tmp = testing.tmpDir(.{ .iterate = true });
+    defer tmp.cleanup();
+    try writeFixture(io, tmp.dir, "pinned/SKILL.MD",
+        \\---
+        \\name: pinned
+        \\description: Ships locked.
+        \\is_can_auto_improve: false
+        \\---
+        \\Body.
+    );
+
+    const report = try importFromTargets(io, alloc, &ctx.db, &.{
+        .{ .open_dir = tmp.dir, .workspace_ids = &.{"ws_a"} },
+    });
+    defer freeImportReport(alloc, report);
+
+    const row = try store.getSkillByName(alloc, &ctx.db, "ws_a", "pinned");
+    defer store.freeSkillRow(alloc, row);
+
+    // A skill checked into a repo can arrive already pinned, and the flag is
+    // a column — it never becomes a metadata row.
+    try testing.expect(!row.is_can_auto_improve);
+    const rows = try store.listMetadata(alloc, &ctx.db, "ws_a", "pinned");
+    defer store.freeSkillMetadataRows(alloc, rows);
+    try testing.expectEqual(@as(usize, 0), rows.len);
 }

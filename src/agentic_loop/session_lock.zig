@@ -7,20 +7,21 @@ const pabrikcore = @import("pabrikcore");
 const helpers = @import("helpers");
 
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const testing = std.testing;
 
 /// A claimed session. `token` identifies THIS run; every later write carries it
 /// so a run that lost its slot can never touch the row a different run owns.
 pub const RunLease = struct {
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     token: []const u8,
 };
 
 pub const AcquireInput = struct {
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     working_directory: []const u8,
 };
@@ -136,7 +137,7 @@ pub fn acquire(input: AcquireInput) !AcquireResult {
     return .busy;
 }
 
-fn lease(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8, token: []const u8) RunLease {
+fn lease(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8, token: []const u8) RunLease {
     return .{
         .allocator = allocator,
         .db = db,
@@ -149,7 +150,7 @@ fn lease(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []
 /// changed the row; `RowNotFound` means the `WHERE` matched nothing (held by
 /// another run, or a losing insert).
 fn claimedRow(
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     allocator: std.mem.Allocator,
     sql: []const u8,
     args: []const []const u8,
@@ -167,7 +168,7 @@ fn claimedRow(
 /// loop must leave.
 pub fn beginIteration(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     token: []const u8,
 ) !?IterationState {
@@ -198,14 +199,14 @@ pub fn beginIteration(
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
 fn setupDb(alloc: std.mem.Allocator) !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
     try db.exec(alloc,
@@ -233,7 +234,7 @@ fn teardown(ctx: *TestCtx) void {
     ctx.threaded.deinit();
 }
 
-fn readToken(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8) ![]const u8 {
+fn readToken(alloc: std.mem.Allocator, db: *database.Db, session_id: []const u8) ![]const u8 {
     var row = try db.queryRow(alloc, "SELECT run_token FROM worker WHERE id = ?", &.{session_id});
     defer row.deinit(alloc);
     return try alloc.dupe(u8, row.values[0]);

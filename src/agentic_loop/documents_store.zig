@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const sqlite = @import("pabrikcore").sqlite;
+const database = @import("pabrikcore").database;
 const helpers = @import("helpers");
 
 /// The only document format MVP writes. The column exists so the table is
@@ -117,7 +118,7 @@ fn rowFromValues(allocator: std.mem.Allocator, values: []const []const u8) !Docu
 /// `DocumentsList` render order.
 pub fn listDocuments(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
 ) ListDocumentsError![]DocumentRow {
     if (workspace_id.len == 0) return error.WorkspaceIdRequired;
@@ -165,7 +166,7 @@ fn likeContainsPattern(allocator: std.mem.Allocator, needle: []const u8) ![]u8 {
 /// substring, never a pattern.
 pub fn searchDocuments(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     needle: ?[]const u8,
 ) SearchDocumentsError![]DocumentRow {
@@ -209,7 +210,7 @@ pub fn searchDocuments(
 /// One document, scoped to `workspace_id`.
 pub fn getDocument(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     document_id: []const u8,
 ) GetDocumentError!DocumentRow {
@@ -230,7 +231,7 @@ pub fn getDocument(
 /// Insert a document and return it with its canonical id + timestamps.
 pub fn createDocument(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     args: CreateDocumentArgs,
 ) CreateDocumentError!DocumentRow {
     if (args.workspace_id.len == 0) return error.WorkspaceIdRequired;
@@ -255,7 +256,7 @@ pub fn createDocument(
     const format = if (args.format.len == 0) FORMAT_MARKDOWN else args.format;
 
     // COALESCE(NULLIF(?, ''), '') on every NOT NULL text column:
-    // `SqliteBackend.exec` binds a zero-length slice as SQL NULL, which would
+    // `Backend.exec` binds a zero-length slice as SQL NULL, which would
     // violate the constraint outright.
     db.exec(allocator,
         \\INSERT INTO documents (id, workspace_id, title, content, format, created_at, updated_at)
@@ -276,7 +277,7 @@ pub fn createDocument(
 /// always advances so the sidebar's recency ordering reflects the edit.
 pub fn updateDocument(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     document_id: []const u8,
     patch: UpdateDocumentArgs,
@@ -315,7 +316,7 @@ pub fn updateDocument(
 /// `error.NotFound` and deletes nothing.
 pub fn deleteDocument(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     document_id: []const u8,
 ) DeleteDocumentError!void {

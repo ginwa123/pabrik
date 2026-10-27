@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 
 /// Migration 107 — tag each background process with its KIND.
 /// `session_background_process` (migration 014) recorded one thing: a
@@ -10,7 +10,7 @@ pub const Migration107AddBackgroundProcessKind = struct {
     pub const version: u32 = 107;
     pub const name = "add_background_process_kind";
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         try db.exec(allocator,
             \\ALTER TABLE session_background_process
             \\    ADD COLUMN kind TEXT NOT NULL DEFAULT 'job'

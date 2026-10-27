@@ -2,6 +2,7 @@ const std = @import("std");
 const http_response = @import("http_response.zig");
 const pabrik_core = @import("pabrikcore");
 const gserverz = pabrik_core.gserverz;
+const git_route = @import("git_route.zig");
 
 /// Domain error set for the worktree-info use case. The handler maps
 /// `NotARepository` to HTTP 404; other failures propagate as 500.
@@ -29,21 +30,15 @@ fn getWorktreeInfoUseCase(
     base: ?[]const u8,
 ) WorktreeInfoError!WorktreeInfoResult {
     // 1) Confirm it's a git repo.
-    const git_dir_check = std.process.run(allocator, io, .{
-        .argv = &.{ "git", "-C", path, "rev-parse", "--git-dir" },
-    }) catch return error.NotARepository;
+    const git_dir_check = git_route.run(allocator, io, path, &.{ "rev-parse", "--git-dir" }, .{}) catch return error.NotARepository;
     if (git_dir_check.term.exited != 0) return error.NotARepository;
 
     // 2) Current branch.
-    const branch_result = std.process.run(allocator, io, .{
-        .argv = &.{ "git", "-C", path, "branch", "--show-current" },
-    }) catch return error.NotARepository;
+    const branch_result = git_route.run(allocator, io, path, &.{ "branch", "--show-current" }, .{}) catch return error.NotARepository;
     const branch = std.mem.trim(u8, branch_result.stdout, " \n\r");
 
     // 3) Last commit (short SHA + subject).
-    const log_result = std.process.run(allocator, io, .{
-        .argv = &.{ "git", "-C", path, "log", "-1", "--format=%h %s" },
-    }) catch return error.NotARepository;
+    const log_result = git_route.run(allocator, io, path, &.{ "log", "-1", "--format=%h %s" }, .{}) catch return error.NotARepository;
     const log_line = std.mem.trim(u8, log_result.stdout, " \n\r");
     var last_sha: []const u8 = "";
     var last_msg: []const u8 = "";
@@ -65,8 +60,7 @@ fn getWorktreeInfoUseCase(
             // loop variable.
             var origin_b_buf: [64]u8 = undefined;
             const origin_b = std.fmt.bufPrint(origin_b_buf[0..], "origin/{s}", .{b}) catch continue;
-            const argv = [_][]const u8{ "git", "-C", path, "rev-parse", "--verify", origin_b };
-            const probe = std.process.run(allocator, io, .{ .argv = &argv }) catch continue;
+            const probe = git_route.run(allocator, io, path, &.{ "rev-parse", "--verify", origin_b }, .{}) catch continue;
             if (probe.term.exited == 0) {
                 default_base = b;
                 break;
@@ -79,8 +73,7 @@ fn getWorktreeInfoUseCase(
     {
         var range_buf: [128]u8 = undefined;
         const range = std.fmt.bufPrint(range_buf[0..], "origin/{s}..HEAD", .{default_base}) catch "";
-        const argv = [_][]const u8{ "git", "-C", path, "rev-list", "--count", range };
-        if (std.process.run(allocator, io, .{ .argv = &argv })) |ahead_result| {
+        if (git_route.run(allocator, io, path, &.{ "rev-list", "--count", range }, .{})) |ahead_result| {
             if (ahead_result.term.exited == 0) {
                 const trimmed = std.mem.trim(u8, ahead_result.stdout, " \n\r");
                 commits_ahead = std.fmt.parseInt(i64, trimmed, 10) catch 0;
@@ -95,8 +88,7 @@ fn getWorktreeInfoUseCase(
     {
         var range_buf: [128]u8 = undefined;
         const range = std.fmt.bufPrint(range_buf[0..], "origin/{s}..HEAD", .{default_base}) catch "";
-        const argv = [_][]const u8{ "git", "-C", path, "diff", "--shortstat", range };
-        if (std.process.run(allocator, io, .{ .argv = &argv })) |diff_result| {
+        if (git_route.run(allocator, io, path, &.{ "diff", "--shortstat", range }, .{})) |diff_result| {
             if (diff_result.term.exited == 0) {
                 diff_summary = std.mem.trim(u8, diff_result.stdout, " \n\r");
             }

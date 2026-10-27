@@ -25,6 +25,9 @@ const use_skill_mod = pabrikcore.skill_tools;
 const remove_skill_mod = pabrikcore.skill_tools;
 const add_skill_mod = pabrikcore.skill_tools;
 const edit_skill_mod = pabrikcore.skill_tools;
+// `set_skill_metadata` — the key-level half of `edit_skill`: it rewrites the
+// fence and leaves the instruction body byte-identical.
+const set_skill_metadata_mod = pabrikcore.skill_tools;
 const set_git_worktree_mod = pabrikcore.set_git_worktree;
 const set_pull_request_mod = pabrikcore.set_pull_request;
 const status_pull_request_mod = pabrikcore.status_pull_request;
@@ -125,6 +128,7 @@ pub fn equips(allocator: std.mem.Allocator) []const AgentTool {
         remove_skill_mod.remove_skill_tool,
         add_skill_mod.add_skill_tool,
         edit_skill_mod.edit_skill_tool,
+        set_skill_metadata_mod.set_skill_metadata_tool,
         // Skill Evals.
         run_skill_eval_mod.run_skill_eval_tool,
         command_tool_mod.command_tool,
@@ -226,6 +230,7 @@ pub fn UNIFIED_TOOL_REGISTRY() []const ToolInfo {
 
         .{ .name = "add_skill", .exec = tools.execAddSkill, .tool_def = add_skill_mod.add_skill_tool, .auto_save_skill = true },
         .{ .name = "edit_skill", .exec = tools.execEditSkill, .tool_def = edit_skill_mod.edit_skill_tool },
+        .{ .name = "set_skill_metadata", .exec = tools.execSetSkillMetadata, .tool_def = set_skill_metadata_mod.set_skill_metadata_tool },
 
         // === SKILL EVALS === run_skill_eval: the agent evaluates the skills
         // this session actually used.
@@ -366,6 +371,9 @@ pub const DEFAULT_AGENT_TOOLS: []const []const u8 = &.{
     remove_skill_mod.remove_skill_tool.function.name,
     add_skill_mod.add_skill_tool.function.name,
     edit_skill_mod.edit_skill_tool.function.name,
+    // The key-level half of `edit_skill`. Ships with it: a model asked to
+    // change one tag must not have to restate the body to do it.
+    set_skill_metadata_mod.set_skill_metadata_tool.function.name,
     search_skills_mod.search_skills_tool.function.name,
 
     // Web search.
@@ -639,7 +647,7 @@ test "DEFAULT_AGENT_TOOLS ships the spawn pair and the progressive meta-tools" {
 const testing = std.testing;
 
 const SeedTestCtx = struct {
-    db: pabrikcore.sqlite.SqliteBackend,
+    db: pabrikcore.database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -648,7 +656,7 @@ fn setupSeedDb() !SeedTestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: pabrikcore.sqlite.SqliteBackend = .{};
+    var db: pabrikcore.database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try db.exec(

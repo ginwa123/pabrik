@@ -8,6 +8,7 @@ const file_attachments = @import("file_attachments.zig");
 const agent = pabrikcore.agent;
 const json = std.json;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 
 pub fn transformLLMHistoryToAgentMessage(allocator: std.mem.Allocator, message: LLMHistory) ![]agent.AgentMessage {
     var messages: std.ArrayList(agent.AgentMessage) = .empty;
@@ -318,7 +319,7 @@ pub const ChatIdentity = struct {
     }
 };
 
-pub fn resolveChatUser(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8) !ChatIdentity {
+pub fn resolveChatUser(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) !ChatIdentity {
     var uid = try allocator.dupe(u8, "");
     errdefer allocator.free(uid);
     var name = try allocator.dupe(u8, "");
@@ -349,7 +350,7 @@ pub fn resolveChatUser(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, 
 
 /// Profile name picked for the session (`sessions.selected_profile_model`,
 /// e.g. `"900ribu"`), for the assistant envelope's identity field.
-pub fn resolveProfileName(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8) ![]u8 {
+pub fn resolveProfileName(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) ![]u8 {
     var prows = try db.query(allocator, "SELECT COALESCE(selected_profile_model,'') FROM sessions WHERE id=?", &.{session_id});
     defer prows.deinit();
     if (try prows.next()) |prow| {

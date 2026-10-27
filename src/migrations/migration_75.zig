@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
@@ -14,7 +14,7 @@ pub const Migration075RenameTimestampColumnsToNanoSuffix = struct {
     pub const version: u32 = 75;
     pub const name = "rename_timestamp_columns_to_nano_suffix";
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         // Wrap in a tx (db.begin/tx.exec/tx.commit) so the 5 renames + 2
         // index swaps are atomic.
         var tx = try db.begin();

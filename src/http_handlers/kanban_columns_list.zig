@@ -23,7 +23,7 @@ pub const KanbanColumnsListResult = []const u8; // pre-serialized JSON
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     item_id: []const u8,
 ) KanbanColumnsListError!KanbanColumnsListResult {
     if (item_id.len == 0) return error.ItemIdRequired;

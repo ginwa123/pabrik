@@ -32,7 +32,7 @@ pub const KanbanTagsListResult = []const u8; // pre-serialized JSON
 
 pub fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: KanbanTagsListInput,
 ) KanbanTagsListError!KanbanTagsListResult {
     const page = llm_history.listKanbanDistinctTags(
@@ -123,12 +123,12 @@ pub fn kanbanTagsListHandler(
 // ===================================================================== Tests
 // for useCase
 
-fn setupDbWithTagsForHandler() !struct { db: pabrikcore.sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+fn setupDbWithTagsForHandler() !struct { db: pabrikcore.database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: pabrikcore.sqlite.SqliteBackend = .{};
+    var db: pabrikcore.database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)", &.{});

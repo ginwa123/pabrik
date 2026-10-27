@@ -1,10 +1,12 @@
-//! Workspace-scoped skill storage (Migration 101): `skills` and
-//! `skill_assets`, shared by the HTTP handlers and the agent tools. ONE rule:
+//! Workspace-scoped skill storage (Migrations 101 + 119), and ONE rule:
 //! `workspace_id` is a parameter in every `WHERE`, so isolation is SQL-side.
+//! `skill_metadata` projects the fence in `content`; it is never authored.
 
 const std = @import("std");
 const sqlite = @import("pabrikcore").sqlite;
+const database = @import("pabrikcore").database;
 const helpers = @import("helpers");
+const frontmatter = @import("skill_frontmatter.zig");
 /// Migration 101, imported (never re-typed) so the tests below run
 /// against the real schema. A store/DDL mismatch fails here rather
 /// than in production.
@@ -45,6 +47,17 @@ pub const SkillAssetRow = struct {
     rel_path: []const u8,
     content: []const u8,
     created_at: []const u8,
+};
+
+/// One row in `skill_metadata`: a SKILL.md frontmatter key that has no
+/// column of its own. All string fields are allocator-owned.
+pub const SkillMetadataRow = struct {
+    id: []const u8,
+    skill_id: []const u8,
+    key: []const u8,
+    value: []const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
 };
 
 /// A companion file to write. Borrows every string; `replaceAssets` copies
@@ -110,6 +123,12 @@ pub const DeleteSkillError = error{
     DeleteFailed,
 };
 
+pub const ListMetadataError = error{
+    WorkspaceIdNameRequired,
+    QueryFailed,
+    OutOfMemory,
+};
+
 pub const ListAssetsError = error{
     WorkspaceIdNameRequired,
     QueryFailed,
@@ -133,6 +152,10 @@ const SELECT_COLUMNS =
     "COALESCE(created_at, ''), COALESCE(updated_at, ''), COALESCE(is_can_auto_improve, 1) " ++
     "FROM skills";
 
+const SELECT_METADATA_COLUMNS =
+    "SELECT id, skill_id, key, COALESCE(value, ''), COALESCE(created_at, ''), " ++
+    "COALESCE(updated_at, '') FROM skill_metadata";
+
 const SELECT_ASSET_COLUMNS =
     "SELECT id, skill_id, rel_path, COALESCE(content, ''), COALESCE(created_at, '') " ++
     "FROM skill_assets";
@@ -149,6 +172,17 @@ fn rowFromValues(allocator: std.mem.Allocator, values: []const []const u8) !Skil
         .created_at = try allocator.dupe(u8, values[5]),
         .updated_at = try allocator.dupe(u8, values[6]),
         .is_can_auto_improve = !std.mem.eql(u8, values[7], "0"),
+    };
+}
+
+fn metadataFromValues(allocator: std.mem.Allocator, values: []const []const u8) !SkillMetadataRow {
+    return .{
+        .id = try allocator.dupe(u8, values[0]),
+        .skill_id = try allocator.dupe(u8, values[1]),
+        .key = try allocator.dupe(u8, values[2]),
+        .value = try allocator.dupe(u8, values[3]),
+        .created_at = try allocator.dupe(u8, values[4]),
+        .updated_at = try allocator.dupe(u8, values[5]),
     };
 }
 
@@ -178,7 +212,7 @@ pub fn isValidSkillName(name: []const u8) bool {
 /// `UNIQUE (workspace_id, name)` index, so the listing needs no second index.
 pub fn listSkills(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
 ) ListSkillsError![]SkillRow {
     if (workspace_id.len == 0) return error.WorkspaceIdRequired;
@@ -207,7 +241,7 @@ pub fn listSkills(
 /// workspace" error: saying it exists would leak a foreign row.
 pub fn getSkillByName(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     name: []const u8,
 ) GetSkillError!SkillRow {
@@ -230,7 +264,7 @@ pub fn getSkillByName(
 /// hang off; `ON CONFLICT` leaves `id` alone, or they would orphan.
 pub fn upsertSkill(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     args: UpsertSkillArgs,
 ) UpsertSkillError!SkillRow {
     if (args.workspace_id.len == 0 or args.name.len == 0) return error.WorkspaceIdNameRequired;
@@ -245,10 +279,17 @@ pub fn upsertSkill(
     // below leaves this column alone — a reset would drop the human's lock.
     const is_can_auto_improve: []const u8 = if (args.is_can_auto_improve orelse true) "1" else "0";
 
+    // One transaction: the row and the metadata projected out of its body
+    // must land together, or a crash between them leaves metadata pointing at
+    // a body that no longer says it.
+    var tx = db.begin() catch return error.WriteFailed;
+    defer tx.commitOrRollback() catch {};
+    errdefer tx.rollback() catch {};
+
     // COALESCE(NULLIF(?, ''), '') on every NOT NULL text column: `exec`
     // binds a zero-length slice as SQL NULL, and an empty description is a
     // legitimate state that has to round-trip as "" rather than fail.
-    db.exec(allocator,
+    tx.exec(allocator,
         \\INSERT INTO skills (id, workspace_id, name, description, content, is_can_auto_improve, created_at, updated_at)
         \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         \\ON CONFLICT (workspace_id, name) DO UPDATE SET
@@ -257,6 +298,14 @@ pub fn upsertSkill(
         \\    updated_at = CURRENT_TIMESTAMP
     , &[_][]const u8{ skill_id, args.workspace_id, args.name, args.description, args.content, is_can_auto_improve }) catch
         return error.WriteFailed;
+
+    // The stored id, not the freshly minted one: `ON CONFLICT` keeps the
+    // existing row's id so its assets and metadata stay attached to it.
+    const stored_id = try storedSkillId(allocator, &tx, args.workspace_id, args.name);
+    defer allocator.free(stored_id);
+    projectMetadata(allocator, &tx, stored_id, args.content) catch return error.WriteFailed;
+
+    tx.commit() catch return error.WriteFailed;
 
     return getSkillByName(allocator, db, args.workspace_id, args.name) catch |err| switch (err) {
         error.NotFound,
@@ -271,7 +320,7 @@ pub fn upsertSkill(
 /// `updated_at` always advances so a re-import is visible as a change.
 pub fn updateSkill(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     name: []const u8,
     patch: UpdateSkillArgs,
@@ -295,12 +344,23 @@ pub fn updateSkill(
         std.mem.eql(u8, content, existing.content) and
         is_can_auto_improve == existing.is_can_auto_improve) return error.NothingToChange;
 
-    db.exec(allocator,
+    var tx = db.begin() catch return error.UpdateFailed;
+    defer tx.commitOrRollback() catch {};
+    errdefer tx.rollback() catch {};
+
+    tx.exec(allocator,
         \\UPDATE skills
         \\SET description = COALESCE(NULLIF(?, ''), ''), content = COALESCE(NULLIF(?, ''), ''), is_can_auto_improve = ?, updated_at = CURRENT_TIMESTAMP
         \\WHERE workspace_id = ? AND name = ?
     , &[_][]const u8{ description, content, if (is_can_auto_improve) "1" else "0", workspace_id, name }) catch
         return error.UpdateFailed;
+
+    // The body may have carried metadata in or out of it, so the projection
+    // is re-derived rather than patched: a key deleted from the frontmatter
+    // has to lose its row.
+    projectMetadata(allocator, &tx, existing.id, content) catch return error.UpdateFailed;
+
+    tx.commit() catch return error.UpdateFailed;
 
     return getSkillByName(allocator, db, workspace_id, name) catch
         return error.UpdateFailed;
@@ -311,7 +371,7 @@ pub fn updateSkill(
 /// DELETE is explicit because `PRAGMA foreign_keys` is off project-wide.
 pub fn deleteSkill(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     name: []const u8,
 ) DeleteSkillError!void {
@@ -330,6 +390,10 @@ pub fn deleteSkill(
     defer tx.commitOrRollback() catch {};
     errdefer tx.rollback() catch {};
 
+    // Both children explicitly: `PRAGMA foreign_keys` is off project-wide, so
+    // the declared CASCADE never fires.
+    tx.exec(allocator, "DELETE FROM skill_metadata WHERE skill_id = ?", &[_][]const u8{row.id}) catch
+        return error.DeleteFailed;
     tx.exec(allocator, "DELETE FROM skill_assets WHERE skill_id = ?", &[_][]const u8{row.id}) catch
         return error.DeleteFailed;
     tx.exec(
@@ -341,11 +405,85 @@ pub fn deleteSkill(
     tx.commit() catch return error.DeleteFailed;
 }
 
+/// One skill's metadata, ordered by key so a rendered list is stable.
+pub fn listMetadata(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    workspace_id: []const u8,
+    name: []const u8,
+) ListMetadataError![]SkillMetadataRow {
+    if (workspace_id.len == 0 or name.len == 0) return error.WorkspaceIdNameRequired;
+
+    var q = db.query(
+        allocator,
+        SELECT_METADATA_COLUMNS ++
+            " WHERE skill_id = (SELECT id FROM skills WHERE workspace_id = ? AND name = ?)" ++
+            " ORDER BY key",
+        &[_][]const u8{ workspace_id, name },
+    ) catch return error.QueryFailed;
+    defer q.deinit();
+
+    var list: std.ArrayList(SkillMetadataRow) = .empty;
+    errdefer freeSkillMetadataRows(allocator, list.items);
+
+    while (q.next() catch return error.QueryFailed) |r| {
+        defer r.deinit(allocator);
+        try list.append(allocator, try metadataFromValues(allocator, r.values));
+    }
+    return list.toOwnedSlice(allocator);
+}
+
+/// The id `(workspace_id, name)` resolves to, for a caller that has just
+/// written the row and must not guess.
+fn storedSkillId(
+    allocator: std.mem.Allocator,
+    tx: *database.Db.Transaction,
+    workspace_id: []const u8,
+    name: []const u8,
+) UpsertSkillError![]u8 {
+    var q = tx.query(
+        allocator,
+        "SELECT id FROM skills WHERE workspace_id = ? AND name = ?",
+        &[_][]const u8{ workspace_id, name },
+    ) catch return error.WriteFailed;
+    defer q.deinit();
+    const r = (q.next() catch return error.WriteFailed) orelse return error.WriteFailed;
+    defer r.deinit(allocator);
+    return allocator.dupe(u8, r.values[0]) catch return error.OutOfMemory;
+}
+
+/// Replace `skill_id`'s metadata with the frontmatter projection of
+/// `content`. Replace, never merge: a key the body no longer carries must
+/// lose its row, or the table would outlive the file it claims to describe.
+fn projectMetadata(
+    allocator: std.mem.Allocator,
+    tx: *database.Db.Transaction,
+    skill_id: []const u8,
+    content: []const u8,
+) !void {
+    tx.exec(allocator, "DELETE FROM skill_metadata WHERE skill_id = ?", &[_][]const u8{skill_id}) catch
+        return error.WriteFailed;
+
+    var parsed = try frontmatter.parse(allocator, content);
+    defer parsed.deinit(allocator);
+
+    for (parsed.pairs, 0..) |pair, i| {
+        const id = try std.fmt.allocPrint(allocator, "sm_{d}_{d}", .{ helpers.unixTimestampNanos(), i });
+        defer allocator.free(id);
+
+        tx.exec(allocator,
+            \\INSERT OR REPLACE INTO skill_metadata (id, skill_id, key, value, created_at, updated_at)
+            \\VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        , &[_][]const u8{ id, skill_id, pair.key, pair.value }) catch
+            return error.WriteFailed;
+    }
+}
+
 /// Every companion file of one skill, ordered by `rel_path` so the
 /// materialised directory is written in a stable order.
 pub fn listAssets(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     name: []const u8,
 ) ListAssetsError![]SkillAssetRow {
@@ -375,7 +513,7 @@ pub fn listAssets(
 /// whose file is gone must lose its row rather than linger half-written.
 pub fn replaceAssets(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     name: []const u8,
     assets: []const SkillAssetInput,
@@ -440,6 +578,20 @@ pub fn freeSkillRows(allocator: std.mem.Allocator, rows: []SkillRow) void {
     allocator.free(rows);
 }
 
+pub fn freeSkillMetadataRow(allocator: std.mem.Allocator, row: SkillMetadataRow) void {
+    allocator.free(row.id);
+    allocator.free(row.skill_id);
+    allocator.free(row.key);
+    allocator.free(row.value);
+    allocator.free(row.created_at);
+    allocator.free(row.updated_at);
+}
+
+pub fn freeSkillMetadataRows(allocator: std.mem.Allocator, rows: []SkillMetadataRow) void {
+    for (rows) |row| freeSkillMetadataRow(allocator, row);
+    allocator.free(rows);
+}
+
 pub fn freeSkillAssetRow(allocator: std.mem.Allocator, row: SkillAssetRow) void {
     allocator.free(row.id);
     allocator.free(row.skill_id);
@@ -463,7 +615,7 @@ pub fn freeSkillAssetRows(allocator: std.mem.Allocator, rows: []SkillAssetRow) v
 const testing = std.testing;
 
 const StoreTestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -473,11 +625,12 @@ fn setupStoreDb() !StoreTestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     errdefer db.deinit();
     try migration.Migration102CreateSkills.up(&db, alloc);
+    try migration.Migration119CreateSkillMetadata.up(&db, alloc);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -767,7 +920,7 @@ test "skills_store rejects a missing workspace id before touching SQL" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // An empty workspace_id must NOT reach the query: `SqliteBackend.exec`
+    // An empty workspace_id must NOT reach the query: `Backend.exec`
     // binds "" as SQL NULL, and `workspace_id` is NOT NULL.
     try testing.expectError(
         error.WorkspaceIdNameRequired,
@@ -936,4 +1089,154 @@ test "skills_store lists the lock state per row, not per workspace" {
     try testing.expect(rows[0].is_can_auto_improve);
     try testing.expectEqualStrings("beta", rows[1].name);
     try testing.expect(!rows[1].is_can_auto_improve);
+}
+
+test "a skill's frontmatter keys land in skill_metadata, minus the promoted three" {
+    const alloc = testing.allocator;
+    var ctx = try setupStoreDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const created = try upsertSkill(alloc, &ctx.db, .{
+        .workspace_id = "ws_a",
+        .name = "pdf",
+        .description = "Work with PDFs",
+        .content =
+        \\---
+        \\name: pdf
+        \\description: Work with PDFs
+        \\origin: ECC
+        \\tags: [workflow, documents]
+        \\---
+        \\Run scripts/convert.py.
+        ,
+    });
+    defer freeSkillRow(alloc, created);
+
+    const rows = try listMetadata(alloc, &ctx.db, "ws_a", "pdf");
+    defer freeSkillMetadataRows(alloc, rows);
+
+    // Key-ordered, and only the keys with no column: `name` and
+    // `description` are already on `skills`, and duplicating them here would
+    // give one fact two homes.
+    try testing.expectEqual(@as(usize, 2), rows.len);
+    try testing.expectEqualStrings("origin", rows[0].key);
+    try testing.expectEqualStrings("ECC", rows[0].value);
+    try testing.expectEqualStrings("tags", rows[1].key);
+    try testing.expectEqualStrings("[workflow, documents]", rows[1].value);
+    try testing.expectEqualStrings(created.id, rows[0].skill_id);
+}
+
+test "a body with no frontmatter has no metadata rows" {
+    const alloc = testing.allocator;
+    var ctx = try setupStoreDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const created = try upsertSkill(alloc, &ctx.db, .{
+        .workspace_id = "ws_a",
+        .name = "bare",
+        .content = "## When to Use\n\nNo fence at all.\n",
+    });
+    defer freeSkillRow(alloc, created);
+
+    const rows = try listMetadata(alloc, &ctx.db, "ws_a", "bare");
+    defer freeSkillMetadataRows(alloc, rows);
+    try testing.expectEqual(@as(usize, 0), rows.len);
+}
+
+test "rewriting the body REPLACES its metadata instead of merging it" {
+    const alloc = testing.allocator;
+    var ctx = try setupStoreDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const created = try upsertSkill(alloc, &ctx.db, .{
+        .workspace_id = "ws_a",
+        .name = "pdf",
+        .content = "---\nname: pdf\norigin: ECC\ntags: [a]\n---\nbody\n",
+    });
+    defer freeSkillRow(alloc, created);
+
+    // The new body drops `origin` and adds `license`. A merge would leave
+    // `origin` alive and the table would describe a file that no longer says
+    // it, which is exactly the drift the table exists to prevent.
+    const patched = try updateSkill(alloc, &ctx.db, "ws_a", "pdf", .{
+        .content = "---\nname: pdf\ntags: [a]\nlicense: MIT\n---\nnew body\n",
+    });
+    defer freeSkillRow(alloc, patched);
+
+    const rows = try listMetadata(alloc, &ctx.db, "ws_a", "pdf");
+    defer freeSkillMetadataRows(alloc, rows);
+    try testing.expectEqual(@as(usize, 2), rows.len);
+    try testing.expectEqualStrings("license", rows[0].key);
+    try testing.expectEqualStrings("tags", rows[1].key);
+}
+
+test "one workspace's skill name never exposes another workspace's metadata" {
+    const alloc = testing.allocator;
+    var ctx = try setupStoreDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const created = try upsertSkill(alloc, &ctx.db, .{
+        .workspace_id = "ws_a",
+        .name = "pdf",
+        .content = "---\nname: pdf\norigin: ECC\n---\nbody\n",
+    });
+    defer freeSkillRow(alloc, created);
+
+    const foreign = try listMetadata(alloc, &ctx.db, "ws_b", "pdf");
+    defer freeSkillMetadataRows(alloc, foreign);
+    try testing.expectEqual(@as(usize, 0), foreign.len);
+}
+
+test "repairing a row through upsert keeps its metadata attached to the same skill id" {
+    const alloc = testing.allocator;
+    var ctx = try setupStoreDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const first = try upsertSkill(alloc, &ctx.db, .{
+        .workspace_id = "ws_a",
+        .name = "pdf",
+        .content = "---\nname: pdf\norigin: ECC\n---\nbody\n",
+    });
+    defer freeSkillRow(alloc, first);
+
+    // The boot-time importer re-runs this on every start-up. `ON CONFLICT`
+    // keeps the original id, so the re-projection has to hang off THAT id —
+    // a second id would orphan every row the first one wrote.
+    const again = try upsertSkill(alloc, &ctx.db, .{
+        .workspace_id = "ws_a",
+        .name = "pdf",
+        .content = "---\nname: pdf\norigin: ECC\ntags: [x]\n---\nbody v2\n",
+    });
+    defer freeSkillRow(alloc, again);
+
+    const rows = try listMetadata(alloc, &ctx.db, "ws_a", "pdf");
+    defer freeSkillMetadataRows(alloc, rows);
+    try testing.expectEqual(@as(usize, 2), rows.len);
+    for (rows) |row| try testing.expectEqualStrings(first.id, row.skill_id);
+}
+
+test "deleting a skill takes its metadata with it" {
+    const alloc = testing.allocator;
+    var ctx = try setupStoreDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const created = try upsertSkill(alloc, &ctx.db, .{
+        .workspace_id = "ws_a",
+        .name = "pdf",
+        .content = "---\nname: pdf\norigin: ECC\n---\nbody\n",
+    });
+    defer freeSkillRow(alloc, created);
+
+    try deleteSkill(alloc, &ctx.db, "ws_a", "pdf");
+
+    // `PRAGMA foreign_keys` is off project-wide, so the declared CASCADE does
+    // nothing: an explicit DELETE is the only thing that stops a re-import of
+    // the same name from inheriting the old rows.
+    try expectRowCount(&ctx, "SELECT COUNT(*) FROM skill_metadata", "0");
 }

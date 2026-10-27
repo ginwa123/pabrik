@@ -1294,6 +1294,62 @@ test "ResponseFormatting teaches the <mermaid> wrapper tag" {
 }
 
 // -------------------------------------------------------------------------
+// ResponseFormatting — WHEN to draw it and HOW to colour it (task_1793032402682_2)
+// -------------------------------------------------------------------------
+
+test "ResponseFormatting routes content to a surface and colours it by role" {
+    const prompt: []const u8 = ResponseFormatting;
+
+    // 1. The when-to-use-which rule. The four surfaces are what the renderer
+    // really branches on: helpers/richBlocks.ts extracts <html> and <mermaid>
+    // (inline or fenced) and everything else falls through to markdown.
+    try std.testing.expect(contains(prompt, "Pick the surface"));
+    try std.testing.expect(contains(prompt, "uniform rows"));
+
+    // A reply may hold prose plus rich blocks, inside the single wrapper.
+    try std.testing.expect(contains(prompt, "inside its single wrapper"));
+
+    // PlantUML has no local renderer: the tag, the external-server warning and
+    // the two skinparams that keep it dark are what make the block usable.
+    try std.testing.expect(contains(prompt, "<plantuml>"));
+    try std.testing.expect(contains(prompt, "</plantuml>"));
+    try std.testing.expect(contains(prompt, "skinparam backgroundColor"));
+
+    // D2 renders remotely too, and its dark theme is a source-level `vars` block.
+    try std.testing.expect(contains(prompt, "<d2>"));
+    try std.testing.expect(contains(prompt, "</d2>"));
+    try std.testing.expect(contains(prompt, "theme-id: 200"));
+
+    // 2. Colour is EXPECTED, from the app's own Kanagawa Dragon accent tokens
+    // (helpers/mermaid.ts MERMAID_PALETTE_FALLBACK, ChatView's
+    // HTML_FRAME_PALETTE_FALLBACK) — one accent per role.
+    try std.testing.expect(contains(prompt, "Colour by ROLE"));
+    try std.testing.expect(contains(prompt, "#8ba4b0"));
+    try std.testing.expect(contains(prompt, "#87a987"));
+    try std.testing.expect(contains(prompt, "#c4746e"));
+
+    // The dark-canvas floor survives — a light palette is still banned.
+    try std.testing.expect(contains(prompt, "near-white"));
+
+    // 3. HOW to emit it: mermaid's `theme: 'base'` is the baseline and both of
+    // these override it. `%%{init}%%` (pinned above) is the one that fights it.
+    try std.testing.expect(contains(prompt, "classDef"));
+    try std.testing.expect(contains(prompt, "linkStyle"));
+
+    // Anti-slop: no gradient/glow/blur/shadow/emoji in a rich block.
+    try std.testing.expect(contains(prompt, "No gradient"));
+
+    // 4. Legibility traps. `htmlLabels: false` + securityLevel strict mean an
+    // HTML tag inside a Mermaid label is escaped to SVG text and printed
+    // literally; the ids named here are the ones mermaid 12 really rejects.
+    try std.testing.expect(contains(prompt, "prints literally"));
+    try std.testing.expect(contains(prompt, "subgraph"));
+
+    // A punctuation-carrying label only survives in `["quoted"]` form.
+    try std.testing.expect(contains(prompt, "[\"quoted\"]"));
+}
+
+// -------------------------------------------------------------------------
 // Regression: build_agent_prompt was moved from src/modules/agent/prompts.zig
 // into src/agentic_loop/prompts_build_messages_for_agent_prompt.zig on
 
@@ -1355,9 +1411,10 @@ test "SkillsToolRule does not pre-list skills (no Available Skills listing)" {
 
 const prompt_migration = @import("../../migrations/migration.zig");
 const prompt_sqlite = @import("pabrikcore").sqlite;
+const database = @import("pabrikcore").database;
 
 const PromptDbCtx = struct {
-    db: prompt_sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -1365,7 +1422,7 @@ fn setupPromptDb() !PromptDbCtx {
     const alloc = std.testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
-    var db: prompt_sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
     var manager = prompt_migration.MigrationManager.init(alloc, &db);
@@ -1436,6 +1493,7 @@ test "buildMessages: the eight mandates reach the live prompt, ungated by the to
         makeTool("run_skill_eval", "Evaluate the skills this task used"),
         makeTool("add_skill", "Write a skill"),
         makeTool("edit_skill", "Update a skill"),
+        makeTool("set_skill_metadata", "Change a skill's metadata keys"),
         makeTool("set_git_worktree", "Bind a worktree to this session"),
         makeTool("set_pull_request", "Bind a PR to this session"),
         makeTool("status_pull_request", "Read the bound PR's live status"),
@@ -1537,6 +1595,7 @@ test "the tools the mandates name are really in the equipped set" {
         "run_skill_eval",
         "add_skill",
         "edit_skill",
+        "set_skill_metadata",
         "set_git_worktree",
         "set_pull_request",
         "status_pull_request",

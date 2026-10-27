@@ -49,7 +49,7 @@ pub const DefaultProject = struct {
 /// the lookup finds nothing.
 pub fn ensureDefaultProject(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     workspace_id: []const u8,
     environment: ?*const std.process.Environ.Map,
     config_tools: ?[]const []const u8,
@@ -149,7 +149,7 @@ fn nameLooksUsable(name: []const u8) bool {
 /// Repair a default project whose stored `name` is garbage, in place.
 fn repairGarbageName(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     item_id: []const u8,
     stored_name: []const u8,
 ) void {
@@ -177,7 +177,7 @@ fn repairGarbageName(
 /// This is the whole "does a default exist?" query — one row on the hot path.
 fn readDefault(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     workspace_id: []const u8,
 ) ?DefaultProject {
     var q = db.query(allocator,
@@ -243,7 +243,7 @@ fn readDefault(
 /// on failure — position is a sort hint, and 0 is a legal value for it.
 fn readPosition(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     item_id: []const u8,
 ) i64 {
     var q = db.query(allocator, "SELECT position FROM workspace_items WHERE id = ?", &[_][]const u8{item_id}) catch return 0;
@@ -256,7 +256,7 @@ fn readPosition(
 /// True when a workspace row exists.
 pub fn workspaceExists(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     workspace_id: []const u8,
 ) bool {
     var q = db.query(allocator, "SELECT 1 FROM workspaces WHERE id = ?", &[_][]const u8{workspace_id}) catch return false;
@@ -288,7 +288,7 @@ pub const WorkspaceDefaultProjectInput = struct {
     environment: ?*const std.process.Environ.Map = null,
 };
 
-pub fn useCaseGet(allocator: std.mem.Allocator, db: *pabrikcore.sqlite.SqliteBackend, input: WorkspaceDefaultProjectInput) EnsureDefaultProjectError![]const u8 {
+pub fn useCaseGet(allocator: std.mem.Allocator, db: *pabrikcore.database.Db, input: WorkspaceDefaultProjectInput) EnsureDefaultProjectError![]const u8 {
     const project = try ensureDefaultProject(allocator, db, input.workspace_id, input.environment, input.config_tools);
     defer project.deinit(allocator);
 
@@ -376,10 +376,11 @@ pub fn workspaceDefaultProjectHandler(
 // ─── Tests ──────────────────────────────────────────────────────────────
 
 const sqlite = @import("pabrikcore").sqlite;
+const database = @import("pabrikcore").database;
 const testing = std.testing;
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     env: std.process.Environ.Map,
     home: []const u8,
@@ -395,7 +396,7 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -454,7 +455,7 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
 /// Run a `SELECT COUNT(*)` whose WHERE clause needs the item id(s)
 /// interpolated.
 fn countWhereFmt(
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     alloc: std.mem.Allocator,
     comptime template: []const u8,
     ids: anytype,
@@ -468,7 +469,7 @@ fn countWhereFmt(
     return std.fmt.parseInt(u32, row.values[0], 10);
 }
 
-fn countWhere(db: *sqlite.SqliteBackend, alloc: std.mem.Allocator, table: []const u8, where: []const u8) !u32 {
+fn countWhere(db: *database.Db, alloc: std.mem.Allocator, table: []const u8, where: []const u8) !u32 {
     var buf: [256]u8 = undefined;
     const sql = try std.fmt.bufPrint(&buf, "SELECT COUNT(*) FROM {s} WHERE {s}", .{ table, where });
     var q = try db.query(alloc, sql, &[_][]const u8{});

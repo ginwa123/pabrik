@@ -6,6 +6,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const design_model = @import("../agentic_loop/design_model.zig");
 
 /// HTTP request body. Both `dx` and `dy` are required.
@@ -34,7 +35,7 @@ pub const TranslateOutput = struct {
 
 pub fn useCase(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     page_id: []const u8,
     element_id: []const u8,
     dx: i64,
@@ -205,7 +206,7 @@ const testing_alloc = testing.allocator;
 const TranslateError = http_handlers.designElementsTranslateError;
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_id: []const u8,
     page_id: []u8,
@@ -227,7 +228,7 @@ fn setupTranslateCtx() !TestCtx {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -268,7 +269,7 @@ fn setupTranslateCtx() !TestCtx {
 
 fn insertTranslateElement(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     page_id: []const u8,
     name: []const u8,
     elem_type: []const u8,
@@ -416,7 +417,7 @@ test "useCase returns ElementIdRequired for an empty element_id" {
     try testing.expectError(error.ElementIdRequired, result);
 }
 
-fn readX(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, id: []const u8) !i64 {
+fn readX(alloc: std.mem.Allocator, db: *database.Db, id: []const u8) !i64 {
     var q = try db.query(alloc, "SELECT x FROM design_page_elements WHERE id = ?", &.{id});
     defer q.deinit();
     const row = (try q.next()) orelse unreachable;

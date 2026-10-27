@@ -2,6 +2,7 @@ const std = @import("std");
 const http_response = @import("http_response.zig");
 const pabrik_core = @import("pabrikcore");
 const gserverz = pabrik_core.gserverz;
+const git_route = @import("git_route.zig");
 const pr_provider = pabrik_core.pr_provider;
 const pr_cli = pabrik_core.pr_cli;
 const run_captured = @import("helpers").run_captured;
@@ -122,7 +123,7 @@ fn createPullRequestUseCaseWith(
 /// free it), or null when it cannot be determined — detached HEAD, not a
 /// repo, git missing.
 fn currentBranch(allocator: std.mem.Allocator, io: std.Io, path: []const u8) ?[]u8 {
-    const res = std.process.run(allocator, io, .{ .argv = &.{ "git", "-C", path, "branch", "--show-current" } }) catch return null;
+    const res = git_route.run(allocator, io, path, &.{ "branch", "--show-current" }, .{}) catch return null;
     defer {
         allocator.free(res.stdout);
         allocator.free(res.stderr);
@@ -208,9 +209,7 @@ fn resolveCreateProvider(allocator: std.mem.Allocator, io: std.Io, body: anytype
     if (body.provider.len > 0) {
         return pr_provider.PrProvider.fromString(body.provider) orelse error.UnknownProvider;
     }
-    const res = std.process.run(allocator, io, .{
-        .argv = &.{ "git", "-C", body.worktree_path, "remote", "get-url", "origin" },
-    }) catch return .github;
+    const res = git_route.run(allocator, io, body.worktree_path, &.{ "remote", "get-url", "origin" }, .{}) catch return .github;
     defer {
         allocator.free(res.stdout);
         allocator.free(res.stderr);

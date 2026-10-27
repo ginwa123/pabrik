@@ -33,7 +33,7 @@ pub const SkillDeleteResponse = struct {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: SkillDeleteInput,
 ) SkillDeleteError!void {
     if (input.workspace_id.len == 0 or input.skill_name.len == 0) {
@@ -111,11 +111,12 @@ comptime {
 // ─── Tests ──────────────────────────────────────────────────────────────
 
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const testing = std.testing;
 const migration = @import("../migrations/migration.zig");
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -123,11 +124,12 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
     try migration.Migration102CreateSkills.up(&db, testing.allocator);
+    try migration.Migration119CreateSkillMetadata.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 

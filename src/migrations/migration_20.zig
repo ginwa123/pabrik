@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
@@ -11,7 +11,7 @@ pub const Migration020AddWorkerExtraFields = struct {
     pub const version: u32 = 20;
     pub const name = "add_worker_extra_fields";
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         // These columns are already part of migration 019's CREATE TABLE (the
         // canonical `worker` schema), so fresh-DB users would crash with
         // "duplicate column name" if we ran the ADD COLUMN unconditionally.

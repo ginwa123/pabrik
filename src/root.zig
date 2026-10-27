@@ -119,6 +119,7 @@ pub const document_events = @import("agentic_loop/document_events.zig");
 pub const skill_evals_drift = @import("agentic_loop/skill_evals_drift.zig");
 pub const add_skill = skill_tools;
 pub const edit_skill = skill_tools;
+pub const set_skill_metadata = skill_tools;
 pub const set_git_worktree = @import("modules/agent/tools/set_git_worktree.zig");
 pub const set_pull_request = @import("modules/agent/tools/set_pull_request.zig");
 pub const status_pull_request = @import("modules/agent/tools/status_pull_request.zig");
@@ -221,8 +222,12 @@ pub const vmd_lifecycle = @import("vmd/lifecycle.zig");
 pub const agent_memories = @import("agentic_loop/agent_memories.zig");
 /// Workspace-scoped document storage (Migration 098).
 pub const documents_store = @import("agentic_loop/documents_store.zig");
-/// Workspace-scoped skill storage (Migration 101).
+/// Workspace-scoped skill storage (Migration 101 + 119).
 pub const skills_store = @import("agentic_loop/skills_store.zig");
+/// THE parser/renderer for a SKILL.md `---` frontmatter block. Shared by
+/// the importer, `add_skill`/`edit_skill`, the migration-119 backfill and
+/// the store's projection into `skill_metadata`.
+pub const skill_frontmatter = @import("agentic_loop/skill_frontmatter.zig");
 /// Workspace-scoped secret storage (Migration 103).
 pub const secrets_store = @import("agentic_loop/secrets_store.zig");
 // Per-workspace config overlay: the sparse JSON merge rule and the
@@ -247,6 +252,8 @@ pub const cleanup_stale_background_process = @import("schedulers/cleanup_stale_b
 // The DB connection policy (and its `--db-*` CLI overrides). Re-exported so
 // the exe module and the schedulers share ONE definition of the defaults.
 pub const boot_db_config = @import("boot/db_config.zig");
+pub const boot_db_target = @import("boot/db_target.zig");
+pub const test_db = @import("testing/test_db.zig");
 pub const workspace_items = @import("agentic_loop/llm_history.zig");
 pub const workspace_item_tasks = @import("agentic_loop/llm_history.zig");
 pub const http_response = @import("http_handlers/http_response.zig");

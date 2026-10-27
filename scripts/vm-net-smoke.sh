@@ -21,6 +21,10 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# The work dir holds an extracted guest rootfs, whose 0555 dirs defeat a plain
+# `rm -rf`; this helper is the one place that knows how to remove it.
+# shellcheck source=scripts/smoke-workdir.sh
+. "$repo_root/scripts/smoke-workdir.sh"
 fc_bin="${FC_BIN:-$HOME/firecracker-demo/firecracker}"
 guest_kernel="${GUEST_KERNEL:-$HOME/firecracker-demo/vmlinux-6.18.51}"
 work="${PABRIK_VM_WORKDIR:-${TMPDIR:-/tmp}/pabrik-vm-net-smoke}"
@@ -52,7 +56,7 @@ trap cleanup EXIT
 [ -c /dev/kvm ] || fail "/dev/kvm is missing: Firecracker needs it"
 [ -x "$fc_bin" ] || fail "no firecracker at $fc_bin (set FC_BIN)"
 [ -f "$guest_kernel" ] || fail "no kernel at $guest_kernel (set GUEST_KERNEL)"
-rm -rf "$work"
+pabrik_wipe_workdir "$work"
 mkdir -p "$work"
 
 say "build the VM trio and the daemon"

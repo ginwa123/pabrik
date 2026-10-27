@@ -3,6 +3,7 @@ const pabrik = @import("pabrikcore");
 const agent = pabrik.agent;
 const logger_mod = pabrik.loggermod;
 const sqlite = pabrik.sqlite;
+const database = pabrik.database;
 const config_mod = pabrik.config;
 const tools_equipped = @import("../modules/agent/tools/tools_equipped.zig");
 const tools = @import("tools.zig");
@@ -40,7 +41,7 @@ pub const TOOL_REGISTRY = tools_equipped.UNIFIED_TOOL_REGISTRY;
 const ToolContext = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     logger: *logger_mod.Logger,
     session_id: []const u8,
     model: []const u8,
@@ -237,7 +238,7 @@ fn secretSubstitutionError(
 /// per-dispatch cache and no database dependency of its own.
 const SecretResolver = struct {
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     /// Null = the session belongs to no workspace. Resolved server-side from
     /// the session id, so the model can never choose it.
     workspace_id: ?[]const u8,
@@ -249,7 +250,7 @@ const SecretResolver = struct {
     /// so it can name the key.
     missing_name: ?[]const u8 = null,
 
-    fn init(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8) SecretResolver {
+    fn init(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) SecretResolver {
         return .{
             .allocator = allocator,
             .db = db,
@@ -651,7 +652,7 @@ const worker_activity_desc_max = 120;
 /// the worker running `session_id`, and emit the SSE `worker_updated` event.
 fn touchWorkerActivity(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     tool_name: []const u8,
     arguments: []const u8,
@@ -714,7 +715,7 @@ pub const ToolBatchOutcome = struct {
 pub fn handle_tool(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     logger: *logger_mod.Logger,
     session_id: []const u8,
     parent_session_id: []const u8,
@@ -1114,7 +1115,7 @@ pub fn handle_tool(
 fn persistRedacted(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     session_id: []const u8,
     cwd: []const u8,
@@ -1137,7 +1138,7 @@ fn persistRedacted(
 fn updateAndSendToolResult(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     session_id: []const u8,
     cwd: []const u8,
@@ -1189,7 +1190,7 @@ fn updateAndSendToolResult(
 
 /// 2026-08-23 B1 fix — emit the SSE for ONE specific llm_history row,
 /// selected by its exact id.
-fn sendSSEForMessageById(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8, cwd: []const u8, agent_name: []const u8, parent_session_id: []const u8, temperature: f32, is_thinking: bool, is_input: bool, is_output: bool, id: []const u8) !void {
+fn sendSSEForMessageById(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8, cwd: []const u8, agent_name: []const u8, parent_session_id: []const u8, temperature: f32, is_thinking: bool, is_input: bool, is_output: bool, id: []const u8) !void {
     const msgOpt = llm_history.getMessageById(allocator, db, session_id, id) catch |err| {
         logger_mod.debugPrint("SSE_DEBUG: getMessageById failed for session {s} id {s}: {s}\n", .{ session_id, id, @errorName(err) });
         return;
@@ -1271,7 +1272,7 @@ fn sendSSEForMessageById(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend
     };
 }
 
-fn sendSSEForLatestMessage(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8, cwd: []const u8, agent_name: []const u8, parent_session_id: []const u8, temperature: f32, is_thinking: bool, is_input: bool, is_output: bool, tool_calls_json: ?[]agent.ToolCall) !void {
+fn sendSSEForLatestMessage(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8, cwd: []const u8, agent_name: []const u8, parent_session_id: []const u8, temperature: f32, is_thinking: bool, is_input: bool, is_output: bool, tool_calls_json: ?[]agent.ToolCall) !void {
     // 2026-08-24 wire-shape fix (task_1787590621966_10): the raw array is
     // passed through unchanged — on_event_sent.onEventSendLLMHistory now
     // serializes tool_calls to a JSON STRING internally (single serialization
@@ -1812,7 +1813,7 @@ test "hook seam: broken hook file fails open to proceed/keep" {
 // Lua hook dispatch tests: real registry + real read_file exec + real Lua.
 
 const HookDispatchCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -1820,7 +1821,7 @@ fn hookDispatchSetup() !HookDispatchCtx {
     var threaded = std.Io.Threaded.init(std.testing.allocator, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     return .{ .db = db, .threaded = threaded };
@@ -2030,7 +2031,7 @@ const secrets_test_orphan_session = "sess_secrets_orphan";
 const secrets_test_canary = "canary-4f1c9a-Zx7Q";
 
 const SecretsFixture = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 
     fn deinit(self: *SecretsFixture) void {
@@ -2047,7 +2048,7 @@ fn secretsSetup(allocator: std.mem.Allocator) !SecretsFixture {
     var threaded = std.Io.Threaded.init(allocator, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -2540,10 +2541,10 @@ test "secrets: the resolver queries the store once per distinct name and remembe
 // Worker activity heartbeat tests
 // ============================================================================
 
-fn workerActivityDb(allocator: std.mem.Allocator) !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+fn workerActivityDb(allocator: std.mem.Allocator) !struct { db: database.Db, threaded: std.Io.Threaded } {
     var threaded = std.Io.Threaded.init(allocator, .{});
     errdefer threaded.deinit();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
     try db.exec(allocator,
@@ -2562,7 +2563,7 @@ fn workerActivityDb(allocator: std.mem.Allocator) !struct { db: sqlite.SqliteBac
 
 fn workerActivityRow(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
 ) !struct { desc: []u8, activity: i64 } {
     var rows = try db.query(allocator, "SELECT last_activity_description, last_activity_nano FROM worker WHERE id = ?", &.{id});

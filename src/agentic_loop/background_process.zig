@@ -1,6 +1,7 @@
 const std = @import("std");
 const root_mod = @import("pabrikcore");
 const sqlite = root_mod.sqlite;
+const database = root_mod.database;
 // NOTE: NOT `root_mod.helpers.process_status`.
 const process_status = @import("helpers").process_status;
 const shell_tool = root_mod.shell_tool;
@@ -54,7 +55,7 @@ pub fn freeProcessInfo(allocator: std.mem.Allocator, p: ProcessInfo) void {
     allocator.free(p.vm_id);
 }
 
-const SqliteBackend = sqlite.SqliteBackend;
+const Backend = database.Db;
 
 /// Where a detached job's pid lives: this host, or the VM of a workspace. The
 /// row's `pid` is the host pid for `.host()` and the guest pid for `.guest()`;
@@ -79,7 +80,7 @@ pub const JobHome = struct {
 /// Save a new background process to the database. `kind` is `KIND_JOB` or
 /// `KIND_SERVICE` — see migration 107; `home` says whether the pid is this
 /// host's or a workspace VM's — see migration 113.
-pub fn save(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []const u8, pid: u32, command: []const u8, log_path: []const u8, started_at: i64, kind: []const u8, home: JobHome) !void {
+pub fn save(db: *Backend, allocator: std.mem.Allocator, session_id: []const u8, pid: u32, command: []const u8, log_path: []const u8, started_at: i64, kind: []const u8, home: JobHome) !void {
     const pid_str = try std.fmt.allocPrint(allocator, "{}", .{pid});
     defer allocator.free(pid_str);
 
@@ -98,7 +99,7 @@ pub fn save(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []cons
 }
 
 /// Get all background processes for a session
-pub fn getBySession(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []const u8) ![]ProcessInfo {
+pub fn getBySession(db: *Backend, allocator: std.mem.Allocator, session_id: []const u8) ![]ProcessInfo {
     var rows = try db.query(allocator, "SELECT pid, command, log_path, started_at, status, COALESCE(kind, 'job'), COALESCE(last_read_offset, 0), COALESCE(vm_id, ''), COALESCE(guest_pid, 0) FROM session_background_process WHERE session_id = ?", &.{session_id});
     defer rows.deinit();
 
@@ -140,7 +141,7 @@ pub fn getBySession(db: *SqliteBackend, allocator: std.mem.Allocator, session_id
 }
 
 /// Update the status of a background process
-pub fn updateStatus(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []const u8, pid: u32, new_status: []const u8) !void {
+pub fn updateStatus(db: *Backend, allocator: std.mem.Allocator, session_id: []const u8, pid: u32, new_status: []const u8) !void {
     const pid_str = try std.fmt.allocPrint(allocator, "{}", .{pid});
     defer allocator.free(pid_str);
 
@@ -150,7 +151,7 @@ pub fn updateStatus(db: *SqliteBackend, allocator: std.mem.Allocator, session_id
 }
 
 /// Delete a background process from the database
-pub fn delete(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []const u8, pid: u32) !void {
+pub fn delete(db: *Backend, allocator: std.mem.Allocator, session_id: []const u8, pid: u32) !void {
     const pid_str = try std.fmt.allocPrint(allocator, "{}", .{pid});
     defer allocator.free(pid_str);
 
@@ -159,7 +160,7 @@ pub fn delete(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []co
 
 /// Every `kind='service'` row, with `session_id` — the rows that
 /// `mode="background_persistence"` created.
-pub fn getServices(db: *SqliteBackend, allocator: std.mem.Allocator) ![]ProcessInfo {
+pub fn getServices(db: *Backend, allocator: std.mem.Allocator) ![]ProcessInfo {
     var rows = try db.query(allocator,
         \\SELECT session_id, pid, command, log_path, started_at, status, COALESCE(kind, 'job'), COALESCE(last_read_offset, 0), COALESCE(vm_id, ''), COALESCE(guest_pid, 0)
         \\FROM session_background_process
@@ -228,7 +229,7 @@ pub fn killProcess(pid: u32) bool {
 }
 
 /// Stop every live `kind='service'` process, TREE included.
-pub fn killServicesForShutdown(db: *SqliteBackend, io: std.Io, allocator: std.mem.Allocator) !usize {
+pub fn killServicesForShutdown(db: *Backend, io: std.Io, allocator: std.mem.Allocator) !usize {
     const services = try getServices(db, allocator);
     defer freeProcessInfos(allocator, services);
 
@@ -243,7 +244,7 @@ pub fn killServicesForShutdown(db: *SqliteBackend, io: std.Io, allocator: std.me
 }
 
 /// One process row by pid, or null when this session has no such process.
-pub fn getByPid(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []const u8, pid: u32) !?ProcessInfo {
+pub fn getByPid(db: *Backend, allocator: std.mem.Allocator, session_id: []const u8, pid: u32) !?ProcessInfo {
     const pid_str = try std.fmt.allocPrint(allocator, "{d}", .{pid});
     defer allocator.free(pid_str);
 
@@ -274,7 +275,7 @@ pub fn getByPid(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []
 /// Persist the read cursor. The caller passes the offset it actually RETURNED,
 /// so a failed persist can only cause a repeat (harmless) and never a gap — a
 /// silently skipped line is the failure that would matter.
-pub fn setLastReadOffset(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []const u8, pid: u32, offset: i64) !void {
+pub fn setLastReadOffset(db: *Backend, allocator: std.mem.Allocator, session_id: []const u8, pid: u32, offset: i64) !void {
     const pid_str = try std.fmt.allocPrint(allocator, "{d}", .{pid});
     defer allocator.free(pid_str);
     const offset_str = try std.fmt.allocPrint(allocator, "{d}", .{offset});
@@ -315,7 +316,7 @@ pub const DeltaRead = struct {
 pub fn readDelta(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *SqliteBackend,
+    db: *Backend,
     session_id: []const u8,
     pid: u32,
     log_path: []const u8,
@@ -412,7 +413,7 @@ pub const ServiceSweepResult = struct {
 };
 
 /// Boot pass over every `kind='service'` row.
-pub fn sweepServicesOnBoot(db: *SqliteBackend, io: std.Io, allocator: std.mem.Allocator) !ServiceSweepResult {
+pub fn sweepServicesOnBoot(db: *Backend, io: std.Io, allocator: std.mem.Allocator) !ServiceSweepResult {
     const services = try getServices(db, allocator);
     defer freeProcessInfos(allocator, services);
 
@@ -765,7 +766,7 @@ test "readLogTruncated handles an empty file" {
 const migration = @import("../migrations/migration.zig");
 
 const TestCtx = struct {
-    db: SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 
     fn deinit(self: *TestCtx) void {
@@ -781,7 +782,7 @@ fn setupCtx() !TestCtx {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

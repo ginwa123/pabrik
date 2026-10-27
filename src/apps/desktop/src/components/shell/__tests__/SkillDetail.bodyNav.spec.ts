@@ -73,6 +73,7 @@ beforeEach(() => {
       content: BODY,
       asset_count: 0,
       is_can_auto_improve: true,
+      metadata: [],
     },
     error_message: '',
   })
@@ -117,6 +118,7 @@ describe('SkillDetail — the outline', () => {
         content: 'just prose',
         asset_count: 0,
         is_can_auto_improve: true,
+        metadata: [],
       },
       error_message: '',
     })

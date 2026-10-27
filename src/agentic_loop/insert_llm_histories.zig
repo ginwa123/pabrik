@@ -5,6 +5,7 @@ const SkillInfo = @import("session_skills.zig").SkillInfo;
 const onEventSendLLMHistory = @import("sse_on_event_send_llm_history.zig").onEventSendLLMHistory;
 
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const logger_mod = pabrikcore.loggermod;
 const agent = pabrikcore.agent;
 const helpers = @import("helpers");
@@ -16,7 +17,7 @@ const parsing = @import("parsing.zig");
 pub const InsertLLMHistoriesInput = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     logger: ?*logger_mod.Logger,
     is_emit_sse: bool,
     event_bus: ?*event_bus_mod.EventBus,
@@ -303,12 +304,12 @@ const testing = std.testing;
 /// A replica of the history table's FTS5 mirror, the triggers that keep it
 /// in sync, and the backstop that repairs a blank model with an UPDATE —
 /// which re-enters the mirror, so FTS5 refuses it.
-fn setupHistoryDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+fn setupHistoryDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try db.exec(alloc,
@@ -467,7 +468,7 @@ test "a history row for a session with a model keeps that model" {
 /// Get all skills loaded for a session
 fn getSessionSkills(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]SkillInfo {
     if (session_id.len == 0) return &.{};

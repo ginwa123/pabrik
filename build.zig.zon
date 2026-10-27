@@ -8,6 +8,12 @@
         // Pinned by URL + hash; exposes a single `databases` module;
         // consumers `@import("databases")` to use it.
         .databases = .{
+            // b583c70 = ruangsql#13, on main: `createTempDb` /
+            // `tempDbAvailable` give a test one disposable database on whichever
+            // backend the build compiled in, and #12's elastic postgres pool
+            // lands with it. Both are what the `--database` flag needs.
+            //
+            // PREVIOUS PIN, kept for the trap it describes —
             // 2b17251 = branch `fix/fd-headroom-scales-with-budget`
             // (ruangsql#9): the reader pool's ceiling no longer collapses to 1
             // when the process's soft `RLIMIT_NOFILE` is at or below
@@ -129,8 +135,8 @@
             // prints. Then `rm -rf zig-pkg && zig build` and confirm the
             // new symbol you rely on actually exists in the extracted
             // package.
-            .url = "git+https://github.com/ginwa123/ruangsql.git#2332237656c81d348be0819d72e141deff6cbe06",
-            .hash = "databases-0.0.0-vy-BCOOEBgA4OqXkX5PCHjXXN5TLeoEvXxUsou6ssolD",
+            .url = "git+https://github.com/ginwa123/ruangsql.git#b583c70cb572431276dbcede595adbb093ab0749",
+            .hash = "databases-0.0.0-vy-BCBGEBgAvJ5sNp02LK7JfvYTt7F8qzFVzpTgtIxA7",
         },
         // External web-framework library (pure-Zig HTTP server +
         // libcurl-backed HTTP client). Exposes a single `kabelweb` module

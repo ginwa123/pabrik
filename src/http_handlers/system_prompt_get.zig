@@ -13,7 +13,7 @@ const tool_models = pabrikcore.tool_models;
 const buildMessages = @import("../agentic_loop/prompts_build_messages_for_agent_prompt.zig").buildMessages;
 
 const agentic_loop = @import("../agentic_loop/workflow.zig");
-const SqliteBackend = pabrikcore.sqlite.SqliteBackend;
+const Backend = pabrikcore.database.Db;
 
 /// JSON response struct. `size_bytes` is the byte length of the rendered
 /// `system_prompt` so callers can sanity-check they got a non-empty prompt
@@ -65,7 +65,7 @@ pub fn systemPromptGetHandler(
 
     // Load the DB-stored message history (same shape `workflow.zig` uses
     // before calling buildMessages).
-    const db_messages = agentic_loop.getLLMHistories(*SqliteBackend, .{
+    const db_messages = agentic_loop.getLLMHistories(*Backend, .{
         .allocator = allocator,
         .db = sqlite_db,
         .session_id = session_id,

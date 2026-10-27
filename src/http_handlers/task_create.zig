@@ -176,7 +176,7 @@ fn generateTaskId(allocator: std.mem.Allocator, io: std.Io) TaskCreateError![]u8
 /// Memory branch. Writes the .md file + inserts the task row.
 fn createMemoryTask(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: TaskCreateInput,
     task_id: []const u8,
 ) TaskCreateError!MemoryResult {
@@ -252,7 +252,7 @@ fn createMemoryTask(
 /// MAX(kanban_position) + 1.
 fn createStandardTask(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: TaskCreateInput,
     task_id: []const u8,
 ) TaskCreateError!StandardResult {
@@ -511,7 +511,7 @@ fn createStandardTask(
 
 pub fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: TaskCreateInput,
 ) TaskCreateError!TaskCreateResult {
     if (input.item_id.len == 0) return error.ItemIdRequired;
@@ -775,7 +775,7 @@ test "task_create: unattended sessions row carries the requesting owner" {
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    var db: pabrikcore.sqlite.SqliteBackend = .{};
+    var db: pabrikcore.database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
     var manager = migration_mod.MigrationManager.init(alloc, &db);

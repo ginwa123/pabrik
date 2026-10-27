@@ -7,6 +7,7 @@ const helpers = @import("helpers");
 const database = @import("databases").database;
 const migration = @import("../migrations/mod.zig").migration;
 const db_config = @import("db_config.zig");
+const db_target = @import("db_target.zig");
 const cli_parse = @import("../cli/parse.zig");
 const cli_flags = @import("../cli/flags.zig");
 const service_mod = @import("../service/mod.zig");
@@ -157,8 +158,16 @@ pub fn dispatchCreateAdmin(
     defer rest.deinit(allocator);
     while (it.next()) |a| try rest.append(allocator, a);
 
+    var db_request: db_target.Request = .{};
+    var without_db: std.ArrayList([]const u8) = .empty;
+    defer without_db.deinit(allocator);
+    db_target.parseArgs(allocator, rest.items, &db_request, &without_db) catch |err| {
+        db_target.reportArgError(rest.items, err);
+        return error.InvalidArgs;
+    };
+
     var got: CreateAdminFlags = .{};
-    if (try cli_parse.parse(CreateAdminFlags, .{ .scope = .create_admin }, null, rest.items, &got, null)) |failure| {
+    if (try cli_parse.parse(CreateAdminFlags, .{ .scope = .create_admin }, null, without_db.items, &got, null)) |failure| {
         switch (failure.kind) {
             .missing_value => std.log.err("create-admin: {s} requires a value", .{failure.flag}),
             .invalid_value => std.log.err("create-admin: {s}: not a valid value", .{failure.flag}),
@@ -168,6 +177,7 @@ pub fn dispatchCreateAdmin(
     }
     if (got.help_requested) {
         std.debug.print("Usage: pabrik create-admin [flags]\n{s}", .{cli_flags.usageBlock(.create_admin, "")});
+        std.debug.print("{s}", .{cli_flags.usageBlock(.db_target, "")});
         return true;
     }
     const email_v = got.email orelse {
@@ -187,18 +197,25 @@ pub fn dispatchCreateAdmin(
         return error.InvalidArgs;
     }
 
-    const db_path = try helpers.db_path.getDbPath(allocator, io, @constCast(environment));
-    defer allocator.free(db_path);
-    var dbSqlite: database.Db = .{};
-    defer dbSqlite.deinit();
-    try database.openWithConfig(&dbSqlite, io, .{ .sqlite_path = db_path }, db_config.best);
-    var mm = migration.MigrationManager.init(allocator, &dbSqlite);
+    var target = db_target.openTarget(allocator, io, @constCast(environment), db_request) catch |err| {
+        if (db_target.isResolveError(err)) {
+            db_target.reportResolveError(db_request, @errorCast(err));
+        } else {
+            std.log.err("create-admin: cannot open the database: {s}", .{@errorName(err)});
+        }
+        return error.InvalidArgs;
+    };
+    defer target.deinit();
+    var db: database.Db = .{};
+    defer db.deinit();
+    try database.openConfigured(&db, io, target.openConfig(), db_config.resolveConfig(&.{}));
+    var mm = migration.MigrationManager.init(allocator, &db);
     defer mm.deinit();
     try migration.registerAllMigrations(&mm);
     try mm.runMigrations();
 
     if (!got.force) {
-        var q = try dbSqlite.query(allocator, "SELECT 1 FROM users WHERE role = 'admin' AND is_active = 1 LIMIT 1", &.{});
+        var q = try db.query(allocator, "SELECT 1 FROM users WHERE role = 'admin' AND is_active = 1 LIMIT 1", &.{});
         defer q.deinit();
         if ((try q.next()) != null) {
             std.log.err("create-admin: an active admin already exists (use --force to add another)", .{});
@@ -217,7 +234,7 @@ pub fn dispatchCreateAdmin(
     const ts = std.Io.Timestamp.now(io, .real);
     const id = try std.fmt.allocPrint(allocator, "user_{d}", .{@divTrunc(ts.nanoseconds, 1_000_000)});
     defer allocator.free(id);
-    dbSqlite.exec(
+    db.exec(
         allocator,
         "INSERT INTO users (id, email, name, password_hash, role, is_active) VALUES (?, ?, COALESCE(?, ''), ?, 'admin', 1)",
         &[_][]const u8{ id, email_v, got.name, hash_slice },
@@ -232,7 +249,7 @@ pub fn dispatchCreateAdmin(
     // mode, so the workspace is stamped VM-backed (read only in saas mode).
     const provisioned = ai_mod.http_handlers.workspace_provisioning.ensureDefaultWorkspace(
         allocator,
-        &dbSqlite,
+        &db,
         io,
         id,
         environment,

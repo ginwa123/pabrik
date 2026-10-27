@@ -20,7 +20,7 @@ const MediaResponse = struct {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     item_id: []const u8,
     task_id: []const u8,
 ) TasksMediaError![]const u8 {

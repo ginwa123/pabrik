@@ -41,10 +41,10 @@
     - video/*: native `<video controls>`. audio/*: native `<audio controls>`.
     - text-like (text/*, application/json, application/javascript):
       fetched source (≤ 512 KB, sliced to 200k chars) rendered via
-      `PreviewContentRenderer` — markdown for `.md` (its <mermaid>
-      blocks and ```mermaid fences included), a diagram for `.mmd` /
-      `.mermaid`, code + language for known code extensions, plain text
-      otherwise.
+      `PreviewContentRenderer` — markdown for `.md` (its <mermaid>,
+      <plantuml> and <d2> blocks included), a diagram for `.mmd`/`.mermaid`,
+      `.puml`/`.plantuml`/`.pu` and `.d2`, code + language for known code
+      extensions, plain text otherwise.
     - everything else: generic file row (icon + name + size + mime + ⬇).
 
   Header (always visible):
@@ -166,8 +166,15 @@ const extOf = (f: ParsedPresentFile): string => {
   return dot === -1 ? '' : base.slice(dot).toLowerCase()
 }
 
-/** Mermaid source files render as a diagram of themselves, not as their own text. */
-const MERMAID_EXTS = new Set(['.mmd', '.mermaid'])
+/** A diagram SOURCE file renders as a diagram of itself, not as its own text. */
+const DIAGRAM_EXTS: Record<string, 'mermaid' | 'plantuml' | 'd2'> = {
+  '.mmd': 'mermaid',
+  '.mermaid': 'mermaid',
+  '.puml': 'plantuml',
+  '.plantuml': 'plantuml',
+  '.pu': 'plantuml',
+  '.d2': 'd2',
+}
 
 /** Text-like files render fetched source inline (not just a row). */
 const isTextLike = (f: ParsedPresentFile): boolean => {
@@ -176,14 +183,15 @@ const isTextLike = (f: ParsedPresentFile): boolean => {
   if (m.startsWith('text/')) return true
   if (m.includes('application/json') || m.includes('application/javascript')) return true
   const ext = extOf(f)
-  return ext in CODE_LANG_BY_EXT || MERMAID_EXTS.has(ext)
+  return ext in CODE_LANG_BY_EXT || ext in DIAGRAM_EXTS
 }
 
-type TextRendererType = 'markdown' | 'text' | 'code' | 'mermaid'
+type TextRendererType = 'markdown' | 'text' | 'code' | 'mermaid' | 'plantuml' | 'd2'
 
 const textRendererType = (f: ParsedPresentFile): TextRendererType => {
   const ext = extOf(f)
-  if (MERMAID_EXTS.has(ext)) return 'mermaid'
+  const diagram = DIAGRAM_EXTS[ext]
+  if (diagram) return diagram
   if (ext === '.md' || mimeLower(f).includes('markdown')) return 'markdown'
   if (ext in CODE_LANG_BY_EXT) return 'code'
   return 'text'

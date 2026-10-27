@@ -8,7 +8,7 @@ const pabrikcore = @import("pabrikcore");
 /// "defaults"). Caller owns the returned slice.
 pub fn loadRaw(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     user_id: []const u8,
 ) !?[]u8 {
     if (user_id.len == 0) return null;
@@ -27,11 +27,11 @@ pub fn loadRaw(
 }
 
 /// Save the raw `config_json` for a user. Empty input stores NULL (defaults)
-/// — never binds `""` directly since SqliteBackend collapses empty slices to
+/// — never binds `""` directly since Backend collapses empty slices to
 /// NULL mid-execution anyway; the literal keeps the intent explicit.
 pub fn saveRaw(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     user_id: []const u8,
     json_text: []const u8,
 ) !void {
@@ -56,11 +56,12 @@ pub fn saveRaw(
 
 const testing = std.testing;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const Migration077 = @import("../../migrations/migration.zig").Migration077AddUsersAndRbacSchema;
 const Migration092 = @import("../../migrations/migration.zig").Migration092AddUserConfigJson;
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -68,7 +69,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     // Migration077 adds user_id to pre-existing workspaces/sessions

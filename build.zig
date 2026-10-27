@@ -753,6 +753,9 @@ fn collectTestShardEntries(b: *std.Build) []const TestShardEntry {
     }) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.path, ".zig")) continue;
+        // `test:db` runs this one in its own module, so sharding it here would
+        // schedule filters that match nothing.
+        if (std.mem.endsWith(u8, entry.path, "db_tests.zig")) continue;
 
         // `entry.dir` + `entry.basename`, not cwd + `entry.path`: the
         // walker's paths are relative to the directory it was opened on
@@ -855,6 +858,7 @@ const test_manifest_other_modules = [_][]const u8{
     "vmd/",
     "vm_agent/",
     "modules/gilvec_db/",
+    "testing/db_tests.zig",
 };
 
 fn testManifestOtherModule(path: []const u8) bool {
@@ -1419,11 +1423,18 @@ pub fn build(b: *std.Build) void {
 
     // Cross-platform Homebrew / vcpkg prefix options.
 
+    const wire_host = b.createModule(.{
+        .root_source_file = b.path("src/vm_wire.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const mod = b.addModule("pabrikcore", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .imports = &.{
             .{ .name = "helpers", .module = helpers_mod },
+            .{ .name = "vm_wire", .module = wire_host },
         },
     });
 
@@ -2590,6 +2601,7 @@ pub fn build(b: *std.Build) void {
     mod_tests_module.addImport("pabrikcore", mod_tests_module);
     mod_tests_module.addImport("kabelweb", kabelweb_mod);
     mod_tests_module.addImport("helpers", helpers_mod);
+    mod_tests_module.addImport("vm_wire", wire_host);
     // Same `databases` import as `mod` — tests that touch sqlite3 get the
     // package's deps (link_libc + sqlite3.c amalgamation + openssl + libpq)
     // via the module-graph dep propagation.
@@ -2681,6 +2693,32 @@ pub fn build(b: *std.Build) void {
         test_step.dependOn(&run_mod_tests.step);
     }
 
+    // The backend-agnostic database tests, in a module of their own: it
+    // reaches only `boot/db_target.zig` + `testing/test_db.zig`, so the SAME
+    // step compiles under `-Ddb_used=sqlite` and `-Ddb_used=sqlite,postgres`.
+    const db_tests_module = b.createModule(.{
+        .root_source_file = b.path("src/testing/db_tests.zig"),
+        .target = test_target,
+        .optimize = optimize,
+    });
+    db_tests_module.addImport("pabrikcore", mod_tests_module);
+    db_tests_module.addImport("helpers", helpers_mod);
+    db_tests_module.addImport("databases", databases_mod);
+    {
+        db_tests_module.linkSystemLibrary("c", .{});
+        db_tests_module.link_libc = true;
+        if (test_target.result.os.tag == .linux) {
+            db_tests_module.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
+        }
+    }
+    const db_tests = b.addTest(.{ .root_module = db_tests_module });
+    const run_db_tests = b.addRunArtifact(db_tests);
+    run_db_tests.setName("test db backend (db_target + temp-db harness)");
+    prependVcpkgBinToPath(b, run_db_tests);
+    test_step.dependOn(&run_db_tests.step);
+    b.step("test:db", "Run the backend-agnostic database tests (--database=* resolution + temp-db harness); honours -Ddb_used")
+        .dependOn(&run_db_tests.step);
+
     // `run_captured.zig` lives in the standalone `helpers` PACKAGE, so its
     // inline tests are not reachable from `src/root.zig` and the mod_tests
     // binary above never compiles them.
@@ -2753,12 +2791,18 @@ pub fn build(b: *std.Build) void {
         .os_tag = .linux,
         .abi = .musl,
     });
+    const wire_guest = b.createModule(.{
+        .root_source_file = b.path("src/vm_wire.zig"),
+        .target = guest_target,
+        .optimize = optimize,
+    });
     const vm_agent_exe = b.addExecutable(.{
         .name = "pabrik-vm-agent",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/vm_agent/main.zig"),
             .target = guest_target,
             .optimize = optimize,
+            .imports = &.{.{ .name = "vm_wire", .module = wire_guest }},
         }),
     });
     // The guest's `/init`: it asks the host for the current agent and execs
@@ -2770,6 +2814,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/vm_agent/bootstrap.zig"),
             .target = guest_target,
             .optimize = optimize,
+            .imports = &.{.{ .name = "vm_wire", .module = wire_guest }},
         }),
     });
     const vm_probe_exe = b.addExecutable(.{
@@ -2786,6 +2831,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/vm_agent/netd.zig"),
             .target = guest_target,
             .optimize = optimize,
+            .imports = &.{.{ .name = "vm_wire", .module = wire_guest }},
         }),
     });
     const install_vm_netd = b.addInstallArtifact(vm_netd_exe, .{});
@@ -2810,6 +2856,7 @@ pub fn build(b: *std.Build) void {
                 .root_source_file = b.path("src/vm_agent/tests.zig"),
                 .target = target,
                 .optimize = optimize,
+                .imports = &.{.{ .name = "vm_wire", .module = wire_host }},
             }),
         });
         const run_vm_tests = b.addRunArtifact(vm_tests);
@@ -2833,6 +2880,7 @@ pub fn build(b: *std.Build) void {
                 .root_source_file = b.path("src/vmd/main.zig"),
                 .target = target,
                 .optimize = optimize,
+                .imports = &.{.{ .name = "vm_wire", .module = wire_host }},
             }),
         });
         const install_vmd = b.addInstallArtifact(vmd_exe, .{});
@@ -2859,6 +2907,7 @@ pub fn build(b: *std.Build) void {
                 .root_source_file = b.path("src/vmd/main.zig"),
                 .target = target,
                 .optimize = optimize,
+                .imports = &.{.{ .name = "vm_wire", .module = wire_host }},
             }),
         });
         const run_vmd_tests = b.addRunArtifact(vmd_tests);

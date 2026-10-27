@@ -5,6 +5,7 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 /// Re-exported so a caller holding a slice returned by `incompleteDependencies`
 /// frees it through the SAME module copy it was built with.
 pub const deps = @import("kanban_deps.zig");
@@ -40,7 +41,7 @@ pub fn freeColumns(allocator: std.mem.Allocator, cols: []KanbanColumn) void {
 /// slice)`.
 pub fn listColumns(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_item_id: []const u8,
 ) ![]KanbanColumn {
     var q = try db.query(allocator,
@@ -177,7 +178,7 @@ pub fn seedDefaultColumns(
 /// least one must be non-null (validated at the HTTP handler layer).
 pub fn updateColumn(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_item_id: []const u8,
     column_id: []const u8,
     name: ?[]const u8,
@@ -210,7 +211,7 @@ pub fn updateColumn(
 /// fixtures) stay untouched.
 pub fn setColumnIsDone(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     column_id: []const u8,
     is_done: bool,
 ) !void {
@@ -224,7 +225,7 @@ pub fn setColumnIsDone(
 /// Delete a column.
 pub fn deleteColumn(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_item_id: []const u8,
     column_id: []const u8,
 ) !void {
@@ -244,7 +245,7 @@ pub fn deleteColumn(
 /// columns.
 pub fn replaceColumnsWith(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     source_item_id: []const u8,
     target_item_id: []const u8,
 ) !void {
@@ -298,7 +299,7 @@ pub fn replaceColumnsWith(
 /// kanban's column sequence.
 pub fn appendColumnsFrom(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     source_item_id: []const u8,
     target_item_id: []const u8,
 ) !void {
@@ -342,7 +343,7 @@ pub fn appendColumnsFrom(
 /// `kanban_column_id`.
 pub fn countTasksInColumn(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     column_id: []const u8,
 ) !u32 {
     // After Migration 072, "tasks in this column" is read from `kanban` (the
@@ -362,7 +363,7 @@ pub fn countTasksInColumn(
 /// shifting the OTHER columns around it.
 pub fn reorderColumn(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_item_id: []const u8,
     column_id: []const u8,
     new_position: i64,
@@ -413,7 +414,7 @@ pub fn reorderColumn(
 /// `target_position`.
 pub fn moveTask(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_item_id: []const u8,
     task_id: []const u8,
     target_column_id: []const u8,
@@ -472,7 +473,7 @@ pub fn moveTask(
 /// The column the task is currently in ('' when it is unassigned).
 fn currentColumnId(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     task_id: []const u8,
 ) ![]u8 {
     var q = try db.query(allocator,
@@ -489,7 +490,7 @@ fn currentColumnId(
 /// reports. Caller frees with `kanban_deps.freeEdges`.
 pub fn incompleteDependencies(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     task_id: []const u8,
 ) ![]deps.Edge {
     const all = try deps.listEdgesForTask(allocator, db, task_id);
@@ -520,7 +521,7 @@ pub const MoveGateError = error{BlockedByDependencies};
 /// so both stay allowed.
 pub fn assertMoveAllowed(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     task_id: []const u8,
     target_column_id: []const u8,
 ) !void {
@@ -538,7 +539,7 @@ pub fn assertMoveAllowed(
 /// the move itself.
 pub fn moveTaskChecked(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_item_id: []const u8,
     task_id: []const u8,
     target_column_id: []const u8,
@@ -560,13 +561,13 @@ const testing = std.testing;
 /// Open a fresh in-memory sqlite DB with the bare minimum tables the
 /// kanban_model functions need: `workspace_items` (for the FK reference) and
 /// `kanban_columns` (the table being queried).
-fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -951,7 +952,7 @@ test "reorderColumn shifts siblings to a dense sequence matching the user's inte
         position: i64,
     };
     const readByPos = struct {
-        fn run(a: std.mem.Allocator, db: *sqlite.SqliteBackend, item_id: []const u8) ![]ColRow {
+        fn run(a: std.mem.Allocator, db: *database.Db, item_id: []const u8) ![]ColRow {
             var q = try db.query(a,
                 \\SELECT kc.id, kc.position
                 \\FROM kanban_columns kc
@@ -1017,12 +1018,12 @@ test "reorderColumn shifts siblings to a dense sequence matching the user's inte
 // ─── Inline tests (formerly kanban_model_test_description.zig) ──────────
 // Unit tests for kanban column description. Inlined here.
 
-fn setupDbDescription() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+fn setupDbDescription() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     // Migration 051 needs `workspace_items` (FK target) and
@@ -1221,12 +1222,12 @@ test "updateColumn with both empty description and new name writes both" {
 // In-memory round-trip tests for replaceColumnsWith + appendColumnsFrom.
 // Inlined here.
 
-fn setupDbCopy() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+fn setupDbCopy() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     // Migration 051 needs `workspace_items` (FK target) and
@@ -1249,7 +1250,7 @@ fn setupDbCopy() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded }
 /// Seed a column and immediately free the returned id.
 fn seedColumn(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_item_id: []const u8,
     name: []const u8,
     description: []const u8,
@@ -1415,7 +1416,7 @@ test "replaceColumnsWith with empty source empties the target" {
 // is `c1 todo / c2 in progress` (not completing) and `c3 done` (completing).
 
 const GateDb = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 
     fn deinit(self: *GateDb) void {
@@ -1429,7 +1430,7 @@ fn setupGateDb() !GateDb {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
 
@@ -1476,7 +1477,7 @@ fn setupGateDb() !GateDb {
     return .{ .db = db, .threaded = threaded };
 }
 
-fn columnOfTask(db: *sqlite.SqliteBackend, task_id: []const u8) ![]u8 {
+fn columnOfTask(db: *database.Db, task_id: []const u8) ![]u8 {
     const alloc = testing.allocator;
     var q = try db.query(alloc,
         "SELECT kanban_column_id FROM kanban WHERE workspace_item_task_id = ?", &.{task_id});

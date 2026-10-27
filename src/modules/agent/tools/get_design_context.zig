@@ -7,6 +7,7 @@ const schemas = @import("schemas.zig");
 const AgentTool = schemas.AgentTool;
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const design_model = pabrikcore.ai_mod.design_model;
 const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
@@ -79,7 +80,7 @@ fn errorJSON(allocator: std.mem.Allocator, error_msg: []const u8) ![]u8 {
 /// Execute `get_design_context`.
 pub fn executeGetDesignContextToString(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     input: GetDesignContextInput,
 ) ![]u8 {
     // 1. Validate exactly-one of the two ids.
@@ -102,7 +103,7 @@ pub fn executeGetDesignContextToString(
 
 fn executeForPage(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     page_id: []const u8,
 ) ![]u8 {
     var bundle = design_model.getPageWithElements(allocator, db, page_id) catch |err| {
@@ -126,7 +127,7 @@ fn executeForPage(
 
 fn executeForItem(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     item_id: []const u8,
 ) ![]u8 {
     const pages = design_model.listPagesWithElements(allocator, db, item_id) catch |err| {
@@ -257,7 +258,7 @@ const testing = std.testing;
 const testing_ctx = std.testing;
 
 fn setupCtx() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_id: []const u8,
     item_path: []u8,
@@ -267,7 +268,7 @@ fn setupCtx() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -342,7 +343,7 @@ fn setupCtx() !struct {
     };
 }
 
-fn teardownCtx(db: *sqlite.SqliteBackend, threaded: *std.Io.Threaded) void {
+fn teardownCtx(db: *database.Db, threaded: *std.Io.Threaded) void {
     db.deinit();
     threaded.deinit();
 }
@@ -352,7 +353,7 @@ fn teardownCtx(db: *sqlite.SqliteBackend, threaded: *std.Io.Threaded) void {
 /// the metadata.
 fn insertElementRaw(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     page_id: []const u8,
     name: []const u8,
     elem_type: []const u8,

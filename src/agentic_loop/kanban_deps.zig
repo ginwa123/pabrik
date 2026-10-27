@@ -5,6 +5,7 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 
 /// Hard cap on the number of dependencies a single task may declare. Keeps the
 /// dependency list payload and the cycle walk bounded.
@@ -77,7 +78,7 @@ const edge_sql_for_item = edge_select ++
 /// Every dependency edge owned by `task_id`. Caller frees with `freeEdges`.
 pub fn listEdgesForTask(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     task_id: []const u8,
 ) ![]Edge {
     return readEdges(allocator, db, edge_sql_for_task, task_id);
@@ -87,7 +88,7 @@ pub fn listEdgesForTask(
 /// One query serves a whole board listing. Caller frees with `freeEdges`.
 pub fn listEdgesForItem(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     item_id: []const u8,
 ) ![]Edge {
     return readEdges(allocator, db, edge_sql_for_item, item_id);
@@ -95,7 +96,7 @@ pub fn listEdgesForItem(
 
 fn readEdges(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     comptime sql: []const u8,
     key: []const u8,
 ) ![]Edge {
@@ -139,7 +140,7 @@ fn readEdges(
 /// normalized and validated (see `validateAndReplace`).
 pub fn replace(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     task_id: []const u8,
     ids: []const []const u8,
 ) !void {
@@ -160,7 +161,7 @@ pub fn replace(
 /// task is deleted so a dangling edge cannot freeze another card forever.
 pub fn deleteForTask(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     task_id: []const u8,
 ) !void {
     try db.exec(allocator, "DELETE FROM kanban_task_dependencies WHERE task_id = ? OR depends_on_task_id = ?", &.{ task_id, task_id });
@@ -245,7 +246,7 @@ pub fn hasCycle(
 /// task of `item_id`, and the resulting graph must stay acyclic.
 pub fn validate(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     item_id: []const u8,
     task_id: []const u8,
     ids: []const []const u8,
@@ -273,7 +274,7 @@ pub fn validate(
 /// HTTP handlers use.
 pub fn validateAndReplace(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     item_id: []const u8,
     task_id: []const u8,
     raw_ids: []const []const u8,
@@ -292,7 +293,7 @@ pub fn validateAndReplace(
 const testing = std.testing;
 
 const TestDb = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 
     fn deinit(self: *TestDb) void {
@@ -307,7 +308,7 @@ fn setupDb() !TestDb {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
 
@@ -337,7 +338,7 @@ fn setupDb() !TestDb {
 }
 
 /// t1 (owner) waits for t2; t3 is unrelated. c1 = in progress, c2 = done.
-fn seedBoard(db: *sqlite.SqliteBackend) !void {
+fn seedBoard(db: *database.Db) !void {
     const alloc = testing.allocator;
     try db.exec(alloc, "INSERT INTO kanban_columns (id, workspace_item_id, name, position, is_done) VALUES ('c1', 'item_1', 'in progress', 0, 0)", &.{});
     try db.exec(alloc, "INSERT INTO kanban_columns (id, workspace_item_id, name, position, is_done) VALUES ('c2', 'item_1', 'done', 1, 1)", &.{});

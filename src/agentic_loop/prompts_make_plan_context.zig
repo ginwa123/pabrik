@@ -6,6 +6,7 @@ const std = @import("std");
 const testing = std.testing;
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const session_plan = pabrikcore.session_plan;
 const migration = @import("../migrations/migration.zig");
 const update_plan_mod = @import("../modules/agent/tools/update_plan.zig");
@@ -13,7 +14,7 @@ const update_plan_mod = @import("../modules/agent/tools/update_plan.zig");
 /// Build a "## Current Plan" section for the system prompt.
 pub fn makePlanContext(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]const u8 {
     if (session_id.len == 0) return allocator.dupe(u8, "");
@@ -68,7 +69,7 @@ pub fn makePlanContext(
 }
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -77,7 +78,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

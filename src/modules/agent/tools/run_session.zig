@@ -3,6 +3,7 @@ const schemas = @import("schemas.zig");
 const AgentTool = schemas.AgentTool;
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const workspace_scope = pabrikcore.workspace_scope;
 const ask_user_pending = pabrikcore.ask_user_pending;
 const helpers = @import("helpers");
@@ -104,7 +105,7 @@ pub const run_session_tool = AgentTool{
     },
 };
 
-fn sessionExists(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8) !bool {
+fn sessionExists(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) !bool {
     var rows = try db.query(allocator, "SELECT 1 FROM sessions WHERE id = ? LIMIT 1", &.{session_id});
     defer rows.deinit();
     if (try rows.next()) |row| {
@@ -114,7 +115,7 @@ fn sessionExists(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, sessio
     return false;
 }
 
-fn workspaceName(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, workspace_id: []const u8) ![]u8 {
+fn workspaceName(allocator: std.mem.Allocator, db: *database.Db, workspace_id: []const u8) ![]u8 {
     if (workspace_id.len == 0) return allocator.dupe(u8, "");
     var rows = try db.query(allocator, "SELECT COALESCE(name, '') FROM workspaces WHERE id = ? LIMIT 1", &.{workspace_id});
     defer rows.deinit();
@@ -129,7 +130,7 @@ fn workspaceName(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, worksp
 /// only: nothing here writes a row, so a refusal cannot leave state behind.
 pub fn planRunSession(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     caller_session_id: []const u8,
     input: RunSessionInput,
 ) !RunPlan {
@@ -305,7 +306,7 @@ fn parseTestJson(alloc: std.mem.Allocator, out: []const u8) !std.json.Parsed(std
 }
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -313,7 +314,7 @@ fn setupDb() !TestCtx {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
 

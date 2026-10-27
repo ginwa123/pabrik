@@ -4,6 +4,7 @@ const pabrik_mod = @import("pabrikcore");
 const agent = pabrik_mod.agent;
 const logger_mod = pabrik_mod.loggermod;
 const sqlite = pabrik_mod.sqlite;
+const database = pabrik_mod.database;
 const save_message = @import("llm_history.zig");
 const custom_http_client = @import("kabelweb").client;
 const config_mod = pabrik_mod.config;
@@ -15,7 +16,7 @@ const mcp_session_scope = @import("mcp_session_scope.zig");
 /// Session identity that owns a `tools/call`, so the Stop button can reach
 /// the lease wait and the transport reads/writes.
 pub const CancelSession = struct {
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     io: std.Io,
 };
@@ -686,7 +687,7 @@ test "handle_mcp_tool_run: a cancelled session stops waiting for a busy stdio se
     defer fx.deinit();
 
     // The Stop button's state, read from where the loop writes it: the worker row.
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(fx.io, ":memory:");
     try db.exec(testing.allocator, "CREATE TABLE worker (id TEXT PRIMARY KEY, cancelled INTEGER DEFAULT 0)", &.{});
@@ -716,7 +717,7 @@ test "handle_mcp_tool_run: a session that is NOT cancelled still waits out the b
     var fx = try StdioCallFixture.init("livewsrv", neverReadingServerJson(), "./test_mcp_lease_uncancelled.log");
     defer fx.deinit();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(fx.io, ":memory:");
     try db.exec(testing.allocator, "CREATE TABLE worker (id TEXT PRIMARY KEY, cancelled INTEGER DEFAULT 0)", &.{});

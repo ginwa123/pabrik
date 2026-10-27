@@ -6,6 +6,7 @@ const schemas = @import("schemas.zig");
 const AgentTool = schemas.AgentTool;
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const design_model = pabrikcore.ai_mod.design_model;
 const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
@@ -220,7 +221,7 @@ fn optClean(allocator: std.mem.Allocator, s: []const u8) !?[]u8 {
 /// Render a single child block.
 pub fn executeGroupElementsToString(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     input: GroupElementsInput,
 ) ![]u8 {
     // 0. Input validation (shape only — DB validation runs after).
@@ -330,7 +331,7 @@ test "errorJSONOwned takes ownership and frees the message" {
 /// rectangle elements ("card-a", "card-b", "card-c") all on the same page.
 /// Returns the DB handle + page_id so tests can call group_elements on them.
 fn setupDbWithThreeElements() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_id: []u8,
     page_id: []u8,
@@ -342,7 +343,7 @@ fn setupDbWithThreeElements() !struct {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -678,7 +679,7 @@ pub fn execGroupElements(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResu
     defer parsed.deinit();
 
     // group_elements doesn't need Io (groupElements handles its own
-    // mkdir-p via the SqliteBackend's io).
+    // mkdir-p via the Backend's io).
     const inner = executeGroupElementsToString(
         ctx.allocator,
         ctx.db,

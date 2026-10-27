@@ -37,6 +37,13 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("../../vmd/manager.zig"),
         .target = target,
         .optimize = optimize,
+        .imports = &.{
+            .{ .name = "vm_wire", .module = b.createModule(.{
+                .root_source_file = b.path("../../vm_wire.zig"),
+                .target = target,
+                .optimize = optimize,
+            }) },
+        },
     });
 
     const imports = [_]std.Build.Module.Import{

@@ -6,9 +6,10 @@ const std = @import("std");
 const linux = std.os.linux;
 const egress = @import("egress.zig");
 const vm_client = @import("vm_client.zig");
+const wire = @import("vm_wire");
 
-pub const egress_port: u32 = 5001;
-pub const resolver_port: u32 = 5002;
+pub const egress_port: u32 = wire.egress_port;
+pub const resolver_port: u32 = wire.resolver_port;
 pub const handshake_prefix = "PABRIK-EGRESS/1 ";
 pub const max_handshake_bytes: usize = 512;
 pub const max_query_bytes: usize = 1200;

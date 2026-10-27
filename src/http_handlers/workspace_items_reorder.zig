@@ -3,6 +3,7 @@ const http_response = @import("http_response.zig");
 const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 
 // ─── Pattern: thin handler + use case in one file ─────────────────────────
 // Mirrors `workspaces_reorder.zig` exactly, scoped to a single workspace's
@@ -83,7 +84,7 @@ const ReorderError = error{
 // i)`.
 fn reorderWorkspaceItems(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
     ordered_ids: []const []const u8,
 ) ReorderError!ReorderResult {

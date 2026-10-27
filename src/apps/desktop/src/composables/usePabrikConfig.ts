@@ -1,5 +1,5 @@
 /** usePabrikConfig — single source of truth for the Pabrik settings UI. Owns the in-memory
- * `PabrikConfig` and a deep snapshot taken at load time. */
+ * `PabrikConfig` and a deep snapshot of the last document the server confirmed. */
 import { computed, ref } from 'vue'
 
 import type { PabrikConfig } from '../api'
@@ -10,20 +10,18 @@ import { userConfigSource, type PabrikConfigSource } from '../helpers/configSour
 export function usePabrikConfig(source: PabrikConfigSource = userConfigSource()) {
   const config = ref<PabrikConfig | null>(null)
   const loaded = ref(false)
-  // JSON.stringify of config at load time. Empty string means
-  // "no snapshot yet" (i.e. dirty is always false before load).
+  // JSON.stringify of the config as the server last confirmed it. Empty string means "no snapshot
+  // yet", so dirty is false before load.
   const snapshot = ref<string>('')
   const saving = ref(false)
 
-  /**    * Number of leaf-level field changes since load. Counts each primitive change once. Used by
-   * PabrikSaveBar to show "● N unsaved changes". */
-  const unsavedCount = computed(() => {
-    if (!config.value) return 0
-    if (!snapshot.value) return 0
-    return countLeafDiffs(snapshot.value, JSON.stringify(config.value))
+  /** Has the config drifted from the confirmed document? Compares leaf values, so a hydrate that
+   * writes an explicit `false` where the key was absent is NOT a change. */
+  const dirty = computed(() => {
+    if (!config.value) return false
+    if (!snapshot.value) return false
+    return countLeafDiffs(snapshot.value, JSON.stringify(config.value)) > 0
   })
-
-  const dirty = computed(() => unsavedCount.value > 0)
 
   /** Re-snapshot the config so future edits compare against it. */
   function takeSnapshot() {
@@ -53,23 +51,17 @@ export function usePabrikConfig(source: PabrikConfigSource = userConfigSource())
     takeSnapshot()
   }
 
+  /** PUT the config and, on success, confirm exactly what was SENT. Snapshotting the live config
+   * instead would mark an edit made during the request as saved although the server never saw it. */
   async function save() {
     if (!config.value) return
+    const body = JSON.stringify(config.value)
     saving.value = true
     try {
-      await source.save(config.value)
-      takeSnapshot()
+      await source.save(JSON.parse(body) as PabrikConfig)
+      snapshot.value = body
     } finally {
       saving.value = false
-    }
-  }
-
-  function reset() {
-    if (!snapshot.value) return
-    try {
-      config.value = JSON.parse(snapshot.value)
-    } catch {
-      // Snapshot was malformed; leave config as-is.
     }
   }
 
@@ -77,17 +69,14 @@ export function usePabrikConfig(source: PabrikConfigSource = userConfigSource())
     config,
     loaded,
     dirty,
-    unsavedCount,
     saving,
     load,
     setConfig,
     save,
-    reset,
   }
 }
 
-/** Count primitive field differences between two JSON strings. Used to drive the "N unsaved
- * changes" pill in the save bar. */
+/** Count primitive field differences between two JSON strings. Drives `dirty`. */
 function countLeafDiffs(aJson: string, bJson: string): number {
   let a: unknown
   let b: unknown

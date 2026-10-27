@@ -3,6 +3,7 @@ const pabrikcore = @import("pabrikcore");
 
 const logger_mod = pabrikcore.loggermod;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const config_mod = pabrikcore.config;
 
 pub const all_agent_tools = @import("../modules/agent/tools/tools_equipped.zig").equips;
@@ -34,6 +35,7 @@ pub const execUseSkill = @import("../modules/agent/tools/skill_tools.zig").execU
 pub const execRemoveSkill = @import("../modules/agent/tools/skill_tools.zig").execRemoveSkill;
 pub const execAddSkill = @import("../modules/agent/tools/skill_tools.zig").execAddSkill;
 pub const execEditSkill = @import("../modules/agent/tools/skill_tools.zig").execEditSkill;
+pub const execSetSkillMetadata = @import("../modules/agent/tools/skill_tools.zig").execSetSkillMetadata;
 pub const execRemoveFile = @import("../modules/agent/tools/remove_file.zig").execRemoveFile;
 pub const execSetGitWorktree = @import("../modules/agent/tools/set_git_worktree.zig").execSetGitWorktree;
 pub const execSetPullRequest = @import("../modules/agent/tools/set_pull_request.zig").execSetPullRequest;
@@ -103,7 +105,7 @@ pub const AgentSaveInfo = struct {
 pub const ToolExecContext = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     logger: *logger_mod.Logger,
     session_id: []const u8,
     model: []const u8,

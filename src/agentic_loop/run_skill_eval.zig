@@ -5,6 +5,7 @@ const std = @import("std");
 const testing = std.testing;
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const agent = pabrikcore.agent;
 const logger_mod = pabrikcore.loggermod;
 const AgentTool = @import("../modules/agent/tools/schemas.zig").AgentTool;
@@ -134,7 +135,7 @@ fn freeJudgeCandidates(allocator: std.mem.Allocator, items: []JudgeCandidate) vo
 fn runJudgeTier(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     logger: ?*logger_mod.Logger,
     args: RunArgs,
     run_id: []const u8,
@@ -277,7 +278,7 @@ fn runJudgeTier(
 /// today and it is not a primitive anyone else should reach for.
 fn insertResult(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     run_id: []const u8,
     skill_key: []const u8,
@@ -332,7 +333,7 @@ fn insertResult(
 pub fn runEval(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     logger: ?*logger_mod.Logger,
     args: RunArgs,
 ) !RunOutcome {
@@ -703,7 +704,7 @@ pub fn execRunSkillEval(ctx: tools.ToolExecContext, tc: agent.ToolCall) !tools.T
 // ─── tests ───────────────────────────────────────────────────────────────
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -711,7 +712,7 @@ fn setupDb() !TestCtx {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
     var manager = migration.MigrationManager.init(alloc, &db);
@@ -721,7 +722,7 @@ fn setupDb() !TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
-fn seedLoaded(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, io: std.Io, session_id: []const u8, name: []const u8) !void {
+fn seedLoaded(alloc: std.mem.Allocator, db: *database.Db, io: std.Io, session_id: []const u8, name: []const u8) !void {
     const result = try std.fmt.allocPrint(alloc,
         "{{\"tool\":\"use_skill\",\"success\":true,\"data\":{{\"skill_name\":{f},\"content\":\"body\",\"loaded\":true}},\"error\":null,\"v\":1}}",
         .{std.json.fmt(name, .{})});
@@ -736,7 +737,7 @@ fn seedLoaded(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, io: std.Io, s
     });
 }
 
-fn countResults(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend) !i64 {
+fn countResults(alloc: std.mem.Allocator, db: *database.Db) !i64 {
     var q = try db.query(alloc, "SELECT COUNT(*) FROM skill_eval_results", &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
@@ -1090,7 +1091,7 @@ test "max_skills = 0 evaluates nothing and does not crash" {
 /// Give `session_id` a workspace through the exact task link a kanban task
 /// session has (`workspace_item_tasks.id` IS the session id) — the first
 /// branch of `workspace_scope.resolveWorkspaceId`.
-fn seedWorkspace(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8, ws_id: []const u8) !void {
+fn seedWorkspace(alloc: std.mem.Allocator, db: *database.Db, session_id: []const u8, ws_id: []const u8) !void {
     try db.exec(alloc,
         \\INSERT OR IGNORE INTO workspaces (id, name) VALUES (?, 'skill eval fixture')
     , &.{ws_id});
@@ -1106,7 +1107,7 @@ fn seedWorkspace(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id
 }
 
 /// One row in `skills`, which is now the whole of a skill.
-fn seedSkillRow(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, ws_id: []const u8, name: []const u8, body: []const u8) !void {
+fn seedSkillRow(alloc: std.mem.Allocator, db: *database.Db, ws_id: []const u8, name: []const u8, body: []const u8) !void {
     const id = try std.fmt.allocPrint(alloc, "sk_test_{s}_{s}", .{ ws_id, name });
     defer alloc.free(id);
     try db.exec(alloc,

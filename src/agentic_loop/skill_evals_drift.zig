@@ -427,7 +427,10 @@ test "a missing referenced path is reported as needing an UPDATE, never a delete
         \\## Procedure
         \\Read src/this/path/does/not/exist.zig then continue.
     ;
-    const a = try analyse(alloc, testing.io, "/tmp", body);
+    // The root is THIS checkout, never "/tmp": a root that does not exist makes
+    // every relative reference uncheckable, so the module reports nothing
+    // missing at all (and on Windows there is no /tmp to find).
+    const a = try analyse(alloc, testing.io, ".", body);
     defer a.deinit(alloc);
 
     try testing.expectEqual(@as(u32, 1), a.missing_count);
@@ -662,7 +665,7 @@ test "a path token containing quotes or a backslash survives JSON encoding" {
         \\---
         \\Read src/we"ird/pa'th.zig and src/back\slash/x.zig
     ;
-    const a = try analyse(alloc, testing.io, "/tmp", body);
+    const a = try analyse(alloc, testing.io, ".", body);
     defer a.deinit(alloc);
     // The emitted JSON must parse — a raw quote would make the whole field
     // unreadable for the client that parses it. Parsed as a generic Value

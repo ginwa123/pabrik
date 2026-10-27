@@ -6,6 +6,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const session_lock = @import("session_lock.zig");
 const testing = std.testing;
 
@@ -139,7 +140,7 @@ pub fn resumeWorkersOnBoot(di: *pabrikcore.App) void {
 
 /// The `worker` rows as resume candidates — the query half, so the SQL is
 /// testable without a booted app.
-pub fn readCandidates(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend) ![]Candidate {
+pub fn readCandidates(allocator: std.mem.Allocator, db: *database.Db) ![]Candidate {
     var rows = try db.query(allocator, select_sql, &.{});
     defer rows.deinit();
 
@@ -177,14 +178,14 @@ fn clearWorkerRow(di: *pabrikcore.App, allocator: std.mem.Allocator, session_id:
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
 fn setupDb(alloc: std.mem.Allocator) !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
     try db.exec(alloc,

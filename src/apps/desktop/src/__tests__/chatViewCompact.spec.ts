@@ -6,6 +6,12 @@ import PabrikGeneralSection, {
   type PabrikGeneralSettings,
 } from '../components/pabrik/PabrikGeneralSection.vue'
 import CompactToolGroup from '../components/tool_outputs/compact/CompactToolGroup.vue'
+import {
+  buildCompactChains,
+  foldedThoughtMessageIds,
+  type ChainGroup,
+  type CompactChainItem,
+} from '../components/tool_outputs/compact/chain'
 import type { ToolCardData } from '../components/tool_outputs/ToolCard.vue'
 import { summarizeToolCall } from '../components/tool_outputs/_shared/toolSummary'
 import { unwrapToolOutput } from '../helpers/unwrapToolOutput'
@@ -53,9 +59,18 @@ function call(tool: string, parameters: string, options: CardOptions = {}): Tool
   return { ...base, parameters }
 }
 
-function mountGroup(cards: ToolCardData[]) {
+/** The chain items a plain run of calls makes up. */
+function itemsOf(cards: ToolCardData[]): CompactChainItem[] {
+  return cards.map((card) => ({ kind: 'tool', key: card.expandKey, card }))
+}
+
+function thought(messageId: string, text: string): CompactChainItem {
+  return { kind: 'thought', key: `thought-${messageId}`, messageId, text }
+}
+
+function mountGroup(items: CompactChainItem[]) {
   return mount(CompactToolGroup, {
-    props: { cards, cwd: '/tmp', sessionId: 'session-1' },
+    props: { items, cwd: '/tmp', sessionId: 'session-1' },
   })
 }
 
@@ -135,46 +150,159 @@ describe('the one line a tool call shows', () => {
 
 describe('the compact group', () => {
   it('draws a lone call as one row, not as a group of one', () => {
-    const wrapper = mountGroup([call('read_file', '{"path":"/x/y.ts"}')])
+    const wrapper = mountGroup(itemsOf([call('read_file', '{"path":"/x/y.ts"}')]))
     expect(wrapper.find('[data-testid="compact-tool-group"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="compact-tool-row-name"]').text()).toBe('read_file')
     expect(wrapper.get('[data-testid="compact-tool-row-primary"]').text()).toBe('/x/y.ts')
   })
 
   it('folds a run of calls into one group card', () => {
-    const wrapper = mountGroup([card('read_file'), card('command'), card('search')])
+    const wrapper = mountGroup(itemsOf([card('read_file'), card('command'), card('search')]))
     expect(wrapper.get('[data-testid="compact-tool-group-count"]').text()).toBe('3 tool calls')
     expect(wrapper.findAll('[data-testid="compact-tool-row"]')).toHaveLength(0)
   })
 
   it('announces the failed calls of the run', () => {
-    const wrapper = mountGroup([card('read_file'), card('command', { success: false })])
+    const wrapper = mountGroup(itemsOf([card('read_file'), card('command', { success: false })]))
     expect(wrapper.get('[data-testid="compact-tool-group-failed"]').text()).toBe('1 failed')
   })
 
   it('shows the total duration of the run', () => {
-    const wrapper = mountGroup([
-      card('command', { durationMs: 40_000 }),
-      card('command', { durationMs: 2_100 }),
-    ])
+    const wrapper = mountGroup(
+      itemsOf([
+        card('command', { durationMs: 40_000 }),
+        card('command', { durationMs: 2_100 }),
+      ]),
+    )
     expect(wrapper.get('[data-testid="compact-tool-group-duration"]').text()).toBe('42.1s')
   })
 
   it('shows no duration when the backend recorded none', () => {
-    const wrapper = mountGroup([card('command')])
+    const wrapper = mountGroup(itemsOf([card('command')]))
     expect(wrapper.find('[data-testid="compact-tool-group-duration"]').exists()).toBe(false)
   })
 
   it('unfolds the run into one row per call', async () => {
-    const wrapper = mountGroup([card('read_file'), card('command')])
+    const wrapper = mountGroup(itemsOf([card('read_file'), card('command')]))
     await wrapper.get('[data-testid="compact-tool-group-header"]').trigger('click')
     expect(wrapper.findAll('[data-testid="compact-tool-row"]')).toHaveLength(2)
   })
 
   it('opens itself when the run holds a question for the human', () => {
-    const wrapper = mountGroup([card('read_file'), card('ask_user')])
+    const wrapper = mountGroup(itemsOf([card('read_file'), card('ask_user')]))
     expect(wrapper.findAll('[data-testid="compact-tool-row"]')).toHaveLength(1)
     expect(wrapper.find('[data-testid="ask-user-card"]').exists()).toBe(true)
+  })
+})
+
+/** A tool-call message of a transcript, as the chain builder sees it. */
+function callCard(messageId: string): ToolCardData {
+  return { ...card('command'), expandKey: messageId }
+}
+
+describe('the chain one agent turn folds into', () => {
+  const group = (
+    role: string,
+    messages: { id: string; reasoning_content?: string; finish_reason?: string }[],
+  ): ChainGroup => ({ role, messages })
+  const cardsOf = (g: ChainGroup): ToolCardData[] => g.messages.map((m) => callCard(m.id))
+  const kinds = (items: CompactChainItem[]): string[] => items.map((item) => item.kind)
+
+  const turn = (): ChainGroup[] => [
+    group('user', [{ id: 'u1' }]),
+    group('assistant', [{ id: 'a1', reasoning_content: 'read it first', finish_reason: 'tool_calls' }]),
+    group('tool', [{ id: 't1' }]),
+    group('assistant', [{ id: 'a2', reasoning_content: 'now query it', finish_reason: 'tool_calls' }]),
+    group('tool', [{ id: 't2' }]),
+    group('assistant', [{ id: 'a3', reasoning_content: 'totals are wrong', finish_reason: 'stop' }]),
+  ]
+
+  it('folds the thoughts between the calls into the same chain as the calls', () => {
+    const chains = buildCompactChains(turn(), cardsOf)
+    expect([...chains.keys()]).toEqual([2])
+    expect(kinds(chains.get(2) ?? [])).toEqual([
+      'thought',
+      'tool',
+      'thought',
+      'tool',
+      'thought',
+    ])
+  })
+
+  it('keeps the chain of a turn split at the assistant message that stops', () => {
+    const chains = buildCompactChains(
+      [
+        group('tool', [{ id: 't1' }]),
+        group('assistant', [{ id: 'a1', reasoning_content: 'done', finish_reason: 'stop' }]),
+        group('user', [{ id: 'u2' }]),
+        group('tool', [{ id: 't2' }]),
+        group('assistant', [{ id: 'a2', reasoning_content: 'done too', finish_reason: 'stop' }]),
+      ],
+      cardsOf,
+    )
+    expect([...chains.keys()]).toEqual([0, 3])
+    expect(chains.get(0)?.map((item) => item.key)).toEqual(['t1', 'thought-a1'])
+    expect(chains.get(3)?.map((item) => item.key)).toEqual(['t2', 'thought-a2'])
+  })
+
+  it('makes no chain for a turn that called nothing', () => {
+    const chains = buildCompactChains(
+      [
+        group('user', [{ id: 'u1' }]),
+        group('assistant', [{ id: 'a1', reasoning_content: 'just thinking', finish_reason: 'stop' }]),
+      ],
+      cardsOf,
+    )
+    expect(chains.size).toBe(0)
+  })
+
+  it('names the thoughts a chain already draws', () => {
+    const folded = foldedThoughtMessageIds(buildCompactChains(turn(), cardsOf))
+    expect([...folded].sort()).toEqual(['a1', 'a2', 'a3'])
+  })
+})
+
+describe('the thoughts inside a group card', () => {
+  it('stays shut on a run of calls, thoughts and all', () => {
+    const wrapper = mountGroup([
+      thought('a1', 'read it first'),
+      ...itemsOf([card('read_file')]),
+      thought('a2', 'now query it'),
+      ...itemsOf([card('command')]),
+    ])
+    expect(wrapper.find('[data-testid="compact-thought-row"]').exists()).toBe(false)
+  })
+
+  it('draws the thoughts between the calls, in the order they happened', async () => {
+    const wrapper = mountGroup([
+      thought('a1', 'read it first'),
+      ...itemsOf([card('read_file')]),
+      thought('a2', 'now query it'),
+      ...itemsOf([card('command')]),
+    ])
+    await wrapper.get('[data-testid="compact-tool-group-header"]').trigger('click')
+    const rows = wrapper.findAll('[data-testid="compact-thought-row"], [data-testid="compact-tool-row"]')
+    expect(rows.map((row) => row.attributes('data-testid'))).toEqual([
+      'compact-thought-row',
+      'compact-tool-row',
+      'compact-thought-row',
+      'compact-tool-row',
+    ])
+  })
+
+  it('opens one thought to the text the model wrote', async () => {
+    const wrapper = mountGroup([
+      thought('a1', 'The schema lives in main.go.\nThen the query.'),
+      ...itemsOf([card('read_file'), card('command')]),
+    ])
+    await wrapper.get('[data-testid="compact-tool-group-header"]').trigger('click')
+    expect(wrapper.get('[data-testid="compact-thought-preview"]').text()).toBe(
+      'The schema lives in main.go.',
+    )
+    await wrapper.get('[data-testid="compact-thought-head"]').trigger('click')
+    expect(wrapper.get('[data-testid="compact-thought-body"]').text()).toBe(
+      'The schema lives in main.go.\nThen the query.',
+    )
   })
 })
 

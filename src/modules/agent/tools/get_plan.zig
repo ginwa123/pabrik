@@ -50,7 +50,7 @@ pub const get_plan_tool = AgentTool{
 /// returned slice and must free it with `allocator.free()`.
 pub fn executeGetPlan(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]const u8 {
     const helpers = @import("helpers");
@@ -76,7 +76,7 @@ const migration = @import("../../../migrations/migration.zig");
 const update_plan_mod = @import("update_plan.zig");
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -85,7 +85,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -242,6 +242,7 @@ const exec_pabrikcore = @import("pabrikcore");
 const tools = @import("../../../agentic_loop/tools.zig");
 const exec_migration = @import("../../../migrations/migration.zig");
 const exec_sqlite = exec_pabrikcore.sqlite;
+const database = exec_pabrikcore.database;
 const exec_update_plan_mod = exec_pabrikcore.update_plan;
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
@@ -265,7 +266,7 @@ pub fn execGetPlan(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
 }
 
 const exec_TestCtx = struct {
-    db: exec_sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -274,7 +275,7 @@ fn exec_setupDb() !exec_TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: exec_sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -286,7 +287,7 @@ fn exec_setupDb() !exec_TestCtx {
 }
 
 /// Build a `ToolExecContext` that the exec wrapper can use.
-fn makeTestCtx(allocator: std.mem.Allocator, db: *exec_sqlite.SqliteBackend, session_id: []const u8) ToolExecContext {
+fn makeTestCtx(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) ToolExecContext {
     var dummy_f32: f32 = 0.0;
     var dummy_bool: bool = false;
     return .{

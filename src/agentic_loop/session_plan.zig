@@ -3,6 +3,7 @@
 const std = @import("std");
 const testing = std.testing;
 const sqlite = @import("pabrikcore").sqlite;
+const database = @import("pabrikcore").database;
 const migration = @import("../migrations/migration.zig");
 
 /// One row in `session_plan`. All string fields are allocator-owned and
@@ -33,7 +34,7 @@ pub const MAX_PLAN_BYTES: usize = 256 * 1024;
 /// Save (UPSERT) a plan. Overwrites any existing row for `session_id`.
 pub fn savePlan(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     args: SavePlanArgs,
 ) ![]const u8 {
     if (args.content.len == 0) return error.InvalidContent;
@@ -62,7 +63,7 @@ pub fn savePlan(
 /// Fetch the plan markdown for `session_id`.
 pub fn getPlan(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]const u8 {
     var q = try db.query(allocator,
@@ -83,7 +84,7 @@ pub fn getPlan(
 /// compaction enrichment to also carry the `updated_at` timestamp.
 pub fn getPlanOpt(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !?PlanRow {
     var q = try db.query(allocator,
@@ -108,7 +109,7 @@ pub fn getPlanOpt(
 }
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -117,7 +118,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

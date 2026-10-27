@@ -29,7 +29,7 @@ const MarkTouchedResponse = struct {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     workspace_id: []const u8,
     item_id: []const u8,
     task_id: []const u8,

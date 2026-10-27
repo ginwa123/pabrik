@@ -28,7 +28,7 @@ pub const SkillsListOutput = struct {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: SkillsListInput,
 ) SkillsListError!SkillsListOutput {
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;
@@ -116,11 +116,12 @@ comptime {
 // ─── Tests ──────────────────────────────────────────────────────────────
 
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const testing = std.testing;
 const migration = @import("../migrations/migration.zig");
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -131,11 +132,12 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
     try migration.Migration102CreateSkills.up(&db, testing.allocator);
+    try migration.Migration119CreateSkillMetadata.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -157,7 +159,7 @@ test "useCase: empty workspace_id returns WorkspaceIdRequired" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Refused before SQL: `SqliteBackend.exec` binds "" as NULL and
+    // Refused before SQL: `Backend.exec` binds "" as NULL and
     // `skills.workspace_id` is NOT NULL.
     try testing.expectError(
         error.WorkspaceIdRequired,

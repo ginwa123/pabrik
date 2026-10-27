@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
@@ -12,7 +12,7 @@ pub const Migration099RenameListSkillsTool = struct {
     pub const name = "rename_list_skills_tool";
 
     /// True when `name` is a table in this database.
-    fn tableExists(allocator: std.mem.Allocator, db: *SqliteBackend, table: []const u8) !bool {
+    fn tableExists(allocator: std.mem.Allocator, db: *Backend, table: []const u8) !bool {
         var q = try db.query(
             allocator,
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
@@ -24,7 +24,7 @@ pub const Migration099RenameListSkillsTool = struct {
         return std.mem.eql(u8, row.values[0], "1");
     }
 
-    fn renameIn(allocator: std.mem.Allocator, db: *SqliteBackend, table: []const u8, owner_col: []const u8) !void {
+    fn renameIn(allocator: std.mem.Allocator, db: *Backend, table: []const u8, owner_col: []const u8) !void {
         if (!try tableExists(allocator, db, table)) return;
 
         // A plain `UPDATE ...
@@ -46,7 +46,7 @@ pub const Migration099RenameListSkillsTool = struct {
         try db.exec(allocator, del, &[_][]const u8{});
     }
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         // Three allowlist tables, one per item type — agents and routines are
         // separate tables even though both are read the same way.
         try renameIn(allocator, db, "agent_tools", "agent_id");

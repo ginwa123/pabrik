@@ -127,13 +127,6 @@ def test_one_turn_of_calls_folds_into_one_card(ui_harness: UIHarness, page) -> N
     open_chatview(page, h, workspace_id, session_id)
     page.locator('[data-testid="compact-tool-group"]').first.wait_for(timeout=20000)
 
-    # Guard the fixture: the thoughts really do separate the tool rows, so the
-    # fold below cannot be plain row adjacency.
-    thoughts = page.locator(".assistant-reasoning").count()
-    assert thoughts == len(CALLS), (
-        f"the fixture must put a thought between the calls, got {thoughts} thoughts"
-    )
-
     cards = page.locator('[data-testid="compact-tool-group"]')
     assert cards.count() == 1, (
         f"one turn's calls must fold into ONE card, got {cards.count()} cards"
@@ -145,6 +138,46 @@ def test_one_turn_of_calls_folds_into_one_card(ui_harness: UIHarness, page) -> N
     assert page.locator('[data-testid="compact-tool-row"]').count() == 0, (
         "a folded run must not draw its rows"
     )
+
+
+def test_the_thoughts_of_the_turn_are_inside_the_card(ui_harness: UIHarness, page) -> None:
+    """A thought belongs to the call it led to, so it lives in the card — a
+    Thought row leaking out below the card is the bug this guards."""
+    h = ui_harness
+    session_id = "sess_compact_view_thoughts_001"
+    workspace_id = create_workspace(h)
+    _write_config(h, "compact")
+    _seed_transcript(h, workspace_id, session_id)
+
+    open_chatview(page, h, workspace_id, session_id)
+    page.locator('[data-testid="compact-tool-group"]').first.wait_for(timeout=20000)
+
+    assert page.locator(".assistant-reasoning").count() == 0, (
+        "a folded turn must not draw the dev view's Thought rows below the card"
+    )
+    body = page.locator(".tool-sequence-compact").first.inner_text()
+    assert "Thinking about step 1" not in body, (
+        f"a folded card must stay shut until it is opened, got {body!r}"
+    )
+
+    page.locator('[data-testid="compact-tool-group-header"]').first.click()
+    page.locator('[data-testid="compact-thought-row"]').first.wait_for(timeout=10000)
+
+    inside = page.evaluate(
+        """() => document.querySelectorAll(
+             '[data-testid="compact-tool-chain"] [data-testid="compact-thought-row"]').length"""
+    )
+    assert inside == len(CALLS), (
+        f"every thought of the turn must draw INSIDE the chain, got {inside} of {len(CALLS)}"
+    )
+    previews = page.locator('[data-testid="compact-thought-preview"]').all_text_contents()
+    assert previews == [f"Thinking about step {i + 1}" for i in range(len(CALLS))], (
+        f"each thought must carry its own line, got {previews}"
+    )
+    whole = page.locator("body").inner_text()
+    for index in range(len(CALLS)):
+        text = f"Thinking about step {index + 1}"
+        assert whole.count(text) == 1, f"{text!r} must be drawn once, got {whole.count(text)}"
 
 
 def test_unfolding_the_card_shows_the_tool_and_its_argument(ui_harness: UIHarness, page) -> None:
@@ -191,7 +224,9 @@ def test_a_row_opens_the_full_card(ui_harness: UIHarness, page) -> None:
         "the compact rows must not draw the dev cards"
     )
     page.locator('[data-testid="compact-tool-row-expand"]').first.click()
-    page.wait_for_timeout(500)
+    page.wait_for_function(
+        "() => document.querySelectorAll('.chat-tool-card').length >= 2", timeout=10000
+    )
     assert page.locator(".chat-tool-card").count() == 2, (
         "the `+` on a row must open the dev card for that one call"
     )

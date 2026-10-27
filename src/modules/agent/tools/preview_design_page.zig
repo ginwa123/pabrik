@@ -7,6 +7,7 @@ const schemas = @import("schemas.zig");
 const AgentTool = schemas.AgentTool;
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const design_model = pabrikcore.ai_mod.design_model;
 const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
@@ -402,7 +403,7 @@ fn appendRotation(
 pub fn executePreviewDesignPageToString(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     input: PreviewDesignPageInput,
     out_preview_id: *[]u8,
 ) ![]u8 {
@@ -469,7 +470,7 @@ const testing = std.testing;
 const testing_ctx = std.testing;
 
 fn setupCtx() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     io: std.Io,
     item_id: []const u8,
@@ -480,7 +481,7 @@ fn setupCtx() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -556,7 +557,7 @@ fn setupCtx() !struct {
     };
 }
 
-fn teardownCtx(db: *sqlite.SqliteBackend, threaded: *std.Io.Threaded) void {
+fn teardownCtx(db: *database.Db, threaded: *std.Io.Threaded) void {
     db.deinit();
     threaded.deinit();
 }
@@ -564,7 +565,7 @@ fn teardownCtx(db: *sqlite.SqliteBackend, threaded: *std.Io.Threaded) void {
 /// Insert a raw element row directly. Bypasses on-disk HTML write.
 fn insertElementRaw(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     page_id: []const u8,
     name: []const u8,
     elem_type: []const u8,

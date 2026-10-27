@@ -79,7 +79,7 @@ const ReorderError = error{
 
 // Position formula: the i-th id in the array gets `position = (count - 1 -
 // i)`.
-fn reorderWorkspaces(allocator: std.mem.Allocator, db: *pabrikcore.sqlite.SqliteBackend, ordered_ids: []const []const u8, owner: []const u8) ReorderError!ReorderResult {
+fn reorderWorkspaces(allocator: std.mem.Allocator, db: *pabrikcore.database.Db, ordered_ids: []const []const u8, owner: []const u8) ReorderError!ReorderResult {
     if (ordered_ids.len > MAX_REORDER_IDS) return error.TooManyIds;
 
     const count: i64 = @intCast(ordered_ids.len);

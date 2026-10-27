@@ -5,6 +5,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const sqlite = @import("pabrikcore").sqlite;
+const database = @import("pabrikcore").database;
 const migration = @import("../migrations/migration.zig");
 const llm_history = @import("llm_history.zig");
 
@@ -66,7 +67,7 @@ pub const MAX_CONTENT_BYTES: usize = 1 << 20; // 1 MiB
 /// `CURRENT_TIMESTAMP` for both `created_at` and `updated_at`.
 pub fn saveMemory(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     args: SaveMemoryArgs,
 ) !MemoryRow {
     if (args.content.len == 0) return error.InvalidContent;
@@ -116,7 +117,7 @@ pub fn saveMemory(
 /// Look up a memory by id, scoped to `workspace_id`.
 pub fn getMemoryById(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     workspace_id: []const u8,
 ) !?MemoryRow {
@@ -188,7 +189,7 @@ pub const LoadOptions = struct {
 /// markers around matches).
 pub fn loadMemoriesByFts(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     opts: LoadOptions,
 ) ![]MemoryHit {
     if (opts.query.len == 0) return allocator.alloc(MemoryHit, 0);
@@ -429,7 +430,7 @@ test "joinTags joins with || and skips empty tags" {
 // Behavioural tests for saveMemory / loadMemoriesByFts / getMemoryById.
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -438,7 +439,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

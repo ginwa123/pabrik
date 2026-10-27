@@ -108,7 +108,7 @@ pub const UpdateElementOutput = struct {
 /// Update a design element. Steps: 1. Validate `element_id`. 2.
 pub fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: UpdateElementInput,
 ) DesignElementUpdateError!UpdateElementOutput {
     // 1. Validate.
@@ -307,9 +307,10 @@ pub fn designElementsUpdateHandler(
 
 const testing_update_reparent = std.testing;
 const sqlite_update_reparent = pabrikcore.sqlite;
+const database = pabrikcore.database;
 
 fn setupUpdateReparentDbAndItem() !struct {
-    db: sqlite_update_reparent.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_id: []const u8,
     item_path: []u8,
@@ -319,7 +320,7 @@ fn setupUpdateReparentDbAndItem() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite_update_reparent.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -394,7 +395,7 @@ fn setupUpdateReparentDbAndItem() !struct {
     };
 }
 
-fn teardownUpdateReparentDb(db: *sqlite_update_reparent.SqliteBackend, threaded: *std.Io.Threaded) void {
+fn teardownUpdateReparentDb(db: *database.Db, threaded: *std.Io.Threaded) void {
     db.deinit();
     threaded.deinit();
 }

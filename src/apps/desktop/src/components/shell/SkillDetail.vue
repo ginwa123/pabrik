@@ -8,6 +8,12 @@
   telling the user so is the difference between "why does this skill keep
   talking about scripts I don't have" and a legible answer.
 
+  The metadata chips are the SKILL.md frontmatter keys that have no column
+  of their own (`origin`, `tags`, `license`). They arrive from the
+  `skill_metadata` table, so this pane renders them instead of parsing the
+  fence out of `content` a second time — and they are edited through the
+  body's own textarea, because the fence IS the file.
+
   Load and delete keep both outcomes: `runSyncResult` hands back either the
   payload or the reason, and the reason is rendered (or emitted), so a
   failed read cannot present as an empty detail pane.
@@ -132,6 +138,14 @@ onUpdated(() => {
   if (key === prevSkillTargetKey) return
   prevSkillTargetKey = key
   void syncSkillTarget(loadTarget.value)
+})
+
+/** The frontmatter keys the columns do not hold. Empty hides the row, so a
+ *  skill whose fence is just `name`/`description` does not render a strip of
+ *  nothing. */
+const metadataRows = computed(() => {
+  const rows = skillDetail.value?.metadata
+  return Array.isArray(rows) ? rows.filter((entry) => entry && entry.key) : []
 })
 
 /** Companion files stored beside the body. Zero hides the row entirely. */
@@ -434,6 +448,29 @@ const handleDelete = async () => {
           <span class="font-medium">{{ assetCount }}</span>
           bundled file{{ assetCount === 1 ? '' : 's' }}
         </p>
+        <!-- Frontmatter metadata: `origin`, `tags`, `license` and whatever
+             else the fence carries beyond name and description. -->
+        <div
+          v-if="metadataRows.length > 0"
+          class="mt-2 flex flex-wrap items-center gap-1.5"
+          data-testid="skill-detail-metadata"
+        >
+          <span
+            v-for="entry in metadataRows"
+            :key="entry.key"
+            class="px-2 py-0.5 rounded text-dense font-mono"
+            style="
+              background-color: var(--semantic-content-bg);
+              color: var(--semantic-text-muted);
+              border: 1px solid var(--color-border);
+            "
+            :data-testid="`skill-metadata-${entry.key}`"
+            :title="`${entry.key}: ${entry.value}`"
+          >
+            <span style="color: var(--semantic-text-dim)">{{ entry.key }}</span>
+            <span aria-hidden="true">: </span>{{ entry.value }}
+          </span>
+        </div>
         <!-- Shown in read AND edit mode: it is a property of the skill, not
              one of the two fields the form edits. -->
         <SkillAutoImproveToggle

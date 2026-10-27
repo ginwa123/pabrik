@@ -1,13 +1,14 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const policy = @import("../vmd/policy.zig");
 
 /// Resolve which workspace a chat session belongs to. Resolution order (first
 /// hit wins): 1.
 pub fn resolveWorkspaceId(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !?[]u8 {
     if (session_id.len == 0) return null;
@@ -45,7 +46,7 @@ pub fn resolveWorkspaceId(
 /// added the column; a schema that predates it answers null rather than error.
 pub fn stampedWorkspaceId(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !?[]u8 {
     if (session_id.len == 0) return null;
@@ -63,7 +64,7 @@ pub fn stampedWorkspaceId(
 /// needs "is this session already owned?" without the cwd heuristic.
 pub fn taskWorkspaceId(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !?[]u8 {
     if (session_id.len == 0) return null;
@@ -84,7 +85,7 @@ pub fn taskWorkspaceId(
 /// return false (fail closed). A session always matches itself.
 pub fn isSameWorkspace(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     caller_session_id: []const u8,
     target_session_id: []const u8,
 ) !bool {
@@ -103,7 +104,7 @@ pub fn isSameWorkspace(
 /// never appear in two workspaces).
 pub fn workspaceSessionIds(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_id: []const u8,
 ) ![][]u8 {
     var out: std.ArrayList([]u8) = .empty;
@@ -167,7 +168,7 @@ pub fn freeSessionIds(allocator: std.mem.Allocator, ids: [][]u8) void {
 /// column is empty.
 pub fn sessionCwd(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !?[]u8 {
     var rows = try db.query(allocator, "SELECT COALESCE(cwd, '') FROM sessions WHERE id = ? LIMIT 1", &.{session_id});
@@ -197,7 +198,7 @@ pub const WorkspaceMatch = struct {
 /// cannot be located has no root, and its commands must not be guessed at.
 pub fn resolveWorkspaceRoot(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !?[]u8 {
     if (session_id.len == 0) return null;
@@ -238,7 +239,7 @@ pub fn resolveWorkspaceRoot(
 /// session's cwd, and the same fail-closed answer when nothing matches.
 pub fn resolveWorkspaceForPath(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     abs_path: []const u8,
 ) !?WorkspaceMatch {
     if (abs_path.len == 0) return null;
@@ -249,7 +250,7 @@ pub fn resolveWorkspaceForPath(
 /// matches when it equals `cwd` or is a `/`-bounded prefix of it.
 fn matchWorkspaceByPath(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     cwd: []const u8,
 ) !?WorkspaceMatch {
     var rows = try db.query(allocator,
@@ -305,7 +306,7 @@ fn isPathPrefix(prefix: []const u8, path: []const u8) bool {
 const testing = std.testing;
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -314,7 +315,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

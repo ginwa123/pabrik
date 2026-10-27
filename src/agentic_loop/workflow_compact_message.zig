@@ -13,6 +13,7 @@ const agent = pabrikcore.agent;
 const prompt = pabrikcore.agent.prompt;
 const AgentMessage = agent.AgentMessage;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const logger_mod = pabrikcore.loggermod;
 const Logger = logger_mod.Logger;
 const timestampIso = pabrikcore.loggermod.timestampIso;
@@ -51,7 +52,7 @@ pub fn parseReadFilePath(content: []const u8) ?[]const u8 {
 /// and rows from other sessions.
 pub fn fetchUserChatHistory(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !std.ArrayList(UserTurn) {
     var turns: std.ArrayList(UserTurn) = .empty;
@@ -87,7 +88,7 @@ pub fn fetchUserChatHistory(
 /// already extracted from each row's XML envelope.
 pub fn fetchReadFilePaths(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     logger: *Logger,
 ) !std.ArrayList(ReadFileTurn) {
@@ -137,7 +138,7 @@ pub fn fetchReadFilePaths(
 /// agent reads them as a timeline).
 pub fn fetchRecentActivities(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     limit: u32,
 ) !std.ArrayList(RecentActivity) {
@@ -181,7 +182,7 @@ pub fn fetchRecentActivities(
 /// table.
 pub fn fetchSessionSkills(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]llm_history.SkillInfo {
     return llm_history.getSessionSkills(allocator, db, session_id);
@@ -192,7 +193,7 @@ pub fn fetchSessionSkills(
 /// fetchers).
 pub fn fetchSessionPlan(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !?session_plan_mod.PlanRow {
     return session_plan_mod.getPlanOpt(allocator, db, session_id);
@@ -202,7 +203,7 @@ pub fn fetchSessionPlan(
 /// bound to. "" when the session works in its own cwd.
 pub fn fetchSessionWorktreeCwd(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]u8 {
     return llm_history.getSessionGitWorktreeCwd(allocator, db, session_id);
@@ -500,7 +501,7 @@ pub const CompactDeps = struct {
         session_id: []const u8,
         model: []const u8,
         cwd: []const u8,
-        db: *sqlite.SqliteBackend,
+        db: *database.Db,
         io: std.Io,
         logger: *Logger,
         event_bus: ?*event_bus_mod.EventBus,
@@ -540,7 +541,7 @@ pub fn maybeCompactMessagesNew(
     url_style: []const u8,
     cwd: []const u8,
     session_id: []const u8,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     io: std.Io,
     logger: *Logger,
     /// Event bus for SSE side-effects (insertLLMHistory's
@@ -700,7 +701,7 @@ pub fn compactMessageInMemoryNew(
     session_id: []const u8,
     model: []const u8,
     cwd: []const u8,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     io: std.Io,
     logger: *Logger,
     /// Event bus for the SSE side-effect path inside `insertLLMHistory` →
@@ -796,14 +797,14 @@ pub fn compactMessageInMemoryNew(
 // GUARANTEED to match production.
 
 fn setupDb() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -822,7 +823,7 @@ fn teardownDb(s: *@TypeOf(setupDb() catch @panic("setupDb failed in the workflow
 
 fn seedRow(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     row: struct {
         id: []const u8,
         session_id: []const u8,
@@ -1074,7 +1075,7 @@ test "fetchRecentActivities returns an empty list when the session has no activi
 
 fn seedSkill(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     skill_name: []const u8,
     content: []const u8,
@@ -1644,7 +1645,7 @@ fn mockCompactMessagesInMemory(
     session_id: []const u8,
     model: []const u8,
     cwd: []const u8,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     io: std.Io,
     logger: *Logger,
     event_bus: ?*event_bus_mod.EventBus,
@@ -2079,14 +2080,14 @@ test "compact_messages_in_memory error propagates to caller" {
 /// In-memory DB with just the columns `fetchUserChatHistory`,
 /// `fetchReadFilePaths`, and `fetchRecentActivities` read.
 fn setupDbForEnrichmentTest() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -2126,7 +2127,7 @@ fn teardownDbForEnrichmentTest(s: *@TypeOf(setupDbForEnrichmentTest() catch @pan
 
 fn seedUserForEnrichmentTest(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     session_id: []const u8,
     content: []const u8,
@@ -2143,7 +2144,7 @@ fn seedUserForEnrichmentTest(
 
 fn seedReadFileForEnrichmentTest(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     session_id: []const u8,
     content: []const u8,
@@ -2160,7 +2161,7 @@ fn seedReadFileForEnrichmentTest(
 
 fn seedRecentActivityForEnrichmentTest(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     session_id: []const u8,
     description: []const u8,
@@ -2801,14 +2802,14 @@ test "PR regression: callCompactAgent mock asserts url_style propagation" {
 // `compactMessageInMemoryNew` and its marking contract
 
 fn envelopeSetupDb() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -2945,7 +2946,7 @@ test "compactMessageInMemoryNew marks every older row unfed and leaves the envel
 
 fn countRowsWithFeedFlag(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     fed: bool,
 ) !usize {
@@ -2960,7 +2961,7 @@ fn countRowsWithFeedFlag(
     return std.fmt.parseInt(usize, row.values[0], 10) catch 0;
 }
 
-fn fedEnvelope(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8) ![]u8 {
+fn fedEnvelope(alloc: std.mem.Allocator, db: *database.Db, session_id: []const u8) ![]u8 {
     var q = try db.query(
         alloc,
         "SELECT response_content FROM llm_history WHERE session_id = ? AND is_feed_to_llm = 1",

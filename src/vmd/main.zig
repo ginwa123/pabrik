@@ -43,6 +43,10 @@ const usage =
     \\  --allowed-uid N      uid the daemon accepts (default: its own)
     \\  --sweep-interval-ms N  how often every workspace is reconciled (default 15000, 0 = off)
     \\  --backoff-base-ms N  first retry delay after a failed boot (default 1000)
+    \\  --idle-stop-ms N     stop a workspace's VM after this long with no work
+    \\                       (default 1800000 = 30 min; 0 turns it off)
+    \\  --idle-grace-ms N    never stop a VMM younger than this (default 60000)
+    \\  --idle-cpu-ms N      guest CPU per sweep that still counts as work (default 50)
     \\  --mem MIB            guest memory (default 512)
     \\  --vcpus N            guest vCPUs (default 1)
     \\                       resize: both flags are required, and it restarts
@@ -89,6 +93,9 @@ const Options = struct {
     max_output_bytes: usize = rpc.default_max_output_bytes,
     sweep_interval_ms: u32 = reconciler.default_sweep_interval_ms,
     backoff_base_ms: i64 = reconciler.default_backoff_base_ms,
+    idle_stop_ms: u32 = reconciler.default_idle_stop_ms,
+    idle_grace_ms: u32 = 60_000,
+    idle_cpu_ms: u32 = 50,
     log_name: []const u8 = "",
     pid: i64 = 0,
     sig: i64 = 9,
@@ -190,6 +197,15 @@ fn parse(args: []const []const u8, options: *Options) void {
             i += 1;
         } else if (std.mem.eql(u8, arg, "--sweep-interval-ms")) {
             options.sweep_interval_ms = number(u32, "--sweep-interval-ms", valueAt(args, i));
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--idle-stop-ms")) {
+            options.idle_stop_ms = number(u32, "--idle-stop-ms", valueAt(args, i));
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--idle-grace-ms")) {
+            options.idle_grace_ms = number(u32, "--idle-grace-ms", valueAt(args, i));
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--idle-cpu-ms")) {
+            options.idle_cpu_ms = number(u32, "--idle-cpu-ms", valueAt(args, i));
             i += 1;
         } else if (std.mem.eql(u8, arg, "--log-name")) {
             options.log_name = valueAt(args, i);
@@ -403,6 +419,9 @@ fn serve(init: std.process.Init, arena: std.mem.Allocator, options: *Options) !v
         .allowed_uid = options.allowed_uid,
         .sweep_interval_ms = options.sweep_interval_ms,
         .backoff_base_ms = options.backoff_base_ms,
+        .idle_stop_ms = options.idle_stop_ms,
+        .idle_grace_ms = options.idle_grace_ms,
+        .idle_cpu_ms = options.idle_cpu_ms,
         .agent_path = if (options.agent.len > 0) options.agent else null,
     }) catch |err| {
         emit(2, "pabrik-vmd: serve failed: {s}\n", .{@errorName(err)});
@@ -635,6 +654,7 @@ fn reportClientError(client: *const vmd_client.Client) noreturn {
 // test root, and this binary is the root of the vmd suite.
 test {
     _ = @import("egress.zig");
+    _ = @import("activity.zig");
     _ = @import("lifecycle.zig");
     _ = @import("bootstrap.zig");
     _ = @import("egress_proxy.zig");

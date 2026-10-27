@@ -35,6 +35,10 @@ pub const SkillCreateInput = struct {
 pub const SkillCreateOutput = struct {
     /// Owned; free with `skills_store.freeSkillRow`.
     skill: skills_store.SkillRow,
+    /// Owned; free with `skills_store.freeSkillMetadataRows`. A create whose
+    /// body carries a frontmatter block already has metadata, so this is not
+    /// always empty.
+    metadata: []skills_store.SkillMetadataRow = &.{},
 };
 
 // =====================================================================
@@ -43,7 +47,7 @@ pub const SkillCreateOutput = struct {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: SkillCreateInput,
 ) SkillCreateError!SkillCreateOutput {
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;
@@ -81,7 +85,14 @@ fn useCase(
         error.WriteFailed, error.RowNotFoundAfterWrite => return error.WriteFailed,
         error.OutOfMemory => return error.OutOfMemory,
     };
-    return .{ .skill = row };
+    errdefer skills_store.freeSkillRow(allocator, row);
+
+    const metadata = skills_store.listMetadata(allocator, db, input.workspace_id, name) catch |err| switch (err) {
+        error.QueryFailed => return error.WriteFailed,
+        error.OutOfMemory => return error.OutOfMemory,
+        error.WorkspaceIdNameRequired => return error.WorkspaceIdRequired,
+    };
+    return .{ .skill = row, .metadata = metadata };
 }
 
 // ===================================================================== Error
@@ -161,6 +172,13 @@ pub fn skillCreateHandler(
         });
     };
     defer skills_store.freeSkillRow(allocator, output.skill);
+    defer skills_store.freeSkillMetadataRows(allocator, output.metadata);
+
+    const entries = try allocator.alloc(http_response.SkillMetadataEntry, output.metadata.len);
+    defer allocator.free(entries);
+    for (output.metadata, 0..) |meta, i| {
+        entries[i] = .{ .key = meta.key, .value = meta.value };
+    }
 
     const data = try std.json.Stringify.valueAlloc(allocator, .{
         .skill = http_response.makeSkillDetailResponse(.{
@@ -170,6 +188,7 @@ pub fn skillCreateHandler(
             // This route writes the body only.
             .asset_count = 0,
             .is_can_auto_improve = output.skill.is_can_auto_improve,
+            .metadata = entries,
         }),
     }, .{});
     return res.jsonResponse(.{ .status_code = 201, .data = data });
@@ -184,11 +203,12 @@ comptime {
 // ─── Tests ──────────────────────────────────────────────────────────────
 
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const testing = std.testing;
 const migration = @import("../migrations/migration.zig");
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -196,11 +216,12 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
     try migration.Migration102CreateSkills.up(&db, testing.allocator);
+    try migration.Migration119CreateSkillMetadata.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -240,6 +261,7 @@ test "useCase: creates a skill and returns the stored row" {
         .body = .{ .name = "  pdf  ", .description = "Work with PDFs", .content = "body" },
     });
     defer skills_store.freeSkillRow(alloc, output.skill);
+    defer skills_store.freeSkillMetadataRows(alloc, output.metadata);
 
     // Trimmed, so the URL path segment and the UNIQUE key both spell the
     // name the user typed without its padding.
@@ -264,6 +286,7 @@ test "useCase: an empty description round-trips as empty, not as a missing field
         .body = .{ .name = "half-written", .description = "", .content = "body" },
     });
     defer skills_store.freeSkillRow(alloc, output.skill);
+    defer skills_store.freeSkillMetadataRows(alloc, output.metadata);
 
     try testing.expectEqualStrings("", output.skill.description);
     try testing.expectEqualStrings("body", output.skill.content);
@@ -340,6 +363,7 @@ test "useCase: a duplicate name in one workspace is NameTaken, a 409" {
         .body = .{ .name = "pdf", .description = "first", .content = "first body" },
     });
     defer skills_store.freeSkillRow(alloc, first.skill);
+    defer skills_store.freeSkillMetadataRows(alloc, first.metadata);
 
     try testing.expectError(
         error.NameTaken,
@@ -376,6 +400,7 @@ test "useCase: the same name in a second workspace is not a duplicate" {
         .body = .{ .name = "pdf", .content = "A's copy" },
     });
     defer skills_store.freeSkillRow(alloc, in_ws1.skill);
+    defer skills_store.freeSkillMetadataRows(alloc, in_ws1.metadata);
 
     // Names are unique per workspace, not per database — two workspaces
     // are two different tenants and each keeps its own `pdf`.
@@ -384,6 +409,7 @@ test "useCase: the same name in a second workspace is not a duplicate" {
         .body = .{ .name = "pdf", .content = "B's copy" },
     });
     defer skills_store.freeSkillRow(alloc, in_ws2.skill);
+    defer skills_store.freeSkillMetadataRows(alloc, in_ws2.metadata);
 
     try testing.expectEqualStrings("ws_2", in_ws2.skill.workspace_id);
     try testing.expect(!std.mem.eql(u8, in_ws1.skill.id, in_ws2.skill.id));
@@ -410,6 +436,7 @@ test "useCase: a create may arrive already locked" {
         .body = .{ .name = "pinned", .description = "d", .content = "body", .is_can_auto_improve = false },
     });
     defer skills_store.freeSkillRow(alloc, output.skill);
+    defer skills_store.freeSkillMetadataRows(alloc, output.metadata);
     try testing.expect(!output.skill.is_can_auto_improve);
 
     // An omitted flag still means "the agent may evolve this".
@@ -418,5 +445,6 @@ test "useCase: a create may arrive already locked" {
         .body = .{ .name = "open", .description = "d", .content = "body" },
     });
     defer skills_store.freeSkillRow(alloc, open.skill);
+    defer skills_store.freeSkillMetadataRows(alloc, open.metadata);
     try testing.expect(open.skill.is_can_auto_improve);
 }

@@ -27,6 +27,8 @@ const server_boot = pabrikcore.boot_server_boot;
 // The DB policy and its `--db-*` overrides, plus the reader-pool reaper that
 // keeps the elastic pool from holding a burst's readers forever.
 const db_config = pabrikcore.boot_db_config;
+// The `--database*` family: which backend to open, and where it lives.
+const db_target = pabrikcore.boot_db_target;
 const static_serve = pabrikcore.http_static_serve;
 const vmd_lifecycle = pabrikcore.vmd_lifecycle;
 
@@ -92,11 +94,22 @@ pub fn main(init: std.process.Init) !void {
     errdefer allocator.destroy(initial_llm_config_ptr);
     initial_llm_config_ptr.* = llm_config;
 
-    // `--db-*` flags retune the connection policy (page cache, reader pool,
-    // mmap window). Parsed here rather than inside `cli_args` because they
-    // belong to the DB module that owns the defaults, and a bad one must be
-
+    // Which backend to open, and where it lives. Stripped before any scope
+    // parser runs because no scope owns these words, and a bad one must be
     // reported before the database is opened.
+    var db_request: db_target.Request = .{};
+    {
+        var leftover: std.ArrayList([]const u8) = .empty;
+        defer leftover.deinit(allocator);
+        db_target.parseArgs(allocator, argv_flat.items, &db_request, &leftover) catch |err| {
+            db_target.reportArgError(argv_flat.items, err);
+            std.process.exit(2);
+        };
+    }
+
+    // `--db-*` flags retune the connection policy (page cache, reader pool,
+    // mmap window), parsed here because that module owns the defaults and a bad
+    // one must be reported before the database is opened.
     var db_overrides: std.ArrayList(db_config.Override) = .empty;
     defer db_overrides.deinit(allocator);
     if (db_config.parseOverrides(allocator, argv_flat.items, &db_overrides)) |_| {} else |err| {
@@ -110,9 +123,15 @@ pub fn main(init: std.process.Init) !void {
         return error.InvalidArgs;
     }
 
-    var db_handles = try server_boot.openDatabase(allocator, io, environment, db_overrides.items);
-    defer db_handles.deinit(allocator);
-    const dbSqlite = &db_handles.db;
+    var db_handles = server_boot.openDatabase(allocator, io, environment, db_request, db_overrides.items) catch |err| {
+        if (db_target.isResolveError(err)) {
+            db_target.reportResolveError(db_request, @errorCast(err));
+            std.process.exit(2);
+        }
+        return err;
+    };
+    defer db_handles.deinit();
+    const db = &db_handles.db;
 
     const tmp_path = environment.get("TMPDIR") orelse
         environment.get("TEMP") orelse
@@ -144,7 +163,7 @@ pub fn main(init: std.process.Init) !void {
     ctxParent.* = pabrikcore.App{
         .allocator = allocator,
         .io = io,
-        .db = dbSqlite,
+        .db = db,
         .llm_config_holder = .{ .current = initial_llm_config_ptr },
         .logger = global_logger_ptr,
         .environment = environment,
@@ -224,7 +243,7 @@ pub fn main(init: std.process.Init) !void {
 
     // `mode="background_persistence"` services die with the pabrik that owns
     // them.
-    if (background_process.sweepServicesOnBoot(dbSqlite, io, allocator)) |sweep| {
+    if (background_process.sweepServicesOnBoot(db, io, allocator)) |sweep| {
         if (sweep.killed > 0 or sweep.marked_orphaned > 0) {
             std.log.info(
                 "background services: swept {d} row(s) from a previous run, killed {d}",
@@ -238,7 +257,7 @@ pub fn main(init: std.process.Init) !void {
     // models.dev model catalog: read the cached snapshot from the DB (local,
     // no network) and kick the detached hourly sync. This is what makes a
     // non-MiniMax model resolve to its real context window instead of 200k.
-    server_boot.loadModelCatalog(allocator, dbSqlite);
+    server_boot.loadModelCatalog(allocator, db);
 
     // Eager globals: call sites go through the singleton instead of
     // lazy-init on first MCP use; the defers free the arenas at shutdown.
@@ -254,7 +273,7 @@ pub fn main(init: std.process.Init) !void {
 
     // Routine scheduler: a concurrent Io task (no thread spawned), after
     // setSingleton + event bus so its fire path can emit events.
-    ai_mod.startup.start(allocator, dbSqlite, ctxParent, io) catch |err| {
+    ai_mod.startup.start(allocator, db, ctxParent, io) catch |err| {
         std.log.err("Failed to submit routine scheduler: {s}", .{@errorName(err)});
     };
 
@@ -394,7 +413,7 @@ pub fn main(init: std.process.Init) !void {
         // `mode="background_persistence"` processes belong to THIS service,
         // so they go down with it — a dev server still holding its port after
         // the user quit pabrik is not "persistent", it is a leak.
-        if (background_process.killServicesForShutdown(dbSqlite, io, allocator)) |killed| {
+        if (background_process.killServicesForShutdown(db, io, allocator)) |killed| {
             if (killed > 0) std.log.info("background services: stopped {d} on shutdown", .{killed});
         } else |err| {
             std.log.warn("background service shutdown kill failed: {s}", .{@errorName(err)});

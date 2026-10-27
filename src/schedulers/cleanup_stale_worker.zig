@@ -1,6 +1,7 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 // Route `delete_worker` through `pabrikcore` (the `root` module) instead of
 // @import'ing it directly.
 const delete_worker_mod = pabrikcore.ai_mod.delete_worker;
@@ -14,7 +15,7 @@ pub const stale_threshold_seconds: i64 = 600;
 
 pub const CleanupStaleWorkerInput = struct {
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     logger: ?*logger_mod.Logger,
     event_bus: ?*event_bus_mod.EventBus,
     now_unix: i64,
@@ -113,7 +114,7 @@ pub fn handle(ctx: ?*anyopaque, now_unix: i64) void {
 // matching the project's existing convention for files that have both impl +
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     arena: std.heap.ArenaAllocator,
 
@@ -134,7 +135,7 @@ fn setupCtx() !TestCtx {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -163,7 +164,7 @@ fn setupCtx() !TestCtx {
 /// (passed as a string — SQLite type-coerces into INTEGER). Returns
 /// the row's id for convenience.
 fn seedWorker(
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     arena_alloc: std.mem.Allocator,
     id: []const u8,
     session_id: []const u8,
@@ -178,7 +179,7 @@ fn seedWorker(
 
 /// Convenience: returns the row count for the given id (0 or 1).
 fn rowExists(
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     arena_alloc: std.mem.Allocator,
     id: []const u8,
 ) !usize {
@@ -359,7 +360,7 @@ test "cleanupStaleWorkers returns the DB error when the worker table itself is m
     defer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
     // NO CREATE TABLE — the query will fail with "no such table".
@@ -372,8 +373,8 @@ test "cleanupStaleWorkers returns the DB error when the worker table itself is m
         .now_unix = 1_000_000,
     });
 
-    // We don't pin the specific SqliteBackend Error variant here — the
-    // SqliteBackend maps missing-table to PrepareFailed (Sqlite.zig:568)
+    // We don't pin the specific Backend Error variant here — the
+    // Backend maps missing-table to PrepareFailed (Sqlite.zig:568)
     // which the helper propagates verbatim.
     try testing.expectError(error.PrepareFailed, result);
 }

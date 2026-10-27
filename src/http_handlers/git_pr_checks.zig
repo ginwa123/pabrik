@@ -5,6 +5,7 @@ const std = @import("std");
 const http_response = @import("http_response.zig");
 const pabrik_core = @import("pabrikcore");
 const gserverz = pabrik_core.gserverz;
+const git_route = @import("git_route.zig");
 const pr_provider = pabrik_core.pr_provider;
 const pr_cli = pabrik_core.pr_cli;
 const run_captured = @import("helpers").run_captured;
@@ -408,7 +409,7 @@ fn useCaseWithPrograms(
     fetch_detail: *?[]u8,
 ) !http_response.GitPrChecksResponse {
     {
-        const check = std.process.run(allocator, io, .{ .argv = &.{ "git", "-C", path, "rev-parse", "--git-dir" } }) catch return error.NotARepository;
+        const check = git_route.run(allocator, io, path, &.{ "rev-parse", "--git-dir" }, .{}) catch return error.NotARepository;
         defer {
             allocator.free(check.stdout);
             allocator.free(check.stderr);

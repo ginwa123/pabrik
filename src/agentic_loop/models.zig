@@ -1,4 +1,5 @@
 const sqlite = @import("pabrikcore").sqlite;
+const database = @import("pabrikcore").database;
 const config = @import("pabrikcore").config;
 const loggermod = @import("pabrikcore").loggermod;
 const pabrikcore = @import("pabrikcore");
@@ -69,7 +70,7 @@ pub const TUIHistory = struct {
 pub const WorkflowArgs = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
-    sqlite_db: *sqlite.SqliteBackend,
+    sqlite_db: *database.Db,
     logger: *loggermod.Logger,
     llm_config: *const config.LlmConfig,
     session_id: []u8,

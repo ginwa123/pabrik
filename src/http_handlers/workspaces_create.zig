@@ -3,6 +3,7 @@ const http_response = @import("http_response.zig");
 const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const auth_common = @import("auth_common.zig");
 const provisioning = @import("workspace_provisioning.zig");
 const workspace_vm = @import("../agentic_loop/workspace_vm.zig");
@@ -65,7 +66,7 @@ pub fn workspacesCreateHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequ
 
 fn useCase(
     allocator: std.mem.Allocator,
-    sqlite_db: *sqlite.SqliteBackend,
+    sqlite_db: *database.Db,
     io: std.Io,
     body: []const u8,
     owner: []const u8,

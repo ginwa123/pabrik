@@ -9,7 +9,7 @@ const agent_routine_db = @import("../models/agent_routine.db.zig");
 /// Resolve the workspace_item_id for a session. Two paths (in order): 1.
 fn resolveWorkspaceItemId(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]u8 {
     var q = db.query(allocator,
@@ -37,7 +37,7 @@ fn resolveWorkspaceItemId(
 /// True only when item_type == 'routine' AND an agent_routines row exists.
 fn isConfiguredRoutineItem(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_item_id: []const u8,
 ) !bool {
     if (workspace_item_id.len == 0) return false;
@@ -58,7 +58,7 @@ fn isConfiguredRoutineItem(
 pub fn makeAgentRoutineSystemPrompt(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]const u8 {
     _ = io; // no file reads — prompt rows are inline content only
@@ -140,10 +140,11 @@ const testing = std.testing;
 // Use a fresh alias for the test section to avoid duplicate-struct-
 // member shadowing (file-level `const sqlite` already exists).
 const test_sqlite = @import("pabrikcore").sqlite;
+const database = @import("pabrikcore").database;
 const Migration116 = @import("../migrations/migration.zig").Migration116UnifyAgentConfigTables;
 
 const TestCtx = struct {
-    db: test_sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -152,7 +153,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: test_sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try db.exec(alloc,

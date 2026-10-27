@@ -2,20 +2,20 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite_mod = pabrikcore.sqlite;
 
-pub const SqliteBackend = sqlite_mod.SqliteBackend;
+pub const Backend = pabrikcore.database.Db;
 
 pub const Migration = struct {
     version: u32,
     name: []const u8,
-    up: *const fn (db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void,
+    up: *const fn (db: *Backend, allocator: std.mem.Allocator) anyerror!void,
 };
 
 pub const MigrationManager = struct {
     allocator: std.mem.Allocator,
-    db: *SqliteBackend,
+    db: *Backend,
     migrations: std.ArrayList(Migration),
 
-    pub fn init(allocator: std.mem.Allocator, db: *SqliteBackend) MigrationManager {
+    pub fn init(allocator: std.mem.Allocator, db: *Backend) MigrationManager {
         return .{
             .allocator = allocator,
             .db = db,

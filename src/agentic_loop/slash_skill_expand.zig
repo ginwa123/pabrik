@@ -3,6 +3,7 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const skills_store = pabrikcore.skills_store;
 const skill_tools = pabrikcore.skill_tools;
 const testing = std.testing;
@@ -82,7 +83,7 @@ pub const ExpandResult = struct {
 pub fn expandSlashSkills(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     message: []const u8,
 ) !ExpandResult {
@@ -163,7 +164,7 @@ pub fn expandSlashSkills(
 fn loadOne(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     name: []const u8,
 ) !?[]const u8 {
@@ -193,7 +194,7 @@ fn loadOne(
 /// without re-expanding.
 fn persistSkill(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     name: []const u8,
     content: []const u8,
@@ -213,7 +214,7 @@ fn persistSkill(
 // workspace, read back real rows.
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -225,7 +226,7 @@ fn setupSlashDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try db.exec(alloc,
@@ -245,6 +246,7 @@ fn setupSlashDb() !TestCtx {
         \\INSERT INTO workspace_item_tasks (id, name, workspace_item_id) VALUES ('s1', 'T1', 'i1')
     , &.{});
     try migration.Migration102CreateSkills.up(&db, alloc);
+    try migration.Migration119CreateSkillMetadata.up(&db, alloc);
     try db.exec(alloc,
         \\CREATE TABLE IF NOT EXISTS session_skills (session_id TEXT NOT NULL, skill_name TEXT NOT NULL, content TEXT NOT NULL, loaded_at_nano INTEGER DEFAULT (strftime('%s', 'now')), PRIMARY KEY (session_id, skill_name))
     , &.{});
@@ -253,7 +255,7 @@ fn setupSlashDb() !TestCtx {
 
 fn seedSlashSkill(
     alloc: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     name: []const u8,
     content: []const u8,
 ) !void {
@@ -271,7 +273,7 @@ fn freeTokenList(alloc: std.mem.Allocator, tokens: [][]const u8) void {
     alloc.free(tokens);
 }
 
-fn sessionSkillBody(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8, name: []const u8) !?[]u8 {
+fn sessionSkillBody(alloc: std.mem.Allocator, db: *database.Db, session_id: []const u8, name: []const u8) !?[]u8 {
     var q = try db.query(alloc, "SELECT content FROM session_skills WHERE session_id = ? AND skill_name = ?", &.{ session_id, name });
     defer q.deinit();
     const row = try q.next() orelse return null;

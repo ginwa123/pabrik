@@ -59,7 +59,7 @@ pub const KanbanColumnDeleteResult = union(enum) {
 /// 1. Validate `item_id` and `column_id`. 2.
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: DeleteColumnInput,
 ) KanbanColumnDeleteError!KanbanColumnDeleteResult {
     // 1. Validate. Business rule: both ids are required to locate the column

@@ -62,7 +62,7 @@ const WorkspaceUpdateResult = struct {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    sqlite_db: *pabrikcore.sqlite.SqliteBackend,
+    sqlite_db: *pabrikcore.database.Db,
     id: []const u8,
     body: []const u8,
     auth_enabled: bool,

@@ -5,7 +5,7 @@ const common = @import("common.zig");
 
 pub const Migration = common.Migration;
 pub const MigrationManager = common.MigrationManager;
-pub const SqliteBackend = common.SqliteBackend;
+pub const Backend = common.Backend;
 pub const addColumnIfMissing = common.addColumnIfMissing;
 pub const dropColumnIfExists = common.dropColumnIfExists;
 pub const renameColumnIfExists = common.renameColumnIfExists;
@@ -129,6 +129,8 @@ const migration_115 = @import("migration_115.zig");
 const migration_116 = @import("migration_116.zig");
 const migration_117 = @import("migration_117.zig");
 const migration_118 = @import("migration_118.zig");
+const migration_119 = @import("migration_119.zig");
+const migration_120 = @import("migration_120.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -249,6 +251,8 @@ pub const Migration115AddWorkspaceIsVm = migration_115.Migration115AddWorkspaceI
 pub const Migration116UnifyAgentConfigTables = migration_116.Migration116UnifyAgentConfigTables;
 pub const Migration117DropLegacyAgentConfigTables = migration_117.Migration117DropLegacyAgentConfigTables;
 pub const Migration118AddWorkerRunToken = migration_118.Migration118AddWorkerRunToken;
+pub const Migration119CreateSkillMetadata = migration_119.Migration119CreateSkillMetadata;
+pub const Migration120GrantSetSkillMetadata = migration_120.Migration120GrantSetSkillMetadata;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -472,6 +476,13 @@ pub const allMigrations: []const Migration = &.{
     // Migration 118 — `worker.run_token`: the per-session run lease the
     // workflow claims in a transaction, so one session runs one loop.
     .{ .version = Migration118AddWorkerRunToken.version, .name = Migration118AddWorkerRunToken.name, .up = Migration118AddWorkerRunToken.up },
+    // Migration 119 — `skill_metadata`: the SKILL.md frontmatter keys with
+    // no dedicated column become rows, derived from `skills.content`.
+    .{ .version = Migration119CreateSkillMetadata.version, .name = Migration119CreateSkillMetadata.name, .up = Migration119CreateSkillMetadata.up },
+    // Migration 120 — grant `set_skill_metadata` to every config that already
+    // has `edit_skill`. A new tool NAME does not reach an existing agent: its
+    // allowlist rows are already seeded, so only a migration can add one.
+    .{ .version = Migration120GrantSetSkillMetadata.version, .name = Migration120GrantSetSkillMetadata.name, .up = Migration120GrantSetSkillMetadata.up },
 };
 
 /// Register all migrations with a MigrationManager
@@ -594,7 +605,7 @@ const Migration078 = Migration076AddAgentsAndAgentKnowledgeAndAgentTools;
 /// `zig-anonymous-struct-type-identity.md` — Zig 0.16 treats two anonymous
 /// `struct { db, threaded }` types as distinct types even with identical
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 };
 
@@ -603,7 +614,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     return .{ .db = db, .threaded = threaded };
@@ -1450,7 +1461,7 @@ test "Migration083 INSERT/SELECT round-trip for both new columns" {
         try testing.expectEqualStrings("ENC_DATA", row.values[2]);
     }
 
-    // NULL handling: legacy row without reasoning metadata should read as "" (SqliteBackend NULL → "").
+    // NULL handling: legacy row without reasoning metadata should read as "" (Backend NULL → "").
     try ctx.db.exec(alloc,
         "INSERT INTO llm_history (id, session_id, model) VALUES (?, ?, ?)",
         &.{ "h2", "sess1", "gpt-5" });
@@ -2231,7 +2242,7 @@ test "Migration093 adds worker.user_id and its index" {
     }
     try testing.expect(found);
 
-    // Nullable TEXT: an empty-string bind (which SqliteBackend collapses to
+    // Nullable TEXT: an empty-string bind (which Backend collapses to
     // SQL NULL) must never violate the column.
     var q = try ctx.db.query(alloc,
         "SELECT type, \"notnull\" FROM pragma_table_info('worker') WHERE name = 'user_id'",
@@ -2586,7 +2597,7 @@ test "migration module imports" {
 /// the schema state that migration 009 was always meant to consume.
 
 fn setupDb009() !struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 } {
     const alloc = testing.allocator;
@@ -2594,7 +2605,7 @@ fn setupDb009() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -2704,7 +2715,7 @@ test "Migration009RemoveCreatedColumn preserves pre-existing rows' created_at" {
 /// Migration 044 to add the `task_type` column on top.
 
 fn setupDb044() !struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 } {
     const alloc = testing.allocator;
@@ -2712,7 +2723,7 @@ fn setupDb044() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -2735,7 +2746,7 @@ fn setupDb044() !struct {
 
 /// Look up a single scalar text value from a SELECT. Returns the
 /// empty slice if there is no row.
-fn scalarText044(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, sql: []const u8, args: []const []const u8) ![]u8 {
+fn scalarText044(alloc: std.mem.Allocator, db: *Backend, sql: []const u8, args: []const []const u8) ![]u8 {
     var q = try db.query(alloc, sql, args);
     defer q.deinit();
     if (try q.next()) |row| {
@@ -2911,7 +2922,7 @@ test "Migration044AddRoutines creates idx_routines_enabled_next_run index" {
 /// Migration 048 to add the `idx_llm_history_created_session` index on top.
 
 fn setupDb048() !struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 } {
     const alloc = testing.allocator;
@@ -2919,7 +2930,7 @@ fn setupDb048() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -3008,7 +3019,7 @@ test "Migration048AddChatListIndex is idempotent on re-run" {
 /// the schema state just before Migration 049 runs.
 
 fn setupDb049() !struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 } {
     const alloc = testing.allocator;
@@ -3016,7 +3027,7 @@ fn setupDb049() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -3066,7 +3077,7 @@ fn setupDb049() !struct {
 
 /// Look up a single scalar text value from a SELECT. Returns the
 /// empty slice if there is no row.
-fn scalarText049(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, sql: []const u8, args: []const []const u8) ![]u8 {
+fn scalarText049(alloc: std.mem.Allocator, db: *Backend, sql: []const u8, args: []const []const u8) ![]u8 {
     var q = try db.query(alloc, sql, args);
     defer q.deinit();
     if (try q.next()) |row| {
@@ -3148,7 +3159,7 @@ test "Migration049AddDefensiveIndexes is idempotent on re-run" {
     try Migration049AddDefensiveIndexes.up(&ctx.db, alloc);
 
     // And both indexes are still there exactly once. COUNT(*) is
-    // returned as text per the SqliteBackend's row-as-text API.
+    // returned as text per the Backend's row-as-text API.
     const wi_count = try scalarText049(alloc, &ctx.db,
         \\SELECT COUNT(*) FROM sqlite_master
         \\WHERE type = 'index'
@@ -3178,7 +3189,7 @@ test "Migration049AddDefensiveIndexes is idempotent on re-run" {
 /// ready for Migration 046 to add the `git_worktree_cwd` column on top.
 
 fn setupDb046() !struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 } {
     const alloc = testing.allocator;
@@ -3186,7 +3197,7 @@ fn setupDb046() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -3211,7 +3222,7 @@ fn setupDb046() !struct {
 
 /// Look up a single scalar text value from a SELECT. Returns the
 /// empty slice if there is no row.
-fn scalarText046(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, sql: []const u8, args: []const []const u8) ![]u8 {
+fn scalarText046(alloc: std.mem.Allocator, db: *Backend, sql: []const u8, args: []const []const u8) ![]u8 {
     var q = try db.query(alloc, sql, args);
     defer q.deinit();
     if (try q.next()) |row| {
@@ -3273,7 +3284,7 @@ test "Migration046AddGitWorktreeCwdToSessions accepts explicit value" {
 /// Migrations 028 and 034), ready for Migration 051 to add the kanban schema
 
 fn setupDb051() !struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 } {
     const alloc = testing.allocator;
@@ -3281,7 +3292,7 @@ fn setupDb051() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -3366,12 +3377,12 @@ test "Migration051 adds kanban_column_id and kanban_position to workspace_item_t
 
 // Static regression checks for Migration 053 (add kanban_column.description).
 
-fn setupDb053() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+fn setupDb053() !struct { db: Backend, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     // Migration 051 needs `workspace_items` (FK target) and
@@ -3461,7 +3472,7 @@ test "migration 053 is safe on populated kanban_columns tables" {
 /// Test fixture for the migration_054 test suite.
 
 const TestCtx054 = struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 };
 
@@ -3473,7 +3484,7 @@ fn setupDbWithoutImageUrl054() !TestCtx054 {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try Migration018CreateSessionQueueMessages.up(&db, alloc);
@@ -3692,7 +3703,7 @@ test "migration 054: table has the expected columns in the expected order" {
 /// (Migration 056 v5 schema, 12 columns).
 
 fn setupDb057() !struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 } {
     const alloc = testing.allocator;
@@ -3700,7 +3711,7 @@ fn setupDb057() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -3841,7 +3852,7 @@ test "Migration057 preserves the v5 columns on design_page_elements" {
 /// Test fixture for the migration_058 test suite.
 
 const TestCtx058 = struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 };
 
@@ -3853,7 +3864,7 @@ fn setupDbWithLlmHistory058() !TestCtx058 {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try Migration001CreateLLMHistory.up(&db, alloc);
@@ -3862,7 +3873,7 @@ fn setupDbWithLlmHistory058() !TestCtx058 {
 
 /// Count rows in `sqlite_master` of a given type, optionally matching
 /// `tbl_name`. Returns 0 if no match. Helper for the trigger + table tests.
-fn countSqliteMaster058(db: *sqlite.SqliteBackend, alloc: std.mem.Allocator, sql: []const u8) !usize {
+fn countSqliteMaster058(db: *Backend, alloc: std.mem.Allocator, sql: []const u8) !usize {
     var q = try db.query(alloc, sql, &[_][]const u8{});
     defer q.deinit();
     var count: usize = 0;
@@ -4097,7 +4108,7 @@ test "migration 058: DELETE trigger removes row from index" {
 // populated by application code + backfill).
 
 const TestCtx059 = struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 };
 
@@ -4108,7 +4119,7 @@ fn setupDbWithLlmHistory059() !TestCtx059 {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try Migration001CreateLLMHistory.up(&db, alloc);
@@ -4118,7 +4129,7 @@ fn setupDbWithLlmHistory059() !TestCtx059 {
 /// Read a column attribute by name from `pragma_table_xinfo('llm_history')`.
 /// Returns null if the column doesn't exist.
 fn columnExists059(
-    db: *sqlite.SqliteBackend,
+    db: *Backend,
     alloc: std.mem.Allocator,
     column_name: []const u8,
 ) !?struct { found: bool, is_generated: bool } {
@@ -4303,7 +4314,7 @@ test "migration 059: is idempotent on a re-run (column + triggers + index)" {
 // re-backfill).
 
 const TestCtx060 = struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 };
 
@@ -4312,7 +4323,7 @@ fn setupDb060() !TestCtx060 {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try Migration001CreateLLMHistory.up(&db, alloc);
@@ -4431,7 +4442,7 @@ test "migration 060: only updates rows where created_iso is NULL or empty" {
 // year-fix).
 
 const TestCtx061 = struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 };
 
@@ -4440,7 +4451,7 @@ fn setupDb061() !TestCtx061 {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try Migration001CreateLLMHistory.up(&db, alloc);
@@ -4581,7 +4592,7 @@ const Migration062 = Migration062AddTaskDescription;
 const createWorkspaceItemTask = @import("pabrikcore").ai_mod.llm_history.createWorkspaceItemTask;
 
 const TestCtx062 = struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 };
 
@@ -4590,7 +4601,7 @@ fn setupDb062() !TestCtx062 {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     // workspace_items (FK target for workspace_item_tasks.workspace_item_id)
@@ -4933,7 +4944,7 @@ test "task_create direct INSERT branches: null/empty/value all succeed for memor
 // (sessions.is_auto_retry_until_stop + sessions.last_finish_reason).
 
 const TestCtx063 = struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 };
 
@@ -4942,7 +4953,7 @@ fn setupDb063() !TestCtx063 {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     // Minimal v1 sessions table — the canonical pre-Migration-063 schema
@@ -5068,7 +5079,7 @@ test "Migration063 last_finish_reason is NULL on existing rows" {
     try Migration063AddSessionAutoRetry.up(&ctx.db, alloc);
 
     // SELECT last_finish_reason — expect empty string (SQL NULL is
-    // surfaced as "" by SqliteBackend per the project's convention;
+    // surfaced as "" by Backend per the project's convention;
     // see project memory `sqlite-backend-empty-slice-binds-as-null`).
     var q = try ctx.db.query(alloc,
         "SELECT last_finish_reason FROM sessions WHERE id = 's_pre_063b'",
@@ -5088,7 +5099,7 @@ test "Migration063 last_finish_reason is NULL on existing rows" {
 const llm_history = pabrikcore.llm_history;
 
 const TestCtx063rt = struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 };
 
@@ -5097,7 +5108,7 @@ fn setupDb063rt() !TestCtx063rt {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -5130,7 +5141,7 @@ fn readColumn063rt(
     column: []const u8,
     row_id: []const u8,
 ) !?[]u8 {
-    // SqliteBackend.query takes argv as []const []const u8 (a slice of string
+    // Backend.query takes argv as []const []const u8 (a slice of string
     // slices), not a tuple.
     const sql = try std.fmt.allocPrint(allocator, "SELECT {s} FROM sessions WHERE id = ?", .{column});
     defer allocator.free(sql);
@@ -5271,7 +5282,7 @@ test "updateSessionLastFinishReason: overwrites on every call" {
 /// Io.Threaded + :memory: pattern).
 
 fn setupDb064() !struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 } {
     const alloc = testing.allocator;
@@ -5279,7 +5290,7 @@ fn setupDb064() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -5366,7 +5377,7 @@ test "Migration063 is idempotent (re-running up() does not error)" {
 // (`workspace_item_tasks.last_human_touched_at`).
 
 const TestCtx065 = struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 };
 
@@ -5375,7 +5386,7 @@ fn setupDb065() !TestCtx065 {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     // workspace_items (FK target for workspace_item_tasks.workspace_item_id)
@@ -5511,7 +5522,7 @@ test "Migration065 leaves pre-existing rows at NULL (not 0, not now)" {
 
     try Migration065AddTaskHumanTouchedAt.up(&ctx.db, alloc);
 
-    // SQL NULL is surfaced as "" by SqliteBackend.query — see project
+    // SQL NULL is surfaced as "" by Backend.query — see project
     // memory `sqlite-backend-empty-slice-binds-as-null` and the
     // existing Migration063 test for the same convention.
     var q = try ctx.db.query(alloc,
@@ -5541,7 +5552,7 @@ test "Migration065 stamps a value when set after the migration" {
     try Migration065AddTaskHumanTouchedAt.up(&ctx.db, alloc);
 
     // Now stamp a unix-ms timestamp — should persist as the literal integer
-    // (formatted as TEXT by SqliteBackend.bind). This is the exact call shape
+    // (formatted as TEXT by Backend.bind). This is the exact call shape
     // that llm_history.updateTaskLastHumanTouchedAt will use.
     const now_ms_str = try std.fmt.allocPrint(alloc, "{d}", .{@as(i64, 1_786_000_000_000)});
     defer alloc.free(now_ms_str);
@@ -5564,7 +5575,7 @@ test "Migration065 stamps a value when set after the migration" {
 // (`design_pages.workspace_item_task_id` FK + backfill).
 
 const TestCtx066 = struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 };
 
@@ -5576,7 +5587,7 @@ fn setupDb066() !TestCtx066 {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -5858,7 +5869,7 @@ test "Migration066 is registered in allMigrations" {
 // (`workspace_item_tasks.tags`).
 
 const TestCtx067 = struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 };
 
@@ -5867,7 +5878,7 @@ fn setupDb067() !TestCtx067 {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -6062,7 +6073,7 @@ test "Migration067 is registered in allMigrations" {
 // UNIQUE INDEX on `tool_call_id`).
 
 const TestCtx068 = struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 };
 
@@ -6071,7 +6082,7 @@ fn setupDb068() !TestCtx068 {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -6256,7 +6267,7 @@ test "Migration068 is registered in allMigrations" {
 // (`workspace_item_tasks.image_urls`).
 
 const TestCtx069 = struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 };
 
@@ -6265,7 +6276,7 @@ fn setupDb069() !TestCtx069 {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -6422,7 +6433,7 @@ test "Migration069 is registered in allMigrations" {
 /// Test fixture.
 
 const TestCtx070 = struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 };
 
@@ -6434,7 +6445,7 @@ fn setupDb070() !TestCtx070 {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     return .{ .db = db, .threaded = threaded };
@@ -6679,7 +6690,7 @@ test "Migration070 is registered in allMigrations" {
 // (`workspace_item_tasks.cwd`).
 
 const TestCtx071 = struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 };
 
@@ -6688,7 +6699,7 @@ fn setupDb071() !TestCtx071 {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -6988,7 +6999,7 @@ fn insertWorkspaceItem071(
 // `kanban` table extraction).
 
 const TestCtx072 = struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 };
 
@@ -6999,7 +7010,7 @@ fn setupDb072() !TestCtx072 {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -7085,7 +7096,7 @@ test "Migration072 kanban_column_id FK is ON DELETE CASCADE — deleting a colum
     defer ctx.threaded.deinit();
 
     // NB: PRAGMA foreign_keys is deliberately OFF in this project's
-    // SqliteBackend init (see src/ai_workflow/tui/kanban_model.zig:306 for
+    // Backend init (see src/ai_workflow/tui/kanban_model.zig:306 for
     // the rationale — application code simulates CASCADE manually).
     try ctx.db.exec(alloc, "PRAGMA foreign_keys = ON", &.{});
 
@@ -7410,7 +7421,7 @@ test "Migration072 preserves the wire format — LEFT JOIN returns the same data
 // append-only log).
 
 const TestCtx073 = struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 };
 
@@ -7422,7 +7433,7 @@ fn setupDb073() !TestCtx073 {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     return .{ .db = db, .threaded = threaded };
@@ -7587,7 +7598,7 @@ test "Migration073 fresh-DB replay: insert and select a session_activity row" {
 // `llm_history.cache_read_input_tokens`).
 
 const TestCtx074 = struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 };
 
@@ -7599,7 +7610,7 @@ fn setupDb074() !TestCtx074 {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -7754,7 +7765,7 @@ test "Migration074 is registered in allMigrations" {
 // to `_nano` suffix).
 
 const TestCtx075 = struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 };
 
@@ -7766,7 +7777,7 @@ fn setupDb075() !TestCtx075 {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -7790,7 +7801,7 @@ fn setupDb075() !TestCtx075 {
     return .{ .db = db, .threaded = threaded };
 }
 
-fn trySeed075(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, sql: []const u8, argv: []const []const u8, table_name: []const u8) void {
+fn trySeed075(alloc: std.mem.Allocator, db: *Backend, sql: []const u8, argv: []const []const u8, table_name: []const u8) void {
     db.exec(alloc, sql, argv) catch |err| {
         std.debug.print("FAIL seed {s}: {s}\n", .{ table_name, @errorName(err) });
     };
@@ -7799,7 +7810,7 @@ fn trySeed075(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, sql: []const 
 /// Returns the list of column names on `table` (via pragma_table_info).
 /// Caller owns the returned slice. Each element is allocated via `alloc.dupe`
 /// and the slice itself is heap-allocated — both must be freed.
-fn listColumns075(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, table: []const u8) ![]const []u8 {
+fn listColumns075(alloc: std.mem.Allocator, db: *Backend, table: []const u8) ![]const []u8 {
     var q = try db.query(alloc,
         "SELECT name FROM pragma_table_info(?) ORDER BY cid",
         &.{table});
@@ -8044,7 +8055,7 @@ test "Migration075 runs cleanly via registerAllMigrations + runMigrations" {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -8208,7 +8219,7 @@ test "Migration075: per-table column count is preserved (rename doesn't drop or 
 // user_system + backfill).
 
 const TestCtx077 = struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 };
 
@@ -8218,7 +8229,7 @@ fn setupDb077() !TestCtx077 {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -8421,7 +8432,7 @@ test "Migration077 adds user_id to workspaces and backfills legacy rows to user_
         defer q.deinit();
         const row = (try q.next()) orelse return error.RowMissing077;
         defer row.deinit(alloc);
-        // NULL is represented as an empty string by SqliteBackend.exec,
+        // NULL is represented as an empty string by Backend.exec,
         // matching the project convention (see project memory
         // `sqlite-backend-empty-slice-binds-as-null`).
         try testing.expectEqualStrings("", row.values[0]);
@@ -8599,7 +8610,7 @@ test "Migration077 is registered in allMigrations" {
 // (`sessions.last_human_touched_at_nano`).
 
 const TestCtx082 = struct {
-    db: sqlite.SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 };
 
@@ -8611,7 +8622,7 @@ fn setupDb082() !TestCtx082 {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try db.exec(alloc,
@@ -8753,7 +8764,7 @@ test "Migration082 leaves pre-existing rows at NULL (not 0, not now)" {
 
     try Migration082AddSessionHumanTouchedAt.up(&ctx.db, alloc);
 
-    // SQL NULL is surfaced as "" by SqliteBackend.query — same
+    // SQL NULL is surfaced as "" by Backend.query — same
     // convention as Migration 065's test.
     var q = try ctx.db.query(alloc,
         "SELECT last_human_touched_at_nano FROM sessions WHERE id = 's_pre_082'",
@@ -8777,7 +8788,7 @@ test "Migration082 stamps a value when set after the migration" {
     try Migration082AddSessionHumanTouchedAt.up(&ctx.db, alloc);
 
     // Now stamp a unix-ms timestamp — should persist as the literal integer
-    // (formatted as TEXT by SqliteBackend.bind). This is the exact call shape
+    // (formatted as TEXT by Backend.bind). This is the exact call shape
     // that llm_history.updateSessionLastHumanTouchedAt will use.
     const now_ms_str = try std.fmt.allocPrint(alloc, "{d}", .{@as(i64, 1_786_000_000_000)});
     defer alloc.free(now_ms_str);
@@ -10344,7 +10355,7 @@ test "createWorkspaceItemTask: skill_names = '' stores '' (not NULL)" {
     try Migration110AddTaskSkillName.up(&ctx.db, alloc);
     try Migration112RenameTaskSkillNames.up(&ctx.db, alloc);
 
-    // The empty-slice-binds-as-NULL trap: `SqliteBackend.exec` binds "" as
+    // The empty-slice-binds-as-NULL trap: `Backend.exec` binds "" as
     // NULL, so the dynamic-SQL builder MUST emit a `''` literal here or the
     // INSERT violates the NOT NULL constraint.
     const task = try createWorkspaceItemTask(

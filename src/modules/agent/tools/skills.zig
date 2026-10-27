@@ -1,4 +1,6 @@
-//! Skill BODY helpers: frontmatter parsing and bundle materialisation.
+//! Skill BODY helpers: bundle materialisation. Frontmatter is not parsed
+//! here: `pabrikcore.skill_frontmatter` is the single parser, so the two
+//! halves of the write path cannot disagree.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -6,68 +8,6 @@ const skills_store = pabrikcore.skills_store;
 
 /// Root for materialised asset directories.
 const TMP_ROOT = "/tmp";
-
-/// Parsed YAML frontmatter from a skill file
-pub const ParsedFrontmatter = struct {
-    name: []const u8,
-    description: []const u8,
-};
-
-/// Parse YAML frontmatter from skill file content Expected format: --- name:
-/// skill-name description: "Skill description text" --- # Skill content
-/// follows...
-pub fn parseYamlFrontmatter(allocator: std.mem.Allocator, content: []const u8) ?ParsedFrontmatter {
-    // Find the first --- marker
-    const first_newline = std.mem.indexOf(u8, content, "\n") orelse return null;
-    const after_first_line = content[first_newline + 1 ..];
-
-    // Find the closing --- marker
-    const closing_marker = std.mem.indexOf(u8, after_first_line, "\n---") orelse return null;
-    const frontmatter_content = after_first_line[0..closing_marker];
-
-    // Parse name and description from frontmatter
-    var name: ?[]const u8 = null;
-    var description: ?[]const u8 = null;
-
-    var line_start: usize = 0;
-    while (line_start < frontmatter_content.len) {
-        const line_end = std.mem.indexOf(u8, frontmatter_content[line_start..], "\n") orelse frontmatter_content.len - line_start;
-        const line = std.mem.trim(u8, frontmatter_content[line_start .. line_start + line_end], " \t\r");
-
-        if (line.len == 0) {
-            line_start += line_end + 1;
-            continue;
-        }
-
-        // Parse "name:" or "description:" lines
-        if (std.mem.startsWith(u8, line, "name:")) {
-            const value = std.mem.trim(u8, line[5..], " \t");
-            // Remove quotes if present, then allocate
-            if (value.len >= 2 and ((value[0] == '"' and value[value.len - 1] == '"') or (value[0] == '\'' and value[value.len - 1] == '\''))) {
-                name = allocator.dupe(u8, value[1 .. value.len - 1]) catch return null;
-            } else {
-                name = allocator.dupe(u8, value) catch return null;
-            }
-        } else if (std.mem.startsWith(u8, line, "description:")) {
-            const value = std.mem.trim(u8, line[12..], " \t");
-            // Remove quotes if present, then allocate
-            if (value.len >= 2 and ((value[0] == '"' and value[value.len - 1] == '"') or (value[0] == '\'' and value[value.len - 1] == '\''))) {
-                description = allocator.dupe(u8, value[1 .. value.len - 1]) catch return null;
-            } else {
-                description = allocator.dupe(u8, value) catch return null;
-            }
-        }
-
-        line_start += line_end + 1;
-    }
-    const parsed_name = name orelse return null;
-    const parsed_desc = description orelse "";
-
-    return .{
-        .name = parsed_name,
-        .description = parsed_desc,
-    };
-}
 
 // ============================================================================
 // Asset materialisation

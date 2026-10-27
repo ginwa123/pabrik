@@ -2,6 +2,7 @@ const std = @import("std");
 const http_response = @import("http_response.zig");
 const pabrik_core = @import("pabrikcore");
 const gserverz = pabrik_core.gserverz;
+const git_route = @import("git_route.zig");
 
 const GitStageResponse = http_response.GitStageResponse;
 
@@ -62,8 +63,7 @@ pub fn gitStageHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res
 
     for (files.items) |file| {
         // Use git add -v for verbose output (shows what's being staged)
-        const argv = [_][]const u8{ "git", "-C", path_param, "add", "-v", "--", file };
-        if (std.process.run(allocator, io, .{ .argv = &argv })) |result| {
+        if (git_route.run(allocator, io, path_param, &.{ "add", "-v", "--", file }, .{})) |result| {
             if (result.term.exited == 0) {
                 staged_files.append(allocator, file) catch {};
                 emitStageEvent(ctx, path_param, file, false);
@@ -131,15 +131,13 @@ pub fn gitUnstageHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, r
 
     for (files.items) |file| {
         // Use git restore --staged -v for verbose output
-        const argv = [_][]const u8{ "git", "-C", path_param, "restore", "--staged", "-v", "--", file };
-        if (std.process.run(allocator, io, .{ .argv = &argv })) |result| {
+        if (git_route.run(allocator, io, path_param, &.{ "restore", "--staged", "-v", "--", file }, .{})) |result| {
             if (result.term.exited == 0) {
                 unstaged_files.append(allocator, file) catch {};
                 emitUnstageEvent(ctx, path_param, file, false);
             } else {
                 // Fallback to git reset HEAD if restore fails
-                const reset_argv = [_][]const u8{ "git", "-C", path_param, "reset", "-q", "--", file };
-                if (std.process.run(allocator, io, .{ .argv = &reset_argv })) |reset_result| {
+                if (git_route.run(allocator, io, path_param, &.{ "reset", "-q", "--", file }, .{})) |reset_result| {
                     if (reset_result.term.exited == 0) {
                         unstaged_files.append(allocator, file) catch {};
                         emitUnstageEvent(ctx, path_param, file, false);
@@ -154,8 +152,7 @@ pub fn gitUnstageHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, r
             }
         } else |_| {
             // Fallback to git reset HEAD
-            const reset_argv = [_][]const u8{ "git", "-C", path_param, "reset", "-q", "--", file };
-            if (std.process.run(allocator, io, .{ .argv = &reset_argv })) |reset_result| {
+            if (git_route.run(allocator, io, path_param, &.{ "reset", "-q", "--", file }, .{})) |reset_result| {
                 if (reset_result.term.exited == 0) {
                     unstaged_files.append(allocator, file) catch {};
                     emitUnstageEvent(ctx, path_param, file, false);

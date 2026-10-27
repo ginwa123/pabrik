@@ -2,7 +2,7 @@ const std = @import("std");
 const common = @import("common.zig");
 const loggermod = @import("../modules/logger/Logger.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 
 /// Migration 117 — drop the twelve `*_legacy_v116` agent-config tables.
 /// The drop is GUARDED: the legacy tables survive unless the unified set
@@ -27,7 +27,7 @@ pub const Migration117DropLegacyAgentConfigTables = struct {
         .{ "agent_routine_system_prompt_legacy_v116", "agent_config_system_prompt" },
     };
 
-    fn tableExists(db: *SqliteBackend, allocator: std.mem.Allocator, table_name: []const u8) bool {
+    fn tableExists(db: *Backend, allocator: std.mem.Allocator, table_name: []const u8) bool {
         var q = db.query(
             allocator,
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
@@ -40,7 +40,7 @@ pub const Migration117DropLegacyAgentConfigTables = struct {
     }
 
     /// How many rows does `table_name` hold? -1 when the table is absent.
-    fn rowCount(db: *SqliteBackend, allocator: std.mem.Allocator, table_name: []const u8) i64 {
+    fn rowCount(db: *Backend, allocator: std.mem.Allocator, table_name: []const u8) i64 {
         if (!tableExists(db, allocator, table_name)) return -1;
         var buf: [256]u8 = undefined;
         const sql = std.fmt.bufPrint(&buf, "SELECT COUNT(*) FROM {s}", .{table_name}) catch return -1;
@@ -51,7 +51,7 @@ pub const Migration117DropLegacyAgentConfigTables = struct {
         return std.fmt.parseInt(i64, row.values[0], 10) catch -1;
     }
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         // Guard: the unified set must hold at least as many rows as the
         // legacy copy did. Otherwise the backfill was partial and the
         // legacy tables are the only copy — keep them.
@@ -85,14 +85,14 @@ pub const Migration117DropLegacyAgentConfigTables = struct {
 const testing = std.testing;
 
 const TestCtx = struct {
-    db: SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 };
 
 fn setupDb(alloc: std.mem.Allocator) !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
-    var db: SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
     try db.exec(alloc,
@@ -101,7 +101,7 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
-fn countRows(alloc: std.mem.Allocator, db: *SqliteBackend, sql: []const u8) !i64 {
+fn countRows(alloc: std.mem.Allocator, db: *Backend, sql: []const u8) !i64 {
     var q = try db.query(alloc, sql, &[_][]const u8{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;

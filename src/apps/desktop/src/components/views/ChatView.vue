@@ -83,6 +83,11 @@ import Bash from '../preview/Bash.vue'
 import ShellTool from '../preview/ShellTool.vue'
 import ToolCard, { type ToolCardData } from '../tool_outputs/ToolCard.vue'
 import CompactToolGroup from '../tool_outputs/compact/CompactToolGroup.vue'
+import {
+  buildCompactChains,
+  foldedThoughtMessageIds,
+  type CompactChainItem,
+} from '../tool_outputs/compact/chain'
 import SubAgentPeekHost from '../pabrik/SubAgentPeekHost.vue'
 import ChatRightSidebar from './chat_right_sidebar/ChatRightSidebar.vue'
 import ChatAppBar from './ChatAppBar.vue'
@@ -114,6 +119,8 @@ import { hasSkillEnvelope, splitSkillEnvelope } from '../../helpers/skillEnvelop
 import AgentErrorCard from '../chat/AgentErrorCard.vue'
 import ChatAttachments from '../chat/ChatAttachments.vue'
 import MermaidDiagram from '../chat/MermaidDiagram.vue'
+import PlantUmlDiagram from '../chat/PlantUmlDiagram.vue'
+import D2Diagram from '../chat/D2Diagram.vue'
 import UserPillRail, { type UserPill } from '../chat/UserPillRail.vue'
 import ChatScrollSlider from '../chat/ChatScrollSlider.vue'
 import { pickActivePillIndex, isPillGroup, estimateViewportEnd } from '../chat/activePill'
@@ -1545,33 +1552,24 @@ const getParametersForMessage = (m: Message): string => {
   return unwrappedByMessageId.value.get(m.id)?.parameters ?? '{}'
 }
 
-/** One agent turn's tool calls, keyed by the group that draws them: the turn
- * ends at the assistant message that stops (`finish_reason === 'stop'`), so the
- * calls before it fold even when the agent thought between them. */
-const compactRuns = computed((): Map<number, ToolCardData[]> => {
-  const runs = new Map<number, ToolCardData[]>()
-  let cards: ToolCardData[] = []
-  let at: number | null = null
-  const flush = () => {
-    if (at !== null && cards.length > 0) runs.set(at, cards)
-    cards = []
-    at = null
-  }
-  messageGroups.value.forEach((group, groupIndex) => {
-    if (group.role === 'tool') {
-      if (at === null) at = groupIndex
-      cards.push(...toolCardsFor(group, groupIndex))
-      return
-    }
-    if (group.role === 'assistant') {
-      if (group.messages.some((m) => m.finish_reason === 'stop')) flush()
-      return
-    }
-    flush()
-  })
-  flush()
-  return runs
-})
+/** One agent turn's calls AND the thoughts between them, keyed by the group that draws the chain.
+ * The turn ends at the assistant message that stops (`finish_reason === 'stop'`), so the calls and
+ * the thoughts before it fold into ONE card instead of the thoughts leaking out below it. */
+const compactChains = computed((): Map<number, CompactChainItem[]> =>
+  chatView.mode === 'compact' ? buildCompactChains(messageGroups.value, toolCardsFor) : new Map(),
+)
+
+/** The thoughts a chain already draws, so the group that holds them draws none of them twice. */
+const foldedThoughtIds = computed((): Set<string> => foldedThoughtMessageIds(compactChains.value))
+
+/** The reasoning rows of one assistant group, minus the thoughts a chain drew. */
+const visibleReasoning = (group: MessageGroup): Message[] =>
+  group.messages.filter(
+    (m) =>
+      typeof m.reasoning_content === 'string' &&
+      m.reasoning_content.trim() !== '' &&
+      !foldedThoughtIds.value.has(m.id),
+  )
 
 /** Every spawn_sub_agent call of the transcript, keyed by tool_call_id. Built once per transcript
  * change — one parse per assistant message — so a card reads its spawn args instead of walking
@@ -4087,8 +4085,8 @@ const compactSession = async () => {
                            groups draw nothing (their calls are in that card). -->
                       <template v-if="chatView.mode === 'compact'">
                         <CompactToolGroup
-                          v-if="compactRuns.has(groupIndex)"
-                          :cards="compactRuns.get(groupIndex) ?? []"
+                          v-if="compactChains.has(groupIndex)"
+                          :items="compactChains.get(groupIndex) ?? []"
                           :cwd="sessionCwd"
                           :session-id="sessionId || chatId"
                           @toggle-expand="toggleToolExpanded"
@@ -4125,9 +4123,7 @@ const compactSession = async () => {
                            reasoning is the context the reply follows from,
                            so it reads first, not as a footnote. -->
                       <div
-                        v-for="(msg, rIdx) in group.messages.filter(
-                          (m) => m.reasoning_content && m.reasoning_content.trim() !== '',
-                        )"
+                        v-for="(msg, rIdx) in visibleReasoning(group)"
                         :key="`reasoning-${rIdx}`"
                         class="mt-3 mb-3"
                       >
@@ -4179,6 +4175,14 @@ const compactSession = async () => {
                               ></iframe>
                               <MermaidDiagram
                                 v-else-if="seg.kind === 'mermaid' && seg.payload"
+                                :source="seg.payload"
+                              />
+                              <PlantUmlDiagram
+                                v-else-if="seg.kind === 'plantuml' && seg.payload"
+                                :source="seg.payload"
+                              />
+                              <D2Diagram
+                                v-else-if="seg.kind === 'd2' && seg.payload"
                                 :source="seg.payload"
                               />
                             </template>

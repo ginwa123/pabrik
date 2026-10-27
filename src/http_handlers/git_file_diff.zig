@@ -3,6 +3,7 @@ const http_response = @import("http_response.zig");
 const photon = @import("pabrikcore");
 const gserverz = photon.gserverz;
 const file_sandbox = @import("../modules/agent/tools/file_sandbox.zig");
+const git_route = @import("git_route.zig");
 
 /// Git file read response. The per-file DIFF endpoint that used to live here
 /// (`GET /api/git/file/diff?path=&file=&staged=`) is GONE.
@@ -28,6 +29,35 @@ pub fn gitFileReadHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, 
     }
     if (std.fs.path.isAbsolute(file_param)) {
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeGitStatusErrorResponse(allocator, "file must be relative to path") });
+    }
+
+    // Under `--saas` the bytes live in the VM and this host has no copy.
+    {
+        var route = git_route.routeFor(allocator, path_param);
+        defer route.deinit();
+        switch (route) {
+            .unavailable => |err| return res.jsonResponse(.{ .status_code = 503, .data = try http_response.makeGitStatusErrorResponse(allocator, @errorName(err)) }),
+            .guest => |*fs| {
+                // `file_param` is relative and the guest refuses `.`/`..`
+                // segments when it resolves the path inside the workspace, so the
+                // joined form cannot climb out (`fs.readAll` -> `policy.relativeWorkspace`).
+                const joined = std.fs.path.join(allocator, &.{ path_param, file_param }) catch {
+                    return res.jsonResponse(.{ .status_code = 500, .data = try http_response.makeGitStatusErrorResponse(allocator, "path join failed") });
+                };
+                defer allocator.free(joined);
+                const guest_content = fs.readAll(joined) catch |err| {
+                    const status: u16 = switch (err) {
+                        error.GuestFileMissing => 404,
+                        error.GuestPathOutsideWorkspace => 403,
+                        else => 502,
+                    };
+                    return res.jsonResponse(.{ .status_code = status, .data = try http_response.makeGitStatusErrorResponse(allocator, @errorName(err)) });
+                };
+                const guest_response = GitFileReadResponse{ .content = guest_content, .encoding = "utf-8" };
+                return res.jsonResponse(.{ .status_code = 200, .data = try makeGitFileReadResponse(allocator, guest_response) });
+            },
+            .host => {},
+        }
     }
 
     // Open `safe_path`, never the joined form: only the canonical path has been

@@ -1,5 +1,5 @@
-//! `GET /api/workspaces/:workspace_id/skills/:skill_name`. One skill's body,
-//! scoped to one workspace.
+//! `GET /api/workspaces/:workspace_id/skills/:skill_name`. One skill's body
+//! and metadata, scoped to one workspace.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -19,15 +19,16 @@ pub const SkillDetailInput = struct {
     skill_name: []const u8,
 };
 
-/// The row as it goes on the wire. `asset_count` rather than the asset list:
-/// the dialog shows "11 companion files", and shipping every companion body
-/// to render that number would put the whole bundle in the response payload.
+/// The row as it goes on the wire. `asset_count`, not the asset list: the
+/// dialog shows "11 companion files" and shipping every body to render that
+/// number would put the bundle in the payload. `metadata` comes from the table.
 pub const SkillDetailRow = struct {
     name: []const u8,
     description: []const u8,
     content: []const u8,
     asset_count: usize,
     is_can_auto_improve: bool,
+    metadata: []const http_response.SkillMetadataEntry,
 };
 
 pub const SkillDetailOutput = struct {
@@ -40,6 +41,8 @@ pub const SkillDetailOutput = struct {
     asset_count: usize = 0,
     /// Owned rows backing `available_skills` on a miss; empty otherwise.
     available: []skills_store.SkillRow = &.{},
+    /// Owned rows; free with `skills_store.freeSkillMetadataRows`.
+    metadata: []skills_store.SkillMetadataRow = &.{},
 };
 
 /// 200 shape.
@@ -63,7 +66,7 @@ const SkillDetailMissingResponse = struct {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: SkillDetailInput,
 ) SkillDetailError!SkillDetailOutput {
     if (input.workspace_id.len == 0 or input.skill_name.len == 0) {
@@ -94,7 +97,14 @@ fn useCase(
     };
     defer skills_store.freeSkillAssetRows(allocator, assets);
 
-    return .{ .skill = row, .asset_count = assets.len };
+    const metadata = skills_store.listMetadata(allocator, db, input.workspace_id, input.skill_name) catch |err| switch (err) {
+        error.QueryFailed => return error.QueryFailed,
+        error.OutOfMemory => return error.OutOfMemory,
+        error.WorkspaceIdNameRequired => return error.IdsRequired,
+    };
+    errdefer skills_store.freeSkillMetadataRows(allocator, metadata);
+
+    return .{ .skill = row, .asset_count = assets.len, .metadata = metadata };
 }
 
 /// The workspace's skill names, for the "not found — here is what there
@@ -102,7 +112,7 @@ fn useCase(
 /// path; a hit must not pay for it.
 fn availableNames(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     workspace_id: []const u8,
 ) SkillDetailError![]skills_store.SkillRow {
     // Mapped by hand for the same reason as `useCase` above: this
@@ -182,6 +192,14 @@ pub fn skillDetailHandler(
     };
     const row = output.skill orelse return error.MissingSkillRow;
     defer skills_store.freeSkillRow(allocator, row);
+    defer skills_store.freeSkillMetadataRows(allocator, output.metadata);
+
+    // Borrowed from the rows above, which outlive the stringify.
+    const entries = try allocator.alloc(http_response.SkillMetadataEntry, output.metadata.len);
+    defer allocator.free(entries);
+    for (output.metadata, 0..) |meta, i| {
+        entries[i] = .{ .key = meta.key, .value = meta.value };
+    }
 
     const data = try std.json.Stringify.valueAlloc(allocator, SkillDetailFoundResponse{
         .skill = .{
@@ -190,6 +208,7 @@ pub fn skillDetailHandler(
             .content = row.content,
             .asset_count = output.asset_count,
             .is_can_auto_improve = row.is_can_auto_improve,
+            .metadata = entries,
         },
         .error_message = "",
     }, .{});
@@ -205,11 +224,12 @@ comptime {
 // ─── Tests ──────────────────────────────────────────────────────────────
 
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const testing = std.testing;
 const migration = @import("../migrations/migration.zig");
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -217,11 +237,12 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
     try migration.Migration102CreateSkills.up(&db, testing.allocator);
+    try migration.Migration119CreateSkillMetadata.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -266,11 +287,42 @@ test "useCase: returns the stored description, not one re-parsed from the body" 
     const output = try useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1", .skill_name = "pdf" });
     const row = output.skill orelse return error.ExpectedSkill;
     defer skills_store.freeSkillRow(alloc, row);
+    defer skills_store.freeSkillMetadataRows(alloc, output.metadata);
 
     try testing.expectEqualStrings("pdf", row.name);
     try testing.expectEqualStrings("Work with PDFs", row.description);
     try testing.expectEqualStrings(BUNDLED_BODY, row.content);
     try testing.expectEqual(@as(usize, 0), output.asset_count);
+    // Nothing but the promoted keys in the fence, so there is no metadata.
+    try testing.expectEqual(@as(usize, 0), output.metadata.len);
+}
+
+test "useCase: the detail read carries the frontmatter the columns do not hold" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const created = try skills_store.upsertSkill(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .name = "pdf",
+        .description = "Work with PDFs",
+        .content = "---\nname: pdf\ndescription: Work with PDFs\norigin: ECC\ntags: [workflow, documents]\n---\nbody\n",
+    });
+    defer skills_store.freeSkillRow(alloc, created);
+
+    const output = try useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1", .skill_name = "pdf" });
+    const row = output.skill orelse return error.ExpectedSkill;
+    defer skills_store.freeSkillRow(alloc, row);
+    defer skills_store.freeSkillMetadataRows(alloc, output.metadata);
+
+    // The UI never sees the fence: `tags` and `origin` arrive as data, so the
+    // detail pane can render them without parsing markdown a second time.
+    try testing.expectEqual(@as(usize, 2), output.metadata.len);
+    try testing.expectEqualStrings("origin", output.metadata[0].key);
+    try testing.expectEqualStrings("ECC", output.metadata[0].value);
+    try testing.expectEqualStrings("tags", output.metadata[1].key);
+    try testing.expectEqualStrings("[workflow, documents]", output.metadata[1].value);
 }
 
 test "useCase: a bundle reports its companion count without shipping the bodies" {
@@ -286,6 +338,7 @@ test "useCase: a bundle reports its companion count without shipping the bodies"
     const output = try useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1", .skill_name = "pdf" });
     const row = output.skill orelse return error.ExpectedSkill;
     defer skills_store.freeSkillRow(alloc, row);
+    defer skills_store.freeSkillMetadataRows(alloc, output.metadata);
 
     try testing.expectEqual(@as(usize, 2), output.asset_count);
 }
@@ -308,6 +361,7 @@ test "useCase: a locked skill reports its lock on the detail read" {
     const output = try useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1", .skill_name = "pdf" });
     const row = output.skill orelse return error.ExpectedSkill;
     defer skills_store.freeSkillRow(alloc, row);
+    defer skills_store.freeSkillMetadataRows(alloc, output.metadata);
 
     // The detail pane owns the checkbox, so the flag has to be on this
     // read or the toggle would always render as checked.

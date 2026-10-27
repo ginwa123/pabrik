@@ -62,7 +62,7 @@ pub const ReparentBatchInput = struct {
 /// `DesignElementsReparentError`.
 pub fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: ReparentBatchInput,
 ) DesignElementsReparentError![]design_model.DesignElement {
     if (input.page_id.len == 0) return error.PageIdRequired;
@@ -191,9 +191,10 @@ pub fn designElementsReparentBatchHandler(
 
 const testing_reparent_handler = std.testing;
 const sqlite_reparent_handler = pabrikcore.sqlite;
+const database = pabrikcore.database;
 
 fn setupReparentHandlerDbAndItem() !struct {
-    db: sqlite_reparent_handler.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_id: []const u8,
     item_path: []u8,
@@ -204,7 +205,7 @@ fn setupReparentHandlerDbAndItem() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite_reparent_handler.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -287,7 +288,7 @@ fn setupReparentHandlerDbAndItem() !struct {
     };
 }
 
-fn teardownReparentHandlerDb(db: *sqlite_reparent_handler.SqliteBackend, threaded: *std.Io.Threaded) void {
+fn teardownReparentHandlerDb(db: *database.Db, threaded: *std.Io.Threaded) void {
     db.deinit();
     threaded.deinit();
 }

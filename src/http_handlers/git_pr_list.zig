@@ -5,6 +5,7 @@ const std = @import("std");
 const http_response = @import("http_response.zig");
 const pabrik_core = @import("pabrikcore");
 const gserverz = pabrik_core.gserverz;
+const git_route = @import("git_route.zig");
 const pr_provider = pabrik_core.pr_provider;
 const pr_cli = pabrik_core.pr_cli;
 const run_captured = @import("helpers").run_captured;
@@ -178,7 +179,7 @@ pub fn listUseCaseWithPrograms(
 
 /// `git -C <path> rev-parse --git-dir` exits 0 only inside a repository.
 fn isGitRepository(allocator: std.mem.Allocator, io: std.Io, path: []const u8) bool {
-    const check = std.process.run(allocator, io, .{ .argv = &.{ "git", "-C", path, "rev-parse", "--git-dir" } }) catch return false;
+    const check = git_route.run(allocator, io, path, &.{ "rev-parse", "--git-dir" }, .{}) catch return false;
     defer {
         allocator.free(check.stdout);
         allocator.free(check.stderr);

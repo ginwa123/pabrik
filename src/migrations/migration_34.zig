@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
@@ -11,7 +11,7 @@ pub const Migration034CreateWorkspaceItemTasks = struct {
     pub const version: u32 = 34;
     pub const name = "create_workspace_item_tasks";
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         // Note: this migration historically included a `session_id` column.
         try db.exec(allocator,
             \\CREATE TABLE IF NOT EXISTS workspace_item_tasks (
