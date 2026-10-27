@@ -288,7 +288,9 @@ pub fn acquire(
         },
         .guest => |target| {
             const io_value = io orelse return Error.GuestManagerUnavailable;
-            const registry = mcp_stdio.GuestRegistry.global(allocator, io_value, openChannel);
+            // Through the singleton so the registry outlives the per-turn
+            // arena that a tool call's `allocator` may be.
+            const registry = pabrikcore.mcpGuestRegistry(io_value, openChannel, allocator);
             const lease = try registry.acquire(server_name, argv, .{
                 .wait_ns = opts.wait_ns,
                 .is_cancelled = opts.is_cancelled,

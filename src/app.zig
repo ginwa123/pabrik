@@ -92,6 +92,7 @@ pub const App = struct {
     /// calling `StdioRegistry.global(allocator)` with its own allocator
     mcp_stdio_registry: ?*mcp_stdio.StdioRegistry = null,
     mcp_http_registry: ?*mcp_http.HttpRegistry = null,
+    mcp_guest_registry: ?*mcp_stdio.GuestRegistry = null,
 
     /// Fetch-once MCP tools cache (plan: mcp-fetch-once-cache).
     mcp_tools_cache: ?[]tool_models.AgentTool = null,
@@ -612,6 +613,22 @@ pub fn mcpStdioRegistry(fallback: std.mem.Allocator) *mcp_stdio.StdioRegistry {
         return reg;
     } else |_| {}
     return mcp_stdio.StdioRegistry.global(fallback);
+}
+
+/// Same shape for the guest transport registry. The opener is a parameter
+/// because the agentic loop owns it, and `app` must not import that loop.
+pub fn mcpGuestRegistry(
+    io: std.Io,
+    opener: mcp_stdio.GuestOpenFn,
+    fallback: std.mem.Allocator,
+) *mcp_stdio.GuestRegistry {
+    if (getSingleton()) |di| {
+        if (di.mcp_guest_registry) |cached| return cached;
+        const reg = mcp_stdio.GuestRegistry.global(di.allocator, io, opener);
+        di.mcp_guest_registry = reg;
+        return reg;
+    } else |_| {}
+    return mcp_stdio.GuestRegistry.global(fallback, io, opener);
 }
 
 /// Same shape for the HTTP transport registry.

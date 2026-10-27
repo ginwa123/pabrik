@@ -43,6 +43,7 @@ pub const getSessionIdForClient = app.getSessionIdForClient;
 pub const handleClientDisconnect = app.handleClientDisconnect;
 pub const mcpStdioRegistry = app.mcpStdioRegistry;
 pub const mcpHttpRegistry = app.mcpHttpRegistry;
+pub const mcpGuestRegistry = app.mcpGuestRegistry;
 
 // Module exports - these are available via @import("pabrikcore")
 // it should import from folder modules only
