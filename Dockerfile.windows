@@ -1,0 +1,13 @@
+FROM mcr.microsoft.com/windows/nanoserver:ltsc2022
+
+WORKDIR C:\data
+
+COPY pabrik.exe C:\app\pabrik.exe
+COPY *.dll C:\app\
+
+ENV HOME=C:\data
+
+EXPOSE 8081
+
+ENTRYPOINT ["C:\\app\\pabrik.exe"]
+CMD ["--no-static-dir"]
