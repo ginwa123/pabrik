@@ -13,6 +13,7 @@ const vm_limits = @import("vm_limits.zig");
 const egress_proxy = @import("egress_proxy.zig");
 const agent_service = @import("agent_service.zig");
 const proxy_rpc = @import("proxy_rpc.zig");
+const activity_mod = @import("activity.zig");
 
 pub const Error = error{
     SocketFailed,
@@ -42,6 +43,15 @@ pub const Config = struct {
     sweep_interval_ms: u32 = reconciler_mod.default_sweep_interval_ms,
     /// The first retry delay after a failed attempt; doubles up to a minute.
     backoff_base_ms: i64 = reconciler_mod.default_backoff_base_ms,
+    /// A workspace whose VM nobody has used for this long is stopped, and boots
+    /// again on the next request. 0 turns the idle reaper off.
+    idle_stop_ms: u32 = reconciler_mod.default_idle_stop_ms,
+    /// A VMM younger than this is never reaped, so the first command after a
+    /// boot is always allowed to arrive.
+    idle_grace_ms: u32 = 60_000,
+    /// Guest CPU in one sweep window that still counts as activity: an idle
+    /// Firecracker with halted vCPUs reads ~0.
+    idle_cpu_ms: u32 = 50,
     /// The host's own TCP ports, refused to every workspace's egress whatever
     /// address is used to reach them.
     host_listeners: []const u16 = &.{8081},
@@ -88,12 +98,19 @@ pub const Manager = struct {
     /// The current agent, served to every guest's bootstrap. Empty when the
     /// daemon was started without one.
     agent: []const u8 = &.{},
+    /// What every workspace's VM has been asked to do. A POINTER: this Manager
+    /// is copied per connection thread and every copy must see the same
+    /// counters. Null when the allocation failed, which only disables reaping.
+    activity: ?*activity_mod.Activity = null,
 
     pub fn init(allocator: std.mem.Allocator, config: Config) Manager {
+        const act = allocator.create(activity_mod.Activity) catch null;
+        if (act) |a| a.* = activity_mod.Activity.init(allocator);
         return .{
             .allocator = allocator,
             .config = config,
             .agent = readAgent(allocator, config.agent_path),
+            .activity = act,
         };
     }
 
@@ -119,7 +136,7 @@ pub const Manager = struct {
 
     /// Every daemon call goes through this one state machine.
     fn reconciler(self: *const Manager) reconciler_mod.Reconciler {
-        return reconciler_mod.Reconciler.init(self.allocator, .{
+        var rec = reconciler_mod.Reconciler.init(self.allocator, .{
             .root = self.config.root,
             .base_image = self.config.base_image,
             .kernel = self.config.kernel,
@@ -127,7 +144,12 @@ pub const Manager = struct {
             .mem_mib = self.config.mem_mib,
             .vcpus = self.config.vcpus,
             .backoff_base_ms = self.config.backoff_base_ms,
+            .idle_stop_ms = self.config.idle_stop_ms,
+            .idle_grace_ms = self.config.idle_grace_ms,
+            .idle_cpu_ms = self.config.idle_cpu_ms,
         });
+        rec.env.logReaped = logReaped;
+        return rec;
     }
 
     /// The workspace's layout, booting its VM only when the reconciler says so.
@@ -148,6 +170,9 @@ pub const Manager = struct {
             log("workspace {s} is {s}: {s}", .{ workspace_id, record.state.name(), record.last_error });
             return error.VmUnavailable;
         }
+        // A changed VMM pid is a fresh guest: its ttys and its jobs died with
+        // the old one, so the readings start over. A no-op on the warm path.
+        if (self.activity) |act| _ = act.notePid(workspace_id, record.pid, activity_mod.nowMs());
         return layout;
     }
 
@@ -422,15 +447,20 @@ fn sweepLoop(manager: Manager) void {
     var arena = std.heap.ArenaAllocator.init(manager.allocator);
     while (!stopping.load(.seq_cst)) {
         defer _ = arena.reset(.retain_capacity);
-        const report = manager.reconciler().sweep(arena.allocator()) catch |err| {
+        // The activity readings turn this pass into the idle reaper; without
+        // them (an allocation that failed) it only counts.
+        const report = manager.reconciler().sweep(arena.allocator(), .{ .activity = manager.activity }) catch |err| {
             log("sweep failed: {s}", .{@errorName(err)});
             sleepMs(manager.config.sweep_interval_ms);
             continue;
         };
         if (report.workspaces > 0) {
-            log("swept {d} workspace(s): ready={d} starting={d} absent={d} failed={d}", .{
-                report.workspaces, report.ready, report.starting, report.absent, report.failed,
+            log("swept {d} workspace(s): ready={d} starting={d} absent={d} failed={d} reaped={d} busy={d}", .{
+                report.workspaces, report.ready, report.starting, report.absent, report.failed, report.reaped, report.busy,
             });
+        }
+        if (report.reaped > 0) {
+            log("reaped {d} idle workspace VM(s), ~{d} MiB rss returned to the host", .{ report.reaped, report.reaped_mib });
         }
         sleepMs(manager.config.sweep_interval_ms);
     }
@@ -487,6 +517,17 @@ fn serveConnection(manager: Manager, conn: linux.fd_t) void {
     };
     defer request.deinit();
 
+    // Work is what keeps a workspace's VM alive; `status` and `ping` are reads
+    // of the state file, and the console polls `status` for every workspace, so
+    // counting them would pin every VM forever.
+    const work = rpc.carriesWork(request.value.action);
+    if (work) {
+        if (manager.activity) |act| act.enter(request.value.workspace_id, activity_mod.nowMs());
+    }
+    defer if (work) {
+        if (manager.activity) |act| act.leave(request.value.workspace_id, activity_mod.nowMs());
+    };
+
     const payload = dispatch(manager, aa, request.value) catch |err| blk: {
         log("request failed: {s}", .{@errorName(err)});
         break :blk rpc.encodeFailure(aa, request.value.id, .internal, @errorName(err)) catch return;
@@ -527,6 +568,9 @@ fn dispatch(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request
         },
         .stop => {
             _ = manager.stopWorkspace(allocator, request.workspace_id);
+            // The VM is gone on purpose: its counters die with it, so a later
+            // boot cannot inherit a job or a tty from the old guest.
+            if (manager.activity) |act| act.forget(request.workspace_id);
             return rpc.encodeAck(allocator, request.id);
         },
         .exec => {
@@ -773,6 +817,9 @@ fn dispatchSpawn(manager: Manager, allocator: std.mem.Allocator, request: rpc.Re
         log("spawn in workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
         return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
     };
+    // A detached job is work the host cannot see any other way: it keeps the VM
+    // up until a probe says it is gone, and dies with the VM if it is wrong.
+    if (manager.activity) |act| act.addJob(request.workspace_id, spawned.pid, activity_mod.nowMs());
     return rpc.encodeSpawned(allocator, request.id, spawned.pid, log_path);
 }
 
@@ -793,6 +840,12 @@ fn dispatchProbe(manager: Manager, allocator: std.mem.Allocator, request: rpc.Re
         // A guest that will not answer is not evidence that the job lives.
         return rpc.encodeProbe(allocator, request.id, false, "unresponsive", state.pid);
     };
+    // Only a proven death retires a job. An unresponsive guest may still be
+    // running it, and forgetting it there would let the reaper take the VM out
+    // from under a live build.
+    if (!probed.alive) {
+        if (manager.activity) |act| act.jobExited(request.workspace_id, request.pid);
+    }
     return rpc.encodeProbe(allocator, request.id, probed.alive, state.label, state.pid);
 }
 
@@ -904,6 +957,15 @@ fn readExact(fd: linux.fd_t, buf: []u8) !void {
         if (rc == 0) return rpc.Error.BadRequest;
         off += rc;
     }
+}
+
+/// One idle VMM stopped, said once and in full: which workspace, how long it
+/// had been unused, and what it was holding. This line is the feature's only
+/// evidence in a log, so it carries the numbers.
+fn logReaped(_: *anyopaque, workspace_id: []const u8, idle_ms: i64, rss_mib: u32) void {
+    log("reaped idle workspace {s}: {d}s without work, ~{d} MiB rss", .{
+        workspace_id, @divTrunc(idle_ms, 1000), rss_mib,
+    });
 }
 
 /// The daemon's stderr is a log, never a protocol stream.

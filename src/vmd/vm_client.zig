@@ -341,6 +341,85 @@ pub fn waitGone(pid: linux.pid_t, timeout_ms: u32) bool {
     return false;
 }
 
+// ─── /proc: the VMM's own numbers, for the idle reaper ───────────────────
+
+/// One tick of `utime`/`stime` is this many milliseconds. USER_HZ is 100 on
+/// every Linux ABI — a frozen constant, not a setting — so no sysconf is
+/// needed and the reading means the same thing on every host.
+pub const user_hz: u64 = 100;
+
+fn readSmallFile(path: []const u8, buf: []u8) ?usize {
+    // Off Linux there is no /proc and the raw syscalls below are meaningless:
+    // issuing them reads as "cannot tell", which is exactly what a caller must
+    // never mistake for zero.
+    if (comptime @import("builtin").os.tag != .linux) return null;
+    var path_buf: [64]u8 = undefined;
+    if (path.len >= path_buf.len) return null;
+    @memcpy(path_buf[0..path.len], path);
+    path_buf[path.len] = 0;
+    const z: [*:0]const u8 = @ptrCast(&path_buf);
+    const rc = linux.open(z, .{ .ACCMODE = .RDONLY, .CLOEXEC = true }, 0);
+    if (linux.errno(rc) != .SUCCESS) return null;
+    const fd: linux.fd_t = @intCast(rc);
+    defer _ = linux.close(fd);
+    const n = linux.read(fd, buf.ptr, buf.len);
+    if (linux.errno(n) != .SUCCESS) return null;
+    return n;
+}
+
+/// `/proc/<pid>/stat` → utime + stime, in ticks. Counted from the LAST ')' so
+/// a comm holding spaces and parentheses cannot be read as numbers; past it,
+/// state is index 0, so utime (field 14) is 11 and stime (field 15) is 12.
+pub fn parseStatCpuTicks(text: []const u8) ?u64 {
+    const close = std.mem.lastIndexOfScalar(u8, text, ')') orelse return null;
+    var it = std.mem.tokenizeScalar(u8, text[close + 1 ..], ' ');
+    var index: usize = 0;
+    var utime: ?u64 = null;
+    var stime: ?u64 = null;
+    while (it.next()) |token| : (index += 1) {
+        if (index == 11) utime = std.fmt.parseInt(u64, token, 10) catch return null;
+        if (index == 12) {
+            stime = std.fmt.parseInt(u64, token, 10) catch return null;
+            break;
+        }
+    }
+    return (utime orelse return null) + (stime orelse return null);
+}
+
+/// The VMM's whole-thread-group CPU time. `/proc/<pid>/stat` reports the group
+/// total for a thread-group leader, which a forked Firecracker always is.
+/// Null means "cannot read it", and the reaper treats that as "cannot tell".
+pub fn cpuTicks(pid: linux.pid_t) ?u64 {
+    if (pid <= 0) return null;
+    var path_buf: [64]u8 = undefined;
+    const path = std.fmt.bufPrint(&path_buf, "/proc/{d}/stat", .{pid}) catch return null;
+    var text: [1024]u8 = undefined;
+    const n = readSmallFile(path, &text) orelse return null;
+    return parseStatCpuTicks(text[0..n]);
+}
+
+/// `/proc/<pid>/status` → `VmRSS:   1234 kB`, in KiB. Only ever used to say how
+/// much a reap released: RSS is the cost of a VM, never a sign of its idleness.
+pub fn parseRssKib(text: []const u8) ?u32 {
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    while (lines.next()) |line| {
+        if (!std.mem.startsWith(u8, line, "VmRSS:")) continue;
+        const value = std.mem.trim(u8, line["VmRSS:".len..], " \tkB");
+        return std.fmt.parseInt(u32, value, 10) catch null;
+    }
+    return null;
+}
+
+pub fn rssMib(pid: linux.pid_t) ?u32 {
+    if (pid <= 0) return null;
+    var path_buf: [64]u8 = undefined;
+    const path = std.fmt.bufPrint(&path_buf, "/proc/{d}/status", .{pid}) catch return null;
+    var text: [4096]u8 = undefined;
+    const n = readSmallFile(path, &text) orelse return null;
+    const kib = parseRssKib(text[0..n]) orelse return null;
+    return kib / 1024;
+}
+
 pub const Vm = struct {
     pid: linux.pid_t,
     layout: Layout,
@@ -1519,4 +1598,32 @@ test "a guest that refuses for its own reason keeps its own words" {
     defer parsed.deinit();
 
     try testing.expectEqualStrings("the guest is out of terminals", refusalText(parsed.value.object));
+}
+
+test "the CPU clock is read from the fields after the comm, whatever comm holds" {
+    // A comm may contain spaces AND parentheses, so the fields are counted from
+    // the LAST ')' — splitting on the first one reads the comm as numbers.
+    const line = "4242 (fire (cracker) vmm) S 1 4242 4242 0 -1 4194304 1000 0 0 0 120 30 0 0 20 0 4 0 60000 0 0";
+    try testing.expectEqual(@as(?u64, 150), parseStatCpuTicks(line));
+}
+
+test "a stat line that stops before stime reads as unknown, not as zero" {
+    const short = "4242 (fc) S 1 4242 4242 0 -1 4194304 1000 0 0 0 120";
+    try testing.expectEqual(@as(?u64, null), parseStatCpuTicks(short));
+    try testing.expectEqual(@as(?u64, null), parseStatCpuTicks(""));
+    try testing.expectEqual(@as(?u64, null), parseStatCpuTicks("garbage"));
+}
+
+test "the VmRSS line is the only one read, and kB survive the parse" {
+    const status = "Name:\tfirecracker\nVmPeak:\t 3168812 kB\nVmRSS:\t  79460 kB\nThreads:\t9\n";
+    try testing.expectEqual(@as(?u32, 79_460), parseRssKib(status));
+    try testing.expectEqual(@as(?u32, null), parseRssKib("Name:\tfirecracker\n"));
+}
+
+test "a pid that is not there has no CPU clock and no RSS" {
+    // 0 and negative are refused before /proc is touched at all.
+    try testing.expectEqual(@as(?u64, null), cpuTicks(0));
+    try testing.expectEqual(@as(?u32, null), rssMib(-1));
+    // And a pid that cannot exist answers null rather than 0: "cannot tell".
+    try testing.expectEqual(@as(?u64, null), cpuTicks(2_147_483_640));
 }
