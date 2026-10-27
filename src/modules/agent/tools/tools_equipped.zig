@@ -639,7 +639,7 @@ test "DEFAULT_AGENT_TOOLS ships the spawn pair and the progressive meta-tools" {
 const testing = std.testing;
 
 const SeedTestCtx = struct {
-    db: pabrikcore.sqlite.SqliteBackend,
+    db: pabrikcore.database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -648,7 +648,7 @@ fn setupSeedDb() !SeedTestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: pabrikcore.sqlite.SqliteBackend = .{};
+    var db: pabrikcore.database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try db.exec(

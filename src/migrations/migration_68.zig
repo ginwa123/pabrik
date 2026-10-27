@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
@@ -14,7 +14,7 @@ pub const Migration068AddToolCallLoading = struct {
     pub const version: u32 = 68;
     pub const name = "add_tool_call_loading";
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         // 1. Add the `is_loading` column. Idempotent via `addColumnIfMissing`
         // — safe for fresh-DB installs where the canonical CREATE TABLE in
         // earlier migrations doesn't include it yet.

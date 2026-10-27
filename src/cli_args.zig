@@ -115,6 +115,8 @@ pub fn reportFailure(f: Failure) void {
 pub fn printUsage() void {
     logger_mod.debugPrint("Usage: pabrik [flags]\n", .{});
     logger_mod.debugPrint("{s}", .{cli_flags.usageBlock(.global, "")});
+    logger_mod.debugPrint("Database backend (default: the one this build compiled in, sqlite):\n", .{});
+    logger_mod.debugPrint("{s}", .{cli_flags.usageBlock(.db_target, "")});
     logger_mod.debugPrint("Database policy (defaults are tuned for low RAM; override to trade RAM for throughput):\n", .{});
     logger_mod.debugPrint("{s}", .{cli_flags.usageBlock(.db, "")});
 }

@@ -67,7 +67,7 @@ pub const TasksMoveResult = union(enum) {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: TasksMoveInput,
 ) TasksMoveError!TasksMoveResult {
     if (input.item_id.len == 0) return error.ItemIdRequired;
@@ -251,12 +251,12 @@ fn freeOutcome(allocator: std.mem.Allocator, outcome: TasksMoveResult) void {
 
 /// In-memory DB: three columns (only `c3` completes a task), two tasks, and
 /// `t1` waiting for `t2`.
-fn setupDb() !struct { db: pabrikcore.sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+fn setupDb() !struct { db: pabrikcore.database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
 
-    var db: pabrikcore.sqlite.SqliteBackend = .{};
+    var db: pabrikcore.database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
 

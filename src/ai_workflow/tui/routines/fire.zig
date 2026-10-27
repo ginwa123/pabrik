@@ -4,6 +4,7 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const ai_workflow = pabrikcore.ai_mod.ai_workflow;
 
 const model = @import("model.zig");
@@ -23,7 +24,7 @@ pub const FireError = error{
 /// Fire a single workspace routine.
 pub fn fireWorkspaceRoutine(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     di: *pabrikcore.App,
     io: std.Io,
     routine_id: []const u8,
@@ -169,7 +170,7 @@ const Migration084ReplaceRoutinesWithWorkspaceRoutines = migration.Migration084R
 /// Open a fresh in-memory sqlite DB with the minimal parent tables,
 /// then run Migration 084. Mirrors the helper in `model.zig`.
 fn setupDb() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 } {
     const alloc = testing.allocator;
@@ -177,7 +178,7 @@ fn setupDb() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -202,7 +203,7 @@ fn setupDb() !struct {
     return .{ .db = db, .threaded = threaded };
 }
 
-fn insertParentItem(db: *sqlite.SqliteBackend, alloc: std.mem.Allocator, id: []const u8) !void {
+fn insertParentItem(db: *database.Db, alloc: std.mem.Allocator, id: []const u8) !void {
     try db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES (?, 'ws1', 'routine')",
         &.{id});

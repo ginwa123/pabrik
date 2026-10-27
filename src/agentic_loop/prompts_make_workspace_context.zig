@@ -2,6 +2,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 
 pub const MAX_SIBLING_ITEMS: u32 = 20;
 pub const MAX_TASKS_PER_ITEM: u32 = 5;
@@ -9,7 +10,7 @@ pub const MAX_TASKS_PER_ITEM: u32 = 5;
 
 pub fn makeWorkspaceContext(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]const u8 {
     if (session_id.len == 0) return allocator.dupe(u8, "");
@@ -100,7 +101,7 @@ pub fn makeWorkspaceContext(
 
 fn getWorkspaceContext(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !?WorkspaceContext {
     if (session_id.len == 0) return null;

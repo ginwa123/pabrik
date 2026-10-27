@@ -72,7 +72,7 @@ pub const WorkspaceItemsCreateAgentResult = []const u8; // pre-serialized JSON
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: WorkspaceItemsCreateAgentInput,
 ) WorkspaceItemsCreateAgentError!WorkspaceItemsCreateAgentResult {
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;
@@ -152,7 +152,7 @@ fn useCase(
 /// Re-read the `position` of a freshly-INSERTed workspace_item.
 fn readInsertedPosition(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     item_id: []const u8,
 ) i64 {
     var q = db.query(
@@ -266,10 +266,11 @@ pub fn workspaceItemsCreateAgentHandler(
 // tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
+const database = @import("pabrikcore").database;
 const testing = std.testing;
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -277,7 +278,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -303,7 +304,7 @@ fn setupDb() !TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
-fn rowCount(db: *sqlite.SqliteBackend, allocator: std.mem.Allocator, table: []const u8, where: []const u8) !u32 {
+fn rowCount(db: *database.Db, allocator: std.mem.Allocator, table: []const u8, where: []const u8) !u32 {
     var sql_buf: [256]u8 = undefined;
     const sql = try std.fmt.bufPrint(&sql_buf, "SELECT COUNT(*) FROM {s} WHERE {s}", .{ table, where });
     var q = try db.query(allocator, sql, &[_][]const u8{});

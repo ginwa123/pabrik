@@ -6,6 +6,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const catalog = @import("model_catalog.zig");
 const store = @import("../models/model_catalog_store.zig");
 const http_client = @import("kabelweb").client;
@@ -92,7 +93,7 @@ fn recordAttempt(attempt: LastAttempt) void {
 /// Fetch models.dev and install the result. Every failure propagates — the
 /// endpoint reports it, the timer logs it — and BOTH record it: an empty catalog
 /// whose syncs failed silently reads exactly like one that was never tried.
-pub fn refresh(alloc: Allocator, io: std.Io, db: *sqlite.SqliteBackend) !Report {
+pub fn refresh(alloc: Allocator, io: std.Io, db: *database.Db) !Report {
     const report = fetchAndInstall(alloc, io, db) catch |err| {
         recordAttempt(.{
             .at_ms = std.Io.Clock.now(.real, io).toMilliseconds(),
@@ -110,7 +111,7 @@ pub fn refresh(alloc: Allocator, io: std.Io, db: *sqlite.SqliteBackend) !Report 
     return report;
 }
 
-fn fetchAndInstall(alloc: Allocator, io: std.Io, db: *sqlite.SqliteBackend) !Report {
+fn fetchAndInstall(alloc: Allocator, io: std.Io, db: *database.Db) !Report {
     var client = http_client.Client.init(alloc);
     var resp = try http_client.get(&client, catalog.SOURCE_URL, .{
         .timeout_ms = 60_000,
@@ -152,7 +153,7 @@ fn fetchAndInstall(alloc: Allocator, io: std.Io, db: *sqlite.SqliteBackend) !Rep
 
 /// Read the DB into the in-memory index. Returns whether a catalog was
 /// installed. Called once, from boot, on the main thread.
-pub fn loadAtBoot(alloc: Allocator, db: *sqlite.SqliteBackend) bool {
+pub fn loadAtBoot(alloc: Allocator, db: *database.Db) bool {
     const cat = store.loadCatalog(db, alloc) catch |err| {
         std.log.warn("model catalog: could not read the cached catalog: {s}", .{@errorName(err)});
         return false;
@@ -172,7 +173,7 @@ pub fn loadAtBoot(alloc: Allocator, db: *sqlite.SqliteBackend) bool {
 /// Detached sync timer. Nothing joins it; it dies with the process.
 /// `loadAtBoot` runs first, so the FIRST fetch is immediate when boot had nothing
 /// to read and waits the interval when it did.
-pub fn startBackgroundSync(alloc: Allocator, db: *sqlite.SqliteBackend) void {
+pub fn startBackgroundSync(alloc: Allocator, db: *database.Db) void {
     if (!fetchingEnabled()) {
         std.log.info("model catalog: background sync disabled (PABRIK_MODEL_CATALOG_FETCH=0)", .{});
         return;
@@ -191,7 +192,7 @@ pub fn startBackgroundSync(alloc: Allocator, db: *sqlite.SqliteBackend) void {
     }
 }
 
-fn backgroundLoop(alloc: Allocator, db: *sqlite.SqliteBackend, first_delay_ns: i96) void {
+fn backgroundLoop(alloc: Allocator, db: *database.Db, first_delay_ns: i96) void {
     // Its OWN io instance: `std.Io.Threaded` is not shareable across threads,
     // and the timer must not borrow the server's.
     var threaded = std.Io.Threaded.init(alloc, .{});
@@ -208,7 +209,7 @@ fn backgroundLoop(alloc: Allocator, db: *sqlite.SqliteBackend, first_delay_ns: i
 
 /// The timer's refresh: same call the manual endpoint makes, with the error
 /// turned into a log line instead of an HTTP body.
-pub fn refreshOnceWithLog(alloc: Allocator, io: std.Io, db: *sqlite.SqliteBackend) void {
+pub fn refreshOnceWithLog(alloc: Allocator, io: std.Io, db: *database.Db) void {
     const report = refresh(alloc, io, db) catch |err| {
         std.log.warn("model catalog: scheduled sync failed ({s}); keeping the previous snapshot", .{@errorName(err)});
         return;

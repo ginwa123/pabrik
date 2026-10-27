@@ -96,6 +96,7 @@ const exec_pabrikcore = @import("pabrikcore");
 const tools = @import("../../../agentic_loop/tools.zig");
 const migration = @import("../../../migrations/migration.zig");
 const sqlite = exec_pabrikcore.sqlite;
+const database = exec_pabrikcore.database;
 const exec_config_mod = exec_pabrikcore.config;
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
@@ -120,7 +121,7 @@ pub fn execListAgents(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult 
 }
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -129,7 +130,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

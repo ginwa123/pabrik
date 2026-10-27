@@ -38,7 +38,7 @@ pub const BackgroundProcessesListResult = []const u8; // pre-serialized JSON
 
 pub fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     session_id: []const u8,
 ) BackgroundProcessesListError!BackgroundProcessesListResult {
     if (session_id.len == 0) return error.MissingSessionId;
@@ -157,7 +157,7 @@ const testing = std.testing;
 const migration = @import("../migrations/migration.zig");
 
 const TestCtx = struct {
-    db: pabrikcore.sqlite.SqliteBackend,
+    db: pabrikcore.database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -166,7 +166,7 @@ fn setupDb() !TestCtx {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: pabrikcore.sqlite.SqliteBackend = .{};
+    var db: pabrikcore.database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -184,7 +184,7 @@ fn teardownDb(ctx: *TestCtx) void {
 }
 
 fn insertBgRow(
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     session_id: []const u8,
     pid: u32,
     command: []const u8,

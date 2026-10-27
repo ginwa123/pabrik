@@ -64,7 +64,7 @@ pub const UpdatePageOutput = struct {
 /// Update an existing design page. Steps: 1. Validate `page_id` non-empty. 2.
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: UpdatePageInput,
 ) DesignPageUpdateError!UpdatePageOutput {
     if (input.page_id.len == 0) return error.PageIdRequired;

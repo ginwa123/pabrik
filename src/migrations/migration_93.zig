@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
@@ -11,7 +11,7 @@ pub const Migration093AddOwnerColumns = struct {
     pub const version: u32 = 93;
     pub const name = "add_owner_columns";
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         try addColumnIfMissing(.{ .db = db }, allocator, "worker", "user_id", "user_id TEXT");
         try db.exec(allocator,
             "CREATE INDEX IF NOT EXISTS idx_worker_user_id ON worker(user_id)",

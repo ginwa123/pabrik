@@ -3,6 +3,7 @@ const pabrikcore = @import("pabrikcore");
 
 const logger_mod = pabrikcore.loggermod;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const config_mod = pabrikcore.config;
 
 pub const all_agent_tools = @import("../modules/agent/tools/tools_equipped.zig").equips;
@@ -103,7 +104,7 @@ pub const AgentSaveInfo = struct {
 pub const ToolExecContext = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     logger: *logger_mod.Logger,
     session_id: []const u8,
     model: []const u8,

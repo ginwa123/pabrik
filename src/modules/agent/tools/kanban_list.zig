@@ -3,6 +3,7 @@ const schemas = @import("schemas.zig");
 const AgentTool = schemas.AgentTool;
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
 
@@ -131,7 +132,7 @@ pub const kanban_list_tool = AgentTool{
 /// Read all tasks for a kanban item from the DB.
 pub fn countKanbanTasks(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_item_id: []const u8,
     column_id: ?[]const u8,
 ) !u32 {
@@ -165,7 +166,7 @@ pub fn countKanbanTasks(
 
 pub fn listKanbanTasks(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_item_id: []const u8,
     column_id: ?[]const u8,
     limit: ?u32,
@@ -251,7 +252,7 @@ pub fn listKanbanTasks(
 /// populate `column_name` in the task summary output.
 fn resolveColumnIdToName(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_item_id: []const u8,
     column_id: []const u8,
 ) !?[]u8 {
@@ -271,7 +272,7 @@ fn resolveColumnIdToName(
 /// Execute the kanban_list tool. Returns a JSON string for the LLM.
 pub fn executeKanbanListToJSON(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     input: KanbanListInput,
 ) ![]u8 {
     // 1. Validate shape (catches task_id/col_id/ws_id passed as item_id).
@@ -603,7 +604,7 @@ pub fn validateItemIdShape(
 /// 'kanban'.
 fn itemExists(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     item_id: []const u8,
 ) !bool {
     var q = try db.query(allocator, "SELECT 1 FROM workspace_items WHERE id = ? AND item_type = 'kanban' LIMIT 1", &.{item_id});
@@ -710,12 +711,12 @@ test "errorJSON on missing field returns parsed error payload" {
 
 /// Set up an in-memory SQLite with the kanban tables + a kanban workspace
 /// item + 3 default columns (todo/in progress/done).
-fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

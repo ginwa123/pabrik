@@ -133,7 +133,7 @@ pub fn execListSecrets(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult
 /// its last rotation.
 fn collectEntries(
     allocator: std.mem.Allocator,
-    db: *@import("pabrikcore").sqlite.SqliteBackend,
+    db: *@import("pabrikcore").database.Db,
     workspace_id: []const u8,
 ) ![]SecretEntry {
     const names = try secrets_store.listSecretNames(allocator, db, workspace_id);
@@ -179,9 +179,10 @@ fn freeSecretEntries(allocator: std.mem.Allocator, entries: []SecretEntry) void 
 
 const exec_testing = std.testing;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -189,7 +190,7 @@ fn setupDb() !TestCtx {
     const alloc = exec_testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
 
@@ -271,7 +272,7 @@ fn seedSecret(alloc: std.mem.Allocator, ctx: *TestCtx, workspace_id: []const u8,
     , &[_][]const u8{ id, workspace_id, name, value });
 }
 
-fn testCtx(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8) ToolExecContext {
+fn testCtx(alloc: std.mem.Allocator, db: *database.Db, session_id: []const u8) ToolExecContext {
     var dummy_f32: f32 = 0.0;
     var dummy_bool: bool = false;
     return .{
@@ -291,7 +292,7 @@ fn testCtx(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []co
     };
 }
 
-fn call(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8, args: []const u8) !ToolExecResult {
+fn call(alloc: std.mem.Allocator, db: *database.Db, session_id: []const u8, args: []const u8) !ToolExecResult {
     const tc = agent.ToolCall{
         .id = "call_1",
         .type = "function",

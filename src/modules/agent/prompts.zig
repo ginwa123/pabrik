@@ -1411,9 +1411,10 @@ test "SkillsToolRule does not pre-list skills (no Available Skills listing)" {
 
 const prompt_migration = @import("../../migrations/migration.zig");
 const prompt_sqlite = @import("pabrikcore").sqlite;
+const database = @import("pabrikcore").database;
 
 const PromptDbCtx = struct {
-    db: prompt_sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -1421,7 +1422,7 @@ fn setupPromptDb() !PromptDbCtx {
     const alloc = std.testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
-    var db: prompt_sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
     var manager = prompt_migration.MigrationManager.init(alloc, &db);

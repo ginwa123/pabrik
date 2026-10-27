@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const sqlite = @import("pabrikcore").sqlite;
+const database = @import("pabrikcore").database;
 
 /// The `owner` value used when `--auth` is OFF. Also the column DEFAULT.
 pub const FILE_MODE_OWNER = "";
@@ -25,7 +26,7 @@ pub fn isEmptyOverlay(json_text: []const u8) bool {
 /// workspace has no scoped settings of its own.
 pub fn loadRaw(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     owner: []const u8,
     workspace_id: []const u8,
 ) !?[]u8 {
@@ -49,7 +50,7 @@ pub fn loadRaw(
 /// `isEmptyOverlay` and the module header.
 pub fn saveRaw(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     owner: []const u8,
     workspace_id: []const u8,
     config_json: []const u8,
@@ -69,7 +70,7 @@ pub fn saveRaw(
 /// body, which every reader treats as empty - and which no later pass refills.
 pub fn clear(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     owner: []const u8,
     workspace_id: []const u8,
 ) !void {
@@ -87,7 +88,7 @@ pub fn clear(
 /// explicitly left inherited?
 pub fn hasRow(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     owner: []const u8,
     workspace_id: []const u8,
 ) !bool {
@@ -109,7 +110,7 @@ pub fn hasRow(
 /// Does this workspace carry any override at all?
 pub fn hasOverlay(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     owner: []const u8,
     workspace_id: []const u8,
 ) !bool {
@@ -138,7 +139,7 @@ pub fn hasOverlay(
 const testing = std.testing;
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -147,7 +148,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

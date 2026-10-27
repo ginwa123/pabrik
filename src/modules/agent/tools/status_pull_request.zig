@@ -939,9 +939,10 @@ pub fn execStatusPullRequest(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExec
 const testing = std.testing;
 const migration = @import("../../../migrations/migration.zig");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -950,7 +951,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -964,7 +965,7 @@ fn setupDb() !TestCtx {
 /// Build a `ToolExecContext` for the exec wrapper. Fields the wrapper
 /// never dereferences on the tested paths (`logger`, `config`)
 /// are left `undefined`, mirroring the get_plan harness.
-fn makeTestCtx(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8) ToolExecContext {
+fn makeTestCtx(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) ToolExecContext {
     var dummy_f32: f32 = 0.0;
     var dummy_bool: bool = false;
     return .{

@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 const addColumnIfMissing = common.addColumnIfMissing;
 
 /// Migration 114 — the chat's file attachments. `file_attachments` holds the full payload for the
@@ -11,7 +11,7 @@ pub const Migration114AddFileAttachments = struct {
     pub const version: u32 = 114;
     pub const name = "add_file_attachments";
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         try addColumnIfMissing(
             .{ .db = db },
             allocator,
@@ -41,7 +41,7 @@ const testing = std.testing;
 test "Migration114 adds the attachment columns and leaves existing rows empty" {
     const alloc = testing.allocator;
 
-    var db: SqliteBackend = .{};
+    var db: Backend = .{};
     defer db.deinit();
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
@@ -78,7 +78,7 @@ test "Migration114 adds the attachment columns and leaves existing rows empty" {
 test "Migration114 replaying is a no-op" {
     const alloc = testing.allocator;
 
-    var db: SqliteBackend = .{};
+    var db: Backend = .{};
     defer db.deinit();
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();

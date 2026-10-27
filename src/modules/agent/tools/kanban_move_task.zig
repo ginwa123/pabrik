@@ -3,6 +3,7 @@ const schemas = @import("schemas.zig");
 const AgentTool = schemas.AgentTool;
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
 
@@ -121,7 +122,7 @@ pub const kanban_move_task_tool = AgentTool{
 /// when no match).
 pub fn findColumnsByName(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_item_id: []const u8,
     name_query: []const u8,
 ) ![]ColumnMatch {
@@ -182,7 +183,7 @@ fn toLowerInto(allocator: std.mem.Allocator, s: []const u8, buf: []u8) ![]const 
 /// moved to column X").
 fn readTaskCurrentColumn(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     task_id: []const u8,
 ) !struct { column_id: []u8, column_name: []u8 } {
     // After Migration 072, the task's current kanban column lives in the
@@ -209,7 +210,7 @@ fn readTaskCurrentColumn(
 /// Execute the kanban_move_task tool. Returns a JSON string for the LLM.
 pub fn executeKanbanMoveTaskToJSON(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     input: KanbanMoveTaskInput,
 ) ![]u8 {
     if (input.workspace_id.len == 0) return errorJSON(allocator, "Missing required field: workspace_id");
@@ -400,7 +401,7 @@ pub const KanbanMoveBlocked = struct {
 /// that the way forward is to finish them.
 fn blockedJSON(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     task_id: []const u8,
 ) ![]u8 {
     const blocked = pabrikcore.ai_mod.kanban_model.incompleteDependencies(
@@ -525,12 +526,12 @@ test "successJSON keeps raw characters, parsed" {
 
 // ─── DB integration behavioral tests (in-memory SQLite) ────────────────
 
-fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

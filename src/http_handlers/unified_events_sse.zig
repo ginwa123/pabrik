@@ -66,7 +66,7 @@ fn clientMayReceive(di: *pabrik_core.App, client_id: [16]u8, data: ai_mod.on_eve
 /// attributed to one.
 fn resolveEventSessionId(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     data: ai_mod.on_event_sent.SseEvent,
 ) ?[]const u8 {
     if (data.session_id.len > 0 and sessionRowExists(allocator, db, data.session_id)) {
@@ -104,7 +104,7 @@ fn payloadFields(allocator: std.mem.Allocator, data: []const u8) ?PayloadFields 
     return out;
 }
 
-fn sessionRowExists(allocator: std.mem.Allocator, db: *pabrikcore.sqlite.SqliteBackend, id: []const u8) bool {
+fn sessionRowExists(allocator: std.mem.Allocator, db: *pabrikcore.database.Db, id: []const u8) bool {
     if (id.len == 0) return false;
     var q = db.query(allocator, "SELECT 1 FROM sessions WHERE id = ?", &[_][]const u8{id}) catch return false;
     defer q.deinit();
@@ -116,7 +116,7 @@ fn sessionRowExists(allocator: std.mem.Allocator, db: *pabrikcore.sqlite.SqliteB
     return false;
 }
 
-fn workerSessionId(allocator: std.mem.Allocator, db: *pabrikcore.sqlite.SqliteBackend, worker_id: []const u8) ?[]const u8 {
+fn workerSessionId(allocator: std.mem.Allocator, db: *pabrikcore.database.Db, worker_id: []const u8) ?[]const u8 {
     if (worker_id.len == 0) return null;
     var q = db.query(allocator, "SELECT session_id FROM worker WHERE id = ?", &[_][]const u8{worker_id}) catch return null;
     defer q.deinit();
@@ -600,8 +600,8 @@ test "parseChannels: trims whitespace around tokens" {
 // The bus fans out by family routing key, so the fan-out must resolve which
 // session an event is about before deciding whether a client may see it.
 
-fn testDb(alloc: std.mem.Allocator) !pabrikcore.sqlite.SqliteBackend {
-    var db: pabrikcore.sqlite.SqliteBackend = .{};
+fn testDb(alloc: std.mem.Allocator) !pabrikcore.database.Db {
+    var db: pabrikcore.database.Db = .{};
     try db.init(std.testing.io, ":memory:");
     try db.exec(alloc, "CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT)", &.{});
     try db.exec(alloc, "CREATE TABLE worker (id TEXT PRIMARY KEY, session_id TEXT)", &.{});

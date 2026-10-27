@@ -6,6 +6,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const host_fixture = @import("helpers").host_fixture;
 
 const testing = std.testing;
@@ -148,7 +149,7 @@ pub const SessionRootError = error{
 /// `cwd`.
 pub fn resolveSessionRoot(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) SessionRootError![]u8 {
     var rows = db.query(
@@ -513,7 +514,7 @@ test "resolveInsideRoot: a directory link that stays inside the root is allowed"
 // ── resolveSessionRoot (in-memory sqlite) ──────────────────────────────
 
 const TestDb = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 
     fn deinit(self: *TestDb) void {
@@ -527,7 +528,7 @@ fn setupDb() !TestDb {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     // Column nullability matches production (Migration 046): both columns are
@@ -544,7 +545,7 @@ fn setupDb() !TestDb {
     return .{ .db = db, .threaded = threaded };
 }
 
-fn seedSession(db: *sqlite.SqliteBackend, id: []const u8, cwd: []const u8, worktree: []const u8) !void {
+fn seedSession(db: *database.Db, id: []const u8, cwd: []const u8, worktree: []const u8) !void {
     try db.exec(testing.allocator, "INSERT INTO sessions (id, name, cwd, git_worktree_cwd) VALUES (?, ?, ?, ?)", &.{ id, id, cwd, worktree });
 }
 

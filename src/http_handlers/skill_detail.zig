@@ -63,7 +63,7 @@ const SkillDetailMissingResponse = struct {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: SkillDetailInput,
 ) SkillDetailError!SkillDetailOutput {
     if (input.workspace_id.len == 0 or input.skill_name.len == 0) {
@@ -102,7 +102,7 @@ fn useCase(
 /// path; a hit must not pay for it.
 fn availableNames(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     workspace_id: []const u8,
 ) SkillDetailError![]skills_store.SkillRow {
     // Mapped by hand for the same reason as `useCase` above: this
@@ -205,11 +205,12 @@ comptime {
 // ─── Tests ──────────────────────────────────────────────────────────────
 
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const testing = std.testing;
 const migration = @import("../migrations/migration.zig");
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -217,7 +218,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

@@ -6,6 +6,7 @@ const isWorkerCancelled = @import("is_worker_cancelled.zig").isWorkerCancelled;
 
 const logger_mod = pabrikcore.loggermod;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const IsWorkerCancelledInput = @import("is_worker_cancelled.zig").IsWorkerCancelledInput;
 
 // Portable sleep helper. We can't use std.c.timespec directly because it's
@@ -40,7 +41,7 @@ fn sleepChunk(chunk_ms: u32) void {
 pub const RetryDelayMsInput = struct {
     allocator: std.mem.Allocator,
     delay_ms: u32,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     io: std.Io,
     logger: *logger_mod.Logger,
@@ -93,14 +94,14 @@ pub fn retryDelayMs(
 }
 
 fn setupDb() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try db.exec(alloc, "CREATE TABLE workers (id TEXT PRIMARY KEY)", &.{});

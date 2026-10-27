@@ -9,7 +9,7 @@ const Scheduler = @import("../ai_workflow/tui/routines/Scheduler.zig");
 /// session-create tasks. No thread is spawned.
 pub fn start(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     di: *pabrikcore.App,
     io: std.Io,
 ) !void {
@@ -18,7 +18,7 @@ pub fn start(
         struct {
             fn run(
                 alloc: std.mem.Allocator,
-                database: *pabrikcore.sqlite.SqliteBackend,
+                database: *pabrikcore.database.Db,
                 di_inner: *pabrikcore.App,
                 io_inner: std.Io,
             ) void {

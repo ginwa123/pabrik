@@ -5315,7 +5315,7 @@ test "web_search: an empty-string key is normalised to absent, never stored" {
     );
     defer freeTestProviders(&providers, alloc);
 
-    // `SqliteBackend.exec` binds "" as SQL NULL, so a blank credential is
+    // `Backend.exec` binds "" as SQL NULL, so a blank credential is
     // the exact shape that survives a JSON round-trip while meaning unset.
     // Normalising it here keeps `isUsable` a single rule.
     try std.testing.expectEqual(@as(?[]const u8, null), providers.get("x").?.key);

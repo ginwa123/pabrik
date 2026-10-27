@@ -5,6 +5,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const logger_mod = pabrikcore.loggermod;
 const llm_history = pabrikcore.llm_history;
 const ai_workflow = @import("workflow.zig");
@@ -39,7 +40,7 @@ pub const BatchJob = struct {
 pub const BatchArgs = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     logger: *logger_mod.Logger,
     /// The session the batch is attributed to (progress events, child parent id).
     parent_sess_id: []const u8,
@@ -117,7 +118,7 @@ pub fn validateJobs(jobs: []const BatchJob) !void {
 const SubAgentThreadArgs = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
-    sqlite_db: *sqlite.SqliteBackend,
+    sqlite_db: *database.Db,
     logger: *logger_mod.Logger,
     parent_sess_id: []const u8,
     agent_name: []const u8,
@@ -578,7 +579,7 @@ test "runBatch enforces the cap before touching the singleton" {
 
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(threaded.io(), ":memory:");
 

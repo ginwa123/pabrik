@@ -132,12 +132,12 @@ pub fn sessionPinHandler(
 
 const testing = std.testing;
 
-fn setupPinDb() !struct { db: pabrikcore.sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+fn setupPinDb() !struct { db: pabrikcore.database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: pabrikcore.sqlite.SqliteBackend = .{};
+    var db: pabrikcore.database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try db.exec(alloc,

@@ -22,7 +22,7 @@ const UserConfigHolder = struct {
 /// no workspace, or a workspace that saved none.
 pub fn resolve(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     session_id: []const u8,
 ) ?Providers {
     const di = pabrikcore.getSingleton() catch return null;
@@ -36,7 +36,7 @@ pub fn resolve(
 
 fn resolveForSessionWorkspace(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     owner: []const u8,
     session_id: []const u8,
 ) ?Providers {
@@ -67,7 +67,7 @@ pub fn providersFrom(allocator: std.mem.Allocator, content: []const u8) ?Provide
 /// workspace row is the source.
 pub fn resolveForOwner(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     owner: []const u8,
 ) ?Providers {
     const raw = pabrikcore.user_config_store.loadRaw(allocator, db, owner) catch return null;
@@ -80,10 +80,11 @@ pub fn resolveForOwner(
 
 const testing = std.testing;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const migration = @import("../migrations/migration.zig");
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -91,7 +92,7 @@ fn setupDb() !TestCtx {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
     var manager = migration.MigrationManager.init(alloc, &db);

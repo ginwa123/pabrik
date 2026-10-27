@@ -25,7 +25,7 @@ pub const SecretsDeleteInput = struct {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: SecretsDeleteInput,
 ) SecretsDeleteError!void {
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;
@@ -109,11 +109,12 @@ pub fn secretsDeleteHandler(
 // ─── Tests ──────────────────────────────────────────────────────────────
 
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const testing = std.testing;
 const migration = @import("../migrations/migration.zig");
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -121,7 +122,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

@@ -264,10 +264,10 @@ fn errorJSON(allocator: std.mem.Allocator, msg: []const u8) ![]u8 {
 /// Resolve the calling session's workspace.
 fn resolveScope(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     caller_session_id: []const u8,
 ) !?[]u8 {
-    // Rejected BEFORE any DB access: `SqliteBackend.exec` binds a
+    // Rejected BEFORE any DB access: `Backend.exec` binds a
     // zero-length slice as SQL NULL, so querying with "" would not be a
     // harmless no-op.
     if (caller_session_id.len == 0) return null;
@@ -297,7 +297,7 @@ fn scopeErrorJSON(allocator: std.mem.Allocator, caller_session_id: []const u8) !
 /// embeds. Caller owns the returned slice and must free it.
 pub fn executeAddDocument(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     caller_session_id: []const u8,
     input: AddDocumentInput,
 ) ![]const u8 {
@@ -329,7 +329,7 @@ pub fn executeAddDocument(
 /// embeds. Caller owns the returned slice and must free it.
 pub fn executeEditDocument(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     caller_session_id: []const u8,
     input: EditDocumentInput,
 ) ![]const u8 {
@@ -372,7 +372,7 @@ pub fn executeEditDocument(
 /// embeds. Caller owns the returned slice and must free it.
 pub fn executeDeleteDocument(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     caller_session_id: []const u8,
     input: DeleteDocumentInput,
 ) ![]const u8 {
@@ -418,7 +418,7 @@ pub fn executeDeleteDocument(
 }
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -428,7 +428,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -622,7 +622,7 @@ test "add_document: two workspaces writing the same title never collide or leak"
 // ─── edit_document ──────────────────────────────────────────────────────
 
 /// Create a document in ws_1 and return its id (caller frees).
-fn seedDoc(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, title: []const u8, content: []const u8) ![]u8 {
+fn seedDoc(alloc: std.mem.Allocator, db: *database.Db, title: []const u8, content: []const u8) ![]u8 {
     const out = try executeAddDocument(alloc, db, "s1", .{ .title = title, .content = content });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
@@ -1196,11 +1196,12 @@ pub fn execSearchDocuments(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecRe
 // ─── Tests ──────────────────────────────────────────────────────────────
 
 const exec_sqlite = exec_pabrikcore.sqlite;
+const database = exec_pabrikcore.database;
 const exec_testing = std.testing;
 const exec_migration = @import("../../../migrations/migration.zig");
 
 const exec_TestCtx = struct {
-    db: exec_sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -1208,7 +1209,7 @@ fn exec_setupDb() !exec_TestCtx {
     var threaded = std.Io.Threaded.init(exec_testing.allocator, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: exec_sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -1240,7 +1241,7 @@ fn exec_setupDb() !exec_TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
-fn makeTestCtx(allocator: std.mem.Allocator, db: *exec_sqlite.SqliteBackend, session_id: []const u8) ToolExecContext {
+fn makeTestCtx(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) ToolExecContext {
     var dummy_f32: f32 = 0.0;
     var dummy_bool: bool = false;
     return .{
@@ -1694,7 +1695,7 @@ test "execDeleteDocument: an unresolvable session surfaces success=false" {
 // ─── search_documents ───────────────────────────────────────────────────
 
 /// Create a document in ws_1 through the real tool path and return its id.
-fn exec_seedDoc(alloc: std.mem.Allocator, db: *exec_sqlite.SqliteBackend, title: []const u8, content: []const u8) ![]u8 {
+fn exec_seedDoc(alloc: std.mem.Allocator, db: *database.Db, title: []const u8, content: []const u8) ![]u8 {
     const args = try std.json.Stringify.valueAlloc(alloc, .{ .title = title, .content = content }, .{});
     defer alloc.free(args);
     const create = try execAddDocument(makeTestCtx(alloc, db, "s1"), fakeToolCall("add_document", args));
@@ -1706,12 +1707,12 @@ fn exec_seedDoc(alloc: std.mem.Allocator, db: *exec_sqlite.SqliteBackend, title:
 }
 
 /// Seed a document whose id the test does not need to keep.
-fn seedAnon(alloc: std.mem.Allocator, db: *exec_sqlite.SqliteBackend, title: []const u8, content: []const u8) !void {
+fn seedAnon(alloc: std.mem.Allocator, db: *database.Db, title: []const u8, content: []const u8) !void {
     const id = try exec_seedDoc(alloc, db, title, content);
     alloc.free(id);
 }
 
-fn runSearch(alloc: std.mem.Allocator, db: *exec_sqlite.SqliteBackend, session: []const u8, args: []const u8) !Envelope {
+fn runSearch(alloc: std.mem.Allocator, db: *database.Db, session: []const u8, args: []const u8) !Envelope {
     const res = try execSearchDocuments(makeTestCtx(alloc, db, session), fakeToolCall("search_documents", args));
     // `parseEnvelope` dupes everything it needs, so the raw output can go.
     defer alloc.free(res.output);
@@ -2134,7 +2135,7 @@ test "execSearchDocuments: deleting what a search returned makes the next search
 // ─── Registration + default seeding ───────────────────────────────────────
 
 /// Is `name` among the rows `seedDefaultAgentTools` wrote for `agent_id`?
-fn seededFor(db: *exec_sqlite.SqliteBackend, agent_id: []const u8, name: []const u8) !bool {
+fn seededFor(db: *database.Db, agent_id: []const u8, name: []const u8) !bool {
     const alloc = exec_testing.allocator;
     var q = try db.query(alloc, "SELECT tool_name FROM agent_config_tools WHERE config_id = ?", &.{agent_id});
     defer q.deinit();

@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
@@ -11,7 +11,7 @@ pub const Migration041AddPerformanceIndexes = struct {
     pub const version: u32 = 41;
     pub const name = "add_performance_indexes";
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         // Hot read paths in llm_history.zig +
         // http_handlers/queue_messages_get.zig +
         // http_handlers/worker_list.zig + http_handlers/workspaces_list.zig.

@@ -60,7 +60,7 @@ pub const SystemPromptUpdateOutput = struct {
 /// requested fields and SELECT-refetch the row.
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: SystemPromptUpdateInput,
 ) SystemPromptUpdateError!SystemPromptUpdateOutput {
     if (input.agent_id.len == 0 or input.prompt_id.len == 0) {
@@ -149,11 +149,12 @@ pub fn agentSystemPromptUpdateHandler(
 // tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
+const database = @import("pabrikcore").database;
 const testing = std.testing;
 const Migration116 = @import("../migrations/migration.zig").Migration116UnifyAgentConfigTables;
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -161,7 +162,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -289,7 +290,7 @@ test "useCase: PATCH with empty-string content is legal (COALESCE binds '' not N
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Regression: SqliteBackend.exec binds "" as SQL NULL, which would
+    // Regression: Backend.exec binds "" as SQL NULL, which would
     // trip content's NOT NULL constraint without the COALESCE(?, '')
     // wrapper in the UPDATE SET clause.
     const output = try useCase(alloc, &ctx.db, .{

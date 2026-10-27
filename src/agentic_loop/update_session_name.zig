@@ -2,6 +2,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const event_bus_mod = pabrikcore.event_bus;
 
 const onEventSendSessions = @import("sse_on_event_send_session.zig").onEventSendSessions;
@@ -9,7 +10,7 @@ const onEventSendSessions = @import("sse_on_event_send_session.zig").onEventSend
 /// Update session name
 pub fn updateSessionName(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
     new_name: []const u8,
     event_bus: ?*event_bus_mod.EventBus,
@@ -38,7 +39,7 @@ pub fn updateSessionName(
 
 fn getSession(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     id: []const u8,
 ) !?SessionTableInfo {
     const sql = "SELECT s.id, s.name, s.status, COALESCE(s.cwd, ''), COALESCE(s.created_at, ''), COALESCE(s.updated_at, ''), COALESCE(s.selected_profile_model, ''), COALESCE(s.git_worktree_cwd, '') FROM sessions s WHERE s.id = ?";

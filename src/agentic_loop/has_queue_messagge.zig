@@ -2,11 +2,12 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const testing = std.testing;
 
 pub fn hasQueuedMessages(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) bool {
     const sql = "SELECT 1 FROM session_queue_messages WHERE session_id = ? LIMIT 1";
@@ -24,12 +25,12 @@ pub fn hasQueuedMessages(
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
-fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try db.exec(alloc,

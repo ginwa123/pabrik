@@ -109,6 +109,7 @@ const tool_eligibility = @import("../../../agentic_loop/tool_eligibility.zig");
 const llm_history = @import("../../../agentic_loop/llm_history.zig");
 const migration = @import("../../../migrations/migration.zig");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const config_mod = pabrikcore.config;
 const ToolExecContext = exec_tools.ToolExecContext;
 const ToolExecResult = exec_tools.ToolExecResult;
@@ -206,7 +207,7 @@ pub fn execUsedTools(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
 }
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -215,7 +216,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -231,7 +232,7 @@ fn setupDb() !TestCtx {
 /// `is_sub_agent` selects the main-agent-only strip.
 fn makeTestCtx(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     cfg: *const config_mod.LlmConfig,
     allowed_tools: []const u8,
     is_sub_agent: bool,

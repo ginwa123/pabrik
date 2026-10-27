@@ -41,7 +41,7 @@ pub const SecretsUpdateOutput = struct {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: SecretsUpdateInput,
 ) SecretsUpdateError!SecretsUpdateOutput {
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;
@@ -93,7 +93,7 @@ fn useCase(
 /// holds a credential.
 fn readRow(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     workspace_id: []const u8,
     secret_id: []const u8,
 ) SecretsUpdateError!secrets_store.SecretRow {
@@ -190,11 +190,12 @@ pub fn secretsUpdateHandler(
 // ─── Tests ──────────────────────────────────────────────────────────────
 
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const testing = std.testing;
 const migration = @import("../migrations/migration.zig");
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -202,7 +203,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

@@ -5,6 +5,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const llm_history = pabrikcore.llm_history;
 const ask_user_mod = pabrikcore.ask_user;
 const wrapToolOutput = @import("../modules/agent/tools/tools_wrap_output.zig").wrapToolOutput;
@@ -44,7 +45,7 @@ pub fn newQuestionId(allocator: std.mem.Allocator, io: std.Io) ![]u8 {
     return std.fmt.allocPrint(allocator, "q_{d}", .{std.Io.Timestamp.now(io, .real).nanoseconds});
 }
 
-/// `SqliteBackend.exec` binds every argument as a string; SQLite's column
+/// `Backend.exec` binds every argument as a string; SQLite's column
 /// affinity converts it for INTEGER columns. Keeping this in one place means
 /// no call site has to remember the cast.
 fn intArg(allocator: std.mem.Allocator, v: i64) ![]u8 {
@@ -54,7 +55,7 @@ fn intArg(allocator: std.mem.Allocator, v: i64) ![]u8 {
 pub const InsertQuestionInput = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     tool_call_id: []const u8,
     llm_history_id: []const u8,
@@ -126,7 +127,7 @@ fn rowToQuestion(row: anytype, allocator: std.mem.Allocator) !PendingQuestion {
 /// Look up by question id. Caller frees via `deinit`.
 pub fn getPendingQuestion(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     question_id: []const u8,
 ) !?PendingQuestion {
     const sql = SELECT_COLUMNS ++ " WHERE id = ? LIMIT 1";
@@ -143,7 +144,7 @@ pub fn getPendingQuestion(
 /// has the tool row in hand (the card's `tool_call_id`).
 pub fn getPendingQuestionByToolCall(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     tool_call_id: []const u8,
 ) !?PendingQuestion {
@@ -162,7 +163,7 @@ pub fn getPendingQuestionByToolCall(
 pub fn markQuestionStatus(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     question_id: []const u8,
     status: Status,
     answer: ?[]const u8,
@@ -195,7 +196,7 @@ pub fn markQuestionStatus(
 pub fn markAbandonedForSession(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !usize {
     const pending = Status.pending.to_str();
@@ -238,7 +239,7 @@ pub fn markAbandonedForSession(
 /// run.
 pub fn hasPendingQuestion(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) bool {
     const sql = "SELECT 1 FROM session_pending_question WHERE session_id = ? AND status = 'pending' LIMIT 1";
@@ -257,7 +258,7 @@ pub fn hasPendingQuestion(
 pub fn abandonPendingQuestions(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !usize {
     // `listRecentQuestions` returns pending rows (always) plus rows resolved
@@ -300,12 +301,12 @@ pub fn abandonPendingQuestions(
 pub fn listRecentQuestions(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]PendingQuestion {
     const cutoff = try intArg(allocator, @intCast(std.Io.Timestamp.now(io, .real).nanoseconds - std.time.ns_per_min));
     defer allocator.free(cutoff);
-    // `SqliteBackend` binds every argument as TEXT, so a bare `?` next to an
+    // `Backend` binds every argument as TEXT, so a bare `?` next to an
     // INTEGER expression has no column affinity on either side — and SQLite
     // orders INTEGER before TEXT, making `resolved_at >= '1789…'` always
     const sql = SELECT_COLUMNS ++
@@ -332,7 +333,7 @@ pub fn listRecentQuestions(
 pub const RewriteToolResultInput = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     /// The `llm_history` row to overwrite (the `ask_user` tool result).
     llm_history_id: []const u8,
@@ -345,7 +346,7 @@ pub const RewriteToolResultInput = struct {
 /// Read a row's `response_content` (owned). Null when the row is gone.
 fn readRowContent(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     row_id: []const u8,
 ) !?[]u8 {
     var rows = try db.query(
@@ -403,7 +404,7 @@ pub fn rewriteToolResultRow(input: RewriteToolResultInput) !void {
 /// Emit the `llm_full` frame for one `llm_history` row.
 fn emitRowById(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     id: []const u8,
 ) void {
@@ -486,7 +487,7 @@ pub const SessionRunFields = struct {
 /// `start_agent.zig` step 3 / `wakeSessionForCompletion`.
 pub fn loadSessionRunFields(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !SessionRunFields {
     var rows = try db.query(
@@ -547,12 +548,12 @@ pub fn resumeSession(
 // Tests
 // ============================================================================
 
-fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
+fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     // The Migration 088 shape: `answer` / `resolved_at` NULL-able on purpose.

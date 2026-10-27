@@ -14,7 +14,7 @@ pub const MAX_FILE_BYTES_OOM_SAFETY: usize = 100 * 1024 * 1024;
 /// session doesn't exist (no workspace_item_tasks row).
 fn resolveWorkspaceItemId(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]u8 {
     var q = db.query(allocator,
@@ -58,7 +58,7 @@ fn readFileContents(
 /// OR isn't an agent.
 fn isAgentItem(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     workspace_item_id: []const u8,
 ) !bool {
     if (workspace_item_id.len == 0) return false;
@@ -79,7 +79,7 @@ fn isAgentItem(
 pub fn makeAgentKnowledge(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]const u8 {
     if (session_id.len == 0) return try allocator.dupe(u8, "");
@@ -175,10 +175,11 @@ const testing = std.testing;
 // Use a fresh alias for the test section to avoid duplicate-struct-
 // member shadowing (file-level `const sqlite` already exists).
 const test_sqlite = @import("pabrikcore").sqlite;
+const database = @import("pabrikcore").database;
 const Migration116 = @import("../migrations/migration.zig").Migration116UnifyAgentConfigTables;
 
 const TestCtx = struct {
-    db: test_sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -187,7 +188,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: test_sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try db.exec(alloc,

@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 const addColumnIfMissing = common.addColumnIfMissing;
 
 /// Migration 111: the `kanban_task_dependencies` edge table, plus
@@ -37,7 +37,7 @@ pub const Migration111AddKanbanTaskDependencies = struct {
         \\        GROUP BY kc3.workspace_item_id HAVING SUM(kc3.is_done) = 0)
     ;
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         try db.exec(allocator,
             \\CREATE TABLE IF NOT EXISTS kanban_task_dependencies (
             \\    task_id TEXT NOT NULL,
@@ -81,7 +81,7 @@ pub const Migration111AddKanbanTaskDependencies = struct {
 /// table but does not report which branch it took, and the backfill needs that
 /// bit.
 fn columnExists(
-    db: *SqliteBackend,
+    db: *Backend,
     allocator: std.mem.Allocator,
     table: []const u8,
     column: []const u8,

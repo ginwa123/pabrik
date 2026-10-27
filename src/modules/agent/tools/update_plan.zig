@@ -153,7 +153,7 @@ pub const update_plan_tool = AgentTool{
 /// `old_text` set → TEXT REPLACE of one snippet; otherwise → FULL REWRITE.
 pub fn executeUpdatePlan(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     input: UpdatePlanInput,
 ) ![]const u8 {
@@ -187,7 +187,7 @@ pub fn executeUpdatePlan(
 /// plan. Every other line of the plan is left exactly as it was.
 fn executeTextReplace(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     input: UpdatePlanInput,
 ) ![]const u8 {
@@ -319,7 +319,7 @@ const migration = @import("../../../migrations/migration.zig");
 
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -328,7 +328,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -710,6 +710,7 @@ const exec_pabrikcore = @import("pabrikcore");
 const tools = @import("../../../agentic_loop/tools.zig");
 const exec_migration = @import("../../../migrations/migration.zig");
 const exec_sqlite = exec_pabrikcore.sqlite;
+const database = exec_pabrikcore.database;
 const exec_session_plan = @import("../../../agentic_loop/session_plan.zig");
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
@@ -764,7 +765,7 @@ pub fn execUpdatePlan(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult 
 }
 
 const exec_TestCtx = struct {
-    db: exec_sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -773,7 +774,7 @@ fn exec_setupDb() !exec_TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: exec_sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -785,7 +786,7 @@ fn exec_setupDb() !exec_TestCtx {
 }
 
 /// Build a `ToolExecContext` that the exec wrapper can use.
-fn makeTestCtx(allocator: std.mem.Allocator, db: *exec_sqlite.SqliteBackend) ToolExecContext {
+fn makeTestCtx(allocator: std.mem.Allocator, db: *database.Db) ToolExecContext {
     var dummy_f32: f32 = 0.0;
     var dummy_bool: bool = false;
     return .{

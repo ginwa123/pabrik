@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
@@ -11,7 +11,7 @@ pub const Migration054MakeSessionQueueMessageNullable = struct {
     pub const version: u32 = 54;
     pub const name = "make_session_queue_messages_message_nullable";
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         // 1. Detect whether image_url column exists (added in Migration 037).
         const has_image_url = blk: {
             var q = try db.query(allocator,

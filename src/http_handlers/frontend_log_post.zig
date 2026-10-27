@@ -4,6 +4,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const http_response = @import("http_response.zig");
 
 /// JSON request body for `POST /api/logs`.
@@ -68,7 +69,7 @@ const VALID_KINDS = [_][]const u8{
 /// enum values. 2.
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     body: FrontendLogBody.FrontendLogEvent,
 ) FrontendLogPostError!void {
     if (body.level.len == 0) return error.MissingLevel;
@@ -298,7 +299,7 @@ const testing = std.testing;
 /// Mirrors the `setupDb063` helper in `migration.zig` and the
 /// `routines/Scheduler.zig` pattern.
 fn setupDbWithLogs() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 } {
     const alloc = testing.allocator;
@@ -306,7 +307,7 @@ fn setupDbWithLogs() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

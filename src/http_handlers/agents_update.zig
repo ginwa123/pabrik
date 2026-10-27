@@ -62,7 +62,7 @@ pub const AgentUpdateOutput = struct {
 /// and is of type `'agent'`.
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: AgentUpdateInput,
 ) AgentUpdateError!AgentUpdateOutput {
     if (input.workspace_id.len == 0 or input.item_id.len == 0) {
@@ -162,11 +162,12 @@ pub fn agentsUpdateHandler(
 // tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
+const database = @import("pabrikcore").database;
 const testing = std.testing;
 const Migration116 = @import("../migrations/migration.zig").Migration116UnifyAgentConfigTables;
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -174,7 +175,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

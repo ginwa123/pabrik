@@ -47,7 +47,7 @@ pub const WorkspaceGetData = struct {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     id: []const u8,
     owner: []const u8,
     mode: runtime_mode.Mode,

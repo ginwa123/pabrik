@@ -66,7 +66,7 @@ pub const WorkspaceItemsCreateKanbanResult = []const u8; // pre-serialized JSON
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: WorkspaceItemsCreateKanbanInput,
 ) WorkspaceItemsCreateKanbanError!WorkspaceItemsCreateKanbanResult {
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;
@@ -266,7 +266,7 @@ pub fn workspaceItemsCreateKanbanHandler(
 /// Re-read the `position` of a freshly-INSERTed workspace_item.
 fn readInsertedPosition(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     item_id: []const u8,
 ) i64 {
     var q = db.query(

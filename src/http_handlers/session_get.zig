@@ -46,7 +46,7 @@ pub const SessionDetailJson = struct {
 /// Returns null for an unknown session id (handler → 404).
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     session_id: []const u8,
 ) SessionGetError!?[]const u8 {
     // Empty id: fail closed without touching the resolver (it also guards
@@ -154,7 +154,7 @@ pub fn sessionGetHandler(
 const testing = std.testing;
 
 const TestCtx = struct {
-    db: pabrikcore.sqlite.SqliteBackend,
+    db: pabrikcore.database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -163,7 +163,7 @@ fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: pabrikcore.sqlite.SqliteBackend = .{};
+    var db: pabrikcore.database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

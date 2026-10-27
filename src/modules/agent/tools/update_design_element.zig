@@ -6,6 +6,7 @@ const schemas = @import("schemas.zig");
 const AgentTool = schemas.AgentTool;
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const design_model = pabrikcore.ai_mod.design_model;
 const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
@@ -293,7 +294,7 @@ fn validateElementIdShape(allocator: std.mem.Allocator, element_id: []const u8) 
 /// Execute the `update_element` tool. Returns a JSON string for the LLM.
 pub fn executeUpdateElementToString(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     input: UpdateElementInput,
 ) ![]u8 {
     // 0. Input validation (shape only — DB validation runs after).
@@ -399,7 +400,7 @@ test "errorJSON on missing field returns an error object" {
 /// one rectangle element named "card". Returns the DB handle + the
 /// element_id so tests can call update_element on it.
 fn setupDbWithElement() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
     item_id: []u8,
     page_id: []u8,
@@ -409,7 +410,7 @@ fn setupDbWithElement() !struct {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 

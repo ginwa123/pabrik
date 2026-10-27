@@ -4,6 +4,7 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const process_status = @import("helpers").process_status;
 const logger_mod = pabrikcore.loggermod;
 const event_bus_mod = pabrikcore.event_bus;
@@ -21,7 +22,7 @@ const testing = std.testing;
 pub const CleanupStaleBackgroundProcessInput = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     logger: ?*logger_mod.Logger,
     event_bus: ?*event_bus_mod.EventBus,
 };
@@ -58,7 +59,7 @@ pub fn freeNotifiedSessions(allocator: std.mem.Allocator, result: *CleanupResult
 pub const NotifySingleBackgroundCompletionArgs = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     logger: ?*logger_mod.Logger,
     event_bus: ?*event_bus_mod.EventBus,
     session_id: []const u8,
@@ -608,7 +609,7 @@ pub fn handle(ctx: ?*anyopaque, now_unix: i64) void {
 // tests (delete_worker.zig, cleanup_stale_worker.zig).
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 
     fn deinit(self: *TestCtx) void {
@@ -623,7 +624,7 @@ fn setupCtx() !TestCtx {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -642,7 +643,7 @@ fn setupCtx() !TestCtx {
 /// Insert a background-process row. `pid` is passed as an `i64` so SQLite can
 /// coerce it to INTEGER (matching the production column type).
 fn seedRow(
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     alloc: std.mem.Allocator,
     session_id: []const u8,
     pid: i64,
@@ -662,7 +663,7 @@ fn seedRow(
 /// the notify-then-delete tests, which need a real temp log file or a
 /// deliberately missing path).
 fn seedRowFull(
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     alloc: std.mem.Allocator,
     session_id: []const u8,
     pid: i64,
@@ -683,7 +684,7 @@ fn seedRowFull(
 /// Fetch the single queue message for a session. Errors with
 /// `error.RowMissing` when the notify step never queued one.
 fn queueMessageForSession(
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     alloc: std.mem.Allocator,
     session_id: []const u8,
 ) ![]u8 {
@@ -696,7 +697,7 @@ fn queueMessageForSession(
 
 /// Count rows for a given session_id. Returns 0 when none.
 fn rowCountForSession(
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     arena_alloc: std.mem.Allocator,
     session_id: []const u8,
 ) !usize {
@@ -958,7 +959,7 @@ test "cleanupStaleBackgroundProcesses returns the DB error when the session_back
     defer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     try db.init(io, ":memory:");
     // NO CREATE TABLE — the query will fail with "no such table".
@@ -971,7 +972,7 @@ test "cleanupStaleBackgroundProcesses returns the DB error when the session_back
         .event_bus = null,
     });
 
-    // We don't pin the exact error variant — SqliteBackend maps
+    // We don't pin the exact error variant — Backend maps
     // missing-table to PrepareFailed (Sqlite.zig:568) which the helper
     // propagates verbatim.
     try testing.expectError(error.PrepareFailed, result);

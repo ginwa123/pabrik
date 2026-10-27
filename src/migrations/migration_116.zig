@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 
 /// Migration 116 — ONE agent-config table set for the three item families.
 /// The twelve old per-item-type tables collapse into four; `item_type` on
@@ -27,7 +27,7 @@ pub const Migration116UnifyAgentConfigTables = struct {
     };
 
     /// Does a table with this name exist in the schema?
-    fn tableExists(db: *SqliteBackend, allocator: std.mem.Allocator, table_name: []const u8) bool {
+    fn tableExists(db: *Backend, allocator: std.mem.Allocator, table_name: []const u8) bool {
         var q = db.query(
             allocator,
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
@@ -41,12 +41,12 @@ pub const Migration116UnifyAgentConfigTables = struct {
 
     /// Run `copy_sql` only when `source_table` exists. A fresh install has
     /// none of the old tables — the copy is then a no-op, not an error.
-    fn copyFrom(db: *SqliteBackend, allocator: std.mem.Allocator, source_table: []const u8, copy_sql: []const u8) !void {
+    fn copyFrom(db: *Backend, allocator: std.mem.Allocator, source_table: []const u8, copy_sql: []const u8) !void {
         if (!tableExists(db, allocator, source_table)) return;
         try db.exec(allocator, copy_sql, &[_][]const u8{});
     }
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         // ─── The four unified tables ───────────────────────────────────
         try db.exec(allocator,
             \\CREATE TABLE IF NOT EXISTS agent_configs (
@@ -200,14 +200,14 @@ pub const Migration116UnifyAgentConfigTables = struct {
 const testing = std.testing;
 
 const TestCtx = struct {
-    db: SqliteBackend,
+    db: Backend,
     threaded: std.Io.Threaded,
 };
 
 fn setupDb(alloc: std.mem.Allocator) !TestCtx {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
-    var db: SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
     try db.exec(alloc,
@@ -216,7 +216,7 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
-fn countRows(alloc: std.mem.Allocator, db: *SqliteBackend, sql: []const u8) !i64 {
+fn countRows(alloc: std.mem.Allocator, db: *Backend, sql: []const u8) !i64 {
     var q = try db.query(alloc, sql, &[_][]const u8{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;

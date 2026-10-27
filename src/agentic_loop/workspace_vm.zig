@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const sqlite = @import("pabrikcore").sqlite;
+const database = @import("pabrikcore").database;
 const runtime_mode = @import("../runtime_mode.zig");
 
 /// What a refusal says when a workspace has no VM to run in.
@@ -24,7 +25,7 @@ pub fn runsInVm(mode: runtime_mode.Mode, stored_is_vm: bool) bool {
 /// The `is_vm` flag of a workspace row. A row that is not there, or a schema
 /// without the column, answers true: before Migration 115 every saas
 /// workspace was a VM workspace.
-pub fn storedIsVm(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, workspace_id: []const u8) bool {
+pub fn storedIsVm(allocator: std.mem.Allocator, db: *database.Db, workspace_id: []const u8) bool {
     var q = db.query(allocator, "SELECT is_vm FROM workspaces WHERE id = ?", &[_][]const u8{workspace_id}) catch return true;
     defer q.deinit();
     const row = q.next() catch return true;
@@ -35,14 +36,14 @@ pub fn storedIsVm(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, works
 }
 
 /// Whether this process may put the workspace in a VM.
-pub fn isVmWorkspace(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, workspace_id: []const u8) bool {
+pub fn isVmWorkspace(allocator: std.mem.Allocator, db: *database.Db, workspace_id: []const u8) bool {
     return runsInVm(runtime_mode.currentMode(), storedIsVm(allocator, db, workspace_id));
 }
 
 const testing = std.testing;
 
-fn setupDb(alloc: std.mem.Allocator) !sqlite.SqliteBackend {
-    var db: sqlite.SqliteBackend = .{};
+fn setupDb(alloc: std.mem.Allocator) !database.Db {
+    var db: database.Db = .{};
     errdefer db.deinit();
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
@@ -76,7 +77,7 @@ test "a workspace the server has no row for is not one it may refuse" {
 
 test "a schema without the column keeps the pre-Migration-115 behaviour" {
     const alloc = testing.allocator;
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     defer db.deinit();
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();

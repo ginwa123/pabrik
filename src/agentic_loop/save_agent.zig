@@ -1,12 +1,13 @@
 const std = @import("std");
 const tree1_mod = @import("pabrikcore");
 const sqlite = tree1_mod.sqlite;
+const database = tree1_mod.database;
 const logger_mod = tree1_mod.loggermod;
 
 /// Check if an agent is already loaded in the database
 pub fn isLoaded(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     agent_name: []const u8,
 ) !bool {
@@ -26,7 +27,7 @@ pub fn isLoaded(
 /// Save a loaded agent to the database for persistence
 pub fn SaveAgent(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     logger: *logger_mod.Logger,
     session_id: []const u8,
     agent_name: []const u8,

@@ -29,7 +29,7 @@ pub const DesignElementHtmlResponse = struct { html: []const u8 };
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     io: std.Io,
     element_id: []const u8,
 ) DesignElementHtmlGetError![]u8 {

@@ -13,7 +13,7 @@ const workspace_settings_store = @import("workspace_settings_store.zig");
 /// directly.
 pub fn resolve(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     session_id: []const u8,
 ) ?config_mod.SkillEvalsConfig {
     const di = pabrikcore.getSingleton() catch return null;
@@ -27,7 +27,7 @@ pub fn resolve(
 
 fn resolveForSessionWorkspace(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     owner: []const u8,
     session_id: []const u8,
 ) ?config_mod.SkillEvalsConfig {
@@ -42,7 +42,7 @@ fn resolveForSessionWorkspace(
 /// carries none.
 pub fn resolveFromWorkspaceRow(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     owner: []const u8,
     workspace_id: []const u8,
 ) ?config_mod.SkillEvalsConfig {
@@ -67,7 +67,7 @@ pub fn skillEvalsFrom(allocator: std.mem.Allocator, content: []const u8) ?config
 /// resolves here — everywhere else the workspace row is the source.
 pub fn resolveForOwner(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     owner: []const u8,
 ) ?config_mod.SkillEvalsConfig {
     const cfg = session_llm_config.forOwner(allocator, db, owner) orelse return null;
@@ -83,10 +83,11 @@ pub fn resolveForOwner(
 
 const testing = std.testing;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const migration = @import("../migrations/migration.zig");
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -94,7 +95,7 @@ fn setupDb() !TestCtx {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
     var manager = migration.MigrationManager.init(alloc, &db);
@@ -104,7 +105,7 @@ fn setupDb() !TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
-fn insertUser(db: *sqlite.SqliteBackend, id: []const u8, config_json: ?[]const u8) !void {
+fn insertUser(db: *database.Db, id: []const u8, config_json: ?[]const u8) !void {
     try db.exec(testing.allocator,
         \\INSERT INTO users (id, email, password_hash, config_json)
         \\VALUES (?, ?, 'x', ?)

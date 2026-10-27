@@ -11,7 +11,7 @@ const workspace_scope = @import("workspace_scope.zig");
 /// singleton should be read instead.
 pub fn forSession(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     session_id: []const u8,
 ) ?*config_mod.LlmConfig {
     const di = pabrikcore.getSingleton() catch return null;
@@ -48,7 +48,7 @@ pub fn forSession(
 pub fn mergedConfigTextFor(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     environment: ?*const std.process.Environ.Map,
     auth_enabled: bool,
     owner: []const u8,
@@ -93,7 +93,7 @@ pub fn mergedConfigTextFor(
 /// sources, in order: 1.
 pub fn sessionWorkspace(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     session_id: []const u8,
 ) ![]u8 {
     var q = try db.query(
@@ -120,7 +120,7 @@ pub fn sessionWorkspace(
 /// that user has no saved config (or it cannot be used).
 pub fn forOwner(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     owner: []const u8,
 ) ?*config_mod.LlmConfig {
     if (owner.len == 0) return null;
@@ -135,7 +135,7 @@ pub fn forOwner(
 pub fn forOwnerAndWorkspace(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     environment: ?*const std.process.Environ.Map,
     auth_enabled: bool,
     owner: []const u8,
@@ -178,7 +178,7 @@ pub fn fromJsonText(
 /// The owner of `session_id`, duped into `allocator`.
 pub fn sessionOwner(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     session_id: []const u8,
 ) ![]u8 {
     var q = try db.query(
@@ -200,10 +200,11 @@ pub fn sessionOwner(
 
 const testing = std.testing;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const migration = @import("../migrations/migration.zig");
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
@@ -211,7 +212,7 @@ fn setupDb() !TestCtx {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
     var manager = migration.MigrationManager.init(alloc, &db);
@@ -221,7 +222,7 @@ fn setupDb() !TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
-fn insertUser(db: *sqlite.SqliteBackend, id: []const u8, config_json: ?[]const u8) !void {
+fn insertUser(db: *database.Db, id: []const u8, config_json: ?[]const u8) !void {
     try db.exec(
         testing.allocator,
         "INSERT INTO users (id, email, password_hash, config_json) VALUES (?, ?, 'h', ?)",
@@ -229,7 +230,7 @@ fn insertUser(db: *sqlite.SqliteBackend, id: []const u8, config_json: ?[]const u
     );
 }
 
-fn insertSession(db: *sqlite.SqliteBackend, id: []const u8, owner: []const u8) !void {
+fn insertSession(db: *database.Db, id: []const u8, owner: []const u8) !void {
     try db.exec(
         testing.allocator,
         "INSERT INTO sessions (id, name, status, user_id) VALUES (?, 's', 'active', ?)",
@@ -356,7 +357,7 @@ test "sessionOwner: owner is read from the session, absent owner is an error" {
 
 const store = @import("workspace_settings_store.zig");
 
-fn putOverlay(db: *sqlite.SqliteBackend, owner: []const u8, workspace_id: []const u8, body: []const u8) !void {
+fn putOverlay(db: *database.Db, owner: []const u8, workspace_id: []const u8, body: []const u8) !void {
     try store.saveRaw(testing.allocator, db, owner, workspace_id, body);
 }
 

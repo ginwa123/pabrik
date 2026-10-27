@@ -4,7 +4,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
-const SqliteBackend = pabrikcore.sqlite.SqliteBackend;
+const Backend = pabrikcore.database.Db;
 const Scheduler = @import("Scheduler.zig");
 
 /// Canonical status values written to the `workspace_routines.last_status`
@@ -69,7 +69,7 @@ pub const Routine = struct {
 
 /// Insert a new routine row. `next_run_at` null writes SQL NULL (manual-run
 /// only).
-pub fn insertWorkspaceRoutine(allocator: std.mem.Allocator, db: *SqliteBackend, r: Routine) !void {
+pub fn insertWorkspaceRoutine(allocator: std.mem.Allocator, db: *Backend, r: Routine) !void {
     _ = try db.exec(allocator,
         \\INSERT INTO workspace_routines (id, workspace_item_id, description, instruction, schedule, enabled, next_run_at)
         \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), ?, ?)
@@ -87,7 +87,7 @@ pub fn insertWorkspaceRoutine(allocator: std.mem.Allocator, db: *SqliteBackend, 
 /// Load the routine for a given workspace-routine `id` (which equals its
 /// `workspace_item_id` per the D3 identity). Returns `error.RoutineNotFound`
 /// if no row matches.
-pub fn loadWorkspaceRoutineById(allocator: std.mem.Allocator, db: *SqliteBackend, id: []const u8) !Routine {
+pub fn loadWorkspaceRoutineById(allocator: std.mem.Allocator, db: *Backend, id: []const u8) !Routine {
     var q = try db.query(allocator,
         \\SELECT id, workspace_item_id, description, instruction, schedule, enabled, next_run_at,
         \\       last_run_at, last_status, last_error, created_at, updated_at
@@ -121,7 +121,7 @@ pub fn loadWorkspaceRoutineById(allocator: std.mem.Allocator, db: *SqliteBackend
 
 /// Return the ids of every enabled routine whose `next_run_at` is at or
 /// before `now_sqlite` (formatted as an SQLite DATETIME literal, e.g.
-pub fn listDueWorkspaceRoutineIds(allocator: std.mem.Allocator, db: *SqliteBackend, now_sqlite: []const u8) ![][]u8 {
+pub fn listDueWorkspaceRoutineIds(allocator: std.mem.Allocator, db: *Backend, now_sqlite: []const u8) ![][]u8 {
     var q = try db.query(allocator,
         \\SELECT id FROM workspace_routines
         \\WHERE enabled = 1
@@ -145,7 +145,7 @@ pub fn listDueWorkspaceRoutineIds(allocator: std.mem.Allocator, db: *SqliteBacke
 
 /// Atomically transition a routine's `last_status` to `'running'` iff it is
 /// not already `'running'`.
-pub fn claimForRun(allocator: std.mem.Allocator, db: *SqliteBackend, routine_id: []const u8) !bool {
+pub fn claimForRun(allocator: std.mem.Allocator, db: *Backend, routine_id: []const u8) !bool {
     db.exec(allocator,
         \\UPDATE workspace_routines
         \\   SET last_status = 'running', updated_at = datetime('now')
@@ -164,7 +164,7 @@ pub fn claimForRun(allocator: std.mem.Allocator, db: *SqliteBackend, routine_id:
 /// Mark a routine as having completed successfully: set `last_status =
 /// 'success'`, bump `next_run_at` to the cron-computed next firing time,
 /// stamp `last_run_at` to now, and clear `last_error`.
-pub fn markSuccess(allocator: std.mem.Allocator, db: *SqliteBackend, routine_id: []const u8, next_run_at_sqlite: []const u8) !void {
+pub fn markSuccess(allocator: std.mem.Allocator, db: *Backend, routine_id: []const u8, next_run_at_sqlite: []const u8) !void {
     _ = try db.exec(allocator,
         \\UPDATE workspace_routines
         \\   SET last_run_at = datetime('now'),
@@ -178,7 +178,7 @@ pub fn markSuccess(allocator: std.mem.Allocator, db: *SqliteBackend, routine_id:
 
 /// Mark a routine as failed with the given error message, and advance its
 /// `next_run_at` so the scheduler picks a future run.
-pub fn markFailed(allocator: std.mem.Allocator, db: *SqliteBackend, routine_id: []const u8, err_msg: []const u8, next_run_at_sqlite: []const u8) !void {
+pub fn markFailed(allocator: std.mem.Allocator, db: *Backend, routine_id: []const u8, err_msg: []const u8, next_run_at_sqlite: []const u8) !void {
     _ = try db.exec(allocator,
         \\UPDATE workspace_routines
         \\   SET last_status = 'failed',
@@ -193,7 +193,7 @@ pub fn markFailed(allocator: std.mem.Allocator, db: *SqliteBackend, routine_id: 
 /// `cron.nextFireTime`, and UPDATE the row.
 pub fn recomputeAllNextRunAt(
     allocator: std.mem.Allocator,
-    db: *SqliteBackend,
+    db: *Backend,
     compute_fn: *const fn (schedule: []const u8, now_unix_nanos: i128) anyerror![]const u8,
     now_unix_nanos: i128,
 ) !void {
@@ -223,6 +223,7 @@ fn nullIfEmptyConst(v: []const u8) ?[]const u8 {
 const testing = std.testing;
 
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 
 const migration = pabrikcore.migrations_mod.migration;
 const Migration084ReplaceRoutinesWithWorkspaceRoutines = migration.Migration084ReplaceRoutinesWithWorkspaceRoutines;
@@ -232,7 +233,7 @@ const Migration084ReplaceRoutinesWithWorkspaceRoutines = migration.Migration084R
 /// Open a fresh in-memory sqlite DB with the minimal parent tables,
 /// then run Migration 084 to bring it to the post-migration state.
 fn setupDb() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 } {
     const alloc = testing.allocator;
@@ -240,7 +241,7 @@ fn setupDb() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -270,7 +271,7 @@ fn setupDb() !struct {
 /// Run a single-column SELECT and return a duplicated copy of the
 /// first row's first column. Returns null when the query produces no
 /// rows.
-fn scalarText(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, sql: []const u8, args: []const []const u8) !?[]u8 {
+fn scalarText(alloc: std.mem.Allocator, db: *database.Db, sql: []const u8, args: []const []const u8) !?[]u8 {
     var q = try db.query(alloc, sql, args);
     defer q.deinit();
     if (try q.next()) |row| {
@@ -281,7 +282,7 @@ fn scalarText(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, sql: []const 
 }
 
 /// Insert a parent workspace_item row.
-fn insertParentItem(db: *sqlite.SqliteBackend, alloc: std.mem.Allocator, id: []const u8) !void {
+fn insertParentItem(db: *database.Db, alloc: std.mem.Allocator, id: []const u8) !void {
     try db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES (?, 'ws1', 'routine')",
         &.{id});

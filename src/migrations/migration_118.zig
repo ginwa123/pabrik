@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-const SqliteBackend = common.SqliteBackend;
+const Backend = common.Backend;
 const addColumnIfMissing = common.addColumnIfMissing;
 
 /// Migration 118 — `worker.run_token`: the per-session run lease, claimed by one
@@ -10,7 +10,7 @@ pub const Migration118AddWorkerRunToken = struct {
     pub const version: u32 = 118;
     pub const name = "add_worker_run_token";
 
-    pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
+    pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         try addColumnIfMissing(
             .{ .db = db },
             allocator,
@@ -23,10 +23,10 @@ pub const Migration118AddWorkerRunToken = struct {
 
 const testing = std.testing;
 
-fn setupDb(alloc: std.mem.Allocator) !struct { db: SqliteBackend, threaded: std.Io.Threaded } {
+fn setupDb(alloc: std.mem.Allocator) !struct { db: Backend, threaded: std.Io.Threaded } {
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
-    var db: SqliteBackend = .{};
+    var db: Backend = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
     try db.exec(alloc,

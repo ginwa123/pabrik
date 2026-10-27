@@ -12,7 +12,7 @@ const auth_common = @import("auth_common.zig");
 /// checks. Returns true when the request may proceed.
 pub fn isAuthorized(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     auth_enabled: bool,
     path: []const u8,
     headers: anytype,

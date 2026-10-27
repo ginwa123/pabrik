@@ -5,6 +5,7 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const runtime_mode = @import("../runtime_mode.zig");
 const workspace_scope = @import("workspace_scope.zig");
 const workspace_vm = @import("workspace_vm.zig");
@@ -26,7 +27,7 @@ pub const Error = error{
 /// database or no session means there is no workspace to place it in, and the
 /// executor refuses rather than guessing.
 pub const GuestContext = struct {
-    db: ?*sqlite.SqliteBackend,
+    db: ?*database.Db,
     session_id: ?[]const u8,
 };
 
@@ -39,7 +40,7 @@ pub fn guestModeActive() bool {
 /// resolve to one. Under `--saas` this is also the VM they run in.
 pub fn workspaceIdFor(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) !?[]u8 {
     return workspace_scope.resolveWorkspaceId(allocator, db, session_id);
@@ -240,7 +241,7 @@ fn shapeCapture(
 const testing = std.testing;
 
 const GuestTestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 
     fn deinit(self: *GuestTestCtx) void {
@@ -254,7 +255,7 @@ const GuestTestCtx = struct {
 fn guestTestCtx() !GuestTestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
 

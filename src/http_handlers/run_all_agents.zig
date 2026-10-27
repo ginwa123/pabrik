@@ -7,6 +7,7 @@ const pabrikcore = @import("pabrikcore");
 const auth_common = @import("auth_common.zig");
 const gserverz = pabrikcore.gserverz;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const http_response = @import("http_response.zig");
 const start_agent = @import("start_agent.zig");
 
@@ -55,7 +56,7 @@ pub const RunAllAgentsOutcome = struct {
 /// List every task id in `column_id`, then run `starter` per id.
 pub fn runAllAgentsWithStarter(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     column_id: []const u8,
     starter: TaskStarter,
 ) !RunAllAgentsOutcome {
@@ -141,7 +142,7 @@ pub fn runAllAgentsWithStarter(
 
 const LiveCtx = struct {
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     di: *pabrikcore.App,
     owner: []const u8,
 };
@@ -161,7 +162,7 @@ fn liveRun(ptr: ?*anyopaque, task_id: []const u8) PerTaskResult {
 /// never copy-pasted).
 pub fn runAllAgentsUseCase(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     di: *pabrikcore.App,
     column_id: []const u8,
     owner: []const u8,
@@ -257,7 +258,7 @@ const testing = std.testing;
 // =====================================================================
 
 const TestDb = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 
     fn deinit(self: *TestDb) void {
@@ -272,7 +273,7 @@ fn setupDb() !TestDb {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -330,7 +331,7 @@ fn seedThreeTaskColumn(ctx: *TestDb) !void {
 /// `isTaskRunning` (seeded `worker` row ⇒ skipped), honours a scripted
 /// fail-list (⇒ failed), otherwise ⇒ started.
 const FakeCtx = struct {
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     fail_ids: []const []const u8 = &.{},
 };
 
@@ -362,7 +363,7 @@ test "runAllAgents rejects empty column_id" {
     var fake = FakeCtx{ .db = &ctx.db };
 
     // Empty-slice-as-NULL rule: "" must never reach a `WHERE id = ?`
-    // binding (SqliteBackend binds "" as SQL NULL). The use-case
+    // binding (Backend binds "" as SQL NULL). The use-case
     // validates first and returns EmptyColumnId.
     const result = runAllAgentsWithStarter(
         testing.allocator,

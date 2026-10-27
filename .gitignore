@@ -3,7 +3,10 @@
 zig-out
 /test_main
 .plans
-/zig-pkg
+# Root-anchored would leave `src/apps/<app>/zig-pkg/` (created by building an
+# app from its own folder) trackable; the pin check in
+# scripts/check-app-path-deps.py is what keeps those paths honest.
+zig-pkg/
 
 # === Worktrees (created by `git worktree add`) ===
 /.worktrees

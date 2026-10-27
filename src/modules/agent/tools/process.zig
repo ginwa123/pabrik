@@ -147,6 +147,7 @@ test "process_tool schema: the description states the two facts the model will g
 const pabrikcore = @import("pabrikcore");
 const tools = @import("../../../agentic_loop/tools.zig");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = pabrikcore.agent;
@@ -235,7 +236,7 @@ fn parseArgs(allocator: std.mem.Allocator, arguments: []const u8) !union(enum) {
 pub fn executeProcess(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     arguments: []const u8,
 ) ![]const u8 {
@@ -332,7 +333,7 @@ fn guestJobOf(p: background_process.ProcessInfo) guest_jobs.GuestJob {
 fn listProcesses(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]const u8 {
     _ = io;
@@ -353,7 +354,7 @@ fn listProcesses(
 fn readProcess(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     args: Args,
 ) ![]const u8 {
@@ -400,7 +401,7 @@ fn readProcess(
 /// the bytes come through the manager and the cursor is persisted here.
 fn readGuestProcess(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     pid: u32,
     row: background_process.ProcessInfo,
@@ -455,7 +456,7 @@ fn guestReadFailure(err: guest_jobs.Error) []const u8 {
 fn stopProcess(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
     args: Args,
 ) ![]const u8 {

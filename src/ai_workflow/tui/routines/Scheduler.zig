@@ -5,6 +5,7 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 
 const model = @import("model.zig");
 const cron = @import("cron.zig");
@@ -15,7 +16,7 @@ pub const TICK_INTERVAL_NS: i128 = 5 * std.time.ns_per_s;
 
 /// Reset every routine whose `last_status = 'running'` to `'failed'` with a
 /// "process killed" error.
-pub fn resetStuckRunning(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend) !void {
+pub fn resetStuckRunning(allocator: std.mem.Allocator, db: *database.Db) !void {
     const err_msg = "process killed (restart detected)";
     const copy = try allocator.dupe(u8, err_msg);
     defer allocator.free(copy);
@@ -30,7 +31,7 @@ pub fn resetStuckRunning(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend
 /// expression.
 pub fn recomputeDueNextRunAt(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     io: std.Io,
 ) !void {
     // Collect (id, schedule, next_run_at) for every enabled routine in a
@@ -94,7 +95,7 @@ pub fn recomputeDueNextRunAt(
 /// thread, no sub-process).
 pub fn fireDueRoutines(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     di: *pabrikcore.App,
     io: std.Io,
 ) !usize {
@@ -127,7 +128,7 @@ pub fn fireDueRoutines(
 /// `startup.zig` for the wiring.
 pub fn start(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     di: *pabrikcore.App,
     io: std.Io,
 ) !void {
@@ -163,7 +164,7 @@ const Migration084ReplaceRoutinesWithWorkspaceRoutines = migration.Migration084R
 /// Open a fresh in-memory sqlite DB with the minimal parent tables
 /// and run Migration 084. Mirrors the helper in `model.zig`.
 fn setupDb() !struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 } {
     const alloc = testing.allocator;
@@ -171,7 +172,7 @@ fn setupDb() !struct {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
@@ -199,7 +200,7 @@ fn setupDb() !struct {
 /// Run a single-column SELECT and return a duplicated copy of the
 /// first row's first column. Returns null when the query produces no
 /// rows. Mirrors the helper in `model.zig`.
-fn scalarText(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, sql: []const u8, args: []const []const u8) !?[]u8 {
+fn scalarText(alloc: std.mem.Allocator, db: *database.Db, sql: []const u8, args: []const []const u8) !?[]u8 {
     var q = try db.query(alloc, sql, args);
     defer q.deinit();
     if (try q.next()) |row| {
@@ -209,7 +210,7 @@ fn scalarText(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, sql: []const 
     return null;
 }
 
-fn insertParentItem(db: *sqlite.SqliteBackend, alloc: std.mem.Allocator, id: []const u8) !void {
+fn insertParentItem(db: *database.Db, alloc: std.mem.Allocator, id: []const u8) !void {
     try db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES (?, 'ws1', 'routine')",
         &.{id});

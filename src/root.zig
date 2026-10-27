@@ -245,6 +245,8 @@ pub const cleanup_stale_background_process = @import("schedulers/cleanup_stale_b
 // The DB connection policy (and its `--db-*` CLI overrides). Re-exported so
 // the exe module and the schedulers share ONE definition of the defaults.
 pub const boot_db_config = @import("boot/db_config.zig");
+pub const boot_db_target = @import("boot/db_target.zig");
+pub const test_db = @import("testing/test_db.zig");
 pub const workspace_items = @import("agentic_loop/llm_history.zig");
 pub const workspace_item_tasks = @import("agentic_loop/llm_history.zig");
 pub const http_response = @import("http_handlers/http_response.zig");

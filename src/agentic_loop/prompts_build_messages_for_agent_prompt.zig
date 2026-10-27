@@ -9,6 +9,7 @@ const agent = pabrikcore.agent;
 const llm_history = @import("llm_history.zig");
 const session_helpers = llm_history;
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const TUIHistory = @import("models.zig").TUIHistory;
 const tool_models = pabrikcore.tool_models;
 
@@ -69,7 +70,7 @@ const spawn_sub_agent_tool = pabrikcore.spawn_sub_agent;
 pub fn buildMessages(
     allocator: std.mem.Allocator,
     io: std.Io,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     cwd: []const u8,
     session_id: []const u8,
     parent_session_id: []const u8,
@@ -301,7 +302,7 @@ pub fn buildMessages(
 /// Build activity info string for the agent prompt
 /// Uses worker table as the SOLE source of active workers info
 /// Filters out current session to avoid self-reference
-fn buildActivityInfo(allocator: std.mem.Allocator, io: std.Io, db: *sqlite.SqliteBackend, current_session_id: []const u8) ![]const u8 {
+fn buildActivityInfo(allocator: std.mem.Allocator, io: std.Io, db: *database.Db, current_session_id: []const u8) ![]const u8 {
     const workers = try llm_history.getActiveWorker(allocator, db);
     defer {
         for (workers) |*worker| worker.deinit(allocator);
@@ -1025,7 +1026,7 @@ pub fn parseProperties(
 /// Build background processes content string from database for system prompt
 pub fn BuildBackgroundProcessPrompt(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]const u8 {
     if (session_id.len == 0) {
@@ -1086,7 +1087,7 @@ pub fn BuildBackgroundProcessPrompt(
 /// Build dynamic agents content string from database for persistence
 pub fn BuildDynamicAgentContent(
     allocator: std.mem.Allocator,
-    db: *sqlite.SqliteBackend,
+    db: *database.Db,
     session_id: []const u8,
 ) ![]const u8 {
     if (session_id.len == 0) {
@@ -1128,7 +1129,7 @@ pub fn BuildDynamicAgentContent(
 const MAX_DESIGN_PAGES: u32 = 10;
 
 /// Strip the item-type-forbidden tools (kanban ↔ design) from `tools`.
-pub fn filteringTools(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8, tools: []tool_models.AgentTool) ![]tool_models.AgentTool {
+pub fn filteringTools(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8, tools: []tool_models.AgentTool) ![]tool_models.AgentTool {
     const ctx = (llm_history.getWorkspaceContext(allocator, db, session_id) catch |err| {
         std.log.warn("BuildDesignCanvasPrompt: getWorkspaceContext failed: {}", .{err});
         return tools;
@@ -1687,7 +1688,7 @@ fn setupPromptDb() !PromptDbCtx {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(threaded.io(), ":memory:");
     var manager = migration.MigrationManager.init(alloc, &db);
@@ -1698,18 +1699,18 @@ fn setupPromptDb() !PromptDbCtx {
 }
 
 const PromptDbCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 };
 
-fn insertWorkspaceItem(db: *sqlite.SqliteBackend, id: []const u8, workspace_id: []const u8, name: []const u8, path: []const u8) !void {
+fn insertWorkspaceItem(db: *database.Db, id: []const u8, workspace_id: []const u8, name: []const u8, path: []const u8) !void {
     try db.exec(testing.allocator,
         \\INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position)
         \\VALUES (?, ?, 'chat', ?, ?, 0)
     , &[_][]const u8{ id, workspace_id, name, path });
 }
 
-fn insertWorkspaceTask(db: *sqlite.SqliteBackend, task_id: []const u8, item_id: []const u8) !void {
+fn insertWorkspaceTask(db: *database.Db, task_id: []const u8, item_id: []const u8) !void {
     try db.exec(testing.allocator,
         \\INSERT INTO workspace_item_tasks (id, name, workspace_item_id, created_at, updated_at, task_type)
         \\VALUES (?, 'T', ?, datetime('now'), datetime('now'), 'standard')

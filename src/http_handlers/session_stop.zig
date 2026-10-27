@@ -19,7 +19,7 @@ pub const SessionStopError = error{
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     session_id: []const u8,
 ) SessionStopError!void {
     llm_history.cancelSession(allocator, db, session_id) catch return error.CancelFailed;

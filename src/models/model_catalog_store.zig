@@ -3,6 +3,7 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
+const database = pabrikcore.database;
 const catalog = @import("../agentic_loop/model_catalog.zig");
 
 const Allocator = std.mem.Allocator;
@@ -23,7 +24,7 @@ pub const SaveStats = struct {
 /// Replace the whole catalog in ONE transaction. Replace-not-merge is
 /// deliberate: a refresh is a snapshot of an external source of truth, and a
 /// model deleted upstream must disappear here too.
-pub fn saveCatalog(db: *sqlite.SqliteBackend, alloc: Allocator, cat: *const catalog.Catalog) !SaveStats {
+pub fn saveCatalog(db: *database.Db, alloc: Allocator, cat: *const catalog.Catalog) !SaveStats {
     try db.exec(alloc, "BEGIN IMMEDIATE", &.{});
     errdefer db.exec(alloc, "ROLLBACK", &.{}) catch {};
 
@@ -102,7 +103,7 @@ pub fn saveCatalog(db: *sqlite.SqliteBackend, alloc: Allocator, cat: *const cata
 
 /// The freshness row. `null` means "never synced" — which the UI must render
 /// differently from "synced, zero models".
-pub fn loadMeta(db: *sqlite.SqliteBackend, alloc: Allocator) !?Meta {
+pub fn loadMeta(db: *database.Db, alloc: Allocator) !?Meta {
     var rows = try db.query(alloc,
         \\SELECT schema_version, COALESCE(source, ''), fetched_at_ms,
         \\       provider_count, model_count
@@ -129,7 +130,7 @@ pub fn freeMeta(alloc: Allocator, meta: *const Meta) void {
 /// Load the whole catalog into an in-memory `Catalog`. `null` when there is
 /// no usable catalog: no meta row (never synced), or a meta row written by
 /// another schema version.
-pub fn loadCatalog(db: *sqlite.SqliteBackend, alloc: Allocator) !?*catalog.Catalog {
+pub fn loadCatalog(db: *database.Db, alloc: Allocator) !?*catalog.Catalog {
     // `std.json.parseFromSliceLeaky` is LEAKY BY DESIGN — it wants an
     // allocator whose memory is released wholesale, not one that has to free
     // each piece.
@@ -264,7 +265,7 @@ const testing = std.testing;
 const Migration106 = @import("../migrations/migration.zig").Migration106CreateModelCatalog;
 
 const TestCtx = struct {
-    db: sqlite.SqliteBackend,
+    db: database.Db,
     threaded: std.Io.Threaded,
 
     fn deinit(self: *TestCtx) void {
@@ -278,7 +279,7 @@ fn setupDb() !TestCtx {
     errdefer threaded.deinit();
     const io = threaded.io();
 
-    var db: sqlite.SqliteBackend = .{};
+    var db: database.Db = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
     try Migration106.up(&db, testing.allocator);

@@ -59,7 +59,7 @@ pub const CreatePageOutput = struct {
 /// 2.
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     input: CreatePageInput,
 ) DesignPageCreateError!CreatePageOutput {
     // 1. Validate. Empty `item_id` → no parent design item; empty

@@ -53,7 +53,7 @@ pub const UpdateGeometryOutput = struct {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.sqlite.SqliteBackend,
+    db: *pabrikcore.database.Db,
     element_id: []const u8,
     x: ?i64,
     y: ?i64,
