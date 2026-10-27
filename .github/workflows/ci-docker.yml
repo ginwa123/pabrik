@@ -37,7 +37,7 @@ jobs:
   linux:
     name: default image (linux/amd64)
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 120
     permissions:
       contents: read
       packages: write
@@ -86,7 +86,7 @@ jobs:
   linux-saas:
     name: saas image (linux/amd64, postgres)
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 120
     permissions:
       contents: read
       packages: write
@@ -193,7 +193,7 @@ jobs:
   macos:
     name: default image (macOS runner, linux/arm64)
     runs-on: macos-15
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -202,12 +202,12 @@ jobs:
         run: |
           set -euo pipefail
           brew install colima docker qemu
-          if ! colima start --cpu 4 --memory 8 --disk 60; then
+          if ! colima start --cpu 3 --memory 6 --disk 40; then
             echo "→ the vz VM failed to start; its log:"
             cat "$HOME/.colima/_lima/colima/ha.stderr.log" 2>/dev/null || true
             colima delete --force || true
             echo "→ retrying with the qemu VM driver"
-            colima start --vm-type qemu --cpu 4 --memory 8 --disk 60
+            colima start --vm-type qemu --cpu 3 --memory 6 --disk 40
           fi
           docker version
 
