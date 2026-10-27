@@ -21,6 +21,11 @@ describe('inputForBackend', () => {
     expect(inputForBackend('pipe', 'a\x1b[?2004;2$yb\n')).toBe('ab\n')
   })
 
+  it('keeps ctrl-c, which must reach the shell that has to stop its command', () => {
+    expect(inputForBackend('pipe', '\x03')).toBe('\x03')
+    expect(inputForBackend('pipe', 'npm run dev\r\x03')).toBe('npm run dev\r\x03')
+  })
+
   it('drops a lone Escape, which can never reach a pipe-backed shell', () => {
     expect(inputForBackend('pipe', 'ls\x1b')).toBe('ls')
   })

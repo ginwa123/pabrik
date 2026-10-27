@@ -2653,6 +2653,47 @@ test "a caller with no identity lists every shell (auth off)" {
 }
 
 // ---------------------------------------------------------------------
+// A full-screen program, and the one keystroke that must stop it.
+
+test "ctrl-c stops a full-screen program and leaves the shell running" {
+    switch (pty_backend) {
+        .posix_pty => {
+            const info = try createSession(testing.io, "/tmp", "ws_test", "/bin/sh", 80, 24, "user_test");
+            defer destroySession(info.id) catch {};
+            const s = getSession(info.id) orelse return error.SessionNotFound;
+            sleepMillis(500);
+            _ = try writeInput(s, "sleep 30\r");
+            sleepMillis(300);
+            _ = try writeInput(s, "\x03");
+            _ = try writeInput(s, "printf \"ALIVE-%s\\n\" 7\r");
+            try expectMarker(s, "ALIVE-7", 100);
+        },
+        .conpty => {
+            const info = try createSession(testing.io, "", "ws_test", null, 80, 24, "user_test");
+            defer destroySession(info.id) catch {};
+            const s = getSession(info.id) orelse return error.SessionNotFound;
+            if (std.mem.eql(u8, info.backend, backend_conpty)) {
+                _ = try writeInput(s, "ping -n 30 127.0.0.1\r");
+                sleepMillis(500);
+                _ = try writeInput(s, "\x03");
+            } else {
+                _ = try writeInput(s, "\x03");
+            }
+            _ = try writeInput(s, "echo ALIVE-7\r");
+            try expectMarker(s, "ALIVE-7", 100);
+        },
+        .none => return error.UnsupportedPlatform,
+    }
+}
+
+test "ctrl-c is a keystroke, never text, on a pipe-backed shell" {
+    const run = try runPipe(testing.allocator, &.{ "sl", "\x03", "eep 1\r" });
+    defer freePipeRun(testing.allocator, run);
+    try testing.expectEqualStrings("sleep 1\r\n", run.shell);
+    try testing.expectEqualStrings("sleep 1\r\n", run.view);
+}
+
+// ---------------------------------------------------------------------
 // Windows shell choice + the pipe backend's input discipline.
 
 fn noShellInstalled(_: []const u8) bool {
