@@ -1612,10 +1612,9 @@ fn writeInputPipeWin(s: *Session, h: HANDLE, data: []const u8) SessionError!usiz
     return data.len;
 }
 
-/// Ctrl-C over a pipe: the byte cannot travel, because nothing on the far side
-/// reads keystrokes. The console raises the signal at the shell's own process
-/// group instead (`CREATE_NEW_PROCESS_GROUP`), which is how a real console does
-/// it — a host with no console simply has nothing to raise it on.
+/// Ctrl-C over a pipe: the byte cannot travel, so the console raises the signal
+/// at the shell's own process group (`CREATE_NEW_PROCESS_GROUP`) — how a real
+/// console does it. A host with no console has nothing to raise it on.
 fn raiseInterrupt(s: *Session, times: usize) void {
     if (s.child_pid <= 0) return;
     const group: DWORD = @intCast(s.child_pid);
@@ -1670,10 +1669,9 @@ fn escapeSequenceLen(data: []const u8, i: usize) usize {
     }
 }
 
-/// One client chunk through the pipe backend's line discipline: `shell`
-/// receives what the shell must read, `view` what the user must see echoed. A
-/// report reaches neither — the console it reports on does not exist here.
-/// Returns the number of Ctrl-C tokens, which the caller raises as a signal.
+/// One client chunk through the pipe backend's line discipline: `shell` gets
+/// what the shell must read, `view` what the user must see. A report reaches
+/// neither; the returned count is Ctrl-C tokens the caller raises as a signal.
 pub fn pipeDiscipline(
     line: *std.ArrayList(u8),
     allocator: std.mem.Allocator,
