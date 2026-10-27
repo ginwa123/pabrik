@@ -13,6 +13,7 @@
 # and, in the `lint` job,
 #   run: python3 scripts/lint-no-dead-doc-refs.py --selftest
 #        python3 scripts/lint-no-dead-doc-refs.py
+#   run: python3 scripts/check-app-path-deps.py
 #
 # That first step used to live at ci.yml lines 1485-1491 and the CI job
 # was deleted in PR #398 ("drop frontend job"), which left this hook
@@ -44,6 +45,9 @@ bash scripts/lint-no-catch-unreachable.sh
 echo "→ no comment points at a document that does not exist"
 python3 scripts/lint-no-dead-doc-refs.py --selftest
 python3 scripts/lint-no-dead-doc-refs.py
+
+echo "→ app path dependencies agree with the root pins"
+python3 scripts/check-app-path-deps.py
 
 echo "→ zginlint (comment-block ceiling, zero findings)"
 zig build zginlint:check

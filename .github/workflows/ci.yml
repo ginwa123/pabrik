@@ -271,6 +271,26 @@ jobs:
           bash scripts/lint-no-catch-unreachable.sh --selftest
           bash scripts/lint-no-catch-unreachable.sh
 
+      - name: App path dependencies agree with the root pins
+        # `src/apps/admin/build.zig.zon` depends on the `databases` and
+        # `kabelweb` packages BY PATH into `zig-pkg/<name>-0.0.0-<hash>` —
+        # and that directory name IS the root pin's `.hash` value. Bumping a
+        # pin therefore renames it and breaks the app, but only on a FRESH
+        # checkout: a developer's `zig-pkg/` still holds the old extract, so
+        # the app builds locally and the three backend cells go red on
+        # `cd src/apps/admin && zig build test`. That is PR #1066.
+        #
+        # Textual, so it needs neither `zig build` nor a populated
+        # `zig-pkg/` — it runs here, before anything is fetched.
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v python3 >/dev/null 2>&1 || {
+            echo "x python3 not found on PATH -- the app pin check cannot run" >&2
+            exit 1
+          }
+          python3 scripts/check-app-path-deps.py
+
       - name: No comment points at a document that does not exist
         # A comment that names a document is a promise to the reader:
         # follow the pointer, read the document, understand the code. When
