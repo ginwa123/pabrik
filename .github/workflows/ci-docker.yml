@@ -65,17 +65,19 @@ jobs:
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
           load: ${{ github.event_name == 'pull_request' }}
-          tags: ghcr.io/${{ github.repository }}:${{ github.sha }}-amd64
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
+            ghcr.io/${{ github.repository }}:latest
           cache-from: type=gha,scope=default-amd64
           cache-to: type=gha,mode=max,scope=default-amd64
 
       - name: Pull the pushed image
         if: ${{ github.event_name != 'pull_request' }}
-        run: docker pull "ghcr.io/${GITHUB_REPOSITORY}:${GITHUB_SHA}-amd64"
+        run: docker pull "ghcr.io/${GITHUB_REPOSITORY}:${GITHUB_SHA}"
 
       - name: Smoke the default image
         env:
-          IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}-amd64
+          IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}
           RUN_ARGS: --network host
           HOST_CHECK: "1"
           EXPECT_DB_FILE: /data/.config/pabrik/agent.db
@@ -128,24 +130,26 @@ jobs:
             SAAS=1
           push: ${{ github.event_name != 'pull_request' }}
           load: ${{ github.event_name == 'pull_request' }}
-          tags: ghcr.io/${{ github.repository }}:${{ github.sha }}-saas-amd64
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ github.sha }}-saas
+            ghcr.io/${{ github.repository }}:saas
           cache-from: type=gha,scope=saas-amd64
           cache-to: type=gha,mode=max,scope=saas-amd64
 
       - name: Pull the pushed image
         if: ${{ github.event_name != 'pull_request' }}
-        run: docker pull "ghcr.io/${GITHUB_REPOSITORY}:${GITHUB_SHA}-saas-amd64"
+        run: docker pull "ghcr.io/${GITHUB_REPOSITORY}:${GITHUB_SHA}-saas"
 
       - name: The image links libpq
         env:
-          IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}-saas-amd64
+          IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}-saas
         run: |
           set -euo pipefail
           docker run --rm --entrypoint sh "$IMAGE_REF" -c 'ldd /usr/local/bin/pabrik | grep -i libpq'
 
       - name: The saas image opens the postgres backend
         env:
-          IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}-saas-amd64
+          IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}-saas
         run: |
           set +e
           out="$(docker run --rm --network host \
@@ -167,7 +171,7 @@ jobs:
 
       - name: The saas image refuses to run tenant code without a VM backend
         env:
-          IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}-saas-amd64
+          IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}-saas
         run: |
           set +e
           out="$(docker run --rm --network host \
@@ -187,12 +191,9 @@ jobs:
           echo "ok: --saas refused (exit 2) and named the flag"
 
   macos:
-    name: default image (linux/arm64)
+    name: default image (macOS runner, linux/arm64)
     runs-on: macos-15
-    timeout-minutes: 120
-    permissions:
-      contents: read
-      packages: write
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -210,33 +211,19 @@ jobs:
           fi
           docker version
 
-      - name: Log in to GHCR
-        if: ${{ github.event_name != 'pull_request' }}
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
-
       - name: Build the default image
         env:
-          IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}-arm64
+          IMAGE_REF: pabrik:macos-arm64
         run: |
           set -euo pipefail
-          docker build --target default --platform linux/arm64 --tag "$IMAGE_REF" .
+          docker build --target default --platform linux/arm64 --build-arg OPTIMIZE=Debug --tag "$IMAGE_REF" .
           docker image inspect "$IMAGE_REF" --format '{{.Architecture}} {{.Os}}'
 
       - name: Smoke the default image
         env:
-          IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}-arm64
+          IMAGE_REF: pabrik:macos-arm64
           EXPECT_DB_FILE: /data/.config/pabrik/agent.db
         run: bash scripts/ci-docker-smoke.sh "$IMAGE_REF" 8080 sqlite
-
-      - name: Push the arm64 image
-        if: ${{ github.event_name != 'pull_request' }}
-        env:
-          IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}-arm64
-        run: docker push "$IMAGE_REF"
 
   windows:
     name: windows image (nanoserver ltsc2022)
@@ -323,38 +310,10 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          docker push "ghcr.io/${{ github.repository }}:${{ github.sha }}-windows-ltsc2022"
+          $tag = "ghcr.io/${{ github.repository }}:${{ github.sha }}-windows-ltsc2022"
+          docker tag $tag "ghcr.io/${{ github.repository }}:windows-ltsc2022"
+          if ($LASTEXITCODE -ne 0) { throw "docker tag failed" }
+          docker push $tag
           if ($LASTEXITCODE -ne 0) { throw "docker push failed" }
-
-  manifest:
-    name: multi-arch manifests
-    needs: [linux, macos, linux-saas]
-    if: ${{ github.event_name != 'pull_request' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Merge the per-architecture images
-        run: |
-          set -euo pipefail
-          image="ghcr.io/${GITHUB_REPOSITORY}"
-          docker buildx imagetools create \
-            --tag "${image}:latest" \
-            --tag "${image}:${GITHUB_SHA}" \
-            "${image}:${GITHUB_SHA}-amd64" \
-            "${image}:${GITHUB_SHA}-arm64"
-          docker buildx imagetools create \
-            --tag "${image}:saas" \
-            --tag "${image}:${GITHUB_SHA}-saas" \
-            "${image}:${GITHUB_SHA}-saas-amd64"
-          docker buildx imagetools inspect "${image}:latest"
-          docker buildx imagetools inspect "${image}:saas"
+          docker push "ghcr.io/${{ github.repository }}:windows-ltsc2022"
+          if ($LASTEXITCODE -ne 0) { throw "docker push failed" }
