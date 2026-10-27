@@ -11,6 +11,9 @@ const config_mod = pabrik_mod.config;
 const mcp_stdio = pabrik_mod.mcp_stdio;
 const mcp_http = pabrik_mod.mcp_http;
 const is_worker_cancelled_mod = @import("is_worker_cancelled.zig");
+const mcp_session_scope = @import("mcp_session_scope.zig");
+const guest_mcp = @import("guest_mcp.zig");
+const workspace_vm = @import("workspace_vm.zig");
 
 /// Session identity that owns a `tools/call`, so the Stop button can reach
 /// the lease wait and the transport reads/writes.
@@ -157,7 +160,7 @@ pub fn handle_mcp_tool_run(
         // mid-loop tool calls can legitimately take longer because the work
         // itself is unbounded).
         const deadline_ns: u64 = 60 * std.time.ns_per_s;
-        return callViaStdio(allocator, logger, server_name, actual_tool_name, tool_call.function.arguments, server_obj, deadline_ns, opts);
+        return callViaSpawnedServer(allocator, logger, server_name, actual_tool_name, tool_call.function.arguments, server_obj, deadline_ns, opts);
     }
 
     const url_value = server_obj.get("url") orelse {
@@ -199,10 +202,18 @@ pub fn handle_mcp_tool_run(
     // registry keeps the client alive for the process lifetime (the arena
     // memory is freed at process exit).
     const http_registry = pabrik_mod.mcpHttpRegistry(allocator);
+    var scope_arena = std.heap.ArenaAllocator.init(allocator);
+    defer scope_arena.deinit();
+    const scope = mcp_session_scope.resolve(
+        scope_arena.allocator(),
+        if (opts.cancel_session) |s| s.db else null,
+        if (opts.cancel_session) |s| s.session_id else null,
+    );
     const http_client = http_registry.getOrConnect(
         server_name,
         url,
         custom_headers,
+        scope,
     ) catch |err| {
         logger.errFmt("MCP HTTP client build failed: {s}", .{@errorName(err)});
         return error.FailedToCallMCPServer;
@@ -254,10 +265,10 @@ pub fn handle_mcp_tool_run(
 // stdio transport: spawn a child process per server, send framed JSON-RPC
 // over its stdin, read the framed response from stdout.
 
-/// Call a tool via the stdio transport. Spawns (or reuses) a child process
-/// keyed by `server_name`, sends a framed `tools/call` JSON-RPC body, and
-/// reads the framed response.
-fn callViaStdio(
+/// Call a tool on a spawned MCP server: sends a framed `tools/call` JSON-RPC
+/// body over the server process's stdin and reads the framed response. The
+/// process is a host child or a guest duplex, chosen by `guest_mcp.route`.
+fn callViaSpawnedServer(
     allocator: std.mem.Allocator,
     logger: *logger_mod.Logger,
     server_name: []const u8,
@@ -298,9 +309,29 @@ fn callViaStdio(
         allocator.free(argv);
     }
 
-    // stdio transport: long-lived child per server, lazy spawn + respawn.
-    // Via the singleton struct (see root.zig `mcpStdioRegistry`).
-    const reg = pabrik_mod.mcpStdioRegistry(allocator);
+    var scope_arena = std.heap.ArenaAllocator.init(allocator);
+    defer scope_arena.deinit();
+    const scope = mcp_session_scope.resolve(
+        scope_arena.allocator(),
+        if (opts.cancel_session) |s| s.db else null,
+        if (opts.cancel_session) |s| s.session_id else null,
+    );
+
+    // Where this server's process belongs: the host child every local install
+    // has always had, or a duplex in the tenant's VM under `--saas`.
+    var route = guest_mcp.route(allocator, workspace_vm.mcpPlacementForProcess(), .{
+        .db = if (opts.cancel_session) |s| s.db else null,
+        .workspace_id = scope.workspace_id,
+    });
+    defer route.deinit();
+    switch (route) {
+        .unavailable => |err| {
+            logger.errFmt("MCP server '{s}' has nowhere to run: {s}", .{ server_name, @errorName(err) });
+            return error.MCPServerUnavailable;
+        },
+        else => {},
+    }
+    const io: ?std.Io = if (opts.cancel_session) |s| s.io else null;
 
     // Retry loop for cold-start / stale child. Use NDJSON framing (like
     // the discovery path) — Python and Node SDKs both default to NDJSON.
@@ -311,17 +342,18 @@ fn callViaStdio(
     // `resp` is allocated from the client's arena, which dies with the child
     // — so the lease that guards it has to outlive the retry loop (the parse
     // below runs after it).
-    var held: ?mcp_stdio.Lease = null;
+    var held: ?guest_mcp.Held = null;
     defer {
         if (held) |*h| h.release();
     }
     while (attempt < 3) : (attempt += 1) {
-        // Bounded + cancellable lease wait: `AcquireOptions{}` means
-        // `wait_ns = 0` = wait forever, parking a neighbour session with no
-        // deadline and no way for Stop to reach it.
-        var lease = reg.acquire(server_name, argv, .{
+        // Bounded + cancellable lease wait: `wait_ns = 0` means "wait forever",
+        // parking a neighbour session with no deadline and no way for Stop to
+        // reach it.
+        var lease = guest_mcp.acquire(allocator, io, route, server_name, argv, .{
             .wait_ns = opts.lease_wait_ns,
             .is_cancelled = cancel_fn,
+            .scope = scope,
         }) catch |err| {
             logger.errFmt("stdio MCP lease failed for {s}.{s}: {s}", .{ server_name, tool_name, @errorName(err) });
             last_err = err;
@@ -337,15 +369,15 @@ fn callViaStdio(
         defer {
             if (held == null) lease.release();
         }
-        const client = lease.client();
+        const client = lease.transport();
 
         const req = try buildToolCallRequestBody(allocator, tool_name, arguments_json);
         defer allocator.free(req);
 
         // Send as NDJSON (JSON + '\n'), not Content-Length. The send shares the
-        // call's budget and the cancel hook: a child that stopped draining its
+        // call's budget and the cancel hook: a server that stopped draining its
         // stdin must not hold this lease (and every waiter behind it) open.
-        client.sendNDJSON(req, deadline_ns, cancel_fn) catch |err| {
+        client.send(req, deadline_ns, cancel_fn) catch |err| {
             logger.errFmt("stdio MCP send failed for {s}.{s}: {s}", .{ server_name, tool_name, @errorName(err) });
             last_err = err;
             if (err == error.SendTimeout or err == error.BrokenPipe) lease.markStale();

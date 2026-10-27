@@ -606,6 +606,7 @@ fn dispatch(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request
         .fs_write => return dispatchFsWrite(manager, allocator, request),
         .fs_walk => return dispatchFsWalk(manager, allocator, request),
         .tty => return dispatchTty(manager, allocator, request),
+        .duplex => return dispatchDuplex(manager, allocator, request),
     }
 }
 
@@ -695,6 +696,92 @@ fn dispatchTty(manager: Manager, allocator: std.mem.Allocator, request: rpc.Requ
         .close => {
             vm_client.ttyClose(allocator, layout, request.tty_id) catch |err| {
                 log("terminal close in workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
+                return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+            };
+            return rpc.encodeAck(allocator, request.id);
+        },
+    }
+}
+
+/// A duplex RPC. `open` asks the AGENT to fork the guest process that owns the
+/// server; every other op talks to that process on the port it bound, so a
+/// reading client never queues behind a long `exec` on the agent's own port.
+fn dispatchDuplex(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request) ![]u8 {
+    const layout = manager.ensure(allocator, request.workspace_id) catch |err| {
+        log("workspace {s} has no usable VM for a duplex: {s}", .{ request.workspace_id, @errorName(err) });
+        return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+    };
+    switch (request.duplex_op) {
+        .open => {
+            const cwd = policy.guestCwd(allocator, policy.guest_root, request.cwd_rel) catch |err| {
+                return rpc.encodeFailure(allocator, request.id, .bad_request, @errorName(err));
+            };
+            var refusal = vm_client.TtyRefusal{};
+            const opened = vm_client.duplexOpen(allocator, layout, request.argv, cwd, &refusal) catch |err| {
+                if (refusal.len > 0) {
+                    log("duplex open in workspace {s} failed: {s} ({s})", .{ request.workspace_id, @errorName(err), refusal.text() });
+                } else {
+                    log("duplex open in workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
+                }
+                if (err == vm_client.Error.DuplexFailed) {
+                    const reason = if (refusal.len > 0) refusal.text() else "the guest refused to open a duplex";
+                    return rpc.encodeFailure(allocator, request.id, .bad_request, reason);
+                }
+                return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+            };
+            return rpc.encodeDuplexReply(allocator, request.id, .{
+                .op = "open",
+                .duplex_id = opened.duplex_id,
+                .pid = opened.pid,
+                .data = "",
+                .eof = false,
+                .exited = false,
+                .exit_code = 0,
+                .bytes = 0,
+                .message = "",
+            });
+        },
+        .read => {
+            const chunk = vm_client.duplexRead(allocator, layout, request.duplex_id, request.max_bytes) catch |err| {
+                log("duplex read in workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
+                return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+            };
+            defer chunk.deinit(allocator);
+            return rpc.encodeDuplexReply(allocator, request.id, .{
+                .op = "read",
+                .duplex_id = request.duplex_id,
+                .pid = 0,
+                .data = chunk.data,
+                .eof = chunk.eof,
+                .exited = chunk.exited,
+                .exit_code = chunk.exit_code,
+                .bytes = @intCast(chunk.data.len),
+                .message = "",
+            });
+        },
+        .write => {
+            const written = vm_client.duplexWrite(allocator, layout, request.duplex_id, request.data) catch |err| {
+                log("duplex write in workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
+                if (err == vm_client.Error.DuplexGone) {
+                    return rpc.encodeFailure(allocator, request.id, .not_ready, "the duplex has closed");
+                }
+                return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
+            };
+            return rpc.encodeDuplexReply(allocator, request.id, .{
+                .op = "write",
+                .duplex_id = request.duplex_id,
+                .pid = 0,
+                .data = "",
+                .eof = false,
+                .exited = false,
+                .exit_code = 0,
+                .bytes = @intCast(written),
+                .message = "",
+            });
+        },
+        .close => {
+            vm_client.duplexClose(allocator, layout, request.duplex_id) catch |err| {
+                log("duplex close in workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
                 return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
             };
             return rpc.encodeAck(allocator, request.id);

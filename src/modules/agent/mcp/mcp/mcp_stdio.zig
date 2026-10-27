@@ -2,8 +2,11 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const mcp_scope = @import("mcp_scope.zig");
 
 const MAX_HEADER_BYTES: usize = 8 * 1024;
+
+pub const default_max_entries: usize = 64;
 
 /// Hard cap on a Content-Length framed body.
 const MAX_BODY_BYTES: usize = 10 * 1024 * 1024;
@@ -32,6 +35,8 @@ pub const StdioError = error{
     /// concurrent access to the same client.
     ConcurrentAccess,
     OutOfMemory,
+    NameTooLong,
+    TooManyChildren,
 };
 
 // ============================================================================
@@ -120,6 +125,46 @@ fn waitReadableWindows(
     }
 }
 
+/// The byte source a framing read pulls from: a child's stdout pipe, or a guest
+/// duplex whose reads are RPCs. One framing implementation serves both.
+pub const Source = struct {
+    ctx: *anyopaque,
+    /// Blocking, bounded by the source's own budget. 0 means end of stream.
+    pull: *const fn (ctx: *anyopaque, dst: []u8) StdioError!usize,
+    /// Bytes already in hand, so a framed read never waits for a byte it has.
+    pending: *const fn (ctx: *anyopaque) usize,
+    /// Wait until `pull` has something, or the deadline/cancel says stop.
+    wait: *const fn (ctx: *anyopaque, deadline_abs: i128, deadline_ns: u64, is_cancelled: ?*const fn () bool) bool,
+};
+
+/// A child's stdout pipe behind the `Source` seam. The reader is the caller's,
+/// so coalesced lines survive across `recv` calls exactly as before.
+const FileSource = struct {
+    reader: *std.Io.File.Reader,
+    io: std.Io,
+    file: std.Io.File,
+
+    fn source(self: *FileSource) Source {
+        return .{ .ctx = @ptrCast(self), .pull = pull, .pending = pending, .wait = wait };
+    }
+
+    fn pull(ctx: *anyopaque, dst: []u8) StdioError!usize {
+        const self: *FileSource = @ptrCast(@alignCast(ctx));
+        return self.reader.interface.readSliceShort(dst) catch StdioError.UnexpectedEof;
+    }
+
+    fn pending(ctx: *anyopaque) usize {
+        const self: *FileSource = @ptrCast(@alignCast(ctx));
+        const iface = &self.reader.interface;
+        return iface.end - iface.seek;
+    }
+
+    fn wait(ctx: *anyopaque, deadline_abs: i128, deadline_ns: u64, is_cancelled: ?*const fn () bool) bool {
+        const self: *FileSource = @ptrCast(@alignCast(ctx));
+        return waitReadable(self.io, self.file, deadline_abs, deadline_ns, is_cancelled);
+    }
+};
+
 /// Read one Content-Length-framed or newline-delimited JSON message.
 /// Allocates ONE slice that's returned to the caller; the caller owns it and
 /// is responsible for freeing.
@@ -155,6 +200,17 @@ fn readFramedWithReader(
     deadline_ns: u64,
     is_cancelled: ?*const fn () bool,
 ) StdioError![]u8 {
+    var file_source = FileSource{ .reader = reader, .io = io, .file = reader.file };
+    return readFramedFromSource(allocator, io, file_source.source(), deadline_ns, is_cancelled);
+}
+
+fn readFramedFromSource(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    src: Source,
+    deadline_ns: u64,
+    is_cancelled: ?*const fn () bool,
+) StdioError![]u8 {
     // Compute the absolute deadline ONCE on entry.
     const deadline_abs: i128 = if (deadline_ns == 0) std.math.maxInt(i128) else blk: {
         const now = std.Io.Timestamp.now(io, .real).nanoseconds;
@@ -178,11 +234,6 @@ fn readFramedWithReader(
         }
     }.call;
 
-    // Persistent reader is owned by the caller (StdioClient keeps it
-    // alive across recv() calls so coalesced lines survive).
-    const iface = &reader.interface;
-    const file = reader.file;
-
     // Peek the first byte to detect framing style: '{' ⇒ newline-delimited
     // JSON (the @modelcontextprotocol/sdk default in v1.x; the message ends
     // at the next \n) anything else ⇒ Content-Length framed (the MCP stdio
@@ -199,9 +250,9 @@ fn readFramedWithReader(
     // pipe still open) blocks the read below forever and the deadline never
     // fires.
     if (deadline_ns != 0 or is_cancelled != null) {
-        if (!waitReadable(io, file, deadline_abs, deadline_ns, is_cancelled)) return StdioError.RecvTimeout;
+        if (!src.wait(src.ctx, deadline_abs, deadline_ns, is_cancelled)) return StdioError.RecvTimeout;
     }
-    const n0 = iface.readSliceShort(&first) catch return StdioError.UnexpectedEof;
+    const n0 = try src.pull(src.ctx, &first);
     if (n0 == 0) return StdioError.UnexpectedEof;
 
     if (first[0] == '{') {
@@ -216,16 +267,16 @@ fn readFramedWithReader(
             // The only cancel/clock poll: once per reader-buffer refill,
             // never per byte — a per-byte poll multiplied a caller's
             // SQLite-query hook into millions of calls and blew the budget.
-            if (iface.bufferedLen() == 0 and (deadline_ns != 0 or is_cancelled != null)) {
+            if (src.pending(src.ctx) == 0 and (deadline_ns != 0 or is_cancelled != null)) {
                 // Only poll once the buffer is drained, or buffered bytes
                 // would sit unread while we wait on an empty fd.
-                if (!waitReadable(io, file, deadline_abs, deadline_ns, is_cancelled)) return StdioError.RecvTimeout;
+                if (!src.wait(src.ctx, deadline_abs, deadline_ns, is_cancelled)) return StdioError.RecvTimeout;
             }
             var b: [1]u8 = undefined;
             // A clean EOF is reported by `readSliceShort` as a short count;
             // the only error it propagates is `error.ReadFailed` — a genuine
             // read failure (EBADF on a killed child, EIO, ...).
-            const n_byte = iface.readSliceShort(&b) catch return StdioError.UnexpectedEof;
+            const n_byte = try src.pull(src.ctx, &b);
             if (n_byte == 0) break;
             if (b[0] == '\n') {
                 // Trim trailing \r if present.
@@ -256,11 +307,11 @@ fn readFramedWithReader(
     var line_start: usize = 0;
 
     while (!found_blank) {
-        if (iface.bufferedLen() == 0 and (deadline_ns != 0 or is_cancelled != null)) {
-            if (!waitReadable(io, file, deadline_abs, deadline_ns, is_cancelled)) return StdioError.RecvTimeout;
+        if (src.pending(src.ctx) == 0 and (deadline_ns != 0 or is_cancelled != null)) {
+            if (!src.wait(src.ctx, deadline_abs, deadline_ns, is_cancelled)) return StdioError.RecvTimeout;
         }
         var byte: [1]u8 = undefined;
-        const n = iface.readSliceShort(&byte) catch return StdioError.UnexpectedEof;
+        const n = try src.pull(src.ctx, &byte);
         if (n == 0) return StdioError.UnexpectedEof;
         if (header_len >= header_buf.len) return StdioError.InvalidFrame;
         header_buf[header_len] = byte[0];
@@ -302,10 +353,10 @@ fn readFramedWithReader(
     // bytes but the bytes never arrive — surfaces as `RecvTimeout`, never a hang.
     var off: usize = 0;
     while (off < body.len) {
-        if (iface.bufferedLen() == 0 and (deadline_ns != 0 or is_cancelled != null)) {
-            if (!waitReadable(io, file, deadline_abs, deadline_ns, is_cancelled)) return StdioError.RecvTimeout;
+        if (src.pending(src.ctx) == 0 and (deadline_ns != 0 or is_cancelled != null)) {
+            if (!src.wait(src.ctx, deadline_abs, deadline_ns, is_cancelled)) return StdioError.RecvTimeout;
         }
-        const n = iface.readSliceShort(body[off..]) catch return StdioError.UnexpectedEof;
+        const n = try src.pull(src.ctx, body[off..]);
         if (n == 0) return StdioError.UnexpectedEof;
         off += n;
         if (deadline_ns != 0 or is_cancelled != null) {
@@ -634,6 +685,221 @@ pub const StdioClient = struct {
 };
 
 // ============================================================================
+// SECTION B2 — GuestStdioClient: the same framing over a guest duplex
+// ============================================================================
+
+/// One duplex's two byte streams. Implemented above this module (a guest duplex
+/// under `--saas`) and by this file's tests (an in-process pipe pair), so the
+/// transport is a seam rather than a build flag.
+pub const Channel = struct {
+    io: std.Io,
+    ctx: *anyopaque,
+    vtable: *const VTable,
+
+    pub const VTable = struct {
+        read: *const fn (ctx: *anyopaque, dst: []u8) ChannelError!ReadResult,
+        write: *const fn (ctx: *anyopaque, bytes: []const u8) ChannelError!void,
+        close: *const fn (ctx: *anyopaque) void,
+    };
+
+    pub const ReadResult = struct { n: usize = 0, eof: bool = false };
+
+    pub const ChannelError = error{
+        /// Nothing arrived in the channel's own budget. Retrying is right.
+        NothingYet,
+        /// The peer is gone: the server exited, or the VM was restarted.
+        Closed,
+        OutOfMemory,
+    };
+
+    pub fn read(self: Channel, dst: []u8) ChannelError!ReadResult {
+        return self.vtable.read(self.ctx, dst);
+    }
+
+    pub fn write(self: Channel, bytes: []const u8) ChannelError!void {
+        return self.vtable.write(self.ctx, bytes);
+    }
+
+    pub fn close(self: Channel) void {
+        self.vtable.close(self.ctx);
+    }
+};
+
+/// Where a guest duplex lives: the tenant's workspace and the daemon's socket.
+/// Everything a reopen needs, and nothing that changes between calls.
+pub const GuestTarget = struct {
+    workspace_id: []const u8,
+    socket: []const u8,
+};
+
+/// Turn a server name and its argv into a live duplex in `target`. The agentic
+/// loop supplies this, because it is the only layer that reaches `pabrik-vmd`.
+pub const GuestOpenFn = *const fn (
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    target: GuestTarget,
+    name: []const u8,
+    argv: []const []const u8,
+) anyerror!Channel;
+
+/// An MCP client whose bytes live in the tenant's guest. `sendNDJSON` and
+/// `recv` are `StdioClient`'s own framing over a `Channel`, so a caller cannot
+/// tell the two transports apart above this struct.
+pub const GuestStdioClient = struct {
+    arena: std.heap.ArenaAllocator,
+    channel: Channel,
+    buffer: [4096]u8 = undefined,
+    seek: usize = 0,
+    end: usize = 0,
+    eof: bool = false,
+    deadline_ns: u64 = 0,
+    deadline_abs: i128 = 0,
+    is_cancelled: ?*const fn () bool = null,
+    is_dead: bool = false,
+
+    pub fn init(backing_allocator: std.mem.Allocator, channel: Channel) GuestStdioClient {
+        return .{
+            .arena = std.heap.ArenaAllocator.init(backing_allocator),
+            .channel = channel,
+        };
+    }
+
+    /// Response bodies come from this client's own arena, exactly as
+    /// `StdioClient.allocator` does — a caller frees them through it.
+    pub fn allocator(self: *GuestStdioClient) std.mem.Allocator {
+        return self.arena.allocator();
+    }
+
+    /// Send one newline-delimited JSON message. The signature is
+    /// `StdioClient.sendNDJSON`'s, so a call site cannot tell the transports
+    /// apart; the channel bounds the write itself.
+    pub fn sendNDJSON(
+        self: *GuestStdioClient,
+        body: []const u8,
+        deadline_ns: u64,
+        is_cancelled: ?*const fn () bool,
+    ) !void {
+        _ = deadline_ns;
+        _ = is_cancelled;
+        if (self.is_dead) return StdioError.BrokenPipe;
+        var stack_buf: [8192]u8 = undefined;
+        if (body.len + 1 <= stack_buf.len) {
+            @memcpy(stack_buf[0..body.len], body);
+            stack_buf[body.len] = '\n';
+            self.channel.write(stack_buf[0 .. body.len + 1]) catch |err| return channelError(err);
+            return;
+        }
+        const joined = self.allocator().alloc(u8, body.len + 1) catch return StdioError.OutOfMemory;
+        @memcpy(joined[0..body.len], body);
+        joined[body.len] = '\n';
+        self.channel.write(joined) catch |err| return channelError(err);
+    }
+
+    /// Read one framed response. Same framing, same errors and the same
+    /// arena-owned body as `StdioClient.recv`.
+    pub fn recv(
+        self: *GuestStdioClient,
+        deadline_ns: u64,
+        is_cancelled: ?*const fn () bool,
+    ) ![]u8 {
+        if (self.is_dead) return StdioError.BrokenPipe;
+        self.deadline_ns = deadline_ns;
+        self.deadline_abs = if (deadline_ns == 0)
+            std.math.maxInt(i128)
+        else
+            std.Io.Timestamp.now(self.channel.io, .real).nanoseconds + @as(i128, @intCast(deadline_ns));
+        self.is_cancelled = is_cancelled;
+        defer {
+            self.deadline_ns = 0;
+            self.deadline_abs = 0;
+            self.is_cancelled = null;
+        }
+        const src = Source{
+            .ctx = @ptrCast(self),
+            .pull = sourcePull,
+            .pending = sourcePending,
+            .wait = sourceWait,
+        };
+        const result = readFramedFromSource(self.allocator(), self.channel.io, src, deadline_ns, is_cancelled);
+        if (result) |body| return body else |err| {
+            // A frame that stopped mid-way leaves the byte stream unaligned.
+            self.seek = 0;
+            self.end = 0;
+            if (err == StdioError.BrokenPipe) self.eof = true;
+            return err;
+        }
+    }
+
+    /// Close the duplex. Idempotent, like `StdioClient.deinit`.
+    pub fn deinit(self: *GuestStdioClient) void {
+        if (self.is_dead) return;
+        self.is_dead = true;
+        self.arena.deinit();
+        self.channel.close();
+    }
+
+    /// One bounded channel read into the buffer. An empty answer is
+    /// `NothingYet`, which the pull loop turns into a deadline/cancel check.
+    fn fillOnce(self: *GuestStdioClient) StdioError!void {
+        const result = self.channel.read(self.buffer[0..]) catch |err| switch (err) {
+            error.NothingYet => return,
+            error.Closed => {
+                self.eof = true;
+                return;
+            },
+            error.OutOfMemory => return StdioError.OutOfMemory,
+        };
+        self.seek = 0;
+        self.end = result.n;
+        if (result.eof) self.eof = true;
+    }
+
+    fn sourcePull(ctx: *anyopaque, dst: []u8) StdioError!usize {
+        const self: *GuestStdioClient = @ptrCast(@alignCast(ctx));
+        while (self.seek == self.end) {
+            if (self.eof) return 0;
+            if (self.is_cancelled) |cb| if (cb()) return StdioError.RecvTimeout;
+            try self.fillOnce();
+            if (self.seek != self.end) break;
+            if (self.eof) return 0;
+            if (self.deadline_ns != 0 and
+                std.Io.Timestamp.now(self.channel.io, .real).nanoseconds >= self.deadline_abs)
+            {
+                return StdioError.RecvTimeout;
+            }
+        }
+        const n = @min(dst.len, self.end - self.seek);
+        @memcpy(dst[0..n], self.buffer[self.seek..][0..n]);
+        self.seek += n;
+        return n;
+    }
+
+    fn sourcePending(ctx: *anyopaque) usize {
+        const self: *GuestStdioClient = @ptrCast(@alignCast(ctx));
+        return self.end - self.seek;
+    }
+
+    fn sourceWait(ctx: *anyopaque, deadline_abs: i128, deadline_ns: u64, is_cancelled: ?*const fn () bool) bool {
+        const self: *GuestStdioClient = @ptrCast(@alignCast(ctx));
+        if (is_cancelled) |cb| if (cb()) return false;
+        if (deadline_ns != 0 and
+            std.Io.Timestamp.now(self.channel.io, .real).nanoseconds >= deadline_abs)
+        {
+            return false;
+        }
+        return true;
+    }
+
+    fn channelError(err: Channel.ChannelError) StdioError {
+        return switch (err) {
+            error.NothingYet => StdioError.SendTimeout,
+            error.Closed => StdioError.BrokenPipe,
+            error.OutOfMemory => StdioError.OutOfMemory,
+        };
+    }
+};
+
+// ============================================================================
 // SECTION C — StdioRegistry (process-global singleton, one child per server)
 // ============================================================================
 
@@ -651,7 +917,19 @@ const Entry = struct {
     dirty: std.atomic.Value(bool) = .init(false),
     /// Serializes whole request/response transactions against this one child.
     io_mutex: std.atomic.Mutex = .unlocked,
+    /// What `client` was spawned from. A changed argv means a different
+    /// server, so the child must be replaced instead of reused.
+    digest: u64 = 0,
 };
+
+fn argvDigest(argv: []const []const u8) u64 {
+    var hasher = std.hash.Wyhash.init(0);
+    for (argv) |arg| {
+        hasher.update(&.{mcp_scope.sep});
+        hasher.update(arg);
+    }
+    return hasher.final();
+}
 
 fn mutexLock(m: *std.atomic.Mutex) void {
     while (!m.tryLock()) std.atomic.spinLoopHint();
@@ -719,6 +997,7 @@ pub const AcquireOptions = struct {
     /// 0 = wait indefinitely.
     wait_ns: u64 = 0,
     is_cancelled: ?*const fn () bool = null,
+    scope: mcp_scope.Scope = .{},
 };
 
 pub const StdioRegistry = struct {
@@ -732,6 +1011,10 @@ pub const StdioRegistry = struct {
     /// from the arena.
     entries: std.StringHashMap(*Entry),
     mutex: std.atomic.Mutex = .unlocked,
+    /// Ceiling on live children across every tenant. A workspace that can
+    /// spawn unbounded processes is a denial of service against a process
+    /// that serves all of them.
+    max_entries: usize = default_max_entries,
 
     pub fn init(parent_allocator: std.mem.Allocator, io: std.Io) StdioRegistry {
         return .{
@@ -792,13 +1075,19 @@ pub const StdioRegistry = struct {
         opts: AcquireOptions,
     ) StdioError!Lease {
         // Phase 1 — registry lock, held only for map + arena work.
+        var key_buf: [mcp_scope.max_key_bytes]u8 = undefined;
+        const scoped_key = opts.scope.keyInto(name, &key_buf) orelse return StdioError.NameTooLong;
         mutexLock(&self.mutex);
-        const entry = self.entries.get(name) orelse blk: {
+        const entry = self.entries.get(scoped_key) orelse blk: {
+            if (self.entries.count() >= self.max_entries) {
+                self.mutex.unlock();
+                return StdioError.TooManyChildren;
+            }
             const client_slot = self.allocClientSlot() catch {
                 self.mutex.unlock();
                 return StdioError.OutOfMemory;
             };
-            const key_dup = self.arena.allocator().dupe(u8, name) catch {
+            const key_dup = self.arena.allocator().dupe(u8, scoped_key) catch {
                 self.mutex.unlock();
                 return StdioError.OutOfMemory;
             };
@@ -844,7 +1133,8 @@ pub const StdioRegistry = struct {
         // Phase 3 — nobody else can be touching this child, so respawn
         // (or spawn, for an entry created above) without any further
         // locking.
-        if (!entry.has_client or entry.dirty.load(.acquire) or entry.client.is_dead) {
+        const digest = argvDigest(argv);
+        if (!entry.has_client or entry.dirty.load(.acquire) or entry.client.is_dead or entry.digest != digest) {
             if (entry.has_client) entry.client.deinit();
             // Allocating from the registry arena is NOT thread-safe, and the
             // registry lock is already released.
@@ -859,6 +1149,7 @@ pub const StdioRegistry = struct {
             };
             entry.client = slot;
             entry.has_client = true;
+            entry.digest = digest;
             entry.dirty.store(false, .release);
         }
         return .{ .registry = self, .entry = entry, .name = name };
@@ -870,8 +1161,32 @@ pub const StdioRegistry = struct {
     pub fn markStale(self: *StdioRegistry, name: []const u8) void {
         mutexLock(&self.mutex);
         defer self.mutex.unlock();
-        if (self.entries.getPtr(name)) |entry_ptr| {
-            entry_ptr.*.dirty.store(true, .release);
+        var it = self.entries.iterator();
+        while (it.next()) |kv| {
+            if (!mcp_scope.matchesName(kv.key_ptr.*, name)) continue;
+            kv.value_ptr.*.dirty.store(true, .release);
+        }
+    }
+
+    /// Drop every tenant's cached child for `name` and kill it.
+    pub fn evictName(self: *StdioRegistry, name: []const u8, allocator: std.mem.Allocator) void {
+        mutexLock(&self.mutex);
+        defer self.mutex.unlock();
+        const doomed = allocator.alloc([]const u8, self.entries.count()) catch return;
+        defer allocator.free(doomed);
+        var count: usize = 0;
+        var it = self.entries.iterator();
+        while (it.next()) |kv| {
+            if (!mcp_scope.matchesName(kv.key_ptr.*, name)) continue;
+            doomed[count] = kv.key_ptr.*;
+            count += 1;
+        }
+        for (doomed[0..count]) |key| {
+            if (self.entries.fetchRemove(key)) |kv| {
+                mutexLock(&kv.value.io_mutex);
+                if (kv.value.has_client) kv.value.client.deinit();
+                kv.value.io_mutex.unlock();
+            }
         }
     }
 
@@ -880,12 +1195,15 @@ pub const StdioRegistry = struct {
     /// owns it.
     pub fn dropAndRespawn(
         self: *StdioRegistry,
+        scope: mcp_scope.Scope,
         name: []const u8,
         argv: []const []const u8,
     ) !*StdioClient {
+        var key_buf: [mcp_scope.max_key_bytes]u8 = undefined;
+        const scoped_key = scope.keyInto(name, &key_buf) orelse return StdioError.NameTooLong;
         mutexLock(&self.mutex);
         defer self.mutex.unlock();
-        if (self.entries.fetchRemove(name)) |kv| {
+        if (self.entries.fetchRemove(scoped_key)) |kv| {
             // Take the entry lock before killing: a concurrent `acquire` may
             // be blocked on it and about to dereference this very client.
             mutexLock(&kv.value.io_mutex);
@@ -893,7 +1211,7 @@ pub const StdioRegistry = struct {
             kv.value.io_mutex.unlock();
         }
         const client_slot = try self.allocClientSlot();
-        const key_dup = try self.arena.allocator().dupe(u8, name);
+        const key_dup = try self.arena.allocator().dupe(u8, scoped_key);
         const new_entry = try self.arena.allocator().create(Entry);
         client_slot.* = try StdioClient.init(self.arena.allocator(), self.io, argv);
         new_entry.* = .{ .client = client_slot, .dirty = .init(false) };
@@ -964,6 +1282,197 @@ pub const StdioRegistry = struct {
     /// Called by main.zig shutdown hook. Kills all spawned children AND
     /// frees all registry memory (via the arena) AND deinits the
     /// owned Threaded io.
+    pub fn deinitGlobal() void {
+        mutexLock(&global_init_mutex);
+        defer global_init_mutex.unlock();
+        if (global_registry) |*reg| {
+            reg.deinit();
+            global_registry = null;
+        }
+    }
+};
+
+/// Exclusive, must-be-released handle on one guest-backed MCP server. Same
+/// contract as `Lease`: one caller owns the duplex's read cursor at a time.
+pub const GuestLease = struct {
+    entry: *GuestEntry,
+    name: []const u8,
+    released: bool = false,
+
+    pub fn client(self: *const GuestLease) *GuestStdioClient {
+        return self.entry.client;
+    }
+
+    pub fn markStale(self: *const GuestLease) void {
+        self.entry.dirty.store(true, .release);
+    }
+
+    pub fn release(self: *GuestLease) void {
+        if (self.released) return;
+        self.released = true;
+        self.entry.io_mutex.unlock();
+    }
+};
+
+const GuestEntry = struct {
+    client: *GuestStdioClient,
+    has_client: bool = false,
+    dirty: std.atomic.Value(bool) = .init(false),
+    io_mutex: std.atomic.Mutex = .unlocked,
+    digest: u64 = 0,
+};
+
+/// The same `AcquireOptions` contract, plus where the duplex lives.
+pub const GuestAcquireOptions = struct {
+    /// 0 = wait indefinitely.
+    wait_ns: u64 = 0,
+    is_cancelled: ?*const fn () bool = null,
+    scope: mcp_scope.Scope = .{},
+    target: GuestTarget = .{ .workspace_id = "", .socket = "" },
+};
+
+/// Cached `GuestStdioClient`s, one duplex per (tenant, server). A guest duplex
+/// is a live MCP server inside the tenant's VM, so it must survive across tool
+/// calls exactly as a host child does.
+pub const GuestRegistry = struct {
+    arena: std.heap.ArenaAllocator,
+    io: std.Io,
+    opener: GuestOpenFn,
+    entries: std.StringHashMap(*GuestEntry),
+    mutex: std.atomic.Mutex = .unlocked,
+    max_entries: usize = default_max_entries,
+
+    pub fn init(parent_allocator: std.mem.Allocator, io: std.Io, opener: GuestOpenFn) GuestRegistry {
+        return .{
+            .arena = std.heap.ArenaAllocator.init(parent_allocator),
+            .io = io,
+            .opener = opener,
+            .entries = std.StringHashMap(*GuestEntry).init(parent_allocator),
+        };
+    }
+
+    /// Take exclusive use of the tenant's duplex for `name`, opening one if
+    /// there is none and replacing it if the last holder marked it stale.
+    pub fn acquire(
+        self: *GuestRegistry,
+        name: []const u8,
+        argv: []const []const u8,
+        opts: GuestAcquireOptions,
+    ) StdioError!GuestLease {
+        var key_buf: [mcp_scope.max_key_bytes]u8 = undefined;
+        const scoped_key = opts.scope.keyInto(name, &key_buf) orelse return StdioError.NameTooLong;
+        mutexLock(&self.mutex);
+        const entry = self.entries.get(scoped_key) orelse blk: {
+            if (self.entries.count() >= self.max_entries) {
+                self.mutex.unlock();
+                return StdioError.TooManyChildren;
+            }
+            const slot = self.arena.allocator().create(GuestStdioClient) catch {
+                self.mutex.unlock();
+                return StdioError.OutOfMemory;
+            };
+            const key_dup = self.arena.allocator().dupe(u8, scoped_key) catch {
+                self.mutex.unlock();
+                return StdioError.OutOfMemory;
+            };
+            const new_entry = self.arena.allocator().create(GuestEntry) catch {
+                self.mutex.unlock();
+                return StdioError.OutOfMemory;
+            };
+            new_entry.* = .{ .client = slot };
+            self.entries.put(key_dup, new_entry) catch {
+                self.mutex.unlock();
+                return StdioError.OutOfMemory;
+            };
+            break :blk new_entry;
+        };
+        self.mutex.unlock();
+
+        if (!tryLockUntil(self.io, &entry.io_mutex, opts.wait_ns, opts.is_cancelled)) {
+            return StdioError.LeaseTimeout;
+        }
+        errdefer entry.io_mutex.unlock();
+
+        const digest = argvDigest(argv);
+        if (!entry.has_client or entry.dirty.load(.acquire) or entry.client.is_dead or entry.digest != digest) {
+            if (entry.has_client) entry.client.deinit();
+            // The opener runs OUTSIDE the registry lock: it opens a socket.
+            const channel = self.opener(
+                self.arena.allocator(),
+                self.io,
+                opts.target,
+                name,
+                argv,
+            ) catch |err| switch (err) {
+                error.OutOfMemory => {
+                    entry.has_client = false;
+                    entry.dirty.store(true, .release);
+                    return StdioError.OutOfMemory;
+                },
+                else => {
+                    entry.has_client = false;
+                    entry.dirty.store(true, .release);
+                    return StdioError.ChildSpawnFailed;
+                },
+            };
+            entry.client.* = GuestStdioClient.init(self.arena.allocator(), channel);
+            entry.has_client = true;
+            entry.digest = digest;
+            entry.dirty.store(false, .release);
+        }
+        return .{ .entry = entry, .name = name };
+    }
+
+    /// Drop every tenant's duplex for `name`, closing it in the guest.
+    pub fn evictName(self: *GuestRegistry, name: []const u8, allocator: std.mem.Allocator) void {
+        mutexLock(&self.mutex);
+        defer self.mutex.unlock();
+        const doomed = allocator.alloc([]const u8, self.entries.count()) catch return;
+        defer allocator.free(doomed);
+        var count: usize = 0;
+        var it = self.entries.iterator();
+        while (it.next()) |kv| {
+            if (!mcp_scope.matchesName(kv.key_ptr.*, name)) continue;
+            doomed[count] = kv.key_ptr.*;
+            count += 1;
+        }
+        for (doomed[0..count]) |key| {
+            if (self.entries.fetchRemove(key)) |kv| {
+                mutexLock(&kv.value.io_mutex);
+                if (kv.value.has_client) kv.value.client.deinit();
+                kv.value.io_mutex.unlock();
+            }
+        }
+    }
+
+    pub fn deinit(self: *GuestRegistry) void {
+        mutexLock(&self.mutex);
+        defer self.mutex.unlock();
+        var it = self.entries.iterator();
+        while (it.next()) |kv| {
+            const entry = kv.value_ptr.*;
+            mutexLock(&entry.io_mutex);
+            if (entry.has_client) entry.client.deinit();
+            entry.io_mutex.unlock();
+        }
+        self.entries.deinit();
+        self.arena.deinit();
+    }
+
+    var global_registry: ?GuestRegistry = null;
+    var global_init_mutex: std.atomic.Mutex = .unlocked;
+
+    /// The process-global registry. The first caller supplies the io and the
+    /// opener; both are process-wide, so later callers pass the same values.
+    pub fn global(allocator: std.mem.Allocator, io: std.Io, opener: GuestOpenFn) *GuestRegistry {
+        mutexLock(&global_init_mutex);
+        defer global_init_mutex.unlock();
+        if (global_registry == null) {
+            global_registry = GuestRegistry.init(allocator, io, opener);
+        }
+        return &global_registry.?;
+    }
+
     pub fn deinitGlobal() void {
         mutexLock(&global_init_mutex);
         defer global_init_mutex.unlock();
@@ -1271,13 +1780,144 @@ test "acquire with different names returns different clients" {
     try testing.expect(a != lb.client());
 }
 
+test "two tenants declaring the same server name get two child processes" {
+    var reg = StdioRegistry.init(testing.allocator, testing.io);
+    defer reg.deinit();
+    const tenant_a = mcp_scope.Scope{ .owner = "u_a", .workspace_id = "ws_1" };
+    const tenant_b = mcp_scope.Scope{ .owner = "u_b", .workspace_id = "ws_1" };
+
+    var la = try reg.acquire("files", echo_argv(), .{ .scope = tenant_a });
+    const a = la.client();
+    la.release();
+
+    var lb = try reg.acquire("files", echo_argv(), .{ .scope = tenant_b });
+    const b = lb.client();
+    lb.release();
+
+    try testing.expect(a != b);
+    try testing.expectEqual(@as(usize, 2), reg.entries.count());
+}
+
+test "one tenant asking twice for the same server keeps a single child" {
+    var reg = StdioRegistry.init(testing.allocator, testing.io);
+    defer reg.deinit();
+    const tenant = mcp_scope.Scope{ .owner = "u_a", .workspace_id = "ws_1" };
+
+    var first = try reg.acquire("files", echo_argv(), .{ .scope = tenant });
+    const a = first.client();
+    first.release();
+
+    var second = try reg.acquire("files", echo_argv(), .{ .scope = tenant });
+    const b = second.client();
+    second.release();
+
+    try testing.expectEqual(@intFromPtr(a), @intFromPtr(b));
+    try testing.expectEqual(@as(usize, 1), reg.entries.count());
+}
+
+test "another tenant's in-flight call does not block this tenant's lease" {
+    var reg = StdioRegistry.init(testing.allocator, testing.io);
+    defer reg.deinit();
+    const tenant_a = mcp_scope.Scope{ .owner = "u_a", .workspace_id = "ws_1" };
+    const tenant_b = mcp_scope.Scope{ .owner = "u_b", .workspace_id = "ws_1" };
+
+    var held = try reg.acquire("files", sigtermIgnoringArgv(), .{ .scope = tenant_a });
+    defer held.release();
+
+    var other = try reg.acquire("files", echo_argv(), .{
+        .scope = tenant_b,
+        .wait_ns = 200 * std.time.ns_per_ms,
+    });
+    defer other.release();
+
+    try testing.expect(held.client() != other.client());
+}
+
+test "invalidating a server name respawns it for every tenant that declared it" {
+    var reg = StdioRegistry.init(testing.allocator, testing.io);
+    defer reg.deinit();
+    const tenant_a = mcp_scope.Scope{ .owner = "u_a", .workspace_id = "ws_1" };
+    const tenant_b = mcp_scope.Scope{ .owner = "u_b", .workspace_id = "ws_1" };
+
+    var la = try reg.acquire("files", echo_argv(), .{ .scope = tenant_a });
+    const a_before = la.client();
+    la.release();
+    var lb = try reg.acquire("files", echo_argv(), .{ .scope = tenant_b });
+    const b_before = lb.client();
+    lb.release();
+
+    reg.markStale("files");
+
+    var la2 = try reg.acquire("files", echo_argv(), .{ .scope = tenant_a });
+    const a_after = la2.client();
+    la2.release();
+    var lb2 = try reg.acquire("files", echo_argv(), .{ .scope = tenant_b });
+    const b_after = lb2.client();
+    lb2.release();
+
+    try testing.expect(a_before != a_after);
+    try testing.expect(b_before != b_after);
+}
+
+test "a changed argv replaces the child instead of reusing the old one" {
+    var reg = StdioRegistry.init(testing.allocator, testing.io);
+    defer reg.deinit();
+    const tenant = mcp_scope.Scope{ .owner = "u_a", .workspace_id = "ws_1" };
+
+    var first = try reg.acquire("files", echo_argv(), .{ .scope = tenant });
+    const before = first.client();
+    first.release();
+
+    var second = try reg.acquire("files", sigtermIgnoringArgv(), .{ .scope = tenant });
+    const after = second.client();
+    second.release();
+
+    try testing.expect(before != after);
+    try testing.expectEqual(@as(usize, 1), reg.entries.count());
+}
+
+test "evicting a server name drops every tenant's child" {
+    var reg = StdioRegistry.init(testing.allocator, testing.io);
+    defer reg.deinit();
+    const tenant_a = mcp_scope.Scope{ .owner = "u_a", .workspace_id = "ws_1" };
+    const tenant_b = mcp_scope.Scope{ .owner = "u_b", .workspace_id = "ws_1" };
+
+    var la = try reg.acquire("files", echo_argv(), .{ .scope = tenant_a });
+    la.release();
+    var lb = try reg.acquire("files", echo_argv(), .{ .scope = tenant_b });
+    lb.release();
+    var keep = try reg.acquire("search", echo_argv(), .{ .scope = tenant_a });
+    keep.release();
+
+    reg.evictName("files", testing.allocator);
+
+    try testing.expectEqual(@as(usize, 1), reg.entries.count());
+}
+
+test "a registry at its ceiling refuses another child and keeps the ones it has" {
+    var reg = StdioRegistry.init(testing.allocator, testing.io);
+    defer reg.deinit();
+    reg.max_entries = 2;
+
+    var a = try reg.acquire("a", echo_argv(), .{});
+    a.release();
+    var b = try reg.acquire("b", echo_argv(), .{});
+    b.release();
+
+    try testing.expectError(StdioError.TooManyChildren, reg.acquire("c", echo_argv(), .{}));
+
+    var a_again = try reg.acquire("a", echo_argv(), .{});
+    a_again.release();
+    try testing.expectEqual(@as(usize, 2), reg.entries.count());
+}
+
 test "StdioRegistry.dropAndRespawn returns a different client" {
     var reg = StdioRegistry.init(testing.allocator, testing.io);
     defer reg.deinit();
     var l1 = try reg.acquire("x", echo_argv(), .{});
     const c1 = l1.client();
     l1.release();
-    const c2 = try reg.dropAndRespawn("x", echo_argv());
+    const c2 = try reg.dropAndRespawn(.{}, "x", echo_argv());
     try testing.expect(c1 != c2);
 }
 
@@ -2130,4 +2770,255 @@ test "acquire on a missing binary reports ChildSpawnFailed and leaves the entry 
     defer lease.release();
     try testing.expect(lease.client().stdin != null);
     try testing.expectEqual(false, lease.entry.dirty.load(.acquire));
+}
+
+// ── Guest transport: the same framing over a Channel ──────────────────────
+// The channel is the seam, so a scripted one stands in for a tenant's VM here.
+// The real guest duplex is covered by `zig build test:vm` and the vmd suite.
+
+const FakeChannel = struct {
+    incoming: []const u8 = "",
+    at: usize = 0,
+    silent: bool = false,
+    closed_on_read: bool = false,
+    closed: bool = false,
+    /// Set by the opener helper: the channel was allocated for the registry,
+    /// so closing it has to free it too.
+    owned: bool = false,
+    writes: std.ArrayList(u8) = .empty,
+
+    fn channel(self: *FakeChannel) Channel {
+        return .{ .io = testing.io, .ctx = @ptrCast(self), .vtable = &fake_vtable };
+    }
+
+    fn deinit(self: *FakeChannel) void {
+        self.writes.deinit(testing.allocator);
+    }
+
+    fn read(ctx: *anyopaque, dst: []u8) Channel.ChannelError!Channel.ReadResult {
+        const self: *FakeChannel = @ptrCast(@alignCast(ctx));
+        if (self.closed_on_read) return error.Closed;
+        if (self.silent or self.at >= self.incoming.len) {
+            // A real duplex read waits inside the guest, so this one waits too
+            // rather than turning the client's loop into a hot spin.
+            if (self.silent) std.Io.sleep(testing.io, .{ .nanoseconds = 2 * std.time.ns_per_ms }, .real) catch {};
+            if (self.silent) return error.NothingYet;
+            return .{ .n = 0, .eof = true };
+        }
+        const n = @min(dst.len, self.incoming.len - self.at);
+        @memcpy(dst[0..n], self.incoming[self.at..][0..n]);
+        self.at += n;
+        return .{ .n = n };
+    }
+
+    fn write(ctx: *anyopaque, bytes: []const u8) Channel.ChannelError!void {
+        const self: *FakeChannel = @ptrCast(@alignCast(ctx));
+        self.writes.appendSlice(testing.allocator, bytes) catch return error.OutOfMemory;
+    }
+
+    fn close(ctx: *anyopaque) void {
+        const self: *FakeChannel = @ptrCast(@alignCast(ctx));
+        self.closed = true;
+        if (!self.owned) return;
+        self.writes.deinit(testing.allocator);
+        testing.allocator.destroy(self);
+    }
+};
+
+const fake_vtable = Channel.VTable{
+    .read = FakeChannel.read,
+    .write = FakeChannel.write,
+    .close = FakeChannel.close,
+};
+
+test "a guest client keeps the second coalesced line for the next read" {
+    var fake = FakeChannel{ .incoming = COALESCED_NDJSON };
+    defer fake.deinit();
+    var client = GuestStdioClient.init(testing.allocator, fake.channel());
+    defer client.deinit();
+
+    const first = try client.recv(5_000 * std.time.ns_per_ms, null);
+    try testing.expectEqualStrings("{\"jsonrpc\":\"2.0\",\"id\":1}", first);
+    const second = try client.recv(5_000 * std.time.ns_per_ms, null);
+    try testing.expectEqualStrings("{\"jsonrpc\":\"2.0\",\"id\":2}", second);
+}
+
+test "a guest client sends one newline-terminated message the server can frame" {
+    var fake = FakeChannel{};
+    defer fake.deinit();
+    var client = GuestStdioClient.init(testing.allocator, fake.channel());
+    defer client.deinit();
+
+    try client.sendNDJSON("{\"jsonrpc\":\"2.0\",\"id\":9}", 0, null);
+    try testing.expectEqualStrings("{\"jsonrpc\":\"2.0\",\"id\":9}\n", fake.writes.items);
+}
+
+test "a silent guest channel times out instead of reporting an empty message" {
+    var fake = FakeChannel{ .silent = true };
+    defer fake.deinit();
+    var client = GuestStdioClient.init(testing.allocator, fake.channel());
+    defer client.deinit();
+
+    try testing.expectError(StdioError.RecvTimeout, client.recv(40 * std.time.ns_per_ms, null));
+}
+
+test "a guest duplex that closed ends the stream instead of hanging" {
+    var fake = FakeChannel{ .closed_on_read = true };
+    defer fake.deinit();
+    var client = GuestStdioClient.init(testing.allocator, fake.channel());
+    defer client.deinit();
+
+    try testing.expectError(StdioError.UnexpectedEof, client.recv(5_000 * std.time.ns_per_ms, null));
+}
+
+test "a cancelled guest read stops even with no deadline at all" {
+    var fake = FakeChannel{ .silent = true };
+    defer fake.deinit();
+    var client = GuestStdioClient.init(testing.allocator, fake.channel());
+    defer client.deinit();
+
+    const cancel = struct {
+        fn call() bool {
+            return true;
+        }
+    }.call;
+    try testing.expectError(StdioError.RecvTimeout, client.recv(0, &cancel));
+}
+
+test "a guest client sends nothing once it is dead, and closes the duplex once" {
+    var fake = FakeChannel{};
+    defer fake.deinit();
+    var client = GuestStdioClient.init(testing.allocator, fake.channel());
+
+    client.deinit();
+    client.deinit();
+    try testing.expect(fake.closed);
+    try testing.expectError(StdioError.BrokenPipe, client.sendNDJSON("{}", 0, null));
+    try testing.expectError(StdioError.BrokenPipe, client.recv(0, null));
+}
+
+// ── GuestRegistry: one live duplex per (tenant, server) ───────────────────
+
+/// The opener the registry tests drive: it hands back a scripted channel and
+/// records how many duplexes it was asked for.
+const Opener = struct {
+    var opens: usize = 0;
+    var fail_next: bool = false;
+    var last_channel_ctx: ?*anyopaque = null;
+
+    fn open(
+        _: std.mem.Allocator,
+        io: std.Io,
+        _: GuestTarget,
+        _: []const u8,
+        _: []const []const u8,
+    ) anyerror!Channel {
+        if (fail_next) {
+            fail_next = false;
+            return error.ChildSpawnFailed;
+        }
+        opens += 1;
+        const fake = try testing.allocator.create(FakeChannel);
+        fake.* = .{ .incoming = COALESCED_NDJSON, .owned = true };
+        last_channel_ctx = @ptrCast(fake);
+        return .{ .io = io, .ctx = @ptrCast(fake), .vtable = &fake_vtable };
+    }
+};
+
+test "two tenants declaring the same server get two guest duplexes" {
+    Opener.opens = 0;
+    var reg = GuestRegistry.init(testing.allocator, testing.io, Opener.open);
+    defer reg.deinit();
+    const target = GuestTarget{ .workspace_id = "ws_1", .socket = "/tmp/vmd.sock" };
+
+    var a = try reg.acquire("files", &.{"server"}, .{
+        .scope = .{ .owner = "u_a", .workspace_id = "ws_1" },
+        .target = target,
+    });
+    const client_a = a.client();
+    a.release();
+
+    var b = try reg.acquire("files", &.{"server"}, .{
+        .scope = .{ .owner = "u_b", .workspace_id = "ws_1" },
+        .target = target,
+    });
+    const client_b = b.client();
+    b.release();
+
+    try testing.expect(client_a != client_b);
+    try testing.expectEqual(@as(usize, 2), reg.entries.count());
+    try testing.expectEqual(@as(usize, 2), Opener.opens);
+}
+
+test "one tenant asking twice for the same server keeps one guest duplex" {
+    Opener.opens = 0;
+    var reg = GuestRegistry.init(testing.allocator, testing.io, Opener.open);
+    defer reg.deinit();
+    const scope = mcp_scope.Scope{ .owner = "u_a", .workspace_id = "ws_1" };
+    const target = GuestTarget{ .workspace_id = "ws_1", .socket = "/tmp/vmd.sock" };
+
+    var first = try reg.acquire("files", &.{"server"}, .{ .scope = scope, .target = target });
+    const a = first.client();
+    first.release();
+    var second = try reg.acquire("files", &.{"server"}, .{ .scope = scope, .target = target });
+    const b = second.client();
+    second.release();
+
+    try testing.expectEqual(@intFromPtr(a), @intFromPtr(b));
+    try testing.expectEqual(@as(usize, 1), reg.entries.count());
+    try testing.expectEqual(@as(usize, 1), Opener.opens);
+}
+
+test "a stale guest lease reopens the duplex instead of reading a closed one" {
+    Opener.opens = 0;
+    var reg = GuestRegistry.init(testing.allocator, testing.io, Opener.open);
+    defer reg.deinit();
+    const scope = mcp_scope.Scope{ .owner = "u_a", .workspace_id = "ws_1" };
+    const target = GuestTarget{ .workspace_id = "ws_1", .socket = "/tmp/vmd.sock" };
+
+    var first = try reg.acquire("files", &.{"server"}, .{ .scope = scope, .target = target });
+    const one = try first.client().recv(5_000 * std.time.ns_per_ms, null);
+    try testing.expectEqualStrings("{\"jsonrpc\":\"2.0\",\"id\":1}", one);
+    first.markStale();
+    first.release();
+
+    var second = try reg.acquire("files", &.{"server"}, .{ .scope = scope, .target = target });
+    // A reopened duplex is a NEW stream: it answers with the first line again,
+    // where the abandoned one would have handed back the second.
+    const again = try second.client().recv(5_000 * std.time.ns_per_ms, null);
+    second.release();
+    try testing.expectEqualStrings("{\"jsonrpc\":\"2.0\",\"id\":1}", again);
+    try testing.expectEqual(@as(usize, 2), Opener.opens);
+}
+
+test "a guest open that failed leaves the entry re-acquirable" {
+    Opener.opens = 0;
+    Opener.fail_next = true;
+    var reg = GuestRegistry.init(testing.allocator, testing.io, Opener.open);
+    defer reg.deinit();
+    const scope = mcp_scope.Scope{ .owner = "u_a", .workspace_id = "ws_1" };
+    const target = GuestTarget{ .workspace_id = "ws_1", .socket = "/tmp/vmd.sock" };
+
+    try testing.expectError(
+        StdioError.ChildSpawnFailed,
+        reg.acquire("files", &.{"server"}, .{ .scope = scope, .target = target }),
+    );
+    var lease = try reg.acquire("files", &.{"server"}, .{ .scope = scope, .target = target });
+    lease.release();
+    try testing.expectEqual(@as(usize, 1), Opener.opens);
+}
+
+test "a guest registry at its ceiling refuses another duplex and keeps the ones it has" {
+    Opener.opens = 0;
+    var reg = GuestRegistry.init(testing.allocator, testing.io, Opener.open);
+    defer reg.deinit();
+    reg.max_entries = 1;
+    const target = GuestTarget{ .workspace_id = "ws_1", .socket = "/tmp/vmd.sock" };
+
+    var first = try reg.acquire("a", &.{"server"}, .{ .target = target });
+    first.release();
+    try testing.expectError(StdioError.TooManyChildren, reg.acquire("b", &.{"server"}, .{ .target = target }));
+    var again = try reg.acquire("a", &.{"server"}, .{ .target = target });
+    again.release();
+    try testing.expectEqual(@as(usize, 1), reg.entries.count());
 }

@@ -448,7 +448,7 @@ pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
                 var it = servers_val.object.iterator();
                 while (it.next()) |entry| {
                     pabrikcore.mcpStdioRegistry(di.allocator).markStale(entry.key_ptr.*);
-                    if (di.mcp_http_registry) |hreg| hreg.evict(entry.key_ptr.*);
+                    if (di.mcp_http_registry) |hreg| hreg.evictName(entry.key_ptr.*);
                 }
             }
         }

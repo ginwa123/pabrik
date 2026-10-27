@@ -18,6 +18,7 @@ const ask_user_mod = pabrikcore.ask_user;
 const notifications = pabrikcore.notifications_mod;
 
 const sqlite = pabrikcore.sqlite;
+const mcp_session_scope = @import("mcp_session_scope.zig");
 const database = pabrikcore.database;
 const migration_mod = pabrikcore.migrations_mod.migration;
 const migration = migration_mod;
@@ -348,6 +349,7 @@ fn fetchMcpToolsFresh(
     copy_session_id: []const u8,
     initial_config: *config_mod.LlmConfig,
     logger: *logger_mod.Logger,
+    io: std.Io,
 ) ?[]pabrikcore.tool_models.AgentTool {
     return (blk: {
         const McpCancelCtx = struct {
@@ -373,10 +375,14 @@ fn fetchMcpToolsFresh(
             mcp_cancel_thunk.state = b.*;
         }
         defer mcp_cancel_thunk.state = null;
+        var scope_arena = std.heap.ArenaAllocator.init(parent_allocator);
+        defer scope_arena.deinit();
+        const scope = mcp_session_scope.resolve(scope_arena.allocator(), db, copy_session_id);
         break :blk build_msg_prompt.buildMCPToolsRun(
             parent_allocator,
             initial_config.mcpServers() orelse .null,
             if (box) |_| &mcp_cancel_thunk.call else null,
+            .{ .scope = scope, .db = db, .io = io },
         );
     } catch |err| blk: {
         logger.errFmt("Failed to load MCP tools: {s}", .{@errorName(err)});
@@ -752,7 +758,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
     // `tools/list` per boot / per config mutation, published to the singleton
     // for every future run.
     if (!di.di.isMcpToolsInit()) {
-        const fresh = fetchMcpToolsFresh(parent_allocator, db, copy_session_id, initial_config, logger);
+        const fresh = fetchMcpToolsFresh(parent_allocator, db, copy_session_id, initial_config, logger, di.io);
         // Publish for all future runs. On error (`fresh == null`) pass
         // mark_init=false so the next run retries instead of caching
         // the failure forever.
@@ -809,7 +815,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         // /api/config/pabrik and add_mcp_server call `clearMcpToolsCache()`
         // after their `setLlmConfig` swap.
         if (!di.di.isMcpToolsInit()) {
-            const fresh = fetchMcpToolsFresh(allocator, db, copy_session_id, config, logger);
+            const fresh = fetchMcpToolsFresh(allocator, db, copy_session_id, config, logger, di.io);
             // `fresh` is consumed by `storeMcpToolsCache` (which deep-dupes
             // onto the singleton), so it is safe for this to live in the
             // per-turn arena.

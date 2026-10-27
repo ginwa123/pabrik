@@ -83,7 +83,7 @@ say "instance started, waiting for the agent banner"
 banner=""
 for _ in $(seq 1 100); do
   if [ -f "$serial_log" ]; then
-    banner="$(grep -m1 'listening on vsock port' "$serial_log" 2>/dev/null || true)"
+    banner="$(grep -m1 -E 'listening on .*vsock port' "$serial_log" 2>/dev/null || true)"
   fi
   [ -n "$banner" ] && break
   sleep 0.1

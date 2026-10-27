@@ -38,7 +38,7 @@ pub const Error = error{
     InvalidBase64,
 };
 
-pub const Action = enum { ping, exec, stop, status, resize, spawn, probe, signal, log, fs_stat, fs_read, fs_remove, fs_write, fs_walk, tty };
+pub const Action = enum { ping, exec, stop, status, resize, spawn, probe, signal, log, fs_stat, fs_read, fs_remove, fs_write, fs_walk, tty, duplex };
 
 /// Whether this action carries work into a workspace's guest: `status` and
 /// `ping` only read the state file, and the console polls them for every
@@ -57,6 +57,7 @@ test "a status poll is not work, a command is" {
     try testing.expect(carriesWork(.exec));
     try testing.expect(carriesWork(.spawn));
     try testing.expect(carriesWork(.tty));
+    try testing.expect(carriesWork(.duplex));
     try testing.expect(carriesWork(.fs_read));
     try testing.expect(carriesWork(.resize));
 }
@@ -64,6 +65,10 @@ test "a status poll is not work, a command is" {
 /// What a `tty` request does. One action rather than five, because every one of
 /// them carries the same four fields and answers with the same reply shape.
 pub const TtyOp = enum { open, read, write, resize, close };
+
+/// What a `duplex` request does: a guest process's two byte streams. Same
+/// one-action shape as `TtyOp`, and for the same reason.
+pub const DuplexOp = enum { open, read, write, close };
 
 pub const Request = struct {
     id: i64 = 0,
@@ -99,6 +104,10 @@ pub const Request = struct {
     /// `tty open` and `tty resize`: the window the caller wants.
     cols: u16 = 0,
     rows: u16 = 0,
+    /// `duplex`: which operation, and which guest duplex it names. `open`
+    /// mints the id, so it is the one op that ignores `duplex_id`.
+    duplex_op: DuplexOp = .open,
+    duplex_id: i64 = -1,
     /// `resize`: the size the workspace's VM must boot with next. Firecracker
     /// fixes both at InstanceStart, so applying them restarts the VM.
     vcpus: u32 = 0,
@@ -206,6 +215,20 @@ pub const TtyReply = struct {
     message: []const u8,
 };
 
+/// A duplex's answer. `data` is a `read`'s bytes and `` for every other op;
+/// `message` is an `open` the guest refused and `` otherwise.
+pub const DuplexReply = struct {
+    op: []const u8,
+    duplex_id: i64,
+    pid: i64,
+    data: []const u8,
+    eof: bool,
+    exited: bool,
+    exit_code: i64,
+    bytes: i64,
+    message: []const u8,
+};
+
 pub const Response = union(enum) {
     pong: struct { version: []const u8 },
     ack,
@@ -218,6 +241,7 @@ pub const Response = union(enum) {
     fs_read: FsChunk,
     fs_walk: FsWalk,
     tty: TtyReply,
+    duplex: DuplexReply,
     failure: struct { code: FailureCode, message: []const u8 },
 };
 
@@ -376,7 +400,9 @@ pub fn encodeRequest(allocator: std.mem.Allocator, request: Request) ![]u8 {
     try out.intField(allocator, "id", request.id);
     if (request.action == .ping) return out.finish(allocator);
     try out.strField(allocator, "workspace_id", request.workspace_id);
-    if (request.action == .exec or request.action == .spawn) {
+    if (request.action == .exec or request.action == .spawn or
+        (request.action == .duplex and request.duplex_op == .open))
+    {
         try out.strArrayField(allocator, "argv", request.argv);
         try out.strField(allocator, "cwd_rel", request.cwd_rel);
     }
@@ -430,6 +456,12 @@ pub fn encodeRequest(allocator: std.mem.Allocator, request: Request) ![]u8 {
         if (request.tty_op == .read) try out.intField(allocator, "max_bytes", @intCast(request.max_bytes));
         if (request.tty_op == .write) try out.base64Field(allocator, "data_b64", request.data);
     }
+    if (request.action == .duplex) {
+        try out.strField(allocator, "duplex_op", @tagName(request.duplex_op));
+        if (request.duplex_op != .open) try out.intField(allocator, "duplex_id", request.duplex_id);
+        if (request.duplex_op == .read) try out.intField(allocator, "max_bytes", @intCast(request.max_bytes));
+        if (request.duplex_op == .write) try out.base64Field(allocator, "data_b64", request.data);
+    }
     return out.finish(allocator);
 }
 
@@ -477,6 +509,11 @@ pub fn decodeRequest(allocator: std.mem.Allocator, json: []const u8) !OwnedReque
 
     if (action == .tty) {
         try decodeTtyAction(object, aa, &request);
+        return .{ .arena = arena, .value = request };
+    }
+
+    if (action == .duplex) {
+        try decodeDuplexAction(object, aa, &request);
         return .{ .arena = arena, .value = request };
     }
 
@@ -976,6 +1013,20 @@ pub fn decodeResponse(
             .message = stringField(object, "message") orelse "",
         } } };
     }
+    if (std.mem.eql(u8, kind, "duplex")) {
+        const data = if (object.get("data_b64")) |_| try decodeBase64Field(aa, object, "data_b64") else "";
+        return .{ .arena = arena, .value = .{ .duplex = .{
+            .op = stringField(object, "duplex_op") orelse "",
+            .duplex_id = integerField(object, "duplex_id") orelse -1,
+            .pid = integerField(object, "pid") orelse 0,
+            .data = data,
+            .eof = boolField(object, "eof"),
+            .exited = boolField(object, "exited"),
+            .exit_code = integerField(object, "exit_code") orelse 0,
+            .bytes = integerField(object, "bytes") orelse 0,
+            .message = stringField(object, "message") orelse "",
+        } } };
+    }
     if (std.mem.eql(u8, kind, "exec.result")) {
         const stdout = try decodeBase64Field(aa, object, "stdout_b64");
         const stderr = try decodeBase64Field(aa, object, "stderr_b64");
@@ -1055,6 +1106,59 @@ fn decodeTtyAction(
     }
 }
 
+/// The duplex action. `open` names an argv the guest runs; every other op
+/// names a duplex id the daemon itself minted, never a port or a pid.
+fn decodeDuplexAction(
+    object: std.json.ObjectMap,
+    allocator: std.mem.Allocator,
+    request: *Request,
+) !void {
+    const op_text = stringField(object, "duplex_op") orelse return Error.BadRequest;
+    const op = std.meta.stringToEnum(DuplexOp, op_text) orelse return Error.BadRequest;
+    request.duplex_op = op;
+
+    if (op == .open) {
+        const argv_value = object.get("argv") orelse return Error.BadRequest;
+        const items = switch (argv_value) {
+            .array => |a| a,
+            else => return Error.BadRequest,
+        };
+        if (items.items.len == 0) return Error.BadRequest;
+        const argv = try allocator.alloc([]const u8, items.items.len);
+        for (items.items, 0..) |item, i| {
+            argv[i] = switch (item) {
+                .string => |t| t,
+                else => return Error.BadRequest,
+            };
+        }
+        request.argv = argv;
+
+        const cwd_rel = stringField(object, "cwd_rel") orelse return Error.BadRequest;
+        if (!policy.cwdRelValid(cwd_rel)) return Error.BadRequest;
+        request.cwd_rel = cwd_rel;
+        return;
+    }
+
+    const id = integerField(object, "duplex_id") orelse return Error.BadRequest;
+    if (!policy.duplexIdValid(id)) return Error.BadRequest;
+    request.duplex_id = id;
+
+    if (op == .read) {
+        const bytes = integerField(object, "max_bytes") orelse return Error.BadRequest;
+        if (bytes <= 0 or bytes > policy.max_duplex_chunk) return Error.BadRequest;
+        request.max_bytes = @intCast(bytes);
+    }
+    if (op == .write) {
+        const text = stringField(object, "data_b64") orelse return Error.BadRequest;
+        const decoder = std.base64.standard.Decoder;
+        const size = decoder.calcSizeForSlice(text) catch return Error.InvalidBase64;
+        if (size == 0 or size > policy.max_duplex_chunk) return Error.BadRequest;
+        const data = try allocator.alloc(u8, size);
+        decoder.decode(data, text) catch return Error.InvalidBase64;
+        request.data = data;
+    }
+}
+
 fn ttyDimField(object: std.json.ObjectMap, key: []const u8) !u16 {
     const value = integerField(object, key) orelse return Error.BadRequest;
     if (value < 0 or value > std.math.maxInt(u16)) return Error.BadRequest;
@@ -1068,6 +1172,23 @@ pub fn encodeTtyReply(allocator: std.mem.Allocator, id: i64, reply: TtyReply) ![
     try out.intField(allocator, "id", id);
     try out.strField(allocator, "tty_op", reply.op);
     try out.intField(allocator, "tty_id", reply.tty_id);
+    try out.intField(allocator, "pid", reply.pid);
+    try out.intField(allocator, "exit_code", reply.exit_code);
+    try out.intField(allocator, "bytes", reply.bytes);
+    try out.boolField(allocator, "eof", reply.eof);
+    try out.boolField(allocator, "exited", reply.exited);
+    if (reply.message.len > 0) try out.strField(allocator, "message", reply.message);
+    if (reply.data.len > 0) try out.base64Field(allocator, "data_b64", reply.data);
+    return out.finish(allocator);
+}
+
+pub fn encodeDuplexReply(allocator: std.mem.Allocator, id: i64, reply: DuplexReply) ![]u8 {
+    var out = try ObjectWriter.init(allocator);
+    errdefer out.list.deinit(allocator);
+    try out.strField(allocator, "type", "duplex");
+    try out.intField(allocator, "id", id);
+    try out.strField(allocator, "duplex_op", reply.op);
+    try out.intField(allocator, "duplex_id", reply.duplex_id);
     try out.intField(allocator, "pid", reply.pid);
     try out.intField(allocator, "exit_code", reply.exit_code);
     try out.intField(allocator, "bytes", reply.bytes);
@@ -1332,6 +1453,141 @@ test "rpc: a spawn, probe and log reply decode to their own shape" {
         .log_chunk => |c| try testing.expect(c.missing),
         else => return error.TestExpectedLogChunk,
     }
+}
+
+test "rpc: a duplex open carries the argv the guest runs, and no id" {
+    const allocator = testing.allocator;
+    const encoded = try encodeRequest(allocator, .{
+        .action = .duplex,
+        .id = 11,
+        .workspace_id = "ws_1",
+        .duplex_op = .open,
+        .argv = &.{ "npx", "-y", "@modelcontextprotocol/server-filesystem" },
+        .cwd_rel = "src",
+    });
+    defer allocator.free(encoded);
+
+    var owned = try decodeRequest(allocator, encoded);
+    defer owned.deinit();
+    try testing.expectEqual(Action.duplex, owned.value.action);
+    try testing.expectEqual(DuplexOp.open, owned.value.duplex_op);
+    try testing.expectEqualStrings("ws_1", owned.value.workspace_id);
+    try testing.expectEqualStrings("src", owned.value.cwd_rel);
+    try testing.expectEqual(@as(usize, 3), owned.value.argv.len);
+    try testing.expectEqualStrings("npx", owned.value.argv[0]);
+    try testing.expectEqual(@as(i64, -1), owned.value.duplex_id);
+}
+
+test "rpc: duplex read and write name a minted id, never a port or a pid" {
+    const allocator = testing.allocator;
+
+    const read_encoded = try encodeRequest(allocator, .{
+        .action = .duplex,
+        .id = 12,
+        .workspace_id = "ws_1",
+        .duplex_op = .read,
+        .duplex_id = 3,
+        .max_bytes = 4096,
+    });
+    defer allocator.free(read_encoded);
+    var read_owned = try decodeRequest(allocator, read_encoded);
+    defer read_owned.deinit();
+    try testing.expectEqual(DuplexOp.read, read_owned.value.duplex_op);
+    try testing.expectEqual(@as(i64, 3), read_owned.value.duplex_id);
+    try testing.expectEqual(@as(usize, 4096), read_owned.value.max_bytes);
+
+    const write_encoded = try encodeRequest(allocator, .{
+        .action = .duplex,
+        .id = 13,
+        .workspace_id = "ws_1",
+        .duplex_op = .write,
+        .duplex_id = 3,
+        .data = "{\"jsonrpc\":\"2.0\"}\n",
+    });
+    defer allocator.free(write_encoded);
+    var write_owned = try decodeRequest(allocator, write_encoded);
+    defer write_owned.deinit();
+    try testing.expectEqual(DuplexOp.write, write_owned.value.duplex_op);
+    try testing.expectEqualStrings("{\"jsonrpc\":\"2.0\"}\n", write_owned.value.data);
+}
+
+test "rpc: a duplex id outside the guest's table is refused, not clamped" {
+    const allocator = testing.allocator;
+    const hostile = try std.fmt.allocPrint(allocator,
+        \\{{"type":"request","action":"duplex","id":1,"workspace_id":"ws_1",
+        \\ "duplex_op":"read","duplex_id":{d},"max_bytes":16}}
+    , .{policy.max_duplex});
+    defer allocator.free(hostile);
+    try testing.expectError(Error.BadRequest, decodeRequest(allocator, hostile));
+
+    const negative = try std.fmt.allocPrint(allocator,
+        \\{{"type":"request","action":"duplex","id":1,"workspace_id":"ws_1",
+        \\ "duplex_op":"close","duplex_id":-1}}
+    , .{});
+    defer allocator.free(negative);
+    try testing.expectError(Error.BadRequest, decodeRequest(allocator, negative));
+}
+
+test "rpc: a duplex read over the chunk ceiling is refused" {
+    const allocator = testing.allocator;
+    const encoded = try encodeRequest(allocator, .{
+        .action = .duplex,
+        .workspace_id = "ws_1",
+        .duplex_op = .read,
+        .duplex_id = 0,
+        .max_bytes = policy.max_duplex_chunk + 1,
+    });
+    defer allocator.free(encoded);
+    try testing.expectError(Error.BadRequest, decodeRequest(allocator, encoded));
+}
+
+test "rpc: a duplex reply carries its bytes, its end and its exit" {
+    const allocator = testing.allocator;
+    const encoded = try encodeDuplexReply(allocator, 21, .{
+        .op = "read",
+        .duplex_id = 2,
+        .pid = 4242,
+        .data = "{\"id\":1}\n",
+        .eof = false,
+        .exited = true,
+        .exit_code = 7,
+        .bytes = 0,
+        .message = "",
+    });
+    defer allocator.free(encoded);
+
+    var owned = try decodeResponse(allocator, encoded);
+    defer owned.deinit();
+    const reply = owned.value.duplex;
+    try testing.expectEqualStrings("read", reply.op);
+    try testing.expectEqual(@as(i64, 2), reply.duplex_id);
+    try testing.expectEqual(@as(i64, 4242), reply.pid);
+    try testing.expectEqualStrings("{\"id\":1}\n", reply.data);
+    try testing.expect(!reply.eof);
+    try testing.expect(reply.exited);
+    try testing.expectEqual(@as(i64, 7), reply.exit_code);
+}
+
+test "rpc: a duplex open the guest refused keeps the guest's own words" {
+    const allocator = testing.allocator;
+    const encoded = try encodeDuplexReply(allocator, 22, .{
+        .op = "open",
+        .duplex_id = -1,
+        .pid = 0,
+        .data = "",
+        .eof = false,
+        .exited = false,
+        .exit_code = 0,
+        .bytes = 0,
+        .message = "all 8 duplexes are in use",
+    });
+    defer allocator.free(encoded);
+
+    var owned = try decodeResponse(allocator, encoded);
+    defer owned.deinit();
+    const reply = owned.value.duplex;
+    try testing.expectEqual(@as(i64, -1), reply.duplex_id);
+    try testing.expectEqualStrings("all 8 duplexes are in use", reply.message);
 }
 
 test "rpc: frame length is refused before anything is allocated" {

@@ -648,7 +648,6 @@ fn runFsRemove(conn_fd: linux.fd_t, id: i64, path: []const u8) void {
     reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"cannot remove\"}}", .{id});
 }
 
-
 /// Every parent directory a write's path needs, each made under a fd the
 /// kernel already resolved BENEATH the workspace: a symlinked segment is
 /// `EXDEV`, never a directory somewhere else. Returns the deepest parent.
@@ -1092,7 +1091,7 @@ fn ttySetWinsize(master: linux.fd_t, cols: u16, rows: u16) bool {
     return linux.errno(linux.ioctl(master, tiocswinsz, @intFromPtr(&win))) == .SUCCESS;
 }
 
-fn ttyListen(port: u32) ?linux.fd_t {
+fn vsockListen(port: u32) ?linux.fd_t {
     return switch (vsock.listen(port, wire.cid_any, 4)) {
         .fd => |fd| fd,
         .errno => null,
@@ -1303,7 +1302,7 @@ fn ttyHost(status_fd: linux.fd_t, request_id: i64, slot: usize, cols: u16, rows:
     _ = ttySetWinsize(master, cols, rows);
 
     const port = tty_port_base + @as(u32, @intCast(slot));
-    const listen_fd = ttyListen(port) orelse ttyFail(status_fd, "cannot listen on the terminal's port");
+    const listen_fd = vsockListen(port) orelse ttyFail(status_fd, "cannot listen on the terminal's port");
 
     var report: [512]u8 = undefined;
     const opened = std.fmt.bufPrint(
@@ -1397,6 +1396,343 @@ fn runTtyOpen(conn_fd: linux.fd_t, id: i64, cols: u16, rows: u16, cwd: []const u
     }
     writeFrame(conn_fd, text);
 }
+// ─── guest duplexes: one MCP server's two byte streams ───────────────────
+
+const duplex_port_base: u32 = wire.duplex_port_base;
+const max_duplex: usize = wire.max_duplex;
+const duplex_chunk: usize = wire.max_duplex_chunk;
+/// How long one `read` waits inside the guest for a byte before answering
+/// "nothing yet", and how long one `write` waits for the server to drain.
+const duplex_read_wait_ms: i32 = 200;
+const duplex_reap_slice_ms: u64 = 10;
+/// How long a read that saw EOF waits for the server's exit code.
+const duplex_exit_wait_ms: u32 = 300;
+const duplex_write_wait_ms: i64 = 5_000;
+const duplex_report_deadline_ms: u32 = 5_000;
+const duplex_poll_slice_ms: i32 = 20;
+
+const DuplexRequest = struct {
+    id: i64 = 0,
+    argv: []const []const u8 = &.{},
+    cwd: []const u8 = tty_cwd,
+};
+
+/// One live duplex: the agent's handle on the process that owns it. The pipes
+/// and the child belong to that process, never to PID 1.
+const DuplexSlot = struct {
+    used: bool = false,
+    host_pid: i64 = 0,
+};
+
+var duplex_slots: [max_duplex]DuplexSlot = [_]DuplexSlot{.{}} ** max_duplex;
+
+fn duplexReapDead() void {
+    for (&duplex_slots) |*slot| {
+        if (!slot.used) continue;
+        var status: u32 = 0;
+        const rc = linux.wait4(@intCast(slot.host_pid), &status, wno_hang, null);
+        if (linux.errno(rc) == .SUCCESS and rc != 0) slot.* = .{};
+    }
+}
+
+fn duplexFreeSlot() ?usize {
+    for (&duplex_slots, 0..) |*slot, i| {
+        if (!slot.used) return i;
+    }
+    return null;
+}
+
+fn duplexFail(status_fd: linux.fd_t, message: []const u8) noreturn {
+    var buf: [512]u8 = undefined;
+    const text = std.fmt.bufPrint(
+        &buf,
+        "{{\"type\":\"duplex.error\",\"id\":0,\"message\":\"{s}\"}}",
+        .{message},
+    ) catch "{\"type\":\"duplex.error\",\"id\":0,\"message\":\"duplex setup failed\"}";
+    writeFrame(status_fd, text);
+    linux.exit(1);
+}
+
+/// The server's stdin and stdout are PIPES, never a pty: a pty merges stderr
+/// into stdout and echoes stdin, and either one corrupts MCP framing.
+fn duplexChild(req: *const DuplexRequest, in_read: linux.fd_t, out_write: linux.fd_t) noreturn {
+    var cwd_buf: [1024]u8 = undefined;
+    _ = linux.setsid();
+    _ = linux.dup2(in_read, 0);
+    _ = linux.dup2(out_write, 1);
+    const devnull_rc = linux.open("/dev/null", .{ .ACCMODE = .WRONLY }, 0);
+    const has_devnull = linux.errno(devnull_rc) == .SUCCESS;
+    if (has_devnull) _ = linux.dup2(@intCast(devnull_rc), 2);
+    if (in_read > 2) _ = linux.close(in_read);
+    if (out_write > 2) _ = linux.close(out_write);
+    if (has_devnull and devnull_rc > 2) _ = linux.close(@intCast(devnull_rc));
+    if (cstr(req.cwd, &cwd_buf)) |cwd| _ = linux.chdir(cwd);
+    _ = linux.setgroups(0, &[_]linux.gid_t{});
+    _ = linux.setgid(default_gid);
+    _ = linux.setuid(default_uid);
+    _ = linux.prctl(@intFromEnum(linux.PR.SET_NO_NEW_PRIVS), 1, 0, 0, 0);
+    const argv = buildArgv(req.argv) orelse {
+        writeAll(2, "pabrik-vm-agent: duplex argv too large\n");
+        linux.exit(126);
+    };
+    _ = linux.execve(@ptrCast(argv[0].?), argv, &exec_env);
+    linux.exit(127);
+}
+
+/// Kill the server's whole session and wait for it, bounded.
+fn duplexKill(in_fd: linux.fd_t, out_fd: linux.fd_t, child_pid: i64) void {
+    const group: usize = @bitCast(-@as(isize, @intCast(child_pid)));
+    _ = linux.syscall2(.kill, group, @intFromEnum(linux.SIG.KILL));
+    _ = linux.syscall2(.kill, @intCast(child_pid), @intFromEnum(linux.SIG.KILL));
+    var status: u32 = 0;
+    var i: usize = 0;
+    while (i < 50) : (i += 1) {
+        const rc = linux.wait4(@intCast(child_pid), &status, wno_hang, null);
+        if (linux.errno(rc) == .SUCCESS and rc != 0) break;
+        const ts = linux.timespec{ .sec = 0, .nsec = 10 * std.time.ns_per_ms };
+        _ = linux.nanosleep(&ts, null);
+    }
+    closeIfOpen(in_fd);
+    closeIfOpen(out_fd);
+}
+
+fn duplexError(conn_fd: linux.fd_t, message: []const u8) void {
+    reply(conn_fd, "{{\"type\":\"duplex.error\",\"id\":1,\"message\":\"{s}\"}}", .{message});
+}
+
+/// Whatever the server has written right now, plus its exit state. `eof` is
+/// the read end of a pipe that every writer has closed, never "no data yet".
+fn duplexReplyRead(conn_fd: linux.fd_t, out_fd: linux.fd_t, child_pid: i64, max_bytes: usize) void {
+    var status: ?u32 = reapWithin(child_pid, 0);
+
+    var chunk: [duplex_chunk]u8 = undefined;
+    var got: usize = 0;
+    var pfd = [_]linux.pollfd{.{ .fd = out_fd, .events = linux.POLL.IN, .revents = 0 }};
+    if (linux.errno(linux.poll(&pfd, 1, duplex_read_wait_ms)) == .SUCCESS and pfd[0].revents != 0) {
+        const rc = linux.read(out_fd, &chunk, @min(max_bytes, chunk.len));
+        if (linux.errno(rc) == .SUCCESS and rc > 0) {
+            got = rc;
+        } else if (status == null) {
+            // Zero bytes on a readable pipe IS end-of-file, and a server that
+            // closed its output is on its way out: report the code it leaves
+            // behind rather than the zero it has not earned yet.
+            status = reapWithin(child_pid, duplex_exit_wait_ms);
+        }
+    }
+
+    if (got == 0) {
+        reply(conn_fd, "{{\"type\":\"duplex.data\",\"id\":1,\"eof\":true,\"exited\":{s},\"exit_code\":{d},\"data_b64\":\"\"}}", .{
+            if (status != null) "true" else "false",
+            exitCode(status),
+        });
+        return;
+    }
+    var b64: [std.base64.standard.Encoder.calcSize(duplex_chunk)]u8 = undefined;
+    const encoded = std.base64.standard.Encoder.encode(&b64, chunk[0..got]);
+    reply(conn_fd, "{{\"type\":\"duplex.data\",\"id\":1,\"eof\":false,\"exited\":{s},\"exit_code\":{d},\"data_b64\":\"{s}\"}}", .{
+        if (status != null) "true" else "false",
+        exitCode(status),
+        encoded,
+    });
+}
+
+/// The server's exit code, or `0` while it is still running.
+fn exitCode(status: ?u32) i64 {
+    const st = status orelse return 0;
+    return if (linux.W.IFEXITED(st)) @intCast(linux.W.EXITSTATUS(st)) else -1;
+}
+
+/// Reap the server, giving it at most `budget_ms` to die. The read end of the
+/// pipe goes readable a hair before `wait4` can see the corpse.
+fn reapWithin(child_pid: i64, budget_ms: u32) ?u32 {
+    var waited: u32 = 0;
+    while (true) {
+        var status: u32 = 0;
+        const reaped = linux.wait4(@intCast(child_pid), &status, wno_hang, null);
+        if (linux.errno(reaped) == .SUCCESS and reaped != 0) return status;
+        if (waited >= budget_ms) return null;
+        sleepMs(duplex_reap_slice_ms);
+        waited += @intCast(duplex_reap_slice_ms);
+    }
+}
+
+/// Write one piece to the server's stdin, waiting for space for at most
+/// `duplex_write_wait_ms`. A server that stopped draining must not park this
+/// process for the rest of the workspace's life.
+fn duplexReplyWrite(conn_fd: linux.fd_t, in_fd: linux.fd_t, data_b64: []const u8) void {
+    var chunk: [duplex_chunk]u8 = undefined;
+    const decoder = std.base64.standard.Decoder;
+    const size = decoder.calcSizeForSlice(data_b64) catch return duplexError(conn_fd, "data is not base64");
+    if (size == 0 or size > chunk.len) return duplexError(conn_fd, "one write piece is too large");
+    decoder.decode(chunk[0..size], data_b64) catch return duplexError(conn_fd, "data is not base64");
+
+    var off: usize = 0;
+    var waited: i64 = 0;
+    while (off < size) {
+        var pfd = [_]linux.pollfd{.{ .fd = in_fd, .events = linux.POLL.OUT, .revents = 0 }};
+        const ready = linux.errno(linux.poll(&pfd, 1, duplex_poll_slice_ms)) == .SUCCESS and pfd[0].revents != 0;
+        if (!ready) {
+            waited += duplex_poll_slice_ms;
+            if (waited >= duplex_write_wait_ms) return duplexError(conn_fd, "the server is not reading its input");
+            continue;
+        }
+        const rc = linux.write(in_fd, chunk[off..].ptr, size - off);
+        if (linux.errno(rc) != .SUCCESS) return duplexError(conn_fd, "the server closed its input");
+        if (rc == 0) return duplexError(conn_fd, "the server closed its input");
+        off += rc;
+    }
+    reply(conn_fd, "{{\"type\":\"duplex.wrote\",\"id\":1,\"bytes\":{d}}}", .{off});
+}
+
+/// One request on a duplex's own port. Returns false when the duplex is
+/// finished and its host should go away.
+fn duplexServeOne(conn_fd: linux.fd_t, in_fd: linux.fd_t, out_fd: linux.fd_t, child_pid: i64) bool {
+    var header: [4]u8 = undefined;
+    if (!readExact(conn_fd, &header)) return true;
+    const len = wire.framePayloadLen(&header);
+    if (len == 0 or len > max_frame) return true;
+    var payload: [max_frame]u8 = undefined;
+    if (!readExact(conn_fd, payload[0..len])) return true;
+
+    const parsed = std.json.parseFromSlice(std.json.Value, std.heap.page_allocator, payload[0..len], .{}) catch {
+        return duplexErrorOrKeep(conn_fd, "bad json frame");
+    };
+    defer parsed.deinit();
+    const obj = switch (parsed.value) {
+        .object => |o| o,
+        else => return duplexErrorOrKeep(conn_fd, "frame is not an object"),
+    };
+    const op = if (obj.get("op")) |v| (if (v == .string) v.string else "") else "";
+
+    if (std.mem.eql(u8, op, "read")) {
+        const asked = if (obj.get("max_bytes")) |v| asUsize(v, duplex_chunk) else duplex_chunk;
+        duplexReplyRead(conn_fd, out_fd, child_pid, @min(asked, duplex_chunk));
+        return true;
+    }
+    if (std.mem.eql(u8, op, "write")) {
+        const data_b64 = if (obj.get("data_b64")) |v| (if (v == .string) v.string else "") else "";
+        duplexReplyWrite(conn_fd, in_fd, data_b64);
+        return true;
+    }
+    if (std.mem.eql(u8, op, "close")) {
+        reply(conn_fd, "{{\"type\":\"duplex.closed\",\"id\":1}}", .{});
+        return false;
+    }
+    return duplexErrorOrKeep(conn_fd, "unknown duplex request");
+}
+
+fn duplexErrorOrKeep(conn_fd: linux.fd_t, message: []const u8) bool {
+    duplexError(conn_fd, message);
+    return true;
+}
+
+/// The process that owns one duplex: it creates both pipes, forks the server,
+/// binds the duplex's own vsock port, and serves until the duplex closes.
+fn duplexHost(status_fd: linux.fd_t, request_id: i64, slot: usize, req: *const DuplexRequest) noreturn {
+    var in_fds: [2]linux.fd_t = .{ -1, -1 };
+    if (!pipePair(&in_fds)) duplexFail(status_fd, "pipe failed");
+    var out_fds: [2]linux.fd_t = .{ -1, -1 };
+    if (!pipePair(&out_fds)) duplexFail(status_fd, "pipe failed");
+
+    const child_rc = linux.fork();
+    if (linux.errno(child_rc) != .SUCCESS) duplexFail(status_fd, "fork failed");
+    if (child_rc == 0) {
+        _ = linux.close(in_fds[1]);
+        _ = linux.close(out_fds[0]);
+        duplexChild(req, in_fds[0], out_fds[1]);
+    }
+    const child_pid: i64 = @intCast(child_rc);
+    _ = linux.close(in_fds[0]);
+    _ = linux.close(out_fds[1]);
+    const in_fd = in_fds[1];
+    const out_fd = out_fds[0];
+
+    const port = duplex_port_base + @as(u32, @intCast(slot));
+    const listen_fd = vsockListen(port) orelse duplexFail(status_fd, "cannot listen on the duplex's port");
+
+    var report: [512]u8 = undefined;
+    const opened = std.fmt.bufPrint(
+        &report,
+        "{{\"type\":\"duplex.opened\",\"id\":{d},\"duplex_id\":{d},\"pid\":{d},\"port\":{d}}}",
+        .{ request_id, slot, child_pid, port },
+    ) catch duplexFail(status_fd, "duplex setup failed");
+    writeFrame(status_fd, opened);
+    _ = linux.close(status_fd);
+
+    while (true) {
+        const conn_rc = linux.accept(listen_fd, null, null);
+        if (linux.errno(conn_rc) != .SUCCESS) continue;
+        const conn_fd: linux.fd_t = @intCast(conn_rc);
+        const keep = duplexServeOne(conn_fd, in_fd, out_fd, child_pid);
+        _ = linux.close(conn_fd);
+        if (!keep) {
+            duplexKill(in_fd, out_fd, child_pid);
+            linux.exit(0);
+        }
+    }
+}
+
+fn duplexReadReport(status_fd: linux.fd_t, buf: []u8) ?[]const u8 {
+    var waited: u32 = 0;
+    while (waited < duplex_report_deadline_ms) : (waited += 20) {
+        var pfd = [_]linux.pollfd{.{ .fd = status_fd, .events = linux.POLL.IN, .revents = 0 }};
+        const rc = linux.poll(&pfd, 1, 20);
+        if (linux.errno(rc) != .SUCCESS) return null;
+        if (rc > 0) break;
+    }
+    var header: [4]u8 = undefined;
+    if (!readExact(status_fd, &header)) return null;
+    const len = wire.framePayloadLen(&header);
+    if (len == 0 or len > buf.len) return null;
+    if (!readExact(status_fd, buf[0..len])) return null;
+    return buf[0..len];
+}
+
+/// `duplex open`: fork the duplex host and answer with its pid and port. The
+/// agent itself owns no pipe, so a server outlives any one connection.
+fn runDuplexOpen(conn_fd: linux.fd_t, req: *const DuplexRequest) void {
+    duplexReapDead();
+    const slot = duplexFreeSlot() orelse {
+        reply(conn_fd, "{{\"type\":\"duplex.error\",\"id\":{d},\"message\":\"all {d} duplexes are in use\"}}", .{ req.id, max_duplex });
+        return;
+    };
+
+    var pipe_fds: [2]linux.fd_t = .{ -1, -1 };
+    if (!pipePair(&pipe_fds)) {
+        reply(conn_fd, "{{\"type\":\"duplex.error\",\"id\":{d},\"message\":\"pipe failed\"}}", .{req.id});
+        return;
+    }
+    const report_fd = pipe_fds[0];
+    const status_fd = pipe_fds[1];
+
+    const fork_rc = linux.fork();
+    if (linux.errno(fork_rc) != .SUCCESS) {
+        closeIfOpen(report_fd);
+        closeIfOpen(status_fd);
+        reply(conn_fd, "{{\"type\":\"duplex.error\",\"id\":{d},\"message\":\"fork failed\"}}", .{req.id});
+        return;
+    }
+    if (fork_rc == 0) {
+        _ = linux.close(report_fd);
+        duplexHost(status_fd, req.id, slot, req);
+    }
+    const host_pid: i64 = @intCast(fork_rc);
+    _ = linux.close(status_fd);
+
+    var buf: [max_frame]u8 = undefined;
+    const report = duplexReadReport(report_fd, &buf);
+    _ = linux.close(report_fd);
+    const text = report orelse {
+        _ = linux.syscall2(.kill, @intCast(host_pid), @intFromEnum(linux.SIG.KILL));
+        reply(conn_fd, "{{\"type\":\"duplex.error\",\"id\":{d},\"message\":\"the duplex host never reported\"}}", .{req.id});
+        return;
+    };
+    if (std.mem.indexOf(u8, text, "\"type\":\"duplex.opened\"") != null) {
+        duplex_slots[slot] = .{ .used = true, .host_pid = host_pid };
+    }
+    writeFrame(conn_fd, text);
+}
+
 // ─── request dispatch ────────────────────────────────────────────────────
 
 fn asU32(value: std.json.Value, fallback: u32) u32 {
@@ -1528,6 +1864,42 @@ fn serveRequest(conn_fd: linux.fd_t, text: []const u8) void {
         const rows = asU16(if (obj.get("rows")) |v| v else .{ .integer = 0 }, 0);
         const cwd = if (obj.get("cwd")) |v| (if (v == .string) v.string else tty_cwd) else tty_cwd;
         runTtyOpen(conn_fd, id, cols, rows, cwd);
+        return;
+    }
+    if (std.mem.eql(u8, kind, "duplex")) {
+        const id = if (obj.get("id")) |v| asI64(v, 0) else 0;
+        const op = if (obj.get("op")) |v| (if (v == .string) v.string else "") else "";
+        // Only `open` reaches the agent: a live duplex answers on its own
+        // port, where a duplex id names a guest process, not a request.
+        if (!std.mem.eql(u8, op, "open")) {
+            reply(conn_fd, "{{\"type\":\"duplex.error\",\"id\":{d},\"message\":\"the agent only opens duplexes\"}}", .{id});
+            return;
+        }
+        var req = DuplexRequest{ .id = id };
+        if (obj.get("cwd")) |v| {
+            if (v == .string) req.cwd = v.string;
+        }
+        if (obj.get("argv")) |v| {
+            if (v == .array) {
+                var list: [max_argv][]const u8 = undefined;
+                var count: usize = 0;
+                for (v.array.items) |item| {
+                    if (item != .string or count == max_argv) break;
+                    list[count] = item.string;
+                    count += 1;
+                }
+                req.argv = list[0..count];
+            }
+        }
+        if (req.argv.len == 0) {
+            reply(conn_fd, "{{\"type\":\"duplex.error\",\"id\":{d},\"message\":\"argv is required\"}}", .{id});
+            return;
+        }
+        if (!ttyCwdOk(req.cwd)) {
+            reply(conn_fd, "{{\"type\":\"duplex.error\",\"id\":{d},\"message\":\"the server must start inside /workspace\"}}", .{id});
+            return;
+        }
+        runDuplexOpen(conn_fd, &req);
         return;
     }
     if (std.mem.eql(u8, kind, "probe")) {
@@ -1940,7 +2312,7 @@ test "an oversized frame is refused without a reply, and the connection closes" 
 }
 
 test "every base64 reply chunk fits one frame once encoded" {
-    for ([_]usize{ read_chunk, log_read_chunk, fs_read_chunk, tty_chunk, port_forward_chunk }) |chunk| {
+    for ([_]usize{ read_chunk, log_read_chunk, fs_read_chunk, tty_chunk, port_forward_chunk, duplex_chunk }) |chunk| {
         try std.testing.expect(wire.encodedReplyFits(chunk));
     }
     try std.testing.expect(!wire.encodedReplyFits(64 * 1024));
@@ -1948,4 +2320,145 @@ test "every base64 reply chunk fits one frame once encoded" {
 
 test "a streamed walk frame and its closer still fit one frame" {
     try std.testing.expect(walk_frame_bytes + 2 <= wire.max_frame);
+}
+
+// ── A duplex runs on the host, over pipes: no vsock and no VM needed. ─────
+
+/// Both pipes plus the forked server, so the serving code is exercised exactly
+/// as it runs in the guest.
+const DuplexFixture = struct {
+    in_fd: linux.fd_t,
+    out_fd: linux.fd_t,
+    child_pid: i64,
+
+    fn spawn(argv: []const []const u8) !DuplexFixture {
+        var in_fds: [2]linux.fd_t = .{ -1, -1 };
+        if (!pipePair(&in_fds)) return error.NoPipe;
+        var out_fds: [2]linux.fd_t = .{ -1, -1 };
+        if (!pipePair(&out_fds)) {
+            closeIfOpen(in_fds[0]);
+            closeIfOpen(in_fds[1]);
+            return error.NoPipe;
+        }
+        const fork_rc = linux.fork();
+        if (linux.errno(fork_rc) != .SUCCESS) {
+            closeIfOpen(in_fds[0]);
+            closeIfOpen(in_fds[1]);
+            closeIfOpen(out_fds[0]);
+            closeIfOpen(out_fds[1]);
+            return error.NoFork;
+        }
+        if (fork_rc == 0) {
+            _ = linux.close(in_fds[1]);
+            _ = linux.close(out_fds[0]);
+            var req = DuplexRequest{ .argv = argv };
+            duplexChild(&req, in_fds[0], out_fds[1]);
+        }
+        _ = linux.close(in_fds[0]);
+        _ = linux.close(out_fds[1]);
+        return .{ .in_fd = in_fds[1], .out_fd = out_fds[0], .child_pid = @intCast(fork_rc) };
+    }
+
+    fn deinit(self: *const DuplexFixture) void {
+        duplexKill(self.in_fd, self.out_fd, self.child_pid);
+    }
+};
+
+/// One request/answer on the duplex, driven through the same `duplexServeOne`
+/// the guest host runs. Returns the reply text, borrowed from `buf`.
+fn duplexAsk(
+    host_end: linux.fd_t,
+    caller_end: linux.fd_t,
+    fx: *const DuplexFixture,
+    request: []const u8,
+    buf: []u8,
+) ![]const u8 {
+    if (!sendFrame(caller_end, request)) return error.NoSend;
+    if (!duplexServeOne(host_end, fx.in_fd, fx.out_fd, fx.child_pid)) return error.HostStopped;
+    return readFrame(caller_end, buf) orelse error.NoReply;
+}
+
+test "a duplex write reaches the server's stdin and its answer comes back" {
+    var fx = try DuplexFixture.spawn(&.{"/bin/cat"});
+    defer fx.deinit();
+    const pair = socketPair() orelse return error.NoSocketPair;
+    const host_end = pair[0];
+    const caller_end = pair[1];
+    setReceiveTimeout(caller_end, 3000);
+    defer _ = linux.close(caller_end);
+
+    // The MCP body is opaque bytes here: framing is the host client's job.
+    const body = "{\"jsonrpc\":\"2.0\",\"id\":1}\n";
+    var b64: [128]u8 = undefined;
+    const encoded = std.base64.standard.Encoder.encode(&b64, body);
+    var frame_buf: [256]u8 = undefined;
+    const write_frame = try std.fmt.bufPrint(
+        &frame_buf,
+        "{{\"op\":\"write\",\"data_b64\":\"{s}\"}}",
+        .{encoded},
+    );
+
+    var reply_buf: [1024]u8 = undefined;
+    const wrote = try duplexAsk(host_end, caller_end, &fx, write_frame, &reply_buf);
+    try std.testing.expect(std.mem.indexOf(u8, wrote, "duplex.wrote") != null);
+
+    var echoed = false;
+    var attempt: usize = 0;
+    while (attempt < 20) : (attempt += 1) {
+        const answered = try duplexAsk(host_end, caller_end, &fx, "{\"op\":\"read\",\"max_bytes\":64}", &reply_buf);
+        if (std.mem.indexOf(u8, answered, encoded) != null) {
+            echoed = true;
+            try std.testing.expect(std.mem.indexOf(u8, answered, "\"eof\":false") != null);
+            break;
+        }
+    }
+    try std.testing.expect(echoed);
+}
+
+test "a read that sees the server's output close reports its exit code" {
+    var fx = try DuplexFixture.spawn(&.{ "/bin/sh", "-c", "exec 1>&-; sleep 0.15; exit 3" });
+    defer fx.deinit();
+    const pair = socketPair() orelse return error.NoSocketPair;
+    const host_end = pair[0];
+    const caller_end = pair[1];
+    setReceiveTimeout(caller_end, 3000);
+    defer _ = linux.close(caller_end);
+
+    var reply_buf: [1024]u8 = undefined;
+    const answered = try duplexAsk(host_end, caller_end, &fx, "{\"op\":\"read\",\"max_bytes\":64}", &reply_buf);
+    try std.testing.expect(std.mem.indexOf(u8, answered, "\"eof\":true") != null);
+    try std.testing.expect(std.mem.indexOf(u8, answered, "\"exited\":true") != null);
+    try std.testing.expect(std.mem.indexOf(u8, answered, "\"exit_code\":3") != null);
+    try std.testing.expect(std.mem.indexOf(u8, answered, "\"data_b64\":\"\"") != null);
+}
+
+test "duplex close ends the host loop, and the server is gone afterwards" {
+    var fx = try DuplexFixture.spawn(&.{"/bin/cat"});
+    const pair = socketPair() orelse return error.NoSocketPair;
+    const host_end = pair[0];
+    const caller_end = pair[1];
+    setReceiveTimeout(caller_end, 3000);
+    defer _ = linux.close(caller_end);
+
+    try std.testing.expect(sendFrame(caller_end, "{\"op\":\"close\"}"));
+    // `false` is what makes `duplexHost` leave its accept loop and kill the
+    // server; a `true` here would keep the process alive forever.
+    try std.testing.expect(!duplexServeOne(host_end, fx.in_fd, fx.out_fd, fx.child_pid));
+    var reply_buf: [256]u8 = undefined;
+    const closed = readFrame(caller_end, &reply_buf) orelse return error.NoReply;
+    try std.testing.expect(std.mem.indexOf(u8, closed, "duplex.closed") != null);
+
+    const pid = fx.child_pid;
+    fx.deinit();
+    try std.testing.expectError(error.ProcessNotFound, std.posix.kill(@intCast(pid), .TERM));
+}
+
+test "a closed duplex leaves no descriptor behind" {
+    const before = liveDescriptors();
+    var i: usize = 0;
+    while (i < 8) : (i += 1) {
+        var fx = try DuplexFixture.spawn(&.{"/bin/cat"});
+        fx.deinit();
+    }
+    try std.testing.expectEqual(before, liveDescriptors());
 }
