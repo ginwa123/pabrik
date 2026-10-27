@@ -143,12 +143,26 @@ jobs:
           set -euo pipefail
           docker run --rm --entrypoint sh "$IMAGE_REF" -c 'ldd /usr/local/bin/pabrik | grep -i libpq'
 
-      - name: Boot the saas image against postgres
+      - name: The saas image opens the postgres backend
         env:
           IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}-saas-amd64
-          RUN_ARGS: --network host -e PABRIK_DATABASE_CONNINFO=postgres://pabrik:pabrik@127.0.0.1:5432/pabrik
-          HOST_CHECK: "1"
-        run: bash scripts/ci-docker-smoke.sh "$IMAGE_REF" 8080 postgres
+        run: |
+          set -uo pipefail
+          out="$(docker run --rm --network host \
+            -e PABRIK_DATABASE_CONNINFO=postgres://pabrik:pabrik@127.0.0.1:5432/pabrik \
+            "$IMAGE_REF" --no-static-dir --port 8080 --database=postgres 2>&1)"
+          status=$?
+          printf '%s\n' "$out"
+          echo "container exit=${status}"
+          if ! printf '%s\n' "$out" | grep -q 'database: backend=postgres '; then
+            echo "::error::the saas image did not open the postgres backend"
+            exit 1
+          fi
+          if ! printf '%s\n' "$out" | grep -q 'postgres: backend='; then
+            echo "::error::the postgres connection pool never started"
+            exit 1
+          fi
+          echo "ok: the saas image opened postgres from PABRIK_DATABASE_CONNINFO"
 
       - name: The saas image refuses to run tenant code without a VM backend
         env:
@@ -184,8 +198,14 @@ jobs:
       - name: Start a Linux container engine
         run: |
           set -euo pipefail
-          brew install colima docker
-          colima start --cpu 4 --memory 8 --disk 60
+          brew install colima docker qemu
+          if ! colima start --cpu 4 --memory 8 --disk 60; then
+            echo "→ the vz VM failed to start; its log:"
+            cat "$HOME/.colima/_lima/colima/ha.stderr.log" 2>/dev/null || true
+            colima delete --force || true
+            echo "→ retrying with the qemu VM driver"
+            colima start --vm-type qemu --cpu 4 --memory 8 --disk 60
+          fi
           docker version
 
       - name: Log in to GHCR
