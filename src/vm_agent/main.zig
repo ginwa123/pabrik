@@ -1404,6 +1404,9 @@ const duplex_chunk: usize = wire.max_duplex_chunk;
 /// How long one `read` waits inside the guest for a byte before answering
 /// "nothing yet", and how long one `write` waits for the server to drain.
 const duplex_read_wait_ms: i32 = 200;
+const duplex_reap_slice_ms: u64 = 10;
+/// How long a read that saw EOF waits for the server's exit code.
+const duplex_exit_wait_ms: u32 = 300;
 const duplex_write_wait_ms: i64 = 5_000;
 const duplex_report_deadline_ms: u32 = 5_000;
 const duplex_poll_slice_ms: i32 = 20;
@@ -1500,16 +1503,7 @@ fn duplexError(conn_fd: linux.fd_t, message: []const u8) void {
 /// Whatever the server has written right now, plus its exit state. `eof` is
 /// the read end of a pipe that every writer has closed, never "no data yet".
 fn duplexReplyRead(conn_fd: linux.fd_t, out_fd: linux.fd_t, child_pid: i64, max_bytes: usize) void {
-    var exited = false;
-    var status: u32 = 0;
-    const reaped = linux.wait4(@intCast(child_pid), &status, wno_hang, null);
-    if (linux.errno(reaped) == .SUCCESS and reaped != 0) exited = true;
-    const code: i64 = if (!exited)
-        0
-    else if (linux.W.IFEXITED(status))
-        @intCast(linux.W.EXITSTATUS(status))
-    else
-        -1;
+    var status: ?u32 = reapWithin(child_pid, 0);
 
     var chunk: [duplex_chunk]u8 = undefined;
     var got: usize = 0;
@@ -1518,26 +1512,48 @@ fn duplexReplyRead(conn_fd: linux.fd_t, out_fd: linux.fd_t, child_pid: i64, max_
         const rc = linux.read(out_fd, &chunk, @min(max_bytes, chunk.len));
         if (linux.errno(rc) == .SUCCESS and rc > 0) {
             got = rc;
-        } else {
-            // Zero bytes on a readable pipe IS end-of-file.
-            exited = true;
+        } else if (status == null) {
+            // Zero bytes on a readable pipe IS end-of-file, and a server that
+            // closed its output is on its way out: report the code it leaves
+            // behind rather than the zero it has not earned yet.
+            status = reapWithin(child_pid, duplex_exit_wait_ms);
         }
     }
 
     if (got == 0) {
         reply(conn_fd, "{{\"type\":\"duplex.data\",\"id\":1,\"eof\":true,\"exited\":{s},\"exit_code\":{d},\"data_b64\":\"\"}}", .{
-            if (exited) "true" else "false",
-            code,
+            if (status != null) "true" else "false",
+            exitCode(status),
         });
         return;
     }
     var b64: [std.base64.standard.Encoder.calcSize(duplex_chunk)]u8 = undefined;
     const encoded = std.base64.standard.Encoder.encode(&b64, chunk[0..got]);
     reply(conn_fd, "{{\"type\":\"duplex.data\",\"id\":1,\"eof\":false,\"exited\":{s},\"exit_code\":{d},\"data_b64\":\"{s}\"}}", .{
-        if (exited) "true" else "false",
-        code,
+        if (status != null) "true" else "false",
+        exitCode(status),
         encoded,
     });
+}
+
+/// The server's exit code, or `0` while it is still running.
+fn exitCode(status: ?u32) i64 {
+    const st = status orelse return 0;
+    return if (linux.W.IFEXITED(st)) @intCast(linux.W.EXITSTATUS(st)) else -1;
+}
+
+/// Reap the server, giving it at most `budget_ms` to die. The read end of the
+/// pipe goes readable a hair before `wait4` can see the corpse.
+fn reapWithin(child_pid: i64, budget_ms: u32) ?u32 {
+    var waited: u32 = 0;
+    while (true) {
+        var status: u32 = 0;
+        const reaped = linux.wait4(@intCast(child_pid), &status, wno_hang, null);
+        if (linux.errno(reaped) == .SUCCESS and reaped != 0) return status;
+        if (waited >= budget_ms) return null;
+        sleepMs(duplex_reap_slice_ms);
+        waited += @intCast(duplex_reap_slice_ms);
+    }
 }
 
 /// Write one piece to the server's stdin, waiting for space for at most
@@ -2399,8 +2415,8 @@ test "a duplex write reaches the server's stdin and its answer comes back" {
     try std.testing.expect(echoed);
 }
 
-test "a duplex read reports the server's exit instead of waiting for bytes" {
-    var fx = try DuplexFixture.spawn(&.{ "/bin/sh", "-c", "exit 3" });
+test "a read that sees the server's output close reports its exit code" {
+    var fx = try DuplexFixture.spawn(&.{ "/bin/sh", "-c", "exec 1>&-; sleep 0.15; exit 3" });
     defer fx.deinit();
     const pair = socketPair() orelse return error.NoSocketPair;
     const host_end = pair[0];
@@ -2409,12 +2425,7 @@ test "a duplex read reports the server's exit instead of waiting for bytes" {
     defer _ = linux.close(caller_end);
 
     var reply_buf: [1024]u8 = undefined;
-    var answered: []const u8 = "";
-    var attempt: usize = 0;
-    while (attempt < 20) : (attempt += 1) {
-        answered = try duplexAsk(host_end, caller_end, &fx, "{\"op\":\"read\",\"max_bytes\":64}", &reply_buf);
-        if (std.mem.indexOf(u8, answered, "\"exit_code\":3") != null) break;
-    }
+    const answered = try duplexAsk(host_end, caller_end, &fx, "{\"op\":\"read\",\"max_bytes\":64}", &reply_buf);
     try std.testing.expect(std.mem.indexOf(u8, answered, "\"eof\":true") != null);
     try std.testing.expect(std.mem.indexOf(u8, answered, "\"exited\":true") != null);
     try std.testing.expect(std.mem.indexOf(u8, answered, "\"exit_code\":3") != null);
