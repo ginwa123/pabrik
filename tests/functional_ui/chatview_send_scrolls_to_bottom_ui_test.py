@@ -95,9 +95,18 @@ TURN_COUNT = 400
 #: do; the point is only that `isAtBottom` is false.
 HISTORY_FRACTION = 0.35
 
-#: Slack for "parked at the bottom", in CSS px. The scroller's sizer is a height
-#: MODEL and its real-bottom override can land a few px short of the model
-#: bottom; this is not a layout-precision test.
+#: Slack for "parked at the bottom", in CSS px, measured against the app's OWN
+#: bottom (`VirtualScroller.bottomScrollTop`, the number the auto-stick targets).
+#: A few px because the sample and the write are not the same frame.
+APP_BOTTOM_TOL_PX = 8
+
+#: Mirrors the scroller's `maxTailGap` prop (VirtualScroller default, not
+#: overridden by ChatView). It is how much blank the sizer is ALLOWED to reserve
+#: below the real content, so it bounds how far the two rulers may disagree.
+MAX_TAIL_GAP_PX = 100
+TAIL_GAP_SLACK_PX = 8
+
+#: Slack for the PRECONDITION "the reader is clearly up in history", in CSS px.
 BOTTOM_TOL_PX = 24
 
 #: Index fed to the dev SSE emitter. It becomes the row's id (`test-{index}`),
@@ -131,15 +140,47 @@ _CHAT_SCROLLER = (
 # `.chat-scroll-to-bottom` is rendered only while `isAtBottom` is false, so its
 # presence IS the flag — read in the same evaluate as the geometry so the two
 # can never disagree about which frame they describe.
+# The app's OWN bottom, not the DOM edge. `scrollToBottom` deliberately parks the
+# reader at the real content bottom, and the sizer may reserve up to `maxTailGap`
+# (100px) of blank below it — so `scrollHeight - clientHeight` is a position the
+# app never occupies, by an amount that depends on how far the height model has
+# converged. Asserting it is how this helper used to fail on a slow runner
+# (measured on CI: scrollTop 23267 vs dom edge 23315) and pass on a fast one.
+# `bottomScrollTop` is the same number the stick targets and `isAtBottom` reads;
+# re-deriving it here would re-implement the predicate under test.
+_APP_BOTTOM_JS = (
+    "(() => {"
+    "  const el = " + _CHAT_SCROLLER + ";"
+    "  if (!el) return { bottom: null, source: 'no-element' };"
+    "  const domEdge = el.scrollHeight - el.clientHeight;"
+    "  try {"
+    "    const inst = el.__vueParentComponent;"
+    "    const exposed = inst && inst.exposed;"
+    "    if (exposed && typeof exposed.bottomScrollTop === 'function') {"
+    "      const v = exposed.bottomScrollTop();"
+    "      if (typeof v === 'number' && isFinite(v)) return { bottom: v, source: 'exposed' };"
+    "    }"
+    "  } catch (e) {"
+    "    return { bottom: domEdge, source: 'dom-fallback' };"
+    "  }"
+    "  return { bottom: domEdge, source: 'dom-fallback' };"
+    "})()"
+)
+
 _GEOM_SCRIPT = (
     "() => {"
     "  const el = " + _CHAT_SCROLLER + ";"
     "  if (!el) return null;"
+    "  const ruler = " + _APP_BOTTOM_JS + ";"
+    "  const domEdge = el.scrollHeight - el.clientHeight;"
     "  return {"
     "    scrollTop: el.scrollTop,"
     "    scrollHeight: el.scrollHeight,"
     "    clientHeight: el.clientHeight,"
-    "    maxScrollTop: el.scrollHeight - el.clientHeight,"
+    "    maxScrollTop: domEdge,"
+    "    appBottom: ruler.bottom,"
+    "    appRulerSource: ruler.source,"
+    "    rulerGap: domEdge - ruler.bottom,"
     "    arrow: !!document.querySelector('.chat-scroll-to-bottom'),"
     "  };"
     "}"
@@ -149,6 +190,11 @@ _GEOM_SCRIPT = (
 def _geom(page) -> dict:
     g = page.evaluate(_GEOM_SCRIPT)
     assert g is not None, "chat message scroller not found"
+    assert g["appRulerSource"] == "exposed", (
+        "could not read VirtualScroller.bottomScrollTop from the mounted instance — the "
+        "assertions below would silently fall back to the DOM ruler, which is the pre-fix "
+        f"definition of 'at the bottom': {g}"
+    )
     return g
 
 
@@ -196,7 +242,7 @@ def _park_in_history(page) -> dict:
     page.wait_for_timeout(400)
     g = _geom(page)
     assert g["arrow"], "precondition failed: the reader is not treated as scrolled up"
-    assert g["scrollTop"] < g["maxScrollTop"] - BOTTOM_TOL_PX, (
+    assert g["scrollTop"] < g["appBottom"] - BOTTOM_TOL_PX, (
         f"precondition failed: the reader is already at the bottom: {g}"
     )
     return g
@@ -248,29 +294,48 @@ def _wait_parked_at_bottom(page, *, what: str) -> dict:
     bottom — that is the state every follow gate reads, and the state the
     pre-fix code leaves behind.
 
+    Both the wait and the assertion use the APP's ruler (`bottomScrollTop`), not
+    `scrollHeight - clientHeight`. The scroller parks the reader at the REAL
+    content bottom and may reserve up to `maxTailGap` (100px) of blank below it,
+    so the DOM edge is a position the app never occupies and the disagreement
+    grows as the height model converges — i.e. it is timing-shaped. That is what
+    made this test flaky: under 6x CPU throttling the reader sits 56px above the
+    DOM edge (scrollTop 23001, domEdge 23057) with `bottomScrollTop()` == 23001
+    and the arrow gone, while the same build on a fast runner sits 0-3px away.
+    CI caught the same thing at 48px (scrollTop 23267 vs 23315, tolerance 24).
+
     30s, not 15s: this wait straddles an SSE echo plus a remeasure, and the
     15s bound was the tightest `wait_for_function` in the suite (30000 is
     what the other 40 use). It held everywhere except the slower macOS
     runners, where it expired mid-settle — a bound problem, not a behaviour
     difference, since the same test passes consistently on Linux. The
     assertions below are unchanged: if the stick never arms, this still fails.
+
+    What keeps the lenient ruler honest: the arrow must be gone (`isAtBottom`
+    armed), the ruler disagreement must stay within `maxTailGap` (so a sizer that
+    reserves a screen of blank still fails), and `_geom` refuses to run on the
+    DOM fallback.
     """
     page.wait_for_function(
         "() => {"
         "  const el = " + _CHAT_SCROLLER + ";"
         "  if (!el) return false;"
         "  if (document.querySelector('.chat-scroll-to-bottom')) return false;"
-        "  return el.scrollTop >= el.scrollHeight - el.clientHeight - "
-        + str(BOTTOM_TOL_PX)
-        + ";"
+        "  const ruler = " + _APP_BOTTOM_JS + ";"
+        "  if (ruler.bottom === null) return false;"
+        "  return el.scrollTop >= ruler.bottom - " + str(APP_BOTTOM_TOL_PX) + ";"
         "}",
         timeout=30000,
     )
     page.wait_for_timeout(400)
     g = _geom(page)
     assert not g["arrow"], f"{what}: the jump-to-bottom arrow is showing, so isAtBottom is false: {g}"
-    assert g["scrollTop"] >= g["maxScrollTop"] - BOTTOM_TOL_PX, (
-        f"{what}: not parked at the bottom of the transcript: {g}"
+    assert g["rulerGap"] <= MAX_TAIL_GAP_PX + TAIL_GAP_SLACK_PX, (
+        f"{what}: the sizer reserves {g['rulerGap']}px of blank below the real content, past the "
+        f"{MAX_TAIL_GAP_PX}px the tail cap allows — 'the bottom' is unreachable by design: {g}"
+    )
+    assert g["scrollTop"] >= g["appBottom"] - APP_BOTTOM_TOL_PX, (
+        f"{what}: not parked at the transcript's bottom: {g}"
     )
     return g
 
