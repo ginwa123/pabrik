@@ -118,24 +118,31 @@ pub const Fs = struct {
     /// The whole file, read in bounded pieces until the guest says `eof`. The
     /// host never opens it, so the only copy is the one in this allocation.
     pub fn readAll(self: *const Fs, abs: []const u8) ![]u8 {
+        return self.readUpTo(self.allocator, abs, fs_policy.max_read_bytes);
+    }
+
+    /// The same read under the caller's own ceiling, for a copy that is allowed
+    /// to be larger than a tool's answer may be. Over the ceiling is a refusal,
+    /// never a truncation — the caller asked for all of it.
+    pub fn readUpTo(self: *const Fs, allocator: std.mem.Allocator, abs: []const u8, max_bytes: usize) ![]u8 {
         const rel = self.relative(abs) orelse return Error.GuestPathOutsideWorkspace;
-        var client = vmd.Client.init(self.allocator, self.socket);
+        var client = vmd.Client.init(allocator, self.socket);
         var out: std.ArrayList(u8) = .empty;
-        errdefer out.deinit(self.allocator);
+        errdefer out.deinit(allocator);
 
         var offset: i64 = 0;
         while (true) {
             const chunk = client.readFile(self.workspace_id, rel, offset, vmd_read_chunk) catch |err| {
                 return managerError(err);
             };
-            defer chunk.deinit(self.allocator);
+            defer chunk.deinit(allocator);
             if (chunk.missing) return Error.GuestFileMissing;
-            try out.appendSlice(self.allocator, chunk.bytes);
+            try out.appendSlice(allocator, chunk.bytes);
             if (chunk.eof or chunk.bytes.len == 0) break;
             offset += @intCast(chunk.bytes.len);
-            if (out.items.len > fs_policy.max_read_bytes) return error.FileTooBig;
+            if (out.items.len > max_bytes) return error.FileTooBig;
         }
-        return out.toOwnedSlice(self.allocator);
+        return out.toOwnedSlice(allocator);
     }
 
     /// The directory form of `relative`: a listing or a walk may start at the
