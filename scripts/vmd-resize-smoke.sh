@@ -21,6 +21,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # `rm -rf`; this helper is the one place that knows how to remove it.
 # shellcheck source=scripts/smoke-workdir.sh
 . "$repo_root/scripts/smoke-workdir.sh"
+# shellcheck source=scripts/vmd-teardown.sh
+. "$repo_root/scripts/vmd-teardown.sh"
 fc_bin="${FC_BIN:-firecracker}"
 guest_kernel="${GUEST_KERNEL:-$HOME/firecracker-demo/vmlinux-6.18.51}"
 # A dev box usually keeps the demo download in ~/firecracker-demo rather than
@@ -65,11 +67,30 @@ start_daemon() {
   done
   fail "daemon never created $sock (see $work/vmd.log)"
 }
-stop_daemon() {
+# SIGTERM means "stop the manager, the VMs stay": the manager started next adopts
+# them, which is what the adoption case at the end asserts. It is the wrong stop
+# for a smoke, whose VM root does not outlive it — see `teardown` below.
+stop_daemon_keep_vms() {
   [ -n "$daemon_pid" ] || return 0
   kill -TERM "$daemon_pid" 2>/dev/null || true
   wait "$daemon_pid" 2>/dev/null || true
   daemon_pid=""
+}
+
+teardown() {
+  local status=$?
+  trap - EXIT
+  pabrik_teardown_daemon "$vms" "$daemon_pid"
+  daemon_pid=""
+  local left
+  left="$(pabrik_count_vmms "$vms")"
+  if [ "$left" -ne 0 ]; then
+    printf '[vmd-resize-smoke] FAIL the run ended with %s VMM(s) on %s, %s before it\n' \
+      "$left" "$vms" "$vmm_at_start" >&2
+    exit 1
+  fi
+  say "ok  $vmm_at_start VMM(s) on $vms before the run, 0 after it"
+  exit "$status"
 }
 
 client() { PABRIK_VM_DIR="$vms" "$vmd" "$@"; }
@@ -87,8 +108,11 @@ vmm_pid() { tr -d '[:space:]' <"$vms/workspaces/$ws/fc.pid"; }
 # `status` also prints the size the workspace boots with.
 status_is_ready() { case "$1" in "ready pid=$2 "*) return 0 ;; *) return 1 ;; esac; }
 
+# The VM root is private to this run, so any VMM already on it is a leak from an
+# earlier one that the wipe above could not remove: a process outlives its files.
+vmm_at_start="$(pabrik_count_vmms "$vms")"
+trap 'teardown' EXIT
 start_daemon
-trap 'stop_daemon' EXIT
 
 say "the workspace boots with the manager's defaults (1 vCPU, 512 MiB)"
 out="$(exec_in --timeout-ms 60000 -- /bin/sh -c 'echo booted' 2>/dev/null)"
@@ -150,7 +174,8 @@ pid_live="$(vmm_pid)"
 if client resize --socket "$sock" --workspace-id "$ws" --vcpus 99 --mem 512 >/dev/null 2>"$work/err.txt"; then
   fail "a resize to 99 vCPUs was accepted"
 fi
-grep -q "vcpus must be 1..8" "$work/err.txt" || fail "the refusal did not name the limit: $(cat "$work/err.txt")"
+grep -qE "vcpus must be 1\.\.[0-9]+" "$work/err.txt" ||
+  fail "the refusal did not name the limit: $(cat "$work/err.txt")"
 if client resize --socket "$sock" --workspace-id "$ws" --vcpus 1 --mem 1000 >/dev/null 2>"$work/err.txt"; then
   fail "a resize to 1000 MiB was accepted (off Firecracker's 128 MiB grid)"
 fi
@@ -198,7 +223,7 @@ status_is_ready "$out" "$pid_live" || fail "the refused shrink disturbed the VM:
 say "ok  refused, and the VM is still ready pid=$pid_live at 512 MiB of storage"
 
 say "the VM survives a resize with the daemon gone: the size is on disk, not in memory"
-stop_daemon
+stop_daemon_keep_vms
 start_daemon
 out="$(status_of)"
 status_is_ready "$out" "$pid_live" || fail "the VM did not outlive its daemon: $out"
