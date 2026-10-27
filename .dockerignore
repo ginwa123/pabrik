@@ -1,0 +1,14 @@
+.git
+.github
+.zig-cache
+.zig-cache-*
+zig-out
+zig-pkg
+.pabrik
+.taste-skill
+.husky
+benchmark
+tools_comment
+**/node_modules
+src/apps/desktop/dist
+src/apps/desktop_app/embedded

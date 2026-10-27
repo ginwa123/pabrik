@@ -1,0 +1,319 @@
+name: docker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - Dockerfile.windows
+      - .dockerignore
+      - .github/workflows/ci-docker.yml
+      - scripts/ci-docker-smoke.sh
+      - build.zig
+      - build.zig.zon
+  pull_request:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - Dockerfile.windows
+      - .dockerignore
+      - .github/workflows/ci-docker.yml
+      - scripts/ci-docker-smoke.sh
+      - build.zig
+      - build.zig.zon
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  ZIG_VERSION: 0.16.0
+
+jobs:
+  linux:
+    name: default image (linux/amd64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the default image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          target: default
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
+            ghcr.io/${{ github.repository }}:latest
+          cache-from: type=gha,scope=default-amd64
+          cache-to: type=gha,mode=max,scope=default-amd64
+
+      - name: Pull the pushed image
+        if: ${{ github.event_name != 'pull_request' }}
+        run: docker pull "ghcr.io/${GITHUB_REPOSITORY}:${GITHUB_SHA}"
+
+      - name: Smoke the default image
+        env:
+          IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}
+          RUN_ARGS: --network host
+          HOST_CHECK: "1"
+          EXPECT_DB_FILE: /data/.config/pabrik/agent.db
+        run: bash scripts/ci-docker-smoke.sh "$IMAGE_REF" 8080 sqlite
+
+  linux-saas:
+    name: saas image (linux/amd64, postgres)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: pabrik
+          POSTGRES_PASSWORD: pabrik
+          POSTGRES_DB: pabrik
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pabrik -d pabrik"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the saas image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          target: saas
+          platforms: linux/amd64
+          build-args: |
+            SAAS=1
+          push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ github.sha }}-saas
+            ghcr.io/${{ github.repository }}:saas
+          cache-from: type=gha,scope=saas-amd64
+          cache-to: type=gha,mode=max,scope=saas-amd64
+
+      - name: Pull the pushed image
+        if: ${{ github.event_name != 'pull_request' }}
+        run: docker pull "ghcr.io/${GITHUB_REPOSITORY}:${GITHUB_SHA}-saas"
+
+      - name: The image links libpq
+        env:
+          IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}-saas
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint sh "$IMAGE_REF" -c 'ldd /usr/local/bin/pabrik | grep -i libpq'
+
+      - name: The saas image opens the postgres backend
+        env:
+          IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}-saas
+        run: |
+          set +e
+          out="$(docker run --rm --network host \
+            -e PABRIK_DATABASE_CONNINFO=postgres://pabrik:pabrik@127.0.0.1:5432/pabrik \
+            "$IMAGE_REF" --no-static-dir --port 8080 --database=postgres 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$out"
+          echo "container exit=${status}"
+          if ! printf '%s\n' "$out" | grep -q 'database: backend=postgres '; then
+            echo "::error::the saas image did not open the postgres backend"
+            exit 1
+          fi
+          if ! printf '%s\n' "$out" | grep -q 'postgres: backend='; then
+            echo "::error::the postgres connection pool never started"
+            exit 1
+          fi
+          echo "ok: the saas image opened postgres from PABRIK_DATABASE_CONNINFO"
+
+      - name: The saas image refuses to run tenant code without a VM backend
+        env:
+          IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}-saas
+        run: |
+          set +e
+          out="$(docker run --rm --network host \
+            -e PABRIK_DATABASE_CONNINFO=postgres://pabrik:pabrik@127.0.0.1:5432/pabrik \
+            "$IMAGE_REF" --no-static-dir --port 8080 --saas 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$out"
+          if [ "$status" -ne 2 ]; then
+            echo "::error::--saas exited ${status}; a refusal is exit 2"
+            exit 1
+          fi
+          if ! printf '%s\n' "$out" | grep -q -- '--saas'; then
+            echo "::error::--saas exited without naming --saas; it must never fall back silently"
+            exit 1
+          fi
+          echo "ok: --saas refused (exit 2) and named the flag"
+
+  macos:
+    name: default image (macOS runner, linux/arm64)
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start a Linux container engine
+        run: |
+          set -euo pipefail
+          brew install colima docker qemu
+          if ! colima start --cpu 3 --memory 6 --disk 40; then
+            echo "→ the vz VM failed to start; its log:"
+            cat "$HOME/.colima/_lima/colima/ha.stderr.log" 2>/dev/null || true
+            colima delete --force || true
+            echo "→ retrying with the qemu VM driver"
+            colima start --vm-type qemu --cpu 3 --memory 6 --disk 40
+          fi
+          docker version
+
+      - name: Build the default image
+        env:
+          IMAGE_REF: pabrik:macos-arm64
+        run: |
+          set -euo pipefail
+          docker build --target default --platform linux/arm64 --build-arg OPTIMIZE=Debug --tag "$IMAGE_REF" .
+          docker image inspect "$IMAGE_REF" --format '{{.Architecture}} {{.Os}}'
+
+      - name: Smoke the default image
+        env:
+          IMAGE_REF: pabrik:macos-arm64
+          EXPECT_DB_FILE: /data/.config/pabrik/agent.db
+        run: bash scripts/ci-docker-smoke.sh "$IMAGE_REF" 8080 sqlite
+
+  windows:
+    name: windows image (nanoserver ltsc2022)
+    runs-on: windows-2022
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Stage the published Windows payload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $zip = Join-Path $env:RUNNER_TEMP "pabrik-windows.zip"
+          $ctx = Join-Path $env:RUNNER_TEMP "pabrik-docker-context"
+          Invoke-WebRequest -Uri "https://github.com/ginwa123/pabrik/releases/download/ci-latest/pabrik-desktop-x86_64-windows-gnu.zip" -OutFile $zip
+          if (-not (Test-Path $zip)) { throw "the ci-latest Windows zip was not downloaded" }
+          New-Item -ItemType Directory -Force -Path $ctx | Out-Null
+          Expand-Archive -Path $zip -DestinationPath $ctx -Force
+          $service = Get-ChildItem $ctx -Filter "pabrik.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $service) { throw "pabrik.exe is not in the release zip" }
+          $dlls = Get-ChildItem $ctx -Filter "*.dll"
+          if ($dlls.Count -lt 1) { throw "no runtime DLLs in the release zip; a bare pabrik.exe cannot load" }
+          Write-Host ("staged pabrik.exe + {0} dll(s)" -f $dlls.Count)
+          foreach ($name in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "concrt140.dll", "vcomp140.dll")) {
+            $source = Join-Path $env:SystemRoot ("System32\" + $name)
+            if (Test-Path $source) {
+              Copy-Item $source (Join-Path $ctx $name) -Force
+              Write-Host ("staged " + $name)
+            }
+          }
+          if (-not (Test-Path (Join-Path $ctx "vcruntime140.dll"))) {
+            throw "vcruntime140.dll is not on this runner; the vcpkg-built DLLs cannot load without the VC++ runtime"
+          }
+          "PABRIK_DOCKER_CONTEXT=$ctx" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Log in to GHCR
+        if: ${{ github.event_name != 'pull_request' }}
+        shell: pwsh
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $env:GHCR_TOKEN | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
+          if ($LASTEXITCODE -ne 0) { throw "docker login failed" }
+
+      - name: Build the Windows image
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = "ghcr.io/${{ github.repository }}:${{ github.sha }}-windows-ltsc2022"
+          docker build --file Dockerfile.windows --tag $tag $env:PABRIK_DOCKER_CONTEXT
+          if ($LASTEXITCODE -ne 0) { throw "docker build failed" }
+          docker run --rm $tag --help
+          if ($LASTEXITCODE -ne 0) { throw ("the image could not run pabrik.exe --help (exit " + $LASTEXITCODE + ")") }
+
+      - name: Boot the Windows image
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = "ghcr.io/${{ github.repository }}:${{ github.sha }}-windows-ltsc2022"
+          docker run --detach --name pabrik-windows $tag --no-static-dir --port 8081
+          if ($LASTEXITCODE -ne 0) { throw "docker run failed" }
+          $ready = $false
+          foreach ($attempt in 1..90) {
+            $running = docker inspect --format "{{.State.Running}}" pabrik-windows
+            if ($running -ne "true") { break }
+            $logs = docker logs pabrik-windows 2>&1 | Out-String
+            if ($logs -match "Agent is ready to serve") {
+              $ready = $true
+              break
+            }
+            Start-Sleep -Seconds 1
+          }
+          docker logs pabrik-windows
+          docker rm --force pabrik-windows
+          if (-not $ready) { throw "the Windows container never reached 'Agent is ready to serve'" }
+
+      - name: Push the Windows image
+        if: ${{ github.event_name != 'pull_request' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = "ghcr.io/${{ github.repository }}:${{ github.sha }}-windows-ltsc2022"
+          docker tag $tag "ghcr.io/${{ github.repository }}:windows-ltsc2022"
+          if ($LASTEXITCODE -ne 0) { throw "docker tag failed" }
+          docker push $tag
+          if ($LASTEXITCODE -ne 0) { throw "docker push failed" }
+          docker push "ghcr.io/${{ github.repository }}:windows-ltsc2022"
+          if ($LASTEXITCODE -ne 0) { throw "docker push failed" }
