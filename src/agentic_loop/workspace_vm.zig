@@ -3,6 +3,7 @@
 //! before they ask the manager for a Firecracker.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
 const runtime_mode = @import("../runtime_mode.zig");
@@ -49,13 +50,30 @@ pub fn mcpPlacement(mode: runtime_mode.Mode) McpPlacement {
 pub fn mcpPlacementNow(environment: ?*const std.process.Environ.Map) McpPlacement {
     if (environment) |env| {
         if (env.get(mcp_guest_env)) |value| {
-            if (std.mem.eql(u8, value, "0")) return .host;
+            if (switchPinsHost(value)) return .host;
         }
     }
     return mcpPlacement(runtime_mode.currentMode());
 }
 
+fn switchPinsHost(value: []const u8) bool {
+    return std.mem.eql(u8, value, "0");
+}
+
 pub const mcp_guest_env = "PABRIK_MCP_GUEST";
+const mcp_guest_env_z: [:0]const u8 = mcp_guest_env;
+
+/// The placement this PROCESS uses now: the mode, unless the operator's
+/// rollout switch pins MCP to the host. Read straight from the environment, so
+/// a tool call needs no environment map plumbed to it.
+pub fn mcpPlacementForProcess() McpPlacement {
+    if (comptime builtin.os.tag != .windows) {
+        if (std.c.getenv(mcp_guest_env_z)) |value| {
+            if (switchPinsHost(std.mem.span(value))) return .host;
+        }
+    }
+    return mcpPlacement(runtime_mode.currentMode());
+}
 
 /// Whether this process may put the workspace in a VM.
 pub fn isVmWorkspace(allocator: std.mem.Allocator, db: *database.Db, workspace_id: []const u8) bool {
@@ -159,4 +177,20 @@ test "with no switch the process mode decides" {
     var map = std.process.Environ.Map.init(testing.allocator);
     defer map.deinit();
     try testing.expectEqual(mcpPlacement(runtime_mode.currentMode()), mcpPlacementNow(&map));
+}
+
+test "the process-wide switch pins MCP to the host in saas mode" {
+    if (comptime builtin.os.tag == .windows) return;
+    const c = @cImport({
+        @cInclude("stdlib.h");
+    });
+    _ = c.setenv(mcp_guest_env_z, "0", 1);
+    defer _ = c.unsetenv(mcp_guest_env_z);
+
+    runtime_mode.setCurrent(.saas);
+    defer runtime_mode.setCurrent(.local);
+    try testing.expectEqual(McpPlacement.host, mcpPlacementForProcess());
+
+    _ = c.unsetenv(mcp_guest_env_z);
+    try testing.expectEqual(McpPlacement.guest, mcpPlacementForProcess());
 }

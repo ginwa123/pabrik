@@ -3,6 +3,7 @@
 //! Pure and platform-free, so the policy is tested on every host.
 
 const std = @import("std");
+const wire = @import("vm_wire");
 
 pub const max_workspace_id_len = 64;
 pub const max_cwd_rel_len = 1024;
@@ -139,6 +140,25 @@ pub fn ttyPort(id: i64) ?u32 {
 pub fn ttyDimValid(cols: u16, rows: u16) bool {
     return cols >= min_tty_dim and cols <= max_tty_dim and
         rows >= min_tty_dim and rows <= max_tty_dim;
+}
+
+// ─── guest duplexes (an MCP server's two byte streams) ───────────────────
+
+/// A duplex gets its own vsock port for the same reason a terminal does, and
+/// the ceiling is the same kind of resource: one guest process plus a listener.
+pub const duplex_port_base: u32 = wire.duplex_port_base;
+pub const max_duplex: u32 = wire.max_duplex;
+pub const max_duplex_chunk: usize = wire.max_duplex_chunk;
+
+pub fn duplexIdValid(id: i64) bool {
+    return id >= 0 and id < @as(i64, @intCast(max_duplex));
+}
+
+/// The guest port a duplex id answers on, or null when the id is not one this
+/// daemon could have handed out.
+pub fn duplexPort(id: i64) ?u32 {
+    if (!duplexIdValid(id)) return null;
+    return duplex_port_base + @as(u32, @intCast(id));
 }
 
 /// The credential the kernel reports for a unix-socket peer. Only the uid is
@@ -279,6 +299,30 @@ test "ttyPort: every legal id maps to its own port and nothing else does" {
     try testing.expect(ttyPort(@intCast(max_ttys)) == null);
     try testing.expect(ttyIdValid(0));
     try testing.expect(!ttyIdValid(-1));
+}
+
+test "duplexPort: every legal id maps to its own port and nothing else does" {
+    try testing.expectEqual(@as(?u32, 5200), duplexPort(0));
+    try testing.expectEqual(@as(?u32, 5207), duplexPort(7));
+    try testing.expect(duplexPort(-1) == null);
+    try testing.expect(duplexPort(@intCast(max_duplex)) == null);
+    try testing.expect(duplexIdValid(0));
+    try testing.expect(!duplexIdValid(-1));
+}
+
+test "no duplex shares a port with an agent, an egress proxy or a terminal" {
+    var id: i64 = 0;
+    while (id < @as(i64, @intCast(max_duplex))) : (id += 1) {
+        const port = duplexPort(id).?;
+        try testing.expect(port != wire.agent_port);
+        try testing.expect(port != wire.egress_port);
+        try testing.expect(port != wire.resolver_port);
+        try testing.expect(port != wire.agent_service_port);
+        var tty: i64 = 0;
+        while (tty < @as(i64, @intCast(max_ttys))) : (tty += 1) {
+            try testing.expect(port != ttyPort(tty).?);
+        }
+    }
 }
 
 test "ttyDimValid: the window size bounds are inclusive and symmetric" {

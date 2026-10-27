@@ -145,6 +145,25 @@ pub const TtyOpened = struct {
     pid: i64,
 };
 
+/// A duplex the workspace's VM opened: the id the agent minted (its slot in
+/// the guest's duplex table) and the pid of the server it runs there.
+pub const DuplexOpened = struct {
+    duplex_id: i64,
+    pid: i64,
+};
+
+/// One piece of a duplex's output, with the server's exit state.
+pub const DuplexChunk = struct {
+    data: []u8,
+    eof: bool,
+    exited: bool,
+    exit_code: i64,
+
+    pub fn deinit(self: DuplexChunk, allocator: std.mem.Allocator) void {
+        allocator.free(self.data);
+    }
+};
+
 /// One piece of a terminal's output. An empty `data` with `eof` means the
 /// terminal had nothing to say right now, which is not the same as an end.
 pub const TtyChunk = struct {
@@ -628,6 +647,104 @@ pub const Client = struct {
             .workspace_id = workspace_id,
             .tty_op = .close,
             .tty_id = tty_id,
+        }, self.guard_ms);
+        defer response.deinit();
+        return switch (response.value) {
+            .ack => {},
+            .failure => |f| self.reportFailure(f),
+            else => Error.ProtocolViolation,
+        };
+    }
+
+    /// Open a duplex inside the workspace's VM: the agent forks the MCP server
+    /// and answers on the duplex's own vsock port.
+    pub fn duplexOpen(
+        self: *Client,
+        workspace_id: []const u8,
+        cwd_rel: []const u8,
+        argv: []const []const u8,
+    ) !DuplexOpened {
+        var response = try self.call(.{
+            .action = .duplex,
+            .id = self.takeId(),
+            .workspace_id = workspace_id,
+            .duplex_op = .open,
+            .cwd_rel = cwd_rel,
+            .argv = argv,
+        }, long_call_guard_ms);
+        defer response.deinit();
+        return switch (response.value) {
+            .duplex => |d| blk: {
+                if (d.duplex_id < 0) break :blk Error.ProtocolViolation;
+                break :blk .{ .duplex_id = d.duplex_id, .pid = d.pid };
+            },
+            .failure => |f| self.reportFailure(f),
+            else => Error.ProtocolViolation,
+        };
+    }
+
+    /// Whatever the server has written since the last read.
+    pub fn duplexRead(
+        self: *Client,
+        workspace_id: []const u8,
+        duplex_id: i64,
+        max_bytes: usize,
+    ) !DuplexChunk {
+        var response = try self.call(.{
+            .action = .duplex,
+            .id = self.takeId(),
+            .workspace_id = workspace_id,
+            .duplex_op = .read,
+            .duplex_id = duplex_id,
+            .max_bytes = max_bytes,
+        }, self.guard_ms);
+        defer response.deinit();
+        return switch (response.value) {
+            .duplex => |d| .{
+                .data = try self.allocator.dupe(u8, d.data),
+                .eof = d.eof,
+                .exited = d.exited,
+                .exit_code = d.exit_code,
+            },
+            .failure => |f| self.reportFailure(f),
+            else => Error.ProtocolViolation,
+        };
+    }
+
+    /// Bytes into the server's stdin. Returns how many the guest took.
+    pub fn duplexWrite(
+        self: *Client,
+        workspace_id: []const u8,
+        duplex_id: i64,
+        data: []const u8,
+    ) !usize {
+        var response = try self.call(.{
+            .action = .duplex,
+            .id = self.takeId(),
+            .workspace_id = workspace_id,
+            .duplex_op = .write,
+            .duplex_id = duplex_id,
+            .data = data,
+        }, self.guard_ms);
+        defer response.deinit();
+        return switch (response.value) {
+            .duplex => |d| if (d.bytes < 0) self.reportFailure(.{
+                .code = .bad_request,
+                .message = "the duplex refused the input",
+            }) else @as(usize, @intCast(d.bytes)),
+            .failure => |f| self.reportFailure(f),
+            else => Error.ProtocolViolation,
+        };
+    }
+
+    /// Kill the server and forget the duplex.
+    pub fn duplexClose(self: *Client, workspace_id: []const u8, duplex_id: i64) !void {
+        var response = try self.call(.{
+            .action = .duplex,
+            .id = self.takeId(),
+            .workspace_id = workspace_id,
+            .duplex_op = .close,
+            .duplex_id = duplex_id,
         }, self.guard_ms);
         defer response.deinit();
         return switch (response.value) {

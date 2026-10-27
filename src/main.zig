@@ -264,6 +264,7 @@ pub fn main(init: std.process.Init) !void {
     ctxParent.mcp_stdio_registry = pabrikcore.mcp_stdio.StdioRegistry.global(allocator);
     ctxParent.mcp_http_registry = pabrikcore.mcp_http.HttpRegistry.global(allocator);
     defer pabrikcore.mcp_stdio.StdioRegistry.deinitGlobal();
+    defer pabrikcore.mcp_stdio.GuestRegistry.deinitGlobal();
     defer pabrikcore.mcp_http.HttpRegistry.deinitGlobal();
 
     const event_bus_mod = pabrikcore.event_bus;

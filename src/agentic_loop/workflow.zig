@@ -349,6 +349,7 @@ fn fetchMcpToolsFresh(
     copy_session_id: []const u8,
     initial_config: *config_mod.LlmConfig,
     logger: *logger_mod.Logger,
+    io: std.Io,
 ) ?[]pabrikcore.tool_models.AgentTool {
     return (blk: {
         const McpCancelCtx = struct {
@@ -381,7 +382,7 @@ fn fetchMcpToolsFresh(
             parent_allocator,
             initial_config.mcpServers() orelse .null,
             if (box) |_| &mcp_cancel_thunk.call else null,
-            scope,
+            .{ .scope = scope, .db = db, .io = io },
         );
     } catch |err| blk: {
         logger.errFmt("Failed to load MCP tools: {s}", .{@errorName(err)});
@@ -757,7 +758,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
     // `tools/list` per boot / per config mutation, published to the singleton
     // for every future run.
     if (!di.di.isMcpToolsInit()) {
-        const fresh = fetchMcpToolsFresh(parent_allocator, db, copy_session_id, initial_config, logger);
+        const fresh = fetchMcpToolsFresh(parent_allocator, db, copy_session_id, initial_config, logger, di.io);
         // Publish for all future runs. On error (`fresh == null`) pass
         // mark_init=false so the next run retries instead of caching
         // the failure forever.
@@ -814,7 +815,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         // /api/config/pabrik and add_mcp_server call `clearMcpToolsCache()`
         // after their `setLlmConfig` swap.
         if (!di.di.isMcpToolsInit()) {
-            const fresh = fetchMcpToolsFresh(allocator, db, copy_session_id, config, logger);
+            const fresh = fetchMcpToolsFresh(allocator, db, copy_session_id, config, logger, di.io);
             // `fresh` is consumed by `storeMcpToolsCache` (which deep-dupes
             // onto the singleton), so it is safe for this to live in the
             // per-turn arena.

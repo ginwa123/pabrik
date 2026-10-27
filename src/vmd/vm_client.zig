@@ -15,6 +15,11 @@ const tty_open_guard_ms: u32 = 10_000;
 /// A terminal read/write/resize is answered from a running process, never from
 /// a boot: a peer that has not answered by now is not going to.
 const tty_call_guard_ms: u32 = 5_000;
+
+/// A duplex open forks a server and binds a port, so it gets the terminal's
+/// budget; a read answers within the guest's own 200 ms wait.
+const duplex_open_guard_ms: u32 = 10_000;
+const duplex_call_guard_ms: u32 = 5_000;
 /// One `fs.write` frame's bytes. The agent refuses more than this, and a
 /// 64 KiB frame cannot hold much more once base64 and the envelope are paid
 /// for, so the two ends agree on one number.
@@ -57,6 +62,12 @@ pub const Error = error{
     /// The terminal's own guest process is gone: the shell exited, or the VM
     /// was restarted under it. Never a reason to boot anything.
     TtyGone,
+    /// The guest refused to open a duplex, or answered something a duplex
+    /// answer cannot be. Distinct from a transport failure.
+    DuplexFailed,
+    /// The duplex's own guest process is gone: the server exited, or the VM
+    /// was restarted under it.
+    DuplexGone,
     /// The image could not be opened or truncated, or `resize2fs` failed on it.
     DiskGrowFailed,
     /// A disk resize asked for a size the image already has, or a smaller one.
@@ -1570,6 +1581,179 @@ pub fn ttyClose(allocator: std.mem.Allocator, layout: Layout, tty_id: i64) !void
     };
     allocator.free(text);
 }
+// ─── guest duplexes: an MCP server's two byte streams ────────────────────
+
+/// A duplex the guest created: the id the agent minted, the pid of the server
+/// it runs, and the vsock port that duplex answers on.
+pub const DuplexOpen = struct {
+    duplex_id: i64,
+    pid: i64,
+    port: u32,
+};
+
+pub const DuplexRead = struct {
+    data: []u8,
+    eof: bool,
+    exited: bool,
+    exit_code: i64,
+
+    pub fn deinit(self: DuplexRead, allocator: std.mem.Allocator) void {
+        allocator.free(self.data);
+    }
+};
+
+/// Open a duplex in the guest: the agent forks the server and answers on
+/// `duplex_port_base + duplex_id`.
+pub fn duplexOpen(
+    allocator: std.mem.Allocator,
+    layout: Layout,
+    argv: []const []const u8,
+    cwd: []const u8,
+    refusal: ?*TtyRefusal,
+) !DuplexOpen {
+    var frame_buf: [8192]u8 = undefined;
+    const head = try std.fmt.bufPrint(
+        &frame_buf,
+        "{{\"type\":\"duplex\",\"op\":\"open\",\"id\":1,\"cwd\":",
+        .{},
+    );
+    var off = head.len;
+    try appendJsonString(&frame_buf, &off, cwd);
+    const argv_head = ",\"argv\":[";
+    @memcpy(frame_buf[off..][0..argv_head.len], argv_head);
+    off += argv_head.len;
+    for (argv, 0..) |argument, i| {
+        if (i > 0) {
+            frame_buf[off] = ',';
+            off += 1;
+        }
+        try appendJsonString(&frame_buf, &off, argument);
+    }
+    frame_buf[off] = ']';
+    off += 1;
+    frame_buf[off] = '}';
+    off += 1;
+
+    const text = try oneShot(allocator, layout, frame_buf[0..off], duplex_open_guard_ms);
+    defer allocator.free(text);
+
+    var parsed = try parseObject(allocator, text);
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+    const id = jsonIntField(obj, "duplex_id") orelse {
+        if (refusal) |out| {
+            const message = refusalText(obj);
+            out.len = @min(message.len, TtyRefusal.max);
+            @memcpy(out.message[0..out.len], message[0..out.len]);
+        }
+        return Error.DuplexFailed;
+    };
+    if (id < 0) return Error.DuplexFailed;
+    const pid = jsonIntField(obj, "pid") orelse return Error.DuplexFailed;
+    const port = jsonIntField(obj, "port") orelse return Error.DuplexFailed;
+    if (port <= 0 or port > std.math.maxInt(u16)) return Error.DuplexFailed;
+    return .{ .duplex_id = id, .pid = pid, .port = @intCast(port) };
+}
+
+/// One piece of a duplex's output. An empty `data` with `eof` means "nothing
+/// right now", which is what the caller's next poll asks again.
+pub fn duplexRead(
+    allocator: std.mem.Allocator,
+    layout: Layout,
+    duplex_id: i64,
+    max_bytes: usize,
+) !DuplexRead {
+    const port = policy.duplexPort(duplex_id) orelse return Error.DuplexFailed;
+    var frame_buf: [256]u8 = undefined;
+    const frame = try std.fmt.bufPrint(
+        &frame_buf,
+        "{{\"type\":\"duplex\",\"op\":\"read\",\"id\":1,\"max_bytes\":{d}}}",
+        .{@min(max_bytes, policy.max_duplex_chunk)},
+    );
+    // The guest process that owned the server is what answered that port, so
+    // nothing listening there IS the exit report — not a failed read.
+    const text = oneShotPort(allocator, layout, port, frame, duplex_call_guard_ms) catch |err| switch (err) {
+        error.ConnectFailed, error.HandshakeRejected => return .{
+            .data = try allocator.alloc(u8, 0),
+            .eof = true,
+            .exited = true,
+            .exit_code = -1,
+        },
+        else => return err,
+    };
+    defer allocator.free(text);
+
+    var parsed = try parseObject(allocator, text);
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+    const b64 = jsonStringField(obj, "data_b64") orelse "";
+    const data = try decodeDuplexBytes(allocator, b64);
+    return .{
+        .data = data,
+        .eof = jsonBoolField(obj, "eof"),
+        .exited = jsonBoolField(obj, "exited"),
+        .exit_code = jsonIntField(obj, "exit_code") orelse 0,
+    };
+}
+
+/// One piece into the server's stdin. Returns how many bytes the guest
+/// accepted; a server that stopped draining is reported, never hidden.
+pub fn duplexWrite(
+    allocator: std.mem.Allocator,
+    layout: Layout,
+    duplex_id: i64,
+    data: []const u8,
+) !usize {
+    const port = policy.duplexPort(duplex_id) orelse return Error.DuplexFailed;
+    if (data.len == 0 or data.len > policy.max_duplex_chunk) return Error.WriteFailed;
+
+    var head_buf: [96]u8 = undefined;
+    const head = try std.fmt.bufPrint(&head_buf, "{{\"type\":\"duplex\",\"op\":\"write\",\"id\":1,\"data_b64\":\"", .{});
+    const encoded_len = std.base64.standard.Encoder.calcSize(data.len);
+    const frame = try allocator.alloc(u8, head.len + encoded_len + 2);
+    defer allocator.free(frame);
+    @memcpy(frame[0..head.len], head);
+    _ = std.base64.standard.Encoder.encode(frame[head.len..][0..encoded_len], data);
+    const tail_at = head.len + encoded_len;
+    frame[tail_at] = '"';
+    frame[tail_at + 1] = '}';
+
+    const text = oneShotPort(allocator, layout, port, frame, duplex_call_guard_ms) catch |err| switch (err) {
+        error.ConnectFailed, error.HandshakeRejected => return Error.DuplexGone,
+        else => return err,
+    };
+    defer allocator.free(text);
+
+    var parsed = try parseObject(allocator, text);
+    defer parsed.deinit();
+    const accepted = jsonIntField(parsed.value.object, "bytes") orelse 0;
+    if (accepted < 0) return Error.WriteFailed;
+    return @intCast(accepted);
+}
+
+/// Kill the server and forget the duplex.
+pub fn duplexClose(allocator: std.mem.Allocator, layout: Layout, duplex_id: i64) !void {
+    const port = policy.duplexPort(duplex_id) orelse return Error.DuplexFailed;
+    const text = oneShotPort(allocator, layout, port, "{\"type\":\"duplex\",\"op\":\"close\",\"id\":1}", duplex_call_guard_ms) catch |err| switch (err) {
+        error.ConnectFailed, error.HandshakeRejected => return,
+        else => return err,
+    };
+    allocator.free(text);
+}
+
+fn decodeDuplexBytes(allocator: std.mem.Allocator, b64: []const u8) ![]u8 {
+    if (b64.len == 0) return allocator.alloc(u8, 0);
+    const decoder = std.base64.standard.Decoder;
+    const size = decoder.calcSizeForSlice(b64) catch return Error.ProtocolViolation;
+    if (size > policy.max_duplex_chunk) return Error.ReplyTooLarge;
+    const out = try allocator.alloc(u8, size);
+    decoder.decode(out, b64) catch {
+        allocator.free(out);
+        return Error.ProtocolViolation;
+    };
+    return out;
+}
+
 pub fn readSerialExcerpt(allocator: std.mem.Allocator, layout: Layout, max_bytes: usize) ![]u8 {
     var buf: [4096]u8 = undefined;
     const z = cstr(layout.serial_log, &buf) orelse return Error.OutOfMemory;

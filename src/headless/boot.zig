@@ -45,6 +45,7 @@ pub const Backend = struct {
 
         pabrikcore.mcp_http.HttpRegistry.deinitGlobal();
         pabrikcore.mcp_stdio.StdioRegistry.deinitGlobal();
+        pabrikcore.mcp_stdio.GuestRegistry.deinitGlobal();
 
         // `freeAllLlmConfigs` frees `llm_config_holder.current`, which IS
         // `llm_config_ptr` (boot installed it there).
