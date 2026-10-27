@@ -5,7 +5,7 @@ WORKDIR C:/data
 COPY pabrik.exe C:/app/pabrik.exe
 COPY *.dll C:/app/
 
-ENV HOME=C:\data
+ENV HOME=C:/data
 
 EXPOSE 8081
 

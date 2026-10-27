@@ -147,11 +147,12 @@ jobs:
         env:
           IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}-saas-amd64
         run: |
-          set -uo pipefail
+          set +e
           out="$(docker run --rm --network host \
             -e PABRIK_DATABASE_CONNINFO=postgres://pabrik:pabrik@127.0.0.1:5432/pabrik \
             "$IMAGE_REF" --no-static-dir --port 8080 --database=postgres 2>&1)"
           status=$?
+          set -e
           printf '%s\n' "$out"
           echo "container exit=${status}"
           if ! printf '%s\n' "$out" | grep -q 'database: backend=postgres '; then
@@ -168,11 +169,12 @@ jobs:
         env:
           IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}-saas-amd64
         run: |
-          set -uo pipefail
+          set +e
           out="$(docker run --rm --network host \
             -e PABRIK_DATABASE_CONNINFO=postgres://pabrik:pabrik@127.0.0.1:5432/pabrik \
             "$IMAGE_REF" --no-static-dir --port 8080 --saas 2>&1)"
           status=$?
+          set -e
           printf '%s\n' "$out"
           if [ "$status" -ne 2 ]; then
             echo "::error::--saas exited ${status}; a refusal is exit 2"
