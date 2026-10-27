@@ -175,6 +175,7 @@ pub fn recordSkillToolEvents(
         std.mem.eql(u8, args.tool_name, "search_skills") or
         std.mem.eql(u8, args.tool_name, "add_skill") or
         std.mem.eql(u8, args.tool_name, "edit_skill") or
+        std.mem.eql(u8, args.tool_name, "set_skill_metadata") or
         std.mem.eql(u8, args.tool_name, "remove_skill");
     if (!is_skill_tool) return;
 
@@ -235,7 +236,7 @@ pub fn recordSkillToolEvents(
 
     const kind: SkillEventKind = if (std.mem.eql(u8, args.tool_name, "add_skill"))
         .created
-    else if (std.mem.eql(u8, args.tool_name, "edit_skill"))
+    else if (std.mem.eql(u8, args.tool_name, "edit_skill") or std.mem.eql(u8, args.tool_name, "set_skill_metadata"))
         .edited
     else
         .removed;
@@ -446,29 +447,38 @@ test "a listed skill and a loaded skill coexist for the same name" {
     try testing.expectEqual(@as(i64, 1), try eventCount(&ctx.db, alloc, "sess_1", "loaded"));
 }
 
-test "recordSkillToolEvents handles add/edit/remove" {
+test "recordSkillToolEvents handles add/edit/metadata/remove" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    const cases = [_]struct { tool: []const u8, event: []const u8, result: []const u8 }{
-        .{ .tool = "add_skill", .event = "created", .result =
+    const cases = [_]struct { tool: []const u8, result: []const u8 }{
+        .{ .tool = "add_skill", .result =
         \\{"tool":"add_skill","success":true,"data":{"skill_name":"new-skill","name":"new-skill","created":true,"path":"/p"},"error":null,"v":1}
         },
-        .{ .tool = "edit_skill", .event = "edited", .result =
+        .{ .tool = "edit_skill", .result =
         \\{"tool":"edit_skill","success":true,"data":{"skill_name":"new-skill","name":"new-skill","updated":true,"path":"/p"},"error":null,"v":1}
         },
-        .{ .tool = "remove_skill", .event = "removed", .result =
+        .{ .tool = "set_skill_metadata", .result =
+        \\{"tool":"set_skill_metadata","success":true,"data":{"skill_name":"new-skill","updated":true,"metadata":[{"key":"license","value":"MIT"}]},"error":null,"v":1}
+        },
+        .{ .tool = "remove_skill", .result =
         \\{"tool":"remove_skill","success":true,"data":{"skill_name":"new-skill","removed":true,"path":"/p"},"error":null,"v":1}
         },
     };
 
     for (cases) |c| {
         recordSkillToolEvents(alloc, &ctx.db, null, testArgs(ctx.threaded.io(), "sess_1", c.tool, c.result));
-        try testing.expectEqual(@as(i64, 1), try eventCount(&ctx.db, alloc, "sess_1", c.event));
     }
-    try testing.expectEqual(@as(i64, 3), try countEvents(&ctx.db, alloc, "sess_1"));
+
+    try testing.expectEqual(@as(i64, 4), try countEvents(&ctx.db, alloc, "sess_1"));
+    try testing.expectEqual(@as(i64, 1), try eventCount(&ctx.db, alloc, "sess_1", "created"));
+    try testing.expectEqual(@as(i64, 1), try eventCount(&ctx.db, alloc, "sess_1", "removed"));
+    // A metadata write is a write to the row, so it lands as `edited` beside
+    // `edit_skill` — the ledger would otherwise show a skill changing with no
+    // event explaining it.
+    try testing.expectEqual(@as(i64, 2), try eventCount(&ctx.db, alloc, "sess_1", "edited"));
 }
 
 test "recordSkillToolEvents tolerates a payload it cannot parse" {

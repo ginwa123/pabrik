@@ -246,6 +246,7 @@ fn setupSlashDb() !TestCtx {
         \\INSERT INTO workspace_item_tasks (id, name, workspace_item_id) VALUES ('s1', 'T1', 'i1')
     , &.{});
     try migration.Migration102CreateSkills.up(&db, alloc);
+    try migration.Migration119CreateSkillMetadata.up(&db, alloc);
     try db.exec(alloc,
         \\CREATE TABLE IF NOT EXISTS session_skills (session_id TEXT NOT NULL, skill_name TEXT NOT NULL, content TEXT NOT NULL, loaded_at_nano INTEGER DEFAULT (strftime('%s', 'now')), PRIMARY KEY (session_id, skill_name))
     , &.{});

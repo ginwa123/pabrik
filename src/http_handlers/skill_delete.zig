@@ -129,6 +129,7 @@ fn setupDb() !TestCtx {
     try db.init(io, ":memory:");
 
     try migration.Migration102CreateSkills.up(&db, testing.allocator);
+    try migration.Migration119CreateSkillMetadata.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 
