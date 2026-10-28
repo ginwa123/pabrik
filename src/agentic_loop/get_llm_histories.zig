@@ -252,8 +252,8 @@ test "getLLMHistories returns rows for the matching session_id in created_at ASC
 
     try seedRow(&s.db, "h1", "s1", "1704067200000000");
     try seedRow(&s.db, "h2", "s1", "1735689600000000");
-    try seedRow(&s.db, "h3", "s2", "2025-06-01 00:00:00"); // different session
-    try seedRow(&s.db, "h4", "s1", "2024-06-01 00:00:00");
+    try seedRow(&s.db, "h3", "s2", "1748736000000000"); // different session
+    try seedRow(&s.db, "h4", "s1", "1717200000000000");
 
     const result = try getLLMHistories(*Backend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s1" });
     defer {

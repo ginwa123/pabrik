@@ -9055,7 +9055,7 @@ test "getCompactedMessages: returns only is_feed_to_llm=0 messages for session" 
     defer llmHistoryCompactedMessagesTeardownDb(&s);
     const alloc = testing.allocator;
 
-    try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h1", "sess_1", "user", "Fix bug", 1, "2025-01-01 00:00:00");
+    try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h1", "sess_1", "user", "Fix bug", 1, "1735689600000000");
     try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h2", "sess_1", "assistant", "OK", 1, "2025-01-01 00:01:00");
     try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h3", "sess_1", "user", "More", 0, "2025-01-01 00:02:00");
     try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h4", "sess_1", "assistant", "Done", 0, "2025-01-01 00:03:00");
@@ -9083,7 +9083,7 @@ test "getCompactedMessages: respects limit" {
     while (i < 30) : (i += 1) {
         var buf: [16]u8 = undefined;
         const id = try std.fmt.bufPrint(&buf, "h{d}", .{i});
-        try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, id, "sess_1", "user", "msg", 0, "2025-01-01 00:00:00");
+        try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, id, "sess_1", "user", "msg", 0, "1735689600000000");
     }
     const results = try getCompactedMessages(alloc, &s.db, "sess_1", .{ .limit = 5 });
     defer {
@@ -9100,7 +9100,7 @@ test "getCompactedMessages: filters by message_ids when provided" {
     var s = try llmHistoryCompactedMessagesSetupDb();
     defer llmHistoryCompactedMessagesTeardownDb(&s);
     const alloc = testing.allocator;
-    try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h1", "sess_1", "user", "A", 0, "2025-01-01 00:00:00");
+    try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h1", "sess_1", "user", "A", 0, "1735689600000000");
     try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h2", "sess_1", "user", "B", 0, "2025-01-01 00:01:00");
     try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h3", "sess_1", "user", "C", 0, "2025-01-01 00:02:00");
 
@@ -9122,7 +9122,7 @@ test "getCompactedMessages: returns empty slice when session has no compacted me
     var s = try llmHistoryCompactedMessagesSetupDb();
     defer llmHistoryCompactedMessagesTeardownDb(&s);
     const alloc = testing.allocator;
-    try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h1", "sess_1", "user", "active", 1, "2025-01-01 00:00:00");
+    try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h1", "sess_1", "user", "active", 1, "1735689600000000");
 
     const results = try getCompactedMessages(alloc, &s.db, "sess_1", .{});
     defer {
