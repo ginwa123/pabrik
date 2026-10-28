@@ -151,7 +151,7 @@ pub fn exists(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8) bo
 /// Fetch one `agents` row by id. Returns null when absent.
 pub fn getById(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8) !?AgentRow {
     var q = db.query(allocator,
-        "SELECT id, workspace_item_id, description, COALESCE(created_at, ''), COALESCE(updated_at, '') FROM agent_configs WHERE id = ? AND item_type = 'agent'",
+        "SELECT id, workspace_item_id, description, COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), '') FROM agent_configs WHERE id = ? AND item_type = 'agent'",
         &.{agent_id},
     ) catch return null;
     defer q.deinit();
@@ -184,7 +184,7 @@ pub fn insert(allocator: std.mem.Allocator, db: DbOrTx, id: []const u8, workspac
 pub fn listKnowledge(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8) ![]KnowledgeRow {
     var q = db.query(allocator,
         \\SELECT id, config_id AS agent_id, file_path, label, content, position,
-        \\       COALESCE(created_at, ''), COALESCE(updated_at, '')
+        \\       COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), '')
         \\FROM agent_config_knowledge WHERE config_id = ?
         \\ORDER BY position DESC
     , &.{agent_id}) catch return &.{};
@@ -228,7 +228,7 @@ pub fn insertKnowledge(
 pub fn getKnowledgeById(allocator: std.mem.Allocator, db: DbOrTx, knowledge_id: []const u8) !?KnowledgeRow {
     var q = db.query(allocator,
         \\SELECT id, config_id AS agent_id, file_path, label, content, position,
-        \\       COALESCE(created_at, ''), COALESCE(updated_at, '')
+        \\       COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), '')
         \\FROM agent_config_knowledge WHERE id = ?
     , &.{knowledge_id}) catch return null;
     defer q.deinit();
@@ -387,7 +387,7 @@ pub fn deleteTool(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8
 pub fn listSystemPrompts(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8) ![]SystemPromptRow {
     var q = db.query(allocator,
         \\SELECT id, config_id AS agent_id, title, content, position,
-        \\       COALESCE(created_at, ''), COALESCE(updated_at, '')
+        \\       COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), '')
         \\FROM agent_config_system_prompt WHERE config_id = ?
         \\ORDER BY position DESC
     , &.{agent_id}) catch return &.{};
@@ -422,7 +422,7 @@ pub fn insertSystemPrompt(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []
 pub fn getSystemPromptById(allocator: std.mem.Allocator, db: DbOrTx, prompt_id: []const u8) !?SystemPromptRow {
     var q = db.query(allocator,
         \\SELECT id, config_id AS agent_id, title, content, position,
-        \\       COALESCE(created_at, ''), COALESCE(updated_at, '')
+        \\       COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), '')
         \\FROM agent_config_system_prompt WHERE id = ?
     , &.{prompt_id}) catch return null;
     defer q.deinit();

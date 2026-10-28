@@ -131,6 +131,15 @@ pub const sqlite_time_functions = if (is_postgres) [_][]const u8{
     \\  END
     \\$fn$
     ,
+    \\CREATE OR REPLACE FUNCTION datetime(ts numeric, modifier text) RETURNS timestamp
+    \\LANGUAGE sql STABLE AS $fn$
+    \\  SELECT CASE
+    \\    WHEN lower(btrim(modifier)) = 'unixepoch'
+    \\      THEN (to_timestamp(ts::double precision) AT TIME ZONE 'UTC')
+    \\    ELSE (to_timestamp(ts::double precision) AT TIME ZONE 'UTC')
+    \\  END
+    \\$fn$
+    ,
     \\CREATE OR REPLACE FUNCTION strftime(fmt text, ts text, modifier text) RETURNS text
     \\LANGUAGE sql STABLE AS $fn$
     \\  SELECT CASE

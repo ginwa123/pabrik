@@ -27,7 +27,8 @@ pub const Migration088AddSessionPendingQuestion = struct {
             \\    created_at 
     ++ dialect.epoch_type ++
     \\ NOT NULL,
-            \\    resolved_at INTEGER
+            \\    resolved_at 
+    ++ dialect.epoch_type ++
             \\)
         , &[_][]const u8{});
 

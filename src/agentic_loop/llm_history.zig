@@ -378,12 +378,12 @@ pub fn getSessionListWithCursor(
         \\COALESCE(s.selected_profile_model, ''),
         \\COALESCE(s.is_auto_retry_until_stop, '0'),
         \\COALESCE(s.last_finish_reason, ''),
-        \\CASE WHEN s.last_human_touched_at_nano IS NULL OR s.last_human_touched_at_nano = '' THEN '' ELSE strftime('%Y-%m-%d %H:%M:%S', s.last_human_touched_at_nano / 1000, 'unixepoch') END,
+        \\CASE WHEN s.last_human_touched_at_nano IS NULL OR COALESCE(CAST(s.last_human_touched_at_nano AS TEXT), '') = '' THEN '' ELSE strftime('%Y-%m-%d %H:%M:%S', s.last_human_touched_at_nano / 1000, 'unixepoch') END,
         \\COALESCE(s.git_worktree_cwd, ''),
         \\COALESCE((SELECT t.workspace_item_id FROM workspace_item_tasks t WHERE t.id = s.id LIMIT 1), ''),
         \\COALESCE(s.is_pinned, 0),
         \\COALESCE(s.pinned_position, 0),
-        \\CASE WHEN COALESCE(s.last_finish_reason, '') = 'stop' AND (s.last_human_touched_at_nano IS NULL OR s.last_human_touched_at_nano = '' OR s.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000) THEN 1 ELSE 0 END
+        \\CASE WHEN COALESCE(s.last_finish_reason, '') = 'stop' AND (s.last_human_touched_at_nano IS NULL OR COALESCE(CAST(s.last_human_touched_at_nano AS TEXT), '') = '' OR s.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000) THEN 1 ELSE 0 END
         \\FROM sessions s
         \\LEFT JOIN llm_history h ON s.id = h.session_id
         \\WHERE {s}
