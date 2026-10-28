@@ -208,7 +208,10 @@ pub fn dispatchCreateAdmin(
     defer target.deinit();
     var db: database.Db = .{};
     defer db.deinit();
-    try database.openConfigured(&db, io, target.openConfig(), db_config.resolveConfig(&.{}));
+    database.openConfigured(&db, io, target.openConfig(), db_config.resolveConfig(&.{})) catch |err| {
+        db_target.reportOpenError(&target, err, db_target.lastErrorMessage(&db));
+        return error.InvalidArgs;
+    };
     var mm = migration.MigrationManager.init(allocator, &db);
     defer mm.deinit();
     try migration.registerAllMigrations(&mm);

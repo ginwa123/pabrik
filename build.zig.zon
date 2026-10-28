@@ -135,8 +135,12 @@
             // prints. Then `rm -rf zig-pkg && zig build` and confirm the
             // new symbol you rely on actually exists in the extracted
             // package.
-            .url = "git+https://github.com/ginwa123/ruangsql.git#b583c70cb572431276dbcede595adbb093ab0749",
-            .hash = "databases-0.0.0-vy-BCBGEBgAvJ5sNp02LK7JfvYTt7F8qzFVzpTgtIxA7",
+            // 8aad4c1 = ruangsql#14: the postgres backend KEEPS the libpq / server error
+            // text (`getLastErrorMessage()`) instead of mapping every failure to a bare
+            // `OpenFailed` / `ExecuteFailed`, which is what made a failed boot undiagnosable.
+            // It is a BRANCH head, so it resolves while #14 lives: move it to the merge SHA.
+            .url = "git+https://github.com/ginwa123/ruangsql.git#8aad4c1548b629c5a486d5854b17d64399f3c8e8",
+            .hash = "databases-0.0.0-vy-BCNyYBgAr0Z08ttKRFycgK5rKe7Ex_Fb6ZgtnYL8e",
         },
         // External web-framework library (pure-Zig HTTP server +
         // libcurl-backed HTTP client). Exposes a single `kabelweb` module
