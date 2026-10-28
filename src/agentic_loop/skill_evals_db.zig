@@ -1634,7 +1634,7 @@ pub const RunFilter = struct {
     limit: u32 = 25,
 };
 
-/// Optional filters are expressed as `(? = '' OR col = ?)` rather than by
+/// Optional filters are expressed as `(COALESCE(CAST(? AS TEXT), '') = '' OR col = ?)` rather than by
 /// building SQL text.
 pub fn listRuns(
     allocator: std.mem.Allocator,
@@ -1648,8 +1648,8 @@ pub fn listRuns(
         \\SELECT id, session_id, status, trigger, scope, skill_name,
         \\       COALESCE(CAST(error AS TEXT), ''), COALESCE(total_tokens, 0), COALESCE(CAST(created_at AS TEXT), '')
         \\  FROM skill_eval_runs
-        \\ WHERE (? = '' OR id = ?)
-        \\   AND (? = '' OR session_id = ?)
+        \\ WHERE (COALESCE(CAST(? AS TEXT), '') = '' OR id = ?)
+        \\   AND (COALESCE(CAST(? AS TEXT), '') = '' OR session_id = ?)
         \\ ORDER BY created_at DESC, id DESC
         \\ LIMIT ?
     , &.{ filter.run_id, filter.run_id, filter.session_id, filter.session_id, limit_str });
@@ -1834,7 +1834,7 @@ pub fn verdictCounts(
 ) ![]VerdictCount {
     var q = try db.query(allocator,
         \\SELECT verdict, COUNT(*) FROM skill_eval_results
-        \\ WHERE (? = '' OR session_id = ?)
+        \\ WHERE (COALESCE(CAST(? AS TEXT), '') = '' OR session_id = ?)
         \\ GROUP BY verdict
         \\ ORDER BY verdict ASC
     , &.{ session_id, session_id });

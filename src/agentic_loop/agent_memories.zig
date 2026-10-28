@@ -818,17 +818,26 @@ test "saveMemory: stamps workspace_id, and an empty one lands in the '' bucket" 
     defer freeMemoryRow(alloc, unscoped);
     try testing.expectEqualStrings("", unscoped.workspace_id);
 
+    // `rowid` is sqlite's; the question is what each row's workspace_id IS, so
+    // ask per row instead of relying on insertion order.
     var q = try ctx.db.query(alloc,
-        \\SELECT id, workspace_id FROM agent_memories ORDER BY rowid
-    , &.{});
+        \\SELECT id, workspace_id FROM agent_memories WHERE id IN (?, ?)
+    , &.{ scoped.id, unscoped.id });
     defer q.deinit();
-    const a = (try q.next()) orelse return error.RowMissing;
-    defer a.deinit(alloc);
-    try testing.expectEqualStrings(scoped.id, a.values[0]);
-    try testing.expectEqualStrings("ws_alpha", a.values[1]);
-    const b = (try q.next()) orelse return error.RowMissing;
-    defer b.deinit(alloc);
-    try testing.expectEqualStrings("", b.values[1]);
+    var seen_scoped = false;
+    var seen_unscoped = false;
+    while (try q.next()) |row| {
+        defer row.deinit(alloc);
+        if (std.mem.eql(u8, row.values[0], scoped.id)) {
+            try testing.expectEqualStrings("ws_alpha", row.values[1]);
+            seen_scoped = true;
+        } else {
+            try testing.expectEqualStrings("", row.values[1]);
+            seen_unscoped = true;
+        }
+    }
+    try testing.expect(seen_scoped);
+    try testing.expect(seen_unscoped);
 }
 
 test "loadMemoriesByFts: never returns another workspace's rows" {
