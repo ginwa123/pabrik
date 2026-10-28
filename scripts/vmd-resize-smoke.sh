@@ -192,27 +192,32 @@ say "ok  three refusals, and the VM is still ready pid=$pid_live"
 say "storage: the disk image grows and the filesystem inside it takes the room"
 disk_img="$vms/workspaces/$ws/disk.ext4"
 img_before="$(stat -c %s "$disk_img")"
-[ "$img_before" = "$((128 * 1024 * 1024))" ] ||
-  fail "the workspace image is $img_before bytes, not the 128 MiB base"
+# The workspace disk is a clone of the base this run booted, so its size comes
+# from build-guest-image.sh rather than from a number written down here.
+base_bytes="$(stat -c %s "$image")"
+[ "$img_before" = "$base_bytes" ] ||
+  fail "the workspace image is $img_before bytes, not a clone of the $base_bytes-byte base"
+base_mib=$((img_before / 1048576))
+grown_mib=$((base_mib * 2))
 root_before="$(guest_root_kb)"
-out="$(client resize --socket "$sock" --workspace-id "$ws" --vcpus 1 --mem 512 --disk 512)"
+out="$(client resize --socket "$sock" --workspace-id "$ws" --vcpus 1 --mem 512 --disk "$grown_mib")"
 case "$out" in
-  ready*disk_mib=512*) ;;
+  ready*disk_mib=$grown_mib*) ;;
   *) fail "the storage resize came back as: $out" ;;
 esac
 img_after="$(stat -c %s "$disk_img")"
-[ "$img_after" = "$((512 * 1024 * 1024))" ] ||
-  fail "the image is $img_after bytes after a resize to 512 MiB"
+[ "$img_after" = "$((grown_mib * 1048576))" ] ||
+  fail "the image is $img_after bytes after a resize to $grown_mib MiB"
 root_after="$(guest_root_kb)"
-[ "$root_after" -gt "$((root_before * 3))" ] ||
-  fail "the guest still sees ${root_after} kB of root filesystem, was ${root_before}"
+[ "$root_after" -gt "$((root_before + (grown_mib - base_mib) * 512))" ] ||
+  fail "the guest sees ${root_after} kB of root filesystem, was ${root_before}: it took less than half of the $((grown_mib - base_mib)) MiB added"
 out="$(exec_in --timeout-ms 60000 -- /bin/sh -c 'cat /workspace/size.txt' 2>/dev/null)"
 [ "$out" = "before-resize" ] || fail "growing the disk lost the workspace file: $out"
-say "ok  image $((img_before / 1048576)) -> $((img_after / 1048576)) MiB, guest root ${root_before} -> ${root_after} kB, file kept"
+say "ok  image $base_mib -> $grown_mib MiB, guest root ${root_before} -> ${root_after} kB, file kept"
 
 say "storage only grows: a smaller disk is refused without a restart"
 pid_live="$(vmm_pid)"
-if client resize --socket "$sock" --workspace-id "$ws" --vcpus 1 --mem 512 --disk 256 >/dev/null 2>"$work/err.txt"; then
+if client resize --socket "$sock" --workspace-id "$ws" --vcpus 1 --mem 512 --disk "$base_mib" >/dev/null 2>"$work/err.txt"; then
   fail "a resize that shrinks the disk was accepted"
 fi
 grep -q "never shrinks" "$work/err.txt" ||
@@ -231,4 +236,4 @@ out="$(exec_in --timeout-ms 60000 -- /bin/sh -c 'nproc' 2>/dev/null | tr -d '[:s
 [ "$out" = "1" ] || fail "the adopted VM reports $out vCPUs, not the recorded 1"
 say "ok  a fresh daemon adopted pid=$pid_live at the recorded size"
 
-printf '[vmd-resize-smoke] PASS  a resize moved the guest from 1 vCPU/512 MiB to 2/1024 MiB and back, grew its disk 128 -> 512 MiB, and kept the data\n'
+printf '[vmd-resize-smoke] PASS  a resize moved the guest from 1 vCPU/512 MiB to 2/1024 MiB and back, grew its disk %s -> %s MiB, and kept the data\n' "$base_mib" "$grown_mib"
