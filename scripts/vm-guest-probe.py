@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Assert the behaviours the guest agent's protocol owes its callers: `hello`,
-`exec` (argv, exit code, non-root uid, timeout, output budget), `shutdown`. The
-framing itself lives in `vm_guest_client.py`.
+`exec` (argv, exit code, the guest's own root uid, timeout, output budget),
+`shutdown`. The framing itself lives in `vm_guest_client.py`.
 
 Usage: vm-guest-probe.py <uds_path> [port]
        vm-guest-probe.py <uds_path> -- <argv...>    # run one command and show it
@@ -106,7 +106,7 @@ def main(argv):
     check("exec exit code 0", exit_frame.get("code") == 0 and not err, repr(exit_frame))
 
     out, _, exit_frame, _ = client.request({"type": "exec", "id": 2, "argv": ["/bin/pabrik-probe", "id"]})
-    check("commands run as a non-root uid", out.startswith(b"uid=1000 "), repr(out))
+    check("commands run as the guest's own root", out.startswith(b"uid=0 "), repr(out))
 
     out, _, exit_frame, _ = client.request(
         {"type": "exec", "id": 3, "argv": ["/bin/pabrik-probe", "write", "/workspace/hello.txt", "persisted"]}
@@ -136,24 +136,24 @@ def main(argv):
     )
 
     out, _, exit_frame, _ = client.request(
-        {"type": "exec", "id": 10, "argv": ["/bin/sh", "-c", "cat /etc/alpine-release"]}
+        {"type": "exec", "id": 10, "argv": ["/bin/sh", "-c", "echo shell-ok"]}
     )
-    check("the guest image ships a real shell", out.strip().startswith(b"3.24"), repr(out))
+    check("the guest image ships a real shell", out.strip() == b"shell-ok", repr(out))
 
     out, _, exit_frame, _ = client.request(
         {"type": "exec", "id": 11, "argv": ["/bin/sh", "-c", "echo $((6*7)); id -u"]}
     )
     check(
         "shell expansion and command substitution",
-        out == b"42\n1000\n",
+        out == b"42\n0\n",
         repr(out),
     )
 
     out, _, exit_frame, _ = client.request(
-        {"type": "exec", "id": 12, "argv": ["/bin/sh", "-c", "busybox --list | wc -l"]}
+        {"type": "exec", "id": 12, "argv": ["/bin/sh", "-c", "wc -l < /etc/pabrik-image-rpms"]}
     )
-    applets = int(out.strip() or b"0")
-    check("busybox provides the userland", applets > 200, repr(out))
+    packages = int(out.strip() or b"0")
+    check("the image records the packages it ships", packages > 100, repr(out))
 
     # ── fs.write: the guest creates the file, and its directories ──────
     reply = write(

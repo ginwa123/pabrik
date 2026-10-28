@@ -147,6 +147,9 @@ jobs:
         with:
           version: ${{ env.ZIG_VERSION }}
 
+      - name: 'The exit trap that takes the manager and its VMMs down (no KVM)'
+        run: scripts/vmd-teardown-selftest.sh
+
       - name: 'Stop, record, start: the guest sees the new size, the disk keeps its file'
         # Firecracker takes vCPUs and RAM only at InstanceStart, so this asserts
         # the whole path: the CLI asks, the manager records the size in

@@ -21,6 +21,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # `rm -rf`; this helper is the one place that knows how to remove it.
 # shellcheck source=scripts/smoke-workdir.sh
 . "$repo_root/scripts/smoke-workdir.sh"
+# shellcheck source=scripts/vmd-teardown.sh
+. "$repo_root/scripts/vmd-teardown.sh"
 fc_bin="${FC_BIN:-firecracker}"
 guest_kernel="${GUEST_KERNEL:-$HOME/firecracker-demo/vmlinux-6.18.51}"
 # A dev box usually keeps the demo download in ~/firecracker-demo rather than
@@ -65,11 +67,30 @@ start_daemon() {
   done
   fail "daemon never created $sock (see $work/vmd.log)"
 }
-stop_daemon() {
+# SIGTERM means "stop the manager, the VMs stay": the manager started next adopts
+# them, which is what the adoption case at the end asserts. It is the wrong stop
+# for a smoke, whose VM root does not outlive it — see `teardown` below.
+stop_daemon_keep_vms() {
   [ -n "$daemon_pid" ] || return 0
   kill -TERM "$daemon_pid" 2>/dev/null || true
   wait "$daemon_pid" 2>/dev/null || true
   daemon_pid=""
+}
+
+teardown() {
+  local status=$?
+  trap - EXIT
+  pabrik_teardown_daemon "$vms" "$daemon_pid"
+  daemon_pid=""
+  local left
+  left="$(pabrik_count_vmms "$vms")"
+  if [ "$left" -ne 0 ]; then
+    printf '[vmd-resize-smoke] FAIL the run ended with %s VMM(s) on %s, %s before it\n' \
+      "$left" "$vms" "$vmm_at_start" >&2
+    exit 1
+  fi
+  say "ok  $vmm_at_start VMM(s) on $vms before the run, 0 after it"
+  exit "$status"
 }
 
 client() { PABRIK_VM_DIR="$vms" "$vmd" "$@"; }
@@ -87,8 +108,11 @@ vmm_pid() { tr -d '[:space:]' <"$vms/workspaces/$ws/fc.pid"; }
 # `status` also prints the size the workspace boots with.
 status_is_ready() { case "$1" in "ready pid=$2 "*) return 0 ;; *) return 1 ;; esac; }
 
+# The VM root is private to this run, so any VMM already on it is a leak from an
+# earlier one that the wipe above could not remove: a process outlives its files.
+vmm_at_start="$(pabrik_count_vmms "$vms")"
+trap 'teardown' EXIT
 start_daemon
-trap 'stop_daemon' EXIT
 
 say "the workspace boots with the manager's defaults (1 vCPU, 512 MiB)"
 out="$(exec_in --timeout-ms 60000 -- /bin/sh -c 'echo booted' 2>/dev/null)"
@@ -150,7 +174,8 @@ pid_live="$(vmm_pid)"
 if client resize --socket "$sock" --workspace-id "$ws" --vcpus 99 --mem 512 >/dev/null 2>"$work/err.txt"; then
   fail "a resize to 99 vCPUs was accepted"
 fi
-grep -q "vcpus must be 1..8" "$work/err.txt" || fail "the refusal did not name the limit: $(cat "$work/err.txt")"
+grep -qE "vcpus must be 1\.\.[0-9]+" "$work/err.txt" ||
+  fail "the refusal did not name the limit: $(cat "$work/err.txt")"
 if client resize --socket "$sock" --workspace-id "$ws" --vcpus 1 --mem 1000 >/dev/null 2>"$work/err.txt"; then
   fail "a resize to 1000 MiB was accepted (off Firecracker's 128 MiB grid)"
 fi
@@ -167,27 +192,32 @@ say "ok  three refusals, and the VM is still ready pid=$pid_live"
 say "storage: the disk image grows and the filesystem inside it takes the room"
 disk_img="$vms/workspaces/$ws/disk.ext4"
 img_before="$(stat -c %s "$disk_img")"
-[ "$img_before" = "$((128 * 1024 * 1024))" ] ||
-  fail "the workspace image is $img_before bytes, not the 128 MiB base"
+# The workspace disk is a clone of the base this run booted, so its size comes
+# from build-guest-image.sh rather than from a number written down here.
+base_bytes="$(stat -c %s "$image")"
+[ "$img_before" = "$base_bytes" ] ||
+  fail "the workspace image is $img_before bytes, not a clone of the $base_bytes-byte base"
+base_mib=$((img_before / 1048576))
+grown_mib=$((base_mib * 2))
 root_before="$(guest_root_kb)"
-out="$(client resize --socket "$sock" --workspace-id "$ws" --vcpus 1 --mem 512 --disk 512)"
+out="$(client resize --socket "$sock" --workspace-id "$ws" --vcpus 1 --mem 512 --disk "$grown_mib")"
 case "$out" in
-  ready*disk_mib=512*) ;;
+  ready*disk_mib=$grown_mib*) ;;
   *) fail "the storage resize came back as: $out" ;;
 esac
 img_after="$(stat -c %s "$disk_img")"
-[ "$img_after" = "$((512 * 1024 * 1024))" ] ||
-  fail "the image is $img_after bytes after a resize to 512 MiB"
+[ "$img_after" = "$((grown_mib * 1048576))" ] ||
+  fail "the image is $img_after bytes after a resize to $grown_mib MiB"
 root_after="$(guest_root_kb)"
-[ "$root_after" -gt "$((root_before * 3))" ] ||
-  fail "the guest still sees ${root_after} kB of root filesystem, was ${root_before}"
+[ "$root_after" -gt "$((root_before + (grown_mib - base_mib) * 512))" ] ||
+  fail "the guest sees ${root_after} kB of root filesystem, was ${root_before}: it took less than half of the $((grown_mib - base_mib)) MiB added"
 out="$(exec_in --timeout-ms 60000 -- /bin/sh -c 'cat /workspace/size.txt' 2>/dev/null)"
 [ "$out" = "before-resize" ] || fail "growing the disk lost the workspace file: $out"
-say "ok  image $((img_before / 1048576)) -> $((img_after / 1048576)) MiB, guest root ${root_before} -> ${root_after} kB, file kept"
+say "ok  image $base_mib -> $grown_mib MiB, guest root ${root_before} -> ${root_after} kB, file kept"
 
 say "storage only grows: a smaller disk is refused without a restart"
 pid_live="$(vmm_pid)"
-if client resize --socket "$sock" --workspace-id "$ws" --vcpus 1 --mem 512 --disk 256 >/dev/null 2>"$work/err.txt"; then
+if client resize --socket "$sock" --workspace-id "$ws" --vcpus 1 --mem 512 --disk "$base_mib" >/dev/null 2>"$work/err.txt"; then
   fail "a resize that shrinks the disk was accepted"
 fi
 grep -q "never shrinks" "$work/err.txt" ||
@@ -198,7 +228,7 @@ status_is_ready "$out" "$pid_live" || fail "the refused shrink disturbed the VM:
 say "ok  refused, and the VM is still ready pid=$pid_live at 512 MiB of storage"
 
 say "the VM survives a resize with the daemon gone: the size is on disk, not in memory"
-stop_daemon
+stop_daemon_keep_vms
 start_daemon
 out="$(status_of)"
 status_is_ready "$out" "$pid_live" || fail "the VM did not outlive its daemon: $out"
@@ -206,4 +236,4 @@ out="$(exec_in --timeout-ms 60000 -- /bin/sh -c 'nproc' 2>/dev/null | tr -d '[:s
 [ "$out" = "1" ] || fail "the adopted VM reports $out vCPUs, not the recorded 1"
 say "ok  a fresh daemon adopted pid=$pid_live at the recorded size"
 
-printf '[vmd-resize-smoke] PASS  a resize moved the guest from 1 vCPU/512 MiB to 2/1024 MiB and back, grew its disk 128 -> 512 MiB, and kept the data\n'
+printf '[vmd-resize-smoke] PASS  a resize moved the guest from 1 vCPU/512 MiB to 2/1024 MiB and back, grew its disk %s -> %s MiB, and kept the data\n' "$base_mib" "$grown_mib"

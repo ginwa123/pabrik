@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Phase P1 smoke: build a guest ext4 image around `pabrik-vm-agent`, boot it on
 # Firecracker without root, and drive the protocol: `hello`, `exec` (argv, exit
-# code, non-root uid, timeout, output budget), `shutdown`, plus an offline read
-# of the image to prove the guest's file survived in the sealed disk.
+# code, the guest's own root uid, timeout, output budget), `shutdown`, plus an
+# offline read of the image to prove the guest's file survived in the sealed
+# disk.
 #
 # Needs: /dev/kvm readable, a firecracker binary, a guest kernel (ELF vmlinux),
 # e2fsprogs + sha256sum + python3. No tap, no iptables, no sudo.
