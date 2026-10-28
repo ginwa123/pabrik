@@ -1201,9 +1201,8 @@ pub fn moveElementsWithDescendantsBatch(
                 \\    UNION ALL
                 \\    SELECT dpe.id FROM design_page_elements dpe
                 \\        JOIN subtree s ON dpe.parent_id = s.id
-                \\    LIMIT 10000
                 \\)
-                \\SELECT id FROM subtree
+                \\SELECT id FROM subtree LIMIT 10000
             , &.{ it.element_id, input.page_id });
             defer q.deinit();
             while (try q.next()) |row| {
@@ -1486,9 +1485,8 @@ pub fn moveElementToPage(
             \\    UNION ALL
             \\    SELECT dpe.id FROM design_page_elements dpe
             \\        JOIN subtree s ON dpe.parent_id = s.id
-            \\    LIMIT 10000
             \\)
-            \\SELECT id FROM subtree
+            \\SELECT id FROM subtree LIMIT 10000
         , &.{ input.element_id, input.source_page_id });
         defer q.deinit();
         while (try q.next()) |row| {
@@ -2947,8 +2945,13 @@ pub fn deletePage(
         }
     }
 
-    // Delete the page row. With FK enforcement ON (the test setup), the
-    // element rows are cascade-deleted.
+    // The element rows go first: sqlite runs with `foreign_keys` off, so the
+    // schema's `ON DELETE CASCADE` never fires there (and postgres, at parity,
+    // declares no FK at all).
+    try db.exec(allocator,
+        "DELETE FROM design_page_elements WHERE page_id = ?",
+        &.{page_id});
+
     try db.exec(allocator,
         "DELETE FROM design_pages WHERE id = ?",
         &.{page_id});
@@ -5788,10 +5791,8 @@ fn deletePageSetupDb() !struct {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // SQLite has FK enforcement OFF by default; the production code's comment
-    // on deletePage says it relies on `ON DELETE CASCADE` to remove the
-    // element rows, so we enable FK enforcement in this test to match the
-    try db.exec(alloc, "PRAGMA foreign_keys = ON", &.{});
+    // `deletePage` removes the element rows itself, so this test asserts the
+    // same thing on both engines and needs no sqlite-only pragma.
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (

@@ -3571,7 +3571,7 @@ pub fn updateSessionLastHumanTouchedAt(
     defer allocator.free(touched_at_str);
 
     const sql =
-        "UPDATE sessions SET last_human_touched_at_nano = ? WHERE id = ?";
+        "UPDATE sessions SET last_human_touched_at_nano = CAST(? AS BIGINT) WHERE id = ?";
     try db.exec(allocator, sql, &.{ touched_at_str, session_id });
 }
 
@@ -5407,10 +5407,21 @@ pub fn listKanbanDistinctTags(
         if (offset_str.len > 0) allocator.free(offset_str);
     }
 
-    // json_each() expands the `tags` JSON array into a virtual table with one
-    // row per element. json_valid + json_type filter out malformed/non-array
-    // rows (legacy / corrupted).
-    var q = try db.query(allocator,
+    // `json_each` is sqlite's table-valued JSON expander, `jsonb_array_elements_text`
+    // its postgres counterpart. The `LIKE '[%'` guard stands in for sqlite's
+    // `json_valid`/`json_type`: a value that is not an array expands to nothing.
+    const sql = if (dialect.is_postgres)
+        \\SELECT je.value AS tag, COUNT(*) AS cnt, MAX(t.updated_at) AS last_used
+        \\FROM workspace_item_tasks t
+        \\CROSS JOIN LATERAL jsonb_array_elements_text(
+        \\    CASE WHEN t.tags LIKE '[%' THEN t.tags::jsonb ELSE '[]'::jsonb END
+        \\) AS je(value)
+        \\WHERE t.workspace_item_id = ?
+        \\GROUP BY je.value
+        \\ORDER BY cnt DESC, last_used DESC
+        \\LIMIT ?
+        \\OFFSET ?
+    else
         \\SELECT je.value AS tag, COUNT(*) AS cnt, MAX(t.updated_at) AS last_used
         \\FROM workspace_item_tasks t, json_each(t.tags) je
         \\WHERE t.workspace_item_id = ?
@@ -5420,7 +5431,9 @@ pub fn listKanbanDistinctTags(
         \\ORDER BY cnt DESC, last_used DESC
         \\LIMIT ?
         \\OFFSET ?
-    , &.{
+    ;
+
+    var q = try db.query(allocator, sql, &.{
         workspace_item_id,
         limit_str,
         offset_str,
@@ -7121,7 +7134,10 @@ test "getSessionList inner subquery uses idx_llm_history_created_session (EXPLAI
         try ctx.db.exec(alloc, sql, &.{});
     }
 
-    // EXPLAIN QUERY PLAN returns one row per plan node.
+    // EXPLAIN QUERY PLAN is sqlite's plan text, and the assertion below reads a
+    // sqlite index name out of it: postgres cannot answer this question.
+    if (dialect.is_postgres) return error.SkipZigTest;
+
     var q = try ctx.db.query(alloc,
         \\EXPLAIN QUERY PLAN
         \\SELECT h.session_id, MAX(h.created_at_nano)
@@ -8513,28 +8529,30 @@ fn llmHistorySearchMessagesFtsSetupDb() !TestCtx {
         \\  -- Tests that need specific timestamps pass `created_at` AND
         \\  -- `created_iso` explicitly via a sub-SELECT that mirrors the
         \\  -- production conversion.
-        \\  created_iso TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+        \\  created_iso TEXT DEFAULT CURRENT_TIMESTAMP
         \\)
     , &.{});
-    try db.exec(alloc,
-        \\CREATE VIRTUAL TABLE messages_fts USING fts5(
-        \\    content
-        \\)
-    , &.{});
+    if (dialect.has_fts5) {
+        try db.exec(alloc,
+            \\CREATE VIRTUAL TABLE messages_fts USING fts5(
+            \\    content
+            \\)
+        , &.{});
+    }
 
     // Sync triggers — same shape as Migration 058 in production (now
     // non-external-content so snippet() can read from messages_fts).
-    try db.exec(alloc,
+    if (dialect.has_fts5) try db.exec(alloc,
         \\CREATE TRIGGER llm_history_ai AFTER INSERT ON llm_history BEGIN
         \\  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, COALESCE(new.response_content, ''));
         \\END
     , &.{});
-    try db.exec(alloc,
+    if (dialect.has_fts5) try db.exec(alloc,
         \\CREATE TRIGGER llm_history_ad AFTER DELETE ON llm_history BEGIN
         \\  DELETE FROM messages_fts WHERE rowid = old.rowid;
         \\END
     , &.{});
-    try db.exec(alloc,
+    if (dialect.has_fts5) try db.exec(alloc,
         \\CREATE TRIGGER llm_history_au AFTER UPDATE ON llm_history BEGIN
         \\  DELETE FROM messages_fts WHERE rowid = old.rowid;
         \\  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, COALESCE(new.response_content, ''));

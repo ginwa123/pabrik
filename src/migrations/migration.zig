@@ -2,6 +2,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
 const helpers = @import("helpers");
+const dialect = pabrikcore.dialect;
 const common = @import("common.zig");
 
 pub const Migration = common.Migration;
@@ -1002,7 +1003,7 @@ test "Migration078 ON DELETE CASCADE: agents dropped when workspace_items row de
     defer ctx.db.deinit();
 
     // Enable FK enforcement (off by default in SQLite, on for this test).
-    try ctx.db.exec(alloc, "PRAGMA foreign_keys = ON", &.{});
+    if (dialect.enable_foreign_keys.len > 0) try ctx.db.exec(alloc, dialect.enable_foreign_keys, &.{});
     try Migration078.up(&ctx.db, alloc);
 
     // Create the parent workspace_items row + agent + 1 knowledge + 1 tool.
@@ -1050,7 +1051,7 @@ test "Migration078 ON DELETE CASCADE: knowledge + tools dropped when agent row d
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    try ctx.db.exec(alloc, "PRAGMA foreign_keys = ON", &.{});
+    if (dialect.enable_foreign_keys.len > 0) try ctx.db.exec(alloc, dialect.enable_foreign_keys, &.{});
     try Migration078.up(&ctx.db, alloc);
 
     try ctx.db.exec(alloc,
@@ -1292,7 +1293,7 @@ test "Migration080 ON DELETE CASCADE removes prompts when agent row deleted" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    try ctx.db.exec(alloc, "PRAGMA foreign_keys = ON", &.{});
+    if (dialect.enable_foreign_keys.len > 0) try ctx.db.exec(alloc, dialect.enable_foreign_keys, &.{});
     // Production order: parent tables first (agents), then the new table.
     try Migration078.up(&ctx.db, alloc);
     try Migration080AddAgentSystemPrompt.up(&ctx.db, alloc);
@@ -1618,7 +1619,7 @@ test "Migration081 ON DELETE CASCADE removes all children when workspace_item de
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    try ctx.db.exec(alloc, "PRAGMA foreign_keys = ON", &.{});
+    if (dialect.enable_foreign_keys.len > 0) try ctx.db.exec(alloc, dialect.enable_foreign_keys, &.{});
     // Production order: parent tables first (agents), then the new tables.
     try Migration078.up(&ctx.db, alloc);
     try Migration081.up(&ctx.db, alloc);
@@ -1796,7 +1797,7 @@ test "Migration084 ON DELETE CASCADE removes routine when workspace_item deleted
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    try ctx.db.exec(alloc, "PRAGMA foreign_keys = ON", &.{});
+    if (dialect.enable_foreign_keys.len > 0) try ctx.db.exec(alloc, dialect.enable_foreign_keys, &.{});
     try ctx.db.exec(alloc,
         "CREATE TABLE workspace_item_tasks (id TEXT PRIMARY KEY, task_type TEXT NOT NULL DEFAULT 'standard')",
         &.{});
@@ -3927,6 +3928,9 @@ test "migration 058: creates messages_fts virtual table" {
 }
 
 test "migration 058: installs sync triggers (exactly 3 on llm_history)" {
+    // The FTS5 triggers only exist on sqlite: postgres indexes `to_tsvector`
+    // instead of maintaining a shadow table, so there is nothing to count.
+    if (dialect.is_postgres) return error.SkipZigTest;
     // The migration creates 3 triggers named llm_history_ai, _ad, _au.
     // After Migration 058, querying sqlite_master with
     // `tbl_name='llm_history'` AND `type='trigger'` must return exactly 3.
@@ -7104,7 +7108,7 @@ test "Migration072 kanban_column_id FK is ON DELETE CASCADE — deleting a colum
     // NB: PRAGMA foreign_keys is deliberately OFF in this project's
     // Backend init (see src/ai_workflow/tui/kanban_model.zig:306 for
     // the rationale — application code simulates CASCADE manually).
-    try ctx.db.exec(alloc, "PRAGMA foreign_keys = ON", &.{});
+    if (dialect.enable_foreign_keys.len > 0) try ctx.db.exec(alloc, dialect.enable_foreign_keys, &.{});
 
     // Seed: one valid task on column col_1.
     try seedKanbanCard072(&ctx, alloc, "task_to_unplace", "col_1", 0);
@@ -9033,7 +9037,7 @@ test "Migration097's user_id stays nullable so an empty bind is legal" {
         &.{ "r_null", "sess_c", "" });
 
     var q = try ctx.db.query(alloc,
-        "SELECT IFNULL(user_id, '<null>') FROM skill_eval_runs WHERE id = ?",
+        "SELECT COALESCE(user_id, '<null>') FROM skill_eval_runs WHERE id = ?",
         &.{"r_null"});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;

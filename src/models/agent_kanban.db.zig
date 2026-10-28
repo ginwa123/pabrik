@@ -152,7 +152,7 @@ pub fn exists(allocator: std.mem.Allocator, db: DbOrTx, workspace_item_id: []con
 /// Fetch the config row by workspace_item_id. Returns null when absent.
 pub fn getByWorkspaceItemId(allocator: std.mem.Allocator, db: DbOrTx, workspace_item_id: []const u8) !?AgentKanbanRow {
     var q = db.query(allocator,
-        "SELECT id, workspace_item_id, description, IFNULL(created_at, ''), IFNULL(updated_at, '') FROM agent_configs WHERE workspace_item_id = ? AND item_type = 'kanban'",
+        "SELECT id, workspace_item_id, description, COALESCE(created_at, ''), COALESCE(updated_at, '') FROM agent_configs WHERE workspace_item_id = ? AND item_type = 'kanban'",
         &.{workspace_item_id},
     ) catch return null;
     defer q.deinit();
@@ -186,7 +186,7 @@ pub fn insertIgnoreDuplicate(allocator: std.mem.Allocator, db: DbOrTx, id: []con
 pub fn listKnowledge(allocator: std.mem.Allocator, db: DbOrTx, kanban_id: []const u8) ![]KnowledgeRow {
     var q = db.query(allocator,
         \\SELECT id, config_id AS kanban_id, file_path, label, content, position,
-        \\       IFNULL(created_at, ''), IFNULL(updated_at, '')
+        \\       COALESCE(created_at, ''), COALESCE(updated_at, '')
         \\FROM agent_config_knowledge WHERE config_id = ?
         \\ORDER BY position DESC
     , &.{kanban_id}) catch return &.{};
@@ -228,7 +228,7 @@ pub fn insertKnowledge(
 pub fn getKnowledgeById(allocator: std.mem.Allocator, db: DbOrTx, knowledge_id: []const u8) !?KnowledgeRow {
     var q = db.query(allocator,
         \\SELECT id, config_id AS kanban_id, file_path, label, content, position,
-        \\       IFNULL(created_at, ''), IFNULL(updated_at, '')
+        \\       COALESCE(created_at, ''), COALESCE(updated_at, '')
         \\FROM agent_config_knowledge WHERE id = ?
     , &.{knowledge_id}) catch return null;
     defer q.deinit();
@@ -358,7 +358,7 @@ pub fn deleteTool(allocator: std.mem.Allocator, db: DbOrTx, kanban_id: []const u
 pub fn listSystemPrompts(allocator: std.mem.Allocator, db: DbOrTx, kanban_id: []const u8) ![]SystemPromptRow {
     var q = db.query(allocator,
         \\SELECT id, config_id AS kanban_id, title, content, position,
-        \\       IFNULL(created_at, ''), IFNULL(updated_at, '')
+        \\       COALESCE(created_at, ''), COALESCE(updated_at, '')
         \\FROM agent_config_system_prompt WHERE config_id = ?
         \\ORDER BY position DESC
     , &.{kanban_id}) catch return &.{};
@@ -393,7 +393,7 @@ pub fn insertSystemPrompt(allocator: std.mem.Allocator, db: DbOrTx, kanban_id: [
 pub fn getSystemPromptById(allocator: std.mem.Allocator, db: DbOrTx, prompt_id: []const u8) !?SystemPromptRow {
     var q = db.query(allocator,
         \\SELECT id, config_id AS kanban_id, title, content, position,
-        \\       IFNULL(created_at, ''), IFNULL(updated_at, '')
+        \\       COALESCE(created_at, ''), COALESCE(updated_at, '')
         \\FROM agent_config_system_prompt WHERE id = ?
     , &.{prompt_id}) catch return null;
     defer q.deinit();

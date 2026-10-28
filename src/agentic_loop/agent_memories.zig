@@ -130,7 +130,7 @@ pub fn getMemoryById(
     const select = try std.fmt.allocPrint(
         allocator,
         "SELECT id, content, tags, COALESCE(workspace_id, ''), COALESCE({s}, ''), COALESCE({s}, '') " ++
-            "FROM agent_memories WHERE id = ? AND workspace_id = ?",
+            "FROM agent_memories WHERE id = ? AND COALESCE(workspace_id, '') = COALESCE(CAST(? AS TEXT), '')",
         .{ created_expr, updated_expr },
     );
     defer allocator.free(select);

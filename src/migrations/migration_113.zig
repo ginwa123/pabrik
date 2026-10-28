@@ -3,6 +3,7 @@ const test_db = @import("../testing/test_db.zig");
 const common = @import("common.zig");
 
 const Backend = common.Backend;
+const dialect = common.dialect;
 
 /// Migration 113 — a detached job can belong to a workspace VM. The table
 /// recorded a HOST pid; a row for a job that ran inside a VM needs that VM and
@@ -34,7 +35,9 @@ test "Migration113 adds the two guest columns and leaves host rows at the defaul
         \\  pid INTEGER NOT NULL,
         \\  command TEXT NOT NULL,
         \\  log_path TEXT NOT NULL,
-        \\  started_at INTEGER NOT NULL,
+        \\  started_at 
+        ++ dialect.epoch_type ++
+        \\ NOT NULL,
         \\  status TEXT NOT NULL,
         \\  kind TEXT NOT NULL DEFAULT 'job',
         \\  last_read_offset INTEGER DEFAULT 0
@@ -74,7 +77,9 @@ test "Migration113 replaying is a no-op" {
         \\  pid INTEGER NOT NULL,
         \\  command TEXT NOT NULL,
         \\  log_path TEXT NOT NULL,
-        \\  started_at INTEGER NOT NULL,
+        \\  started_at 
+        ++ dialect.epoch_type ++
+        \\ NOT NULL,
         \\  status TEXT NOT NULL DEFAULT 'running',
         \\  PRIMARY KEY (session_id, pid)
         \\)

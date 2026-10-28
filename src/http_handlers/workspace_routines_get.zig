@@ -67,9 +67,9 @@ fn useCase(
 
     var qr = db.query(allocator,
         \\SELECT id, workspace_item_id, description, instruction, schedule, enabled,
-        \\       IFNULL(last_run_at, ''), IFNULL(next_run_at, ''),
-        \\       last_status, IFNULL(last_error, ''),
-        \\       IFNULL(created_at, ''), IFNULL(updated_at, '')
+        \\       COALESCE(last_run_at, ''), COALESCE(next_run_at, ''),
+        \\       last_status, COALESCE(last_error, ''),
+        \\       COALESCE(created_at, ''), COALESCE(updated_at, '')
         \\FROM workspace_routines WHERE id = ?
     , &[_][]const u8{input.item_id}) catch return error.DatabaseError;
     defer qr.deinit();

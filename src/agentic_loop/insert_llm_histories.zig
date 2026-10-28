@@ -1,5 +1,6 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const dialect = pabrikcore.dialect;
 const test_db = pabrikcore.test_db;
 const LLMHistory = @import("llm_history_row.zig").LLMHistory;
 const SkillInfo = @import("session_skills.zig").SkillInfo;
@@ -359,36 +360,38 @@ fn setupHistoryDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
         \\    updated_at TEXT
         \\)
     , &.{});
-    try db.exec(alloc,
-        \\CREATE VIRTUAL TABLE messages_fts USING fts5(
-        \\    content,
-        \\    tokenize='porter unicode61 remove_diacritics 2'
-        \\)
-    , &.{});
-    try db.exec(alloc,
-        \\CREATE TRIGGER llm_history_ai AFTER INSERT ON llm_history BEGIN
-        \\  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, COALESCE(new.response_content, ''));
-        \\END
-    , &.{});
-    try db.exec(alloc,
-        \\CREATE TRIGGER llm_history_ad AFTER DELETE ON llm_history BEGIN
-        \\  DELETE FROM messages_fts WHERE rowid = old.rowid;
-        \\END
-    , &.{});
-    try db.exec(alloc,
-        \\CREATE TRIGGER llm_history_au AFTER UPDATE ON llm_history BEGIN
-        \\  DELETE FROM messages_fts WHERE rowid = old.rowid;
-        \\  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, COALESCE(new.response_content, ''));
-        \\END
-    , &.{});
-    try db.exec(alloc,
-        \\CREATE TRIGGER llm_history_ai_model_not_empty
-        \\AFTER INSERT ON llm_history
-        \\FOR EACH ROW WHEN NEW.model IS NULL OR TRIM(NEW.model) = ''
-        \\BEGIN
-        \\  UPDATE llm_history SET model = 'unknown' WHERE id = NEW.id;
-        \\END
-    , &.{});
+    if (dialect.has_fts5) {
+        try db.exec(alloc,
+            \\CREATE VIRTUAL TABLE messages_fts USING fts5(
+            \\    content,
+            \\    tokenize='porter unicode61 remove_diacritics 2'
+            \\)
+        , &.{});
+        if (dialect.has_fts5) try db.exec(alloc,
+            \\CREATE TRIGGER llm_history_ai AFTER INSERT ON llm_history BEGIN
+            \\  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, COALESCE(new.response_content, ''));
+            \\END
+        , &.{});
+        if (dialect.has_fts5) try db.exec(alloc,
+            \\CREATE TRIGGER llm_history_ad AFTER DELETE ON llm_history BEGIN
+            \\  DELETE FROM messages_fts WHERE rowid = old.rowid;
+            \\END
+        , &.{});
+        if (dialect.has_fts5) try db.exec(alloc,
+            \\CREATE TRIGGER llm_history_au AFTER UPDATE ON llm_history BEGIN
+            \\  DELETE FROM messages_fts WHERE rowid = old.rowid;
+            \\  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, COALESCE(new.response_content, ''));
+            \\END
+        , &.{});
+        if (dialect.has_fts5) try db.exec(alloc,
+            \\CREATE TRIGGER llm_history_ai_model_not_empty
+            \\AFTER INSERT ON llm_history
+            \\FOR EACH ROW WHEN NEW.model IS NULL OR TRIM(NEW.model) = ''
+            \\BEGIN
+            \\  UPDATE llm_history SET model = 'unknown' WHERE id = NEW.id;
+            \\END
+        , &.{});
+    }
     return .{ .db = db, .threaded = threaded };
 }
 

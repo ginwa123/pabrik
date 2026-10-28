@@ -97,13 +97,13 @@ fn useCase(
     defer allocator.free(line_str);
 
     // Dedup check: same kind + message + stack within the last 1 second. The
-    // `IFNULL(stack,'') = IFNULL(?,'')` form treats NULL and "" as equivalent
+    // `COALESCE(stack,'') = COALESCE(?,'')` form treats NULL and "" as equivalent
     // dedup keys (matches the design doc contract).
     const dedup_sql =
         \\SELECT id FROM logs
         \\WHERE kind = ?
         \\  AND message = ?
-        \\  AND IFNULL(stack,'') = IFNULL(?,'')
+        \\  AND COALESCE(stack,'') = COALESCE(?,'')
         \\  AND created_at_nano >= ?
         \\LIMIT 1
     ;
@@ -350,7 +350,7 @@ test "dedup SQL: same kind+message+stack within 1s increments count" {
     // Dedup SELECT — same key within last 1s → matches.
     var rows = try s.db.query(
         alloc,
-        "SELECT id FROM logs WHERE kind = ? AND message = ? AND IFNULL(stack,'') = IFNULL(?,'') AND created_at_nano >= ? LIMIT 1",
+        "SELECT id FROM logs WHERE kind = ? AND message = ? AND COALESCE(stack,'') = COALESCE(?,'') AND created_at_nano >= ? LIMIT 1",
         &.{ "console_error", "boom", "stack-A", dedup_cutoff_str },
     );
     defer rows.deinit();
@@ -398,7 +398,7 @@ test "dedup SQL: different stack within 1s does NOT match (insert second row)" {
     // Dedup query with a DIFFERENT stack — should NOT match.
     var rows = try s.db.query(
         alloc,
-        "SELECT id FROM logs WHERE kind = ? AND message = ? AND IFNULL(stack,'') = IFNULL(?,'') AND created_at_nano >= ? LIMIT 1",
+        "SELECT id FROM logs WHERE kind = ? AND message = ? AND COALESCE(stack,'') = COALESCE(?,'') AND created_at_nano >= ? LIMIT 1",
         &.{ "console_error", "boom", "stack-B", dedup_cutoff_str },
     );
     defer rows.deinit();
@@ -447,7 +447,7 @@ test "dedup SQL: same key but >1s apart does NOT match (no dedup across window)"
     // handler would INSERT a new row.
     var rows = try s.db.query(
         alloc,
-        "SELECT id FROM logs WHERE kind = ? AND message = ? AND IFNULL(stack,'') = IFNULL(?,'') AND created_at_nano >= ? LIMIT 1",
+        "SELECT id FROM logs WHERE kind = ? AND message = ? AND COALESCE(stack,'') = COALESCE(?,'') AND created_at_nano >= ? LIMIT 1",
         &.{ "console_error", "boom", "stack-A", dedup_cutoff_str },
     );
     defer rows.deinit();
