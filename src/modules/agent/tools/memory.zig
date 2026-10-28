@@ -1298,7 +1298,7 @@ test "load_memory_tool: multi-token query joins with OR (regression for strict-s
     const id1 = try extractSavedId(alloc, _o1);
     defer alloc.free(id1);
     const _o2 = try executeSaveMemory(alloc, &ctx.db, .{
-        .content = "user prefers claude-sonnet for writing tasks",
+        .content = "user chooses the claude-sonnet model for writing tasks",
         .tags = "",
     }, "");
     defer alloc.free(_o2);

@@ -344,7 +344,9 @@ fn setupDb() !struct {
         \\CREATE TABLE llm_history (
         \\    id TEXT PRIMARY KEY,
         \\    session_id TEXT NOT NULL,
-        \\    created_at_nano TEXT,
+        \\    created_at_nano 
+        ++ pabrikcore.dialect.epoch_type ++
+        \\,
         \\    response_content TEXT,
         \\    role TEXT
         \\)
@@ -361,10 +363,20 @@ fn seedMessage(
     role: []const u8,
     content: []const u8,
 ) !void {
-    try db.exec(alloc,
+    // `created_at_nano` is an epoch column. Callers hand in either the epoch or
+    // a timestamp spelling, so convert once here — relying on sqlite's text
+    // affinity is what let an ISO string sit in a BIGINT column.
+    const insert =
         \\INSERT INTO llm_history (id, session_id, created_at_nano, response_content, role)
         \\VALUES (?, ?, ?, ?, ?)
-    , &.{ id, session_id, created_at, content, role });
+    ;
+    if (std.mem.indexOfScalar(u8, created_at, '-') == null) {
+        try db.exec(alloc, insert, &.{ id, session_id, created_at, content, role });
+        return;
+    }
+    var q = try db.queryRow(alloc, "SELECT CAST(strftime('%s', ?) AS BIGINT) * 1000000", &.{created_at});
+    defer q.deinit(alloc);
+    try db.exec(alloc, insert, &.{ id, session_id, q.values[0], content, role });
 }
 
 test "formatHistory - mode .none short-circuits to empty string" {
@@ -384,12 +396,12 @@ test "formatHistory - last:5 filters out tool messages" {
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    try seedMessage(alloc, &ctx.db, "m1", "p", "2024-01-01 00:00:01", "user", "Hello");
-    try seedMessage(alloc, &ctx.db, "m2", "p", "2024-01-01 00:00:02", "assistant", "Hi there");
-    try seedMessage(alloc, &ctx.db, "m3", "p", "2024-01-01 00:00:03", "user", "Please do X");
-    try seedMessage(alloc, &ctx.db, "m4", "p", "2024-01-01 00:00:04", "assistant", "On it");
-    try seedMessage(alloc, &ctx.db, "m5", "p", "2024-01-01 00:00:05", "tool", "{\"result\":\"ok\"}");
-    try seedMessage(alloc, &ctx.db, "m6", "p", "2024-01-01 00:00:06", "user", "Thanks");
+    try seedMessage(alloc, &ctx.db, "m1", "p", "1704067201000000", "user", "Hello");
+    try seedMessage(alloc, &ctx.db, "m2", "p", "1704067202000000", "assistant", "Hi there");
+    try seedMessage(alloc, &ctx.db, "m3", "p", "1704067203000000", "user", "Please do X");
+    try seedMessage(alloc, &ctx.db, "m4", "p", "1704067204000000", "assistant", "On it");
+    try seedMessage(alloc, &ctx.db, "m5", "p", "1704067205000000", "tool", "{\"result\":\"ok\"}");
+    try seedMessage(alloc, &ctx.db, "m6", "p", "1704067206000000", "user", "Thanks");
 
     const out = try formatHistory(alloc, &ctx.db, "child_sess", "p", .{ .last = 5 });
     defer alloc.free(out);
@@ -417,9 +429,9 @@ test "formatHistory - last:1 returns only the last user/assistant turn" {
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    try seedMessage(alloc, &ctx.db, "m1", "p", "2024-01-01 00:00:01", "user", "first");
-    try seedMessage(alloc, &ctx.db, "m2", "p", "2024-01-01 00:00:02", "assistant", "second");
-    try seedMessage(alloc, &ctx.db, "m3", "p", "2024-01-01 00:00:03", "user", "third");
+    try seedMessage(alloc, &ctx.db, "m1", "p", "1704067201000000", "user", "first");
+    try seedMessage(alloc, &ctx.db, "m2", "p", "1704067202000000", "assistant", "second");
+    try seedMessage(alloc, &ctx.db, "m3", "p", "1704067203000000", "user", "third");
 
     const out = try formatHistory(alloc, &ctx.db, "child_sess", "p", .{ .last = 1 });
     defer alloc.free(out);
@@ -435,10 +447,10 @@ test "formatHistory - since_last_user starts at the last user message" {
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    try seedMessage(alloc, &ctx.db, "m1", "p", "2024-01-01 00:00:01", "user", "first_user");
-    try seedMessage(alloc, &ctx.db, "m2", "p", "2024-01-01 00:00:02", "assistant", "after_first");
-    try seedMessage(alloc, &ctx.db, "m3", "p", "2024-01-01 00:00:03", "user", "second_user");
-    try seedMessage(alloc, &ctx.db, "m4", "p", "2024-01-01 00:00:04", "assistant", "after_second");
+    try seedMessage(alloc, &ctx.db, "m1", "p", "1704067201000000", "user", "first_user");
+    try seedMessage(alloc, &ctx.db, "m2", "p", "1704067202000000", "assistant", "after_first");
+    try seedMessage(alloc, &ctx.db, "m3", "p", "1704067203000000", "user", "second_user");
+    try seedMessage(alloc, &ctx.db, "m4", "p", "1704067204000000", "assistant", "after_second");
 
     const out = try formatHistory(alloc, &ctx.db, "child_sess", "p", .since_last_user);
     defer alloc.free(out);
@@ -510,8 +522,8 @@ test "formatHistory - empty session_id returns empty string (defensive, new arg)
 
     // Seed some history for the "parent" so we can confirm the empty
     // session_id short-circuit beats the DB read (no DB hit expected).
-    try seedMessage(alloc, &ctx.db, "m1", "p", "2024-01-01 00:00:01", "user", "should NOT appear");
-    try seedMessage(alloc, &ctx.db, "m2", "p", "2024-01-01 00:00:02", "assistant", "should NOT appear");
+    try seedMessage(alloc, &ctx.db, "m1", "p", "1704067201000000", "user", "should NOT appear");
+    try seedMessage(alloc, &ctx.db, "m2", "p", "1704067202000000", "assistant", "should NOT appear");
 
     const out = try formatHistory(alloc, &ctx.db, "", "p", .{ .last = 5 });
     defer alloc.free(out);
@@ -529,8 +541,8 @@ test "formatHistory - session_id equal parent_session_id returns empty string (N
     // Seed parent history — but the subagent guard says "session equals
     // parent → not a subagent → empty string". So the seeded messages
     // must NOT appear in the output.
-    try seedMessage(alloc, &ctx.db, "m1", "self", "2024-01-01 00:00:01", "user", "should NOT appear");
-    try seedMessage(alloc, &ctx.db, "m2", "self", "2024-01-01 00:00:02", "assistant", "should NOT appear");
+    try seedMessage(alloc, &ctx.db, "m1", "self", "1704067201000000", "user", "should NOT appear");
+    try seedMessage(alloc, &ctx.db, "m2", "self", "1704067202000000", "assistant", "should NOT appear");
 
     const out = try formatHistory(alloc, &ctx.db, "self", "self", .{ .last = 5 });
     defer alloc.free(out);
@@ -545,11 +557,11 @@ test "formatHistory - session_id differs from parent_session_id returns parent h
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    try seedMessage(alloc, &ctx.db, "m1", "parent_sess", "2024-01-01 00:00:01", "user", "from parent: a question");
-    try seedMessage(alloc, &ctx.db, "m2", "parent_sess", "2024-01-01 00:00:02", "assistant", "from parent: an answer");
+    try seedMessage(alloc, &ctx.db, "m1", "parent_sess", "1704067201000000", "user", "from parent: a question");
+    try seedMessage(alloc, &ctx.db, "m2", "parent_sess", "1704067202000000", "assistant", "from parent: an answer");
     // A row tagged with the SAME session_id as the child (the subagent)
     // should never come back, because we filter by parent_session_id.
-    try seedMessage(alloc, &ctx.db, "m3", "child_sess", "2024-01-01 00:00:03", "user", "from child — must NOT appear");
+    try seedMessage(alloc, &ctx.db, "m3", "child_sess", "1704067203000000", "user", "from child — must NOT appear");
 
     const out = try formatHistory(alloc, &ctx.db, "child_sess", "parent_sess", .{ .last = 5 });
     defer alloc.free(out);
@@ -613,9 +625,9 @@ test "formatHistory - empty content rows are filtered out" {
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    try seedMessage(alloc, &ctx.db, "m1", "p", "2024-01-01 00:00:01", "user", "Hello");
-    try seedMessage(alloc, &ctx.db, "m2", "p", "2024-01-01 00:00:02", "assistant", ""); // empty
-    try seedMessage(alloc, &ctx.db, "m3", "p", "2024-01-01 00:00:03", "user", "Bye");
+    try seedMessage(alloc, &ctx.db, "m1", "p", "1704067201000000", "user", "Hello");
+    try seedMessage(alloc, &ctx.db, "m2", "p", "1704067202000000", "assistant", ""); // empty
+    try seedMessage(alloc, &ctx.db, "m3", "p", "1704067203000000", "user", "Bye");
 
     const out = try formatHistory(alloc, &ctx.db, "child_sess", "p", .{ .last = 5 });
     defer alloc.free(out);

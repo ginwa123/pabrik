@@ -89,7 +89,9 @@ test "Migration113 replaying is a no-op" {
     try Migration113AddGuestJobColumns.up(&db, alloc);
 
     var rows = try db.query(alloc,
-        \\SELECT COUNT(*) FROM pragma_table_info('session_background_process')
+        \\SELECT COUNT(*) FROM 
+        ++ comptime dialect.tableColumns("session_background_process") ++
+        \\
         \\WHERE name IN ('vm_id', 'guest_pid')
     , &[_][]const u8{});
     defer rows.deinit();

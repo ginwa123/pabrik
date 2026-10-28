@@ -635,7 +635,7 @@ fn columnsOf(ctx: *TestCtx, table: []const u8) ![]const []const u8 {
         "SELECT column_name FROM information_schema.columns " ++
             "WHERE table_schema = current_schema() AND table_name = ? ORDER BY ordinal_position"
     else
-        "SELECT name FROM pragma_table_info(?) ORDER BY cid",
+        "SELECT name FROM " ++ dialect.table_columns_of_bound_table ++ " ORDER BY cid",
         &[_][]const u8{table},
     );
     defer q.deinit();
@@ -929,7 +929,7 @@ test "Migration078 agents.workspace_item_id is UNIQUE" {
     // The standard SQLite convention is that UNIQUE constraints create
     // auto-named indexes "sqlite_autoindex_<table>_<n>"; query sqlite_master.
     var q = try ctx.db.query(alloc,
-        "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='index' AND tbl_name='agents'",
+        "SELECT name FROM " ++ dialect.indexes_source ++ " WHERE type='index' AND tbl_name='agents'",
         &.{});
     defer q.deinit();
     var found = false;
@@ -972,7 +972,7 @@ test "Migration078 agent_tools(agent_id, tool_name) is UNIQUE" {
 
     // Verify the named UNIQUE index exists.
     var q = try ctx.db.query(alloc,
-        "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='index' AND name='uq_agent_tools_agent_tool'",
+        "SELECT name FROM " ++ dialect.indexes_source ++ " WHERE type='index' AND name='uq_agent_tools_agent_tool'",
         &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.UniqueIndexNotCreated;
@@ -1000,6 +1000,10 @@ test "Migration078 agent_tools(agent_id, tool_name) is UNIQUE" {
 }
 
 test "Migration078 ON DELETE CASCADE: agents dropped when workspace_items row deleted" {
+    // The cascade is the FK's job, and a postgres build declares
+    // `CHECK (1 = 1)` where sqlite declares the reference — see
+    // `dialect.foreignKey`. There is no constraint to cascade there.
+    if (dialect.is_postgres) return error.SkipZigTest;
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -1049,6 +1053,10 @@ test "Migration078 ON DELETE CASCADE: agents dropped when workspace_items row de
 }
 
 test "Migration078 ON DELETE CASCADE: knowledge + tools dropped when agent row deleted" {
+    // The cascade is the FK's job, and a postgres build declares
+    // `CHECK (1 = 1)` where sqlite declares the reference — see
+    // `dialect.foreignKey`. There is no constraint to cascade there.
+    if (dialect.is_postgres) return error.SkipZigTest;
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -1106,7 +1114,7 @@ test "Migration078 creates agent_knowledge.position + agent_id composite index" 
 
     // The named index from the spec: idx_agent_knowledge_agent_id_position.
     var q = try ctx.db.query(alloc,
-        "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='index' AND name='idx_agent_knowledge_agent_id_position'",
+        "SELECT name FROM " ++ dialect.indexes_source ++ " WHERE type='index' AND name='idx_agent_knowledge_agent_id_position'",
         &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.PositionIndexNotCreated;
@@ -1291,6 +1299,10 @@ test "Migration080 is registered in allMigrations" {
 }
 
 test "Migration080 ON DELETE CASCADE removes prompts when agent row deleted" {
+    // The cascade is the FK's job, and a postgres build declares
+    // `CHECK (1 = 1)` where sqlite declares the reference — see
+    // `dialect.foreignKey`. There is no constraint to cascade there.
+    if (dialect.is_postgres) return error.SkipZigTest;
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -1617,6 +1629,10 @@ test "Migration081 UNIQUE workspace_item_id rejects second agent_kanbans row" {
 }
 
 test "Migration081 ON DELETE CASCADE removes all children when workspace_item deleted" {
+    // The cascade is the FK's job, and a postgres build declares
+    // `CHECK (1 = 1)` where sqlite declares the reference — see
+    // `dialect.foreignKey`. There is no constraint to cascade there.
+    if (dialect.is_postgres) return error.SkipZigTest;
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -1737,7 +1753,7 @@ test "Migration084 drops routines table and normalizes task_type routine rows" {
     // Old indexes are gone.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name LIKE 'idx_routines_%'",
+            "SELECT name FROM " ++ dialect.indexes_source ++ " WHERE type = 'index' AND name LIKE 'idx_routines_%'",
             &.{});
         defer q.deinit();
         try testing.expect((try q.next()) == null);
@@ -1795,6 +1811,10 @@ test "Migration084 UNIQUE workspace_item_id rejects second workspace_routines ro
 }
 
 test "Migration084 ON DELETE CASCADE removes routine when workspace_item deleted" {
+    // The cascade is the FK's job, and a postgres build declares
+    // `CHECK (1 = 1)` where sqlite declares the reference — see
+    // `dialect.foreignKey`. There is no constraint to cascade there.
+    if (dialect.is_postgres) return error.SkipZigTest;
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -1921,7 +1941,7 @@ test "Migration085 PRIMARY KEY(session_id, tool_name) rejects a duplicate" {
     try testing.expect(duplicate_failed);
     // INSERT OR IGNORE (what the production helper uses) is a silent no-op.
     try ctx.db.exec(alloc,
-        "INSERT OR IGNORE INTO session_progressive_tool (session_id, tool_name, server_name, loaded_at_nano) VALUES ('s1', 'glob', '', 3)",
+        dialect.insert_ignore_prefix ++ " INTO session_progressive_tool (session_id, tool_name, server_name, loaded_at_nano) VALUES ('s1', 'glob', '', 3)" ++ dialect.conflict_ignore,
         &.{});
 
     var q = try ctx.db.query(alloc, "SELECT COUNT(*) FROM session_progressive_tool WHERE session_id = 's1'", &.{});
@@ -2264,7 +2284,7 @@ test "Migration093 adds worker.user_id and its index" {
     try testing.expectEqualStrings("0", row.values[1]);
 
     var qi = try ctx.db.query(alloc,
-        "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name = 'idx_worker_user_id'",
+        "SELECT COUNT(*) FROM " ++ dialect.indexes_source ++ " WHERE type = 'index' AND name = 'idx_worker_user_id'",
         &.{});
     defer qi.deinit();
     const irow = (try qi.next()) orelse return error.RowMissing;
@@ -2575,7 +2595,7 @@ test "Migration095 creates the workspace index and is idempotent" {
     try testing.expectEqualStrings("ws_kept", row.values[0]);
 
     var idx = try ctx.db.query(alloc,
-        "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name = 'idx_agent_memories_workspace'",
+        "SELECT name FROM " ++ dialect.indexes_source ++ " WHERE type = 'index' AND name = 'idx_agent_memories_workspace'",
         &.{});
     defer idx.deinit();
     const irow = (try idx.next()) orelse return error.IndexMissing;
@@ -2697,7 +2717,7 @@ test "Migration009RemoveCreatedColumn preserves pre-existing rows' created_at" {
     // Insert a deterministic row in the pre-migration schema.
     try ctx.db.exec(alloc,
         "INSERT INTO llm_history (id, session_id, model, response_content, created_at) " ++
-        "VALUES ('row_1', 'sess_1', 'm1', 'hello', '2026-06-30 12:34:56')",
+        "VALUES ('row_1', 'sess_1', 'm1', 'hello', '1782822896000000')",
         &.{});
 
     try Migration009RemoveCreatedColumn.up(&ctx.db, alloc);
@@ -2711,7 +2731,9 @@ test "Migration009RemoveCreatedColumn preserves pre-existing rows' created_at" {
     const row = (try q.next()) orelse return error.RowMissing009;
     defer row.deinit(alloc);
     try testing.expectEqualStrings("row_1", row.values[0]);
-    try testing.expectEqualStrings("2026-06-30 12:34:56", row.values[1]);
+    // The column is an epoch, so the value that survives the copy is the one
+    // that went in — not a timestamp spelling sqlite's text affinity invented.
+    try testing.expectEqualStrings("1782822896000000", row.values[1]);
 }
 
 // ===== Tests merged from migration_routines_test.zig (2026-09-29 flatten) =====
@@ -2868,7 +2890,13 @@ test "Migration044AddRoutines creates routines table with expected columns" {
     defer alloc.free(last_status);
     try testing.expectEqualStrings("", last_status);
 
-    const last_run_at = try scalarText044(alloc, &ctx.db, "SELECT COALESCE(last_run_at, '') FROM routines WHERE id = 'r1'", &.{});
+    var last_run_buf: [64]u8 = undefined;
+    const last_run_at_sql = try std.fmt.allocPrint(alloc,
+        "SELECT COALESCE({s}, '') FROM routines WHERE id = 'r1'",
+        .{try dialect.timestampText(&last_run_buf, "last_run_at")},
+    );
+    defer alloc.free(last_run_at_sql);
+    const last_run_at = try scalarText044(alloc, &ctx.db, last_run_at_sql, &.{});
     defer alloc.free(last_run_at);
     try testing.expectEqualStrings("", last_run_at);
 }
@@ -2907,7 +2935,7 @@ test "Migration044AddRoutines creates idx_routines_enabled_next_run index" {
     // Query sqlite_master for the index name. If the migration forgot
     // to create the index, the query returns zero rows.
     var q = try ctx.db.query(alloc,
-        "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='index' AND name='idx_routines_enabled_next_run'",
+        "SELECT name FROM " ++ dialect.indexes_source ++ " WHERE type='index' AND name='idx_routines_enabled_next_run'",
         &.{});
     defer q.deinit();
 
@@ -2977,7 +3005,7 @@ test "Migration048AddChatListIndex creates idx_llm_history_created_session index
     // create the index, the query returns zero rows.
     var q = try ctx.db.query(alloc,
         \\SELECT name FROM 
-        ++ dialect.tables_source ++
+        ++ dialect.indexes_source ++
         \\
         \\WHERE type = 'index'
         \\  AND name = 'idx_llm_history_created_session'
@@ -3010,7 +3038,7 @@ test "Migration048AddChatListIndex is idempotent on re-run" {
     // And the index is still there exactly once.
     var q = try ctx.db.query(alloc,
         \\SELECT COUNT(*) FROM 
-        ++ dialect.tables_source ++
+        ++ dialect.indexes_source ++
         \\
         \\WHERE type = 'index'
         \\  AND name = 'idx_llm_history_created_session'
@@ -3115,7 +3143,7 @@ test "Migration049AddDefensiveIndexes creates idx_workspace_items_position_id in
     // create the index, the query returns zero rows.
     var q = try ctx.db.query(alloc,
         \\SELECT name FROM 
-        ++ dialect.tables_source ++
+        ++ dialect.indexes_source ++
         \\
         \\WHERE type = 'index'
         \\  AND name = 'idx_workspace_items_position_id'
@@ -3145,7 +3173,7 @@ test "Migration049AddDefensiveIndexes creates idx_routines_last_status index" {
     // Same pattern as test 1 but for the routines index.
     var q = try ctx.db.query(alloc,
         \\SELECT name FROM 
-        ++ dialect.tables_source ++
+        ++ dialect.indexes_source ++
         \\
         \\WHERE type = 'index'
         \\  AND name = 'idx_routines_last_status'
@@ -3180,7 +3208,7 @@ test "Migration049AddDefensiveIndexes is idempotent on re-run" {
     // returned as text per the Backend's row-as-text API.
     const wi_count = try scalarText049(alloc, &ctx.db,
         \\SELECT COUNT(*) FROM 
-        ++ dialect.tables_source ++
+        ++ dialect.indexes_source ++
         \\
         \\WHERE type = 'index'
         \\  AND name = 'idx_workspace_items_position_id'
@@ -3190,7 +3218,7 @@ test "Migration049AddDefensiveIndexes is idempotent on re-run" {
 
     const r_count = try scalarText049(alloc, &ctx.db,
         \\SELECT COUNT(*) FROM 
-        ++ dialect.tables_source ++
+        ++ dialect.indexes_source ++
         \\
         \\WHERE type = 'index'
         \\  AND name = 'idx_routines_last_status'
@@ -3662,7 +3690,7 @@ test "migration 054: index idx_session_queue_messages_session is recreated" {
     // `zig-migration-tests-three-pitfalls.md`.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='index' " ++
+            "SELECT name FROM " ++ dialect.indexes_source ++ " WHERE type='index' " ++
             "AND name = 'idx_session_queue_messages_session'",
             &[_][]const u8{},
         );
@@ -3679,7 +3707,7 @@ test "migration 054: index idx_session_queue_messages_session is recreated" {
 
     // After the migration, the index is back.
     var q = try ctx.db.query(alloc,
-        "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='index' " ++
+        "SELECT name FROM " ++ dialect.indexes_source ++ " WHERE type='index' " ++
         "AND name = 'idx_session_queue_messages_session'",
         &[_][]const u8{},
     );
@@ -3915,6 +3943,9 @@ fn countSqliteMaster058(db: *Backend, alloc: std.mem.Allocator, sql: []const u8)
 }
 
 test "migration 058: creates messages_fts virtual table" {
+    // FTS5 is sqlite's; a postgres build searches through tsvector and has
+    // none of the virtual-table or sync-trigger surface this test pins.
+    if (!dialect.has_fts5) return error.SkipZigTest;
     // After Migration 058, `sqlite_master` must contain a row for
     // `messages_fts` with type='table' (FTS5 virtual tables show up as
     // 'table' rows in sqlite_master, not 'view' or 'index').
@@ -4002,6 +4033,9 @@ test "migration 058: installs sync triggers (exactly 3 on llm_history)" {
 }
 
 test "migration 058: backfills existing rows into FTS index" {
+    // FTS5 is sqlite's; a postgres build searches through tsvector and has
+    // none of the virtual-table or sync-trigger surface this test pins.
+    if (!dialect.has_fts5) return error.SkipZigTest;
     // Pre-existing rows must be backfilled into messages_fts during
     // migration. Insert 2 rows BEFORE the migration, run it, then verify
     // that FTS5 MATCH on a unique word from each row returns the row.
@@ -4061,6 +4095,9 @@ test "migration 058: backfills existing rows into FTS index" {
 }
 
 test "migration 058: INSERT trigger fires for new rows" {
+    // FTS5 is sqlite's; a postgres build searches through tsvector and has
+    // none of the virtual-table or sync-trigger surface this test pins.
+    if (!dialect.has_fts5) return error.SkipZigTest;
     // After migration, INSERT INTO llm_history must auto-add to the FTS
     // index. Insert one new row AFTER migration; FTS MATCH must find it.
     const alloc = testing.allocator;
@@ -4090,6 +4127,9 @@ test "migration 058: INSERT trigger fires for new rows" {
 }
 
 test "migration 058: DELETE trigger removes row from index" {
+    // FTS5 is sqlite's; a postgres build searches through tsvector and has
+    // none of the virtual-table or sync-trigger surface this test pins.
+    if (!dialect.has_fts5) return error.SkipZigTest;
     // After migration, DELETE FROM llm_history must auto-remove from the
     // FTS index. Insert one row, delete it, then FTS MATCH must return
     // null (no rows match).
@@ -4171,7 +4211,7 @@ fn columnExists059(
     column_name: []const u8,
 ) !?struct { found: bool, is_generated: bool } {
     var q = try db.query(alloc,
-        "SELECT name, hidden FROM pragma_table_xinfo('llm_history') WHERE name = ?",
+        "SELECT name, hidden FROM " ++ comptime dialect.tableColumnsWithHidden("llm_history") ++ " WHERE name = ?",
         &.{column_name});
     defer q.deinit();
     const row = (try q.next()) orelse return .{ .found = false, .is_generated = false };
@@ -4235,7 +4275,7 @@ test "migration 059: backfills existing rows from created_at" {
     // migration's backfill uses (substring + datetime). This keeps the
     // test timezone-agnostic.
     var expected_q = try ctx.db.query(alloc,
-        "SELECT datetime(substr(?, 1, 10), 'unixepoch')", &.{micros});
+        "SELECT datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch')", &.{micros});
     defer expected_q.deinit();
     const expected_row = (try expected_q.next()) orelse return error.ExpectedExprFailed059;
     defer expected_row.deinit(alloc);
@@ -4273,7 +4313,7 @@ test "migration 059: lex comparison against a date string selects the correct ro
     // backfill uses (substr(micros, 1, 10)). Lex comparison must use
     // the same expression or it won't match.
     var iso_q = try ctx.db.query(alloc,
-        "SELECT datetime(substr(?, 1, 10), 'unixepoch')", &.{new_micros});
+        "SELECT datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch')", &.{new_micros});
     defer iso_q.deinit();
     const iso_row = (try iso_q.next()) orelse return error.IsoExprFailed059;
     defer iso_row.deinit(alloc);
@@ -4318,7 +4358,7 @@ test "migration 059: creates idx_llm_history_created_iso index" {
     // on the `created_iso` column.
     var q = try ctx.db.query(alloc,
         \\SELECT name FROM 
-        ++ dialect.tables_source ++
+        ++ dialect.indexes_source ++
         \\
         \\WHERE type='index' AND tbl_name='llm_history' AND name='idx_llm_history_created_iso'
     , &.{});
@@ -4406,7 +4446,7 @@ test "migration 060: re-backfills row with empty created_at using datetime('now'
 
     try ctx.db.exec(alloc,
         "INSERT INTO llm_history (id, session_id, model, response_content, created_at) " ++
-        "VALUES ('h_empty','s1','m','empty created_at','')", &.{});
+        "VALUES ('h_empty','s1','m','empty created_at', NULL)", &.{});
 
     try Migration060RebackfillCreatedIso.up(&ctx.db, alloc);
 
@@ -5394,7 +5434,7 @@ test "Migration064 creates the idx_logs_created_at and idx_logs_level indexes" {
 
     var rows = try s.db.query(
         alloc,
-        "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='index' AND tbl_name='logs' ORDER BY name",
+        "SELECT name FROM " ++ dialect.indexes_source ++ " WHERE type='index' AND tbl_name='logs' ORDER BY name",
         &[_][]const u8{},
     );
     defer rows.deinit();
@@ -5504,7 +5544,7 @@ test "Migration065 adds last_human_touched_at column to workspace_item_tasks" {
     defer qt.deinit();
     const type_row = (try qt.next()) orelse return error.RowMissing065;
     defer type_row.deinit(alloc);
-    try testing.expectEqualStrings("INTEGER", type_row.values[0]);
+    try testing.expectEqualStrings(dialect.epoch_type, type_row.values[0]);
 }
 
 test "Migration065 is idempotent on a re-run" {
@@ -5747,7 +5787,7 @@ test "Migration066 adds workspace_item_task_id column to design_pages" {
     // someone drops the CREATE INDEX step but leaves the column.
     var qi = try ctx.db.query(alloc,
         \\SELECT name FROM 
-        ++ dialect.tables_source ++
+        ++ dialect.indexes_source ++
         \\
         \\WHERE type = 'index'
         \\  AND name = 'idx_design_pages_workspace_item_task_id'
@@ -6249,7 +6289,7 @@ test "Migration068 adds partial UNIQUE INDEX on tool_call_id" {
     // Confirm the index exists.
     var q = try ctx.db.query(alloc,
         \\SELECT name, sql FROM 
-        ++ dialect.tables_source ++
+        ++ dialect.indexes_source ++
         \\
         \\WHERE type = 'index' AND tbl_name = 'llm_history'
         \\AND name = 'idx_llm_history_tool_call_id_loading'
@@ -6628,6 +6668,9 @@ test "Migration070 is idempotent on a re-run" {
 }
 
 test "Migration070 creates agent_memories_fts FTS5 virtual table" {
+    // FTS5 is sqlite's; a postgres build searches through tsvector and has
+    // none of the virtual-table or sync-trigger surface this test pins.
+    if (!dialect.has_fts5) return error.SkipZigTest;
     // After migration, `sqlite_master` must contain a row for
     // `agent_memories_fts` with type='table' (FTS5 virtual tables show
     // up as 'table' rows in sqlite_master, not 'view' or 'index').
@@ -6648,6 +6691,9 @@ test "Migration070 creates agent_memories_fts FTS5 virtual table" {
 }
 
 test "Migration070 installs sync triggers (exactly 3 on agent_memories)" {
+    // Postgres keeps this index as a GIN over tsvector instead of an FTS5
+    // table, so it has no sync triggers to count.
+    if (dialect.is_postgres) return error.SkipZigTest;
     // The migration creates 3 triggers: agent_memories_ai, _ad, _au.
     // After migration, querying sqlite_master with `tbl_name='agent_memories'`
     // AND `type='trigger'` must return exactly 3.
@@ -6693,6 +6739,9 @@ test "Migration070 installs sync triggers (exactly 3 on agent_memories)" {
 }
 
 test "Migration070 sync triggers keep FTS5 in lockstep with source table" {
+    // FTS5 is sqlite's; a postgres build searches through tsvector and has
+    // none of the virtual-table or sync-trigger surface this test pins.
+    if (!dialect.has_fts5) return error.SkipZigTest;
     // The whole point of the triggers is that INSERT/UPDATE/DELETE on
     // `agent_memories` auto-mirror into `agent_memories_fts`. Insert a
     // row, FTS5 MATCH on a unique word from it must return the row.
@@ -7183,12 +7232,12 @@ fn seedKanbanCard072(
     position: i64,
 ) !void {
     try ctx.db.exec(alloc,
-        "INSERT OR IGNORE INTO workspace_items (id, workspace_id, item_type) " ++
-        "VALUES ('wi_1', 'ws_1', 'kanban')",
+        dialect.insert_ignore_prefix ++ " INTO workspace_items (id, workspace_id, item_type) " ++
+        "VALUES ('wi_1', 'ws_1', 'kanban')" ++ dialect.conflict_ignore,
         &.{});
     try ctx.db.exec(alloc,
-        "INSERT OR IGNORE INTO kanban_columns (id, workspace_item_id, name, position) " ++
-        "VALUES (?, 'wi_1', 'todo', 0)",
+        dialect.insert_ignore_prefix ++ " INTO kanban_columns (id, workspace_item_id, name, position) " ++
+        "VALUES (?, 'wi_1', 'todo', 0)" ++ dialect.conflict_ignore,
         &.{column_id});
     const pos_str = try std.fmt.allocPrint(alloc, "{d}", .{position});
     defer alloc.free(pos_str);
@@ -7293,7 +7342,7 @@ test "Migration072 creates idx_kanban_column_position index" {
 
     var q = try ctx.db.query(alloc,
         \\SELECT 1 FROM 
-        ++ dialect.tables_source ++
+        ++ dialect.indexes_source ++
         \\
         \\WHERE type = 'index' AND name = 'idx_kanban_column_position'
     , &.{});
@@ -7361,12 +7410,12 @@ test "Migration072 backfill skips tasks whose kanban_column_id has no matching k
     // Seed: task with a valid column (col_1) + task pointing at a
     // deleted/orphan column (col_deleted).
     try ctx.db.exec(alloc,
-        "INSERT OR IGNORE INTO workspace_items (id, workspace_id, item_type) " ++
-        "VALUES ('wi_1', 'ws_1', 'kanban')",
+        dialect.insert_ignore_prefix ++ " INTO workspace_items (id, workspace_id, item_type) " ++
+        "VALUES ('wi_1', 'ws_1', 'kanban')" ++ dialect.conflict_ignore,
         &.{});
     try ctx.db.exec(alloc,
-        "INSERT OR IGNORE INTO kanban_columns (id, workspace_item_id, name, position) " ++
-        "VALUES ('col_1', 'wi_1', 'todo', 0)",
+        dialect.insert_ignore_prefix ++ " INTO kanban_columns (id, workspace_item_id, name, position) " ++
+        "VALUES ('col_1', 'wi_1', 'todo', 0)" ++ dialect.conflict_ignore,
         &.{});
     try ctx.db.exec(alloc,
         \\INSERT INTO workspace_item_tasks
@@ -7448,7 +7497,7 @@ test "Migration072 drops the legacy idx_tasks_column_position index" {
 
     var q = try ctx.db.query(alloc,
         \\SELECT 1 FROM 
-        ++ dialect.tables_source ++
+        ++ dialect.indexes_source ++
         \\
         \\WHERE type = 'index' AND name = 'idx_tasks_column_position'
     , &.{});
@@ -7497,12 +7546,12 @@ test "Migration072 preserves the wire format — LEFT JOIN returns the same data
     // assignment (the "chat task in a kanban item" case — has
     // kanban_column_id IS NULL).
     try ctx.db.exec(alloc,
-        "INSERT OR IGNORE INTO workspace_items (id, workspace_id, item_type) " ++
-        "VALUES ('wi_1', 'ws_1', 'kanban')",
+        dialect.insert_ignore_prefix ++ " INTO workspace_items (id, workspace_id, item_type) " ++
+        "VALUES ('wi_1', 'ws_1', 'kanban')" ++ dialect.conflict_ignore,
         &.{});
     try ctx.db.exec(alloc,
-        "INSERT OR IGNORE INTO kanban_columns (id, workspace_item_id, name, position) " ++
-        "VALUES ('col_1', 'wi_1', 'todo', 0)",
+        dialect.insert_ignore_prefix ++ " INTO kanban_columns (id, workspace_item_id, name, position) " ++
+        "VALUES ('col_1', 'wi_1', 'todo', 0)" ++ dialect.conflict_ignore,
         &.{});
     try ctx.db.exec(alloc,
         \\INSERT INTO workspace_item_tasks
@@ -7663,7 +7712,7 @@ test "Migration073 creates idx_session_activity_session_created index" {
     // Sanity: pre-migration, index doesn't exist.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT 1 FROM " ++ dialect.tables_source ++ " WHERE type='index' AND name='idx_session_activity_session_created'",
+            "SELECT 1 FROM " ++ dialect.indexes_source ++ " WHERE type='index' AND name='idx_session_activity_session_created'",
             &.{});
         defer q.deinit();
         const row = (try q.next()) orelse null;
@@ -7677,7 +7726,7 @@ test "Migration073 creates idx_session_activity_session_created index" {
 
     var q = try ctx.db.query(alloc,
         \\SELECT name FROM 
-        ++ dialect.tables_source ++
+        ++ dialect.indexes_source ++
         \\
         \\WHERE type='index' AND name='idx_session_activity_session_created'
         , &.{});
@@ -7941,7 +7990,7 @@ fn trySeed075(alloc: std.mem.Allocator, db: *Backend, sql: []const u8, argv: []c
 /// and the slice itself is heap-allocated — both must be freed.
 fn listColumns075(alloc: std.mem.Allocator, db: *Backend, table: []const u8) ![]const []u8 {
     var q = try db.query(alloc,
-        "SELECT name FROM pragma_table_info(?) ORDER BY cid",
+        "SELECT name FROM " ++ dialect.table_columns_of_bound_table ++ " ORDER BY cid",
         &.{table});
     defer q.deinit();
     var cols = std.ArrayList([]u8).empty;
@@ -7980,7 +8029,7 @@ test "Migration075 renames the 5 timestamp columns to _nano suffix" {
     for (cases) |c| {
         // New column exists.
         var q = try ctx.db.query(alloc,
-            "SELECT 1 FROM pragma_table_info(?) WHERE name = ?",
+            "SELECT 1 FROM " ++ dialect.table_columns_of_bound_table ++ " WHERE name = ?",
             &.{ c.table, c.new });
         defer q.deinit();
         const row = (try q.next()) orelse {
@@ -7991,7 +8040,7 @@ test "Migration075 renames the 5 timestamp columns to _nano suffix" {
 
         // Old column is gone.
         var q2 = try ctx.db.query(alloc,
-            "SELECT 1 FROM pragma_table_info(?) WHERE name = ?",
+            "SELECT 1 FROM " ++ dialect.table_columns_of_bound_table ++ " WHERE name = ?",
             &.{ c.table, c.old });
         defer q2.deinit();
         const r2 = try q2.next();
@@ -8041,7 +8090,7 @@ test "Migration075 renames idx_logs_created_at → idx_logs_created_at_nano" {
     // Old index is gone.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT 1 FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name = 'idx_logs_created_at'",
+            "SELECT 1 FROM " ++ dialect.indexes_source ++ " WHERE type = 'index' AND name = 'idx_logs_created_at'",
             &.{});
         defer q.deinit();
         try testing.expect((try q.next()) == null);
@@ -8050,7 +8099,7 @@ test "Migration075 renames idx_logs_created_at → idx_logs_created_at_nano" {
     // New index exists.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT 1 FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name = 'idx_logs_created_at_nano'",
+            "SELECT 1 FROM " ++ dialect.indexes_source ++ " WHERE type = 'index' AND name = 'idx_logs_created_at_nano'",
             &.{});
         defer q.deinit();
         const row = (try q.next()) orelse return error.NewIndexMissing075;
@@ -8069,7 +8118,7 @@ test "Migration075 renames idx_worker_last_activity → idx_worker_last_activity
     // Old index is gone.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT 1 FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name = 'idx_worker_last_activity'",
+            "SELECT 1 FROM " ++ dialect.indexes_source ++ " WHERE type = 'index' AND name = 'idx_worker_last_activity'",
             &.{});
         defer q.deinit();
         try testing.expect((try q.next()) == null);
@@ -8078,7 +8127,7 @@ test "Migration075 renames idx_worker_last_activity → idx_worker_last_activity
     // New index exists.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT 1 FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name = 'idx_worker_last_activity_nano'",
+            "SELECT 1 FROM " ++ dialect.indexes_source ++ " WHERE type = 'index' AND name = 'idx_worker_last_activity_nano'",
             &.{});
         defer q.deinit();
         const row = (try q.next()) orelse return error.NewIndexMissing075;
@@ -8103,16 +8152,17 @@ test "Migration075 updates the internal column reference of idx_llm_history_sess
     // EXPLAIN QUERY PLAN on a SELECT that uses this index.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT 1 FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name = 'idx_llm_history_session_created'",
+            "SELECT 1 FROM " ++ dialect.indexes_source ++ " WHERE type = 'index' AND name = 'idx_llm_history_session_created'",
             &.{});
         defer q.deinit();
         const row = (try q.next()) orelse return error.IndexMissing075;
         defer row.deinit(alloc);
     }
 
-    // Verify the index is still usable — EXPLAIN should pick it up
-    // for a query that filters on session_id.
-    {
+    // EXPLAIN QUERY PLAN is sqlite's plan text; postgres answers the same
+    // question through a planner with a different spelling, so this half of
+    // the test only exists where the plan is readable.
+    if (!dialect.is_postgres) {
         var q = try ctx.db.query(alloc,
             "EXPLAIN QUERY PLAN SELECT id FROM llm_history WHERE session_id = 'sess_1' ORDER BY created_at_nano DESC",
             &.{});
@@ -8248,23 +8298,26 @@ test "Migration075: ORDER BY last_activity_nano DESC on worker uses the renamed 
 
     try Migration075RenameTimestampColumnsToNanoSuffix.up(&ctx.db, alloc);
 
-    // EXPLAIN QUERY PLAN should pick up idx_worker_last_activity_nano for
-    // an ORDER BY last_activity_nano DESC query.
-    var q = try ctx.db.query(alloc,
-        "EXPLAIN QUERY PLAN SELECT id FROM worker ORDER BY last_activity_nano DESC",
-        &.{});
-    defer q.deinit();
-    var found_index: bool = false;
-    while (try q.next()) |row| {
-        defer row.deinit(alloc);
-        for (row.values) |v| {
-            if (std.mem.indexOf(u8, v, "idx_worker_last_activity_nano") != null) {
-                found_index = true;
-                break;
+    // EXPLAIN QUERY PLAN is sqlite's plan text; postgres answers the same
+    // question through a planner with a different spelling, so this half of
+    // the test only exists where the plan is readable.
+    if (!dialect.is_postgres) {
+        var q = try ctx.db.query(alloc,
+            "EXPLAIN QUERY PLAN SELECT id FROM worker ORDER BY last_activity_nano DESC",
+            &.{});
+        defer q.deinit();
+        var found_index: bool = false;
+        while (try q.next()) |row| {
+            defer row.deinit(alloc);
+            for (row.values) |v| {
+                if (std.mem.indexOf(u8, v, "idx_worker_last_activity_nano") != null) {
+                    found_index = true;
+                    break;
+                }
             }
         }
+        try testing.expect(found_index);
     }
-    try testing.expect(found_index);
 }
 
 // ============================================================================
@@ -8831,7 +8884,7 @@ test "Migration082 adds last_human_touched_at_nano column to sessions" {
     defer qt.deinit();
     const type_row = (try qt.next()) orelse return error.RowMissing082;
     defer type_row.deinit(alloc);
-    try testing.expectEqualStrings("INTEGER", type_row.values[0]);
+    try testing.expectEqualStrings(dialect.epoch_type, type_row.values[0]);
 
     // Nullability sanity: NOT NULL must NOT appear in the column's
     // constraints (the canonical "never touched" state is NULL).
@@ -8992,7 +9045,7 @@ test "Migration096 creates the ledger table and both indexes" {
     });
 
     var qi = try ctx.db.query(alloc,
-        "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name IN ('idx_session_skill_events_session', 'idx_session_skill_events_skill')",
+        "SELECT COUNT(*) FROM " ++ dialect.indexes_source ++ " WHERE type = 'index' AND name IN ('idx_session_skill_events_session', 'idx_session_skill_events_skill')",
         &.{});
     defer qi.deinit();
     const irow = (try qi.next()) orelse return error.RowMissing;
@@ -9088,7 +9141,7 @@ test "Migration097 creates all three tables and their indexes" {
     }
 
     var qi = try ctx.db.query(alloc,
-        "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name IN ('uq_skill_eval_facts','idx_skill_eval_facts_skill','uq_skill_eval_runs_self_prompt','idx_skill_eval_runs_session','idx_skill_eval_runs_status','idx_skill_eval_results_run','idx_skill_eval_results_skill','idx_skill_eval_results_session')",
+        "SELECT COUNT(*) FROM " ++ dialect.indexes_source ++ " WHERE type = 'index' AND name IN ('uq_skill_eval_facts','idx_skill_eval_facts_skill','uq_skill_eval_runs_self_prompt','idx_skill_eval_runs_session','idx_skill_eval_runs_status','idx_skill_eval_results_run','idx_skill_eval_results_skill','idx_skill_eval_results_session')",
         &.{});
     defer qi.deinit();
     const irow = (try qi.next()) orelse return error.RowMissing;
@@ -9105,8 +9158,10 @@ test "Migration097's fact key admits exactly one row per (skill, content, contex
     try Migration097CreateSkillEvalTables.up(&ctx.db, alloc);
 
     const insert =
-        \\INSERT OR IGNORE INTO skill_eval_facts (id, skill_key, content_hash, context_key, verdict_intrinsic)
+        dialect.insert_ignore_prefix ++
+        \\ INTO skill_eval_facts (id, skill_key, content_hash, context_key, verdict_intrinsic)
         \\VALUES (?, ?, ?, ?, ?)
+        ++ dialect.conflict_ignore
     ;
     try ctx.db.exec(alloc, insert, &.{ "f1", "global:foo", "hashA", "/repo@abc", "computing" });
     try testing.expect(ctx.db.changes() > 0);
@@ -9354,19 +9409,6 @@ fn countMembers(ctx: *TestCtx) !i64 {
     return std.fmt.parseInt(i64, row.values[0], 10);
 }
 
-fn tableDdl(ctx: *TestCtx, table: []const u8) ![]const u8 {
-    const alloc = testing.allocator;
-    var q = try ctx.db.query(
-        alloc,
-        "SELECT COALESCE(sql, '') FROM " ++ dialect.tables_source ++ " WHERE type = 'table' AND name = ?",
-        &[_][]const u8{table},
-    );
-    defer q.deinit();
-    const row = (try q.next()) orelse return error.TableMissing;
-    defer row.deinit(alloc);
-    return alloc.dupe(u8, row.values[0]);
-}
-
 test "Migration100 creates workspace_members with the shape the design promises" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
@@ -9417,18 +9459,21 @@ test "Migration100 creates workspace_members with the shape the design promises"
     try testing.expectEqualStrings("workspace_id", pk1.values[0]);
     try testing.expectEqualStrings("user_id", pk2.values[0]);
 
-    // The role set is CHECK-constrained, and a SQLite CHECK cannot be
-    // ALTERed — so this list is effectively permanent without a table
-    // recreate. Assert the exact set so adding a role is a deliberate act.
-    const ddl = try tableDdl(&ctx, "workspace_members");
-    defer alloc.free(ddl);
-    try testing.expect(std.mem.indexOf(u8, ddl, "CHECK (role IN ('owner', 'admin', 'editor', 'viewer'))") != null);
+    // The role set is CHECK-constrained and a CHECK cannot be ALTERed, so the
+    // assertion is the rejected INSERT rather than the CREATE TABLE text, which
+    // postgres does not keep in a queryable catalogue.
+    try testing.expectError(
+        error.ExecuteFailed,
+        ctx.db.exec(alloc,
+            "INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ('ws_check', 'u_check', 'emperor')",
+            &.{}),
+    );
 
     // Both directions are indexed: the PK covers workspace_id -> members
     // (the hot visibility predicate); this covers user_id -> workspaces.
     var qi = try ctx.db.query(
         alloc,
-        "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name = 'idx_workspace_members_user'",
+        "SELECT COUNT(*) FROM " ++ dialect.indexes_source ++ " WHERE type = 'index' AND name = 'idx_workspace_members_user'",
         &.{},
     );
     defer qi.deinit();
@@ -10040,10 +10085,17 @@ test "Migration103 stamps both timestamps and refuses a NULL value" {
         \\VALUES ('sec_1', 'ws_1', 'GH', 'ghp_1')
     , &.{});
 
-    var q = try ctx.db.query(alloc,
-        \\SELECT COALESCE(created_at, ''), COALESCE(updated_at, '')
-        \\FROM workspace_secrets WHERE id = 'sec_1'
-    , &.{});
+    var created_buf: [64]u8 = undefined;
+    var updated_buf: [64]u8 = undefined;
+    const stamps = try std.fmt.allocPrint(alloc,
+        "SELECT COALESCE({s}, ''), COALESCE({s}, '') FROM workspace_secrets WHERE id = 'sec_1'",
+        .{
+            try dialect.timestampText(&created_buf, "created_at"),
+            try dialect.timestampText(&updated_buf, "updated_at"),
+        },
+    );
+    defer alloc.free(stamps);
+    var q = try ctx.db.query(alloc, stamps, &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
     defer row.deinit(alloc);
@@ -10230,7 +10282,11 @@ test "Migration105 keys on (owner, workspace_id), not workspace_id alone" {
     // Replacing u2's row must NOT touch u1's. If the key were `workspace_id`
     // alone, this REPLACE would evict u1 - which is the leak this key exists
     // to prevent, so the count assertion below is the real witness.
-    try ctx.db.exec(alloc,
+    try ctx.db.exec(alloc, if (dialect.is_postgres)
+        \\INSERT INTO workspace_settings (owner, workspace_id, config_json)
+        \\VALUES ('u2', 'ws_1', '{"active_profile":"changed"}')
+        \\ON CONFLICT (owner, workspace_id) DO UPDATE SET config_json = excluded.config_json
+    else
         \\INSERT OR REPLACE INTO workspace_settings (owner, workspace_id, config_json)
         \\VALUES ('u2', 'ws_1', '{"active_profile":"changed"}')
     , &.{});

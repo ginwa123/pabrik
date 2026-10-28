@@ -714,8 +714,10 @@ test "a corrupted default project name is repaired on read" {
     defer ctx.deinit();
 
     // Seed a default whose name is poison bytes, the way the bad build did.
+    // Control bytes, not 0xAA: postgres rejects invalid UTF-8 on write, and a
+    // stored name this reader must repair has to exist on both engines.
     var poison: [8]u8 = undefined;
-    @memset(&poison, 0xAA);
+    @memset(&poison, 0x01);
     try ctx.db.exec(alloc,
         \\INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position, is_default)
         \\VALUES ('item_poison', 'ws_1', 'agent', ?, '/home/tester', 0, 1)

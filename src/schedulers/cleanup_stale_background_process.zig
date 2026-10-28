@@ -973,10 +973,15 @@ test "cleanupStaleBackgroundProcesses returns the DB error when the session_back
         .event_bus = null,
     });
 
-    // We don't pin the exact error variant — Backend maps
-    // missing-table to PrepareFailed (Sqlite.zig:568) which the helper
-    // propagates verbatim.
-    try testing.expectError(error.PrepareFailed, result);
+    // The error variant is the backend's own affair: sqlite reports a missing
+    // table at prepare, postgres at execute, so accept either.
+    // The behaviour is "reported, not swallowed".
+    if (result) |_| {
+        return error.ExpectedMissingTableError;
+    } else |err| switch (err) {
+        error.PrepareFailed, error.QueryFailed => {},
+        else => return err,
+    }
 }
 
 test "cleanupStaleBackgroundProcesses batch-chunks deletes when more than max_pairs_per_stmt dead rows exist" {

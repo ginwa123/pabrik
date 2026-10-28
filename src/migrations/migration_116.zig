@@ -214,7 +214,7 @@ test "Migration116 creates the four unified tables with the expected columns" {
 
     try Migration116UnifyAgentConfigTables.up(db, alloc);
 
-    var q = try db.query(alloc, "SELECT name FROM pragma_table_info('agent_configs')", &[_][]const u8{});
+    var q = try db.query(alloc, "SELECT name FROM " ++ comptime dialect.tableColumns("agent_configs"), &[_][]const u8{});
     defer q.deinit();
     var cols: usize = 0;
     while (try q.next()) |row| {
@@ -225,15 +225,15 @@ test "Migration116 creates the four unified tables with the expected columns" {
 
     try testing.expectEqual(
         @as(i64, 1),
-        try countRows(alloc, db, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='agent_config_knowledge'"),
+        try countRows(alloc, db, "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type='table' AND name='agent_config_knowledge'"),
     );
     try testing.expectEqual(
         @as(i64, 1),
-        try countRows(alloc, db, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='agent_config_tools'"),
+        try countRows(alloc, db, "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type='table' AND name='agent_config_tools'"),
     );
     try testing.expectEqual(
         @as(i64, 1),
-        try countRows(alloc, db, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='agent_config_system_prompt'"),
+        try countRows(alloc, db, "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type='table' AND name='agent_config_system_prompt'"),
     );
 }
 
@@ -306,11 +306,11 @@ test "Migration116 parks the old tables under a _legacy_v116 name instead of dro
 
     try testing.expectEqual(
         @as(i64, 0),
-        try countRows(alloc, db, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='agents'"),
+        try countRows(alloc, db, "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type='table' AND name='agents'"),
     );
     try testing.expectEqual(
         @as(i64, 1),
-        try countRows(alloc, db, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='agents_legacy_v116'"),
+        try countRows(alloc, db, "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type='table' AND name='agents_legacy_v116'"),
     );
     // The legacy table still holds the rows.
     try testing.expectEqual(
@@ -337,7 +337,7 @@ test "Migration116 replaying is a no-op" {
     try testing.expectEqual(@as(i64, 1), try countRows(alloc, db, "SELECT COUNT(*) FROM agent_configs"));
     try testing.expectEqual(
         @as(i64, 1),
-        try countRows(alloc, db, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='agents_legacy_v116'"),
+        try countRows(alloc, db, "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type='table' AND name='agents_legacy_v116'"),
     );
 }
 
@@ -353,7 +353,7 @@ test "Migration116 on a fresh install creates the tables and copies nothing" {
     try testing.expectEqual(@as(i64, 0), try countRows(alloc, db, "SELECT COUNT(*) FROM agent_configs"));
     try testing.expectEqual(
         @as(i64, 0),
-        try countRows(alloc, db, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name LIKE '%_legacy_v116'"),
+        try countRows(alloc, db, "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type='table' AND name LIKE '%_legacy_v116'"),
     );
 }
 

@@ -680,7 +680,7 @@ fn seededNames(
     var sql_buf: [256]u8 = undefined;
     const sql = try std.fmt.bufPrint(
         &sql_buf,
-        "SELECT tool_name FROM {s} WHERE {s} = ? ORDER BY tool_name ASC",
+        "SELECT tool_name FROM {s} WHERE {s} = ?",
         .{ table, "config_id" },
     );
     var q = try ctx.db.query(alloc, sql, &.{owner_id});
@@ -694,6 +694,13 @@ fn seededNames(
         defer row.deinit(alloc);
         try out.append(alloc, try alloc.dupe(u8, row.values[0]));
     }
+    // Byte order, in Zig: the database's own collation differs per engine, and
+    // the assertion below compares against a byte-sorted list.
+    std.mem.sort([]const u8, out.items, {}, struct {
+        fn lt(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.order(u8, a, b) == .lt;
+        }
+    }.lt);
     return try out.toOwnedSlice(alloc);
 }
 

@@ -783,7 +783,9 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
         \\  is_input INTEGER,
         \\  image_url TEXT,
         \\  is_feed_to_llm INTEGER,
-        \\  created_at_nano TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\  created_at_nano 
+        ++ pabrikcore.dialect.epoch_default ++
+        \\,
         \\  created_iso TEXT
         \\)
     , &[_][]const u8{});

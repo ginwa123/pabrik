@@ -1352,8 +1352,14 @@ test "a run that fails mid-loop is finalized as error, not left running" {
         .environment = null,
         .enabled = true,
     });
-    // It must propagate an error...
-    try testing.expectError(error.PrepareFailed, result);
+    // It must propagate an error. Which variant arrives is the backend's own
+    // affair: sqlite fails at prepare, postgres at execute.
+    if (result) |_| {
+        return error.ExpectedMissingTableError;
+    } else |err| switch (err) {
+        error.PrepareFailed, error.QueryFailed, error.ExecuteFailed => {},
+        else => return err,
+    }
 
     // ...and the run must NOT be left `running`. A stuck run both shows a
     // permanently spinning UI and, because the partial unique index still holds

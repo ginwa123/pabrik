@@ -3,6 +3,7 @@ const test_db = @import("../testing/test_db.zig");
 const common = @import("common.zig");
 
 const Backend = common.Backend;
+const dialect = common.dialect;
 const addColumnIfMissing = common.addColumnIfMissing;
 
 /// Migration 114 — the chat's file attachments. `file_attachments` holds the full payload for the
@@ -96,7 +97,9 @@ test "Migration114 replaying is a no-op" {
     try Migration114AddFileAttachments.up(&db, alloc);
 
     var rows = try db.query(alloc,
-        \\SELECT COUNT(*) FROM pragma_table_info('llm_history')
+        \\SELECT COUNT(*) FROM 
+        ++ comptime dialect.tableColumns("llm_history") ++
+        \\
         \\WHERE name IN ('file_attachments', 'file_attachments_meta')
     , &[_][]const u8{});
     defer rows.deinit();

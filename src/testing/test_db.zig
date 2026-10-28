@@ -21,12 +21,15 @@ pub fn skipUnlessAvailable() error{ SkipZigTest, NoPostgresServer }!void {
 
 pub fn create(allocator: std.mem.Allocator) !TempDb {
     try skipUnlessAvailable();
-    return database.createTempDb(allocator, .{});
+    return database.createTempDb(allocator, .{ .base_conninfo = try quietBaseConninfo() });
 }
 
 pub fn createWith(allocator: std.mem.Allocator, config: database.Config) !TempDb {
     try skipUnlessAvailable();
-    return database.createTempDb(allocator, .{ .config = config });
+    return database.createTempDb(allocator, .{
+        .config = config,
+        .base_conninfo = try quietBaseConninfo(),
+    });
 }
 
 pub fn handle(temp: *TempDb) *database.Db {
@@ -44,6 +47,29 @@ var schema_name: ?[]const u8 = null;
 
 fn longLived() std.mem.Allocator {
     return std.heap.page_allocator;
+}
+
+/// Postgres reports every skipped `CREATE INDEX IF NOT EXISTS` and every object
+/// a `DROP SCHEMA … CASCADE` takes as a NOTICE, and Zig relays a PASSING step's
+/// stderr as a block shaped exactly like a failure. It rides in the conninfo.
+const quiet_option = "-cclient_min_messages=warning";
+
+/// The temp-database path splits a conninfo on spaces, so the option has to stay
+/// one token: `-csetting=value` is the form both libpq and the server accept.
+fn quietBaseConninfo() !?[:0]const u8 {
+    if (!database.backend_is_postgres) return null;
+    const base = ensureBaseConninfo() catch return null;
+    const already = std.mem.indexOf(u8, base, "options=") != null;
+    const quiet: [:0]const u8 = if (already)
+        try std.fmt.allocPrintSentinel(longLived(), "{s}", .{base}, 0)
+    else
+        try std.fmt.allocPrintSentinel(
+            longLived(),
+            "{s} options={s}",
+            .{ std.mem.trimEnd(u8, base, " "), quiet_option },
+            0,
+        );
+    return quiet;
 }
 
 fn pidAlive(pid: []const u8) bool {
@@ -139,8 +165,8 @@ pub fn openMemory(db: *database.Db, io: std.Io) !void {
     const schema = try ensureSchemaName();
     const conninfo = try std.fmt.allocPrintSentinel(
         longLived(),
-        "{s} options=-csearch_path={s}",
-        .{ std.mem.trimEnd(u8, base, " "), schema },
+        "{s} options='-csearch_path={s} {s}'",
+        .{ std.mem.trimEnd(u8, base, " "), schema, quiet_option },
         0,
     );
 

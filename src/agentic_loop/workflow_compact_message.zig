@@ -836,12 +836,24 @@ fn seedRow(
         created_at: []const u8,
     },
 ) !void {
+    // `created_at_nano` is an epoch column. Decide the unit here, in Zig, and
+    // bind one value: a CASE over a bind is the shape that works until the
+    // planner resolves the un-taken arm's cast anyway.
+    const nano = if (std.mem.indexOfScalar(u8, row.created_at, '-') == null)
+        row.created_at
+    else blk: {
+        var q = try db.queryRow(alloc, "SELECT CAST(strftime('%s', ?) AS BIGINT) * 1000000", &.{row.created_at});
+        defer q.deinit(alloc);
+        break :blk try alloc.dupe(u8, q.values[0]);
+    };
+    defer if (nano.ptr != row.created_at.ptr) alloc.free(nano);
+
     try db.exec(
         alloc,
         "INSERT INTO llm_history " ++
             "(id, session_id, model, response_content, role, tool_name, is_input, is_output, is_feed_to_llm, created_at_nano) " ++
             "VALUES (?, ?, 'test-model', ?, ?, ?, ?, ?, 1, ?)",
-        &.{ row.id, row.session_id, row.content, row.role, row.tool_name, row.is_input, row.is_output, row.created_at },
+        &.{ row.id, row.session_id, row.content, row.role, row.tool_name, row.is_input, row.is_output, nano },
     );
 }
 
@@ -931,8 +943,11 @@ test "fetchUserChatHistory returns only matching session's user rows with non-nu
     try testing.expectEqual(@as(usize, 2), turns.items.len);
     try testing.expectEqualStrings("first ask", turns.items[0].content);
     try testing.expectEqualStrings("second ask", turns.items[1].content);
-    try testing.expectEqualStrings("2026-01-01 00:00:01", turns.items[0].created_at);
-    try testing.expectEqualStrings("2026-01-01 00:00:03", turns.items[1].created_at);
+    // `created_at_nano` is an epoch column and the reader projects it verbatim,
+    // so the assertion names the value the column holds — 2026-01-01T00:00:01Z
+    // and :03Z in microseconds.
+    try testing.expectEqualStrings("1767225601000000", turns.items[0].created_at);
+    try testing.expectEqualStrings("1767225603000000", turns.items[1].created_at);
 }
 
 test "fetchReadFilePaths returns only matching session's read_file outputs, with parsed paths" {
@@ -2908,7 +2923,7 @@ test "compactMessageInMemoryNew marks every older row unfed and leaves the envel
         try s.db.exec(
             alloc,
             "INSERT INTO llm_history (id, session_id, model, response_content, role, is_feed_to_llm, created_at_nano) " ++
-                "VALUES (?, ?, 'gpt-4o', 'old turn', 'user', 1, '2026-01-01 00:00:00')",
+                "VALUES (?, ?, 'gpt-4o', 'old turn', 'user', 1, '1767225600000000')",
             &.{ id, session_id },
         );
     }
@@ -3042,7 +3057,7 @@ test "end-to-end: compacted rows are findable via getCompactedMessages after com
             \\INSERT INTO llm_history
             \\  (id, session_id, model, response_content, role, is_feed_to_llm,
             \\   created_at_nano, tool_call_id, tool_name)
-            \\VALUES (?, ?, 'gpt-4o', ?, ?, 1, '2026-01-01 00:00:00', ?, ?)
+            \\VALUES (?, ?, 'gpt-4o', ?, ?, 1, '1767225600000000', ?, ?)
         , &.{ id, session_id, content, role, tcid, tname });
     }
 

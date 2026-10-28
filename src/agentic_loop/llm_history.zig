@@ -357,10 +357,10 @@ pub fn getSessionListWithCursor(
 
     // Build cursor filter.
     const cursor_column = switch (sort_field) {
-        .created_at => "s.created_at",
+        .created_at => "CAST(s.created_at AS TEXT)",
         .session_name => "COALESCE(CAST(s.name AS TEXT), '')",
         .agent => "COALESCE((SELECT CAST(h2.agent AS TEXT) FROM llm_history h2 WHERE h2.session_id = s.id AND h2.agent IS NOT NULL LIMIT 1), 'Agent')",
-        .updated_at => "s.updated_at",
+        .updated_at => "CAST(s.updated_at AS TEXT)",
     };
     const cursor_filter = if (cursor) |_|
         try std.fmt.allocPrint(allocator, " AND {s} {s} ?", .{ cursor_column, if (sort_direction == .asc) ">" else "<" })
@@ -383,7 +383,7 @@ pub fn getSessionListWithCursor(
         \\COALESCE((SELECT t.workspace_item_id FROM workspace_item_tasks t WHERE t.id = s.id LIMIT 1), ''),
         \\COALESCE(s.is_pinned, 0),
         \\COALESCE(s.pinned_position, 0),
-        \\CASE WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop' AND (s.last_human_touched_at_nano IS NULL OR COALESCE(CAST(s.last_human_touched_at_nano AS TEXT), '') = '' OR s.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000) THEN 1 ELSE 0 END
+        \\CASE WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop' AND (s.last_human_touched_at_nano IS NULL OR COALESCE(CAST(s.last_human_touched_at_nano AS TEXT), '') = '' OR s.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) * 1000 AS BIGINT)) THEN 1 ELSE 0 END
         \\FROM sessions s
         \\WHERE {s}
         \\ORDER BY {s} LIMIT {d}
@@ -2296,9 +2296,13 @@ pub fn searchMessagesFts(
             \\        h.tool_call_id AS tool_call_id,
             \\        h.tool_name AS tool_name,
             \\        COALESCE(NULLIF(h.created_iso, ''), CAST(h.created_at_nano AS TEXT), '') AS created_at,
-            \\        -ts_rank(to_tsvector('simple'::regconfig, COALESCE(CAST(h.response_content AS TEXT), '')), q.tsq) AS fts_rank
+            \\        -ts_rank(
+            ++ comptime dialect.tsVectorText("COALESCE(CAST(h.response_content AS TEXT), '')") ++
+            \\, q.tsq) AS fts_rank
             \\    FROM llm_history h, to_tsquery('simple'::regconfig, ?) AS q(tsq)
-            \\    WHERE to_tsvector('simple'::regconfig, COALESCE(CAST(h.response_content AS TEXT), '')) @@ q.tsq
+            \\    WHERE
+            ++ " " ++ dialect.tsVectorText("COALESCE(CAST(h.response_content AS TEXT), '')") ++
+            \\ @@ q.tsq
         );
     } else {
         // Wrap FTS5 access in a subquery so the COUNT(*) OVER () window
@@ -5086,7 +5090,7 @@ pub fn getWorkspaceItemTaskById(
     // 18-column contract, indices 0-17) minus cursor/sort/pagination —
     // replaced by `WHERE t.id = ? ...
     const sql =
-        \\SELECT t.id, t.name, t.workspace_item_id, t.description, t.created_at, t.updated_at, t.task_type, COALESCE(t.is_pinned, 0), COALESCE(t.pinned_position, 0), k.kanban_column_id, COALESCE(k.kanban_position, 0), COALESCE(CAST(s.is_auto_retry_until_stop AS TEXT), '0'), COALESCE(CAST(s.last_finish_reason AS TEXT), ''), CASE WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop' AND (t.last_human_touched_at_nano IS NULL OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000) THEN 1 ELSE 0 END, t.tags, COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''), t.cwd, CASE WHEN COALESCE(CAST(t.image_urls AS TEXT), '') != '' THEN 1 ELSE 0 END, CASE WHEN COALESCE(CAST(t.video_urls AS TEXT), '') != '' THEN 1 ELSE 0 END, COALESCE(CAST(t.skill_names AS TEXT), '') FROM workspace_item_tasks t LEFT JOIN kanban k ON k.workspace_item_task_id = t.id LEFT JOIN sessions s ON s.id = t.id WHERE t.workspace_item_id = ? AND t.id = ? LIMIT 1
+        \\SELECT t.id, t.name, t.workspace_item_id, t.description, t.created_at, t.updated_at, t.task_type, COALESCE(t.is_pinned, 0), COALESCE(t.pinned_position, 0), k.kanban_column_id, COALESCE(k.kanban_position, 0), COALESCE(CAST(s.is_auto_retry_until_stop AS TEXT), '0'), COALESCE(CAST(s.last_finish_reason AS TEXT), ''), CASE WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop' AND (t.last_human_touched_at_nano IS NULL OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) * 1000 AS BIGINT)) THEN 1 ELSE 0 END, t.tags, COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''), t.cwd, CASE WHEN COALESCE(CAST(t.image_urls AS TEXT), '') != '' THEN 1 ELSE 0 END, CASE WHEN COALESCE(CAST(t.video_urls AS TEXT), '') != '' THEN 1 ELSE 0 END, COALESCE(CAST(t.skill_names AS TEXT), '') FROM workspace_item_tasks t LEFT JOIN kanban k ON k.workspace_item_task_id = t.id LEFT JOIN sessions s ON s.id = t.id WHERE t.workspace_item_id = ? AND t.id = ? LIMIT 1
     ;
 
     var rows = try db.query(allocator, sql, &.{ workspace_item_id, task_id });
@@ -5247,7 +5251,7 @@ pub fn listWorkspaceItemTasksWithCursor(
             q_pattern = try std.fmt.allocPrint(allocator, "%{s}%", .{escaped});
             q_clause = try std.fmt.allocPrint(
                 allocator,
-                " AND (LOWER(t.name) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(CAST(t.description AS TEXT), '')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(CAST(t.tags AS TEXT), '')) LIKE ? ESCAPE '\\')",
+                " AND (LOWER(t.name) LIKE LOWER(?) ESCAPE '\\' OR LOWER(COALESCE(CAST(t.description AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\' OR LOWER(COALESCE(CAST(t.tags AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\')",
                 .{},
             );
         }
@@ -5275,7 +5279,7 @@ pub fn listWorkspaceItemTasksWithCursor(
         // Auto-retry-until-stop: LEFT JOIN sessions on t.id = sessions.id
         // (per the project convention task.id == session.id; standard tasks
         // that have no matching session row get NULL → COALESCE to '0').
-        "SELECT t.id, t.name, t.workspace_item_id, t.description, t.created_at, t.updated_at, t.task_type, COALESCE(t.is_pinned, 0), COALESCE(t.pinned_position, 0), k.kanban_column_id, COALESCE(k.kanban_position, 0), COALESCE(CAST(s.is_auto_retry_until_stop AS TEXT), '0'), COALESCE(CAST(s.last_finish_reason AS TEXT), ''), CASE WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop' AND (t.last_human_touched_at_nano IS NULL OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000) THEN 1 ELSE 0 END, t.tags, COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''), t.cwd, CASE WHEN COALESCE(CAST(t.image_urls AS TEXT), '') != '' THEN 1 ELSE 0 END, CASE WHEN COALESCE(CAST(t.video_urls AS TEXT), '') != '' THEN 1 ELSE 0 END, COALESCE(CAST(t.skill_names AS TEXT), '') FROM workspace_item_tasks t LEFT JOIN kanban k ON k.workspace_item_task_id = t.id LEFT JOIN sessions s ON s.id = t.id WHERE t.workspace_item_id = ?{s}{s}{s} {s} LIMIT {s}",
+        "SELECT t.id, t.name, t.workspace_item_id, t.description, t.created_at, t.updated_at, t.task_type, COALESCE(t.is_pinned, 0), COALESCE(t.pinned_position, 0), k.kanban_column_id, COALESCE(k.kanban_position, 0), COALESCE(CAST(s.is_auto_retry_until_stop AS TEXT), '0'), COALESCE(CAST(s.last_finish_reason AS TEXT), ''), CASE WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop' AND (t.last_human_touched_at_nano IS NULL OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) * 1000 AS BIGINT)) THEN 1 ELSE 0 END, t.tags, COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''), t.cwd, CASE WHEN COALESCE(CAST(t.image_urls AS TEXT), '') != '' THEN 1 ELSE 0 END, CASE WHEN COALESCE(CAST(t.video_urls AS TEXT), '') != '' THEN 1 ELSE 0 END, COALESCE(CAST(t.skill_names AS TEXT), '') FROM workspace_item_tasks t LEFT JOIN kanban k ON k.workspace_item_task_id = t.id LEFT JOIN sessions s ON s.id = t.id WHERE t.workspace_item_id = ?{s}{s}{s} {s} LIMIT {s}",
         .{ cursor_clause, column_id_clause, q_clause, order_by, limit_str },
     );
     defer allocator.free(sql);
@@ -6909,7 +6913,9 @@ fn getSessionListSetupDb() !struct {
         \\    tool_results_json TEXT,
         \\    finish_reason TEXT,
         \\    usage_json TEXT,
-        \\    created_at_nano TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\    created_at_nano 
+        ++ pabrikcore.dialect.epoch_default ++
+        \\,
         \\    agent TEXT DEFAULT 'Agent'
         \\)
     , &.{});
@@ -6976,11 +6982,11 @@ test "getSessionList inner subquery returns sessions in created_at DESC order" {
     // Three sessions, distinct created_at values. Newest first by
     // insert order means s_jan < s_feb < s_mar.
     try ctx.db.exec(alloc, "INSERT INTO llm_history (id, session_id, model, created_at_nano) " ++
-        "VALUES ('h1', 's_jan', 'm1', '2024-01-01 00:00:00')", &.{});
+        "VALUES ('h1', 's_jan', 'm1', '1704067200000000')", &.{});
     try ctx.db.exec(alloc, "INSERT INTO llm_history (id, session_id, model, created_at_nano) " ++
-        "VALUES ('h2', 's_feb', 'm1', '2024-02-01 00:00:00')", &.{});
+        "VALUES ('h2', 's_feb', 'm1', '1706745600000000')", &.{});
     try ctx.db.exec(alloc, "INSERT INTO llm_history (id, session_id, model, created_at_nano) " ++
-        "VALUES ('h3', 's_mar', 'm1', '2024-03-01 00:00:00')", &.{});
+        "VALUES ('h3', 's_mar', 'm1', '1709251200000000')", &.{});
 
     // Exact inner subquery the production rewrite uses (see
     // zig getSessionList). Asserts the order is the
@@ -7015,11 +7021,11 @@ test "getSessionList inner subquery respects LIMIT and OFFSET" {
     // Five sessions, distinct created_at values. The full ordering
     // (newest first) is: s5, s4, s3, s2, s1.
     const inserts = [_][]const u8{
-        "INSERT INTO llm_history (id, session_id, model, created_at_nano) VALUES ('h1', 's1', 'm1', '2024-01-01 00:00:00')",
-        "INSERT INTO llm_history (id, session_id, model, created_at_nano) VALUES ('h2', 's2', 'm1', '2024-02-01 00:00:00')",
-        "INSERT INTO llm_history (id, session_id, model, created_at_nano) VALUES ('h3', 's3', 'm1', '2024-03-01 00:00:00')",
-        "INSERT INTO llm_history (id, session_id, model, created_at_nano) VALUES ('h4', 's4', 'm1', '2024-04-01 00:00:00')",
-        "INSERT INTO llm_history (id, session_id, model, created_at_nano) VALUES ('h5', 's5', 'm1', '2024-05-01 00:00:00')",
+        "INSERT INTO llm_history (id, session_id, model, created_at_nano) VALUES ('h1', 's1', 'm1', '1704067200000000')",
+        "INSERT INTO llm_history (id, session_id, model, created_at_nano) VALUES ('h2', 's2', 'm1', '1706745600000000')",
+        "INSERT INTO llm_history (id, session_id, model, created_at_nano) VALUES ('h3', 's3', 'm1', '1709251200000000')",
+        "INSERT INTO llm_history (id, session_id, model, created_at_nano) VALUES ('h4', 's4', 'm1', '1711929600000000')",
+        "INSERT INTO llm_history (id, session_id, model, created_at_nano) VALUES ('h5', 's5', 'm1', '1714521600000000')",
     };
     for (inserts) |sql| {
         try ctx.db.exec(alloc, sql, &.{});
@@ -7083,9 +7089,9 @@ test "getSessionList agent field is from the latest message in the session" {
     // Two messages for the same session. The OLDER one is agent='A', the
     // NEWER one is agent='B'.
     try ctx.db.exec(alloc, "INSERT INTO llm_history (id, session_id, model, agent, created_at_nano) " ++
-        "VALUES ('h_old', 's1', 'm1', 'A', '2024-01-01 00:00:00')", &.{});
+        "VALUES ('h_old', 's1', 'm1', 'A', '1704067200000000')", &.{});
     try ctx.db.exec(alloc, "INSERT INTO llm_history (id, session_id, model, agent, created_at_nano) " ++
-        "VALUES ('h_new', 's1', 'm1', 'B', '2024-02-01 00:00:00')", &.{});
+        "VALUES ('h_new', 's1', 'm1', 'B', '1706745600000000')", &.{});
 
     // Exact correlated subquery the production rewrite uses (see
     // zig getSessionList). Asserts the new "agent of the
@@ -7127,7 +7133,7 @@ test "getSessionList inner subquery uses idx_llm_history_created_session (EXPLAI
         const sql = try std.fmt.bufPrint(
             &buf,
             "INSERT INTO llm_history (id, session_id, model, created_at_nano) " ++
-                "VALUES ('h{d}', 's{d}', 'm1', '2024-01-01 00:00:00')",
+                "VALUES ('h{d}', 's{d}', 'm1', '1704067200000000')",
             .{ i, i },
         );
         try ctx.db.exec(alloc, sql, &.{});
@@ -8212,7 +8218,7 @@ test "needs_human_review predicate returns 1 when finish_reason='stop' AND no hu
         \\  WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop'
         \\       AND (
         \\         t.last_human_touched_at_nano IS NULL
-        \\         OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000
+        \\         OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) * 1000 AS BIGINT)
         \\       )
         \\  THEN 1 ELSE 0 END
         \\FROM workspace_item_tasks t
@@ -8266,7 +8272,7 @@ test "needs_human_review predicate returns 0 when human touched AFTER the AI fin
         \\  WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop'
         \\       AND (
         \\         t.last_human_touched_at_nano IS NULL
-        \\         OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000
+        \\         OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) * 1000 AS BIGINT)
         \\       )
         \\  THEN 1 ELSE 0 END
         \\FROM workspace_item_tasks t
@@ -8315,7 +8321,7 @@ test "needs_human_review predicate returns 0 when finish_reason is 'tool_calls' 
         \\  WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop'
         \\       AND (
         \\         t.last_human_touched_at_nano IS NULL
-        \\         OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000
+        \\         OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) * 1000 AS BIGINT)
         \\       )
         \\  THEN 1 ELSE 0 END
         \\FROM workspace_item_tasks t
@@ -8355,7 +8361,7 @@ test "needs_human_review predicate returns 0 when no sessions row exists for the
         \\  WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop'
         \\       AND (
         \\         t.last_human_touched_at_nano IS NULL
-        \\         OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000
+        \\         OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) * 1000 AS BIGINT)
         \\       )
         \\  THEN 1 ELSE 0 END
         \\FROM workspace_item_tasks t
@@ -8520,7 +8526,9 @@ fn llmHistorySearchMessagesFtsSetupDb() !TestCtx {
         \\  tool_name TEXT,
         \\  is_feed_to_llm INTEGER DEFAULT 1,
         \\  agent TEXT,
-        \\  created_at_nano TEXT DEFAULT (datetime('now')),
+        \\  created_at_nano 
+        ++ pabrikcore.dialect.epoch_default ++
+        \\,
         \\  -- Mirrors Migration 059 in production: a regular TEXT column.
         \\  -- No INSERT trigger — production populates it from application
         \\  -- code in `saveMessage`. For test convenience, default to
@@ -8779,13 +8787,13 @@ test "searchMessagesFts: filters by since using ISO date string (regression for 
     // Production code in `saveMessage` computes `created_iso` from
     // `created_at` via libc `localtime_r` + `strftime`.
     try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
-        "VALUES ('h_old','s1','user','old message',?,datetime(substr(?,1,10),'unixepoch'))", &.{ old_micros, old_micros });
+        "VALUES ('h_old','s1','user','old message',?,datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch'))", &.{ old_micros, old_micros });
     try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
-        "VALUES ('h_new','s1','user','new message',?,datetime(substr(?,1,10),'unixepoch'))", &.{ new_micros, new_micros });
+        "VALUES ('h_new','s1','user','new message',?,datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch'))", &.{ new_micros, new_micros });
 
     // Compute the ISO date for `new_micros` using the SAME expression the
     // migration uses — that's what `created_iso` will contain.
-    var iso_q = try s.db.queryRow(alloc, "SELECT datetime(? / 1000000, 'unixepoch')", &.{new_micros});
+    var iso_q = try s.db.queryRow(alloc, "SELECT datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch')", &.{new_micros});
     defer iso_q.deinit(alloc);
     const new_iso = iso_q.values[0];
 
@@ -8818,14 +8826,14 @@ test "searchMessagesFts: filters by until using ISO date string (regression for 
     const new_micros: []const u8 = "1785000000000000";
 
     try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
-        "VALUES ('h_old','s1','user','old message',?,datetime(substr(?,1,10),'unixepoch'))", &.{ old_micros, old_micros });
+        "VALUES ('h_old','s1','user','old message',?,datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch'))", &.{ old_micros, old_micros });
     try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
-        "VALUES ('h_new','s1','user','new message',?,datetime(substr(?,1,10),'unixepoch'))", &.{ new_micros, new_micros });
+        "VALUES ('h_new','s1','user','new message',?,datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch'))", &.{ new_micros, new_micros });
 
     // Compute the ISO for `old_micros` — `until=old_iso` should keep only h_old.
     // Use the same `substr(_,1,10)` expression as the inserted rows so
     // the lex comparison matches exactly.
-    var iso_q = try s.db.queryRow(alloc, "SELECT datetime(substr(? ,1, 10), 'unixepoch')", &.{old_micros});
+    var iso_q = try s.db.queryRow(alloc, "SELECT datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch')", &.{old_micros});
     defer iso_q.deinit(alloc);
     const old_iso = iso_q.values[0];
 
@@ -8856,17 +8864,17 @@ test "searchMessagesFts: since AND until together produce a date range (regressi
     const new_micros: []const u8 = "1785000000000000";
 
     try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
-        "VALUES ('h_old','s1','user','old message',?,datetime(substr(?,1,10),'unixepoch'))", &.{ old_micros, old_micros });
+        "VALUES ('h_old','s1','user','old message',?,datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch'))", &.{ old_micros, old_micros });
     try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
-        "VALUES ('h_mid','s1','user','mid message',?,datetime(substr(?,1,10),'unixepoch'))", &.{ mid_micros, mid_micros });
+        "VALUES ('h_mid','s1','user','mid message',?,datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch'))", &.{ mid_micros, mid_micros });
     try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
-        "VALUES ('h_new','s1','user','new message',?,datetime(substr(?,1,10),'unixepoch'))", &.{ new_micros, new_micros });
+        "VALUES ('h_new','s1','user','new message',?,datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch'))", &.{ new_micros, new_micros });
 
     // Use the same substr(_,1,10) expression as the inserted rows so the
     // lex comparison matches exactly.
     var iso_q = try s.db.queryRow(alloc,
-        \\SELECT datetime(substr(? ,1,10), 'unixepoch') AS since_iso,
-        \\       datetime(substr(? ,1,10), 'unixepoch') AS until_iso
+        \\SELECT datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch') AS since_iso,
+        \\       datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch') AS until_iso
     , &.{ mid_micros, new_micros });
     defer iso_q.deinit(alloc);
     const since_iso = iso_q.values[0];
@@ -8974,7 +8982,9 @@ fn llmHistoryCompactedMessagesSetupDb() !struct {
         \\  tool_name TEXT,
         \\  is_feed_to_llm INTEGER DEFAULT 1,
         \\  agent TEXT,
-        \\  created_at_nano TEXT DEFAULT (datetime('now')),
+        \\  created_at_nano 
+        ++ pabrikcore.dialect.epoch_default ++
+        \\,
         \\  -- Mirrors Migration 059 in production: a regular TEXT column
         \\  -- populated by INSERT/UPDATE triggers. We CAN'T use a STORED
         \\  -- GENERATED ALWAYS AS column here because `datetime(...,
@@ -9022,7 +9032,7 @@ fn llmHistoryCompactedMessagesSeedMessage(
     const created_iso_len: usize = blk: {
         if (created_at.len >= 10 and std.mem.indexOfScalar(u8, created_at, '-') == null) {
             // Looks like a microsecond integer — convert via SQLite.
-            var q = try db.queryRow(alloc, "SELECT datetime(? / 1000000, 'unixepoch')", &.{created_at});
+            var q = try db.queryRow(alloc, "SELECT datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch')", &.{created_at});
             defer q.deinit(alloc);
             const iso = q.values[0];
             const len = iso.len;
@@ -9041,6 +9051,12 @@ fn llmHistoryCompactedMessagesSeedMessage(
         \\INSERT INTO llm_history (id, session_id, role, response_content, is_feed_to_llm, created_at_nano, created_iso)
         \\VALUES (?, ?, ?, ?, ?, ?, ?)
     ;
+    if (std.mem.indexOfScalar(u8, created_at, '-') != null) {
+        var nq = try db.queryRow(alloc, "SELECT CAST(strftime('%s', ?) AS BIGINT) * 1000000", &.{created_at});
+        defer nq.deinit(alloc);
+        try db.exec(alloc, sql, &.{ id, sess, role, content, feed_str, nq.values[0], created_iso });
+        return;
+    }
     try db.exec(alloc, sql, &.{ id, sess, role, content, feed_str, created_at, created_iso });
 }
 
@@ -9049,7 +9065,7 @@ test "getCompactedMessages: returns only is_feed_to_llm=0 messages for session" 
     defer llmHistoryCompactedMessagesTeardownDb(&s);
     const alloc = testing.allocator;
 
-    try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h1", "sess_1", "user", "Fix bug", 1, "2025-01-01 00:00:00");
+    try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h1", "sess_1", "user", "Fix bug", 1, "1735689600000000");
     try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h2", "sess_1", "assistant", "OK", 1, "2025-01-01 00:01:00");
     try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h3", "sess_1", "user", "More", 0, "2025-01-01 00:02:00");
     try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h4", "sess_1", "assistant", "Done", 0, "2025-01-01 00:03:00");
@@ -9077,7 +9093,7 @@ test "getCompactedMessages: respects limit" {
     while (i < 30) : (i += 1) {
         var buf: [16]u8 = undefined;
         const id = try std.fmt.bufPrint(&buf, "h{d}", .{i});
-        try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, id, "sess_1", "user", "msg", 0, "2025-01-01 00:00:00");
+        try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, id, "sess_1", "user", "msg", 0, "1735689600000000");
     }
     const results = try getCompactedMessages(alloc, &s.db, "sess_1", .{ .limit = 5 });
     defer {
@@ -9094,7 +9110,7 @@ test "getCompactedMessages: filters by message_ids when provided" {
     var s = try llmHistoryCompactedMessagesSetupDb();
     defer llmHistoryCompactedMessagesTeardownDb(&s);
     const alloc = testing.allocator;
-    try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h1", "sess_1", "user", "A", 0, "2025-01-01 00:00:00");
+    try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h1", "sess_1", "user", "A", 0, "1735689600000000");
     try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h2", "sess_1", "user", "B", 0, "2025-01-01 00:01:00");
     try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h3", "sess_1", "user", "C", 0, "2025-01-01 00:02:00");
 
@@ -9116,7 +9132,7 @@ test "getCompactedMessages: returns empty slice when session has no compacted me
     var s = try llmHistoryCompactedMessagesSetupDb();
     defer llmHistoryCompactedMessagesTeardownDb(&s);
     const alloc = testing.allocator;
-    try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h1", "sess_1", "user", "active", 1, "2025-01-01 00:00:00");
+    try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h1", "sess_1", "user", "active", 1, "1735689600000000");
 
     const results = try getCompactedMessages(alloc, &s.db, "sess_1", .{});
     defer {
@@ -9147,7 +9163,7 @@ test "getCompactedMessages: filters by since using ISO date string (regression)"
 
     // Compute the ISO for `new_micros` using the SAME expression the
     // migration uses — that's what `created_iso` will contain.
-    var iso_q = try s.db.queryRow(alloc, "SELECT datetime(? / 1000000, 'unixepoch')", &.{new_micros});
+    var iso_q = try s.db.queryRow(alloc, "SELECT datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch')", &.{new_micros});
     defer iso_q.deinit(alloc);
     const new_iso = iso_q.values[0];
 
@@ -9176,7 +9192,7 @@ test "getCompactedMessages: filters by until using ISO date string (regression)"
     try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h_old", "sess_1", "user", "old", 0, old_micros);
     try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h_new", "sess_1", "user", "new", 0, new_micros);
 
-    var iso_q = try s.db.queryRow(alloc, "SELECT datetime(? / 1000000, 'unixepoch')", &.{old_micros});
+    var iso_q = try s.db.queryRow(alloc, "SELECT datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch')", &.{old_micros});
     defer iso_q.deinit(alloc);
     const old_iso = iso_q.values[0];
 
@@ -9207,8 +9223,8 @@ test "getCompactedMessages: since AND until together produce a date range (regre
     try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h_new", "sess_1", "user", "new", 0, new_micros);
 
     var iso_q = try s.db.queryRow(alloc,
-        \\SELECT datetime(? / 1000000, 'unixepoch') AS since_iso,
-        \\       datetime(? / 1000000, 'unixepoch') AS until_iso
+        \\SELECT datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch') AS since_iso,
+        \\       datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch') AS until_iso
     , &.{ mid_micros, new_micros });
     defer iso_q.deinit(alloc);
     const since_iso = iso_q.values[0];
@@ -9263,7 +9279,9 @@ test "saveMessage: writes a correct-year (2026-ish) created_iso from current tim
         \\    loop_index INTEGER,
         \\    temperature REAL,
         \\    is_thinking INTEGER,
-        \\    created_at_nano TEXT,
+        \\    created_at_nano 
+        ++ pabrikcore.dialect.epoch_type ++
+        \\,
         \\    created_iso TEXT,
         \\    parent_session_id TEXT,
         \\    parent_id TEXT,
@@ -9346,7 +9364,9 @@ test "saveMessage: created_at column is stored as Unix microseconds (length <= 1
         \\    loop_index INTEGER,
         \\    temperature REAL,
         \\    is_thinking INTEGER,
-        \\    created_at_nano TEXT,
+        \\    created_at_nano 
+        ++ pabrikcore.dialect.epoch_type ++
+        \\,
         \\    created_iso TEXT,
         \\    parent_session_id TEXT,
         \\    parent_id TEXT,
@@ -9978,7 +9998,9 @@ test "saveMessage: user envelope carries owner identity, assistant carries profi
         \\    loop_index INTEGER,
         \\    temperature REAL,
         \\    is_thinking INTEGER,
-        \\    created_at_nano TEXT,
+        \\    created_at_nano 
+        ++ pabrikcore.dialect.epoch_type ++
+        \\,
         \\    created_iso TEXT,
         \\    parent_session_id TEXT,
         \\    parent_id TEXT,

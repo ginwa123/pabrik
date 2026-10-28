@@ -168,7 +168,7 @@ test "insertQueueMessage inserts each call as a new row (auto-incrementing id)" 
     try insertQueueMessage(.{ .allocator = testing.allocator, .db = &s.db, .logger = null, .session_id = "s1", .message = "second", .image_url = "", .event_bus = null, .is_emit_sse = false });
     try insertQueueMessage(.{ .allocator = testing.allocator, .db = &s.db, .logger = null, .session_id = "s1", .message = "third", .image_url = "", .event_bus = null, .is_emit_sse = false });
 
-    var q = try s.db.query(testing.allocator, "SELECT message FROM session_queue_messages WHERE session_id = 's1' ORDER BY rowid", &.{});
+    var q = try s.db.query(testing.allocator, "SELECT message FROM session_queue_messages WHERE session_id = 's1' ORDER BY id", &.{});
     defer q.deinit();
     var msgs: [3]?[]u8 = .{ null, null, null };
     defer for (msgs) |maybe| if (maybe) |m| testing.allocator.free(m);

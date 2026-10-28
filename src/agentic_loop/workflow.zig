@@ -2254,7 +2254,7 @@ test "end-to-end: compaction envelope is queryable via getCompactedMessages" {
             \\INSERT INTO llm_history (id, session_id, model, response_content, role, is_feed_to_llm, created_at_nano, tool_call_id, tool_name)
             \\VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
         ;
-        const created_at = "2025-01-01 00:00:00";
+        const created_at = "1735689600000000"; // epoch microseconds, the column's unit
         var tcid_buf: [16]u8 = undefined;
         const tcid = if (std.mem.eql(u8, role, "tool")) std.fmt.bufPrint(&tcid_buf, "tc_{s}", .{id}) catch "" else "";
         const tname = if (std.mem.eql(u8, role, "tool")) "bash" else "";

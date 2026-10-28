@@ -230,10 +230,14 @@ pub fn loadMemoriesByFts(
             \\                    'StartSel=[, StopSel=], MaxWords=10, MinWords=3') AS snippet,
             \\        COALESCE(to_char(m.created_at, 'YYYY-MM-DD HH24:MI:SS'), '') AS created_at,
             \\        COALESCE(to_char(m.updated_at, 'YYYY-MM-DD HH24:MI:SS'), '') AS updated_at,
-            \\        -ts_rank(to_tsvector('simple'::regconfig, COALESCE(CAST(m.content AS TEXT), '') || ' ' || COALESCE(CAST(m.tags AS TEXT), '')), q.tsq) AS fts_rank
+            \\        -ts_rank(
+            ++ comptime dialect.tsVectorText("COALESCE(CAST(m.content AS TEXT), '') || ' ' || COALESCE(CAST(m.tags AS TEXT), '')") ++
+            \\, q.tsq) AS fts_rank
             \\    FROM agent_memories m, to_tsquery('simple'::regconfig, ?) AS q(tsq)
-            \\    WHERE to_tsvector('simple'::regconfig, COALESCE(CAST(m.content AS TEXT), '') || ' ' || COALESCE(CAST(m.tags AS TEXT), '')) @@ q.tsq
-            \\      AND m.workspace_id = ?
+            \\    WHERE
+            ++ " " ++ dialect.tsVectorText("COALESCE(CAST(m.content AS TEXT), '') || ' ' || COALESCE(CAST(m.tags AS TEXT), '')") ++
+            \\ @@ q.tsq
+            \\      AND COALESCE(CAST(m.workspace_id AS TEXT), '') = COALESCE(CAST(? AS TEXT), '')
         );
     } else {
         try sql.appendSlice(allocator,
@@ -250,7 +254,7 @@ pub fn loadMemoriesByFts(
             \\    FROM agent_memories_fts
             \\    JOIN agent_memories m ON m.rowid = agent_memories_fts.rowid
             \\    WHERE agent_memories_fts MATCH ?
-            \\      AND m.workspace_id = ?
+            \\      AND COALESCE(CAST(m.workspace_id AS TEXT), '') = COALESCE(CAST(? AS TEXT), '')
         );
     }
 
@@ -818,17 +822,26 @@ test "saveMemory: stamps workspace_id, and an empty one lands in the '' bucket" 
     defer freeMemoryRow(alloc, unscoped);
     try testing.expectEqualStrings("", unscoped.workspace_id);
 
+    // `rowid` is sqlite's; the question is what each row's workspace_id IS, so
+    // ask per row instead of relying on insertion order.
     var q = try ctx.db.query(alloc,
-        \\SELECT id, workspace_id FROM agent_memories ORDER BY rowid
-    , &.{});
+        \\SELECT id, workspace_id FROM agent_memories WHERE id IN (?, ?)
+    , &.{ scoped.id, unscoped.id });
     defer q.deinit();
-    const a = (try q.next()) orelse return error.RowMissing;
-    defer a.deinit(alloc);
-    try testing.expectEqualStrings(scoped.id, a.values[0]);
-    try testing.expectEqualStrings("ws_alpha", a.values[1]);
-    const b = (try q.next()) orelse return error.RowMissing;
-    defer b.deinit(alloc);
-    try testing.expectEqualStrings("", b.values[1]);
+    var seen_scoped = false;
+    var seen_unscoped = false;
+    while (try q.next()) |row| {
+        defer row.deinit(alloc);
+        if (std.mem.eql(u8, row.values[0], scoped.id)) {
+            try testing.expectEqualStrings("ws_alpha", row.values[1]);
+            seen_scoped = true;
+        } else {
+            try testing.expectEqualStrings("", row.values[1]);
+            seen_unscoped = true;
+        }
+    }
+    try testing.expect(seen_scoped);
+    try testing.expect(seen_unscoped);
 }
 
 test "loadMemoriesByFts: never returns another workspace's rows" {

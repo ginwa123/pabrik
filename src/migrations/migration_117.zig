@@ -145,12 +145,12 @@ test "Migration117 drops the twelve legacy tables once the unified set is comple
 
     try testing.expectEqual(
         @as(i64, 0),
-        try countRows(alloc, db, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name LIKE '%_legacy_v116'"),
+        try countRows(alloc, db, "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type='table' AND name LIKE '%_legacy_v116'"),
     );
     // The unified tables survive.
     try testing.expectEqual(
         @as(i64, 1),
-        try countRows(alloc, db, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='agent_configs'"),
+        try countRows(alloc, db, "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type='table' AND name='agent_configs'"),
     );
     try testing.expectEqual(@as(i64, 1), try countRows(alloc, db, "SELECT COUNT(*) FROM agent_configs"));
 }
@@ -177,7 +177,7 @@ test "Migration117 keeps the legacy tables when the unified set is short a row" 
     // The legacy copy is the only full copy — it must survive.
     try testing.expectEqual(
         @as(i64, 1),
-        try countRows(alloc, db, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='agents_legacy_v116'"),
+        try countRows(alloc, db, "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type='table' AND name='agents_legacy_v116'"),
     );
     try testing.expectEqual(@as(i64, 2), try countRows(alloc, db, "SELECT COUNT(*) FROM agents_legacy_v116"));
 }
@@ -193,7 +193,7 @@ test "Migration117 on a fresh install drops nothing and does not fail" {
 
     try testing.expectEqual(
         @as(i64, 0),
-        try countRows(alloc, db, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name LIKE '%_legacy_v116'"),
+        try countRows(alloc, db, "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type='table' AND name LIKE '%_legacy_v116'"),
     );
 }
 
@@ -216,7 +216,7 @@ test "Migration117 replaying is a no-op" {
 
     try testing.expectEqual(
         @as(i64, 0),
-        try countRows(alloc, db, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name LIKE '%_legacy_v116'"),
+        try countRows(alloc, db, "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type='table' AND name LIKE '%_legacy_v116'"),
     );
 }
 

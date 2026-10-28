@@ -3,6 +3,7 @@ const test_db = @import("../testing/test_db.zig");
 const common = @import("common.zig");
 
 const Backend = common.Backend;
+const dialect = common.dialect;
 const addColumnIfMissing = common.addColumnIfMissing;
 
 /// Migration 115 — a workspace records whether it is a microVM workspace.
@@ -85,7 +86,10 @@ test "Migration115 replaying is a no-op" {
     try Migration115AddWorkspaceIsVm.up(&db, alloc);
 
     var rows = try db.query(alloc,
-        \\SELECT COUNT(*) FROM pragma_table_info('workspaces') WHERE name = 'is_vm'
+        \\SELECT COUNT(*) FROM 
+        ++ comptime dialect.tableColumns("workspaces") ++
+        \\
+        \\WHERE name = 'is_vm'
     , &[_][]const u8{});
     defer rows.deinit();
     const row = (try rows.next()) orelse return error.RowMissing;

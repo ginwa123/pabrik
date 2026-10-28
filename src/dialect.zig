@@ -90,15 +90,60 @@ pub const enable_foreign_keys: []const u8 = if (is_postgres) "" else "PRAGMA for
 /// surface. Postgres reaches full text search through `tsvector` instead.
 pub const has_fts5: bool = !is_postgres;
 
-/// sqlite's `pragma_table_info(<table>)` as a source of `name` (+ `cid`, the
-/// CREATE order). Postgres reads the same two columns out of its catalogue.
-pub fn tableColumns(comptime table: []const u8) []const u8 {
-    return if (is_postgres)
-        "(SELECT column_name AS name, ordinal_position AS cid FROM information_schema.columns " ++
-            "WHERE table_schema = current_schema() AND table_name = '" ++ table ++ "')"
-    else
-        "pragma_table_info('" ++ table ++ "')";
+/// The `to_tsvector` postgres matches and ranks `expr` with, rewritten to the
+/// token boundaries FTS5 uses — FTS5 splits `SPEC.md`, postgres' `simple` does not.
+pub fn tsVectorText(comptime expr: []const u8) []const u8 {
+    return "to_tsvector('simple'::regconfig, regexp_replace(" ++ expr ++ ", '[^[:alnum:]_]+', ' ', 'g'))";
 }
+
+/// Index rows: `name`, plus the `tbl_name`/`type` a `sqlite_master` predicate
+/// filters on. Postgres keeps the same three facts in `pg_indexes`, so a test
+/// that asks "does index X exist on table Y" reads the same either way.
+pub const indexes_source: []const u8 = if (is_postgres)
+    "(SELECT 'index'::text AS type, indexname::text AS name, tablename::text AS tbl_name, " ++
+        "indexdef::text AS sql FROM pg_indexes WHERE schemaname = current_schema())"
+else
+    "sqlite_master";
+
+/// sqlite's `pragma_table_info` question — `name`, `cid`, `type`, `notnull`,
+/// `dflt_value`, `pk`, `hidden` — answered from `information_schema`, whose
+/// spellings differ on every one.
+pub fn tableColumns(comptime table: []const u8) []const u8 {
+    if (is_postgres) return
+    "(SELECT c.column_name::text AS name, c.ordinal_position AS cid, " ++
+        "upper(CASE WHEN c.data_type IN ('character varying', 'character', 'text') THEN 'text' " ++
+        "WHEN c.data_type LIKE 'timestamp%' THEN 'timestamp' ELSE c.data_type END) AS type, " ++
+        "CASE WHEN c.is_nullable = 'NO' THEN 1 ELSE 0 END AS \"notnull\", " ++
+        "CASE WHEN COALESCE(c.column_default, '') IN ('now()', 'CURRENT_TIMESTAMP') THEN 'CURRENT_TIMESTAMP' " ++
+        "ELSE regexp_replace(COALESCE(c.column_default, ''), '::[a-zA-Z_ ]+$', '') END AS dflt_value, " ++
+        "COALESCE((SELECT kcu.ordinal_position FROM information_schema.table_constraints tc " ++
+        "JOIN information_schema.key_column_usage kcu ON kcu.constraint_name = tc.constraint_name " ++
+        "AND kcu.table_schema = tc.table_schema " ++
+        "WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = current_schema() " ++
+        "AND tc.table_name = '" ++ table ++ "' AND kcu.column_name = c.column_name), 0) AS pk, " ++
+        "0 AS hidden " ++
+        "FROM information_schema.columns c " ++
+        "WHERE c.table_schema = current_schema() AND c.table_name = '" ++ table ++ "')";
+    return "pragma_table_info('" ++ table ++ "')";
+}
+
+/// `tableColumns` plus `hidden` — `pragma_table_xinfo`'s extra column, which
+/// postgres does not distinguish (a column is either stored or it is not).
+pub fn tableColumnsWithHidden(comptime table: []const u8) []const u8 {
+    if (is_postgres) return tableColumns(table);
+    return "pragma_table_xinfo('" ++ table ++ "')";
+}
+
+/// Columns of the table NAMED BY A BIND, for the callers that only learn the
+/// table at run time: same `name`/`cid`/`type` shape as `tableColumns`, keyed
+/// by one `?`.
+pub const table_columns_of_bound_table: []const u8 = if (is_postgres)
+    "(SELECT column_name::text AS name, ordinal_position AS cid, " ++
+        "upper(CASE WHEN data_type IN ('character varying', 'character', 'text') THEN 'text' " ++
+        "WHEN data_type LIKE 'timestamp%' THEN 'timestamp' ELSE data_type END) AS type " ++
+        "FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ?)"
+else
+    "pragma_table_info(?)";
 
 /// sqlite runs with `PRAGMA foreign_keys` off, so an FK clause in its DDL is
 /// inert documentation. Postgres enforces it — which changes which inserts and
@@ -159,7 +204,7 @@ pub const sqlite_time_functions = if (is_postgres) [_][]const u8{
     \\  SELECT CASE
     \\    WHEN lower(btrim(ts)) IN ('now', 'current_timestamp')
     \\      THEN (extract(epoch FROM now()))::bigint
-    \\    ELSE (extract(epoch FROM ts::timestamptz))::bigint
+    \\    ELSE (extract(epoch FROM ts::timestamp))::bigint
     \\  END
     \\$fn$
     ,
