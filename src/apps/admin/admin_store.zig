@@ -47,14 +47,9 @@ pub const Error = error{
 /// `created_at`/`last_login_at` are `TIMESTAMP`; postgres' own cast keeps
 /// microseconds, so both render through `timestampText` into the
 /// `YYYY-MM-DD HH:MM:SS` the console shows.
-const user_columns = blk: {
-    var created_buf: [128]u8 = undefined;
-    var last_buf: [128]u8 = undefined;
-    const created = dialect.timestampText(&created_buf, "created_at") catch unreachable;
-    const last = dialect.timestampText(&last_buf, "last_login_at") catch unreachable;
-    break :blk "SELECT id, email, COALESCE(CAST(name AS TEXT), ''), role, is_active, " ++
-        "COALESCE(" ++ created ++ ", ''), COALESCE(" ++ last ++ ", '')";
-};
+const user_columns: []const u8 = "SELECT id, email, COALESCE(CAST(name AS TEXT), ''), role, is_active, " ++
+    "COALESCE(" ++ dialect.timestampText("created_at") ++ ", ''), " ++
+    "COALESCE(" ++ dialect.timestampText("last_login_at") ++ ", '')";
 
 /// The system account is not a person and can never sign in, so the console
 /// leaves it out of every list.
@@ -283,13 +278,9 @@ pub fn setPasswordHash(
 const test_db = @import("test_db.zig");
 const testing = std.testing;
 
-/// Create the two tables the console reads, for a database that has none
-/// yet. A database pabrik has booted on already has them; this is what makes
-/// `pabrik-admin` usable on a fresh file or a fresh postgres database.
-///
-/// The DDL is the one migration 077/089 writes, which is valid on both
-/// backends: `is_active` is `INTEGER` (not `BOOLEAN`) on postgres too, so the
-/// `is_active = 1` filters below read either schema unchanged.
+/// The DDL migration 077/089 writes, valid on both backends: `is_active` is
+/// `INTEGER` (not `BOOLEAN`) on postgres too, so the `is_active = 1` filters
+/// below read either schema unchanged.
 pub fn ensureSchema(allocator: std.mem.Allocator, db: Db) !void {
     try db.exec(allocator,
         \\CREATE TABLE IF NOT EXISTS users (

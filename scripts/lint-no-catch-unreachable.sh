@@ -67,14 +67,14 @@ fi
 # without it a legal `catch` / newline / `unreachable` split — which
 # `zig fmt` will happily produce on a long line — slips through.
 scan() {
-  local out rc
+  local out rc=0
   # Capture rg's stderr instead of discarding it: "command not found",
   # a permission error and a genuine no-match all look like an empty
-  # stdout, and only one of them means the tree is clean.
-  set +e
-  out="$(rg -U -n --no-heading 'catch[[:space:]]+unreachable\b' src/ 2>&1)"
-  rc=$?
-  set -e
+  # stdout, and only one of them means the tree is clean. `|| rc=$?` and
+  # never a `set +e`/`set -e` toggle: those are shell-GLOBAL, and the
+  # `set -e` that closed the old toggle was still armed on the way out, so
+  # `return 1` killed the caller before it printed a single violation.
+  out="$(rg -U -n --no-heading 'catch[[:space:]]+unreachable\b' src/ 2>&1)" || rc=$?
   # rg exits 0 = matches found, 1 = no matches, >=2 = rg itself failed.
   if [ "$rc" -ge 2 ]; then
     echo "x the scan could not run (rg exit $rc):" >&2
@@ -178,21 +178,16 @@ EOF
   # with 127 before reaching the check we are actually testing.
   local rc_norg bash_abs
   bash_abs="$(command -v bash)"
-  set +e
-  PATH="$tmp/emptybin" "$bash_abs" "$0" >/dev/null 2>&1
-  rc_norg=$?
-  set -e
+  rc_norg=0
+  PATH="$tmp/emptybin" "$bash_abs" "$0" >/dev/null 2>&1 || rc_norg=$?
 
   echo "selftest: lint-no-catch-unreachable"
 
   # `set -e` would abort the whole selftest the first time a fixture
   # correctly fails to match, so every probe is wrapped in an `if`.
   probe() { # probe <file> -> prints 0 if the idiom is present, 1 if not
-    local rc
-    set +e
-    rg -U -q 'catch[[:space:]]+unreachable\b' "$1" >/dev/null 2>&1
-    rc=$?
-    set -e
+    local rc=0
+    rg -U -q 'catch[[:space:]]+unreachable\b' "$1" >/dev/null 2>&1 || rc=$?
     # >=2 means rg itself failed, which must NOT read as "no match".
     if [ "$rc" -ge 2 ]; then
       echo 2
@@ -223,6 +218,26 @@ EOF
   check "newline-separated is caught"  0 "$rc_newline"
   check "missing rg FAILS (not a pass)" 1 "$rc_norg"
 
+  # 10. THE REPORTING GUARD. A run that finds a violation must NAME it: on
+  #     2026-10-28 `main` failed this lint with a green selftest and a bare
+  #     exit 1, and the whole triage started from a log holding no file:line.
+  #     Pin both halves — the status AND the location.
+  local self_path
+  self_path="$REPO_ROOT/scripts/$(basename "${BASH_SOURCE[0]}")"
+  mkdir -p "$tmp/repo/scripts"
+  cp "$self_path" "$tmp/repo/scripts/"
+  cp -r "$tmp/src" "$tmp/repo/src"
+  local rc_report report
+  rc_report=0
+  report="$("$bash_abs" "$tmp/repo/scripts/$(basename "$self_path")" 2>&1)" || rc_report=$?
+  check "a violation exits 1"          1 "$rc_report"
+  if printf '%s\n' "$report" | grep -q 'banned\.zig:3'; then
+    echo "  ok   a violation names its file:line"
+  else
+    echo "  FAIL a violation names its file:line (got: $report)"
+    failures=$((failures + 1))
+  fi
+
   if [ "$failures" -ne 0 ]; then
     echo "selftest: $failures failure(s)"
     return 1
@@ -244,8 +259,10 @@ case "${1:-}" in
     diag="$(mktemp)"
     # shellcheck disable=SC2064  # expand the paths NOW, not at trap time
     trap "rm -f '$hits' '$diag'" EXIT
-    scan >"$hits" 2>"$diag"
-    rc=$?
+    # `|| rc=$?` keeps `set -e` from exiting the script on a hit before
+    # `rc` is read, so a violation is always named.
+    rc=0
+    scan >"$hits" 2>"$diag" || rc=$?
     if [ "$rc" -eq 2 ]; then
       cat "$diag" >&2
       exit 1
