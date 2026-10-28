@@ -62,7 +62,7 @@ test "Migration118 replaying is a no-op" {
     try Migration118AddWorkerRunToken.up(db, alloc);
     try Migration118AddWorkerRunToken.up(db, alloc);
 
-    var row = try db.queryRow(alloc, "SELECT COUNT(*) FROM pragma_table_info('worker') WHERE name = 'run_token'", &[_][]const u8{});
+    var row = try db.queryRow(alloc, "SELECT COUNT(*) FROM " ++ comptime dialect.tableColumns("worker") ++ " WHERE name = 'run_token'", &[_][]const u8{});
     defer row.deinit(alloc);
     try testing.expectEqualStrings("1", row.values[0]);
 }

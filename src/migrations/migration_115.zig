@@ -85,7 +85,10 @@ test "Migration115 replaying is a no-op" {
     try Migration115AddWorkspaceIsVm.up(&db, alloc);
 
     var rows = try db.query(alloc,
-        \\SELECT COUNT(*) FROM pragma_table_info('workspaces') WHERE name = 'is_vm'
+        \\SELECT COUNT(*) FROM 
+        ++ comptime dialect.tableColumns("workspaces") ++
+        \\
+        \\WHERE name = 'is_vm'
     , &[_][]const u8{});
     defer rows.deinit();
     const row = (try rows.next()) orelse return error.RowMissing;

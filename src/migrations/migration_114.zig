@@ -96,7 +96,9 @@ test "Migration114 replaying is a no-op" {
     try Migration114AddFileAttachments.up(&db, alloc);
 
     var rows = try db.query(alloc,
-        \\SELECT COUNT(*) FROM pragma_table_info('llm_history')
+        \\SELECT COUNT(*) FROM 
+        ++ comptime dialect.tableColumns("llm_history") ++
+        \\
         \\WHERE name IN ('file_attachments', 'file_attachments_meta')
     , &[_][]const u8{});
     defer rows.deinit();
