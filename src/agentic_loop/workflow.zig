@@ -218,7 +218,7 @@ fn re_read_selected_profile_model(
 ) []const u8 {
     var rows = db.query(
         allocator,
-        "SELECT COALESCE(selected_profile_model, '') FROM sessions WHERE id = ?",
+        "SELECT COALESCE(CAST(selected_profile_model AS TEXT), '') FROM sessions WHERE id = ?",
         &.{session_id},
     ) catch return fallback;
     defer rows.deinit();

@@ -195,11 +195,11 @@ fn addUser(
     role: []const u8,
     active: bool,
 ) !void {
-    // `COALESCE(?, '')` because an empty slice binds as NULL, and `name` is
+    // `COALESCE(CAST(? AS TEXT), '')` because an empty slice binds as NULL, and `name` is
     // NOT NULL: without it, an account with no name cannot be inserted at all.
     try db.exec(allocator,
         \\INSERT INTO users (id, email, name, password_hash, role, is_active, created_at)
-        \\VALUES (?, ?, COALESCE(?, ''), 'x', ?, ?, datetime('now'))
+        \\VALUES (?, ?, COALESCE(CAST(? AS TEXT), ''), 'x', ?, ?, datetime('now'))
     , &[_][]const u8{ id, email, name, role, if (active) "1" else "0" });
 }
 

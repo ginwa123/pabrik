@@ -369,7 +369,7 @@ fn setupHistoryDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
         , &.{});
         if (dialect.has_fts5) try db.exec(alloc,
             \\CREATE TRIGGER llm_history_ai AFTER INSERT ON llm_history BEGIN
-            \\  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, COALESCE(new.response_content, ''));
+            \\  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, COALESCE(CAST(new.response_content AS TEXT), ''));
             \\END
         , &.{});
         if (dialect.has_fts5) try db.exec(alloc,
@@ -380,7 +380,7 @@ fn setupHistoryDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
         if (dialect.has_fts5) try db.exec(alloc,
             \\CREATE TRIGGER llm_history_au AFTER UPDATE ON llm_history BEGIN
             \\  DELETE FROM messages_fts WHERE rowid = old.rowid;
-            \\  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, COALESCE(new.response_content, ''));
+            \\  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, COALESCE(CAST(new.response_content AS TEXT), ''));
             \\END
         , &.{});
         if (dialect.has_fts5) try db.exec(alloc,

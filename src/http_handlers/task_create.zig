@@ -798,7 +798,7 @@ test "task_create: unattended sessions row carries the requesting owner" {
         .owner = "user_1",
     });
     {
-        var q = try db.query(alloc, "SELECT COALESCE(user_id, '') FROM sessions WHERE id = ?", &.{owned.standard.task_id});
+        var q = try db.query(alloc, "SELECT COALESCE(CAST(user_id AS TEXT), '') FROM sessions WHERE id = ?", &.{owned.standard.task_id});
         defer q.deinit();
         const row = (try q.next()) orelse return error.SessionRowMissing;
         defer row.deinit(alloc);

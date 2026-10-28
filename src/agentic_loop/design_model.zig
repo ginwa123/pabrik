@@ -323,7 +323,7 @@ pub fn listPages(
 ) (sqlite.Error || std.mem.Allocator.Error)![]DesignPage {
     var q = try db.query(allocator,
         \\SELECT dp.id, dp.workspace_item_id, dp.name,
-        \\       COALESCE(dp.workspace_item_task_id, ''),
+        \\       COALESCE(CAST(dp.workspace_item_task_id AS TEXT), ''),
         \\       dp.width, dp.height, dp.position,
         \\       COALESCE(CAST(dp.created_at AS TEXT), ''), COALESCE(CAST(dp.updated_at AS TEXT), '')
         \\FROM design_pages dp
@@ -570,7 +570,7 @@ pub fn addElement(
         \\    ?, ?, ?, ?, ?, ?, ?, ?, 0,
         \\    COALESCE((SELECT MAX(de.position) FROM design_page_elements de
         \\        WHERE de.page_id = ?), -1) + 1,
-        \\    ?, ?, COALESCE(?, ''), '', 0, ?, ?, '', '', '', ?,
+        \\    ?, ?, COALESCE(CAST(? AS TEXT), ''), '', 0, ?, ?, '', '', '', ?,
         \\    datetime('now'), datetime('now')
         \\)
     , &.{
@@ -782,7 +782,7 @@ pub fn updateElement(
         const new_parent_sql: []const u8 = if (input.parent_id) |p| p else "";
         var max_pos_q = try db.query(allocator,
             \\SELECT COALESCE(MAX(position), -1) FROM design_page_elements
-            \\WHERE COALESCE(parent_id, '') = ? AND id != ?
+            \\WHERE COALESCE(CAST(parent_id AS TEXT), '') = ? AND id != ?
         , &.{ new_parent_sql, input.element_id });
         defer max_pos_q.deinit();
         const max_pos_row = (try max_pos_q.next()) orelse unreachable;
@@ -1406,7 +1406,7 @@ pub fn moveElementToPage(
     };
     const elem_lookup: ElementLookup = blk: {
         var q = try db.query(allocator,
-            \\SELECT page_id, COALESCE(parent_id, '')
+            \\SELECT page_id, COALESCE(CAST(parent_id AS TEXT), '')
             \\FROM design_page_elements WHERE id = ?
         , &.{input.element_id});
         defer q.deinit();
@@ -2008,7 +2008,7 @@ pub fn reparentElements(
         const new_parent_sql: []const u8 = if (input.new_parent_id) |p| p else "";
         var max_pos_q = try tx.query(allocator,
             \\SELECT COALESCE(MAX(position), -1) FROM design_page_elements
-            \\WHERE COALESCE(parent_id, '') = ? AND id != ?
+            \\WHERE COALESCE(CAST(parent_id AS TEXT), '') = ? AND id != ?
         , &.{ new_parent_sql, eid });
         defer max_pos_q.deinit();
         const max_pos_row = (try max_pos_q.next()) orelse return error.DbError;
@@ -2046,7 +2046,7 @@ pub fn reparentElements(
     }
     for (row_ptrs.items) |eid| {
         var q = try tx.query(allocator,
-            \\SELECT id, page_id, COALESCE(parent_id, ''),
+            \\SELECT id, page_id, COALESCE(CAST(parent_id AS TEXT), ''),
             \\       x, y, width, height,
             \\       z_index, position,
             \\       name, file_path, type, rotation, fill, stroke,
@@ -2322,7 +2322,7 @@ pub fn ungroupElements(
 ) UngroupError![]DesignElement {
     // 1. Look up the group element. Verify it's a group/frame.
     var group_row = db.query(allocator,
-        "SELECT id, page_id, COALESCE(parent_id, ''), type FROM design_page_elements WHERE id = ?",
+        "SELECT id, page_id, COALESCE(CAST(parent_id AS TEXT), ''), type FROM design_page_elements WHERE id = ?",
         &.{input.element_id}) catch return error.DbError;
     defer group_row.deinit();
     const maybe_g_opt = group_row.next() catch return error.DbError;
@@ -2346,7 +2346,7 @@ pub fn ungroupElements(
     }
     {
         var q = db.query(allocator,
-            \\SELECT de.id, de.page_id, COALESCE(de.parent_id, ''),
+            \\SELECT de.id, de.page_id, COALESCE(CAST(de.parent_id AS TEXT), ''),
             \\       de.x, de.y, de.width, de.height,
             \\       de.z_index, de.position,
             \\       de.name, de.type
@@ -2424,7 +2424,7 @@ pub fn listElements(
         \\       de.type, de.rotation, de.fill, de.stroke, de.stroke_width,
         \\       de.corner_radius, de.opacity,
         \\       de.text_content, de.text_style, de.image_url,
-        \\       COALESCE(de.parent_id, ''),
+        \\       COALESCE(CAST(de.parent_id AS TEXT), ''),
         \\       COALESCE(CAST(de.created_at AS TEXT), ''), COALESCE(CAST(de.updated_at AS TEXT), '')
         \\FROM design_page_elements de
         \\WHERE de.page_id = ?
@@ -2495,7 +2495,7 @@ pub fn getElement(
         \\       de.type, de.rotation, de.fill, de.stroke, de.stroke_width,
         \\       de.corner_radius, de.opacity,
         \\       de.text_content, de.text_style, de.image_url,
-        \\       COALESCE(de.parent_id, ''),
+        \\       COALESCE(CAST(de.parent_id AS TEXT), ''),
         \\       COALESCE(CAST(de.created_at AS TEXT), ''), COALESCE(CAST(de.updated_at AS TEXT), '')
         \\FROM design_page_elements de
         \\WHERE de.id = ?
@@ -2579,7 +2579,7 @@ pub fn getPageWithElements(
     // 1. Fetch the page row.
     var q = try db.query(allocator,
         \\SELECT dp.id, dp.workspace_item_id, dp.name,
-        \\       COALESCE(dp.workspace_item_task_id, ''),
+        \\       COALESCE(CAST(dp.workspace_item_task_id AS TEXT), ''),
         \\       dp.width, dp.height, dp.position,
         \\       COALESCE(CAST(dp.created_at AS TEXT), ''), COALESCE(CAST(dp.updated_at AS TEXT), '')
         \\FROM design_pages dp
@@ -2740,7 +2740,7 @@ pub fn setElementParent(
     };
     const elem: ElemLookup = blk: {
         var q = try db.query(allocator,
-            \\SELECT page_id, COALESCE(parent_id, '') FROM design_page_elements WHERE id = ?
+            \\SELECT page_id, COALESCE(CAST(parent_id AS TEXT), '') FROM design_page_elements WHERE id = ?
         , &.{element_id});
         defer q.deinit();
         const row = (try q.next()) orelse return error.ElementNotFound;
@@ -2910,7 +2910,7 @@ pub fn deletePage(
     } = blk: {
         var q = try db.query(allocator,
             \\SELECT dp.workspace_item_id,
-            \\       COALESCE(dp.workspace_item_task_id, '')
+            \\       COALESCE(CAST(dp.workspace_item_task_id AS TEXT), '')
             \\FROM design_pages dp
             \\WHERE dp.id = ?
         , &.{page_id});
@@ -3989,7 +3989,7 @@ test "reparentElements with new_parent_id = null moves elements to top-level" {
     const got2 = try getElement(alloc, &ctx.db, "elem_nested_2");
     defer freeElement(alloc, got2);
 
-    // COALESCE(parent_id, '') returns '' for NULL parent_ids.
+    // COALESCE(CAST(parent_id AS TEXT), '') returns '' for NULL parent_ids.
     try testing_reparent_batch.expectEqual(@as(usize, 0), got1.parent_id.len);
     try testing_reparent_batch.expectEqual(@as(usize, 0), got2.parent_id.len);
 }
@@ -4931,7 +4931,7 @@ fn moveToPageReadPageId(
     element_id: []const u8,
 ) ![]u8 {
     var q = try db.query(alloc,
-        "SELECT COALESCE(page_id, '') FROM design_page_elements WHERE id = ?",
+        "SELECT COALESCE(CAST(page_id AS TEXT), '') FROM design_page_elements WHERE id = ?",
         &.{element_id});
     defer q.deinit();
     const row = (try q.next()) orelse return error.ElementNotFound;
@@ -4947,7 +4947,7 @@ fn moveToPageReadParentId(
     element_id: []const u8,
 ) ![]u8 {
     var q = try db.query(alloc,
-        "SELECT COALESCE(parent_id, '') FROM design_page_elements WHERE id = ?",
+        "SELECT COALESCE(CAST(parent_id AS TEXT), '') FROM design_page_elements WHERE id = ?",
         &.{element_id});
     defer q.deinit();
     const row = (try q.next()) orelse return error.ElementNotFound;
@@ -6084,7 +6084,7 @@ test "deletePage cascade-deletes the paired workspace_item_tasks row" {
     // The paired task id is stored on design_pages.workspace_item_task_id.
     // Read it back.
     var q = try ctx.db.query(alloc,
-        "SELECT COALESCE(workspace_item_task_id, '') FROM design_pages WHERE id = ?",
+        "SELECT COALESCE(CAST(workspace_item_task_id AS TEXT), '') FROM design_pages WHERE id = ?",
         &.{page_id});
     defer q.deinit();
     const row = (try q.next()) orelse return error.NoPageRow;
@@ -6319,7 +6319,7 @@ fn deleteParentInsertElement(
 /// empty (NULL).
 fn deleteParentParentIdOf(alloc: std.mem.Allocator, db: *database.Db, id: []const u8) ![]u8 {
     var q = try db.query(alloc,
-        "SELECT COALESCE(parent_id, 'NULL') FROM design_page_elements WHERE id = ?",
+        "SELECT COALESCE(CAST(parent_id AS TEXT), 'NULL') FROM design_page_elements WHERE id = ?",
         &.{id});
     defer q.deinit();
     const row = (try q.next()) orelse return error.NotFound;

@@ -126,7 +126,7 @@ fn useCase(
     var q2 = db.query(allocator,
         \\SELECT id, workspace_item_id, description, instruction, schedule, enabled,
         \\       COALESCE(CAST(last_run_at AS TEXT), ''), COALESCE(CAST(next_run_at AS TEXT), ''),
-        \\       last_status, COALESCE(last_error, ''),
+        \\       last_status, COALESCE(CAST(last_error AS TEXT), ''),
         \\       COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), '')
         \\FROM workspace_routines WHERE id = ?
     , &[_][]const u8{input.item_id}) catch return error.RefetchFailed;

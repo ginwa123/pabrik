@@ -52,7 +52,7 @@ pub fn authLoginHandler(
 
     // Look up active user by email.
     var q = db.query(allocator,
-        "SELECT id, email, COALESCE(name, ''), password_hash, role FROM users WHERE email = ? AND is_active = 1",
+        "SELECT id, email, COALESCE(CAST(name AS TEXT), ''), password_hash, role FROM users WHERE email = ? AND is_active = 1",
         &[_][]const u8{email},
     ) catch {
         return res.jsonResponse(.{

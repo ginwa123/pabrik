@@ -108,7 +108,7 @@ pub fn insertPendingQuestion(input: InsertQuestionInput) ![]u8 {
 }
 
 const SELECT_COLUMNS =
-    \\SELECT id, session_id, tool_call_id, llm_history_id, question, COALESCE(multi_select, 0), status, COALESCE(answer, '')
+    \\SELECT id, session_id, tool_call_id, llm_history_id, question, COALESCE(multi_select, 0), status, COALESCE(CAST(answer AS TEXT), '')
     \\FROM session_pending_question
 ;
 
@@ -352,7 +352,7 @@ fn readRowContent(
 ) !?[]u8 {
     var rows = try db.query(
         allocator,
-        "SELECT COALESCE(response_content, '') FROM llm_history WHERE id = ? LIMIT 1",
+        "SELECT COALESCE(CAST(response_content AS TEXT), '') FROM llm_history WHERE id = ? LIMIT 1",
         &.{row_id},
     );
     defer rows.deinit();
@@ -471,7 +471,7 @@ pub const SessionRunFields = struct {
     cwd: []const u8,
     selected_profile_model: []const u8,
     is_auto_retry_until_stop: []const u8,
-    /// Owning user id (`COALESCE(user_id, '')`).
+    /// Owning user id (`COALESCE(CAST(user_id AS TEXT), '')`).
     user_id: []const u8,
 
     pub fn deinit(self: *const SessionRunFields, allocator: std.mem.Allocator) void {
@@ -493,7 +493,7 @@ pub fn loadSessionRunFields(
 ) !SessionRunFields {
     var rows = try db.query(
         allocator,
-        "SELECT COALESCE(name, ''), COALESCE(cwd, ''), COALESCE(selected_profile_model, ''), COALESCE(is_auto_retry_until_stop, '0'), COALESCE(user_id, '') FROM sessions WHERE id = ?",
+        "SELECT COALESCE(CAST(name AS TEXT), ''), COALESCE(CAST(cwd AS TEXT), ''), COALESCE(CAST(selected_profile_model AS TEXT), ''), COALESCE(CAST(is_auto_retry_until_stop AS TEXT), '0'), COALESCE(CAST(user_id AS TEXT), '') FROM sessions WHERE id = ?",
         &.{session_id},
     );
     defer rows.deinit();

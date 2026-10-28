@@ -56,7 +56,7 @@ pub fn lookupSession(
     sha256Hex(raw_token, &hash_hex);
 
     var q = db.query(allocator,
-        \\SELECT s.user_id, u.email, COALESCE(u.name, ''), u.role
+        \\SELECT s.user_id, u.email, COALESCE(CAST(u.name AS TEXT), ''), u.role
         \\FROM auth_sessions s JOIN users u ON u.id = s.user_id
         \\WHERE s.token_hash = ? AND s.expires_at > datetime('now') AND u.is_active = 1
     , &[_][]const u8{hash_hex[0..]}) catch return null;

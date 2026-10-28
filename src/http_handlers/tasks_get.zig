@@ -160,7 +160,7 @@ fn fetchWorkspaceItemPath(
 ) ![]u8 {
     var rows = db.query(
         allocator,
-        "SELECT COALESCE(path, '') FROM workspace_items WHERE id = ?",
+        "SELECT COALESCE(CAST(path AS TEXT), '') FROM workspace_items WHERE id = ?",
         &.{item_id},
     ) catch return "";
     defer rows.deinit();

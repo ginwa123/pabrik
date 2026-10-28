@@ -15,7 +15,7 @@ pub fn loadRaw(
     if (user_id.len == 0) return null;
     var q = try db.query(
         allocator,
-        "SELECT COALESCE(config_json, '') FROM users WHERE id = ?",
+        "SELECT COALESCE(CAST(config_json AS TEXT), '') FROM users WHERE id = ?",
         &[_][]const u8{user_id},
     );
     defer q.deinit();

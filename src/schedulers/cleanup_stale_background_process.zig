@@ -199,7 +199,7 @@ pub fn wakeSessionForCompletion(di: *pabrikcore.App, allocator: std.mem.Allocato
     var sprofile: []const u8 = "";
     var sretry: []const u8 = "0";
     var sowner: []const u8 = "";
-    if (di.db.query(allocator, "SELECT name, COALESCE(cwd, ''), COALESCE(selected_profile_model, ''), COALESCE(is_auto_retry_until_stop, '0'), COALESCE(user_id, '') FROM sessions WHERE id = ?", &.{sid})) |rows| {
+    if (di.db.query(allocator, "SELECT name, COALESCE(CAST(cwd AS TEXT), ''), COALESCE(CAST(selected_profile_model AS TEXT), ''), COALESCE(CAST(is_auto_retry_until_stop AS TEXT), '0'), COALESCE(CAST(user_id AS TEXT), '') FROM sessions WHERE id = ?", &.{sid})) |rows| {
         var q = rows;
         defer q.deinit();
         if (q.next() catch null) |row| {
@@ -279,7 +279,7 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
     // `kind = 'job'` is not an optimization — it is the OTHER HALF of
     // `mode="background_persistence"`'s contract.
     const select_sql =
-        \\SELECT session_id, pid, command, log_path, COALESCE(vm_id, ''), COALESCE(guest_pid, 0)
+        \\SELECT session_id, pid, command, log_path, COALESCE(CAST(vm_id AS TEXT), ''), COALESCE(guest_pid, 0)
         \\FROM session_background_process
         \\WHERE kind = 'job'
     ;

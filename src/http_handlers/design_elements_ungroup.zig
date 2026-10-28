@@ -190,7 +190,7 @@ fn insertChild(alloc: std.mem.Allocator, db: *database.Db, page_id: []const u8, 
 
 fn readParentId(alloc: std.mem.Allocator, db: *database.Db, id: []const u8) !?[]u8 {
     var q = try db.query(alloc,
-        "SELECT COALESCE(parent_id, '<NULL>') FROM design_page_elements WHERE id = ?",
+        "SELECT COALESCE(CAST(parent_id AS TEXT), '<NULL>') FROM design_page_elements WHERE id = ?",
         &.{id});
     defer q.deinit();
     if (try q.next()) |row| {

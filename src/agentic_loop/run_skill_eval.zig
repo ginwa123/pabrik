@@ -1001,7 +1001,7 @@ test "a skill in ANOTHER workspace is invisible to this session" {
     defer out.deinit(alloc);
 
     try testing.expectEqual(@as(u32, 1), out.needs_human);
-    var q = try ctx.db.query(alloc, "SELECT rationale, COALESCE(content_at_use, '') FROM skill_eval_results", &.{});
+    var q = try ctx.db.query(alloc, "SELECT rationale, COALESCE(CAST(content_at_use AS TEXT), '') FROM skill_eval_results", &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
     defer row.deinit(alloc);
@@ -1462,7 +1462,7 @@ test "a result row stores the exact body its base_content_hash was computed from
     try testing.expectEqual(@as(u32, 1), out.evaluated);
 
     var q = try ctx.db.query(alloc,
-        "SELECT COALESCE(content_at_use, ''), COALESCE(base_content_hash, ''), COALESCE(proposed_diff, '') FROM skill_eval_results",
+        "SELECT COALESCE(CAST(content_at_use AS TEXT), ''), COALESCE(CAST(base_content_hash AS TEXT), ''), COALESCE(CAST(proposed_diff AS TEXT), '') FROM skill_eval_results",
         &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
@@ -1508,7 +1508,7 @@ test "a result whose body could not be read stores no before" {
     try testing.expectEqual(@as(u32, 1), out.needs_human);
 
     var q = try ctx.db.query(alloc,
-        "SELECT COALESCE(content_at_use, ''), COALESCE(base_content_hash, '') FROM skill_eval_results",
+        "SELECT COALESCE(CAST(content_at_use AS TEXT), ''), COALESCE(CAST(base_content_hash AS TEXT), '') FROM skill_eval_results",
         &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;

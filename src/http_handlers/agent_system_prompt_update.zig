@@ -292,7 +292,7 @@ test "useCase: PATCH with empty-string content is legal (COALESCE binds '' not N
     defer ctx.db.deinit();
 
     // Regression: Backend.exec binds "" as SQL NULL, which would
-    // trip content's NOT NULL constraint without the COALESCE(?, '')
+    // trip content's NOT NULL constraint without the COALESCE(CAST(? AS TEXT), '')
     // wrapper in the UPDATE SET clause.
     const output = try useCase(alloc, &ctx.db, .{
         .agent_id = "ws_item_1",

@@ -346,7 +346,7 @@ fn fetchTaskItemId(
     task_id: []const u8,
 ) ![]u8 {
     var q = try db.query(allocator,
-        "SELECT COALESCE(workspace_item_id, '') FROM workspace_item_tasks WHERE id = ?",
+        "SELECT COALESCE(CAST(workspace_item_id AS TEXT), '') FROM workspace_item_tasks WHERE id = ?",
         &.{task_id});
     defer q.deinit();
 

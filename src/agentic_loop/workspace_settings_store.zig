@@ -34,8 +34,8 @@ pub fn loadRaw(
     if (workspace_id.len == 0) return null;
     var q = try db.query(
         allocator,
-        // `COALESCE(?, '')` on `owner`, NOT a bare `?`.
-        "SELECT COALESCE(config_json, '') FROM workspace_settings WHERE owner = COALESCE(?, '') AND workspace_id = ?",
+        // `COALESCE(CAST(? AS TEXT), '')` on `owner`, NOT a bare `?`.
+        "SELECT COALESCE(CAST(config_json AS TEXT), '') FROM workspace_settings WHERE owner = COALESCE(CAST(? AS TEXT), '') AND workspace_id = ?",
         &[_][]const u8{ owner, workspace_id },
     );
     defer q.deinit();
@@ -60,7 +60,7 @@ pub fn saveRaw(
     if (isEmptyOverlay(config_json)) return clear(allocator, db, owner, workspace_id);
     try db.exec(allocator,
         \\INSERT INTO workspace_settings (owner, workspace_id, config_json, updated_at)
-        \\VALUES (COALESCE(?, ''), ?, ?, datetime('now'))
+        \\VALUES (COALESCE(CAST(? AS TEXT), ''), ?, ?, datetime('now'))
         \\ON CONFLICT (owner, workspace_id) DO UPDATE SET
         \\    config_json = excluded.config_json,
         \\    updated_at = datetime('now')
@@ -78,7 +78,7 @@ pub fn clear(
     if (workspace_id.len == 0) return error.WorkspaceIdRequired;
     try db.exec(allocator,
         \\INSERT INTO workspace_settings (owner, workspace_id, config_json, updated_at)
-        \\VALUES (COALESCE(?, ''), ?, NULL, datetime('now'))
+        \\VALUES (COALESCE(CAST(? AS TEXT), ''), ?, NULL, datetime('now'))
         \\ON CONFLICT (owner, workspace_id) DO UPDATE SET
         \\    config_json = NULL,
         \\    updated_at = datetime('now')
@@ -96,8 +96,8 @@ pub fn hasRow(
     if (workspace_id.len == 0) return false;
     var q = try db.query(
         allocator,
-        // `COALESCE(?, '')` for the same reason as `loadRaw` - see there.
-        "SELECT 1 FROM workspace_settings WHERE owner = COALESCE(?, '') AND workspace_id = ?",
+        // `COALESCE(CAST(? AS TEXT), '')` for the same reason as `loadRaw` - see there.
+        "SELECT 1 FROM workspace_settings WHERE owner = COALESCE(CAST(? AS TEXT), '') AND workspace_id = ?",
         &[_][]const u8{ owner, workspace_id },
     );
     defer q.deinit();
@@ -118,10 +118,10 @@ pub fn hasOverlay(
     if (workspace_id.len == 0) return false;
     var q = try db.query(
         allocator,
-        // `COALESCE(?, '')` for the same reason as `loadRaw` - see there.
+        // `COALESCE(CAST(? AS TEXT), '')` for the same reason as `loadRaw` - see there.
         \\SELECT 1 FROM workspace_settings
-        \\WHERE owner = COALESCE(?, '') AND workspace_id = ?
-        \\  AND COALESCE(config_json, '') <> ''
+        \\WHERE owner = COALESCE(CAST(? AS TEXT), '') AND workspace_id = ?
+        \\  AND COALESCE(CAST(config_json AS TEXT), '') <> ''
     ,
         &[_][]const u8{ owner, workspace_id },
     );

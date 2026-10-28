@@ -108,7 +108,7 @@ pub fn save(db: *Backend, allocator: std.mem.Allocator, session_id: []const u8, 
 
 /// Get all background processes for a session
 pub fn getBySession(db: *Backend, allocator: std.mem.Allocator, session_id: []const u8) ![]ProcessInfo {
-    var rows = try db.query(allocator, "SELECT pid, command, log_path, started_at, status, COALESCE(kind, 'job'), COALESCE(last_read_offset, 0), COALESCE(vm_id, ''), COALESCE(guest_pid, 0) FROM session_background_process WHERE session_id = ?", &.{session_id});
+    var rows = try db.query(allocator, "SELECT pid, command, log_path, started_at, status, COALESCE(CAST(kind AS TEXT), 'job'), COALESCE(last_read_offset, 0), COALESCE(CAST(vm_id AS TEXT), ''), COALESCE(guest_pid, 0) FROM session_background_process WHERE session_id = ?", &.{session_id});
     defer rows.deinit();
 
     var processes = std.ArrayList(ProcessInfo).empty;
@@ -170,7 +170,7 @@ pub fn delete(db: *Backend, allocator: std.mem.Allocator, session_id: []const u8
 /// `mode="background_persistence"` created.
 pub fn getServices(db: *Backend, allocator: std.mem.Allocator) ![]ProcessInfo {
     var rows = try db.query(allocator,
-        \\SELECT session_id, pid, command, log_path, started_at, status, COALESCE(kind, 'job'), COALESCE(last_read_offset, 0), COALESCE(vm_id, ''), COALESCE(guest_pid, 0)
+        \\SELECT session_id, pid, command, log_path, started_at, status, COALESCE(CAST(kind AS TEXT), 'job'), COALESCE(last_read_offset, 0), COALESCE(CAST(vm_id AS TEXT), ''), COALESCE(guest_pid, 0)
         \\FROM session_background_process
         \\WHERE kind = 'service'
     , &[_][]const u8{});
@@ -257,7 +257,7 @@ pub fn getByPid(db: *Backend, allocator: std.mem.Allocator, session_id: []const 
     defer allocator.free(pid_str);
 
     var rows = try db.query(allocator,
-        \\SELECT pid, command, log_path, started_at, status, COALESCE(kind, 'job'), COALESCE(last_read_offset, 0), COALESCE(vm_id, ''), COALESCE(guest_pid, 0)
+        \\SELECT pid, command, log_path, started_at, status, COALESCE(CAST(kind AS TEXT), 'job'), COALESCE(last_read_offset, 0), COALESCE(CAST(vm_id AS TEXT), ''), COALESCE(guest_pid, 0)
         \\FROM session_background_process
         \\WHERE session_id = ? AND pid = ?
     , &.{ session_id, pid_str });

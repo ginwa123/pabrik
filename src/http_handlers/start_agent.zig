@@ -65,7 +65,7 @@ pub fn startAgentUseCase(
         // transaction on the shared connection.
         var session_row = try db.query(
             allocator,
-            "SELECT COALESCE(selected_profile_model, ''), COALESCE(is_auto_retry_until_stop, '0') FROM sessions WHERE id = ?",
+            "SELECT COALESCE(CAST(selected_profile_model AS TEXT), ''), COALESCE(CAST(is_auto_retry_until_stop AS TEXT), '0') FROM sessions WHERE id = ?",
             &.{task_id},
         );
         defer session_row.deinit();

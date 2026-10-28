@@ -308,7 +308,7 @@ fn executeList(
         var sql: std.ArrayList(u8) = .empty;
         defer sql.deinit(allocator);
         try sql.appendSlice(allocator,
-            \\SELECT s.id, COALESCE(s.name, ''), COALESCE(s.status, ''),
+            \\SELECT s.id, COALESCE(CAST(s.name AS TEXT), ''), COALESCE(CAST(s.status AS TEXT), ''),
             \\  COUNT(h.id), COALESCE(MAX(h.created_at_nano), '')
             \\FROM sessions s LEFT JOIN llm_history h ON h.session_id = s.id
             \\WHERE s.id IN (
@@ -401,7 +401,7 @@ fn latestUserPreview(
     session_id: []const u8,
 ) ![]u8 {
     var rows = try db.query(allocator,
-        \\SELECT substr(COALESCE(response_content, ''), 1, 100) FROM llm_history
+        \\SELECT substr(COALESCE(CAST(response_content AS TEXT), ''), 1, 100) FROM llm_history
         \\WHERE session_id = ? AND role = 'user'
         \\ORDER BY rowid DESC LIMIT 1
     , &.{session_id});
@@ -645,7 +645,7 @@ fn sessionNames(
 
     var sql: std.ArrayList(u8) = .empty;
     defer sql.deinit(allocator);
-    try sql.appendSlice(allocator, "SELECT id, COALESCE(name, '') FROM sessions WHERE id IN (");
+    try sql.appendSlice(allocator, "SELECT id, COALESCE(CAST(name AS TEXT), '') FROM sessions WHERE id IN (");
     var bind_values: std.ArrayList([]const u8) = .empty;
     defer bind_values.deinit(allocator);
     for (distinct.items, 0..) |sid, i| {
@@ -865,7 +865,7 @@ fn setupDb() !TestCtx {
         , &.{});
         if (dialect.has_fts5) try db.exec(alloc,
             \\CREATE TRIGGER llm_history_ai AFTER INSERT ON llm_history BEGIN
-            \\  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, COALESCE(new.response_content, ''));
+            \\  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, COALESCE(CAST(new.response_content AS TEXT), ''));
             \\END
         , &.{});
     }

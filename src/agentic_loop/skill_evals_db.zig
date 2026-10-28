@@ -964,7 +964,7 @@ pub fn readJudgeScores(
 ) !?JudgeScores {
     var q = try db.query(allocator,
         \\SELECT relevance, used, helpfulness, confidence,
-        \\       COALESCE(status, ''), COALESCE(verdict, ''), COALESCE(sub_session_id, '')
+        \\       COALESCE(CAST(status AS TEXT), ''), COALESCE(CAST(verdict AS TEXT), ''), COALESCE(CAST(sub_session_id AS TEXT), '')
         \\  FROM skill_eval_results WHERE id = ?
     , &.{result_id});
     defer q.deinit();
@@ -1442,7 +1442,7 @@ test "markResultStale records the refusal instead of deleting the verdict" {
     , &.{});
     try markResultStale(alloc, &ctx.db, "res_1");
 
-    var q = try ctx.db.query(alloc, "SELECT status, COALESCE(proposed_diff, '') FROM skill_eval_results WHERE id = 'res_1'", &.{});
+    var q = try ctx.db.query(alloc, "SELECT status, COALESCE(CAST(proposed_diff AS TEXT), '') FROM skill_eval_results WHERE id = 'res_1'", &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
     defer row.deinit(alloc);
@@ -1646,7 +1646,7 @@ pub fn listRuns(
 
     var q = try db.query(allocator,
         \\SELECT id, session_id, status, trigger, scope, skill_name,
-        \\       COALESCE(error, ''), COALESCE(total_tokens, 0), COALESCE(CAST(created_at AS TEXT), '')
+        \\       COALESCE(CAST(error AS TEXT), ''), COALESCE(total_tokens, 0), COALESCE(CAST(created_at AS TEXT), '')
         \\  FROM skill_eval_runs
         \\ WHERE (? = '' OR id = ?)
         \\   AND (? = '' OR session_id = ?)
@@ -1733,14 +1733,14 @@ pub const ResultRow = struct {
 /// the two queries below so the column list and `mapResultRow`'s indices
 /// cannot drift apart.
 const result_projection =
-    \\SELECT r.id, r.run_id, COALESCE(r.session_id, ''),
+    \\SELECT r.id, r.run_id, COALESCE(CAST(r.session_id AS TEXT), ''),
     \\       r.skill_key, r.skill_name, r.status, r.verdict,
     \\       COALESCE(f.freshness, 0), COALESCE(f.accuracy, 0), COALESCE(f.duplication, 0),
-    \\       COALESCE(r.rationale, ''),
-    \\       COALESCE(f.missing_paths_json, ''), COALESCE(r.intrinsic_fact_id, ''),
-    \\       COALESCE(r.base_content_hash, ''),
-    \\       COALESCE(r.content_at_use, ''), COALESCE(r.proposed_diff, ''),
-    \\       r.applied_at IS NOT NULL, COALESCE(r.apply_action, '')
+    \\       COALESCE(CAST(r.rationale AS TEXT), ''),
+    \\       COALESCE(CAST(f.missing_paths_json AS TEXT), ''), COALESCE(CAST(r.intrinsic_fact_id AS TEXT), ''),
+    \\       COALESCE(CAST(r.base_content_hash AS TEXT), ''),
+    \\       COALESCE(CAST(r.content_at_use AS TEXT), ''), COALESCE(CAST(r.proposed_diff AS TEXT), ''),
+    \\       r.applied_at IS NOT NULL, COALESCE(CAST(r.apply_action AS TEXT), '')
     \\  FROM skill_eval_results r
     \\  LEFT JOIN skill_eval_facts f ON f.id = r.intrinsic_fact_id
     \\                              AND f.verdict_intrinsic != 'computing'
@@ -2152,7 +2152,7 @@ test "updateJudgeResult persists the proposal the judge was made to produce" {
         .proposed_diff = proposal,
     }));
 
-    var q = try ctx.db.query(alloc, "SELECT COALESCE(proposed_diff, '') FROM skill_eval_results WHERE id = 'rj_p1'", &.{});
+    var q = try ctx.db.query(alloc, "SELECT COALESCE(CAST(proposed_diff AS TEXT), '') FROM skill_eval_results WHERE id = 'rj_p1'", &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
     defer row.deinit(alloc);
@@ -2175,7 +2175,7 @@ test "a judge verdict that changes nothing stores no proposal" {
         .rationale = "judge: exactly right",
     }));
 
-    var q = try ctx.db.query(alloc, "SELECT COALESCE(proposed_diff, '') FROM skill_eval_results WHERE id = 'rj_p2'", &.{});
+    var q = try ctx.db.query(alloc, "SELECT COALESCE(CAST(proposed_diff AS TEXT), '') FROM skill_eval_results WHERE id = 'rj_p2'", &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
     defer row.deinit(alloc);

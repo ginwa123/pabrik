@@ -191,7 +191,7 @@ fn readTaskCurrentColumn(
     // `kanban` join table. LEFT JOIN kanban so unassigned tasks (no kanban
     // row) return column_id = '' + column_name = '' (the COALESCE fallback).
     var q = try db.query(allocator,
-        \\SELECT COALESCE(k.kanban_column_id, ''), COALESCE(kc.name, '')
+        \\SELECT COALESCE(CAST(k.kanban_column_id AS TEXT), ''), COALESCE(CAST(kc.name AS TEXT), '')
         \\FROM workspace_item_tasks t
         \\LEFT JOIN kanban k ON k.workspace_item_task_id = t.id
         \\LEFT JOIN kanban_columns kc ON kc.id = k.kanban_column_id
@@ -249,7 +249,7 @@ pub fn executeKanbanMoveTaskToJSON(
     // 1. Look up the task to get its name (for the success response).
     var task_name_buf: [256]u8 = undefined;
     const task_name_slice: []const u8 = blk: {
-        var q = try db.query(allocator, "SELECT COALESCE(t.name, '') FROM workspace_item_tasks t WHERE t.id = ?", &.{input.task_id});
+        var q = try db.query(allocator, "SELECT COALESCE(CAST(t.name AS TEXT), '') FROM workspace_item_tasks t WHERE t.id = ?", &.{input.task_id});
         defer q.deinit();
         if (try q.next()) |row| {
             defer row.deinit(allocator);

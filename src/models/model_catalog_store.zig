@@ -107,7 +107,7 @@ pub fn saveCatalog(db: *database.Db, alloc: Allocator, cat: *const catalog.Catal
 /// differently from "synced, zero models".
 pub fn loadMeta(db: *database.Db, alloc: Allocator) !?Meta {
     var rows = try db.query(alloc,
-        \\SELECT schema_version, COALESCE(source, ''), fetched_at_ms,
+        \\SELECT schema_version, COALESCE(CAST(source AS TEXT), ''), fetched_at_ms,
         \\       provider_count, model_count
         \\FROM model_catalog_meta WHERE id = 1
     , &.{});
@@ -160,8 +160,8 @@ pub fn loadCatalog(db: *database.Db, alloc: Allocator) !?*catalog.Catalog {
 
     {
         var rows = try db.query(alloc,
-            \\SELECT id, COALESCE(name, ''), COALESCE(base_url, ''),
-            \\       COALESCE(url_style, 'openai'), COALESCE(env_json, '[]')
+            \\SELECT id, COALESCE(CAST(name AS TEXT), ''), COALESCE(CAST(base_url AS TEXT), ''),
+            \\       COALESCE(CAST(url_style AS TEXT), 'openai'), COALESCE(CAST(env_json AS TEXT), '[]')
             \\FROM model_catalog_providers
         , &.{});
         defer rows.deinit();
@@ -188,9 +188,9 @@ pub fn loadCatalog(db: *database.Db, alloc: Allocator) !?*catalog.Catalog {
 
     {
         var rows = try db.query(alloc,
-            \\SELECT provider_id, model_id, COALESCE(name, ''),
-            \\       context_window, output_tokens, COALESCE(reasoning, 'none'),
-            \\       COALESCE(effort_json, '[]'), budget_min, temperature,
+            \\SELECT provider_id, model_id, COALESCE(CAST(name AS TEXT), ''),
+            \\       context_window, output_tokens, COALESCE(CAST(reasoning AS TEXT), 'none'),
+            \\       COALESCE(CAST(effort_json AS TEXT), '[]'), budget_min, temperature,
             \\       cost_input, cost_output
             \\FROM model_catalog_models ORDER BY provider_id, model_id
         , &.{});

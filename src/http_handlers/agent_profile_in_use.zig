@@ -39,7 +39,7 @@ fn useCase(
 
     var q = db.query(
         allocator,
-        \\SELECT s.id, COALESCE(s.sub_agent_name, '')
+        \\SELECT s.id, COALESCE(CAST(s.sub_agent_name AS TEXT), '')
         \\FROM worker w
         \\JOIN sessions s ON (s.id = w.id OR s.id = w.session_id)
         \\WHERE s.selected_profile_model = ? OR s.sub_agent_name = ?

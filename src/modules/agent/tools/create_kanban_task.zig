@@ -227,7 +227,7 @@ fn lookupItemProjectPath(
 ) ![]u8 {
     var q = db.query(
         allocator,
-        "SELECT COALESCE(path, '') FROM workspace_items WHERE id = ?",
+        "SELECT COALESCE(CAST(path AS TEXT), '') FROM workspace_items WHERE id = ?",
         &[_][]const u8{item_id},
     ) catch {
         std.log.warn("create_kanban_task: could not read the item path for '{s}' — creating the card with no cwd override", .{item_id});
@@ -1346,7 +1346,7 @@ test "executeKanbanTaskToJSON stamps last_human_touched_at on happy path" {
 
     const task_id = try extractTaskId(alloc, json);
     defer alloc.free(task_id);
-    const stored = try readColumn(alloc, &s.db, "SELECT COALESCE(last_human_touched_at_nano, '') FROM workspace_item_tasks WHERE id = ?", &.{task_id});
+    const stored = try readColumn(alloc, &s.db, "SELECT COALESCE(CAST(last_human_touched_at_nano AS TEXT), '') FROM workspace_item_tasks WHERE id = ?", &.{task_id});
     defer alloc.free(stored);
     // The stamp must be non-empty (a unix-ms integer string). The
     // pre-stamp default is NULL → COALESCE returns ''. After the
