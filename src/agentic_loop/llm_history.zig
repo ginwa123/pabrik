@@ -372,8 +372,8 @@ pub fn getSessionListWithCursor(
     defer allocator.free(where_with_cursor);
 
     const sql_final = try std.fmt.allocPrint(allocator,
-        \\SELECT s.id, s.name, s.status, s.cwd, COALESCE(s.created_at, ''),
-        \\COALESCE(s.updated_at, ''),
+        \\SELECT s.id, s.name, s.status, s.cwd, COALESCE(CAST(s.created_at AS TEXT), ''),
+        \\COALESCE(CAST(s.updated_at AS TEXT), ''),
         \\COALESCE(h.agent, 'Agent'),
         \\COALESCE(s.selected_profile_model, ''),
         \\COALESCE(s.is_auto_retry_until_stop, '0'),
@@ -1941,7 +1941,7 @@ pub fn getCompactedMessages(
         \\    COALESCE(h.response_content, ''),
         \\    h.tool_call_id, h.tool_name,
         \\    COALESCE(h.model, ''), COALESCE(h.agent, ''),
-        \\    COALESCE(h.created_at_nano, '') AS created_at,
+        \\    COALESCE(CAST(h.created_at_nano AS TEXT), '') AS created_at,
         \\    COUNT(*) OVER () AS total
         \\FROM llm_history h
         \\WHERE h.session_id = ?
@@ -2056,7 +2056,7 @@ pub fn getMessagesByIds(
         \\    COALESCE(h.response_content, ''),
         \\    h.tool_call_id, h.tool_name,
         \\    COALESCE(h.model, ''), COALESCE(h.agent, ''),
-        \\    COALESCE(h.created_at_nano, '') AS created_at,
+        \\    COALESCE(CAST(h.created_at_nano AS TEXT), '') AS created_at,
         \\    COUNT(*) OVER () AS total
         \\FROM llm_history h
         \\WHERE h.id IN (
@@ -2690,7 +2690,7 @@ pub fn getLatestSessionByDir(
     db: *database.Db,
     cwd: []const u8,
 ) !?SessionInfo {
-    const sql = "SELECT s.id, s.name, s.status, s.cwd, COALESCE(s.created_at, ''), COALESCE(s.updated_at, ''), COALESCE(h.agent, '') FROM sessions s LEFT JOIN llm_history h ON s.id = h.session_id WHERE s.cwd = ? GROUP BY s.id ORDER BY s.created_at DESC LIMIT 1";
+    const sql = "SELECT s.id, s.name, s.status, s.cwd, COALESCE(CAST(s.created_at AS TEXT), ''), COALESCE(CAST(s.updated_at AS TEXT), ''), COALESCE(h.agent, '') FROM sessions s LEFT JOIN llm_history h ON s.id = h.session_id WHERE s.cwd = ? GROUP BY s.id ORDER BY s.created_at DESC LIMIT 1";
     var rows = try db.query(allocator, sql, &[_][]const u8{cwd});
     defer rows.deinit();
 
@@ -3314,7 +3314,7 @@ pub fn getSession(
 ) !?SessionTableInfo {
     const sql =
         \\SELECT s.id, s.name, s.status, COALESCE(s.cwd, ''),
-        \\       COALESCE(s.created_at, ''), COALESCE(s.updated_at, ''),
+        \\       COALESCE(CAST(s.created_at AS TEXT), ''), COALESCE(CAST(s.updated_at AS TEXT), ''),
         \\       COALESCE(s.selected_profile_model, ''), COALESCE(s.git_worktree_cwd, ''),
         \\       COALESCE(s.is_auto_retry_until_stop, '0'), COALESCE(s.last_finish_reason, ''),
         \\       COALESCE(s.pr_url, ''), COALESCE(s.pr_provider, ''),
@@ -3368,7 +3368,7 @@ fn getSessionLegacy(
 ) !?SessionTableInfo {
     const sql =
         \\SELECT s.id, s.name, s.status, COALESCE(s.cwd, ''),
-        \\       COALESCE(s.created_at, ''), COALESCE(s.updated_at, ''),
+        \\       COALESCE(CAST(s.created_at AS TEXT), ''), COALESCE(CAST(s.updated_at AS TEXT), ''),
         \\       COALESCE(s.selected_profile_model, ''), COALESCE(s.git_worktree_cwd, ''),
         \\       COALESCE(s.is_auto_retry_until_stop, '0'), COALESCE(s.last_finish_reason, ''),
         \\       COALESCE(s.pr_url, ''), COALESCE(s.pr_provider, '')
@@ -3777,7 +3777,7 @@ pub fn list_sessions(
     allocator: std.mem.Allocator,
     db: *database.Db,
 ) ![]SessionTableInfo {
-    const sql = "SELECT id, name, status, COALESCE(selected_profile_model, ''), COALESCE(cwd, ''), COALESCE(created_at, ''), COALESCE(updated_at, ''), COALESCE(git_worktree_cwd, ''), COALESCE(pr_url, ''), COALESCE(pr_provider, ''), COALESCE(is_auto_retry_until_stop, '0'), COALESCE(last_finish_reason, ''), COALESCE(sub_agent_name, ''), COALESCE(parent_session_id, '') FROM sessions ORDER BY id";
+    const sql = "SELECT id, name, status, COALESCE(selected_profile_model, ''), COALESCE(cwd, ''), COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), ''), COALESCE(git_worktree_cwd, ''), COALESCE(pr_url, ''), COALESCE(pr_provider, ''), COALESCE(is_auto_retry_until_stop, '0'), COALESCE(last_finish_reason, ''), COALESCE(sub_agent_name, ''), COALESCE(parent_session_id, '') FROM sessions ORDER BY id";
 
     var rows = try db.query(allocator, sql, &.{});
     defer rows.deinit();
@@ -5466,7 +5466,7 @@ pub fn getSessionsForBroadcast(
     allocator: std.mem.Allocator,
     db: *database.Db,
 ) ![]SessionBroadcastInfo {
-    const sql = "SELECT s.id, COALESCE(s.name, ''), COALESCE(s.status, 'active'), COALESCE(s.cwd, ''), COALESCE(s.created_at, ''), COALESCE(s.updated_at, ''), COALESCE(h.agent, 'Agent'), COALESCE(s.selected_profile_model, ''), COALESCE(s.git_worktree_cwd, ''), COALESCE(s.pr_url, ''), COALESCE(s.pr_provider, ''), COALESCE(s.sub_agent_name, ''), COALESCE(s.parent_session_id, '') FROM sessions s LEFT JOIN llm_history h ON s.id = h.session_id ORDER BY s.updated_at DESC";
+    const sql = "SELECT s.id, COALESCE(s.name, ''), COALESCE(s.status, 'active'), COALESCE(s.cwd, ''), COALESCE(CAST(s.created_at AS TEXT), ''), COALESCE(CAST(s.updated_at AS TEXT), ''), COALESCE(h.agent, 'Agent'), COALESCE(s.selected_profile_model, ''), COALESCE(s.git_worktree_cwd, ''), COALESCE(s.pr_url, ''), COALESCE(s.pr_provider, ''), COALESCE(s.sub_agent_name, ''), COALESCE(s.parent_session_id, '') FROM sessions s LEFT JOIN llm_history h ON s.id = h.session_id ORDER BY s.updated_at DESC";
 
     var rows = db.query(allocator, sql, &[_][]const u8{}) catch return &[_]SessionBroadcastInfo{};
     defer rows.deinit();

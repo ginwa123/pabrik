@@ -6,6 +6,7 @@ const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
+const dialect = common.dialect;
 
 pub const Migration080AddAgentSystemPrompt = struct {
     pub const version: u32 = 80;
@@ -21,7 +22,7 @@ pub const Migration080AddAgentSystemPrompt = struct {
             \\    position INTEGER NOT NULL DEFAULT 0,
             \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            \\    FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+            ++ comptime dialect.foreignKey("FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE") ++
             \\)
         , &[_][]const u8{});
         try db.exec(allocator,

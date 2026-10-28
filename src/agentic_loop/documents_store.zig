@@ -98,7 +98,7 @@ pub const DeleteDocumentError = error{
 /// return a different shape.
 const SELECT_COLUMNS =
     "SELECT id, workspace_id, title, content, format, " ++
-    "COALESCE(created_at, ''), COALESCE(updated_at, '') " ++
+    "COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), '') " ++
     "FROM documents";
 
 fn rowFromValues(allocator: std.mem.Allocator, values: []const []const u8) !DocumentRow {

@@ -42,7 +42,7 @@ fn getSession(
     db: *database.Db,
     id: []const u8,
 ) !?SessionTableInfo {
-    const sql = "SELECT s.id, s.name, s.status, COALESCE(s.cwd, ''), COALESCE(s.created_at, ''), COALESCE(s.updated_at, ''), COALESCE(s.selected_profile_model, ''), COALESCE(s.git_worktree_cwd, '') FROM sessions s WHERE s.id = ?";
+    const sql = "SELECT s.id, s.name, s.status, COALESCE(s.cwd, ''), COALESCE(CAST(s.created_at AS TEXT), ''), COALESCE(CAST(s.updated_at AS TEXT), ''), COALESCE(s.selected_profile_model, ''), COALESCE(s.git_worktree_cwd, '') FROM sessions s WHERE s.id = ?";
 
     var rows = try db.query(allocator, sql, &.{id});
     defer rows.deinit();

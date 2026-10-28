@@ -89,7 +89,7 @@ pub fn getPlanOpt(
     session_id: []const u8,
 ) !?PlanRow {
     var q = try db.query(allocator,
-        "SELECT session_id, plan_md, COALESCE(updated_at, '') FROM session_plan WHERE session_id = ?",
+        "SELECT session_id, plan_md, COALESCE(CAST(updated_at AS TEXT), '') FROM session_plan WHERE session_id = ?",
         &.{session_id});
     defer q.deinit();
 

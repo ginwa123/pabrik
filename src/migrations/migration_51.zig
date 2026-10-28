@@ -6,6 +6,7 @@ const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
+const dialect = common.dialect;
 
 pub const Migration051AddKanban = struct {
     pub const version: u32 = 51;
@@ -22,7 +23,7 @@ pub const Migration051AddKanban = struct {
             \\    name TEXT NOT NULL,
             \\    position INTEGER NOT NULL,
             \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE
+            ++ comptime dialect.foreignKey("FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE") ++
             \\)
         , &[_][]const u8{});
         try db.exec(allocator,

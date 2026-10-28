@@ -53,7 +53,7 @@ pub const Migration116UnifyAgentConfigTables = struct {
             \\    description TEXT NOT NULL DEFAULT '',
             \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE
+            ++ comptime dialect.foreignKey("FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE") ++
             \\)
         , &[_][]const u8{});
         try db.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_agent_configs_workspace_item_id ON agent_configs(workspace_item_id)", &[_][]const u8{});
@@ -69,7 +69,7 @@ pub const Migration116UnifyAgentConfigTables = struct {
             \\    position INTEGER NOT NULL DEFAULT 0,
             \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            \\    FOREIGN KEY (config_id) REFERENCES agent_configs(id) ON DELETE CASCADE
+            ++ comptime dialect.foreignKey("FOREIGN KEY (config_id) REFERENCES agent_configs(id) ON DELETE CASCADE") ++
             \\)
         , &[_][]const u8{});
         try db.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_agent_config_knowledge_config_id ON agent_config_knowledge(config_id)", &[_][]const u8{});
@@ -82,7 +82,7 @@ pub const Migration116UnifyAgentConfigTables = struct {
             \\    tool_name TEXT NOT NULL,
             \\    enabled INTEGER NOT NULL DEFAULT 1,
             \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            \\    FOREIGN KEY (config_id) REFERENCES agent_configs(id) ON DELETE CASCADE
+            ++ comptime dialect.foreignKey("FOREIGN KEY (config_id) REFERENCES agent_configs(id) ON DELETE CASCADE") ++
             \\)
         , &[_][]const u8{});
         try db.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_agent_config_tools_config_id ON agent_config_tools(config_id)", &[_][]const u8{});
@@ -97,7 +97,7 @@ pub const Migration116UnifyAgentConfigTables = struct {
             \\    position INTEGER NOT NULL DEFAULT 0,
             \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            \\    FOREIGN KEY (config_id) REFERENCES agent_configs(id) ON DELETE CASCADE
+            ++ comptime dialect.foreignKey("FOREIGN KEY (config_id) REFERENCES agent_configs(id) ON DELETE CASCADE") ++
             \\)
         , &[_][]const u8{});
         try db.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_agent_config_system_prompt_config_id ON agent_config_system_prompt(config_id)", &[_][]const u8{});

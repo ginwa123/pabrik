@@ -45,7 +45,7 @@ pub const Error = error{
 
 const user_columns =
     \\SELECT id, email, COALESCE(name, ''), role, is_active,
-    \\       COALESCE(created_at, ''), COALESCE(last_login_at, '')
+    \\       COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(last_login_at AS TEXT), '')
 ;
 
 /// The system account is not a person and can never sign in, so the console

@@ -2,6 +2,7 @@ const std = @import("std");
 const common = @import("common.zig");
 
 const Backend = common.Backend;
+const dialect = common.dialect;
 
 /// Migration 105 - create `workspace_settings`, the per-workspace config
 /// overlay.
@@ -18,7 +19,7 @@ pub const Migration105CreateWorkspaceSettings = struct {
             \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    PRIMARY KEY (owner, workspace_id),
-            \\    FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+            ++ comptime dialect.foreignKey("FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE") ++
             \\)
         , &[_][]const u8{});
     }

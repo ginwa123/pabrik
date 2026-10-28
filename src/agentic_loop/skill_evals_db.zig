@@ -1646,7 +1646,7 @@ pub fn listRuns(
 
     var q = try db.query(allocator,
         \\SELECT id, session_id, status, trigger, scope, skill_name,
-        \\       COALESCE(error, ''), COALESCE(total_tokens, 0), COALESCE(created_at, '')
+        \\       COALESCE(error, ''), COALESCE(total_tokens, 0), COALESCE(CAST(created_at AS TEXT), '')
         \\  FROM skill_eval_runs
         \\ WHERE (? = '' OR id = ?)
         \\   AND (? = '' OR session_id = ?)

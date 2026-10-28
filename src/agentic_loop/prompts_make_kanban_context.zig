@@ -356,7 +356,7 @@ fn listColumns(
     workspace_item_id: []const u8,
 ) ![]KanbanColumn {
     var q = try db.query(allocator,
-        \\SELECT kc.id, kc.workspace_item_id, kc.name, kc.description, kc.position, COALESCE(kc.created_at, '')
+        \\SELECT kc.id, kc.workspace_item_id, kc.name, kc.description, kc.position, COALESCE(CAST(kc.created_at AS TEXT), '')
         \\FROM kanban_columns kc
         \\WHERE kc.workspace_item_id = ?
         \\ORDER BY kc.position ASC

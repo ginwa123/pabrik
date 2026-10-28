@@ -6,6 +6,7 @@ const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
+const dialect = common.dialect;
 
 pub const Migration044AddRoutines = struct {
     pub const version: u32 = 44;
@@ -33,7 +34,7 @@ pub const Migration044AddRoutines = struct {
             \\    last_error TEXT,
             \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            \\    FOREIGN KEY (task_id) REFERENCES workspace_item_tasks(id) ON DELETE CASCADE
+            ++ comptime dialect.foreignKey("FOREIGN KEY (task_id) REFERENCES workspace_item_tasks(id) ON DELETE CASCADE") ++
             \\)
         , &[_][]const u8{});
 

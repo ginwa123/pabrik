@@ -56,7 +56,7 @@ pub fn listColumns(
 ) ![]KanbanColumn {
     var q = try db.query(allocator,
         \\SELECT kc.id, kc.workspace_item_id, kc.name, kc.description, kc.position,
-        \\       COALESCE(kc.created_at, ''), COALESCE(kc.is_done, 0)
+        \\       COALESCE(CAST(kc.created_at AS TEXT), ''), COALESCE(kc.is_done, 0)
         \\FROM kanban_columns kc
         \\WHERE kc.workspace_item_id = ?
         \\ORDER BY kc.position ASC

@@ -325,7 +325,7 @@ pub fn listPages(
         \\SELECT dp.id, dp.workspace_item_id, dp.name,
         \\       COALESCE(dp.workspace_item_task_id, ''),
         \\       dp.width, dp.height, dp.position,
-        \\       COALESCE(dp.created_at, ''), COALESCE(dp.updated_at, '')
+        \\       COALESCE(CAST(dp.created_at AS TEXT), ''), COALESCE(CAST(dp.updated_at AS TEXT), '')
         \\FROM design_pages dp
         \\WHERE dp.workspace_item_id = ?
         \\ORDER BY dp.position ASC
@@ -2054,7 +2054,7 @@ pub fn reparentElements(
             \\       name, file_path, type, rotation, fill, stroke,
             \\       stroke_width, corner_radius, opacity,
             \\       text_content, text_style, image_url,
-            \\       COALESCE(created_at, ''), COALESCE(updated_at, '')
+            \\       COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), '')
             \\FROM design_page_elements
             \\WHERE id = ?
         , &.{eid});
@@ -2427,7 +2427,7 @@ pub fn listElements(
         \\       de.corner_radius, de.opacity,
         \\       de.text_content, de.text_style, de.image_url,
         \\       COALESCE(de.parent_id, ''),
-        \\       COALESCE(de.created_at, ''), COALESCE(de.updated_at, '')
+        \\       COALESCE(CAST(de.created_at AS TEXT), ''), COALESCE(CAST(de.updated_at AS TEXT), '')
         \\FROM design_page_elements de
         \\WHERE de.page_id = ?
         \\ORDER BY de.z_index ASC, de.position ASC
@@ -2498,7 +2498,7 @@ pub fn getElement(
         \\       de.corner_radius, de.opacity,
         \\       de.text_content, de.text_style, de.image_url,
         \\       COALESCE(de.parent_id, ''),
-        \\       COALESCE(de.created_at, ''), COALESCE(de.updated_at, '')
+        \\       COALESCE(CAST(de.created_at AS TEXT), ''), COALESCE(CAST(de.updated_at AS TEXT), '')
         \\FROM design_page_elements de
         \\WHERE de.id = ?
     , &.{element_id});
@@ -2583,7 +2583,7 @@ pub fn getPageWithElements(
         \\SELECT dp.id, dp.workspace_item_id, dp.name,
         \\       COALESCE(dp.workspace_item_task_id, ''),
         \\       dp.width, dp.height, dp.position,
-        \\       COALESCE(dp.created_at, ''), COALESCE(dp.updated_at, '')
+        \\       COALESCE(CAST(dp.created_at AS TEXT), ''), COALESCE(CAST(dp.updated_at AS TEXT), '')
         \\FROM design_pages dp
         \\WHERE dp.id = ?
     , &.{page_id});

@@ -24,7 +24,7 @@ pub const Migration119CreateSkillMetadata = struct {
             \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    UNIQUE (skill_id, key),
-            \\    FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
+            ++ comptime dialect.foreignKey("FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE") ++
             \\)
         , &[_][]const u8{});
 

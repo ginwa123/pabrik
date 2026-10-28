@@ -90,6 +90,13 @@ pub const enable_foreign_keys: []const u8 = if (is_postgres) "" else "PRAGMA for
 /// surface. Postgres reaches full text search through `tsvector` instead.
 pub const has_fts5: bool = !is_postgres;
 
+/// sqlite runs with `PRAGMA foreign_keys` off, so an FK clause in its DDL is
+/// inert documentation. Postgres enforces it — which changes which inserts and
+/// deletes are legal — so it declares a no-op check in the same slot.
+pub fn foreignKey(comptime clause: []const u8) []const u8 {
+    return if (is_postgres) "CHECK (1 = 1)" else clause;
+}
+
 /// Postgres spellings of sqlite's two time functions: ~260 statements say
 /// `datetime('now')` or `strftime('%s', x)` and mean "now"/"epoch", not a
 /// dialect choice. Empty on sqlite, which has them already.
@@ -128,33 +135,23 @@ pub const sqlite_time_functions = if (is_postgres) [_][]const u8{
     \\  SELECT to_char(to_timestamp(ts::double precision) AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')
     \\$fn$
     ,
-    \\CREATE OR REPLACE FUNCTION strftime(fmt text, ts text) RETURNS text
+    \\CREATE OR REPLACE FUNCTION strftime(fmt text, ts text) RETURNS bigint
     \\LANGUAGE sql STABLE AS $fn$
     \\  SELECT CASE
-    \\    WHEN fmt = '%s' AND lower(btrim(ts)) IN ('now', 'current_timestamp')
-    \\      THEN (extract(epoch FROM now()))::bigint::text
-    \\    WHEN fmt = '%s'
-    \\      THEN (extract(epoch FROM ts::timestamptz))::bigint::text
     \\    WHEN lower(btrim(ts)) IN ('now', 'current_timestamp')
-    \\      THEN to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')
-    \\    ELSE ts
+    \\      THEN (extract(epoch FROM now()))::bigint
+    \\    ELSE (extract(epoch FROM ts::timestamptz))::bigint
     \\  END
     \\$fn$
     ,
-    \\CREATE OR REPLACE FUNCTION strftime(fmt text, ts timestamp) RETURNS text
+    \\CREATE OR REPLACE FUNCTION strftime(fmt text, ts timestamp) RETURNS bigint
     \\LANGUAGE sql STABLE AS $fn$
-    \\  SELECT CASE
-    \\    WHEN fmt = '%s' THEN (extract(epoch FROM ts))::bigint::text
-    \\    ELSE to_char(ts, 'YYYY-MM-DD HH24:MI:SS')
-    \\  END
+    \\  SELECT (extract(epoch FROM ts))::bigint
     \\$fn$
     ,
-    \\CREATE OR REPLACE FUNCTION strftime(fmt text) RETURNS text
+    \\CREATE OR REPLACE FUNCTION strftime(fmt text) RETURNS bigint
     \\LANGUAGE sql STABLE AS $fn$
-    \\  SELECT CASE
-    \\    WHEN fmt = '%s' THEN (extract(epoch FROM now()))::bigint::text
-    \\    ELSE to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')
-    \\  END
+    \\  SELECT (extract(epoch FROM now()))::bigint
     \\$fn$
     ,
 } else [_][]const u8{};

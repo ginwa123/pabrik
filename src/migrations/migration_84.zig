@@ -6,6 +6,7 @@ const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
+const dialect = common.dialect;
 
 /// Migration 084 — drop per-task routines, replace with workspace-level
 /// routines (`workspace_routines`, 1:1 with routine `workspace_items`). ##
@@ -41,7 +42,7 @@ pub const Migration084ReplaceRoutinesWithWorkspaceRoutines = struct {
             \\    last_error TEXT NOT NULL DEFAULT '',
             \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE
+            ++ comptime dialect.foreignKey("FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE") ++
             \\)
         , &[_][]const u8{});
 

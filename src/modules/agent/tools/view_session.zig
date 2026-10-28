@@ -220,7 +220,7 @@ fn loadSessionDetail(allocator: std.mem.Allocator, db: *database.Db, session_id:
         \\       COALESCE(pr_url, ''), COALESCE(pr_provider, ''),
         \\       COALESCE(parent_session_id, ''), COALESCE(sub_agent_name, ''),
         \\       COALESCE(is_pinned, 0), COALESCE(user_id, ''),
-        \\       COALESCE(created_at, ''), COALESCE(updated_at, ''),
+        \\       COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), ''),
         \\       COALESCE(last_human_touched_at_nano, 0)
         \\FROM sessions WHERE id = ?
     , &.{session_id});

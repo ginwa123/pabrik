@@ -244,8 +244,8 @@ pub fn loadMemoriesByFts(
             \\    SELECT
             \\        m.id AS id, m.tags AS tags,
             \\        snippet(agent_memories_fts, 0, '[', ']', '...', 10) AS snippet,
-            \\        COALESCE(m.created_at, '') AS created_at,
-            \\        COALESCE(m.updated_at, '') AS updated_at,
+            \\        COALESCE(CAST(m.created_at AS TEXT), '') AS created_at,
+            \\        COALESCE(CAST(m.updated_at AS TEXT), '') AS updated_at,
             \\        rank AS fts_rank
             \\    FROM agent_memories_fts
             \\    JOIN agent_memories m ON m.rowid = agent_memories_fts.rowid
