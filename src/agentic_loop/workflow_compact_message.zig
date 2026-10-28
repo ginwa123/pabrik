@@ -836,19 +836,24 @@ fn seedRow(
         created_at: []const u8,
     },
 ) !void {
+    // `created_at_nano` is an epoch column. Decide the unit here, in Zig, and
+    // bind one value: a CASE over a bind is the shape that works until the
+    // planner resolves the un-taken arm's cast anyway.
+    const nano = if (std.mem.indexOfScalar(u8, row.created_at, '-') == null)
+        row.created_at
+    else blk: {
+        var q = try db.queryRow(alloc, "SELECT CAST(strftime('%s', ?) AS BIGINT) * 1000000", &.{row.created_at});
+        defer q.deinit(alloc);
+        break :blk try alloc.dupe(u8, q.values[0]);
+    };
+    defer if (nano.ptr != row.created_at.ptr) alloc.free(nano);
+
     try db.exec(
         alloc,
-        // `created_at_nano` is an epoch column: a timestamp spelling is
-        // converted here rather than trusted to sqlite's text affinity.
         "INSERT INTO llm_history " ++
             "(id, session_id, model, response_content, role, tool_name, is_input, is_output, is_feed_to_llm, created_at_nano) " ++
-            "SELECT ?, ?, 'test-model', ?, ?, ?, ?, ?, 1, " ++
-            "CASE WHEN CAST(? AS TEXT) LIKE '%-%' " ++
-            "THEN CAST(strftime('%s', CAST(? AS TEXT)) AS BIGINT) * 1000000 " ++
-            "ELSE CAST(? AS BIGINT) END " ++
-            "WHERE 1 = 1",
-        &.{ row.id, row.session_id, row.content, row.role, row.tool_name, row.is_input, row.is_output,
-            row.created_at, row.created_at, row.created_at },
+            "VALUES (?, ?, 'test-model', ?, ?, ?, ?, ?, 1, ?)",
+        &.{ row.id, row.session_id, row.content, row.role, row.tool_name, row.is_input, row.is_output, nano },
     );
 }
 
