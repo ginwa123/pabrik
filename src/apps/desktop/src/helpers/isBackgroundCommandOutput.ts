@@ -76,18 +76,6 @@ const LEGACY_PREFIX = 'This is an output from background command (pid '
 /** Legacy fence matcher — tolerates 3, 4, or 5-quote fences. */
 const LEGACY_FENCE_RE = /"{3,5}/g
 
-/**  * Escape the 5 XML metacharacters on serialization. Mirrors `llm_history.zig xmlEscape`: `&` MUST
- * be replaced first, otherwise the later replacements would double-escape their own `&`-prefixed
- * entities. */
-function escapeXml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;')
-}
-
 export function isBackgroundCommandOutput(content: string): boolean {
   if (JSON_ENVELOPE_RE.test(content)) return true
   if (BACKGROUND_XML_RE.test(content)) return true
@@ -148,18 +136,20 @@ function parseLegacyProse(content: string): ParsedBackgroundCommandOutput | null
   return { pid, command, body: content.slice(bodyStart, bodyEnd).trim(), truncated: false, logPath: null }
 }
 
-/**  * Re-emit a parsed background completion as the foreground shell XML envelope. `command`/`stdout`
- * are XML-escaped; `stderr` is empty (the background logger merges streams); `truncated` comes from
- * the envelope. */
-export function backgroundToShellXml(parsed: ParsedBackgroundCommandOutput): string {
-  return (
-    `<command>${escapeXml(parsed.command)}</command>` +
-    `<stdout>${escapeXml(parsed.body)}</stdout>` +
-    `<stderr></stderr>` +
-    `<exit_code></exit_code>` +
-    `<truncated>${parsed.truncated}</truncated>` +
-    `<timeout>false</timeout>` +
-    `<stdout_lines></stdout_lines>` +
-    `<stderr_lines></stderr_lines>`
-  )
+/**  * Re-emit a parsed background completion as the shell result PAYLOAD the tool cards already read
+ * (`parseCommand`): the JSON `data` object of a shell envelope. `stderr` is empty because the
+ * background logger merges streams, and there is no exit code because the watcher only sees the log. */
+export function backgroundToShellData(
+  parsed: ParsedBackgroundCommandOutput,
+): Record<string, unknown> {
+  return {
+    command: parsed.command,
+    stdout: parsed.body,
+    stderr: '',
+    exit_code: null,
+    truncated: parsed.truncated,
+    timeout: false,
+    stdout_lines: parsed.body === '' ? 0 : parsed.body.split('\n').length,
+    stderr_lines: 0,
+  }
 }

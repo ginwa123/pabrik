@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   parseBackgroundCommandOutput,
   isBackgroundCommandOutput,
-  backgroundToShellXml,
+  backgroundToShellData,
 } from './isBackgroundCommandOutput'
 
 const xmlEnvelope = (
@@ -175,17 +175,22 @@ describe('isBackgroundCommandOutput', () => {
     expect(parseBackgroundCommandOutput(content)).toBeNull()
   })
 
-  it('backgroundToShellXml contains escaped command/stdout tags', () => {
-    const xml = backgroundToShellXml({
+  it('re-emits a completion as the shell payload a card reads', () => {
+    const data = backgroundToShellData({
       pid: '123',
       command: 'echo "a<b>&c"',
       body: "it's <done> & \"dusted\"",
       truncated: true,
       logPath: '/tmp/full.log',
     })
-    expect(xml).toContain('<command>echo &quot;a&lt;b&gt;&amp;c&quot;</command>')
-    expect(xml).toContain('<stdout>it&apos;s &lt;done&gt; &amp; &quot;dusted&quot;</stdout>')
-    expect(xml).toContain('<stderr></stderr>')
-    expect(xml).toContain('<truncated>true</truncated>')
+    expect(data).toMatchObject({
+      command: 'echo "a<b>&c"',
+      stdout: "it's <done> & \"dusted\"",
+      stderr: '',
+      exit_code: null,
+      truncated: true,
+      timeout: false,
+      stderr_lines: 0,
+    })
   })
 })
