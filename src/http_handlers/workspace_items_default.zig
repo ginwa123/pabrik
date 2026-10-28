@@ -410,8 +410,8 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
         \\  path TEXT,
         \\  position INTEGER NOT NULL DEFAULT 0,
         \\  is_default INTEGER NOT NULL DEFAULT 0,
-        \\  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        \\  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
     , &[_][]const u8{});
     try db.exec(alloc,
@@ -428,8 +428,8 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
         \\  workspace_item_id TEXT NOT NULL UNIQUE,
         \\  item_type TEXT NOT NULL,
         \\  description TEXT,
-        \\  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        \\  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
     , &[_][]const u8{});
     try db.exec(alloc,
@@ -438,7 +438,7 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
         \\  config_id TEXT NOT NULL,
         \\  tool_name TEXT NOT NULL,
         \\  enabled INTEGER NOT NULL DEFAULT 1,
-        \\  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        \\  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
     , &[_][]const u8{});
     try db.exec(alloc, "CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT, user_id TEXT)", &[_][]const u8{});

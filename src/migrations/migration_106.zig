@@ -2,6 +2,7 @@ const std = @import("std");
 const common = @import("common.zig");
 
 const Backend = common.Backend;
+const dialect = common.dialect;
 
 /// Migration 106 - create the models.dev model catalog cache. The catalog is
 /// 227 providers / 8,562 models of pure metadata: each model's context
@@ -45,15 +46,17 @@ pub const Migration106CreateModelCatalog = struct {
             \\    ON model_catalog_models (model_id)
         , &[_][]const u8{});
 
-        try db.exec(allocator,
+        const ddl = try std.fmt.allocPrint(allocator,
             \\CREATE TABLE IF NOT EXISTS model_catalog_meta (
             \\    id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
             \\    schema_version INTEGER NOT NULL,
             \\    source TEXT,
-            \\    fetched_at_ms INTEGER NOT NULL,
+            \\    fetched_at_ms {s} NOT NULL,
             \\    provider_count INTEGER NOT NULL DEFAULT 0,
             \\    model_count INTEGER NOT NULL DEFAULT 0
             \\)
-        , &[_][]const u8{});
+        , .{dialect.epoch_type});
+        defer allocator.free(ddl);
+        try db.exec(allocator, ddl, &[_][]const u8{});
     }
 };

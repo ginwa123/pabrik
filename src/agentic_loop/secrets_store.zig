@@ -415,8 +415,8 @@ fn setupDb() !TestCtx {
         \\  workspace_id TEXT NOT NULL,
         \\  name TEXT NOT NULL,
         \\  value TEXT NOT NULL,
-        \\  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        \\  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
     , &.{});
     try db.exec(alloc,

@@ -28,7 +28,7 @@ pub const Migration097CreateSkillEvalTables = struct {
             \\    proposed_content TEXT NOT NULL DEFAULT '',
             \\    missing_paths_json TEXT NOT NULL DEFAULT '',
             \\    drift_commits_json TEXT NOT NULL DEFAULT '',
-            \\    computed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            \\    computed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             \\)
         , &[_][]const u8{});
 
@@ -61,9 +61,9 @@ pub const Migration097CreateSkillEvalTables = struct {
             \\    report_json TEXT NOT NULL DEFAULT '',
             \\    total_tokens INTEGER NOT NULL DEFAULT 0,
             \\    error TEXT NOT NULL DEFAULT '',
-            \\    started_at DATETIME,
-            \\    finished_at DATETIME,
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            \\    started_at TIMESTAMP,
+            \\    finished_at TIMESTAMP,
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    user_id TEXT
             \\)
         , &[_][]const u8{});
@@ -102,9 +102,9 @@ pub const Migration097CreateSkillEvalTables = struct {
             \\    proposed_diff TEXT NOT NULL DEFAULT '',
             \\    rationale TEXT NOT NULL DEFAULT '',
             \\    sub_session_id TEXT NOT NULL DEFAULT '',
-            \\    applied_at DATETIME,
+            \\    applied_at TIMESTAMP,
             \\    apply_action TEXT NOT NULL DEFAULT '',
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    user_id TEXT
             \\)
         , &[_][]const u8{});

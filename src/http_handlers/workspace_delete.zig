@@ -161,8 +161,8 @@ fn setupDeleteDb() !DeleteCtx {
         \\CREATE TABLE workspaces (
         \\  id TEXT PRIMARY KEY,
         \\  name TEXT NOT NULL,
-        \\  created_at DATETIME,
-        \\  updated_at DATETIME,
+        \\  created_at TIMESTAMP,
+        \\  updated_at TIMESTAMP,
         \\  position INTEGER,
         \\  user_id TEXT
         \\)
@@ -172,7 +172,7 @@ fn setupDeleteDb() !DeleteCtx {
         \\  workspace_id TEXT NOT NULL,
         \\  user_id TEXT NOT NULL,
         \\  role TEXT NOT NULL DEFAULT 'viewer',
-        \\  joined_at DATETIME,
+        \\  joined_at TIMESTAMP,
         \\  invited_by TEXT,
         \\  PRIMARY KEY (workspace_id, user_id)
         \\)
@@ -186,8 +186,8 @@ fn setupDeleteDb() !DeleteCtx {
         \\  workspace_id TEXT NOT NULL,
         \\  name TEXT NOT NULL,
         \\  value TEXT NOT NULL,
-        \\  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        \\  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
     , &.{});
     // Mirrors Migration 105's `workspace_settings`.
@@ -196,8 +196,8 @@ fn setupDeleteDb() !DeleteCtx {
         \\  owner TEXT NOT NULL DEFAULT '',
         \\  workspace_id TEXT NOT NULL,
         \\  config_json TEXT,
-        \\  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\  PRIMARY KEY (owner, workspace_id)
         \\)
     , &.{});

@@ -325,9 +325,9 @@ test "resolveRequestUserId maps a valid cookie to the owning user" {
         \\CREATE TABLE auth_sessions (
         \\  token_hash TEXT PRIMARY KEY,
         \\  user_id TEXT NOT NULL,
-        \\  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\  expires_at DATETIME NOT NULL,
-        \\  last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        \\  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\  expires_at TIMESTAMP NOT NULL,
+        \\  last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
     , &.{});
     try db.exec(alloc, "INSERT INTO users (id, email, password_hash) VALUES ('user_a', 'a@example.com', 'x')", &.{});

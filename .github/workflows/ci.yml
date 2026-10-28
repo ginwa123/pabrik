@@ -464,6 +464,51 @@ jobs:
           PABRIK_DB_TESTS_REQUIRE_SERVER: '1'
         run: zig build test:db -Ddb_used=sqlite,postgres
 
+      # The same two steps the Linux cell runs after `zig build test`. The
+      # console is its own package and the daemon is Linux-only, so neither
+      # touches the backend choice — running them here is what keeps the two
+      # cells' step lists identical.
+      - name: "Admin console (its own package: build + unit tests)"
+        run: |
+          cd src/apps/admin
+          zig build test --summary all
+
+      - name: vmd unit tests (Linux)
+        run: zig build test:vmd --summary all -Dno-webapp-rebuild
+
+      - name: Install the postgres client the smoke assertions read with
+        # `scripts/ci-install-linux-deps.sh` is the shared list every cell
+        # installs; a psql client belongs to this cell only. The service
+        # container publishes 5432 on the runner's loopback, so the client
+        # talks to it exactly as the app does.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: "Boot on postgres: every migration applies, full text search answers"
+        # The end-to-end half of the contract this job exists for. `--database=
+        # postgres` boots the real binary against the service container, then
+        # the script asserts: /health answers, `schema_migrations` reached the
+        # highest version the tree registers, both full text indexes exist, and
+        # the `to_tsquery`/`ts_headline` pair the search code builds returns the
+        # stored row with the searched term bracketed.
+        env:
+          PABRIK_DATABASE_CONNINFO: host=127.0.0.1 port=5432 user=pabrik password=pabrik dbname=pabrik
+          PORT: '8080'
+        run: bash scripts/ci-postgres-smoke.sh
+
+      # NOTE — why `zig build test -Ddb_used=sqlite,postgres` is NOT a step here.
+      # 273 test setups open an sqlite database by name (`db.init(io,
+      # ":memory:")`, 165 files). A postgres build cannot open one, so they fail
+      # at open before any assertion, and the cell would report ~1500 errors it
+      # cannot act on. The backend-agnostic half IS gated above (`test:db` runs
+      # on both), and the boot smoke step proves the migrations and the search
+      # end to end. Branch `feat/db-test-harness-memory` carries the harness
+      # (`test_db.openMemory`) that converts those 273 setups; once its
+      # remaining `rowid`/`PRAGMA`/`changes()` fixes land, the full suite joins
+      # this job as the step the Linux cell already has.
+
+
   # ── 2. Backend, one job per platform ────────────────────────────────
   # Three calls of the same reusable workflow instead of one 3-cell
   # matrix. The `if` says three things at once, and each is load-bearing:

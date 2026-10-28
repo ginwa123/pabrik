@@ -6,6 +6,7 @@ const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
+const dialect = common.dialect;
 
 /// Migration 061 — Re-backfill `created_iso` for rows that are NULL, empty,
 /// OR have the wrong year (e.g. year 58,507 from the nanosecond/microsecond
@@ -18,21 +19,22 @@ pub const Migration061FixCreatedIsoYear = struct {
         // UPDATE WHERE clause matches three categories: 1. created_iso IS
         // NULL 2. created_iso = '' 3. created_iso has a year that doesn't
         // match any plausible Unix‑timestamp year — i.e.
-        try db.exec(
+        const from_epoch = try dialect.epochToText(allocator, "substr(CAST(created_at AS TEXT), 1, 10)");
+        defer allocator.free(from_epoch);
+        const backfill = try std.fmt.allocPrint(
             allocator,
             \\UPDATE llm_history
             \\SET created_iso = CASE
-            \\    WHEN created_at IS NULL OR created_at = ''
-            \\        THEN datetime('now')
-            \\    ELSE datetime(
-            \\        CAST(substr(created_at, 1, 10) AS INTEGER),
-            \\        'unixepoch'
-            \\    )
+            \\    WHEN COALESCE(CAST(created_at AS TEXT), '') = ''
+            \\        THEN {s}
+            \\    ELSE {s}
             \\END
             \\WHERE created_iso IS NULL
             \\   OR created_iso = ''
             \\   OR (created_iso NOT LIKE '19__-%'
             \\       AND created_iso NOT LIKE '20__-%')
-        , &[_][]const u8{});
+        , .{ dialect.now_text, from_epoch });
+        defer allocator.free(backfill);
+        try db.exec(allocator, backfill, &[_][]const u8{});
     }
 };

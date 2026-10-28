@@ -473,7 +473,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded, item_id: []u8
         \\    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
         \\    item_type TEXT NOT NULL, name TEXT, path TEXT,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME, updated_at DATETIME)
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP)
     , &.{});
 
     try db.exec(alloc,
@@ -496,8 +496,8 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded, item_id: []u8
         \\    x INTEGER NOT NULL DEFAULT 0,
         \\    y INTEGER NOT NULL DEFAULT 0,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME,
-        \\    updated_at DATETIME,
+        \\    created_at TIMESTAMP,
+        \\    updated_at TIMESTAMP,
         \\    UNIQUE (workspace_item_id, name),
         \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE)
     , &.{});
@@ -516,7 +516,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded, item_id: []u8
         \\    corner_radius INTEGER NOT NULL DEFAULT 0, opacity REAL NOT NULL DEFAULT 1.0,
         \\    text_content TEXT NOT NULL DEFAULT '', text_style TEXT NOT NULL DEFAULT '',
         \\    image_url TEXT NOT NULL DEFAULT '', parent_id TEXT,
-        \\    created_at DATETIME, updated_at DATETIME,
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP,
         \\    FOREIGN KEY (page_id) REFERENCES design_pages(id) ON DELETE CASCADE)
     , &.{});
 

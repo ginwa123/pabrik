@@ -58,6 +58,9 @@ pub const sqlite = @import("databases").sqlite;
 // pabrikcore.database; var db: database.Db = .{}; App-controlled via root
 // `-Ddb_used` (default sqlite).
 pub const database = @import("databases").database;
+/// The SQL that differs between the compiled-in backends: `now_epoch`,
+/// `now_text`, `tables_source`, `columnExists`, … — see src/dialect.zig.
+pub const dialect = @import("dialect.zig");
 pub const bash_tool = @import("modules/agent/tools/bash.zig");
 pub const pwsh_tool = @import("modules/agent/tools/pwsh.zig");
 pub const command_tool = @import("modules/agent/tools/command.zig");

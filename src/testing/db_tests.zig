@@ -319,3 +319,152 @@ test "closing a temp database twice is safe" {
 
     try testing.expect(!temp.live);
 }
+
+fn migrate(db: *database.Db) !void {
+    var manager = pabrikcore.migrations_mod.migration.MigrationManager.init(testing.allocator, db);
+    defer manager.deinit();
+    try pabrikcore.migrations_mod.migration.registerAllMigrations(&manager);
+    try manager.runMigrations();
+}
+
+fn lastMigrationVersion() u32 {
+    var last: u32 = 0;
+    for (pabrikcore.migrations_mod.migration.allMigrations) |m| {
+        if (m.version > last) last = m.version;
+    }
+    return last;
+}
+
+test "every migration applies to the database the build compiled in" {
+    var temp = try test_db.create(testing.allocator);
+    defer temp.deinit();
+    const db = test_db.handle(&temp);
+
+    try migrate(db);
+
+    var row = try db.queryRow(testing.allocator, "SELECT MAX(version) FROM schema_migrations", &.{});
+    defer row.deinit(testing.allocator);
+    const reached = try std.fmt.parseInt(u32, row.values[0], 10);
+    try testing.expectEqual(lastMigrationVersion(), reached);
+}
+
+test "a table the schema declares is a table the migration created" {
+    var temp = try test_db.create(testing.allocator);
+    defer temp.deinit();
+    const db = test_db.handle(&temp);
+
+    try migrate(db);
+
+    try testing.expect(try pabrikcore.dialect.tableExists(.{ .db = db }, testing.allocator, "llm_history"));
+    try testing.expect(try pabrikcore.dialect.tableExists(.{ .db = db }, testing.allocator, "agent_memories"));
+    try testing.expect(try pabrikcore.dialect.columnExists(.{ .db = db }, testing.allocator, "llm_history", "response_content"));
+    try testing.expect(!try pabrikcore.dialect.columnExists(.{ .db = db }, testing.allocator, "llm_history", "no_such_column"));
+}
+
+test "a saved memory comes back from full text search with the term bracketed" {
+    const alloc = testing.allocator;
+    var temp = try test_db.create(alloc);
+    defer temp.deinit();
+    const db = test_db.handle(&temp);
+    try migrate(db);
+
+    const saved = try pabrikcore.agent_memories.saveMemory(alloc, db, .{
+        .content = "the zephyrword turbine spins at dusk",
+        .tags = &.{"hardware"},
+        .workspace_id = "ws_search",
+    });
+    defer pabrikcore.agent_memories.freeMemoryRow(alloc, saved);
+
+    const hits = try pabrikcore.agent_memories.loadMemoriesByFts(alloc, db, .{
+        .query = "zephyrword",
+        .tags = &.{},
+        .limit = 10,
+        .offset = 0,
+        .workspace_id = "ws_search",
+    });
+    defer pabrikcore.agent_memories.freeMemoryHits(alloc, hits);
+
+    try testing.expectEqual(@as(usize, 1), hits.len);
+    try testing.expectEqualStrings(saved.id, hits[0].id);
+    try testing.expect(std.mem.indexOf(u8, hits[0].snippet, "[zephyrword]") != null);
+    try testing.expectEqual(@as(u32, 1), hits[0].total_count);
+}
+
+test "full text search does not reach another workspace's memories" {
+    const alloc = testing.allocator;
+    var temp = try test_db.create(alloc);
+    defer temp.deinit();
+    const db = test_db.handle(&temp);
+    try migrate(db);
+
+    const mine = try pabrikcore.agent_memories.saveMemory(alloc, db, .{
+        .content = "quasarterm lives in one workspace",
+        .tags = &.{},
+        .workspace_id = "ws_a",
+    });
+    defer pabrikcore.agent_memories.freeMemoryRow(alloc, mine);
+    const other = try pabrikcore.agent_memories.saveMemory(alloc, db, .{
+        .content = "quasarterm lives in another workspace",
+        .tags = &.{},
+        .workspace_id = "ws_b",
+    });
+    defer pabrikcore.agent_memories.freeMemoryRow(alloc, other);
+
+    const hits = try pabrikcore.agent_memories.loadMemoriesByFts(alloc, db, .{
+        .query = "quasarterm",
+        .tags = &.{},
+        .limit = 10,
+        .offset = 0,
+        .workspace_id = "ws_a",
+    });
+    defer pabrikcore.agent_memories.freeMemoryHits(alloc, hits);
+
+    try testing.expectEqual(@as(usize, 1), hits.len);
+    try testing.expectEqualStrings(mine.id, hits[0].id);
+}
+
+test "a stored message is found by full text search and the snippet names the term" {
+    const alloc = testing.allocator;
+    var temp = try test_db.create(alloc);
+    defer temp.deinit();
+    const db = test_db.handle(&temp);
+    try migrate(db);
+
+    try db.exec(alloc,
+        \\INSERT INTO llm_history (id, session_id, model, response_content, role, created_iso)
+        \\VALUES ('msg_search_1', 'sess_search', 'm', 'a deltaword appears here', 'assistant', '2026-01-02 03:04:05')
+    , &.{});
+
+    const hits = try pabrikcore.llm_history.searchMessagesFts(alloc, db, "deltaword", .{});
+    defer {
+        for (hits) |h| {
+            var copy = h;
+            copy.deinit(alloc);
+        }
+        alloc.free(hits);
+    }
+
+    try testing.expectEqual(@as(usize, 1), hits.len);
+    try testing.expectEqualStrings("msg_search_1", hits[0].id);
+    try testing.expectEqualStrings("sess_search", hits[0].session_id);
+    try testing.expect(std.mem.indexOf(u8, hits[0].snippet, "[deltaword]") != null);
+    try testing.expectEqual(@as(u32, 1), hits[0].total_count);
+}
+
+test "a message the search term is not in is not a hit" {
+    const alloc = testing.allocator;
+    var temp = try test_db.create(alloc);
+    defer temp.deinit();
+    const db = test_db.handle(&temp);
+    try migrate(db);
+
+    try db.exec(alloc,
+        \\INSERT INTO llm_history (id, session_id, model, response_content, role, created_iso)
+        \\VALUES ('msg_search_2', 'sess_search', 'm', 'nothing in common here', 'assistant', '2026-01-02 03:04:05')
+    , &.{});
+
+    const hits = try pabrikcore.llm_history.searchMessagesFts(alloc, db, "deltaword", .{});
+    defer alloc.free(hits);
+
+    try testing.expectEqual(@as(usize, 0), hits.len);
+}

@@ -3086,7 +3086,7 @@ fn setupGeometryBatchDbAndItem() !struct {
         \\    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
         \\    item_type TEXT NOT NULL, name TEXT, path TEXT,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME, updated_at DATETIME)
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP)
     , &.{});
 
     try db.exec(alloc,
@@ -3108,8 +3108,8 @@ fn setupGeometryBatchDbAndItem() !struct {
         \\    x INTEGER NOT NULL DEFAULT 0,
         \\    y INTEGER NOT NULL DEFAULT 0,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME,
-        \\    updated_at DATETIME,
+        \\    created_at TIMESTAMP,
+        \\    updated_at TIMESTAMP,
         \\    UNIQUE (workspace_item_id, name),
         \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE)
     , &.{});
@@ -3127,7 +3127,7 @@ fn setupGeometryBatchDbAndItem() !struct {
         \\    corner_radius INTEGER NOT NULL DEFAULT 0, opacity REAL NOT NULL DEFAULT 1.0,
         \\    text_content TEXT NOT NULL DEFAULT '', text_style TEXT NOT NULL DEFAULT '',
         \\    image_url TEXT NOT NULL DEFAULT '', parent_id TEXT,
-        \\    created_at DATETIME, updated_at DATETIME,
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP,
         \\    FOREIGN KEY (page_id) REFERENCES design_pages(id) ON DELETE CASCADE)
     , &.{});
 
@@ -3360,7 +3360,7 @@ fn setupReparentDbAndItem() !struct {
         \\    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
         \\    item_type TEXT NOT NULL, name TEXT, path TEXT,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME, updated_at DATETIME)
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP)
     , &.{});
 
     try db.exec(alloc,
@@ -3382,8 +3382,8 @@ fn setupReparentDbAndItem() !struct {
         \\    x INTEGER NOT NULL DEFAULT 0,
         \\    y INTEGER NOT NULL DEFAULT 0,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME,
-        \\    updated_at DATETIME,
+        \\    created_at TIMESTAMP,
+        \\    updated_at TIMESTAMP,
         \\    UNIQUE (workspace_item_id, name),
         \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE)
     , &.{});
@@ -3401,7 +3401,7 @@ fn setupReparentDbAndItem() !struct {
         \\    corner_radius INTEGER NOT NULL DEFAULT 0, opacity REAL NOT NULL DEFAULT 1.0,
         \\    text_content TEXT NOT NULL DEFAULT '', text_style TEXT NOT NULL DEFAULT '',
         \\    image_url TEXT NOT NULL DEFAULT '', parent_id TEXT,
-        \\    created_at DATETIME, updated_at DATETIME,
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP,
         \\    FOREIGN KEY (page_id) REFERENCES design_pages(id) ON DELETE CASCADE)
     , &.{});
 
@@ -3786,7 +3786,7 @@ fn setupReparentBatchDbAndItem() !struct {
         \\    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
         \\    item_type TEXT NOT NULL, name TEXT, path TEXT,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME, updated_at DATETIME)
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP)
     , &.{});
 
     try db.exec(alloc,
@@ -3808,8 +3808,8 @@ fn setupReparentBatchDbAndItem() !struct {
         \\    x INTEGER NOT NULL DEFAULT 0,
         \\    y INTEGER NOT NULL DEFAULT 0,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME,
-        \\    updated_at DATETIME,
+        \\    created_at TIMESTAMP,
+        \\    updated_at TIMESTAMP,
         \\    UNIQUE (workspace_item_id, name),
         \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE)
     , &.{});
@@ -3827,7 +3827,7 @@ fn setupReparentBatchDbAndItem() !struct {
         \\    corner_radius INTEGER NOT NULL DEFAULT 0, opacity REAL NOT NULL DEFAULT 1.0,
         \\    text_content TEXT NOT NULL DEFAULT '', text_style TEXT NOT NULL DEFAULT '',
         \\    image_url TEXT NOT NULL DEFAULT '', parent_id TEXT,
-        \\    created_at DATETIME, updated_at DATETIME,
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP,
         \\    FOREIGN KEY (page_id) REFERENCES design_pages(id) ON DELETE CASCADE)
     , &.{});
 
@@ -4229,7 +4229,7 @@ fn setupMoveBatchDbAndItem() !struct {
         \\    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
         \\    item_type TEXT NOT NULL, name TEXT, path TEXT,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME, updated_at DATETIME)
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP)
     , &.{});
 
     try db.exec(alloc,
@@ -4251,8 +4251,8 @@ fn setupMoveBatchDbAndItem() !struct {
         \\    x INTEGER NOT NULL DEFAULT 0,
         \\    y INTEGER NOT NULL DEFAULT 0,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME,
-        \\    updated_at DATETIME,
+        \\    created_at TIMESTAMP,
+        \\    updated_at TIMESTAMP,
         \\    UNIQUE (workspace_item_id, name),
         \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE)
     , &.{});
@@ -4270,7 +4270,7 @@ fn setupMoveBatchDbAndItem() !struct {
         \\    corner_radius INTEGER NOT NULL DEFAULT 0, opacity REAL NOT NULL DEFAULT 1.0,
         \\    text_content TEXT NOT NULL DEFAULT '', text_style TEXT NOT NULL DEFAULT '',
         \\    image_url TEXT NOT NULL DEFAULT '', parent_id TEXT,
-        \\    created_at DATETIME, updated_at DATETIME,
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP,
         \\    FOREIGN KEY (page_id) REFERENCES design_pages(id) ON DELETE CASCADE)
     , &.{});
 
@@ -4833,7 +4833,7 @@ fn setupMoveToPageDbAndItem() !struct {
         \\    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
         \\    item_type TEXT NOT NULL, name TEXT, path TEXT,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME, updated_at DATETIME)
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP)
     , &.{});
 
     try db.exec(alloc,
@@ -4855,8 +4855,8 @@ fn setupMoveToPageDbAndItem() !struct {
         \\    x INTEGER NOT NULL DEFAULT 0,
         \\    y INTEGER NOT NULL DEFAULT 0,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME,
-        \\    updated_at DATETIME,
+        \\    created_at TIMESTAMP,
+        \\    updated_at TIMESTAMP,
         \\    UNIQUE (workspace_item_id, name),
         \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE)
     , &.{});
@@ -4874,7 +4874,7 @@ fn setupMoveToPageDbAndItem() !struct {
         \\    corner_radius INTEGER NOT NULL DEFAULT 0, opacity REAL NOT NULL DEFAULT 1.0,
         \\    text_content TEXT NOT NULL DEFAULT '', text_style TEXT NOT NULL DEFAULT '',
         \\    image_url TEXT NOT NULL DEFAULT '', parent_id TEXT,
-        \\    created_at DATETIME, updated_at DATETIME,
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP,
         \\    FOREIGN KEY (page_id) REFERENCES design_pages(id) ON DELETE CASCADE)
     , &.{});
 
@@ -5327,7 +5327,7 @@ fn setupUpdatePageDbAndItem() !struct {
         \\    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
         \\    item_type TEXT NOT NULL, name TEXT, path TEXT,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME, updated_at DATETIME)
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP)
     , &.{});
 
     try db.exec(alloc,
@@ -5339,8 +5339,8 @@ fn setupUpdatePageDbAndItem() !struct {
         \\    width INTEGER NOT NULL DEFAULT 1440,
         \\    height INTEGER NOT NULL DEFAULT 1024,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \\    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)
+        \\    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \\    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)
     , &.{});
 
     const item_id = try alloc.dupe(u8, "item_rename_test");
@@ -5488,7 +5488,7 @@ fn addElementParentSetupDbAndItem() !struct {
         \\    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
         \\    item_type TEXT NOT NULL, name TEXT, path TEXT,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME, updated_at DATETIME)
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP)
     , &.{});
 
     try db.exec(alloc,
@@ -5510,8 +5510,8 @@ fn addElementParentSetupDbAndItem() !struct {
         \\    x INTEGER NOT NULL DEFAULT 0,
         \\    y INTEGER NOT NULL DEFAULT 0,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME,
-        \\    updated_at DATETIME,
+        \\    created_at TIMESTAMP,
+        \\    updated_at TIMESTAMP,
         \\    UNIQUE (workspace_item_id, name),
         \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE)
     , &.{});
@@ -5529,7 +5529,7 @@ fn addElementParentSetupDbAndItem() !struct {
         \\    corner_radius INTEGER NOT NULL DEFAULT 0, opacity REAL NOT NULL DEFAULT 1.0,
         \\    text_content TEXT NOT NULL DEFAULT '', text_style TEXT NOT NULL DEFAULT '',
         \\    image_url TEXT NOT NULL DEFAULT '', parent_id TEXT,
-        \\    created_at DATETIME, updated_at DATETIME,
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP,
         \\    FOREIGN KEY (page_id) REFERENCES design_pages(id) ON DELETE CASCADE)
     , &.{});
 
@@ -5797,7 +5797,7 @@ fn deletePageSetupDb() !struct {
         \\    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
         \\    item_type TEXT NOT NULL, name TEXT, path TEXT,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME, updated_at DATETIME)
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP)
     , &.{});
 
     try db.exec(alloc,
@@ -5819,8 +5819,8 @@ fn deletePageSetupDb() !struct {
         \\    x INTEGER NOT NULL DEFAULT 0,
         \\    y INTEGER NOT NULL DEFAULT 0,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME,
-        \\    updated_at DATETIME,
+        \\    created_at TIMESTAMP,
+        \\    updated_at TIMESTAMP,
         \\    UNIQUE (workspace_item_id, name),
         \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE)
     , &.{});
@@ -5838,7 +5838,7 @@ fn deletePageSetupDb() !struct {
         \\    corner_radius INTEGER NOT NULL DEFAULT 0, opacity REAL NOT NULL DEFAULT 1.0,
         \\    text_content TEXT NOT NULL DEFAULT '', text_style TEXT NOT NULL DEFAULT '',
         \\    image_url TEXT NOT NULL DEFAULT '', parent_id TEXT,
-        \\    created_at DATETIME, updated_at DATETIME,
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP,
         \\    FOREIGN KEY (page_id) REFERENCES design_pages(id) ON DELETE CASCADE)
     , &.{});
 
@@ -6215,7 +6215,7 @@ fn deleteParentSetupDbAndItem() !struct {
         \\    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
         \\    item_type TEXT NOT NULL, name TEXT, path TEXT,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME, updated_at DATETIME)
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP)
     , &.{});
 
     try db.exec(alloc,
@@ -6237,8 +6237,8 @@ fn deleteParentSetupDbAndItem() !struct {
         \\    x INTEGER NOT NULL DEFAULT 0,
         \\    y INTEGER NOT NULL DEFAULT 0,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME,
-        \\    updated_at DATETIME,
+        \\    created_at TIMESTAMP,
+        \\    updated_at TIMESTAMP,
         \\    UNIQUE (workspace_item_id, name),
         \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE)
     , &.{});
@@ -6256,7 +6256,7 @@ fn deleteParentSetupDbAndItem() !struct {
         \\    corner_radius INTEGER NOT NULL DEFAULT 0, opacity REAL NOT NULL DEFAULT 1.0,
         \\    text_content TEXT NOT NULL DEFAULT '', text_style TEXT NOT NULL DEFAULT '',
         \\    image_url TEXT NOT NULL DEFAULT '', parent_id TEXT,
-        \\    created_at DATETIME, updated_at DATETIME,
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP,
         \\    FOREIGN KEY (page_id) REFERENCES design_pages(id) ON DELETE CASCADE)
     , &.{});
 
@@ -6468,7 +6468,7 @@ fn groupSetupDbAndItem() !struct {
         \\    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
         \\    item_type TEXT NOT NULL, name TEXT, path TEXT,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME, updated_at DATETIME)
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP)
     , &.{});
 
     try db.exec(alloc,
@@ -6490,8 +6490,8 @@ fn groupSetupDbAndItem() !struct {
         \\    x INTEGER NOT NULL DEFAULT 0,
         \\    y INTEGER NOT NULL DEFAULT 0,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME,
-        \\    updated_at DATETIME,
+        \\    created_at TIMESTAMP,
+        \\    updated_at TIMESTAMP,
         \\    UNIQUE (workspace_item_id, name),
         \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE)
     , &.{});
@@ -6509,7 +6509,7 @@ fn groupSetupDbAndItem() !struct {
         \\    corner_radius INTEGER NOT NULL DEFAULT 0, opacity REAL NOT NULL DEFAULT 1.0,
         \\    text_content TEXT NOT NULL DEFAULT '', text_style TEXT NOT NULL DEFAULT '',
         \\    image_url TEXT NOT NULL DEFAULT '', parent_id TEXT,
-        \\    created_at DATETIME, updated_at DATETIME,
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP,
         \\    FOREIGN KEY (page_id) REFERENCES design_pages(id) ON DELETE CASCADE)
     , &.{});
 
@@ -6803,7 +6803,7 @@ fn parentIdSetupDbAndItem() !struct {
         \\    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
         \\    item_type TEXT NOT NULL, name TEXT, path TEXT,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME, updated_at DATETIME)
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP)
     , &.{});
 
     try db.exec(alloc,
@@ -6825,8 +6825,8 @@ fn parentIdSetupDbAndItem() !struct {
         \\    x INTEGER NOT NULL DEFAULT 0,
         \\    y INTEGER NOT NULL DEFAULT 0,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME,
-        \\    updated_at DATETIME,
+        \\    created_at TIMESTAMP,
+        \\    updated_at TIMESTAMP,
         \\    UNIQUE (workspace_item_id, name),
         \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE)
     , &.{});
@@ -6844,7 +6844,7 @@ fn parentIdSetupDbAndItem() !struct {
         \\    corner_radius INTEGER NOT NULL DEFAULT 0, opacity REAL NOT NULL DEFAULT 1.0,
         \\    text_content TEXT NOT NULL DEFAULT '', text_style TEXT NOT NULL DEFAULT '',
         \\    image_url TEXT NOT NULL DEFAULT '', parent_id TEXT,
-        \\    created_at DATETIME, updated_at DATETIME,
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP,
         \\    FOREIGN KEY (page_id) REFERENCES design_pages(id) ON DELETE CASCADE)
     , &.{});
 
@@ -7050,7 +7050,7 @@ fn reorderSetupDb() !struct {
         \\    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
         \\    item_type TEXT NOT NULL, name TEXT, path TEXT,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME, updated_at DATETIME)
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP)
     , &.{});
     try db.exec(alloc,
         \\CREATE TABLE design_pages (
@@ -7060,7 +7060,7 @@ fn reorderSetupDb() !struct {
         \\    width INTEGER NOT NULL DEFAULT 1440,
         \\    height INTEGER NOT NULL DEFAULT 1024,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME, updated_at DATETIME)
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP)
     , &.{});
     try db.exec(alloc,
         \\CREATE TABLE design_page_elements (
@@ -7081,7 +7081,7 @@ fn reorderSetupDb() !struct {
         \\    text_style TEXT NOT NULL DEFAULT '',
         \\    image_url TEXT NOT NULL DEFAULT '',
         \\    parent_id TEXT,
-        \\    created_at DATETIME, updated_at DATETIME)
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP)
     , &.{});
     try db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type, path) " ++
@@ -7333,7 +7333,7 @@ fn setElementParentSetupDbAndItem() !struct {
         \\    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
         \\    item_type TEXT NOT NULL, name TEXT, path TEXT,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME, updated_at DATETIME)
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP)
     , &.{});
 
     try db.exec(alloc,
@@ -7355,8 +7355,8 @@ fn setElementParentSetupDbAndItem() !struct {
         \\    x INTEGER NOT NULL DEFAULT 0,
         \\    y INTEGER NOT NULL DEFAULT 0,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME,
-        \\    updated_at DATETIME,
+        \\    created_at TIMESTAMP,
+        \\    updated_at TIMESTAMP,
         \\    UNIQUE (workspace_item_id, name),
         \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE)
     , &.{});
@@ -7374,7 +7374,7 @@ fn setElementParentSetupDbAndItem() !struct {
         \\    corner_radius INTEGER NOT NULL DEFAULT 0, opacity REAL NOT NULL DEFAULT 1.0,
         \\    text_content TEXT NOT NULL DEFAULT '', text_style TEXT NOT NULL DEFAULT '',
         \\    image_url TEXT NOT NULL DEFAULT '', parent_id TEXT,
-        \\    created_at DATETIME, updated_at DATETIME,
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP,
         \\    FOREIGN KEY (page_id) REFERENCES design_pages(id) ON DELETE CASCADE)
     , &.{});
 
@@ -7612,7 +7612,7 @@ fn designModelSetupDbAndItem() !struct {
         \\    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
         \\    item_type TEXT NOT NULL, name TEXT, path TEXT,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME, updated_at DATETIME)
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP)
     , &.{});
 
     // workspace_item_tasks (required by setDesignPage since the FK
@@ -7625,8 +7625,8 @@ fn designModelSetupDbAndItem() !struct {
         \\    workspace_item_id TEXT NOT NULL,
         \\    task_type TEXT NOT NULL DEFAULT 'standard',
         \\    description TEXT NOT NULL DEFAULT '',
-        \\    created_at DATETIME,
-        \\    updated_at DATETIME)
+        \\    created_at TIMESTAMP,
+        \\    updated_at TIMESTAMP)
     , &.{});
 
     // design_pages (v6 schema + post-Migration-066
@@ -7642,8 +7642,8 @@ fn designModelSetupDbAndItem() !struct {
         \\    x INTEGER NOT NULL DEFAULT 0,
         \\    y INTEGER NOT NULL DEFAULT 0,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME,
-        \\    updated_at DATETIME,
+        \\    created_at TIMESTAMP,
+        \\    updated_at TIMESTAMP,
         \\    UNIQUE (workspace_item_id, name),
         \\    UNIQUE (workspace_item_task_id),
         \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE)
@@ -7664,7 +7664,7 @@ fn designModelSetupDbAndItem() !struct {
         \\    corner_radius INTEGER NOT NULL DEFAULT 0, opacity REAL NOT NULL DEFAULT 1.0,
         \\    text_content TEXT NOT NULL DEFAULT '', text_style TEXT NOT NULL DEFAULT '',
         \\    image_url TEXT NOT NULL DEFAULT '', parent_id TEXT,
-        \\    created_at DATETIME, updated_at DATETIME,
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP,
         \\    FOREIGN KEY (page_id) REFERENCES design_pages(id) ON DELETE CASCADE)
     , &.{});
 

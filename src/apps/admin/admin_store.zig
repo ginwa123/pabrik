@@ -286,18 +286,18 @@ pub fn ensureSchema(allocator: std.mem.Allocator, db: Db) !void {
         \\    password_hash TEXT NOT NULL,
         \\    role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('admin', 'user', 'bot')),
         \\    is_active INTEGER NOT NULL DEFAULT 1,
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\    last_login_at DATETIME DEFAULT NULL
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\    last_login_at TIMESTAMP DEFAULT NULL
         \\)
     , &.{});
     try db.exec(allocator,
         \\CREATE TABLE IF NOT EXISTS auth_sessions (
         \\    token_hash TEXT PRIMARY KEY,
         \\    user_id TEXT NOT NULL,
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\    expires_at DATETIME NOT NULL,
-        \\    last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\    expires_at TIMESTAMP NOT NULL,
+        \\    last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
     , &.{});
 }

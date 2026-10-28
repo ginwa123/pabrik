@@ -2188,7 +2188,7 @@ test "search_documents is seeded by default but delete_document is not" {
     // build (it only stands up the document schema). Same table shape the
     // registry's own seed tests use.
     try ctx.db.exec(alloc,
-        \\CREATE TABLE agent_config_tools (id TEXT PRIMARY KEY, config_id TEXT NOT NULL, tool_name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(config_id, tool_name))
+        \\CREATE TABLE agent_config_tools (id TEXT PRIMARY KEY, config_id TEXT NOT NULL, tool_name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE(config_id, tool_name))
     , &.{});
 
     // `null` config is the legacy path a freshly created agent item takes.

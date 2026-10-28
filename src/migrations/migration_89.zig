@@ -16,9 +16,9 @@ pub const Migration089AuthSessions = struct {
             \\CREATE TABLE IF NOT EXISTS auth_sessions (
             \\    token_hash TEXT PRIMARY KEY,
             \\    user_id TEXT NOT NULL,
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            \\    expires_at DATETIME NOT NULL,
-            \\    last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            \\    expires_at TIMESTAMP NOT NULL,
+            \\    last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             \\)
         , &[_][]const u8{});

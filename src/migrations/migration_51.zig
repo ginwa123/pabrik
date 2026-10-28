@@ -21,7 +21,7 @@ pub const Migration051AddKanban = struct {
             \\    workspace_item_id TEXT NOT NULL,
             \\    name TEXT NOT NULL,
             \\    position INTEGER NOT NULL,
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE
             \\)
         , &[_][]const u8{});

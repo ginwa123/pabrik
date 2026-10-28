@@ -18,8 +18,8 @@ pub const Migration103CreateWorkspaceSecrets = struct {
             \\    workspace_id TEXT NOT NULL,
             \\    name TEXT NOT NULL,
             \\    value TEXT NOT NULL,
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
             \\)
         , &[_][]const u8{});

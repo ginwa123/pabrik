@@ -157,8 +157,8 @@ fn setupDb() !TestCtx {
         \\    name TEXT,
         \\    path TEXT,
         \\    position INTEGER,
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
     , &[_][]const u8{});
     try db.exec(alloc,
@@ -166,8 +166,8 @@ fn setupDb() !TestCtx {
         \\    id TEXT PRIMARY KEY,
         \\    name TEXT,
         \\    workspace_item_id TEXT,
-        \\    created_at DATETIME,
-        \\    updated_at DATETIME,
+        \\    created_at TIMESTAMP,
+        \\    updated_at TIMESTAMP,
         \\    task_type TEXT DEFAULT 'standard'
         \\)
     , &[_][]const u8{});

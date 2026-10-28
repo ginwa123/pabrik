@@ -2,6 +2,7 @@ const std = @import("std");
 const common = @import("common.zig");
 
 const Backend = common.Backend;
+const dialect = common.dialect;
 
 /// Migration 120 — grant `set_skill_metadata` beside `edit_skill` in every
 /// existing allowlist: `DEFAULT_AGENT_TOOLS` only applies to a config with NO
@@ -15,28 +16,23 @@ pub const Migration120GrantSetSkillMetadata = struct {
     const TABLE = "agent_config_tools";
 
     fn tableExists(allocator: std.mem.Allocator, db: *Backend) !bool {
-        var q = try db.query(
-            allocator,
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
-            &[_][]const u8{TABLE},
-        );
-        defer q.deinit();
-        const row = (try q.next()) orelse return false;
-        defer row.deinit(allocator);
-        return std.mem.eql(u8, row.values[0], "1");
+        return dialect.tableExists(.{ .db = db }, allocator, TABLE);
     }
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         if (!try tableExists(allocator, db)) return;
 
         // One statement, no cursor held across writes: the subquery is
-        // evaluated first, and `INSERT OR IGNORE` makes a replay a no-op on
+        // evaluated first, and the conflict clause makes a replay a no-op on
         // the UNIQUE (config_id, tool_name) key when it exists.
-        try db.exec(allocator,
-            \\INSERT OR IGNORE INTO agent_config_tools (id, config_id, tool_name, enabled, created_at)
-            \\SELECT id || '_m120', config_id, 'set_skill_metadata', enabled, COALESCE(created_at, datetime('now'))
-            \\FROM agent_config_tools WHERE tool_name = 'edit_skill'
-        , &[_][]const u8{});
+        const statement = try std.fmt.allocPrint(
+            allocator,
+            \\{s} INTO agent_config_tools (id, config_id, tool_name, enabled, created_at)
+            \\SELECT id || '_m120', config_id, 'set_skill_metadata', enabled, COALESCE(created_at, {s})
+            \\FROM agent_config_tools WHERE tool_name = 'edit_skill'{s}
+        , .{ dialect.insert_ignore_prefix, dialect.now_stamp, dialect.conflict_ignore });
+        defer allocator.free(statement);
+        try db.exec(allocator, statement, &[_][]const u8{});
     }
 };
 
@@ -59,7 +55,7 @@ fn setupDb() !TestCtx {
         \\    config_id TEXT NOT NULL,
         \\    tool_name TEXT NOT NULL,
         \\    enabled INTEGER NOT NULL DEFAULT 1,
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\    UNIQUE (config_id, tool_name)
         \\)
     , &[_][]const u8{});

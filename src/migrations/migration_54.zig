@@ -6,6 +6,7 @@ const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
+const dialect = common.dialect;
 
 pub const Migration054MakeSessionQueueMessageNullable = struct {
     pub const version: u32 = 54;
@@ -13,19 +14,12 @@ pub const Migration054MakeSessionQueueMessageNullable = struct {
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         // 1. Detect whether image_url column exists (added in Migration 037).
-        const has_image_url = blk: {
-            var q = try db.query(allocator,
-                "SELECT 1 FROM pragma_table_info('session_queue_messages') " ++
-                "WHERE name = 'image_url' LIMIT 1",
-                &[_][]const u8{},
-            );
-            defer q.deinit();
-            if (try q.next()) |row| {
-                defer row.deinit(allocator);
-                break :blk true;
-            }
-            break :blk false;
-        };
+        const has_image_url = try dialect.columnExists(
+            .{ .db = db },
+            allocator,
+            "session_queue_messages",
+            "image_url",
+        );
 
         // 2. Rename existing table out of the way.
         try db.exec(allocator,
@@ -41,7 +35,7 @@ pub const Migration054MakeSessionQueueMessageNullable = struct {
             \\    session_id TEXT NOT NULL,
             \\    message TEXT,
             \\    image_url TEXT,
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             \\)
         , &[_][]const u8{});
 

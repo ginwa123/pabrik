@@ -6,6 +6,7 @@ const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
+const dialect = common.dialect;
 
 /// Migration 059 — Add a `created_iso` column to `llm_history` (populated by
 /// application code — NOT SQLite triggers). ## Why this exists
@@ -25,20 +26,21 @@ pub const Migration059AddCreatedIso = struct {
         );
 
         // 2. Backfill existing rows.
-        try db.exec(
+        const from_epoch = try dialect.epochToText(allocator, "substr(CAST(created_at AS TEXT), 1, 10)");
+        defer allocator.free(from_epoch);
+        const backfill = try std.fmt.allocPrint(
             allocator,
             \\UPDATE llm_history
             \\SET created_iso = CASE
-            \\    WHEN created_at IS NULL OR created_at = ''
-            \\        THEN datetime('now')
-            \\    ELSE datetime(
-            \\        CAST(substr(created_at, 1, 10) AS INTEGER),
-            \\        'unixepoch'
-            \\    )
+            \\    WHEN COALESCE(CAST(created_at AS TEXT), '') = ''
+            \\        THEN {s}
+            \\    ELSE {s}
             \\END
             \\WHERE created_iso IS NULL
             \\   OR created_iso = ''
-        , &[_][]const u8{});
+        , .{ dialect.now_text, from_epoch });
+        defer allocator.free(backfill);
+        try db.exec(allocator, backfill, &[_][]const u8{});
 
         // 3. Index for queries filtering by created_iso.
         try db.exec(

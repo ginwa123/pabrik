@@ -190,7 +190,7 @@ fn setupDb() !struct {
         \\    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
         \\    item_type TEXT NOT NULL, name TEXT, path TEXT,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME, updated_at DATETIME)
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP)
     , &.{});
     try db.exec(alloc,
         \\CREATE TABLE design_pages (
@@ -200,7 +200,7 @@ fn setupDb() !struct {
         \\    width INTEGER NOT NULL DEFAULT 1440,
         \\    height INTEGER NOT NULL DEFAULT 1024,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME, updated_at DATETIME)
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP)
     , &.{});
     try db.exec(alloc,
         \\CREATE TABLE design_page_elements (
@@ -221,7 +221,7 @@ fn setupDb() !struct {
         \\    text_style TEXT NOT NULL DEFAULT '',
         \\    image_url TEXT NOT NULL DEFAULT '',
         \\    parent_id TEXT,
-        \\    created_at DATETIME, updated_at DATETIME)
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP)
     , &.{});
     try db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type, path) " ++

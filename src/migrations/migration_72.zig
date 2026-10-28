@@ -6,6 +6,7 @@ const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
+const dialect = common.dialect;
 
 /// Migration 072 — Extract `kanban_column_id` + `kanban_position` from
 /// `workspace_item_tasks` into a dedicated `kanban` join table.
@@ -49,25 +50,23 @@ pub const Migration072ExtractKanbanTable = struct {
         );
 
         // Step 3: backfill from existing data.
-        var check_buf: [256]u8 = undefined;
-        const check_sql = std.fmt.bufPrint(
-            &check_buf,
-            "SELECT 1 FROM pragma_table_info('workspace_item_tasks') " ++
-                "WHERE name = 'kanban_column_id'",
-            .{},
-        ) catch return error.BufferTooSmall;
-        var q = try tx.query(allocator, check_sql, &.{});
-        defer q.deinit();
-        if (try q.next()) |row| {
+        if (try dialect.columnExists(
+            .{ .tx = &tx },
+            allocator,
+            "workspace_item_tasks",
+            "kanban_column_id",
+        )) {
             // Source columns still exist — first run, do the backfill.
-            row.deinit(allocator);
-            try tx.exec(allocator,
-                \\INSERT OR IGNORE INTO kanban (workspace_item_task_id, kanban_column_id, kanban_position)
+            const backfill = try std.fmt.allocPrint(
+                allocator,
+                \\{s} INTO kanban (workspace_item_task_id, kanban_column_id, kanban_position)
                 \\SELECT t.id, t.kanban_column_id, COALESCE(t.kanban_position, 0)
                 \\FROM workspace_item_tasks t
                 \\WHERE t.kanban_column_id IS NOT NULL
-                \\  AND t.kanban_column_id IN (SELECT id FROM kanban_columns)
-            , &[_][]const u8{});
+                \\  AND t.kanban_column_id IN (SELECT id FROM kanban_columns){s}
+            , .{ dialect.insert_ignore_prefix, dialect.conflict_ignore });
+            defer allocator.free(backfill);
+            try tx.exec(allocator, backfill, &[_][]const u8{});
         }
         // else: re-run — backfill already happened on the first run.
 

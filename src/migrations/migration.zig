@@ -670,7 +670,7 @@ test "Migration099 renames agent_tools rows and preserves enabled + count" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    try ctx.db.exec(alloc, "CREATE TABLE agent_tools (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, tool_name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(agent_id, tool_name))", &[_][]const u8{});
+    try ctx.db.exec(alloc, "CREATE TABLE agent_tools (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, tool_name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE(agent_id, tool_name))", &[_][]const u8{});
     try ctx.db.exec(alloc, "INSERT INTO agent_tools (id, agent_id, tool_name, enabled) VALUES ('at_1', 'ag_1', 'list_skills', 1)", &[_][]const u8{});
     try ctx.db.exec(alloc, "INSERT INTO agent_tools (id, agent_id, tool_name, enabled) VALUES ('at_2', 'ag_1', 'bash', 1)", &[_][]const u8{});
 
@@ -711,7 +711,7 @@ test "Migration099 renames every per-item-type allowlist table" {
     for (cases) |c| {
         const create = try std.fmt.allocPrint(
             alloc,
-            "CREATE TABLE {s} (id TEXT PRIMARY KEY, {s} TEXT NOT NULL, tool_name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE({s}, tool_name))",
+            "CREATE TABLE {s} (id TEXT PRIMARY KEY, {s} TEXT NOT NULL, tool_name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE({s}, tool_name))",
             .{ c.table, c.owner, c.owner },
         );
         defer alloc.free(create);
@@ -748,7 +748,7 @@ test "Migration099 keeps one row when an owner already has the new name" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    try ctx.db.exec(alloc, "CREATE TABLE agent_tools (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, tool_name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(agent_id, tool_name))", &[_][]const u8{});
+    try ctx.db.exec(alloc, "CREATE TABLE agent_tools (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, tool_name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE(agent_id, tool_name))", &[_][]const u8{});
     try ctx.db.exec(alloc, "INSERT INTO agent_tools (id, agent_id, tool_name, enabled) VALUES ('at_1', 'ag_1', 'list_skills', 1)", &[_][]const u8{});
     try ctx.db.exec(alloc, "INSERT INTO agent_tools (id, agent_id, tool_name, enabled) VALUES ('at_2', 'ag_1', 'search_skills', 1)", &[_][]const u8{});
 
@@ -773,7 +773,7 @@ test "Migration099 is idempotent and never leaves both names behind" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    try ctx.db.exec(alloc, "CREATE TABLE agent_tools (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, tool_name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(agent_id, tool_name))", &[_][]const u8{});
+    try ctx.db.exec(alloc, "CREATE TABLE agent_tools (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, tool_name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE(agent_id, tool_name))", &[_][]const u8{});
     try ctx.db.exec(alloc, "INSERT INTO agent_tools (id, agent_id, tool_name, enabled) VALUES ('at_1', 'ag_1', 'list_skills', 1)", &[_][]const u8{});
 
     try Migration099RenameListSkillsTool.up(&ctx.db, alloc);
@@ -936,7 +936,7 @@ test "Migration078 agents.workspace_item_id is UNIQUE" {
     // second must fail with a UNIQUE violation. We need a parent
     // workspace_items row first (FK).
     try ctx.db.exec(alloc,
-        "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT, name TEXT, path TEXT, position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+        "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT, name TEXT, path TEXT, position INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         &.{});
     try ctx.db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position) VALUES ('ws_item_1', 'ws_1', 'agent', 'Test Agent', '/tmp/agent', 0)",
@@ -971,7 +971,7 @@ test "Migration078 agent_tools(agent_id, tool_name) is UNIQUE" {
 
     // Tighter check: insert parent rows, then duplicate tool_name → expect UNIQUE violation.
     try ctx.db.exec(alloc,
-        "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT, name TEXT, path TEXT, position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+        "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT, name TEXT, path TEXT, position INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         &.{});
     try ctx.db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position) VALUES ('ws_item_1', 'ws_1', 'agent', 'Test Agent', '/tmp/agent', 0)",
@@ -1001,7 +1001,7 @@ test "Migration078 ON DELETE CASCADE: agents dropped when workspace_items row de
 
     // Create the parent workspace_items row + agent + 1 knowledge + 1 tool.
     try ctx.db.exec(alloc,
-        "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT, name TEXT, path TEXT, position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+        "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT, name TEXT, path TEXT, position INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         &.{});
     try ctx.db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position) VALUES ('ws_item_1', 'ws_1', 'agent', 'Cascade Test', '/tmp/cascade', 0)",
@@ -1048,7 +1048,7 @@ test "Migration078 ON DELETE CASCADE: knowledge + tools dropped when agent row d
     try Migration078.up(&ctx.db, alloc);
 
     try ctx.db.exec(alloc,
-        "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT, name TEXT, path TEXT, position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+        "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT, name TEXT, path TEXT, position INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         &.{});
     try ctx.db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position) VALUES ('ws_item_1', 'ws_1', 'agent', 'Cascade Test', '/tmp/cascade', 0)",
@@ -1292,7 +1292,7 @@ test "Migration080 ON DELETE CASCADE removes prompts when agent row deleted" {
     try Migration080AddAgentSystemPrompt.up(&ctx.db, alloc);
 
     try ctx.db.exec(alloc,
-        "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT, name TEXT, path TEXT, position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+        "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT, name TEXT, path TEXT, position INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         &.{});
     try ctx.db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position) VALUES ('ws_item_1', 'ws_1', 'agent', 'Cascade Test', '/tmp/cascade', 0)",
@@ -1618,7 +1618,7 @@ test "Migration081 ON DELETE CASCADE removes all children when workspace_item de
     try Migration081.up(&ctx.db, alloc);
 
     try ctx.db.exec(alloc,
-        "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT, name TEXT, path TEXT, position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+        "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT, name TEXT, path TEXT, position INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         &.{});
     try ctx.db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position) VALUES ('ws_item_1', 'ws_1', 'kanban', 'Cascade Test', '/tmp/cascade', 0)",
@@ -1702,12 +1702,12 @@ test "Migration084 drops routines table and normalizes task_type routine rows" {
         \\    schedule TEXT NOT NULL,
         \\    initial_prompt TEXT NOT NULL,
         \\    enabled INTEGER NOT NULL DEFAULT 1,
-        \\    last_run_at DATETIME,
-        \\    next_run_at DATETIME NOT NULL,
+        \\    last_run_at TIMESTAMP,
+        \\    next_run_at TIMESTAMP NOT NULL,
         \\    last_status TEXT,
         \\    last_error TEXT,
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
     , &.{});
     try ctx.db.exec(alloc,
@@ -1797,7 +1797,7 @@ test "Migration084 ON DELETE CASCADE removes routine when workspace_item deleted
     try Migration084.up(&ctx.db, alloc);
 
     try ctx.db.exec(alloc,
-        "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT, name TEXT, path TEXT, position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+        "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT, name TEXT, path TEXT, position INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         &.{});
     try ctx.db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position) VALUES ('ws_item_1', 'ws_1', 'routine', 'Nightly', '/tmp/x', 0)",
@@ -2502,8 +2502,8 @@ fn setupAgentMemoriesPre095(ctx: *TestCtx) !void {
         \\    id TEXT PRIMARY KEY,
         \\    content TEXT NOT NULL,
         \\    tags TEXT NOT NULL DEFAULT '',
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
     , &[_][]const u8{});
     try ctx.db.exec(testing.allocator,
@@ -2736,8 +2736,8 @@ fn setupDb044() !struct {
         \\    name TEXT NOT NULL,
         \\    workspace_item_id TEXT NOT NULL,
         \\    session_id TEXT,
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
     , &.{});
 
@@ -2946,7 +2946,7 @@ fn setupDb048() !struct {
         \\    tool_results_json TEXT,
         \\    finish_reason TEXT,
         \\    usage_json TEXT,
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
     , &.{});
 
@@ -3051,8 +3051,8 @@ fn setupDb049() !struct {
         \\    name TEXT,
         \\    path TEXT,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
     , &.{});
 
@@ -3064,8 +3064,8 @@ fn setupDb049() !struct {
         \\    schedule TEXT NOT NULL,
         \\    initial_prompt TEXT NOT NULL,
         \\    enabled INTEGER NOT NULL DEFAULT 1,
-        \\    last_run_at DATETIME,
-        \\    next_run_at DATETIME NOT NULL,
+        \\    last_run_at TIMESTAMP,
+        \\    next_run_at TIMESTAMP NOT NULL,
         \\    last_status TEXT,
         \\    last_error TEXT,
         \\    FOREIGN KEY (task_id) REFERENCES workspace_item_tasks(id) ON DELETE CASCADE
@@ -3211,8 +3211,8 @@ fn setupDb046() !struct {
         \\    status TEXT NOT NULL DEFAULT 'active',
         \\    cwd TEXT,
         \\    workspace_id TEXT,
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\    selected_profile_model TEXT
         \\)
     , &.{});
@@ -3731,7 +3731,7 @@ fn setupDb057() !struct {
         \\    workspace_item_task_id TEXT,
         \\    html TEXT NOT NULL DEFAULT '',
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME, updated_at DATETIME,
+        \\    created_at TIMESTAMP, updated_at TIMESTAMP,
         \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE)
     , &.{});
     // design_page_elements v5 schema (Migration 056 — 12 columns, no v6 props)
@@ -3741,7 +3741,7 @@ fn setupDb057() !struct {
         \\    file_path TEXT NOT NULL DEFAULT '', x INTEGER NOT NULL DEFAULT 0,
         \\    y INTEGER NOT NULL DEFAULT 0, width INTEGER NOT NULL DEFAULT 375,
         \\    height INTEGER NOT NULL DEFAULT 667, z_index INTEGER NOT NULL DEFAULT 0,
-        \\    position INTEGER NOT NULL DEFAULT 0, created_at DATETIME, updated_at DATETIME,
+        \\    position INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP, updated_at TIMESTAMP,
         \\    FOREIGN KEY (page_id) REFERENCES design_pages(id) ON DELETE CASCADE)
     , &.{});
 
@@ -5119,8 +5119,8 @@ fn setupDb063rt() !TestCtx063rt {
         \\    name TEXT NOT NULL,
         \\    status TEXT NOT NULL DEFAULT 'active',
         \\    cwd TEXT,
-        \\    created_at DATETIME,
-        \\    updated_at DATETIME,
+        \\    created_at TIMESTAMP,
+        \\    updated_at TIMESTAMP,
         \\    selected_profile_model TEXT,
         \\    git_worktree_cwd TEXT,
         \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
@@ -5619,8 +5619,8 @@ fn setupDb066() !TestCtx066 {
         \\    x INTEGER NOT NULL DEFAULT 0,
         \\    y INTEGER NOT NULL DEFAULT 0,
         \\    position INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE
         \\)
     , &.{});
@@ -5731,8 +5731,8 @@ test "Migration066 is idempotent on a fresh-DB install where the canonical schem
         \\    y INTEGER NOT NULL DEFAULT 0,
         \\    position INTEGER NOT NULL DEFAULT 0,
         \\    workspace_item_task_id TEXT,
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE
         \\)
     , &.{});
@@ -8259,9 +8259,9 @@ test "Migration077 creates users table with all 9 columns" {
         .{ .name = "password_hash", .type = "TEXT", .default = "" },
         .{ .name = "role", .type = "TEXT", .default = "'user'" },
         .{ .name = "is_active", .type = "INTEGER", .default = "1" },
-        .{ .name = "created_at", .type = "DATETIME", .default = "CURRENT_TIMESTAMP" },
-        .{ .name = "updated_at", .type = "DATETIME", .default = "CURRENT_TIMESTAMP" },
-        .{ .name = "last_login_at", .type = "DATETIME", .default = "" },
+        .{ .name = "created_at", .type = "TIMESTAMP", .default = "CURRENT_TIMESTAMP" },
+        .{ .name = "updated_at", .type = "TIMESTAMP", .default = "CURRENT_TIMESTAMP" },
+        .{ .name = "last_login_at", .type = "TIMESTAMP", .default = "" },
         .{ .name = "config_json", .type = "TEXT", .default = "" },
     };
 
@@ -8302,8 +8302,8 @@ test "Migration077 creates user_companies table with all 8 columns" {
         .{ .name = "slug", .type = "TEXT", .default = "" },
         .{ .name = "description", .type = "TEXT", .default = "''" },
         .{ .name = "is_active", .type = "INTEGER", .default = "1" },
-        .{ .name = "created_at", .type = "DATETIME", .default = "CURRENT_TIMESTAMP" },
-        .{ .name = "updated_at", .type = "DATETIME", .default = "CURRENT_TIMESTAMP" },
+        .{ .name = "created_at", .type = "TIMESTAMP", .default = "CURRENT_TIMESTAMP" },
+        .{ .name = "updated_at", .type = "TIMESTAMP", .default = "CURRENT_TIMESTAMP" },
         .{ .name = "created_by", .type = "TEXT", .default = "" },
     };
 
@@ -8630,8 +8630,8 @@ fn setupDb082() !TestCtx082 {
         \\    id TEXT PRIMARY KEY,
         \\    name TEXT NOT NULL,
         \\    status TEXT NOT NULL DEFAULT 'active',
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
     , &.{});
     return .{ .db = db, .threaded = threaded };
@@ -8731,8 +8731,8 @@ test "Migration082 is idempotent on a fresh-DB install where the canonical schem
         \\    id TEXT PRIMARY KEY,
         \\    name TEXT NOT NULL,
         \\    status TEXT NOT NULL DEFAULT 'active',
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\    last_human_touched_at_nano INTEGER
         \\)
     , &.{});
@@ -9696,8 +9696,8 @@ fn createLegacySkillsTable(ctx: *TestCtx) !void {
         \\    name TEXT NOT NULL,
         \\    description TEXT NOT NULL DEFAULT '',
         \\    content TEXT NOT NULL DEFAULT '',
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\    UNIQUE (workspace_id, name)
         \\)
     , &.{});
@@ -10132,8 +10132,8 @@ fn createLegacyTasksTable110(ctx: *TestCtx) !void {
         \\  name TEXT NOT NULL,
         \\  workspace_item_id TEXT NOT NULL,
         \\  description TEXT NOT NULL DEFAULT '',
-        \\  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\  task_type TEXT NOT NULL DEFAULT 'standard',
         \\  tags TEXT NOT NULL DEFAULT '',
         \\  image_urls TEXT NOT NULL DEFAULT '',
@@ -10483,7 +10483,7 @@ fn createLegacyKanbanColumns(ctx: *TestCtx) !void {
         \\CREATE TABLE kanban_columns (
         \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT NOT NULL,
         \\    description TEXT NOT NULL DEFAULT '', position INTEGER,
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
     , &.{});
 }
 
@@ -10611,7 +10611,7 @@ test "Migration111 is a no-op on a table that already has is_done" {
         \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT NOT NULL,
         \\    description TEXT NOT NULL DEFAULT '', position INTEGER,
         \\    is_done INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
     , &.{});
     try ctx.db.exec(alloc,
         "INSERT INTO kanban_columns (id, workspace_item_id, name, position, is_done) VALUES ('c1', 'item_1', 'Todo', 0, 0)", &.{});

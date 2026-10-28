@@ -6,6 +6,7 @@ const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
+const dialect = common.dialect;
 
 pub const Migration077AddUsersAndRbacSchema = struct {
     pub const version: u32 = 77;
@@ -27,9 +28,9 @@ pub const Migration077AddUsersAndRbacSchema = struct {
             \\    password_hash TEXT NOT NULL,
             \\    role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('admin', 'user', 'bot')),
             \\    is_active INTEGER NOT NULL DEFAULT 1,
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            \\    last_login_at DATETIME DEFAULT NULL
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            \\    last_login_at TIMESTAMP DEFAULT NULL
             \\)
         , &[_][]const u8{});
 
@@ -41,8 +42,8 @@ pub const Migration077AddUsersAndRbacSchema = struct {
             \\    slug TEXT NOT NULL UNIQUE,
             \\    description TEXT NOT NULL DEFAULT '',
             \\    is_active INTEGER NOT NULL DEFAULT 1,
-            \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    created_by TEXT
             \\)
         , &[_][]const u8{});
@@ -53,7 +54,7 @@ pub const Migration077AddUsersAndRbacSchema = struct {
             \\    user_id TEXT NOT NULL,
             \\    user_company_id TEXT NOT NULL,
             \\    role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'admin', 'member', 'guest')),
-            \\    joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            \\    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    invited_by TEXT,
             \\    PRIMARY KEY (user_id, user_company_id)
             \\)
@@ -103,12 +104,14 @@ pub const Migration077AddUsersAndRbacSchema = struct {
             "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)",
             &[_][]const u8{});
 
-        // 7. Default user_system — INSERT OR IGNORE makes it idempotent.
+        // 7. Default user_system — the conflict clause makes it idempotent.
         //    See the spec §3.6 for the full reasoning (password_hash
         //    sentinel, is_active=0, system@local reserved per RFC 6762).
         try tx.exec(allocator,
-            "INSERT OR IGNORE INTO users (id, email, name, password_hash, role, is_active) " ++
-                "VALUES ('user_system', 'system@local', 'System', '!disabled', 'admin', 0)",
+            dialect.insert_ignore_prefix ++
+                " INTO users (id, email, name, password_hash, role, is_active) " ++
+                "VALUES ('user_system', 'system@local', 'System', '!disabled', 'admin', 0)" ++
+                dialect.conflict_ignore,
             &[_][]const u8{});
 
         // 8. Backfill — convert every legacy row (workspaces, sessions) WHERE

@@ -587,7 +587,7 @@ test "listColumns returns columns ordered by position" {
     try s.db.exec(alloc,
         \\CREATE TABLE kanban_columns (
         \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT, description TEXT NOT NULL DEFAULT '',
-        \\    position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+        \\    position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
     , &.{});
     try s.db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('item_1', 'ws_1', 'kanban')", &.{});
@@ -621,7 +621,7 @@ test "addColumn inserts at end of position sequence" {
     try s.db.exec(alloc,
         \\CREATE TABLE kanban_columns (
         \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT, description TEXT NOT NULL DEFAULT '',
-        \\    position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+        \\    position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
     , &.{});
     try s.db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('item_1', 'ws_1', 'kanban')", &.{});
@@ -654,7 +654,7 @@ test "seedDefaultColumns creates todo, in progress, done" {
     try s.db.exec(alloc,
         \\CREATE TABLE kanban_columns (
         \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT, description TEXT NOT NULL DEFAULT '',
-        \\    position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+        \\    position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
     , &.{});
     try s.db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('item_1', 'ws_1', 'kanban')", &.{});
@@ -683,7 +683,7 @@ test "renameColumn updates name" {
     try s.db.exec(alloc,
         \\CREATE TABLE kanban_columns (
         \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT, description TEXT NOT NULL DEFAULT '',
-        \\    position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+        \\    position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
     , &.{});
     try s.db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('item_1', 'ws_1', 'kanban')", &.{});
@@ -711,7 +711,7 @@ test "deleteColumn nulls out the kanban row's kanban_column_id" {
     try s.db.exec(alloc,
         \\CREATE TABLE kanban_columns (
         \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT, description TEXT NOT NULL DEFAULT '',
-        \\    position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+        \\    position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
     , &.{});
     // Mirror the post-Migration-072 schema: workspace_item_tasks has
     // no kanban_column_id/kanban_position columns; the kanban table
@@ -856,7 +856,7 @@ test "moveTask changes column and renumbers positions" {
     try s.db.exec(alloc,
         \\CREATE TABLE kanban_columns (
         \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT, description TEXT NOT NULL DEFAULT '',
-        \\    position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+        \\    position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
     , &.{});
     // Post-Migration-072 schema
     try s.db.exec(alloc,
@@ -929,7 +929,7 @@ test "reorderColumn shifts siblings to a dense sequence matching the user's inte
     try s.db.exec(alloc,
         \\CREATE TABLE kanban_columns (
         \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT, description TEXT NOT NULL DEFAULT '',
-        \\    position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+        \\    position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
     , &.{});
     try s.db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('item_1', 'ws_1', 'kanban')", &.{});
@@ -1439,7 +1439,7 @@ fn setupGateDb() !GateDb {
         \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT,
         \\    description TEXT NOT NULL DEFAULT '', position INTEGER,
         \\    is_done INTEGER NOT NULL DEFAULT 0,
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
     , &.{});
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
@@ -1453,7 +1453,7 @@ fn setupGateDb() !GateDb {
     try db.exec(alloc,
         \\CREATE TABLE kanban_task_dependencies (
         \\    task_id TEXT NOT NULL, depends_on_task_id TEXT NOT NULL,
-        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\    PRIMARY KEY (task_id, depends_on_task_id))
     , &.{});
 

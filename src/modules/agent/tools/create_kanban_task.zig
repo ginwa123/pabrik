@@ -750,8 +750,8 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
         \\  name TEXT,
         \\  status TEXT,
         \\  cwd TEXT NOT NULL DEFAULT '',
-        \\  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\  is_auto_retry_until_stop TEXT,
         \\  selected_profile_model TEXT
         \\)
@@ -773,7 +773,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
         \\  is_input INTEGER,
         \\  image_url TEXT,
         \\  is_feed_to_llm INTEGER,
-        \\  created_at_nano DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\  created_at_nano TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\  created_iso TEXT
         \\)
     , &[_][]const u8{});

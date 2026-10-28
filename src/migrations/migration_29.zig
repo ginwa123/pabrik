@@ -13,8 +13,8 @@ pub const Migration029AddTimestampsToSessions = struct {
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         // Use NULL default — CURRENT_TIMESTAMP is non-constant in older SQLite
-        try db.exec(allocator, "ALTER TABLE sessions ADD COLUMN created_at DATETIME DEFAULT NULL", &[_][]const u8{});
-        try db.exec(allocator, "ALTER TABLE sessions ADD COLUMN updated_at DATETIME DEFAULT NULL", &[_][]const u8{});
+        try db.exec(allocator, "ALTER TABLE sessions ADD COLUMN created_at TIMESTAMP DEFAULT NULL", &[_][]const u8{});
+        try db.exec(allocator, "ALTER TABLE sessions ADD COLUMN updated_at TIMESTAMP DEFAULT NULL", &[_][]const u8{});
 
         // Backfill existing rows with the current time
         try db.exec(allocator, "UPDATE sessions SET created_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE created_at IS NULL", &[_][]const u8{});

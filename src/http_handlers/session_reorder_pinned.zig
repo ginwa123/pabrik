@@ -89,7 +89,7 @@ test "reorderPinnedSessions assigns DESC positions in display order" {
         \\CREATE TABLE sessions (
         \\  id TEXT PRIMARY KEY,
         \\  name TEXT NOT NULL DEFAULT '',
-        \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\  is_pinned INTEGER NOT NULL DEFAULT 0,
         \\  pinned_position INTEGER NOT NULL DEFAULT 0
         \\)
