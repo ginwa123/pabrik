@@ -96,7 +96,7 @@ pub fn save(db: *Backend, allocator: std.mem.Allocator, session_id: []const u8, 
 
     const sql = dialect.upsert_verb ++
         \\ INTO session_background_process (session_id, pid, command, log_path, started_at, status, kind, vm_id, guest_pid)
-        \\VALUES (?, ?, ?, ?, ?, 'running', ?, ?, ?)
+        \\VALUES (?, ?, ?, ?, ?, 'running', ?, COALESCE(CAST(? AS TEXT), ''), COALESCE(CAST(? AS BIGINT), 0))
     ++ (if (dialect.is_postgres)
         " ON CONFLICT (session_id, pid) DO UPDATE SET command = excluded.command, " ++
             "log_path = excluded.log_path, started_at = excluded.started_at, status = excluded.status, " ++

@@ -183,7 +183,8 @@ pub fn markQuestionStatus(
 
     try db.exec(
         allocator,
-        "UPDATE session_pending_question SET status = ?, answer = ?, resolved_at = ? WHERE id = ?",
+        "UPDATE session_pending_question SET status = ?, answer = COALESCE(CAST(? AS TEXT), ''), " ++
+            "resolved_at = CAST(? AS BIGINT) WHERE id = ?",
         &.{
             status.to_str(),
             answer orelse "",
