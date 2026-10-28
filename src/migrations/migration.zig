@@ -929,7 +929,7 @@ test "Migration078 agents.workspace_item_id is UNIQUE" {
     // The standard SQLite convention is that UNIQUE constraints create
     // auto-named indexes "sqlite_autoindex_<table>_<n>"; query sqlite_master.
     var q = try ctx.db.query(alloc,
-        "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='index' AND tbl_name='agents'",
+        "SELECT name FROM " ++ dialect.indexes_source ++ " WHERE type='index' AND tbl_name='agents'",
         &.{});
     defer q.deinit();
     var found = false;
@@ -972,7 +972,7 @@ test "Migration078 agent_tools(agent_id, tool_name) is UNIQUE" {
 
     // Verify the named UNIQUE index exists.
     var q = try ctx.db.query(alloc,
-        "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='index' AND name='uq_agent_tools_agent_tool'",
+        "SELECT name FROM " ++ dialect.indexes_source ++ " WHERE type='index' AND name='uq_agent_tools_agent_tool'",
         &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.UniqueIndexNotCreated;
@@ -1106,7 +1106,7 @@ test "Migration078 creates agent_knowledge.position + agent_id composite index" 
 
     // The named index from the spec: idx_agent_knowledge_agent_id_position.
     var q = try ctx.db.query(alloc,
-        "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='index' AND name='idx_agent_knowledge_agent_id_position'",
+        "SELECT name FROM " ++ dialect.indexes_source ++ " WHERE type='index' AND name='idx_agent_knowledge_agent_id_position'",
         &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.PositionIndexNotCreated;
@@ -1737,7 +1737,7 @@ test "Migration084 drops routines table and normalizes task_type routine rows" {
     // Old indexes are gone.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name LIKE 'idx_routines_%'",
+            "SELECT name FROM " ++ dialect.indexes_source ++ " WHERE type = 'index' AND name LIKE 'idx_routines_%'",
             &.{});
         defer q.deinit();
         try testing.expect((try q.next()) == null);
@@ -2264,7 +2264,7 @@ test "Migration093 adds worker.user_id and its index" {
     try testing.expectEqualStrings("0", row.values[1]);
 
     var qi = try ctx.db.query(alloc,
-        "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name = 'idx_worker_user_id'",
+        "SELECT COUNT(*) FROM " ++ dialect.indexes_source ++ " WHERE type = 'index' AND name = 'idx_worker_user_id'",
         &.{});
     defer qi.deinit();
     const irow = (try qi.next()) orelse return error.RowMissing;
@@ -2575,7 +2575,7 @@ test "Migration095 creates the workspace index and is idempotent" {
     try testing.expectEqualStrings("ws_kept", row.values[0]);
 
     var idx = try ctx.db.query(alloc,
-        "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name = 'idx_agent_memories_workspace'",
+        "SELECT name FROM " ++ dialect.indexes_source ++ " WHERE type = 'index' AND name = 'idx_agent_memories_workspace'",
         &.{});
     defer idx.deinit();
     const irow = (try idx.next()) orelse return error.IndexMissing;
@@ -2907,7 +2907,7 @@ test "Migration044AddRoutines creates idx_routines_enabled_next_run index" {
     // Query sqlite_master for the index name. If the migration forgot
     // to create the index, the query returns zero rows.
     var q = try ctx.db.query(alloc,
-        "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='index' AND name='idx_routines_enabled_next_run'",
+        "SELECT name FROM " ++ dialect.indexes_source ++ " WHERE type='index' AND name='idx_routines_enabled_next_run'",
         &.{});
     defer q.deinit();
 
@@ -2977,7 +2977,7 @@ test "Migration048AddChatListIndex creates idx_llm_history_created_session index
     // create the index, the query returns zero rows.
     var q = try ctx.db.query(alloc,
         \\SELECT name FROM 
-        ++ dialect.tables_source ++
+        ++ dialect.indexes_source ++
         \\
         \\WHERE type = 'index'
         \\  AND name = 'idx_llm_history_created_session'
@@ -3010,7 +3010,7 @@ test "Migration048AddChatListIndex is idempotent on re-run" {
     // And the index is still there exactly once.
     var q = try ctx.db.query(alloc,
         \\SELECT COUNT(*) FROM 
-        ++ dialect.tables_source ++
+        ++ dialect.indexes_source ++
         \\
         \\WHERE type = 'index'
         \\  AND name = 'idx_llm_history_created_session'
@@ -3115,7 +3115,7 @@ test "Migration049AddDefensiveIndexes creates idx_workspace_items_position_id in
     // create the index, the query returns zero rows.
     var q = try ctx.db.query(alloc,
         \\SELECT name FROM 
-        ++ dialect.tables_source ++
+        ++ dialect.indexes_source ++
         \\
         \\WHERE type = 'index'
         \\  AND name = 'idx_workspace_items_position_id'
@@ -3145,7 +3145,7 @@ test "Migration049AddDefensiveIndexes creates idx_routines_last_status index" {
     // Same pattern as test 1 but for the routines index.
     var q = try ctx.db.query(alloc,
         \\SELECT name FROM 
-        ++ dialect.tables_source ++
+        ++ dialect.indexes_source ++
         \\
         \\WHERE type = 'index'
         \\  AND name = 'idx_routines_last_status'
@@ -3180,7 +3180,7 @@ test "Migration049AddDefensiveIndexes is idempotent on re-run" {
     // returned as text per the Backend's row-as-text API.
     const wi_count = try scalarText049(alloc, &ctx.db,
         \\SELECT COUNT(*) FROM 
-        ++ dialect.tables_source ++
+        ++ dialect.indexes_source ++
         \\
         \\WHERE type = 'index'
         \\  AND name = 'idx_workspace_items_position_id'
@@ -3190,7 +3190,7 @@ test "Migration049AddDefensiveIndexes is idempotent on re-run" {
 
     const r_count = try scalarText049(alloc, &ctx.db,
         \\SELECT COUNT(*) FROM 
-        ++ dialect.tables_source ++
+        ++ dialect.indexes_source ++
         \\
         \\WHERE type = 'index'
         \\  AND name = 'idx_routines_last_status'
@@ -3662,7 +3662,7 @@ test "migration 054: index idx_session_queue_messages_session is recreated" {
     // `zig-migration-tests-three-pitfalls.md`.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='index' " ++
+            "SELECT name FROM " ++ dialect.indexes_source ++ " WHERE type='index' " ++
             "AND name = 'idx_session_queue_messages_session'",
             &[_][]const u8{},
         );
@@ -3679,7 +3679,7 @@ test "migration 054: index idx_session_queue_messages_session is recreated" {
 
     // After the migration, the index is back.
     var q = try ctx.db.query(alloc,
-        "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='index' " ++
+        "SELECT name FROM " ++ dialect.indexes_source ++ " WHERE type='index' " ++
         "AND name = 'idx_session_queue_messages_session'",
         &[_][]const u8{},
     );
@@ -4318,7 +4318,7 @@ test "migration 059: creates idx_llm_history_created_iso index" {
     // on the `created_iso` column.
     var q = try ctx.db.query(alloc,
         \\SELECT name FROM 
-        ++ dialect.tables_source ++
+        ++ dialect.indexes_source ++
         \\
         \\WHERE type='index' AND tbl_name='llm_history' AND name='idx_llm_history_created_iso'
     , &.{});
@@ -5394,7 +5394,7 @@ test "Migration064 creates the idx_logs_created_at and idx_logs_level indexes" {
 
     var rows = try s.db.query(
         alloc,
-        "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='index' AND tbl_name='logs' ORDER BY name",
+        "SELECT name FROM " ++ dialect.indexes_source ++ " WHERE type='index' AND tbl_name='logs' ORDER BY name",
         &[_][]const u8{},
     );
     defer rows.deinit();
@@ -5747,7 +5747,7 @@ test "Migration066 adds workspace_item_task_id column to design_pages" {
     // someone drops the CREATE INDEX step but leaves the column.
     var qi = try ctx.db.query(alloc,
         \\SELECT name FROM 
-        ++ dialect.tables_source ++
+        ++ dialect.indexes_source ++
         \\
         \\WHERE type = 'index'
         \\  AND name = 'idx_design_pages_workspace_item_task_id'
@@ -6249,7 +6249,7 @@ test "Migration068 adds partial UNIQUE INDEX on tool_call_id" {
     // Confirm the index exists.
     var q = try ctx.db.query(alloc,
         \\SELECT name, sql FROM 
-        ++ dialect.tables_source ++
+        ++ dialect.indexes_source ++
         \\
         \\WHERE type = 'index' AND tbl_name = 'llm_history'
         \\AND name = 'idx_llm_history_tool_call_id_loading'
@@ -7293,7 +7293,7 @@ test "Migration072 creates idx_kanban_column_position index" {
 
     var q = try ctx.db.query(alloc,
         \\SELECT 1 FROM 
-        ++ dialect.tables_source ++
+        ++ dialect.indexes_source ++
         \\
         \\WHERE type = 'index' AND name = 'idx_kanban_column_position'
     , &.{});
@@ -7448,7 +7448,7 @@ test "Migration072 drops the legacy idx_tasks_column_position index" {
 
     var q = try ctx.db.query(alloc,
         \\SELECT 1 FROM 
-        ++ dialect.tables_source ++
+        ++ dialect.indexes_source ++
         \\
         \\WHERE type = 'index' AND name = 'idx_tasks_column_position'
     , &.{});
@@ -7663,7 +7663,7 @@ test "Migration073 creates idx_session_activity_session_created index" {
     // Sanity: pre-migration, index doesn't exist.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT 1 FROM " ++ dialect.tables_source ++ " WHERE type='index' AND name='idx_session_activity_session_created'",
+            "SELECT 1 FROM " ++ dialect.indexes_source ++ " WHERE type='index' AND name='idx_session_activity_session_created'",
             &.{});
         defer q.deinit();
         const row = (try q.next()) orelse null;
@@ -7677,7 +7677,7 @@ test "Migration073 creates idx_session_activity_session_created index" {
 
     var q = try ctx.db.query(alloc,
         \\SELECT name FROM 
-        ++ dialect.tables_source ++
+        ++ dialect.indexes_source ++
         \\
         \\WHERE type='index' AND name='idx_session_activity_session_created'
         , &.{});
@@ -8041,7 +8041,7 @@ test "Migration075 renames idx_logs_created_at → idx_logs_created_at_nano" {
     // Old index is gone.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT 1 FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name = 'idx_logs_created_at'",
+            "SELECT 1 FROM " ++ dialect.indexes_source ++ " WHERE type = 'index' AND name = 'idx_logs_created_at'",
             &.{});
         defer q.deinit();
         try testing.expect((try q.next()) == null);
@@ -8050,7 +8050,7 @@ test "Migration075 renames idx_logs_created_at → idx_logs_created_at_nano" {
     // New index exists.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT 1 FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name = 'idx_logs_created_at_nano'",
+            "SELECT 1 FROM " ++ dialect.indexes_source ++ " WHERE type = 'index' AND name = 'idx_logs_created_at_nano'",
             &.{});
         defer q.deinit();
         const row = (try q.next()) orelse return error.NewIndexMissing075;
@@ -8069,7 +8069,7 @@ test "Migration075 renames idx_worker_last_activity → idx_worker_last_activity
     // Old index is gone.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT 1 FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name = 'idx_worker_last_activity'",
+            "SELECT 1 FROM " ++ dialect.indexes_source ++ " WHERE type = 'index' AND name = 'idx_worker_last_activity'",
             &.{});
         defer q.deinit();
         try testing.expect((try q.next()) == null);
@@ -8078,7 +8078,7 @@ test "Migration075 renames idx_worker_last_activity → idx_worker_last_activity
     // New index exists.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT 1 FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name = 'idx_worker_last_activity_nano'",
+            "SELECT 1 FROM " ++ dialect.indexes_source ++ " WHERE type = 'index' AND name = 'idx_worker_last_activity_nano'",
             &.{});
         defer q.deinit();
         const row = (try q.next()) orelse return error.NewIndexMissing075;
@@ -8103,7 +8103,7 @@ test "Migration075 updates the internal column reference of idx_llm_history_sess
     // EXPLAIN QUERY PLAN on a SELECT that uses this index.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT 1 FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name = 'idx_llm_history_session_created'",
+            "SELECT 1 FROM " ++ dialect.indexes_source ++ " WHERE type = 'index' AND name = 'idx_llm_history_session_created'",
             &.{});
         defer q.deinit();
         const row = (try q.next()) orelse return error.IndexMissing075;
@@ -8992,7 +8992,7 @@ test "Migration096 creates the ledger table and both indexes" {
     });
 
     var qi = try ctx.db.query(alloc,
-        "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name IN ('idx_session_skill_events_session', 'idx_session_skill_events_skill')",
+        "SELECT COUNT(*) FROM " ++ dialect.indexes_source ++ " WHERE type = 'index' AND name IN ('idx_session_skill_events_session', 'idx_session_skill_events_skill')",
         &.{});
     defer qi.deinit();
     const irow = (try qi.next()) orelse return error.RowMissing;
@@ -9088,7 +9088,7 @@ test "Migration097 creates all three tables and their indexes" {
     }
 
     var qi = try ctx.db.query(alloc,
-        "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name IN ('uq_skill_eval_facts','idx_skill_eval_facts_skill','uq_skill_eval_runs_self_prompt','idx_skill_eval_runs_session','idx_skill_eval_runs_status','idx_skill_eval_results_run','idx_skill_eval_results_skill','idx_skill_eval_results_session')",
+        "SELECT COUNT(*) FROM " ++ dialect.indexes_source ++ " WHERE type = 'index' AND name IN ('uq_skill_eval_facts','idx_skill_eval_facts_skill','uq_skill_eval_runs_self_prompt','idx_skill_eval_runs_session','idx_skill_eval_runs_status','idx_skill_eval_results_run','idx_skill_eval_results_skill','idx_skill_eval_results_session')",
         &.{});
     defer qi.deinit();
     const irow = (try qi.next()) orelse return error.RowMissing;
@@ -9428,7 +9428,7 @@ test "Migration100 creates workspace_members with the shape the design promises"
     // (the hot visibility predicate); this covers user_id -> workspaces.
     var qi = try ctx.db.query(
         alloc,
-        "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name = 'idx_workspace_members_user'",
+        "SELECT COUNT(*) FROM " ++ dialect.indexes_source ++ " WHERE type = 'index' AND name = 'idx_workspace_members_user'",
         &.{},
     );
     defer qi.deinit();

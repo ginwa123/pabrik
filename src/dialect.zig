@@ -90,15 +90,40 @@ pub const enable_foreign_keys: []const u8 = if (is_postgres) "" else "PRAGMA for
 /// surface. Postgres reaches full text search through `tsvector` instead.
 pub const has_fts5: bool = !is_postgres;
 
-/// sqlite's `pragma_table_info(<table>)` as a source of `name` (+ `cid`, the
-/// CREATE order). Postgres reads the same two columns out of its catalogue.
+/// Index rows: `name`, plus the `tbl_name`/`type` a `sqlite_master` predicate
+/// filters on. Postgres keeps the same three facts in `pg_indexes`, so a test
+/// that asks "does index X exist on table Y" reads the same either way.
+pub const indexes_source: []const u8 = if (is_postgres)
+    "(SELECT 'index'::text AS type, indexname::text AS name, tablename::text AS tbl_name " ++
+        "FROM pg_indexes WHERE schemaname = current_schema())"
+else
+    "sqlite_master";
+
+/// sqlite's `pragma_table_info(<table>)`: `name`, `cid` (CREATE order), `type`,
+/// `notnull`, `dflt_value`, `pk`, and — for `pragma_table_xinfo`'s spelling —
+/// `hidden`. Postgres spreads those over `information_schema`, whose spellings
+/// differ on every one: `text` is lowercase and `character varying` is the same
+/// declaration, a default arrives as `'0'::integer`, and "is this column part of
+/// the primary key" is a constraint join. Mapping all of it here is what lets a
+/// schema assertion be written once and hold on both engines.
 pub fn tableColumns(comptime table: []const u8) []const u8 {
-    return if (is_postgres)
-        "(SELECT column_name AS name, ordinal_position AS cid FROM information_schema.columns " ++
-            "WHERE table_schema = current_schema() AND table_name = '" ++ table ++ "')"
-    else
-        "pragma_table_info('" ++ table ++ "')";
+    if (is_postgres) return
+    "(SELECT c.column_name::text AS name, c.ordinal_position AS cid, " ++
+        "upper(CASE WHEN c.data_type IN ('character varying', 'character', 'text') THEN 'text' " ++
+        "WHEN c.data_type LIKE 'timestamp%' THEN 'timestamp' ELSE c.data_type END) AS type, " ++
+        "CASE WHEN c.is_nullable = 'NO' THEN 1 ELSE 0 END AS \"notnull\", " ++
+        "trim(both '''' from regexp_replace(COALESCE(c.column_default, ''), '::[a-zA-Z_ ]+$', '')) AS dflt_value, " ++
+        "COALESCE((SELECT kcu.ordinal_position FROM information_schema.table_constraints tc " ++
+        "JOIN information_schema.key_column_usage kcu ON kcu.constraint_name = tc.constraint_name " ++
+        "AND kcu.table_schema = tc.table_schema " ++
+        "WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = current_schema() " ++
+        "AND tc.table_name = '" ++ table ++ "' AND kcu.column_name = c.column_name), 0) AS pk, " ++
+        "0 AS hidden " ++
+        "FROM information_schema.columns c " ++
+        "WHERE c.table_schema = current_schema() AND c.table_name = '" ++ table ++ "')";
+    return "pragma_table_info('" ++ table ++ "')";
 }
+
 
 /// sqlite runs with `PRAGMA foreign_keys` off, so an FK clause in its DDL is
 /// inert documentation. Postgres enforces it — which changes which inserts and
