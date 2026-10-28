@@ -8,6 +8,7 @@ import PabrikGeneralSection, {
 import CompactToolGroup from '../components/tool_outputs/compact/CompactToolGroup.vue'
 import {
   buildCompactChains,
+  foldedNarrationMessageIds,
   foldedThoughtMessageIds,
   type ChainGroup,
   type CompactChainItem,
@@ -169,10 +170,7 @@ describe('the compact group', () => {
 
   it('shows the total duration of the run', () => {
     const wrapper = mountGroup(
-      itemsOf([
-        card('command', { durationMs: 40_000 }),
-        card('command', { durationMs: 2_100 }),
-      ]),
+      itemsOf([card('command', { durationMs: 40_000 }), card('command', { durationMs: 2_100 })]),
     )
     expect(wrapper.get('[data-testid="compact-tool-group-duration"]').text()).toBe('42.1s')
   })
@@ -203,30 +201,35 @@ function callCard(messageId: string): ToolCardData {
 describe('the chain one agent turn folds into', () => {
   const group = (
     role: string,
-    messages: { id: string; reasoning_content?: string; finish_reason?: string }[],
+    messages: {
+      id: string
+      content?: string
+      reasoning_content?: string
+      finish_reason?: string
+    }[],
   ): ChainGroup => ({ role, messages })
   const cardsOf = (g: ChainGroup): ToolCardData[] => g.messages.map((m) => callCard(m.id))
   const kinds = (items: CompactChainItem[]): string[] => items.map((item) => item.kind)
 
   const turn = (): ChainGroup[] => [
     group('user', [{ id: 'u1' }]),
-    group('assistant', [{ id: 'a1', reasoning_content: 'read it first', finish_reason: 'tool_calls' }]),
+    group('assistant', [
+      { id: 'a1', reasoning_content: 'read it first', finish_reason: 'tool_calls' },
+    ]),
     group('tool', [{ id: 't1' }]),
-    group('assistant', [{ id: 'a2', reasoning_content: 'now query it', finish_reason: 'tool_calls' }]),
+    group('assistant', [
+      { id: 'a2', reasoning_content: 'now query it', finish_reason: 'tool_calls' },
+    ]),
     group('tool', [{ id: 't2' }]),
-    group('assistant', [{ id: 'a3', reasoning_content: 'totals are wrong', finish_reason: 'stop' }]),
+    group('assistant', [
+      { id: 'a3', reasoning_content: 'totals are wrong', finish_reason: 'stop' },
+    ]),
   ]
 
   it('folds the thoughts between the calls into the same chain as the calls', () => {
     const chains = buildCompactChains(turn(), cardsOf)
     expect([...chains.keys()]).toEqual([2])
-    expect(kinds(chains.get(2) ?? [])).toEqual([
-      'thought',
-      'tool',
-      'thought',
-      'tool',
-      'thought',
-    ])
+    expect(kinds(chains.get(2) ?? [])).toEqual(['thought', 'tool', 'thought', 'tool', 'thought'])
   })
 
   it('keeps the chain of a turn split at the assistant message that stops', () => {
@@ -249,7 +252,9 @@ describe('the chain one agent turn folds into', () => {
     const chains = buildCompactChains(
       [
         group('user', [{ id: 'u1' }]),
-        group('assistant', [{ id: 'a1', reasoning_content: 'just thinking', finish_reason: 'stop' }]),
+        group('assistant', [
+          { id: 'a1', reasoning_content: 'just thinking', finish_reason: 'stop' },
+        ]),
       ],
       cardsOf,
     )
@@ -259,6 +264,93 @@ describe('the chain one agent turn folds into', () => {
   it('names the thoughts a chain already draws', () => {
     const folded = foldedThoughtMessageIds(buildCompactChains(turn(), cardsOf))
     expect([...folded].sort()).toEqual(['a1', 'a2', 'a3'])
+  })
+
+  const narrated = (): ChainGroup[] => [
+    group('user', [{ id: 'u1' }]),
+    group('assistant', [
+      { id: 'n1', content: 'I will read the schema first.', finish_reason: 'tool_calls' },
+    ]),
+    group('tool', [{ id: 't1' }]),
+    group('assistant', [
+      { id: 'n2', content: 'Now let me add up the totals.', finish_reason: 'tool_calls' },
+    ]),
+    group('tool', [{ id: 't2' }]),
+    group('assistant', [
+      { id: 'n3', content: 'The tax column is never filled.', finish_reason: 'stop' },
+    ]),
+  ]
+
+  it('folds the narration on the way to a call into the chain, in the order it happened', () => {
+    const chains = buildCompactChains(narrated(), cardsOf)
+    expect([...chains.keys()]).toEqual([2])
+    expect(kinds(chains.get(2) ?? [])).toEqual(['narration', 'tool', 'narration', 'tool'])
+  })
+
+  it('names the narration a chain already draws but not the answer that ends the turn', () => {
+    const folded = foldedNarrationMessageIds(buildCompactChains(narrated(), cardsOf))
+    expect([...folded].sort()).toEqual(['n1', 'n2'])
+  })
+
+  it('keeps the narration of a turn that called nothing in the transcript', () => {
+    const chains = buildCompactChains(
+      [
+        group('user', [{ id: 'u1' }]),
+        group('assistant', [{ id: 'n1', content: 'Just an answer.', finish_reason: 'stop' }]),
+      ],
+      cardsOf,
+    )
+    expect(chains.size).toBe(0)
+    expect(foldedNarrationMessageIds(chains).size).toBe(0)
+  })
+
+  it('leaves the question that ends the turn at a call for the human out of the chain', () => {
+    const chains = buildCompactChains(
+      [
+        group('user', [{ id: 'u1' }]),
+        group('assistant', [
+          { id: 'n1', content: 'Which database should I read?', finish_reason: 'tool_calls' },
+        ]),
+        group('tool', [{ id: 't1' }]),
+        group('assistant', [
+          { id: 'n2', content: 'Reading the billing one.', finish_reason: 'tool_calls' },
+        ]),
+        group('tool', [{ id: 't2' }]),
+        group('assistant', [{ id: 'n3', content: 'Done.', finish_reason: 'stop' }]),
+      ],
+      (g) => g.messages.map((m) => (m.id === 't1' ? card('ask_user') : callCard(m.id))),
+    )
+    expect([...foldedNarrationMessageIds(chains)].sort()).toEqual(['n2'])
+    expect(kinds(chains.get(2) ?? [])).toEqual(['tool'])
+    expect([...chains.keys()]).toEqual([2, 4])
+  })
+
+  it('ends the turn at a message that awaits the user', () => {
+    const chains = buildCompactChains(
+      [
+        group('tool', [{ id: 't1' }]),
+        group('assistant', [
+          { id: 'n1', content: 'Anything else?', finish_reason: 'awaiting_user' },
+        ]),
+        group('tool', [{ id: 't2' }]),
+        group('assistant', [{ id: 'n2', content: 'Second answer.', finish_reason: 'stop' }]),
+      ],
+      cardsOf,
+    )
+    expect([...chains.keys()]).toEqual([0, 2])
+    expect(foldedNarrationMessageIds(chains).size).toBe(0)
+  })
+
+  it('keeps a presented file out of the chain', () => {
+    const chains = buildCompactChains(
+      [
+        group('user', [{ id: 'u1' }]),
+        group('tool', [{ id: 't1' }, { id: 't2' }]),
+        group('assistant', [{ id: 'n1', content: 'Here it is.', finish_reason: 'stop' }]),
+      ],
+      (g) => g.messages.map((m) => (m.id === 't2' ? card('present_files') : callCard(m.id))),
+    )
+    expect(chains.get(1)?.map((item) => item.key)).toEqual(['t1'])
   })
 })
 
@@ -281,7 +373,9 @@ describe('the thoughts inside a group card', () => {
       ...itemsOf([card('command')]),
     ])
     await wrapper.get('[data-testid="compact-tool-group-header"]').trigger('click')
-    const rows = wrapper.findAll('[data-testid="compact-thought-row"], [data-testid="compact-tool-row"]')
+    const rows = wrapper.findAll(
+      '[data-testid="compact-thought-row"], [data-testid="compact-tool-row"]',
+    )
     expect(rows.map((row) => row.attributes('data-testid'))).toEqual([
       'compact-thought-row',
       'compact-tool-row',
@@ -302,6 +396,51 @@ describe('the thoughts inside a group card', () => {
     await wrapper.get('[data-testid="compact-thought-head"]').trigger('click')
     expect(wrapper.get('[data-testid="compact-thought-body"]').text()).toBe(
       'The schema lives in main.go.\nThen the query.',
+    )
+  })
+})
+
+describe('the narration inside a group card', () => {
+  const narration = (messageId: string, text: string): CompactChainItem => ({
+    kind: 'narration',
+    key: `narration-${messageId}`,
+    messageId,
+    text,
+  })
+
+  it('stays shut on a run of calls, narration and all', () => {
+    const wrapper = mountGroup([
+      narration('n1', 'I will read the schema first.'),
+      ...itemsOf([card('read_file')]),
+      narration('n2', 'Now let me add up the totals.'),
+      ...itemsOf([card('command')]),
+    ])
+    expect(wrapper.find('[data-testid="compact-narration-row"]').exists()).toBe(false)
+  })
+
+  it('marks the narration apart from the thoughts when the card is opened', async () => {
+    const wrapper = mountGroup([
+      thought('a1', 'The schema lives in main.go.'),
+      narration('n1', 'I will read the schema first.'),
+      ...itemsOf([card('read_file'), card('command')]),
+    ])
+    await wrapper.get('[data-testid="compact-tool-group-header"]').trigger('click')
+    expect(wrapper.get('[data-testid="compact-narration-label"]').text()).toBe('said')
+    expect(wrapper.get('[data-testid="compact-narration-preview"]').text()).toBe(
+      'I will read the schema first.',
+    )
+    expect(wrapper.get('[data-testid="compact-thought-label"]').text()).toBe('thought')
+  })
+
+  it('opens one narration line to the text the model wrote', async () => {
+    const wrapper = mountGroup([
+      narration('n1', 'I will read the schema first.\nThen the totals.'),
+      ...itemsOf([card('read_file'), card('command')]),
+    ])
+    await wrapper.get('[data-testid="compact-tool-group-header"]').trigger('click')
+    await wrapper.get('[data-testid="compact-narration-head"]').trigger('click')
+    expect(wrapper.get('[data-testid="compact-narration-body"]').text()).toBe(
+      'I will read the schema first.\nThen the totals.',
     )
   })
 })

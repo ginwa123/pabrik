@@ -85,7 +85,9 @@ import ToolCard, { type ToolCardData } from '../tool_outputs/ToolCard.vue'
 import CompactToolGroup from '../tool_outputs/compact/CompactToolGroup.vue'
 import {
   buildCompactChains,
+  foldedNarrationMessageIds,
   foldedThoughtMessageIds,
+  foldsIntoChain,
   type CompactChainItem,
 } from '../tool_outputs/compact/chain'
 import SubAgentPeekHost from '../pabrik/SubAgentPeekHost.vue'
@@ -1552,15 +1554,21 @@ const getParametersForMessage = (m: Message): string => {
   return unwrappedByMessageId.value.get(m.id)?.parameters ?? '{}'
 }
 
-/** One agent turn's calls AND the thoughts between them, keyed by the group that draws the chain.
- * The turn ends at the assistant message that stops (`finish_reason === 'stop'`), so the calls and
- * the thoughts before it fold into ONE card instead of the thoughts leaking out below it. */
-const compactChains = computed((): Map<number, CompactChainItem[]> =>
-  chatView.mode === 'compact' ? buildCompactChains(messageGroups.value, toolCardsFor) : new Map(),
+/** One agent turn's calls, the thoughts between them and the narration on the way to each call,
+ * keyed by the group that draws the chain. A turn ends where the agent answers or asks, so only
+ * that message keeps its own place in the transcript. */
+const compactChains = computed(
+  (): Map<number, CompactChainItem[]> =>
+    chatView.mode === 'compact' ? buildCompactChains(messageGroups.value, toolCardsFor) : new Map(),
 )
 
 /** The thoughts a chain already draws, so the group that holds them draws none of them twice. */
 const foldedThoughtIds = computed((): Set<string> => foldedThoughtMessageIds(compactChains.value))
+
+/** The narration a chain already draws, so it stops stacking up above the card. */
+const foldedNarrationIds = computed(
+  (): Set<string> => foldedNarrationMessageIds(compactChains.value),
+)
 
 /** The reasoning rows of one assistant group, minus the thoughts a chain drew. */
 const visibleReasoning = (group: MessageGroup): Message[] =>
@@ -1570,6 +1578,13 @@ const visibleReasoning = (group: MessageGroup): Message[] =>
       m.reasoning_content.trim() !== '' &&
       !foldedThoughtIds.value.has(m.id),
   )
+
+/** The messages of one assistant group that carry the answer: past the first tool call the agent
+ * only narrates, and compact mode draws that narration inside the chain. */
+const answeredMessages = (group: MessageGroup): Message[] =>
+  chatView.mode === 'compact'
+    ? group.messages.filter((m) => !foldedNarrationIds.value.has(m.id))
+    : group.messages
 
 /** Every spawn_sub_agent call of the transcript, keyed by tool_call_id. Built once per transcript
  * change — one parse per assistant message — so a card reads its spawn args instead of walking
@@ -1603,6 +1618,11 @@ const toolCardsFor = (group: MessageGroup, groupIndex: number): ToolCardData[] =
       ? (subAgentArgsByToolCallId.value.get(msg.tool_call_id) ?? null)
       : null,
   }))
+
+/** The calls of one tool group that keep their own card in compact mode: the chain must not
+ * swallow something the agent is showing the reader. */
+const standaloneCardsFor = (group: MessageGroup, groupIndex: number): ToolCardData[] =>
+  toolCardsFor(group, groupIndex).filter((card) => !foldsIntoChain(card))
 
 const renderMessageHtml = (msg: Message): string =>
   msg.id.startsWith('streaming-')
@@ -4094,6 +4114,22 @@ const compactSession = async () => {
                           @jump-to-line="handleFallbackJumpToLine"
                           @open-session="onOpenWorkspaceSession"
                         />
+                        <div
+                          v-if="standaloneCardsFor(group, groupIndex).length > 0"
+                          class="tool-sequence"
+                        >
+                          <ToolCard
+                            v-for="card in standaloneCardsFor(group, groupIndex)"
+                            :key="card.expandKey"
+                            v-bind="card"
+                            :cwd="sessionCwd"
+                            :session-id="sessionId || chatId"
+                            @toggle-expand="toggleToolExpanded"
+                            @peek="nav.openPeek"
+                            @jump-to-line="handleFallbackJumpToLine"
+                            @open-session="onOpenWorkspaceSession"
+                          />
+                        </div>
                       </template>
                       <div v-else class="tool-sequence">
                         <ToolCard
@@ -4150,8 +4186,15 @@ const compactSession = async () => {
                            on tool_calls-only assistant turns. The tool header
                            (if any) is shown above; we don't want an empty
                            padded area below it. -->
-                      <div v-if="group.messages.some(hasVisibleContent)" class="assistant-messages">
-                        <div v-for="(msg, idx) in group.messages" :key="idx" class="assistant-item">
+                      <div
+                        v-if="answeredMessages(group).some(hasVisibleContent)"
+                        class="assistant-messages"
+                      >
+                        <div
+                          v-for="(msg, idx) in answeredMessages(group)"
+                          :key="msg.id || `answer-${idx}`"
+                          class="assistant-item"
+                        >
                           <!-- <html> and <mermaid> blocks render as themselves;
                                `sandbox="allow-scripts"` with no same-origin is
                                the null-origin security boundary. -->

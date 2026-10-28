@@ -1,12 +1,12 @@
 <script setup lang="ts">
-/** CompactToolGroup — a run of tool calls and the thoughts between them. A lone
- * call is one row; a run of several folds into one group card that unfolds into
- * the rows. */
+/** CompactToolGroup — a run of tool calls, the thoughts between them and the narration the agent
+ * wrote on the way to each call. A lone call is one row; a run of several folds into one group card
+ * that unfolds into the rows. */
 import { computed, ref } from 'vue'
 
 import { tryUnwrapToolOutput } from '@/helpers/unwrapToolOutput'
 import type { CompactChainItem } from './chain'
-import CompactThoughtRow from './CompactThoughtRow.vue'
+import CompactTextRow from './CompactTextRow.vue'
 import CompactToolRow from './CompactToolRow.vue'
 import ToolCard, { type ToolCardData } from '../ToolCard.vue'
 
@@ -130,7 +130,18 @@ function toggle(): void {
           @open-session="emit('open-session', $event)"
         />
         <div v-else class="tool-item" :class="idx < items.length - 1 ? 'tool-item-border' : ''">
-          <CompactThoughtRow v-if="item.kind === 'thought'" :text="item.text" />
+          <CompactTextRow
+            v-if="item.kind === 'thought'"
+            :text="item.text"
+            label="thought"
+            test-id="compact-thought"
+          />
+          <CompactTextRow
+            v-else-if="item.kind === 'narration'"
+            :text="item.text"
+            label="said"
+            test-id="compact-narration"
+          />
           <CompactToolRow
             v-else
             :tool="item.card.message.tool_name ?? 'tool'"

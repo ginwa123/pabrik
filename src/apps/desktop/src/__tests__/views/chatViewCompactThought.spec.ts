@@ -104,12 +104,16 @@ function seedTurn(): void {
   historyRows.push({
     id: 'msg_tool_command',
     role: 'tool',
-    content: envelope('command', '<command>sqlite3 ruang.db "select sum(total) from bills"</command>', {
-      command: 'sqlite3 ruang.db "select sum(total) from bills"',
-      stdout: '0\n',
-      stderr: '',
-      exit_code: 0,
-    }),
+    content: envelope(
+      'command',
+      '<command>sqlite3 ruang.db "select sum(total) from bills"</command>',
+      {
+        command: 'sqlite3 ruang.db "select sum(total) from bills"',
+        stdout: '0\n',
+        stderr: '',
+        exit_code: 0,
+      },
+    ),
     created_at: 5,
     tool_name: 'command',
   })
@@ -131,9 +135,9 @@ function seedTurn(): void {
   historyRows.reverse()
 }
 
-const installApiMocks = (mode: 'compact' | 'dev'): void => {
+const installApiMocks = (mode: 'compact' | 'dev', seed: () => void = seedTurn): void => {
   config = mode === 'compact' ? { chat_view: 'compact' } : {}
-  seedTurn()
+  seed()
   vi.spyOn(api, 'getQueuedMessages').mockResolvedValue({ messages: [] } as never)
   vi.spyOn(api, 'getSession').mockResolvedValue({
     session_id: 'placeholder',
@@ -178,45 +182,45 @@ const normalize = (html: string): string =>
     .replace(/\s+/g, ' ')
     .trim()
 
+let wrapper: VueWrapper | null = null
+let app: VueApp | null = null
+
+beforeEach(() => {
+  if (typeof localStorage === 'undefined' || typeof localStorage.getItem !== 'function') {
+    const store: Record<string, string> = {}
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => (k in store ? store[k] : null),
+      setItem: (k: string, v: string) => {
+        store[k] = String(v)
+      },
+      removeItem: (k: string) => {
+        delete store[k]
+      },
+      clear: () => {
+        for (const k in store) delete store[k]
+      },
+      key: () => null,
+      length: 0,
+    } as Storage)
+  } else {
+    localStorage.clear()
+  }
+  setActivePinia(createPinia())
+  __resetSseBus()
+  app = createApp({})
+  installSseBus(app)
+  __setSseBusGlobalClient(makeStubClient('connecting'))
+})
+
+afterEach(() => {
+  wrapper?.unmount()
+  wrapper = null
+  __resetSseBus()
+  app = null
+  vi.restoreAllMocks()
+})
+
 describe('the compact view of a turn that thought between its calls', () => {
-  let wrapper: VueWrapper | null = null
-  let app: VueApp | null = null
-
-  beforeEach(() => {
-    if (typeof localStorage === 'undefined' || typeof localStorage.getItem !== 'function') {
-      const store: Record<string, string> = {}
-      vi.stubGlobal('localStorage', {
-        getItem: (k: string) => (k in store ? store[k] : null),
-        setItem: (k: string, v: string) => {
-          store[k] = String(v)
-        },
-        removeItem: (k: string) => {
-          delete store[k]
-        },
-        clear: () => {
-          for (const k in store) delete store[k]
-        },
-        key: () => null,
-        length: 0,
-      } as Storage)
-    } else {
-      localStorage.clear()
-    }
-    setActivePinia(createPinia())
-    __resetSseBus()
-    app = createApp({})
-    installSseBus(app)
-    __setSseBusGlobalClient(makeStubClient('connecting'))
-  })
-
-  afterEach(() => {
-    wrapper?.unmount()
-    wrapper = null
-    __resetSseBus()
-    app = null
-    vi.restoreAllMocks()
-  })
-
   it('keeps every thought of the turn out of the transcript until the card is opened', async () => {
     installApiMocks('compact')
     wrapper = await mountChatView('task_compact_folded')
@@ -300,6 +304,152 @@ describe('the compact view of a turn that thought between its calls', () => {
     wrapper = await mountChatView('task_dev_keeps_thought')
 
     expect(wrapper.findAll('.assistant-reasoning')).toHaveLength(3)
+    expect(wrapper.find('[data-testid="compact-tool-chain"]').exists()).toBe(false)
+  })
+})
+
+const SAID_ONE = 'I will start by reading the billing schema.'
+const SAID_TWO = 'Now let me add up what the bills say.'
+const QUESTION = 'Which database should I read, billing or archive?'
+
+const toolRow = (id: string, tool: string, parameters: string, data: unknown, order: number) => ({
+  id,
+  role: 'tool',
+  content: envelope(tool, parameters, data),
+  created_at: order,
+  tool_name: tool,
+})
+
+function seedNarratedTurn(): void {
+  historyRows.length = 0
+  historyRows.push({
+    id: 'msg_user',
+    role: 'user',
+    content: 'why are the bill totals wrong?',
+    created_at: 1,
+  })
+  historyRows.push({
+    id: 'msg_said_one',
+    role: 'assistant',
+    content: SAID_ONE,
+    created_at: 2,
+    finish_reason: 'tool_calls',
+  })
+  historyRows.push(
+    toolRow(
+      'msg_tool_read',
+      'read_file',
+      '<path>/repo/main.go</path>',
+      {
+        path: '/repo/main.go',
+        content: 'package main\n',
+      },
+      3,
+    ),
+  )
+  historyRows.push({
+    id: 'msg_said_two',
+    role: 'assistant',
+    content: SAID_TWO,
+    created_at: 4,
+    finish_reason: 'tool_calls',
+  })
+  historyRows.push(
+    toolRow(
+      'msg_tool_command',
+      'command',
+      '<command>sqlite3 ruang.db "select 1"</command>',
+      {
+        command: 'sqlite3 ruang.db "select 1"',
+        stdout: '1\n',
+        stderr: '',
+        exit_code: 0,
+      },
+      5,
+    ),
+  )
+  historyRows.push({
+    id: 'msg_answer',
+    role: 'assistant',
+    content: ANSWER,
+    created_at: 6,
+    finish_reason: 'stop',
+  })
+  historyRows.reverse()
+}
+
+function seedQuestionTurn(): void {
+  historyRows.length = 0
+  historyRows.push({
+    id: 'msg_user',
+    role: 'user',
+    content: 'why are the bill totals wrong?',
+    created_at: 1,
+  })
+  historyRows.push({
+    id: 'msg_said_question',
+    role: 'assistant',
+    content: QUESTION,
+    created_at: 2,
+    finish_reason: 'tool_calls',
+  })
+  historyRows.push(
+    toolRow(
+      'msg_tool_ask',
+      'ask_user',
+      '<question>which database?</question>',
+      {
+        status: 'pending',
+        question_id: 'q_1',
+        question: QUESTION,
+        options: ['billing', 'archive'],
+      },
+      3,
+    ),
+  )
+  historyRows.reverse()
+}
+
+describe('the compact view of a turn that narrated on the way to its calls', () => {
+  it('draws only the answer the turn ended with, not every line on the way there', async () => {
+    installApiMocks('compact', seedNarratedTurn)
+    wrapper = await mountChatView('task_compact_narration_folded')
+
+    expect(wrapper.get('[data-testid="compact-tool-group-count"]').text()).toBe('2 tool calls')
+    expect(wrapper.text()).not.toContain(SAID_ONE)
+    expect(wrapper.text()).not.toContain(SAID_TWO)
+    expect(wrapper.text()).toContain(ANSWER)
+  })
+
+  it('draws the narration inside the card, in the order it happened', async () => {
+    installApiMocks('compact', seedNarratedTurn)
+    wrapper = await mountChatView('task_compact_narration_in_card')
+
+    await wrapper.get('[data-testid="compact-tool-group-header"]').trigger('click')
+    await nextTick()
+
+    const chain = wrapper.get('[data-testid="compact-tool-chain"]')
+    const previews = chain
+      .findAll('[data-testid="compact-narration-preview"]')
+      .map((row) => row.text())
+    expect(previews).toEqual([SAID_ONE, SAID_TWO])
+    expect(chain.text()).not.toContain(ANSWER)
+  })
+
+  it('keeps the question the agent asked the human in the transcript', async () => {
+    installApiMocks('compact', seedQuestionTurn)
+    wrapper = await mountChatView('task_compact_question')
+
+    expect(wrapper.text()).toContain(QUESTION)
+    expect(wrapper.find('[data-testid="ask-user-card"]').exists()).toBe(true)
+  })
+
+  it('keeps the dev view drawing every line the agent wrote', async () => {
+    installApiMocks('dev', seedNarratedTurn)
+    wrapper = await mountChatView('task_dev_keeps_narration')
+
+    expect(wrapper.text()).toContain(SAID_ONE)
+    expect(wrapper.text()).toContain(SAID_TWO)
     expect(wrapper.find('[data-testid="compact-tool-chain"]').exists()).toBe(false)
   })
 })
