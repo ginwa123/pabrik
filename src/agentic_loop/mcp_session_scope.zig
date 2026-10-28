@@ -17,7 +17,7 @@ pub fn resolve(
 
     var q = backend.query(
         allocator,
-        "SELECT COALESCE(user_id, ''), COALESCE(workspace_id, '') FROM sessions WHERE id = ?",
+        "SELECT COALESCE(CAST(user_id AS TEXT), ''), COALESCE(CAST(workspace_id AS TEXT), '') FROM sessions WHERE id = ?",
         &[_][]const u8{sid},
     ) catch return .{};
     defer q.deinit();

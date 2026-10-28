@@ -151,7 +151,7 @@ pub fn exists(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8) bo
 /// Fetch one `agents` row by id. Returns null when absent.
 pub fn getById(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8) !?AgentRow {
     var q = db.query(allocator,
-        "SELECT id, workspace_item_id, description, COALESCE(created_at, ''), COALESCE(updated_at, '') FROM agent_configs WHERE id = ? AND item_type = 'agent'",
+        "SELECT id, workspace_item_id, description, COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), '') FROM agent_configs WHERE id = ? AND item_type = 'agent'",
         &.{agent_id},
     ) catch return null;
     defer q.deinit();
@@ -184,7 +184,7 @@ pub fn insert(allocator: std.mem.Allocator, db: DbOrTx, id: []const u8, workspac
 pub fn listKnowledge(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8) ![]KnowledgeRow {
     var q = db.query(allocator,
         \\SELECT id, config_id AS agent_id, file_path, label, content, position,
-        \\       COALESCE(created_at, ''), COALESCE(updated_at, '')
+        \\       COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), '')
         \\FROM agent_config_knowledge WHERE config_id = ?
         \\ORDER BY position DESC
     , &.{agent_id}) catch return &.{};
@@ -218,7 +218,7 @@ pub fn insertKnowledge(
     defer allocator.free(id);
 
     db.exec(allocator,
-        "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, content, position, created_at, updated_at) VALUES (?, ?, COALESCE(?, ''), COALESCE(?, ''), COALESCE(?, ''), COALESCE((SELECT MAX(position) FROM agent_config_knowledge WHERE config_id = ?), -1) + 1, datetime('now'), datetime('now'))",
+        "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, content, position, created_at, updated_at) VALUES (?, ?, COALESCE(CAST(? AS TEXT), ''), COALESCE(CAST(? AS TEXT), ''), COALESCE(CAST(? AS TEXT), ''), COALESCE((SELECT MAX(position) FROM agent_config_knowledge WHERE config_id = ?), -1) + 1, datetime('now'), datetime('now'))",
         &.{ id, agent_id, file_path, label, content, agent_id },
     ) catch return null;
     return getKnowledgeById(allocator, db, id);
@@ -228,7 +228,7 @@ pub fn insertKnowledge(
 pub fn getKnowledgeById(allocator: std.mem.Allocator, db: DbOrTx, knowledge_id: []const u8) !?KnowledgeRow {
     var q = db.query(allocator,
         \\SELECT id, config_id AS agent_id, file_path, label, content, position,
-        \\       COALESCE(created_at, ''), COALESCE(updated_at, '')
+        \\       COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), '')
         \\FROM agent_config_knowledge WHERE id = ?
     , &.{knowledge_id}) catch return null;
     defer q.deinit();
@@ -250,9 +250,9 @@ pub fn updateKnowledge(
     var sql: std.ArrayList(u8) = .empty;
     defer sql.deinit(allocator);
     try sql.appendSlice(allocator, "UPDATE agent_config_knowledge SET updated_at = datetime('now')");
-    if (file_path != null) try sql.appendSlice(allocator, ", file_path = COALESCE(?, '')");
+    if (file_path != null) try sql.appendSlice(allocator, ", file_path = COALESCE(CAST(? AS TEXT), '')");
     if (label != null) try sql.appendSlice(allocator, ", label = ?");
-    if (content != null) try sql.appendSlice(allocator, ", content = COALESCE(?, '')");
+    if (content != null) try sql.appendSlice(allocator, ", content = COALESCE(CAST(? AS TEXT), '')");
     try sql.appendSlice(allocator, " WHERE id = ? AND config_id = ?");
 
     var args: std.ArrayList([]const u8) = .empty;
@@ -387,7 +387,7 @@ pub fn deleteTool(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8
 pub fn listSystemPrompts(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8) ![]SystemPromptRow {
     var q = db.query(allocator,
         \\SELECT id, config_id AS agent_id, title, content, position,
-        \\       COALESCE(created_at, ''), COALESCE(updated_at, '')
+        \\       COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), '')
         \\FROM agent_config_system_prompt WHERE config_id = ?
         \\ORDER BY position DESC
     , &.{agent_id}) catch return &.{};
@@ -412,7 +412,7 @@ pub fn insertSystemPrompt(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []
     defer allocator.free(id);
 
     db.exec(allocator,
-        "INSERT INTO agent_config_system_prompt (id, config_id, title, content, position, created_at, updated_at) VALUES (?, ?, COALESCE(?, ''), COALESCE(?, ''), COALESCE((SELECT MAX(position) FROM agent_config_system_prompt WHERE config_id = ?), -1) + 1, datetime('now'), datetime('now'))",
+        "INSERT INTO agent_config_system_prompt (id, config_id, title, content, position, created_at, updated_at) VALUES (?, ?, COALESCE(CAST(? AS TEXT), ''), COALESCE(CAST(? AS TEXT), ''), COALESCE((SELECT MAX(position) FROM agent_config_system_prompt WHERE config_id = ?), -1) + 1, datetime('now'), datetime('now'))",
         &.{ id, agent_id, title, content, agent_id },
     ) catch return null;
     return getSystemPromptById(allocator, db, id);
@@ -422,7 +422,7 @@ pub fn insertSystemPrompt(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []
 pub fn getSystemPromptById(allocator: std.mem.Allocator, db: DbOrTx, prompt_id: []const u8) !?SystemPromptRow {
     var q = db.query(allocator,
         \\SELECT id, config_id AS agent_id, title, content, position,
-        \\       COALESCE(created_at, ''), COALESCE(updated_at, '')
+        \\       COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), '')
         \\FROM agent_config_system_prompt WHERE id = ?
     , &.{prompt_id}) catch return null;
     defer q.deinit();
@@ -445,8 +445,8 @@ pub fn updateSystemPrompt(
     var sql: std.ArrayList(u8) = .empty;
     defer sql.deinit(allocator);
     try sql.appendSlice(allocator, "UPDATE agent_config_system_prompt SET updated_at = datetime('now')");
-    if (title != null) try sql.appendSlice(allocator, ", title = COALESCE(?, '')");
-    if (content != null) try sql.appendSlice(allocator, ", content = COALESCE(?, '')");
+    if (title != null) try sql.appendSlice(allocator, ", title = COALESCE(CAST(? AS TEXT), '')");
+    if (content != null) try sql.appendSlice(allocator, ", content = COALESCE(CAST(? AS TEXT), '')");
     try sql.appendSlice(allocator, " WHERE id = ? AND config_id = ?");
 
     var args: std.ArrayList([]const u8) = .empty;

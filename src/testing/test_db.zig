@@ -52,6 +52,9 @@ fn pidAlive(pid: []const u8) bool {
     return std.c.access(path.ptr, 0) == 0;
 }
 
+/// The instance the scratch schemas live on. An explicit `POSTGRES_TEST_CONNINFO`
+/// wins; otherwise the two ports a local server is normally on are probed, so
+/// `zig build test -Ddb_used=postgres` works without exporting anything.
 fn ensureBaseConninfo() ![]const u8 {
     if (base_conninfo) |base| return base;
 
@@ -60,11 +63,23 @@ fn ensureBaseConninfo() ![]const u8 {
         base_conninfo = base;
         return base;
     }
-    var temp = try database.createTempDb(longLived(), .{});
-    const base = try longLived().dupe(u8, temp.base_conninfo);
-    temp.deinit();
-    base_conninfo = base;
-    return base;
+
+    const candidates = [_][:0]const u8{
+        "host=127.0.0.1 port=5432 dbname=postgres",
+        "host=127.0.0.1 port=5433 dbname=postgres",
+        "host=/tmp port=54329 dbname=postgres",
+    };
+    for (candidates) |candidate| {
+        var probe = database.createTempDb(longLived(), .{ .base_conninfo = candidate }) catch continue;
+        const base = longLived().dupe(u8, candidate) catch {
+            probe.deinit();
+            return error.OutOfMemory;
+        };
+        probe.deinit();
+        base_conninfo = base;
+        return base;
+    }
+    return error.NoPostgresServer;
 }
 
 fn ensureSchemaName() ![]const u8 {
@@ -115,7 +130,12 @@ fn dropDeadSchemas(db: *database.Db) void {
 pub fn openMemory(db: *database.Db, io: std.Io) !void {
     if (!database.backend_is_postgres) return db.init(io, ":memory:");
 
-    const base = try ensureBaseConninfo();
+    // No instance answering means there is nothing to test against: skip, the
+    // same contract `create()` uses, unless CI demands a server.
+    const base = ensureBaseConninfo() catch |err| {
+        if (std.c.getenv(require_env) != null) return err;
+        return error.SkipZigTest;
+    };
     const schema = try ensureSchemaName();
     const conninfo = try std.fmt.allocPrintSentinel(
         longLived(),

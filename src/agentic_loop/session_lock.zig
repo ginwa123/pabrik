@@ -177,7 +177,7 @@ pub fn beginIteration(
         allocator,
         \\SELECT w.run_token,
         \\       COALESCE(w.cancelled, 0),
-        \\       COALESCE(s.is_auto_retry_until_stop, '0')
+        \\       COALESCE(CAST(s.is_auto_retry_until_stop AS TEXT), '0')
         \\FROM worker w
         \\LEFT JOIN sessions s ON s.id = w.session_id
         \\WHERE w.id = ?

@@ -44,7 +44,7 @@ pub const Error = error{
 };
 
 const user_columns =
-    \\SELECT id, email, COALESCE(name, ''), role, is_active,
+    \\SELECT id, email, COALESCE(CAST(name AS TEXT), ''), role, is_active,
     \\       COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(last_login_at AS TEXT), '')
 ;
 
@@ -194,7 +194,7 @@ pub fn insertUser(
     if (emailTaken(allocator, db, email) catch return error.DatabaseError) return error.EmailTaken;
     db.exec(allocator,
         \\INSERT INTO users (id, email, name, password_hash, role, is_active, created_at, updated_at)
-        \\VALUES (?, ?, COALESCE(?, ''), ?, ?, 1, ?, ?)
+        \\VALUES (?, ?, COALESCE(CAST(? AS TEXT), ''), ?, ?, 1, ?, ?)
     , &[_][]const u8{ id, email, name, password_hash, admin_common.roleName(role), created_at, created_at }) catch return error.DatabaseError;
     return .{
         .id = try allocator.dupe(u8, id),
@@ -554,7 +554,7 @@ pub fn listWorkspaces(allocator: std.mem.Allocator, db: Db) ![]WorkspaceRow {
 
     var q = try db.query(
         allocator,
-        "SELECT id, COALESCE(name, '') FROM workspaces ORDER BY name, id",
+        "SELECT id, COALESCE(CAST(name AS TEXT), '') FROM workspaces ORDER BY name, id",
         &.{},
     );
     defer q.deinit();

@@ -155,7 +155,7 @@ pub fn resolveSessionRoot(
 ) SessionRootError![]u8 {
     var rows = db.query(
         allocator,
-        "SELECT COALESCE(git_worktree_cwd, ''), COALESCE(cwd, '') FROM sessions WHERE id = ?",
+        "SELECT COALESCE(CAST(git_worktree_cwd AS TEXT), ''), COALESCE(CAST(cwd AS TEXT), '') FROM sessions WHERE id = ?",
         &.{session_id},
     ) catch return error.QueryFailed;
     defer rows.deinit();

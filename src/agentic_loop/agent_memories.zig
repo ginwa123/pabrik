@@ -129,8 +129,8 @@ pub fn getMemoryById(
     const updated_expr = try dialect.timestampText(&updated_buf, "updated_at");
     const select = try std.fmt.allocPrint(
         allocator,
-        "SELECT id, content, tags, COALESCE(workspace_id, ''), COALESCE({s}, ''), COALESCE({s}, '') " ++
-            "FROM agent_memories WHERE id = ? AND COALESCE(workspace_id, '') = COALESCE(CAST(? AS TEXT), '')",
+        "SELECT id, content, tags, COALESCE(CAST(workspace_id AS TEXT), ''), COALESCE({s}, ''), COALESCE({s}, '') " ++
+            "FROM agent_memories WHERE id = ? AND COALESCE(CAST(workspace_id AS TEXT), '') = COALESCE(CAST(? AS TEXT), '')",
         .{ created_expr, updated_expr },
     );
     defer allocator.free(select);
@@ -230,9 +230,9 @@ pub fn loadMemoriesByFts(
             \\                    'StartSel=[, StopSel=], MaxWords=10, MinWords=3') AS snippet,
             \\        COALESCE(to_char(m.created_at, 'YYYY-MM-DD HH24:MI:SS'), '') AS created_at,
             \\        COALESCE(to_char(m.updated_at, 'YYYY-MM-DD HH24:MI:SS'), '') AS updated_at,
-            \\        -ts_rank(to_tsvector('simple'::regconfig, COALESCE(m.content, '') || ' ' || COALESCE(m.tags, '')), q.tsq) AS fts_rank
+            \\        -ts_rank(to_tsvector('simple'::regconfig, COALESCE(CAST(m.content AS TEXT), '') || ' ' || COALESCE(CAST(m.tags AS TEXT), '')), q.tsq) AS fts_rank
             \\    FROM agent_memories m, to_tsquery('simple'::regconfig, ?) AS q(tsq)
-            \\    WHERE to_tsvector('simple'::regconfig, COALESCE(m.content, '') || ' ' || COALESCE(m.tags, '')) @@ q.tsq
+            \\    WHERE to_tsvector('simple'::regconfig, COALESCE(CAST(m.content AS TEXT), '') || ' ' || COALESCE(CAST(m.tags AS TEXT), '')) @@ q.tsq
             \\      AND m.workspace_id = ?
         );
     } else {

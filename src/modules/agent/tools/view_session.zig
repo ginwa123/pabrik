@@ -108,8 +108,8 @@ const TaskDetail = struct {
 /// id doubles as the task id (Migration 052), so the join is by id.
 fn taskDetail(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) !?TaskDetail {
     var rows = try db.query(allocator,
-        \\SELECT t.id, COALESCE(t.name, ''), COALESCE(t.cwd, ''), wi.id,
-        \\       COALESCE(wi.item_type, ''), COALESCE(wi.name, '')
+        \\SELECT t.id, COALESCE(CAST(t.name AS TEXT), ''), COALESCE(CAST(t.cwd AS TEXT), ''), wi.id,
+        \\       COALESCE(CAST(wi.item_type AS TEXT), ''), COALESCE(CAST(wi.name AS TEXT), '')
         \\FROM workspace_item_tasks t
         \\JOIN workspace_items wi ON wi.id = t.workspace_item_id
         \\WHERE t.id = ?
@@ -145,8 +145,8 @@ const WorkerDetail = struct {
 /// from the same row, so the two can never disagree.
 fn workerDetail(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) !?WorkerDetail {
     var rows = try db.query(allocator,
-        \\SELECT COALESCE(working_directory, ''), COALESCE(last_activity_nano, 0),
-        \\       COALESCE(last_activity_description, '')
+        \\SELECT COALESCE(CAST(working_directory AS TEXT), ''), COALESCE(last_activity_nano, 0),
+        \\       COALESCE(CAST(last_activity_description AS TEXT), '')
         \\FROM worker WHERE id = ? LIMIT 1
     , &.{session_id});
     defer rows.deinit();
@@ -214,12 +214,12 @@ const SessionDetail = struct {
 /// row is gone. Reads only; the caller owns the result.
 fn loadSessionDetail(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) !?SessionDetail {
     var rows = try db.query(allocator,
-        \\SELECT id, COALESCE(name, ''), COALESCE(status, ''), COALESCE(cwd, ''),
-        \\       COALESCE(git_worktree_cwd, ''), COALESCE(selected_profile_model, ''),
-        \\       COALESCE(is_auto_retry_until_stop, 0), COALESCE(last_finish_reason, ''),
-        \\       COALESCE(pr_url, ''), COALESCE(pr_provider, ''),
-        \\       COALESCE(parent_session_id, ''), COALESCE(sub_agent_name, ''),
-        \\       COALESCE(is_pinned, 0), COALESCE(user_id, ''),
+        \\SELECT id, COALESCE(CAST(name AS TEXT), ''), COALESCE(CAST(status AS TEXT), ''), COALESCE(CAST(cwd AS TEXT), ''),
+        \\       COALESCE(CAST(git_worktree_cwd AS TEXT), ''), COALESCE(CAST(selected_profile_model AS TEXT), ''),
+        \\       COALESCE(is_auto_retry_until_stop, 0), COALESCE(CAST(last_finish_reason AS TEXT), ''),
+        \\       COALESCE(CAST(pr_url AS TEXT), ''), COALESCE(CAST(pr_provider AS TEXT), ''),
+        \\       COALESCE(CAST(parent_session_id AS TEXT), ''), COALESCE(CAST(sub_agent_name AS TEXT), ''),
+        \\       COALESCE(is_pinned, 0), COALESCE(CAST(user_id AS TEXT), ''),
         \\       COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), ''),
         \\       COALESCE(last_human_touched_at_nano, 0)
         \\FROM sessions WHERE id = ?
@@ -343,7 +343,7 @@ pub fn execute_view_session(
     const workspace_name = try scalar(
         allocator,
         db,
-        "SELECT COALESCE(name, '') FROM workspaces WHERE id = ? LIMIT 1",
+        "SELECT COALESCE(CAST(name AS TEXT), '') FROM workspaces WHERE id = ? LIMIT 1",
         &.{workspace_id},
     );
     defer allocator.free(workspace_name);

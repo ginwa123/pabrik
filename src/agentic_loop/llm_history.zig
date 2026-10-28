@@ -175,8 +175,8 @@ pub fn getSessionList(
     const sql =
         \\SELECT sub.session_id,
         \\       sub.created_at,
-        \\       COALESCE(s.cwd, '') AS cwd,
-        \\       COALESCE(s.name, '') AS session_name,
+        \\       COALESCE(CAST(s.cwd AS TEXT), '') AS cwd,
+        \\       COALESCE(CAST(s.name AS TEXT), '') AS session_name,
         \\       COALESCE(
         \\         (SELECT h2.agent
         \\            FROM llm_history h2
@@ -185,8 +185,8 @@ pub fn getSessionList(
         \\           LIMIT 1),
         \\         'Agent'
         \\       ) AS agent,
-        \\       COALESCE(s.is_auto_retry_until_stop, '0') AS is_auto_retry_until_stop,
-        \\       COALESCE(s.last_finish_reason, '') AS last_finish_reason,
+        \\       COALESCE(CAST(s.is_auto_retry_until_stop AS TEXT), '0') AS is_auto_retry_until_stop,
+        \\       COALESCE(CAST(s.last_finish_reason AS TEXT), '') AS last_finish_reason,
         \\       COALESCE(
         \\         (SELECT t.workspace_item_id
         \\            FROM workspace_item_tasks t
@@ -349,8 +349,8 @@ pub fn getSessionListWithCursor(
     };
     const order_by = switch (sort_field) {
         .created_at => try std.fmt.allocPrint(allocator, "s.created_at {s}", .{sort_order}),
-        .session_name => try std.fmt.allocPrint(allocator, "COALESCE(s.name, '') {s}", .{sort_order}),
-        .agent => try std.fmt.allocPrint(allocator, "COALESCE(h.agent, 'Agent') {s}", .{sort_order}),
+        .session_name => try std.fmt.allocPrint(allocator, "COALESCE(CAST(s.name AS TEXT), '') {s}", .{sort_order}),
+        .agent => try std.fmt.allocPrint(allocator, "COALESCE((SELECT CAST(h2.agent AS TEXT) FROM llm_history h2 WHERE h2.session_id = s.id AND h2.agent IS NOT NULL LIMIT 1), 'Agent') {s}", .{sort_order}),
         .updated_at => try std.fmt.allocPrint(allocator, "s.updated_at {s}", .{sort_order}),
     };
     defer allocator.free(order_by);
@@ -358,8 +358,8 @@ pub fn getSessionListWithCursor(
     // Build cursor filter.
     const cursor_column = switch (sort_field) {
         .created_at => "s.created_at",
-        .session_name => "COALESCE(s.name, '')",
-        .agent => "COALESCE(h.agent, 'Agent')",
+        .session_name => "COALESCE(CAST(s.name AS TEXT), '')",
+        .agent => "COALESCE((SELECT CAST(h2.agent AS TEXT) FROM llm_history h2 WHERE h2.session_id = s.id AND h2.agent IS NOT NULL LIMIT 1), 'Agent')",
         .updated_at => "s.updated_at",
     };
     const cursor_filter = if (cursor) |_|
@@ -374,20 +374,19 @@ pub fn getSessionListWithCursor(
     const sql_final = try std.fmt.allocPrint(allocator,
         \\SELECT s.id, s.name, s.status, s.cwd, COALESCE(CAST(s.created_at AS TEXT), ''),
         \\COALESCE(CAST(s.updated_at AS TEXT), ''),
-        \\COALESCE(h.agent, 'Agent'),
-        \\COALESCE(s.selected_profile_model, ''),
-        \\COALESCE(s.is_auto_retry_until_stop, '0'),
-        \\COALESCE(s.last_finish_reason, ''),
-        \\CASE WHEN s.last_human_touched_at_nano IS NULL OR s.last_human_touched_at_nano = '' THEN '' ELSE strftime('%Y-%m-%d %H:%M:%S', s.last_human_touched_at_nano / 1000, 'unixepoch') END,
-        \\COALESCE(s.git_worktree_cwd, ''),
+        \\COALESCE((SELECT CAST(h2.agent AS TEXT) FROM llm_history h2 WHERE h2.session_id = s.id AND h2.agent IS NOT NULL LIMIT 1), 'Agent'),
+        \\COALESCE(CAST(s.selected_profile_model AS TEXT), ''),
+        \\COALESCE(CAST(s.is_auto_retry_until_stop AS TEXT), '0'),
+        \\COALESCE(CAST(s.last_finish_reason AS TEXT), ''),
+        \\CASE WHEN s.last_human_touched_at_nano IS NULL OR COALESCE(CAST(s.last_human_touched_at_nano AS TEXT), '') = '' THEN '' ELSE strftime('%Y-%m-%d %H:%M:%S', s.last_human_touched_at_nano / 1000, 'unixepoch') END,
+        \\COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''),
         \\COALESCE((SELECT t.workspace_item_id FROM workspace_item_tasks t WHERE t.id = s.id LIMIT 1), ''),
         \\COALESCE(s.is_pinned, 0),
         \\COALESCE(s.pinned_position, 0),
-        \\CASE WHEN COALESCE(s.last_finish_reason, '') = 'stop' AND (s.last_human_touched_at_nano IS NULL OR s.last_human_touched_at_nano = '' OR s.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000) THEN 1 ELSE 0 END
+        \\CASE WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop' AND (s.last_human_touched_at_nano IS NULL OR COALESCE(CAST(s.last_human_touched_at_nano AS TEXT), '') = '' OR s.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000) THEN 1 ELSE 0 END
         \\FROM sessions s
-        \\LEFT JOIN llm_history h ON s.id = h.session_id
         \\WHERE {s}
-        \\GROUP BY s.id ORDER BY {s} LIMIT {d}
+        \\ORDER BY {s} LIMIT {d}
     , .{ where_with_cursor, order_by, limit });
     defer allocator.free(sql_final);
 
@@ -588,11 +587,11 @@ pub fn get_session(
     const sql =
         \\SELECT DISTINCT
         \\    h.session_id,
-        \\    COALESCE(s.cwd, ''),
+        \\    COALESCE(CAST(s.cwd AS TEXT), ''),
         \\    s.created_at as created_at,
-        \\    COALESCE(h.agent, 'Agent'),
-        \\    COALESCE(s.name, ''),
-        \\    COALESCE(h.model, 'gpt-4'),
+        \\    COALESCE((SELECT CAST(h2.agent AS TEXT) FROM llm_history h2 WHERE h2.session_id = s.id AND h2.agent IS NOT NULL LIMIT 1), 'Agent'),
+        \\    COALESCE(CAST(s.name AS TEXT), ''),
+        \\    COALESCE(CAST(h.model AS TEXT), 'gpt-4'),
         \\    COALESCE(h.temperature, 0.2),
         \\    s.updated_at as updated_at
         \\FROM llm_history h
@@ -784,11 +783,11 @@ pub fn getSessionMessagesSorted(
         };
         sql = try std.fmt.allocPrint(allocator,
             \\SELECT h.id, h.session_id, h.role, h.response_content, h.created_at_nano AS created_at,
-            \\       COALESCE(h.is_input, 0), COALESCE(h.is_output, 0), COALESCE(h.tool_name, ''),
-            \\       COALESCE(h.finish_reason, ''), COALESCE(s.cwd, ''), COALESCE(s.git_worktree_cwd, ''), COALESCE(h.reasoning_content, ''), COALESCE(h.reasoning_id, ''), COALESCE(h.reasoning_encrypted_content, ''),
-            \\       COALESCE(h.diffview_before, ''), COALESCE(h.diffview_after, ''), COALESCE(h.image_url, ''), COALESCE(h.video_url, ''), COALESCE(h.tool_call_id, ''), COALESCE(h.tool_calls_json, ''),
-            \\       COALESCE(s.selected_profile_model, ''), COALESCE(s.pr_url, ''), COALESCE(s.pr_provider, ''), COALESCE(s.sub_agent_name, ''), COALESCE(s.parent_session_id, ''),
-            \\       COALESCE(h.file_attachments_meta, '')
+            \\       COALESCE(h.is_input, 0), COALESCE(h.is_output, 0), COALESCE(CAST(h.tool_name AS TEXT), ''),
+            \\       COALESCE(CAST(h.finish_reason AS TEXT), ''), COALESCE(CAST(s.cwd AS TEXT), ''), COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''), COALESCE(CAST(h.reasoning_content AS TEXT), ''), COALESCE(CAST(h.reasoning_id AS TEXT), ''), COALESCE(CAST(h.reasoning_encrypted_content AS TEXT), ''),
+            \\       COALESCE(CAST(h.diffview_before AS TEXT), ''), COALESCE(CAST(h.diffview_after AS TEXT), ''), COALESCE(CAST(h.image_url AS TEXT), ''), COALESCE(CAST(h.video_url AS TEXT), ''), COALESCE(CAST(h.tool_call_id AS TEXT), ''), COALESCE(CAST(h.tool_calls_json AS TEXT), ''),
+            \\       COALESCE(CAST(s.selected_profile_model AS TEXT), ''), COALESCE(CAST(s.pr_url AS TEXT), ''), COALESCE(CAST(s.pr_provider AS TEXT), ''), COALESCE(CAST(s.sub_agent_name AS TEXT), ''), COALESCE(CAST(s.parent_session_id AS TEXT), ''),
+            \\       COALESCE(CAST(h.file_attachments_meta AS TEXT), '')
             \\FROM llm_history h LEFT JOIN sessions s ON h.session_id = s.id
             \\WHERE h.session_id = ?{s}{s} LIMIT ?
         , .{ cursor_cmp, order_part });
@@ -806,11 +805,11 @@ pub fn getSessionMessagesSorted(
         };
         sql = try std.fmt.allocPrint(allocator,
             \\SELECT h.id, h.session_id, h.role, h.response_content, h.created_at_nano AS created_at,
-            \\       COALESCE(h.is_input, 0), COALESCE(h.is_output, 0), COALESCE(h.tool_name, ''),
-            \\       COALESCE(h.finish_reason, ''), COALESCE(s.cwd, ''), COALESCE(s.git_worktree_cwd, ''), COALESCE(h.reasoning_content, ''), COALESCE(h.reasoning_id, ''), COALESCE(h.reasoning_encrypted_content, ''),
-            \\       COALESCE(h.diffview_before, ''), COALESCE(h.diffview_after, ''), COALESCE(h.image_url, ''), COALESCE(h.video_url, ''), COALESCE(h.tool_call_id, ''), COALESCE(h.tool_calls_json, ''),
-            \\       COALESCE(s.selected_profile_model, ''), COALESCE(s.pr_url, ''), COALESCE(s.pr_provider, ''), COALESCE(s.sub_agent_name, ''), COALESCE(s.parent_session_id, ''),
-            \\       COALESCE(h.file_attachments_meta, '')
+            \\       COALESCE(h.is_input, 0), COALESCE(h.is_output, 0), COALESCE(CAST(h.tool_name AS TEXT), ''),
+            \\       COALESCE(CAST(h.finish_reason AS TEXT), ''), COALESCE(CAST(s.cwd AS TEXT), ''), COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''), COALESCE(CAST(h.reasoning_content AS TEXT), ''), COALESCE(CAST(h.reasoning_id AS TEXT), ''), COALESCE(CAST(h.reasoning_encrypted_content AS TEXT), ''),
+            \\       COALESCE(CAST(h.diffview_before AS TEXT), ''), COALESCE(CAST(h.diffview_after AS TEXT), ''), COALESCE(CAST(h.image_url AS TEXT), ''), COALESCE(CAST(h.video_url AS TEXT), ''), COALESCE(CAST(h.tool_call_id AS TEXT), ''), COALESCE(CAST(h.tool_calls_json AS TEXT), ''),
+            \\       COALESCE(CAST(s.selected_profile_model AS TEXT), ''), COALESCE(CAST(s.pr_url AS TEXT), ''), COALESCE(CAST(s.pr_provider AS TEXT), ''), COALESCE(CAST(s.sub_agent_name AS TEXT), ''), COALESCE(CAST(s.parent_session_id AS TEXT), ''),
+            \\       COALESCE(CAST(h.file_attachments_meta AS TEXT), '')
             \\FROM llm_history h LEFT JOIN sessions s ON h.session_id = s.id
             \\WHERE h.session_id = ?{s} LIMIT ?
         , .{order_part});
@@ -840,10 +839,10 @@ pub fn getSessionMessagesSorted(
             };
             sql = try std.fmt.allocPrint(allocator,
                 \\SELECT h.id, h.session_id, h.role, h.response_content, h.created_at_nano AS created_at,
-                \\       COALESCE(h.is_input, 0), COALESCE(h.is_output, 0), COALESCE(h.tool_name, ''),
-                \\       COALESCE(h.finish_reason, ''), COALESCE(s.cwd, ''), COALESCE(s.git_worktree_cwd, ''), COALESCE(h.reasoning_content, ''), COALESCE(h.reasoning_id, ''), COALESCE(h.reasoning_encrypted_content, ''),
-                \\       COALESCE(h.diffview_before, ''), COALESCE(h.diffview_after, ''), COALESCE(h.image_url, ''), COALESCE(h.video_url, ''), COALESCE(h.tool_call_id, ''), COALESCE(h.tool_calls_json, ''),
-                \\       COALESCE(s.selected_profile_model, ''), COALESCE(s.pr_url, ''), COALESCE(s.pr_provider, '')
+                \\       COALESCE(h.is_input, 0), COALESCE(h.is_output, 0), COALESCE(CAST(h.tool_name AS TEXT), ''),
+                \\       COALESCE(CAST(h.finish_reason AS TEXT), ''), COALESCE(CAST(s.cwd AS TEXT), ''), COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''), COALESCE(CAST(h.reasoning_content AS TEXT), ''), COALESCE(CAST(h.reasoning_id AS TEXT), ''), COALESCE(CAST(h.reasoning_encrypted_content AS TEXT), ''),
+                \\       COALESCE(CAST(h.diffview_before AS TEXT), ''), COALESCE(CAST(h.diffview_after AS TEXT), ''), COALESCE(CAST(h.image_url AS TEXT), ''), COALESCE(CAST(h.video_url AS TEXT), ''), COALESCE(CAST(h.tool_call_id AS TEXT), ''), COALESCE(CAST(h.tool_calls_json AS TEXT), ''),
+                \\       COALESCE(CAST(s.selected_profile_model AS TEXT), ''), COALESCE(CAST(s.pr_url AS TEXT), ''), COALESCE(CAST(s.pr_provider AS TEXT), '')
                 \\FROM llm_history h LEFT JOIN sessions s ON h.session_id = s.id
                 \\WHERE h.session_id = ?{s}{s} LIMIT ?
             , .{ cursor_cmp, order_part });
@@ -862,10 +861,10 @@ pub fn getSessionMessagesSorted(
             };
             sql = try std.fmt.allocPrint(allocator,
                 \\SELECT h.id, h.session_id, h.role, h.response_content, h.created_at_nano AS created_at,
-                \\       COALESCE(h.is_input, 0), COALESCE(h.is_output, 0), COALESCE(h.tool_name, ''),
-                \\       COALESCE(h.finish_reason, ''), COALESCE(s.cwd, ''), COALESCE(s.git_worktree_cwd, ''), COALESCE(h.reasoning_content, ''), COALESCE(h.reasoning_id, ''), COALESCE(h.reasoning_encrypted_content, ''),
-                \\       COALESCE(h.diffview_before, ''), COALESCE(h.diffview_after, ''), COALESCE(h.image_url, ''), COALESCE(h.video_url, ''), COALESCE(h.tool_call_id, ''), COALESCE(h.tool_calls_json, ''),
-                \\       COALESCE(s.selected_profile_model, ''), COALESCE(s.pr_url, ''), COALESCE(s.pr_provider, '')
+                \\       COALESCE(h.is_input, 0), COALESCE(h.is_output, 0), COALESCE(CAST(h.tool_name AS TEXT), ''),
+                \\       COALESCE(CAST(h.finish_reason AS TEXT), ''), COALESCE(CAST(s.cwd AS TEXT), ''), COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''), COALESCE(CAST(h.reasoning_content AS TEXT), ''), COALESCE(CAST(h.reasoning_id AS TEXT), ''), COALESCE(CAST(h.reasoning_encrypted_content AS TEXT), ''),
+                \\       COALESCE(CAST(h.diffview_before AS TEXT), ''), COALESCE(CAST(h.diffview_after AS TEXT), ''), COALESCE(CAST(h.image_url AS TEXT), ''), COALESCE(CAST(h.video_url AS TEXT), ''), COALESCE(CAST(h.tool_call_id AS TEXT), ''), COALESCE(CAST(h.tool_calls_json AS TEXT), ''),
+                \\       COALESCE(CAST(s.selected_profile_model AS TEXT), ''), COALESCE(CAST(s.pr_url AS TEXT), ''), COALESCE(CAST(s.pr_provider AS TEXT), '')
                 \\FROM llm_history h LEFT JOIN sessions s ON h.session_id = s.id
                 \\WHERE h.session_id = ?{s} LIMIT ?
             , .{order_part});
@@ -1061,7 +1060,7 @@ pub fn getSessionProfileName(
 ) ![]const u8 {
     var rows = try db.query(
         allocator,
-        "SELECT COALESCE(selected_profile_model, '') FROM sessions WHERE id = ?",
+        "SELECT COALESCE(CAST(selected_profile_model AS TEXT), '') FROM sessions WHERE id = ?",
         &.{session_id},
     );
     defer rows.deinit();
@@ -1091,7 +1090,7 @@ pub fn getSessionPrFields(
 ) !SessionPrFields {
     var rows = try db.query(
         allocator,
-        "SELECT COALESCE(pr_url, ''), COALESCE(pr_provider, '') FROM sessions WHERE id = ?",
+        "SELECT COALESCE(CAST(pr_url AS TEXT), ''), COALESCE(CAST(pr_provider AS TEXT), '') FROM sessions WHERE id = ?",
         &.{session_id},
     );
     defer rows.deinit();
@@ -1668,16 +1667,16 @@ pub fn getMessages(
         \\SELECT
         \\    h.id, h.session_id, h.model, h.created_at_nano AS created_at,
         \\    h.response_content, h.finish_reason,
-        \\    COALESCE(h.role, 'assistant'),
-        \\    COALESCE(h.tool_calls_json, ''),
-        \\    COALESCE(h.reasoning_content, ''),
-        \\    COALESCE(h.reasoning_id, ''),
-        \\    COALESCE(h.reasoning_encrypted_content, ''),
-        \\    COALESCE(h.agent, 'Agent'),
-        \\    COALESCE(s.name, ''),
+        \\    COALESCE(CAST(h.role AS TEXT), 'assistant'),
+        \\    COALESCE(CAST(h.tool_calls_json AS TEXT), ''),
+        \\    COALESCE(CAST(h.reasoning_content AS TEXT), ''),
+        \\    COALESCE(CAST(h.reasoning_id AS TEXT), ''),
+        \\    COALESCE(CAST(h.reasoning_encrypted_content AS TEXT), ''),
+        \\    COALESCE((SELECT CAST(h2.agent AS TEXT) FROM llm_history h2 WHERE h2.session_id = s.id AND h2.agent IS NOT NULL LIMIT 1), 'Agent'),
+        \\    COALESCE(CAST(s.name AS TEXT), ''),
         \\    COALESCE(h.loop_index, 0),
-        \\    COALESCE(h.tool_name, ''),
-        \\    COALESCE(h.parent_session_id, ''),
+        \\    COALESCE(CAST(h.tool_name AS TEXT), ''),
+        \\    COALESCE(CAST(h.parent_session_id AS TEXT), ''),
         \\    COALESCE(h.temperature, 0.2),
         \\    COALESCE(h.is_thinking, 0),
         \\    COALESCE(h.prompt_tokens, 0),
@@ -1685,11 +1684,11 @@ pub fn getMessages(
         \\    COALESCE(h.total_tokens, 0),
         \\    COALESCE(h.is_input, 0),
         \\    COALESCE(h.is_output, 0),
-        \\    COALESCE(h.diffview_before, ''),
-        \\    COALESCE(h.diffview_after, ''),
-        \\    COALESCE(h.image_url, ''),
-        \\    COALESCE(h.video_url, ''),
-        \\    COALESCE(h.tool_call_id, '')
+        \\    COALESCE(CAST(h.diffview_before AS TEXT), ''),
+        \\    COALESCE(CAST(h.diffview_after AS TEXT), ''),
+        \\    COALESCE(CAST(h.image_url AS TEXT), ''),
+        \\    COALESCE(CAST(h.video_url AS TEXT), ''),
+        \\    COALESCE(CAST(h.tool_call_id AS TEXT), '')
         \\FROM llm_history h
         \\LEFT JOIN sessions s ON h.session_id = s.id
         \\WHERE h.session_id = ?
@@ -1937,10 +1936,10 @@ pub fn getCompactedMessages(
     defer sql.deinit(allocator);
     try sql.appendSlice(allocator,
         \\SELECT
-        \\    h.id, h.session_id, COALESCE(h.role, 'assistant'),
-        \\    COALESCE(h.response_content, ''),
+        \\    h.id, h.session_id, COALESCE(CAST(h.role AS TEXT), 'assistant'),
+        \\    COALESCE(CAST(h.response_content AS TEXT), ''),
         \\    h.tool_call_id, h.tool_name,
-        \\    COALESCE(h.model, ''), COALESCE(h.agent, ''),
+        \\    COALESCE(CAST(h.model AS TEXT), ''), COALESCE(CAST(h.agent AS TEXT), ''),
         \\    COALESCE(CAST(h.created_at_nano AS TEXT), '') AS created_at,
         \\    COUNT(*) OVER () AS total
         \\FROM llm_history h
@@ -2052,10 +2051,10 @@ pub fn getMessagesByIds(
     defer sql.deinit(allocator);
     try sql.appendSlice(allocator,
         \\SELECT
-        \\    h.id, h.session_id, COALESCE(h.role, 'assistant'),
-        \\    COALESCE(h.response_content, ''),
+        \\    h.id, h.session_id, COALESCE(CAST(h.role AS TEXT), 'assistant'),
+        \\    COALESCE(CAST(h.response_content AS TEXT), ''),
         \\    h.tool_call_id, h.tool_name,
-        \\    COALESCE(h.model, ''), COALESCE(h.agent, ''),
+        \\    COALESCE(CAST(h.model AS TEXT), ''), COALESCE(CAST(h.agent AS TEXT), ''),
         \\    COALESCE(CAST(h.created_at_nano AS TEXT), '') AS created_at,
         \\    COUNT(*) OVER () AS total
         \\FROM llm_history h
@@ -2291,15 +2290,15 @@ pub fn searchMessagesFts(
             \\FROM (
             \\    SELECT
             \\        h.id AS id, h.session_id AS session_id,
-            \\        COALESCE(h.role, 'assistant') AS role,
-            \\        ts_headline('simple'::regconfig, COALESCE(h.response_content, ''), q.tsq,
+            \\        COALESCE(CAST(h.role AS TEXT), 'assistant') AS role,
+            \\        ts_headline('simple'::regconfig, COALESCE(CAST(h.response_content AS TEXT), ''), q.tsq,
             \\                    'StartSel=[, StopSel=], MaxWords=10, MinWords=3') AS snippet,
             \\        h.tool_call_id AS tool_call_id,
             \\        h.tool_name AS tool_name,
             \\        COALESCE(NULLIF(h.created_iso, ''), CAST(h.created_at_nano AS TEXT), '') AS created_at,
-            \\        -ts_rank(to_tsvector('simple'::regconfig, COALESCE(h.response_content, '')), q.tsq) AS fts_rank
+            \\        -ts_rank(to_tsvector('simple'::regconfig, COALESCE(CAST(h.response_content AS TEXT), '')), q.tsq) AS fts_rank
             \\    FROM llm_history h, to_tsquery('simple'::regconfig, ?) AS q(tsq)
-            \\    WHERE to_tsvector('simple'::regconfig, COALESCE(h.response_content, '')) @@ q.tsq
+            \\    WHERE to_tsvector('simple'::regconfig, COALESCE(CAST(h.response_content AS TEXT), '')) @@ q.tsq
         );
     } else {
         // Wrap FTS5 access in a subquery so the COUNT(*) OVER () window
@@ -2312,7 +2311,7 @@ pub fn searchMessagesFts(
             \\FROM (
             \\    SELECT
             \\        h.id AS id, h.session_id AS session_id,
-            \\        COALESCE(h.role, 'assistant') AS role,
+            \\        COALESCE(CAST(h.role AS TEXT), 'assistant') AS role,
             \\        snippet(messages_fts, 0, '[', ']', '...', 10) AS snippet,
             \\        h.tool_call_id AS tool_call_id,
             \\        h.tool_name AS tool_name,
@@ -2431,16 +2430,16 @@ pub fn getLatestMessage(
         \\SELECT
         \\    h.id, h.session_id, h.model, h.created_at_nano AS created_at,
         \\    h.response_content, h.finish_reason,
-        \\    COALESCE(h.role, 'assistant'),
-        \\    COALESCE(h.tool_calls_json, ''),
-        \\    COALESCE(h.reasoning_content, ''),
-        \\    COALESCE(h.reasoning_id, ''),
-        \\    COALESCE(h.reasoning_encrypted_content, ''),
-        \\    COALESCE(h.agent, 'Agent'),
-        \\    COALESCE(s.name, ''),
+        \\    COALESCE(CAST(h.role AS TEXT), 'assistant'),
+        \\    COALESCE(CAST(h.tool_calls_json AS TEXT), ''),
+        \\    COALESCE(CAST(h.reasoning_content AS TEXT), ''),
+        \\    COALESCE(CAST(h.reasoning_id AS TEXT), ''),
+        \\    COALESCE(CAST(h.reasoning_encrypted_content AS TEXT), ''),
+        \\    COALESCE((SELECT CAST(h2.agent AS TEXT) FROM llm_history h2 WHERE h2.session_id = s.id AND h2.agent IS NOT NULL LIMIT 1), 'Agent'),
+        \\    COALESCE(CAST(s.name AS TEXT), ''),
         \\    COALESCE(h.loop_index, 0),
-        \\    COALESCE(h.tool_name, ''),
-        \\    COALESCE(h.parent_session_id, ''),
+        \\    COALESCE(CAST(h.tool_name AS TEXT), ''),
+        \\    COALESCE(CAST(h.parent_session_id AS TEXT), ''),
         \\    COALESCE(h.temperature, 0.2),
         \\    COALESCE(h.is_thinking, 0),
         \\    COALESCE(h.prompt_tokens, 0),
@@ -2448,11 +2447,11 @@ pub fn getLatestMessage(
         \\    COALESCE(h.total_tokens, 0),
         \\    COALESCE(h.is_input, 0),
         \\    COALESCE(h.is_output, 0),
-        \\    COALESCE(h.diffview_before, ''),
-        \\    COALESCE(h.diffview_after, ''),
-        \\    COALESCE(h.image_url, ''),
-        \\    COALESCE(h.video_url, ''),
-        \\    COALESCE(h.tool_call_id, '')
+        \\    COALESCE(CAST(h.diffview_before AS TEXT), ''),
+        \\    COALESCE(CAST(h.diffview_after AS TEXT), ''),
+        \\    COALESCE(CAST(h.image_url AS TEXT), ''),
+        \\    COALESCE(CAST(h.video_url AS TEXT), ''),
+        \\    COALESCE(CAST(h.tool_call_id AS TEXT), '')
         \\FROM llm_history h
         \\LEFT JOIN sessions s ON h.session_id = s.id
         \\WHERE h.session_id = ?
@@ -2546,16 +2545,16 @@ pub fn getMessageById(
         \\SELECT
         \\    h.id, h.session_id, h.model, h.created_at_nano AS created_at,
         \\    h.response_content, h.finish_reason,
-        \\    COALESCE(h.role, 'assistant'),
-        \\    COALESCE(h.tool_calls_json, ''),
-        \\    COALESCE(h.reasoning_content, ''),
-        \\    COALESCE(h.reasoning_id, ''),
-        \\    COALESCE(h.reasoning_encrypted_content, ''),
-        \\    COALESCE(h.agent, 'Agent'),
-        \\    COALESCE(s.name, ''),
+        \\    COALESCE(CAST(h.role AS TEXT), 'assistant'),
+        \\    COALESCE(CAST(h.tool_calls_json AS TEXT), ''),
+        \\    COALESCE(CAST(h.reasoning_content AS TEXT), ''),
+        \\    COALESCE(CAST(h.reasoning_id AS TEXT), ''),
+        \\    COALESCE(CAST(h.reasoning_encrypted_content AS TEXT), ''),
+        \\    COALESCE((SELECT CAST(h2.agent AS TEXT) FROM llm_history h2 WHERE h2.session_id = s.id AND h2.agent IS NOT NULL LIMIT 1), 'Agent'),
+        \\    COALESCE(CAST(s.name AS TEXT), ''),
         \\    COALESCE(h.loop_index, 0),
-        \\    COALESCE(h.tool_name, ''),
-        \\    COALESCE(h.parent_session_id, ''),
+        \\    COALESCE(CAST(h.tool_name AS TEXT), ''),
+        \\    COALESCE(CAST(h.parent_session_id AS TEXT), ''),
         \\    COALESCE(h.temperature, 0.2),
         \\    COALESCE(h.is_thinking, 0),
         \\    COALESCE(h.prompt_tokens, 0),
@@ -2563,11 +2562,11 @@ pub fn getMessageById(
         \\    COALESCE(h.total_tokens, 0),
         \\    COALESCE(h.is_input, 0),
         \\    COALESCE(h.is_output, 0),
-        \\    COALESCE(h.diffview_before, ''),
-        \\    COALESCE(h.diffview_after, ''),
-        \\    COALESCE(h.image_url, ''),
-        \\    COALESCE(h.video_url, ''),
-        \\    COALESCE(h.tool_call_id, '')
+        \\    COALESCE(CAST(h.diffview_before AS TEXT), ''),
+        \\    COALESCE(CAST(h.diffview_after AS TEXT), ''),
+        \\    COALESCE(CAST(h.image_url AS TEXT), ''),
+        \\    COALESCE(CAST(h.video_url AS TEXT), ''),
+        \\    COALESCE(CAST(h.tool_call_id AS TEXT), '')
         \\FROM llm_history h
         \\LEFT JOIN sessions s ON h.session_id = s.id
         \\WHERE h.id = ? AND h.session_id = ?
@@ -2657,7 +2656,7 @@ pub fn get_sessions_by_dir(
 ) ![]SessionInfo {
     var results: std.ArrayList(SessionInfo) = .empty;
 
-    const sql = "SELECT h.session_id, COALESCE(s.cwd, ''), MAX(h.created_at_nano) AS created_at FROM llm_history h LEFT JOIN sessions s ON h.session_id = s.id WHERE s.cwd = ? GROUP BY h.session_id ORDER BY MAX(h.created_at_nano) DESC LIMIT 10";
+    const sql = "SELECT h.session_id, COALESCE(CAST(s.cwd AS TEXT), ''), MAX(h.created_at_nano) AS created_at FROM llm_history h LEFT JOIN sessions s ON h.session_id = s.id WHERE s.cwd = ? GROUP BY h.session_id ORDER BY MAX(h.created_at_nano) DESC LIMIT 10";
     var rows = try db.query(allocator, sql, &[_][]const u8{cwd});
     defer rows.deinit();
 
@@ -2690,7 +2689,7 @@ pub fn getLatestSessionByDir(
     db: *database.Db,
     cwd: []const u8,
 ) !?SessionInfo {
-    const sql = "SELECT s.id, s.name, s.status, s.cwd, COALESCE(CAST(s.created_at AS TEXT), ''), COALESCE(CAST(s.updated_at AS TEXT), ''), COALESCE(h.agent, '') FROM sessions s LEFT JOIN llm_history h ON s.id = h.session_id WHERE s.cwd = ? GROUP BY s.id ORDER BY s.created_at DESC LIMIT 1";
+    const sql = "SELECT s.id, s.name, s.status, s.cwd, COALESCE(CAST(s.created_at AS TEXT), ''), COALESCE(CAST(s.updated_at AS TEXT), ''), COALESCE(CAST(h.agent AS TEXT), '') FROM sessions s LEFT JOIN llm_history h ON s.id = h.session_id WHERE s.cwd = ? GROUP BY s.id ORDER BY s.created_at DESC LIMIT 1";
     var rows = try db.query(allocator, sql, &[_][]const u8{cwd});
     defer rows.deinit();
 
@@ -2732,7 +2731,7 @@ pub fn get_current_agent_by_session_id(
     db: *database.Db,
     session_id: []const u8,
 ) !AgentState {
-    const sql = "SELECT COALESCE(agent, 'Agent'), COALESCE(temperature, 0), COALESCE(is_thinking, 1) FROM llm_history WHERE session_id = ? ORDER BY created_at_nano DESC LIMIT 1";
+    const sql = "SELECT COALESCE(CAST(agent AS TEXT), 'Agent'), COALESCE(temperature, 0), COALESCE(is_thinking, 1) FROM llm_history WHERE session_id = ? ORDER BY created_at_nano DESC LIMIT 1";
     var rows = try db.query(allocator, sql, &.{session_id});
     defer rows.deinit();
 
@@ -2790,10 +2789,10 @@ pub fn getActiveWorker(
     const sql =
         \\SELECT
         \\    w.session_id,
-        \\    COALESCE(w.working_directory, ''),
+        \\    COALESCE(CAST(w.working_directory AS TEXT), ''),
         \\    w.last_activity_nano AS last_activity,
-        \\    COALESCE(w.last_activity_description, ''),
-        \\    COALESCE(s.git_worktree_cwd, '')
+        \\    COALESCE(CAST(w.last_activity_description AS TEXT), ''),
+        \\    COALESCE(CAST(s.git_worktree_cwd AS TEXT), '')
         \\FROM worker w
         \\LEFT JOIN sessions s ON s.id = w.session_id
         \\ORDER BY w.last_activity_nano DESC
@@ -2956,10 +2955,10 @@ pub fn getWorkerBySessionId(
     const sql =
         \\SELECT
         \\    w.session_id,
-        \\    COALESCE(w.working_directory, ''),
+        \\    COALESCE(CAST(w.working_directory AS TEXT), ''),
         \\    w.last_activity_nano AS last_activity,
-        \\    COALESCE(w.last_activity_description, ''),
-        \\    COALESCE(s.git_worktree_cwd, '')
+        \\    COALESCE(CAST(w.last_activity_description AS TEXT), ''),
+        \\    COALESCE(CAST(s.git_worktree_cwd AS TEXT), '')
         \\FROM worker w
         \\LEFT JOIN sessions s ON s.id = w.session_id
         \\WHERE w.session_id = ?
@@ -3153,7 +3152,7 @@ pub fn getQueueMessages(
     db: *database.Db,
     session_id: []const u8,
 ) !?std.ArrayList(QueuedMessage) {
-    const select_sql = "SELECT message, image_url, COALESCE(video_url, '') FROM session_queue_messages WHERE session_id = ? ORDER BY created_at ASC";
+    const select_sql = "SELECT message, image_url, COALESCE(CAST(video_url AS TEXT), '') FROM session_queue_messages WHERE session_id = ? ORDER BY created_at ASC";
     var rows = try db.query(allocator, select_sql, &.{session_id});
     defer rows.deinit();
 
@@ -3313,12 +3312,12 @@ pub fn getSession(
     id: []const u8,
 ) !?SessionTableInfo {
     const sql =
-        \\SELECT s.id, s.name, s.status, COALESCE(s.cwd, ''),
+        \\SELECT s.id, s.name, s.status, COALESCE(CAST(s.cwd AS TEXT), ''),
         \\       COALESCE(CAST(s.created_at AS TEXT), ''), COALESCE(CAST(s.updated_at AS TEXT), ''),
-        \\       COALESCE(s.selected_profile_model, ''), COALESCE(s.git_worktree_cwd, ''),
-        \\       COALESCE(s.is_auto_retry_until_stop, '0'), COALESCE(s.last_finish_reason, ''),
-        \\       COALESCE(s.pr_url, ''), COALESCE(s.pr_provider, ''),
-        \\       COALESCE(s.sub_agent_name, ''), COALESCE(s.parent_session_id, '')
+        \\       COALESCE(CAST(s.selected_profile_model AS TEXT), ''), COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''),
+        \\       COALESCE(CAST(s.is_auto_retry_until_stop AS TEXT), '0'), COALESCE(CAST(s.last_finish_reason AS TEXT), ''),
+        \\       COALESCE(CAST(s.pr_url AS TEXT), ''), COALESCE(CAST(s.pr_provider AS TEXT), ''),
+        \\       COALESCE(CAST(s.sub_agent_name AS TEXT), ''), COALESCE(CAST(s.parent_session_id AS TEXT), '')
         \\FROM sessions s WHERE s.id = ?
     ;
 
@@ -3367,11 +3366,11 @@ fn getSessionLegacy(
     id: []const u8,
 ) !?SessionTableInfo {
     const sql =
-        \\SELECT s.id, s.name, s.status, COALESCE(s.cwd, ''),
+        \\SELECT s.id, s.name, s.status, COALESCE(CAST(s.cwd AS TEXT), ''),
         \\       COALESCE(CAST(s.created_at AS TEXT), ''), COALESCE(CAST(s.updated_at AS TEXT), ''),
-        \\       COALESCE(s.selected_profile_model, ''), COALESCE(s.git_worktree_cwd, ''),
-        \\       COALESCE(s.is_auto_retry_until_stop, '0'), COALESCE(s.last_finish_reason, ''),
-        \\       COALESCE(s.pr_url, ''), COALESCE(s.pr_provider, '')
+        \\       COALESCE(CAST(s.selected_profile_model AS TEXT), ''), COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''),
+        \\       COALESCE(CAST(s.is_auto_retry_until_stop AS TEXT), '0'), COALESCE(CAST(s.last_finish_reason AS TEXT), ''),
+        \\       COALESCE(CAST(s.pr_url AS TEXT), ''), COALESCE(CAST(s.pr_provider AS TEXT), '')
         \\FROM sessions s WHERE s.id = ?
     ;
 
@@ -3673,7 +3672,7 @@ pub fn getSessionGitWorktreeCwd(
 ) ![]u8 {
     var rows = try db.query(
         allocator,
-        "SELECT COALESCE(git_worktree_cwd, '') FROM sessions WHERE id = ?",
+        "SELECT COALESCE(CAST(git_worktree_cwd AS TEXT), '') FROM sessions WHERE id = ?",
         &.{session_id},
     );
     defer rows.deinit();
@@ -3777,7 +3776,7 @@ pub fn list_sessions(
     allocator: std.mem.Allocator,
     db: *database.Db,
 ) ![]SessionTableInfo {
-    const sql = "SELECT id, name, status, COALESCE(selected_profile_model, ''), COALESCE(cwd, ''), COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), ''), COALESCE(git_worktree_cwd, ''), COALESCE(pr_url, ''), COALESCE(pr_provider, ''), COALESCE(is_auto_retry_until_stop, '0'), COALESCE(last_finish_reason, ''), COALESCE(sub_agent_name, ''), COALESCE(parent_session_id, '') FROM sessions ORDER BY id";
+    const sql = "SELECT id, name, status, COALESCE(CAST(selected_profile_model AS TEXT), ''), COALESCE(CAST(cwd AS TEXT), ''), COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), ''), COALESCE(CAST(git_worktree_cwd AS TEXT), ''), COALESCE(CAST(pr_url AS TEXT), ''), COALESCE(CAST(pr_provider AS TEXT), ''), COALESCE(CAST(is_auto_retry_until_stop AS TEXT), '0'), COALESCE(CAST(last_finish_reason AS TEXT), ''), COALESCE(CAST(sub_agent_name AS TEXT), ''), COALESCE(CAST(parent_session_id AS TEXT), '') FROM sessions ORDER BY id";
 
     var rows = try db.query(allocator, sql, &.{});
     defer rows.deinit();
@@ -3950,7 +3949,7 @@ pub fn saveProgressiveTool(
     // COALESCE on server_name is REQUIRED, not cosmetic: Backend binds
     // an empty `[]const u8` as SQL NULL, and `server_name` is NOT NULL — so a
     // built-in (always passed with "") would violate the constraint and
-    const sql = "INSERT INTO session_progressive_tool (session_id, tool_name, server_name, loaded_at_nano) VALUES (?, ?, COALESCE(?, ''), strftime('%s', 'now')) ON CONFLICT DO NOTHING";
+    const sql = "INSERT INTO session_progressive_tool (session_id, tool_name, server_name, loaded_at_nano) VALUES (?, ?, COALESCE(CAST(? AS TEXT), ''), strftime('%s', 'now')) ON CONFLICT DO NOTHING";
     try db.exec(allocator, sql, &.{ session_id, tool_name, server_name });
 
     const inserted = db.changes() > 0;
@@ -5087,7 +5086,7 @@ pub fn getWorkspaceItemTaskById(
     // 18-column contract, indices 0-17) minus cursor/sort/pagination —
     // replaced by `WHERE t.id = ? ...
     const sql =
-        \\SELECT t.id, t.name, t.workspace_item_id, t.description, t.created_at, t.updated_at, t.task_type, COALESCE(t.is_pinned, 0), COALESCE(t.pinned_position, 0), k.kanban_column_id, COALESCE(k.kanban_position, 0), COALESCE(s.is_auto_retry_until_stop, '0'), COALESCE(s.last_finish_reason, ''), CASE WHEN COALESCE(s.last_finish_reason, '') = 'stop' AND (t.last_human_touched_at_nano IS NULL OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000) THEN 1 ELSE 0 END, t.tags, COALESCE(s.git_worktree_cwd, ''), t.cwd, CASE WHEN COALESCE(t.image_urls, '') != '' THEN 1 ELSE 0 END, CASE WHEN COALESCE(t.video_urls, '') != '' THEN 1 ELSE 0 END, COALESCE(t.skill_names, '') FROM workspace_item_tasks t LEFT JOIN kanban k ON k.workspace_item_task_id = t.id LEFT JOIN sessions s ON s.id = t.id WHERE t.workspace_item_id = ? AND t.id = ? LIMIT 1
+        \\SELECT t.id, t.name, t.workspace_item_id, t.description, t.created_at, t.updated_at, t.task_type, COALESCE(t.is_pinned, 0), COALESCE(t.pinned_position, 0), k.kanban_column_id, COALESCE(k.kanban_position, 0), COALESCE(CAST(s.is_auto_retry_until_stop AS TEXT), '0'), COALESCE(CAST(s.last_finish_reason AS TEXT), ''), CASE WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop' AND (t.last_human_touched_at_nano IS NULL OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000) THEN 1 ELSE 0 END, t.tags, COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''), t.cwd, CASE WHEN COALESCE(CAST(t.image_urls AS TEXT), '') != '' THEN 1 ELSE 0 END, CASE WHEN COALESCE(CAST(t.video_urls AS TEXT), '') != '' THEN 1 ELSE 0 END, COALESCE(CAST(t.skill_names AS TEXT), '') FROM workspace_item_tasks t LEFT JOIN kanban k ON k.workspace_item_task_id = t.id LEFT JOIN sessions s ON s.id = t.id WHERE t.workspace_item_id = ? AND t.id = ? LIMIT 1
     ;
 
     var rows = try db.query(allocator, sql, &.{ workspace_item_id, task_id });
@@ -5152,7 +5151,7 @@ pub fn getWorkspaceItemTaskMedia(
     workspace_item_id: []const u8,
     task_id: []const u8,
 ) !?TaskMedia {
-    const sql = "SELECT COALESCE(t.image_urls, ''), COALESCE(t.video_urls, '') FROM workspace_item_tasks t WHERE t.workspace_item_id = ? AND t.id = ? LIMIT 1";
+    const sql = "SELECT COALESCE(CAST(t.image_urls AS TEXT), ''), COALESCE(CAST(t.video_urls AS TEXT), '') FROM workspace_item_tasks t WHERE t.workspace_item_id = ? AND t.id = ? LIMIT 1";
     var rows = try db.query(allocator, sql, &.{ workspace_item_id, task_id });
     defer rows.deinit();
     if (try rows.next()) |row| {
@@ -5248,7 +5247,7 @@ pub fn listWorkspaceItemTasksWithCursor(
             q_pattern = try std.fmt.allocPrint(allocator, "%{s}%", .{escaped});
             q_clause = try std.fmt.allocPrint(
                 allocator,
-                " AND (LOWER(t.name) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(t.description, '')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(t.tags, '')) LIKE ? ESCAPE '\\')",
+                " AND (LOWER(t.name) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(CAST(t.description AS TEXT), '')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(CAST(t.tags AS TEXT), '')) LIKE ? ESCAPE '\\')",
                 .{},
             );
         }
@@ -5276,7 +5275,7 @@ pub fn listWorkspaceItemTasksWithCursor(
         // Auto-retry-until-stop: LEFT JOIN sessions on t.id = sessions.id
         // (per the project convention task.id == session.id; standard tasks
         // that have no matching session row get NULL → COALESCE to '0').
-        "SELECT t.id, t.name, t.workspace_item_id, t.description, t.created_at, t.updated_at, t.task_type, COALESCE(t.is_pinned, 0), COALESCE(t.pinned_position, 0), k.kanban_column_id, COALESCE(k.kanban_position, 0), COALESCE(s.is_auto_retry_until_stop, '0'), COALESCE(s.last_finish_reason, ''), CASE WHEN COALESCE(s.last_finish_reason, '') = 'stop' AND (t.last_human_touched_at_nano IS NULL OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000) THEN 1 ELSE 0 END, t.tags, COALESCE(s.git_worktree_cwd, ''), t.cwd, CASE WHEN COALESCE(t.image_urls, '') != '' THEN 1 ELSE 0 END, CASE WHEN COALESCE(t.video_urls, '') != '' THEN 1 ELSE 0 END, COALESCE(t.skill_names, '') FROM workspace_item_tasks t LEFT JOIN kanban k ON k.workspace_item_task_id = t.id LEFT JOIN sessions s ON s.id = t.id WHERE t.workspace_item_id = ?{s}{s}{s} {s} LIMIT {s}",
+        "SELECT t.id, t.name, t.workspace_item_id, t.description, t.created_at, t.updated_at, t.task_type, COALESCE(t.is_pinned, 0), COALESCE(t.pinned_position, 0), k.kanban_column_id, COALESCE(k.kanban_position, 0), COALESCE(CAST(s.is_auto_retry_until_stop AS TEXT), '0'), COALESCE(CAST(s.last_finish_reason AS TEXT), ''), CASE WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop' AND (t.last_human_touched_at_nano IS NULL OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000) THEN 1 ELSE 0 END, t.tags, COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''), t.cwd, CASE WHEN COALESCE(CAST(t.image_urls AS TEXT), '') != '' THEN 1 ELSE 0 END, CASE WHEN COALESCE(CAST(t.video_urls AS TEXT), '') != '' THEN 1 ELSE 0 END, COALESCE(CAST(t.skill_names AS TEXT), '') FROM workspace_item_tasks t LEFT JOIN kanban k ON k.workspace_item_task_id = t.id LEFT JOIN sessions s ON s.id = t.id WHERE t.workspace_item_id = ?{s}{s}{s} {s} LIMIT {s}",
         .{ cursor_clause, column_id_clause, q_clause, order_by, limit_str },
     );
     defer allocator.free(sql);
@@ -5479,7 +5478,7 @@ pub fn getSessionsForBroadcast(
     allocator: std.mem.Allocator,
     db: *database.Db,
 ) ![]SessionBroadcastInfo {
-    const sql = "SELECT s.id, COALESCE(s.name, ''), COALESCE(s.status, 'active'), COALESCE(s.cwd, ''), COALESCE(CAST(s.created_at AS TEXT), ''), COALESCE(CAST(s.updated_at AS TEXT), ''), COALESCE(h.agent, 'Agent'), COALESCE(s.selected_profile_model, ''), COALESCE(s.git_worktree_cwd, ''), COALESCE(s.pr_url, ''), COALESCE(s.pr_provider, ''), COALESCE(s.sub_agent_name, ''), COALESCE(s.parent_session_id, '') FROM sessions s LEFT JOIN llm_history h ON s.id = h.session_id ORDER BY s.updated_at DESC";
+    const sql = "SELECT s.id, COALESCE(CAST(s.name AS TEXT), ''), COALESCE(CAST(s.status AS TEXT), 'active'), COALESCE(CAST(s.cwd AS TEXT), ''), COALESCE(CAST(s.created_at AS TEXT), ''), COALESCE(CAST(s.updated_at AS TEXT), ''), COALESCE((SELECT CAST(h2.agent AS TEXT) FROM llm_history h2 WHERE h2.session_id = s.id AND h2.agent IS NOT NULL LIMIT 1), 'Agent'), COALESCE(CAST(s.selected_profile_model AS TEXT), ''), COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''), COALESCE(CAST(s.pr_url AS TEXT), ''), COALESCE(CAST(s.pr_provider AS TEXT), ''), COALESCE(CAST(s.sub_agent_name AS TEXT), ''), COALESCE(CAST(s.parent_session_id AS TEXT), '') FROM sessions s LEFT JOIN llm_history h ON s.id = h.session_id ORDER BY s.updated_at DESC";
 
     var rows = db.query(allocator, sql, &[_][]const u8{}) catch return &[_]SessionBroadcastInfo{};
     defer rows.deinit();
@@ -8210,7 +8209,7 @@ test "needs_human_review predicate returns 1 when finish_reason='stop' AND no hu
     // Replicate the production SQL CASE.
     var q = try db.query(alloc,
         \\SELECT CASE
-        \\  WHEN COALESCE(s.last_finish_reason, '') = 'stop'
+        \\  WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop'
         \\       AND (
         \\         t.last_human_touched_at_nano IS NULL
         \\         OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000
@@ -8264,7 +8263,7 @@ test "needs_human_review predicate returns 0 when human touched AFTER the AI fin
 
     var q = try db.query(alloc,
         \\SELECT CASE
-        \\  WHEN COALESCE(s.last_finish_reason, '') = 'stop'
+        \\  WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop'
         \\       AND (
         \\         t.last_human_touched_at_nano IS NULL
         \\         OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000
@@ -8313,7 +8312,7 @@ test "needs_human_review predicate returns 0 when finish_reason is 'tool_calls' 
 
     var q = try db.query(alloc,
         \\SELECT CASE
-        \\  WHEN COALESCE(s.last_finish_reason, '') = 'stop'
+        \\  WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop'
         \\       AND (
         \\         t.last_human_touched_at_nano IS NULL
         \\         OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000
@@ -8353,7 +8352,7 @@ test "needs_human_review predicate returns 0 when no sessions row exists for the
 
     var q = try db.query(alloc,
         \\SELECT CASE
-        \\  WHEN COALESCE(s.last_finish_reason, '') = 'stop'
+        \\  WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop'
         \\       AND (
         \\         t.last_human_touched_at_nano IS NULL
         \\         OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000
@@ -8544,7 +8543,7 @@ fn llmHistorySearchMessagesFtsSetupDb() !TestCtx {
     // non-external-content so snippet() can read from messages_fts).
     if (dialect.has_fts5) try db.exec(alloc,
         \\CREATE TRIGGER llm_history_ai AFTER INSERT ON llm_history BEGIN
-        \\  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, COALESCE(new.response_content, ''));
+        \\  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, COALESCE(CAST(new.response_content AS TEXT), ''));
         \\END
     , &.{});
     if (dialect.has_fts5) try db.exec(alloc,
@@ -8555,7 +8554,7 @@ fn llmHistorySearchMessagesFtsSetupDb() !TestCtx {
     if (dialect.has_fts5) try db.exec(alloc,
         \\CREATE TRIGGER llm_history_au AFTER UPDATE ON llm_history BEGIN
         \\  DELETE FROM messages_fts WHERE rowid = old.rowid;
-        \\  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, COALESCE(new.response_content, ''));
+        \\  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, COALESCE(CAST(new.response_content AS TEXT), ''));
         \\END
     , &.{});
 
@@ -9699,7 +9698,7 @@ test "getActiveWorker returns empty string when session row has NULL git_worktre
     }
 
     try testing.expectEqual(@as(usize, 1), workers.len);
-    // COALESCE(s.git_worktree_cwd, '') maps NULL → empty string so the prompt
+    // COALESCE(CAST(s.git_worktree_cwd AS TEXT), '') maps NULL → empty string so the prompt
     // builder's `if (worker.git_worktree_cwd.len > 0)` guard works as
     // designed (skips the "(git worktree: ...)" suffix when no worktree is
     try testing.expectEqualStrings("", workers[0].git_worktree_cwd);

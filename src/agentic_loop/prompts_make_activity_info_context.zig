@@ -91,10 +91,10 @@ pub fn getActiveWorker(
     const sql =
         \\SELECT
         \\    w.session_id,
-        \\    COALESCE(w.working_directory, ''),
+        \\    COALESCE(CAST(w.working_directory AS TEXT), ''),
         \\    w.last_activity_nano AS last_activity,
-        \\    COALESCE(w.last_activity_description, ''),
-        \\    COALESCE(s.git_worktree_cwd, '')
+        \\    COALESCE(CAST(w.last_activity_description AS TEXT), ''),
+        \\    COALESCE(CAST(s.git_worktree_cwd AS TEXT), '')
         \\FROM worker w
         \\LEFT JOIN sessions s ON s.id = w.session_id
         \\ORDER BY w.last_activity_nano DESC

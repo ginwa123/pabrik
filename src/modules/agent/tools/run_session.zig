@@ -118,7 +118,7 @@ fn sessionExists(allocator: std.mem.Allocator, db: *database.Db, session_id: []c
 
 fn workspaceName(allocator: std.mem.Allocator, db: *database.Db, workspace_id: []const u8) ![]u8 {
     if (workspace_id.len == 0) return allocator.dupe(u8, "");
-    var rows = try db.query(allocator, "SELECT COALESCE(name, '') FROM workspaces WHERE id = ? LIMIT 1", &.{workspace_id});
+    var rows = try db.query(allocator, "SELECT COALESCE(CAST(name AS TEXT), '') FROM workspaces WHERE id = ? LIMIT 1", &.{workspace_id});
     defer rows.deinit();
     if (try rows.next()) |row| {
         defer row.deinit(allocator);

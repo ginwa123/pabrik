@@ -172,7 +172,7 @@ pub fn sessionCwd(
     db: *database.Db,
     session_id: []const u8,
 ) !?[]u8 {
-    var rows = try db.query(allocator, "SELECT COALESCE(cwd, '') FROM sessions WHERE id = ? LIMIT 1", &.{session_id});
+    var rows = try db.query(allocator, "SELECT COALESCE(CAST(cwd AS TEXT), '') FROM sessions WHERE id = ? LIMIT 1", &.{session_id});
     defer rows.deinit();
     if (try rows.next()) |row| {
         defer row.deinit(allocator);
@@ -205,7 +205,7 @@ pub fn resolveWorkspaceRoot(
     if (session_id.len == 0) return null;
 
     var rows = try db.query(allocator,
-        \\SELECT COALESCE(wi.path, '') FROM workspace_item_tasks t
+        \\SELECT COALESCE(CAST(wi.path AS TEXT), '') FROM workspace_item_tasks t
         \\JOIN workspace_items wi ON wi.id = t.workspace_item_id
         \\WHERE t.id = ? LIMIT 1
     , &.{session_id});

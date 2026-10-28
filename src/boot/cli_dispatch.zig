@@ -236,7 +236,7 @@ pub fn dispatchCreateAdmin(
     defer allocator.free(id);
     db.exec(
         allocator,
-        "INSERT INTO users (id, email, name, password_hash, role, is_active) VALUES (?, ?, COALESCE(?, ''), ?, 'admin', 1)",
+        "INSERT INTO users (id, email, name, password_hash, role, is_active) VALUES (?, ?, COALESCE(CAST(? AS TEXT), ''), ?, 'admin', 1)",
         &[_][]const u8{ id, email_v, got.name, hash_slice },
     ) catch {
         std.log.err("create-admin: insert failed (email may already exist)", .{});

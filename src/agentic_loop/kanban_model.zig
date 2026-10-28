@@ -436,7 +436,7 @@ pub fn moveTask(
     // source column after the move).
     const current_col_id = blk: {
         var q = try db.query(allocator,
-            "SELECT COALESCE(k.kanban_column_id, '') FROM kanban k WHERE k.workspace_item_task_id = ?",
+            "SELECT COALESCE(CAST(k.kanban_column_id AS TEXT), '') FROM kanban k WHERE k.workspace_item_task_id = ?",
             &.{task_id});
         defer q.deinit();
         const row = (try q.next()) orelse return error.TaskNotFound;
@@ -487,7 +487,7 @@ fn currentColumnId(
     task_id: []const u8,
 ) ![]u8 {
     var q = try db.query(allocator,
-        "SELECT COALESCE(kanban_column_id, '') FROM kanban WHERE workspace_item_task_id = ?",
+        "SELECT COALESCE(CAST(kanban_column_id AS TEXT), '') FROM kanban WHERE workspace_item_task_id = ?",
         &.{task_id});
     defer q.deinit();
 

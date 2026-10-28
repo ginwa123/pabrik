@@ -149,16 +149,16 @@ pub const ReplaceAssetsError = error{
 /// different shape. `COALESCE` flattens SQL NULL and guards a row written
 /// before a column existed, so the JS side never sees a null string.
 const SELECT_COLUMNS =
-    "SELECT id, workspace_id, name, COALESCE(description, ''), COALESCE(content, ''), " ++
+    "SELECT id, workspace_id, name, COALESCE(CAST(description AS TEXT), ''), COALESCE(CAST(content AS TEXT), ''), " ++
     "COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), ''), COALESCE(is_can_auto_improve, 1) " ++
     "FROM skills";
 
 const SELECT_METADATA_COLUMNS =
-    "SELECT id, skill_id, key, COALESCE(value, ''), COALESCE(CAST(created_at AS TEXT), ''), " ++
+    "SELECT id, skill_id, key, COALESCE(CAST(value AS TEXT), ''), COALESCE(CAST(created_at AS TEXT), ''), " ++
     "COALESCE(CAST(updated_at AS TEXT), '') FROM skill_metadata";
 
 const SELECT_ASSET_COLUMNS =
-    "SELECT id, skill_id, rel_path, COALESCE(content, ''), COALESCE(CAST(created_at AS TEXT), '') " ++
+    "SELECT id, skill_id, rel_path, COALESCE(CAST(content AS TEXT), ''), COALESCE(CAST(created_at AS TEXT), '') " ++
     "FROM skill_assets";
 
 /// Positional dupe, so a column reorder becomes a compile error in exactly

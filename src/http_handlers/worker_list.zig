@@ -352,6 +352,20 @@ test "a missing worker table surfaces as QueryFailed rather than an empty list" 
     );
 }
 
+/// The pool policy under test is sqlite's (one reader, a 20 ms budget): a
+/// postgres build has no such knobs, so it only ever compiles this away.
+fn openPoolPressureDb(db: *database.Db, io: std.Io, path: [:0]const u8) !void {
+    if (comptime database.backend_is_postgres) {
+        return error.SkipZigTest;
+    } else {
+        return db.initWithConfig(io, path, .{
+            .read_conns = 1,
+            .max_read_conns = 1,
+            .reader_wait_ms = 20,
+        });
+    }
+}
+
 test "repeated listings hand their pooled reader back instead of exhausting the pool" {
     // FILE-BACKED, deliberately: `initWithConfig` skips pooling for
     // `:memory:` (a second connection would see an empty database), so the
@@ -375,11 +389,7 @@ test "repeated listings hand their pooled reader back instead of exhausting the 
     // ONE reader, and a budget short enough to fail fast: with a single
     // reader, a second listing that finds the pool empty has no way to grow
     // it, so it waits and then falls back onto the write connection.
-    try db.initWithConfig(threaded.io(), path, .{
-        .read_conns = 1,
-        .max_read_conns = 1,
-        .reader_wait_ms = 20,
-    });
+    try openPoolPressureDb(&db, threaded.io(), path);
 
     try db.exec(alloc,
         \\CREATE TABLE worker (

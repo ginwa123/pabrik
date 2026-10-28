@@ -223,7 +223,7 @@ fn fetchWorkspacesList(alloc: std.mem.Allocator, db: *database.Db, include_items
             // Migration 062: added `description` to the SELECT column list
             // (right after `workspace_item_id`). All subsequent indices shift
             // by one.
-            const tasks_sql = try std.fmt.allocPrint(alloc, "SELECT t.id, t.name, t.workspace_item_id, t.description, t.created_at, t.updated_at, COALESCE(t.is_pinned, 0), COALESCE(t.pinned_position, 0), COALESCE(s.is_auto_retry_until_stop, '0'), t.tags FROM workspace_item_tasks t LEFT JOIN sessions s ON s.id = t.id WHERE t.workspace_item_id IN {s} ORDER BY t.is_pinned DESC, t.pinned_position DESC, t.created_at DESC", .{task_in_clause.items});
+            const tasks_sql = try std.fmt.allocPrint(alloc, "SELECT t.id, t.name, t.workspace_item_id, t.description, t.created_at, t.updated_at, COALESCE(t.is_pinned, 0), COALESCE(t.pinned_position, 0), COALESCE(CAST(s.is_auto_retry_until_stop AS TEXT), '0'), t.tags FROM workspace_item_tasks t LEFT JOIN sessions s ON s.id = t.id WHERE t.workspace_item_id IN {s} ORDER BY t.is_pinned DESC, t.pinned_position DESC, t.created_at DESC", .{task_in_clause.items});
             var tasks_rows = try db.query(alloc, tasks_sql, item_ids.items);
             defer tasks_rows.deinit();
 

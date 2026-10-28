@@ -99,7 +99,7 @@ pub fn sessionWorkspace(
 ) ![]u8 {
     var q = try db.query(
         allocator,
-        "SELECT COALESCE(workspace_id, '') FROM sessions WHERE id = ?",
+        "SELECT COALESCE(CAST(workspace_id AS TEXT), '') FROM sessions WHERE id = ?",
         &[_][]const u8{session_id},
     );
     defer q.deinit();
@@ -184,7 +184,7 @@ pub fn sessionOwner(
 ) ![]u8 {
     var q = try db.query(
         allocator,
-        "SELECT COALESCE(user_id, '') FROM sessions WHERE id = ?",
+        "SELECT COALESCE(CAST(user_id AS TEXT), '') FROM sessions WHERE id = ?",
         &[_][]const u8{session_id},
     );
     defer q.deinit();

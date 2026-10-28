@@ -56,8 +56,8 @@ pub fn anyIncomplete(edges: []const Edge) bool {
 /// still reports its id.
 const edge_select =
     "SELECT d.task_id, d.depends_on_task_id, " ++
-    "COALESCE(dep.name, ''), COALESCE(k.kanban_column_id, ''), " ++
-    "COALESCE(c.name, ''), COALESCE(c.is_done, 0)";
+    "COALESCE(CAST(dep.name AS TEXT), ''), COALESCE(CAST(k.kanban_column_id AS TEXT), ''), " ++
+    "COALESCE(CAST(c.name AS TEXT), ''), COALESCE(c.is_done, 0)";
 const edge_joins =
     " FROM kanban_task_dependencies d " ++
     "LEFT JOIN workspace_item_tasks dep ON dep.id = d.depends_on_task_id " ++

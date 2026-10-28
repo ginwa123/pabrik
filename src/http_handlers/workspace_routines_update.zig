@@ -125,9 +125,9 @@ fn useCase(
     // useCase is private, so re-run the same SELECT here.
     var q2 = db.query(allocator,
         \\SELECT id, workspace_item_id, description, instruction, schedule, enabled,
-        \\       COALESCE(last_run_at, ''), COALESCE(next_run_at, ''),
-        \\       last_status, COALESCE(last_error, ''),
-        \\       COALESCE(created_at, ''), COALESCE(updated_at, '')
+        \\       COALESCE(CAST(last_run_at AS TEXT), ''), COALESCE(CAST(next_run_at AS TEXT), ''),
+        \\       last_status, COALESCE(CAST(last_error AS TEXT), ''),
+        \\       COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), '')
         \\FROM workspace_routines WHERE id = ?
     , &[_][]const u8{input.item_id}) catch return error.RefetchFailed;
     defer q2.deinit();

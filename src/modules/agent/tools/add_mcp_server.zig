@@ -943,7 +943,7 @@ fn persistAuthModeStatus(ctx: ToolExecContext, di: *exec_pabrikcore.App) ![]u8 {
     {
         var q = ctx.db.query(
             ctx.allocator,
-            "SELECT COALESCE(user_id, '') FROM sessions WHERE id = ?",
+            "SELECT COALESCE(CAST(user_id AS TEXT), '') FROM sessions WHERE id = ?",
             &[_][]const u8{ctx.session_id},
         ) catch |err| {
             return failStatus(ctx.allocator, "session lookup", @errorName(err));

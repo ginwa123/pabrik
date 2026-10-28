@@ -827,7 +827,7 @@ fn readExistingWorktreeCwd(
     db: *database.Db,
     session_id: []const u8,
 ) ![]u8 {
-    const sql = "SELECT COALESCE(s.git_worktree_cwd, '') FROM sessions s WHERE s.id = ?";
+    const sql = "SELECT COALESCE(CAST(s.git_worktree_cwd AS TEXT), '') FROM sessions s WHERE s.id = ?";
     var q = try db.query(allocator, sql, &.{session_id});
     defer q.deinit();
     if (try q.next()) |row| {

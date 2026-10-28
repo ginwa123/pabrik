@@ -34,8 +34,8 @@ pub fn getQueueMessages(
         \\    id,
         \\    message,
         \\    image_url,
-        \\    COALESCE(video_url, ''),
-        \\    COALESCE(file_attachments, '')
+        \\    COALESCE(CAST(video_url AS TEXT), ''),
+        \\    COALESCE(CAST(file_attachments AS TEXT), '')
         \\FROM session_queue_messages
         \\WHERE session_id = ?
         \\ORDER BY created_at ASC;

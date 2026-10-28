@@ -63,16 +63,16 @@ pub fn decide(candidate: Candidate, owner_alive: bool) Decision {
 
 const select_sql =
     \\SELECT w.id,
-    \\       COALESCE(s.name, ''),
-    \\       COALESCE(s.cwd, ''),
-    \\       COALESCE(s.selected_profile_model, ''),
-    \\       COALESCE(s.is_auto_retry_until_stop, '0'),
-    \\       COALESCE(s.user_id, ''),
-    \\       COALESCE(s.last_finish_reason, ''),
-    \\       COALESCE(s.parent_session_id, ''),
-    \\       COALESCE(s.sub_agent_name, ''),
+    \\       COALESCE(CAST(s.name AS TEXT), ''),
+    \\       COALESCE(CAST(s.cwd AS TEXT), ''),
+    \\       COALESCE(CAST(s.selected_profile_model AS TEXT), ''),
+    \\       COALESCE(CAST(s.is_auto_retry_until_stop AS TEXT), '0'),
+    \\       COALESCE(CAST(s.user_id AS TEXT), ''),
+    \\       COALESCE(CAST(s.last_finish_reason AS TEXT), ''),
+    \\       COALESCE(CAST(s.parent_session_id AS TEXT), ''),
+    \\       COALESCE(CAST(s.sub_agent_name AS TEXT), ''),
     \\       EXISTS (SELECT 1 FROM session_queue_messages q WHERE q.session_id = w.id),
-    \\       COALESCE(w.run_token, '')
+    \\       COALESCE(CAST(w.run_token AS TEXT), '')
     \\FROM worker w
     \\LEFT JOIN sessions s ON s.id = w.session_id
     \\ORDER BY w.last_activity_nano DESC;

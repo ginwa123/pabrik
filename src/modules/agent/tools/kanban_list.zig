@@ -182,7 +182,7 @@ pub fn listKanbanTasks(
             const lim_str = std.fmt.bufPrint(&lim_buf, "{d}", .{lim}) catch "20";
             const off_str = std.fmt.bufPrint(&off_buf, "{d}", .{off}) catch "0";
             break :blk try db.query(allocator,
-                \\SELECT t.id, t.name, COALESCE(k.kanban_column_id, ''), COALESCE(k.kanban_position, -1)
+                \\SELECT t.id, t.name, COALESCE(CAST(k.kanban_column_id AS TEXT), ''), COALESCE(k.kanban_position, -1)
                 \\FROM workspace_item_tasks t
                 \\LEFT JOIN kanban k ON k.workspace_item_task_id = t.id
                 \\WHERE t.workspace_item_id = ? AND k.kanban_column_id = ?
@@ -191,7 +191,7 @@ pub fn listKanbanTasks(
             , &.{ workspace_item_id, cid, lim_str, off_str });
         } else {
             break :blk try db.query(allocator,
-                \\SELECT t.id, t.name, COALESCE(k.kanban_column_id, ''), COALESCE(k.kanban_position, -1)
+                \\SELECT t.id, t.name, COALESCE(CAST(k.kanban_column_id AS TEXT), ''), COALESCE(k.kanban_position, -1)
                 \\FROM workspace_item_tasks t
                 \\LEFT JOIN kanban k ON k.workspace_item_task_id = t.id
                 \\WHERE t.workspace_item_id = ? AND k.kanban_column_id = ?
@@ -206,7 +206,7 @@ pub fn listKanbanTasks(
             const lim_str = std.fmt.bufPrint(&lim_buf, "{d}", .{lim}) catch "20";
             const off_str = std.fmt.bufPrint(&off_buf, "{d}", .{off}) catch "0";
             break :blk try db.query(allocator,
-                \\SELECT t.id, t.name, COALESCE(k.kanban_column_id, ''), COALESCE(k.kanban_position, -1)
+                \\SELECT t.id, t.name, COALESCE(CAST(k.kanban_column_id AS TEXT), ''), COALESCE(k.kanban_position, -1)
                 \\FROM workspace_item_tasks t
                 \\LEFT JOIN kanban k ON k.workspace_item_task_id = t.id
                 \\WHERE t.workspace_item_id = ?
@@ -215,7 +215,7 @@ pub fn listKanbanTasks(
             , &.{ workspace_item_id, lim_str, off_str });
         } else {
             break :blk try db.query(allocator,
-                \\SELECT t.id, t.name, COALESCE(k.kanban_column_id, ''), COALESCE(k.kanban_position, -1)
+                \\SELECT t.id, t.name, COALESCE(CAST(k.kanban_column_id AS TEXT), ''), COALESCE(k.kanban_position, -1)
                 \\FROM workspace_item_tasks t
                 \\LEFT JOIN kanban k ON k.workspace_item_task_id = t.id
                 \\WHERE t.workspace_item_id = ?
