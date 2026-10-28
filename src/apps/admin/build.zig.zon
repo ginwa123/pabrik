@@ -9,7 +9,7 @@
     // unpacks vendored sources under `src/`, where the linter walks.
     .dependencies = .{
         .databases = .{
-            .path = "../../../zig-pkg/databases-0.0.0-vy-BCBGEBgAvJ5sNp02LK7JfvYTt7F8qzFVzpTgtIxA7",
+            .path = "../../../zig-pkg/databases-0.0.0-vy-BCNyYBgAr0Z08ttKRFycgK5rKe7Ex_Fb6ZgtnYL8e",
         },
         .kabelweb = .{
             .path = "../../../zig-pkg/kabelweb-0.0.0-vhZam0qGHQCzi7tg9e4tnQucLRoFxnrkXSsTjV_rBxal",

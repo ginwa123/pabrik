@@ -15,6 +15,11 @@ pub const MigrationManager = struct {
     allocator: std.mem.Allocator,
     db: *Backend,
     migrations: std.ArrayList(Migration),
+    /// The migration `runMigrations` is applying, or 0. Set BEFORE `up`, because
+    /// the `schema_migrations` row lands only after it succeeds: a caller that
+    /// catches the error is the only thing that can name the migration.
+    running_version: u32 = 0,
+    running_name: []const u8 = "",
 
     pub fn init(allocator: std.mem.Allocator, db: *Backend) MigrationManager {
         return .{
@@ -35,10 +40,14 @@ pub const MigrationManager = struct {
 
         for (self.migrations.items) |migration| {
             if (migration.version > currentVersion) {
+                self.running_version = migration.version;
+                self.running_name = migration.name;
                 try migration.up(self.db, self.allocator);
                 const versionStr = try std.fmt.allocPrint(self.allocator, "{}", .{migration.version});
                 defer self.allocator.free(versionStr);
                 try self.db.exec(self.allocator, "INSERT INTO schema_migrations (version, name) VALUES (?, ?)", &.{ versionStr, migration.name });
+                self.running_version = 0;
+                self.running_name = "";
             }
         }
     }

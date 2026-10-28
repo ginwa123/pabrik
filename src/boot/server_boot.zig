@@ -216,7 +216,10 @@ pub fn openDatabase(
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try database.openConfigured(&db, io, target.openConfig(), db_config.resolveConfig(overrides));
+    database.openConfigured(&db, io, target.openConfig(), db_config.resolveConfig(overrides)) catch |err| {
+        db_target.reportOpenError(&target, err, db_target.lastErrorMessage(&db));
+        return err;
+    };
     shutdown.logSqliteConfig(allocator, &db);
     try runMigrations(allocator, &db);
     return .{ .target = target, .db = db };
@@ -226,7 +229,20 @@ pub fn runMigrations(allocator: std.mem.Allocator, db: *database.Db) !void {
     var mm = migration.MigrationManager.init(allocator, db);
     defer mm.deinit();
     try migration.registerAllMigrations(&mm);
-    try mm.runMigrations();
+    mm.runMigrations() catch |err| {
+        if (mm.running_version != 0) {
+            std.log.err(
+                "Error: migration {d} ({s}) failed: {s}",
+                .{ mm.running_version, mm.running_name, @errorName(err) },
+            );
+            if (db_target.lastErrorMessage(db)) |detail| std.log.err("  {s}", .{detail});
+            std.log.err(
+                "  the schema is now partly migrated: a migration is recorded only after it succeeds, so this one retries against what it already changed",
+                .{},
+            );
+        }
+        return err;
+    };
 }
 
 /// Build the `--static-dir DIR` config: absolutize first (`openDirAbsolute`
