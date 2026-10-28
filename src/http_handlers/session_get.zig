@@ -186,7 +186,7 @@ fn setupDb() !TestCtx {
         \\  pr_provider TEXT NOT NULL DEFAULT '',
         \\  sub_agent_name TEXT NOT NULL DEFAULT '',
         \\  parent_session_id TEXT NOT NULL DEFAULT '',
-        \\  last_human_touched_at_nano INTEGER
+        \\  last_human_touched_at_nano BIGINT
         \\)
     , &.{});
     try db.exec(alloc,

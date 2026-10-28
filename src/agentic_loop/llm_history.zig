@@ -5773,7 +5773,7 @@ fn setupDb() !TestCtx {
         \\    pinned_position INTEGER DEFAULT 0,
         \\    -- kanban_column_id / kanban_position REMOVED post-Migration-072
         \\    -- (they now live in the `kanban` join table below)
-        \\    last_human_touched_at_nano INTEGER,
+        \\    last_human_touched_at_nano BIGINT,
         \\    tags TEXT NOT NULL DEFAULT '',
         \\    cwd TEXT NOT NULL DEFAULT '',
         \\    image_urls TEXT NOT NULL DEFAULT '',
@@ -7310,7 +7310,7 @@ test "updateTaskLastHumanTouchedAt stamps the unix-ms value on the task" {
         "VALUES ('task_1', 'T1', 'wi_1')", &.{});
 
     // Before stamp — column doesn't exist yet (Migration 065 not run).
-    try db.exec(alloc, "ALTER TABLE workspace_item_tasks ADD COLUMN last_human_touched_at_nano INTEGER", &.{});
+    try db.exec(alloc, "ALTER TABLE workspace_item_tasks ADD COLUMN last_human_touched_at_nano BIGINT", &.{});
 
     const now_ms: i64 = 1_786_500_000_000;
     try updateTaskLastHumanTouchedAt(alloc, &db, "task_1", now_ms);
@@ -7332,7 +7332,7 @@ test "updateTaskLastHumanTouchedAt overwrites on repeated calls" {
     try test_db.openMemory(&db, io);
 
     try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)", &.{});
-    try db.exec(alloc, "CREATE TABLE workspace_item_tasks (id TEXT PRIMARY KEY, name TEXT, workspace_item_id TEXT, last_human_touched_at_nano INTEGER)", &.{});
+    try db.exec(alloc, "CREATE TABLE workspace_item_tasks (id TEXT PRIMARY KEY, name TEXT, workspace_item_id TEXT, last_human_touched_at_nano BIGINT)", &.{});
     try db.exec(alloc, "INSERT INTO workspace_items (id, workspace_id, item_type) " ++
         "VALUES ('wi_1', 'ws_1', 'chat')", &.{});
     try db.exec(alloc, "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) " ++
@@ -7367,7 +7367,7 @@ test "updateSessionLastHumanTouchedAt stamps the unix-ms value on the session" {
         \\CREATE TABLE sessions (
         \\    id TEXT PRIMARY KEY,
         \\    name TEXT NOT NULL,
-        \\    last_human_touched_at_nano INTEGER
+        \\    last_human_touched_at_nano BIGINT
         \\)
     , &.{});
     try db.exec(alloc, "INSERT INTO sessions (id, name) VALUES ('sess_1', 'Hello')", &.{});
@@ -7395,7 +7395,7 @@ test "updateSessionLastHumanTouchedAt with now_unix_ms=null reads the real clock
         \\CREATE TABLE sessions (
         \\    id TEXT PRIMARY KEY,
         \\    name TEXT NOT NULL,
-        \\    last_human_touched_at_nano INTEGER
+        \\    last_human_touched_at_nano BIGINT
         \\)
     , &.{});
     try db.exec(alloc, "INSERT INTO sessions (id, name) VALUES ('sess_real', 'Real')", &.{});
@@ -7433,7 +7433,7 @@ test "updateSessionLastHumanTouchedAt is a no-op for unknown session_id" {
         \\CREATE TABLE sessions (
         \\    id TEXT PRIMARY KEY,
         \\    name TEXT NOT NULL,
-        \\    last_human_touched_at_nano INTEGER
+        \\    last_human_touched_at_nano BIGINT
         \\)
     , &.{});
     // No rows inserted.
@@ -7463,7 +7463,7 @@ test "updateSessionLastHumanTouchedAt is idempotent on repeated calls with the s
         \\CREATE TABLE sessions (
         \\    id TEXT PRIMARY KEY,
         \\    name TEXT NOT NULL,
-        \\    last_human_touched_at_nano INTEGER
+        \\    last_human_touched_at_nano BIGINT
         \\)
     , &.{});
     try db.exec(alloc, "INSERT INTO sessions (id, name) VALUES ('sess_idem', 'Idem')", &.{});
@@ -7491,7 +7491,7 @@ test "updateSessionLastHumanTouchedAt overwrites on repeated calls with a newer 
         \\CREATE TABLE sessions (
         \\    id TEXT PRIMARY KEY,
         \\    name TEXT NOT NULL,
-        \\    last_human_touched_at_nano INTEGER
+        \\    last_human_touched_at_nano BIGINT
         \\)
     , &.{});
     try db.exec(alloc, "INSERT INTO sessions (id, name) VALUES ('sess_overwrite', 'Overwrite')", &.{});
@@ -7519,7 +7519,7 @@ test "updateSessionLastHumanTouchedAt skips empty session_id (no SQL bind)" {
         \\CREATE TABLE sessions (
         \\    id TEXT PRIMARY KEY,
         \\    name TEXT NOT NULL,
-        \\    last_human_touched_at_nano INTEGER
+        \\    last_human_touched_at_nano BIGINT
         \\)
     , &.{});
 
@@ -7621,7 +7621,7 @@ test "getSessionListWithCursor converts unix-ms storage to SQLite datetime on th
         \\    selected_profile_model TEXT,
         \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
         \\    last_finish_reason TEXT,
-        \\    last_human_touched_at_nano INTEGER,
+        \\    last_human_touched_at_nano BIGINT,
         \\    git_worktree_cwd TEXT,
         \\    is_pinned INTEGER NOT NULL DEFAULT 0,
         \\    pinned_position INTEGER NOT NULL DEFAULT 0
@@ -7696,7 +7696,7 @@ test "getSessionListWithCursor returns empty string for NULL last_human_touched_
         \\    selected_profile_model TEXT,
         \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
         \\    last_finish_reason TEXT,
-        \\    last_human_touched_at_nano INTEGER,
+        \\    last_human_touched_at_nano BIGINT,
         \\    git_worktree_cwd TEXT,
         \\    is_pinned INTEGER NOT NULL DEFAULT 0,
         \\    pinned_position INTEGER NOT NULL DEFAULT 0
@@ -7764,7 +7764,7 @@ test "getSessionListWithCursor derives needs_human_review for the sidebar status
         \\    selected_profile_model TEXT,
         \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
         \\    last_finish_reason TEXT,
-        \\    last_human_touched_at_nano INTEGER,
+        \\    last_human_touched_at_nano BIGINT,
         \\    git_worktree_cwd TEXT,
         \\    is_pinned INTEGER NOT NULL DEFAULT 0,
         \\    pinned_position INTEGER NOT NULL DEFAULT 0
@@ -7882,7 +7882,7 @@ test "getSessionListWithCursor pages on the sort field's column, not created_at"
         \\    selected_profile_model TEXT,
         \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
         \\    last_finish_reason TEXT,
-        \\    last_human_touched_at_nano INTEGER,
+        \\    last_human_touched_at_nano BIGINT,
         \\    git_worktree_cwd TEXT,
         \\    is_pinned INTEGER NOT NULL DEFAULT 0,
         \\    pinned_position INTEGER NOT NULL DEFAULT 0
@@ -7983,7 +7983,7 @@ test "getSessionListWithCursor keeps the created_at filter when sorting by creat
         \\    selected_profile_model TEXT,
         \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
         \\    last_finish_reason TEXT,
-        \\    last_human_touched_at_nano INTEGER,
+        \\    last_human_touched_at_nano BIGINT,
         \\    git_worktree_cwd TEXT,
         \\    is_pinned INTEGER NOT NULL DEFAULT 0,
         \\    pinned_position INTEGER NOT NULL DEFAULT 0
@@ -8058,7 +8058,7 @@ test "getSessionListWithCursor: workspace_ids bounds sessions AND total (count h
         \\    selected_profile_model TEXT,
         \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
         \\    last_finish_reason TEXT,
-        \\    last_human_touched_at_nano INTEGER,
+        \\    last_human_touched_at_nano BIGINT,
         \\    git_worktree_cwd TEXT,
         \\    is_pinned INTEGER NOT NULL DEFAULT 0,
         \\    pinned_position INTEGER NOT NULL DEFAULT 0
@@ -8178,7 +8178,7 @@ test "needs_human_review predicate returns 1 when finish_reason='stop' AND no hu
         \\  id TEXT PRIMARY KEY,
         \\  name TEXT,
         \\  workspace_item_id TEXT,
-        \\  last_human_touched_at_nano INTEGER
+        \\  last_human_touched_at_nano BIGINT
         \\)
     , &.{});
     // Post-Migration-072: kanban placement lives in the `kanban` join table.
@@ -8239,7 +8239,7 @@ test "needs_human_review predicate returns 0 when human touched AFTER the AI fin
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
         \\  id TEXT PRIMARY KEY, name TEXT, workspace_item_id TEXT,
-        \\  last_human_touched_at_nano INTEGER
+        \\  last_human_touched_at_nano BIGINT
         \\)
     , &.{});
     try db.exec(alloc,
@@ -8293,7 +8293,7 @@ test "needs_human_review predicate returns 0 when finish_reason is 'tool_calls' 
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
         \\  id TEXT PRIMARY KEY, name TEXT, workspace_item_id TEXT,
-        \\  last_human_touched_at_nano INTEGER
+        \\  last_human_touched_at_nano BIGINT
         \\)
     , &.{});
     try db.exec(alloc,
@@ -8344,7 +8344,7 @@ test "needs_human_review predicate returns 0 when no sessions row exists for the
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
         \\  id TEXT PRIMARY KEY, name TEXT, workspace_item_id TEXT,
-        \\  last_human_touched_at_nano INTEGER
+        \\  last_human_touched_at_nano BIGINT
         \\)
     , &.{});
     try db.exec(alloc, "CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT, status TEXT, last_finish_reason TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, git_worktree_cwd TEXT)", &.{});
@@ -9644,7 +9644,7 @@ fn llmHistoryWorkerInfoSetupDb() !struct {
         \\    id TEXT PRIMARY KEY,
         \\    session_id TEXT NOT NULL,
         \\    working_directory TEXT,
-        \\    last_activity_nano INTEGER DEFAULT (strftime('%s', 'now')),
+        \\    last_activity_nano BIGINT DEFAULT (strftime('%s', 'now')),
         \\    last_activity_description TEXT,
         \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
@@ -9824,7 +9824,7 @@ fn progressiveSetupDb() !ProgressiveTestCtx {
         \\    session_id TEXT NOT NULL,
         \\    tool_name TEXT NOT NULL,
         \\    server_name TEXT NOT NULL DEFAULT '',
-        \\    loaded_at_nano INTEGER NOT NULL DEFAULT 0,
+        \\    loaded_at_nano BIGINT NOT NULL DEFAULT 0,
         \\    PRIMARY KEY (session_id, tool_name)
         \\)
     , &.{});
@@ -10139,7 +10139,7 @@ fn setupOwnedSessionsDb() !struct { db: database.Db, threaded: std.Io.Threaded }
         \\    selected_profile_model TEXT,
         \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
         \\    last_finish_reason TEXT,
-        \\    last_human_touched_at_nano INTEGER,
+        \\    last_human_touched_at_nano BIGINT,
         \\    git_worktree_cwd TEXT,
         \\    is_pinned INTEGER NOT NULL DEFAULT 0,
         \\    pinned_position INTEGER NOT NULL DEFAULT 0

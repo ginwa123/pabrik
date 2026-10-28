@@ -33,7 +33,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
     try db.exec(alloc,
-        \\CREATE TABLE worker (id TEXT PRIMARY KEY, session_id TEXT, working_directory TEXT, last_activity_nano INTEGER)
+        \\CREATE TABLE worker (id TEXT PRIMARY KEY, session_id TEXT, working_directory TEXT, last_activity_nano BIGINT)
     , &.{});
     return .{ .db = db, .threaded = threaded };
 }

@@ -90,6 +90,16 @@ pub const enable_foreign_keys: []const u8 = if (is_postgres) "" else "PRAGMA for
 /// surface. Postgres reaches full text search through `tsvector` instead.
 pub const has_fts5: bool = !is_postgres;
 
+/// sqlite's `pragma_table_info(<table>)` as a source of `name` (+ `cid`, the
+/// CREATE order). Postgres reads the same two columns out of its catalogue.
+pub fn tableColumns(comptime table: []const u8) []const u8 {
+    return if (is_postgres)
+        "(SELECT column_name AS name, ordinal_position AS cid FROM information_schema.columns " ++
+            "WHERE table_schema = current_schema() AND table_name = '" ++ table ++ "')"
+    else
+        "pragma_table_info('" ++ table ++ "')";
+}
+
 /// sqlite runs with `PRAGMA foreign_keys` off, so an FK clause in its DDL is
 /// inert documentation. Postgres enforces it — which changes which inserts and
 /// deletes are legal — so it declares a no-op check in the same slot.

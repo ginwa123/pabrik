@@ -150,7 +150,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
         \\    id TEXT PRIMARY KEY,
         \\    session_id TEXT,
         \\    working_directory TEXT,
-        \\    last_activity_nano INTEGER,
+        \\    last_activity_nano BIGINT,
         \\    last_activity_description TEXT,
         \\    cancelled INTEGER DEFAULT 0,
         \\    user_id TEXT
@@ -350,7 +350,7 @@ test "updateWorker names cancelled on INSERT, so a default-less column still sta
         \\    id TEXT PRIMARY KEY,
         \\    session_id TEXT,
         \\    working_directory TEXT,
-        \\    last_activity_nano INTEGER,
+        \\    last_activity_nano BIGINT,
         \\    last_activity_description TEXT,
         \\    cancelled INTEGER NOT NULL,
         \\    user_id TEXT

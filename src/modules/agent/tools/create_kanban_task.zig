@@ -738,7 +738,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
         \\  name TEXT,
         \\  description TEXT NOT NULL DEFAULT '',
         \\  task_type TEXT,
-        \\  last_human_touched_at_nano INTEGER,
+        \\  last_human_touched_at_nano BIGINT,
         \\  -- Migrations 067 / 069 / 071: the agent tool now writes
         \\  -- these columns via the new optional `tags` / `image_urls`
         \\  -- / `cwd` input fields. The schema here mirrors the

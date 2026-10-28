@@ -506,7 +506,7 @@ fn setupDb() !TestCtx {
         \\  is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
         \\  last_finish_reason TEXT,
         \\  user_id TEXT,
-        \\  last_human_touched_at_nano INTEGER,
+        \\  last_human_touched_at_nano BIGINT,
         \\  pr_url TEXT,
         \\  pr_provider TEXT,
         \\  sub_agent_name TEXT,
@@ -538,7 +538,7 @@ fn setupDb() !TestCtx {
         \\  id TEXT PRIMARY KEY,
         \\  session_id TEXT NOT NULL,
         \\  working_directory TEXT,
-        \\  last_activity_nano INTEGER DEFAULT 0,
+        \\  last_activity_nano BIGINT DEFAULT 0,
         \\  last_activity_description TEXT
         \\)
     , &.{});

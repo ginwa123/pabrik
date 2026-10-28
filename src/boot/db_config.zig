@@ -213,6 +213,9 @@ fn freshDbPath(dir: *std.testing.TmpDir, name: []const u8) ![:0]const u8 {
 }
 
 test "the policy pabrik opens with is the policy the connection reports" {
+    // A postgres build cannot open a sqlite path at all, and these tests
+    // assert sqlite pragmas: there is nothing to check on this backend.
+    if (databases.database.backend_is_postgres) return error.SkipZigTest;
     // The point of this file is that these values are APPLIED, not just
     // declared - a struct that compiles proves nothing about the pragmas.
     const allocator = std.testing.allocator;
@@ -249,6 +252,9 @@ test "the policy pabrik opens with is the policy the connection reports" {
 }
 
 test "a pooled connection still reads and writes correctly" {
+    // A postgres build cannot open a sqlite path at all, and these tests
+    // assert sqlite pragmas: there is nothing to check on this backend.
+    if (databases.database.backend_is_postgres) return error.SkipZigTest;
     // Reader pooling must be invisible: a write on the primary connection
     // has to be visible to the next read, which lands on a reader.
     const allocator = std.testing.allocator;
@@ -282,6 +288,9 @@ test "a pooled connection still reads and writes correctly" {
 }
 
 test "a committed write is visible to the next pooled read" {
+    // A postgres build cannot open a sqlite path at all, and these tests
+    // assert sqlite pragmas: there is nothing to check on this backend.
+    if (databases.database.backend_is_postgres) return error.SkipZigTest;
     // The regression this file could not see: with reader pooling, a
     // connection handed out while a `Rows` from it is still open serves the
     // OLD snapshot, because the live iterator holds that connection's read
@@ -459,6 +468,9 @@ test "parseOverrides collects db flags and ignores everything else" {
 }
 
 test "an override is applied to a live connection, not just to the struct" {
+    // A postgres build cannot open a sqlite path at all, and these tests
+    // assert sqlite pragmas: there is nothing to check on this backend.
+    if (databases.database.backend_is_postgres) return error.SkipZigTest;
     // The struct is only a promise; this is the one that proves the pragma
     // the server will actually run with is the one the flag asked for.
     const allocator = std.testing.allocator;

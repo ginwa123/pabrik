@@ -215,7 +215,7 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
         \\    id TEXT PRIMARY KEY,
         \\    session_id TEXT NOT NULL,
         \\    working_directory TEXT,
-        \\    last_activity_nano INTEGER,
+        \\    last_activity_nano BIGINT,
         \\    last_activity_description TEXT,
         \\    cancelled INTEGER DEFAULT 0,
         \\    run_token TEXT NOT NULL DEFAULT ''

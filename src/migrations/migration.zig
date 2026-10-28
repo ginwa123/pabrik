@@ -631,7 +631,10 @@ fn setupDb() !TestCtx {
 /// given table (ordered by `cid`, the original CREATE order).
 fn columnsOf(ctx: *TestCtx, table: []const u8) ![]const []const u8 {
     const alloc = testing.allocator;
-    var q = try ctx.db.query(alloc,
+    var q = try ctx.db.query(alloc, if (dialect.is_postgres)
+        "SELECT column_name FROM information_schema.columns " ++
+            "WHERE table_schema = current_schema() AND table_name = ? ORDER BY ordinal_position"
+    else
         "SELECT name FROM pragma_table_info(?) ORDER BY cid",
         &[_][]const u8{table},
     );
@@ -841,7 +844,7 @@ test "Migration078 creates agents table with correct columns" {
     // Sanity: pre-migration, the agents table doesn't exist.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='agents'",
+            "SELECT 1 FROM " ++ dialect.tables_source ++ " WHERE type='table' AND name='agents'",
             &.{});
         defer q.deinit();
         const row = (try q.next()) orelse null;
@@ -856,7 +859,7 @@ test "Migration078 creates agents table with correct columns" {
     // Post-migration: table exists in sqlite_master.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='agents'",
+            "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='table' AND name='agents'",
             &.{});
         defer q.deinit();
         const row = (try q.next()) orelse return error.AgentsTableNotCreated;
@@ -926,7 +929,7 @@ test "Migration078 agents.workspace_item_id is UNIQUE" {
     // The standard SQLite convention is that UNIQUE constraints create
     // auto-named indexes "sqlite_autoindex_<table>_<n>"; query sqlite_master.
     var q = try ctx.db.query(alloc,
-        "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='agents'",
+        "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='index' AND tbl_name='agents'",
         &.{});
     defer q.deinit();
     var found = false;
@@ -969,7 +972,7 @@ test "Migration078 agent_tools(agent_id, tool_name) is UNIQUE" {
 
     // Verify the named UNIQUE index exists.
     var q = try ctx.db.query(alloc,
-        "SELECT name FROM sqlite_master WHERE type='index' AND name='uq_agent_tools_agent_tool'",
+        "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='index' AND name='uq_agent_tools_agent_tool'",
         &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.UniqueIndexNotCreated;
@@ -1103,7 +1106,7 @@ test "Migration078 creates agent_knowledge.position + agent_id composite index" 
 
     // The named index from the spec: idx_agent_knowledge_agent_id_position.
     var q = try ctx.db.query(alloc,
-        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_agent_knowledge_agent_id_position'",
+        "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='index' AND name='idx_agent_knowledge_agent_id_position'",
         &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.PositionIndexNotCreated;
@@ -1123,7 +1126,7 @@ test "Migration078 is idempotent on a re-run" {
     // Each of the 3 tables should still exist exactly once.
     for ([_][]const u8{ "agents", "agent_knowledge", "agent_tools" }) |table| {
         var q = try ctx.db.query(alloc,
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+            "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type='table' AND name=?",
             &[_][]const u8{table},
         );
         defer q.deinit();
@@ -1183,7 +1186,7 @@ test "Migration079 is idempotent (safe to run twice)" {
 
     // Column still exists exactly once.
     var q = try ctx.db.query(alloc,
-        "SELECT COUNT(*) FROM pragma_table_info('agent_knowledge') WHERE name = 'content'",
+        "SELECT COUNT(*) FROM " ++ comptime dialect.tableColumns("agent_knowledge") ++ " WHERE name = 'content'",
         &.{},
     );
     defer q.deinit();
@@ -1396,7 +1399,7 @@ test "Migration083 adds reasoning_id + reasoning_encrypted_content columns to ll
     // Sanity: columns do NOT exist before the migration.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT 1 FROM pragma_table_info('llm_history') WHERE name IN ('reasoning_id', 'reasoning_encrypted_content')",
+            "SELECT 1 FROM " ++ comptime dialect.tableColumns("llm_history") ++ " WHERE name IN ('reasoning_id', 'reasoning_encrypted_content')",
             &.{});
         defer q.deinit();
         try testing.expect((try q.next()) == null);
@@ -1421,7 +1424,7 @@ test "Migration083 adds reasoning_id + reasoning_encrypted_content columns to ll
 
     // Type + nullability sanity: both TEXT, nullable (notnull == 0).
     var q = try ctx.db.query(alloc,
-        "SELECT name, type, \"notnull\" FROM pragma_table_info('llm_history') WHERE name IN ('reasoning_id', 'reasoning_encrypted_content') ORDER BY name",
+        "SELECT name, type, \"notnull\" FROM " ++ comptime dialect.tableColumns("llm_history") ++ " WHERE name IN ('reasoning_id', 'reasoning_encrypted_content') ORDER BY name",
         &.{});
     defer q.deinit();
     var idx: usize = 0;
@@ -1503,7 +1506,7 @@ test "Migration083 is idempotent on a re-run" {
     try Migration083AddReasoningIdAndEncryptedContent.up(&ctx.db, alloc);
 
     var q = try ctx.db.query(alloc,
-        "SELECT COUNT(*) FROM pragma_table_info('llm_history') WHERE name IN ('reasoning_id', 'reasoning_encrypted_content')",
+        "SELECT COUNT(*) FROM " ++ comptime dialect.tableColumns("llm_history") ++ " WHERE name IN ('reasoning_id', 'reasoning_encrypted_content')",
         &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
@@ -1726,7 +1729,7 @@ test "Migration084 drops routines table and normalizes task_type routine rows" {
     // Old table is gone.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'routines'",
+            "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type = 'table' AND name = 'routines'",
             &.{});
         defer q.deinit();
         try testing.expect((try q.next()) == null);
@@ -1734,7 +1737,7 @@ test "Migration084 drops routines table and normalizes task_type routine rows" {
     // Old indexes are gone.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'idx_routines_%'",
+            "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name LIKE 'idx_routines_%'",
             &.{});
         defer q.deinit();
         try testing.expect((try q.next()) == null);
@@ -1761,7 +1764,7 @@ test "Migration084 drops routines table and normalizes task_type routine rows" {
     // Replacement table exists.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'workspace_routines'",
+            "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type = 'table' AND name = 'workspace_routines'",
             &.{});
         defer q.deinit();
         const row = (try q.next()) orelse return error.RowMissing;
@@ -1836,7 +1839,7 @@ test "Migration084 is idempotent on a re-run" {
     try Migration084.up(&ctx.db, alloc);
 
     var q = try ctx.db.query(alloc,
-        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'workspace_routines'",
+        "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type = 'table' AND name = 'workspace_routines'",
         &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
@@ -1887,7 +1890,7 @@ test "Migration085 is idempotent on a re-run" {
     try Migration085AddSessionProgressiveTool.up(&ctx.db, alloc);
 
     var q = try ctx.db.query(alloc,
-        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'session_progressive_tool'",
+        "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type = 'table' AND name = 'session_progressive_tool'",
         &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
@@ -1972,7 +1975,7 @@ test "Migration086 adds pr_url + pr_provider columns to sessions" {
 
     // Both nullable TEXT (notnull == 0).
     var q = try ctx.db.query(alloc,
-        "SELECT name, type, \"notnull\" FROM pragma_table_info('sessions') WHERE name IN ('pr_url', 'pr_provider') ORDER BY name",
+        "SELECT name, type, \"notnull\" FROM " ++ comptime dialect.tableColumns("sessions") ++ " WHERE name IN ('pr_url', 'pr_provider') ORDER BY name",
         &.{});
     defer q.deinit();
     var idx: usize = 0;
@@ -2003,7 +2006,7 @@ test "Migration086 is idempotent on a re-run" {
     try Migration086AddSessionPrUrl.up(&ctx.db, alloc);
 
     var q = try ctx.db.query(alloc,
-        "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name IN ('pr_url', 'pr_provider')",
+        "SELECT COUNT(*) FROM " ++ comptime dialect.tableColumns("sessions") ++ " WHERE name IN ('pr_url', 'pr_provider')",
         &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
@@ -2032,7 +2035,7 @@ test "Migration087 creates agent_routines tables with correct columns" {
 
     for ([_][]const u8{ "agent_routines", "agent_routine_knowledges", "agent_routine_system_prompt", "agent_routine_tools" }) |tbl| {
         var q = try ctx.db.query(alloc,
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            "SELECT 1 FROM " ++ dialect.tables_source ++ " WHERE type = 'table' AND name = ?",
             &[_][]const u8{tbl});
         defer q.deinit();
         const found = try q.next();
@@ -2184,7 +2187,7 @@ test "Migration091 is idempotent on a re-run" {
     try Migration091AddSubAgentNameToSessions.up(&ctx.db, alloc);
 
     var q = try ctx.db.query(alloc,
-        "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name IN ('sub_agent_name', 'parent_session_id')",
+        "SELECT COUNT(*) FROM " ++ comptime dialect.tableColumns("sessions") ++ " WHERE name IN ('sub_agent_name', 'parent_session_id')",
         &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
@@ -2252,7 +2255,7 @@ test "Migration093 adds worker.user_id and its index" {
     // Nullable TEXT: an empty-string bind (which Backend collapses to
     // SQL NULL) must never violate the column.
     var q = try ctx.db.query(alloc,
-        "SELECT type, \"notnull\" FROM pragma_table_info('worker') WHERE name = 'user_id'",
+        "SELECT type, \"notnull\" FROM " ++ comptime dialect.tableColumns("worker") ++ " WHERE name = 'user_id'",
         &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
@@ -2261,7 +2264,7 @@ test "Migration093 adds worker.user_id and its index" {
     try testing.expectEqualStrings("0", row.values[1]);
 
     var qi = try ctx.db.query(alloc,
-        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_worker_user_id'",
+        "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name = 'idx_worker_user_id'",
         &.{});
     defer qi.deinit();
     const irow = (try qi.next()) orelse return error.RowMissing;
@@ -2399,7 +2402,7 @@ test "Migration094 adds is_default and defaults every pre-existing row to 0" {
     // NOT NULL must be set, or a future writer could store NULL and the
     // `WHERE is_default = 1` index would silently skip that row forever.
     var qi = try ctx.db.query(alloc,
-        "SELECT type, \"notnull\", dflt_value FROM pragma_table_info('workspace_items') WHERE name = 'is_default'",
+        "SELECT type, \"notnull\", dflt_value FROM " ++ comptime dialect.tableColumns("workspace_items") ++ " WHERE name = 'is_default'",
         &.{});
     defer qi.deinit();
     const irow = (try qi.next()) orelse return error.RowMissing;
@@ -2572,7 +2575,7 @@ test "Migration095 creates the workspace index and is idempotent" {
     try testing.expectEqualStrings("ws_kept", row.values[0]);
 
     var idx = try ctx.db.query(alloc,
-        "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_agent_memories_workspace'",
+        "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name = 'idx_agent_memories_workspace'",
         &.{});
     defer idx.deinit();
     const irow = (try idx.next()) orelse return error.IndexMissing;
@@ -2645,7 +2648,7 @@ test "Migration009RemoveCreatedColumn does not crash on fresh-DB schema (no 'cre
     // of sync with Migration 001 — fix the helper, not the test.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT name FROM pragma_table_info('llm_history') WHERE name IN ('created', 'created_at')",
+            "SELECT name FROM " ++ comptime dialect.tableColumns("llm_history") ++ " WHERE name IN ('created', 'created_at')",
             &.{});
         defer q.deinit();
         var has_created: bool = false;
@@ -2666,7 +2669,7 @@ test "Migration009RemoveCreatedColumn does not crash on fresh-DB schema (no 'cre
     // dropped), `llm_history` still exists with `created_at`.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT name FROM sqlite_master WHERE name IN ('llm_history', 'llm_history_old') ORDER BY name",
+            "SELECT name FROM " ++ dialect.tables_source ++ " WHERE name IN ('llm_history', 'llm_history_old') ORDER BY name",
             &.{});
         defer q.deinit();
         var seen_llm_history: bool = false;
@@ -2904,7 +2907,7 @@ test "Migration044AddRoutines creates idx_routines_enabled_next_run index" {
     // Query sqlite_master for the index name. If the migration forgot
     // to create the index, the query returns zero rows.
     var q = try ctx.db.query(alloc,
-        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_routines_enabled_next_run'",
+        "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='index' AND name='idx_routines_enabled_next_run'",
         &.{});
     defer q.deinit();
 
@@ -2973,7 +2976,9 @@ test "Migration048AddChatListIndex creates idx_llm_history_created_session index
     // Query sqlite_master for the index name. If the migration forgot to
     // create the index, the query returns zero rows.
     var q = try ctx.db.query(alloc,
-        \\SELECT name FROM sqlite_master
+        \\SELECT name FROM 
+        ++ dialect.tables_source ++
+        \\
         \\WHERE type = 'index'
         \\  AND name = 'idx_llm_history_created_session'
     , &.{});
@@ -3004,7 +3009,9 @@ test "Migration048AddChatListIndex is idempotent on re-run" {
 
     // And the index is still there exactly once.
     var q = try ctx.db.query(alloc,
-        \\SELECT COUNT(*) FROM sqlite_master
+        \\SELECT COUNT(*) FROM 
+        ++ dialect.tables_source ++
+        \\
         \\WHERE type = 'index'
         \\  AND name = 'idx_llm_history_created_session'
     , &.{});
@@ -3107,7 +3114,9 @@ test "Migration049AddDefensiveIndexes creates idx_workspace_items_position_id in
     // Query sqlite_master for the index name. If the migration forgot to
     // create the index, the query returns zero rows.
     var q = try ctx.db.query(alloc,
-        \\SELECT name FROM sqlite_master
+        \\SELECT name FROM 
+        ++ dialect.tables_source ++
+        \\
         \\WHERE type = 'index'
         \\  AND name = 'idx_workspace_items_position_id'
     , &.{});
@@ -3135,7 +3144,9 @@ test "Migration049AddDefensiveIndexes creates idx_routines_last_status index" {
 
     // Same pattern as test 1 but for the routines index.
     var q = try ctx.db.query(alloc,
-        \\SELECT name FROM sqlite_master
+        \\SELECT name FROM 
+        ++ dialect.tables_source ++
+        \\
         \\WHERE type = 'index'
         \\  AND name = 'idx_routines_last_status'
     , &.{});
@@ -3168,7 +3179,9 @@ test "Migration049AddDefensiveIndexes is idempotent on re-run" {
     // And both indexes are still there exactly once. COUNT(*) is
     // returned as text per the Backend's row-as-text API.
     const wi_count = try scalarText049(alloc, &ctx.db,
-        \\SELECT COUNT(*) FROM sqlite_master
+        \\SELECT COUNT(*) FROM 
+        ++ dialect.tables_source ++
+        \\
         \\WHERE type = 'index'
         \\  AND name = 'idx_workspace_items_position_id'
     , &.{});
@@ -3176,7 +3189,9 @@ test "Migration049AddDefensiveIndexes is idempotent on re-run" {
     try testing.expectEqualStrings("1", wi_count);
 
     const r_count = try scalarText049(alloc, &ctx.db,
-        \\SELECT COUNT(*) FROM sqlite_master
+        \\SELECT COUNT(*) FROM 
+        ++ dialect.tables_source ++
+        \\
         \\WHERE type = 'index'
         \\  AND name = 'idx_routines_last_status'
     , &.{});
@@ -3330,7 +3345,7 @@ test "Migration051 creates kanban_columns table with expected columns" {
     // expected order. pragma_table_info orders rows by cid (column
     // ordinal), so the iteration order matches CREATE TABLE column order.
     var q = try ctx.db.query(alloc,
-        "SELECT name FROM pragma_table_info('kanban_columns') ORDER BY cid",
+        "SELECT name FROM " ++ comptime dialect.tableColumns("kanban_columns") ++ " ORDER BY cid",
         &.{});
     defer q.deinit();
 
@@ -3364,7 +3379,7 @@ test "Migration051 adds kanban_column_id and kanban_position to workspace_item_t
     // Assert the two new columns are present. Sorted by name for a
     // stable assertion regardless of ALTER TABLE execution order.
     var q = try ctx.db.query(alloc,
-        "SELECT name FROM pragma_table_info('workspace_item_tasks') " ++
+        "SELECT name FROM " ++ comptime dialect.tableColumns("workspace_item_tasks") ++ " " ++
         "WHERE name IN ('kanban_column_id', 'kanban_position') " ++
         "ORDER BY name",
         &.{});
@@ -3413,7 +3428,9 @@ test "migration 053 adds description column with default empty string" {
 
     // Sanity: kanban_columns exists (051 seeded it).
     var q = try ctx.db.query(alloc,
-        \\SELECT name FROM pragma_table_info('kanban_columns') ORDER BY cid
+        \\SELECT name FROM 
+        ++ comptime dialect.tableColumns("kanban_columns") ++
+        \\ ORDER BY cid
     , &.{});
     defer q.deinit();
     const names_before: [5][]const u8 = .{ "id", "workspace_item_id", "name", "position", "created_at" };
@@ -3431,7 +3448,9 @@ test "migration 053 adds description column with default empty string" {
 
     // Re-check pragma_table_info — description is now present.
     var q2 = try ctx.db.query(alloc,
-        \\SELECT name FROM pragma_table_info('kanban_columns') ORDER BY cid
+        \\SELECT name FROM 
+        ++ comptime dialect.tableColumns("kanban_columns") ++
+        \\ ORDER BY cid
     , &.{});
     defer q2.deinit();
     const names_after: [6][]const u8 = .{ "id", "workspace_item_id", "name", "position", "created_at", "description" };
@@ -3541,7 +3560,7 @@ test "migration 054: empty message insert succeeds after migration" {
 
     // Sanity: `message` no longer has NOT NULL.
     var q = try ctx.db.query(alloc,
-        "SELECT \"notnull\" FROM pragma_table_info('session_queue_messages') " ++
+        "SELECT \"notnull\" FROM " ++ comptime dialect.tableColumns("session_queue_messages") ++ " " ++
         "WHERE name = 'message'",
         &[_][]const u8{},
     );
@@ -3643,7 +3662,7 @@ test "migration 054: index idx_session_queue_messages_session is recreated" {
     // `zig-migration-tests-three-pitfalls.md`.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT name FROM sqlite_master WHERE type='index' " ++
+            "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='index' " ++
             "AND name = 'idx_session_queue_messages_session'",
             &[_][]const u8{},
         );
@@ -3660,7 +3679,7 @@ test "migration 054: index idx_session_queue_messages_session is recreated" {
 
     // After the migration, the index is back.
     var q = try ctx.db.query(alloc,
-        "SELECT name FROM sqlite_master WHERE type='index' " ++
+        "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='index' " ++
         "AND name = 'idx_session_queue_messages_session'",
         &[_][]const u8{},
     );
@@ -3684,7 +3703,7 @@ test "migration 054: table has the expected columns in the expected order" {
         "id", "session_id", "message", "image_url", "created_at",
     };
     var q = try ctx.db.query(alloc,
-        "SELECT name FROM pragma_table_info('session_queue_messages') ORDER BY cid",
+        "SELECT name FROM " ++ comptime dialect.tableColumns("session_queue_messages") ++ " ORDER BY cid",
         &[_][]const u8{},
     );
     defer q.deinit();
@@ -3771,7 +3790,9 @@ test "Migration057 adds the 11 v6 element properties columns" {
 
     // Assert all 11 new columns exist on design_page_elements.
     var q = try ctx.db.query(alloc,
-        \\SELECT name FROM pragma_table_info('design_page_elements')
+        \\SELECT name FROM 
+        ++ comptime dialect.tableColumns("design_page_elements") ++
+        \\
         \\WHERE name IN ('type','rotation','fill','stroke','stroke_width',
         \\                'corner_radius','opacity','text_content',
         \\                'text_style','image_url','parent_id')
@@ -3836,7 +3857,9 @@ test "Migration057 preserves the v5 columns on design_page_elements" {
     // The 12 v5 columns must still be present after 057 (which is
     // strictly additive — never drop).
     var q = try ctx.db.query(alloc,
-        \\SELECT name FROM pragma_table_info('design_page_elements')
+        \\SELECT name FROM 
+        ++ comptime dialect.tableColumns("design_page_elements") ++
+        \\
         \\WHERE name IN ('id','page_id','name','file_path','x','y','width',
         \\                'height','z_index','position','created_at','updated_at')
         \\ORDER BY name
@@ -3903,7 +3926,7 @@ test "migration 058: creates messages_fts virtual table" {
     // Sanity: pre-migration, no `messages_fts` exists.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='messages_fts'",
+            "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='table' AND name='messages_fts'",
             &[_][]const u8{},
         );
         defer q.deinit();
@@ -3918,7 +3941,7 @@ test "migration 058: creates messages_fts virtual table" {
 
     // Post-migration: `messages_fts` exists as a table.
     var q = try ctx.db.query(alloc,
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='messages_fts'",
+        "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='table' AND name='messages_fts'",
         &[_][]const u8{},
     );
     defer q.deinit();
@@ -3928,6 +3951,8 @@ test "migration 058: creates messages_fts virtual table" {
 }
 
 test "migration 058: installs sync triggers (exactly 3 on llm_history)" {
+    // The FTS5 triggers exist only on sqlite (postgres indexes `to_tsvector`).
+    if (dialect.is_postgres) return error.SkipZigTest;
     // The FTS5 triggers only exist on sqlite: postgres indexes `to_tsvector`
     // instead of maintaining a shadow table, so there is nothing to count.
     if (dialect.is_postgres) return error.SkipZigTest;
@@ -3941,14 +3966,14 @@ test "migration 058: installs sync triggers (exactly 3 on llm_history)" {
 
     // Sanity: pre-migration, zero triggers on llm_history.
     const pre_count = try countSqliteMaster058(&ctx.db, alloc,
-        "SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='llm_history'");
+        "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='trigger' AND tbl_name='llm_history'");
     try testing.expectEqual(@as(usize, 0), pre_count);
 
     try Migration058AddLlmHistoryFts.up(&ctx.db, alloc);
 
     // Post-migration: exactly 3 triggers.
     const post_count = try countSqliteMaster058(&ctx.db, alloc,
-        "SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='llm_history'");
+        "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='trigger' AND tbl_name='llm_history'");
     try testing.expectEqual(@as(usize, 3), post_count);
 
     // Verify the exact names (the migration uses _ai, _ad, _au).
@@ -3956,7 +3981,9 @@ test "migration 058: installs sync triggers (exactly 3 on llm_history)" {
     defer for (names_buf) |n| if (n.len > 0) alloc.free(n);
 
     var q = try ctx.db.query(alloc,
-        \\SELECT name FROM sqlite_master
+        \\SELECT name FROM 
+        ++ dialect.tables_source ++
+        \\
         \\WHERE type='trigger' AND tbl_name='llm_history'
         \\ORDER BY name
     , &[_][]const u8{});
@@ -4290,7 +4317,9 @@ test "migration 059: creates idx_llm_history_created_iso index" {
     // Post-migration: an index named `idx_llm_history_created_iso` exists
     // on the `created_iso` column.
     var q = try ctx.db.query(alloc,
-        \\SELECT name FROM sqlite_master
+        \\SELECT name FROM 
+        ++ dialect.tables_source ++
+        \\
         \\WHERE type='index' AND tbl_name='llm_history' AND name='idx_llm_history_created_iso'
     , &.{});
     defer q.deinit();
@@ -4638,7 +4667,9 @@ test "Migration062 adds description column to workspace_item_tasks" {
     // Sanity: description does NOT exist before the migration.
     {
         var q = try ctx.db.query(alloc,
-            \\SELECT 1 FROM pragma_table_info('workspace_item_tasks')
+            \\SELECT 1 FROM 
+            ++ comptime dialect.tableColumns("workspace_item_tasks") ++
+            \\
             \\WHERE name = 'description'
         , &.{});
         defer q.deinit();
@@ -4650,7 +4681,9 @@ test "Migration062 adds description column to workspace_item_tasks" {
 
     // Confirm the column exists with the expected name.
     var q = try ctx.db.query(alloc,
-        \\SELECT name FROM pragma_table_info('workspace_item_tasks')
+        \\SELECT name FROM 
+        ++ comptime dialect.tableColumns("workspace_item_tasks") ++
+        \\
         \\WHERE name = 'description'
     , &.{});
     defer q.deinit();
@@ -4687,7 +4720,9 @@ test "Migration062 is idempotent on a column that already exists" {
 
     // Re-check: still one `description` column (no duplicates).
     var q = try ctx.db.query(alloc,
-        \\SELECT COUNT(*) FROM pragma_table_info('workspace_item_tasks')
+        \\SELECT COUNT(*) FROM 
+        ++ comptime dialect.tableColumns("workspace_item_tasks") ++
+        \\
         \\WHERE name = 'description'
     , &.{});
     defer q.deinit();
@@ -4988,7 +5023,9 @@ test "Migration063 adds is_auto_retry_until_stop column to sessions" {
     // Sanity: column does NOT exist before the migration.
     {
         var q = try ctx.db.query(alloc,
-            \\SELECT 1 FROM pragma_table_info('sessions')
+            \\SELECT 1 FROM 
+            ++ comptime dialect.tableColumns("sessions") ++
+            \\
             \\WHERE name = 'is_auto_retry_until_stop'
         , &.{});
         defer q.deinit();
@@ -4998,7 +5035,9 @@ test "Migration063 adds is_auto_retry_until_stop column to sessions" {
     try Migration063AddSessionAutoRetry.up(&ctx.db, alloc);
 
     var q = try ctx.db.query(alloc,
-        \\SELECT name FROM pragma_table_info('sessions')
+        \\SELECT name FROM 
+        ++ comptime dialect.tableColumns("sessions") ++
+        \\
         \\WHERE name = 'is_auto_retry_until_stop'
     , &.{});
     defer q.deinit();
@@ -5019,7 +5058,9 @@ test "Migration063 adds last_finish_reason column to sessions" {
     try Migration063AddSessionAutoRetry.up(&ctx.db, alloc);
 
     var q = try ctx.db.query(alloc,
-        \\SELECT name FROM pragma_table_info('sessions')
+        \\SELECT name FROM 
+        ++ comptime dialect.tableColumns("sessions") ++
+        \\
         \\WHERE name = 'last_finish_reason'
     , &.{});
     defer q.deinit();
@@ -5042,7 +5083,9 @@ test "Migration063 is idempotent on a re-run" {
     // Still exactly one column of each name.
     for ([_][]const u8{ "is_auto_retry_until_stop", "last_finish_reason" }) |col| {
         var q = try ctx.db.query(alloc,
-            \\SELECT COUNT(*) FROM pragma_table_info('sessions')
+            \\SELECT COUNT(*) FROM 
+            ++ comptime dialect.tableColumns("sessions") ++
+            \\
             \\WHERE name = ?
         , &[_][]const u8{col});
         defer q.deinit();
@@ -5319,7 +5362,7 @@ test "Migration064 creates logs table with all 11 columns in the right order" {
 
     var rows = try s.db.query(
         alloc,
-        "SELECT name FROM pragma_table_info('logs') ORDER BY cid",
+        "SELECT name FROM " ++ comptime dialect.tableColumns("logs") ++ " ORDER BY cid",
         &[_][]const u8{},
     );
     defer rows.deinit();
@@ -5351,7 +5394,7 @@ test "Migration064 creates the idx_logs_created_at and idx_logs_level indexes" {
 
     var rows = try s.db.query(
         alloc,
-        "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='logs' ORDER BY name",
+        "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='index' AND tbl_name='logs' ORDER BY name",
         &[_][]const u8{},
     );
     defer rows.deinit();
@@ -5420,7 +5463,9 @@ test "Migration065 adds last_human_touched_at column to workspace_item_tasks" {
     // Sanity: column does NOT exist before the migration.
     {
         var q = try ctx.db.query(alloc,
-            \\SELECT 1 FROM pragma_table_info('workspace_item_tasks')
+            \\SELECT 1 FROM 
+            ++ comptime dialect.tableColumns("workspace_item_tasks") ++
+            \\
             \\WHERE name = 'last_human_touched_at'
         , &.{});
         defer q.deinit();
@@ -5432,7 +5477,9 @@ test "Migration065 adds last_human_touched_at column to workspace_item_tasks" {
 
     // Confirm the column exists with the expected name.
     var q = try ctx.db.query(alloc,
-        \\SELECT name FROM pragma_table_info('workspace_item_tasks')
+        \\SELECT name FROM 
+        ++ comptime dialect.tableColumns("workspace_item_tasks") ++
+        \\
         \\WHERE name = 'last_human_touched_at'
     , &.{});
     defer q.deinit();
@@ -5449,7 +5496,9 @@ test "Migration065 adds last_human_touched_at column to workspace_item_tasks" {
     // work as arithmetic), not TEXT or a literal "INTEGER" string in
     // the column-name slot.
     var qt = try ctx.db.query(alloc,
-        \\SELECT type FROM pragma_table_info('workspace_item_tasks')
+        \\SELECT type FROM 
+        ++ comptime dialect.tableColumns("workspace_item_tasks") ++
+        \\
         \\WHERE name = 'last_human_touched_at'
     , &.{});
     defer qt.deinit();
@@ -5471,7 +5520,9 @@ test "Migration065 is idempotent on a re-run" {
 
     // Still exactly one column of that name.
     var q = try ctx.db.query(alloc,
-        \\SELECT COUNT(*) FROM pragma_table_info('workspace_item_tasks')
+        \\SELECT COUNT(*) FROM 
+        ++ comptime dialect.tableColumns("workspace_item_tasks") ++
+        \\
         \\WHERE name = 'last_human_touched_at'
     , &.{});
     defer q.deinit();
@@ -5505,7 +5556,9 @@ test "Migration065 is idempotent on a fresh-DB install where the canonical schem
 
     // Re-check: still exactly one column.
     var q = try ctx.db.query(alloc,
-        \\SELECT COUNT(*) FROM pragma_table_info('workspace_item_tasks')
+        \\SELECT COUNT(*) FROM 
+        ++ comptime dialect.tableColumns("workspace_item_tasks") ++
+        \\
         \\WHERE name = 'last_human_touched_at'
     , &.{});
     defer q.deinit();
@@ -5646,7 +5699,9 @@ test "Migration066 adds workspace_item_task_id column to design_pages" {
     // Sanity: column does NOT exist before the migration.
     {
         var q = try ctx.db.query(alloc,
-            \\SELECT 1 FROM pragma_table_info('design_pages')
+            \\SELECT 1 FROM 
+            ++ comptime dialect.tableColumns("design_pages") ++
+            \\
             \\WHERE name = 'workspace_item_task_id'
         , &.{});
         defer q.deinit();
@@ -5658,7 +5713,9 @@ test "Migration066 adds workspace_item_task_id column to design_pages" {
 
     // Confirm the column exists with the expected name.
     var q = try ctx.db.query(alloc,
-        \\SELECT name FROM pragma_table_info('design_pages')
+        \\SELECT name FROM 
+        ++ comptime dialect.tableColumns("design_pages") ++
+        \\
         \\WHERE name = 'workspace_item_task_id'
     , &.{});
     defer q.deinit();
@@ -5675,7 +5732,9 @@ test "Migration066 adds workspace_item_task_id column to design_pages" {
     // workspace_item_tasks.id works), not a literal "TEXT" string
     // in the column-name slot.
     var qt = try ctx.db.query(alloc,
-        \\SELECT type FROM pragma_table_info('design_pages')
+        \\SELECT type FROM 
+        ++ comptime dialect.tableColumns("design_pages") ++
+        \\
         \\WHERE name = 'workspace_item_task_id'
     , &.{});
     defer qt.deinit();
@@ -5687,7 +5746,9 @@ test "Migration066 adds workspace_item_task_id column to design_pages" {
     // 1:1 invariant enforcement). Catch a regression where
     // someone drops the CREATE INDEX step but leaves the column.
     var qi = try ctx.db.query(alloc,
-        \\SELECT name FROM sqlite_master
+        \\SELECT name FROM 
+        ++ dialect.tables_source ++
+        \\
         \\WHERE type = 'index'
         \\  AND name = 'idx_design_pages_workspace_item_task_id'
     , &.{});
@@ -5712,7 +5773,9 @@ test "Migration066 is idempotent on a re-run" {
 
     // Still exactly one column of that name.
     var q = try ctx.db.query(alloc,
-        \\SELECT COUNT(*) FROM pragma_table_info('design_pages')
+        \\SELECT COUNT(*) FROM 
+        ++ comptime dialect.tableColumns("design_pages") ++
+        \\
         \\WHERE name = 'workspace_item_task_id'
     , &.{});
     defer q.deinit();
@@ -5754,7 +5817,9 @@ test "Migration066 is idempotent on a fresh-DB install where the canonical schem
 
     // Re-check: still exactly one column of that name.
     var q = try ctx.db.query(alloc,
-        \\SELECT COUNT(*) FROM pragma_table_info('design_pages')
+        \\SELECT COUNT(*) FROM 
+        ++ comptime dialect.tableColumns("design_pages") ++
+        \\
         \\WHERE name = 'workspace_item_task_id'
     , &.{});
     defer q.deinit();
@@ -5913,7 +5978,9 @@ test "Migration067 adds tags column to workspace_item_tasks" {
     // Sanity: column does NOT exist before the migration.
     {
         var q = try ctx.db.query(alloc,
-            \\SELECT 1 FROM pragma_table_info('workspace_item_tasks')
+            \\SELECT 1 FROM 
+            ++ comptime dialect.tableColumns("workspace_item_tasks") ++
+            \\
             \\WHERE name = 'tags'
         , &.{});
         defer q.deinit();
@@ -5925,7 +5992,9 @@ test "Migration067 adds tags column to workspace_item_tasks" {
 
     // Confirm the column exists with the expected name.
     var q = try ctx.db.query(alloc,
-        \\SELECT name FROM pragma_table_info('workspace_item_tasks')
+        \\SELECT name FROM 
+        ++ comptime dialect.tableColumns("workspace_item_tasks") ++
+        \\
         \\WHERE name = 'tags'
     , &.{});
     defer q.deinit();
@@ -5941,7 +6010,9 @@ test "Migration067 adds tags column to workspace_item_tasks" {
     // Type sanity: the column must be TEXT (NOT NULL DEFAULT '' applies
     // independently of the type).
     var qt = try ctx.db.query(alloc,
-        \\SELECT type FROM pragma_table_info('workspace_item_tasks')
+        \\SELECT type FROM 
+        ++ comptime dialect.tableColumns("workspace_item_tasks") ++
+        \\
         \\WHERE name = 'tags'
     , &.{});
     defer qt.deinit();
@@ -5963,7 +6034,9 @@ test "Migration067 is idempotent on a re-run" {
 
     // Still exactly one column of that name.
     var q = try ctx.db.query(alloc,
-        \\SELECT COUNT(*) FROM pragma_table_info('workspace_item_tasks')
+        \\SELECT COUNT(*) FROM 
+        ++ comptime dialect.tableColumns("workspace_item_tasks") ++
+        \\
         \\WHERE name = 'tags'
     , &.{});
     defer q.deinit();
@@ -5997,7 +6070,9 @@ test "Migration067 is idempotent on a fresh-DB install where the canonical schem
 
     // Re-check: still exactly one column.
     var q = try ctx.db.query(alloc,
-        \\SELECT COUNT(*) FROM pragma_table_info('workspace_item_tasks')
+        \\SELECT COUNT(*) FROM 
+        ++ comptime dialect.tableColumns("workspace_item_tasks") ++
+        \\
         \\WHERE name = 'tags'
     , &.{});
     defer q.deinit();
@@ -6121,7 +6196,9 @@ test "Migration068 adds is_loading column to llm_history" {
     // Sanity: column does NOT exist before the migration.
     {
         var q = try ctx.db.query(alloc,
-            \\SELECT 1 FROM pragma_table_info('llm_history')
+            \\SELECT 1 FROM 
+            ++ comptime dialect.tableColumns("llm_history") ++
+            \\
             \\WHERE name = 'is_loading'
         , &.{});
         defer q.deinit();
@@ -6133,7 +6210,9 @@ test "Migration068 adds is_loading column to llm_history" {
 
     // Confirm the column exists with the expected name.
     var q = try ctx.db.query(alloc,
-        \\SELECT name FROM pragma_table_info('llm_history')
+        \\SELECT name FROM 
+        ++ comptime dialect.tableColumns("llm_history") ++
+        \\
         \\WHERE name = 'is_loading'
     , &.{});
     defer q.deinit();
@@ -6144,7 +6223,9 @@ test "Migration068 adds is_loading column to llm_history" {
     // Type sanity: the column must be INTEGER (NOT NULL DEFAULT 0).
     var qt = try ctx.db.query(alloc,
         \\SELECT type, "notnull", dflt_value
-        \\FROM pragma_table_info('llm_history')
+        \\FROM 
+        ++ comptime dialect.tableColumns("llm_history") ++
+        \\
         \\WHERE name = 'is_loading'
     , &.{});
     defer qt.deinit();
@@ -6167,7 +6248,9 @@ test "Migration068 adds partial UNIQUE INDEX on tool_call_id" {
 
     // Confirm the index exists.
     var q = try ctx.db.query(alloc,
-        \\SELECT name, sql FROM sqlite_master
+        \\SELECT name, sql FROM 
+        ++ dialect.tables_source ++
+        \\
         \\WHERE type = 'index' AND tbl_name = 'llm_history'
         \\AND name = 'idx_llm_history_tool_call_id_loading'
     , &.{});
@@ -6191,7 +6274,9 @@ test "Migration068 is idempotent on a re-run" {
 
     // Still exactly one is_loading column.
     var q = try ctx.db.query(alloc,
-        \\SELECT COUNT(*) FROM pragma_table_info('llm_history')
+        \\SELECT COUNT(*) FROM 
+        ++ comptime dialect.tableColumns("llm_history") ++
+        \\
         \\WHERE name = 'is_loading'
     , &.{});
     defer q.deinit();
@@ -6314,7 +6399,9 @@ test "Migration069 adds image_urls column to workspace_item_tasks" {
     // Sanity: column does NOT exist before the migration.
     {
         var q = try ctx.db.query(alloc,
-            \\SELECT 1 FROM pragma_table_info('workspace_item_tasks')
+            \\SELECT 1 FROM 
+            ++ comptime dialect.tableColumns("workspace_item_tasks") ++
+            \\
             \\WHERE name = 'image_urls'
         , &.{});
         defer q.deinit();
@@ -6326,7 +6413,9 @@ test "Migration069 adds image_urls column to workspace_item_tasks" {
 
     // Confirm the column exists with the expected name.
     var q = try ctx.db.query(alloc,
-        \\SELECT name FROM pragma_table_info('workspace_item_tasks')
+        \\SELECT name FROM 
+        ++ comptime dialect.tableColumns("workspace_item_tasks") ++
+        \\
         \\WHERE name = 'image_urls'
     , &.{});
     defer q.deinit();
@@ -6339,7 +6428,9 @@ test "Migration069 adds image_urls column to workspace_item_tasks" {
     // `description` / `tags` patterns from Migrations 062 / 067).
     var qt = try ctx.db.query(alloc,
         \\SELECT type, "notnull", dflt_value
-        \\FROM pragma_table_info('workspace_item_tasks')
+        \\FROM 
+        ++ comptime dialect.tableColumns("workspace_item_tasks") ++
+        \\
         \\WHERE name = 'image_urls'
     , &.{});
     defer qt.deinit();
@@ -6367,7 +6458,9 @@ test "Migration069 is idempotent on a re-run" {
 
     // Still exactly one image_urls column.
     var q = try ctx.db.query(alloc,
-        \\SELECT COUNT(*) FROM pragma_table_info('workspace_item_tasks')
+        \\SELECT COUNT(*) FROM 
+        ++ comptime dialect.tableColumns("workspace_item_tasks") ++
+        \\
         \\WHERE name = 'image_urls'
     , &.{});
     defer q.deinit();
@@ -6462,7 +6555,7 @@ fn setupDb070() !TestCtx070 {
 }
 
 test "Migration070 creates agent_memories table with correct columns" {
-    // After migration, `pragma_table_info('agent_memories')` must show
+    // After migration, `" ++ comptime dialect.tableColumns("agent_memories") ++ "` must show
     // columns: id (TEXT PK), content (TEXT NOT NULL), tags (TEXT NOT NULL
     // DEFAULT ''), created_at (DATETIME DEFAULT CURRENT_TIMESTAMP),
     const alloc = testing.allocator;
@@ -6473,7 +6566,7 @@ test "Migration070 creates agent_memories table with correct columns" {
     // Sanity: table does NOT exist before the migration.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_memories'",
+            "SELECT 1 FROM " ++ dialect.tables_source ++ " WHERE type='table' AND name='agent_memories'",
             &.{});
         defer q.deinit();
         const row = (try q.next()) orelse null;
@@ -6488,7 +6581,7 @@ test "Migration070 creates agent_memories table with correct columns" {
     // Post-migration: table exists.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='agent_memories'",
+            "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='table' AND name='agent_memories'",
             &.{});
         defer q.deinit();
         const row = (try q.next()) orelse return error.AgentMemoriesTableNotCreated070;
@@ -6498,7 +6591,7 @@ test "Migration070 creates agent_memories table with correct columns" {
 
     // Verify the 5 expected columns exist with the expected names.
     var q = try ctx.db.query(alloc,
-        "SELECT name FROM pragma_table_info('agent_memories') ORDER BY cid",
+        "SELECT name FROM " ++ comptime dialect.tableColumns("agent_memories") ++ " ORDER BY cid",
         &.{});
     defer q.deinit();
     const expected_columns = [_][]const u8{ "id", "content", "tags", "created_at", "updated_at" };
@@ -6526,7 +6619,7 @@ test "Migration070 is idempotent on a re-run" {
 
     // Still exactly 1 agent_memories table.
     var q = try ctx.db.query(alloc,
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='agent_memories'",
+        "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type='table' AND name='agent_memories'",
         &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing070;
@@ -6546,7 +6639,7 @@ test "Migration070 creates agent_memories_fts FTS5 virtual table" {
     try Migration070AddAgentMemories.up(&ctx.db, alloc);
 
     var q = try ctx.db.query(alloc,
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='agent_memories_fts'",
+        "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='table' AND name='agent_memories_fts'",
         &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.FtsVirtualTableNotCreated070;
@@ -6566,7 +6659,7 @@ test "Migration070 installs sync triggers (exactly 3 on agent_memories)" {
     // Sanity: pre-migration, zero triggers on agent_memories.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='agent_memories'",
+            "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='trigger' AND tbl_name='agent_memories'",
             &.{});
         defer q.deinit();
         var pre_count: usize = 0;
@@ -6581,7 +6674,9 @@ test "Migration070 installs sync triggers (exactly 3 on agent_memories)" {
 
     // Post-migration: exactly 3 triggers.
     var q = try ctx.db.query(alloc,
-        \\SELECT name FROM sqlite_master
+        \\SELECT name FROM 
+        ++ dialect.tables_source ++
+        \\
         \\WHERE type='trigger' AND tbl_name='agent_memories'
         \\ORDER BY name
         , &.{});
@@ -6747,7 +6842,9 @@ test "Migration071 adds cwd column to workspace_item_tasks" {
     // Sanity: column does NOT exist before the migration.
     {
         var q = try ctx.db.query(alloc,
-            \\SELECT 1 FROM pragma_table_info('workspace_item_tasks')
+            \\SELECT 1 FROM 
+            ++ comptime dialect.tableColumns("workspace_item_tasks") ++
+            \\
             \\WHERE name = 'cwd'
         , &.{});
         defer q.deinit();
@@ -6759,7 +6856,9 @@ test "Migration071 adds cwd column to workspace_item_tasks" {
 
     // Confirm the column exists with the expected name.
     var q = try ctx.db.query(alloc,
-        \\SELECT name FROM pragma_table_info('workspace_item_tasks')
+        \\SELECT name FROM 
+        ++ comptime dialect.tableColumns("workspace_item_tasks") ++
+        \\
         \\WHERE name = 'cwd'
     , &.{});
     defer q.deinit();
@@ -6772,7 +6871,9 @@ test "Migration071 adds cwd column to workspace_item_tasks" {
     // `description` / `tags` / `image_urls` patterns from Migrations 062 /
     var qt = try ctx.db.query(alloc,
         \\SELECT type, "notnull", dflt_value
-        \\FROM pragma_table_info('workspace_item_tasks')
+        \\FROM 
+        ++ comptime dialect.tableColumns("workspace_item_tasks") ++
+        \\
         \\WHERE name = 'cwd'
     , &.{});
     defer qt.deinit();
@@ -6800,7 +6901,9 @@ test "Migration071 is idempotent on a re-run" {
 
     // Still exactly one cwd column.
     var q = try ctx.db.query(alloc,
-        \\SELECT COUNT(*) FROM pragma_table_info('workspace_item_tasks')
+        \\SELECT COUNT(*) FROM 
+        ++ comptime dialect.tableColumns("workspace_item_tasks") ++
+        \\
         \\WHERE name = 'cwd'
     , &.{});
     defer q.deinit();
@@ -7153,7 +7256,9 @@ test "Migration072 creates the kanban table with the expected schema" {
     // Sanity: kanban table does NOT exist before migration.
     {
         var q = try ctx.db.query(alloc,
-            \\SELECT 1 FROM sqlite_master
+            \\SELECT 1 FROM 
+            ++ dialect.tables_source ++
+            \\
             \\WHERE type = 'table' AND name = 'kanban'
         , &.{});
         defer q.deinit();
@@ -7164,7 +7269,9 @@ test "Migration072 creates the kanban table with the expected schema" {
 
     // Confirm the kanban table exists.
     var q = try ctx.db.query(alloc,
-        \\SELECT 1 FROM sqlite_master
+        \\SELECT 1 FROM 
+        ++ dialect.tables_source ++
+        \\
         \\WHERE type = 'table' AND name = 'kanban'
     , &.{});
     defer q.deinit();
@@ -7185,7 +7292,9 @@ test "Migration072 creates idx_kanban_column_position index" {
     try Migration072ExtractKanbanTable.up(&ctx.db, alloc);
 
     var q = try ctx.db.query(alloc,
-        \\SELECT 1 FROM sqlite_master
+        \\SELECT 1 FROM 
+        ++ dialect.tables_source ++
+        \\
         \\WHERE type = 'index' AND name = 'idx_kanban_column_position'
     , &.{});
     defer q.deinit();
@@ -7298,7 +7407,9 @@ test "Migration072 drops kanban_column_id from workspace_item_tasks" {
     try Migration072ExtractKanbanTable.up(&ctx.db, alloc);
 
     var q = try ctx.db.query(alloc,
-        \\SELECT name FROM pragma_table_info('workspace_item_tasks')
+        \\SELECT name FROM 
+        ++ comptime dialect.tableColumns("workspace_item_tasks") ++
+        \\
         \\WHERE name = 'kanban_column_id'
     , &.{});
     defer q.deinit();
@@ -7314,7 +7425,9 @@ test "Migration072 drops kanban_position from workspace_item_tasks" {
     try Migration072ExtractKanbanTable.up(&ctx.db, alloc);
 
     var q = try ctx.db.query(alloc,
-        \\SELECT name FROM pragma_table_info('workspace_item_tasks')
+        \\SELECT name FROM 
+        ++ comptime dialect.tableColumns("workspace_item_tasks") ++
+        \\
         \\WHERE name = 'kanban_position'
     , &.{});
     defer q.deinit();
@@ -7334,7 +7447,9 @@ test "Migration072 drops the legacy idx_tasks_column_position index" {
     try Migration072ExtractKanbanTable.up(&ctx.db, alloc);
 
     var q = try ctx.db.query(alloc,
-        \\SELECT 1 FROM sqlite_master
+        \\SELECT 1 FROM 
+        ++ dialect.tables_source ++
+        \\
         \\WHERE type = 'index' AND name = 'idx_tasks_column_position'
     , &.{});
     defer q.deinit();
@@ -7359,7 +7474,9 @@ test "Migration072 is idempotent — re-running does not crash" {
 
     // Verify the schema is still correct after the re-run.
     var q = try ctx.db.query(alloc,
-        \\SELECT name FROM pragma_table_info('workspace_item_tasks')
+        \\SELECT name FROM 
+        ++ comptime dialect.tableColumns("workspace_item_tasks") ++
+        \\
         \\WHERE name IN ('kanban_column_id', 'kanban_position')
     , &.{});
     defer q.deinit();
@@ -7454,7 +7571,7 @@ fn setupDb073() !TestCtx073 {
 // columns in the right order.
 
 test "Migration073 creates session_activity table with correct columns" {
-    // After migration, `pragma_table_info('session_activity')` must show
+    // After migration, `" ++ comptime dialect.tableColumns("session_activity") ++ "` must show
     // columns in order: id (TEXT PK), session_id (TEXT NOT NULL), description
     // (TEXT NOT NULL), created_at (DATETIME DEFAULT CURRENT_TIMESTAMP).
     const alloc = testing.allocator;
@@ -7465,7 +7582,7 @@ test "Migration073 creates session_activity table with correct columns" {
     // Sanity: table does NOT exist before the migration.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_activity'",
+            "SELECT 1 FROM " ++ dialect.tables_source ++ " WHERE type='table' AND name='session_activity'",
             &.{});
         defer q.deinit();
         const row = (try q.next()) orelse null;
@@ -7480,7 +7597,7 @@ test "Migration073 creates session_activity table with correct columns" {
     // Post-migration: table exists.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='session_activity'",
+            "SELECT name FROM " ++ dialect.tables_source ++ " WHERE type='table' AND name='session_activity'",
             &.{});
         defer q.deinit();
         const row = (try q.next()) orelse return error.SessionActivityTableNotCreated073;
@@ -7490,7 +7607,7 @@ test "Migration073 creates session_activity table with correct columns" {
 
     // Verify the 4 expected columns exist with the expected names + order.
     var q = try ctx.db.query(alloc,
-        "SELECT name FROM pragma_table_info('session_activity') ORDER BY cid",
+        "SELECT name FROM " ++ comptime dialect.tableColumns("session_activity") ++ " ORDER BY cid",
         &.{});
     defer q.deinit();
     const expected_columns = [_][]const u8{ "id", "session_id", "description", "created_at" };
@@ -7522,7 +7639,7 @@ test "Migration073 is idempotent on a re-run" {
 
     // Still exactly 1 session_activity table.
     var q = try ctx.db.query(alloc,
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='session_activity'",
+        "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type='table' AND name='session_activity'",
         &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing073;
@@ -7546,7 +7663,7 @@ test "Migration073 creates idx_session_activity_session_created index" {
     // Sanity: pre-migration, index doesn't exist.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_session_activity_session_created'",
+            "SELECT 1 FROM " ++ dialect.tables_source ++ " WHERE type='index' AND name='idx_session_activity_session_created'",
             &.{});
         defer q.deinit();
         const row = (try q.next()) orelse null;
@@ -7559,7 +7676,9 @@ test "Migration073 creates idx_session_activity_session_created index" {
     try Migration073AddSessionActivity.up(&ctx.db, alloc);
 
     var q = try ctx.db.query(alloc,
-        \\SELECT name FROM sqlite_master
+        \\SELECT name FROM 
+        ++ dialect.tables_source ++
+        \\
         \\WHERE type='index' AND name='idx_session_activity_session_created'
         , &.{});
     defer q.deinit();
@@ -7644,7 +7763,7 @@ test "Migration074 adds cache_creation_input_tokens + cache_read_input_tokens to
 
     // Post-migration: both columns exist with type=INTEGER and dflt_value=0.
     var q = try ctx.db.query(alloc,
-        "SELECT name, type, dflt_value FROM pragma_table_info('llm_history') " ++
+        "SELECT name, type, dflt_value FROM " ++ comptime dialect.tableColumns("llm_history") ++ " " ++
             "WHERE name IN ('cache_creation_input_tokens', 'cache_read_input_tokens') " ++
             "ORDER BY name",
         &.{});
@@ -7685,7 +7804,7 @@ test "Migration074 is idempotent on a re-run" {
 
     // Both columns still exist exactly once each.
     var q = try ctx.db.query(alloc,
-        "SELECT COUNT(*) FROM pragma_table_info('llm_history') " ++
+        "SELECT COUNT(*) FROM " ++ comptime dialect.tableColumns("llm_history") ++ " " ++
             "WHERE name IN ('cache_creation_input_tokens', 'cache_read_input_tokens')",
         &.{});
     defer q.deinit();
@@ -7922,7 +8041,7 @@ test "Migration075 renames idx_logs_created_at → idx_logs_created_at_nano" {
     // Old index is gone.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_logs_created_at'",
+            "SELECT 1 FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name = 'idx_logs_created_at'",
             &.{});
         defer q.deinit();
         try testing.expect((try q.next()) == null);
@@ -7931,7 +8050,7 @@ test "Migration075 renames idx_logs_created_at → idx_logs_created_at_nano" {
     // New index exists.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_logs_created_at_nano'",
+            "SELECT 1 FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name = 'idx_logs_created_at_nano'",
             &.{});
         defer q.deinit();
         const row = (try q.next()) orelse return error.NewIndexMissing075;
@@ -7950,7 +8069,7 @@ test "Migration075 renames idx_worker_last_activity → idx_worker_last_activity
     // Old index is gone.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_worker_last_activity'",
+            "SELECT 1 FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name = 'idx_worker_last_activity'",
             &.{});
         defer q.deinit();
         try testing.expect((try q.next()) == null);
@@ -7959,7 +8078,7 @@ test "Migration075 renames idx_worker_last_activity → idx_worker_last_activity
     // New index exists.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_worker_last_activity_nano'",
+            "SELECT 1 FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name = 'idx_worker_last_activity_nano'",
             &.{});
         defer q.deinit();
         const row = (try q.next()) orelse return error.NewIndexMissing075;
@@ -7984,7 +8103,7 @@ test "Migration075 updates the internal column reference of idx_llm_history_sess
     // EXPLAIN QUERY PLAN on a SELECT that uses this index.
     {
         var q = try ctx.db.query(alloc,
-            "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_llm_history_session_created'",
+            "SELECT 1 FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name = 'idx_llm_history_session_created'",
             &.{});
         defer q.deinit();
         const row = (try q.next()) orelse return error.IndexMissing075;
@@ -8033,7 +8152,7 @@ test "Migration075 is idempotent on a re-run" {
 
     // Verify the schema is still correct after all 3 runs.
     var q = try ctx.db.query(alloc,
-        "SELECT COUNT(*) FROM pragma_table_info('llm_history') " ++
+        "SELECT COUNT(*) FROM " ++ comptime dialect.tableColumns("llm_history") ++ " " ++
             "WHERE name IN ('created_at', 'created_at_nano')",
         &.{});
     defer q.deinit();
@@ -8082,7 +8201,7 @@ test "Migration075 runs cleanly via registerAllMigrations + runMigrations" {
 
     // Schema check: the new column names exist.
     var q = try db.query(alloc,
-        "SELECT 1 FROM pragma_table_info('llm_history') WHERE name = 'created_at_nano'",
+        "SELECT 1 FROM " ++ comptime dialect.tableColumns("llm_history") ++ " WHERE name = 'created_at_nano'",
         &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.ColumnMissing075;
@@ -8276,7 +8395,9 @@ test "Migration077 creates users table with all 9 columns" {
     };
 
     var q = try ctx.db.query(alloc,
-        \\SELECT name, type, dflt_value FROM pragma_table_info('users') ORDER BY cid
+        \\SELECT name, type, dflt_value FROM 
+        ++ comptime dialect.tableColumns("users") ++
+        \\ ORDER BY cid
     , &.{});
     defer q.deinit();
 
@@ -8318,7 +8439,9 @@ test "Migration077 creates user_companies table with all 8 columns" {
     };
 
     var q = try ctx.db.query(alloc,
-        \\SELECT name, type, dflt_value FROM pragma_table_info('user_companies') ORDER BY cid
+        \\SELECT name, type, dflt_value FROM 
+        ++ comptime dialect.tableColumns("user_companies") ++
+        \\ ORDER BY cid
     , &.{});
     defer q.deinit();
 
@@ -8352,7 +8475,9 @@ test "Migration077 creates user_company_members table with composite PK" {
     };
 
     var q = try ctx.db.query(alloc,
-        \\SELECT name FROM pragma_table_info('user_company_members') ORDER BY cid
+        \\SELECT name FROM 
+        ++ comptime dialect.tableColumns("user_company_members") ++
+        \\ ORDER BY cid
     , &.{});
     defer q.deinit();
 
@@ -8368,7 +8493,9 @@ test "Migration077 creates user_company_members table with composite PK" {
     // Verify the composite PRIMARY KEY (user_id, user_company_id) is in
     // place.
     var pk_q = try ctx.db.query(alloc,
-        \\SELECT name, pk FROM pragma_table_info('user_company_members')
+        \\SELECT name, pk FROM 
+        ++ comptime dialect.tableColumns("user_company_members") ++
+        \\
         \\WHERE pk > 0 ORDER BY pk
     , &.{});
     defer pk_q.deinit();
@@ -8419,7 +8546,9 @@ test "Migration077 adds user_id to workspaces and backfills legacy rows to user_
 
     // Verify the column exists with type=TEXT, nullable.
     var col_q = try ctx.db.query(alloc,
-        \\SELECT type, "notnull" FROM pragma_table_info('workspaces')
+        \\SELECT type, "notnull" FROM 
+        ++ comptime dialect.tableColumns("workspaces") ++
+        \\
         \\WHERE name = 'user_id'
     , &.{});
     defer col_q.deinit();
@@ -8474,7 +8603,9 @@ test "Migration077 adds user_id to sessions and backfills legacy rows to user_sy
 
     // Verify the column exists with type=TEXT, nullable.
     var col_q = try ctx.db.query(alloc,
-        \\SELECT type, "notnull" FROM pragma_table_info('sessions')
+        \\SELECT type, "notnull" FROM 
+        ++ comptime dialect.tableColumns("sessions") ++
+        \\
         \\WHERE name = 'user_id'
     , &.{});
     defer col_q.deinit();
@@ -8566,7 +8697,9 @@ test "Migration077 is idempotent on re-run via addColumnIfMissing + INSERT OR IG
     // Verify the schema is still correct after all 4 runs total
     // (1 from setupDb + 3 from this test).
     var q = try ctx.db.query(alloc,
-        \\SELECT COUNT(*) FROM pragma_table_info('workspaces') WHERE name = 'user_id'
+        \\SELECT COUNT(*) FROM 
+        ++ comptime dialect.tableColumns("workspaces") ++
+        \\ WHERE name = 'user_id'
     , &.{});
     defer q.deinit();
     const ws_row = (try q.next()) orelse return error.RowMissing077;
@@ -8574,7 +8707,9 @@ test "Migration077 is idempotent on re-run via addColumnIfMissing + INSERT OR IG
     try testing.expectEqualStrings("1", ws_row.values[0]);
 
     var q2 = try ctx.db.query(alloc,
-        \\SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'user_id'
+        \\SELECT COUNT(*) FROM 
+        ++ comptime dialect.tableColumns("sessions") ++
+        \\ WHERE name = 'user_id'
     , &.{});
     defer q2.deinit();
     const sess_row = (try q2.next()) orelse return error.RowMissing077;
@@ -8656,7 +8791,9 @@ test "Migration082 adds last_human_touched_at_nano column to sessions" {
     // Sanity: column does NOT exist before the migration.
     {
         var q = try ctx.db.query(alloc,
-            \\SELECT 1 FROM pragma_table_info('sessions')
+            \\SELECT 1 FROM 
+            ++ comptime dialect.tableColumns("sessions") ++
+            \\
             \\WHERE name = 'last_human_touched_at_nano'
         , &.{});
         defer q.deinit();
@@ -8670,7 +8807,9 @@ test "Migration082 adds last_human_touched_at_nano column to sessions" {
     // literal — that footgun was caught in Migration 065's test, see
     // project memory `addColumnIfMissing-requires-name-type`).
     var q = try ctx.db.query(alloc,
-        \\SELECT name FROM pragma_table_info('sessions')
+        \\SELECT name FROM 
+        ++ comptime dialect.tableColumns("sessions") ++
+        \\
         \\WHERE name = 'last_human_touched_at_nano'
     , &.{});
     defer q.deinit();
@@ -8684,7 +8823,9 @@ test "Migration082 adds last_human_touched_at_nano column to sessions" {
     // Type sanity: the column must be INTEGER (so unix-ms comparisons
     // work as arithmetic), not TEXT.
     var qt = try ctx.db.query(alloc,
-        \\SELECT type FROM pragma_table_info('sessions')
+        \\SELECT type FROM 
+        ++ comptime dialect.tableColumns("sessions") ++
+        \\
         \\WHERE name = 'last_human_touched_at_nano'
     , &.{});
     defer qt.deinit();
@@ -8695,7 +8836,9 @@ test "Migration082 adds last_human_touched_at_nano column to sessions" {
     // Nullability sanity: NOT NULL must NOT appear in the column's
     // constraints (the canonical "never touched" state is NULL).
     var qn = try ctx.db.query(alloc,
-        \\SELECT "notnull" FROM pragma_table_info('sessions')
+        \\SELECT "notnull" FROM 
+        ++ comptime dialect.tableColumns("sessions") ++
+        \\
         \\WHERE name = 'last_human_touched_at_nano'
     , &.{});
     defer qn.deinit();
@@ -8717,7 +8860,9 @@ test "Migration082 is idempotent on a re-run" {
 
     // Still exactly one column of that name.
     var q = try ctx.db.query(alloc,
-        \\SELECT COUNT(*) FROM pragma_table_info('sessions')
+        \\SELECT COUNT(*) FROM 
+        ++ comptime dialect.tableColumns("sessions") ++
+        \\
         \\WHERE name = 'last_human_touched_at_nano'
     , &.{});
     defer q.deinit();
@@ -8752,7 +8897,9 @@ test "Migration082 is idempotent on a fresh-DB install where the canonical schem
 
     // Re-check: still exactly one column.
     var q = try ctx.db.query(alloc,
-        \\SELECT COUNT(*) FROM pragma_table_info('sessions')
+        \\SELECT COUNT(*) FROM 
+        ++ comptime dialect.tableColumns("sessions") ++
+        \\
         \\WHERE name = 'last_human_touched_at_nano'
     , &.{});
     defer q.deinit();
@@ -8845,7 +8992,7 @@ test "Migration096 creates the ledger table and both indexes" {
     });
 
     var qi = try ctx.db.query(alloc,
-        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name IN ('idx_session_skill_events_session', 'idx_session_skill_events_skill')",
+        "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name IN ('idx_session_skill_events_session', 'idx_session_skill_events_skill')",
         &.{});
     defer qi.deinit();
     const irow = (try qi.next()) orelse return error.RowMissing;
@@ -8904,7 +9051,7 @@ test "Migration096 is idempotent on a re-run" {
     try Migration096CreateSessionSkillEvents.up(&ctx.db, alloc);
 
     var q = try ctx.db.query(alloc,
-        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'session_skill_events'",
+        "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type = 'table' AND name = 'session_skill_events'",
         &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
@@ -8932,7 +9079,7 @@ test "Migration097 creates all three tables and their indexes" {
     const expected = [_][]const u8{ "skill_eval_facts", "skill_eval_runs", "skill_eval_results" };
     for (expected) |table| {
         var q = try ctx.db.query(alloc,
-            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
+            "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type = 'table' AND name = ?",
             &.{table});
         defer q.deinit();
         const row = (try q.next()) orelse return error.RowMissing;
@@ -8941,7 +9088,7 @@ test "Migration097 creates all three tables and their indexes" {
     }
 
     var qi = try ctx.db.query(alloc,
-        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name IN ('uq_skill_eval_facts','idx_skill_eval_facts_skill','uq_skill_eval_runs_self_prompt','idx_skill_eval_runs_session','idx_skill_eval_runs_status','idx_skill_eval_results_run','idx_skill_eval_results_skill','idx_skill_eval_results_session')",
+        "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name IN ('uq_skill_eval_facts','idx_skill_eval_facts_skill','uq_skill_eval_runs_self_prompt','idx_skill_eval_runs_session','idx_skill_eval_runs_status','idx_skill_eval_results_run','idx_skill_eval_results_skill','idx_skill_eval_results_session')",
         &.{});
     defer qi.deinit();
     const irow = (try qi.next()) orelse return error.RowMissing;
@@ -9055,7 +9202,7 @@ test "Migration097 is idempotent on a re-run" {
     try Migration097CreateSkillEvalTables.up(&ctx.db, alloc);
 
     var q = try ctx.db.query(alloc,
-        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name LIKE 'skill_eval_%'",
+        "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type = 'table' AND name LIKE 'skill_eval_%'",
         &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
@@ -9211,7 +9358,7 @@ fn tableDdl(ctx: *TestCtx, table: []const u8) ![]const u8 {
     const alloc = testing.allocator;
     var q = try ctx.db.query(
         alloc,
-        "SELECT COALESCE(sql, '') FROM sqlite_master WHERE type = 'table' AND name = ?",
+        "SELECT COALESCE(sql, '') FROM " ++ dialect.tables_source ++ " WHERE type = 'table' AND name = ?",
         &[_][]const u8{table},
     );
     defer q.deinit();
@@ -9245,7 +9392,7 @@ test "Migration100 creates workspace_members with the shape the design promises"
     // `user_id` MUST be NOT NULL.
     var q = try ctx.db.query(
         alloc,
-        "SELECT type, \"notnull\" FROM pragma_table_info('workspace_members') WHERE name = 'user_id'",
+        "SELECT type, \"notnull\" FROM " ++ comptime dialect.tableColumns("workspace_members") ++ " WHERE name = 'user_id'",
         &.{},
     );
     defer q.deinit();
@@ -9259,7 +9406,7 @@ test "Migration100 creates workspace_members with the shape the design promises"
     // OFF (see Migration 077's docstring). It shows up as pk=1/pk=2.
     var qp = try ctx.db.query(
         alloc,
-        "SELECT name FROM pragma_table_info('workspace_members') WHERE pk > 0 ORDER BY pk",
+        "SELECT name FROM " ++ comptime dialect.tableColumns("workspace_members") ++ " WHERE pk > 0 ORDER BY pk",
         &.{},
     );
     defer qp.deinit();
@@ -9281,7 +9428,7 @@ test "Migration100 creates workspace_members with the shape the design promises"
     // (the hot visibility predicate); this covers user_id -> workspaces.
     var qi = try ctx.db.query(
         alloc,
-        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_workspace_members_user'",
+        "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type = 'index' AND name = 'idx_workspace_members_user'",
         &.{},
     );
     defer qi.deinit();
@@ -10029,7 +10176,7 @@ test "Migration106's text columns are NULLABLE so an empty base_url is represent
     for ([_][]const u8{ "base_url", "url_style", "name" }) |col| {
         const sql = try std.fmt.allocPrint(
             alloc,
-            "SELECT \"notnull\" FROM pragma_table_info('model_catalog_providers') WHERE name = '{s}'",
+            "SELECT \"notnull\" FROM " ++ comptime dialect.tableColumns("model_catalog_providers") ++ " WHERE name = '{s}'",
             .{col},
         );
         defer alloc.free(sql);
@@ -10053,7 +10200,7 @@ test "Migration105's config_json is nullable, so clearing the overlay is represe
     // representation. An explicit NULL insert would fail on a NOT NULL column.
     var q = try ctx.db.query(
         alloc,
-        "SELECT \"notnull\" FROM pragma_table_info('workspace_settings') WHERE name = 'config_json'",
+        "SELECT \"notnull\" FROM " ++ comptime dialect.tableColumns("workspace_settings") ++ " WHERE name = 'config_json'",
         &.{},
     );
     defer q.deinit();

@@ -193,7 +193,7 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
         \\CREATE TABLE worker (
         \\    id TEXT PRIMARY KEY,
         \\    session_id TEXT NOT NULL,
-        \\    last_activity_nano INTEGER,
+        \\    last_activity_nano BIGINT,
         \\    run_token TEXT NOT NULL DEFAULT ''
         \\)
     , &.{});

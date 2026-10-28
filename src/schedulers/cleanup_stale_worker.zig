@@ -148,7 +148,7 @@ fn setupCtx() !TestCtx {
         \\    id TEXT PRIMARY KEY,
         \\    session_id TEXT NOT NULL,
         \\    working_directory TEXT,
-        \\    last_activity_nano INTEGER,
+        \\    last_activity_nano BIGINT,
         \\    last_activity_description TEXT,
         \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)

@@ -2113,7 +2113,7 @@ fn secretsSetup(allocator: std.mem.Allocator) !SecretsFixture {
         \\  loop_index INTEGER,
         \\  temperature REAL,
         \\  is_thinking INTEGER,
-        \\  created_at_nano INTEGER,
+        \\  created_at_nano BIGINT,
         \\  created_iso TEXT,
         \\  parent_session_id TEXT,
         \\  parent_id TEXT,
@@ -2553,7 +2553,7 @@ fn workerActivityDb(allocator: std.mem.Allocator) !struct { db: database.Db, thr
         \\    id TEXT PRIMARY KEY,
         \\    session_id TEXT,
         \\    working_directory TEXT,
-        \\    last_activity_nano INTEGER,
+        \\    last_activity_nano BIGINT,
         \\    last_activity_description TEXT,
         \\    cancelled INTEGER DEFAULT 0,
         \\    user_id TEXT

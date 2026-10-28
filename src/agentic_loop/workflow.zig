@@ -2870,7 +2870,7 @@ test "progressive tool search: equipping a built-in makes it appear in the next 
         \\    session_id TEXT NOT NULL,
         \\    tool_name TEXT NOT NULL,
         \\    server_name TEXT NOT NULL DEFAULT '',
-        \\    loaded_at_nano INTEGER NOT NULL DEFAULT 0,
+        \\    loaded_at_nano BIGINT NOT NULL DEFAULT 0,
         \\    PRIMARY KEY (session_id, tool_name)
         \\)
     , &.{});
@@ -2964,7 +2964,7 @@ test "progressive tool search: an MCP tool is invisible until equipped, then app
         \\    session_id TEXT NOT NULL,
         \\    tool_name TEXT NOT NULL,
         \\    server_name TEXT NOT NULL DEFAULT '',
-        \\    loaded_at_nano INTEGER NOT NULL DEFAULT 0,
+        \\    loaded_at_nano BIGINT NOT NULL DEFAULT 0,
         \\    PRIMARY KEY (session_id, tool_name)
         \\)
     , &.{});

@@ -704,7 +704,7 @@ fn setupDb() !struct { db: pabrikcore.database.Db, threaded: std.Io.Threaded } {
         \\    multi_select INTEGER NOT NULL DEFAULT 0,
         \\    status TEXT NOT NULL DEFAULT 'pending',
         \\    answer TEXT,
-        \\    created_at INTEGER NOT NULL,
+        \\    created_at BIGINT NOT NULL,
         \\    resolved_at INTEGER
         \\)
     , &.{});
