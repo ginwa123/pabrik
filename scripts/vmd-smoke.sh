@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # P2a smoke: `pabrik-vmd` (our own Zig client) boots a workspace VM, runs
-# commands in it as uid 1000, stops it, and the workspace's sealed disk
-# persists across boots. No root, no tap, no iptables.
+# commands in it as the guest's own root, stops it, and the workspace's sealed
+# disk persists across boots. No root, no tap, no iptables.
 #
 # Usage: scripts/vmd-smoke.sh
 # Env:   FC_BIN, GUEST_KERNEL, PABRIK_VM_WORKDIR
@@ -42,10 +42,10 @@ run() { PABRIK_VM_DIR="$vms" "$vmd" run --workspace-id "$ws" --base-image "$work
   --kernel "$guest_kernel" --fc "$fc_bin" "$@"; }
 
 say "one boot: shell, uid and distro"
-out="$(run --timeout-ms 15000 -- /bin/sh -c 'echo hello; id -u; cat /etc/alpine-release' 2>/dev/null)"
-expected=$'hello\n1000\n3.24.2'
+out="$(run --timeout-ms 15000 -- /bin/sh -c '. /etc/os-release; echo hello; id -u; echo "$ID $VERSION_ID"' 2>/dev/null)"
+expected=$'hello\n0\nfedora 44'
 [ "$out" = "$expected" ] || fail "unexpected output: $out"
-say "ok  exec over the Zig client -> hello / uid 1000 / Alpine 3.24.2"
+say "ok  exec over the Zig client -> hello / uid 0 / Fedora 44"
 
 say "a failing command propagates its exit code"
 if run -- /bin/sh -c 'echo to-stderr >&2; exit 7' >/dev/null 2>"$work/err.txt"; then
@@ -75,4 +75,4 @@ done
 [ ! -e "$vms/workspaces/../disk.ext4" ] || fail "no path escaped the workspace dir"
 say "ok  $vms/workspaces/$ws/{disk.ext4,api.sock,vsock.sock,serial.log,fc.log}"
 
-say "OK - boot, exec as uid 1000, exit codes, timeouts, persistence, derived paths"
+say "OK - boot, exec as the guest's own root, exit codes, timeouts, persistence, derived paths"

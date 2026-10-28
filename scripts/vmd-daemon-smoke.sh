@@ -75,11 +75,11 @@ out="$(client ping --socket "$sock")"
 [ "$out" = "pabrik-vmd 0.1" ] || fail "unexpected ping reply: $out"
 say "ok  ping -> $out"
 
-say "a command runs inside the workspace's VM, as uid 1000"
-out="$(exec_in --timeout-ms 20000 -- /bin/sh -c 'id -u; cat /etc/alpine-release' 2>/dev/null)"
-expected=$'1000\n3.24.2'
+say "a command runs inside the workspace's VM, as the guest's own root"
+out="$(exec_in --timeout-ms 20000 -- /bin/sh -c '. /etc/os-release; id -u; echo "$ID $VERSION_ID"' 2>/dev/null)"
+expected=$'0\nfedora 44'
 [ "$out" = "$expected" ] || fail "unexpected exec output: $out"
-say "ok  exec -> uid 1000 on Alpine 3.24.2"
+say "ok  exec -> uid 0 on Fedora 44"
 
 say "the reconciler sweeps on its own clock"
 for _ in $(seq 1 40); do grep -q 'swept 1 workspace' "$work/vmd.log" && break; sleep 0.1; done
