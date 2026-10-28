@@ -95,6 +95,7 @@ pub fn buildMessages(
     // 1. Static prompts — inlined (no PROMPT_SECTIONS constant), gated on hasTool where needed
     try final_system.appendSlice(allocator, prompts_const.UniversalRules);
     try final_system.appendSlice(allocator, prompts_const.Agent);
+    try final_system.appendSlice(allocator, prompts_const.TemporaryFilesRule);
     if (hasTool(filtered_tools, "command")) {
         try final_system.appendSlice(allocator, prompts_const.GitPrompt);
     }
@@ -1221,6 +1222,7 @@ const PROMPT_SECTIONS: []const PromptSection = &.{
     // Documented here for discoverability.
     .{ .name = "skill_eval_tool_rule", .content = prompts_const.SkillEvalToolRule, .requires_tool = "run_skill_eval" },
     .{ .name = "agent_directive", .content = prompts_const.Agent },
+    .{ .name = "temporary_files_rule", .content = prompts_const.TemporaryFilesRule },
     .{ .name = "git_prompt", .content = prompts_const.GitPrompt },
     .{ .name = "response_formatting", .content = prompts_const.ResponseFormatting },
     .{
