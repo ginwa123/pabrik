@@ -938,8 +938,11 @@ test "fetchUserChatHistory returns only matching session's user rows with non-nu
     try testing.expectEqual(@as(usize, 2), turns.items.len);
     try testing.expectEqualStrings("first ask", turns.items[0].content);
     try testing.expectEqualStrings("second ask", turns.items[1].content);
-    try testing.expectEqualStrings("2026-01-01 00:00:01", turns.items[0].created_at);
-    try testing.expectEqualStrings("2026-01-01 00:00:03", turns.items[1].created_at);
+    // `created_at_nano` is an epoch column and the reader projects it verbatim,
+    // so the assertion names the value the column holds — 2026-01-01T00:00:01Z
+    // and :03Z in microseconds.
+    try testing.expectEqualStrings("1767225601000000", turns.items[0].created_at);
+    try testing.expectEqualStrings("1767225603000000", turns.items[1].created_at);
 }
 
 test "fetchReadFilePaths returns only matching session's read_file outputs, with parsed paths" {
