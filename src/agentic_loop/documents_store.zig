@@ -182,7 +182,7 @@ pub fn searchDocuments(
     const sql = if (pattern != null)
         SELECT_COLUMNS ++
             " WHERE workspace_id = ?" ++
-            " AND (title LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\')" ++
+            " AND (LOWER(title) LIKE LOWER(?) ESCAPE '\\' OR LOWER(content) LIKE LOWER(?) ESCAPE '\\')" ++
             " ORDER BY updated_at DESC, id DESC"
     else
         SELECT_COLUMNS ++ " WHERE workspace_id = ? ORDER BY updated_at DESC, id DESC";

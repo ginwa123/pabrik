@@ -5247,7 +5247,7 @@ pub fn listWorkspaceItemTasksWithCursor(
             q_pattern = try std.fmt.allocPrint(allocator, "%{s}%", .{escaped});
             q_clause = try std.fmt.allocPrint(
                 allocator,
-                " AND (LOWER(t.name) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(CAST(t.description AS TEXT), '')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(CAST(t.tags AS TEXT), '')) LIKE ? ESCAPE '\\')",
+                " AND (LOWER(t.name) LIKE LOWER(?) ESCAPE '\\' OR LOWER(COALESCE(CAST(t.description AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\' OR LOWER(COALESCE(CAST(t.tags AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\')",
                 .{},
             );
         }
