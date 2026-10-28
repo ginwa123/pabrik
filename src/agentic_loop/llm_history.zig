@@ -9047,6 +9047,12 @@ fn llmHistoryCompactedMessagesSeedMessage(
         \\INSERT INTO llm_history (id, session_id, role, response_content, is_feed_to_llm, created_at_nano, created_iso)
         \\VALUES (?, ?, ?, ?, ?, ?, ?)
     ;
+    if (std.mem.indexOfScalar(u8, created_at, '-') != null) {
+        var nq = try db.queryRow(alloc, "SELECT CAST(strftime('%s', ?) AS BIGINT) * 1000000", &.{created_at});
+        defer nq.deinit(alloc);
+        try db.exec(alloc, sql, &.{ id, sess, role, content, feed_str, nq.values[0], created_iso });
+        return;
+    }
     try db.exec(alloc, sql, &.{ id, sess, role, content, feed_str, created_at, created_iso });
 }
 

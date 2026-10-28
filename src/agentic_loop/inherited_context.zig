@@ -363,10 +363,20 @@ fn seedMessage(
     role: []const u8,
     content: []const u8,
 ) !void {
-    try db.exec(alloc,
+    // `created_at_nano` is an epoch column. Callers hand in either the epoch or
+    // a timestamp spelling, so convert once here — relying on sqlite's text
+    // affinity is what let an ISO string sit in a BIGINT column.
+    const insert =
         \\INSERT INTO llm_history (id, session_id, created_at_nano, response_content, role)
         \\VALUES (?, ?, ?, ?, ?)
-    , &.{ id, session_id, created_at, content, role });
+    ;
+    if (std.mem.indexOfScalar(u8, created_at, '-') == null) {
+        try db.exec(alloc, insert, &.{ id, session_id, created_at, content, role });
+        return;
+    }
+    var q = try db.queryRow(alloc, "SELECT CAST(strftime('%s', ?) AS BIGINT) * 1000000", &.{created_at});
+    defer q.deinit(alloc);
+    try db.exec(alloc, insert, &.{ id, session_id, q.values[0], content, role });
 }
 
 test "formatHistory - mode .none short-circuits to empty string" {

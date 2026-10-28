@@ -112,7 +112,8 @@ pub fn tableColumns(comptime table: []const u8) []const u8 {
         "upper(CASE WHEN c.data_type IN ('character varying', 'character', 'text') THEN 'text' " ++
         "WHEN c.data_type LIKE 'timestamp%' THEN 'timestamp' ELSE c.data_type END) AS type, " ++
         "CASE WHEN c.is_nullable = 'NO' THEN 1 ELSE 0 END AS \"notnull\", " ++
-        "trim(both '''' from regexp_replace(COALESCE(c.column_default, ''), '::[a-zA-Z_ ]+$', '')) AS dflt_value, " ++
+        "CASE WHEN COALESCE(c.column_default, '') IN ('now()', 'CURRENT_TIMESTAMP') THEN 'CURRENT_TIMESTAMP' " ++
+        "ELSE regexp_replace(COALESCE(c.column_default, ''), '::[a-zA-Z_ ]+$', '') END AS dflt_value, " ++
         "COALESCE((SELECT kcu.ordinal_position FROM information_schema.table_constraints tc " ++
         "JOIN information_schema.key_column_usage kcu ON kcu.constraint_name = tc.constraint_name " ++
         "AND kcu.table_schema = tc.table_schema " ++

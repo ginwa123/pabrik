@@ -838,10 +838,17 @@ fn seedRow(
 ) !void {
     try db.exec(
         alloc,
+        // `created_at_nano` is an epoch column: a timestamp spelling is
+        // converted here rather than trusted to sqlite's text affinity.
         "INSERT INTO llm_history " ++
             "(id, session_id, model, response_content, role, tool_name, is_input, is_output, is_feed_to_llm, created_at_nano) " ++
-            "VALUES (?, ?, 'test-model', ?, ?, ?, ?, ?, 1, ?)",
-        &.{ row.id, row.session_id, row.content, row.role, row.tool_name, row.is_input, row.is_output, row.created_at },
+            "SELECT ?, ?, 'test-model', ?, ?, ?, ?, ?, 1, " ++
+            "CASE WHEN CAST(? AS TEXT) LIKE '%-%' " ++
+            "THEN CAST(strftime('%s', CAST(? AS TEXT)) AS BIGINT) * 1000000 " ++
+            "ELSE CAST(? AS BIGINT) END " ++
+            "WHERE 1 = 1",
+        &.{ row.id, row.session_id, row.content, row.role, row.tool_name, row.is_input, row.is_output,
+            row.created_at, row.created_at, row.created_at },
     );
 }
 

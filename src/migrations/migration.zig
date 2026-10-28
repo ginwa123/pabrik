@@ -5518,7 +5518,7 @@ test "Migration065 adds last_human_touched_at column to workspace_item_tasks" {
     defer qt.deinit();
     const type_row = (try qt.next()) orelse return error.RowMissing065;
     defer type_row.deinit(alloc);
-    try testing.expectEqualStrings("INTEGER", type_row.values[0]);
+    try testing.expectEqualStrings(dialect.epoch_type, type_row.values[0]);
 }
 
 test "Migration065 is idempotent on a re-run" {
@@ -8851,7 +8851,7 @@ test "Migration082 adds last_human_touched_at_nano column to sessions" {
     defer qt.deinit();
     const type_row = (try qt.next()) orelse return error.RowMissing082;
     defer type_row.deinit(alloc);
-    try testing.expectEqualStrings("INTEGER", type_row.values[0]);
+    try testing.expectEqualStrings(dialect.epoch_type, type_row.values[0]);
 
     // Nullability sanity: NOT NULL must NOT appear in the column's
     // constraints (the canonical "never touched" state is NULL).
