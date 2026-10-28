@@ -2923,7 +2923,7 @@ test "compactMessageInMemoryNew marks every older row unfed and leaves the envel
         try s.db.exec(
             alloc,
             "INSERT INTO llm_history (id, session_id, model, response_content, role, is_feed_to_llm, created_at_nano) " ++
-                "VALUES (?, ?, 'gpt-4o', 'old turn', 'user', 1, '2026-01-01 00:00:00')",
+                "VALUES (?, ?, 'gpt-4o', 'old turn', 'user', 1, '1767225600000000')",
             &.{ id, session_id },
         );
     }
@@ -3057,7 +3057,7 @@ test "end-to-end: compacted rows are findable via getCompactedMessages after com
             \\INSERT INTO llm_history
             \\  (id, session_id, model, response_content, role, is_feed_to_llm,
             \\   created_at_nano, tool_call_id, tool_name)
-            \\VALUES (?, ?, 'gpt-4o', ?, ?, 1, '2026-01-01 00:00:00', ?, ?)
+            \\VALUES (?, ?, 'gpt-4o', ?, ?, 1, '1767225600000000', ?, ?)
         , &.{ id, session_id, content, role, tcid, tname });
     }
 

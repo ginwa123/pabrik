@@ -35,10 +35,12 @@ pub const Migration070AddAgentMemories = struct {
         // 3. The search index. Postgres keeps it in a GIN over `tsvector`,
         //    sqlite in an FTS5 virtual table.
         if (dialect.is_postgres) {
-            try db.exec(allocator,
-                \\CREATE INDEX IF NOT EXISTS idx_agent_memories_fts
-                \\ON agent_memories USING gin (to_tsvector('simple'::regconfig, COALESCE(content, '') || ' ' || COALESCE(tags, '')))
-            , &[_][]const u8{});
+            const fts_index = try std.fmt.allocPrint(allocator,
+                "CREATE INDEX IF NOT EXISTS idx_agent_memories_fts ON agent_memories USING gin ({s})",
+                .{dialect.tsVectorText("COALESCE(content, '') || ' ' || COALESCE(tags, '')")},
+            );
+            defer allocator.free(fts_index);
+            try db.exec(allocator, fts_index, &[_][]const u8{});
             return;
         }
 

@@ -90,12 +90,20 @@ pub const enable_foreign_keys: []const u8 = if (is_postgres) "" else "PRAGMA for
 /// surface. Postgres reaches full text search through `tsvector` instead.
 pub const has_fts5: bool = !is_postgres;
 
+/// The `to_tsvector` postgres matches and ranks with, for a text `expr`.
+/// FTS5 breaks a token at any punctuation, while postgres' `simple` tokenizer
+/// keeps `SPEC.md` whole — so the indexed text is rewritten to the boundaries
+/// FTS5 uses and a dotted search finds what FTS5 finds.
+pub fn tsVectorText(comptime expr: []const u8) []const u8 {
+    return "to_tsvector('simple'::regconfig, regexp_replace(" ++ expr ++ ", '[^[:alnum:]_]+', ' ', 'g'))";
+}
+
 /// Index rows: `name`, plus the `tbl_name`/`type` a `sqlite_master` predicate
 /// filters on. Postgres keeps the same three facts in `pg_indexes`, so a test
 /// that asks "does index X exist on table Y" reads the same either way.
 pub const indexes_source: []const u8 = if (is_postgres)
-    "(SELECT 'index'::text AS type, indexname::text AS name, tablename::text AS tbl_name " ++
-        "FROM pg_indexes WHERE schemaname = current_schema())"
+    "(SELECT 'index'::text AS type, indexname::text AS name, tablename::text AS tbl_name, " ++
+        "indexdef::text AS sql FROM pg_indexes WHERE schemaname = current_schema())"
 else
     "sqlite_master";
 
@@ -125,6 +133,12 @@ pub fn tableColumns(comptime table: []const u8) []const u8 {
     return "pragma_table_info('" ++ table ++ "')";
 }
 
+/// `tableColumns` plus `hidden` — `pragma_table_xinfo`'s extra column, which
+/// postgres does not distinguish (a column is either stored or it is not).
+pub fn tableColumnsWithHidden(comptime table: []const u8) []const u8 {
+    if (is_postgres) return tableColumns(table);
+    return "pragma_table_xinfo('" ++ table ++ "')";
+}
 
 /// Columns of the table NAMED BY A BIND, for the callers that only learn the
 /// table at run time: same `name`/`cid`/`type` shape as `tableColumns`, keyed
@@ -196,7 +210,7 @@ pub const sqlite_time_functions = if (is_postgres) [_][]const u8{
     \\  SELECT CASE
     \\    WHEN lower(btrim(ts)) IN ('now', 'current_timestamp')
     \\      THEN (extract(epoch FROM now()))::bigint
-    \\    ELSE (extract(epoch FROM ts::timestamptz))::bigint
+    \\    ELSE (extract(epoch FROM ts::timestamp))::bigint
     \\  END
     \\$fn$
     ,

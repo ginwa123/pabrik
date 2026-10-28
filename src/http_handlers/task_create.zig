@@ -816,7 +816,7 @@ test "task_create: unattended sessions row carries the requesting owner" {
         },
     });
     {
-        var q = try db.query(alloc, "SELECT user_id IS NULL FROM sessions WHERE id = ?", &.{shared.standard.task_id});
+        var q = try db.query(alloc, "SELECT CASE WHEN user_id IS NULL THEN 1 ELSE 0 END FROM sessions WHERE id = ?", &.{shared.standard.task_id});
         defer q.deinit();
         const row = (try q.next()) orelse return error.SessionRowMissing;
         defer row.deinit(alloc);

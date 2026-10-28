@@ -309,7 +309,7 @@ fn executeList(
         defer sql.deinit(allocator);
         try sql.appendSlice(allocator,
             \\SELECT s.id, COALESCE(CAST(s.name AS TEXT), ''), COALESCE(CAST(s.status AS TEXT), ''),
-            \\  COUNT(h.id), COALESCE(MAX(h.created_at_nano), '')
+            \\  COUNT(h.id), COALESCE(CAST(MAX(h.created_at_nano) AS TEXT), '')
             \\FROM sessions s LEFT JOIN llm_history h ON h.session_id = s.id
             \\WHERE s.id IN (
         );
@@ -323,7 +323,7 @@ fn executeList(
         try sql.appendSlice(allocator,
             \\)
             \\GROUP BY s.id
-            \\ORDER BY COALESCE(MAX(h.created_at_nano), '') DESC, s.id ASC
+            \\ORDER BY COALESCE(CAST(MAX(h.created_at_nano) AS TEXT), '') DESC, s.id ASC
         );
 
         var rows = try db.query(allocator, sql.items, bind_values.items);
@@ -403,7 +403,7 @@ fn latestUserPreview(
     var rows = try db.query(allocator,
         \\SELECT substr(COALESCE(CAST(response_content AS TEXT), ''), 1, 100) FROM llm_history
         \\WHERE session_id = ? AND role = 'user'
-        \\ORDER BY rowid DESC LIMIT 1
+        \\ORDER BY created_at_nano DESC, id DESC LIMIT 1
     , &.{session_id});
     defer rows.deinit();
     if (try rows.next()) |row| {

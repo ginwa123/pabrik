@@ -340,7 +340,7 @@ test "getLLMHistories filters out rows where is_feed_to_llm = 0" {
     try s.db.exec(testing.allocator, "INSERT INTO llm_history (id, session_id, created_at_nano, is_feed_to_llm) " ++
         "VALUES ('h_yes', 's', '1735689600000000', 1)", &.{});
     try s.db.exec(testing.allocator, "INSERT INTO llm_history (id, session_id, created_at_nano, is_feed_to_llm) " ++
-        "VALUES ('h_no',  's', '2025-01-02', 0)", &.{});
+        "VALUES ('h_no',  's', '1735776000000000', 0)", &.{});
 
     const result = try getLLMHistories(*Backend, .{ .allocator = testing.allocator, .db = &s.db, .session_id = "s" });
     defer {

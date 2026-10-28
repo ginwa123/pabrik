@@ -230,9 +230,13 @@ pub fn loadMemoriesByFts(
             \\                    'StartSel=[, StopSel=], MaxWords=10, MinWords=3') AS snippet,
             \\        COALESCE(to_char(m.created_at, 'YYYY-MM-DD HH24:MI:SS'), '') AS created_at,
             \\        COALESCE(to_char(m.updated_at, 'YYYY-MM-DD HH24:MI:SS'), '') AS updated_at,
-            \\        -ts_rank(to_tsvector('simple'::regconfig, COALESCE(CAST(m.content AS TEXT), '') || ' ' || COALESCE(CAST(m.tags AS TEXT), '')), q.tsq) AS fts_rank
+            \\        -ts_rank(
+            ++ comptime dialect.tsVectorText("COALESCE(CAST(m.content AS TEXT), '') || ' ' || COALESCE(CAST(m.tags AS TEXT), '')") ++
+            \\, q.tsq) AS fts_rank
             \\    FROM agent_memories m, to_tsquery('simple'::regconfig, ?) AS q(tsq)
-            \\    WHERE to_tsvector('simple'::regconfig, COALESCE(CAST(m.content AS TEXT), '') || ' ' || COALESCE(CAST(m.tags AS TEXT), '')) @@ q.tsq
+            \\    WHERE
+            ++ " " ++ dialect.tsVectorText("COALESCE(CAST(m.content AS TEXT), '') || ' ' || COALESCE(CAST(m.tags AS TEXT), '')") ++
+            \\ @@ q.tsq
             \\      AND COALESCE(CAST(m.workspace_id AS TEXT), '') = COALESCE(CAST(? AS TEXT), '')
         );
     } else {

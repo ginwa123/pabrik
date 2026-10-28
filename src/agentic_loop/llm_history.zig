@@ -357,10 +357,10 @@ pub fn getSessionListWithCursor(
 
     // Build cursor filter.
     const cursor_column = switch (sort_field) {
-        .created_at => "s.created_at",
+        .created_at => "CAST(s.created_at AS TEXT)",
         .session_name => "COALESCE(CAST(s.name AS TEXT), '')",
         .agent => "COALESCE((SELECT CAST(h2.agent AS TEXT) FROM llm_history h2 WHERE h2.session_id = s.id AND h2.agent IS NOT NULL LIMIT 1), 'Agent')",
-        .updated_at => "s.updated_at",
+        .updated_at => "CAST(s.updated_at AS TEXT)",
     };
     const cursor_filter = if (cursor) |_|
         try std.fmt.allocPrint(allocator, " AND {s} {s} ?", .{ cursor_column, if (sort_direction == .asc) ">" else "<" })
@@ -383,7 +383,7 @@ pub fn getSessionListWithCursor(
         \\COALESCE((SELECT t.workspace_item_id FROM workspace_item_tasks t WHERE t.id = s.id LIMIT 1), ''),
         \\COALESCE(s.is_pinned, 0),
         \\COALESCE(s.pinned_position, 0),
-        \\CASE WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop' AND (s.last_human_touched_at_nano IS NULL OR COALESCE(CAST(s.last_human_touched_at_nano AS TEXT), '') = '' OR s.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000) THEN 1 ELSE 0 END
+        \\CASE WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop' AND (s.last_human_touched_at_nano IS NULL OR COALESCE(CAST(s.last_human_touched_at_nano AS TEXT), '') = '' OR s.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) * 1000 AS BIGINT)) THEN 1 ELSE 0 END
         \\FROM sessions s
         \\WHERE {s}
         \\ORDER BY {s} LIMIT {d}
@@ -2296,9 +2296,13 @@ pub fn searchMessagesFts(
             \\        h.tool_call_id AS tool_call_id,
             \\        h.tool_name AS tool_name,
             \\        COALESCE(NULLIF(h.created_iso, ''), CAST(h.created_at_nano AS TEXT), '') AS created_at,
-            \\        -ts_rank(to_tsvector('simple'::regconfig, COALESCE(CAST(h.response_content AS TEXT), '')), q.tsq) AS fts_rank
+            \\        -ts_rank(
+            ++ comptime dialect.tsVectorText("COALESCE(CAST(h.response_content AS TEXT), '')") ++
+            \\, q.tsq) AS fts_rank
             \\    FROM llm_history h, to_tsquery('simple'::regconfig, ?) AS q(tsq)
-            \\    WHERE to_tsvector('simple'::regconfig, COALESCE(CAST(h.response_content AS TEXT), '')) @@ q.tsq
+            \\    WHERE
+            ++ " " ++ dialect.tsVectorText("COALESCE(CAST(h.response_content AS TEXT), '')") ++
+            \\ @@ q.tsq
         );
     } else {
         // Wrap FTS5 access in a subquery so the COUNT(*) OVER () window
@@ -5086,7 +5090,7 @@ pub fn getWorkspaceItemTaskById(
     // 18-column contract, indices 0-17) minus cursor/sort/pagination —
     // replaced by `WHERE t.id = ? ...
     const sql =
-        \\SELECT t.id, t.name, t.workspace_item_id, t.description, t.created_at, t.updated_at, t.task_type, COALESCE(t.is_pinned, 0), COALESCE(t.pinned_position, 0), k.kanban_column_id, COALESCE(k.kanban_position, 0), COALESCE(CAST(s.is_auto_retry_until_stop AS TEXT), '0'), COALESCE(CAST(s.last_finish_reason AS TEXT), ''), CASE WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop' AND (t.last_human_touched_at_nano IS NULL OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000) THEN 1 ELSE 0 END, t.tags, COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''), t.cwd, CASE WHEN COALESCE(CAST(t.image_urls AS TEXT), '') != '' THEN 1 ELSE 0 END, CASE WHEN COALESCE(CAST(t.video_urls AS TEXT), '') != '' THEN 1 ELSE 0 END, COALESCE(CAST(t.skill_names AS TEXT), '') FROM workspace_item_tasks t LEFT JOIN kanban k ON k.workspace_item_task_id = t.id LEFT JOIN sessions s ON s.id = t.id WHERE t.workspace_item_id = ? AND t.id = ? LIMIT 1
+        \\SELECT t.id, t.name, t.workspace_item_id, t.description, t.created_at, t.updated_at, t.task_type, COALESCE(t.is_pinned, 0), COALESCE(t.pinned_position, 0), k.kanban_column_id, COALESCE(k.kanban_position, 0), COALESCE(CAST(s.is_auto_retry_until_stop AS TEXT), '0'), COALESCE(CAST(s.last_finish_reason AS TEXT), ''), CASE WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop' AND (t.last_human_touched_at_nano IS NULL OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) * 1000 AS BIGINT)) THEN 1 ELSE 0 END, t.tags, COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''), t.cwd, CASE WHEN COALESCE(CAST(t.image_urls AS TEXT), '') != '' THEN 1 ELSE 0 END, CASE WHEN COALESCE(CAST(t.video_urls AS TEXT), '') != '' THEN 1 ELSE 0 END, COALESCE(CAST(t.skill_names AS TEXT), '') FROM workspace_item_tasks t LEFT JOIN kanban k ON k.workspace_item_task_id = t.id LEFT JOIN sessions s ON s.id = t.id WHERE t.workspace_item_id = ? AND t.id = ? LIMIT 1
     ;
 
     var rows = try db.query(allocator, sql, &.{ workspace_item_id, task_id });
@@ -5275,7 +5279,7 @@ pub fn listWorkspaceItemTasksWithCursor(
         // Auto-retry-until-stop: LEFT JOIN sessions on t.id = sessions.id
         // (per the project convention task.id == session.id; standard tasks
         // that have no matching session row get NULL → COALESCE to '0').
-        "SELECT t.id, t.name, t.workspace_item_id, t.description, t.created_at, t.updated_at, t.task_type, COALESCE(t.is_pinned, 0), COALESCE(t.pinned_position, 0), k.kanban_column_id, COALESCE(k.kanban_position, 0), COALESCE(CAST(s.is_auto_retry_until_stop AS TEXT), '0'), COALESCE(CAST(s.last_finish_reason AS TEXT), ''), CASE WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop' AND (t.last_human_touched_at_nano IS NULL OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000) THEN 1 ELSE 0 END, t.tags, COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''), t.cwd, CASE WHEN COALESCE(CAST(t.image_urls AS TEXT), '') != '' THEN 1 ELSE 0 END, CASE WHEN COALESCE(CAST(t.video_urls AS TEXT), '') != '' THEN 1 ELSE 0 END, COALESCE(CAST(t.skill_names AS TEXT), '') FROM workspace_item_tasks t LEFT JOIN kanban k ON k.workspace_item_task_id = t.id LEFT JOIN sessions s ON s.id = t.id WHERE t.workspace_item_id = ?{s}{s}{s} {s} LIMIT {s}",
+        "SELECT t.id, t.name, t.workspace_item_id, t.description, t.created_at, t.updated_at, t.task_type, COALESCE(t.is_pinned, 0), COALESCE(t.pinned_position, 0), k.kanban_column_id, COALESCE(k.kanban_position, 0), COALESCE(CAST(s.is_auto_retry_until_stop AS TEXT), '0'), COALESCE(CAST(s.last_finish_reason AS TEXT), ''), CASE WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop' AND (t.last_human_touched_at_nano IS NULL OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) * 1000 AS BIGINT)) THEN 1 ELSE 0 END, t.tags, COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''), t.cwd, CASE WHEN COALESCE(CAST(t.image_urls AS TEXT), '') != '' THEN 1 ELSE 0 END, CASE WHEN COALESCE(CAST(t.video_urls AS TEXT), '') != '' THEN 1 ELSE 0 END, COALESCE(CAST(t.skill_names AS TEXT), '') FROM workspace_item_tasks t LEFT JOIN kanban k ON k.workspace_item_task_id = t.id LEFT JOIN sessions s ON s.id = t.id WHERE t.workspace_item_id = ?{s}{s}{s} {s} LIMIT {s}",
         .{ cursor_clause, column_id_clause, q_clause, order_by, limit_str },
     );
     defer allocator.free(sql);
@@ -6978,11 +6982,11 @@ test "getSessionList inner subquery returns sessions in created_at DESC order" {
     // Three sessions, distinct created_at values. Newest first by
     // insert order means s_jan < s_feb < s_mar.
     try ctx.db.exec(alloc, "INSERT INTO llm_history (id, session_id, model, created_at_nano) " ++
-        "VALUES ('h1', 's_jan', 'm1', '2024-01-01 00:00:00')", &.{});
+        "VALUES ('h1', 's_jan', 'm1', '1704067200000000')", &.{});
     try ctx.db.exec(alloc, "INSERT INTO llm_history (id, session_id, model, created_at_nano) " ++
-        "VALUES ('h2', 's_feb', 'm1', '2024-02-01 00:00:00')", &.{});
+        "VALUES ('h2', 's_feb', 'm1', '1706745600000000')", &.{});
     try ctx.db.exec(alloc, "INSERT INTO llm_history (id, session_id, model, created_at_nano) " ++
-        "VALUES ('h3', 's_mar', 'm1', '2024-03-01 00:00:00')", &.{});
+        "VALUES ('h3', 's_mar', 'm1', '1709251200000000')", &.{});
 
     // Exact inner subquery the production rewrite uses (see
     // zig getSessionList). Asserts the order is the
@@ -7017,11 +7021,11 @@ test "getSessionList inner subquery respects LIMIT and OFFSET" {
     // Five sessions, distinct created_at values. The full ordering
     // (newest first) is: s5, s4, s3, s2, s1.
     const inserts = [_][]const u8{
-        "INSERT INTO llm_history (id, session_id, model, created_at_nano) VALUES ('h1', 's1', 'm1', '2024-01-01 00:00:00')",
-        "INSERT INTO llm_history (id, session_id, model, created_at_nano) VALUES ('h2', 's2', 'm1', '2024-02-01 00:00:00')",
-        "INSERT INTO llm_history (id, session_id, model, created_at_nano) VALUES ('h3', 's3', 'm1', '2024-03-01 00:00:00')",
-        "INSERT INTO llm_history (id, session_id, model, created_at_nano) VALUES ('h4', 's4', 'm1', '2024-04-01 00:00:00')",
-        "INSERT INTO llm_history (id, session_id, model, created_at_nano) VALUES ('h5', 's5', 'm1', '2024-05-01 00:00:00')",
+        "INSERT INTO llm_history (id, session_id, model, created_at_nano) VALUES ('h1', 's1', 'm1', '1704067200000000')",
+        "INSERT INTO llm_history (id, session_id, model, created_at_nano) VALUES ('h2', 's2', 'm1', '1706745600000000')",
+        "INSERT INTO llm_history (id, session_id, model, created_at_nano) VALUES ('h3', 's3', 'm1', '1709251200000000')",
+        "INSERT INTO llm_history (id, session_id, model, created_at_nano) VALUES ('h4', 's4', 'm1', '1711929600000000')",
+        "INSERT INTO llm_history (id, session_id, model, created_at_nano) VALUES ('h5', 's5', 'm1', '1714521600000000')",
     };
     for (inserts) |sql| {
         try ctx.db.exec(alloc, sql, &.{});
@@ -7085,9 +7089,9 @@ test "getSessionList agent field is from the latest message in the session" {
     // Two messages for the same session. The OLDER one is agent='A', the
     // NEWER one is agent='B'.
     try ctx.db.exec(alloc, "INSERT INTO llm_history (id, session_id, model, agent, created_at_nano) " ++
-        "VALUES ('h_old', 's1', 'm1', 'A', '2024-01-01 00:00:00')", &.{});
+        "VALUES ('h_old', 's1', 'm1', 'A', '1704067200000000')", &.{});
     try ctx.db.exec(alloc, "INSERT INTO llm_history (id, session_id, model, agent, created_at_nano) " ++
-        "VALUES ('h_new', 's1', 'm1', 'B', '2024-02-01 00:00:00')", &.{});
+        "VALUES ('h_new', 's1', 'm1', 'B', '1706745600000000')", &.{});
 
     // Exact correlated subquery the production rewrite uses (see
     // zig getSessionList). Asserts the new "agent of the
@@ -7129,7 +7133,7 @@ test "getSessionList inner subquery uses idx_llm_history_created_session (EXPLAI
         const sql = try std.fmt.bufPrint(
             &buf,
             "INSERT INTO llm_history (id, session_id, model, created_at_nano) " ++
-                "VALUES ('h{d}', 's{d}', 'm1', '2024-01-01 00:00:00')",
+                "VALUES ('h{d}', 's{d}', 'm1', '1704067200000000')",
             .{ i, i },
         );
         try ctx.db.exec(alloc, sql, &.{});
@@ -8214,7 +8218,7 @@ test "needs_human_review predicate returns 1 when finish_reason='stop' AND no hu
         \\  WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop'
         \\       AND (
         \\         t.last_human_touched_at_nano IS NULL
-        \\         OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000
+        \\         OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) * 1000 AS BIGINT)
         \\       )
         \\  THEN 1 ELSE 0 END
         \\FROM workspace_item_tasks t
@@ -8268,7 +8272,7 @@ test "needs_human_review predicate returns 0 when human touched AFTER the AI fin
         \\  WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop'
         \\       AND (
         \\         t.last_human_touched_at_nano IS NULL
-        \\         OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000
+        \\         OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) * 1000 AS BIGINT)
         \\       )
         \\  THEN 1 ELSE 0 END
         \\FROM workspace_item_tasks t
@@ -8317,7 +8321,7 @@ test "needs_human_review predicate returns 0 when finish_reason is 'tool_calls' 
         \\  WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop'
         \\       AND (
         \\         t.last_human_touched_at_nano IS NULL
-        \\         OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000
+        \\         OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) * 1000 AS BIGINT)
         \\       )
         \\  THEN 1 ELSE 0 END
         \\FROM workspace_item_tasks t
@@ -8357,7 +8361,7 @@ test "needs_human_review predicate returns 0 when no sessions row exists for the
         \\  WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop'
         \\       AND (
         \\         t.last_human_touched_at_nano IS NULL
-        \\         OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000
+        \\         OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) * 1000 AS BIGINT)
         \\       )
         \\  THEN 1 ELSE 0 END
         \\FROM workspace_item_tasks t

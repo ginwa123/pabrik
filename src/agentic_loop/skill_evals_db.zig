@@ -1740,7 +1740,7 @@ const result_projection =
     \\       COALESCE(CAST(f.missing_paths_json AS TEXT), ''), COALESCE(CAST(r.intrinsic_fact_id AS TEXT), ''),
     \\       COALESCE(CAST(r.base_content_hash AS TEXT), ''),
     \\       COALESCE(CAST(r.content_at_use AS TEXT), ''), COALESCE(CAST(r.proposed_diff AS TEXT), ''),
-    \\       r.applied_at IS NOT NULL, COALESCE(CAST(r.apply_action AS TEXT), '')
+    \\       CASE WHEN r.applied_at IS NOT NULL THEN 1 ELSE 0 END, COALESCE(CAST(r.apply_action AS TEXT), '')
     \\  FROM skill_eval_results r
     \\  LEFT JOIN skill_eval_facts f ON f.id = r.intrinsic_fact_id
     \\                              AND f.verdict_intrinsic != 'computing'

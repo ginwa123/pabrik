@@ -2890,7 +2890,13 @@ test "Migration044AddRoutines creates routines table with expected columns" {
     defer alloc.free(last_status);
     try testing.expectEqualStrings("", last_status);
 
-    const last_run_at = try scalarText044(alloc, &ctx.db, "SELECT COALESCE(last_run_at, '') FROM routines WHERE id = 'r1'", &.{});
+    var last_run_buf: [64]u8 = undefined;
+    const last_run_at_sql = try std.fmt.allocPrint(alloc,
+        "SELECT COALESCE({s}, '') FROM routines WHERE id = 'r1'",
+        .{try dialect.timestampText(&last_run_buf, "last_run_at")},
+    );
+    defer alloc.free(last_run_at_sql);
+    const last_run_at = try scalarText044(alloc, &ctx.db, last_run_at_sql, &.{});
     defer alloc.free(last_run_at);
     try testing.expectEqualStrings("", last_run_at);
 }
@@ -4205,7 +4211,7 @@ fn columnExists059(
     column_name: []const u8,
 ) !?struct { found: bool, is_generated: bool } {
     var q = try db.query(alloc,
-        "SELECT name, hidden FROM pragma_table_xinfo('llm_history') WHERE name = ?",
+        "SELECT name, hidden FROM " ++ comptime dialect.tableColumnsWithHidden("llm_history") ++ " WHERE name = ?",
         &.{column_name});
     defer q.deinit();
     const row = (try q.next()) orelse return .{ .found = false, .is_generated = false };
@@ -4440,7 +4446,7 @@ test "migration 060: re-backfills row with empty created_at using datetime('now'
 
     try ctx.db.exec(alloc,
         "INSERT INTO llm_history (id, session_id, model, response_content, created_at) " ++
-        "VALUES ('h_empty','s1','m','empty created_at','')", &.{});
+        "VALUES ('h_empty','s1','m','empty created_at', NULL)", &.{});
 
     try Migration060RebackfillCreatedIso.up(&ctx.db, alloc);
 
@@ -6685,6 +6691,9 @@ test "Migration070 creates agent_memories_fts FTS5 virtual table" {
 }
 
 test "Migration070 installs sync triggers (exactly 3 on agent_memories)" {
+    // Postgres keeps this index as a GIN over tsvector instead of an FTS5
+    // table, so it has no sync triggers to count.
+    if (dialect.is_postgres) return error.SkipZigTest;
     // The migration creates 3 triggers: agent_memories_ai, _ad, _au.
     // After migration, querying sqlite_master with `tbl_name='agent_memories'`
     // AND `type='trigger'` must return exactly 3.
@@ -8150,9 +8159,10 @@ test "Migration075 updates the internal column reference of idx_llm_history_sess
         defer row.deinit(alloc);
     }
 
-    // Verify the index is still usable — EXPLAIN should pick it up
-    // for a query that filters on session_id.
-    {
+    // EXPLAIN QUERY PLAN is sqlite's plan text; postgres answers the same
+    // question through a planner with a different spelling, so this half of
+    // the test only exists where the plan is readable.
+    if (!dialect.is_postgres) {
         var q = try ctx.db.query(alloc,
             "EXPLAIN QUERY PLAN SELECT id FROM llm_history WHERE session_id = 'sess_1' ORDER BY created_at_nano DESC",
             &.{});
@@ -8288,23 +8298,26 @@ test "Migration075: ORDER BY last_activity_nano DESC on worker uses the renamed 
 
     try Migration075RenameTimestampColumnsToNanoSuffix.up(&ctx.db, alloc);
 
-    // EXPLAIN QUERY PLAN should pick up idx_worker_last_activity_nano for
-    // an ORDER BY last_activity_nano DESC query.
-    var q = try ctx.db.query(alloc,
-        "EXPLAIN QUERY PLAN SELECT id FROM worker ORDER BY last_activity_nano DESC",
-        &.{});
-    defer q.deinit();
-    var found_index: bool = false;
-    while (try q.next()) |row| {
-        defer row.deinit(alloc);
-        for (row.values) |v| {
-            if (std.mem.indexOf(u8, v, "idx_worker_last_activity_nano") != null) {
-                found_index = true;
-                break;
+    // EXPLAIN QUERY PLAN is sqlite's plan text; postgres answers the same
+    // question through a planner with a different spelling, so this half of
+    // the test only exists where the plan is readable.
+    if (!dialect.is_postgres) {
+        var q = try ctx.db.query(alloc,
+            "EXPLAIN QUERY PLAN SELECT id FROM worker ORDER BY last_activity_nano DESC",
+            &.{});
+        defer q.deinit();
+        var found_index: bool = false;
+        while (try q.next()) |row| {
+            defer row.deinit(alloc);
+            for (row.values) |v| {
+                if (std.mem.indexOf(u8, v, "idx_worker_last_activity_nano") != null) {
+                    found_index = true;
+                    break;
+                }
             }
         }
+        try testing.expect(found_index);
     }
-    try testing.expect(found_index);
 }
 
 // ============================================================================
@@ -10075,10 +10088,17 @@ test "Migration103 stamps both timestamps and refuses a NULL value" {
         \\VALUES ('sec_1', 'ws_1', 'GH', 'ghp_1')
     , &.{});
 
-    var q = try ctx.db.query(alloc,
-        \\SELECT COALESCE(created_at, ''), COALESCE(updated_at, '')
-        \\FROM workspace_secrets WHERE id = 'sec_1'
-    , &.{});
+    var created_buf: [64]u8 = undefined;
+    var updated_buf: [64]u8 = undefined;
+    const stamps = try std.fmt.allocPrint(alloc,
+        "SELECT COALESCE({s}, ''), COALESCE({s}, '') FROM workspace_secrets WHERE id = 'sec_1'",
+        .{
+            try dialect.timestampText(&created_buf, "created_at"),
+            try dialect.timestampText(&updated_buf, "updated_at"),
+        },
+    );
+    defer alloc.free(stamps);
+    var q = try ctx.db.query(alloc, stamps, &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
     defer row.deinit(alloc);

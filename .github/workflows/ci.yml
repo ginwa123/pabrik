@@ -377,8 +377,9 @@ jobs:
   # `-Ddb_used=sqlite` is the default build, so every other job proves the
   # sqlite backend and NOTHING proved the postgres one. `--database=postgres`
   # is now a runtime flag, so this job is what keeps it honest: the backend
-  # is compiled (libpq via scripts/ci-install-linux-deps.sh), and the
-  # backend-agnostic suite in `zig build test:db` runs against a real server.
+  # is compiled (libpq via scripts/ci-install-linux-deps.sh), the
+  # backend-agnostic suite in `zig build test:db` runs against a real server,
+  # and the whole suite in `zig build test` runs against it too.
   #
   # It is a job of its own rather than a step in `backend-linux` for the
   # same reason the functional shards are: a service container, a
@@ -389,9 +390,10 @@ jobs:
     needs: [changes, lint]
     if: ${{ needs.lint.result == 'success' && needs.changes.outputs.heavy == 'true' && !cancelled() }}
     runs-on: ubuntu-24.04
-    # A cold `databases` package build (libpq, no sqlite3.c) plus two tiny
-    # test binaries. The 30 is for a cold package cache, not for the tests.
-    timeout-minutes: 30
+    # A cold `databases` package build (libpq, no sqlite3.c), two tiny test
+    # binaries, and then the whole sharded suite against the service container.
+    # The 45 is for a cold package cache plus that run, not for a slow test.
+    timeout-minutes: 45
     services:
       postgres:
         # Pinned, not `postgres:latest`: a major-version bump changes the
@@ -463,6 +465,19 @@ jobs:
         env:
           PABRIK_DB_TESTS_REQUIRE_SERVER: '1'
         run: zig build test:db -Ddb_used=sqlite,postgres
+
+      - name: The whole suite, on the postgres backend
+        # BLOCKING. `zig build test` is the suite every other cell runs, and
+        # `-Ddb_used=sqlite,postgres` makes it run against this job's server:
+        # the fixtures, the migrations and the product SQL all have to hold on
+        # both engines. `PABRIK_DB_TESTS_REQUIRE_SERVER` keeps a reachable
+        # server mandatory rather than letting the run skip itself green.
+        env:
+          PABRIK_DB_TESTS_REQUIRE_SERVER: '1'
+        run: |
+          set -o pipefail
+          zig build test -Ddb_used=sqlite,postgres -Dno-webapp-rebuild --summary all 2>&1 | tee /tmp/test.log
+          bash scripts/check-zig-test-output-clean.sh --summary /tmp/test.log
 
       # The same two steps the Linux cell runs after `zig build test`. The
       # console is its own package and the daemon is Linux-only, so neither

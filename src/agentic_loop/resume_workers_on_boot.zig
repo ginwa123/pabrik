@@ -71,7 +71,7 @@ const select_sql =
     \\       COALESCE(CAST(s.last_finish_reason AS TEXT), ''),
     \\       COALESCE(CAST(s.parent_session_id AS TEXT), ''),
     \\       COALESCE(CAST(s.sub_agent_name AS TEXT), ''),
-    \\       EXISTS (SELECT 1 FROM session_queue_messages q WHERE q.session_id = w.id),
+    \\       CASE WHEN EXISTS (SELECT 1 FROM session_queue_messages q WHERE q.session_id = w.id) THEN 1 ELSE 0 END,
     \\       COALESCE(CAST(w.run_token AS TEXT), '')
     \\FROM worker w
     \\LEFT JOIN sessions s ON s.id = w.session_id

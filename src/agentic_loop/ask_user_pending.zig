@@ -312,7 +312,7 @@ pub fn listRecentQuestions(
     // INTEGER expression has no column affinity on either side — and SQLite
     // orders INTEGER before TEXT, making `resolved_at >= '1789…'` always
     const sql = SELECT_COLUMNS ++
-        " WHERE session_id = ? AND (status = 'pending' OR COALESCE(resolved_at, 0) >= CAST(? AS INTEGER)) ORDER BY created_at ASC";
+        " WHERE session_id = ? AND (status = 'pending' OR COALESCE(resolved_at, 0) >= CAST(? AS " ++ pabrikcore.dialect.epoch_type ++ ")) ORDER BY created_at ASC";
     var rows = try db.query(allocator, sql, &.{ session_id, cutoff });
     defer rows.deinit();
 
