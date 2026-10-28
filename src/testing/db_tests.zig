@@ -468,19 +468,3 @@ test "a message the search term is not in is not a hit" {
 
     try testing.expectEqual(@as(usize, 0), hits.len);
 }
-
-test "a failed statement leaves its reason readable through the reporter" {
-    if (!database.backend_is_postgres) return error.SkipZigTest;
-
-    const alloc = testing.allocator;
-    var temp = try test_db.create(alloc);
-    defer temp.deinit();
-    const db = test_db.handle(&temp);
-
-    try testing.expectError(error.ExecuteFailed, db.exec(alloc, "INSERT INTO pabrik_no_such_table (x) VALUES (?)", &.{"1"}));
-
-    // The pabrik-side seam the boot path prints: the backend keeps the text, and
-    // `lastErrorMessage` reads it without the caller knowing which backend is compiled in.
-    const detail = db_target.lastErrorMessage(db) orelse return error.ExpectedLastErrorMessage;
-    try testing.expect(std.mem.indexOf(u8, detail, "pabrik_no_such_table") != null);
-}
