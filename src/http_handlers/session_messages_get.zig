@@ -193,7 +193,9 @@ fn setupDb() !TestCtx {
         \\    session_id TEXT NOT NULL,
         \\    role TEXT,
         \\    response_content TEXT,
-        \\    created_at_nano TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\    created_at_nano 
+        ++ pabrikcore.dialect.epoch_default ++
+        \\,
         \\    is_input INTEGER DEFAULT 0,
         \\    is_output INTEGER DEFAULT 0,
         \\    tool_name TEXT,

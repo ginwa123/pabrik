@@ -233,7 +233,7 @@ pub fn loadMemoriesByFts(
             \\        -ts_rank(to_tsvector('simple'::regconfig, COALESCE(CAST(m.content AS TEXT), '') || ' ' || COALESCE(CAST(m.tags AS TEXT), '')), q.tsq) AS fts_rank
             \\    FROM agent_memories m, to_tsquery('simple'::regconfig, ?) AS q(tsq)
             \\    WHERE to_tsvector('simple'::regconfig, COALESCE(CAST(m.content AS TEXT), '') || ' ' || COALESCE(CAST(m.tags AS TEXT), '')) @@ q.tsq
-            \\      AND m.workspace_id = ?
+            \\      AND COALESCE(CAST(m.workspace_id AS TEXT), '') = COALESCE(CAST(? AS TEXT), '')
         );
     } else {
         try sql.appendSlice(allocator,
@@ -250,7 +250,7 @@ pub fn loadMemoriesByFts(
             \\    FROM agent_memories_fts
             \\    JOIN agent_memories m ON m.rowid = agent_memories_fts.rowid
             \\    WHERE agent_memories_fts MATCH ?
-            \\      AND m.workspace_id = ?
+            \\      AND COALESCE(CAST(m.workspace_id AS TEXT), '') = COALESCE(CAST(? AS TEXT), '')
         );
     }
 

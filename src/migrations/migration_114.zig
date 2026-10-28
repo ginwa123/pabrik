@@ -3,6 +3,7 @@ const test_db = @import("../testing/test_db.zig");
 const common = @import("common.zig");
 
 const Backend = common.Backend;
+const dialect = common.dialect;
 const addColumnIfMissing = common.addColumnIfMissing;
 
 /// Migration 114 — the chat's file attachments. `file_attachments` holds the full payload for the

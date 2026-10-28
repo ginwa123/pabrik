@@ -125,6 +125,17 @@ pub fn tableColumns(comptime table: []const u8) []const u8 {
 }
 
 
+/// Columns of the table NAMED BY A BIND, for the callers that only learn the
+/// table at run time: same `name`/`cid`/`type` shape as `tableColumns`, keyed
+/// by one `?`.
+pub const table_columns_of_bound_table: []const u8 = if (is_postgres)
+    "(SELECT column_name::text AS name, ordinal_position AS cid, " ++
+        "upper(CASE WHEN data_type IN ('character varying', 'character', 'text') THEN 'text' " ++
+        "WHEN data_type LIKE 'timestamp%' THEN 'timestamp' ELSE data_type END) AS type " ++
+        "FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ?)"
+else
+    "pragma_table_info(?)";
+
 /// sqlite runs with `PRAGMA foreign_keys` off, so an FK clause in its DDL is
 /// inert documentation. Postgres enforces it — which changes which inserts and
 /// deletes are legal — so it declares a no-op check in the same slot.

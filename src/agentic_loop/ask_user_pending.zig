@@ -569,8 +569,11 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
         \\    multi_select INTEGER NOT NULL DEFAULT 0,
         \\    status TEXT NOT NULL DEFAULT 'pending',
         \\    answer TEXT,
-        \\    created_at BIGINT NOT NULL,
-        \\    resolved_at INTEGER
+        \\    created_at 
+        ++ pabrikcore.dialect.epoch_type ++
+        \\ NOT NULL,
+        \\    resolved_at 
+        ++ pabrikcore.dialect.epoch_type ++
         \\)
     , &.{});
     try db.exec(

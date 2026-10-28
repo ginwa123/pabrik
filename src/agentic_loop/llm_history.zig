@@ -6909,7 +6909,9 @@ fn getSessionListSetupDb() !struct {
         \\    tool_results_json TEXT,
         \\    finish_reason TEXT,
         \\    usage_json TEXT,
-        \\    created_at_nano TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\    created_at_nano 
+        ++ pabrikcore.dialect.epoch_default ++
+        \\,
         \\    agent TEXT DEFAULT 'Agent'
         \\)
     , &.{});
@@ -8520,7 +8522,9 @@ fn llmHistorySearchMessagesFtsSetupDb() !TestCtx {
         \\  tool_name TEXT,
         \\  is_feed_to_llm INTEGER DEFAULT 1,
         \\  agent TEXT,
-        \\  created_at_nano TEXT DEFAULT (datetime('now')),
+        \\  created_at_nano 
+        ++ pabrikcore.dialect.epoch_default ++
+        \\,
         \\  -- Mirrors Migration 059 in production: a regular TEXT column.
         \\  -- No INSERT trigger — production populates it from application
         \\  -- code in `saveMessage`. For test convenience, default to
@@ -8779,13 +8783,13 @@ test "searchMessagesFts: filters by since using ISO date string (regression for 
     // Production code in `saveMessage` computes `created_iso` from
     // `created_at` via libc `localtime_r` + `strftime`.
     try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
-        "VALUES ('h_old','s1','user','old message',?,datetime(substr(?,1,10),'unixepoch'))", &.{ old_micros, old_micros });
+        "VALUES ('h_old','s1','user','old message',?,datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch'))", &.{ old_micros, old_micros });
     try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
-        "VALUES ('h_new','s1','user','new message',?,datetime(substr(?,1,10),'unixepoch'))", &.{ new_micros, new_micros });
+        "VALUES ('h_new','s1','user','new message',?,datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch'))", &.{ new_micros, new_micros });
 
     // Compute the ISO date for `new_micros` using the SAME expression the
     // migration uses — that's what `created_iso` will contain.
-    var iso_q = try s.db.queryRow(alloc, "SELECT datetime(? / 1000000, 'unixepoch')", &.{new_micros});
+    var iso_q = try s.db.queryRow(alloc, "SELECT datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch')", &.{new_micros});
     defer iso_q.deinit(alloc);
     const new_iso = iso_q.values[0];
 
@@ -8818,14 +8822,14 @@ test "searchMessagesFts: filters by until using ISO date string (regression for 
     const new_micros: []const u8 = "1785000000000000";
 
     try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
-        "VALUES ('h_old','s1','user','old message',?,datetime(substr(?,1,10),'unixepoch'))", &.{ old_micros, old_micros });
+        "VALUES ('h_old','s1','user','old message',?,datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch'))", &.{ old_micros, old_micros });
     try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
-        "VALUES ('h_new','s1','user','new message',?,datetime(substr(?,1,10),'unixepoch'))", &.{ new_micros, new_micros });
+        "VALUES ('h_new','s1','user','new message',?,datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch'))", &.{ new_micros, new_micros });
 
     // Compute the ISO for `old_micros` — `until=old_iso` should keep only h_old.
     // Use the same `substr(_,1,10)` expression as the inserted rows so
     // the lex comparison matches exactly.
-    var iso_q = try s.db.queryRow(alloc, "SELECT datetime(substr(? ,1, 10), 'unixepoch')", &.{old_micros});
+    var iso_q = try s.db.queryRow(alloc, "SELECT datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch')", &.{old_micros});
     defer iso_q.deinit(alloc);
     const old_iso = iso_q.values[0];
 
@@ -8856,17 +8860,17 @@ test "searchMessagesFts: since AND until together produce a date range (regressi
     const new_micros: []const u8 = "1785000000000000";
 
     try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
-        "VALUES ('h_old','s1','user','old message',?,datetime(substr(?,1,10),'unixepoch'))", &.{ old_micros, old_micros });
+        "VALUES ('h_old','s1','user','old message',?,datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch'))", &.{ old_micros, old_micros });
     try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
-        "VALUES ('h_mid','s1','user','mid message',?,datetime(substr(?,1,10),'unixepoch'))", &.{ mid_micros, mid_micros });
+        "VALUES ('h_mid','s1','user','mid message',?,datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch'))", &.{ mid_micros, mid_micros });
     try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
-        "VALUES ('h_new','s1','user','new message',?,datetime(substr(?,1,10),'unixepoch'))", &.{ new_micros, new_micros });
+        "VALUES ('h_new','s1','user','new message',?,datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch'))", &.{ new_micros, new_micros });
 
     // Use the same substr(_,1,10) expression as the inserted rows so the
     // lex comparison matches exactly.
     var iso_q = try s.db.queryRow(alloc,
-        \\SELECT datetime(substr(? ,1,10), 'unixepoch') AS since_iso,
-        \\       datetime(substr(? ,1,10), 'unixepoch') AS until_iso
+        \\SELECT datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch') AS since_iso,
+        \\       datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch') AS until_iso
     , &.{ mid_micros, new_micros });
     defer iso_q.deinit(alloc);
     const since_iso = iso_q.values[0];
@@ -8974,7 +8978,9 @@ fn llmHistoryCompactedMessagesSetupDb() !struct {
         \\  tool_name TEXT,
         \\  is_feed_to_llm INTEGER DEFAULT 1,
         \\  agent TEXT,
-        \\  created_at_nano TEXT DEFAULT (datetime('now')),
+        \\  created_at_nano 
+        ++ pabrikcore.dialect.epoch_default ++
+        \\,
         \\  -- Mirrors Migration 059 in production: a regular TEXT column
         \\  -- populated by INSERT/UPDATE triggers. We CAN'T use a STORED
         \\  -- GENERATED ALWAYS AS column here because `datetime(...,
@@ -9022,7 +9028,7 @@ fn llmHistoryCompactedMessagesSeedMessage(
     const created_iso_len: usize = blk: {
         if (created_at.len >= 10 and std.mem.indexOfScalar(u8, created_at, '-') == null) {
             // Looks like a microsecond integer — convert via SQLite.
-            var q = try db.queryRow(alloc, "SELECT datetime(? / 1000000, 'unixepoch')", &.{created_at});
+            var q = try db.queryRow(alloc, "SELECT datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch')", &.{created_at});
             defer q.deinit(alloc);
             const iso = q.values[0];
             const len = iso.len;
@@ -9147,7 +9153,7 @@ test "getCompactedMessages: filters by since using ISO date string (regression)"
 
     // Compute the ISO for `new_micros` using the SAME expression the
     // migration uses — that's what `created_iso` will contain.
-    var iso_q = try s.db.queryRow(alloc, "SELECT datetime(? / 1000000, 'unixepoch')", &.{new_micros});
+    var iso_q = try s.db.queryRow(alloc, "SELECT datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch')", &.{new_micros});
     defer iso_q.deinit(alloc);
     const new_iso = iso_q.values[0];
 
@@ -9176,7 +9182,7 @@ test "getCompactedMessages: filters by until using ISO date string (regression)"
     try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h_old", "sess_1", "user", "old", 0, old_micros);
     try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h_new", "sess_1", "user", "new", 0, new_micros);
 
-    var iso_q = try s.db.queryRow(alloc, "SELECT datetime(? / 1000000, 'unixepoch')", &.{old_micros});
+    var iso_q = try s.db.queryRow(alloc, "SELECT datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch')", &.{old_micros});
     defer iso_q.deinit(alloc);
     const old_iso = iso_q.values[0];
 
@@ -9207,8 +9213,8 @@ test "getCompactedMessages: since AND until together produce a date range (regre
     try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h_new", "sess_1", "user", "new", 0, new_micros);
 
     var iso_q = try s.db.queryRow(alloc,
-        \\SELECT datetime(? / 1000000, 'unixepoch') AS since_iso,
-        \\       datetime(? / 1000000, 'unixepoch') AS until_iso
+        \\SELECT datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch') AS since_iso,
+        \\       datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch') AS until_iso
     , &.{ mid_micros, new_micros });
     defer iso_q.deinit(alloc);
     const since_iso = iso_q.values[0];
@@ -9263,7 +9269,9 @@ test "saveMessage: writes a correct-year (2026-ish) created_iso from current tim
         \\    loop_index INTEGER,
         \\    temperature REAL,
         \\    is_thinking INTEGER,
-        \\    created_at_nano TEXT,
+        \\    created_at_nano 
+        ++ pabrikcore.dialect.epoch_type ++
+        \\,
         \\    created_iso TEXT,
         \\    parent_session_id TEXT,
         \\    parent_id TEXT,
@@ -9346,7 +9354,9 @@ test "saveMessage: created_at column is stored as Unix microseconds (length <= 1
         \\    loop_index INTEGER,
         \\    temperature REAL,
         \\    is_thinking INTEGER,
-        \\    created_at_nano TEXT,
+        \\    created_at_nano 
+        ++ pabrikcore.dialect.epoch_type ++
+        \\,
         \\    created_iso TEXT,
         \\    parent_session_id TEXT,
         \\    parent_id TEXT,
@@ -9978,7 +9988,9 @@ test "saveMessage: user envelope carries owner identity, assistant carries profi
         \\    loop_index INTEGER,
         \\    temperature REAL,
         \\    is_thinking INTEGER,
-        \\    created_at_nano TEXT,
+        \\    created_at_nano 
+        ++ pabrikcore.dialect.epoch_type ++
+        \\,
         \\    created_iso TEXT,
         \\    parent_session_id TEXT,
         \\    parent_id TEXT,

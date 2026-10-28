@@ -853,7 +853,9 @@ fn setupDb() !TestCtx {
         \\  tool_name TEXT,
         \\  is_feed_to_llm INTEGER DEFAULT 1,
         \\  agent TEXT,
-        \\  created_at_nano TEXT DEFAULT (datetime('now')),
+        \\  created_at_nano 
+        ++ pabrikcore.dialect.epoch_default ++
+        \\,
         \\  created_iso TEXT DEFAULT CURRENT_TIMESTAMP
         \\)
     , &.{});

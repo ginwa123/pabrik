@@ -332,7 +332,9 @@ fn setupHistoryDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
         \\    loop_index INTEGER DEFAULT 0,
         \\    temperature REAL DEFAULT 0.2,
         \\    is_thinking INTEGER DEFAULT 0,
-        \\    created_at_nano TEXT,
+        \\    created_at_nano 
+        ++ pabrikcore.dialect.epoch_type ++
+        \\,
         \\    created_iso TEXT,
         \\    parent_session_id TEXT,
         \\    parent_id TEXT,
