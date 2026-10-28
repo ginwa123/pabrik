@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const database = @import("databases").database;
+const dialect = @import("dialect");
 const admin_common = @import("admin_common.zig");
 
 const Db = *database.Db;
@@ -43,10 +44,17 @@ pub const Error = error{
     OutOfMemory,
 };
 
-const user_columns =
-    \\SELECT id, email, COALESCE(CAST(name AS TEXT), ''), role, is_active,
-    \\       COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(last_login_at AS TEXT), '')
-;
+/// `created_at`/`last_login_at` are `TIMESTAMP`; postgres' own cast keeps
+/// microseconds, so both render through `timestampText` into the
+/// `YYYY-MM-DD HH:MM:SS` the console shows.
+const user_columns = blk: {
+    var created_buf: [128]u8 = undefined;
+    var last_buf: [128]u8 = undefined;
+    const created = dialect.timestampText(&created_buf, "created_at") catch unreachable;
+    const last = dialect.timestampText(&last_buf, "last_login_at") catch unreachable;
+    break :blk "SELECT id, email, COALESCE(CAST(name AS TEXT), ''), role, is_active, " ++
+        "COALESCE(" ++ created ++ ", ''), COALESCE(" ++ last ++ ", '')";
+};
 
 /// The system account is not a person and can never sign in, so the console
 /// leaves it out of every list.
@@ -149,7 +157,7 @@ pub fn overview(allocator: std.mem.Allocator, db: Db) !Overview {
     {
         var q = try db.query(
             allocator,
-            "SELECT COUNT(*) FROM auth_sessions WHERE expires_at > datetime('now')",
+            "SELECT COUNT(*) FROM auth_sessions WHERE expires_at > " ++ dialect.now_stamp_utc,
             &.{},
         );
         defer q.deinit();
@@ -233,7 +241,7 @@ pub fn updateUser(
 
     db.exec(
         allocator,
-        "UPDATE users SET role = ?, is_active = ?, updated_at = datetime('now') WHERE id = ?",
+        "UPDATE users SET role = ?, is_active = ?, updated_at = " ++ dialect.now_stamp_utc ++ " WHERE id = ?",
         &[_][]const u8{
             admin_common.roleName(role_after),
             if (active_after) "1" else "0",
@@ -263,20 +271,25 @@ pub fn setPasswordHash(
     defer freeUser(allocator, current);
     db.exec(
         allocator,
-        "UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?",
+        "UPDATE users SET password_hash = ?, updated_at = " ++ dialect.now_stamp_utc ++ " WHERE id = ?",
         &[_][]const u8{ password_hash, id },
     ) catch return error.DatabaseError;
 }
 
 // =====================================================================
-// Tests — in-memory SQLite with the real `users` schema.
+// Tests — a fresh database on the compiled backend, with the real schema.
 // =====================================================================
 
+const test_db = @import("test_db.zig");
 const testing = std.testing;
 
 /// Create the two tables the console reads, for a database that has none
 /// yet. A database pabrik has booted on already has them; this is what makes
-/// `pabrik-admin` usable on a fresh file.
+/// `pabrik-admin` usable on a fresh file or a fresh postgres database.
+///
+/// The DDL is the one migration 077/089 writes, which is valid on both
+/// backends: `is_active` is `INTEGER` (not `BOOLEAN`) on postgres too, so the
+/// `is_active = 1` filters below read either schema unchanged.
 pub fn ensureSchema(allocator: std.mem.Allocator, db: Db) !void {
     try db.exec(allocator,
         \\CREATE TABLE IF NOT EXISTS users (
@@ -318,25 +331,27 @@ fn addUser(
     email: []const u8,
     role: []const u8,
     active: bool,
-    age: []const u8,
+    age_secs: i64,
 ) !void {
+    const created = try admin_common.utcStamp(allocator, testing.io, age_secs);
+    defer allocator.free(created);
     try db.exec(allocator,
         \\INSERT INTO users (id, email, name, password_hash, role, is_active, created_at)
-        \\VALUES (?, ?, '', 'x', ?, ?, datetime('now', ?))
-    , &[_][]const u8{ id, email, role, if (active) "1" else "0", age });
+        \\VALUES (?, ?, '', 'x', ?, ?, ?)
+    , &[_][]const u8{ id, email, role, if (active) "1" else "0", created });
 }
 
 test "listUsers shows every real account and leaves the system account out" {
     const alloc = testing.allocator;
-    var db: database.Db = .{};
-    defer db.deinit();
-    try db.init(testing.io, ":memory:");
-    try createUsersSchema(alloc, &db);
-    try addUser(alloc, &db, "user_a", "a@example.com", "admin", true, "-3 hours");
-    try addUser(alloc, &db, "user_b", "b@example.com", "user", true, "-2 hours");
-    try addUser(alloc, &db, "user_c", "c@example.com", "user", false, "-1 hours");
+    var fixture: test_db.Fixture = .{};
+    defer fixture.deinit();
+    const db = try fixture.open();
+    try createUsersSchema(alloc, db);
+    try addUser(alloc, db, "user_a", "a@example.com", "admin", true, -3 * 3600);
+    try addUser(alloc, db, "user_b", "b@example.com", "user", true, -2 * 3600);
+    try addUser(alloc, db, "user_c", "c@example.com", "user", false, -1 * 3600);
 
-    const users = try listUsers(alloc, &db);
+    const users = try listUsers(alloc, db);
     defer freeUsers(alloc, users);
 
     try testing.expectEqual(@as(usize, 3), users.len);
@@ -349,32 +364,32 @@ test "listUsers shows every real account and leaves the system account out" {
 
 test "findUser answers null for an id nobody carries" {
     const alloc = testing.allocator;
-    var db: database.Db = .{};
-    defer db.deinit();
-    try db.init(testing.io, ":memory:");
-    try createUsersSchema(alloc, &db);
-    try addUser(alloc, &db, "user_a", "a@example.com", "admin", true, "-1 hours");
+    var fixture: test_db.Fixture = .{};
+    defer fixture.deinit();
+    const db = try fixture.open();
+    try createUsersSchema(alloc, db);
+    try addUser(alloc, db, "user_a", "a@example.com", "admin", true, -1 * 3600);
 
-    const found = (try findUser(alloc, &db, "user_a")).?;
+    const found = (try findUser(alloc, db, "user_a")).?;
     defer freeUser(alloc, found);
     try testing.expectEqualStrings("a@example.com", found.email);
     try testing.expect(found.is_active);
 
-    const missing = try findUser(alloc, &db, "user_zz");
+    const missing = try findUser(alloc, db, "user_zz");
     try testing.expect(missing == null);
 }
 
 test "overview counts the accounts the console shows, not the system account" {
     const alloc = testing.allocator;
-    var db: database.Db = .{};
-    defer db.deinit();
-    try db.init(testing.io, ":memory:");
-    try createUsersSchema(alloc, &db);
-    try addUser(alloc, &db, "user_a", "a@example.com", "admin", true, "-3 hours");
-    try addUser(alloc, &db, "user_b", "b@example.com", "user", true, "-2 hours");
-    try addUser(alloc, &db, "user_c", "c@example.com", "bot", false, "-1 hours");
+    var fixture: test_db.Fixture = .{};
+    defer fixture.deinit();
+    const db = try fixture.open();
+    try createUsersSchema(alloc, db);
+    try addUser(alloc, db, "user_a", "a@example.com", "admin", true, -3 * 3600);
+    try addUser(alloc, db, "user_b", "b@example.com", "user", true, -2 * 3600);
+    try addUser(alloc, db, "user_c", "c@example.com", "bot", false, -1 * 3600);
 
-    const counts = try overview(alloc, &db);
+    const counts = try overview(alloc, db);
     try testing.expectEqual(@as(u32, 3), counts.total_users);
     try testing.expectEqual(@as(u32, 2), counts.active_users);
     try testing.expectEqual(@as(u32, 1), counts.admin_users);
@@ -383,28 +398,32 @@ test "overview counts the accounts the console shows, not the system account" {
 
 test "overview counts only the sessions that have not expired" {
     const alloc = testing.allocator;
-    var db: database.Db = .{};
-    defer db.deinit();
-    try db.init(testing.io, ":memory:");
-    try createUsersSchema(alloc, &db);
+    var fixture: test_db.Fixture = .{};
+    defer fixture.deinit();
+    const db = try fixture.open();
+    try createUsersSchema(alloc, db);
+    const live = try admin_common.utcStamp(alloc, testing.io, 24 * 3600);
+    defer alloc.free(live);
+    const dead = try admin_common.utcStamp(alloc, testing.io, -24 * 3600);
+    defer alloc.free(dead);
     try db.exec(alloc,
         \\INSERT INTO auth_sessions (token_hash, user_id, expires_at)
-        \\VALUES ('live', 'user_a', datetime('now', '+1 day')),
-        \\       ('dead', 'user_a', datetime('now', '-1 day'))
-    , &.{});
+        \\VALUES ('live', 'user_a', ?),
+        \\       ('dead', 'user_a', ?)
+    , &[_][]const u8{ live, dead });
 
-    const counts = try overview(alloc, &db);
+    const counts = try overview(alloc, db);
     try testing.expectEqual(@as(u32, 1), counts.active_sessions);
 }
 
 test "insertUser stores the account and refuses a second use of the email" {
     const alloc = testing.allocator;
-    var db: database.Db = .{};
-    defer db.deinit();
-    try db.init(testing.io, ":memory:");
-    try createUsersSchema(alloc, &db);
+    var fixture: test_db.Fixture = .{};
+    defer fixture.deinit();
+    const db = try fixture.open();
+    try createUsersSchema(alloc, db);
 
-    const created = try insertUser(alloc, &db, "user_new", "new@example.com", "New Person", .user, "hash", "2026-01-02 03:04:05");
+    const created = try insertUser(alloc, db, "user_new", "new@example.com", "New Person", .user, "hash", "2026-01-02 03:04:05");
     defer freeUser(alloc, created);
     try testing.expectEqualStrings("user_new", created.id);
     try testing.expectEqualStrings("new@example.com", created.email);
@@ -413,7 +432,7 @@ test "insertUser stores the account and refuses a second use of the email" {
     try testing.expect(created.is_active);
     try testing.expectEqualStrings("2026-01-02 03:04:05", created.created_at);
 
-    const stored = (try findUser(alloc, &db, "user_new")).?;
+    const stored = (try findUser(alloc, db, "user_new")).?;
     defer freeUser(alloc, stored);
     try testing.expectEqualStrings("new@example.com", stored.email);
     try testing.expectEqualStrings("New Person", stored.name);
@@ -421,40 +440,40 @@ test "insertUser stores the account and refuses a second use of the email" {
     try testing.expect(stored.is_active);
     try testing.expectEqualStrings("2026-01-02 03:04:05", stored.created_at);
 
-    try testing.expectError(error.EmailTaken, insertUser(alloc, &db, "user_2", "new@example.com", "", .user, "hash", "2026-01-02 03:04:05"));
+    try testing.expectError(error.EmailTaken, insertUser(alloc, db, "user_2", "new@example.com", "", .user, "hash", "2026-01-02 03:04:05"));
 }
 
 test "insertUser accepts an account with no name" {
     const alloc = testing.allocator;
-    var db: database.Db = .{};
-    defer db.deinit();
-    try db.init(testing.io, ":memory:");
-    try createUsersSchema(alloc, &db);
+    var fixture: test_db.Fixture = .{};
+    defer fixture.deinit();
+    const db = try fixture.open();
+    try createUsersSchema(alloc, db);
 
-    const created = try insertUser(alloc, &db, "user_new", "new@example.com", "", .user, "hash", "2026-01-02 03:04:05");
+    const created = try insertUser(alloc, db, "user_new", "new@example.com", "", .user, "hash", "2026-01-02 03:04:05");
     defer freeUser(alloc, created);
     try testing.expectEqualStrings("", created.name);
 
-    const stored = (try findUser(alloc, &db, "user_new")).?;
+    const stored = (try findUser(alloc, db, "user_new")).?;
     defer freeUser(alloc, stored);
     try testing.expectEqualStrings("", stored.name);
 }
 
 test "updateUser changes the role and whether the account may sign in" {
     const alloc = testing.allocator;
-    var db: database.Db = .{};
-    defer db.deinit();
-    try db.init(testing.io, ":memory:");
-    try createUsersSchema(alloc, &db);
-    try addUser(alloc, &db, "user_a", "a@example.com", "user", true, "-1 hours");
-    try addUser(alloc, &db, "user_b", "b@example.com", "admin", true, "-1 hours");
+    var fixture: test_db.Fixture = .{};
+    defer fixture.deinit();
+    const db = try fixture.open();
+    try createUsersSchema(alloc, db);
+    try addUser(alloc, db, "user_a", "a@example.com", "user", true, -1 * 3600);
+    try addUser(alloc, db, "user_b", "b@example.com", "admin", true, -1 * 3600);
 
-    const changed = try updateUser(alloc, &db, "user_a", .bot, false);
+    const changed = try updateUser(alloc, db, "user_a", .bot, false);
     defer freeUser(alloc, changed);
     try testing.expectEqualStrings("bot", changed.role);
     try testing.expect(!changed.is_active);
 
-    const stored = (try findUser(alloc, &db, "user_a")).?;
+    const stored = (try findUser(alloc, db, "user_a")).?;
     defer freeUser(alloc, stored);
     try testing.expectEqualStrings("bot", stored.role);
     try testing.expect(!stored.is_active);
@@ -462,26 +481,26 @@ test "updateUser changes the role and whether the account may sign in" {
 
 test "updateUser reports an id nobody carries" {
     const alloc = testing.allocator;
-    var db: database.Db = .{};
-    defer db.deinit();
-    try db.init(testing.io, ":memory:");
-    try createUsersSchema(alloc, &db);
+    var fixture: test_db.Fixture = .{};
+    defer fixture.deinit();
+    const db = try fixture.open();
+    try createUsersSchema(alloc, db);
 
-    try testing.expectError(error.UserNotFound, updateUser(alloc, &db, "user_zz", .admin, true));
+    try testing.expectError(error.UserNotFound, updateUser(alloc, db, "user_zz", .admin, true));
 }
 
 test "updateUser refuses to leave the installation without an owner" {
     const alloc = testing.allocator;
-    var db: database.Db = .{};
-    defer db.deinit();
-    try db.init(testing.io, ":memory:");
-    try createUsersSchema(alloc, &db);
-    try addUser(alloc, &db, "user_a", "a@example.com", "admin", true, "-1 hours");
+    var fixture: test_db.Fixture = .{};
+    defer fixture.deinit();
+    const db = try fixture.open();
+    try createUsersSchema(alloc, db);
+    try addUser(alloc, db, "user_a", "a@example.com", "admin", true, -1 * 3600);
 
-    try testing.expectError(error.LastAdmin, updateUser(alloc, &db, "user_a", .user, true));
-    try testing.expectError(error.LastAdmin, updateUser(alloc, &db, "user_a", .admin, false));
+    try testing.expectError(error.LastAdmin, updateUser(alloc, db, "user_a", .user, true));
+    try testing.expectError(error.LastAdmin, updateUser(alloc, db, "user_a", .admin, false));
 
-    const untouched = (try findUser(alloc, &db, "user_a")).?;
+    const untouched = (try findUser(alloc, db, "user_a")).?;
     defer freeUser(alloc, untouched);
     try testing.expectEqualStrings("admin", untouched.role);
     try testing.expect(untouched.is_active);
@@ -489,22 +508,22 @@ test "updateUser refuses to leave the installation without an owner" {
 
 test "updateUser lets a second owner take over before the first one steps down" {
     const alloc = testing.allocator;
-    var db: database.Db = .{};
-    defer db.deinit();
-    try db.init(testing.io, ":memory:");
-    try createUsersSchema(alloc, &db);
-    try addUser(alloc, &db, "user_a", "a@example.com", "admin", true, "-2 hours");
-    try addUser(alloc, &db, "user_b", "b@example.com", "user", true, "-1 hours");
+    var fixture: test_db.Fixture = .{};
+    defer fixture.deinit();
+    const db = try fixture.open();
+    try createUsersSchema(alloc, db);
+    try addUser(alloc, db, "user_a", "a@example.com", "admin", true, -2 * 3600);
+    try addUser(alloc, db, "user_b", "b@example.com", "user", true, -1 * 3600);
 
-    const promoted = try updateUser(alloc, &db, "user_b", .admin, true);
+    const promoted = try updateUser(alloc, db, "user_b", .admin, true);
     defer freeUser(alloc, promoted);
     try testing.expectEqualStrings("admin", promoted.role);
-    const demoted = try updateUser(alloc, &db, "user_a", .user, false);
+    const demoted = try updateUser(alloc, db, "user_a", .user, false);
     defer freeUser(alloc, demoted);
     try testing.expectEqualStrings("user", demoted.role);
     try testing.expect(!demoted.is_active);
 
-    const stored = (try findUser(alloc, &db, "user_a")).?;
+    const stored = (try findUser(alloc, db, "user_a")).?;
     defer freeUser(alloc, stored);
     try testing.expectEqualStrings("user", stored.role);
     try testing.expect(!stored.is_active);
@@ -512,20 +531,20 @@ test "updateUser lets a second owner take over before the first one steps down" 
 
 test "setPasswordHash replaces the stored hash and reports an unknown id" {
     const alloc = testing.allocator;
-    var db: database.Db = .{};
-    defer db.deinit();
-    try db.init(testing.io, ":memory:");
-    try createUsersSchema(alloc, &db);
-    try addUser(alloc, &db, "user_a", "a@example.com", "user", true, "-1 hours");
+    var fixture: test_db.Fixture = .{};
+    defer fixture.deinit();
+    const db = try fixture.open();
+    try createUsersSchema(alloc, db);
+    try addUser(alloc, db, "user_a", "a@example.com", "user", true, -1 * 3600);
 
-    try setPasswordHash(alloc, &db, "user_a", "new-hash");
+    try setPasswordHash(alloc, db, "user_a", "new-hash");
     var q = try db.query(alloc, "SELECT password_hash FROM users WHERE id = ?", &[_][]const u8{"user_a"});
     defer q.deinit();
     const row = (try q.next()).?;
     defer row.deinit(alloc);
     try testing.expectEqualStrings("new-hash", row.values[0]);
 
-    try testing.expectError(error.UserNotFound, setPasswordHash(alloc, &db, "user_zz", "x"));
+    try testing.expectError(error.UserNotFound, setPasswordHash(alloc, db, "user_zz", "x"));
 }
 
 // ─── workspaces: read-only, for the machines section ────────────────────────
@@ -578,10 +597,12 @@ pub fn listWorkspaces(allocator: std.mem.Allocator, db: Db) ![]WorkspaceRow {
     return out.toOwnedSlice(allocator);
 }
 
-fn tableExists(allocator: std.mem.Allocator, db: Db, name: []const u8) !bool {
+/// True when the current schema holds a table with that name — `sqlite_master`
+/// on sqlite, `information_schema` on postgres.
+pub fn tableExists(allocator: std.mem.Allocator, db: Db, name: []const u8) !bool {
     var q = try db.query(
         allocator,
-        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
+        "SELECT COUNT(*) FROM " ++ dialect.tables_source ++ " WHERE type = 'table' AND name = ?",
         &[_][]const u8{name},
     );
     defer q.deinit();
@@ -600,16 +621,16 @@ fn addWorkspace(allocator: std.mem.Allocator, db: Db, id: []const u8, name: []co
 
 test "listWorkspaces lists every workspace, by name" {
     const alloc = testing.allocator;
-    var db: database.Db = .{};
-    defer db.deinit();
-    try db.init(testing.io, ":memory:");
+    var fixture: test_db.Fixture = .{};
+    defer fixture.deinit();
+    const db = try fixture.open();
     try db.exec(alloc,
         \\CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT)
     , &.{});
-    try addWorkspace(alloc, &db, "ws_b", "kabelweb");
-    try addWorkspace(alloc, &db, "ws_a", "pabrik saas");
+    try addWorkspace(alloc, db, "ws_b", "kabelweb");
+    try addWorkspace(alloc, db, "ws_a", "pabrik saas");
 
-    const rows = try listWorkspaces(alloc, &db);
+    const rows = try listWorkspaces(alloc, db);
     defer freeWorkspaces(alloc, rows);
 
     try testing.expectEqual(@as(usize, 2), rows.len);
@@ -621,12 +642,12 @@ test "listWorkspaces lists every workspace, by name" {
 
 test "a database with no workspaces table lists nothing instead of failing" {
     const alloc = testing.allocator;
-    var db: database.Db = .{};
-    defer db.deinit();
-    try db.init(testing.io, ":memory:");
-    try createUsersSchema(alloc, &db);
+    var fixture: test_db.Fixture = .{};
+    defer fixture.deinit();
+    const db = try fixture.open();
+    try createUsersSchema(alloc, db);
 
-    const rows = try listWorkspaces(alloc, &db);
+    const rows = try listWorkspaces(alloc, db);
     defer freeWorkspaces(alloc, rows);
     try testing.expectEqual(@as(usize, 0), rows.len);
 }

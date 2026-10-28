@@ -27,6 +27,16 @@ else
 /// and postgres compares it against its own `now()` rather than a parsed string.
 pub const now_stamp: []const u8 = "CURRENT_TIMESTAMP";
 
+/// "Now" as a UTC `TIMESTAMP`: sqlite's `datetime('now')` is UTC text, and
+/// postgres gets its `now()` made timezone-free so the value does not depend on
+/// the connection's `TimeZone`. Usable both as a value (`SET ad_at = …`) and on
+/// the right of a comparison against a `TIMESTAMP` column (`expires_at > …`),
+/// including on a database where migration 121's `datetime()` shim is absent.
+pub const now_stamp_utc: []const u8 = if (is_postgres)
+    "(now() AT TIME ZONE 'UTC')"
+else
+    "datetime('now')";
+
 /// Column type for an epoch-seconds column: postgres `INTEGER` is 32-bit and
 /// would overflow in 2038, so it gets `BIGINT`.
 pub const epoch_type: []const u8 = if (is_postgres) "BIGINT" else "INTEGER";
@@ -261,11 +271,13 @@ test "the epoch and timestamp fragments are the ones the compiled backend unders
         try testing.expectEqualStrings("BIGINT", epoch_type);
         try testing.expect(!has_fts5);
         try testing.expectEqualStrings("", enable_foreign_keys);
+        try testing.expectEqualStrings("(now() AT TIME ZONE 'UTC')", now_stamp_utc);
     } else {
         try testing.expect(std.mem.indexOf(u8, now_epoch, "strftime") != null);
         try testing.expectEqualStrings("datetime('now')", now_text);
         try testing.expectEqualStrings("INTEGER", epoch_type);
         try testing.expect(has_fts5);
         try testing.expectEqualStrings("PRAGMA foreign_keys = ON", enable_foreign_keys);
+        try testing.expectEqualStrings("datetime('now')", now_stamp_utc);
     }
 }

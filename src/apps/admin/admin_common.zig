@@ -129,13 +129,15 @@ pub fn revokeSessions(
     );
 }
 
-/// The current UTC time in the format SQLite's `datetime('now')` writes. The
-/// console stamps its own rows, so the value it reports back is the value it
-/// stored, not a second reading of a clock it does not control.
-pub fn sqliteNow(allocator: std.mem.Allocator, io: std.Io) ![]u8 {
+/// The current UTC time in the format SQLite's `datetime('now')` writes, moved
+/// by `offset_secs` (negative = in the past). The console stamps its own rows,
+/// so the value it reports back is the value it stored, not a second reading of
+/// a clock it does not control. Writing the stamp ourselves also keeps the
+/// tests free of `datetime('now', '-3 hours')`, which postgres does not have.
+pub fn utcStamp(allocator: std.mem.Allocator, io: std.Io, offset_secs: i64) ![]u8 {
     const stamp = std.Io.Timestamp.now(io, .real);
-    const secs: i64 = @intCast(@divTrunc(stamp.nanoseconds, std.time.ns_per_s));
-    const epoch_seconds: std.time.epoch.EpochSeconds = .{ .secs = @intCast(secs) };
+    const now: i64 = @intCast(@divTrunc(stamp.nanoseconds, std.time.ns_per_s));
+    const epoch_seconds: std.time.epoch.EpochSeconds = .{ .secs = @intCast(now + offset_secs) };
     const day_seconds = epoch_seconds.getDaySeconds();
     const year_day = epoch_seconds.getEpochDay().calculateYearDay();
     const month_day = year_day.calculateMonthDay();
@@ -149,7 +151,29 @@ pub fn sqliteNow(allocator: std.mem.Allocator, io: std.Io) ![]u8 {
     });
 }
 
+/// `utcStamp` for now, the value `created_at` is written with.
+pub fn sqliteNow(allocator: std.mem.Allocator, io: std.Io) ![]u8 {
+    return utcStamp(allocator, io, 0);
+}
+
 const testing = std.testing;
+
+test "utcStamp writes the datetime('now') format and moves by whole seconds" {
+    const alloc = testing.allocator;
+    const now = try utcStamp(alloc, testing.io, 0);
+    defer alloc.free(now);
+    // `YYYY-MM-DD HH:MM:SS`, the shape both backends compare as text.
+    try testing.expectEqual(@as(usize, 19), now.len);
+    try testing.expectEqual(@as(u8, '-'), now[4]);
+    try testing.expectEqual(@as(u8, ':'), now[13]);
+
+    const earlier = try utcStamp(alloc, testing.io, -3600);
+    defer alloc.free(earlier);
+    try testing.expectEqual(@as(usize, 19), earlier.len);
+    // One hour back is a different stamp, and never a later one.
+    try testing.expect(!std.mem.eql(u8, now, earlier));
+    try testing.expect(std.mem.order(u8, earlier, now) == .lt);
+}
 
 test "parseRole accepts exactly the three roles the users table allows" {
     try testing.expectEqual(Role.admin, parseRole("admin").?);

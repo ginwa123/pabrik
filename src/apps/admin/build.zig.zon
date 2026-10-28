@@ -24,6 +24,8 @@
         "admin_common.zig",
         "admin_page.zig",
         "admin_store.zig",
+        "db_target.zig",
+        "test_db.zig",
         "runtime.zig",
         "page",
         "admin.css",
