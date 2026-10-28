@@ -90,10 +90,8 @@ pub const enable_foreign_keys: []const u8 = if (is_postgres) "" else "PRAGMA for
 /// surface. Postgres reaches full text search through `tsvector` instead.
 pub const has_fts5: bool = !is_postgres;
 
-/// The `to_tsvector` postgres matches and ranks with, for a text `expr`.
-/// FTS5 breaks a token at any punctuation, while postgres' `simple` tokenizer
-/// keeps `SPEC.md` whole — so the indexed text is rewritten to the boundaries
-/// FTS5 uses and a dotted search finds what FTS5 finds.
+/// The `to_tsvector` postgres matches and ranks `expr` with, rewritten to the
+/// token boundaries FTS5 uses — FTS5 splits `SPEC.md`, postgres' `simple` does not.
 pub fn tsVectorText(comptime expr: []const u8) []const u8 {
     return "to_tsvector('simple'::regconfig, regexp_replace(" ++ expr ++ ", '[^[:alnum:]_]+', ' ', 'g'))";
 }
@@ -107,13 +105,9 @@ pub const indexes_source: []const u8 = if (is_postgres)
 else
     "sqlite_master";
 
-/// sqlite's `pragma_table_info(<table>)`: `name`, `cid` (CREATE order), `type`,
-/// `notnull`, `dflt_value`, `pk`, and — for `pragma_table_xinfo`'s spelling —
-/// `hidden`. Postgres spreads those over `information_schema`, whose spellings
-/// differ on every one: `text` is lowercase and `character varying` is the same
-/// declaration, a default arrives as `'0'::integer`, and "is this column part of
-/// the primary key" is a constraint join. Mapping all of it here is what lets a
-/// schema assertion be written once and hold on both engines.
+/// sqlite's `pragma_table_info` question — `name`, `cid`, `type`, `notnull`,
+/// `dflt_value`, `pk`, `hidden` — answered from `information_schema`, whose
+/// spellings differ on every one.
 pub fn tableColumns(comptime table: []const u8) []const u8 {
     if (is_postgres) return
     "(SELECT c.column_name::text AS name, c.ordinal_position AS cid, " ++

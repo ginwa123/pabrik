@@ -374,12 +374,8 @@ test "cleanupStaleWorkers returns the DB error when the worker table itself is m
         .now_unix = 1_000_000,
     });
 
-    // The behaviour is "a missing table is reported, not swallowed". Which
-    // variant arrives is the backend's own affair: sqlite fails at prepare,
-    // postgres at execute, so accept either.
-    // The behaviour is "a missing table is reported, not swallowed". Which
-    // variant arrives is the backend's own affair: sqlite fails at prepare,
-    // postgres at execute, so accept either.
+    // A missing table is reported, not swallowed: sqlite fails at prepare,
+    // postgres at execute, so accept either variant.
     if (result) |_| {
         return error.ExpectedMissingTableError;
     } else |err| switch (err) {

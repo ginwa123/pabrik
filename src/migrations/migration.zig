@@ -9459,12 +9459,9 @@ test "Migration100 creates workspace_members with the shape the design promises"
     try testing.expectEqualStrings("workspace_id", pk1.values[0]);
     try testing.expectEqualStrings("user_id", pk2.values[0]);
 
-    // The role set is CHECK-constrained, and a SQLite CHECK cannot be
-    // ALTERed — so this list is effectively permanent without a table
-    // recreate. Assert the exact set so adding a role is a deliberate act.
-    // The CHECK constraint is what makes an unknown role unrepresentable, so
-    // the assertion is the rejected INSERT rather than the CREATE TABLE text —
-    // which postgres does not keep in a queryable catalogue.
+    // The role set is CHECK-constrained and a CHECK cannot be ALTERed, so the
+    // assertion is the rejected INSERT rather than the CREATE TABLE text, which
+    // postgres does not keep in a queryable catalogue.
     try testing.expectError(
         error.ExecuteFailed,
         ctx.db.exec(alloc,

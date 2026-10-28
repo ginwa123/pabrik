@@ -49,12 +49,9 @@ fn longLived() std.mem.Allocator {
     return std.heap.page_allocator;
 }
 
-/// Postgres reports every `CREATE INDEX IF NOT EXISTS` it skips and every object
-/// a `DROP SCHEMA … CASCADE` takes with it as a NOTICE on stderr — one line per
-/// object, tens of thousands per run. Zig's build runner relays a PASSING step's
-/// stderr as a block shaped exactly like a failure, so a green suite would read
-/// as a broken one. The setting rides in the connection options, so it holds for
-/// every connection the harness opens and no test has to remember it.
+/// Postgres reports every skipped `CREATE INDEX IF NOT EXISTS` and every object
+/// a `DROP SCHEMA … CASCADE` takes as a NOTICE, and Zig relays a PASSING step's
+/// stderr as a block shaped exactly like a failure. It rides in the conninfo.
 const quiet_option = "-cclient_min_messages=warning";
 
 /// The temp-database path splits a conninfo on spaces, so the option has to stay
