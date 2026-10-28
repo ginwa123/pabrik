@@ -79,6 +79,7 @@ test "list_secrets_tool: the description teaches the placeholder and promises na
 // The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const tools = @import("../../../agentic_loop/tools.zig");
 const secrets_store = @import("../../../agentic_loop/secrets_store.zig");
 const workspace_scope = @import("../../../agentic_loop/workspace_scope.zig");
@@ -192,7 +193,7 @@ fn setupDb() !TestCtx {
     errdefer threaded.deinit();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
 
     try db.exec(alloc,
         \\CREATE TABLE sessions (

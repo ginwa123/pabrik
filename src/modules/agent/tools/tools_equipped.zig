@@ -1,5 +1,6 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const tools = @import("../../../agentic_loop/tools.zig");
 
 const helpers = @import("helpers");
@@ -568,7 +569,7 @@ pub fn seedDefaultKanbanTools(
             defer allocator.free(id);
             try db.exec(
                 allocator,
-                "INSERT OR IGNORE INTO agent_config_tools (id, config_id, tool_name, enabled, created_at) VALUES (?, ?, ?, 1, datetime('now'))",
+                "INSERT INTO agent_config_tools (id, config_id, tool_name, enabled, created_at) VALUES (?, ?, ?, 1, datetime('now')) ON CONFLICT DO NOTHING",
                 &.{ id, kanban_id, tool_name },
             );
             idx += 1;
@@ -590,7 +591,7 @@ pub fn seedDefaultKanbanTools(
             defer allocator.free(id);
             try db.exec(
                 allocator,
-                "INSERT OR IGNORE INTO agent_config_tools (id, config_id, tool_name, enabled, created_at) VALUES (?, ?, ?, 1, datetime('now'))",
+                "INSERT INTO agent_config_tools (id, config_id, tool_name, enabled, created_at) VALUES (?, ?, ?, 1, datetime('now')) ON CONFLICT DO NOTHING",
                 &.{ id, kanban_id, tool_name },
             );
             idx += 1;
@@ -605,7 +606,7 @@ pub fn seedDefaultKanbanTools(
         defer allocator.free(id);
         try db.exec(
             allocator,
-            "INSERT OR IGNORE INTO agent_config_tools (id, config_id, tool_name, enabled, created_at) VALUES (?, ?, ?, 1, datetime('now'))",
+            "INSERT INTO agent_config_tools (id, config_id, tool_name, enabled, created_at) VALUES (?, ?, ?, 1, datetime('now')) ON CONFLICT DO NOTHING",
             &.{ id, kanban_id, tool_name },
         );
     }
@@ -615,7 +616,7 @@ pub fn seedDefaultKanbanTools(
         defer allocator.free(id);
         try db.exec(
             allocator,
-            "INSERT OR IGNORE INTO agent_config_tools (id, config_id, tool_name, enabled, created_at) VALUES (?, ?, ?, 1, datetime('now'))",
+            "INSERT INTO agent_config_tools (id, config_id, tool_name, enabled, created_at) VALUES (?, ?, ?, 1, datetime('now')) ON CONFLICT DO NOTHING",
             &.{ id, kanban_id, tool_name },
         );
     }
@@ -658,7 +659,7 @@ fn setupSeedDb() !SeedTestCtx {
     const io = threaded.io();
     var db: pabrikcore.database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     try db.exec(
         alloc,
         "CREATE TABLE agent_config_tools (id TEXT PRIMARY KEY, config_id TEXT NOT NULL, tool_name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE(config_id, tool_name))",

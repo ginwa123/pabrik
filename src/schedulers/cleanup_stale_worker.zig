@@ -1,5 +1,6 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 // Route `delete_worker` through `pabrikcore` (the `root` module) instead of
@@ -137,7 +138,7 @@ fn setupCtx() !TestCtx {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Minimal schema matching the production worker table (after
     // migration 075). We use the column types from
@@ -147,7 +148,7 @@ fn setupCtx() !TestCtx {
         \\    id TEXT PRIMARY KEY,
         \\    session_id TEXT NOT NULL,
         \\    working_directory TEXT,
-        \\    last_activity_nano INTEGER,
+        \\    last_activity_nano BIGINT,
         \\    last_activity_description TEXT,
         \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
@@ -362,7 +363,7 @@ test "cleanupStaleWorkers returns the DB error when the worker table itself is m
 
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     // NO CREATE TABLE — the query will fail with "no such table".
 
     const result = cleanupStaleWorkers(.{

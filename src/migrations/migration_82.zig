@@ -6,6 +6,7 @@ const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
+const dialect = common.dialect;
 
 /// Migration 082 - Add `sessions.last_human_touched_at_nano`. Sibling of
 /// Migration 065 (which added the same column shape to
@@ -26,7 +27,7 @@ pub const Migration082AddSessionHumanTouchedAt = struct {
             // name + type - `addColumnIfMissing` uses this verbatim as `ALTER
             // TABLE {table} ADD COLUMN {definition}`, so omitting the column
             // name would create a column literally named "INTEGER".
-            "last_human_touched_at_nano INTEGER",
+            "last_human_touched_at_nano " ++ dialect.epoch_type,
         );
     }
 };

@@ -19,6 +19,7 @@ pub const std_options: std.Options = .{
     .http_disable_tls = false,
 };
 
+
 // ─── The App singleton ────────────────────────────────────────────────────
 // The struct and its registry helpers live in `src/app.zig` (that file's
 // header says why).

@@ -3,6 +3,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
@@ -81,9 +82,9 @@ pub fn insertPendingQuestion(input: InsertQuestionInput) ![]u8 {
 
     try input.db.exec(
         allocator,
-        \\INSERT OR IGNORE INTO session_pending_question
+        \\INSERT INTO session_pending_question
         \\    (id, session_id, tool_call_id, llm_history_id, question, multi_select, status, answer, created_at, resolved_at)
-        \\VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL)
+        \\VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL) ON CONFLICT DO NOTHING
     ,
         &.{
             id,
@@ -555,7 +556,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     // The Migration 088 shape: `answer` / `resolved_at` NULL-able on purpose.
     try db.exec(alloc,
         \\CREATE TABLE session_pending_question (
@@ -567,7 +568,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
         \\    multi_select INTEGER NOT NULL DEFAULT 0,
         \\    status TEXT NOT NULL DEFAULT 'pending',
         \\    answer TEXT,
-        \\    created_at INTEGER NOT NULL,
+        \\    created_at BIGINT NOT NULL,
         \\    resolved_at INTEGER
         \\)
     , &.{});

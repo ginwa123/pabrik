@@ -6,6 +6,7 @@ const std = @import("std");
 const http_response = @import("http_response.zig");
 const auth_common = @import("auth_common.zig");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const ai_mod = pabrikcore.ai_mod;
 const memories_mod = pabrikcore.memories;
@@ -407,7 +408,7 @@ fn createStandardTask(
                 // Post-Migration-072: the task→column assignment lives in the
                 // `kanban` join table.
                 db.exec(allocator,
-                    "INSERT OR IGNORE INTO kanban (workspace_item_task_id, kanban_column_id, kanban_position) VALUES (?, ?, (SELECT COALESCE(MAX(k.kanban_position), -1) + 1 FROM kanban k WHERE k.kanban_column_id = ?))",
+                    "INSERT INTO kanban (workspace_item_task_id, kanban_column_id, kanban_position) VALUES (?, ?, (SELECT COALESCE(MAX(k.kanban_position), -1) + 1 FROM kanban k WHERE k.kanban_column_id = ?)) ON CONFLICT DO NOTHING",
                     &[_][]const u8{ task_id, col_id, col_id },
                 ) catch |err| {
                     std.log.warn("task_create: kanban auto-assign failed (non-fatal): {s}", .{@errorName(err)});
@@ -481,7 +482,7 @@ fn createStandardTask(
         // before this row was written) doesn't trip a UNIQUE constraint
         db.exec(
             allocator,
-            "INSERT OR IGNORE INTO sessions (id, name, status, is_auto_retry_until_stop, user_id) VALUES (?, ?, 'active', ?, ?)",
+            "INSERT INTO sessions (id, name, status, is_auto_retry_until_stop, user_id) VALUES (?, ?, 'active', ?, ?) ON CONFLICT DO NOTHING",
             &[_][]const u8{ task.id, task.name, normalized, input.owner },
         ) catch |err| {
             std.log.warn("task_create: session INSERT for unattended flag failed (non-fatal): {s}", .{@errorName(err)});
@@ -777,7 +778,7 @@ test "task_create: unattended sessions row carries the requesting owner" {
     const io = threaded.io();
     var db: pabrikcore.database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     var manager = migration_mod.MigrationManager.init(alloc, &db);
     defer manager.deinit();
     try migration_mod.registerAllMigrations(&manager);

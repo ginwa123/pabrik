@@ -1,5 +1,6 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 
 const sqlite = pabrikcore.sqlite;
 
@@ -355,7 +356,7 @@ fn listColumns(
     workspace_item_id: []const u8,
 ) ![]KanbanColumn {
     var q = try db.query(allocator,
-        \\SELECT kc.id, kc.workspace_item_id, kc.name, kc.description, kc.position, COALESCE(kc.created_at, '')
+        \\SELECT kc.id, kc.workspace_item_id, kc.name, kc.description, kc.position, COALESCE(CAST(kc.created_at AS TEXT), '')
         \\FROM kanban_columns kc
         \\WHERE kc.workspace_item_id = ?
         \\ORDER BY kc.position ASC
@@ -440,7 +441,7 @@ fn setupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
         \\    id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT, name TEXT, path TEXT, position INTEGER

@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const helpers = @import("helpers");
 
 const sqlite = pabrikcore.sqlite;
@@ -208,13 +209,13 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
     errdefer threaded.deinit();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
     try db.exec(alloc,
         \\CREATE TABLE worker (
         \\    id TEXT PRIMARY KEY,
         \\    session_id TEXT NOT NULL,
         \\    working_directory TEXT,
-        \\    last_activity_nano INTEGER,
+        \\    last_activity_nano BIGINT,
         \\    last_activity_description TEXT,
         \\    cancelled INTEGER DEFAULT 0,
         \\    run_token TEXT NOT NULL DEFAULT ''

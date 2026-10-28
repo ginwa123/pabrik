@@ -1,4 +1,5 @@
 const std = @import("std");
+const test_db = @import("pabrikcore").test_db;
 const sqlite = @import("pabrikcore").sqlite;
 
 /// Build the dynamic sibling-cwd list for the cross-project prompt.
@@ -105,7 +106,7 @@ fn setupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
         \\    id TEXT PRIMARY KEY,

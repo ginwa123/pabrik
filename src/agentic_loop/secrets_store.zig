@@ -1,6 +1,7 @@
 //! Storage layer for workspace-scoped secrets.
 
 const std = @import("std");
+const test_db = @import("pabrikcore").test_db;
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
 const helpers = @import("helpers");
@@ -60,7 +61,7 @@ pub const SecretsError = error{
 /// `value` in this list — see the module header.
 const SELECT_COLUMNS =
     "SELECT id, workspace_id, name, " ++
-    "COALESCE(created_at, ''), COALESCE(updated_at, '') " ++
+    "COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), '') " ++
     "FROM workspace_secrets";
 
 /// The agent's discovery path: NAMES ONLY, ordered so the list is stable
@@ -407,7 +408,7 @@ fn setupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_secrets (

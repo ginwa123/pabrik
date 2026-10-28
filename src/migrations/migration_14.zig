@@ -6,6 +6,7 @@ const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
+const dialect = common.dialect;
 
 pub const Migration014AddBackgroundProcess = struct {
     pub const version: u32 = 14;
@@ -18,7 +19,9 @@ pub const Migration014AddBackgroundProcess = struct {
             \\    pid INTEGER NOT NULL,
             \\    command TEXT NOT NULL,
             \\    log_path TEXT NOT NULL,
-            \\    started_at INTEGER NOT NULL,
+            \\    started_at 
+            ++ dialect.epoch_type ++
+            \\ NOT NULL,
             \\    status TEXT NOT NULL DEFAULT 'running',
             \\    PRIMARY KEY (session_id, pid)
             \\)

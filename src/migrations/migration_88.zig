@@ -2,6 +2,7 @@ const std = @import("std");
 const common = @import("common.zig");
 
 const Backend = common.Backend;
+const dialect = common.dialect;
 const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
@@ -23,7 +24,9 @@ pub const Migration088AddSessionPendingQuestion = struct {
             \\    multi_select INTEGER NOT NULL DEFAULT 0,
             \\    status TEXT NOT NULL DEFAULT 'pending',
             \\    answer TEXT,
-            \\    created_at INTEGER NOT NULL,
+            \\    created_at 
+    ++ dialect.epoch_type ++
+    \\ NOT NULL,
             \\    resolved_at INTEGER
             \\)
         , &[_][]const u8{});

@@ -3,6 +3,7 @@
 const std = @import("std");
 const http_response = @import("http_response.zig");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const llm_history = pabrikcore.llm_history;
 
@@ -206,7 +207,7 @@ fn setupDb() !TestCtx {
     const io = threaded.io();
     var db: pabrikcore.database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Minimal schema: the columns the session-list SELECT reads plus
     // the workspace tables the scope resolver joins on.
@@ -221,7 +222,7 @@ fn setupDb() !TestCtx {
         \\  selected_profile_model TEXT,
         \\  is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
         \\  last_finish_reason TEXT,
-        \\  last_human_touched_at_nano INTEGER,
+        \\  last_human_touched_at_nano BIGINT,
         \\  git_worktree_cwd TEXT,
         \\  is_pinned INTEGER NOT NULL DEFAULT 0,
         \\  pinned_position INTEGER NOT NULL DEFAULT 0

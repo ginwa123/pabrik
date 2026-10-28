@@ -1,5 +1,6 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const database = pabrikcore.database;
 const mcp_scope = @import("../modules/agent/mcp/mcp/mcp_scope.zig");
 
@@ -36,7 +37,7 @@ fn setupDb(alloc: std.mem.Allocator) !database.Db {
     errdefer db.deinit();
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
     try db.exec(alloc,
         \\CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT, workspace_id TEXT)
     , &[_][]const u8{});

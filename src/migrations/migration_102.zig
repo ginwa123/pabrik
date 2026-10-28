@@ -6,6 +6,7 @@ const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
+const dialect = common.dialect;
 
 pub const Migration102CreateSkills = struct {
     pub const version: u32 = 102;
@@ -23,7 +24,7 @@ pub const Migration102CreateSkills = struct {
             \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    is_can_auto_improve INTEGER NOT NULL DEFAULT 1,
             \\    UNIQUE (workspace_id, name),
-            \\    FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+            ++ comptime dialect.foreignKey("FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE") ++
             \\)
         , &[_][]const u8{});
 
@@ -35,7 +36,7 @@ pub const Migration102CreateSkills = struct {
             \\    content TEXT NOT NULL DEFAULT '',
             \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    UNIQUE (skill_id, rel_path),
-            \\    FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
+            ++ comptime dialect.foreignKey("FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE") ++
             \\)
         , &[_][]const u8{});
     }

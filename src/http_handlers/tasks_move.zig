@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const kanban_model = @import("../agentic_loop/kanban_model.zig");
@@ -258,7 +259,7 @@ fn setupDb() !struct { db: pabrikcore.database.Db, threaded: std.Io.Threaded } {
 
     var db: pabrikcore.database.Db = .{};
     errdefer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
 
     try db.exec(alloc,
         \\CREATE TABLE kanban_columns (

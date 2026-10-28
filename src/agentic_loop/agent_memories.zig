@@ -3,6 +3,7 @@
 //! `mem_<16-hex>` id and `CURRENT_TIMESTAMP` timestamps.
 
 const std = @import("std");
+const test_db = @import("pabrikcore").test_db;
 const builtin = @import("builtin");
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
@@ -129,7 +130,7 @@ pub fn getMemoryById(
     const select = try std.fmt.allocPrint(
         allocator,
         "SELECT id, content, tags, COALESCE(workspace_id, ''), COALESCE({s}, ''), COALESCE({s}, '') " ++
-            "FROM agent_memories WHERE id = ? AND workspace_id = ?",
+            "FROM agent_memories WHERE id = ? AND COALESCE(workspace_id, '') = COALESCE(CAST(? AS TEXT), '')",
         .{ created_expr, updated_expr },
     );
     defer allocator.free(select);
@@ -243,8 +244,8 @@ pub fn loadMemoriesByFts(
             \\    SELECT
             \\        m.id AS id, m.tags AS tags,
             \\        snippet(agent_memories_fts, 0, '[', ']', '...', 10) AS snippet,
-            \\        COALESCE(m.created_at, '') AS created_at,
-            \\        COALESCE(m.updated_at, '') AS updated_at,
+            \\        COALESCE(CAST(m.created_at AS TEXT), '') AS created_at,
+            \\        COALESCE(CAST(m.updated_at AS TEXT), '') AS updated_at,
             \\        rank AS fts_rank
             \\    FROM agent_memories_fts
             \\    JOIN agent_memories m ON m.rowid = agent_memories_fts.rowid
@@ -469,7 +470,7 @@ fn setupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     var manager = migration.MigrationManager.init(alloc, &db);
     defer manager.deinit();

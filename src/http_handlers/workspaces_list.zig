@@ -1,6 +1,7 @@
 const std = @import("std");
 const http_response = @import("http_response.zig");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
@@ -330,7 +331,7 @@ fn setupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspaces (
@@ -386,10 +387,10 @@ fn setupDb() !TestCtx {
     // ws_1..ws_3 are inserted without `user_id`, so they carry the NULL
     // legacy bucket.
     try db.exec(alloc,
-        \\INSERT OR IGNORE INTO workspace_members (workspace_id, user_id, role) VALUES
+        \\INSERT INTO workspace_members (workspace_id, user_id, role) VALUES
         \\  ('ws_1', 'user_system', 'owner'),
         \\  ('ws_2', 'user_system', 'owner'),
-        \\  ('ws_3', 'user_system', 'owner')
+        \\  ('ws_3', 'user_system', 'owner') ON CONFLICT DO NOTHING
     , &.{});
 
     return .{ .db = db, .threaded = threaded };
@@ -459,9 +460,9 @@ test "fetchWorkspacesList: another user's workspace is invisible; the shared leg
     // Same backfill contract: a real owner becomes their own member, the
     // sentinel row becomes the shared marker.
     try ctx.db.exec(alloc,
-        \\INSERT OR IGNORE INTO workspace_members (workspace_id, user_id, role) VALUES
+        \\INSERT INTO workspace_members (workspace_id, user_id, role) VALUES
         \\  ('ws_b', 'user_b', 'owner'),
-        \\  ('ws_sys', 'user_system', 'owner')
+        \\  ('ws_sys', 'user_system', 'owner') ON CONFLICT DO NOTHING
     , &.{});
 
     // user_a sees the 3 legacy rows + the sentinel row — never ws_b.

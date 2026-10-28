@@ -1,4 +1,5 @@
 const std = @import("std");
+const test_db = @import("../testing/test_db.zig");
 const common = @import("common.zig");
 
 const Backend = common.Backend;
@@ -48,7 +49,7 @@ fn setupDb() !TestCtx {
     errdefer threaded.deinit();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
     try db.exec(testing.allocator,
         \\CREATE TABLE agent_config_tools (
         \\    id TEXT PRIMARY KEY,
@@ -146,7 +147,7 @@ test "Migration120 is a no-op on a database with no allowlist table" {
     defer threaded.deinit();
     var db: Backend = .{};
     defer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
 
     // A fresh install before Migration 116 unified the per-item tables.
     try Migration120GrantSetSkillMetadata.up(&db, alloc);

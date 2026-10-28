@@ -4,6 +4,7 @@
 const std = @import("std");
 const http_response = @import("http_response.zig");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 
 pub const SessionUsageError = error{
@@ -159,7 +160,7 @@ fn setupDb() !TestCtx {
     const io = threaded.io();
     var db: pabrikcore.database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Only the columns USAGE_SQL reads. A minimal schema is deliberate: if
     // the query ever grows a dependency on another column, this setup stops

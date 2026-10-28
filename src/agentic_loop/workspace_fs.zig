@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const runtime_mode = @import("../runtime_mode.zig");
@@ -564,7 +565,7 @@ fn guestTestCtx() !GuestTestCtx {
     errdefer threaded.deinit();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
 
     try db.exec(testing.allocator,
         \\CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT NOT NULL, status TEXT, cwd TEXT, workspace_id TEXT)

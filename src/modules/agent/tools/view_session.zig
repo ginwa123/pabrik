@@ -2,6 +2,7 @@ const std = @import("std");
 const schemas = @import("schemas.zig");
 const AgentTool = schemas.AgentTool;
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const workspace_scope = pabrikcore.workspace_scope;
@@ -219,7 +220,7 @@ fn loadSessionDetail(allocator: std.mem.Allocator, db: *database.Db, session_id:
         \\       COALESCE(pr_url, ''), COALESCE(pr_provider, ''),
         \\       COALESCE(parent_session_id, ''), COALESCE(sub_agent_name, ''),
         \\       COALESCE(is_pinned, 0), COALESCE(user_id, ''),
-        \\       COALESCE(created_at, ''), COALESCE(updated_at, ''),
+        \\       COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), ''),
         \\       COALESCE(last_human_touched_at_nano, 0)
         \\FROM sessions WHERE id = ?
     , &.{session_id});
@@ -489,7 +490,7 @@ fn setupDb() !TestCtx {
     errdefer threaded.deinit();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
 
     try db.exec(alloc,
         \\CREATE TABLE sessions (
@@ -505,7 +506,7 @@ fn setupDb() !TestCtx {
         \\  is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
         \\  last_finish_reason TEXT,
         \\  user_id TEXT,
-        \\  last_human_touched_at_nano INTEGER,
+        \\  last_human_touched_at_nano BIGINT,
         \\  pr_url TEXT,
         \\  pr_provider TEXT,
         \\  sub_agent_name TEXT,
@@ -537,7 +538,7 @@ fn setupDb() !TestCtx {
         \\  id TEXT PRIMARY KEY,
         \\  session_id TEXT NOT NULL,
         \\  working_directory TEXT,
-        \\  last_activity_nano INTEGER DEFAULT 0,
+        \\  last_activity_nano BIGINT DEFAULT 0,
         \\  last_activity_description TEXT
         \\)
     , &.{});

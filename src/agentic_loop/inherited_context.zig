@@ -324,6 +324,7 @@ test "isSubagent - case-sensitive (different case is treated as different)" {
 // --- Formatter tests (need DB) --------------------------------------------
 
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 
 fn setupDb() !struct {
     db: pabrikcore.database.Db,
@@ -336,7 +337,7 @@ fn setupDb() !struct {
 
     var db: pabrikcore.database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Minimal llm_history schema — only the columns the formatter reads.
     try db.exec(alloc,

@@ -152,7 +152,7 @@ pub fn exists(allocator: std.mem.Allocator, db: DbOrTx, workspace_item_id: []con
 /// Fetch the config row by workspace_item_id. Returns null when absent.
 pub fn getByWorkspaceItemId(allocator: std.mem.Allocator, db: DbOrTx, workspace_item_id: []const u8) !?AgentRoutineRow {
     var q = db.query(allocator,
-        "SELECT id, workspace_item_id, description, IFNULL(created_at, ''), IFNULL(updated_at, '') FROM agent_configs WHERE workspace_item_id = ? AND item_type = 'routine'",
+        "SELECT id, workspace_item_id, description, COALESCE(created_at, ''), COALESCE(updated_at, '') FROM agent_configs WHERE workspace_item_id = ? AND item_type = 'routine'",
         &.{workspace_item_id},
     ) catch return null;
     defer q.deinit();
@@ -175,7 +175,7 @@ pub fn updateDescription(allocator: std.mem.Allocator, db: DbOrTx, workspace_ite
 /// "configured", and re-enabling must not trip UNIQUE(workspace_item_id).
 pub fn insertIgnoreDuplicate(allocator: std.mem.Allocator, db: DbOrTx, id: []const u8, workspace_item_id: []const u8) !void {
     try db.exec(allocator,
-        "INSERT OR IGNORE INTO agent_configs (id, workspace_item_id, item_type) VALUES (?, ?, 'routine')",
+        "INSERT INTO agent_configs (id, workspace_item_id, item_type) VALUES (?, ?, 'routine') ON CONFLICT DO NOTHING",
         &.{ id, workspace_item_id },
     );
 }
@@ -186,7 +186,7 @@ pub fn insertIgnoreDuplicate(allocator: std.mem.Allocator, db: DbOrTx, id: []con
 pub fn listKnowledge(allocator: std.mem.Allocator, db: DbOrTx, routine_id: []const u8) ![]KnowledgeRow {
     var q = db.query(allocator,
         \\SELECT id, config_id AS routine_id, file_path, label, content, position,
-        \\       IFNULL(created_at, ''), IFNULL(updated_at, '')
+        \\       COALESCE(created_at, ''), COALESCE(updated_at, '')
         \\FROM agent_config_knowledge WHERE config_id = ?
         \\ORDER BY position DESC
     , &.{routine_id}) catch return &.{};
@@ -228,7 +228,7 @@ pub fn insertKnowledge(
 pub fn getKnowledgeById(allocator: std.mem.Allocator, db: DbOrTx, knowledge_id: []const u8) !?KnowledgeRow {
     var q = db.query(allocator,
         \\SELECT id, config_id AS routine_id, file_path, label, content, position,
-        \\       IFNULL(created_at, ''), IFNULL(updated_at, '')
+        \\       COALESCE(created_at, ''), COALESCE(updated_at, '')
         \\FROM agent_config_knowledge WHERE id = ?
     , &.{knowledge_id}) catch return null;
     defer q.deinit();
@@ -358,7 +358,7 @@ pub fn deleteTool(allocator: std.mem.Allocator, db: DbOrTx, routine_id: []const 
 pub fn listSystemPrompts(allocator: std.mem.Allocator, db: DbOrTx, routine_id: []const u8) ![]SystemPromptRow {
     var q = db.query(allocator,
         \\SELECT id, config_id AS routine_id, title, content, position,
-        \\       IFNULL(created_at, ''), IFNULL(updated_at, '')
+        \\       COALESCE(created_at, ''), COALESCE(updated_at, '')
         \\FROM agent_config_system_prompt WHERE config_id = ?
         \\ORDER BY position DESC
     , &.{routine_id}) catch return &.{};
@@ -393,7 +393,7 @@ pub fn insertSystemPrompt(allocator: std.mem.Allocator, db: DbOrTx, routine_id: 
 pub fn getSystemPromptById(allocator: std.mem.Allocator, db: DbOrTx, prompt_id: []const u8) !?SystemPromptRow {
     var q = db.query(allocator,
         \\SELECT id, config_id AS routine_id, title, content, position,
-        \\       IFNULL(created_at, ''), IFNULL(updated_at, '')
+        \\       COALESCE(created_at, ''), COALESCE(updated_at, '')
         \\FROM agent_config_system_prompt WHERE id = ?
     , &.{prompt_id}) catch return null;
     defer q.deinit();

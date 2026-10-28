@@ -45,7 +45,7 @@ pub const Error = error{
 
 const user_columns =
     \\SELECT id, email, COALESCE(name, ''), role, is_active,
-    \\       COALESCE(created_at, ''), COALESCE(last_login_at, '')
+    \\       COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(last_login_at AS TEXT), '')
 ;
 
 /// The system account is not a person and can never sign in, so the console
@@ -306,8 +306,8 @@ pub fn ensureSchema(allocator: std.mem.Allocator, db: Db) !void {
 fn createUsersSchema(allocator: std.mem.Allocator, db: Db) !void {
     try ensureSchema(allocator, db);
     try db.exec(allocator,
-        \\INSERT OR IGNORE INTO users (id, email, name, password_hash, role, is_active)
-        \\VALUES ('user_system', 'system@local', 'System', '!disabled', 'admin', 0)
+        \\INSERT INTO users (id, email, name, password_hash, role, is_active)
+        \\VALUES ('user_system', 'system@local', 'System', '!disabled', 'admin', 0) ON CONFLICT DO NOTHING
     , &.{});
 }
 

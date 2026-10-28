@@ -1,7 +1,9 @@
 const std = @import("std");
 const root_mod = @import("pabrikcore");
+const test_db = root_mod.test_db;
 const sqlite = root_mod.sqlite;
 const database = root_mod.database;
+const dialect = root_mod.dialect;
 // NOTE: NOT `root_mod.helpers.process_status`.
 const process_status = @import("helpers").process_status;
 const shell_tool = root_mod.shell_tool;
@@ -92,10 +94,16 @@ pub fn save(db: *Backend, allocator: std.mem.Allocator, session_id: []const u8, 
 
     const kind_value: []const u8 = if (kind.len == 0) KIND_JOB else kind;
 
-    try db.exec(allocator,
-        \\INSERT OR REPLACE INTO session_background_process (session_id, pid, command, log_path, started_at, status, kind, vm_id, guest_pid)
+    const sql = dialect.upsert_verb ++
+        \\ INTO session_background_process (session_id, pid, command, log_path, started_at, status, kind, vm_id, guest_pid)
         \\VALUES (?, ?, ?, ?, ?, 'running', ?, ?, ?)
-    , &.{ session_id, pid_str, command, log_path, started_at_str, kind_value, home.vm_id, guest_pid_str });
+    ++ (if (dialect.is_postgres)
+        " ON CONFLICT (session_id, pid) DO UPDATE SET command = excluded.command, " ++
+            "log_path = excluded.log_path, started_at = excluded.started_at, status = excluded.status, " ++
+            "kind = excluded.kind, vm_id = excluded.vm_id, guest_pid = excluded.guest_pid"
+    else
+        "");
+    try db.exec(allocator, sql, &.{ session_id, pid_str, command, log_path, started_at_str, kind_value, home.vm_id, guest_pid_str });
 }
 
 /// Get all background processes for a session
@@ -784,7 +792,7 @@ fn setupCtx() !TestCtx {
 
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     var manager = migration.MigrationManager.init(testing.allocator, &db);
     defer manager.deinit();

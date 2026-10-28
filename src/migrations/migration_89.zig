@@ -6,6 +6,7 @@ const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
+const dialect = common.dialect;
 
 pub const Migration089AuthSessions = struct {
     pub const version: u32 = 89;
@@ -19,7 +20,7 @@ pub const Migration089AuthSessions = struct {
             \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    expires_at TIMESTAMP NOT NULL,
             \\    last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            \\    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            ++ comptime dialect.foreignKey("FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE") ++
             \\)
         , &[_][]const u8{});
         try db.exec(allocator,

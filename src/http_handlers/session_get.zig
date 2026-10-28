@@ -3,6 +3,7 @@
 const std = @import("std");
 const http_response = @import("http_response.zig");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const llm_history = pabrikcore.llm_history;
 
@@ -165,7 +166,7 @@ fn setupDb() !TestCtx {
     const io = threaded.io();
     var db: pabrikcore.database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Full column set so llm_history.getSession's primary SELECT
     // succeeds (no legacy fallback).
@@ -185,7 +186,7 @@ fn setupDb() !TestCtx {
         \\  pr_provider TEXT NOT NULL DEFAULT '',
         \\  sub_agent_name TEXT NOT NULL DEFAULT '',
         \\  parent_session_id TEXT NOT NULL DEFAULT '',
-        \\  last_human_touched_at_nano INTEGER
+        \\  last_human_touched_at_nano BIGINT
         \\)
     , &.{});
     try db.exec(alloc,

@@ -1,7 +1,15 @@
 const model_catalog = @import("model_catalog.zig");
 const std = @import("std");
+/// The tail of the upsert of a session skill row (see `dialect.upsert_verb`).
+const UPSERT_SESSION_SKILL_TAIL: []const u8 = if (dialect.is_postgres)
+    " ON CONFLICT (session_id, skill_name) DO UPDATE SET " ++
+        "content = excluded.content, loaded_at_nano = excluded.loaded_at_nano"
+else
+    "";
+
 const testing = std.testing;
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const dialect = pabrikcore.dialect;
@@ -364,8 +372,8 @@ pub fn getSessionListWithCursor(
     defer allocator.free(where_with_cursor);
 
     const sql_final = try std.fmt.allocPrint(allocator,
-        \\SELECT s.id, s.name, s.status, s.cwd, COALESCE(s.created_at, ''),
-        \\COALESCE(s.updated_at, ''),
+        \\SELECT s.id, s.name, s.status, s.cwd, COALESCE(CAST(s.created_at AS TEXT), ''),
+        \\COALESCE(CAST(s.updated_at AS TEXT), ''),
         \\COALESCE(h.agent, 'Agent'),
         \\COALESCE(s.selected_profile_model, ''),
         \\COALESCE(s.is_auto_retry_until_stop, '0'),
@@ -1933,7 +1941,7 @@ pub fn getCompactedMessages(
         \\    COALESCE(h.response_content, ''),
         \\    h.tool_call_id, h.tool_name,
         \\    COALESCE(h.model, ''), COALESCE(h.agent, ''),
-        \\    COALESCE(h.created_at_nano, '') AS created_at,
+        \\    COALESCE(CAST(h.created_at_nano AS TEXT), '') AS created_at,
         \\    COUNT(*) OVER () AS total
         \\FROM llm_history h
         \\WHERE h.session_id = ?
@@ -2048,7 +2056,7 @@ pub fn getMessagesByIds(
         \\    COALESCE(h.response_content, ''),
         \\    h.tool_call_id, h.tool_name,
         \\    COALESCE(h.model, ''), COALESCE(h.agent, ''),
-        \\    COALESCE(h.created_at_nano, '') AS created_at,
+        \\    COALESCE(CAST(h.created_at_nano AS TEXT), '') AS created_at,
         \\    COUNT(*) OVER () AS total
         \\FROM llm_history h
         \\WHERE h.id IN (
@@ -2682,7 +2690,7 @@ pub fn getLatestSessionByDir(
     db: *database.Db,
     cwd: []const u8,
 ) !?SessionInfo {
-    const sql = "SELECT s.id, s.name, s.status, s.cwd, COALESCE(s.created_at, ''), COALESCE(s.updated_at, ''), COALESCE(h.agent, '') FROM sessions s LEFT JOIN llm_history h ON s.id = h.session_id WHERE s.cwd = ? GROUP BY s.id ORDER BY s.created_at DESC LIMIT 1";
+    const sql = "SELECT s.id, s.name, s.status, s.cwd, COALESCE(CAST(s.created_at AS TEXT), ''), COALESCE(CAST(s.updated_at AS TEXT), ''), COALESCE(h.agent, '') FROM sessions s LEFT JOIN llm_history h ON s.id = h.session_id WHERE s.cwd = ? GROUP BY s.id ORDER BY s.created_at DESC LIMIT 1";
     var rows = try db.query(allocator, sql, &[_][]const u8{cwd});
     defer rows.deinit();
 
@@ -3306,7 +3314,7 @@ pub fn getSession(
 ) !?SessionTableInfo {
     const sql =
         \\SELECT s.id, s.name, s.status, COALESCE(s.cwd, ''),
-        \\       COALESCE(s.created_at, ''), COALESCE(s.updated_at, ''),
+        \\       COALESCE(CAST(s.created_at AS TEXT), ''), COALESCE(CAST(s.updated_at AS TEXT), ''),
         \\       COALESCE(s.selected_profile_model, ''), COALESCE(s.git_worktree_cwd, ''),
         \\       COALESCE(s.is_auto_retry_until_stop, '0'), COALESCE(s.last_finish_reason, ''),
         \\       COALESCE(s.pr_url, ''), COALESCE(s.pr_provider, ''),
@@ -3360,7 +3368,7 @@ fn getSessionLegacy(
 ) !?SessionTableInfo {
     const sql =
         \\SELECT s.id, s.name, s.status, COALESCE(s.cwd, ''),
-        \\       COALESCE(s.created_at, ''), COALESCE(s.updated_at, ''),
+        \\       COALESCE(CAST(s.created_at AS TEXT), ''), COALESCE(CAST(s.updated_at AS TEXT), ''),
         \\       COALESCE(s.selected_profile_model, ''), COALESCE(s.git_worktree_cwd, ''),
         \\       COALESCE(s.is_auto_retry_until_stop, '0'), COALESCE(s.last_finish_reason, ''),
         \\       COALESCE(s.pr_url, ''), COALESCE(s.pr_provider, '')
@@ -3563,7 +3571,7 @@ pub fn updateSessionLastHumanTouchedAt(
     defer allocator.free(touched_at_str);
 
     const sql =
-        "UPDATE sessions SET last_human_touched_at_nano = ? WHERE id = ?";
+        "UPDATE sessions SET last_human_touched_at_nano = CAST(? AS BIGINT) WHERE id = ?";
     try db.exec(allocator, sql, &.{ touched_at_str, session_id });
 }
 
@@ -3769,7 +3777,7 @@ pub fn list_sessions(
     allocator: std.mem.Allocator,
     db: *database.Db,
 ) ![]SessionTableInfo {
-    const sql = "SELECT id, name, status, COALESCE(selected_profile_model, ''), COALESCE(cwd, ''), COALESCE(created_at, ''), COALESCE(updated_at, ''), COALESCE(git_worktree_cwd, ''), COALESCE(pr_url, ''), COALESCE(pr_provider, ''), COALESCE(is_auto_retry_until_stop, '0'), COALESCE(last_finish_reason, ''), COALESCE(sub_agent_name, ''), COALESCE(parent_session_id, '') FROM sessions ORDER BY id";
+    const sql = "SELECT id, name, status, COALESCE(selected_profile_model, ''), COALESCE(cwd, ''), COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), ''), COALESCE(git_worktree_cwd, ''), COALESCE(pr_url, ''), COALESCE(pr_provider, ''), COALESCE(is_auto_retry_until_stop, '0'), COALESCE(last_finish_reason, ''), COALESCE(sub_agent_name, ''), COALESCE(parent_session_id, '') FROM sessions ORDER BY id";
 
     var rows = try db.query(allocator, sql, &.{});
     defer rows.deinit();
@@ -3840,7 +3848,7 @@ pub fn saveSkill(
     // Skip if session_id is empty
     if (session_id.len == 0) return;
 
-    const sql = "INSERT OR REPLACE INTO session_skills (session_id, skill_name, content, loaded_at_nano) VALUES (?, ?, ?, strftime('%s', 'now'))";
+    const sql = dialect.upsert_verb ++ " INTO session_skills (session_id, skill_name, content, loaded_at_nano) VALUES (?, ?, ?, strftime('%s', 'now'))" ++ UPSERT_SESSION_SKILL_TAIL;
     try db.exec(allocator, sql, &.{ session_id, skill_name, content });
     logger.debugFmt("Skill '{s}' saved to database for session {s}", .{ skill_name, session_id });
 }
@@ -3942,7 +3950,7 @@ pub fn saveProgressiveTool(
     // COALESCE on server_name is REQUIRED, not cosmetic: Backend binds
     // an empty `[]const u8` as SQL NULL, and `server_name` is NOT NULL — so a
     // built-in (always passed with "") would violate the constraint and
-    const sql = "INSERT OR IGNORE INTO session_progressive_tool (session_id, tool_name, server_name, loaded_at_nano) VALUES (?, ?, COALESCE(?, ''), strftime('%s', 'now'))";
+    const sql = "INSERT INTO session_progressive_tool (session_id, tool_name, server_name, loaded_at_nano) VALUES (?, ?, COALESCE(?, ''), strftime('%s', 'now')) ON CONFLICT DO NOTHING";
     try db.exec(allocator, sql, &.{ session_id, tool_name, server_name });
 
     const inserted = db.changes() > 0;
@@ -5399,10 +5407,21 @@ pub fn listKanbanDistinctTags(
         if (offset_str.len > 0) allocator.free(offset_str);
     }
 
-    // json_each() expands the `tags` JSON array into a virtual table with one
-    // row per element. json_valid + json_type filter out malformed/non-array
-    // rows (legacy / corrupted).
-    var q = try db.query(allocator,
+    // `json_each` is sqlite's table-valued JSON expander, `jsonb_array_elements_text`
+    // its postgres counterpart. The `LIKE '[%'` guard stands in for sqlite's
+    // `json_valid`/`json_type`: a value that is not an array expands to nothing.
+    const sql = if (dialect.is_postgres)
+        \\SELECT je.value AS tag, COUNT(*) AS cnt, MAX(t.updated_at) AS last_used
+        \\FROM workspace_item_tasks t
+        \\CROSS JOIN LATERAL jsonb_array_elements_text(
+        \\    CASE WHEN t.tags LIKE '[%' THEN t.tags::jsonb ELSE '[]'::jsonb END
+        \\) AS je(value)
+        \\WHERE t.workspace_item_id = ?
+        \\GROUP BY je.value
+        \\ORDER BY cnt DESC, last_used DESC
+        \\LIMIT ?
+        \\OFFSET ?
+    else
         \\SELECT je.value AS tag, COUNT(*) AS cnt, MAX(t.updated_at) AS last_used
         \\FROM workspace_item_tasks t, json_each(t.tags) je
         \\WHERE t.workspace_item_id = ?
@@ -5412,7 +5431,9 @@ pub fn listKanbanDistinctTags(
         \\ORDER BY cnt DESC, last_used DESC
         \\LIMIT ?
         \\OFFSET ?
-    , &.{
+    ;
+
+    var q = try db.query(allocator, sql, &.{
         workspace_item_id,
         limit_str,
         offset_str,
@@ -5458,7 +5479,7 @@ pub fn getSessionsForBroadcast(
     allocator: std.mem.Allocator,
     db: *database.Db,
 ) ![]SessionBroadcastInfo {
-    const sql = "SELECT s.id, COALESCE(s.name, ''), COALESCE(s.status, 'active'), COALESCE(s.cwd, ''), COALESCE(s.created_at, ''), COALESCE(s.updated_at, ''), COALESCE(h.agent, 'Agent'), COALESCE(s.selected_profile_model, ''), COALESCE(s.git_worktree_cwd, ''), COALESCE(s.pr_url, ''), COALESCE(s.pr_provider, ''), COALESCE(s.sub_agent_name, ''), COALESCE(s.parent_session_id, '') FROM sessions s LEFT JOIN llm_history h ON s.id = h.session_id ORDER BY s.updated_at DESC";
+    const sql = "SELECT s.id, COALESCE(s.name, ''), COALESCE(s.status, 'active'), COALESCE(s.cwd, ''), COALESCE(CAST(s.created_at AS TEXT), ''), COALESCE(CAST(s.updated_at AS TEXT), ''), COALESCE(h.agent, 'Agent'), COALESCE(s.selected_profile_model, ''), COALESCE(s.git_worktree_cwd, ''), COALESCE(s.pr_url, ''), COALESCE(s.pr_provider, ''), COALESCE(s.sub_agent_name, ''), COALESCE(s.parent_session_id, '') FROM sessions s LEFT JOIN llm_history h ON s.id = h.session_id ORDER BY s.updated_at DESC";
 
     var rows = db.query(allocator, sql, &[_][]const u8{}) catch return &[_]SessionBroadcastInfo{};
     defer rows.deinit();
@@ -5527,7 +5548,7 @@ fn setupDbWithTagsForKanban() !struct { db: database.Db, threaded: std.Io.Thread
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Minimal schema: workspace_items + workspace_item_tasks with the
     // tags column (Migration 067). We don't run all 66 prior migrations
@@ -5736,7 +5757,7 @@ fn setupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)", &.{});
     try db.exec(alloc,
@@ -5752,7 +5773,7 @@ fn setupDb() !TestCtx {
         \\    pinned_position INTEGER DEFAULT 0,
         \\    -- kanban_column_id / kanban_position REMOVED post-Migration-072
         \\    -- (they now live in the `kanban` join table below)
-        \\    last_human_touched_at_nano INTEGER,
+        \\    last_human_touched_at_nano BIGINT,
         \\    tags TEXT NOT NULL DEFAULT '',
         \\    cwd TEXT NOT NULL DEFAULT '',
         \\    image_urls TEXT NOT NULL DEFAULT '',
@@ -5788,8 +5809,8 @@ fn insertTask(
     description: []const u8,
     tags: []const u8,
 ) !void {
-    try ctx.db.exec(alloc, "INSERT OR IGNORE INTO workspace_items (id, workspace_id, item_type) " ++
-        "VALUES ('wi_1', 'ws_1', 'kanban')", &.{});
+    try ctx.db.exec(alloc, "INSERT INTO workspace_items (id, workspace_id, item_type) " ++
+        "VALUES ('wi_1', 'ws_1', 'kanban') ON CONFLICT DO NOTHING", &.{});
     try ctx.db.exec(alloc,
         \\INSERT INTO workspace_item_tasks
         \\(id, name, workspace_item_id, description, updated_at, task_type, tags)
@@ -5809,8 +5830,8 @@ fn insertTaskInColumn(
     column_id: ?[]const u8,
     position: i64,
 ) !void {
-    try ctx.db.exec(alloc, "INSERT OR IGNORE INTO workspace_items (id, workspace_id, item_type) " ++
-        "VALUES ('wi_1', 'ws_1', 'kanban')", &.{});
+    try ctx.db.exec(alloc, "INSERT INTO workspace_items (id, workspace_id, item_type) " ++
+        "VALUES ('wi_1', 'ws_1', 'kanban') ON CONFLICT DO NOTHING", &.{});
     // SQLite exec binds only TEXT, so format position as a string.
     const pos_str = try std.fmt.allocPrint(alloc, "{d}", .{position});
     defer alloc.free(pos_str);
@@ -6619,7 +6640,7 @@ test "getWorkspaceItemTaskById is scoped to the parent workspace item" {
     // task_other lives under a DIFFERENT item (wi_2). Fetching it
     // through wi_1 must return null — the item scoping prevents
     // cross-item task reads.
-    try ctx.db.exec(alloc, "INSERT OR IGNORE INTO workspace_items (id, workspace_id, item_type) VALUES ('wi_2', 'ws_1', 'kanban')", &.{});
+    try ctx.db.exec(alloc, "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('wi_2', 'ws_1', 'kanban') ON CONFLICT DO NOTHING", &.{});
     try ctx.db.exec(alloc, "INSERT INTO workspace_item_tasks (id, name, workspace_item_id, description, updated_at, task_type, tags) VALUES ('task_other', 'elsewhere', 'wi_2', '', datetime('now'), 'standard', '[]')", &.{});
 
     const opt = try getWorkspaceItemTaskById(alloc, &ctx.db, "wi_1", "task_other");
@@ -6691,7 +6712,7 @@ fn sessionUpdateSetupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Canonical post-Migration-063 schema (matches
     // migration_063_runtime_test.zig).
@@ -6876,7 +6897,7 @@ fn getSessionListSetupDb() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // llm_history — only the columns the rewritten query reads.
     try db.exec(alloc,
@@ -7113,7 +7134,10 @@ test "getSessionList inner subquery uses idx_llm_history_created_session (EXPLAI
         try ctx.db.exec(alloc, sql, &.{});
     }
 
-    // EXPLAIN QUERY PLAN returns one row per plan node.
+    // EXPLAIN QUERY PLAN is sqlite's plan text, and the assertion below reads a
+    // sqlite index name out of it: postgres cannot answer this question.
+    if (dialect.is_postgres) return error.SkipZigTest;
+
     var q = try ctx.db.query(alloc,
         \\EXPLAIN QUERY PLAN
         \\SELECT h.session_id, MAX(h.created_at_nano)
@@ -7275,7 +7299,7 @@ test "updateTaskLastHumanTouchedAt stamps the unix-ms value on the task" {
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Minimal tables Migration 065 needs (parent + task).
     try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)", &.{});
@@ -7286,7 +7310,7 @@ test "updateTaskLastHumanTouchedAt stamps the unix-ms value on the task" {
         "VALUES ('task_1', 'T1', 'wi_1')", &.{});
 
     // Before stamp — column doesn't exist yet (Migration 065 not run).
-    try db.exec(alloc, "ALTER TABLE workspace_item_tasks ADD COLUMN last_human_touched_at_nano INTEGER", &.{});
+    try db.exec(alloc, "ALTER TABLE workspace_item_tasks ADD COLUMN last_human_touched_at_nano BIGINT", &.{});
 
     const now_ms: i64 = 1_786_500_000_000;
     try updateTaskLastHumanTouchedAt(alloc, &db, "task_1", now_ms);
@@ -7305,10 +7329,10 @@ test "updateTaskLastHumanTouchedAt overwrites on repeated calls" {
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)", &.{});
-    try db.exec(alloc, "CREATE TABLE workspace_item_tasks (id TEXT PRIMARY KEY, name TEXT, workspace_item_id TEXT, last_human_touched_at_nano INTEGER)", &.{});
+    try db.exec(alloc, "CREATE TABLE workspace_item_tasks (id TEXT PRIMARY KEY, name TEXT, workspace_item_id TEXT, last_human_touched_at_nano BIGINT)", &.{});
     try db.exec(alloc, "INSERT INTO workspace_items (id, workspace_id, item_type) " ++
         "VALUES ('wi_1', 'ws_1', 'chat')", &.{});
     try db.exec(alloc, "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) " ++
@@ -7335,7 +7359,7 @@ test "updateSessionLastHumanTouchedAt stamps the unix-ms value on the session" {
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Minimal sessions table that already declares the Migration 082
     // column (so the writer doesn't have to run migrations in tests).
@@ -7343,7 +7367,7 @@ test "updateSessionLastHumanTouchedAt stamps the unix-ms value on the session" {
         \\CREATE TABLE sessions (
         \\    id TEXT PRIMARY KEY,
         \\    name TEXT NOT NULL,
-        \\    last_human_touched_at_nano INTEGER
+        \\    last_human_touched_at_nano BIGINT
         \\)
     , &.{});
     try db.exec(alloc, "INSERT INTO sessions (id, name) VALUES ('sess_1', 'Hello')", &.{});
@@ -7365,13 +7389,13 @@ test "updateSessionLastHumanTouchedAt with now_unix_ms=null reads the real clock
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE sessions (
         \\    id TEXT PRIMARY KEY,
         \\    name TEXT NOT NULL,
-        \\    last_human_touched_at_nano INTEGER
+        \\    last_human_touched_at_nano BIGINT
         \\)
     , &.{});
     try db.exec(alloc, "INSERT INTO sessions (id, name) VALUES ('sess_real', 'Real')", &.{});
@@ -7403,13 +7427,13 @@ test "updateSessionLastHumanTouchedAt is a no-op for unknown session_id" {
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE sessions (
         \\    id TEXT PRIMARY KEY,
         \\    name TEXT NOT NULL,
-        \\    last_human_touched_at_nano INTEGER
+        \\    last_human_touched_at_nano BIGINT
         \\)
     , &.{});
     // No rows inserted.
@@ -7433,13 +7457,13 @@ test "updateSessionLastHumanTouchedAt is idempotent on repeated calls with the s
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE sessions (
         \\    id TEXT PRIMARY KEY,
         \\    name TEXT NOT NULL,
-        \\    last_human_touched_at_nano INTEGER
+        \\    last_human_touched_at_nano BIGINT
         \\)
     , &.{});
     try db.exec(alloc, "INSERT INTO sessions (id, name) VALUES ('sess_idem', 'Idem')", &.{});
@@ -7461,13 +7485,13 @@ test "updateSessionLastHumanTouchedAt overwrites on repeated calls with a newer 
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE sessions (
         \\    id TEXT PRIMARY KEY,
         \\    name TEXT NOT NULL,
-        \\    last_human_touched_at_nano INTEGER
+        \\    last_human_touched_at_nano BIGINT
         \\)
     , &.{});
     try db.exec(alloc, "INSERT INTO sessions (id, name) VALUES ('sess_overwrite', 'Overwrite')", &.{});
@@ -7489,13 +7513,13 @@ test "updateSessionLastHumanTouchedAt skips empty session_id (no SQL bind)" {
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE sessions (
         \\    id TEXT PRIMARY KEY,
         \\    name TEXT NOT NULL,
-        \\    last_human_touched_at_nano INTEGER
+        \\    last_human_touched_at_nano BIGINT
         \\)
     , &.{});
 
@@ -7583,7 +7607,7 @@ test "getSessionListWithCursor converts unix-ms storage to SQLite datetime on th
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Minimal schema with the Migration 082 column.
     try db.exec(alloc,
@@ -7597,7 +7621,7 @@ test "getSessionListWithCursor converts unix-ms storage to SQLite datetime on th
         \\    selected_profile_model TEXT,
         \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
         \\    last_finish_reason TEXT,
-        \\    last_human_touched_at_nano INTEGER,
+        \\    last_human_touched_at_nano BIGINT,
         \\    git_worktree_cwd TEXT,
         \\    is_pinned INTEGER NOT NULL DEFAULT 0,
         \\    pinned_position INTEGER NOT NULL DEFAULT 0
@@ -7659,7 +7683,7 @@ test "getSessionListWithCursor returns empty string for NULL last_human_touched_
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE sessions (
@@ -7672,7 +7696,7 @@ test "getSessionListWithCursor returns empty string for NULL last_human_touched_
         \\    selected_profile_model TEXT,
         \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
         \\    last_finish_reason TEXT,
-        \\    last_human_touched_at_nano INTEGER,
+        \\    last_human_touched_at_nano BIGINT,
         \\    git_worktree_cwd TEXT,
         \\    is_pinned INTEGER NOT NULL DEFAULT 0,
         \\    pinned_position INTEGER NOT NULL DEFAULT 0
@@ -7727,7 +7751,7 @@ test "getSessionListWithCursor derives needs_human_review for the sidebar status
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE sessions (
@@ -7740,7 +7764,7 @@ test "getSessionListWithCursor derives needs_human_review for the sidebar status
         \\    selected_profile_model TEXT,
         \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
         \\    last_finish_reason TEXT,
-        \\    last_human_touched_at_nano INTEGER,
+        \\    last_human_touched_at_nano BIGINT,
         \\    git_worktree_cwd TEXT,
         \\    is_pinned INTEGER NOT NULL DEFAULT 0,
         \\    pinned_position INTEGER NOT NULL DEFAULT 0
@@ -7845,7 +7869,7 @@ test "getSessionListWithCursor pages on the sort field's column, not created_at"
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE sessions (
@@ -7858,7 +7882,7 @@ test "getSessionListWithCursor pages on the sort field's column, not created_at"
         \\    selected_profile_model TEXT,
         \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
         \\    last_finish_reason TEXT,
-        \\    last_human_touched_at_nano INTEGER,
+        \\    last_human_touched_at_nano BIGINT,
         \\    git_worktree_cwd TEXT,
         \\    is_pinned INTEGER NOT NULL DEFAULT 0,
         \\    pinned_position INTEGER NOT NULL DEFAULT 0
@@ -7946,7 +7970,7 @@ test "getSessionListWithCursor keeps the created_at filter when sorting by creat
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE sessions (
@@ -7959,7 +7983,7 @@ test "getSessionListWithCursor keeps the created_at filter when sorting by creat
         \\    selected_profile_model TEXT,
         \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
         \\    last_finish_reason TEXT,
-        \\    last_human_touched_at_nano INTEGER,
+        \\    last_human_touched_at_nano BIGINT,
         \\    git_worktree_cwd TEXT,
         \\    is_pinned INTEGER NOT NULL DEFAULT 0,
         \\    pinned_position INTEGER NOT NULL DEFAULT 0
@@ -8021,7 +8045,7 @@ test "getSessionListWithCursor: workspace_ids bounds sessions AND total (count h
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE sessions (
@@ -8034,7 +8058,7 @@ test "getSessionListWithCursor: workspace_ids bounds sessions AND total (count h
         \\    selected_profile_model TEXT,
         \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
         \\    last_finish_reason TEXT,
-        \\    last_human_touched_at_nano INTEGER,
+        \\    last_human_touched_at_nano BIGINT,
         \\    git_worktree_cwd TEXT,
         \\    is_pinned INTEGER NOT NULL DEFAULT 0,
         \\    pinned_position INTEGER NOT NULL DEFAULT 0
@@ -8144,7 +8168,7 @@ test "needs_human_review predicate returns 1 when finish_reason='stop' AND no hu
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Parent table + task table with the Migration 065 column +
     // sessions table to JOIN against.
@@ -8154,7 +8178,7 @@ test "needs_human_review predicate returns 1 when finish_reason='stop' AND no hu
         \\  id TEXT PRIMARY KEY,
         \\  name TEXT,
         \\  workspace_item_id TEXT,
-        \\  last_human_touched_at_nano INTEGER
+        \\  last_human_touched_at_nano BIGINT
         \\)
     , &.{});
     // Post-Migration-072: kanban placement lives in the `kanban` join table.
@@ -8209,13 +8233,13 @@ test "needs_human_review predicate returns 0 when human touched AFTER the AI fin
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)", &.{});
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
         \\  id TEXT PRIMARY KEY, name TEXT, workspace_item_id TEXT,
-        \\  last_human_touched_at_nano INTEGER
+        \\  last_human_touched_at_nano BIGINT
         \\)
     , &.{});
     try db.exec(alloc,
@@ -8263,13 +8287,13 @@ test "needs_human_review predicate returns 0 when finish_reason is 'tool_calls' 
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)", &.{});
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
         \\  id TEXT PRIMARY KEY, name TEXT, workspace_item_id TEXT,
-        \\  last_human_touched_at_nano INTEGER
+        \\  last_human_touched_at_nano BIGINT
         \\)
     , &.{});
     try db.exec(alloc,
@@ -8314,13 +8338,13 @@ test "needs_human_review predicate returns 0 when no sessions row exists for the
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)", &.{});
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
         \\  id TEXT PRIMARY KEY, name TEXT, workspace_item_id TEXT,
-        \\  last_human_touched_at_nano INTEGER
+        \\  last_human_touched_at_nano BIGINT
         \\)
     , &.{});
     try db.exec(alloc, "CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT, status TEXT, last_finish_reason TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, git_worktree_cwd TEXT)", &.{});
@@ -8358,7 +8382,7 @@ fn llmHistorySearchFtsQuerySafetySetupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Walk every production migration so the schema (including `messages_fts`
     // + its triggers) matches what production runs.
@@ -8484,7 +8508,7 @@ fn llmHistorySearchMessagesFtsSetupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE llm_history (
@@ -8505,28 +8529,30 @@ fn llmHistorySearchMessagesFtsSetupDb() !TestCtx {
         \\  -- Tests that need specific timestamps pass `created_at` AND
         \\  -- `created_iso` explicitly via a sub-SELECT that mirrors the
         \\  -- production conversion.
-        \\  created_iso TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+        \\  created_iso TEXT DEFAULT CURRENT_TIMESTAMP
         \\)
     , &.{});
-    try db.exec(alloc,
-        \\CREATE VIRTUAL TABLE messages_fts USING fts5(
-        \\    content
-        \\)
-    , &.{});
+    if (dialect.has_fts5) {
+        try db.exec(alloc,
+            \\CREATE VIRTUAL TABLE messages_fts USING fts5(
+            \\    content
+            \\)
+        , &.{});
+    }
 
     // Sync triggers — same shape as Migration 058 in production (now
     // non-external-content so snippet() can read from messages_fts).
-    try db.exec(alloc,
+    if (dialect.has_fts5) try db.exec(alloc,
         \\CREATE TRIGGER llm_history_ai AFTER INSERT ON llm_history BEGIN
         \\  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, COALESCE(new.response_content, ''));
         \\END
     , &.{});
-    try db.exec(alloc,
+    if (dialect.has_fts5) try db.exec(alloc,
         \\CREATE TRIGGER llm_history_ad AFTER DELETE ON llm_history BEGIN
         \\  DELETE FROM messages_fts WHERE rowid = old.rowid;
         \\END
     , &.{});
-    try db.exec(alloc,
+    if (dialect.has_fts5) try db.exec(alloc,
         \\CREATE TRIGGER llm_history_au AFTER UPDATE ON llm_history BEGIN
         \\  DELETE FROM messages_fts WHERE rowid = old.rowid;
         \\  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, COALESCE(new.response_content, ''));
@@ -8936,7 +8962,7 @@ fn llmHistoryCompactedMessagesSetupDb() !struct {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE llm_history (
@@ -9218,7 +9244,7 @@ test "saveMessage: writes a correct-year (2026-ish) created_iso from current tim
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE llm_history (
@@ -9301,7 +9327,7 @@ test "saveMessage: created_at column is stored as Unix microseconds (length <= 1
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE llm_history (
@@ -9387,7 +9413,7 @@ fn llmHistoryToolCallLoadingSetupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Walk every production migration (001 → 068) so the schema matches
     // production. Manual schema setup drifts the moment a migration lands;
@@ -9596,7 +9622,7 @@ fn llmHistoryWorkerInfoSetupDb() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Minimal `sessions` schema (matches the columns touched by
     // `getActiveWorker`'s JOIN). `git_worktree_cwd` (Migration 046)
@@ -9618,7 +9644,7 @@ fn llmHistoryWorkerInfoSetupDb() !struct {
         \\    id TEXT PRIMARY KEY,
         \\    session_id TEXT NOT NULL,
         \\    working_directory TEXT,
-        \\    last_activity_nano INTEGER DEFAULT (strftime('%s', 'now')),
+        \\    last_activity_nano BIGINT DEFAULT (strftime('%s', 'now')),
         \\    last_activity_description TEXT,
         \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
@@ -9792,13 +9818,13 @@ fn progressiveSetupDb() !ProgressiveTestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     try db.exec(alloc,
         \\CREATE TABLE session_progressive_tool (
         \\    session_id TEXT NOT NULL,
         \\    tool_name TEXT NOT NULL,
         \\    server_name TEXT NOT NULL DEFAULT '',
-        \\    loaded_at_nano INTEGER NOT NULL DEFAULT 0,
+        \\    loaded_at_nano BIGINT NOT NULL DEFAULT 0,
         \\    PRIMARY KEY (session_id, tool_name)
         \\)
     , &.{});
@@ -9933,7 +9959,7 @@ test "saveMessage: user envelope carries owner identity, assistant carries profi
     const io = threaded.io();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE llm_history (
@@ -10099,7 +10125,7 @@ fn setupOwnedSessionsDb() !struct { db: database.Db, threaded: std.Io.Threaded }
     errdefer threaded.deinit();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
 
     try db.exec(alloc,
         \\CREATE TABLE sessions (
@@ -10113,7 +10139,7 @@ fn setupOwnedSessionsDb() !struct { db: database.Db, threaded: std.Io.Threaded }
         \\    selected_profile_model TEXT,
         \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
         \\    last_finish_reason TEXT,
-        \\    last_human_touched_at_nano INTEGER,
+        \\    last_human_touched_at_nano BIGINT,
         \\    git_worktree_cwd TEXT,
         \\    is_pinned INTEGER NOT NULL DEFAULT 0,
         \\    pinned_position INTEGER NOT NULL DEFAULT 0

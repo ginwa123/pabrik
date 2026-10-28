@@ -3,6 +3,7 @@
 const std = @import("std");
 const http_response = @import("http_response.zig");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const auth_common = @import("auth_common.zig");
 const gserverz = pabrikcore.gserverz;
 
@@ -169,13 +170,13 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     errdefer threaded.deinit();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
     try db.exec(alloc,
         \\CREATE TABLE worker (
         \\    id TEXT PRIMARY KEY,
         \\    session_id TEXT NOT NULL,
         \\    working_directory TEXT,
-        \\    last_activity_nano INTEGER,
+        \\    last_activity_nano BIGINT,
         \\    last_activity_description TEXT,
         \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\    cancelled INTEGER DEFAULT 0,
@@ -385,7 +386,7 @@ test "repeated listings hand their pooled reader back instead of exhausting the 
         \\    id TEXT PRIMARY KEY,
         \\    session_id TEXT NOT NULL,
         \\    working_directory TEXT,
-        \\    last_activity_nano INTEGER,
+        \\    last_activity_nano BIGINT,
         \\    last_activity_description TEXT,
         \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\    cancelled INTEGER DEFAULT 0,

@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const auth_core = @import("auth_core");
 
 // The session cookie and the token/password helpers live in `auth_core.zig`,
@@ -270,7 +271,7 @@ test "canSeeSession: own + shared visible, another user's hidden, system sees al
     const io = threaded.io();
     var db: pabrikcore.database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     try db.exec(alloc, "CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT)", &.{});
     try db.exec(alloc, "INSERT INTO sessions (id, user_id) VALUES ('s_a','user_a'), ('s_b','user_b'), ('s_legacy',NULL)", &.{});
 
@@ -309,7 +310,7 @@ test "resolveRequestUserId maps a valid cookie to the owning user" {
     const io = threaded.io();
     var db: pabrikcore.database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE users (

@@ -268,7 +268,7 @@ pub fn useCase(alloc: std.mem.Allocator, io: std.Io, di: *pabrikcore.App, parsed
         };
         if (workspace_id) |id| {
             effective_cwd = vmd_policy.guest_root;
-            di.db.exec(alloc, "INSERT OR IGNORE INTO sessions (id, name, status, cwd, workspace_id) VALUES (?, ?, 'active', ?, ?)", &.{ session_id, session_name, effective_cwd, id }) catch |err| {
+            di.db.exec(alloc, "INSERT INTO sessions (id, name, status, cwd, workspace_id) VALUES (?, ?, 'active', ?, ?) ON CONFLICT DO NOTHING", &.{ session_id, session_name, effective_cwd, id }) catch |err| {
                 std.log.warn("session_create: workspace stamp insert failed (non-fatal): {s}", .{@errorName(err)});
             };
             di.db.exec(alloc, "UPDATE sessions SET cwd = ?, workspace_id = ? WHERE id = ?", &.{ effective_cwd, id, session_id }) catch |err| {

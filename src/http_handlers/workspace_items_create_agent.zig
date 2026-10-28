@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const auth_common = @import("auth_common.zig");
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
@@ -280,7 +281,7 @@ fn setupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // The useCase INSERTs into workspace_items + agents. workspace_items
     // needs the full shape (per spec D6) — re-create here matching the

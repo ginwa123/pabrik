@@ -181,8 +181,8 @@ const admin_common = @import("admin_common.zig");
 fn seedDatabase(allocator: std.mem.Allocator, db: *database.Db) !void {
     try admin_store.ensureSchema(allocator, db);
     try db.exec(allocator,
-        \\INSERT OR IGNORE INTO users (id, email, name, password_hash, role, is_active)
-        \\VALUES ('user_system', 'system@local', 'System', '!disabled', 'admin', 0)
+        \\INSERT INTO users (id, email, name, password_hash, role, is_active)
+        \\VALUES ('user_system', 'system@local', 'System', '!disabled', 'admin', 0) ON CONFLICT DO NOTHING
     , &.{});
 }
 

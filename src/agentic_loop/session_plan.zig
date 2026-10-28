@@ -1,6 +1,7 @@
 //! Storage layer for the `update_plan` + `get_plan` agent tools.
 
 const std = @import("std");
+const test_db = @import("pabrikcore").test_db;
 const testing = std.testing;
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
@@ -88,7 +89,7 @@ pub fn getPlanOpt(
     session_id: []const u8,
 ) !?PlanRow {
     var q = try db.query(allocator,
-        "SELECT session_id, plan_md, COALESCE(updated_at, '') FROM session_plan WHERE session_id = ?",
+        "SELECT session_id, plan_md, COALESCE(CAST(updated_at AS TEXT), '') FROM session_plan WHERE session_id = ?",
         &.{session_id});
     defer q.deinit();
 
@@ -120,7 +121,7 @@ fn setupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     var manager = migration.MigrationManager.init(alloc, &db);
     defer manager.deinit();

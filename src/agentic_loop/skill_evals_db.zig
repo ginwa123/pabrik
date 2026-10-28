@@ -4,6 +4,7 @@
 const std = @import("std");
 const testing = std.testing;
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const logger_mod = pabrikcore.loggermod;
@@ -92,10 +93,10 @@ pub fn insertEvent(
         const id = try std.fmt.allocPrint(allocator, "sse:listed:{s}:{s}", .{ args.session_id, skill_name });
         defer allocator.free(id);
         try db.exec(allocator,
-            \\INSERT OR IGNORE INTO session_skill_events
+            \\INSERT INTO session_skill_events
             \\    (id, session_id, skill_name, event, source, content_hash, loop_index, llm_history_id)
             \\VALUES
-            \\    (?, ?, ?, 'listed', COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), ?, COALESCE(NULLIF(?, ''), ''))
+            \\    (?, ?, ?, 'listed', COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), ?, COALESCE(NULLIF(?, ''), '')) ON CONFLICT DO NOTHING
         , &.{ id, args.session_id, skill_name, source, content_hash, loop_index_str, args.llm_history_id });
         return;
     }
@@ -259,7 +260,7 @@ fn setupDb() !TestCtx {
     errdefer threaded.deinit();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
     var manager = migration.MigrationManager.init(alloc, &db);
     defer manager.deinit();
     try migration.registerAllMigrations(&manager);
@@ -710,11 +711,11 @@ pub fn claimFact(
     context_key: []const u8,
 ) !FactClaim {
     try db.exec(allocator,
-        \\INSERT OR IGNORE INTO skill_eval_facts
+        \\INSERT INTO skill_eval_facts
         \\    (id, skill_key, content_hash, context_key, verdict_intrinsic, computed_at)
         \\VALUES
         \\    (?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''),
-        \\     COALESCE(NULLIF(?, ''), ''), 'computing', datetime('now'))
+        \\     COALESCE(NULLIF(?, ''), ''), 'computing', datetime('now')) ON CONFLICT DO NOTHING
     , &.{ id, skill_key, content_hash, context_key });
     if (db.changes() > 0) return .won;
 
@@ -1025,14 +1026,14 @@ pub fn claimRun(
     model: []const u8,
 ) !bool {
     try db.exec(allocator,
-        \\INSERT OR IGNORE INTO skill_eval_runs
+        \\INSERT INTO skill_eval_runs
         \\    (id, session_id, skill_name, scope, trigger, status, profile, model,
         \\     cwd, context_key, started_at)
         \\VALUES
         \\    (?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''),
         \\     COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), 'running',
         \\     COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''),
-        \\     COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), datetime('now'))
+        \\     COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), datetime('now')) ON CONFLICT DO NOTHING
     // Bind order MUST match the placeholder order in the VALUES clause above:
     // id, session_id, skill_name, scope, trigger, profile, model, cwd,
     // context_key.
@@ -1645,7 +1646,7 @@ pub fn listRuns(
 
     var q = try db.query(allocator,
         \\SELECT id, session_id, status, trigger, scope, skill_name,
-        \\       COALESCE(error, ''), COALESCE(total_tokens, 0), COALESCE(created_at, '')
+        \\       COALESCE(error, ''), COALESCE(total_tokens, 0), COALESCE(CAST(created_at AS TEXT), '')
         \\  FROM skill_eval_runs
         \\ WHERE (? = '' OR id = ?)
         \\   AND (? = '' OR session_id = ?)

@@ -20,7 +20,7 @@ pub const Migration087CreateAgentRoutines = struct {
             \\    description TEXT NOT NULL DEFAULT '',
             \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE
+            ++ comptime dialect.foreignKey("FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE") ++
             \\)
         , &[_][]const u8{});
         try db.exec(allocator,
@@ -37,7 +37,7 @@ pub const Migration087CreateAgentRoutines = struct {
             \\    position INTEGER NOT NULL DEFAULT 0,
             \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            \\    FOREIGN KEY (routine_id) REFERENCES agent_routines(id) ON DELETE CASCADE
+            ++ comptime dialect.foreignKey("FOREIGN KEY (routine_id) REFERENCES agent_routines(id) ON DELETE CASCADE") ++
             \\)
         , &[_][]const u8{});
         try db.exec(allocator,
@@ -56,7 +56,7 @@ pub const Migration087CreateAgentRoutines = struct {
             \\    position INTEGER NOT NULL DEFAULT 0,
             \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            \\    FOREIGN KEY (routine_id) REFERENCES agent_routines(id) ON DELETE CASCADE
+            ++ comptime dialect.foreignKey("FOREIGN KEY (routine_id) REFERENCES agent_routines(id) ON DELETE CASCADE") ++
             \\)
         , &[_][]const u8{});
         try db.exec(allocator,
@@ -73,7 +73,7 @@ pub const Migration087CreateAgentRoutines = struct {
             \\    tool_name TEXT NOT NULL,
             \\    enabled INTEGER NOT NULL DEFAULT 1,
             \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            \\    FOREIGN KEY (routine_id) REFERENCES agent_routines(id) ON DELETE CASCADE
+            ++ comptime dialect.foreignKey("FOREIGN KEY (routine_id) REFERENCES agent_routines(id) ON DELETE CASCADE") ++
             \\)
         , &[_][]const u8{});
         try db.exec(allocator,

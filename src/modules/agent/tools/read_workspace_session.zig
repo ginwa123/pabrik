@@ -2,6 +2,8 @@ const std = @import("std");
 const schemas = @import("schemas.zig");
 const AgentTool = schemas.AgentTool;
 const pabrikcore = @import("pabrikcore");
+const dialect = pabrikcore.dialect;
+const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const llm_history = pabrikcore.llm_history;
@@ -838,7 +840,7 @@ fn setupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE llm_history (
@@ -852,19 +854,21 @@ fn setupDb() !TestCtx {
         \\  is_feed_to_llm INTEGER DEFAULT 1,
         \\  agent TEXT,
         \\  created_at_nano TEXT DEFAULT (datetime('now')),
-        \\  created_iso TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+        \\  created_iso TEXT DEFAULT CURRENT_TIMESTAMP
         \\)
     , &.{});
-    try db.exec(alloc,
-        \\CREATE VIRTUAL TABLE messages_fts USING fts5(
-        \\    content
-        \\)
-    , &.{});
-    try db.exec(alloc,
-        \\CREATE TRIGGER llm_history_ai AFTER INSERT ON llm_history BEGIN
-        \\  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, COALESCE(new.response_content, ''));
-        \\END
-    , &.{});
+    if (dialect.has_fts5) {
+        try db.exec(alloc,
+            \\CREATE VIRTUAL TABLE messages_fts USING fts5(
+            \\    content
+            \\)
+        , &.{});
+        if (dialect.has_fts5) try db.exec(alloc,
+            \\CREATE TRIGGER llm_history_ai AFTER INSERT ON llm_history BEGIN
+            \\  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, COALESCE(new.response_content, ''));
+            \\END
+        , &.{});
+    }
     try db.exec(alloc,
         \\CREATE TABLE sessions (
         \\  id TEXT PRIMARY KEY,

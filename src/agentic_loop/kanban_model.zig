@@ -3,7 +3,17 @@
 //! progress / done`).
 
 const std = @import("std");
+/// The tail of the upsert of a task's `kanban` row: sqlite's `INSERT OR
+/// REPLACE` replaces the row, postgres assigns the two columns instead.
+const UPSERT_KANBAN_TAIL: []const u8 = if (dialect.is_postgres)
+    " ON CONFLICT (workspace_item_task_id) DO UPDATE SET " ++
+        "kanban_column_id = excluded.kanban_column_id, kanban_position = excluded.kanban_position"
+else
+    "";
+
 const pabrikcore = @import("pabrikcore");
+const dialect = pabrikcore.dialect;
+const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 /// Re-exported so a caller holding a slice returned by `incompleteDependencies`
@@ -46,7 +56,7 @@ pub fn listColumns(
 ) ![]KanbanColumn {
     var q = try db.query(allocator,
         \\SELECT kc.id, kc.workspace_item_id, kc.name, kc.description, kc.position,
-        \\       COALESCE(kc.created_at, ''), COALESCE(kc.is_done, 0)
+        \\       COALESCE(CAST(kc.created_at AS TEXT), ''), COALESCE(kc.is_done, 0)
         \\FROM kanban_columns kc
         \\WHERE kc.workspace_item_id = ?
         \\ORDER BY kc.position ASC
@@ -440,7 +450,7 @@ pub fn moveTask(
 
     // Step 2: move the task to the target column at the target position.
     try db.exec(allocator,
-        "INSERT OR REPLACE INTO kanban (workspace_item_task_id, kanban_column_id, kanban_position) VALUES (?, ?, ?)",
+        dialect.upsert_verb ++ " INTO kanban (workspace_item_task_id, kanban_column_id, kanban_position) VALUES (?, ?, ?)" ++ UPSERT_KANBAN_TAIL,
         &.{ task_id, target_column_id, pos_str });
 
     // Step 3: shift other tasks in the target column that are at >= target_position.
@@ -569,7 +579,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     return .{ .db = db, .threaded = threaded };
 }
@@ -1025,7 +1035,7 @@ fn setupDbDescription() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     // Migration 051 needs `workspace_items` (FK target) and
     // `workspace_item_tasks` (ALTER TABLE target).
     try db.exec(alloc,
@@ -1229,7 +1239,7 @@ fn setupDbCopy() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     // Migration 051 needs `workspace_items` (FK target) and
     // `workspace_item_tasks` (ALTER TABLE target).
     try db.exec(alloc,
@@ -1432,7 +1442,7 @@ fn setupGateDb() !GateDb {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
 
     try db.exec(alloc,
         \\CREATE TABLE kanban_columns (

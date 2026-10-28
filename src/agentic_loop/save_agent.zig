@@ -2,6 +2,7 @@ const std = @import("std");
 const tree1_mod = @import("pabrikcore");
 const sqlite = tree1_mod.sqlite;
 const database = tree1_mod.database;
+const dialect = tree1_mod.dialect;
 const logger_mod = tree1_mod.loggermod;
 
 /// Check if an agent is already loaded in the database
@@ -35,7 +36,8 @@ pub fn SaveAgent(
     // Skip if session_id is empty
     if (session_id.len == 0) return;
 
-    const sql = "INSERT OR REPLACE INTO session_agents (session_id, agent_name, updated_at) VALUES (?, ?, strftime('%s', 'now'))";
+    const sql = "INSERT INTO session_agents (session_id, agent_name, updated_at) VALUES (?, ?, strftime('%s', 'now'))" ++
+        " ON CONFLICT (session_id) DO UPDATE SET agent_name = excluded.agent_name, updated_at = excluded.updated_at";
     try db.exec(allocator, sql, &.{ session_id, agent_name });
     logger.debugFmt("Agent '{s}' saved to database for session {s}", .{ agent_name, session_id });
 }

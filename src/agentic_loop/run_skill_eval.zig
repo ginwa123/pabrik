@@ -4,6 +4,7 @@
 const std = @import("std");
 const testing = std.testing;
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const agent = pabrikcore.agent;
@@ -714,7 +715,7 @@ fn setupDb() !TestCtx {
     errdefer threaded.deinit();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
     var manager = migration.MigrationManager.init(alloc, &db);
     defer manager.deinit();
     try migration.registerAllMigrations(&manager);
@@ -1093,16 +1094,16 @@ test "max_skills = 0 evaluates nothing and does not crash" {
 /// branch of `workspace_scope.resolveWorkspaceId`.
 fn seedWorkspace(alloc: std.mem.Allocator, db: *database.Db, session_id: []const u8, ws_id: []const u8) !void {
     try db.exec(alloc,
-        \\INSERT OR IGNORE INTO workspaces (id, name) VALUES (?, 'skill eval fixture')
+        \\INSERT INTO workspaces (id, name) VALUES (?, 'skill eval fixture') ON CONFLICT DO NOTHING
     , &.{ws_id});
     const item_id = try std.fmt.allocPrint(alloc, "wi_{s}", .{ws_id});
     defer alloc.free(item_id);
     try db.exec(alloc,
-        \\INSERT OR IGNORE INTO workspace_items (id, workspace_id, item_type, name, path)
-        \\VALUES (?, ?, 'kanban', 'skill eval fixture', '')
+        \\INSERT INTO workspace_items (id, workspace_id, item_type, name, path)
+        \\VALUES (?, ?, 'kanban', 'skill eval fixture', '') ON CONFLICT DO NOTHING
     , &.{ item_id, ws_id });
     try db.exec(alloc,
-        \\INSERT OR IGNORE INTO workspace_item_tasks (id, name, workspace_item_id) VALUES (?, 'skill eval fixture', ?)
+        \\INSERT INTO workspace_item_tasks (id, name, workspace_item_id) VALUES (?, 'skill eval fixture', ?) ON CONFLICT DO NOTHING
     , &.{ session_id, item_id });
 }
 
@@ -1111,8 +1112,10 @@ fn seedSkillRow(alloc: std.mem.Allocator, db: *database.Db, ws_id: []const u8, n
     const id = try std.fmt.allocPrint(alloc, "sk_test_{s}_{s}", .{ ws_id, name });
     defer alloc.free(id);
     try db.exec(alloc,
-        \\INSERT OR REPLACE INTO skills (id, workspace_id, name, description, content, created_at, updated_at)
+        \\INSERT INTO skills (id, workspace_id, name, description, content, created_at, updated_at)
         \\VALUES (?, ?, ?, 'seeded by a skill eval test', COALESCE(NULLIF(?, ''), ''), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        \\ON CONFLICT (id) DO UPDATE SET workspace_id = excluded.workspace_id, name = excluded.name,
+        \\  description = excluded.description, content = excluded.content, updated_at = excluded.updated_at
     , &.{ id, ws_id, name, body });
 }
 

@@ -299,6 +299,7 @@ test "every progressive tool carries a non-empty system_prompt" {
 // The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const tools = @import("../../../agentic_loop/tools.zig");
 const tools_equipped = @import("tools_equipped.zig");
 const llm_history = @import("../../../agentic_loop/llm_history.zig");
@@ -676,7 +677,7 @@ test "execSearchTool: a regex finds tools a literal substring could not, end to 
     defer threaded.deinit();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
     try Migration085.up(&db, exec_testing.allocator);
 
     // The literal text "^(list|load|save|search)_" appears in no tool name or
@@ -724,7 +725,7 @@ test "execSearchTool: limit/offset page the matches and report the true total" {
     defer threaded.deinit();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
     try Migration085.up(&db, exec_testing.allocator);
 
     const page1 = try searchToolOutput(
@@ -864,7 +865,7 @@ test "execUseTool: equipping a catalog tool persists the row and reports it back
     defer threaded.deinit();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
     try Migration085.up(&db, exec_testing.allocator);
 
     // `save_memory` is registered and not in the allowlist, so it is in the

@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const helpers = @import("helpers");
@@ -124,9 +125,9 @@ fn useCase(
     // useCase is private, so re-run the same SELECT here.
     var q2 = db.query(allocator,
         \\SELECT id, workspace_item_id, description, instruction, schedule, enabled,
-        \\       IFNULL(last_run_at, ''), IFNULL(next_run_at, ''),
-        \\       last_status, IFNULL(last_error, ''),
-        \\       IFNULL(created_at, ''), IFNULL(updated_at, '')
+        \\       COALESCE(last_run_at, ''), COALESCE(next_run_at, ''),
+        \\       last_status, COALESCE(last_error, ''),
+        \\       COALESCE(created_at, ''), COALESCE(updated_at, '')
         \\FROM workspace_routines WHERE id = ?
     , &[_][]const u8{input.item_id}) catch return error.RefetchFailed;
     defer q2.deinit();
@@ -235,7 +236,7 @@ fn setupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(testing.allocator,
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",

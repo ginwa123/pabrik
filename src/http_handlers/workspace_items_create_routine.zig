@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const helpers = @import("helpers");
@@ -137,7 +138,7 @@ fn useCase(
     // immediately (mirrors the agent_kanbans seed in
     // workspace_items_create_kanban.zig).
     tx.exec(allocator,
-        "INSERT OR IGNORE INTO agent_configs (id, workspace_item_id, item_type) VALUES (?, ?, 'routine')",
+        "INSERT INTO agent_configs (id, workspace_item_id, item_type) VALUES (?, ?, 'routine') ON CONFLICT DO NOTHING",
         &.{ item_id, item_id },
     ) catch return error.DatabaseError;
 
@@ -297,7 +298,7 @@ fn setupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(testing.allocator,
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",

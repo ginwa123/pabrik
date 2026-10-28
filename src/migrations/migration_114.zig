@@ -1,4 +1,5 @@
 const std = @import("std");
+const test_db = @import("../testing/test_db.zig");
 const common = @import("common.zig");
 
 const Backend = common.Backend;
@@ -45,7 +46,7 @@ test "Migration114 adds the attachment columns and leaves existing rows empty" {
     defer db.deinit();
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
 
     try db.exec(alloc,
         \\CREATE TABLE llm_history (
@@ -82,7 +83,7 @@ test "Migration114 replaying is a no-op" {
     defer db.deinit();
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
 
     try db.exec(alloc,
         \\CREATE TABLE llm_history (id TEXT PRIMARY KEY)

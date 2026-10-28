@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const json = std.json;
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const mcp_stdio = pabrikcore.mcp_stdio;
 const mcp_scope = pabrikcore.mcp_scope;
 const guest_mcp = @import("guest_mcp.zig");
@@ -1718,7 +1719,7 @@ fn setupPromptDb() !PromptDbCtx {
     errdefer threaded.deinit();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
     var manager = migration.MigrationManager.init(alloc, &db);
     defer manager.deinit();
     try migration.registerAllMigrations(&manager);

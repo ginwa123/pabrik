@@ -1,5 +1,6 @@
 const std = @import("std");
 const pabrik = @import("pabrikcore");
+const test_db = pabrik.test_db;
 const agent = pabrik.agent;
 const logger_mod = pabrik.loggermod;
 const sqlite = pabrik.sqlite;
@@ -1823,7 +1824,7 @@ fn hookDispatchSetup() !HookDispatchCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -2050,7 +2051,7 @@ fn secretsSetup(allocator: std.mem.Allocator) !SecretsFixture {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // The three shapes `resolveWorkspaceId` walks before giving up.
     // `saveMessage` also runs `UPDATE sessions SET cwd = ?, updated_at = ...`,
@@ -2112,7 +2113,7 @@ fn secretsSetup(allocator: std.mem.Allocator) !SecretsFixture {
         \\  loop_index INTEGER,
         \\  temperature REAL,
         \\  is_thinking INTEGER,
-        \\  created_at_nano INTEGER,
+        \\  created_at_nano BIGINT,
         \\  created_iso TEXT,
         \\  parent_session_id TEXT,
         \\  parent_id TEXT,
@@ -2546,13 +2547,13 @@ fn workerActivityDb(allocator: std.mem.Allocator) !struct { db: database.Db, thr
     errdefer threaded.deinit();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
     try db.exec(allocator,
         \\CREATE TABLE worker (
         \\    id TEXT PRIMARY KEY,
         \\    session_id TEXT,
         \\    working_directory TEXT,
-        \\    last_activity_nano INTEGER,
+        \\    last_activity_nano BIGINT,
         \\    last_activity_description TEXT,
         \\    cancelled INTEGER DEFAULT 0,
         \\    user_id TEXT

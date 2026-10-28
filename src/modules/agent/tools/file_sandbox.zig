@@ -5,6 +5,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const host_fixture = @import("helpers").host_fixture;
@@ -530,7 +531,7 @@ fn setupDb() !TestDb {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     // Column nullability matches production (Migration 046): both columns are
     // nullable, which is why the resolver COALESCEs them.
     try db.exec(alloc,

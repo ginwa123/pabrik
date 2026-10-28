@@ -1,7 +1,16 @@
 //! Send-time expansion of slash-command skill tokens in chat messages.
 
 const std = @import("std");
+/// The tail of the upsert of a session skill row (see `dialect.upsert_verb`).
+const UPSERT_SESSION_SKILL_TAIL: []const u8 = if (dialect.is_postgres)
+    " ON CONFLICT (session_id, skill_name) DO UPDATE SET " ++
+        "content = excluded.content, loaded_at_nano = excluded.loaded_at_nano"
+else
+    "";
+
 const pabrikcore = @import("pabrikcore");
+const dialect = pabrikcore.dialect;
+const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const skills_store = pabrikcore.skills_store;
@@ -202,7 +211,7 @@ fn persistSkill(
     if (session_id.len == 0 or content.len == 0) return;
     db.exec(
         allocator,
-        "INSERT OR REPLACE INTO session_skills (session_id, skill_name, content, loaded_at_nano) VALUES (?, ?, ?, strftime('%s', 'now'))",
+        dialect.upsert_verb ++ " INTO session_skills (session_id, skill_name, content, loaded_at_nano) VALUES (?, ?, ?, strftime('%s', 'now'))" ++ UPSERT_SESSION_SKILL_TAIL,
         &[_][]const u8{ session_id, name, content },
     ) catch |err| {
         std.log.warn("slash_skill_expand: persist '{s}' failed (non-fatal): {s}", .{ name, @errorName(err) });
@@ -228,7 +237,7 @@ fn setupSlashDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     try db.exec(alloc,
         \\CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT NOT NULL, status TEXT DEFAULT 'active', cwd TEXT)
     , &.{});
@@ -248,7 +257,7 @@ fn setupSlashDb() !TestCtx {
     try migration.Migration102CreateSkills.up(&db, alloc);
     try migration.Migration119CreateSkillMetadata.up(&db, alloc);
     try db.exec(alloc,
-        \\CREATE TABLE IF NOT EXISTS session_skills (session_id TEXT NOT NULL, skill_name TEXT NOT NULL, content TEXT NOT NULL, loaded_at_nano INTEGER DEFAULT (strftime('%s', 'now')), PRIMARY KEY (session_id, skill_name))
+        \\CREATE TABLE IF NOT EXISTS session_skills (session_id TEXT NOT NULL, skill_name TEXT NOT NULL, content TEXT NOT NULL, loaded_at_nano BIGINT DEFAULT (strftime('%s', 'now')), PRIMARY KEY (session_id, skill_name))
     , &.{});
     return .{ .db = db, .threaded = threaded };
 }

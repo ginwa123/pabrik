@@ -6,6 +6,7 @@ const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
+const dialect = common.dialect;
 
 pub const Migration081CreateAgentKanbans = struct {
     pub const version: u32 = 81;
@@ -19,7 +20,7 @@ pub const Migration081CreateAgentKanbans = struct {
             \\    description TEXT NOT NULL DEFAULT '',
             \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE
+            ++ comptime dialect.foreignKey("FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE") ++
             \\)
         , &[_][]const u8{});
         try db.exec(allocator,
@@ -36,7 +37,7 @@ pub const Migration081CreateAgentKanbans = struct {
             \\    position INTEGER NOT NULL DEFAULT 0,
             \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            \\    FOREIGN KEY (kanban_id) REFERENCES agent_kanbans(id) ON DELETE CASCADE
+            ++ comptime dialect.foreignKey("FOREIGN KEY (kanban_id) REFERENCES agent_kanbans(id) ON DELETE CASCADE") ++
             \\)
         , &[_][]const u8{});
         try db.exec(allocator,
@@ -55,7 +56,7 @@ pub const Migration081CreateAgentKanbans = struct {
             \\    position INTEGER NOT NULL DEFAULT 0,
             \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            \\    FOREIGN KEY (kanban_id) REFERENCES agent_kanbans(id) ON DELETE CASCADE
+            ++ comptime dialect.foreignKey("FOREIGN KEY (kanban_id) REFERENCES agent_kanbans(id) ON DELETE CASCADE") ++
             \\)
         , &[_][]const u8{});
         try db.exec(allocator,
@@ -72,7 +73,7 @@ pub const Migration081CreateAgentKanbans = struct {
             \\    tool_name TEXT NOT NULL,
             \\    enabled INTEGER NOT NULL DEFAULT 1,
             \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            \\    FOREIGN KEY (kanban_id) REFERENCES agent_kanbans(id) ON DELETE CASCADE
+            ++ comptime dialect.foreignKey("FOREIGN KEY (kanban_id) REFERENCES agent_kanbans(id) ON DELETE CASCADE") ++
             \\)
         , &[_][]const u8{});
         try db.exec(allocator,

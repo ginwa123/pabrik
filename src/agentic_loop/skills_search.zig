@@ -3,6 +3,7 @@
 const std = @import("std");
 const testing = std.testing;
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const progressive_regex = @import("progressive_regex.zig");
 const skills_store = pabrikcore.skills_store;
 
@@ -466,7 +467,7 @@ fn setupStoreDb() !StoreTestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     try migration.Migration102CreateSkills.up(&db, alloc);
     try migration.Migration119CreateSkillMetadata.up(&db, alloc);
     return .{ .db = db, .threaded = threaded };

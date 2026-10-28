@@ -1,4 +1,5 @@
 const std = @import("std");
+const test_db = @import("../testing/test_db.zig");
 const testing = std.testing;
 
 pub const pabrikcore = @import("pabrikcore");
@@ -246,7 +247,7 @@ fn re_read_setupDb() !ReReadTestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     var manager = migration_mod.MigrationManager.init(alloc, &db);
     defer manager.deinit();
@@ -2213,7 +2214,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     var manager = migration.MigrationManager.init(alloc, &db);
     defer manager.deinit();
@@ -2863,13 +2864,13 @@ test "progressive tool search: equipping a built-in makes it appear in the next 
     defer threaded.deinit();
     var db: Backend = .{};
     defer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
     try db.exec(alloc,
         \\CREATE TABLE IF NOT EXISTS session_progressive_tool (
         \\    session_id TEXT NOT NULL,
         \\    tool_name TEXT NOT NULL,
         \\    server_name TEXT NOT NULL DEFAULT '',
-        \\    loaded_at_nano INTEGER NOT NULL DEFAULT 0,
+        \\    loaded_at_nano BIGINT NOT NULL DEFAULT 0,
         \\    PRIMARY KEY (session_id, tool_name)
         \\)
     , &.{});
@@ -2957,13 +2958,13 @@ test "progressive tool search: an MCP tool is invisible until equipped, then app
     defer threaded.deinit();
     var db: Backend = .{};
     defer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
     try db.exec(alloc,
         \\CREATE TABLE IF NOT EXISTS session_progressive_tool (
         \\    session_id TEXT NOT NULL,
         \\    tool_name TEXT NOT NULL,
         \\    server_name TEXT NOT NULL DEFAULT '',
-        \\    loaded_at_nano INTEGER NOT NULL DEFAULT 0,
+        \\    loaded_at_nano BIGINT NOT NULL DEFAULT 0,
         \\    PRIMARY KEY (session_id, tool_name)
         \\)
     , &.{});
@@ -3145,7 +3146,7 @@ test "flushCancelledPartial persists the streamed partial as a cancelled turn" {
 
     var db: Backend = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Run the REAL migrations rather than hand-rolling `llm_history`:
     // `insertLLMHistories` binds ~30 columns plus an `UPDATE sessions`, and a

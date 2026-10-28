@@ -1021,6 +1021,7 @@ test "present_files: a workspace-VM path outside the working directory is reject
 // The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const tools = @import("../../../agentic_loop/tools.zig");
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
@@ -1239,7 +1240,7 @@ fn setupExecEnv(allocator: std.mem.Allocator) !ExecEnv {
     errdefer threaded.deinit();
     var db: pabrikcore.database.Db = .{};
     errdefer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
     // Only the two columns the sandbox root resolver reads; nullable, like
     // production (Migration 046), so the unbound-worktree shape is real.
     try db.exec(allocator,

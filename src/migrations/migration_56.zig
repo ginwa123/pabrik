@@ -6,6 +6,7 @@ const addColumnIfMissing = common.addColumnIfMissing;
 const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
+const dialect = common.dialect;
 
 pub const Migration056UpgradeDesignPagesToFileModel = struct {
     pub const version: u32 = 56;
@@ -27,7 +28,7 @@ pub const Migration056UpgradeDesignPagesToFileModel = struct {
             \\    position INTEGER NOT NULL DEFAULT 0,
             \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE
+            ++ comptime dialect.foreignKey("FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE") ++
             \\)
         , &[_][]const u8{});
 
@@ -58,7 +59,7 @@ pub const Migration056UpgradeDesignPagesToFileModel = struct {
             \\    position INTEGER NOT NULL DEFAULT 0,
             \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            \\    FOREIGN KEY (page_id) REFERENCES design_pages(id) ON DELETE CASCADE
+            ++ comptime dialect.foreignKey("FOREIGN KEY (page_id) REFERENCES design_pages(id) ON DELETE CASCADE") ++
             \\)
         , &[_][]const u8{});
 

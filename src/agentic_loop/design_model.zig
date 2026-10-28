@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const helpers = @import("helpers");
@@ -324,7 +325,7 @@ pub fn listPages(
         \\SELECT dp.id, dp.workspace_item_id, dp.name,
         \\       COALESCE(dp.workspace_item_task_id, ''),
         \\       dp.width, dp.height, dp.position,
-        \\       COALESCE(dp.created_at, ''), COALESCE(dp.updated_at, '')
+        \\       COALESCE(CAST(dp.created_at AS TEXT), ''), COALESCE(CAST(dp.updated_at AS TEXT), '')
         \\FROM design_pages dp
         \\WHERE dp.workspace_item_id = ?
         \\ORDER BY dp.position ASC
@@ -1200,9 +1201,8 @@ pub fn moveElementsWithDescendantsBatch(
                 \\    UNION ALL
                 \\    SELECT dpe.id FROM design_page_elements dpe
                 \\        JOIN subtree s ON dpe.parent_id = s.id
-                \\    LIMIT 10000
                 \\)
-                \\SELECT id FROM subtree
+                \\SELECT id FROM subtree LIMIT 10000
             , &.{ it.element_id, input.page_id });
             defer q.deinit();
             while (try q.next()) |row| {
@@ -1485,9 +1485,8 @@ pub fn moveElementToPage(
             \\    UNION ALL
             \\    SELECT dpe.id FROM design_page_elements dpe
             \\        JOIN subtree s ON dpe.parent_id = s.id
-            \\    LIMIT 10000
             \\)
-            \\SELECT id FROM subtree
+            \\SELECT id FROM subtree LIMIT 10000
         , &.{ input.element_id, input.source_page_id });
         defer q.deinit();
         while (try q.next()) |row| {
@@ -2053,7 +2052,7 @@ pub fn reparentElements(
             \\       name, file_path, type, rotation, fill, stroke,
             \\       stroke_width, corner_radius, opacity,
             \\       text_content, text_style, image_url,
-            \\       COALESCE(created_at, ''), COALESCE(updated_at, '')
+            \\       COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), '')
             \\FROM design_page_elements
             \\WHERE id = ?
         , &.{eid});
@@ -2426,7 +2425,7 @@ pub fn listElements(
         \\       de.corner_radius, de.opacity,
         \\       de.text_content, de.text_style, de.image_url,
         \\       COALESCE(de.parent_id, ''),
-        \\       COALESCE(de.created_at, ''), COALESCE(de.updated_at, '')
+        \\       COALESCE(CAST(de.created_at AS TEXT), ''), COALESCE(CAST(de.updated_at AS TEXT), '')
         \\FROM design_page_elements de
         \\WHERE de.page_id = ?
         \\ORDER BY de.z_index ASC, de.position ASC
@@ -2497,7 +2496,7 @@ pub fn getElement(
         \\       de.corner_radius, de.opacity,
         \\       de.text_content, de.text_style, de.image_url,
         \\       COALESCE(de.parent_id, ''),
-        \\       COALESCE(de.created_at, ''), COALESCE(de.updated_at, '')
+        \\       COALESCE(CAST(de.created_at AS TEXT), ''), COALESCE(CAST(de.updated_at AS TEXT), '')
         \\FROM design_page_elements de
         \\WHERE de.id = ?
     , &.{element_id});
@@ -2582,7 +2581,7 @@ pub fn getPageWithElements(
         \\SELECT dp.id, dp.workspace_item_id, dp.name,
         \\       COALESCE(dp.workspace_item_task_id, ''),
         \\       dp.width, dp.height, dp.position,
-        \\       COALESCE(dp.created_at, ''), COALESCE(dp.updated_at, '')
+        \\       COALESCE(CAST(dp.created_at AS TEXT), ''), COALESCE(CAST(dp.updated_at AS TEXT), '')
         \\FROM design_pages dp
         \\WHERE dp.id = ?
     , &.{page_id});
@@ -2946,8 +2945,13 @@ pub fn deletePage(
         }
     }
 
-    // Delete the page row. With FK enforcement ON (the test setup), the
-    // element rows are cascade-deleted.
+    // The element rows go first: sqlite runs with `foreign_keys` off, so the
+    // schema's `ON DELETE CASCADE` never fires there (and postgres, at parity,
+    // declares no FK at all).
+    try db.exec(allocator,
+        "DELETE FROM design_page_elements WHERE page_id = ?",
+        &.{page_id});
+
     try db.exec(allocator,
         "DELETE FROM design_pages WHERE id = ?",
         &.{page_id});
@@ -3079,7 +3083,7 @@ fn setupGeometryBatchDbAndItem() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
@@ -3353,7 +3357,7 @@ fn setupReparentDbAndItem() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
@@ -3779,7 +3783,7 @@ fn setupReparentBatchDbAndItem() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
@@ -4222,7 +4226,7 @@ fn setupMoveBatchDbAndItem() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
@@ -4826,7 +4830,7 @@ fn setupMoveToPageDbAndItem() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
@@ -5320,7 +5324,7 @@ fn setupUpdatePageDbAndItem() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
@@ -5481,7 +5485,7 @@ fn addElementParentSetupDbAndItem() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
@@ -5785,12 +5789,10 @@ fn deletePageSetupDb() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
-    // SQLite has FK enforcement OFF by default; the production code's comment
-    // on deletePage says it relies on `ON DELETE CASCADE` to remove the
-    // element rows, so we enable FK enforcement in this test to match the
-    try db.exec(alloc, "PRAGMA foreign_keys = ON", &.{});
+    // `deletePage` removes the element rows itself, so this test asserts the
+    // same thing on both engines and needs no sqlite-only pragma.
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
@@ -6208,7 +6210,7 @@ fn deleteParentSetupDbAndItem() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
@@ -6461,7 +6463,7 @@ fn groupSetupDbAndItem() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
@@ -6796,7 +6798,7 @@ fn parentIdSetupDbAndItem() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
@@ -7043,7 +7045,7 @@ fn reorderSetupDb() !struct {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
@@ -7326,7 +7328,7 @@ fn setElementParentSetupDbAndItem() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
@@ -7603,7 +7605,7 @@ fn designModelSetupDbAndItem() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // workspace_items. `path` is required by setDesignPage (returns
     // ItemPathMissing if NULL/empty).

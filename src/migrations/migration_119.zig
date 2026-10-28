@@ -1,4 +1,5 @@
 const std = @import("std");
+const test_db = @import("../testing/test_db.zig");
 const common = @import("common.zig");
 const frontmatter = @import("../agentic_loop/skill_frontmatter.zig");
 
@@ -23,7 +24,7 @@ pub const Migration119CreateSkillMetadata = struct {
             \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    UNIQUE (skill_id, key),
-            \\    FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
+            ++ comptime dialect.foreignKey("FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE") ++
             \\)
         , &[_][]const u8{});
 
@@ -88,7 +89,7 @@ fn setupDb() !TestCtx {
     errdefer threaded.deinit();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
     try migration.Migration102CreateSkills.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
