@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const database = pabrikcore.database;
 /// `frontmatter.parse` is used HERE and in the write tools: this is the one
 /// moment the promoted keys move out of the body and into their columns, and
@@ -612,7 +613,7 @@ fn setupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try migration.Migration102CreateSkills.up(&db, testing.allocator);
     try migration.Migration119CreateSkillMetadata.up(&db, testing.allocator);

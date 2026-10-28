@@ -2,6 +2,7 @@
 //! to a kanban workspace-item WITH an `agent_kanbans` row (Migration 081).
 
 const std = @import("std");
+const test_db = @import("pabrikcore").test_db;
 const sqlite = @import("pabrikcore").sqlite;
 const agent_kanban_db = @import("../models/agent_kanban.db.zig");
 
@@ -185,7 +186,7 @@ fn setupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
         \\    id TEXT PRIMARY KEY,

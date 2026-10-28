@@ -3,6 +3,7 @@
 //! `skill_metadata` projects the fence in `content`; it is never authored.
 
 const std = @import("std");
+const test_db = @import("pabrikcore").test_db;
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
 const helpers = @import("helpers");
@@ -472,8 +473,10 @@ fn projectMetadata(
         defer allocator.free(id);
 
         tx.exec(allocator,
-            \\INSERT OR REPLACE INTO skill_metadata (id, skill_id, key, value, created_at, updated_at)
+            \\INSERT INTO skill_metadata (id, skill_id, key, value, created_at, updated_at)
             \\VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            \\ON CONFLICT (id) DO UPDATE SET skill_id = excluded.skill_id, key = excluded.key,
+            \\  value = excluded.value, updated_at = excluded.updated_at
         , &[_][]const u8{ id, skill_id, pair.key, pair.value }) catch
             return error.WriteFailed;
     }
@@ -552,8 +555,10 @@ pub fn replaceAssets(
         // deleted, so a collision can only be a duplicate `rel_path` inside
         // ONE batch, where the last writer is the right answer.
         tx.exec(allocator,
-            \\INSERT OR REPLACE INTO skill_assets (id, skill_id, rel_path, content, created_at)
+            \\INSERT INTO skill_assets (id, skill_id, rel_path, content, created_at)
             \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), CURRENT_TIMESTAMP)
+            \\ON CONFLICT (id) DO UPDATE SET skill_id = excluded.skill_id, rel_path = excluded.rel_path,
+            \\  content = excluded.content
         , &[_][]const u8{ asset_id, row.id, a.rel_path, a.content }) catch
             return error.WriteFailed;
     }
@@ -627,7 +632,7 @@ fn setupStoreDb() !StoreTestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     errdefer db.deinit();
     try migration.Migration102CreateSkills.up(&db, alloc);
     try migration.Migration119CreateSkillMetadata.up(&db, alloc);

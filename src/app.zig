@@ -235,8 +235,8 @@ pub const App = struct {
 
         // (no debug log — production code)
 
-        const session_sql = "INSERT OR IGNORE INTO sessions (id, name, status, cwd, created_at, updated_at, selected_profile_model, is_auto_retry_until_stop, user_id) " ++
-            "VALUES (?, ?, 'active', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?)";
+        const session_sql = "INSERT INTO sessions (id, name, status, cwd, created_at, updated_at, selected_profile_model, is_auto_retry_until_stop, user_id) " ++
+            "VALUES (?, ?, 'active', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?) ON CONFLICT DO NOTHING";
         const copy_session_name = try allocator.dupe(u8, session_name);
         const copy_cwd = try allocator.dupe(u8, effective_cwd);
         const copy_profile = if (effective_profile.len > 0) try allocator.dupe(u8, effective_profile) else "";

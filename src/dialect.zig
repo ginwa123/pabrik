@@ -63,6 +63,10 @@ pub const tables_source: []const u8 = if (is_postgres)
 else
     "sqlite_master";
 
+/// A single-row upsert's verb: sqlite replaces the conflicting row, postgres
+/// needs `ON CONFLICT (…) DO UPDATE SET …` appended instead.
+pub const upsert_verb: []const u8 = if (is_postgres) "INSERT" else "INSERT OR REPLACE";
+
 /// An `INSERT` that must land once and silently skip a duplicate: sqlite
 /// spells it `INSERT OR IGNORE`, postgres puts `conflict_ignore` at the end.
 /// Both halves are needed — sqlite cannot parse `ON CONFLICT` after a SELECT.
@@ -85,6 +89,75 @@ pub const enable_foreign_keys: []const u8 = if (is_postgres) "" else "PRAGMA for
 /// Whether this backend can spell `MATCH`/`snippet()`/`rank` — the FTS5
 /// surface. Postgres reaches full text search through `tsvector` instead.
 pub const has_fts5: bool = !is_postgres;
+
+/// Postgres spellings of sqlite's two time functions: ~260 statements say
+/// `datetime('now')` or `strftime('%s', x)` and mean "now"/"epoch", not a
+/// dialect choice. Empty on sqlite, which has them already.
+pub const sqlite_time_functions = if (is_postgres) [_][]const u8{
+    \\CREATE OR REPLACE FUNCTION datetime(ts text) RETURNS timestamp
+    \\LANGUAGE sql STABLE AS $fn$
+    \\  SELECT CASE
+    \\    WHEN lower(btrim(ts)) IN ('now', 'current_timestamp')
+    \\      THEN (now() AT TIME ZONE 'UTC')
+    \\    ELSE ts::timestamp
+    \\  END
+    \\$fn$
+    ,
+    \\CREATE OR REPLACE FUNCTION datetime(ts text, modifier text) RETURNS timestamp
+    \\LANGUAGE sql STABLE AS $fn$
+    \\  SELECT CASE
+    \\    WHEN lower(btrim(modifier)) = 'unixepoch'
+    \\      THEN (to_timestamp(ts::double precision) AT TIME ZONE 'UTC')
+    \\    WHEN lower(btrim(ts)) IN ('now', 'current_timestamp')
+    \\      THEN ((now() + modifier::interval) AT TIME ZONE 'UTC')
+    \\    ELSE ts::timestamp
+    \\  END
+    \\$fn$
+    ,
+    \\CREATE OR REPLACE FUNCTION strftime(fmt text, ts text, modifier text) RETURNS text
+    \\LANGUAGE sql STABLE AS $fn$
+    \\  SELECT CASE
+    \\    WHEN lower(btrim(modifier)) = 'unixepoch'
+    \\      THEN to_char(to_timestamp(ts::double precision) AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')
+    \\    ELSE ts
+    \\  END
+    \\$fn$
+    ,
+    \\CREATE OR REPLACE FUNCTION strftime(fmt text, ts numeric, modifier text) RETURNS text
+    \\LANGUAGE sql STABLE AS $fn$
+    \\  SELECT to_char(to_timestamp(ts::double precision) AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')
+    \\$fn$
+    ,
+    \\CREATE OR REPLACE FUNCTION strftime(fmt text, ts text) RETURNS text
+    \\LANGUAGE sql STABLE AS $fn$
+    \\  SELECT CASE
+    \\    WHEN fmt = '%s' AND lower(btrim(ts)) IN ('now', 'current_timestamp')
+    \\      THEN (extract(epoch FROM now()))::bigint::text
+    \\    WHEN fmt = '%s'
+    \\      THEN (extract(epoch FROM ts::timestamptz))::bigint::text
+    \\    WHEN lower(btrim(ts)) IN ('now', 'current_timestamp')
+    \\      THEN to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')
+    \\    ELSE ts
+    \\  END
+    \\$fn$
+    ,
+    \\CREATE OR REPLACE FUNCTION strftime(fmt text, ts timestamp) RETURNS text
+    \\LANGUAGE sql STABLE AS $fn$
+    \\  SELECT CASE
+    \\    WHEN fmt = '%s' THEN (extract(epoch FROM ts))::bigint::text
+    \\    ELSE to_char(ts, 'YYYY-MM-DD HH24:MI:SS')
+    \\  END
+    \\$fn$
+    ,
+    \\CREATE OR REPLACE FUNCTION strftime(fmt text) RETURNS text
+    \\LANGUAGE sql STABLE AS $fn$
+    \\  SELECT CASE
+    \\    WHEN fmt = '%s' THEN (extract(epoch FROM now()))::bigint::text
+    \\    ELSE to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')
+    \\  END
+    \\$fn$
+    ,
+} else [_][]const u8{};
 
 fn count(db: DbOrTx, allocator: std.mem.Allocator, sql: []const u8, argv: []const []const u8) !i64 {
     var row = try db.queryRow(allocator, sql, argv);

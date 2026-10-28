@@ -110,7 +110,7 @@ fn useCase(
     // DEFAULT_KANBAN_TOOLS) so a fresh board is immediately usable.
     tx.exec(
         allocator,
-        "INSERT OR IGNORE INTO agent_configs (id, workspace_item_id, item_type) VALUES (?, ?, 'kanban')",
+        "INSERT INTO agent_configs (id, workspace_item_id, item_type) VALUES (?, ?, 'kanban') ON CONFLICT DO NOTHING",
         &.{ item_id, item_id },
     ) catch return error.SeedFailed;
     tools_equipped.seedDefaultKanbanTools(allocator, .{ .tx = &tx }, item_id, input.config_tools) catch return error.SeedFailed;

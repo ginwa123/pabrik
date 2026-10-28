@@ -4,6 +4,7 @@
 const std = @import("std");
 const http_response = @import("http_response.zig");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 
 pub const SessionReorderPinnedError = error{
@@ -84,7 +85,7 @@ test "reorderPinnedSessions assigns DESC positions in display order" {
     const io = threaded.io();
     var db: pabrikcore.database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     try db.exec(alloc,
         \\CREATE TABLE sessions (
         \\  id TEXT PRIMARY KEY,

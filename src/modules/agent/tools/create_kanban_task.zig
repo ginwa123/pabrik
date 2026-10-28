@@ -3,9 +3,19 @@
 //! `task_create.zig::createStandardTask` exactly): 1.
 
 const std = @import("std");
+/// The tail of the upsert of a task's `kanban` row: sqlite's `INSERT OR
+/// REPLACE` replaces the row, postgres assigns the two columns instead.
+const UPSERT_KANBAN_TAIL: []const u8 = if (dialect.is_postgres)
+    " ON CONFLICT (workspace_item_task_id) DO UPDATE SET " ++
+        "kanban_column_id = excluded.kanban_column_id, kanban_position = excluded.kanban_position"
+else
+    "";
+
 const schemas = @import("schemas.zig");
 const AgentTool = schemas.AgentTool;
 const pabrikcore = @import("pabrikcore");
+const dialect = pabrikcore.dialect;
+const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const helpers = @import("helpers");
@@ -522,7 +532,7 @@ pub fn executeKanbanTaskToJSON(
     defer allocator.free(position_str);
     db.exec(
         allocator,
-        "INSERT OR REPLACE INTO kanban (workspace_item_task_id, kanban_column_id, kanban_position) VALUES (?, ?, ?)",
+        dialect.upsert_verb ++ " INTO kanban (workspace_item_task_id, kanban_column_id, kanban_position) VALUES (?, ?, ?)" ++ UPSERT_KANBAN_TAIL,
         &[_][]const u8{ task_id, target_column_id, position_str },
     ) catch |err| {
         std.log.warn("create_kanban_task: kanban auto-assign failed (non-fatal): {s}", .{@errorName(err)});
@@ -573,8 +583,8 @@ pub fn executeKanbanTaskToJSON(
 
         db.exec(
             allocator,
-            "INSERT OR IGNORE INTO sessions (id, name, status, cwd, created_at, updated_at, selected_profile_model, is_auto_retry_until_stop) " ++
-                "VALUES (?, ?, 'active', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?)",
+            "INSERT INTO sessions (id, name, status, cwd, created_at, updated_at, selected_profile_model, is_auto_retry_until_stop) " ++
+                "VALUES (?, ?, 'active', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?) ON CONFLICT DO NOTHING",
             &[_][]const u8{
                 task_id,
                 trimmed_name,
@@ -691,7 +701,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(alloc,
         \\CREATE TABLE workspaces (

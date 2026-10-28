@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const auth_common = @import("auth_common.zig");
@@ -79,7 +80,7 @@ pub fn insertWorkspace(
     // on `workspaces` is kept in sync deliberately — it is the rollback path.
     _ = try tx.exec(
         allocator,
-        "INSERT OR IGNORE INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, 'owner')",
+        "INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, 'owner') ON CONFLICT DO NOTHING",
         &[_][]const u8{ workspace_id, member },
     );
 
@@ -170,7 +171,7 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // `workspaces` in its Migration 027 + 077 shape: `position` drives the
     // listing order and `user_id` is the pre-Migration-100 owner column.

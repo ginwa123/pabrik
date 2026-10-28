@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const pabrik_core = @import("pabrikcore");
+const test_db = pabrik_core.test_db;
 const gserverz = pabrik_core.gserverz;
 const ai_mod = pabrik_core.ai_mod;
 const auth_common = @import("auth_common.zig");
@@ -602,7 +603,7 @@ test "parseChannels: trims whitespace around tokens" {
 
 fn testDb(alloc: std.mem.Allocator) !pabrikcore.database.Db {
     var db: pabrikcore.database.Db = .{};
-    try db.init(std.testing.io, ":memory:");
+    try test_db.openMemory(&db, std.testing.io);
     try db.exec(alloc, "CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT)", &.{});
     try db.exec(alloc, "CREATE TABLE worker (id TEXT PRIMARY KEY, session_id TEXT)", &.{});
     try db.exec(alloc, "INSERT INTO sessions (id, user_id) VALUES ('s_a','user_a'), ('s_b','user_b')", &.{});

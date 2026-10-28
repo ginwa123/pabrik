@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 
 /// Load the raw `config_json` for a user. Returns null when the user
 /// has no row, the column is NULL, or it is empty (all mean
@@ -71,7 +72,7 @@ fn setupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     // Migration077 adds user_id to pre-existing workspaces/sessions
     // tables — stub them so the ALTER has a target.
     try db.exec(

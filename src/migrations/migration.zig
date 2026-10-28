@@ -1,5 +1,6 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const helpers = @import("helpers");
 const common = @import("common.zig");
 
@@ -131,6 +132,7 @@ const migration_117 = @import("migration_117.zig");
 const migration_118 = @import("migration_118.zig");
 const migration_119 = @import("migration_119.zig");
 const migration_120 = @import("migration_120.zig");
+const migration_121 = @import("migration_121.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -253,6 +255,7 @@ pub const Migration117DropLegacyAgentConfigTables = migration_117.Migration117Dr
 pub const Migration118AddWorkerRunToken = migration_118.Migration118AddWorkerRunToken;
 pub const Migration119CreateSkillMetadata = migration_119.Migration119CreateSkillMetadata;
 pub const Migration120GrantSetSkillMetadata = migration_120.Migration120GrantSetSkillMetadata;
+pub const Migration121AddSqliteTimeFunctions = migration_121.Migration121AddSqliteTimeFunctions;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -483,6 +486,9 @@ pub const allMigrations: []const Migration = &.{
     // has `edit_skill`. A new tool NAME does not reach an existing agent: its
     // allowlist rows are already seeded, so only a migration can add one.
     .{ .version = Migration120GrantSetSkillMetadata.version, .name = Migration120GrantSetSkillMetadata.name, .up = Migration120GrantSetSkillMetadata.up },
+    // Migration 121 — `datetime(...)` / `strftime(...)` as postgres functions, so the ~260 statements
+    // that already spell them stay identical on both engines (a no-op on sqlite).
+    .{ .version = Migration121AddSqliteTimeFunctions.version, .name = Migration121AddSqliteTimeFunctions.name, .up = Migration121AddSqliteTimeFunctions.up },
 };
 
 /// Register all migrations with a MigrationManager
@@ -616,7 +622,7 @@ fn setupDb() !TestCtx {
     const io = threaded.io();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -2607,7 +2613,7 @@ fn setupDb009() !struct {
 
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Replay migrations 001–008 in version order. Migration 001 itself
     // creates the table; the rest are ADD COLUMN. This mirrors what a
@@ -2725,7 +2731,7 @@ fn setupDb044() !struct {
 
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Mirror the state left by Migration 034 exactly — same columns,
     // same NULL/NOT NULL semantics, same default timestamps. This is
@@ -2932,7 +2938,7 @@ fn setupDb048() !struct {
 
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Mirror the state left by Migration 001 exactly — same columns, same
     // NULL/NOT NULL semantics.
@@ -3029,7 +3035,7 @@ fn setupDb049() !struct {
 
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // workspace_item_tasks — parent of the routines.task_id FK.
     try db.exec(alloc,
@@ -3199,7 +3205,7 @@ fn setupDb046() !struct {
 
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Mirror the state left by Migration 017 + 022 + 025 + 029 + 040 exactly
     // — same columns, same NULL/NOT NULL semantics, same default timestamps.
@@ -3294,7 +3300,7 @@ fn setupDb051() !struct {
 
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Mirror the state left by Migration 028 + 034 — same column names
     // that Migration 051's FK references and ALTER TABLE statements
@@ -3384,7 +3390,7 @@ fn setupDb053() !struct { db: Backend, threaded: std.Io.Threaded } {
     const io = threaded.io();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     // Migration 051 needs `workspace_items` (FK target) and
     // `workspace_item_tasks` (ALTER TABLE target).
     try db.exec(alloc,
@@ -3486,7 +3492,7 @@ fn setupDbWithoutImageUrl054() !TestCtx054 {
     const io = threaded.io();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     try Migration018CreateSessionQueueMessages.up(&db, alloc);
     return .{ .db = db, .threaded = threaded };
 }
@@ -3713,7 +3719,7 @@ fn setupDb057() !struct {
 
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // workspace_items: required for the design_pages FK reference
     try db.exec(alloc,
@@ -3866,7 +3872,7 @@ fn setupDbWithLlmHistory058() !TestCtx058 {
     const io = threaded.io();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     try Migration001CreateLLMHistory.up(&db, alloc);
     return .{ .db = db, .threaded = threaded };
 }
@@ -4121,7 +4127,7 @@ fn setupDbWithLlmHistory059() !TestCtx059 {
     const io = threaded.io();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     try Migration001CreateLLMHistory.up(&db, alloc);
     return .{ .db = db, .threaded = threaded };
 }
@@ -4325,7 +4331,7 @@ fn setupDb060() !TestCtx060 {
     const io = threaded.io();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     try Migration001CreateLLMHistory.up(&db, alloc);
     // Migration 060 expects `created_iso` to exist. Migration 059
     // creates it (with a backfill that touches the existing rows).
@@ -4453,7 +4459,7 @@ fn setupDb061() !TestCtx061 {
     const io = threaded.io();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     try Migration001CreateLLMHistory.up(&db, alloc);
     try Migration059AddCreatedIso.up(&db, alloc);
     return .{ .db = db, .threaded = threaded };
@@ -4603,7 +4609,7 @@ fn setupDb062() !TestCtx062 {
     const io = threaded.io();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     // workspace_items (FK target for workspace_item_tasks.workspace_item_id)
     // and workspace_item_tasks itself must exist before migration 061 can run
     // — production walks migrations 001 → 061 in order, so by the time 061
@@ -4955,7 +4961,7 @@ fn setupDb063() !TestCtx063 {
     const io = threaded.io();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     // Minimal v1 sessions table — the canonical pre-Migration-063 schema
     // only declares id/name/status (Migration 017 line 263-269). The
     // migration must add the new columns on top of this.
@@ -5110,7 +5116,7 @@ fn setupDb063rt() !TestCtx063rt {
     const io = threaded.io();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Canonical post-Migration-063 schema.
     try db.exec(alloc,
@@ -5292,7 +5298,7 @@ fn setupDb064() !struct {
 
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     return .{ .db = db, .threaded = threaded };
 }
@@ -5388,7 +5394,7 @@ fn setupDb065() !TestCtx065 {
     const io = threaded.io();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     // workspace_items (FK target for workspace_item_tasks.workspace_item_id)
     // and workspace_item_tasks itself must exist before the migration can
     // run.
@@ -5589,7 +5595,7 @@ fn setupDb066() !TestCtx066 {
     const io = threaded.io();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // workspace_items + workspace_item_tasks: FK targets + chat-session table
     // that the backfill creates new rows in.
@@ -5880,7 +5886,7 @@ fn setupDb067() !TestCtx067 {
     const io = threaded.io();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // workspace_items (FK target for workspace_item_tasks.workspace_item_id)
     // and workspace_item_tasks itself must exist before the migration can
@@ -6084,7 +6090,7 @@ fn setupDb068() !TestCtx068 {
     const io = threaded.io();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Minimal `llm_history` schema matching the v1 shape — no `is_loading`
     // column yet (that's exactly what the migration adds).
@@ -6278,7 +6284,7 @@ fn setupDb069() !TestCtx069 {
     const io = threaded.io();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Minimal `workspace_item_tasks` schema matching the pre-Migration-069
     // shape — no `image_urls` column yet (that's exactly what the migration
@@ -6447,7 +6453,7 @@ fn setupDb070() !TestCtx070 {
     const io = threaded.io();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -6701,7 +6707,7 @@ fn setupDb071() !TestCtx071 {
     const io = threaded.io();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Minimal `workspace_item_tasks` schema matching the pre-Migration-070
     // shape — no `cwd` column yet (that's exactly what the migration adds).
@@ -7012,7 +7018,7 @@ fn setupDb072() !TestCtx072 {
     const io = threaded.io();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // workspace_items — FK target for workspace_item_tasks.workspace_item_id
     try db.exec(alloc,
@@ -7435,7 +7441,7 @@ fn setupDb073() !TestCtx073 {
     const io = threaded.io();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -7612,7 +7618,7 @@ fn setupDb074() !TestCtx074 {
     const io = threaded.io();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     var manager = MigrationManager.init(alloc, &db);
     defer manager.deinit();
@@ -7779,7 +7785,7 @@ fn setupDb075() !TestCtx075 {
     const io = threaded.io();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     var manager = MigrationManager.init(alloc, &db);
     defer manager.deinit();
@@ -8057,7 +8063,7 @@ test "Migration075 runs cleanly via registerAllMigrations + runMigrations" {
     const io = threaded.io();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     var manager = MigrationManager.init(alloc, &db);
     defer manager.deinit();
@@ -8231,7 +8237,7 @@ fn setupDb077() !TestCtx077 {
     const io = threaded.io();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     var manager = MigrationManager.init(alloc, &db);
     defer manager.deinit();
@@ -8624,7 +8630,7 @@ fn setupDb082() !TestCtx082 {
     const io = threaded.io();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     try db.exec(alloc,
         \\CREATE TABLE sessions (
         \\    id TEXT PRIMARY KEY,

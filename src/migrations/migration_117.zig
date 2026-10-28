@@ -1,4 +1,5 @@
 const std = @import("std");
+const test_db = @import("../testing/test_db.zig");
 const common = @import("common.zig");
 const loggermod = @import("../modules/logger/Logger.zig");
 
@@ -87,7 +88,7 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
     errdefer threaded.deinit();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT, name TEXT, path TEXT, position INTEGER)
     , &[_][]const u8{});

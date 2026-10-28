@@ -8,6 +8,7 @@ const ToolParameters = schemas.ToolParameters;
 const AgentToolFunction = schemas.AgentToolFunction;
 const AgentTool = schemas.AgentTool;
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const skills_store = pabrikcore.skills_store;
 const workspace_scope = pabrikcore.workspace_scope;
 /// `skills.zig` next to this file is the BODY layer (bundle
@@ -1275,7 +1276,7 @@ fn setupSkillsDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     try db.exec(alloc,
         \\CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT NOT NULL, status TEXT DEFAULT 'active', cwd TEXT)
     , &.{});
@@ -2481,7 +2482,7 @@ fn setupDb() !exec_TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     try db.exec(alloc,
         \\CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT NOT NULL, status TEXT DEFAULT 'active', cwd TEXT)
     , &.{});

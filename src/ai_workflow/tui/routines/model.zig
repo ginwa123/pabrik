@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const Backend = pabrikcore.database.Db;
 const Scheduler = @import("Scheduler.zig");
 
@@ -243,7 +244,7 @@ fn setupDb() !struct {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Migration 084's UPDATE touches workspace_item_tasks, and the
     // FK references workspace_items — both must exist.

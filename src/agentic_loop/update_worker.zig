@@ -1,5 +1,6 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
@@ -88,7 +89,7 @@ pub fn updateWorker(obj: UpsertWorkerInput) !void {
     // `INSERT ...
     try db.exec(
         allocator,
-        "INSERT OR IGNORE INTO sessions (id, name, status, created_at, updated_at) VALUES (?, '', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        "INSERT INTO sessions (id, name, status, created_at, updated_at) VALUES (?, '', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) ON CONFLICT DO NOTHING",
         &.{session_id},
     );
     try db.exec(
@@ -143,7 +144,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     try db.exec(alloc,
         \\CREATE TABLE worker (
         \\    id TEXT PRIMARY KEY,
@@ -341,7 +342,7 @@ test "updateWorker names cancelled on INSERT, so a default-less column still sta
     defer threaded.deinit();
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
 
     // `cancelled INTEGER NOT NULL` with NO default.
     try db.exec(alloc,

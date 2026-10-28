@@ -1,4 +1,5 @@
 const std = @import("std");
+const test_db = @import("../testing/test_db.zig");
 const common = @import("common.zig");
 
 const Backend = common.Backend;
@@ -28,7 +29,7 @@ fn setupDb(alloc: std.mem.Allocator) !struct { db: Backend, threaded: std.Io.Thr
     errdefer threaded.deinit();
     var db: Backend = .{};
     errdefer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
     try db.exec(alloc,
         \\CREATE TABLE worker (id TEXT PRIMARY KEY, session_id TEXT NOT NULL)
     , &[_][]const u8{});

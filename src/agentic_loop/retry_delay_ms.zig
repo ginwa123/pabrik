@@ -2,6 +2,7 @@ const std = @import("std");
 const testing = std.testing;
 const builtin = @import("builtin");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const isWorkerCancelled = @import("is_worker_cancelled.zig").isWorkerCancelled;
 
 const logger_mod = pabrikcore.loggermod;
@@ -103,7 +104,7 @@ fn setupDb() !struct {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     try db.exec(alloc, "CREATE TABLE workers (id TEXT PRIMARY KEY)", &.{});
     return .{ .db = db, .threaded = threaded };
 }

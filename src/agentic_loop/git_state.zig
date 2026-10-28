@@ -5,6 +5,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const run_captured = @import("helpers").run_captured;
@@ -578,7 +579,7 @@ fn canaryRepo() !CanaryRepo {
     errdefer threaded.deinit();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
     try db.exec(allocator,
         \\CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT NOT NULL, status TEXT, cwd TEXT, workspace_id TEXT)
     , &.{});

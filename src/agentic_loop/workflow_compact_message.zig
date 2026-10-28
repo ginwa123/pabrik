@@ -3,6 +3,7 @@
 const model_catalog = @import("model_catalog.zig");
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const mark_history_not_for_llmrun = @import("markHistoryNotForLLMRun.zig").markHistoryNotForLLMRun;
 const migration = @import("../migrations/migration.zig");
 
@@ -806,7 +807,7 @@ fn setupDb() !struct {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     var manager = migration.MigrationManager.init(alloc, &db);
     defer manager.deinit();
@@ -2089,7 +2090,7 @@ fn setupDbForEnrichmentTest() !struct {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     try db.exec(
         alloc,
@@ -2811,7 +2812,7 @@ fn envelopeSetupDb() !struct {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     var manager = migration.MigrationManager.init(alloc, &db);
     defer manager.deinit();

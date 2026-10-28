@@ -356,7 +356,7 @@ pub fn insertTool(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8
 /// seeding path, which is idempotent by design.
 pub fn insertToolIgnoreDuplicate(allocator: std.mem.Allocator, db: DbOrTx, id: []const u8, agent_id: []const u8, tool_name: []const u8) !void {
     try db.exec(allocator,
-        "INSERT OR IGNORE INTO agent_config_tools (id, config_id, tool_name, enabled, created_at) VALUES (?, ?, ?, 1, datetime('now'))",
+        "INSERT INTO agent_config_tools (id, config_id, tool_name, enabled, created_at) VALUES (?, ?, ?, 1, datetime('now')) ON CONFLICT DO NOTHING",
         &.{ id, agent_id, tool_name },
     );
 }

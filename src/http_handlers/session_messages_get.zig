@@ -1,6 +1,7 @@
 const std = @import("std");
 const http_response = @import("http_response.zig");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const session_llm_config = @import("../agentic_loop/session_llm_config.zig");
 const gserverz = pabrikcore.gserverz;
 const helpers = @import("helpers");
@@ -183,7 +184,7 @@ fn setupDb() !TestCtx {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // llm_history — only the columns the production SELECT list reads.
     try db.exec(alloc,

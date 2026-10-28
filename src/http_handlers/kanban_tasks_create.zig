@@ -250,8 +250,8 @@ pub fn kanbanTasksCreateHandler(
 
         sqlite_db.exec(
             allocator,
-            "INSERT OR IGNORE INTO sessions (id, name, status, cwd, workspace_id, created_at, updated_at, selected_profile_model, is_auto_retry_until_stop, user_id) " ++
-                "VALUES (?, ?, 'active', ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?)",
+            "INSERT INTO sessions (id, name, status, cwd, workspace_id, created_at, updated_at, selected_profile_model, is_auto_retry_until_stop, user_id) " ++
+                "VALUES (?, ?, 'active', ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?) ON CONFLICT DO NOTHING",
             &[_][]const u8{
                 standard_result.task_id,
                 standard_result.name,

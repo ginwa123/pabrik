@@ -1,5 +1,6 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const LLMHistory = @import("llm_history_row.zig").LLMHistory;
 const SkillInfo = @import("session_skills.zig").SkillInfo;
 const onEventSendLLMHistory = @import("sse_on_event_send_llm_history.zig").onEventSendLLMHistory;
@@ -311,7 +312,7 @@ fn setupHistoryDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const io = threaded.io();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     try db.exec(alloc,
         \\CREATE TABLE llm_history (
         \\    id TEXT PRIMARY KEY,

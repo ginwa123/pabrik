@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const database = pabrikcore.database;
 const mcp_stdio = pabrikcore.mcp_stdio;
 const mcp_scope = pabrikcore.mcp_scope;
@@ -324,7 +325,7 @@ fn testCtx() !TestCtx {
     errdefer threaded.deinit();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
     try db.exec(testing.allocator,
         \\CREATE TABLE workspaces (id TEXT PRIMARY KEY, is_vm INTEGER NOT NULL DEFAULT 0)
     , &.{});

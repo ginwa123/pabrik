@@ -3,6 +3,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const process_status = @import("helpers").process_status;
@@ -626,7 +627,7 @@ fn setupCtx() !TestCtx {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
 
     // Walk every production migration (001 → latest).
     var manager = migration.MigrationManager.init(alloc, &db);
@@ -961,7 +962,7 @@ test "cleanupStaleBackgroundProcesses returns the DB error when the session_back
 
     var db: database.Db = .{};
     defer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     // NO CREATE TABLE — the query will fail with "no such table".
 
     const result = cleanupStaleBackgroundProcesses(.{

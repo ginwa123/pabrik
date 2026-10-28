@@ -175,7 +175,7 @@ pub fn updateDescription(allocator: std.mem.Allocator, db: DbOrTx, workspace_ite
 /// "configured", and re-enabling must not trip UNIQUE(workspace_item_id).
 pub fn insertIgnoreDuplicate(allocator: std.mem.Allocator, db: DbOrTx, id: []const u8, workspace_item_id: []const u8) !void {
     try db.exec(allocator,
-        "INSERT OR IGNORE INTO agent_configs (id, workspace_item_id, item_type) VALUES (?, ?, 'kanban')",
+        "INSERT INTO agent_configs (id, workspace_item_id, item_type) VALUES (?, ?, 'kanban') ON CONFLICT DO NOTHING",
         &.{ id, workspace_item_id },
     );
 }

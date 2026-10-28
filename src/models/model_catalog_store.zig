@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const dialect = pabrikcore.dialect;
@@ -282,7 +283,7 @@ fn setupDb() !TestCtx {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(io, ":memory:");
+    try test_db.openMemory(&db, io);
     try Migration106.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }

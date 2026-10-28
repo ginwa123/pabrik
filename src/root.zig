@@ -19,6 +19,20 @@ pub const std_options: std.Options = .{
     .http_disable_tls = false,
 };
 
+/// A postgres test binary must REPORT a panic, not wedge: this host's DWARF
+/// unwinder can stall on the self-debug-info lock, turning one failing test
+/// into a hung shard. `PABRIK_TEST_STACK_TRACE=1` asks for the full trace back.
+fn postgresTestPanic(msg: []const u8, first_trace_addr: ?usize) noreturn {
+    if (std.c.getenv("PABRIK_TEST_STACK_TRACE") != null) std.debug.defaultPanic(msg, first_trace_addr);
+    std.debug.print("panic: {s}\n", .{msg});
+    std.process.abort();
+}
+
+pub const panic = if (@import("builtin").is_test and database.backend_is_postgres)
+    std.debug.FullPanic(postgresTestPanic)
+else
+    std.debug.FullPanic(std.debug.defaultPanic);
+
 // ─── The App singleton ────────────────────────────────────────────────────
 // The struct and its registry helpers live in `src/app.zig` (that file's
 // header says why).

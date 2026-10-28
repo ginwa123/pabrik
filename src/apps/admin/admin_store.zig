@@ -306,8 +306,8 @@ pub fn ensureSchema(allocator: std.mem.Allocator, db: Db) !void {
 fn createUsersSchema(allocator: std.mem.Allocator, db: Db) !void {
     try ensureSchema(allocator, db);
     try db.exec(allocator,
-        \\INSERT OR IGNORE INTO users (id, email, name, password_hash, role, is_active)
-        \\VALUES ('user_system', 'system@local', 'System', '!disabled', 'admin', 0)
+        \\INSERT INTO users (id, email, name, password_hash, role, is_active)
+        \\VALUES ('user_system', 'system@local', 'System', '!disabled', 'admin', 0) ON CONFLICT DO NOTHING
     , &.{});
 }
 

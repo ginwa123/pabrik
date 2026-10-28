@@ -1,5 +1,6 @@
 const std = @import("std");
 const root_mod = @import("pabrikcore");
+const test_db = root_mod.test_db;
 const gserverz = root_mod.gserverz;
 const pabrikcore = root_mod;
 const ai_workflow = pabrikcore.ai_workflow;
@@ -156,7 +157,7 @@ fn setupDeleteDb() !DeleteCtx {
     errdefer threaded.deinit();
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
     try db.exec(alloc,
         \\CREATE TABLE workspaces (
         \\  id TEXT PRIMARY KEY,

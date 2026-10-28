@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 
@@ -151,8 +152,8 @@ pub fn replace(
     try tx.exec(allocator, "DELETE FROM kanban_task_dependencies WHERE task_id = ?", &.{task_id});
     for (ids) |id| {
         try tx.exec(allocator,
-            \\INSERT OR IGNORE INTO kanban_task_dependencies (task_id, depends_on_task_id)
-            \\VALUES (?, ?)
+            \\INSERT INTO kanban_task_dependencies (task_id, depends_on_task_id)
+            \\VALUES (?, ?) ON CONFLICT DO NOTHING
         , &.{ task_id, id });
     }
 }
@@ -310,7 +311,7 @@ fn setupDb() !TestDb {
 
     var db: database.Db = .{};
     errdefer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
 
     try db.exec(alloc,
         \\CREATE TABLE kanban_columns (

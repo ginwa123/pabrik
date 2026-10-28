@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const http_response = @import("http_response.zig");
 const gserverz = pabrikcore.gserverz;
 const ask_user_mod = pabrikcore.ask_user;
@@ -360,7 +361,7 @@ test "remainingQuestions: counts only THIS session's still-pending questions" {
     defer threaded.deinit();
     var db: pabrikcore.database.Db = .{};
     defer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
     try pendingQuestionSchema(allocator, &db);
 
     // Nothing open → 0, which is the signal to resume.
@@ -396,7 +397,7 @@ test "remainingQuestions: an unreadable table reports 0 so a resume still happen
     defer threaded.deinit();
     var db: pabrikcore.database.Db = .{};
     defer db.deinit();
-    try db.init(threaded.io(), ":memory:");
+    try test_db.openMemory(&db, threaded.io());
     // No session_pending_question table at all. Reporting 0 keeps the
     // pre-existing "just resume" behaviour instead of stalling the session.
     try testing.expectEqual(@as(usize, 0), remainingQuestions(allocator, &db, "s1"));
