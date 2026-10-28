@@ -374,8 +374,16 @@ test "cleanupStaleWorkers returns the DB error when the worker table itself is m
         .now_unix = 1_000_000,
     });
 
-    // We don't pin the specific Backend Error variant here — the
-    // Backend maps missing-table to PrepareFailed (Sqlite.zig:568)
-    // which the helper propagates verbatim.
-    try testing.expectError(error.PrepareFailed, result);
+    // The behaviour is "a missing table is reported, not swallowed". Which
+    // variant arrives is the backend's own affair: sqlite fails at prepare,
+    // postgres at execute, so accept either.
+    // The behaviour is "a missing table is reported, not swallowed". Which
+    // variant arrives is the backend's own affair: sqlite fails at prepare,
+    // postgres at execute, so accept either.
+    if (result) |_| {
+        return error.ExpectedMissingTableError;
+    } else |err| switch (err) {
+        error.PrepareFailed, error.QueryFailed => {},
+        else => return err,
+    }
 }
