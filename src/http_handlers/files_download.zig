@@ -8,6 +8,9 @@ const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
 // The one containment rule, shared with the `present_files` agent tool.
 const file_sandbox = @import("../modules/agent/tools/file_sandbox.zig");
+// Which filesystem a presented file's bytes come from.
+const presented_source = @import("../modules/agent/tools/presented_source.zig");
+const workspace_fs = @import("../agentic_loop/workspace_fs.zig");
 
 /// Cap mirrors `present_files.zig:MAX_FILE_BYTES` so every presented
 /// file is downloadable. Must stay in sync (see the sync test below).
@@ -113,6 +116,73 @@ pub fn mimeForPath(path: []const u8) []const u8 {
 // Handler
 // =====================================================================
 
+/// What the browser is handed: the bytes, the type it may be read as, and the
+/// name it downloads under. `bytes` and `basename` belong to the caller's
+/// allocator — the per-request one every response payload lives in.
+pub const Fetched = struct {
+    bytes: []u8,
+    mime: []const u8,
+    basename: []u8,
+};
+
+pub const FetchError = error{
+    NotAbsolute,
+    Traversal,
+    RootNotAbsolute,
+    RootUnreachable,
+    OutsideRoot,
+    NotFound,
+    IsDirectory,
+    TooLarge,
+    Unavailable,
+    ReadFailed,
+    OutOfMemory,
+};
+
+/// One presented file, read from whichever filesystem owns the workspace tree.
+pub fn fetchPresented(
+    allocator: std.mem.Allocator,
+    source: presented_source.Source,
+    root: []const u8,
+    abs: []const u8,
+) FetchError!Fetched {
+    const canon = source.admit(allocator, root, abs) catch |err| return switch (err) {
+        error.NotAbsolute => error.NotAbsolute,
+        error.PathTraversal => error.Traversal,
+        error.RootNotAbsolute => error.RootNotAbsolute,
+        error.RootUnreachable => error.RootUnreachable,
+        error.OutsideRoot => error.OutsideRoot,
+        error.TargetUnreachable => error.NotFound,
+        error.OutOfMemory => error.OutOfMemory,
+    };
+    defer allocator.free(canon);
+
+    const probe = source.probe(canon) catch |err| return switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        error.GuestFileMissing => error.NotFound,
+        error.GuestManagerUnavailable, error.GuestManagerRefused, error.GuestWorkspaceUnknown, error.GuestWorkspaceNotVm => error.Unavailable,
+        else => error.ReadFailed,
+    };
+    if (probe.missing) return error.NotFound;
+    if (probe.kind == .dir) return error.IsDirectory;
+    if (probe.kind != .file) return error.NotFound;
+    if (probe.size > MAX_DOWNLOAD_BYTES) return error.TooLarge;
+
+    const bytes = source.readAll(allocator, canon, MAX_DOWNLOAD_BYTES + 1) catch |err| return switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        error.FileTooBig => error.TooLarge,
+        error.GuestFileMissing => error.NotFound,
+        error.GuestManagerUnavailable, error.GuestManagerRefused, error.GuestWorkspaceUnknown, error.GuestWorkspaceNotVm => error.Unavailable,
+        else => error.ReadFailed,
+    };
+    errdefer allocator.free(bytes);
+    return .{
+        .bytes = bytes,
+        .mime = mimeForPath(canon),
+        .basename = try allocator.dupe(u8, std.fs.path.basename(canon)),
+    };
+}
+
 pub fn filesDownloadHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const io = ctx.io;
@@ -166,64 +236,56 @@ pub fn filesDownloadHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
     };
     defer allocator.free(root);
 
-    // Canonicalize the target (resolves symlinks + `.` segments). A
-    // file-level symlink pointing outside the root resolves outside
-    // and is rejected by the prefix check below.
-    const canon_z = std.Io.Dir.realPathFileAbsoluteAlloc(io, path_param, allocator) catch {
-        return gserverz.HttpResponse.init(404, "Not Found", allocator).withJson(
-            try http_response.makeErrorResponse(allocator, .{ .@"error" = "File not found" }),
-        );
+    // The tree lives in the workspace's VM under `--saas`, and on this host
+    // everywhere else. A VM that cannot answer is a refusal, never a quiet
+    // read of whatever this host happens to have at the same path.
+    var guest = workspace_fs.forSession(allocator, di.db, session_id) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return gserverz.HttpResponse.init(503, "Service Unavailable", allocator).withJson(
+            try http_response.makeErrorResponse(allocator, .{ .@"error" = "The workspace's VM is not reachable" }),
+        ),
     };
-    defer allocator.free(canon_z);
-    const canon: []const u8 = canon_z;
+    defer if (guest) |*fs| fs.deinit();
+    var host_holder = presented_source.Host{ .io = io };
+    var guest_holder: presented_source.Guest = undefined;
+    const source = if (guest) |*fs| blk: {
+        guest_holder = .{ .fs = fs };
+        break :blk guest_holder.source();
+    } else host_holder.source();
 
-    // Canonicalize the root the same way so the prefix comparison is
-    // canonical-vs-canonical (a symlinked cwd would otherwise false-
-    // reject every file inside it).
-    const root_canon_z = std.Io.Dir.realPathFileAbsoluteAlloc(io, root, allocator) catch {
-        return gserverz.HttpResponse.init(403, "Forbidden", allocator).withJson(
-            try http_response.makeErrorResponse(allocator, .{ .@"error" = "Session working directory is not accessible" }),
-        );
-    };
-    defer allocator.free(root_canon_z);
-    const root_canon: []const u8 = root_canon_z;
-
-    if (!file_sandbox.isInsideRoot(root_canon, canon, file_sandbox.nativeStyle())) {
-        return gserverz.HttpResponse.init(403, "Forbidden", allocator).withJson(
+    const fetched = fetchPresented(allocator, source, root, path_param) catch |err| switch (err) {
+        error.NotAbsolute => return gserverz.HttpResponse.init(400, "Bad Request", allocator).withJson(
+            try http_response.makeErrorResponse(allocator, .{ .@"error" = "Path must be absolute" }),
+        ),
+        error.Traversal => return gserverz.HttpResponse.init(403, "Forbidden", allocator).withJson(
+            try http_response.makeErrorResponse(allocator, .{ .@"error" = "Path traversal rejected" }),
+        ),
+        error.OutsideRoot => return gserverz.HttpResponse.init(403, "Forbidden", allocator).withJson(
             try http_response.makeErrorResponse(allocator, .{ .@"error" = "Path escapes the session working directory" }),
-        );
-    }
-
-    // Open with directories rejected deterministically, then size-cap.
-    const file = std.Io.Dir.cwd().openFile(io, canon, .{ .allow_directory = false }) catch |err| switch (err) {
-        error.IsDir => return gserverz.HttpResponse.init(403, "Forbidden", allocator).withJson(
+        ),
+        error.RootUnreachable, error.RootNotAbsolute => return gserverz.HttpResponse.init(403, "Forbidden", allocator).withJson(
+            try http_response.makeErrorResponse(allocator, .{ .@"error" = "Session working directory is not accessible" }),
+        ),
+        error.NotFound => return gserverz.HttpResponse.init(404, "Not Found", allocator).withJson(
+            try http_response.makeErrorResponse(allocator, .{ .@"error" = "File not found" }),
+        ),
+        error.IsDirectory => return gserverz.HttpResponse.init(403, "Forbidden", allocator).withJson(
             try http_response.makeErrorResponse(allocator, .{ .@"error" = "Path is a directory" }),
         ),
-        else => return gserverz.HttpResponse.init(404, "Not Found", allocator).withJson(
-            try http_response.makeErrorResponse(allocator, .{ .@"error" = "File not found" }),
+        error.TooLarge => return gserverz.HttpResponse.init(413, "Content Too Large", allocator).withJson(
+            try http_response.makeErrorResponse(allocator, .{ .@"error" = "File exceeds the 50 MiB download limit" }),
+        ),
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Unavailable => return gserverz.HttpResponse.init(503, "Service Unavailable", allocator).withJson(
+            try http_response.makeErrorResponse(allocator, .{ .@"error" = "The workspace's VM is not reachable" }),
+        ),
+        error.ReadFailed => return gserverz.HttpResponse.init(500, "Internal Server Error", allocator).withJson(
+            try http_response.makeErrorResponse(allocator, .{ .@"error" = "Failed to read file" }),
         ),
     };
-    defer std.Io.File.close(file, io);
 
-    const stat = std.Io.File.stat(file, io) catch {
-        return gserverz.HttpResponse.init(404, "Not Found", allocator).withJson(
-            try http_response.makeErrorResponse(allocator, .{ .@"error" = "File not found" }),
-        );
-    };
-    if (stat.size > MAX_DOWNLOAD_BYTES) {
-        return gserverz.HttpResponse.init(413, "Content Too Large", allocator).withJson(
-            try http_response.makeErrorResponse(allocator, .{ .@"error" = "File exceeds the 50 MiB download limit" }),
-        );
-    }
-
-    const bytes = std.Io.Dir.cwd().readFileAlloc(io, canon, allocator, .limited(MAX_DOWNLOAD_BYTES + 1)) catch {
-        return gserverz.HttpResponse.init(500, "Internal Server Error", allocator).withJson(
-            try http_response.makeErrorResponse(allocator, .{ .@"error" = "Failed to read file" }),
-        );
-    };
-
-    const mime = mimeForPath(canon);
-    const basename = std.fs.path.basename(canon);
+    const mime = fetched.mime;
+    const basename = fetched.basename;
     const effective = effectiveDisposition(disposition, mime);
     // `withHeader` stores the slice by reference (same as `setContentType`
     // and every `makeErrorResponse` payload in this codebase) — do NOT free
@@ -236,7 +298,7 @@ pub fn filesDownloadHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
     // `withBody` sets Content-Length; `setContentType` sets Content-Type.
     // `nosniff` is unconditional: the extension-derived type must never be
     // re-interpreted by the browser into something renderable.
-    var resp = gserverz.HttpResponse.init(200, "OK", allocator).withBody(bytes).setContentType(mime).withHeader(
+    var resp = gserverz.HttpResponse.init(200, "OK", allocator).withBody(fetched.bytes).setContentType(mime).withHeader(
         "Content-Disposition",
         disp_value,
     ).withHeader("X-Content-Type-Options", "nosniff");
@@ -317,4 +379,58 @@ test "the shared rule is the one this endpoint applies" {
 test "MAX_DOWNLOAD_BYTES stays in sync with the tool cap" {
     const present_files = @import("../modules/agent/tools/present_files.zig");
     try testing.expectEqual(present_files.MAX_FILE_BYTES, MAX_DOWNLOAD_BYTES);
+}
+
+// ─── Workspace-VM tests ──────────────────────────────────────────────────
+// Under `--saas` the presented file is inside the workspace's microVM: the host
+// has never had these bytes, and the card's own download is what this answers.
+
+test "a file that exists only in the workspace VM is served with its own bytes" {
+    const alloc = testing.allocator;
+    var memory = presented_source.Memory.init(alloc);
+    defer memory.deinit();
+    try memory.put("/workspace/reports/img.png", "\x89PNG\r\n\x1a\n");
+
+    const fetched = try fetchPresented(alloc, memory.source(), "/workspace", "/workspace/reports/img.png");
+    defer alloc.free(fetched.bytes);
+    defer alloc.free(fetched.basename);
+
+    try testing.expectEqualStrings("\x89PNG\r\n\x1a\n", fetched.bytes);
+    try testing.expectEqualStrings("image/png", fetched.mime);
+    try testing.expectEqualStrings("img.png", fetched.basename);
+}
+
+test "a file the workspace VM does not have is not found, never an empty download" {
+    const alloc = testing.allocator;
+    var memory = presented_source.Memory.init(alloc);
+    defer memory.deinit();
+
+    try testing.expectError(error.NotFound, fetchPresented(alloc, memory.source(), "/workspace", "/workspace/gone.png"));
+}
+
+test "a directory in the workspace VM is refused as a directory" {
+    const alloc = testing.allocator;
+    var memory = presented_source.Memory.init(alloc);
+    defer memory.deinit();
+    try memory.putDir("/workspace/reports");
+
+    try testing.expectError(error.IsDirectory, fetchPresented(alloc, memory.source(), "/workspace", "/workspace/reports"));
+}
+
+test "a workspace-VM file over the download cap is refused before any read" {
+    const alloc = testing.allocator;
+    var memory = presented_source.Memory.init(alloc);
+    defer memory.deinit();
+    try memory.putSized("/workspace/huge.mp4", MAX_DOWNLOAD_BYTES + 1);
+
+    try testing.expectError(error.TooLarge, fetchPresented(alloc, memory.source(), "/workspace", "/workspace/huge.mp4"));
+}
+
+test "a workspace-VM path outside the working directory is refused" {
+    const alloc = testing.allocator;
+    var memory = presented_source.Memory.init(alloc);
+    defer memory.deinit();
+    try memory.put("/workspace/other/secret.png", "\x89PNG");
+
+    try testing.expectError(error.OutsideRoot, fetchPresented(alloc, memory.source(), "/workspace/reports", "/workspace/other/secret.png"));
 }

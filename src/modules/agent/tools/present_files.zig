@@ -7,8 +7,8 @@ const schemas = @import("schemas.zig");
 const path_validate = @import("helpers").path_validate;
 const invalidPathReason = path_validate.invalidPathReason;
 const AgentTool = schemas.AgentTool;
-// The one containment rule shared with GET /api/files/download.
-const file_sandbox = @import("file_sandbox.zig");
+// Which substrate holds a presented file, and the one containment rule it obeys.
+const presented_source = @import("presented_source.zig");
 const host_fixture = @import("helpers").host_fixture;
 
 /// Maximum number of files per call. Keeps the card scannable and the
@@ -169,26 +169,22 @@ pub fn mimeForPath(path: []const u8) []const u8 {
     return "application/octet-stream";
 }
 
-// ─── Core execution ──────────────────────────────────────────────────────
-
-/// Stat one file: open (rejecting directories) + size. Returns the size on
-/// success. Errors: - `error.FileNotFound` — missing, unreadable, or a
-/// directory. - `error.FileTooLarge` — size exceeds `MAX_FILE_BYTES`.
-fn statFileSize(io: std.Io, path: []const u8) !u64 {
-    // Any open failure (missing, dir, permissions, device errors)
-    // surfaces as FileNotFound — the caller reports "not found (or is
-    // a directory)", which is the actionable signal for the LLM.
-    const file = std.Io.Dir.cwd().openFile(io, path, .{ .allow_directory = false }) catch return error.FileNotFound;
-    defer std.Io.File.close(file, io);
-    const stat = std.Io.File.stat(file, io) catch return error.FileNotFound;
-    if (stat.size > MAX_FILE_BYTES) return error.FileTooLarge;
-    return stat.size;
-}
-
-/// Execute the tool: validate every file, then build the success object.
+/// Execute the tool against this host's filesystem: the local-mode entry point.
 pub fn executePresentFilesToString(
     allocator: std.mem.Allocator,
     io: std.Io,
+    input: PresentFilesInput,
+    sandbox_root: ?[]const u8,
+) ![]u8 {
+    const host = presented_source.Host{ .io = io };
+    return executePresentFilesFrom(allocator, host.source(), input, sandbox_root);
+}
+
+/// Execute the tool against whichever filesystem owns the workspace tree:
+/// validate every file, then build the success object.
+pub fn executePresentFilesFrom(
+    allocator: std.mem.Allocator,
+    source: presented_source.Source,
     input: PresentFilesInput,
     sandbox_root: ?[]const u8,
 ) ![]u8 {
@@ -241,11 +237,11 @@ pub fn executePresentFilesToString(
             defer allocator.free(msg);
             return jsonErrorEnvelope(allocator, msg);
         }
-        // Containment, through the same helper the download endpoint uses.
+        // Containment, through the same seam the download endpoint uses.
         if (sandbox_root) |root| {
             if (root.len > 0) {
-                if (file_sandbox.resolveInsideRoot(io, allocator, root, f.path, file_sandbox.nativeStyle())) |canon| {
-                    defer allocator.free(canon);
+                if (source.admit(allocator, root, f.path)) |canon| {
+                    allocator.free(canon);
                 } else |err| switch (err) {
                     error.OutOfMemory => return error.OutOfMemory,
                     // Missing file (or a directory we cannot canonicalize):
@@ -287,18 +283,18 @@ pub fn executePresentFilesToString(
                 }
             }
         }
-        const size = statFileSize(io, f.path) catch |err| switch (err) {
-            error.FileNotFound => {
-                const msg = try std.fmt.allocPrint(allocator, "present_files: file not found (or is a directory): \"{s}\".", .{f.path});
-                defer allocator.free(msg);
-                return jsonErrorEnvelope(allocator, msg);
-            },
-            error.FileTooLarge => {
-                const msg = try std.fmt.allocPrint(allocator, "present_files: file \"{s}\" exceeds the {d} MiB limit.", .{ f.path, MAX_FILE_BYTES / (1024 * 1024) });
-                defer allocator.free(msg);
-                return jsonErrorEnvelope(allocator, msg);
-            },
-        };
+        const probe = try source.probe(f.path);
+        if (probe.missing or probe.kind != .file) {
+            const msg = try std.fmt.allocPrint(allocator, "present_files: file not found (or is a directory): \"{s}\".", .{f.path});
+            defer allocator.free(msg);
+            return jsonErrorEnvelope(allocator, msg);
+        }
+        if (probe.size > MAX_FILE_BYTES) {
+            const msg = try std.fmt.allocPrint(allocator, "present_files: file \"{s}\" exceeds the {d} MiB limit.", .{ f.path, MAX_FILE_BYTES / (1024 * 1024) });
+            defer allocator.free(msg);
+            return jsonErrorEnvelope(allocator, msg);
+        }
+        const size = probe.size;
 
         const mime = mimeForPath(f.path);
         const raw_label = f.label orelse "";
@@ -926,6 +922,101 @@ test "present_files: a label keeps its tabs and newlines (sanitizeControlChars c
     try testing.expect(contains(label, "\t"));
 }
 
+// ─── Workspace-VM tests ──────────────────────────────────────────────────
+// `--saas` keeps the tenant tree inside the workspace's microVM: these hold the
+// source the guest answers with, which is the only copy of the file that exists.
+
+test "present_files: a file that exists only in the workspace VM is presented" {
+    const alloc = testing.allocator;
+    var memory = presented_source.Memory.init(alloc);
+    defer memory.deinit();
+    try memory.put("/workspace/reports/after.html", "<h1>hi</h1>");
+
+    var refs = [_]PresentFileRef{.{ .path = "/workspace/reports/after.html" }};
+    const input = PresentFilesInput{ .files = &refs };
+    const payload = try executePresentFilesFrom(alloc, memory.source(), input, "/workspace");
+    defer alloc.free(payload);
+
+    const parsed = try std.json.parseFromSlice(std.json.Value, alloc, payload, .{});
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+    try testing.expectEqualStrings("presented", obj.get("status").?.string);
+    try testing.expectEqual(@as(i64, 1), obj.get("count").?.integer);
+    const file = obj.get("files").?.array.items[0].object;
+    try testing.expectEqual(@as(i64, 11), file.get("bytes").?.integer);
+    try testing.expectEqualStrings("text/html; charset=utf-8", file.get("mime").?.string);
+    try testing.expectEqualStrings("after.html", file.get("label").?.string);
+}
+
+test "present_files: a file the workspace VM does not have reports not-found" {
+    const alloc = testing.allocator;
+    var memory = presented_source.Memory.init(alloc);
+    defer memory.deinit();
+
+    var refs = [_]PresentFileRef{.{ .path = "/workspace/nope.txt" }};
+    const input = PresentFilesInput{ .files = &refs };
+    const payload = try executePresentFilesFrom(alloc, memory.source(), input, "/workspace");
+    defer alloc.free(payload);
+
+    const parsed = try std.json.parseFromSlice(std.json.Value, alloc, payload, .{});
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+    try testing.expect(obj.get("status").? == .null);
+    try testing.expect(contains(obj.get("error").?.string, "not found"));
+}
+
+test "present_files: a directory in the workspace VM is rejected as not-found" {
+    const alloc = testing.allocator;
+    var memory = presented_source.Memory.init(alloc);
+    defer memory.deinit();
+    try memory.putDir("/workspace/reports");
+
+    var refs = [_]PresentFileRef{.{ .path = "/workspace/reports" }};
+    const input = PresentFilesInput{ .files = &refs };
+    const payload = try executePresentFilesFrom(alloc, memory.source(), input, "/workspace");
+    defer alloc.free(payload);
+
+    const parsed = try std.json.parseFromSlice(std.json.Value, alloc, payload, .{});
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+    try testing.expect(obj.get("status").? == .null);
+    try testing.expect(contains(obj.get("error").?.string, "not found"));
+}
+
+test "present_files: a workspace-VM file over the cap is rejected by the same limit" {
+    const alloc = testing.allocator;
+    var memory = presented_source.Memory.init(alloc);
+    defer memory.deinit();
+    try memory.putSized("/workspace/huge.mp4", MAX_FILE_BYTES + 1);
+
+    var refs = [_]PresentFileRef{.{ .path = "/workspace/huge.mp4" }};
+    const input = PresentFilesInput{ .files = &refs };
+    const payload = try executePresentFilesFrom(alloc, memory.source(), input, "/workspace");
+    defer alloc.free(payload);
+
+    const parsed = try std.json.parseFromSlice(std.json.Value, alloc, payload, .{});
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+    try testing.expect(obj.get("status").? == .null);
+    try testing.expect(contains(obj.get("error").?.string, "exceeds"));
+}
+
+test "present_files: a workspace-VM path outside the working directory is rejected" {
+    const alloc = testing.allocator;
+    var memory = presented_source.Memory.init(alloc);
+    defer memory.deinit();
+    try memory.put("/workspace/other/secret.txt", "s3cret");
+
+    var refs = [_]PresentFileRef{.{ .path = "/workspace/other/secret.txt" }};
+    const input = PresentFilesInput{ .files = &refs };
+    const payload = try executePresentFilesFrom(alloc, memory.source(), input, "/workspace/reports");
+    defer alloc.free(payload);
+
+    const parsed = try std.json.parseFromSlice(std.json.Value, alloc, payload, .{});
+    defer parsed.deinit();
+    try testing.expect(contains(parsed.value.object.get("error").?.string, "outside the session working directory"));
+}
+
 // Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
 // The tool definition above and its executor below live in ONE file.
 
@@ -936,6 +1027,8 @@ const ToolExecResult = tools.ToolExecResult;
 const agent = pabrikcore.agent;
 const present_files_mod = pabrikcore.ai_mod.present_files;
 const exec_file_sandbox = pabrikcore.ai_mod.file_sandbox;
+const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
+const runtime_mode = @import("../../../runtime_mode.zig");
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");
 const exec_path_validate = @import("helpers").path_validate;
@@ -998,10 +1091,25 @@ pub fn execPresentFiles(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResul
     };
     defer if (root) |r| ctx.allocator.free(r);
 
-    // executePresentFilesToString returns a JSON string.
-    const inner = present_files_mod.executePresentFilesToString(
+    // Which filesystem holds the tree. Local mode is this host; `--saas` is the
+    // workspace's VM, whose copy is the only one there is.
+    var guest = workspace_fs.forSession(ctx.allocator, ctx.db, ctx.session_id) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "present_files", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer if (guest) |*fs| fs.deinit();
+    var host_source = presented_source.Host{ .io = ctx.io };
+    var guest_source: presented_source.Guest = undefined;
+    const source = if (guest) |*fs| blk: {
+        guest_source = .{ .fs = fs };
+        break :blk guest_source.source();
+    } else host_source.source();
+
+    const inner = present_files_mod.executePresentFilesFrom(
         ctx.allocator,
-        ctx.io,
+        source,
         input,
         root,
     ) catch |err| {
@@ -1285,6 +1393,62 @@ test "execPresentFiles: an unknown session keeps the un-sandboxed legacy path" {
     var ctx = env.minimalCtx(a);
     ctx.session_id = "no_such_session";
     const output = try runPresentFilesWith(a, &ctx, path);
+    defer a.free(output);
+    const parsed = try std.json.parseFromSlice(std.json.Value, a, output, .{});
+    defer parsed.deinit();
+    try exec_testing.expect(parsed.value.object.get("success").?.bool);
+}
+
+/// Make the session a `--saas` one whose workspace is a microVM, with the
+/// tree's recorded root at `root`.
+fn makeVmWorkspace(env: *ExecEnv, root: []const u8) !void {
+    const a = exec_testing.allocator;
+    try env.db.exec(a, "ALTER TABLE sessions ADD COLUMN workspace_id TEXT", &.{});
+    try env.db.exec(a, "CREATE TABLE workspaces (id TEXT PRIMARY KEY, is_vm INTEGER NOT NULL DEFAULT 0)", &.{});
+    try env.db.exec(a, "INSERT INTO workspaces (id, is_vm) VALUES ('w_vm', 1)", &.{});
+    try env.db.exec(a, "CREATE TABLE workspace_item_tasks (id TEXT PRIMARY KEY, name TEXT, workspace_item_id TEXT)", &.{});
+    try env.db.exec(a, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT, name TEXT, path TEXT, position INTEGER)", &.{});
+    try env.db.exec(a, "INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position) VALUES ('i1','w_vm','kanban','A',?,1)", &.{root});
+    try env.db.exec(a, "UPDATE sessions SET workspace_id = 'w_vm' WHERE id = ?", &.{env.session_id});
+}
+
+test "execPresentFiles: under --saas the tool asks the workspace's VM, never this host" {
+    // The bug: a `--saas` session's tree is the microVM's, and `present_files`
+    // read the HOST instead. The file below exists on this host, so a host read
+    // answers "presented" — a card whose every fetch 404s.
+    const a = exec_testing.allocator;
+    var env = try setupExecEnv(a);
+    defer env.deinit(a);
+
+    const path = try env.writeInside(a, "report.html", "<h1>hi</h1>");
+    defer a.free(path);
+    try makeVmWorkspace(&env, env.inside_abs);
+
+    runtime_mode.setCurrent(.saas);
+    defer runtime_mode.setCurrent(.local);
+    runtime_mode.setManagerSocket("/tmp/pabrik-present-files-no-vm.sock");
+    defer runtime_mode.setManagerSocket(null);
+
+    const output = try runPresentFiles(a, &env, path);
+    defer a.free(output);
+    const parsed = try std.json.parseFromSlice(std.json.Value, a, output, .{});
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+
+    try exec_testing.expect(!obj.get("success").?.bool);
+    try exec_testing.expect(std.mem.indexOf(u8, obj.get("error").?.string, "not reachable") != null);
+}
+
+test "execPresentFiles: a local-mode session still reads its own tree" {
+    const a = exec_testing.allocator;
+    var env = try setupExecEnv(a);
+    defer env.deinit(a);
+
+    const path = try env.writeInside(a, "report.html", "<h1>hi</h1>");
+    defer a.free(path);
+    try makeVmWorkspace(&env, env.inside_abs);
+
+    const output = try runPresentFiles(a, &env, path);
     defer a.free(output);
     const parsed = try std.json.parseFromSlice(std.json.Value, a, output, .{});
     defer parsed.deinit();
