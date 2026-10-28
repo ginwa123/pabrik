@@ -1000,6 +1000,10 @@ test "Migration078 agent_tools(agent_id, tool_name) is UNIQUE" {
 }
 
 test "Migration078 ON DELETE CASCADE: agents dropped when workspace_items row deleted" {
+    // The cascade is the FK's job, and a postgres build declares
+    // `CHECK (1 = 1)` where sqlite declares the reference — see
+    // `dialect.foreignKey`. There is no constraint to cascade there.
+    if (dialect.is_postgres) return error.SkipZigTest;
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -1049,6 +1053,10 @@ test "Migration078 ON DELETE CASCADE: agents dropped when workspace_items row de
 }
 
 test "Migration078 ON DELETE CASCADE: knowledge + tools dropped when agent row deleted" {
+    // The cascade is the FK's job, and a postgres build declares
+    // `CHECK (1 = 1)` where sqlite declares the reference — see
+    // `dialect.foreignKey`. There is no constraint to cascade there.
+    if (dialect.is_postgres) return error.SkipZigTest;
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -1291,6 +1299,10 @@ test "Migration080 is registered in allMigrations" {
 }
 
 test "Migration080 ON DELETE CASCADE removes prompts when agent row deleted" {
+    // The cascade is the FK's job, and a postgres build declares
+    // `CHECK (1 = 1)` where sqlite declares the reference — see
+    // `dialect.foreignKey`. There is no constraint to cascade there.
+    if (dialect.is_postgres) return error.SkipZigTest;
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -1617,6 +1629,10 @@ test "Migration081 UNIQUE workspace_item_id rejects second agent_kanbans row" {
 }
 
 test "Migration081 ON DELETE CASCADE removes all children when workspace_item deleted" {
+    // The cascade is the FK's job, and a postgres build declares
+    // `CHECK (1 = 1)` where sqlite declares the reference — see
+    // `dialect.foreignKey`. There is no constraint to cascade there.
+    if (dialect.is_postgres) return error.SkipZigTest;
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -1795,6 +1811,10 @@ test "Migration084 UNIQUE workspace_item_id rejects second workspace_routines ro
 }
 
 test "Migration084 ON DELETE CASCADE removes routine when workspace_item deleted" {
+    // The cascade is the FK's job, and a postgres build declares
+    // `CHECK (1 = 1)` where sqlite declares the reference — see
+    // `dialect.foreignKey`. There is no constraint to cascade there.
+    if (dialect.is_postgres) return error.SkipZigTest;
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
