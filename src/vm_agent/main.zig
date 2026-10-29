@@ -31,13 +31,12 @@ const wno_hang: u32 = 1;
 const job_log_dir = "/tmp/pabrik";
 const log_read_chunk: usize = 16 * 1024;
 const reply_buf_bytes: usize = wire.max_frame;
-/// The page the shared registry gets: one page holds every slot, and PID 1
-/// maps it before it accepts, so the processes it forks share it.
 const registry_bytes: usize = 4096;
 
 /// The slot bookkeeping PID 1 shares with every connection process. A terminal
 /// slot index IS its vsock port, so two processes must never hold the same one
-/// — and a fork copies memory, so the page is mapped MAP_SHARED.
+/// — and a fork copies memory, so the page is mapped MAP_SHARED, once, before
+/// the fork that would otherwise split it.
 const Registry = struct {
     tty: [max_ttys]TtySlot = [_]TtySlot{.{}} ** max_ttys,
     duplex: [max_duplex]DuplexSlot = [_]DuplexSlot{.{}} ** max_duplex,
