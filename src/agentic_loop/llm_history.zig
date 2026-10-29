@@ -3002,14 +3002,79 @@ pub fn isTaskRunning(
     return true;
 }
 
-/// Cancel a session (set cancelled flag)
+/// Cancel a session (set cancelled flag) — and the sessions it spawned.
+///
+/// A session is not actually stopped while the sub-agents IT started keep
+/// running: each one is a separate session with its own `worker` row, and the
+/// parent is parked in the batch's `Group.await` until they all return. So the
+/// same Stop has to reach them, or the button appears to do nothing for as
+/// long as the slowest child keeps working.
+///
+/// The child link is `llm_history.parent_session_id` — the column
+/// `spawn_sub_agent` (and the skill-eval judge batch) writes on every message
+/// of a child session. One level is all there is: a sub-agent's tool list has
+/// `spawn_sub_agent` stripped, so it cannot spawn its own.
+///
+/// The child UPDATE is best-effort. A database whose `llm_history` predates
+/// migration 12 has no `parent_session_id` column, and failing the whole Stop
+/// because a descendant could not be flagged would leave the parent running —
+/// strictly worse than stopping the parent alone.
 pub fn cancelSession(
     allocator: std.mem.Allocator,
     db: *database.Db,
     session_id: []const u8,
 ) !void {
-    const sql = "UPDATE worker SET cancelled = 1 WHERE id = ?";
-    try db.exec(allocator, sql, &.{session_id});
+    try db.exec(allocator, "UPDATE worker SET cancelled = 1 WHERE id = ?", &.{session_id});
+    db.exec(
+        allocator,
+        "UPDATE worker SET cancelled = 1 WHERE id IN " ++
+            "(SELECT DISTINCT session_id FROM llm_history WHERE parent_session_id = ?)",
+        &.{session_id},
+    ) catch {};
+}
+
+// ─── Stop propagation ───────────────────────────────────────────────────────
+
+/// One worker row's `cancelled` column, read straight from SQL so the
+/// assertion cannot be satisfied by the writer's own bookkeeping.
+fn cancelledFlag(db: *database.Db, allocator: std.mem.Allocator, worker_id: []const u8) !i64 {
+    var rows = try db.query(allocator, "SELECT cancelled FROM worker WHERE id = ?", &.{worker_id});
+    defer rows.deinit();
+    const row = (try rows.next()) orelse return error.NoSuchWorker;
+    defer row.deinit(allocator);
+    return @as(i64, try std.fmt.parseInt(i64, row.values[0], 10));
+}
+
+test "cancelSession also stops the child sessions this one spawned" {
+    const allocator = testing.allocator;
+    var threaded = std.Io.Threaded.init(allocator, .{});
+    defer threaded.deinit();
+    var db: database.Db = .{};
+    defer db.deinit();
+    try test_db.openMemory(&db, threaded.io());
+    try db.exec(allocator,
+        \\CREATE TABLE worker (id TEXT PRIMARY KEY, cancelled INTEGER DEFAULT 0)
+    , &.{});
+    try db.exec(allocator,
+        \\CREATE TABLE llm_history (id TEXT PRIMARY KEY, session_id TEXT, parent_session_id TEXT)
+    , &.{});
+    try db.exec(allocator,
+        \\INSERT INTO worker (id) VALUES ('parent'), ('child'), ('sibling')
+    , &.{});
+    // `child` ran a turn under `parent` (the link `spawn_sub_agent` writes);
+    // `sibling` is an unrelated session that must be left alone.
+    try db.exec(allocator,
+        \\INSERT INTO llm_history (id, session_id, parent_session_id) VALUES
+        \\  ('m_parent', 'parent', NULL),
+        \\  ('m_child', 'child', 'parent'),
+        \\  ('m_sibling', 'sibling', NULL)
+    , &.{});
+
+    try cancelSession(allocator, &db, "parent");
+
+    try testing.expectEqual(@as(i64, 1), try cancelledFlag(&db, allocator, "parent"));
+    try testing.expectEqual(@as(i64, 1), try cancelledFlag(&db, allocator, "child"));
+    try testing.expectEqual(@as(i64, 0), try cancelledFlag(&db, allocator, "sibling"));
 }
 
 // =============================================================================

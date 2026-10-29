@@ -46,23 +46,37 @@ pub fn execute_command_with(
     input: CommandInput,
     executor: ?shell.Executor,
 ) !CommandOutput {
+    return execute_command_with_cancel(allocator, io, input, executor, null);
+}
+
+/// `execute_command_with` plus the Stop button: `cancel_hook` is polled by the
+/// foreground wait loop, which SIGKILLs the child's process group once the
+/// session has been cancelled. Detached modes ignore it — they outlive the
+/// call by design.
+pub fn execute_command_with_cancel(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    input: CommandInput,
+    executor: ?shell.Executor,
+    cancel_hook: ?shell.CancelHook,
+) !CommandOutput {
     if (builtin.os.tag == .windows) {
         // Phase 1 (cmd fallback) is foreground-only: background keeps the
         // historical pwsh path (spawn_background's nohup idiom + the D8
         // Start-Process TODO in shell.zig).
         if (input.background) {
-            return shell.execute_shell_with(allocator, io, COMMAND_PWSH_PREFIX, input, executor);
+            return shell.execute_shell_with_cancel(allocator, io, COMMAND_PWSH_PREFIX, input, executor, cancel_hook);
         }
-        const pwsh_out = shell.execute_shell_with(allocator, io, COMMAND_PWSH_PREFIX, input, executor) catch |err| {
+        const pwsh_out = shell.execute_shell_with_cancel(allocator, io, COMMAND_PWSH_PREFIX, input, executor, cancel_hook) catch |err| {
             // Retry ONLY on a missing binary. Any other error (timeout,
             // forbidden, spawn permission, …) propagates unchanged so real
             // failures are never masked as "try the other shell".
             if (err != error.FileNotFound) return err;
-            return try shell.execute_shell_with(allocator, io, COMMAND_CMD_PREFIX, input, executor);
+            return try shell.execute_shell_with_cancel(allocator, io, COMMAND_CMD_PREFIX, input, executor, cancel_hook);
         };
         return pwsh_out;
     } else {
-        return shell.execute_shell_with(allocator, io, COMMAND_BASH_PREFIX, input, executor);
+        return shell.execute_shell_with_cancel(allocator, io, COMMAND_BASH_PREFIX, input, executor, cancel_hook);
     }
 }
 
@@ -482,6 +496,7 @@ pub fn runWithContext(
     tool_call: agent.ToolCall,
     db: ?*database.Db,
     session_id: ?[]const u8,
+    cancel_hook: ?shell.CancelHook,
 ) !RunResult {
     const input = switch (bash_args.parseShellArgs(allocator, tool_call.function.arguments)) {
         .success => |in| in,
@@ -516,12 +531,25 @@ pub fn runWithContext(
     // the session's workspace VM, and no host shell is ever spawned for it.
     var guest = vm_runtime.GuestContext{ .db = db, .session_id = session_id };
     const executor = vm_runtime.executorFor(&guest);
-    const command_output = try command_tool_mod.execute_command_with(
+    // `cancel_hook` is the Stop button, carried in from the dispatch (see
+    // `session_cancel_probe.Probe`): a foreground run polls it inside its wait
+    // loop and kills the child's process group.
+    const command_output = try command_tool_mod.execute_command_with_cancel(
         allocator,
         io,
         input,
         executor,
+        cancel_hook,
     );
+    // The shell output owns its three slices and this function is their last
+    // reader: it serialises them below and never exposes them. `execCommand`
+    // allocates on the per-iteration arena in production, so this only shows
+    // up as a leak when a test drives the tool with `testing.allocator`.
+    defer {
+        allocator.free(command_output.command);
+        allocator.free(command_output.stdout);
+        allocator.free(command_output.stderr);
+    }
     // A detached command that ran in a guest leaves a GUEST pid behind, and the
     // accounting row has to say which VM it belongs to.
     const ran_in_guest = executor != null;
@@ -613,7 +641,7 @@ pub fn execCommand(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     // Catch ANY remaining error from the run path (e.g. from
     // `execute_command` itself — fork failures, permission errors, etc.) and
     // wrap it in the standard tool-error envelope, matching execReadFile /
-    const inner = runWithContext(ctx.allocator, ctx.io, tc, ctx.db, ctx.session_id) catch |err| {
+    const inner = runWithContext(ctx.allocator, ctx.io, tc, ctx.db, ctx.session_id, ctx.cancel_hook) catch |err| {
         const err_msg = try error_explain.explain(ctx.allocator, err, null);
         defer ctx.allocator.free(err_msg);
         const output = try wrapToolOutput(ctx.allocator, "command", tc.function.arguments, false, err_msg, "");
@@ -926,4 +954,41 @@ test "execute_command: with no executor the host shell runs it, unchanged" {
     try testing.expect(std.mem.indexOf(u8, out.stdout, "local-substrate") != null);
     // A host run, not a guest one.
     try testing.expect(std.mem.indexOf(u8, out.stdout, "guest ran:") == null);
+}
+
+// ─── Stop reaches a running command ─────────────────────────────────────────
+
+/// The dispatch's probe, faked: the first poll says "cancelled". The hook is
+/// the only input this test does not control via a real database, which is
+/// what keeps it deterministic.
+const AlwaysCancelled = struct {
+    fn isCancelled(_: *const anyopaque) bool {
+        return true;
+    }
+};
+
+test "execCommand: a dispatch hook that reports Stop kills the running command" {
+    if (builtin.os.tag == .windows) return;
+
+    var hook_state: u8 = 0;
+    var ctx = commandTestCtx(exec_testing.allocator, exec_testing.io);
+    ctx.cancel_hook = .{ .ctx = &hook_state, .is_cancelled = AlwaysCancelled.isCancelled };
+
+    const tc = agent.ToolCall{
+        .id = "call_cancel",
+        .function = .{
+            .name = "command",
+            .arguments = "{\"command\":\"sleep 30\",\"cwd\":\"/tmp\",\"timeout\":60}",
+        },
+    };
+
+    const res = try execCommand(ctx, tc);
+    defer res.deinit(exec_testing.allocator);
+
+    const parsed = try std.json.parseFromSlice(std.json.Value, exec_testing.allocator, res.output, .{});
+    defer parsed.deinit();
+    const data = parsed.value.object.get("data").?.object;
+    try exec_testing.expect(data.get("cancelled").?.bool);
+    try exec_testing.expect(!data.get("timeout").?.bool);
+    try exec_testing.expectEqual(@as(i64, -9), data.get("exit_code").?.integer);
 }

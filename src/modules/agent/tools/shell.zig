@@ -48,6 +48,26 @@ pub const RunMode = enum {
     }
 };
 
+/// Cooperative cancellation, handed in by whoever is running the tool.
+///
+/// A foreground `command` blocks its thread waiting on the child, so nothing
+/// upstream can interrupt it: cancellation has to be POLLED from inside the
+/// wait loop. `ctx` is the probe's own state (the agentic loop passes a
+/// per-dispatch `session_cancel_probe.Probe`, which answers "has this session
+/// been stopped?" from the `worker.cancelled` row).
+pub const CancelHook = struct {
+    ctx: *const anyopaque,
+    is_cancelled: *const fn (ctx: *const anyopaque) bool,
+
+    pub fn requested(self: CancelHook) bool {
+        return self.is_cancelled(self.ctx);
+    }
+};
+
+/// `ShellInput` stays a pure WIRE type — it is what the LLM's JSON arguments
+/// parse into (see the `parseFromSlice(ShellInput, …)` test below), so it can
+/// never carry a function pointer. The hook therefore travels as a separate
+/// argument, next to the `Executor`, which is injected the same way.
 pub const ShellInput = struct {
     command: []const u8,
     timeout: ?u32 = null,
@@ -81,6 +101,10 @@ pub const ShellOutput = struct {
     timeout: bool,
     stdout_lines: usize = 0,
     stderr_lines: usize = 0,
+    /// The run was stopped by `cancel_hook`, not by the child exiting and not
+    /// by `timeout`. The child's process group was SIGKILLed, so `exit_code`
+    /// is the negative signal number (POSIX).
+    cancelled: bool = false,
 };
 
 /// Returned by `execute_shell` when the caller omits `timeout`.
@@ -623,8 +647,22 @@ pub fn execute_shell_with(
     input: ShellInput,
     executor: ?Executor,
 ) !ShellOutput {
+    return execute_shell_with_cancel(allocator, io, argv_prefix, input, executor, null);
+}
+
+/// `execute_shell_with` plus the Stop button. An injected executor receives the
+/// input only: the guest path (a workspace microVM) has its own lifetime and
+/// its own stop, so the hook does not cross that boundary.
+pub fn execute_shell_with_cancel(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    argv_prefix: []const []const u8,
+    input: ShellInput,
+    executor: ?Executor,
+    cancel_hook: ?CancelHook,
+) !ShellOutput {
     if (executor) |injected| return injected.run(injected.ctx, allocator, io, argv_prefix, input);
-    return run_shell_command(allocator, io, argv_prefix, input);
+    return run_shell_command_with(allocator, io, argv_prefix, input, cancel_hook);
 }
 
 /// Run a shell command with the supplied argv-prefix (e.g. `&.{ "bash", "-c"
@@ -634,6 +672,19 @@ pub fn run_shell_command(
     io: std.Io,
     argv_prefix: []const []const u8,
     input: ShellInput,
+) !ShellOutput {
+    return run_shell_command_with(allocator, io, argv_prefix, input, null);
+}
+
+/// `run_shell_command`, with a hook the foreground wait loop polls. On a true
+/// answer the child's process group is SIGKILLed mid-run and the call returns
+/// with `cancelled = true` instead of waiting out `timeout`.
+pub fn run_shell_command_with(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    argv_prefix: []const []const u8,
+    input: ShellInput,
+    cancel_hook: ?CancelHook,
 ) !ShellOutput {
     // --- URL encoding if requested --- cmd.exe treats single quotes
     // literally (no quoting semantics), so the `"…"` → `'…'` swap would
@@ -768,6 +819,7 @@ pub fn run_shell_command(
     }
 
     var timeout_hit = false;
+    var cancel_hit = false;
     var child_term: ?std.process.Child.Term = null;
 
     const deadline_ns = std.Io.Timestamp.now(io, .real).nanoseconds + @as(i64, @intCast(timeout_ns));
@@ -776,9 +828,25 @@ pub fn run_shell_command(
     // .KILL` nor `status_to_term` (which uses `std.c.W.*` — also `void` on
     child_term = blk: {
         while (true) {
+            // Both output streams are closed: the child is finished. Checked
+            // FIRST so a command that ended on its own is never reported as
+            // cancelled or timed out on a poll that lost the race.
             if (stdout_reader.eof.load(.acquire) and stderr_reader.eof.load(.acquire)) {
                 const wait_result = wait_pid_bounded(io, &child, KILL_GRACE_PERIOD_NS);
                 break :blk term_from_wait(wait_result);
+            }
+            // Stop button: cheap to poll, because the hook throttles its own
+            // database read.
+            if (cancel_hook) |hook| {
+                if (hook.requested()) {
+                    cancel_hit = true;
+                    // The same SIGKILL-the-process-group path the timeout
+                    // takes: one syscall reaches the child and every
+                    // descendant it left in its group.
+                    terminateTimedOutChild(&child, child_pgid);
+                    const wait_result = wait_pid_bounded(io, &child, KILL_GRACE_PERIOD_NS);
+                    break :blk term_from_wait(wait_result);
+                }
             }
             if (std.Io.Timestamp.now(io, .real).nanoseconds >= deadline_ns) {
                 timeout_hit = true;
@@ -831,6 +899,7 @@ pub fn run_shell_command(
         .timeout = timeout_hit,
         .stdout_lines = stdout_cap.line_count,
         .stderr_lines = stderr_cap.line_count,
+        .cancelled = cancel_hit,
     };
 }
 
@@ -1183,9 +1252,10 @@ pub fn stopDetachedProcess(allocator: std.mem.Allocator, io: std.Io, pid: u32) b
     return signalled;
 }
 
-/// JSON serialiser — same 8-field payload as the old `result_to_xml`
+/// JSON serialiser — the same payload as the old `result_to_xml`
 /// (`command/stdout/stderr/exit_code/truncated/timeout/stdout_lines/
-/// stderr_lines`), now a JSON object.
+/// stderr_lines`, plus `cancelled` so a Stop is visible in the transcript
+/// instead of looking like a mysterious SIGKILL), now a JSON object.
 pub fn result_to_json(allocator: std.mem.Allocator, result: ShellOutput) ![]u8 {
     // Strip terminal escape sequences FIRST.
     const ansi_stdout = try helpers.ansi.stripAnsi(allocator, result.stdout);
@@ -1208,6 +1278,7 @@ pub fn result_to_json(allocator: std.mem.Allocator, result: ShellOutput) ![]u8 {
         .timeout = result.timeout,
         .stdout_lines = result.stdout_lines,
         .stderr_lines = result.stderr_lines,
+        .cancelled = result.cancelled,
     }, .{});
 }
 
@@ -1980,4 +2051,76 @@ test "tempDirFor: the Windows fallback is never the POSIX literal" {
     defer testing.allocator.free(t);
     try testing.expect(t.len > 0);
     try testing.expect(!std.mem.eql(u8, t, "/tmp"));
+}
+
+// ─── Cancellation: the Stop button reaches a running child ──────────────────
+
+/// A hook that answers "cancelled" from its Nth poll on. The counter is the
+/// test's own state, and it is what makes the run deterministic: the child is
+/// killed on a poll the test controls, not on a wall-clock deadline.
+fn CancellingAfter(comptime polls_before_cancel: usize) type {
+    return struct {
+        polls: usize = 0,
+
+        fn isCancelled(context: *const anyopaque) bool {
+            const self: *@This() = @ptrCast(@alignCast(@constCast(context)));
+            self.polls += 1;
+            return self.polls > polls_before_cancel;
+        }
+
+        fn hook(self: *@This()) CancelHook {
+            return .{ .ctx = @ptrCast(self), .is_cancelled = isCancelled };
+        }
+    };
+}
+
+test "run_shell_command_with: a cancelled session kills the foreground child instead of waiting out its timeout" {
+    if (builtin.os.tag == .windows) return; // SIGKILL/-pgid is POSIX-only
+
+    const Cancel = CancellingAfter(0);
+    var hook_state = Cancel{};
+    const out = try run_shell_command_with(testing.allocator, testing.io, &.{ "bash", "-c" }, .{
+        .command = "sleep 30",
+        .cwd = "/tmp",
+        // Five times the width of the test suite: if the hook were ignored,
+        // this test would sit out the whole `timeout` and time out instead of
+        // failing on an assertion.
+        .timeout = 60,
+    }, hook_state.hook());
+    defer {
+        testing.allocator.free(out.command);
+        testing.allocator.free(out.stdout);
+        testing.allocator.free(out.stderr);
+    }
+
+    try testing.expect(out.cancelled);
+    // The cancel path must not masquerade as the deadline path: the two are
+    // reported separately to the model and in the transcript.
+    try testing.expect(!out.timeout);
+    // `bash -c "sleep 30"` leads its own process group, so the group kill
+    // reaches `sleep` too. SIGKILL is 9 on every POSIX host.
+    try testing.expectEqual(@as(i32, -9), out.exit_code);
+    try testing.expect(hook_state.polls > 0);
+}
+
+test "run_shell_command_with: a hook that never fires leaves the run unchanged" {
+    if (builtin.os.tag == .windows) return;
+
+    const Never = CancellingAfter(std.math.maxInt(usize));
+    var hook_state = Never{};
+    const out = try run_shell_command_with(testing.allocator, testing.io, &.{ "bash", "-c" }, .{
+        .command = "echo still-running",
+        .cwd = "/tmp",
+        .timeout = 30,
+    }, hook_state.hook());
+    defer {
+        testing.allocator.free(out.command);
+        testing.allocator.free(out.stdout);
+        testing.allocator.free(out.stderr);
+    }
+
+    try testing.expect(!out.cancelled);
+    try testing.expect(!out.timeout);
+    try testing.expectEqual(@as(i32, 0), out.exit_code);
+    try testing.expect(std.mem.indexOf(u8, out.stdout, "still-running") != null);
 }
