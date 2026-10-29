@@ -62,14 +62,33 @@ on:
         type: string
       publish:
         description: >-
-          Publish the staged binaries to the rolling `ci-latest` release.
-          `false` turns this workflow into a pure CHECK, which is what the
-          scheduled Windows job passes: a nightly run must never overwrite
-          the release that tracks main's newest green build (and must never
-          need `contents: write` to do it).
+          Publish the staged binaries to a GitHub release. `false` turns this
+          workflow into a pure CHECK, which is what the scheduled Windows job
+          passes: a nightly run must never overwrite the release that tracks
+          main's newest green build (and must never need `contents: write` to
+          do it).
         required: false
         default: true
         type: boolean
+      release_tag:
+        description: >-
+          Release tag these assets are published to, and the only thing that
+          decides WHICH kind of release this cell feeds. `ci-latest` (the
+          default) is the ROLLING release that tracks main's newest green
+          build: prerelease, never "Latest". ci.yml passes `github.ref_name`
+          when the run is a `v*` tag push, which turns the same steps into the
+          publisher of a VERSIONED release (prerelease=false, make_latest=true
+          for a plain tag; a `-rc1`-style suffix stays a prerelease).
+
+          The derivation lives in ci.yml (`env.RELEASE_TAG`) so the three
+          cells and the android cell cannot disagree, and
+          scripts/ci-check-release.py re-derives the same prerelease rule to
+          assert the result afterwards. Change the two together.
+
+          Only meaningful with `publish: true`.
+        required: false
+        default: ci-latest
+        type: string
 
 permissions:
   contents: read
@@ -101,7 +120,9 @@ jobs:
     # arm64 runner rejects with "Bad CPU type in executable".
     #
     # The publish step (softprops/action-gh-release@v2) creates/updates the
-    # rolling `ci-latest` release, which needs write access to contents.
+    # release named by `inputs.release_tag` -- the rolling `ci-latest` release
+    # on a main push, a VERSIONED release on a `v*` tag push -- and needs
+    # write access to contents either way.
     # The workflow default is `contents: read`; this job-level block
     # overrides it here AND in the caller, because a called workflow can
     # only ever be granted what the caller already holds.
@@ -1648,12 +1669,19 @@ jobs:
           Remove-Item $service.FullName -Force
           Write-Output ("packaged " + $zip)
 
-      - name: Render the shared ci-latest release body
+      - name: Render the release body
         # `body_path:` is read VERBATIM -- the action does not evaluate
-        # expressions inside the file -- so the two @@ placeholders are
-        # substituted here instead. The substitutions go through `sed`
-        # with a `|` delimiter because the body itself is full of
-        # slashes.
+        # expressions inside the file -- so the @@ placeholders are
+        # substituted before the publish step consumes it, by
+        # scripts/ci-render-release-body.sh. That script is SHARED with
+        # ci.yml's android-apk publisher: four jobs write one release row
+        # last-writer-wins, so the only way they cannot send different text
+        # is to not have four renderers.
+        #
+        # RELEASE_TAG is what makes a tag push publish a VERSIONED release
+        # instead of the rolling one. The rule lives in ci.yml
+        # (`env.RELEASE_TAG`) and arrives as an input, so this cell never
+        # re-implements it.
         #
         # `shell: bash` on all three cells, Windows included: the
         # windows-2022 image ships Git Bash and this workflow already runs
@@ -1662,43 +1690,57 @@ jobs:
         if: inputs.publish && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         shell: bash
         env:
-          # Read from the environment, not interpolated into the sed
-          # expression by the runner: `github.sha` is a hex string and
-          # `github.run_id` an integer, so neither can carry a `|` or a
-          # `/` -- but keeping them out of the shell command line means a
-          # future value that can would be a quoting bug rather than an
-          # injection.
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          # Read from the environment, not interpolated by the runner into
+          # the shell command line: `github.sha` is a hex string and
+          # `github.run_id` an integer, so neither can carry a `|` or a `/`
+          # -- but keeping them out of the command means a future value
+          # that can would be a quoting bug rather than an injection.
           SHA: ${{ github.sha }}
           RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
-          sed -e "s|@@SHA@@|$SHA|" -e "s|@@RUN@@|$RUN_ID|" \
-            scripts/ci-release-body.md > "$RUNNER_TEMP/ci-latest-body.md"
-          test -s "$RUNNER_TEMP/ci-latest-body.md"
-          echo "rendered $(wc -l < "$RUNNER_TEMP/ci-latest-body.md") lines of release body"
+          bash scripts/ci-render-release-body.sh > "$RUNNER_TEMP/release-body.md"
+          test -s "$RUNNER_TEMP/release-body.md"
+          echo "rendered $(wc -l < "$RUNNER_TEMP/release-body.md") lines of body for release $RELEASE_TAG"
 
-      - name: Publish binaries to rolling ci-latest release
-        # Merges to main + manual dispatch publish the staged binaries as
-        # assets on a single ROLLING GitHub Release tagged `ci-latest`.
+      - name: Publish binaries to the release
+        # ONE release per kind of run, chosen by `inputs.release_tag`:
+        #
+        #   `ci-latest`  push to main / manual dispatch on a branch
+        #                -> the ROLLING release: prerelease,
+        #                   make_latest=false, so it never shadows a
+        #                   versioned release.
+        #   `<v-star>`   push of a `v*` tag
+        #                -> a VERSIONED release: prerelease=false and
+        #                   make_latest=true, so it becomes the repo's
+        #                   "Latest" and `curl install.sh | bash -s --
+        #                   --version v1.2.3` resolves to it.
+        #
+        # A tag carrying a semver pre-release suffix (`v1.0.0-rc1`) stays a
+        # prerelease: it IS a release, but it must not take the Latest
+        # badge from the last real version. scripts/ci-check-release.py
+        # re-derives this exact rule to assert the result on tag runs --
+        # change the two together.
+        #
         # Releases do NOT count against the Actions artifact-storage quota,
-        # which is why this replaces upload-artifact entirely.
+        # which is why this replaces upload-artifact entirely. PR builds only
+        # stage (previous step) and skip this publish -- zero quota usage on
+        # any event.
         #
-        # PR builds only stage (previous step) and skip this publish —
-        # zero quota usage on any event.
-        #
-        # The release is marked prerelease + make_latest=false so it never
-        # shadows real versioned releases; softprops/action-gh-release@v2
-        # updates the tag + replaces same-named assets in place, so
-        # `ci-latest` always tracks the newest green main build.
+        # softprops/action-gh-release@v2 updates the tag + replaces
+        # same-named assets in place, so re-running a tag's workflow
+        # republishes that release instead of creating a second one, and
+        # `ci-latest` keeps tracking the newest green main build.
         if: inputs.publish && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ci-latest
-          name: CI binaries (latest main)
-          # ONE body file for every publisher of this release. The
-          # header of scripts/ci-release-body.md explains why it is a
-          # file and not a second inline copy.
-          body_path: ${{ runner.temp }}/ci-latest-body.md
-          prerelease: true
-          make_latest: false
+          tag_name: ${{ inputs.release_tag }}
+          name: ${{ inputs.release_tag == 'ci-latest' && 'CI binaries (latest main)' || inputs.release_tag }}
+          # ONE body file for every publisher of a release, rendered by the
+          # shared script above. The header of scripts/ci-release-body.md
+          # explains why it is a file and not a second inline copy.
+          body_path: ${{ runner.temp }}/release-body.md
+          prerelease: ${{ inputs.release_tag == 'ci-latest' || contains(inputs.release_tag, '-') }}
+          make_latest: ${{ inputs.release_tag != 'ci-latest' && !contains(inputs.release_tag, '-') }}
           files: bin-stage-${{ inputs.target_zig }}/*

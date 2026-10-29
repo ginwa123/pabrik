@@ -1,9 +1,10 @@
 <!--
-  The `ci-latest` release body, in ONE file, used by every publisher:
+  The GitHub Release body, in ONE file, used by every publisher and by BOTH
+  kinds of release:
 
-    * backend (Linux X64)   — .github/workflows/reusable/backend.yml
-    * backend (macOS ARM64) — .github/workflows/reusable/backend.yml
-    * backend (Windows X64) — .github/workflows/reusable/backend.yml
+    * backend (Linux X64)   — .github/workflows/ci-backend.yml
+    * backend (macOS ARM64) — .github/workflows/ci-backend.yml
+    * backend (Windows X64) — .github/workflows/ci-backend.yml
     * android-apk           — .github/workflows/ci.yml
 
   It used to be inline in the backend job only, and the android job was
@@ -12,16 +13,26 @@
   softprops/action-gh-release@v2 takes no lock over the tag. That ordering
   requirement is what stopped android-apk from starting early.
 
-  Sharing the file removes the requirement: all four publishers now send
+  Sharing the file removes the requirement: all four publishers send
   byte-identical text, so it no longer matters which one wins the create
   race, and android-apk can run alongside the backends.
 
-  @@SHA@@ / @@RUN@@ are substituted by the publish step from the workflow
-  context. `body_path:` is NOT expression-evaluated by the action, which is
+  TWO KINDS OF RELEASE READ THIS FILE
+  -----------------------------------
+  `ci-latest` (main / manual dispatch) and `<tag>` (a pushed `v*` tag). The
+  asset documentation is identical by design — a tagged release ships
+  exactly what the rolling one ships — so only the headline differs, and it
+  is the headline placeholder that carries the difference. Do NOT fork
+  this file.
+
+  The four placeholders (headline, release tag, commit, run id) are
+  substituted by scripts/ci-render-release-body.sh, which FAILS when one is left
+  behind. `body_path:` is NOT expression-evaluated by the action, which is
   exactly why the placeholders are literal here rather than ${{ }}.  -->
 
-Rolling release — binaries from the latest green `main` build.
+@@HEADLINE@@
 
+- Release: @@RELEASE_TAG@@
 - Commit: @@SHA@@
 - Built: @@RUN@@
 
