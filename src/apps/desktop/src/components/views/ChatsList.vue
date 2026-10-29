@@ -9,25 +9,28 @@ import { buildAppUrl } from '../../helpers/appUrl'
 import { useContextMenu } from '../../composables/useContextMenu'
 import { isBackgroundOpenEvent } from '../../helpers/tabTarget'
 import { openInNewTab } from '../../helpers/openInNewTab'
-import { VirtualScroller, formatRelativeTime } from '../../helpers'
+import { VirtualScroller } from '../../helpers'
 import {
   fetchPrInfoCached,
-  fetchPrStatusCached,
-  fetchPrConflictCached,
   branchUrlFromPrUrl,
-  onPrStatusInvalidated,
 } from '../../helpers/prStatusCache'
 import { useAgentErrorStore } from '../../stores/agentError'
+import type { ChatRow } from './chatsList/chatRowHelpers'
+import { effectiveChatCwd } from './chatsList/chatRowHelpers'
+import ChatRowGitIcon from './chatsList/ChatRowGitIcon.vue'
+import ChatRowStatusCluster from './chatsList/ChatRowStatusCluster.vue'
+import { useChatsPrStatus } from './chatsList/useChatsPrStatus'
+import { useChatsRows, type ChatsNavItem } from './chatsList/chatsListRows'
+import { useChatsResize } from './chatsList/useChatsResize'
+import { useChatsTouched } from './chatsList/useChatsTouched'
 import { parseAgentErrorHeadline } from '../../helpers/parseAgentErrorHeadline'
 import { sessionEngineDb, toSessionRow } from '../../sync/SessionEngineDb'
 import { runSyncEffect, runSyncEffectOr, runSyncVoid } from '../../sync/runtime'
 import * as api from '../../api'
-import WorkerElapsedChip from '../WorkerElapsedChip.vue'
 import SidebarSkeleton from '../shell/SidebarSkeleton.vue'
 import ChatRowContextMenu from '../shell/ChatRowContextMenu.vue'
 import RenameTaskModal from '../dialogs/RenameTaskModal.vue'
 import GitBranchMenu from '../shell/GitBranchMenu.vue'
-import UiIcon from '../ui/UiIcon.vue'
 
 const router = useRouter()
 
@@ -50,21 +53,6 @@ const workspacesStore = useWorkspacesStore()
 // ChatView remounts, so the badge stays in sync across session
 // switches without a second fetch.
 const agentErrorStore = useAgentErrorStore()
-
-type StatusBadgeRow = {
-  id: string
-  last_finish_reason?: string
-  needs_human_review?: boolean
-}
-
-const isAwaitingReview = (row: StatusBadgeRow): boolean =>
-  row.needs_human_review === true && row.last_finish_reason === 'stop'
-
-// The `last_finish_reason === 'stop'` gate is load-bearing: without it a
-// stale `needs_human_review: false` + `finish_reason: 'tool_calls'`
-// state paints a phantom "reviewed" checkmark mid-turn.
-const isReviewed = (row: StatusBadgeRow): boolean =>
-  !isAwaitingReview(row) && row.last_finish_reason === 'stop'
 
 const rowAgentError = (id: string) => agentErrorStore.bySession[id] ?? null
 const rowErrorRetryLabel = (id: string): string | null => {
@@ -92,161 +80,41 @@ const scopedWorkspaceId = computed(() => {
 const isCurrentChat = (sessionId: string): boolean =>
   currentMainView.value.kind === 'chat' && currentMainView.value.sessionId === sessionId
 
-// Migration 082 - "AI is ahead of you" stale-dot check.
-// Both come from the backend as unix-ms strings (Migration 075
-// convention) - we compare as numbers.
-const isStale = (human: string | undefined, updated: string | undefined): boolean => {
-  if (!human) return false
-  if (!updated) return false
-  // Both fields are SQLite datetime UTC strings ('YYYY-MM-DD HH:MM:SS') - identical format - so
-  // lexicographic string comparison is the most accurate (and fastest) way to detect 'updated_at >
-  // human_time'.
-  return updated > human
-}
-
-// Single-badge rule: the orange awaiting-review dot already covers
-// the "AI is ahead" state, so the amber stale dot stays hidden then.
-// Without this both dots paint together (same SQL predicate).
-type StaleDotRow = StatusBadgeRow & {
-  last_human_touched_at?: string
-  updated_at?: string
-}
-
-const shouldShowStaleDot = (item: StaleDotRow): boolean => {
-  if (isAwaitingReview(item)) return false
-  return isStale(item.last_human_touched_at, item.updated_at)
-}
-
 // Inject processingState from App.vue
 const processingState = inject<Ref<Record<string, boolean>>>('processingState', ref({}))
 
-// PR branch badges use the same palette as WorkspaceItemTaskCard:
-// green = open, violet = merged, red = closed. Rows without a pull
-// request omit the badge entirely.
-const prStatuses = ref<Record<string, string>>({})
-// Conflict-only hint per chat: true when the PR reports CONFLICTING/DIRTY.
-// Quiet-when-clean — absent/false for mergeable, unknown, or failed fetches.
-const prConflicts = ref<Record<string, boolean>>({})
-const prSeqByChat = new Map<string, number>()
-
-type ChatRow = {
-  id: string
-  cwd?: string
-  git_worktree_cwd?: string
-  git_branch?: string
-}
-
-const effectiveChatCwd = (item: ChatRow): string => item.git_worktree_cwd || item.cwd || ''
-
-const chatBranchStyle = (id: string): Record<string, string> => {
-  const s = prStatuses.value[id] || ''
-  if (s === 'merged') return { color: 'var(--color-violet)', fontWeight: '600' }
-  if (s === 'closed') return { color: 'var(--semantic-error)', fontWeight: '600' }
-  if (s === 'open') return { color: 'var(--color-green)', fontWeight: '600' }
-  return { color: 'var(--color-orange)', fontWeight: '600' }
-}
-
-const chatBranchTitle = (item: ChatRow): string => {
-  const branch = item.git_branch || ''
-  const s = prStatuses.value[item.id] || ''
-  const conflictSuffix = prConflicts.value[item.id] ? ' — merge conflicts' : ''
-  const base =
-    s === 'merged'
-      ? `PR merged — ${branch}`
-      : s === 'closed'
-        ? `PR closed — ${branch}`
-        : s === 'open'
-          ? `PR open${conflictSuffix} — ${branch}`
-          : prConflicts.value[item.id]
-            ? `${branch} — merge conflicts`
-            : branch
-  // Surface the worktree path alongside the branch so the full
-  // checkout location stays discoverable on hover.
-  if (item.git_worktree_cwd) return `${base} — ${item.git_worktree_cwd}`
-  return base
-}
-
-const refreshChatPrStatus = async (item: ChatRow) => {
-  const branch = item.git_branch || ''
-  const cwd = effectiveChatCwd(item)
-  if (!branch || !cwd) {
-    if (prStatuses.value[item.id]) delete prStatuses.value[item.id]
-    if (prConflicts.value[item.id]) delete prConflicts.value[item.id]
-    return
-  }
-  const seq = (prSeqByChat.get(item.id) || 0) + 1
-  prSeqByChat.set(item.id, seq)
-  // Shared cache: dedupes the list-load burst across rows, retries
-  // transient failures, resolves '' (fail-silent) when unknown.
-  const [status, hasConflict] = await Promise.all([
-    fetchPrStatusCached(cwd, branch),
-    fetchPrConflictCached(cwd, branch),
-  ])
-  if (prSeqByChat.get(item.id) !== seq) return
-  if (status) prStatuses.value[item.id] = status
-  else if (prStatuses.value[item.id]) delete prStatuses.value[item.id]
-  if (hasConflict) prConflicts.value[item.id] = true
-  else if (prConflicts.value[item.id]) delete prConflicts.value[item.id]
-}
 
 // Helper to check if a session is processing. Reads the injected
 // processingState live so rows reflect spinner state without mirroring
 // it onto each row object.
 const isProcessing = (id: string): boolean => !!processingState.value[id]
 
+
 // State
 const chatsLoading = ref(false)
-const navItems = ref<
-  {
-    id: string
-    name: string
-    active?: boolean
-    relativeTime?: string
-    selected_profile_model?: string
-    sub_agent_name?: string
-    parent_session_id?: string
-    cwd?: string
-    git_worktree_cwd?: string
-    git_branch?: string
-    is_auto_retry_until_stop?: string
-    last_human_touched_at?: string
-    updated_at?: string
-    // Raw `updated_at` sort value (matches the backend
-    // `sort_by=updated_at` order). Used for display sorting and for
-    // cache-first scroll-back (`loadOlderFromCache`).
-    sortKey?: string
-    // Migration 104 — pinned sessions (PINNED section above RECENT).
-    is_pinned?: boolean
-    pinned_position?: number
-    last_finish_reason?: string
-    needs_human_review?: boolean
-  }[]
->([])
+const navItems = ref<ChatsNavItem[]>([])
 const chatsHasMore = ref(false)
 const chatsNextCursor = ref<string | null>(null)
 const chatsSortDirection = ref<'asc' | 'desc'>(navigationStore.chatsSortDirection)
 const chatsTotal = ref(0)
 
-// Resolve PR colors whenever the row list (re)populates — same burst
-// pattern as the kanban board mount. Runs at the end of loadChats().
-const burstChatPrStatus = () => {
-  for (const item of navItems.value || []) {
-    if (item.git_branch) void refreshChatPrStatus(item)
-  }
-}
+const { sessionCacheKey, toNavItem, sortNavItemsForDisplay, mapNavItemToChat } = useChatsRows({
+  navItems,
+  chatsSortDirection,
+  scopedWorkspaceId,
+})
 
-// A merge or close ANYWHERE — this tab's MergeBox, or the `git_pr_state` SSE event from another
-// client — drops the shared cache entry and calls this back.
-let unsubscribePrStatus: (() => void) | null = null
-onMounted(() => {
-  unsubscribePrStatus = onPrStatusInvalidated(() => {
-    burstChatPrStatus()
-  })
+// ChatsList maintains its OWN navItems mirror of workspacesStore state, populated by loadChats().
+const virtualScrollerRef = ref<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.
+
+const { startChatsResize, stopChatsResize } = useChatsResize()
+const { optimisticClearStaleDot, fireSessionTouched, touchedAtMs, TOUCH_ECHO_SUPPRESS_MS } =
+  useChatsTouched({ navItems })
+
+const { prStatuses, prConflicts, burstChatPrStatus } = useChatsPrStatus({
+  navItems,
 })
-onUnmounted(() => {
-  unsubscribePrStatus?.()
-  unsubscribePrStatus = null
-})
+
 
 // Right-click action menu for a chat row. Position state + dismiss
 // wiring live in useContextMenu; the row payload lives here so the menu
@@ -429,150 +297,8 @@ const onSortToggle = () => {
   loadChats()
 }
 
-// Chats resize handling
-const isChatsResizing = ref(false)
-const chatsResizeStartY = ref(0)
-const chatsResizeStartPx = ref(0)
-
 // ChatsList maintains its OWN navItems mirror of workspacesStore state, populated by loadChats().
-const virtualScrollerRef = ref<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.
 
-// Get computed chats height in pixels from percentage
-const getChatsHeightPx = (): number => {
-  const aside = document.querySelector('aside')
-  if (!aside) return 200
-  const navHeight = aside.clientHeight - 56 - 48 // header + footer
-  return (navHeight * sidebarStore.chatsHeight) / 100
-}
-
-const startChatsResize = (e: MouseEvent) => {
-  e.preventDefault()
-  e.stopPropagation()
-  console.log('[ChatsList] startChatsResize', e.clientY)
-  isChatsResizing.value = true
-  chatsResizeStartY.value = e.clientY
-  chatsResizeStartPx.value = getChatsHeightPx()
-  document.addEventListener('mousemove', handleChatsResize, { passive: false })
-  document.addEventListener('mouseup', stopChatsResize)
-  document.body.style.userSelect = 'none'
-  document.body.style.cursor = 'row-resize'
-}
-
-const handleChatsResize = (e: MouseEvent) => {
-  e.preventDefault()
-  if (!isChatsResizing.value) return
-  console.log(
-    '[ChatsList] handleChatsResize',
-    e.clientY,
-    'delta:',
-    e.clientY - chatsResizeStartY.value,
-  )
-  const deltaY = e.clientY - chatsResizeStartY.value
-  const newHeightPx = Math.max(80, chatsResizeStartPx.value + deltaY)
-  // Convert back to percentage
-  const aside = document.querySelector('aside')
-  if (!aside) return
-  const navHeight = aside.clientHeight - 56 - 48
-  const newPercent = (newHeightPx / navHeight) * 100
-  console.log('[ChatsList] newPercent:', newPercent)
-  sidebarStore.setChatsHeight(newPercent)
-}
-
-const stopChatsResize = () => {
-  isChatsResizing.value = false
-  document.removeEventListener('mousemove', handleChatsResize)
-  document.removeEventListener('mouseup', stopChatsResize)
-  document.body.style.userSelect = ''
-  document.body.style.cursor = ''
-}
-
-// Public methods for parent to call Amber stale-dot clear (yellow-dot-fix): optimistic patch +
-// best-effort backend touch. isStale() predicate is unchanged — clearing the dot is done by
-// aligning last_human_touched_at to updated_at.
-const optimisticClearStaleDot = (id: string) => {
-  const item = navItems.value.find((i) => i.id === id)
-  if (item && item.updated_at) {
-    item.last_human_touched_at = item.updated_at
-    item.relativeTime = formatRelativeTime(item.last_human_touched_at)
-  }
-}
-
-// Loop-guard (touched-echo fix): fireSessionTouched fires at most ONCE per sessionId per component
-// lifetime.
-const touchedFiredFor = new Set<string>()
-const touchedAtMs = new Map<string, number>()
-// Echo window: a session.updated arriving within this long after our
-// own touched POST is assumed to be the backend echo of that POST,
-// not an independent rename — skip the refetch for it.
-const TOUCH_ECHO_SUPPRESS_MS = 5000
-
-const fireSessionTouched = (id: string) => {
-  if (!id || touchedFiredFor.has(id)) return
-  touchedFiredFor.add(id)
-  touchedAtMs.set(id, Date.now())
-  api.markSessionTouched(id).catch((e) => {
-    // Allow retry on failure: a failed stamp never reached the DB,
-    // so no SSE echo is coming — drop the guards.
-    touchedFiredFor.delete(id)
-    touchedAtMs.delete(id)
-    console.error('Failed to mark session touched:', e)
-  })
-}
-
-// Sidebar local-first: the cache partition key. Matches the
-// `scopedWorkspaceId` refetch boundary — each workspace paints its own
-// cached rows, `'all'` when unscoped (back-compat).
-const sessionCacheKey = (): string => scopedWorkspaceId.value ?? 'all'
-
-// Single mapper for server session → row view model, shared by the cache paint and the network paint
-// so both shapes stay identical (same "no shape drift" rule as ChatView's toChatMessages).
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.
-const toNavItem = (session: any) => ({
-  id: session.session_id,
-  name: session.session_name || 'New Chat',
-  // active state now derives from the URL via isCurrentChat() in the template
-  // (sidebar-single-active fix 2026-08-06). Storing it here would freeze the highlight at
-  // loadChats() time and leave stale `active: true` after navigation away from chat.
-  active: false,
-  // Migration 082 — prefer human-touched timestamp when present.
-  relativeTime: formatRelativeTime(session.last_human_touched_at || session.updated_at),
-  selected_profile_model: session.selected_profile_model || '',
-  sub_agent_name: session.sub_agent_name || '',
-  parent_session_id: session.parent_session_id || '',
-  cwd: session.cwd || '',
-  git_worktree_cwd: session.git_worktree_cwd || '',
-  git_branch: session.git_branch || '',
-  // Migration 063 — defaulted to "0" in getChats mapping so the
-  // `=== '1'` badge check below is well-defined.
-  is_auto_retry_until_stop: session.is_auto_retry_until_stop || '0',
-  // Migration 082 — captured separately for the stale-dot check
-  // (compares updated_at vs last_human_touched_at to render the
-  // amber "AI is ahead of you" indicator).
-  last_human_touched_at: session.last_human_touched_at || '',
-  updated_at: session.updated_at || '',
-  sortKey: session.updated_at || '',
-  // Migration 104 — pinned sessions. Boolean on the wire; default
-  // false so legacy caches read as unpinned.
-  is_pinned: session.is_pinned ?? false,
-  pinned_position: session.pinned_position ?? 0,
-  last_finish_reason: session.last_finish_reason || '',
-  // NOT `?? false`: a legacy cache row with no field must read as
-  // "no badge", not "reviewed".
-  needs_human_review: session.needs_human_review ?? undefined,
-})
-
-// Display order for cached paints. The engine stores newest-first;
-// the backend serves `direction` order — re-apply it here so a warm
-// mount in asc mode matches the network order exactly.
-const sortNavItemsForDisplay = () => {
-  const asc = chatsSortDirection.value === 'asc'
-  navItems.value.sort((a, b) => {
-    const ak = a.sortKey ?? ''
-    const bk = b.sortKey ?? ''
-    if (ak === bk) return 0
-    return (ak < bk ? -1 : 1) * (asc ? 1 : -1)
-  })
-}
 
 // Migration 104 — PINNED section above RECENT. Pinned rows sort by
 // `pinned_position` DESC (first pinned = highest position = top);
@@ -621,24 +347,6 @@ const togglePinFromMenu = async () => {
     console.error('Failed to toggle session pin:', err)
   }
 }
-
-// Minimal Chat shape for the cache write-through above.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const mapNavItemToChat = (r: any): any => ({
-  session_id: r.id,
-  session_name: r.name,
-  cwd: r.cwd ?? '',
-  git_worktree_cwd: r.git_worktree_cwd ?? '',
-  git_branch: r.git_branch ?? '',
-  updated_at: r.updated_at ?? '',
-  selected_profile_model: r.selected_profile_model ?? '',
-  is_auto_retry_until_stop: r.is_auto_retry_until_stop ?? '0',
-  last_human_touched_at: r.last_human_touched_at ?? '',
-  is_pinned: r.is_pinned ?? false,
-  pinned_position: r.pinned_position ?? 0,
-  last_finish_reason: r.last_finish_reason ?? '',
-  needs_human_review: r.needs_human_review ?? undefined,
-})
 
 // PINNED drag-drop reorder (Migration 104). HTML5 DnD on the pinned rows only (small list, no
 // virtualization): dragstart captures the id, dragover tracks the target + before/after half, drop
@@ -1157,129 +865,21 @@ defineExpose({
               : 'color: var(--semantic-text-muted);'
           "
         >
-          <span class="w-[var(--sb-mark)] shrink-0 flex items-center">
-            <span
-              v-if="item.git_branch && prStatuses[item.id]"
-              class="inline-flex items-center cursor-context-menu"
-              :style="chatBranchStyle(item.id)"
-              :title="chatBranchTitle(item) + ' — right-click to open the change request'"
-              :data-pr-status="prStatuses[item.id] || undefined"
-              :data-pr-conflict="prConflicts[item.id] || undefined"
-              data-testid="chat-git-branch"
-              @contextmenu.prevent.stop="onGitIconContextMenu($event, item)"
-            >
-              <svg
-                class="w-3 h-3 shrink-0"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2.5"
-                aria-hidden="true"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M6 3v12M18 9a3 3 0 100-6 3 3 0 000 6zM6 21a3 3 0 100-6 3 3 0 000 6zM18 9a9 9 0 01-9 9"
-                />
-              </svg>
-            </span>
-          </span>
+          <ChatRowGitIcon
+            :item="item"
+            :pr-status="prStatuses[item.id]"
+            :pr-conflict="!!prConflicts[item.id]"
+            @contextmenu="onGitIconContextMenu($event, item)"
+          />
           <span class="flex-1 min-w-0 truncate text-left" :title="item.name">{{ item.name }}</span>
-          <span class="ml-2 flex items-center gap-1.5 shrink-0">
-            <span
-              v-if="item.sub_agent_name"
-              class="text-micro"
-              style="color: var(--color-violet)"
-              :title="
-                item.parent_session_id ? 'Sub-agent of ' + item.parent_session_id : 'Sub-agent'
-              "
-              ><UiIcon name="tools" size-class="w-3 h-3" /> {{ item.sub_agent_name }}</span
-            >
-            <span
-              v-if="isAwaitingReview(item)"
-              class="inline-flex items-center shrink-0"
-              title="AI finished — awaiting your review"
-              data-testid="chat-status-awaiting-review"
-            >
-              <span
-                class="w-2 h-2 rounded-full"
-                style="
-                  background-color: rgb(251, 146, 60);
-                  box-shadow: 0 0 0 0 rgba(251, 146, 60, 0.6);
-                  animation: chat-needs-review-pulse 2.4s ease-out 4 forwards;
-                "
-              />
-            </span>
-            <span
-              v-else-if="isReviewed(item)"
-              class="inline-flex items-center shrink-0 text-green-500"
-              title="Reviewed"
-              data-testid="chat-status-reviewed"
-            >
-              <svg
-                class="w-3 h-3"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2.5"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-            </span>
-            <span
-              v-if="rowAgentError(item.id)"
-              class="inline-flex items-center shrink-0"
-              style="color: var(--color-red)"
-              :title="
-                rowErrorRetryLabel(item.id)
-                  ? `Agent error — retry ${rowErrorRetryLabel(item.id)}`
-                  : 'Agent error'
-              "
-              data-testid="chat-status-agent-error"
-            >
-              ⚠
-            </span>
-            <span
-              v-if="prConflicts[item.id]"
-              class="inline-flex items-center shrink-0 cursor-context-menu"
-              style="color: var(--color-red)"
-              :title="'Merge conflicts — ' + (item.git_branch || '')"
-              data-testid="chat-status-pr-conflict"
-              @contextmenu.prevent.stop="onGitIconContextMenu($event, item)"
-            >
-              <UiIcon name="alert" size-class="w-3 h-3" />
-            </span>
-            <span
-              v-if="!isProcessing(item.id)"
-              class="text-micro opacity-70 flex items-center gap-1"
-            >
-              <span
-                v-if="shouldShowStaleDot(item)"
-                class="w-1 h-1 rounded-full bg-amber-400"
-                title="AI is still working — your last touch was earlier"
-                data-testid="chat-stale-dot"
-              />
-              <span
-                :title="
-                  item.last_human_touched_at
-                    ? 'Last human activity'
-                    : 'Last activity (never touched by you yet)'
-                "
-                data-testid="chat-time-pill"
-                >{{ item.relativeTime || 'now' }}</span
-              >
-            </span>
-            <WorkerElapsedChip
-              v-else
-              :session-id="item.id"
-              test-id="chat-elapsed-chip"
-              variant="text"
-            />
-          </span>
+          <ChatRowStatusCluster
+            :item="item"
+            :agent-error="!!rowAgentError(item.id)"
+            :agent-error-retry-label="rowErrorRetryLabel(item.id)"
+            :pr-conflict="!!prConflicts[item.id]"
+            :processing="isProcessing(item.id)"
+            @git-context-menu="onGitIconContextMenu($event, item)"
+          />
         </button>
       </div>
     </div>
@@ -1369,131 +969,23 @@ defineExpose({
                 : 'color: var(--semantic-text-muted);'
             "
           >
-            <span class="w-[var(--sb-mark)] shrink-0 flex items-center">
-              <span
-                v-if="item.git_branch && prStatuses[item.id]"
-                class="inline-flex items-center cursor-context-menu"
-                :style="chatBranchStyle(item.id)"
-                :title="chatBranchTitle(item) + ' — right-click to open the change request'"
-                :data-pr-status="prStatuses[item.id] || undefined"
-                :data-pr-conflict="prConflicts[item.id] || undefined"
-                data-testid="chat-git-branch"
-                @contextmenu.prevent.stop="onGitIconContextMenu($event, item)"
-              >
-                <svg
-                  class="w-3 h-3 shrink-0"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="2.5"
-                  aria-hidden="true"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M6 3v12M18 9a3 3 0 100-6 3 3 0 000 6zM6 21a3 3 0 100-6 3 3 0 000 6zM18 9a9 9 0 01-9 9"
-                  />
-                </svg>
-              </span>
-            </span>
+            <ChatRowGitIcon
+              :item="item"
+              :pr-status="prStatuses[item.id]"
+              :pr-conflict="!!prConflicts[item.id]"
+              @contextmenu="onGitIconContextMenu($event, item)"
+            />
             <span class="flex-1 min-w-0 truncate text-left" :title="item.name">{{
               item.name
             }}</span>
-            <span class="ml-2 flex items-center gap-1.5 shrink-0">
-              <span
-                v-if="item.sub_agent_name"
-                class="text-micro"
-                style="color: var(--color-violet)"
-                :title="
-                  item.parent_session_id ? 'Sub-agent of ' + item.parent_session_id : 'Sub-agent'
-                "
-                ><UiIcon name="tools" size-class="w-3 h-3" /> {{ item.sub_agent_name }}</span
-              >
-              <span
-                v-if="isAwaitingReview(item)"
-                class="inline-flex items-center shrink-0"
-                title="AI finished — awaiting your review"
-                data-testid="chat-status-awaiting-review"
-              >
-                <span
-                  class="w-2 h-2 rounded-full"
-                  style="
-                    background-color: rgb(251, 146, 60);
-                    box-shadow: 0 0 0 0 rgba(251, 146, 60, 0.6);
-                    animation: chat-needs-review-pulse 2.4s ease-out 4 forwards;
-                  "
-                />
-              </span>
-              <span
-                v-else-if="isReviewed(item)"
-                class="inline-flex items-center shrink-0 text-green-500"
-                title="Reviewed"
-                data-testid="chat-status-reviewed"
-              >
-                <svg
-                  class="w-3 h-3"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="2.5"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-              </span>
-              <span
-                v-if="rowAgentError(item.id)"
-                class="inline-flex items-center shrink-0"
-                style="color: var(--color-red)"
-                :title="
-                  rowErrorRetryLabel(item.id)
-                    ? `Agent error — retry ${rowErrorRetryLabel(item.id)}`
-                    : 'Agent error'
-                "
-                data-testid="chat-status-agent-error"
-              >
-                ⚠
-              </span>
-              <span
-                v-if="prConflicts[item.id]"
-                class="inline-flex items-center shrink-0 cursor-context-menu"
-                style="color: var(--color-red)"
-                :title="'Merge conflicts — ' + (item.git_branch || '')"
-                data-testid="chat-status-pr-conflict"
-                @contextmenu.prevent.stop="onGitIconContextMenu($event, item)"
-              >
-                <UiIcon name="alert" size-class="w-3 h-3" />
-              </span>
-              <span
-                v-if="!isProcessing(item.id)"
-                class="text-micro opacity-70 flex items-center gap-1"
-              >
-                <span
-                  v-if="shouldShowStaleDot(item)"
-                  class="w-1 h-1 rounded-full bg-amber-400"
-                  title="AI is still working — your last touch was earlier"
-                  data-testid="chat-stale-dot"
-                />
-                <span
-                  :title="
-                    item.last_human_touched_at
-                      ? 'Last human activity'
-                      : 'Last activity (never touched by you yet)'
-                  "
-                  data-testid="chat-time-pill"
-                  >{{ item.relativeTime || 'now' }}</span
-                >
-              </span>
-              <WorkerElapsedChip
-                v-else
-                :session-id="item.id"
-                test-id="chat-elapsed-chip"
-                variant="text"
-              />
-            </span>
+            <ChatRowStatusCluster
+              :item="item"
+              :agent-error="!!rowAgentError(item.id)"
+              :agent-error-retry-label="rowErrorRetryLabel(item.id)"
+              :pr-conflict="!!prConflicts[item.id]"
+              :processing="isProcessing(item.id)"
+              @git-context-menu="onGitIconContextMenu($event, item)"
+            />
           </button>
         </template>
       </VirtualScroller>
@@ -1572,25 +1064,3 @@ defineExpose({
     @open-pr="openGitPrInBackground"
   />
 </template>
-
-<style scoped>
-/* Prefixed `chat-` so it cannot collide with the kanban card's
-   same-shaped `needs-review-pulse` in its own scoped block. */
-@keyframes chat-needs-review-pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(251, 146, 60, 0.6);
-  }
-  70% {
-    box-shadow: 0 0 0 12px rgba(251, 146, 60, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(251, 146, 60, 0);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  [data-testid='chat-status-awaiting-review'] span {
-    animation: none;
-  }
-}
-</style>
