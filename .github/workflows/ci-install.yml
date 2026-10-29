@@ -31,6 +31,18 @@
 #   from file://). PRs exercise these scripts against the newest green
 #   main build, which is the right oracle for "does the installer work".
 #
+# WHY THIS STILL INSTALLS FROM `ci-latest` ON A `v*` TAG RUN
+# ---------------------------------------------------------
+# A tag run publishes a VERSIONED release (ci.yml's `env.RELEASE_TAG`), and
+# these jobs run BESIDE the backend cells, not after them -- so the tag's
+# release does not exist yet when the download starts. Pointing them at the
+# tag would mean either racing the publisher (flaky red) or making install
+# wait for all three backends (the per-platform graph exists to avoid
+# exactly that). What this workflow checks is the INSTALLER SCRIPTS at this
+# SHA against a real release, and `ci-latest` is that release on every run;
+# the tag's own artifact contract is asserted by ci.yml's `release-check`
+# job, after the publishers, against the release itself.
+#
 # NO `concurrency:` BLOCK, DELIBERATELY — same reason as ci-backend.yml:
 # inside a CALLED workflow `github.workflow` resolves to the CALLER's
 # name, so three calls would share one group and cancel each other.

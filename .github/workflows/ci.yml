@@ -52,6 +52,19 @@
 #    build graph and the package cache, and it is the one gate that is
 #    about Zig source rather than JavaScript. Two jobs, two toolchains.
 #
+# 8. A TAG PUSH IS A RELEASE, NOT A SECOND PIPELINE. `push: tags: ['v*']`
+#    runs THIS workflow: a release must be cut from a commit a real pipeline
+#    verified, so a fork of 1300 lines in a `release.yml` would be a second
+#    definition of "green" that can rot independently. What a tag run changes
+#    is only WHERE the assets go -- `env.RELEASE_TAG` resolves to the tag's
+#    name instead of `ci-latest`, so the same four publishers fill a VERSIONED
+#    release and the rolling one is left alone. `release-check` then asserts
+#    that release really has all 12 assets, is not a prerelease and holds the
+#    repo's "Latest" badge: the one thing a tag push promises and a rolling
+#    release does not. Without this, a tag push ran NOTHING (every workflow
+#    triggered on branches only), which is how tag `v0.1` came to exist as a
+#    release with zero assets.
+#
 # The two reusable workflows sit at the TOP level of .github/workflows and
 # NOT in a subdirectory. A subdirectory looks tidier and is wrong: GitHub
 # rejects the whole workflow with
@@ -77,6 +90,16 @@ name: ci
 on:
   push:
     branches: [main]
+    # A `v*` tag runs THIS workflow (see item 8 in the header): a tagged
+    # release must be cut from a commit a real pipeline verified, so a tag
+    # build is a full build, not a reduced "publish what is already there"
+    # job. The tag is what tells the publishers WHERE to send the assets --
+    # `env.RELEASE_TAG` below, which is `ci-latest` on every other ref.
+    #
+    # Deliberately `v*` and not `*`: a stray tag must not publish a release,
+    # and `ci-latest` itself is a tag this workflow CREATES, so it can never
+    # be a trigger for it.
+    tags: ['v*']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -101,6 +124,30 @@ env:
   # and build.zig. pnpm/action-setup pins pnpm 11; Node 24 + pnpm are the
   # only JS toolchain bits CI needs.
   ZIG_VERSION: 0.16.0
+  # WHERE THE PUBLISHERS SEND THEIR ASSETS — the only thing a tag push changes
+  # about the pipeline, and the reason this file needs no twin release.yml.
+  #
+  #   refs/heads/*, refs/pull/*  -> `ci-latest`, the rolling release that
+  #                                 tracks main's newest green build
+  #   refs/tags/v*               -> the tag's own VERSIONED release
+  #
+  # A manual dispatch ON A TAG REF resolves the same way, because
+  # `github.ref` is `refs/tags/...` there too, and it republishes the SAME
+  # release (softprops/action-gh-release@v2 replaces same-named assets in
+  # place) instead of creating a second one. Two things it cannot do:
+  #   * it is not a way to backfill the empty `v0.1` release -- a dispatch
+  #     runs the workflow FILE FROM THE DISPATCHED REF, so an old tag would
+  #     run the old workflow, which had no tag path at all;
+  #   * it does not skip the build. A re-release is a full green pipeline or
+  #     it is not a release.
+  #
+  # WHY THE THREE `release_tag:` INPUTS BELOW REPEAT THIS EXPRESSION: `with:`
+  # on a `uses:` call accepts only github/needs/strategy/matrix/inputs/vars,
+  # so `env` is unreadable there (actionlint rejects it:
+  # `context "env" is not allowed here`). Step-level `if:`/`with:` CAN read
+  # env, which is why the android publisher below uses this name instead of
+  # repeating the expression a fourth time.
+  RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'ci-latest' }}
 
 jobs:
   # ── 0. Path filter ───────────────────────────────────────────────────
@@ -150,6 +197,17 @@ jobs:
           # stdout is `heavy=true|false`; the per-file trace goes to
           # stderr and lands in this step's log.
           heavy="$(bash scripts/ci-change-filter.sh "$base")"
+          # A TAG PUSH ALWAYS BUILDS EVERYTHING. Its output is a release, and
+          # a release missing assets is not a release -- so the filter's
+          # answer is not allowed to shrink a tag run. A NEW tag already
+          # lands here with no usable base (heavy=true by the fail-open
+          # rule); this covers the one case that could slip through, a tag
+          # force-moved onto a docs-only diff. `GITHUB_REF_TYPE` is a
+          # runner-provided default var ("branch" | "tag").
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            echo 'tag ref — building everything' >&2
+            heavy='heavy=true'
+          fi
           echo "$heavy"
           echo "$heavy" >> "$GITHUB_OUTPUT"
 
@@ -553,6 +611,10 @@ jobs:
       # .glibc_version = 2.38 needs.
       target_zig: x86_64-linux-gnu
       target_step: install:linux:system
+      # Publishing destination. `env.RELEASE_TAG` cannot be read from a
+      # `uses:` call's `with:`, so the same one-line rule is spelled out
+      # here (see the `env:` block above for what it decides).
+      release_tag: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'ci-latest' }}
 
   backend-macos:
     name: backend (macOS ARM64)
@@ -569,6 +631,10 @@ jobs:
       # result with "Bad CPU type in executable".
       target_zig: aarch64-macos
       target_step: install:macos-arm
+      # Publishing destination. `env.RELEASE_TAG` cannot be read from a
+      # `uses:` call's `with:`, so the same one-line rule is spelled out
+      # here (see the `env:` block above for what it decides).
+      release_tag: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'ci-latest' }}
 
   backend-windows:
     name: backend (Windows X64)
@@ -585,6 +651,10 @@ jobs:
       # sysroot under C:\vcpkg\installed\x64-windows.
       target_zig: x86_64-windows-gnu
       target_step: install:windows-nat
+      # Publishing destination. `env.RELEASE_TAG` cannot be read from a
+      # `uses:` call's `with:`, so the same one-line rule is spelled out
+      # here (see the `env:` block above for what it decides).
+      release_tag: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'ci-latest' }}
 
   # ── 3. Functional, three shards per platform ────────────────────────
   # Each shard `needs:` ITS OWN backend cell and nothing else. This is the
@@ -939,11 +1009,16 @@ jobs:
           cp "$src" "$stage/Pabrik-android-debug.apk"
           ls -l "$stage"
 
-      - name: Render the shared ci-latest release body
-        # The same file the three backend cells send, for the same reason
+      - name: Render the release body
+        # The same script the three backend cells run, for the same reason
         # (see the header of scripts/ci-release-body.md). Sending a
         # DIFFERENT body is what used to make this job the last writer,
         # and last-writer was what kept it off the critical path.
+        #
+        # `RELEASE_TAG` comes from the workflow `env:` block: the tag's name
+        # on a `v*` tag push, `ci-latest` on every other ref. This job reads
+        # it from `env` because a step's `env:`/`with:` CAN, while the
+        # `uses:` calls above cannot.
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         shell: bash
         env:
@@ -951,21 +1026,25 @@ jobs:
           RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
-          sed -e "s|@@SHA@@|$SHA|" -e "s|@@RUN@@|$RUN_ID|" \
-            scripts/ci-release-body.md > "$RUNNER_TEMP/ci-latest-body.md"
-          test -s "$RUNNER_TEMP/ci-latest-body.md"
-          echo "rendered $(wc -l < "$RUNNER_TEMP/ci-latest-body.md") lines of release body"
+          bash scripts/ci-render-release-body.sh > "$RUNNER_TEMP/release-body.md"
+          test -s "$RUNNER_TEMP/release-body.md"
+          echo "rendered $(wc -l < "$RUNNER_TEMP/release-body.md") lines of body for release $RELEASE_TAG"
 
-      - name: Publish the APK to the rolling ci-latest release
-        # Same release, same tag, same event gate as the backend job: a PR
-        # builds and stages but never publishes -- zero quota usage, and a
-        # pull_request from a fork has no write token at all. A broken Android
-        # build SHOULD still go red on a PR, which is why the gate is on this
-        # step and not on the job.
+      - name: Publish the APK to the release
+        # Same release, same tag_name rule, same event gate as the backend
+        # cells: a PR builds and stages but never publishes -- zero quota
+        # usage, and a pull_request from a fork has no write token at all. A
+        # broken Android build SHOULD still go red on a PR, which is why the
+        # gate is on this step and not on the job.
+        #
+        # On a `v*` tag push this publishes into the tag's VERSIONED release
+        # instead of `ci-latest` (env.RELEASE_TAG), and the app becomes one of
+        # the 12 assets release-check asserts -- the phone client is the one
+        # asset a user cannot get from anywhere else on a tag page.
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ci-latest
+          tag_name: ${{ env.RELEASE_TAG }}
           # `prerelease` / `make_latest` are spelled out rather than left
           # implicit. Neither input has a `default:` in the action's action.yml,
           # so omitting `prerelease` makes v2 inherit it from the existing
@@ -977,6 +1056,14 @@ jobs:
           # still a prerelease. (The create path IS reachable from here --
           # this job can win the race to create the tag -- and the shared
           # body file is what makes that safe.)
+          #
+          # The rule, identical to the three backend cells' (keep them in
+          # step -- scripts/ci-check-release.py re-derives it to assert the
+          # result):
+          #   ci-latest            -> prerelease, never "Latest"
+          #   anything with `-`    -> a pre-release tag (v1.0.0-rc1): a
+          #                           release, but not the "Latest" badge
+          #   any other tag        -> a real release, make_latest=true
           # Byte-identical to what the three backend cells send, which is
           # what makes the ORDER between the four publishers irrelevant.
           # A GitHub Release row is last-writer-wins and v2 takes no lock
@@ -984,10 +1071,10 @@ jobs:
           # was "android last, and android never writes a body" -- and
           # "android last" meant `needs: backend`, which is exactly the
           # gate this job no longer has.
-          name: CI binaries (latest main)
-          body_path: ${{ runner.temp }}/ci-latest-body.md
-          prerelease: true
-          make_latest: false
+          name: ${{ env.RELEASE_TAG == 'ci-latest' && 'CI binaries (latest main)' || env.RELEASE_TAG }}
+          body_path: ${{ runner.temp }}/release-body.md
+          prerelease: ${{ env.RELEASE_TAG == 'ci-latest' || contains(env.RELEASE_TAG, '-') }}
+          make_latest: ${{ env.RELEASE_TAG != 'ci-latest' && !contains(env.RELEASE_TAG, '-') }}
           # The ONE thing this publisher contributes. Its own staging dir,
           # matching the backend cells' `bin-stage-<triple>` convention:
           # four jobs publish to one release, and a shared directory is a
@@ -1223,7 +1310,72 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  # ── 5. The one required check ───────────────────────────────────────
+  # ── 6. Tag runs: assert the release actually exists ──────────────────
+  # A tag push is the one event whose OUTPUT is a published artifact, and the
+  # four publishers write it independently (three backend cells + android,
+  # last-writer-wins, no lock over the tag). Every cell can be green while the
+  # release is missing an asset -- each job only ever uploads its own.
+  #
+  # So after the four publishers, assert the CONTRACT on the release itself:
+  # the 12 named assets uploaded and non-empty, not a draft, the
+  # prerelease/"Latest" split the publish steps asked for.
+  # scripts/ci-check-release.py is the whole check and runs by hand against
+  # any live release (`gh api repos/<repo>/releases/tags/<tag> | python3
+  # scripts/ci-check-release.py --tag <tag>`), which is how it was verified
+  # against the real `ci-latest` and `v0.1` payloads before this job existed.
+  #
+  # TAG REFS ONLY. `ci-latest` is a rolling build, not a release, so a main
+  # push must not be gated on it; on those runs this job is `skipped` and
+  # `ci-ok` treats skipped as a pass.
+  release-check:
+    name: release-check (tag)
+    needs: [backend-linux, backend-macos, backend-windows, android-apk]
+    # The four publishers must have SUCCEEDED, not merely finished. A red
+    # macOS cell means no .app zip and no bare binaries; a check that ran
+    # anyway would bury the real failure under a list of missing assets.
+    if: ${{ startsWith(github.ref, 'refs/tags/') && !cancelled() && needs.backend-linux.result == 'success' && needs.backend-macos.result == 'success' && needs.backend-windows.result == 'success' && needs.android-apk.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # `contents: read` is the workflow default and all a read of
+    # /releases/tags/<tag> + /releases/latest needs. Deliberately NOT write:
+    # a check that can publish is a check that can paper over what it checks.
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        # Only for scripts/ci-check-release.py. Nothing is built or uploaded
+        # here, so a plain checkout is the whole setup.
+        uses: actions/checkout@v4
+
+      - name: Assert the tag release satisfies the release contract
+        shell: bash
+        env:
+          # Read from env rather than interpolated by the runner into the
+          # command: `github.repository` and a tag name are both values the
+          # shell would otherwise be parsing for the first time.
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          echo "-> release contract for tag $TAG"
+          # The whole payload comes down in one call: a release's assets are
+          # inline, so no pagination and no second request per asset.
+          gh api "repos/$REPO/releases/tags/$TAG" > "$RUNNER_TEMP/release.json"
+          # What the releases page shows under "Latest" -- and what
+          # `install.sh` without --version resolves to once the rolling
+          # release is not the newest. This repo has NO latest release today
+          # (both existing releases are prereleases, so the endpoint 404s),
+          # hence the `|| true`: an absent latest is the checker's business,
+          # not a confusing curl error here.
+          latest="$(gh api "repos/$REPO/releases/latest" --jq .tag_name 2>/dev/null || true)"
+          echo "-> /releases/latest reports: ${latest:-<none>}"
+          python3 scripts/ci-check-release.py \
+            --tag "$TAG" \
+            --latest-tag "$latest" \
+            --json-file "$RUNNER_TEMP/release.json"
+
+  # ── 7. The one required check ───────────────────────────────────────
   ci-ok:
     name: ci-ok
     runs-on: ubuntu-latest
@@ -1256,6 +1408,7 @@ jobs:
       - install-windows
       - android-apk
       - android-test
+      - release-check
     # `always()` is mandatory, not defensive. `ci-ok` IS the required
     # check, so if it is skipped the PR is stuck on a check that will
     # never report — a docs-only change would do exactly that.
@@ -1294,6 +1447,7 @@ jobs:
             install-windows=${{ needs.install-windows.result }}
             android-apk=${{ needs.android-apk.result }}
             android-test=${{ needs.android-test.result }}
+            release-check=${{ needs.release-check.result }}
         run: |
           set -uo pipefail
           failed=0
