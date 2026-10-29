@@ -65,7 +65,7 @@ describe('user-pill rail wiring', () => {
     const source = await readChatViewSource()
     const fn = source.match(/const jumpToUserGroup = [\s\S]*?\n\}/)
     expect(fn).not.toBeNull()
-    expect(fn![0]).toContain('scrollLogger.markProgrammatic()')
+    expect(fn![0]).toContain('logger().markProgrammatic()')
     expect(fn![0]).toContain('scrollToItem(target')
     expect(fn![0]).toContain('pill-jump-flash')
     // Index resolved by stable key at click time (SSE may shift positions).

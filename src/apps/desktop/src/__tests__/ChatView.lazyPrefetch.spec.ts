@@ -29,7 +29,7 @@ describe('older-history prefetch — trigger wiring', () => {
     // anchor-compensation scrollTop write is not a gesture) and for the initial
     // load, whose late unmarked scroll events armed a fetch on open.
     expect(body).toMatch(
-      /if \(!isProgrammatic && !isInitialLoad\) \{[\s\S]*evaluateOlderPrefetch\(\)/,
+      /if \(!isProgrammatic && !getIsInitialLoad\(\)\) \{[\s\S]*evaluateOlderPrefetch\(\)/,
     )
   })
 
@@ -52,7 +52,7 @@ describe('older-history prefetch — trigger wiring', () => {
 
   it('does NOT run an eager prefetch on open (unsettled geometry)', async () => {
     const source = await readChatViewSource()
-    const body = fnBody(source, 'const loadChatHistory = async () => {', '\n// ─── Scroll')
+    const body = fnBody(source, 'const loadChatHistory = async () => {', '// ─── Scroll')
     expect(body).toContain("resetOlderPrefetch('refresh')")
     // Measured in the browser: at this point the initial-load scroll has not been applied yet, so
     // `container.scrollTop` is still 0 and an eager evaluation would burn a scroll-back request on
@@ -86,7 +86,7 @@ describe('older-history prefetch — arm must stay invisible', () => {
     const body = fnBody(source, 'const armPrefetchOlder = (', 'const claimBufferedOlderPage = (')
     expect(body).toContain('prefetchBackoffUntil = performance.now() + backoffMs')
     expect(body).toContain("prefetchLogCtx('load-more-prefetch-failed'")
-    expect(body).toContain('scrollLogger.warn(')
+    expect(body).toContain('logger().warn(')
   })
 })
 
@@ -179,7 +179,7 @@ describe('older-history prefetch — commit invariants', () => {
     expect(body).toContain("skip: 'auto-chain-budget'")
     // A real upward gesture resets the budget.
     const scrollBody = fnBody(source, 'const handleVirtualScroll = (', '\n// ─── Send Message')
-    expect(scrollBody).toContain('prefetchAutoChain = 0')
+    expect(scrollBody).toContain('resetPrefetchAutoChain()')
   })
 })
 

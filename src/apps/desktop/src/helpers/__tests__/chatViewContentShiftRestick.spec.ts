@@ -3,6 +3,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import VirtualScroller from '../VirtualScroller.vue'
+import { readChatViewSource } from '../../__tests__/helpers/chatViewSource'
 
 type Item = { id: number }
 
@@ -242,15 +243,8 @@ describe('ChatView onContentShift restick (extracted)', () => {
   // extracted-function tests above pin the MATH; this one pins the WIRING. Without it the extracted
   // function could drift from production silently (the exact failure mode that let Bug C ship).
   it('T6d (red→green): production loadChatHistory re-validates bottom after endPreserve when user was at bottom', async () => {
-    const { readFileSync } = await import('node:fs')
-    const { resolve } = await import('node:path')
-    const { fileURLToPath } = await import('node:url')
-    // Resolve relative to the spec's directory
-    // (src/apps/desktop/src/helpers/__tests__/ → ../../components/views/).
-    const here = fileURLToPath(import.meta.url)
-    // here = .../src/helpers/__tests__/<file>.ts → dirname → up 2 = src/
-    const path = resolve(here, '../../../components/views/ChatView.vue')
-    const src = readFileSync(path, 'utf8')
+    // The bundle, not the raw SFC: loadChatHistory now lives in useChatPagination.ts.
+    const src = readChatViewSource()
     // Extract the loadMore branch (from `if (loadMore) {` to the
     // matching `} else {` that starts the initial-load branch).
     const loadMoreStart = src.indexOf('suppressContentShiftStick = true')
