@@ -68,7 +68,7 @@ import { tryUnwrapToolOutput, type UnwrappedToolOutput } from '@/helpers/unwrapT
 import {
   isBackgroundCommandOutput,
   parseBackgroundCommandOutput,
-  backgroundToShellXml,
+  backgroundToShellData,
 } from '@/helpers/isBackgroundCommandOutput'
 import {
   applyProgressEvent,
@@ -1640,9 +1640,9 @@ const renderMessageHtml = (msg: Message): string =>
 const isBgUserMsg = (m: { content?: string }): boolean =>
   !!m.content && isBackgroundCommandOutput(m.content)
 
-const bgShellContent = (m: { content?: string }): string => {
+const bgShellData = (m: { content?: string }): unknown => {
   const pr = m.content ? parseBackgroundCommandOutput(m.content) : null
-  return pr ? backgroundToShellXml(pr) : (m.content ?? '')
+  return pr ? backgroundToShellData(pr) : (m.content ?? '')
 }
 // A user group made ONLY of background completions renders as a transparent left-aligned tool card,
 // not the blue right bubble (background completions are role=user on the wire, tool-styled in
@@ -4051,7 +4051,7 @@ const compactSession = async () => {
                           >
                             <ShellTool
                               tool-name="command"
-                              :content="bgShellContent(bgMsg)"
+                              :content="bgShellData(bgMsg)"
                               :parameters="'{}'"
                             />
                           </div>
@@ -4084,7 +4084,7 @@ const compactSession = async () => {
                           <template v-if="isBgUserMsg(userMsg)"
                             ><ShellTool
                               tool-name="command"
-                              :content="bgShellContent(userMsg)"
+                              :content="bgShellData(userMsg)"
                               :parameters="'{}'" /></template
                           ><template v-else
                             ><SkillInvocationCard
