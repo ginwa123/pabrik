@@ -927,8 +927,6 @@ pub const SpawnRequest = struct {
     argv: []const []const u8,
     cwd: []const u8 = "/workspace",
     log_path: []const u8,
-    uid: u32 = 1000,
-    gid: u32 = 1000,
     id: i64 = 1,
 };
 
@@ -940,8 +938,8 @@ fn buildSpawnFrame(buf: []u8, request: SpawnRequest) ![]const u8 {
     var head_buf: [1024]u8 = undefined;
     const head = try std.fmt.bufPrint(
         &head_buf,
-        "{{\"type\":\"spawn\",\"id\":{d},\"uid\":{d},\"gid\":{d},\"cwd\":",
-        .{ request.id, request.uid, request.gid },
+        "{{\"type\":\"spawn\",\"id\":{d},\"cwd\":",
+        .{request.id},
     );
     @memcpy(buf[0..head.len], head);
     var off: usize = head.len;

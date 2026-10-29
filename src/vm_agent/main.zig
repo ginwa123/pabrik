@@ -31,6 +31,59 @@ const wno_hang: u32 = 1;
 const job_log_dir = "/tmp/pabrik";
 const log_read_chunk: usize = 16 * 1024;
 const reply_buf_bytes: usize = wire.max_frame;
+const registry_bytes: usize = 4096;
+
+/// The slot bookkeeping PID 1 shares with every connection process: a slot
+/// index IS its vsock port, and a fork copies memory, so the page is mapped
+/// MAP_SHARED once, before the fork that would otherwise split it.
+const Registry = struct {
+    tty: [max_ttys]TtySlot = [_]TtySlot{.{}} ** max_ttys,
+    duplex: [max_duplex]DuplexSlot = [_]DuplexSlot{.{}} ** max_duplex,
+};
+
+comptime {
+    if (@sizeOf(Registry) > registry_bytes) @compileError("the shared registry must fit one page");
+}
+
+var registry_private: Registry = .{};
+var registry_shared: ?*Registry = null;
+
+fn registry() *Registry {
+    if (registry_shared) |page| return page;
+    const mapped = linux.mmap(
+        null,
+        registry_bytes,
+        .{ .READ = true, .WRITE = true },
+        .{ .TYPE = .SHARED, .ANONYMOUS = true },
+        -1,
+        0,
+    );
+    const page: *Registry = if (linux.errno(mapped) == .SUCCESS) @ptrFromInt(mapped) else &registry_private;
+    page.* = .{};
+    registry_shared = page;
+    return page;
+}
+
+/// Claiming a slot is one atomic swap on its own flag: the claimer and the
+/// releaser run in different processes, on the same page.
+fn claimFlag(flag: *u8) bool {
+    return @cmpxchgStrong(u8, flag, 0, 1, .seq_cst, .seq_cst) == null;
+}
+
+fn releaseFlag(flag: *u8, host_pid: *i64) void {
+    @atomicStore(i64, host_pid, 0, .seq_cst);
+    @atomicStore(u8, flag, 0, .seq_cst);
+}
+
+/// A host this process did not fork is nobody's child once its parent is gone:
+/// `wait4` answers ECHILD and only `kill` can still say whether it is there.
+fn processGone(pid: i64) bool {
+    if (pid <= 0) return true;
+    var status: u32 = 0;
+    const reaped = linux.wait4(@intCast(pid), &status, wno_hang, null);
+    if (linux.errno(reaped) == .SUCCESS and reaped != 0) return true;
+    return linux.errno(linux.syscall2(.kill, @intCast(pid), 0)) == .SRCH;
+}
 
 /// The in-guest network forwarder: loopback, the resolver config, and the two
 /// proxies the tenant's traffic leaves through.
@@ -312,13 +365,14 @@ fn runExec(conn_fd: linux.fd_t, req: *const ExecRequest) void {
 
 // ─── detached jobs ───────────────────────────────────────────────────────
 
+/// A detached job runs as the same identity an `exec` does: the workspace's
+/// own machine, where the tenant is root. Its log, its tree and its `git` are
+/// then the ones the next foreground command sees.
 const SpawnRequest = struct {
     id: i64 = 0,
     argv: []const []const u8 = &.{},
     cwd: []const u8 = "/workspace",
     log_path: []const u8 = "",
-    uid: u32 = default_uid,
-    gid: u32 = default_gid,
 };
 
 /// The detached child: its own session (so a dead caller cannot take it down),
@@ -333,8 +387,8 @@ fn spawnChild(req: *const SpawnRequest, log_fd: linux.fd_t) noreturn {
     if (linux.errno(devnull) == .SUCCESS) _ = linux.dup2(@intCast(devnull), 0);
     if (log_fd > 2) _ = linux.close(log_fd);
     _ = linux.setgroups(0, &[_]linux.gid_t{});
-    _ = linux.setgid(req.gid);
-    _ = linux.setuid(req.uid);
+    _ = linux.setgid(default_gid);
+    _ = linux.setuid(default_uid);
     _ = linux.prctl(@intFromEnum(linux.PR.SET_NO_NEW_PRIVS), 1, 0, 0, 0);
     const argv = buildArgv(req.argv);
     if (argv == null) {
@@ -377,14 +431,10 @@ fn runSpawn(conn_fd: linux.fd_t, req: *const SpawnRequest) void {
     reply(conn_fd, "{{\"type\":\"spawn.result\",\"id\":{d},\"pid\":{d}}}", .{ req.id, fork_rc });
 }
 
-/// Signal 0 is the existence probe: `EPERM` also means "it is there". A job
-/// this agent forked is reaped FIRST, because a zombie still answers signal 0.
+/// Signal 0 is the existence probe, and a zombie still answers it, so the job
+/// is reaped first. `EPERM` means "it is there, just not mine".
 fn runProbe(conn_fd: linux.fd_t, id: i64, pid: i64) void {
-    var status: u32 = 0;
-    const reaped = linux.wait4(@intCast(pid), &status, wno_hang, null);
-    const gone = linux.errno(reaped) == .SUCCESS and reaped != 0;
-    const err = linux.errno(linux.syscall2(.kill, @intCast(pid), 0));
-    const alive = !gone and (err == .SUCCESS or err == .PERM);
+    const alive = !processGone(pid);
     reply(conn_fd, "{{\"type\":\"probe.result\",\"id\":{d},\"alive\":{s}}}", .{ id, if (alive) "true" else "false" });
 }
 
@@ -997,9 +1047,8 @@ fn runFsWalk(conn_fd: linux.fd_t, id: i64, path: []const u8, max_depth: u32, max
 
 // ─── interactive terminals ───────────────────────────────────────────────
 
-/// Every terminal answers on its OWN vsock port. The agent serves one
-/// connection at a time, so a terminal sharing port 5000 would freeze for as
-/// long as any `exec` the tenant started — including the agent's own commands.
+/// Every terminal answers on its OWN vsock port: a terminal connection lives as
+/// long as its shell, so it never shares the port a request is dialled on.
 const tty_port_base: u32 = 5100;
 const max_ttys: usize = 8;
 const tty_chunk: usize = 32 * 1024;
@@ -1043,11 +1092,9 @@ const tty_env = [_:null]?[*:0]const u8{
 /// One live terminal: the agent's handle on the process that owns it. The pty
 /// and the shell belong to that process, never to PID 1.
 const TtySlot = struct {
-    used: bool = false,
+    used: u8 = 0,
     host_pid: i64 = 0,
 };
-
-var tty_slots: [max_ttys]TtySlot = [_]TtySlot{.{}} ** max_ttys;
 
 fn ttyWindowOk(cols: u16, rows: u16) bool {
     return cols >= tty_min_dim and cols <= tty_max_dim and
@@ -1068,22 +1115,35 @@ fn ttyCwdOk(cwd: []const u8) bool {
     return true;
 }
 
-/// Reap the terminal hosts that died since the last open, so a slot is freed by
-/// the same call that wants one.
-fn ttyReapDead() void {
-    for (&tty_slots) |*slot| {
-        if (!slot.used) continue;
-        var status: u32 = 0;
-        const rc = linux.wait4(@intCast(slot.host_pid), &status, wno_hang, null);
-        if (linux.errno(rc) == .SUCCESS and rc != 0) slot.* = .{};
-    }
-}
-
-fn ttyFreeSlot() ?usize {
-    for (&tty_slots, 0..) |*slot, i| {
-        if (!slot.used) return i;
+/// Take the lowest free terminal slot. Freeing a dead host's slot here is what
+/// keeps the count honest when the opener is a process that never forked it.
+fn ttyClaim() ?usize {
+    ttyReleaseDead();
+    for (&registry().tty, 0..) |*slot, i| {
+        if (!claimFlag(&slot.used)) continue;
+        return i;
     }
     return null;
+}
+
+/// The parent publishes the pid the fork returned; until then the slot is
+/// claimed but nameless, and no release pass may touch it.
+fn ttyPublish(slot_index: usize, host_pid: i64) void {
+    @atomicStore(i64, &registry().tty[slot_index].host_pid, host_pid, .seq_cst);
+}
+
+fn ttyRelease(slot_index: usize) void {
+    const slot = &registry().tty[slot_index];
+    releaseFlag(&slot.used, &slot.host_pid);
+}
+
+fn ttyReleaseDead() void {
+    for (&registry().tty) |*slot| {
+        if (@atomicLoad(u8, &slot.used, .seq_cst) == 0) continue;
+        const pid = @atomicLoad(i64, &slot.host_pid, .seq_cst);
+        if (pid == 0) continue;
+        if (processGone(pid)) releaseFlag(&slot.used, &slot.host_pid);
+    }
 }
 
 fn ttySetWinsize(master: linux.fd_t, cols: u16, rows: u16) bool {
@@ -1355,8 +1415,7 @@ fn runTtyOpen(conn_fd: linux.fd_t, id: i64, cols: u16, rows: u16, cwd: []const u
         reply(conn_fd, "{{\"type\":\"tty.error\",\"id\":{d},\"message\":\"the shell must start inside /workspace\"}}", .{id});
         return;
     }
-    ttyReapDead();
-    const slot = ttyFreeSlot() orelse {
+    const slot = ttyClaim() orelse {
         reply(conn_fd, "{{\"type\":\"tty.error\",\"id\":{d},\"message\":\"all {d} terminals are in use\"}}", .{ id, max_ttys });
         return;
     };
@@ -1373,6 +1432,7 @@ fn runTtyOpen(conn_fd: linux.fd_t, id: i64, cols: u16, rows: u16, cwd: []const u
     if (linux.errno(fork_rc) != .SUCCESS) {
         closeIfOpen(report_fd);
         closeIfOpen(status_fd);
+        ttyRelease(slot);
         reply(conn_fd, "{{\"type\":\"tty.error\",\"id\":{d},\"message\":\"fork failed\"}}", .{id});
         return;
     }
@@ -1388,11 +1448,14 @@ fn runTtyOpen(conn_fd: linux.fd_t, id: i64, cols: u16, rows: u16, cwd: []const u
     _ = linux.close(report_fd);
     const text = report orelse {
         _ = linux.syscall2(.kill, @intCast(host_pid), @intFromEnum(linux.SIG.KILL));
+        ttyRelease(slot);
         reply(conn_fd, "{{\"type\":\"tty.error\",\"id\":{d},\"message\":\"the terminal host never reported\"}}", .{id});
         return;
     };
     if (std.mem.indexOf(u8, text, "\"type\":\"tty.opened\"") != null) {
-        tty_slots[slot] = .{ .used = true, .host_pid = host_pid };
+        ttyPublish(slot, host_pid);
+    } else {
+        ttyRelease(slot);
     }
     writeFrame(conn_fd, text);
 }
@@ -1420,26 +1483,35 @@ const DuplexRequest = struct {
 /// One live duplex: the agent's handle on the process that owns it. The pipes
 /// and the child belong to that process, never to PID 1.
 const DuplexSlot = struct {
-    used: bool = false,
+    used: u8 = 0,
     host_pid: i64 = 0,
 };
 
-var duplex_slots: [max_duplex]DuplexSlot = [_]DuplexSlot{.{}} ** max_duplex;
-
-fn duplexReapDead() void {
-    for (&duplex_slots) |*slot| {
-        if (!slot.used) continue;
-        var status: u32 = 0;
-        const rc = linux.wait4(@intCast(slot.host_pid), &status, wno_hang, null);
-        if (linux.errno(rc) == .SUCCESS and rc != 0) slot.* = .{};
-    }
-}
-
-fn duplexFreeSlot() ?usize {
-    for (&duplex_slots, 0..) |*slot, i| {
-        if (!slot.used) return i;
+fn duplexClaim() ?usize {
+    duplexReleaseDead();
+    for (&registry().duplex, 0..) |*slot, i| {
+        if (!claimFlag(&slot.used)) continue;
+        return i;
     }
     return null;
+}
+
+fn duplexPublish(slot_index: usize, host_pid: i64) void {
+    @atomicStore(i64, &registry().duplex[slot_index].host_pid, host_pid, .seq_cst);
+}
+
+fn duplexRelease(slot_index: usize) void {
+    const slot = &registry().duplex[slot_index];
+    releaseFlag(&slot.used, &slot.host_pid);
+}
+
+fn duplexReleaseDead() void {
+    for (&registry().duplex) |*slot| {
+        if (@atomicLoad(u8, &slot.used, .seq_cst) == 0) continue;
+        const pid = @atomicLoad(i64, &slot.host_pid, .seq_cst);
+        if (pid == 0) continue;
+        if (processGone(pid)) releaseFlag(&slot.used, &slot.host_pid);
+    }
 }
 
 fn duplexFail(status_fd: linux.fd_t, message: []const u8) noreturn {
@@ -1691,8 +1763,7 @@ fn duplexReadReport(status_fd: linux.fd_t, buf: []u8) ?[]const u8 {
 /// `duplex open`: fork the duplex host and answer with its pid and port. The
 /// agent itself owns no pipe, so a server outlives any one connection.
 fn runDuplexOpen(conn_fd: linux.fd_t, req: *const DuplexRequest) void {
-    duplexReapDead();
-    const slot = duplexFreeSlot() orelse {
+    const slot = duplexClaim() orelse {
         reply(conn_fd, "{{\"type\":\"duplex.error\",\"id\":{d},\"message\":\"all {d} duplexes are in use\"}}", .{ req.id, max_duplex });
         return;
     };
@@ -1709,6 +1780,7 @@ fn runDuplexOpen(conn_fd: linux.fd_t, req: *const DuplexRequest) void {
     if (linux.errno(fork_rc) != .SUCCESS) {
         closeIfOpen(report_fd);
         closeIfOpen(status_fd);
+        duplexRelease(slot);
         reply(conn_fd, "{{\"type\":\"duplex.error\",\"id\":{d},\"message\":\"fork failed\"}}", .{req.id});
         return;
     }
@@ -1724,11 +1796,14 @@ fn runDuplexOpen(conn_fd: linux.fd_t, req: *const DuplexRequest) void {
     _ = linux.close(report_fd);
     const text = report orelse {
         _ = linux.syscall2(.kill, @intCast(host_pid), @intFromEnum(linux.SIG.KILL));
+        duplexRelease(slot);
         reply(conn_fd, "{{\"type\":\"duplex.error\",\"id\":{d},\"message\":\"the duplex host never reported\"}}", .{req.id});
         return;
     };
     if (std.mem.indexOf(u8, text, "\"type\":\"duplex.opened\"") != null) {
-        duplex_slots[slot] = .{ .used = true, .host_pid = host_pid };
+        duplexPublish(slot, host_pid);
+    } else {
+        duplexRelease(slot);
     }
     writeFrame(conn_fd, text);
 }
@@ -1828,8 +1903,6 @@ fn serveRequest(conn_fd: linux.fd_t, text: []const u8) void {
     if (std.mem.eql(u8, kind, "spawn")) {
         var req = SpawnRequest{};
         if (obj.get("id")) |v| req.id = asI64(v, 0);
-        if (obj.get("uid")) |v| req.uid = asU32(v, req.uid);
-        if (obj.get("gid")) |v| req.gid = asU32(v, req.gid);
         if (obj.get("cwd")) |v| {
             if (v == .string) req.cwd = v.string;
         }
@@ -2117,6 +2190,37 @@ fn serveConnection(conn_fd: linux.fd_t) void {
     _ = linux.close(conn_fd);
 }
 
+/// Hand one connection to its own process and come straight back: a long
+/// `exec` must not hold the listener every other caller dials. A fork that
+/// fails serves inline, so a refused fork costs latency, never the listener.
+fn serveInChild(conn_fd: linux.fd_t, listener_fd: linux.fd_t) i64 {
+    _ = registry();
+    const fork_rc = linux.fork();
+    if (linux.errno(fork_rc) != .SUCCESS) {
+        serveConnection(conn_fd);
+        return 0;
+    }
+    if (fork_rc == 0) {
+        closeIfOpen(listener_fd);
+        serveConnection(conn_fd);
+        linux.exit(0);
+    }
+    const child_pid: i64 = @intCast(fork_rc);
+    _ = linux.close(conn_fd);
+    return child_pid;
+}
+
+/// Collect the connection processes that finished. PID 1 forks nothing else
+/// but `netd` and these, so a WNOHANG sweep here reaps only its own children:
+/// a job or a terminal host belongs to the connection process that forked it.
+fn reapExited() void {
+    while (true) {
+        var status: u32 = 0;
+        const rc = linux.wait4(-1, &status, wno_hang, null);
+        if (linux.errno(rc) != .SUCCESS or rc == 0) return;
+    }
+}
+
 pub fn main() void {
     writeAll(1, "\n[pabrik-vm-agent] booting as PID 1\n");
     logLine(if (mountPseudo("proc", "/proc")) "mounted proc" else "MISSING proc");
@@ -2139,6 +2243,7 @@ pub fn main() void {
     // The happy path stays silent: a serial write is a vmexit, a poll is not news.
     var failures: u32 = 0;
     while (true) {
+        reapExited();
         var pfd = [1]linux.pollfd{
             .{ .fd = listen_fd, .events = linux.POLL.IN, .revents = 0 },
         };
@@ -2158,7 +2263,7 @@ pub fn main() void {
             continue;
         }
         failures = 0;
-        serveConnection(@intCast(conn_rc));
+        _ = serveInChild(@intCast(conn_rc), listen_fd);
     }
 }
 
@@ -2461,4 +2566,100 @@ test "a closed duplex leaves no descriptor behind" {
         fx.deinit();
     }
     try std.testing.expectEqual(before, liveDescriptors());
+}
+
+// ── The accept loop: one process per connection, one shared slot page. ────
+
+test "terminal slots claimed in two processes never collide" {
+    _ = registry();
+    var to_parent: [2]linux.fd_t = .{ -1, -1 };
+    var to_child: [2]linux.fd_t = .{ -1, -1 };
+    if (!pipePair(&to_parent) or !pipePair(&to_child)) return error.SkipZigTest;
+    const held: usize = 4;
+
+    const fork_rc = linux.fork();
+    if (linux.errno(fork_rc) != .SUCCESS) {
+        closeIfOpen(to_parent[0]);
+        closeIfOpen(to_parent[1]);
+        closeIfOpen(to_child[0]);
+        closeIfOpen(to_child[1]);
+        return error.SkipZigTest;
+    }
+    if (fork_rc == 0) {
+        _ = linux.close(to_parent[0]);
+        _ = linux.close(to_child[1]);
+        var mine: [held]u8 = undefined;
+        for (&mine) |*cell| cell.* = @intCast(ttyClaim() orelse 0xff);
+        _ = writeBytes(to_parent[1], &mine);
+        var go: [1]u8 = undefined;
+        _ = readExact(to_child[0], &go);
+        for (mine) |index| ttyRelease(index);
+        linux.exit(0);
+    }
+    _ = linux.close(to_parent[1]);
+    _ = linux.close(to_child[0]);
+    defer _ = linux.close(to_parent[0]);
+    defer _ = linux.close(to_child[1]);
+
+    var child_slots: [held]u8 = undefined;
+    try std.testing.expect(readExact(to_parent[0], &child_slots));
+    var parent_slots: [held]usize = undefined;
+    for (&parent_slots) |*cell| cell.* = ttyClaim() orelse return error.SlotExhausted;
+
+    for (child_slots) |child_index| try std.testing.expect(child_index != 0xff);
+    for (parent_slots) |parent_index| {
+        for (child_slots) |child_index| {
+            try std.testing.expect(parent_index != child_index);
+        }
+    }
+
+    try std.testing.expect(writeBytes(to_child[1], "g"));
+    var status: u32 = 0;
+    try std.testing.expectEqual(@as(usize, @intCast(fork_rc)), linux.wait4(@intCast(fork_rc), &status, 0, null));
+    for (parent_slots) |index| ttyRelease(index);
+
+    var reclaimed: [max_ttys]usize = undefined;
+    for (&reclaimed) |*cell| cell.* = ttyClaim() orelse return error.SlotStuck;
+    for (reclaimed) |index| ttyRelease(index);
+}
+
+test "a terminal slot whose host is gone is handed out again" {
+    const absent_pid: i64 = std.math.maxInt(i32) - 1;
+
+    const claimed = ttyClaim() orelse return error.SlotExhausted;
+    ttyPublish(claimed, absent_pid);
+
+    const reused = ttyClaim() orelse return error.SlotStuck;
+    try std.testing.expectEqual(claimed, reused);
+    ttyRelease(reused);
+}
+
+test "a long command on one connection does not hold the next" {
+    const first = socketPair() orelse return error.SkipZigTest;
+    const second = socketPair() orelse return error.SkipZigTest;
+    setReceiveTimeout(first[1], 6000);
+    setReceiveTimeout(second[1], 1500);
+    defer _ = linux.close(first[1]);
+    defer _ = linux.close(second[1]);
+
+    const command = "{\"type\":\"exec\",\"id\":1,\"argv\":[\"/bin/sh\",\"-c\",\"sleep 2\"],\"timeout_ms\":5000}";
+    try std.testing.expect(sendFrame(first[1], command));
+    _ = linux.shutdown(first[1], linux.SHUT.WR);
+
+    const muted = muteSerial();
+    defer unmuteSerial(muted);
+    const first_pid = serveInChild(first[0], -1);
+    if (first_pid == 0) return error.ForkFailed;
+
+    try std.testing.expect(sendFrame(second[1], "{\"type\":\"hello\"}"));
+    _ = linux.shutdown(second[1], linux.SHUT.WR);
+    const second_pid = serveInChild(second[0], -1);
+
+    var reply_buf: [512]u8 = undefined;
+    const answer = readFrame(second[1], &reply_buf) orelse return error.NoReply;
+    try std.testing.expectEqualStrings(hello_json, answer);
+
+    var status: u32 = 0;
+    try std.testing.expectEqual(@as(usize, @intCast(second_pid)), linux.wait4(@intCast(second_pid), &status, 0, null));
+    try std.testing.expectEqual(@as(usize, @intCast(first_pid)), linux.wait4(@intCast(first_pid), &status, 0, null));
 }
