@@ -259,7 +259,7 @@ jobs:
           if (-not (Test-Path $rg)) {
             Write-Host "rg.exe not in the release zip; staging the pinned ripgrep"
             ./scripts/stage-bundled-ripgrep.ps1 -Target "x86_64-windows-gnu" -Dest $rg
-            if ($LASTEXITCODE -ne 0 -or -not (Test-Path $rg)) { throw "could not stage rg.exe for the Windows image" }
+            if (-not (Test-Path $rg)) { throw "could not stage rg.exe for the Windows image" }
           }
           foreach ($name in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "concrt140.dll", "vcomp140.dll")) {
             $source = Join-Path $env:SystemRoot ("System32\" + $name)

@@ -14,8 +14,7 @@ $Pinned = @{
 }
 
 if (-not $Pinned.ContainsKey($Target)) {
-    Write-Error "no bundled ripgrep is published for triple '$Target' (known: $($Pinned.Keys -join ', '))"
-    exit 1
+    throw "no bundled ripgrep is published for triple '$Target' (known: $($Pinned.Keys -join ', '))"
 }
 
 $Upstream = $Pinned[$Target].Upstream
@@ -45,8 +44,7 @@ if ($cached) {
 $GotSha = Get-HexDigest $Archive
 if ($GotSha -ne $WantSha) {
     Remove-Item $Archive -Force -ErrorAction SilentlyContinue
-    Write-Error "sha256 mismatch for ${ArchiveName}: expected $WantSha, got $GotSha"
-    exit 1
+    throw "sha256 mismatch for ${ArchiveName}: expected $WantSha, got $GotSha"
 }
 Write-Output "sha256 ok ($WantSha)"
 
@@ -59,8 +57,7 @@ $Member = Join-Path $ExtractDir "ripgrep-$RipgrepVersion-$Upstream\rg.exe"
 if (-not (Test-Path $Member)) {
     $found = Get-ChildItem $ExtractDir -Recurse -Filter "rg.exe" | Select-Object -First 1
     if (-not $found) {
-        Write-Error "the $Upstream archive carries no rg.exe"
-        exit 1
+        throw "the $Upstream archive carries no rg.exe"
     }
     $Member = $found.FullName
 }
