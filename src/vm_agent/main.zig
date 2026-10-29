@@ -33,10 +33,9 @@ const log_read_chunk: usize = 16 * 1024;
 const reply_buf_bytes: usize = wire.max_frame;
 const registry_bytes: usize = 4096;
 
-/// The slot bookkeeping PID 1 shares with every connection process. A terminal
-/// slot index IS its vsock port, so two processes must never hold the same one
-/// — and a fork copies memory, so the page is mapped MAP_SHARED, once, before
-/// the fork that would otherwise split it.
+/// The slot bookkeeping PID 1 shares with every connection process: a slot
+/// index IS its vsock port, and a fork copies memory, so the page is mapped
+/// MAP_SHARED once, before the fork that would otherwise split it.
 const Registry = struct {
     tty: [max_ttys]TtySlot = [_]TtySlot{.{}} ** max_ttys,
     duplex: [max_duplex]DuplexSlot = [_]DuplexSlot{.{}} ** max_duplex,
