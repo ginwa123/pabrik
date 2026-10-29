@@ -6,7 +6,7 @@ import { resolve } from 'node:path'
 import { readChatViewSource as readChatViewBundle } from '../../../__tests__/helpers/chatViewSource'
 
 const chatViewSrc = readChatViewBundle()
-const apiSrc = readFileSync(resolve(__dirname, '../../../api/index.ts'), 'utf8')
+const apiSrc = readFileSync(resolve(__dirname, '../../../api/chatHistory.ts'), 'utf8')
 
 describe('ChatView empty state is gated on a server-confirmed empty transcript', () => {
   it('the empty state template requires historyConfirmed', () => {

@@ -9,11 +9,11 @@ import { ApiError, getBackgroundProcessLog, getBackgroundProcesses } from '../in
 
 function apiIndexSource(): string {
   const cands = [
-    join(process.cwd(), 'src/api/index.ts'), // cwd = src/apps/desktop
-    join(process.cwd(), 'src/apps/desktop/src/api/index.ts'), // cwd = repo root
+    join(process.cwd(), 'src/api/backgroundProcesses.ts'), // cwd = src/apps/desktop
+    join(process.cwd(), 'src/apps/desktop/src/api/backgroundProcesses.ts'), // cwd = repo root
   ]
   try {
-    cands.unshift(join(dirname(fileURLToPath(import.meta.url)), '../index.ts'))
+    cands.unshift(join(dirname(fileURLToPath(import.meta.url)), '../backgroundProcesses.ts'))
   } catch {
     // vite-rewritten import.meta.url — fall through to cwd candidates.
   }

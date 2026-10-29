@@ -47,14 +47,92 @@
       "count": 1
     }
   },
-  "src/api/index.ts": {
+  "src/api/agentKanbans.ts": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/api/agentRoutines.ts": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/api/chatMessages.ts": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/api/config.ts": {
     "local/no-silent-fallback-catch": {
-      "count": 4
+      "count": 2
     },
     "local/no-try-catch": {
-      "count": 47
+      "count": 4
+    }
+  },
+  "src/api/core.ts": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/api/files.ts": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/api/git.ts": {
+    "local/no-try-catch": {
+      "count": 7
+    }
+  },
+  "src/api/internal.ts": {
+    "local/no-silent-fallback-catch": {
+      "count": 1
     },
-    "max-lines": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/api/kanban.ts": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/api/memories.ts": {
+    "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/api/models.ts": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/api/sessionList.ts": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/api/sessions.ts": {
+    "local/no-silent-fallback-catch": {
+      "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 5
+    }
+  },
+  "src/api/sse.ts": {
+    "local/no-try-catch": {
+      "count": 17
+    }
+  },
+  "src/api/tasks.ts": {
+    "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/api/workspaces.ts": {
+    "local/no-try-catch": {
       "count": 1
     }
   },
@@ -974,14 +1052,89 @@
     }
   },
   "src/stores/workspaces.ts": {
-    "local/no-silent-fallback-catch": {
+    "local/no-try-catch": {
       "count": 2
+    }
+  },
+  "src/stores/workspaces/agentRuns.ts": {
+    "local/no-try-catch": {
+      "count": 5
+    }
+  },
+  "src/stores/workspaces/designElements.ts": {
+    "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/stores/workspaces/designPages.ts": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/stores/workspaces/initActions.ts": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/stores/workspaces/itemCrud.ts": {
+    "local/no-try-catch": {
+      "count": 8
+    }
+  },
+  "src/stores/workspaces/itemLoader.ts": {
+    "local/no-try-catch": {
+      "count": 5
+    }
+  },
+  "src/stores/workspaces/kanbanColumns.ts": {
+    "local/no-try-catch": {
+      "count": 3
+    }
+  },
+  "src/stores/workspaces/kanbanTasks.ts": {
+    "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/stores/workspaces/media.ts": {
+    "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/stores/workspaces/normalize.ts": {
+    "local/no-silent-fallback-catch": {
+      "count": 1
     },
     "local/no-try-catch": {
-      "count": 51
-    },
-    "max-lines": {
       "count": 1
+    }
+  },
+  "src/stores/workspaces/persistence.ts": {
+    "local/no-silent-fallback-catch": {
+      "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 5
+    }
+  },
+  "src/stores/workspaces/sessionEvents.ts": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/stores/workspaces/taskCrud.ts": {
+    "local/no-try-catch": {
+      "count": 4
+    }
+  },
+  "src/stores/workspaces/taskEdit.ts": {
+    "local/no-try-catch": {
+      "count": 5
+    }
+  },
+  "src/stores/workspaces/workspaceCrud.ts": {
+    "local/no-try-catch": {
+      "count": 4
     }
   },
   "src/sync/IndexedDbStore.ts": {

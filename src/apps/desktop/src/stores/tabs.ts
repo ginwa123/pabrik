@@ -15,7 +15,6 @@ import {
   sameRouteQuery,
   sameTabTarget,
   shouldTabify,
-  stripTabParam,
   tabKeyOf,
   tabKeyVariants,
   withTabParam,

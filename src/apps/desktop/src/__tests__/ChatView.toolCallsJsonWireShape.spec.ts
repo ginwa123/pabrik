@@ -8,7 +8,7 @@ const readFile = async (relPath: string): Promise<string> => {
   return fs.readFile(fullPath, 'utf8')
 }
 
-const readApiSource = () => readFile('api/index.ts')
+const readApiSource = () => readFile('api/sseEvents.ts')
 const readChatViewSource = () => readFile('components/views/ChatView.vue')
 
 describe('SseEvent interface — tool_calls_json field (source contract)', () => {
