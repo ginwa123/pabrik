@@ -1,0 +1,572 @@
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+:deep(.tool-output) {
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.375rem;
+  margin: 0.25rem 0;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: var(--text-dense);
+  line-height: 1.5;
+}
+
+:deep(.tool-stdout) {
+  background-color: rgba(59, 130, 246, 0.1);
+  border-left: 3px solid #3b82f6;
+  color: var(--semantic-text);
+}
+
+:deep(.tool-stderr) {
+  background-color: rgba(245, 158, 11, 0.1);
+  border-left: 3px solid #f59e0b;
+  color: var(--semantic-text);
+}
+
+:deep(.tool-success) {
+  background-color: rgba(34, 197, 94, 0.1);
+  border-left: 3px solid #22c55e;
+  color: var(--semantic-text);
+}
+
+:deep(.tool-error) {
+  background-color: rgba(239, 68, 68, 0.1);
+  border-left: 3px solid #ef4444;
+  color: var(--semantic-text);
+}
+
+:deep(.tool-tag) {
+  font-weight: 600;
+  margin-right: 0.5rem;
+}
+
+:deep(.file-path) {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: var(--text-dense);
+  padding: 0.25rem 0.5rem;
+  background-color: rgba(139, 92, 246, 0.1);
+  border-radius: 0.25rem;
+  margin: 0.125rem 0;
+  color: var(--semantic-text);
+}
+
+:deep(.search-file) {
+  font-weight: 600;
+  font-size: var(--text-body);
+  color: var(--color-violet);
+  margin-top: 0.5rem;
+}
+
+:deep(.search-line) {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: var(--text-dense);
+  padding: 0.125rem 0.5rem;
+}
+
+:deep(.line-num) {
+  color: var(--semantic-text-dim);
+  user-select: none;
+  margin-right: 1rem;
+  min-width: 3rem;
+  display: inline-block;
+}
+
+:deep(.line-content) {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+:deep(.file-content) {
+  margin-top: 0.25rem;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: var(--text-dense);
+  line-height: 1.5;
+  background-color: rgba(0, 0, 0, 0.04);
+  border-radius: 0.375rem;
+  padding: 0.5rem 0;
+  overflow-x: hidden;
+}
+
+:deep(.tool-sequence) {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  /* 2026-08-23 paragraph-mode margin pass — the old 0.25rem gap was
+     sized for boxed cards that carried their own visual separation.
+     De-bubbled rows are flat, so they need explicit rhythm to read as
+     distinct steps instead of one dense wall. */
+  gap: 0.625rem;
+}
+
+/* The compact view's rows carry the same information in a tighter stack. */
+:deep(.tool-sequence-compact) {
+  gap: 0.125rem;
+}
+
+:deep(.tool-item) {
+  padding: 0.125rem 0;
+  width: 100%;
+  min-width: 0;
+}
+
+:deep(.tool-item-border) {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+:deep(.tool-item-border:last-child) {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+/* 2026-08-23 paragraph-mode margin pass — spacing AROUND the tool
+   sequence so it breathes against surrounding prose:
+   - gap above the first tool row (was flush against the assistant text)
+   - gap below the last tool row (was flush against the next group) */
+:deep(.tool-sequence) {
+  margin-top: 0.375rem;
+  margin-bottom: 0.375rem;
+}
+
+/* Tool calls summary - shown only when tool outputs are NOT displayed */
+:deep(.tool-calls-summary) {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+  background-color: var(--color-bg-p1);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  border-left: 3px solid var(--color-violet);
+}
+
+:deep(.tool-calls-badge) {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--color-violet);
+  font-size: var(--text-dense);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-family: var(--font-mono);
+}
+
+:deep(.tool-names-list) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+:deep(.tool-name-chip) {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  background-color: var(--color-bg-p2);
+  border: 1px solid var(--color-border-light);
+  border-radius: 9999px;
+  font-size: var(--text-dense);
+  font-family: var(--font-mono);
+  color: var(--color-aqua);
+}
+
+:deep(.tool-inline) {
+  font-size: var(--text-dense);
+  color: var(--color-violet);
+  font-family: monospace;
+}
+
+:deep(.tool-inline-result) {
+  font-size: var(--text-dense);
+  color: var(--semantic-text-dim);
+  font-family: monospace;
+}
+
+:deep(.tool-inline-success) {
+  color: var(--color-green);
+  font-weight: 600;
+}
+
+:deep(.tool-inline-error) {
+  color: var(--color-red);
+  font-weight: 600;
+}
+
+:deep(.markdown-content pre) {
+  overflow-x: auto;
+}
+
+:deep(.markdown-content pre:hover .code-copy-btn) {
+  opacity: 1;
+}
+
+/* ─── <html> wrapper-tag sandboxed iframe (2026-08-23 html-tag-support) ──
+   Live HTML blocks from the LLM render inside a null-origin iframe
+   (sandbox="allow-scripts", no allow-same-origin). The frame paints the
+   app's CARD surface, NOT white: an LLM that answers in HTML mode (the
+   response-formatting prompt explicitly offers it) is still part of the
+   transcript, and a hardcoded #fff read as a bright slab in the dark
+   theme. `color-scheme: dark` keeps the frame's native scrollbars dark
+   too. Height is set inline by the frame's own auto-resize report
+   (helpers/iframeAutoResize.ts) to its FULL content height — no inner
+   scrollbar, the outer chat scroller owns scrolling. */
+
+/* ─── Tool-output cards, de-bubbled (2026-08-23) ────────────────────────
+   All 24 tool_output components used to carry an identical Tailwind card
+   frame (`rounded-md border border-[--color-border] bg-[--semantic-card-bg]`)
+   — a boxed bubble per tool row. In paragraph mode that reads as heavy
+   chrome stacked under un-bubbled prose. The frame is now ONE shared
+   class, `.chat-tool-card`, defined here once:
+     - transparent background (page shows through)
+     - no full box border; a subtle 2px left rule marks the row instead
+     - gentle hover tint so rows stay discoverable as expandable
+   Error/warning variants still work: components bind
+   `border-red-500/50` / `border-orange-500/50` via :class, which now
+   recolors the left rule (border-left-color) instead of drawing a box.
+   Scoped deep selector: the components are children of ChatView's tree. */
+:deep(.chat-tool-card) {
+  background-color: transparent;
+  border: none;
+  border-left: 2px solid var(--color-border);
+  border-radius: 0;
+  overflow: visible;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  transition:
+    background-color 0.15s ease,
+    border-left-color 0.15s ease;
+}
+
+:deep(.chat-tool-card pre) {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+:deep(.chat-tool-card:hover) {
+  background-color: color-mix(in srgb, var(--color-violet) 4%, transparent);
+  border-left-color: var(--color-violet);
+}
+
+/* Attached image thumbnail — small fixed-size preview matching
+   FileInput.vue's FilePreview (80×80px, rounded, object-fit:cover).
+   Click opens the full-screen ImagePreview via openImagePreview(). */
+.chat-attached-image-thumb {
+  width: 80px;
+  height: 80px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  background-color: var(--semantic-sidebar-bg);
+  cursor: pointer;
+}
+
+.chat-attached-image-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.chat-attached-image-thumb:hover .chat-attached-image-img {
+  opacity: 0.9;
+}
+
+/* Attached document chip — the name of a PDF or a text document the model
+   read. Metadata only: the bytes never reach the transcript. */
+.chat-attached-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background-color: var(--semantic-sidebar-bg);
+  font-size: var(--text-dense);
+}
+
+.chat-attached-file-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.chat-attached-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-attached-file-size {
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+/* Pill-jump flash (2026-09-09 chatview user pill): brief outline pulse
+   on the user bubble after a rail-pill jump so the eye finds it. */
+
+/* Realtime chat slider: this scroller's native scrollbar is replaced by
+   the ChatScrollSlider thumb (draggable, scroll-synced). Scrolling
+   itself is untouched (wheel/touch/keyboard still work) — only the
+   native visual is hidden, and only inside this wrapper. */
+.messages-scroll-hide-native :deep(.virtual-scroller) {
+  scrollbar-width: none;
+}
+.messages-scroll-hide-native :deep(.virtual-scroller::-webkit-scrollbar) {
+  display: none;
+}
+/* Make room for the slider track at the extreme right edge. */
+.messages-scroll-hide-native :deep(.user-pill-rail) {
+  right: 18px;
+}
+
+/* ─── Pill-rail gutter ────────────────────────────────────────────────────
+   The rail is `position: absolute` on the transcript wrapper, so it is
+   OUT of flow: nothing reserves space for it and its pills paint straight
+   over the message bubbles (the "pillbar overlaps the chat" report). The
+   rail itself cannot fix that — an absolutely-positioned element never
+   pushes siblings — so the wrapper reserves the strip instead.
+
+   `--pill-rail-gutter` is the width of the rail's own footprint, measured
+   from the wrapper's right edge:
+       right: 18px  +  rail padding 4px  +  pill 24px  =  46px
+   rounded up to 48px so the pill's `scaleX(1.25)` hover growth (24 → 30px)
+   still lands inside the gutter rather than on a bubble.
+
+   Declared on the WRAPPER, not on the scroller: the agent-error band is a
+   sibling of the VirtualScroller, so a property set on the scroller would
+   not reach it and the strip would break across that band.
+
+   Applied as `padding-right` on the rows, NOT as a margin or a width on
+   the scroller: VirtualScroller's `measureItems()` reads `el.offsetHeight`,
+   so a horizontal padding is invisible to the height model — the sizer,
+   `scrollToBottom` and the scroll-restore anchors all keep working
+   unchanged. A `padding-bottom` would have been folded into the height and
+   shifted every anchor.
+
+   The class is bound on the wrapper with the SAME condition as the rail's
+   own `v-if="userPills.length >= 2"`, so the gutter exists exactly when
+   the rail does — no dead space in a 1-user-group chat, and no pills
+   without a gutter. */
+.messages-scroll-hide-native.has-pill-rail {
+  --pill-rail-gutter: 48px;
+}
+
+/* The rows are the scroller's slot content, so the gutter has to reach
+   them through `:deep()`. The agent-error band is a plain descendant of
+   the wrapper (outside the scroller's height model), so it takes the same
+   padding directly — the strip stays continuous down the transcript. */
+/* Mirror the strip. Padding one side only was invisible while the rows were
+   centred; a full-bleed row is shifted 32px off the column's centre without it. */
+.messages-scroll-hide-native.has-pill-rail :deep([data-group-key]),
+.messages-scroll-hide-native.has-pill-rail .agent-error-list {
+  padding-right: var(--pill-rail-gutter, 48px);
+  padding-left: var(--pill-rail-gutter, 48px);
+}
+
+/* ─── Floating composer ──────────────────────────────────────────────────
+   The composer is an overlay, not the last flex child. The dock's
+   ResizeObserver writes its height into `--chat-composer-inset` on the
+   `.chat-column` (see the script block); everything below reads that one
+   number, so there is a single source of truth for "how much room does
+   the floating composer take". It is unset (0) while the dock is not
+   rendered — e.g. the read-only peek panel — which degrades the last row
+   to a plain 1rem of bottom padding, matching the old flow layout. */
+.chat-column {
+  --chat-composer-inset: 0px;
+  --chat-content-max: 100%;
+
+  /* Contain this surface's whole z-ladder.
+     `position: relative` with `z-index: auto` does NOT open a stacking
+     context, so the tiers below (scroll slider / pill rail 20, composer
+     dock 30, scroll-to-bottom 31) were competing in the ROOT stacking
+     context against AppLayout's full-surface overlays — and every one of
+     them outranked the document viewer's `z-index: 10`. Opening a chat
+     session and then clicking a document therefore painted the composer
+     dock, the scroll arrow and the scroll slider ON TOP of the document.
+
+     Isolating here fixes the class of bug rather than one instance: no
+     z-index added to the chat in future can escape past an app-level
+     overlay, so DocumentsView does not have to be raised above a number
+     that would have to be raised again. */
+  isolation: isolate;
+}
+
+/* Transcript width presets. Every row and the composer cap themselves at
+   `--chat-content-max`, so `full` is the default and `comfortable` is the
+   old centred 56rem (896px) cap. */
+.chat-column.chat-width-comfortable {
+  --chat-content-max: 896px;
+}
+.chat-column.chat-width-wide {
+  --chat-content-max: 1400px;
+}
+
+.composer-dock {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* Above the transcript (z-0/auto) and the pill rail + scroll slider
+     (z-20), below the scroll-to-bottom arrow (z-31). */
+  z-index: 30;
+}
+
+/* The fade that replaces the old `border-top` + opaque sidebar fill.
+   `--semantic-content-bg` is the colour the transcript is actually
+   painted on, so the gradient dissolves into the page instead of
+   stopping at a 1px rule — or showing the 1-shade seam that fading to
+   `--semantic-sidebar-bg` (the old bar fill) would have produced. */
+.composer-scrim {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* Opaque across the dock itself (so nothing shows through the padding
+     around the card), then 3rem of fade ABOVE it — that extra band is
+     what softens the cut where the transcript runs under the composer. */
+  height: calc(100% + 3rem);
+  pointer-events: none;
+  background: linear-gradient(
+    to top,
+    var(--semantic-content-bg) 0,
+    var(--semantic-content-bg) calc(100% - 3rem),
+    transparent 100%
+  );
+}
+
+/* Lift the composer card off the page. Without this it reads as another
+   flat surface rather than something floating over the transcript.
+
+   `position: relative` + `z-index: 1` is load-bearing, not decoration: the
+   scrim is a POSITIONED descendant of the dock (`position: absolute`,
+   `z-index: auto`), and CSS paints positioned descendants AFTER in-flow,
+   non-positioned content. A static card therefore loses to the scrim, whose
+   opaque band covers the dock's full height — the input row, paperclip and
+   Send button all vanish, leaving only whatever the card happens to position
+   itself (the agent picker's `relative` wrapper) on top. `pointer-events:
+   none` on the scrim hides the damage from hit-testing, so `elementFromPoint`
+   still reports the textarea and every geometry test passes. Giving the card
+   its own stacking context above the scrim is what keeps it visible. */
+.composer-dock :deep(.composer-card) {
+  position: relative;
+  z-index: 1;
+  box-shadow:
+    0 10px 30px -10px rgba(0, 0, 0, 0.7),
+    0 2px 8px -2px rgba(0, 0, 0, 0.45);
+}
+
+/* Bottom clearance for the newest message. Plain CSS padding on the last
+   row, so VirtualScroller's `measureItems()` (which reads
+   `el.offsetHeight`) folds it into the height model for free: the sizer
+   grows, and `scrollToBottom` lands on the padded bottom, so the newest
+   message is always fully visible above the composer. Keyed by group
+   index in the template, never `:last-child` — the last child of the
+   rendered window is a mid-transcript row whenever the window does not
+   cover the tail. */
+
+.agent-error-list {
+  padding-bottom: calc(var(--chat-composer-inset) + 0.5rem);
+}
+
+/* Scroll-to-bottom arrow: sits clear of the dock instead of at a fixed
+   `bottom-24`, which was tuned for the old in-flow composer height. */
+.chat-scroll-to-bottom {
+  position: absolute;
+  right: 2rem;
+  bottom: calc(var(--chat-composer-inset) + 0.75rem);
+  z-index: 31;
+}
+
+/* V1 composer toolbar (single-card): quiet ghost actions + muted status.
+   The strip itself lives in FileInput's toolbar slot; these classes style
+   the projected content. Display-only status (tokens) deliberately has no
+   button affordance — no border, no hover — so actions read as actions. */
+.composer-tool-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: var(--text-dense);
+  font-weight: 500;
+  color: var(--semantic-text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.composer-tool-btn:hover {
+  background-color: var(--hover-bg, rgba(255, 255, 255, 0.04));
+  color: var(--semantic-text);
+}
+
+.composer-tool-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.composer-tool-btn:disabled:hover {
+  background: transparent;
+  color: var(--semantic-text-dim);
+}
+
+/* The agent list is capped by the space above the composer
+   (`--chat-composer-inset` = the dock's published height) and scrolls: an
+   uncapped list ran off the top of the window, with no way to reach it. */
+.agent-picker-menu {
+  max-height: min(60vh, calc(100vh - var(--chat-composer-inset, 0px) - 2rem));
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.composer-toolbar-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--color-border);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+.composer-tokens-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 4px;
+  font-size: var(--text-dense);
+  color: var(--semantic-text-dim);
+  white-space: nowrap;
+}
+
+.composer-branch-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+@media (max-width: 720px) {
+  .composer-branch-label {
+    max-width: 120px;
+  }
+}
+
+@media (max-width: 560px) {
+  .composer-tokens-status {
+    display: none;
+  }
+}

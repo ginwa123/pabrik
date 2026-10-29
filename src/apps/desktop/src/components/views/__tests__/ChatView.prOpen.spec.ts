@@ -1,10 +1,9 @@
 /** Static contract: ChatView opens sidebar files in the in-app code browser (which also updates the
  * app URL to view=code-editor). */
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { readChatViewSource as readChatViewBundle } from '../../../__tests__/helpers/chatViewSource'
 
-const chatViewSrc = readFileSync(resolve(__dirname, '../ChatView.vue'), 'utf8')
+const chatViewSrc = readChatViewBundle()
 
 describe('ChatView sidebar open-file wiring', () => {
   it('handles open-file via the injected code-browser opener', () => {

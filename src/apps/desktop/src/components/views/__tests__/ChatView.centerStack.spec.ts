@@ -3,8 +3,6 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import { shallowMount, flushPromises } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import CenterDiffSection from '../chat_right_sidebar/CenterDiffSection.vue'
 import SidebarDiffView from '../chat_right_sidebar/SidebarDiffView.vue'
 import {
@@ -12,8 +10,9 @@ import {
   encodePathParam,
   decodePathParam,
 } from '../chat_right_sidebar/parseUnifiedDiff'
+import { readChatViewSource as readChatViewBundle } from '../../../__tests__/helpers/chatViewSource'
 
-const chatViewSrc = readFileSync(resolve(__dirname, '../ChatView.vue'), 'utf8')
+const chatViewSrc = readChatViewBundle()
 
 describe('centerDiffSectionId', () => {
   it('is center-diff- + base64url without padding', () => {

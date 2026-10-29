@@ -2,28 +2,45 @@
  * legitimately-saved messages were invisible in the chatview: F1. */
 import { describe, it, expect } from 'vitest'
 import { stripThinkingTags } from '../helpers/stripTags'
+import { readChatViewSource as readChatViewBundle } from './helpers/chatViewSource'
 
-const readChatViewSource = async (): Promise<string> => {
+const readChatViewSource = async (): Promise<string> => readChatViewBundle()
+
+const readPresentationSource = async (): Promise<string> => {
   const fs = await import('node:fs/promises')
   const path = await import('node:path')
-  const chatviewPath = path.resolve(__dirname, '..', 'components', 'views', 'ChatView.vue')
-  return fs.readFile(chatviewPath, 'utf8')
+  const presentationPath = path.resolve(
+    __dirname,
+    '..',
+    'components',
+    'views',
+    'chat_view',
+    'useChatMessagePresentation.ts',
+  )
+  return fs.readFile(presentationPath, 'utf8')
+}
+
+const readHtmlFrameSource = async (): Promise<string> => {
+  const fs = await import('node:fs/promises')
+  const path = await import('node:path')
+  const framePath = path.resolve(__dirname, '..', 'helpers', 'chatHtmlFrame.ts')
+  return fs.readFile(framePath, 'utf8')
 }
 
 describe('F1 — filteredMessages exemptions (source contract)', () => {
   it('keeps image-only messages (image_urls populated)', async () => {
-    const source = await readChatViewSource()
+    const source = await readPresentationSource()
     // The exemption must exist INSIDE the filteredMessages filter body.
     expect(source).toMatch(/if \(\(m\.image_urls\?\.length \?\? 0\) > 0\) return true/)
   })
 
   it('keeps role=tool messages regardless of stripped content', async () => {
-    const source = await readChatViewSource()
+    const source = await readPresentationSource()
     expect(source).toMatch(/if \(m\.role === 'tool'\) return true/)
   })
 
   it('keeps assistant messages that carry reasoning_content', async () => {
-    const source = await readChatViewSource()
+    const source = await readPresentationSource()
     expect(source).toMatch(
       /m\.role === 'assistant' && m\.reasoning_content && m\.reasoning_content\.trim\(\) !== ''/,
     )
@@ -40,7 +57,7 @@ describe('F2 — user group renders ALL messages (source contract)', () => {
   })
 
   it('hasBubbleContent checks every user message, not just [0]', async () => {
-    const source = await readChatViewSource()
+    const source = await readPresentationSource()
     // The user branch of hasBubbleContent must use .some(...) over all
     // messages (the old code read group.messages[0] directly).
     const userBranch = source.match(/if \(group\.role === 'user'\) \{[\s\S]*?\n  \}/)
@@ -164,7 +181,8 @@ describe('Rich-block support — ChatView render branch (source contract)', () =
     // message.
     expect(source).toMatch(/v-if="msg\.role === 'assistant' && hasRichBlocks\(msg\.content\)"/)
     // The legacy renderResponse call site survives (v-else path).
-    expect(source).toMatch(/renderResponse\(\s*\n\s*msg\.content,/)
+    const presentation = await readPresentationSource()
+    expect(presentation).toMatch(/renderResponse\(\s*\n\s*msg\.content,/)
   })
 
   it('renders html blocks in a sandboxed iframe (allow-scripts only)', async () => {
@@ -183,7 +201,7 @@ describe('Rich-block support — ChatView render branch (source contract)', () =
 
   it('renders a mermaid segment through MermaidDiagram, never as HTML', async () => {
     const source = await readChatViewSource()
-    expect(source).toMatch(/import MermaidDiagram from '\.\.\/chat\/MermaidDiagram\.vue'/)
+    expect(source).toMatch(/import MermaidDiagram from '[^']*MermaidDiagram\.vue'/)
     expect(source).toMatch(
       /v-else-if="seg\.kind === 'mermaid' && seg\.payload"\s*\n\s*:source="seg\.payload"/,
     )
@@ -193,7 +211,7 @@ describe('Rich-block support — ChatView render branch (source contract)', () =
   })
 
   it('wraps fragment blocks in a minimal srcdoc shell via buildHtmlSrcdoc', async () => {
-    const source = await readChatViewSource()
+    const source = await readHtmlFrameSource()
     expect(source).toMatch(/const buildHtmlSrcdoc/)
   })
 
@@ -208,29 +226,28 @@ describe('Rich-block support — ChatView render branch (source contract)', () =
   // response-formatting prompt offers it) put a bright slab with its own scrollbar inside the dark.
   it('paints the frame with the app theme instead of a hardcoded white', async () => {
     const source = await readChatViewSource()
-    // The frame element ...
     expect(source).toMatch(/\.chat-html-frame \{[\s\S]*?background: var\(--semantic-card-bg/)
     expect(source).toMatch(/\.chat-html-frame \{[\s\S]*?color-scheme: dark/)
-    // ... and the srcdoc shell it wraps fragments in.
-    expect(source).not.toMatch(/background:#fff/)
-    expect(source).toMatch(/:root\{color-scheme:dark\}/)
-    expect(source).toMatch(/resolveHtmlFramePalette/)
+    const frame = await readHtmlFrameSource()
+    expect(frame).not.toMatch(/background:#fff/)
+    expect(frame).toMatch(/:root\{color-scheme:dark\}/)
+    expect(frame).toMatch(/resolveHtmlFramePalette/)
   })
 
   it('auto-sizes the frame from its own reported content height', async () => {
     const source = await readChatViewSource()
-    expect(source).toMatch(/autoResizeScript\(CHAT_HTML_FRAME_RESIZE_SOURCE\)/)
-    expect(source).toMatch(/readAutoResizeHeight\(event, CHAT_HTML_FRAME_RESIZE_SOURCE\)/)
-    expect(source).toMatch(/findSenderFrame\(document, event, 'iframe\.chat-html-frame'\)/)
-    // The listener must be torn down with the view.
     expect(source).toMatch(/window\.removeEventListener\('message', onHtmlFrameResize\)/)
+    const frame = await readHtmlFrameSource()
+    expect(frame).toMatch(/autoResizeScript\(CHAT_HTML_FRAME_RESIZE_SOURCE\)/)
+    expect(frame).toMatch(/readAutoResizeHeight\(event, CHAT_HTML_FRAME_RESIZE_SOURCE\)/)
+    expect(frame).toMatch(/findSenderFrame\(document, event, 'iframe\.chat-html-frame'\)/)
   })
 
   // 2026-09-13 follow-up (same task): the model authors this HTML blind — real payload
   // 1789313976387498377 shipped GitHub's light `background:#f6f8fa` inline on every <pre>, which
   // beat the shell stylesheet and left theme ink on a light chip (1.57:1 contrast).
   it('forces the text surfaces so payload-authored light colours cannot win', async () => {
-    const source = await readChatViewSource()
+    const source = await readHtmlFrameSource()
     // `!important` is the point: an inline style loses to it.
     expect(source).toMatch(
       /pre,code,th,td\{background:\$\{p\.chip\}!important;color:\$\{p\.fg\}!important\}/,
@@ -246,9 +263,10 @@ describe('Rich-block support — ChatView render branch (source contract)', () =
   // outer chat scroller owns scrolling and no gray inner scrollbar appears.
   it('grows html frames to full height with no inner scrollbar', async () => {
     const source = await readChatViewSource()
-    expect(source).toMatch(/growFrameToContent\(reported\)/)
     expect(source).toMatch(/scrolling="no"/)
-    expect(source).toMatch(/FRAME_NO_SCROLLBAR_STYLE/)
     expect(source).toMatch(/\.chat-html-frame::-webkit-scrollbar/)
+    const frame = await readHtmlFrameSource()
+    expect(frame).toMatch(/growFrameToContent\(reported\)/)
+    expect(frame).toMatch(/FRAME_NO_SCROLLBAR_STYLE/)
   })
 })

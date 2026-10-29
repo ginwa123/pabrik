@@ -2,11 +2,10 @@
  * stacked section drives currentPath, which syncs to ?diff= via router.replace (never push); the
  * Back button clears the selection and deletes the param. */
 import { describe, expect, it, vi, afterEach } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { scrollToSectionElement, centerDiffSectionId } from '../chat_right_sidebar/parseUnifiedDiff'
+import { readChatViewSource as readChatViewBundle } from '../../../__tests__/helpers/chatViewSource'
 
-const chatViewSrc = readFileSync(resolve(__dirname, '../ChatView.vue'), 'utf8')
+const chatViewSrc = readChatViewBundle()
 
 describe('ChatView scroll-spy + URL sync', () => {
   it('reads the route (useRoute) beside useRouter', () => {
@@ -38,9 +37,9 @@ describe('scrollToSectionElement', () => {
 
   it('scrolls the addressed section into view at block start', () => {
     const scrollIntoView = vi.fn()
-    const getSpy = vi.spyOn(document, 'getElementById').mockReturnValue(
-      { scrollIntoView } as unknown as HTMLElement,
-    )
+    const getSpy = vi
+      .spyOn(document, 'getElementById')
+      .mockReturnValue({ scrollIntoView } as unknown as HTMLElement)
     expect(scrollToSectionElement('a/b.txt')).toBe(true)
     expect(getSpy).toHaveBeenCalledWith(centerDiffSectionId('a/b.txt'))
     expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start' })

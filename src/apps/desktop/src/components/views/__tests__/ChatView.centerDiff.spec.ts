@@ -1,10 +1,9 @@
 /** Static contract: ChatView swaps its main column to a full-height diff when a sidebar file is
  * clicked (center-stage design — no dialog, no overlay sidebar). */
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { readChatViewSource as readChatViewBundle } from '../../../__tests__/helpers/chatViewSource'
 
-const chatViewSrc = readFileSync(resolve(__dirname, '../ChatView.vue'), 'utf8')
+const chatViewSrc = readChatViewBundle()
 
 describe('ChatView center-stage diff', () => {
   it('holds the selection and swaps on show-diff', () => {

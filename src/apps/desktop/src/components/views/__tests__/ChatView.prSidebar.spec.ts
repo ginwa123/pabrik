@@ -1,10 +1,9 @@
 /** Static contract: ChatView feeds the session's attached-PR binding into the right sidebar so the
  * panel flips to PR-changes mode. */
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { readChatViewSource as readChatViewBundle } from '../../../__tests__/helpers/chatViewSource'
 
-const chatViewSrc = readFileSync(resolve(__dirname, '../ChatView.vue'), 'utf8')
+const chatViewSrc = readChatViewBundle()
 
 describe('ChatView PR sidebar wiring', () => {
   it('holds the attached-PR binding in refs', () => {

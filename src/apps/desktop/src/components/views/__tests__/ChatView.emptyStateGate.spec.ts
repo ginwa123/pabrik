@@ -3,8 +3,9 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { readChatViewSource as readChatViewBundle } from '../../../__tests__/helpers/chatViewSource'
 
-const chatViewSrc = readFileSync(resolve(__dirname, '../ChatView.vue'), 'utf8')
+const chatViewSrc = readChatViewBundle()
 const apiSrc = readFileSync(resolve(__dirname, '../../../api/index.ts'), 'utf8')
 
 describe('ChatView empty state is gated on a server-confirmed empty transcript', () => {

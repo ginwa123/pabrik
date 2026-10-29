@@ -1,9 +1,8 @@
 /** Static contract: one width token caps the transcript, and its presets live in CSS. */
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { readChatViewSource } from '../../../__tests__/helpers/chatViewSource'
 
-const src = readFileSync(resolve(__dirname, '../ChatView.vue'), 'utf8')
+const src = readChatViewSource()
 
 // Built from parts: written out, this literal is a Tailwind candidate and the
 // scanner would keep the now-dead utility in the shipped stylesheet.

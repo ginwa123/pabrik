@@ -2,8 +2,9 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { readChatViewSource } from '../../../__tests__/helpers/chatViewSource'
 
-const chatViewSrc = readFileSync(resolve(__dirname, '../ChatView.vue'), 'utf8')
+const chatViewSrc = readChatViewSource()
 const headerSrc = readFileSync(
   resolve(__dirname, '../../tool_outputs/_shared/ToolCardHeader.vue'),
   'utf8',
@@ -40,7 +41,9 @@ describe('ChatView tool-width consistency', () => {
   it('ToolCardHeader primary truncates inside fixed width (min-w-0)', () => {
     // flex-1 truncate without min-w-0 never ellipsizes in a flex row — a long
     // tool name/path forces the header wider instead.
-    expect(headerSrc).toMatch(/flex-1[^"]*min-w-0[^"]*truncate|flex-1[^"]*truncate[^"]*min-w-0|min-w-0[^"]*flex-1[^"]*truncate/)
+    expect(headerSrc).toMatch(
+      /flex-1[^"]*min-w-0[^"]*truncate|flex-1[^"]*truncate[^"]*min-w-0|min-w-0[^"]*flex-1[^"]*truncate/,
+    )
   })
 
   it('ToolParameters pre scrolls inside instead of stretching the card', () => {

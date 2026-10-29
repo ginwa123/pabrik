@@ -15,22 +15,17 @@ import { chatEngineDb, newestCursor, toChatMessage } from '../../sync/ChatEngine
 import { runSyncEffect, runSyncEffectOr, runSyncVoid } from '../../sync/runtime'
 import { useChatContentWidth } from '../../composables/useChatContentWidth'
 import { useChatScrollRestore } from '../../composables/useChatScrollRestore'
+import { stripThinkingTags, VirtualScroller, formatCompactTokens } from '@/helpers'
+import { onHtmlFrameResize } from '../../helpers/chatHtmlFrame'
+import { useChatComposerAgents } from './chat_view/useChatComposerAgents'
+import ChatMessageRow from './chat_view/ChatMessageRow.vue'
+import ChatTranscriptStates from './chat_view/ChatTranscriptStates.vue'
 import {
-  stripThinkingTags,
-  VirtualScroller,
-  renderResponse,
-  renderStreamingResponse,
-  renderMarkdown,
-  hasRichBlocks,
-  extractRichBlocks,
-  CHAT_HTML_FRAME_RESIZE_SOURCE,
-  autoResizeScript,
-  growFrameToContent,
-  FRAME_NO_SCROLLBAR_STYLE,
-  findSenderFrame,
-  readAutoResizeHeight,
-  formatCompactTokens,
-} from '@/helpers'
+  isCompactionMessage,
+  useChatMessagePresentation,
+  type Message,
+  type MessageGroup,
+} from './chat_view/useChatMessagePresentation'
 import {
   buildScrollContext,
   createScrollLogger,
@@ -64,12 +59,6 @@ import {
 } from '../../helpers/chatHistoryRetry'
 import { ChatHistoryError } from '../../api'
 import { resolveWorkspaceId } from '../../helpers/workspaceScope'
-import { tryUnwrapToolOutput, type UnwrappedToolOutput } from '@/helpers/unwrapToolOutput'
-import {
-  isBackgroundCommandOutput,
-  parseBackgroundCommandOutput,
-  backgroundToShellData,
-} from '@/helpers/isBackgroundCommandOutput'
 import {
   applyProgressEvent,
   applySnapshotRows,
@@ -80,16 +69,6 @@ import {
 } from '../../helpers/subagentProgress'
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- used in <template> as <Bash> (~line 2507); typescript-eslint doesn't always see template usages via the Vue parser
 import Bash from '../preview/Bash.vue'
-import ShellTool from '../preview/ShellTool.vue'
-import ToolCard, { type ToolCardData } from '../tool_outputs/ToolCard.vue'
-import CompactToolGroup from '../tool_outputs/compact/CompactToolGroup.vue'
-import {
-  buildCompactChains,
-  foldedNarrationMessageIds,
-  foldedThoughtMessageIds,
-  foldsIntoChain,
-  type CompactChainItem,
-} from '../tool_outputs/compact/chain'
 import SubAgentPeekHost from '../pabrik/SubAgentPeekHost.vue'
 import ChatRightSidebar from './chat_right_sidebar/ChatRightSidebar.vue'
 import ChatAppBar from './ChatAppBar.vue'
@@ -113,29 +92,17 @@ import { useRouter, useRoute } from 'vue-router'
 import type { LocationQueryRaw } from 'vue-router'
 import { useWorkspacesStore } from '../../stores/workspaces'
 import { buildAppUrl, isChatRouteStaleForSession } from '../../helpers/appUrl'
-import CompactionCard from '../preview/CompactionCard.vue'
-import SkillInvocationCard from '../preview/SkillInvocationCard.vue'
-import { hasSkillEnvelope, splitSkillEnvelope } from '../../helpers/skillEnvelope'
-// 2026-08-25 agent-error-card (task_1787663566535_2): dedicated renderer
-// for agentic-loop error/retry diagnostics (is_error=true SSE events).
 import AgentErrorCard from '../chat/AgentErrorCard.vue'
-import ChatAttachments from '../chat/ChatAttachments.vue'
-import MermaidDiagram from '../chat/MermaidDiagram.vue'
-import PlantUmlDiagram from '../chat/PlantUmlDiagram.vue'
-import D2Diagram from '../chat/D2Diagram.vue'
-import UserPillRail, { type UserPill } from '../chat/UserPillRail.vue'
+import UserPillRail from '../chat/UserPillRail.vue'
 import ChatScrollSlider from '../chat/ChatScrollSlider.vue'
-import { pickActivePillIndex, isPillGroup, estimateViewportEnd } from '../chat/activePill'
+import { pickActivePillIndex, estimateViewportEnd } from '../chat/activePill'
 import SkillsPopup from '../preview/SkillsPopup.vue'
 import BackgroundCommandsPopup from '../preview/BackgroundCommandsPopup.vue'
 import ImagePreview from '../preview/ImagePreview.vue'
 import WorktreeMenu from '../workspace/WorktreeMenu.vue'
 import CreatePrDialog from '../dialogs/CreatePrDialog.vue'
 import CreateWorktreeDialog from '../dialogs/CreateWorktreeDialog.vue'
-import { indexSpawnSubAgentArgs } from '../../helpers/parseSpawnSubAgentArgs'
-import type { SubAgentArgs } from '../../helpers/parseSpawnSubAgentArgs'
 import { ICON_PATHS } from '../ui/icons'
-import UiIcon from '../ui/UiIcon.vue'
 
 const props = defineProps<{
   chatId: string
@@ -166,32 +133,6 @@ const emit = defineEmits<{
 // Check if session is pending (needs creation on first message)
 const isPendingSession = computed(() => props.chatId.startsWith('pending-'))
 const { presetClass: chatWidthClass } = useChatContentWidth()
-
-interface Message {
-  id: string
-  role: 'user' | 'assistant' | 'system' | 'tool'
-  content: string
-  timestamp: Date
-  tool_name?: string
-  diffview_before?: string
-  diffview_after?: string
-  image_urls?: string[]
-  video_urls?: string[]
-  /** The attached files as a JSON array of `{name, mime, bytes}` — metadata only. */
-  file_attachments?: string
-  tool_calls_json?: string
-  finish_reason?: string
-  tool_call_id?: string
-  /**    * JSON-stringified tool input arguments, populated by the same `tryUnwrapToolOutput` pipeline
-   * that fills `unwrappedByMessageId`. Used by cards like `PresentFiles` without re-fetching. */
-  parameters?: string
-  is_input?: boolean
-  is_output?: boolean
-  /**    * Thinking models' chain-of-thought, stored in `llm_history.reasoning_content`. Populated by
-   * loadChatHistory (REST) and the SSE `full` handler; rendered as a collapsible section in the
-   * assistant bubble. */
-  reasoning_content?: string
-}
 
 // Copy code content to clipboard
 const copyCodeContent = async (codeContent: string) => {
@@ -234,125 +175,6 @@ const setupCodeBlockCopyButtons = () => {
   })
 }
 
-/**  * The `<html>` frame is a separate document with a NULL origin, so the app's CSS custom properties
- * do NOT cascade in — theme values are inlined into the srcdoc. The literals below are Kanagawa
- * Dragon fallbacks for no-DOM cases. */
-interface HtmlFramePalette {
-  bg: string
-  fg: string
-  muted: string
-  border: string
-  link: string
-  /** Chip behind `code`/`pre`/table cells — matches the app's
-   *  `.markdown-content pre` (`--color-bg-p1`). */
-  chip: string
-  /** Inline `code` ink — matches the app's `.markdown-content code`
-   *  (`--color-aqua`). */
-  codeInk: string
-}
-
-const HTML_FRAME_PALETTE_FALLBACK: HtmlFramePalette = {
-  bg: '#1D1C19', // --semantic-card-bg
-  fg: '#c5c9c5', // --semantic-text
-  muted: '#a6a69c', // --semantic-text-muted
-  border: '#282727', // --color-border
-  link: '#8ba4b0', // --semantic-link
-  chip: '#282727', // --color-bg-p1
-  codeInk: '#8ea4a2', // --color-aqua
-}
-
-let htmlFramePalette: HtmlFramePalette | null = null
-
-const readCssVar = (name: string, fallback: string): string => {
-  if (typeof window === 'undefined' || typeof getComputedStyle !== 'function') return fallback
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
-  return value || fallback
-}
-
-/** Memoized — the theme is fixed for the app's lifetime and this runs for
- *  every `<html>` block on every assistant render. */
-const resolveHtmlFramePalette = (): HtmlFramePalette => {
-  if (htmlFramePalette) return htmlFramePalette
-  const fallback = HTML_FRAME_PALETTE_FALLBACK
-  htmlFramePalette = {
-    bg: readCssVar('--semantic-card-bg', fallback.bg),
-    fg: readCssVar('--semantic-text', fallback.fg),
-    muted: readCssVar('--semantic-text-muted', fallback.muted),
-    border: readCssVar('--color-border', fallback.border),
-    link: readCssVar('--semantic-link', fallback.link),
-    chip: readCssVar('--color-bg-p1', fallback.chip),
-    codeInk: readCssVar('--color-aqua', fallback.codeInk),
-  }
-  return htmlFramePalette
-}
-
-/** Build the srcdoc document for an html block. Full documents pass through verbatim; fragments get
- * a shell carrying the app's THEME, `color-scheme: dark`, and the auto-resize reporter. */
-const buildHtmlSrcdoc = (block: string): string => {
-  const trimmed = block.trim()
-  if (/<!doctype html|<html[\s>]/i.test(trimmed)) {
-    // Full documents pass through, but still get the no-scrollbar shell
-    // + reporter so they grow to full height instead of clipping behind
-    // the browser's 150px default with an inner scrollbar.
-    const noScrollbar = `<style>${FRAME_NO_SCROLLBAR_STYLE}</style>`
-    const reporter = autoResizeScript(CHAT_HTML_FRAME_RESIZE_SOURCE)
-    if (/<\/body\s*>/i.test(trimmed)) {
-      return trimmed.replace(/<\/body\s*>/i, `${noScrollbar}${reporter}</body>`)
-    }
-    return `${trimmed}${noScrollbar}${reporter}`
-  }
-  const p = resolveHtmlFramePalette()
-  return (
-    '<!DOCTYPE html><html><head><meta charset="utf-8">' +
-    '<style>' +
-    ':root{color-scheme:dark}' +
-    'html,body{margin:0;padding:0}' +
-    `body{font-family:system-ui,sans-serif;background:${p.bg};color:${p.fg};margin:8px}` +
-    `a{color:${p.link}}` +
-    'img{max-width:100%}' +
-    `pre,code,th,td{background:${p.chip}!important;color:${p.fg}!important}` +
-    'code{font-family:ui-monospace,"SF Mono",Menlo,monospace;padding:.1em .3em;border-radius:3px}' +
-    `code{color:${p.codeInk}!important}` +
-    'pre{font-family:ui-monospace,"SF Mono",Menlo,monospace;padding:.6em .8em;' +
-    'border-radius:4px;overflow-x:auto}' +
-    'pre code{background:transparent!important;padding:0}' +
-    `pre code{color:${p.fg}!important}` +
-    'table{border-collapse:collapse}' +
-    `th,td{border:1px solid ${p.border};padding:4px 8px}` +
-    `hr{border:none;border-top:1px solid ${p.border}}` +
-    `blockquote{margin:.6em 0;padding-left:.8em;border-left:3px solid ${p.border};color:${p.muted}}` +
-    FRAME_NO_SCROLLBAR_STYLE +
-    '</style>' +
-    '</head><body>' +
-    trimmed +
-    '</body>' +
-    autoResizeScript(CHAT_HTML_FRAME_RESIZE_SOURCE) +
-    '</html>'
-  )
-}
-
-/**  * The reporter script inside each frame posts its content height; grow the frame to its FULL height
- * (no cap) so no inner scrollbar appears — the outer chat scroller owns scrolling. `contentWindow`
- * identity is the only handle a null-origin sandbox leaves the parent. */
-const onHtmlFrameResize = (event: MessageEvent): void => {
-  const reported = readAutoResizeHeight(event, CHAT_HTML_FRAME_RESIZE_SOURCE)
-  if (reported === null) return
-  const frame = findSenderFrame(document, event, 'iframe.chat-html-frame')
-  if (!frame) return
-  frame.style.height = `${growFrameToContent(reported)}px`
-}
-
-// A compaction handoff: a user-role message carrying the envelope `compactMessageInMemoryNew`
-// writes. JSON since the format change, XML before it, so both prefixes are recognised — the bubble
-// renders a `CompactionCard` instead of a wall of raw document text.
-const isCompactionMessage = (msg: { role: string; content: string } | undefined): boolean => {
-  if (!msg) return false
-  if (msg.role !== 'user') return false
-  const trimmed = msg.content.trimStart()
-  if (trimmed.startsWith('{"compact_messages"')) return true
-  return trimmed.startsWith('<compact_messages>')
-}
-
 // Session ID extracted from props on mount
 const sessionId = ref('')
 
@@ -364,9 +186,6 @@ const isLLMProcessing = computed(() => !!processingState.value[sessionId.value])
 
 // Pagination state
 const messageCursor = ref<string | null>(null)
-// 2026-09-09 user-pill pagination fix: 1000 rows per page defeated pagination (slow TTFB with
-// base64 image_urls + tool JSON, memory spike, VirtualScroller height-estimate blowup). Large pages
-// risk that tradeoff; the load-more threshold drives histories beyond one page.
 const PAGE_SIZE = 1000
 
 // ── Sub-agent peek ──────────────────────────────────────────────── Owns the slide-over panel for
@@ -768,9 +587,6 @@ async function onChatSidebarRefresh() {
   chatSidebarRef.value?.refresh()
 }
 
-// 2026-09-04 subagent-peek P1 fix: the peek lifecycle lives in SubAgentPeekHost (setup scope, keyed
-// by sessionId). Never call useSubAgentPeek inside a computed — lifecycle hooks registered during
-// render are unreliable (fetch fired 0/N times → permanent empty panel).
 function onPeekOpenFull(sessionId: string) {
   nav.closePeek()
   router.replace({ path: '/app', query: { view: 'chat', session: sessionId } })
@@ -913,7 +729,6 @@ const isLastGroup = (index: number) => index === messageGroups.value.length - 1
 // `helpers/autoStickGate.ts` for the gating math.
 const lastAutoStickAt = ref(0)
 
-// contentShift handler (P2, task_1787551495337_9) — replaces the old spacer MutationObserver.
 let spacerRafId: number | null = null
 let lastObservedScrollHeight = 0
 // True while a loadMore preserve window is in flight — contentShift
@@ -934,8 +749,6 @@ const onContentShift = (shift: { topSpacer: number; bottomSpacer: number; total:
     // total height) won't trigger a re-scroll.
     if (newScrollHeight === lastObservedScrollHeight) return
     const delta = newScrollHeight - lastObservedScrollHeight
-    // ── Fix: only stick on GROWTH, not shrink (2026-09-02) ────────── Shrinking is the sizer clamp
-    // itself (modelTotal -> realTotal), not new content.
     if (delta <= 0 || delta < 10) {
       lastObservedScrollHeight = newScrollHeight
       return
@@ -1050,111 +863,26 @@ const sidebarBranch = computed(() =>
 const maxTotalTokens = ref(0)
 const maxCapacityTotalTokens = ref(200000)
 
-// ─── Agent selection ───────────────────────────────────────────────────────── Per-session model
-// selection.
-const availableAgents = ref<
-  Array<{ name: string; model: string; base_url: string; url_style: string }>
->([])
-const selectedAgent = ref<string | null>(null)
-// User-chosen default agent from Settings → Agents → "Set active". `null` when no agent
-// is marked active (or no agents configured).
-const activeAgent = ref<string | null>(null)
-const showAgentPicker = ref(false)
-const isUpdatingAgent = ref(false)
-const agentPickerRef = ref<HTMLElement | null>(null)
-
-/** The workspace this chat runs in: the route's, else the app's. The sidebar's
- * Terminal tab starts its shell inside THIS workspace's VM under `--saas`. */
-const chatWorkspaceId = computed<string>(() =>
-  resolveWorkspaceId(route?.params?.workspaceId, workspacesStore.activeWorkspace?.id),
-)
-
-/** The workspace whose agents the picker must list: the route's, else the one the app is in. The
- * picker must offer what actually RUNS here, and a run uses the workspace's config overlay merged
- * over the user config (`session_llm_config.mergedConfigTextFor`). */
-const agentPickerWorkspaceId = chatWorkspaceId
-
-const loadAgents = async () => {
-  try {
-    const wsId = agentPickerWorkspaceId.value
-    const config = wsId ? await api.getWorkspaceConfig(wsId) : await api.getPabrikConfig()
-    const agents = (config.profiles ?? {}) as Record<
-      string,
-      { model?: string; base_url?: string; url_style?: string; enabled?: boolean }
-    >
-    availableAgents.value = Object.entries(agents)
-      .filter(([, p]) => p.enabled !== false)
-      .map(([name, p]) => ({
-        name,
-        model: p.model ?? '',
-        base_url: p.base_url ?? '',
-        url_style: p.url_style ?? '',
-      }))
-    // `active_profile` is the user-chosen default from Settings. Empty
-    // string → null (matches the backend's PUT coercion in
-    // `pabrik_config_put.zig`).
-    const raw = (config as { active_profile?: string | null }).active_profile
-    activeAgent.value = raw && raw.length > 0 ? raw : null
-    // How the chat draws tool calls. The config this chat already fetched
-    // is the effective one (the workspace overlay merged over the user
-    // config), so the mode is the one that runs here.
-    chatView.setMode(chatViewModeFrom(config))
-  } catch (err) {
-    console.error('Failed to load agents:', err)
-    availableAgents.value = []
-    activeAgent.value = null
-  }
-}
-
-// Effective agent the chip / picker reflect — mirrors the backend cascade in
-// `workflow.zig::resolveEffectiveAgent`.
-const effectiveAgent = computed<string | null>(() => {
-  const sel = selectedAgent.value
-  if (sel && sel.length > 0) return sel
-  return activeAgent.value
+const {
+  availableAgents,
+  selectedAgent,
+  activeAgent,
+  showAgentPicker,
+  isUpdatingAgent,
+  agentPickerRef,
+  chatWorkspaceId,
+  loadAgents,
+  effectiveAgent,
+  effectiveProfileUrlStyle,
+  agentChipTooltip,
+  selectAgent,
+  closeOnOutsideClick,
+} = useChatComposerAgents({
+  sessionId,
+  workspaceId: () =>
+    resolveWorkspaceId(route?.params?.workspaceId, workspacesStore.activeWorkspace?.id),
+  applyChatViewMode: (config) => chatView.setMode(chatViewModeFrom(config)),
 })
-
-/// The wire style the effective profile uses — it decides which file types the model can read.
-/// Empty when the profile is unknown; the backend then has the final say.
-const effectiveProfileUrlStyle = computed<string | undefined>(() => {
-  const name = effectiveAgent.value
-  if (!name) return undefined
-  const style = availableAgents.value.find((p) => p.name === name)?.url_style
-  return style && style.length > 0 ? style : undefined
-})
-
-/// Tooltip text reflecting what the backend will actually use. Distinguishes
-/// "explicit per-session choice" from "defaulted to the active agent" so the
-/// user understands the cascade.
-const agentChipTooltip = computed(() => {
-  const sel = selectedAgent.value
-  if (sel && sel.length > 0) return `Using agent: ${sel}`
-  if (activeAgent.value) return `Using active agent: ${activeAgent.value}`
-  return 'Using default (top-level config)'
-})
-
-const selectAgent = async (name: string | null) => {
-  if (isUpdatingAgent.value) return
-  isUpdatingAgent.value = true
-  try {
-    const sid = sessionId.value
-    if (sid) {
-      await api.updateSession(sid, { selectedAgent: name })
-    }
-    selectedAgent.value = name
-  } catch (err) {
-    console.error('Failed to update agent:', err)
-  } finally {
-    isUpdatingAgent.value = false
-    showAgentPicker.value = false
-  }
-}
-
-const closeOnOutsideClick = (e: MouseEvent) => {
-  if (agentPickerRef.value && !agentPickerRef.value.contains(e.target as Node)) {
-    showAgentPicker.value = false
-  }
-}
 
 // ─── Worktree dropdown + PR dialog ──────────────────────────────────────────── The chat status
 // bar's git branch indicator becomes a clickable button when a worktree is bound (`gitWorktreeCwd`
@@ -1265,13 +993,8 @@ const showSkillsPopup = ref(false)
 // ids, NOT positional `${groupIndex}-${idx}` pairs.
 const expandedToolIds = ref<Set<string>>(new Set())
 
-// 2026-08-23 spawn-subagent-live-progress: per-tool_call_id map of sub-agent progress rows. Fed by
-// role="subagent_progress" SSE events on the existing `llm` bus channel (no new event_type).
 const subAgentProgressMap = ref<SubAgentProgressMap>({})
 
-// 2026-08-25 agent-error-card (task_1787663566535_2): live-only list of agentic-loop error/retry
-// diagnostics. Fed by `full` SSE events with is_error=true (workflow.zig's 3 diagnostic sites —
-// never persisted, is_skip_db=true).
 const agentErrorStore = useAgentErrorStore()
 const chatView = useChatViewStore()
 // Per-session derived read. Reads from the store (keyed by sessionId) so the card survives ChatView
@@ -1304,13 +1027,6 @@ const toggleToolExpanded = (msgId: string) => {
     newSet.add(msgId)
   }
   expandedToolIds.value = newSet
-}
-
-// Stable expand-state key for a tool message. Falls back through:
-//   3. positional `${groupIndex}-${idx}` — last resort for legacy rows
-//      with no id at all; better than nothing, same behaviour as before.
-const toolExpandKey = (msg: Message, groupIndex: number, idx: number): string => {
-  return msg.id || msg.tool_call_id || `pos-${groupIndex}-${idx}`
 }
 
 // Code-editor wiring for the fallback `<DiffView>` rendered for tools that don't have a dedicated
@@ -1377,110 +1093,75 @@ const stopGitStatusPoll = () => {
   }
 }
 
-// Filter out empty messages for display (check stripped content). 2026-08-23 hidden-messages fix —
-// three exemptions ADDED to the original "drop if stripThinkingTags(content) is empty" rule: 1.
-// `image_urls` populated → KEEP.
-const filteredMessages = computed(() =>
-  messages.value.filter((m) => {
-    // Always keep tool_calls messages even if content is only thinking tags
-    if (m.finish_reason === 'tool_calls') return true
-    // 2026-08-23: image-only user messages must survive the filter —
-    // hasBubbleContent renders their images downstream.
-    if ((m.image_urls?.length ?? 0) > 0) return true
-    // A turn that carries only an attached document renders its chips.
-    if ((m.file_attachments?.length ?? 0) > 0) return true
-    // 2026-08-23: tool results render via dedicated components; never
-    // drop them on empty stripped content.
-    if (m.role === 'tool') return true
-    // 2026-08-23: thinking-only assistant turns (reasoning_content set,
-    // final text empty) still have visible content once the reasoning
-    // section renders.
-    if (m.role === 'assistant' && m.reasoning_content && m.reasoning_content.trim() !== '') {
-      return true
-    }
-    const stripped = stripThinkingTags(m.content)
-    return stripped && stripped.trim() !== ''
-  }),
-)
-
-// Group consecutive messages of the same role together for cleaner display
-interface MessageGroup {
-  role: 'user' | 'assistant' | 'tool'
-  messages: Message[]
-  timestamp: Date
-}
-
-/** Stable identity for a message group (2026-08-26 stable-keys fix). */
-const groupKey = (group: MessageGroup): string =>
-  group.messages[0]?.id ?? `empty-${group.timestamp.getTime()}`
-
-const messageGroups = computed((): MessageGroup[] => {
-  const groups: MessageGroup[] = []
-
-  for (const msg of filteredMessages.value) {
-    const lastGroup = groups[groups.length - 1]
-
-    if (lastGroup && lastGroup.role === msg.role) {
-      lastGroup.messages.push(msg)
-      if (msg.timestamp > lastGroup.timestamp) {
-        lastGroup.timestamp = msg.timestamp
-      }
-    } else {
-      groups.push({
-        role: msg.role as 'user' | 'assistant' | 'tool',
-        messages: [msg],
-        timestamp: msg.timestamp,
-      })
-    }
-  }
-
-  // 2026-08-23 blank-block fix — drop groups with nothing renderable BEFORE the VirtualScroller
-  // ever sees them.
-  return groups.filter((g, i) => hasBubbleContent(g, i))
+const {
+  groupKey,
+  messageGroups,
+  isInitializing,
+  groupKeyForMessageId,
+  userPills,
+  compactChains,
+  visibleReasoning,
+  answeredMessages,
+  toolCardsFor,
+  standaloneCardsFor,
+  renderMessageHtml,
+  isBgUserMsg,
+  bgShellData,
+  isBgOnlyGroup,
+  hasVisibleContent,
+  hasBubbleContent,
+} = useChatMessagePresentation({
+  messages,
+  expandedToolIds,
+  subAgentProgressMap,
+  isPendingSession,
+  sessionId,
+  isRemoteLoadPending,
+  mode: () => chatView.mode,
 })
 
-/** Ready-gate: true while the transcript load is outstanding AND there is nothing for the reader to
- * look at yet. Drives the initializing skeleton and the composer disable. */
-const isInitializing = computed(
-  () =>
-    !isPendingSession.value &&
-    (!sessionId.value || (isRemoteLoadPending.value && messageGroups.value.length === 0)),
-)
+const statesProps = computed(() => ({
+  isLoadingMore: isLoadingMore.value,
+  isInitializing: isInitializing.value,
+  isLoading: isLoading.value,
+  error: error.value,
+  historyConfirmed: historyConfirmed.value,
+  messageGroups: messageGroups.value,
+  hasMoreMessages: hasMoreMessages.value,
+  scrollerIsScrollable: scrollerIsScrollable.value,
+  pageSize: PAGE_SIZE,
+  loadChatHistory,
+  maybeLoadOlder,
+}))
 
-/**  * Group key of the group containing a message id (2026-09-06 virtual-scroller shrink fix). Used at
- * the streaming->DB swap site to transfer the measured height to the new key. Null when the message
- * is not in any group (already filtered, empty chat). */
-const groupKeyForMessageId = (messageId: string): string | null => {
-  if (!messageId) return null
-  const g = messageGroups.value.find((grp) => grp.messages.some((m) => m.id === messageId))
-  return g ? groupKey(g) : null
-}
-
-// ── User-pill rail (2026-09-09 chatview user pill) ────────────────────── One pill per user group;
-// click jumps the scroller to that group. Per-group (not per-message) because VirtualScroller items
-// ARE groups — scrollToItem(groupIndex) is exact.
-const userPills = computed((): UserPill[] => {
-  const pills: UserPill[] = []
-  messageGroups.value.forEach((g, i) => {
-    // Real user turns only: bg-output groups are role=user on the wire
-    // but render as tool cards, compaction envelopes are system
-    // artifacts — neither gets a pill (see isPillGroup).
-    const first = g.messages[0]
-    if (!isPillGroup(g.role, isBgOnlyGroup(g), !!first && isCompactionMessage(first))) return
-    // Per message, not on the join: a `/skill-` turn carries the loaded bodies
-    // as a trailing envelope, and the preview is for the human's sentence.
-    let text = ''
-    let skills = 0
-    for (const m of g.messages) {
-      const parts = splitSkillEnvelope(m.content || '')
-      text += (text === '' ? '' : '\n') + parts.text
-      skills += parts.skills.length
-    }
-    const label = text.trim().slice(0, 60) || 'Image'
-    const preview = skills > 0 ? `${label} +${skills} skill${skills === 1 ? '' : 's'}` : label
-    pills.push({ groupIndex: i, key: groupKey(g), preview })
-  })
-  return pills
+/** One prop bag per rendered row: the presentation helpers are stable functions, the mode and the
+ * chain map are read here so the child re-renders with them. */
+const rowProps = (group: MessageGroup, groupIndex: number) => ({
+  group,
+  groupIndex,
+  mode: chatView.mode,
+  sessionId: sessionId.value,
+  chatId: props.chatId,
+  cwd: sessionCwd.value,
+  groupKey,
+  isLastGroup,
+  isBgOnlyGroup,
+  hasBubbleContent,
+  isCompactionMessage,
+  bgShellData,
+  isBgUserMsg,
+  openImagePreview,
+  compactChains: compactChains.value,
+  standaloneCardsFor,
+  toolCardsFor,
+  toggleToolExpanded,
+  openPeek: nav.openPeek,
+  handleFallbackJumpToLine,
+  onOpenWorkspaceSession,
+  visibleReasoning,
+  answeredMessages,
+  hasVisibleContent,
+  renderMessageHtml,
 })
 
 // Last pill the user jumped to (highlight). Also driven by scroll (see
@@ -1523,242 +1204,6 @@ const jumpToUserGroup = (groupIndex: number, key: string) => {
   })
 }
 
-// Per-message envelope unwrap lookup. Keyed by message id; value is the parsed envelope or null if
-// the content is not a <tool> envelope (legacy or non-tool content). Computed once when messages
-// change so the template can do a cheap O(1) lookup per tool component.
-const unwrappedByMessageId = computed((): Map<string, UnwrappedToolOutput | null> => {
-  const map = new Map<string, UnwrappedToolOutput | null>()
-  for (const m of messages.value) {
-    if (m.role !== 'tool') {
-      map.set(m.id, null)
-      continue
-    }
-    map.set(m.id, tryUnwrapToolOutput(m.content))
-  }
-  return map
-})
-
-// Helper used in the template: get the inner data to pass to a tool-specific component. Returns the
-// original content if the envelope didn't parse (legacy fallback) or if there was an error (the
-// error message is shown via the envelope, not via the inner component's own error path).
-const innerToolData = (m: Message): unknown => {
-  const unwrapped = unwrappedByMessageId.value.get(m.id)
-  if (unwrapped === null || unwrapped === undefined) return m.content // legacy
-  return unwrapped.data ?? m.content // error case: fall back to full content
-}
-
-// Helper used in the template: get the JSON-string tool-call arguments
-// for a tool message. Falls back to '{}' for legacy messages that
-// don't carry the envelope.
-const getParametersForMessage = (m: Message): string => {
-  return unwrappedByMessageId.value.get(m.id)?.parameters ?? '{}'
-}
-
-/** One agent turn's calls, the thoughts between them and the narration on the way to each call,
- * keyed by the group that draws the chain. A turn ends where the agent answers or asks, so only
- * that message keeps its own place in the transcript. */
-const compactChains = computed(
-  (): Map<number, CompactChainItem[]> =>
-    chatView.mode === 'compact' ? buildCompactChains(messageGroups.value, toolCardsFor) : new Map(),
-)
-
-/** The thoughts a chain already draws, so the group that holds them draws none of them twice. */
-const foldedThoughtIds = computed((): Set<string> => foldedThoughtMessageIds(compactChains.value))
-
-/** The narration a chain already draws, so it stops stacking up above the card. */
-const foldedNarrationIds = computed(
-  (): Set<string> => foldedNarrationMessageIds(compactChains.value),
-)
-
-/** The reasoning rows of one assistant group, minus the thoughts a chain drew. */
-const visibleReasoning = (group: MessageGroup): Message[] =>
-  group.messages.filter(
-    (m) =>
-      typeof m.reasoning_content === 'string' &&
-      m.reasoning_content.trim() !== '' &&
-      !foldedThoughtIds.value.has(m.id),
-  )
-
-/** The messages of one assistant group that carry the answer: past the first tool call the agent
- * only narrates, and compact mode draws that narration inside the chain. */
-const answeredMessages = (group: MessageGroup): Message[] =>
-  chatView.mode === 'compact'
-    ? group.messages.filter((m) => !foldedNarrationIds.value.has(m.id))
-    : group.messages
-
-/** Every spawn_sub_agent call of the transcript, keyed by tool_call_id. Built once per transcript
- * change — one parse per assistant message — so a card reads its spawn args instead of walking
- * the transcript. */
-const subAgentArgsByToolCallId = computed((): Map<string, SubAgentArgs[]> => {
-  const index = new Map<string, SubAgentArgs[]>()
-  for (const group of messageGroups.value) {
-    if (group.role !== 'assistant') continue
-    for (const msg of group.messages) {
-      if (typeof msg.tool_calls_json !== 'string') continue
-      for (const [toolCallId, args] of indexSpawnSubAgentArgs(msg.tool_calls_json)) {
-        index.set(toolCallId, args)
-      }
-    }
-  }
-  return index
-})
-
-/** The cards of one tool group, in order. Both views draw the same cards. */
-const toolCardsFor = (group: MessageGroup, groupIndex: number): ToolCardData[] =>
-  group.messages.map((msg, idx) => ({
-    message: msg,
-    content: innerToolData(msg),
-    parameters: getParametersForMessage(msg),
-    expanded: expandedToolIds.value.has(toolExpandKey(msg, groupIndex, idx)),
-    expandKey: toolExpandKey(msg, groupIndex, idx),
-    subAgentProgress: msg.tool_call_id
-      ? (subAgentProgressMap.value[msg.tool_call_id] ?? null)
-      : null,
-    subAgentArgs: msg.tool_call_id
-      ? (subAgentArgsByToolCallId.value.get(msg.tool_call_id) ?? null)
-      : null,
-  }))
-
-/** The calls of one tool group that keep their own card in compact mode: the chain must not
- * swallow something the agent is showing the reader. */
-const standaloneCardsFor = (group: MessageGroup, groupIndex: number): ToolCardData[] =>
-  toolCardsFor(group, groupIndex).filter((card) => !foldsIntoChain(card))
-
-const renderMessageHtml = (msg: Message): string =>
-  msg.id.startsWith('streaming-')
-    ? renderStreamingResponse(msg.content, msg.role, msg.tool_name)
-    : renderResponse(
-        msg.content,
-        msg.role,
-        msg.tool_name,
-        msg.diffview_before,
-        msg.diffview_after,
-        msg.finish_reason,
-        msg.tool_calls_json,
-      )
-
-const isBgUserMsg = (m: { content?: string }): boolean =>
-  !!m.content && isBackgroundCommandOutput(m.content)
-
-const bgShellData = (m: { content?: string }): unknown => {
-  const pr = m.content ? parseBackgroundCommandOutput(m.content) : null
-  return pr ? backgroundToShellData(pr) : (m.content ?? '')
-}
-// A user group made ONLY of background completions renders as a transparent left-aligned tool card,
-// not the blue right bubble (background completions are role=user on the wire, tool-styled in
-// pixels — see helpers/isBackgroundCommandOutput).
-const isBgOnlyGroup = (group: { role: string; messages: { content?: string }[] }): boolean =>
-  group.role === 'user' && group.messages.length > 0 && group.messages.every(isBgUserMsg)
-
-// ─── FIX: Compute tool call names per assistant group ───────────────────────── For each group
-// index, returns the tool names string if the group is an assistant turn that triggered tool calls
-// BUT the tool outputs are NOT shown anywhere in the transcript.
-const groupToolNames = computed((): (string | null)[] => {
-  // Pre-collect every tool_call_id that has a matching tool row in the
-  // transcript. The id set is the single source of truth for "is this
-  // tool call already represented by a structured card?".
-  const renderedToolCallIds = new Set<string>()
-  for (const g of messageGroups.value) {
-    if (g.role !== 'tool') continue
-    for (const m of g.messages) {
-      if (m.tool_call_id) renderedToolCallIds.add(m.tool_call_id)
-    }
-  }
-
-  return messageGroups.value.map((group, i) => {
-    if (group.role !== 'assistant') return null
-
-    // Same-group tool rows (rare but possible when an assistant message
-    // carries tool_calls_json AND a tool result) → no pill needed.
-    const nextGroup = messageGroups.value[i + 1]
-    if (nextGroup?.role === 'tool') {
-      return null
-    }
-
-    // Look for any message in this assistant group whose tool_calls_json
-    // either already has a matching tool row OR yields parseable names.
-    for (const msg of group.messages) {
-      // 2026-08-24 wire-shape fix (task_1787590621966_10): the backend now always serializes
-      // tool_calls_json as a JSON STRING, but older events (or any future array-shaped regression)
-      // must not crash the render.
-      if (typeof msg.tool_calls_json === 'string' && msg.tool_calls_json.trim()) {
-        try {
-          const parsed = JSON.parse(msg.tool_calls_json)
-          // tool_calls_json IS the array directly: [{id, type, function: {name}}]
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.
-            const names = parsed.map((tc: any) => tc.function?.name || tc.name || 'unknown')
-
-            // If EVERY tool call in this group already has a rendered tool row somewhere in the
-            // transcript, the structured cards are the source of truth — suppress the pill entirely.
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; tool_calls_json shape is intentionally opaque.
-            const allRendered = parsed.every((tc: any) => {
-              const id = tc?.id
-              return typeof id === 'string' && renderedToolCallIds.has(id)
-            })
-            if (allRendered) return null
-
-            return names.join(', ')
-          }
-        } catch {}
-      }
-
-      // finish_reason set but tool_calls_json missing/unparseable.
-      if (msg.finish_reason === 'tool_calls') {
-        // We can't match by id here (tool_calls_json is missing), so fall back to the adjacency
-        // heuristic: if a tool group appears ANYWHERE in the transcript after this group, the tool
-        // call was rendered → no pill.
-        let hasLaterTool = false
-        for (let j = i + 1; j < messageGroups.value.length; j++) {
-          if (messageGroups.value[j]?.role === 'tool') {
-            hasLaterTool = true
-            break
-          }
-        }
-        if (hasLaterTool) return null
-        return '...'
-      }
-    }
-
-    return null
-  })
-})
-
-// ─── Bubble Visibility ──────────────────────────────────────────────────────── Check if a message
-// has visible text content (i.e. content that survives stripThinkingTags and is non-empty after
-// trim).
-const hasVisibleContent = (m: Message): boolean => {
-  const stripped = stripThinkingTags(m.content || '')
-  return stripped.trim().length > 0
-}
-
-// Check if a message group has any visible content for its bubble.
-const hasBubbleContent = (group: MessageGroup, groupIndex: number): boolean => {
-  if (group.role === 'user') {
-    return group.messages.some(
-      (m) =>
-        (m.image_urls?.length ?? 0) > 0 ||
-        (m.file_attachments?.length ?? 0) > 0 ||
-        hasVisibleContent(m) ||
-        !!(m.reasoning_content && m.reasoning_content.trim() !== ''),
-    )
-  }
-  if (group.role === 'tool') {
-    return group.messages.length > 0
-  }
-  if (group.role === 'assistant') {
-    const hasToolHeader = groupToolNames.value[groupIndex] !== null
-    const hasReasoning = group.messages.some(
-      (m) => m.reasoning_content && m.reasoning_content.trim() !== '',
-    )
-    return hasToolHeader || hasReasoning || group.messages.some(hasVisibleContent)
-  }
-  return false
-}
-
-// ─── Chat History ──────────────────────────────────────────────────────────── 2026-09-04
-// spawn-subagent-refresh-persist (task_1788505292766_1) — rehydrate live sub-agent rows after a
-// (re)load.
 const rehydrateSubAgentProgress = async () => {
   const placeholders = messages.value.filter(isPlaceholderSpawnRow)
   if (placeholders.length === 0) return
@@ -1866,9 +1311,6 @@ const toChatMessages = (
     tool_call_id: msg.tool_call_id,
     is_input: msg.is_input,
     is_output: msg.is_output,
-    // 2026-08-23 hidden-messages fix — carry the thinking model's
-    // reasoning through to the renderer. The backend REST endpoint
-    // already returns it (http_response.zig SessionMessage).
     reasoning_content: msg.reasoning_content || undefined,
   }))
 
@@ -2071,14 +1513,9 @@ const commitOlderPage = async (
     },
   })
   virtualScrollerRef.value?.beginPreserve(newCount)
-  // 2026-09-09 user-pill pagination fix — dedupe: drop pages already present (retry after a failed
-  // endPreserve, overlapping cursor pages, or an SSE `full` echo that landed mid-preserve).
   const seenIds = new Set(messages.value.map((m) => m.id))
   const freshMessages = newMessages.filter((m) => !seenIds.has(m.id))
   messages.value = [...freshMessages.slice().reverse(), ...messages.value]
-  // 2026-09-09 user-pill pagination fix — cursor advance: the NEXT loadMore must continue from THIS
-  // page's cursor, not the initial one. These assignments previously lived only in the initial-load
-  // branch, so every 2nd+ loadMore re-sent the same cursor and re-prepended the same page forever.
   messageCursor.value = page.nextCursor
   hasMoreMessages.value = page.hasMore
   await nextTick()
@@ -2117,9 +1554,6 @@ const commitOlderPage = async (
   lastObservedScrollHeight = virtualScrollerRef.value?.containerRef?.scrollHeight ?? 0
   suppressContentShiftStick = false
 
-  // ── Post-preserve bottom re-validation (task_1787638309623_3) ──────── The suppress window above
-  // SWALLOWED every contentShift event, so if the user was at bottom before the prepend, nothing
-  // re-validated the bottom after `endPreserve` restored the anchor.
   if (wasAtBottom) {
     const c = virtualScrollerRef.value?.containerRef
     if (c) {
@@ -2471,7 +1905,6 @@ const runHistoryLoadAttempt = async () => {
     chatPrProvider.value = data.pr_provider ?? ''
   }
 
-  // 2026-08-07-profile-persist-read.
   if (data.selected_profile_model !== undefined) {
     selectedAgent.value =
       typeof data.selected_profile_model === 'string' ? data.selected_profile_model || null : null
@@ -2555,9 +1988,6 @@ const runHistoryLoadAttempt = async () => {
     }
 
     setupCodeBlockCopyButtons()
-    // 2026-09-04 spawn-subagent-refresh-persist (task_1788505292766_1) — rehydrate live sub-agent
-    // rows after a (re)load. Fire-and-forget: the map update re-renders cards when snapshots land;
-    // failures keep Task 0's "starting…".
     void rehydrateSubAgentProgress()
   } finally {
     isInitialLoad = false
@@ -2904,14 +2334,9 @@ const handleVirtualScroll = (
   // Tight 10px threshold: a chat message is typically 50-100px tall, so reading the last message
   // puts you well outside this window.
   const userScrolledUp = !isProgrammatic && deltaTop < 0
-  // ── Fix: cap retention (2026-09-02) ─────────────────────────────── Previously retained even
-  // with bottom=1730px gap, keeping isAtBottom=true forever and causing every contentShift to stick
-  // even when user is far from bottom. Only retain when gap is small.
   const retainedThroughGrowth =
     previousIsAtBottom && contentGrew && !userScrolledUp && distanceFromBottom < 100
   const nextIsAtBottom = newIsAtBottom || retainedThroughGrowth
-  // ── Deep-dive: isAtBottom decision (2026-09-02) ──────────────────── Log every time the retained
-  // path changes the outcome, or when contentGrew is true (the blinking-loop trigger).
   if (contentGrew || retainedThroughGrowth || newIsAtBottom !== nextIsAtBottom) {
     scrollLogger.info({
       ...ctx,
@@ -3029,8 +2454,6 @@ const connectSse = () => {
   offLlm = bus.on('llm', (event: api.SseEvent) => {
     if (event.session_id !== sid) return
 
-    // 2026-08-23 spawn-subagent-live-progress: route sub-agent progress events into the
-    // per-tool_call_id map and STOP here.
     if ((event as SubAgentProgressEvent).role === 'subagent_progress') {
       subAgentProgressMap.value = applyProgressEvent(
         subAgentProgressMap.value,
@@ -3043,16 +2466,10 @@ const connectSse = () => {
       return
     }
 
-    // 2026-08-23 llm-chunk-streaming: gate on the three event types ChatView actually handles —
-    // `chunk` (append delta), `chunk_final` (token-stream-end marker that updates maxTotalTokens),
-    // and `full` (replace streaming-* row with canonical DB row).
     if (event.type !== 'chunk' && event.type !== 'chunk_final' && event.type !== 'full') {
       return
     }
 
-    // 2026-08-25 agent-error-card (task_1787663566535_2) + 2026-08-25 dedupe
-    // (task_1787668954023_2): agentic-loop diagnostics (retry attempts + TooManyRetries bails)
-    // arrive as `full` events with is_error=true.
     if (event.type === 'full' && event.is_error) {
       agentErrorStore.setError(sid, event.content || '', event.id || undefined)
       nextTick(() => scrollToBottom(false, 'agent-error-card'))
@@ -3060,18 +2477,12 @@ const connectSse = () => {
     }
 
     if (event.type === 'chunk' && event.content) {
-      // 2026-08-23 llm-chunk-streaming: the backend sends RAW DELTAS
-      // (choices[0].delta.content per provider SSE), so APPEND here —
-      // the old `=` replace left only the last fragment visible.
       streamingContent.value += event.content
       streamContentVersion += 1
       updateStreamingMessage()
       return
     }
 
-    // 2026-08-23 llm-chunk-streaming: in-stream final marker emitted by workflow.zig right before
-    // the canonical llm_full row. Carries usage + signals "token stream over" so the typing
-    // indicator can stop early.
     if (event.type === 'chunk_final') {
       if (event.total_tokens) {
         maxTotalTokens.value = event.total_tokens
@@ -3082,9 +2493,6 @@ const connectSse = () => {
       return
     }
 
-    // 2026-08-23 hidden-messages fix — the gate previously required `event.content` to be truthy,
-    // which silently DROPPED every `full` event whose content was empty: tool-result rows
-    // (role='tool', empty raw content.
     const hasRenderableFullPayload = !!(
       event.content ||
       event.reasoning_content ||
@@ -3094,15 +2502,9 @@ const connectSse = () => {
       (event.video_url && event.video_url.length > 0)
     )
     if (event.type === 'full' && event.finish_reason && hasRenderableFullPayload) {
-      // 2026-08-25 task_1787668954023_2: any non-error `full` event that passes the renderable gate
-      // means the agent is alive and producing output — clear the error card so it disappears the
-      // moment the agent recovers from the retry chain.
       if (agentErrorStore.bySession[sid]) {
         agentErrorStore.clearForSession(sid)
       }
-      // 2026-09-06 virtual-scroller shrink fix: capture the streaming group's height key BEFORE the
-      // filter drops the placeholder — the canonical row pushed below has a new DB id (new group
-      // key, no stored height → sizer dip). Transferred after the push.
       const streamingGroupKey = groupKeyForMessageId(
         messages.value.find((m) => m.id.startsWith('streaming-'))?.id ?? '',
       )
@@ -3112,9 +2514,6 @@ const connectSse = () => {
         (event.role as 'user' | 'assistant' | 'system' | 'tool') ||
         (event.tool_call_id ? 'tool' : 'assistant')
 
-      // 2026-09-01 fix: placeholder → final update for the same tool call shares the same `id` (row
-      // id). The placeholder SSE (empty `<data>`) arrives first, then the final SSE (`<results>`)
-      // for the same row.
       if (event.id) {
         const existingById = messages.value.find((m) => m.id === event.id)
         if (existingById) {
@@ -3168,9 +2567,6 @@ const connectSse = () => {
         }
       }
 
-      // 2026-08-23 TOOLS-pill-spam fix — the backend re-emits an SSE for EVERY tool completion via
-      // getLatestMessage(), which (backend bug B1, see handle_tool.zig) often returns the ASSISTANT
-      // tool_calls row instead of the completed tool placeholder.
       const dup = messages.value.find((m) => {
         if (m.role !== role) return false
         if ((m.tool_call_id ?? '') !== (event.tool_call_id ?? '')) return false
@@ -3178,9 +2574,6 @@ const connectSse = () => {
       })
       if (
         dup &&
-        // 2026-08-23: the optimistic-user dedupe that lived here is gone — handleFileInputSubmit no
-        // longer pushes a local placeholder. User echoes arrive fresh with a stable DB id; a
-        // same-content repeat (server re-emit) collapses to one message via the dedupe above.
         role !== 'user'
       ) {
         return
@@ -3205,21 +2598,14 @@ const connectSse = () => {
         file_attachments: event.file_attachments,
         finish_reason: event.finish_reason,
         tool_call_id: event.tool_call_id,
-        // 2026-08-24 (task_1787545088500_6, bug A) — carry the wire field through the SSE
-        // full-event push.
         tool_calls_json: event.tool_calls_json,
         is_input: event.is_input,
         is_output: event.is_output,
-        // 2026-08-23 hidden-messages fix — carry reasoning through so
-        // thinking-only turns render their collapsible section.
         reasoning_content: event.reasoning_content || undefined,
       })
       // Write-through: persist the SSE `full` row with its full wire shape
       // so cached mounts render it identically. Best-effort.
       persistSseFullRowLocally(sid, event, role, messageId, messageTimestamp)
-      // 2026-09-06 virtual-scroller shrink fix: move the streaming group's measured height onto the
-      // canonical row's key so the sizer never dips through the 64px estimate for a frame.
-      // Best-effort — missing keys are a no-op (rekeyHeight guards).
       if (streamingGroupKey && event.id) {
         const newGroupKey = groupKeyForMessageId(event.id)
         if (newGroupKey && newGroupKey !== streamingGroupKey) {
@@ -3242,9 +2628,6 @@ const connectSse = () => {
       })
       setupCodeBlockCopyButtons()
 
-      // 2026-08-23 spawn-subagent-live-progress: when the FINAL spawn_sub_agent tool result row
-      // lands, drop the corresponding live-progress entry so the parsed-envelope view (which lives
-      // in `content`) takes over rendering immediately.
       if (
         role === 'tool' &&
         event.tool_name === 'spawn_sub_agent' &&
@@ -3267,9 +2650,6 @@ const connectSse = () => {
       return
     }
 
-    // 2026-08-23 hidden-messages fix — reasoning chunks used to be console.log-only. Accumulate
-    // them onto the streaming assistant message so the collapsible reasoning section renders live
-    // while a thinking model works (before any final content arrives).
     if (event.reasoning_content && !event.content) {
       const existingMsg = messages.value.find(
         (m) => m.role === 'assistant' && m.id.startsWith('streaming-'),
@@ -3437,9 +2817,6 @@ onMounted(async () => {
     }
 
     await loadChatHistory()
-    // 2026-09-02 stream-resume-on-reselect (task_1787673548905_0) — seed the streaming-*
-    // placeholder with the backend's partial text so subsequent chunk events APPEND to the
-    // recovered content instead of starting from an empty buffer.
     const snapshotStartVersion = streamContentVersion
     try {
       const snap = await api.getStreamSnapshot(sessionId.value)
@@ -3790,174 +3167,8 @@ const compactSession = async () => {
         >
           ◫
         </button>
-        <!-- Loading More indicator (floats above the scroller during pagination).
+        <ChatTranscriptStates v-bind="statesProps" />
 
-             Restored: while `maybeLoadOlder` / `commitOlderPage` run, the
-             "Load more messages" button below is hidden (`!isLoadingMore`
-             in its v-if), so with this block commented out the user got
-             NO affordance at all — the button vanished and nothing
-             replaced it until the page committed. -->
-        <div
-          v-if="isLoadingMore"
-          class="absolute top-0 left-0 right-0 flex justify-center py-2 z-10 pointer-events-none"
-          data-testid="chat-loading-more"
-          role="status"
-          aria-label="Loading older messages"
-        >
-          <div
-            class="flex items-center gap-2 px-4 py-2 rounded-full shadow-sm"
-            style="background-color: var(--semantic-card-bg)"
-          >
-            <div
-              class="w-4 h-4 border-2 rounded-full animate-spin"
-              style="border-color: var(--color-violet); border-top-color: transparent"
-            ></div>
-            <span class="text-body" style="color: var(--semantic-text-dim)">Loading more...</span>
-          </div>
-        </div>
-
-        <!-- Initializing skeleton — shown while the remote half of the
-             transcript load is outstanding AND nothing renderable has
-             painted (isInitializing): covers the mount gap where sessionId
-             is still empty, the whole cold-start network page (up to
-             INITIAL_HISTORY_TIMEOUT_MS, retries included), and the
-             cached-mount window whose cached rows do not render. A cached
-             mount whose rows DO render takes the skeleton down on the paint
-             — the cached transcript is a better placeholder than shimmer —
-             and the tail refresh runs behind it. Shimmer rows keep layout
-             stable so the transcript doesn't flash blank/empty-state before
-             content arrives. -->
-        <div
-          v-if="isInitializing"
-          data-testid="chat-initializing-skeleton"
-          class="flex flex-col gap-3 px-4 max-w-[var(--chat-content-max)] mx-auto pt-6 w-full"
-          role="status"
-          aria-label="Loading conversation"
-        >
-          <div
-            v-for="w in ['42%', '88%', '67%']"
-            :key="w"
-            class="h-4 rounded animate-pulse"
-            :style="{ width: w, backgroundColor: 'var(--semantic-card-bg)' }"
-          ></div>
-        </div>
-
-        <!-- Load error — `error` was previously write-only (set on fetch
-             failure but never rendered). Shown only once initializing is
-             over and no messages arrived. -->
-        <div
-          v-if="error && !isInitializing && messageGroups.length === 0"
-          data-testid="chat-load-error"
-          class="flex flex-col items-center justify-center h-full px-4"
-        >
-          <p class="text-body mb-3" style="color: var(--semantic-text-dim)">{{ error }}</p>
-          <button
-            @click="loadChatHistory()"
-            class="px-4 py-1.5 rounded-full text-dense"
-            style="
-              background-color: var(--semantic-card-bg);
-              border: 1px solid var(--color-border);
-              color: var(--semantic-text);
-            "
-          >
-            Retry
-          </button>
-        </div>
-
-        <!-- Empty State --
-             Gated on `historyConfirmed`, NOT on "there are no messages".
-             "Zero messages" and "we have not been told yet" are different
-             states and only a completed load can tell them apart: before
-             this gate, a slow or erroring backend — whose failure used to
-             be swallowed into an empty transcript — rendered "How can I
-             help you?" for sessions full of messages. -->
-        <div
-          v-if="
-            historyConfirmed &&
-            !isInitializing &&
-            !isLoading &&
-            !error &&
-            messageGroups.length === 0
-          "
-          class="flex flex-col items-center justify-center h-full px-4"
-        >
-          <div
-            class="w-16 h-16 rounded-2xl mb-4 flex items-center justify-center text-display"
-            style="background: linear-gradient(135deg, var(--color-violet), var(--color-blue))"
-          >
-            <UiIcon name="chat" size-class="w-7 h-7" />
-          </div>
-          <h3 class="text-title-sm font-medium mb-2" style="color: var(--semantic-text)">
-            How can I help you?
-          </h3>
-          <p class="text-body text-center" style="color: var(--semantic-text-dim)">
-            Start a conversation by typing a message below
-          </p>
-        </div>
-
-        <!--
-          Load more messages button.
-
-          Why this exists: the <VirtualScroller> below only emits @load-more
-          when the user scrolls within `loadMoreThreshold` of the top of a
-          *scrollable* container. When the loaded messages fit in the
-          viewport (a common case for short tool/result chats),
-          the container is not scrollable, the scroll event never fires,
-          and the user has no way to reach older messages.
-
-          This button bypasses the scroll trigger and calls
-          `maybeLoadOlder('manual')` — the same guard chain the scroll path
-          uses, minus the auto-stick gate (an explicit click must not be
-          swallowed by a stream). A page the prefetch already armed is
-          committed from memory. It is hidden while a
-          pagination is already in flight (`isLoadingMore`) so we don't
-          show two spinners, hidden when the initial empty state is
-          rendered (`messageGroups.length === 0`), and hidden when the
-          container IS scrollable (`!scrollerIsScrollable` is false) —
-          in that case the user can scroll to the top to load more, and
-          showing the button would be UI clutter.
-
-          Position: sibling of <VirtualScroller> inside the
-          `messagesWrapperRef` flex container. The wrapper is
-          `position: relative` (see line 1395) and a `flex flex-col`
-          layout; this button is the first child so it sits above the
-          scroller and is not subject to virtualization or the
-          `beginPreserve`/`endPreserve` scroll-restoration dance.
-        -->
-        <div
-          v-if="
-            hasMoreMessages && !isLoadingMore && messageGroups.length > 0 && !scrollerIsScrollable
-          "
-          class="flex justify-center pt-2 pb-1"
-          data-testid="load-more-messages"
-        >
-          <button
-            @click="maybeLoadOlder('manual')"
-            class="flex items-center gap-2 px-4 py-1.5 rounded-full text-dense transition-all duration-200 hover:scale-105"
-            style="
-              background-color: var(--semantic-card-bg);
-              border: 1px solid var(--color-border);
-              color: var(--semantic-text);
-            "
-            :title="`Load ${PAGE_SIZE} older messages`"
-          >
-            <span>↑</span>
-            <span>Load more messages</span>
-          </button>
-        </div>
-
-        <!-- Virtualized Message List.
-             2026-08-23 fast-scroll responsiveness tuning:
-             - default-item-height 200 -> 64: real rows are ~40-80px
-               (one-line tool cards, short paragraphs). The old 200px
-               estimate made top/bottom spacers 2.5-5x too tall, so a
-               fast fling landed the estimated visible window deep inside
-               spacer territory; content only appeared after measureItems
-               caught up (~3s of blank). A closer estimate keeps the
-               window near the real content from the first frame.
-             - buffer 20 -> 30: cheap insurance for fast scrolls — more
-               pre-rendered rows above/below means the viewport is
-               already populated when the fling stops. -->
         <VirtualScroller
           v-if="!isInitializing && (isLoading || messageGroups.length > 0)"
           ref="virtualScrollerRef"
@@ -3977,288 +3188,10 @@ const compactSession = async () => {
           @content-shift="onContentShift"
         >
           <template #default="{ item: group, index: groupIndex }">
-            <div
-              class="px-4 max-w-[var(--chat-content-max)] mx-auto"
-              :class="[
-                groupIndex === 0 ? 'pt-6' : '',
-                isLastGroup(groupIndex) ? 'last-transcript-row' : '',
-              ]"
-              :data-group-key="groupKey(group)"
-            >
-              <div
-                class="flex"
-                :class="
-                  group.role === 'user' && !isBgOnlyGroup(group) ? 'flex-row-reverse' : 'flex-row'
-                "
-              >
-                <!-- Bubble / paragraph container.
-                     2026-08-23 paragraph-mode: the AI (assistant) side no
-                     longer renders as a chat bubble. The container keeps
-                     the bubble chrome (padding, rounded corners, card bg,
-                     border) ONLY for user groups; assistant + tool groups
-                     render as transparent, borderless paragraphs that flow
-                     with the page background — like a document, not a
-                     messenger.
-                     NOTE: empty groups are already filtered out of
-                     messageGroups (see the computed) — this v-if is only
-                     defense-in-depth. Do NOT move it to the slot root:
-                     an unrendered group keeps its 200px height ESTIMATE
-                     in the VirtualScroller forever, which desyncs the
-                     estimated scroll model from the real DOM and blanks
-                     the whole chat on scrollToBottom. -->
-                <div
-                  class="min-w-0"
-                  :class="
-                    group.role === 'user' && !isBgOnlyGroup(group)
-                      ? 'max-w-[90%] w-fit ml-auto'
-                      : 'flex-1 w-full max-w-full'
-                  "
-                >
-                  <div
-                    v-if="hasBubbleContent(group, groupIndex)"
-                    class="text-body leading-relaxed"
-                    role="button"
-                    tabindex="0"
-                    :class="
-                      group.role === 'user' && !isBgOnlyGroup(group)
-                        ? 'px-4 py-2.5 rounded-2xl whitespace-pre-wrap break-words'
-                        : 'markdown-content'
-                    "
-                    :style="
-                      group.role === 'user' && !isBgOnlyGroup(group)
-                        ? 'background-color: var(--color-blue-1); color: var(--semantic-text); border-bottom-right-radius: 6px;'
-                        : 'color: var(--semantic-text);'
-                    "
-                  >
-                    <!-- ── User ── -->
-                    <template v-if="group.role === 'user'">
-                      <!-- Compaction envelope: render as a structured card
-                           instead of a wall of escaped XML. -->
-                      <CompactionCard
-                        v-if="isCompactionMessage(group.messages[0])"
-                        :content="group.messages[0]!.content"
-                      />
-                      <!-- Background completions: role=user on the wire,
-                           tool card in pixels — transparent left-aligned
-                           tool-sequence, never the blue bubble. -->
-                      <template v-else-if="isBgOnlyGroup(group)">
-                        <div class="tool-sequence">
-                          <div
-                            v-for="(bgMsg, bgIdx) in group.messages"
-                            :key="bgMsg.id || `bg-${bgIdx}`"
-                            class="tool-item"
-                            :class="bgIdx < group.messages.length - 1 ? 'tool-item-border' : ''"
-                          >
-                            <ShellTool
-                              tool-name="command"
-                              :content="bgShellData(bgMsg)"
-                              :parameters="'{}'"
-                            />
-                          </div>
-                        </div>
-                      </template>
-                      <!-- 2026-08-23 hidden-messages fix — v-for over ALL
-                           messages in the group. The old template rendered
-                           only group.messages[0], so consecutive user
-                           messages (queue-drain bursts, rapid sends) beyond
-                           the first were invisible: their text AND attached
-                           images never appeared. Each message renders its
-                           own images + text; empty-text messages with
-                           images render images only. -->
-                      <template v-else>
-                        <template
-                          v-for="(userMsg, userMsgIdx) in group.messages"
-                          :key="userMsg.id || `u-${userMsgIdx}`"
-                        >
-                          <ChatAttachments
-                            v-if="
-                              (userMsg.image_urls && userMsg.image_urls.length > 0) ||
-                              (userMsg.video_urls && userMsg.video_urls.length > 0) ||
-                              (userMsg.file_attachments && userMsg.file_attachments.length > 0)
-                            "
-                            :image-urls="userMsg.image_urls"
-                            :video-urls="userMsg.video_urls"
-                            :file-attachments="userMsg.file_attachments"
-                            @open-image="openImagePreview"
-                          />
-                          <template v-if="isBgUserMsg(userMsg)"
-                            ><ShellTool
-                              tool-name="command"
-                              :content="bgShellData(userMsg)"
-                              :parameters="'{}'" /></template
-                          ><template v-else
-                            ><SkillInvocationCard
-                              v-if="hasSkillEnvelope(userMsg.content)"
-                              :content="userMsg.content || ''"
-                            /><span v-else-if="userMsg.content">{{
-                              userMsg.content
-                            }}</span></template
-                          >
-                        </template>
-                      </template>
-                    </template>
-
-                    <!-- ── Tool ── -->
-                    <template v-else-if="group.role === 'tool'">
-                      <!-- The compact view draws a turn's calls ONCE, at the
-                           first tool group of the turn; the turn's later tool
-                           groups draw nothing (their calls are in that card). -->
-                      <template v-if="chatView.mode === 'compact'">
-                        <CompactToolGroup
-                          v-if="compactChains.has(groupIndex)"
-                          :items="compactChains.get(groupIndex) ?? []"
-                          :cwd="sessionCwd"
-                          :session-id="sessionId || chatId"
-                          @toggle-expand="toggleToolExpanded"
-                          @peek="nav.openPeek"
-                          @jump-to-line="handleFallbackJumpToLine"
-                          @open-session="onOpenWorkspaceSession"
-                        />
-                        <div
-                          v-if="standaloneCardsFor(group, groupIndex).length > 0"
-                          class="tool-sequence"
-                        >
-                          <ToolCard
-                            v-for="card in standaloneCardsFor(group, groupIndex)"
-                            :key="card.expandKey"
-                            v-bind="card"
-                            :cwd="sessionCwd"
-                            :session-id="sessionId || chatId"
-                            @toggle-expand="toggleToolExpanded"
-                            @peek="nav.openPeek"
-                            @jump-to-line="handleFallbackJumpToLine"
-                            @open-session="onOpenWorkspaceSession"
-                          />
-                        </div>
-                      </template>
-                      <div v-else class="tool-sequence">
-                        <ToolCard
-                          v-for="(card, idx) in toolCardsFor(group, groupIndex)"
-                          :key="card.expandKey"
-                          v-bind="card"
-                          :class="idx < group.messages.length - 1 ? 'tool-item-border' : ''"
-                          :cwd="sessionCwd"
-                          :session-id="sessionId || chatId"
-                          @toggle-expand="toggleToolExpanded"
-                          @peek="nav.openPeek"
-                          @jump-to-line="handleFallbackJumpToLine"
-                          @open-session="onOpenWorkspaceSession"
-                        />
-                      </div>
-                    </template>
-
-                    <!-- ── Assistant ── -->
-                    <template v-else-if="group.role === 'assistant'">
-                      <!-- 2026-08-23 hidden-messages fix — collapsible
-                           reasoning section for thinking models. Previously
-                           reasoning_content was console.log-only, so a
-                           thinking-only turn (empty final text) looked like
-                           the agent said nothing. Default-collapsed so long
-                           chains-of-thought don't push content off-screen;
-                           click to expand. Rendered ABOVE the answer: the
-                           reasoning is the context the reply follows from,
-                           so it reads first, not as a footnote. -->
-                      <div
-                        v-for="(msg, rIdx) in visibleReasoning(group)"
-                        :key="`reasoning-${rIdx}`"
-                        class="mt-3 mb-3"
-                      >
-                        <details class="assistant-reasoning">
-                          <summary
-                            class="cursor-pointer select-none text-dense font-medium opacity-70 hover:opacity-100"
-                            :style="{ color: 'var(--semantic-text-dim)' }"
-                          >
-                            Thought
-                          </summary>
-                          <div
-                            class="mt-1 whitespace-pre-wrap text-dense leading-relaxed opacity-80 border-l-2 pl-3"
-                            :style="{
-                              color: 'var(--semantic-text-dim)',
-                              'border-color': 'var(--color-border)',
-                            }"
-                          >
-                            {{ msg.reasoning_content }}
-                          </div>
-                        </details>
-                      </div>
-                      <!-- Hide the messages block when every message in the group
-                           is empty after stripping thinking tags — this happens
-                           on tool_calls-only assistant turns. The tool header
-                           (if any) is shown above; we don't want an empty
-                           padded area below it. -->
-                      <div
-                        v-if="answeredMessages(group).some(hasVisibleContent)"
-                        class="assistant-messages"
-                      >
-                        <div
-                          v-for="(msg, idx) in answeredMessages(group)"
-                          :key="msg.id || `answer-${idx}`"
-                          class="assistant-item"
-                        >
-                          <!-- <html> and <mermaid> blocks render as themselves;
-                               `sandbox="allow-scripts"` with no same-origin is
-                               the null-origin security boundary. -->
-                          <template v-if="msg.role === 'assistant' && hasRichBlocks(msg.content)">
-                            <template
-                              v-for="(seg, sIdx) in extractRichBlocks(msg.content || '')"
-                              :key="sIdx"
-                            >
-                              <!-- eslint-disable-next-line vue/no-v-html -->
-                              <span
-                                v-if="seg.kind === 'markdown' && seg.payload"
-                                v-html="renderMarkdown(seg.payload)"
-                              ></span>
-                              <iframe
-                                v-else-if="seg.kind === 'html' && seg.payload"
-                                class="chat-html-frame"
-                                sandbox="allow-scripts"
-                                scrolling="no"
-                                style="overflow: hidden"
-                                :srcdoc="buildHtmlSrcdoc(seg.payload)"
-                              ></iframe>
-                              <MermaidDiagram
-                                v-else-if="seg.kind === 'mermaid' && seg.payload"
-                                :source="seg.payload"
-                              />
-                              <PlantUmlDiagram
-                                v-else-if="seg.kind === 'plantuml' && seg.payload"
-                                :source="seg.payload"
-                              />
-                              <D2Diagram
-                                v-else-if="seg.kind === 'd2' && seg.payload"
-                                :source="seg.payload"
-                              />
-                            </template>
-                          </template>
-                          <span v-else v-html="renderMessageHtml(msg)"></span>
-                        </div>
-                      </div>
-                    </template>
-                  </div>
-                  <!-- Timestamp is hidden along with the bubble. The bubble
-                       uses v-if="hasBubbleContent(...)" above; if the
-                       bubble is hidden, the timestamp would otherwise
-                       appear orphaned (this was the "timestamps with no
-                       bubble" visual artifact between tool calls). -->
-                  <!-- <div -->
-                  <!--   v-if="hasBubbleContent(group, groupIndex)" -->
-                  <!--   class="text-dense mt-1 px-1" -->
-                  <!--   :class="group.role === 'user' ? 'text-right' : 'text-left'" -->
-                  <!--   style="color: var(--semantic-text-dim)" -->
-                  <!-- > -->
-                  <!--   {{ formatTime(group.timestamp) }} -->
-                  <!-- </div> -->
-                </div>
-              </div>
-            </div>
+            <ChatMessageRow v-bind="rowProps(group, groupIndex)" />
           </template>
         </VirtualScroller>
 
-        <!-- User-pill rail (2026-09-09 chatview user pill): one pill per
-             user group on the right edge; click jumps to that message.
-             Sibling of VirtualScroller inside the relative
-             messagesWrapperRef so it never virtualizes. Hidden when
-             fewer than 2 user groups (nothing to navigate). -->
         <UserPillRail
           v-if="userPills.length >= 2"
           :pills="userPills"
@@ -4275,15 +3208,6 @@ const compactSession = async () => {
              below) — this thumb IS the scrollbar visual. -->
         <ChatScrollSlider :get-container="getChatScrollContainer" />
 
-        <!-- 2026-08-25 agent-error-card (task_1787663566535_2):
-             Agentic-loop error/retry diagnostics. Rendered OUTSIDE the
-             VirtualScroller on purpose — the scroller's height-estimate
-             model only knows about messageGroups rows, and injecting
-             foreign rows desyncs the estimated scroll window (same class
-             of bug as the empty-group note above). These are transient,
-             live-only diagnostics (backend is_skip_db=true), so pinning
-             them at the bottom of the transcript area is correct UX too:
-             the newest error is always visible without scrolling. -->
         <div
           v-if="agentError"
           class="px-4 max-w-[var(--chat-content-max)] mx-auto agent-error-list"
@@ -4776,21 +3700,6 @@ const compactSession = async () => {
       @close="showCreateWorktreeDialog = false"
     />
 
-    <!-- Sub-agent peek panel — slide-over from the right.
-         Renders only when navigationStore.peekPanel is set;
-         teardown happens when ChatView unmounts (route change
-         away from this chat).
-
-         The `!embedded` guard is load-bearing (task_1788604407681_2):
-         the peek panel itself embeds a read-only ChatView for the
-         sub-agent session, and `peekPanel` is GLOBAL store state. An
-         embedded instance that also rendered the host would recurse
-         Host → Panel → ChatView → Host → … forever and the panel
-         would never appear. Exactly one host exists — the one in the
-         outermost non-embedded ChatView. Eye-clicks inside the peek
-         still drill down: they call `nav.openPeek` (kept below on
-         SpawnSubAgent), which swaps the payload the outer host
-         renders (it is `:key`d by sessionId). -->
     <SubAgentPeekHost
       v-if="nav.peekPanel && !embedded"
       :key="nav.peekPanel.sessionId"
@@ -4803,655 +3712,4 @@ const compactSession = async () => {
   </div>
 </template>
 
-<style scoped>
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-
-:deep(.tool-output) {
-  padding: 0.5rem 0.75rem;
-  border-radius: 0.375rem;
-  margin: 0.25rem 0;
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-  font-size: var(--text-dense);
-  line-height: 1.5;
-}
-
-:deep(.tool-stdout) {
-  background-color: rgba(59, 130, 246, 0.1);
-  border-left: 3px solid #3b82f6;
-  color: var(--semantic-text);
-}
-
-:deep(.tool-stderr) {
-  background-color: rgba(245, 158, 11, 0.1);
-  border-left: 3px solid #f59e0b;
-  color: var(--semantic-text);
-}
-
-:deep(.tool-success) {
-  background-color: rgba(34, 197, 94, 0.1);
-  border-left: 3px solid #22c55e;
-  color: var(--semantic-text);
-}
-
-:deep(.tool-error) {
-  background-color: rgba(239, 68, 68, 0.1);
-  border-left: 3px solid #ef4444;
-  color: var(--semantic-text);
-}
-
-:deep(.tool-tag) {
-  font-weight: 600;
-  margin-right: 0.5rem;
-}
-
-:deep(.file-path) {
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-  font-size: var(--text-dense);
-  padding: 0.25rem 0.5rem;
-  background-color: rgba(139, 92, 246, 0.1);
-  border-radius: 0.25rem;
-  margin: 0.125rem 0;
-  color: var(--semantic-text);
-}
-
-:deep(.search-file) {
-  font-weight: 600;
-  font-size: var(--text-body);
-  color: var(--color-violet);
-  margin-top: 0.5rem;
-}
-
-:deep(.search-line) {
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-  font-size: var(--text-dense);
-  padding: 0.125rem 0.5rem;
-}
-
-:deep(.line-num) {
-  color: var(--semantic-text-dim);
-  user-select: none;
-  margin-right: 1rem;
-  min-width: 3rem;
-  display: inline-block;
-}
-
-:deep(.line-content) {
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
-:deep(.file-content) {
-  margin-top: 0.25rem;
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-  font-size: var(--text-dense);
-  line-height: 1.5;
-  background-color: rgba(0, 0, 0, 0.04);
-  border-radius: 0.375rem;
-  padding: 0.5rem 0;
-  overflow-x: hidden;
-}
-
-:deep(.tool-sequence) {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  min-width: 0;
-  /* 2026-08-23 paragraph-mode margin pass — the old 0.25rem gap was
-     sized for boxed cards that carried their own visual separation.
-     De-bubbled rows are flat, so they need explicit rhythm to read as
-     distinct steps instead of one dense wall. */
-  gap: 0.625rem;
-}
-
-/* The compact view's rows carry the same information in a tighter stack. */
-:deep(.tool-sequence-compact) {
-  gap: 0.125rem;
-}
-
-:deep(.tool-item) {
-  padding: 0.125rem 0;
-  width: 100%;
-  min-width: 0;
-}
-
-:deep(.tool-item-border) {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
-:deep(.tool-item-border:last-child) {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
-/* 2026-08-23 paragraph-mode margin pass — spacing AROUND the tool
-   sequence so it breathes against surrounding prose:
-   - gap above the first tool row (was flush against the assistant text)
-   - gap below the last tool row (was flush against the next group) */
-:deep(.tool-sequence) {
-  margin-top: 0.375rem;
-  margin-bottom: 0.375rem;
-}
-
-/* Tool calls summary - shown only when tool outputs are NOT displayed */
-:deep(.tool-calls-summary) {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  margin-bottom: 0.5rem;
-  background-color: var(--color-bg-p1);
-  border: 1px solid var(--color-border);
-  border-radius: 0.5rem;
-  border-left: 3px solid var(--color-violet);
-}
-
-:deep(.tool-calls-badge) {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  color: var(--color-violet);
-  font-size: var(--text-dense);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-family: var(--font-mono);
-}
-
-:deep(.tool-names-list) {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.375rem;
-}
-
-:deep(.tool-name-chip) {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.125rem 0.5rem;
-  background-color: var(--color-bg-p2);
-  border: 1px solid var(--color-border-light);
-  border-radius: 9999px;
-  font-size: var(--text-dense);
-  font-family: var(--font-mono);
-  color: var(--color-aqua);
-}
-
-:deep(.tool-inline) {
-  font-size: var(--text-dense);
-  color: var(--color-violet);
-  font-family: monospace;
-}
-
-:deep(.tool-inline-result) {
-  font-size: var(--text-dense);
-  color: var(--semantic-text-dim);
-  font-family: monospace;
-}
-
-:deep(.tool-inline-success) {
-  color: var(--color-green);
-  font-weight: 600;
-}
-
-:deep(.tool-inline-error) {
-  color: var(--color-red);
-  font-weight: 600;
-}
-
-:deep(.markdown-content pre) {
-  overflow-x: auto;
-}
-
-/* 2026-08-24 (task_1787545088500_6, bug C) — long unbroken URLs in
-   assistant prose overflow the chat bubble. The pre block above
-   already scrolls horizontally, but inline links + prose do not.
-   `overflow-wrap: anywhere` lets the browser break inside a long
-   word/URL at any character so the bubble stays within its parent;
-   `word-break: break-word` is the older alias kept for browsers
-   that don't recognise the new property name. Surgical, scoped
-   to .markdown-content only. */
-.markdown-content {
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-:deep(.markdown-content pre:hover .code-copy-btn) {
-  opacity: 1;
-}
-
-/* ─── Assistant paragraph mode (2026-08-23) ──────────────────────────────
-   The AI side no longer renders as a chat bubble — assistant groups are
-   transparent, borderless paragraphs that flow with the page background.
-   These rules give the un-bubbled content document-like rhythm:
-   - .assistant-messages: vertical spacing between consecutive assistant
-     groups (the old bubble's py-2.5 padding provided this separation).
-   - .assistant-item + .assistant-item + .assistant-item: a small gap
-     between adjacent messages inside one group.
-   2026-08-23 margin pass: bumped both up — flat paragraphs need more
-   explicit rhythm than boxed bubbles did. */
-.assistant-messages {
-  margin-bottom: 0.375rem;
-}
-
-.assistant-item + .assistant-item {
-  margin-top: 0.625rem;
-}
-
-/* ─── <html> wrapper-tag sandboxed iframe (2026-08-23 html-tag-support) ──
-   Live HTML blocks from the LLM render inside a null-origin iframe
-   (sandbox="allow-scripts", no allow-same-origin). The frame paints the
-   app's CARD surface, NOT white: an LLM that answers in HTML mode (the
-   response-formatting prompt explicitly offers it) is still part of the
-   transcript, and a hardcoded #fff read as a bright slab in the dark
-   theme. `color-scheme: dark` keeps the frame's native scrollbars dark
-   too. Height is set inline by the frame's own auto-resize report
-   (helpers/iframeAutoResize.ts) to its FULL content height — no inner
-   scrollbar, the outer chat scroller owns scrolling. */
-.chat-html-frame {
-  display: block;
-  width: 100%;
-  min-height: 120px;
-  border: 1px solid var(--color-border, #ddd);
-  border-radius: 8px;
-  background: var(--semantic-card-bg, #1d1c19);
-  color-scheme: dark;
-  overflow: hidden;
-  scrollbar-width: none;
-}
-
-.chat-html-frame::-webkit-scrollbar {
-  display: none;
-}
-
-/* ─── Tool-output cards, de-bubbled (2026-08-23) ────────────────────────
-   All 24 tool_output components used to carry an identical Tailwind card
-   frame (`rounded-md border border-[--color-border] bg-[--semantic-card-bg]`)
-   — a boxed bubble per tool row. In paragraph mode that reads as heavy
-   chrome stacked under un-bubbled prose. The frame is now ONE shared
-   class, `.chat-tool-card`, defined here once:
-     - transparent background (page shows through)
-     - no full box border; a subtle 2px left rule marks the row instead
-     - gentle hover tint so rows stay discoverable as expandable
-   Error/warning variants still work: components bind
-   `border-red-500/50` / `border-orange-500/50` via :class, which now
-   recolors the left rule (border-left-color) instead of drawing a box.
-   Scoped deep selector: the components are children of ChatView's tree. */
-:deep(.chat-tool-card) {
-  background-color: transparent;
-  border: none;
-  border-left: 2px solid var(--color-border);
-  border-radius: 0;
-  overflow: visible;
-  width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-  transition:
-    background-color 0.15s ease,
-    border-left-color 0.15s ease;
-}
-
-:deep(.chat-tool-card pre) {
-  max-width: 100%;
-  min-width: 0;
-  overflow-x: auto;
-}
-
-:deep(.chat-tool-card:hover) {
-  background-color: color-mix(in srgb, var(--color-violet) 4%, transparent);
-  border-left-color: var(--color-violet);
-}
-
-/* Attached image thumbnail — small fixed-size preview matching
-   FileInput.vue's FilePreview (80×80px, rounded, object-fit:cover).
-   Click opens the full-screen ImagePreview via openImagePreview(). */
-.chat-attached-image-thumb {
-  width: 80px;
-  height: 80px;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid var(--color-border);
-  background-color: var(--semantic-sidebar-bg);
-  cursor: pointer;
-}
-
-.chat-attached-image-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.chat-attached-image-thumb:hover .chat-attached-image-img {
-  opacity: 0.9;
-}
-
-/* Attached document chip — the name of a PDF or a text document the model
-   read. Metadata only: the bytes never reach the transcript. */
-.chat-attached-file-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 240px;
-  padding: 4px 8px;
-  border-radius: 8px;
-  border: 1px solid var(--color-border);
-  background-color: var(--semantic-sidebar-bg);
-  font-size: var(--text-dense);
-}
-
-.chat-attached-file-icon {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-}
-
-.chat-attached-file-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chat-attached-file-size {
-  opacity: 0.6;
-  flex-shrink: 0;
-}
-
-/* Pill-jump flash (2026-09-09 chatview user pill): brief outline pulse
-   on the user bubble after a rail-pill jump so the eye finds it. */
-.pill-jump-flash {
-  animation: pill-jump-flash 1.2s ease-out;
-  border-radius: 12px;
-}
-
-@keyframes pill-jump-flash {
-  0%,
-  100% {
-    outline: 2px solid transparent;
-    outline-offset: 2px;
-  }
-  25%,
-  60% {
-    outline: 2px solid var(--color-violet, #8b5cf6);
-    outline-offset: 2px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .pill-jump-flash {
-    animation: none;
-    outline: 2px solid var(--color-violet, #8b5cf6);
-    outline-offset: 2px;
-  }
-}
-
-/* Realtime chat slider: this scroller's native scrollbar is replaced by
-   the ChatScrollSlider thumb (draggable, scroll-synced). Scrolling
-   itself is untouched (wheel/touch/keyboard still work) — only the
-   native visual is hidden, and only inside this wrapper. */
-.messages-scroll-hide-native :deep(.virtual-scroller) {
-  scrollbar-width: none;
-}
-.messages-scroll-hide-native :deep(.virtual-scroller::-webkit-scrollbar) {
-  display: none;
-}
-/* Make room for the slider track at the extreme right edge. */
-.messages-scroll-hide-native :deep(.user-pill-rail) {
-  right: 18px;
-}
-
-/* ─── Pill-rail gutter ────────────────────────────────────────────────────
-   The rail is `position: absolute` on the transcript wrapper, so it is
-   OUT of flow: nothing reserves space for it and its pills paint straight
-   over the message bubbles (the "pillbar overlaps the chat" report). The
-   rail itself cannot fix that — an absolutely-positioned element never
-   pushes siblings — so the wrapper reserves the strip instead.
-
-   `--pill-rail-gutter` is the width of the rail's own footprint, measured
-   from the wrapper's right edge:
-       right: 18px  +  rail padding 4px  +  pill 24px  =  46px
-   rounded up to 48px so the pill's `scaleX(1.25)` hover growth (24 → 30px)
-   still lands inside the gutter rather than on a bubble.
-
-   Declared on the WRAPPER, not on the scroller: the agent-error band is a
-   sibling of the VirtualScroller, so a property set on the scroller would
-   not reach it and the strip would break across that band.
-
-   Applied as `padding-right` on the rows, NOT as a margin or a width on
-   the scroller: VirtualScroller's `measureItems()` reads `el.offsetHeight`,
-   so a horizontal padding is invisible to the height model — the sizer,
-   `scrollToBottom` and the scroll-restore anchors all keep working
-   unchanged. A `padding-bottom` would have been folded into the height and
-   shifted every anchor.
-
-   The class is bound on the wrapper with the SAME condition as the rail's
-   own `v-if="userPills.length >= 2"`, so the gutter exists exactly when
-   the rail does — no dead space in a 1-user-group chat, and no pills
-   without a gutter. */
-.messages-scroll-hide-native.has-pill-rail {
-  --pill-rail-gutter: 48px;
-}
-
-/* The rows are the scroller's slot content, so the gutter has to reach
-   them through `:deep()`. The agent-error band is a plain descendant of
-   the wrapper (outside the scroller's height model), so it takes the same
-   padding directly — the strip stays continuous down the transcript. */
-/* Mirror the strip. Padding one side only was invisible while the rows were
-   centred; a full-bleed row is shifted 32px off the column's centre without it. */
-.messages-scroll-hide-native.has-pill-rail :deep([data-group-key]),
-.messages-scroll-hide-native.has-pill-rail .agent-error-list {
-  padding-right: var(--pill-rail-gutter, 48px);
-  padding-left: var(--pill-rail-gutter, 48px);
-}
-
-/* ─── Floating composer ──────────────────────────────────────────────────
-   The composer is an overlay, not the last flex child. The dock's
-   ResizeObserver writes its height into `--chat-composer-inset` on the
-   `.chat-column` (see the script block); everything below reads that one
-   number, so there is a single source of truth for "how much room does
-   the floating composer take". It is unset (0) while the dock is not
-   rendered — e.g. the read-only peek panel — which degrades the last row
-   to a plain 1rem of bottom padding, matching the old flow layout. */
-.chat-column {
-  --chat-composer-inset: 0px;
-  --chat-content-max: 100%;
-
-  /* Contain this surface's whole z-ladder.
-     `position: relative` with `z-index: auto` does NOT open a stacking
-     context, so the tiers below (scroll slider / pill rail 20, composer
-     dock 30, scroll-to-bottom 31) were competing in the ROOT stacking
-     context against AppLayout's full-surface overlays — and every one of
-     them outranked the document viewer's `z-index: 10`. Opening a chat
-     session and then clicking a document therefore painted the composer
-     dock, the scroll arrow and the scroll slider ON TOP of the document.
-
-     Isolating here fixes the class of bug rather than one instance: no
-     z-index added to the chat in future can escape past an app-level
-     overlay, so DocumentsView does not have to be raised above a number
-     that would have to be raised again. */
-  isolation: isolate;
-}
-
-/* Transcript width presets. Every row and the composer cap themselves at
-   `--chat-content-max`, so `full` is the default and `comfortable` is the
-   old centred 56rem (896px) cap. */
-.chat-column.chat-width-comfortable {
-  --chat-content-max: 896px;
-}
-.chat-column.chat-width-wide {
-  --chat-content-max: 1400px;
-}
-
-.composer-dock {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  /* Above the transcript (z-0/auto) and the pill rail + scroll slider
-     (z-20), below the scroll-to-bottom arrow (z-31). */
-  z-index: 30;
-}
-
-/* The fade that replaces the old `border-top` + opaque sidebar fill.
-   `--semantic-content-bg` is the colour the transcript is actually
-   painted on, so the gradient dissolves into the page instead of
-   stopping at a 1px rule — or showing the 1-shade seam that fading to
-   `--semantic-sidebar-bg` (the old bar fill) would have produced. */
-.composer-scrim {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  /* Opaque across the dock itself (so nothing shows through the padding
-     around the card), then 3rem of fade ABOVE it — that extra band is
-     what softens the cut where the transcript runs under the composer. */
-  height: calc(100% + 3rem);
-  pointer-events: none;
-  background: linear-gradient(
-    to top,
-    var(--semantic-content-bg) 0,
-    var(--semantic-content-bg) calc(100% - 3rem),
-    transparent 100%
-  );
-}
-
-/* Lift the composer card off the page. Without this it reads as another
-   flat surface rather than something floating over the transcript.
-
-   `position: relative` + `z-index: 1` is load-bearing, not decoration: the
-   scrim is a POSITIONED descendant of the dock (`position: absolute`,
-   `z-index: auto`), and CSS paints positioned descendants AFTER in-flow,
-   non-positioned content. A static card therefore loses to the scrim, whose
-   opaque band covers the dock's full height — the input row, paperclip and
-   Send button all vanish, leaving only whatever the card happens to position
-   itself (the agent picker's `relative` wrapper) on top. `pointer-events:
-   none` on the scrim hides the damage from hit-testing, so `elementFromPoint`
-   still reports the textarea and every geometry test passes. Giving the card
-   its own stacking context above the scrim is what keeps it visible. */
-.composer-dock :deep(.composer-card) {
-  position: relative;
-  z-index: 1;
-  box-shadow:
-    0 10px 30px -10px rgba(0, 0, 0, 0.7),
-    0 2px 8px -2px rgba(0, 0, 0, 0.45);
-}
-
-/* Bottom clearance for the newest message. Plain CSS padding on the last
-   row, so VirtualScroller's `measureItems()` (which reads
-   `el.offsetHeight`) folds it into the height model for free: the sizer
-   grows, and `scrollToBottom` lands on the padded bottom, so the newest
-   message is always fully visible above the composer. Keyed by group
-   index in the template, never `:last-child` — the last child of the
-   rendered window is a mid-transcript row whenever the window does not
-   cover the tail. */
-.last-transcript-row {
-  padding-bottom: calc(var(--chat-composer-inset) + 1rem);
-}
-
-/* Same clearance for the live agent-error band: it sits after the
-   VirtualScroller (outside the height model, so it can't borrow
-   `.last-transcript-row`'s padding) and would otherwise sit under the
-   dock. */
-.agent-error-list {
-  padding-bottom: calc(var(--chat-composer-inset) + 0.5rem);
-}
-
-/* Scroll-to-bottom arrow: sits clear of the dock instead of at a fixed
-   `bottom-24`, which was tuned for the old in-flow composer height. */
-.chat-scroll-to-bottom {
-  position: absolute;
-  right: 2rem;
-  bottom: calc(var(--chat-composer-inset) + 0.75rem);
-  z-index: 31;
-}
-
-/* V1 composer toolbar (single-card): quiet ghost actions + muted status.
-   The strip itself lives in FileInput's toolbar slot; these classes style
-   the projected content. Display-only status (tokens) deliberately has no
-   button affordance — no border, no hover — so actions read as actions. */
-.composer-tool-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  border-radius: 8px;
-  font-size: var(--text-dense);
-  font-weight: 500;
-  color: var(--semantic-text-dim);
-  background: transparent;
-  border: 1px solid transparent;
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    background-color 0.15s ease,
-    color 0.15s ease;
-}
-
-.composer-tool-btn:hover {
-  background-color: var(--hover-bg, rgba(255, 255, 255, 0.04));
-  color: var(--semantic-text);
-}
-
-.composer-tool-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.composer-tool-btn:disabled:hover {
-  background: transparent;
-  color: var(--semantic-text-dim);
-}
-
-/* The agent list is capped by the space above the composer
-   (`--chat-composer-inset` = the dock's published height) and scrolls: an
-   uncapped list ran off the top of the window, with no way to reach it. */
-.agent-picker-menu {
-  max-height: min(60vh, calc(100vh - var(--chat-composer-inset, 0px) - 2rem));
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
-.composer-toolbar-divider {
-  width: 1px;
-  height: 16px;
-  background: var(--color-border);
-  margin: 0 4px;
-  flex-shrink: 0;
-}
-
-.composer-tokens-status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 4px;
-  font-size: var(--text-dense);
-  color: var(--semantic-text-dim);
-  white-space: nowrap;
-}
-
-.composer-branch-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 220px;
-}
-
-@media (max-width: 720px) {
-  .composer-branch-label {
-    max-width: 120px;
-  }
-}
-
-@media (max-width: 560px) {
-  .composer-tokens-status {
-    display: none;
-  }
-}
-</style>
+<style scoped src="./chat_view/chatView.css"></style>

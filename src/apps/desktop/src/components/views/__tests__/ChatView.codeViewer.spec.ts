@@ -3,8 +3,9 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { readChatViewSource as readChatViewBundle } from '../../../__tests__/helpers/chatViewSource'
 
-const chatViewSrc = readFileSync(resolve(__dirname, '../ChatView.vue'), 'utf8')
+const chatViewSrc = readChatViewBundle()
 const appLayoutSrc = readFileSync(resolve(__dirname, '..', '..', 'AppLayout.vue'), 'utf8')
 
 describe('ChatView — code viewer in the center column', () => {

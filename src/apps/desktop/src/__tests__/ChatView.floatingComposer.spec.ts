@@ -14,9 +14,10 @@ import ChatView from '../components/views/ChatView.vue'
 import { installSseBus, __resetSseBus, __setSseBusGlobalClient } from '../helpers/sseBus'
 import type { SseClient, SseState } from '../helpers/sseClient'
 import { makeLocalStorageStub } from './helpers'
+import { readChatViewSource } from './helpers/chatViewSource'
 
 const __dir = dirname(fileURLToPath(import.meta.url))
-const chatViewSrc = readFileSync(resolve(__dir, '../components/views/ChatView.vue'), 'utf8')
+const chatViewSrc = readChatViewSource()
 const sliderSrc = readFileSync(resolve(__dir, '../components/chat/ChatScrollSlider.vue'), 'utf8')
 
 const { useRouteMock, useRouterMock } = vi.hoisted(() => ({
@@ -266,9 +267,7 @@ describe('ChatView floating composer — source contract', () => {
   it('lifts the composer card above the scrim so the input stays visible', () => {
     // The scrim is a POSITIONED descendant of the dock (`position: absolute`, `z-index: auto`), and
     // CSS paints positioned descendants AFTER in-flow, non-positioned content.
-    const cardRule = chatViewSrc.match(
-      /\.composer-dock\s+:deep\(\.composer-card\)\s*\{[^}]*\}/,
-    )
+    const cardRule = chatViewSrc.match(/\.composer-dock\s+:deep\(\.composer-card\)\s*\{[^}]*\}/)
     expect(cardRule).not.toBeNull()
     expect(cardRule![0]).toMatch(/position:\s*relative;/)
     expect(cardRule![0]).toMatch(/z-index:\s*1;/)
