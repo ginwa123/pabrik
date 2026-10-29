@@ -80,6 +80,10 @@ pub const RouteStat = struct {
     statuses: []const StatusStat,
 };
 
+fn writeSeconds(out: *std.ArrayList(u8), allocator: std.mem.Allocator, ns: u64) !void {
+    try out.print(allocator, "{d}.{d:0>9}", .{ ns / std.time.ns_per_s, ns % std.time.ns_per_s });
+}
+
 fn p95UpperBound(series: Series) u64 {
     if (series.count == 0) return 0;
     const target = (series.count * 95 + 99) / 100;
@@ -220,6 +224,28 @@ pub const Registry = struct {
                 series.route,
                 series.count,
             });
+        }
+
+        try out.appendSlice(allocator, "# HELP http_request_duration_seconds_avg Mean request duration since process start.\n");
+        try out.appendSlice(allocator, "# TYPE http_request_duration_seconds_avg gauge\n");
+        for (self.series.items) |series| {
+            try out.print(allocator, "http_request_duration_seconds_avg{{method=\"{s}\",route=\"{s}\"}} ", .{
+                series.method,
+                series.route,
+            });
+            try writeSeconds(&out, allocator, if (series.count == 0) 0 else series.sum_ns / series.count);
+            try out.append(allocator, '\n');
+        }
+
+        try out.appendSlice(allocator, "# HELP http_request_duration_seconds_max Slowest request since process start.\n");
+        try out.appendSlice(allocator, "# TYPE http_request_duration_seconds_max gauge\n");
+        for (self.series.items) |series| {
+            try out.print(allocator, "http_request_duration_seconds_max{{method=\"{s}\",route=\"{s}\"}} ", .{
+                series.method,
+                series.route,
+            });
+            try writeSeconds(&out, allocator, series.max_ns);
+            try out.append(allocator, '\n');
         }
 
         try out.appendSlice(allocator, "# HELP http_requests_in_flight Requests being served right now.\n");
@@ -406,6 +432,34 @@ test "render reports the requests still in flight" {
     const after = try registry.render(std.testing.allocator);
     defer std.testing.allocator.free(after);
     try std.testing.expect(std.mem.endsWith(u8, after, "http_requests_in_flight 0\n"));
+}
+
+test "render reports the mean and the slowest duration of a route" {
+    var registry = try Registry.init(std.testing.allocator, std.testing.io, &.{
+        .{ .method = "GET", .path = "/api/slow" },
+    });
+    defer registry.deinit();
+
+    try registry.record("GET", "/api/slow", 200, 100 * std.time.ns_per_ms);
+    try registry.record("GET", "/api/slow", 200, 300 * std.time.ns_per_ms);
+
+    const body = try registry.render(std.testing.allocator);
+    defer std.testing.allocator.free(body);
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        body,
+        "http_request_duration_seconds_avg{method=\"GET\",route=\"/api/slow\"} 0.200000000\n",
+    ) != null);
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        body,
+        "http_request_duration_seconds_max{method=\"GET\",route=\"/api/slow\"} 0.300000000\n",
+    ) != null);
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        body,
+        "# HELP http_request_duration_seconds_avg Mean request duration since process start.",
+    ) != null);
 }
 
 test "record keeps counting after a series is established" {
