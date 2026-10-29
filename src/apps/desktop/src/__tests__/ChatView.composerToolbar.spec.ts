@@ -1,12 +1,12 @@
 /** ChatView V1 composer toolbar — static contract (mirrors the DiffCommentBox.spec.ts
  * source-reading pattern; mounting the full ChatView needs the agentCascade harness). */
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { resolve, dirname } from 'node:path'
+import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readChatViewSource as readChatViewBundle } from './helpers/chatViewSource'
 
 const __dir = dirname(fileURLToPath(import.meta.url))
-const chatViewSrc = readFileSync(resolve(__dir, '../components/views/ChatView.vue'), 'utf8')
+const chatViewSrc = readChatViewBundle()
 
 // The toolbar block: from `<template #toolbar>` to its close. All
 // toolbar assertions scope to this slice so matches elsewhere in the

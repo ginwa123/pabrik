@@ -2,12 +2,12 @@
  * auto-stick is gated on `isAtBottom`: the `messages.length` watcher returns early without it,
  * `onContentShift` skips, and `scrollToBottom(force = false)` does nothing. */
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { resolve, dirname } from 'node:path'
+import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readChatViewSource as readChatViewBundle } from './helpers/chatViewSource'
 
 const __dir = dirname(fileURLToPath(import.meta.url))
-const source = readFileSync(resolve(__dir, '../components/views/ChatView.vue'), 'utf8')
+const source = readChatViewBundle()
 
 /** Slice a region out of the SFC by two markers, with a loud failure if absent. */
 function slice(startMarker: string, endMarker: string): string {

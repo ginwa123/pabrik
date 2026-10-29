@@ -4,8 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
-import { readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createApp, defineComponent, h, nextTick, provide, type App as VueApp } from 'vue'
 
@@ -17,9 +16,10 @@ import { OPEN_IN_CODE_EDITOR_KEY, type OpenInCodeEditorFn } from '@/composables/
 import { installSseBus, __resetSseBus, __setSseBusGlobalClient } from '@/helpers/sseBus'
 import type { SseClient, SseState } from '@/helpers/sseClient'
 import { makeLocalStorageStub } from '@/__tests__/helpers'
+import { readChatViewSource as readChatViewBundle } from '../../../__tests__/helpers/chatViewSource'
 
 const __dir = dirname(fileURLToPath(import.meta.url))
-const chatViewSrc = readFileSync(resolve(__dir, '../ChatView.vue'), 'utf8')
+const chatViewSrc = readChatViewBundle()
 
 const { useRouteMock, useRouterMock } = vi.hoisted(() => ({
   useRouteMock: vi.fn(() => ({

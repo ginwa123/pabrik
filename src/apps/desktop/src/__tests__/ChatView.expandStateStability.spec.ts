@@ -1,13 +1,9 @@
 /** Regression tests for the 2026-08-23 "auto-collapse on SSE" bug. Background: the chatview used
  * positional expand keys (`${groupIndex}-${idx}`) into the `messageGroups` computed. */
 import { describe, it, expect } from 'vitest'
+import { readChatViewSource as readChatViewBundle } from './helpers/chatViewSource'
 
-const readChatViewSource = async (): Promise<string> => {
-  const fs = await import('node:fs/promises')
-  const path = await import('node:path')
-  const chatviewPath = path.resolve(__dirname, '..', 'components', 'views', 'ChatView.vue')
-  return fs.readFile(chatviewPath, 'utf8')
-}
+const readChatViewSource = async (): Promise<string> => readChatViewBundle()
 
 const readPresentationSource = async (): Promise<string> => {
   const fs = await import('node:fs/promises')

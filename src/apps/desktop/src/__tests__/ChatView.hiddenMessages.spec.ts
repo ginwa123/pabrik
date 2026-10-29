@@ -201,7 +201,7 @@ describe('Rich-block support — ChatView render branch (source contract)', () =
 
   it('renders a mermaid segment through MermaidDiagram, never as HTML', async () => {
     const source = await readChatViewSource()
-    expect(source).toMatch(/import MermaidDiagram from '\.\.\/chat\/MermaidDiagram\.vue'/)
+    expect(source).toMatch(/import MermaidDiagram from '[^']*MermaidDiagram\.vue'/)
     expect(source).toMatch(
       /v-else-if="seg\.kind === 'mermaid' && seg\.payload"\s*\n\s*:source="seg\.payload"/,
     )

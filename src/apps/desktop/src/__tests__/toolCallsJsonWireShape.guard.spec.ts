@@ -11,10 +11,7 @@ const presentationSrc = readFileSync(
   join(here, '../components/views/chat_view/useChatMessagePresentation.ts'),
   'utf-8',
 )
-const peekSrc = readFileSync(
-  join(here, '../composables/useSubAgentPeek.ts'),
-  'utf-8',
-)
+const peekSrc = readFileSync(join(here, '../composables/useSubAgentPeek.ts'), 'utf-8')
 
 describe('ChatView groupToolNames — tool_calls_json typeof guard', () => {
   it('guards .trim() behind a typeof string check (crash regression)', () => {
@@ -30,9 +27,7 @@ describe('ChatView groupToolNames — tool_calls_json typeof guard', () => {
   it('guards parseSpawnSubAgentArgs call with a typeof check', () => {
     // findSubAgentArgsForToolGroup walks backwards through groups and
     // JSON.parses tool_calls_json — non-string values must be skipped.
-    expect(presentationSrc).toMatch(
-      /typeof msg\.tool_calls_json !== 'string'\) continue/,
-    )
+    expect(presentationSrc).toMatch(/typeof msg\.tool_calls_json !== 'string'\) continue/)
   })
 })
 
@@ -41,10 +36,14 @@ describe('useSubAgentPeek — legacy ev.tool_calls copy guard', () => {
     // The old code copied `ev.tool_calls ?? ...` unconditionally — the
     // legacy field was array-shaped on the old wire. Both copy sites
     // (update-existing + append-new) must now typeof-check first.
-    const matches = peekSrc.match(/typeof \(ev as \{ tool_calls\?: unknown \}\)\.tool_calls === 'string'/g)
+    const matches = peekSrc.match(
+      /typeof \(ev as \{ tool_calls\?: unknown \}\)\.tool_calls === 'string'/g,
+    )
     expect(matches).not.toBeNull()
     expect(matches!.length).toBeGreaterThanOrEqual(2)
     // The unconditional legacy copies must be gone.
-    expect(peekSrc).not.toMatch(/\(ev as \{ tool_calls\?: unknown \}\)\.tool_calls \?\? existing\.tool_calls_json/)
+    expect(peekSrc).not.toMatch(
+      /\(ev as \{ tool_calls\?: unknown \}\)\.tool_calls \?\? existing\.tool_calls_json/,
+    )
   })
 })

@@ -204,39 +204,8 @@
   overflow-x: auto;
 }
 
-/* 2026-08-24 (task_1787545088500_6, bug C) — long unbroken URLs in
-   assistant prose overflow the chat bubble. The pre block above
-   already scrolls horizontally, but inline links + prose do not.
-   `overflow-wrap: anywhere` lets the browser break inside a long
-   word/URL at any character so the bubble stays within its parent;
-   `word-break: break-word` is the older alias kept for browsers
-   that don't recognise the new property name. Surgical, scoped
-   to .markdown-content only. */
-.markdown-content {
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
 :deep(.markdown-content pre:hover .code-copy-btn) {
   opacity: 1;
-}
-
-/* ─── Assistant paragraph mode (2026-08-23) ──────────────────────────────
-   The AI side no longer renders as a chat bubble — assistant groups are
-   transparent, borderless paragraphs that flow with the page background.
-   These rules give the un-bubbled content document-like rhythm:
-   - .assistant-messages: vertical spacing between consecutive assistant
-     groups (the old bubble's py-2.5 padding provided this separation).
-   - .assistant-item + .assistant-item + .assistant-item: a small gap
-     between adjacent messages inside one group.
-   2026-08-23 margin pass: bumped both up — flat paragraphs need more
-   explicit rhythm than boxed bubbles did. */
-.assistant-messages {
-  margin-bottom: 0.375rem;
-}
-
-.assistant-item + .assistant-item {
-  margin-top: 0.625rem;
 }
 
 /* ─── <html> wrapper-tag sandboxed iframe (2026-08-23 html-tag-support) ──
@@ -249,21 +218,6 @@
    too. Height is set inline by the frame's own auto-resize report
    (helpers/iframeAutoResize.ts) to its FULL content height — no inner
    scrollbar, the outer chat scroller owns scrolling. */
-.chat-html-frame {
-  display: block;
-  width: 100%;
-  min-height: 120px;
-  border: 1px solid var(--color-border, #ddd);
-  border-radius: 8px;
-  background: var(--semantic-card-bg, #1d1c19);
-  color-scheme: dark;
-  overflow: hidden;
-  scrollbar-width: none;
-}
-
-.chat-html-frame::-webkit-scrollbar {
-  display: none;
-}
 
 /* ─── Tool-output cards, de-bubbled (2026-08-23) ────────────────────────
    All 24 tool_output components used to carry an identical Tailwind card
@@ -360,31 +314,6 @@
 
 /* Pill-jump flash (2026-09-09 chatview user pill): brief outline pulse
    on the user bubble after a rail-pill jump so the eye finds it. */
-.pill-jump-flash {
-  animation: pill-jump-flash 1.2s ease-out;
-  border-radius: 12px;
-}
-
-@keyframes pill-jump-flash {
-  0%,
-  100% {
-    outline: 2px solid transparent;
-    outline-offset: 2px;
-  }
-  25%,
-  60% {
-    outline: 2px solid var(--color-violet, #8b5cf6);
-    outline-offset: 2px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .pill-jump-flash {
-    animation: none;
-    outline: 2px solid var(--color-violet, #8b5cf6);
-    outline-offset: 2px;
-  }
-}
 
 /* Realtime chat slider: this scroller's native scrollbar is replaced by
    the ChatScrollSlider thumb (draggable, scroll-synced). Scrolling
@@ -545,14 +474,7 @@
    index in the template, never `:last-child` — the last child of the
    rendered window is a mid-transcript row whenever the window does not
    cover the tail. */
-.last-transcript-row {
-  padding-bottom: calc(var(--chat-composer-inset) + 1rem);
-}
 
-/* Same clearance for the live agent-error band: it sits after the
-   VirtualScroller (outside the height model, so it can't borrow
-   `.last-transcript-row`'s padding) and would otherwise sit under the
-   dock. */
 .agent-error-list {
   padding-bottom: calc(var(--chat-composer-inset) + 0.5rem);
 }

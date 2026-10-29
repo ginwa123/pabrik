@@ -1,13 +1,9 @@
 /** Source-contract tests for the older-history PREFETCH work (task_1789505423062_0) — the "auto
  * fetch before the scroll reaches the top" fix. */
 import { describe, it, expect } from 'vitest'
+import { readChatViewSource as readChatViewBundle } from './helpers/chatViewSource'
 
-const readChatViewSource = async (): Promise<string> => {
-  const fs = await import('node:fs/promises')
-  const path = await import('node:path')
-  const chatviewPath = path.resolve(__dirname, '..', 'components', 'views', 'ChatView.vue')
-  return fs.readFile(chatviewPath, 'utf8')
-}
+const readChatViewSource = async (): Promise<string> => readChatViewBundle()
 
 /** Slice a top-level `const name = …` function body out of the source. */
 function fnBody(source: string, startMarker: string, endMarker: string): string {
@@ -32,7 +28,9 @@ describe('older-history prefetch — trigger wiring', () => {
     // Velocity sampling / arming must be skipped for programmatic writes (an
     // anchor-compensation scrollTop write is not a gesture) and for the initial
     // load, whose late unmarked scroll events armed a fetch on open.
-    expect(body).toMatch(/if \(!isProgrammatic && !isInitialLoad\) \{[\s\S]*evaluateOlderPrefetch\(\)/)
+    expect(body).toMatch(
+      /if \(!isProgrammatic && !isInitialLoad\) \{[\s\S]*evaluateOlderPrefetch\(\)/,
+    )
   })
 
   it('evaluateOlderPrefetch is the only place that consults the decision helper', async () => {

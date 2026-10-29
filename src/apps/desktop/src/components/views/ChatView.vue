@@ -15,20 +15,16 @@ import { chatEngineDb, newestCursor, toChatMessage } from '../../sync/ChatEngine
 import { runSyncEffect, runSyncEffectOr, runSyncVoid } from '../../sync/runtime'
 import { useChatContentWidth } from '../../composables/useChatContentWidth'
 import { useChatScrollRestore } from '../../composables/useChatScrollRestore'
-import {
-  stripThinkingTags,
-  VirtualScroller,
-  renderMarkdown,
-  hasRichBlocks,
-  extractRichBlocks,
-  formatCompactTokens,
-} from '@/helpers'
-import { buildHtmlSrcdoc, onHtmlFrameResize } from '../../helpers/chatHtmlFrame'
+import { stripThinkingTags, VirtualScroller, formatCompactTokens } from '@/helpers'
+import { onHtmlFrameResize } from '../../helpers/chatHtmlFrame'
 import { useChatComposerAgents } from './chat_view/useChatComposerAgents'
+import ChatMessageRow from './chat_view/ChatMessageRow.vue'
+import ChatTranscriptStates from './chat_view/ChatTranscriptStates.vue'
 import {
   isCompactionMessage,
   useChatMessagePresentation,
   type Message,
+  type MessageGroup,
 } from './chat_view/useChatMessagePresentation'
 import {
   buildScrollContext,
@@ -73,9 +69,6 @@ import {
 } from '../../helpers/subagentProgress'
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- used in <template> as <Bash> (~line 2507); typescript-eslint doesn't always see template usages via the Vue parser
 import Bash from '../preview/Bash.vue'
-import ShellTool from '../preview/ShellTool.vue'
-import ToolCard from '../tool_outputs/ToolCard.vue'
-import CompactToolGroup from '../tool_outputs/compact/CompactToolGroup.vue'
 import SubAgentPeekHost from '../pabrik/SubAgentPeekHost.vue'
 import ChatRightSidebar from './chat_right_sidebar/ChatRightSidebar.vue'
 import ChatAppBar from './ChatAppBar.vue'
@@ -99,16 +92,9 @@ import { useRouter, useRoute } from 'vue-router'
 import type { LocationQueryRaw } from 'vue-router'
 import { useWorkspacesStore } from '../../stores/workspaces'
 import { buildAppUrl, isChatRouteStaleForSession } from '../../helpers/appUrl'
-import CompactionCard from '../preview/CompactionCard.vue'
-import SkillInvocationCard from '../preview/SkillInvocationCard.vue'
 // 2026-08-25 agent-error-card (task_1787663566535_2): dedicated renderer
 // for agentic-loop error/retry diagnostics (is_error=true SSE events).
 import AgentErrorCard from '../chat/AgentErrorCard.vue'
-import { hasSkillEnvelope } from '../../helpers/skillEnvelope'
-import ChatAttachments from '../chat/ChatAttachments.vue'
-import MermaidDiagram from '../chat/MermaidDiagram.vue'
-import PlantUmlDiagram from '../chat/PlantUmlDiagram.vue'
-import D2Diagram from '../chat/D2Diagram.vue'
 import UserPillRail from '../chat/UserPillRail.vue'
 import ChatScrollSlider from '../chat/ChatScrollSlider.vue'
 import { pickActivePillIndex, estimateViewportEnd } from '../chat/activePill'
@@ -119,7 +105,6 @@ import WorktreeMenu from '../workspace/WorktreeMenu.vue'
 import CreatePrDialog from '../dialogs/CreatePrDialog.vue'
 import CreateWorktreeDialog from '../dialogs/CreateWorktreeDialog.vue'
 import { ICON_PATHS } from '../ui/icons'
-import UiIcon from '../ui/UiIcon.vue'
 
 const props = defineProps<{
   chatId: string
@@ -1149,6 +1134,50 @@ const {
   sessionId,
   isRemoteLoadPending,
   mode: () => chatView.mode,
+})
+
+const statesProps = computed(() => ({
+  isLoadingMore: isLoadingMore.value,
+  isInitializing: isInitializing.value,
+  isLoading: isLoading.value,
+  error: error.value,
+  historyConfirmed: historyConfirmed.value,
+  messageGroups: messageGroups.value,
+  hasMoreMessages: hasMoreMessages.value,
+  scrollerIsScrollable: scrollerIsScrollable.value,
+  pageSize: PAGE_SIZE,
+  loadChatHistory,
+  maybeLoadOlder,
+}))
+
+/** One prop bag per rendered row: the presentation helpers are stable functions, the mode and the
+ * chain map are read here so the child re-renders with them. */
+const rowProps = (group: MessageGroup, groupIndex: number) => ({
+  group,
+  groupIndex,
+  mode: chatView.mode,
+  sessionId: sessionId.value,
+  chatId: props.chatId,
+  cwd: sessionCwd.value,
+  groupKey,
+  isLastGroup,
+  isBgOnlyGroup,
+  hasBubbleContent,
+  isCompactionMessage,
+  bgShellData,
+  isBgUserMsg,
+  openImagePreview,
+  compactChains: compactChains.value,
+  standaloneCardsFor,
+  toolCardsFor,
+  toggleToolExpanded,
+  openPeek: nav.openPeek,
+  handleFallbackJumpToLine,
+  onOpenWorkspaceSession,
+  visibleReasoning,
+  answeredMessages,
+  hasVisibleContent,
+  renderMessageHtml,
 })
 
 // Last pill the user jumped to (highlight). Also driven by scroll (see
@@ -3225,161 +3254,7 @@ const compactSession = async () => {
         >
           ◫
         </button>
-        <!-- Loading More indicator (floats above the scroller during pagination).
-
-             Restored: while `maybeLoadOlder` / `commitOlderPage` run, the
-             "Load more messages" button below is hidden (`!isLoadingMore`
-             in its v-if), so with this block commented out the user got
-             NO affordance at all — the button vanished and nothing
-             replaced it until the page committed. -->
-        <div
-          v-if="isLoadingMore"
-          class="absolute top-0 left-0 right-0 flex justify-center py-2 z-10 pointer-events-none"
-          data-testid="chat-loading-more"
-          role="status"
-          aria-label="Loading older messages"
-        >
-          <div
-            class="flex items-center gap-2 px-4 py-2 rounded-full shadow-sm"
-            style="background-color: var(--semantic-card-bg)"
-          >
-            <div
-              class="w-4 h-4 border-2 rounded-full animate-spin"
-              style="border-color: var(--color-violet); border-top-color: transparent"
-            ></div>
-            <span class="text-body" style="color: var(--semantic-text-dim)">Loading more...</span>
-          </div>
-        </div>
-
-        <!-- Initializing skeleton — shown while the remote half of the
-             transcript load is outstanding AND nothing renderable has
-             painted (isInitializing): covers the mount gap where sessionId
-             is still empty, the whole cold-start network page (up to
-             INITIAL_HISTORY_TIMEOUT_MS, retries included), and the
-             cached-mount window whose cached rows do not render. A cached
-             mount whose rows DO render takes the skeleton down on the paint
-             — the cached transcript is a better placeholder than shimmer —
-             and the tail refresh runs behind it. Shimmer rows keep layout
-             stable so the transcript doesn't flash blank/empty-state before
-             content arrives. -->
-        <div
-          v-if="isInitializing"
-          data-testid="chat-initializing-skeleton"
-          class="flex flex-col gap-3 px-4 max-w-[var(--chat-content-max)] mx-auto pt-6 w-full"
-          role="status"
-          aria-label="Loading conversation"
-        >
-          <div
-            v-for="w in ['42%', '88%', '67%']"
-            :key="w"
-            class="h-4 rounded animate-pulse"
-            :style="{ width: w, backgroundColor: 'var(--semantic-card-bg)' }"
-          ></div>
-        </div>
-
-        <!-- Load error — `error` was previously write-only (set on fetch
-             failure but never rendered). Shown only once initializing is
-             over and no messages arrived. -->
-        <div
-          v-if="error && !isInitializing && messageGroups.length === 0"
-          data-testid="chat-load-error"
-          class="flex flex-col items-center justify-center h-full px-4"
-        >
-          <p class="text-body mb-3" style="color: var(--semantic-text-dim)">{{ error }}</p>
-          <button
-            @click="loadChatHistory()"
-            class="px-4 py-1.5 rounded-full text-dense"
-            style="
-              background-color: var(--semantic-card-bg);
-              border: 1px solid var(--color-border);
-              color: var(--semantic-text);
-            "
-          >
-            Retry
-          </button>
-        </div>
-
-        <!-- Empty State --
-             Gated on `historyConfirmed`, NOT on "there are no messages".
-             "Zero messages" and "we have not been told yet" are different
-             states and only a completed load can tell them apart: before
-             this gate, a slow or erroring backend — whose failure used to
-             be swallowed into an empty transcript — rendered "How can I
-             help you?" for sessions full of messages. -->
-        <div
-          v-if="
-            historyConfirmed &&
-            !isInitializing &&
-            !isLoading &&
-            !error &&
-            messageGroups.length === 0
-          "
-          class="flex flex-col items-center justify-center h-full px-4"
-        >
-          <div
-            class="w-16 h-16 rounded-2xl mb-4 flex items-center justify-center text-display"
-            style="background: linear-gradient(135deg, var(--color-violet), var(--color-blue))"
-          >
-            <UiIcon name="chat" size-class="w-7 h-7" />
-          </div>
-          <h3 class="text-title-sm font-medium mb-2" style="color: var(--semantic-text)">
-            How can I help you?
-          </h3>
-          <p class="text-body text-center" style="color: var(--semantic-text-dim)">
-            Start a conversation by typing a message below
-          </p>
-        </div>
-
-        <!--
-          Load more messages button.
-
-          Why this exists: the <VirtualScroller> below only emits @load-more
-          when the user scrolls within `loadMoreThreshold` of the top of a
-          *scrollable* container. When the loaded messages fit in the
-          viewport (a common case for short tool/result chats),
-          the container is not scrollable, the scroll event never fires,
-          and the user has no way to reach older messages.
-
-          This button bypasses the scroll trigger and calls
-          `maybeLoadOlder('manual')` — the same guard chain the scroll path
-          uses, minus the auto-stick gate (an explicit click must not be
-          swallowed by a stream). A page the prefetch already armed is
-          committed from memory. It is hidden while a
-          pagination is already in flight (`isLoadingMore`) so we don't
-          show two spinners, hidden when the initial empty state is
-          rendered (`messageGroups.length === 0`), and hidden when the
-          container IS scrollable (`!scrollerIsScrollable` is false) —
-          in that case the user can scroll to the top to load more, and
-          showing the button would be UI clutter.
-
-          Position: sibling of <VirtualScroller> inside the
-          `messagesWrapperRef` flex container. The wrapper is
-          `position: relative` (see line 1395) and a `flex flex-col`
-          layout; this button is the first child so it sits above the
-          scroller and is not subject to virtualization or the
-          `beginPreserve`/`endPreserve` scroll-restoration dance.
-        -->
-        <div
-          v-if="
-            hasMoreMessages && !isLoadingMore && messageGroups.length > 0 && !scrollerIsScrollable
-          "
-          class="flex justify-center pt-2 pb-1"
-          data-testid="load-more-messages"
-        >
-          <button
-            @click="maybeLoadOlder('manual')"
-            class="flex items-center gap-2 px-4 py-1.5 rounded-full text-dense transition-all duration-200 hover:scale-105"
-            style="
-              background-color: var(--semantic-card-bg);
-              border: 1px solid var(--color-border);
-              color: var(--semantic-text);
-            "
-            :title="`Load ${PAGE_SIZE} older messages`"
-          >
-            <span>↑</span>
-            <span>Load more messages</span>
-          </button>
-        </div>
+        <ChatTranscriptStates v-bind="statesProps" />
 
         <!-- Virtualized Message List.
              2026-08-23 fast-scroll responsiveness tuning:
@@ -3412,280 +3287,7 @@ const compactSession = async () => {
           @content-shift="onContentShift"
         >
           <template #default="{ item: group, index: groupIndex }">
-            <div
-              class="px-4 max-w-[var(--chat-content-max)] mx-auto"
-              :class="[
-                groupIndex === 0 ? 'pt-6' : '',
-                isLastGroup(groupIndex) ? 'last-transcript-row' : '',
-              ]"
-              :data-group-key="groupKey(group)"
-            >
-              <div
-                class="flex"
-                :class="
-                  group.role === 'user' && !isBgOnlyGroup(group) ? 'flex-row-reverse' : 'flex-row'
-                "
-              >
-                <!-- Bubble / paragraph container.
-                     2026-08-23 paragraph-mode: the AI (assistant) side no
-                     longer renders as a chat bubble. The container keeps
-                     the bubble chrome (padding, rounded corners, card bg,
-                     border) ONLY for user groups; assistant + tool groups
-                     render as transparent, borderless paragraphs that flow
-                     with the page background — like a document, not a
-                     messenger.
-                     NOTE: empty groups are already filtered out of
-                     messageGroups (see the computed) — this v-if is only
-                     defense-in-depth. Do NOT move it to the slot root:
-                     an unrendered group keeps its 200px height ESTIMATE
-                     in the VirtualScroller forever, which desyncs the
-                     estimated scroll model from the real DOM and blanks
-                     the whole chat on scrollToBottom. -->
-                <div
-                  class="min-w-0"
-                  :class="
-                    group.role === 'user' && !isBgOnlyGroup(group)
-                      ? 'max-w-[90%] w-fit ml-auto'
-                      : 'flex-1 w-full max-w-full'
-                  "
-                >
-                  <div
-                    v-if="hasBubbleContent(group, groupIndex)"
-                    class="text-body leading-relaxed"
-                    role="button"
-                    tabindex="0"
-                    :class="
-                      group.role === 'user' && !isBgOnlyGroup(group)
-                        ? 'px-4 py-2.5 rounded-2xl whitespace-pre-wrap break-words'
-                        : 'markdown-content'
-                    "
-                    :style="
-                      group.role === 'user' && !isBgOnlyGroup(group)
-                        ? 'background-color: var(--color-blue-1); color: var(--semantic-text); border-bottom-right-radius: 6px;'
-                        : 'color: var(--semantic-text);'
-                    "
-                  >
-                    <!-- ── User ── -->
-                    <template v-if="group.role === 'user'">
-                      <!-- Compaction envelope: render as a structured card
-                           instead of a wall of escaped XML. -->
-                      <CompactionCard
-                        v-if="isCompactionMessage(group.messages[0])"
-                        :content="group.messages[0]!.content"
-                      />
-                      <!-- Background completions: role=user on the wire,
-                           tool card in pixels — transparent left-aligned
-                           tool-sequence, never the blue bubble. -->
-                      <template v-else-if="isBgOnlyGroup(group)">
-                        <div class="tool-sequence">
-                          <div
-                            v-for="(bgMsg, bgIdx) in group.messages"
-                            :key="bgMsg.id || `bg-${bgIdx}`"
-                            class="tool-item"
-                            :class="bgIdx < group.messages.length - 1 ? 'tool-item-border' : ''"
-                          >
-                            <ShellTool
-                              tool-name="command"
-                              :content="bgShellData(bgMsg)"
-                              :parameters="'{}'"
-                            />
-                          </div>
-                        </div>
-                      </template>
-                      <!-- 2026-08-23 hidden-messages fix — v-for over ALL
-                           messages in the group. The old template rendered
-                           only group.messages[0], so consecutive user
-                           messages (queue-drain bursts, rapid sends) beyond
-                           the first were invisible: their text AND attached
-                           images never appeared. Each message renders its
-                           own images + text; empty-text messages with
-                           images render images only. -->
-                      <template v-else>
-                        <template
-                          v-for="(userMsg, userMsgIdx) in group.messages"
-                          :key="userMsg.id || `u-${userMsgIdx}`"
-                        >
-                          <ChatAttachments
-                            v-if="
-                              (userMsg.image_urls && userMsg.image_urls.length > 0) ||
-                              (userMsg.video_urls && userMsg.video_urls.length > 0) ||
-                              (userMsg.file_attachments && userMsg.file_attachments.length > 0)
-                            "
-                            :image-urls="userMsg.image_urls"
-                            :video-urls="userMsg.video_urls"
-                            :file-attachments="userMsg.file_attachments"
-                            @open-image="openImagePreview"
-                          />
-                          <template v-if="isBgUserMsg(userMsg)"
-                            ><ShellTool
-                              tool-name="command"
-                              :content="bgShellData(userMsg)"
-                              :parameters="'{}'" /></template
-                          ><template v-else
-                            ><SkillInvocationCard
-                              v-if="hasSkillEnvelope(userMsg.content)"
-                              :content="userMsg.content || ''"
-                            /><span v-else-if="userMsg.content">{{
-                              userMsg.content
-                            }}</span></template
-                          >
-                        </template>
-                      </template>
-                    </template>
-
-                    <!-- ── Tool ── -->
-                    <template v-else-if="group.role === 'tool'">
-                      <!-- The compact view draws a turn's calls ONCE, at the
-                           first tool group of the turn; the turn's later tool
-                           groups draw nothing (their calls are in that card). -->
-                      <template v-if="chatView.mode === 'compact'">
-                        <CompactToolGroup
-                          v-if="compactChains.has(groupIndex)"
-                          :items="compactChains.get(groupIndex) ?? []"
-                          :cwd="sessionCwd"
-                          :session-id="sessionId || chatId"
-                          @toggle-expand="toggleToolExpanded"
-                          @peek="nav.openPeek"
-                          @jump-to-line="handleFallbackJumpToLine"
-                          @open-session="onOpenWorkspaceSession"
-                        />
-                        <div
-                          v-if="standaloneCardsFor(group, groupIndex).length > 0"
-                          class="tool-sequence"
-                        >
-                          <ToolCard
-                            v-for="card in standaloneCardsFor(group, groupIndex)"
-                            :key="card.expandKey"
-                            v-bind="card"
-                            :cwd="sessionCwd"
-                            :session-id="sessionId || chatId"
-                            @toggle-expand="toggleToolExpanded"
-                            @peek="nav.openPeek"
-                            @jump-to-line="handleFallbackJumpToLine"
-                            @open-session="onOpenWorkspaceSession"
-                          />
-                        </div>
-                      </template>
-                      <div v-else class="tool-sequence">
-                        <ToolCard
-                          v-for="(card, idx) in toolCardsFor(group, groupIndex)"
-                          :key="card.expandKey"
-                          v-bind="card"
-                          :class="idx < group.messages.length - 1 ? 'tool-item-border' : ''"
-                          :cwd="sessionCwd"
-                          :session-id="sessionId || chatId"
-                          @toggle-expand="toggleToolExpanded"
-                          @peek="nav.openPeek"
-                          @jump-to-line="handleFallbackJumpToLine"
-                          @open-session="onOpenWorkspaceSession"
-                        />
-                      </div>
-                    </template>
-
-                    <!-- ── Assistant ── -->
-                    <template v-else-if="group.role === 'assistant'">
-                      <!-- 2026-08-23 hidden-messages fix — collapsible
-                           reasoning section for thinking models. Previously
-                           reasoning_content was console.log-only, so a
-                           thinking-only turn (empty final text) looked like
-                           the agent said nothing. Default-collapsed so long
-                           chains-of-thought don't push content off-screen;
-                           click to expand. Rendered ABOVE the answer: the
-                           reasoning is the context the reply follows from,
-                           so it reads first, not as a footnote. -->
-                      <div
-                        v-for="(msg, rIdx) in visibleReasoning(group)"
-                        :key="`reasoning-${rIdx}`"
-                        class="mt-3 mb-3"
-                      >
-                        <details class="assistant-reasoning">
-                          <summary
-                            class="cursor-pointer select-none text-dense font-medium opacity-70 hover:opacity-100"
-                            :style="{ color: 'var(--semantic-text-dim)' }"
-                          >
-                            Thought
-                          </summary>
-                          <div
-                            class="mt-1 whitespace-pre-wrap text-dense leading-relaxed opacity-80 border-l-2 pl-3"
-                            :style="{
-                              color: 'var(--semantic-text-dim)',
-                              'border-color': 'var(--color-border)',
-                            }"
-                          >
-                            {{ msg.reasoning_content }}
-                          </div>
-                        </details>
-                      </div>
-                      <!-- Hide the messages block when every message in the group
-                           is empty after stripping thinking tags — this happens
-                           on tool_calls-only assistant turns. The tool header
-                           (if any) is shown above; we don't want an empty
-                           padded area below it. -->
-                      <div
-                        v-if="answeredMessages(group).some(hasVisibleContent)"
-                        class="assistant-messages"
-                      >
-                        <div
-                          v-for="(msg, idx) in answeredMessages(group)"
-                          :key="msg.id || `answer-${idx}`"
-                          class="assistant-item"
-                        >
-                          <!-- <html> and <mermaid> blocks render as themselves;
-                               `sandbox="allow-scripts"` with no same-origin is
-                               the null-origin security boundary. -->
-                          <template v-if="msg.role === 'assistant' && hasRichBlocks(msg.content)">
-                            <template
-                              v-for="(seg, sIdx) in extractRichBlocks(msg.content || '')"
-                              :key="sIdx"
-                            >
-                              <!-- eslint-disable-next-line vue/no-v-html -->
-                              <span
-                                v-if="seg.kind === 'markdown' && seg.payload"
-                                v-html="renderMarkdown(seg.payload)"
-                              ></span>
-                              <iframe
-                                v-else-if="seg.kind === 'html' && seg.payload"
-                                class="chat-html-frame"
-                                sandbox="allow-scripts"
-                                scrolling="no"
-                                style="overflow: hidden"
-                                :srcdoc="buildHtmlSrcdoc(seg.payload)"
-                              ></iframe>
-                              <MermaidDiagram
-                                v-else-if="seg.kind === 'mermaid' && seg.payload"
-                                :source="seg.payload"
-                              />
-                              <PlantUmlDiagram
-                                v-else-if="seg.kind === 'plantuml' && seg.payload"
-                                :source="seg.payload"
-                              />
-                              <D2Diagram
-                                v-else-if="seg.kind === 'd2' && seg.payload"
-                                :source="seg.payload"
-                              />
-                            </template>
-                          </template>
-                          <span v-else v-html="renderMessageHtml(msg)"></span>
-                        </div>
-                      </div>
-                    </template>
-                  </div>
-                  <!-- Timestamp is hidden along with the bubble. The bubble
-                       uses v-if="hasBubbleContent(...)" above; if the
-                       bubble is hidden, the timestamp would otherwise
-                       appear orphaned (this was the "timestamps with no
-                       bubble" visual artifact between tool calls). -->
-                  <!-- <div -->
-                  <!--   v-if="hasBubbleContent(group, groupIndex)" -->
-                  <!--   class="text-dense mt-1 px-1" -->
-                  <!--   :class="group.role === 'user' ? 'text-right' : 'text-left'" -->
-                  <!--   style="color: var(--semantic-text-dim)" -->
-                  <!-- > -->
-                  <!--   {{ formatTime(group.timestamp) }} -->
-                  <!-- </div> -->
-                </div>
-              </div>
-            </div>
+            <ChatMessageRow v-bind="rowProps(group, groupIndex)" />
           </template>
         </VirtualScroller>
 
