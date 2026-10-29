@@ -1,31 +1,28 @@
 <template>
   <div class="login-wrap">
     <form class="login-card" @submit.prevent="onSubmit">
-      <div class="login-brand">
-        <span class="login-mark">A</span>
-        <div>
-          <h1>Welcome back</h1>
-          <p class="login-sub">Sign in to AnakMagang</p>
-        </div>
-      </div>
-      <p v-if="authDisabled" class="muted">
-        Auth is disabled on this server — you should not see this page.
-      </p>
-      <label class="field">
-        <span>Email</span>
+      <h1>Welcome back</h1>
+      <p v-if="authDisabled" class="muted">Authentication is disabled on this server.</p>
+      <div class="field">
+        <label for="login-email">Email</label>
         <input
+          id="login-email"
+          ref="emailInput"
           v-model="email"
           type="email"
           autocomplete="username"
+          autocapitalize="off"
+          spellcheck="false"
           placeholder="you@example.com"
           required
           :disabled="busy"
         />
-      </label>
-      <label class="field">
-        <span>Password</span>
-        <div class="password-row">
+      </div>
+      <div class="field">
+        <label for="login-password">Password</label>
+        <div class="input-shell">
           <input
+            id="login-password"
             v-model="password"
             :type="showPassword ? 'text' : 'password'"
             autocomplete="current-password"
@@ -35,15 +32,16 @@
           />
           <button
             type="button"
-            class="ghost-btn"
+            class="reveal-btn"
             :disabled="busy"
             :aria-label="showPassword ? 'Hide password' : 'Show password'"
+            :aria-pressed="showPassword"
             @click="showPassword = !showPassword"
           >
-            {{ showPassword ? 'Hide' : 'Show' }}
+            <UiIcon :name="showPassword ? 'lock-open' : 'lock'" :size="15" />
           </button>
         </div>
-      </label>
+      </div>
       <p v-if="error" class="error" role="alert">{{ error }}</p>
       <button type="submit" class="primary-btn" :disabled="busy || !canSubmit">
         {{ busy ? 'Signing in…' : 'Sign in' }}
@@ -57,6 +55,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getAuthMeCached, invalidateAuthMe } from '../helpers/authMe'
 import { useSseBus } from '../helpers/sseBus'
+import UiIcon from '../components/ui/UiIcon.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -66,6 +65,7 @@ const error = ref('')
 const busy = ref(false)
 const authDisabled = ref(false)
 const showPassword = ref(false)
+const emailInput = ref<HTMLInputElement | null>(null)
 
 const canSubmit = computed(() => email.value.trim().length > 0 && password.value.length > 0)
 
@@ -88,6 +88,8 @@ function kickSseAfterLogin(): void {
 }
 
 onMounted(async () => {
+  // The only field on the page: a sign-in should never need a click before the first keystroke.
+  emailInput.value?.focus()
   // Already logged in? Skip the form (deep-linkable ?redirect= is honored).
   // Cached: mount must not stall on a slow /me (see helpers/authMe).
   try {
@@ -145,103 +147,94 @@ async function onSubmit() {
 .login-card {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  width: 360px;
+  gap: 16px;
+  width: 320px;
   max-width: 100%;
-  padding: 28px;
-  border-radius: 14px;
+  padding: 24px;
+  border-radius: 12px;
   background: var(--semantic-card-bg);
   border: 1px solid var(--color-border);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
-}
-.login-brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.login-mark {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  font-weight: 700;
-  font-size: var(--text-title-sm);
-  color: var(--semantic-text);
-  background: var(--color-bg-dim);
-  border: 1px solid var(--color-border);
-  flex-shrink: 0;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
 }
 .login-card h1 {
   font-size: var(--text-title-sm);
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: -0.01em;
   margin: 0;
   color: var(--semantic-text);
-}
-.login-sub {
-  font-size: var(--text-dense);
-  margin: 2px 0 0;
-  color: var(--semantic-text-muted);
 }
 .field {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+.field label {
   font-size: var(--text-dense);
   font-weight: 500;
   color: var(--semantic-text-muted);
 }
 .field input {
-  padding: 9px 12px;
-  border-radius: 9px;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 11px;
+  border-radius: 8px;
   border: 1px solid var(--color-border);
   background: var(--color-bg-dim);
   color: var(--semantic-text);
   font-size: var(--text-body);
   outline: none;
-  width: 100%;
-  box-sizing: border-box;
 }
 .field input::placeholder {
   color: var(--semantic-text-dim);
 }
 .field input:focus {
   border-color: var(--semantic-link);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--semantic-link) 18%, transparent);
 }
 .field input:disabled {
   opacity: 0.6;
 }
-.password-row {
+.input-shell {
+  position: relative;
   display: flex;
-  gap: 8px;
 }
-.password-row input {
-  flex: 1;
-  min-width: 0;
+.input-shell input {
+  padding-right: 38px;
 }
-.ghost-btn {
-  padding: 0 12px;
-  border-radius: 9px;
-  border: 1px solid var(--color-border);
+.reveal-btn {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
   background: transparent;
   color: var(--semantic-text-dim);
-  font-size: var(--text-dense);
-  font-weight: 600;
   cursor: pointer;
-  white-space: nowrap;
 }
-.ghost-btn:hover:not(:disabled) {
+.reveal-btn:hover:not(:disabled) {
   color: var(--semantic-text);
-  border-color: var(--color-border-light);
+  background: var(--semantic-active-bg);
+}
+.reveal-btn:focus-visible {
+  outline: 2px solid var(--semantic-link);
+  outline-offset: 1px;
+}
+.reveal-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .error {
   color: var(--semantic-error);
   font-size: var(--text-dense);
   margin: 0;
-  padding: 8px 12px;
-  border-radius: 9px;
+  padding: 7px 10px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--semantic-error) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--semantic-error) 35%, transparent);
 }
@@ -251,20 +244,25 @@ async function onSubmit() {
   margin: 0;
 }
 .primary-btn {
-  padding: 10px 12px;
-  border-radius: 9px;
+  padding: 9px 12px;
+  border-radius: 8px;
   border: none;
   background: var(--semantic-accent);
-  color: #12120f;
+  color: var(--color-bg-dim);
   font-size: var(--text-body);
-  font-weight: 650;
+  font-weight: 600;
   cursor: pointer;
 }
 .primary-btn:hover:not(:disabled) {
   background: var(--semantic-accent-hover);
 }
+.primary-btn:focus-visible {
+  outline: 2px solid var(--semantic-link);
+  outline-offset: 2px;
+}
 .primary-btn:disabled {
-  opacity: 0.55;
+  background: var(--color-bg-p1);
+  color: var(--semantic-text-dim);
   cursor: not-allowed;
 }
 </style>
