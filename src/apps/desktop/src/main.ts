@@ -5,6 +5,9 @@ import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
 import App from './App.vue'
 import router from './router'
 import './style.css'
+import { initTheme } from './theme/runtime'
+
+initTheme()
 
 // Frontend error-log client (POST /api/logs) is DISABLED — it spammed the backend on every
 // console.error/warn. Keep the helper module + its spec for now; just don't install it.

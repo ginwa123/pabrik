@@ -45,31 +45,14 @@ import {
   onPrStatusInvalidated,
 } from '../../helpers/prStatusCache'
 import { formatTaskTimestamp as formatRelativeTime } from '../../helpers/formatTaskTimestamp'
+import { tagStyle } from '../../helpers/tagPalette'
 import UiIcon from '../ui/UiIcon.vue'
 import WorkerElapsedChip from '../WorkerElapsedChip.vue'
 
-// Kanban task tags palette (Migration 067).
-const TAG_PALETTE = [
-  { bg: 'rgba(139, 92, 246, 0.18)', border: 'rgba(139, 92, 246, 0.45)', text: '#a78bfa' },
-  { bg: 'rgba(59, 130, 246, 0.18)', border: 'rgba(59, 130, 246, 0.45)', text: '#60a5fa' },
-  { bg: 'rgba(34, 197, 94, 0.18)', border: 'rgba(34, 197, 94, 0.45)', text: '#4ade80' },
-  { bg: 'rgba(245, 158, 11, 0.18)', border: 'rgba(245, 158, 11, 0.45)', text: '#fbbf24' },
-  { bg: 'rgba(249, 115, 22, 0.18)', border: 'rgba(249, 115, 22, 0.45)', text: '#fb923c' },
-  { bg: 'rgba(239, 68, 68, 0.18)', border: 'rgba(239, 68, 68, 0.45)', text: '#f87171' },
-] as const
-
+// Kanban task tags palette (Migration 067) — shared with the row and the tag editor.
 function tagChipStyle(tag: string): Record<string, string> {
-  let hash = 5381
-  for (const c of tag.toLowerCase()) {
-    hash = ((hash << 5) + hash + c.charCodeAt(0)) >>> 0
-  }
-  const idx = hash % TAG_PALETTE.length
-  const c = TAG_PALETTE[idx] ?? TAG_PALETTE[0]
-  return {
-    backgroundColor: c.bg,
-    border: `1px solid ${c.border}`,
-    color: c.text,
-  }
+  const style = tagStyle(tag)
+  return { backgroundColor: style.backgroundColor, border: style.border, color: style.color }
 }
 
 // Re-inject processingState from App.vue (same key WorkspaceItem and
@@ -596,7 +579,7 @@ onUpdated(() => {
         <div
           class="error-tooltip absolute left-0 top-full mt-1.5 w-[280px] z-50 rounded-lg p-2 pointer-events-none opacity-0 invisible transition-opacity duration-150"
           style="
-            background: #0e0e0c;
+            background: var(--semantic-card-bg);
             border: 1px solid rgba(196, 116, 110, 0.45);
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
           "

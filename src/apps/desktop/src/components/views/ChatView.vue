@@ -118,7 +118,7 @@ const setupCodeBlockCopyButtons = () => {
       btn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS.clipboard.map((d) => `<path d="${d}"/>`).join('')}</svg>`
       btn.title = 'Copy code'
       btn.style.cssText =
-        'position: absolute; top: 8px; right: 8px; padding: 4px 8px; font-size: 12px; cursor: pointer; border: none; background: rgba(255,255,255,0.1); border-radius: 4px; opacity: 0.7; transition: opacity 0.2s;'
+        'position: absolute; top: 8px; right: 8px; padding: 4px 8px; font-size: 12px; cursor: pointer; border: none; background: var(--semantic-active-bg); border-radius: 4px; opacity: 0.7; transition: opacity 0.2s;'
       btn.onmouseover = () => (btn.style.opacity = '1')
       btn.onmouseout = () => (btn.style.opacity = '0.7')
       btn.onclick = (e) => {
@@ -1624,7 +1624,7 @@ const compactSession = async () => {
                             <span
                               v-if="activeAgent === p.name"
                               class="text-micro ml-1 px-1 py-0.5 rounded"
-                              :style="{ backgroundColor: 'var(--color-violet)', color: '#181616' }"
+                              :style="{ backgroundColor: 'var(--color-violet)', color: 'var(--semantic-on-accent)' }"
                               data-testid="agent-picker-active-badge"
                               >(active)</span
                             >

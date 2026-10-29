@@ -34,7 +34,7 @@ const dotColor = computed<string>(() => {
       role="status"
       aria-live="polite"
       class="sticky top-0 left-0 right-0 flex items-center gap-2 px-4 h-9 border-b backdrop-blur-sm"
-      style="background-color: rgba(24, 22, 22, 0.92); border-color: var(--color-border)"
+      style="background-color: color-mix(in srgb, var(--semantic-content-bg) 92%, transparent); border-color: var(--color-border)"
     >
       <span
         class="w-1.5 h-1.5 rounded-full"

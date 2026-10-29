@@ -51,6 +51,7 @@ import { useContextMenu } from '../../composables/useContextMenu'
 import { useAgentErrorStore } from '../../stores/agentError'
 import { parseAgentErrorHeadline } from '../../helpers/parseAgentErrorHeadline'
 import { formatTaskTimestamp, taskTimestampTooltip } from '../../helpers/formatTaskTimestamp'
+import { tagStyle } from '../../helpers/tagPalette'
 import OpenInNewTabMenu from '../shell/OpenInNewTabMenu.vue'
 import UiIcon from '../ui/UiIcon.vue'
 import WorkerElapsedChip from '../WorkerElapsedChip.vue'
@@ -197,24 +198,11 @@ const blockedTitle = computed<string>(() => {
   return names.length > 0 ? `${head}: ${names.join(', ')}` : head
 })
 
-// Same djb2 → 6-colour palette as <WorkspaceItemTaskCard> and
-// <KanbanTagsInput>, so a tag keeps its colour wherever it appears.
-const TAG_PALETTE = [
-  { bg: 'rgba(139, 92, 246, 0.18)', border: 'rgba(139, 92, 246, 0.45)', text: '#a78bfa' },
-  { bg: 'rgba(59, 130, 246, 0.18)', border: 'rgba(59, 130, 246, 0.45)', text: '#60a5fa' },
-  { bg: 'rgba(34, 197, 94, 0.18)', border: 'rgba(34, 197, 94, 0.45)', text: '#4ade80' },
-  { bg: 'rgba(245, 158, 11, 0.18)', border: 'rgba(245, 158, 11, 0.45)', text: '#fbbf24' },
-  { bg: 'rgba(249, 115, 22, 0.18)', border: 'rgba(249, 115, 22, 0.45)', text: '#fb923c' },
-  { bg: 'rgba(239, 68, 68, 0.18)', border: 'rgba(239, 68, 68, 0.45)', text: '#f87171' },
-] as const
-
+// Same djb2 → 6-hue cycle as <WorkspaceItemTaskCard> and <KanbanTagsInput> (helpers/tagPalette), so
+// a tag keeps its colour wherever it appears.
 function tagChipStyle(tag: string): Record<string, string> {
-  let hash = 5381
-  for (const c of tag.toLowerCase()) {
-    hash = ((hash << 5) + hash + c.charCodeAt(0)) >>> 0
-  }
-  const c = TAG_PALETTE[hash % TAG_PALETTE.length] ?? TAG_PALETTE[0]
-  return { backgroundColor: c.bg, border: `1px solid ${c.border}`, color: c.text }
+  const style = tagStyle(tag)
+  return { backgroundColor: style.backgroundColor, border: style.border, color: style.color }
 }
 
 // ─── Keyboard ────────────────────────────────────────────────────────────── The row root is a
@@ -290,7 +278,7 @@ const runAgentFromMenu = () => {
         <span
           v-if="props.task.is_pinned"
           class="mr-1"
-          style="color: #e8c87a"
+          style="color: var(--color-yellow)"
           title="Pinned"
           data-testid="kanban-row-pin-indicator"
           aria-hidden="true"
@@ -369,9 +357,9 @@ const runAgentFromMenu = () => {
     >
       <button
         type="button"
-        class="w-6 h-6 flex items-center justify-center rounded hover:bg-[#2e2d2a]"
+        class="w-6 h-6 flex items-center justify-center rounded hover:bg-(--hover-bg-strong)"
         :class="props.task.is_pinned ? 'opacity-100' : 'opacity-70'"
-        :style="props.task.is_pinned ? 'color: #e8c87a' : 'color: var(--semantic-text-dim)'"
+        :style="props.task.is_pinned ? 'color: var(--color-yellow)' : 'color: var(--semantic-text-dim)'"
         :title="props.task.is_pinned ? 'Unpin task' : 'Pin task'"
         :aria-label="props.task.is_pinned ? 'Unpin task' : 'Pin task'"
         data-testid="task-pin-toggle"
@@ -407,7 +395,7 @@ const runAgentFromMenu = () => {
 
       <button
         type="button"
-        class="w-6 h-6 flex items-center justify-center rounded opacity-70 hover:opacity-100 hover:bg-[#2e2d2a] hover:text-blue-400"
+        class="w-6 h-6 flex items-center justify-center rounded opacity-70 hover:opacity-100 hover:bg-(--hover-bg-strong) hover:text-blue-400"
         style="color: var(--semantic-text-dim)"
         title="Rename task"
         aria-label="Rename task"
@@ -432,7 +420,7 @@ const runAgentFromMenu = () => {
 
       <button
         type="button"
-        class="w-6 h-6 flex items-center justify-center rounded opacity-70 hover:opacity-100 hover:bg-[#2e2d2a]"
+        class="w-6 h-6 flex items-center justify-center rounded opacity-70 hover:opacity-100 hover:bg-(--hover-bg-strong)"
         style="color: var(--semantic-text-dim)"
         title="Open task details"
         aria-label="Open task details"
@@ -444,7 +432,7 @@ const runAgentFromMenu = () => {
 
       <button
         type="button"
-        class="w-6 h-6 flex items-center justify-center rounded opacity-70 hover:opacity-100 hover:bg-[#2e2d2a] hover:text-red-400"
+        class="w-6 h-6 flex items-center justify-center rounded opacity-70 hover:opacity-100 hover:bg-(--hover-bg-strong) hover:text-red-400"
         style="color: var(--semantic-text-dim)"
         title="Delete task"
         aria-label="Delete task"

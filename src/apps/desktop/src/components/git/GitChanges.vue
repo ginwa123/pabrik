@@ -412,7 +412,7 @@ const hasChanges = computed(
             <div
               v-for="file in stagedFiles"
               :key="'staged-' + file.path"
-              class="w-full flex items-center gap-2 px-3 py-1.5 text-body transition-colors hover:bg-white/5 group"
+              class="w-full flex items-center gap-2 px-3 py-1.5 text-body transition-colors hover:bg-(--hover-bg) group"
               @contextmenu="showContextMenu($event, file, true)"
               @click="emit('file-click', file, true)"
             >
@@ -423,7 +423,7 @@ const hasChanges = computed(
               <button
                 @click.stop="unstageFile(file)"
                 :disabled="isStaging"
-                class="p-1 rounded transition-opacity hover:bg-white/10"
+                class="p-1 rounded transition-opacity hover:bg-(--semantic-active-bg)"
                 style="opacity: 0.5"
                 :style="{ opacity: isStaging ? 0.3 : 0.5 }"
                 title="Unstage"
@@ -472,7 +472,7 @@ const hasChanges = computed(
             <div
               v-for="file in unstagedFiles"
               :key="'unstaged-' + file.path"
-              class="w-full flex items-center gap-2 px-3 py-1.5 text-body transition-colors hover:bg-white/5 group"
+              class="w-full flex items-center gap-2 px-3 py-1.5 text-body transition-colors hover:bg-(--hover-bg) group"
               @contextmenu="showContextMenu($event, file, false)"
               @click="emit('file-click', file, false)"
             >
@@ -483,7 +483,7 @@ const hasChanges = computed(
               <button
                 @click.stop="stageFile(file)"
                 :disabled="isStaging"
-                class="p-1 rounded transition-opacity hover:bg-white/10"
+                class="p-1 rounded transition-opacity hover:bg-(--semantic-active-bg)"
                 :style="{ opacity: isStaging ? 0.3 : 0.5 }"
                 title="Stage"
               >
@@ -531,7 +531,7 @@ const hasChanges = computed(
             <div
               v-for="file in untrackedFiles"
               :key="'untracked-' + file.path"
-              class="w-full flex items-center gap-2 px-3 py-1.5 text-body transition-colors hover:bg-white/5 group"
+              class="w-full flex items-center gap-2 px-3 py-1.5 text-body transition-colors hover:bg-(--hover-bg) group"
               @contextmenu="showContextMenu($event, file, false)"
             >
               <UiIcon name="circle" size-class="w-4 h-4" />
@@ -541,7 +541,7 @@ const hasChanges = computed(
               <button
                 @click.stop="stageFile(file)"
                 :disabled="isStaging"
-                class="p-1 rounded transition-opacity hover:bg-white/10"
+                class="p-1 rounded transition-opacity hover:bg-(--semantic-active-bg)"
                 :style="{ opacity: isStaging ? 0.3 : 0.5 }"
                 title="Stage"
               >

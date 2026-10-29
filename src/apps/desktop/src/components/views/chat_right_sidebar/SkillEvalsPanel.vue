@@ -213,14 +213,14 @@ const hasAnything = computed(() => runs.value.length > 0 || results.value.length
     data-testid="skill-evals-panel"
     :data-eval-run="evalRunParam"
   >
-    <header class="flex items-center justify-between px-3 py-2 border-b border-neutral-800">
+    <header class="flex items-center justify-between px-3 py-2 border-b border-(--color-border)">
       <h2 class="text-sm font-medium">Skill Evals</h2>
       <div class="flex items-center gap-2">
         <span v-if="total > 0" class="text-xs text-neutral-400" data-testid="evals-total">
           {{ total }} verdict{{ total === 1 ? '' : 's' }}
         </span>
         <button
-          class="text-xs px-2 py-1 rounded border border-neutral-700 hover:bg-neutral-800"
+          class="text-xs px-2 py-1 rounded border border-(--color-border) hover:bg-(--semantic-active-bg)"
           data-testid="evals-refresh"
           @click="load"
         >
@@ -232,7 +232,7 @@ const hasAnything = computed(() => runs.value.length > 0 || results.value.length
     <!-- The failure is rendered, not swallowed. -->
     <div
       v-if="error"
-      class="px-3 py-2 text-xs text-red-400 border-b border-neutral-800"
+      class="px-3 py-2 text-xs text-red-400 border-b border-(--color-border)"
       data-testid="evals-error"
     >
       Could not load evals: {{ error }}
@@ -270,7 +270,7 @@ const hasAnything = computed(() => runs.value.length > 0 || results.value.length
         <li
           v-for="c in counts"
           :key="c.verdict"
-          class="text-xs px-2 py-0.5 rounded border border-neutral-700"
+          class="text-xs px-2 py-0.5 rounded border border-(--color-border)"
           :class="verdictClass(c.verdict)"
         >
           {{ c.verdict }}: {{ c.n }}
@@ -278,7 +278,7 @@ const hasAnything = computed(() => runs.value.length > 0 || results.value.length
       </ul>
 
       <!-- Runs -->
-      <ul class="divide-y divide-neutral-800" data-testid="evals-runs">
+      <ul class="divide-y divide-(--color-border)" data-testid="evals-runs">
         <li v-for="run in runs" :key="run.id" class="px-3 py-2">
           <button
             class="w-full text-left"
@@ -310,7 +310,7 @@ const hasAnything = computed(() => runs.value.length > 0 || results.value.length
           <li
             v-for="r in results"
             :key="r.id"
-            class="rounded border border-neutral-800 p-2"
+            class="rounded border border-(--color-border) p-2"
             :data-testid="`evals-result-${r.id}`"
           >
             <div class="flex items-center justify-between">
@@ -333,7 +333,7 @@ const hasAnything = computed(() => runs.value.length > 0 || results.value.length
               </span>
               <button
                 v-else
-                class="text-xs px-2 py-1 rounded border border-neutral-700 hover:bg-neutral-800 disabled:opacity-50"
+                class="text-xs px-2 py-1 rounded border border-(--color-border) hover:bg-(--semantic-active-bg) disabled:opacity-50"
                 :disabled="applying === r.id"
                 :data-testid="`evals-apply-${r.id}`"
                 @click="apply(r)"

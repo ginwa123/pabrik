@@ -6,6 +6,7 @@ import {
   growFrameToContent,
   readAutoResizeHeight,
 } from './iframeAutoResize'
+import { activeScheme, activeTheme } from '../theme/runtime'
 
 /**
  * The frame is a separate NULL-origin document, so app CSS custom properties do not cascade in.
@@ -31,6 +32,7 @@ export const HTML_FRAME_PALETTE_FALLBACK: HtmlFramePalette = {
 }
 
 let htmlFramePalette: HtmlFramePalette | null = null
+let htmlFramePaletteTheme: string | null = null
 
 const readCssVar = (name: string, fallback: string): string => {
   if (typeof window === 'undefined' || typeof getComputedStyle !== 'function') return fallback
@@ -38,9 +40,11 @@ const readCssVar = (name: string, fallback: string): string => {
   return value || fallback
 }
 
-/** Memoized: the theme is fixed for the app's lifetime and this runs on every assistant render. */
+/** Memoized PER THEME: this runs on every assistant render, and a theme flip must re-read the
+ * tokens rather than reuse the shell painted for the previous theme. */
 export const resolveHtmlFramePalette = (): HtmlFramePalette => {
-  if (htmlFramePalette) return htmlFramePalette
+  const theme = activeTheme()
+  if (htmlFramePalette && htmlFramePaletteTheme === theme) return htmlFramePalette
   const fallback = HTML_FRAME_PALETTE_FALLBACK
   htmlFramePalette = {
     bg: readCssVar('--semantic-card-bg', fallback.bg),
@@ -51,6 +55,7 @@ export const resolveHtmlFramePalette = (): HtmlFramePalette => {
     chip: readCssVar('--color-bg-p1', fallback.chip),
     codeInk: readCssVar('--color-aqua', fallback.codeInk),
   }
+  htmlFramePaletteTheme = theme
   return htmlFramePalette
 }
 
@@ -69,7 +74,9 @@ export const buildHtmlSrcdoc = (block: string): string => {
   return (
     '<!DOCTYPE html><html><head><meta charset="utf-8">' +
     '<style>' +
-    ':root{color-scheme:dark}' +
+    ':root{color-scheme:' +
+    activeScheme() +
+    '}' +
     'html,body{margin:0;padding:0}' +
     `body{font-family:system-ui,sans-serif;background:${p.bg};color:${p.fg};margin:8px}` +
     `a{color:${p.link}}` +

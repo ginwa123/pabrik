@@ -277,7 +277,7 @@ const errorRetryLabel = computed(() =>
         <div
           class="error-tooltip absolute left-0 top-full mt-1.5 w-[240px] z-50 rounded-lg p-2 pointer-events-none opacity-0 invisible transition-opacity duration-150"
           style="
-            background: #0e0e0c;
+            background: var(--semantic-card-bg);
             border: 1px solid rgba(196, 116, 110, 0.45);
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
           "

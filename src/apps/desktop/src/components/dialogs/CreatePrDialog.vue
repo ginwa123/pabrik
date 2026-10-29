@@ -197,7 +197,7 @@ const onClose = () => {
               background-color: var(--semantic-input-bg, var(--semantic-card-bg));
               border: 1px solid var(--color-border);
               color: var(--semantic-text);
-              color-scheme: dark;
+              color-scheme: var(--color-scheme);
             "
             placeholder="main"
           />
@@ -215,7 +215,7 @@ const onClose = () => {
               background-color: var(--semantic-input-bg, var(--semantic-card-bg));
               border: 1px solid var(--color-border);
               color: var(--semantic-text);
-              color-scheme: dark;
+              color-scheme: var(--color-scheme);
             "
             :placeholder="`${forge.short} title`"
           />
@@ -233,7 +233,7 @@ const onClose = () => {
               background-color: var(--semantic-input-bg, var(--semantic-card-bg));
               border: 1px solid var(--color-border);
               color: var(--semantic-text);
-              color-scheme: dark;
+              color-scheme: var(--color-scheme);
             "
             placeholder="Describe the changes..."
           ></textarea>

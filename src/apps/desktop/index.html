@@ -15,6 +15,17 @@
     -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Pabrik</title>
+    <!-- Pre-paint theme: the stored theme lands on <html> before the module
+         loads, so a light-theme user never sees a frame of the dark palette.
+         The key is `THEME_STORAGE_KEY` in src/theme/themes.ts — keep them in step. -->
+    <script>
+      try {
+        var storedTheme = localStorage.getItem('pabrik-theme')
+        if (storedTheme) document.documentElement.dataset.theme = storedTheme
+      } catch {
+        /* storage blocked: the default dark palette stands */
+      }
+    </script>
   </head>
   <body>
     <div id="app"></div>

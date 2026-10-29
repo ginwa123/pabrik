@@ -12,8 +12,17 @@ import type { CompactChainItem } from '../../tool_outputs/compact/chain'
 import { hasRichBlocks, extractRichBlocks, renderMarkdown } from '@/helpers'
 import { hasSkillEnvelope } from '../../../helpers/skillEnvelope'
 import { buildHtmlSrcdoc } from '../../../helpers/chatHtmlFrame'
+import { useThemeTick } from '../../../composables/useThemeTick'
 import type { ChatViewMode } from '../../../stores/chatView'
 import type { Message, MessageGroup } from './useChatMessagePresentation'
+
+const themeTick = useThemeTick()
+
+/** The shell is a string of literal colours, so it is rebuilt when the theme changes. */
+function htmlFrameSrcDoc(block: string): string {
+  void themeTick.value
+  return buildHtmlSrcdoc(block)
+}
 
 defineProps<{
   group: MessageGroup
@@ -262,7 +271,7 @@ defineProps<{
                       sandbox="allow-scripts"
                       scrolling="no"
                       style="overflow: hidden"
-                      :srcdoc="buildHtmlSrcdoc(seg.payload)"
+                      :srcdoc="htmlFrameSrcDoc(seg.payload)"
                     ></iframe>
                     <MermaidDiagram
                       v-else-if="seg.kind === 'mermaid' && seg.payload"
@@ -318,7 +327,7 @@ defineProps<{
   border: 1px solid var(--color-border, #ddd);
   border-radius: 8px;
   background: var(--semantic-card-bg, #1d1c19);
-  color-scheme: dark;
+  color-scheme: var(--color-scheme);
   overflow: hidden;
   scrollbar-width: none;
 }

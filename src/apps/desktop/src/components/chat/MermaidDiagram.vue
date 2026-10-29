@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /** MermaidDiagram — one `<mermaid>…</mermaid>` block of an assistant turn, drawn as SVG. Owns no
- * theme and no colour: `helpers/mermaid.ts` reads the app's CSS variables and initializes Mermaid
- * with them. Clicking it opens a preview; the source is one click away. */
+ * palette: `helpers/mermaid.ts` reads the app's CSS variables. What it does own is the redraw after
+ * a theme flip, because the SVG carries a scoped stylesheet of literal colours. */
 import { computed, onBeforeUnmount, onMounted, onUpdated, ref } from 'vue'
 import UiIcon from '../ui/UiIcon.vue'
 import { renderMermaid } from '../../helpers/mermaid'
+import { onThemeApplied, themeRevision } from '../../theme/runtime'
 
 const props = defineProps<{ source: string }>()
 
@@ -13,18 +14,21 @@ const failure = ref('')
 const copied = ref(false)
 const preview = ref(false)
 
-// The source this component has already asked for. `onUpdated` fires on ANY parent re-render (a
-// streaming sibling, a scroll), so the draw is keyed on the source rather than on the update.
+// The source AND the theme revision this component has already asked for. `onUpdated` fires on ANY
+// parent re-render (a streaming sibling, a scroll), so the draw is keyed on both: a theme flip has to
+// rebuild the SVG, whose scoped stylesheet holds literal colours.
 let drawn = ''
 // Token so a slow render cannot overwrite the result of a newer one.
 let token = 0
 let copyTimer: ReturnType<typeof setTimeout> | null = null
+let offThemeApplied: (() => void) | null = null
 // Restored when the overlay closes: the transcript's own overflow is not always `''`.
 let overflowBeforePreview = ''
 
 const draw = (): void => {
-  if (drawn === props.source) return
-  drawn = props.source
+  const key = `${themeRevision.value}\u0000${props.source}`
+  if (drawn === key) return
+  drawn = key
   const mine = ++token
   svg.value = ''
   failure.value = ''
@@ -38,7 +42,10 @@ const draw = (): void => {
     })
 }
 
-onMounted(draw)
+onMounted(() => {
+  draw()
+  offThemeApplied = onThemeApplied(draw)
+})
 onUpdated(draw)
 
 // A Mermaid parse error is a multi-line dump with the offending source line in it; the first line
@@ -87,6 +94,8 @@ const closePreview = (): void => {
 }
 
 onBeforeUnmount(() => {
+  offThemeApplied?.()
+  offThemeApplied = null
   if (copyTimer) clearTimeout(copyTimer)
   if (preview.value) closePreview()
 })

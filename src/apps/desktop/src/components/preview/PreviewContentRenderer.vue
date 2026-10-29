@@ -47,6 +47,7 @@
 -->
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useThemeTick } from '../../composables/useThemeTick'
 import { marked } from 'marked'
 import {
   PREVIEW_AUTO_RESIZE_SCRIPT,
@@ -66,6 +67,8 @@ export interface PreviewArgs {
   language?: string
   caption?: string
 }
+
+const themeTick = useThemeTick()
 
 const props = withDefaults(
   defineProps<{
@@ -151,8 +154,9 @@ const imageSrc = computed<string | null>(() => {
 })
 
 /** Build the iframe's `srcdoc` value from the user HTML. CRITICAL: do NOT manually escape `<`, `>`,
- * `&`, `"` here. */
+ * `&`, `"` here. The shell carries literal colours, so the tick makes it rebuild on a theme change. */
 const htmlSrcDoc = computed<string | null>(() => {
+  void themeTick.value
   if (props.contentType !== 'html') return null
   const raw = props.args.content ?? ''
   return `${PREVIEW_AUTO_RESIZE_SCRIPT}${frameDocumentStyle()}${raw}`

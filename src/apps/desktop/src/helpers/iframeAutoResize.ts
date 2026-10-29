@@ -1,3 +1,5 @@
+import { activeScheme } from '../theme/runtime'
+
 /** Shared "content iframe reports its own height" protocol. A sandboxed content iframe
  * (`sandbox="allow-scripts"`, NULL origin) cannot be measured from the parent — `contentDocument`
  * is off-limits, so the parent has no way to learn the height of what the frame rendered. */
@@ -54,10 +56,10 @@ export function resolveFrameCanvasBackground(): string {
 }
 
 /** `<style>` shell prepended to a fetched HTML document inside a preview frame: paints the canvas
- * with the app surface — NEVER a hardcoded `#fff`, which shows as a bright slab in the dark theme
- * wherever the document's own `body` box does not cover the canvas. */
+ * with the app surface (never a hardcoded `#fff`, which shows as a bright slab in the dark theme) and
+ * declares the theme's scheme so the frame's native controls match it. */
 export function frameDocumentStyle(canvas: string = resolveFrameCanvasBackground()): string {
-  return `<style>html,body{margin:0;padding:0;background:${canvas};}${FRAME_NO_SCROLLBAR_STYLE}</style>`
+  return `<style>html,body{margin:0;padding:0;background:${canvas};color-scheme:${activeScheme()};}${FRAME_NO_SCROLLBAR_STYLE}</style>`
 }
 
 /**  * Read a sender's reported height out of a `message` event. Returns `null` for anything that isn't

@@ -343,7 +343,7 @@ defineExpose({ refresh })
       <div class="flex-1 overflow-y-auto" @scroll="onScroll">
         <template v-for="commit in commits" :key="commit.sha">
           <button
-            class="w-full flex items-center gap-2 px-3 py-1.5 text-body text-left transition-colors hover:bg-white/5"
+            class="w-full flex items-center gap-2 px-3 py-1.5 text-body text-left transition-colors hover:bg-(--hover-bg)"
             :style="{
               backgroundColor:
                 selectedSha === commit.sha ? 'var(--semantic-active-bg)' : 'transparent',
@@ -403,7 +403,7 @@ defineExpose({ refresh })
             >
               <template v-for="file in detailCache[commit.sha]?.files ?? []" :key="file.path">
                 <button
-                  class="w-full flex items-center gap-2 text-dense text-left rounded px-1 py-0.5 transition-colors hover:bg-white/5"
+                  class="w-full flex items-center gap-2 text-dense text-left rounded px-1 py-0.5 transition-colors hover:bg-(--hover-bg)"
                   :title="`Show diff at ${commit.short_sha}`"
                   @click="toggleFile(commit, file)"
                 >
