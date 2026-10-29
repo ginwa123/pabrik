@@ -2,13 +2,9 @@
  * legitimately-saved messages were invisible in the chatview: F1. */
 import { describe, it, expect } from 'vitest'
 import { stripThinkingTags } from '../helpers/stripTags'
+import { readChatViewSource as readChatViewBundle } from './helpers/chatViewSource'
 
-const readChatViewSource = async (): Promise<string> => {
-  const fs = await import('node:fs/promises')
-  const path = await import('node:path')
-  const chatviewPath = path.resolve(__dirname, '..', 'components', 'views', 'ChatView.vue')
-  return fs.readFile(chatviewPath, 'utf8')
-}
+const readChatViewSource = async (): Promise<string> => readChatViewBundle()
 
 const readPresentationSource = async (): Promise<string> => {
   const fs = await import('node:fs/promises')

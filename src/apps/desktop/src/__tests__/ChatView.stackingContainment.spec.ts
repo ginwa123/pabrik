@@ -13,9 +13,10 @@ import ChatView from '../components/views/ChatView.vue'
 import { installSseBus, __resetSseBus, __setSseBusGlobalClient } from '../helpers/sseBus'
 import type { SseClient, SseState } from '../helpers/sseClient'
 import { makeLocalStorageStub } from './helpers'
+import { readChatViewSource } from './helpers/chatViewSource'
 
 const __dir = dirname(fileURLToPath(import.meta.url))
-const chatViewSrc = readFileSync(resolve(__dir, '../components/views/ChatView.vue'), 'utf8')
+const chatViewSrc = readChatViewSource()
 const appLayoutSrc = readFileSync(resolve(__dir, '../components/AppLayout.vue'), 'utf8')
 
 const { useRouteMock, useRouterMock } = vi.hoisted(() => ({

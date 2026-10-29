@@ -1,13 +1,9 @@
 /** Source-contract tests for the 2026-09-09 chatview user-pill work: cursor-pagination fixes +
  * pill-rail wiring in ChatView.vue. */
 import { describe, it, expect } from 'vitest'
+import { readChatViewSource as readChatViewBundle } from './helpers/chatViewSource'
 
-const readChatViewSource = async (): Promise<string> => {
-  const fs = await import('node:fs/promises')
-  const path = await import('node:path')
-  const chatviewPath = path.resolve(__dirname, '..', 'components', 'views', 'ChatView.vue')
-  return fs.readFile(chatviewPath, 'utf8')
-}
+const readChatViewSource = async (): Promise<string> => readChatViewBundle()
 
 describe('pagination — cursor advances on loadMore', () => {
   it('advances messageCursor + hasMoreMessages on the initial load AND on every prepend', async () => {
