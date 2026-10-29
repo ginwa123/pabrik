@@ -3,9 +3,7 @@
  * event (sse_on_event_send_llm_history.zig:45). */
 import { describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
+import { readChatViewSource } from '../../../__tests__/helpers/chatViewSource'
 import type * as api from '../../../api'
 
 const SID = 'sess_target'
@@ -76,8 +74,7 @@ describe('ChatView live skills harness', () => {
 })
 
 describe('ChatView.vue live-skills wiring (static contract)', () => {
-  const here = dirname(fileURLToPath(import.meta.url))
-  const src = readFileSync(join(here, '..', 'ChatView.vue'), 'utf8')
+  const src = readChatViewSource()
   const llmHandler = src.slice(src.indexOf("bus.on('llm'"))
 
   it('handler reads session_skills into sessionSkills', () => {

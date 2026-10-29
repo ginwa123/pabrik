@@ -413,7 +413,7 @@
       "count": 1
     },
     "local/no-try-catch": {
-      "count": 25
+      "count": 23
     }
   },
   "src/components/views/ChatsList.vue": {
@@ -541,6 +541,11 @@
     },
     "local/no-try-catch": {
       "count": 1
+    }
+  },
+  "src/components/views/chat_view/useChatSse.ts": {
+    "local/no-try-catch": {
+      "count": 2
     }
   },
   "src/components/workspace/WorkspaceItemTaskCard.vue": {
