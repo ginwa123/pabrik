@@ -90,8 +90,8 @@ pub const Observation = struct {
     recorded: State = .absent,
     attempts: u32 = 0,
     retry_at_ms: i64 = 0,
-    /// When the current attempt started, so the hello deadline has an origin.
     since_ms: i64 = 0,
+    hello_ms: i64 = 0,
     now_ms: i64 = 0,
 };
 
@@ -127,6 +127,8 @@ pub fn decide(obs: Observation, config: Config) Decision {
     }
     if (live_pid) {
         if (obs.hello_answered) return .{ .adopt = obs.pid };
+        if (obs.hello_ms != 0) return .{ .adopt = obs.pid };
+        if (obs.recorded == .failed) return .{ .await_hello = obs.pid };
         if (obs.since_ms != 0 and obs.now_ms - obs.since_ms >= config.hello_deadline_ms) {
             return refuse(.guest_never_answered_hello, obs, config, "the guest never answered hello");
         }
@@ -190,6 +192,7 @@ pub const Record = struct {
     attempts: u32 = 0,
     retry_at_ms: i64 = 0,
     since_ms: i64 = 0,
+    hello_ms: i64 = 0,
 
     /// Every `Record` owns `last_error`, empty or not, so a caller can always
     /// free it and a static string is never passed to the allocator.
@@ -223,6 +226,8 @@ pub fn parseRecord(allocator: std.mem.Allocator, text: []const u8) !Record {
             record.retry_at_ms = std.fmt.parseInt(i64, value, 10) catch 0;
         } else if (std.mem.eql(u8, key, "since_ms")) {
             record.since_ms = std.fmt.parseInt(i64, value, 10) catch 0;
+        } else if (std.mem.eql(u8, key, "hello_ms")) {
+            record.hello_ms = std.fmt.parseInt(i64, value, 10) catch 0;
         }
     }
     return record;
@@ -238,6 +243,7 @@ pub fn renderRecord(allocator: std.mem.Allocator, record: Record) ![]u8 {
     try out.print(allocator, "attempts={d}\n", .{record.attempts});
     try out.print(allocator, "retry_at_ms={d}\n", .{record.retry_at_ms});
     try out.print(allocator, "since_ms={d}\n", .{record.since_ms});
+    try out.print(allocator, "hello_ms={d}\n", .{record.hello_ms});
     try out.appendSlice(allocator, "error=");
     for (record.last_error) |ch| {
         try out.append(allocator, if (ch < 0x20 or ch == 0x7f) ' ' else ch);
@@ -521,6 +527,7 @@ pub const Reconciler = struct {
             .attempts = prior.attempts,
             .retry_at_ms = prior.retry_at_ms,
             .since_ms = prior.since_ms,
+            .hello_ms = prior.hello_ms,
             .now_ms = self.env.nowMs(self.env.ctx),
         };
         if (alive) obs.hello_answered = self.env.helloAnswered(self.env.ctx, layout);
@@ -535,6 +542,7 @@ pub const Reconciler = struct {
                 .attempts = prior.attempts,
                 .retry_at_ms = prior.retry_at_ms,
                 .since_ms = prior.since_ms,
+                .hello_ms = 0,
                 .last_error = try allocator.dupe(u8, prior.last_error),
             },
             .adopt => |live| Record{
@@ -542,6 +550,7 @@ pub const Reconciler = struct {
                 .pid = live,
                 .attempts = prior.attempts,
                 .since_ms = prior.since_ms,
+                .hello_ms = if (obs.hello_answered) obs.now_ms else prior.hello_ms,
                 .last_error = try allocator.dupe(u8, ""),
             },
             .await_hello => |live| Record{
@@ -549,6 +558,7 @@ pub const Reconciler = struct {
                 .pid = live,
                 .attempts = prior.attempts,
                 .since_ms = if (prior.since_ms != 0) prior.since_ms else obs.now_ms,
+                .hello_ms = prior.hello_ms,
                 .last_error = try allocator.dupe(u8, ""),
             },
             .refuse => |r| Record{
@@ -558,6 +568,7 @@ pub const Reconciler = struct {
                 .attempts = prior.attempts + 1,
                 .retry_at_ms = r.retry_at_ms,
                 .since_ms = prior.since_ms,
+                .hello_ms = prior.hello_ms,
             },
         };
         try self.writeRecord(layout, record);
@@ -572,6 +583,7 @@ pub const Reconciler = struct {
             .pid = pid,
             .attempts = attempts,
             .since_ms = since_ms,
+            .hello_ms = self.env.nowMs(self.env.ctx),
             .last_error = try allocator.dupe(u8, ""),
         };
         try self.writeRecord(layout, record);
@@ -1260,6 +1272,7 @@ test "a recorded state survives a restart, and an unknown one reads absent" {
         .attempts = 3,
         .retry_at_ms = 99,
         .since_ms = 12,
+        .hello_ms = 7,
     });
     defer alloc.free(text);
     try scratch.write("demo", "vmd.state", text);
@@ -1272,6 +1285,7 @@ test "a recorded state survives a restart, and an unknown one reads absent" {
     try std.testing.expectEqual(@as(u32, 3), read.attempts);
     try std.testing.expectEqual(@as(i64, 99), read.retry_at_ms);
     try std.testing.expectEqual(@as(i64, 12), read.since_ms);
+    try std.testing.expectEqual(@as(i64, 7), read.hello_ms);
 
     try scratch.write("other", "vmd.state", "state=who knows\npid=oops\n");
     const unknown = try rec.read(alloc, "other");
@@ -1473,4 +1487,100 @@ test "the reaper never touches a workspace with no VM to stop" {
     try std.testing.expectEqual(@as(u32, 0), report.reaped);
     try std.testing.expectEqual(@as(u32, 0), fake.kills);
     try std.testing.expectEqual(@as(u32, 1), report.absent);
+}
+
+const ready_state = "state=ready\npid=4242\nattempts=0\nretry_at_ms=0\nsince_ms=1000\nhello_ms=2000\nerror=\n";
+
+test "a busy guest keeps its workspace ready instead of failing it" {
+    var scratch = try Scratch.init("busy-ready");
+    defer scratch.deinit();
+    try scratch.write("demo", "fc.pid", "4242\n");
+    try scratch.write("demo", "vmd.state", ready_state);
+    var fake = Fake{ .alive = true, .now = 5_000_000 };
+    const rec = testReconciler(&fake, scratch.root);
+    const alloc = std.testing.allocator;
+
+    const record = try rec.request(alloc, "demo");
+    defer record.deinit(alloc);
+    try std.testing.expectEqual(State.ready, record.state);
+    try std.testing.expectEqual(@as(i64, 4242), record.pid);
+    try std.testing.expectEqual(@as(i64, 2000), record.hello_ms);
+    try std.testing.expectEqualStrings("", record.last_error);
+    try std.testing.expectEqual(@as(u32, 0), fake.boots);
+    try std.testing.expectEqual(@as(u32, 0), fake.kills);
+}
+
+test "a workspace recorded failed whose VMM is alive is probed again, not answered from the verdict" {
+    var scratch = try Scratch.init("failed-live");
+    defer scratch.deinit();
+    try scratch.write("demo", "fc.pid", "4242\n");
+    try scratch.write("demo", "vmd.state", "state=failed\npid=4242\nattempts=9\nretry_at_ms=0\nsince_ms=1000\nerror=the guest never answered hello\n");
+    var fake = Fake{ .alive = true, .now = 5_000_000 };
+    const rec = testReconciler(&fake, scratch.root);
+    const alloc = std.testing.allocator;
+
+    const healed = try rec.request(alloc, "demo");
+    defer healed.deinit(alloc);
+    try std.testing.expectEqual(State.ready, healed.state);
+    try std.testing.expectEqual(@as(i64, 4242), healed.pid);
+    try std.testing.expectEqual(@as(i64, 5_000_000), healed.hello_ms);
+    try std.testing.expectEqual(@as(u32, 9), healed.attempts);
+    try std.testing.expectEqual(@as(u32, 0), fake.boots);
+    try std.testing.expectEqual(@as(u32, 0), fake.kills);
+}
+
+test "a busy guest is asked for hello, not condemned, when its record is already failed" {
+    var scratch = try Scratch.init("failed-busy");
+    defer scratch.deinit();
+    try scratch.write("demo", "fc.pid", "4242\n");
+    try scratch.write("demo", "vmd.state", "state=failed\npid=4242\nattempts=9\nretry_at_ms=0\nsince_ms=1000\nerror=the guest never answered hello\n");
+    var fake = Fake{ .alive = true, .now = 5_000_000, .ready = false };
+    const rec = testReconciler(&fake, scratch.root);
+    const alloc = std.testing.allocator;
+
+    const record = try rec.observe(alloc, "demo");
+    defer record.deinit(alloc);
+    try std.testing.expectEqual(State.starting, record.state);
+    try std.testing.expectEqual(@as(u32, 9), record.attempts);
+    try std.testing.expectEqual(@as(i64, 4242), record.pid);
+    try std.testing.expectEqual(@as(u32, 0), fake.kills);
+}
+
+test "the moment a guest answers hello is kept, so a later miss is not a failed boot" {
+    var scratch = try Scratch.init("hello-moment");
+    defer scratch.deinit();
+    try scratch.write("demo", "fc.pid", "4242\n");
+    var fake = Fake{ .alive = true, .hello = true, .now = 5_000_000 };
+    const rec = testReconciler(&fake, scratch.root);
+    const alloc = std.testing.allocator;
+
+    const ready = try rec.observe(alloc, "demo");
+    defer ready.deinit(alloc);
+    try std.testing.expectEqual(State.ready, ready.state);
+    try std.testing.expectEqual(@as(i64, 5_000_000), ready.hello_ms);
+
+    fake.hello = false;
+    fake.now = 5_400_000;
+    const busy = try rec.observe(alloc, "demo");
+    defer busy.deinit(alloc);
+    try std.testing.expectEqual(State.ready, busy.state);
+    try std.testing.expectEqual(@as(i64, 5_000_000), busy.hello_ms);
+    try std.testing.expectEqual(@as(u32, 0), busy.attempts);
+}
+
+test "a VMM that has never answered hello still fails after the boot deadline" {
+    var scratch = try Scratch.init("never-hello");
+    defer scratch.deinit();
+    try scratch.write("demo", "fc.pid", "4242\n");
+    try scratch.write("demo", "vmd.state", "state=starting\npid=4242\nattempts=1\nretry_at_ms=0\nsince_ms=1000\nhello_ms=0\nerror=\n");
+    var fake = Fake{ .alive = true, .now = 5_000_000 };
+    const rec = testReconciler(&fake, scratch.root);
+    const alloc = std.testing.allocator;
+
+    const record = try rec.observe(alloc, "demo");
+    defer record.deinit(alloc);
+    try std.testing.expectEqual(State.failed, record.state);
+    try std.testing.expectEqualStrings("the guest never answered hello", record.last_error);
+    try std.testing.expectEqual(@as(i64, 0), record.hello_ms);
+    try std.testing.expectEqual(@as(u32, 0), fake.kills);
 }
