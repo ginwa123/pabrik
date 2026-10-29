@@ -46,11 +46,7 @@ fn probeDir(
     head_buf: *[max_head_bytes]u8,
 ) DirProbe {
     var git_entry_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
-    const git_entry = std.fmt.bufPrint(
-        &git_entry_buf,
-        "{s}{c}{s}",
-        .{ dir, std.fs.path.sep, git_entry_name },
-    ) catch return .not_a_repo;
+    const git_entry = childPath(&git_entry_buf, dir, git_entry_name) orelse return .not_a_repo;
 
     var head_path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     if (childPath(&head_path_buf, git_entry, head_name)) |head_path| {
@@ -72,7 +68,12 @@ fn probeDir(
     return .no_branch;
 }
 
+/// One separator, never two: a Windows `\\?\` path is rejected outright when a
+/// component is empty, and a drive root already ends with the separator.
 fn childPath(buf: []u8, parent: []const u8, name: []const u8) ?[]const u8 {
+    if (parent.len > 0 and parent[parent.len - 1] == std.fs.path.sep) {
+        return std.fmt.bufPrint(buf, "{s}{s}", .{ parent, name }) catch null;
+    }
     return std.fmt.bufPrint(buf, "{s}{c}{s}", .{ parent, std.fs.path.sep, name }) catch null;
 }
 
@@ -91,7 +92,7 @@ fn gitDirFromEntry(allocator: std.mem.Allocator, dir: []const u8, entry: []const
     const target = std.mem.trim(u8, line[gitdir_prefix.len..], " \t\r\n");
     if (target.len == 0) return null;
     if (std.fs.path.isAbsolute(target)) return allocator.dupe(u8, target) catch null;
-    return std.fs.path.join(allocator, &.{ dir, target }) catch null;
+    return std.fs.path.resolve(allocator, &.{ dir, target }) catch null;
 }
 
 fn branchFromHead(allocator: std.mem.Allocator, content: []const u8) ?[]u8 {

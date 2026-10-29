@@ -18,12 +18,32 @@ pub const seed_cwds = [_][]const u8{
     "/pabrik-bench/cwd-c",
 };
 
-const seed_sql =
-    \\INSERT OR REPLACE INTO sessions (id, name, status, cwd, created_at, updated_at)
-    \\VALUES (?, ?, 'active', ?,
-    \\        strftime('%Y-%m-%d %H:%M:%S', '2026-01-01 00:00:00', ?),
-    \\        strftime('%Y-%m-%d %H:%M:%S', '2026-01-01 00:00:00', ?))
-;
+const seed_sql_head = pabrikcore.dialect.upsert_verb ++
+    " INTO sessions (id, name, status, cwd, created_at, updated_at) VALUES (";
+const seed_sql_tail = ")" ++
+    (if (pabrikcore.dialect.is_postgres)
+        " ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, status = EXCLUDED.status," ++
+            " cwd = EXCLUDED.cwd, created_at = EXCLUDED.created_at, updated_at = EXCLUDED.updated_at"
+    else
+        "");
+
+/// 2026-01-01T00:00:00Z, the first seeded row's timestamp.
+const seed_epoch: u64 = 1_767_225_600;
+
+fn seedTimestamp(buf: []u8, row: u32) ![]const u8 {
+    const stamp = std.time.epoch.EpochSeconds{ .secs = seed_epoch + @as(u64, row) * 60 };
+    const day = stamp.getEpochDay().calculateYearDay();
+    const month = day.calculateMonthDay();
+    const clock = stamp.getDaySeconds();
+    return std.fmt.bufPrint(buf, "{d:0>4}-{d:0>2}-{d:0>2} {d:0>2}:{d:0>2}:{d:0>2}", .{
+        day.year,
+        month.month.numeric(),
+        month.day_index + 1,
+        clock.getHoursIntoDay(),
+        clock.getMinutesIntoHour(),
+        clock.getSecondsIntoMinute(),
+    });
+}
 
 fn gateEnabled() bool {
     const value = std.c.getenv("PABRIK_BENCH_SEED") orelse return false;
@@ -41,21 +61,17 @@ pub fn parseRows(raw: ?[]const u8) u32 {
 pub fn seedSessions(allocator: std.mem.Allocator, db: *pabrikcore.database.Db, rows: u32) !void {
     var n: u32 = 1;
     while (n <= @min(rows, max_rows)) : (n += 1) {
-        var id_buf: [16]u8 = undefined;
-        var name_buf: [32]u8 = undefined;
-        var offset_buf: [16]u8 = undefined;
+        var stamp_buf: [24]u8 = undefined;
+        const stamp = try seedTimestamp(&stamp_buf, n);
 
-        const id = try std.fmt.bufPrint(&id_buf, "bench-{d:0>4}", .{n});
-        const name = try std.fmt.bufPrint(&name_buf, "Bench session {d:0>4}", .{n});
-        const offset = try std.fmt.bufPrint(&offset_buf, "+{d} seconds", .{n * 60});
+        const sql = try std.fmt.allocPrint(
+            allocator,
+            "{s}'bench-{d:0>4}', 'Bench session {d:0>4}', 'active', '{s}', '{s}', '{s}'{s}",
+            .{ seed_sql_head, n, n, seed_cwds[(n - 1) % seed_cwds.len], stamp, stamp, seed_sql_tail },
+        );
+        defer allocator.free(sql);
 
-        try db.exec(allocator, seed_sql, &.{
-            id,
-            name,
-            seed_cwds[(n - 1) % seed_cwds.len],
-            offset,
-            offset,
-        });
+        try db.exec(allocator, sql, &.{});
     }
 }
 
@@ -144,6 +160,7 @@ test "seeding fifty rows leaves fifty sessions spread over the three directories
 
     try testing.expectEqual(@as(u32, 50), try countRows(&ctx, "SELECT COUNT(*) FROM sessions"));
     try testing.expectEqual(@as(u32, 3), try countRows(&ctx, "SELECT COUNT(DISTINCT cwd) FROM sessions"));
+    try testing.expectEqual(@as(u32, 50), try countRows(&ctx, "SELECT COUNT(DISTINCT created_at) FROM sessions"));
     try testing.expectEqual(@as(u32, 0), try countRows(&ctx, "SELECT COUNT(*) FROM sessions WHERE cwd NOT IN ('/pabrik-bench/cwd-a','/pabrik-bench/cwd-b','/pabrik-bench/cwd-c')"));
 }
 
@@ -175,7 +192,7 @@ test "a seeded row carries the same id, name and timestamps every run" {
     try testing.expectEqualStrings("bench-0001", first.values[0]);
     try testing.expectEqualStrings("Bench session 0001", first.values[1]);
     try testing.expectEqualStrings("/pabrik-bench/cwd-a", first.values[2]);
-    try testing.expectEqualStrings("2026-01-01 00:01:00", first.values[3]);
+    try testing.expect(std.mem.indexOf(u8, first.values[3], "2026-01-01") != null);
 
     const second = (try rows.next()).?;
     defer second.deinit(testing.allocator);
