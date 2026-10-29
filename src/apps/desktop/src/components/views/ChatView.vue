@@ -1,23 +1,17 @@
 <script setup lang="ts">
-import {
-  ref,
-  reactive,
-  onMounted,
-  onUnmounted,
-  onUpdated,
-  nextTick,
-  computed,
-  inject,
-  type Ref,
-} from 'vue'
+import { ref, onMounted, onUnmounted, onUpdated, nextTick, computed, inject, type Ref } from 'vue'
 import * as api from '../../api'
 import { chatEngineDb, newestCursor, toChatMessage } from '../../sync/ChatEngineDb'
 import { runSyncEffect, runSyncEffectOr, runSyncVoid } from '../../sync/runtime'
 import { useChatContentWidth } from '../../composables/useChatContentWidth'
 import { useChatScrollRestore } from '../../composables/useChatScrollRestore'
-import { stripThinkingTags, VirtualScroller, formatCompactTokens } from '@/helpers'
+import { VirtualScroller, formatCompactTokens } from '@/helpers'
 import { onHtmlFrameResize } from '../../helpers/chatHtmlFrame'
 import { useChatComposerAgents } from './chat_view/useChatComposerAgents'
+import { useChatDiffView } from './chat_view/useChatDiffView'
+import { useChatSse } from './chat_view/useChatSse'
+import { useChatWorktree } from './chat_view/useChatWorktree'
+import type { VirtualScrollerExposed } from './chat_view/chatViewTypes'
 import ChatMessageRow from './chat_view/ChatMessageRow.vue'
 import ChatTranscriptStates from './chat_view/ChatTranscriptStates.vue'
 import {
@@ -42,7 +36,6 @@ import {
   type ScrollReason,
 } from '@/helpers'
 import FileInput from '../file/FileInput.vue'
-import { installSseBus, useSseBus } from '../../helpers/sseBus'
 import { readGitStatusCache } from '../../helpers/gitStatusCache'
 import { splitMediaUrlsWire } from '../../helpers/mediaUrls'
 import {
@@ -60,11 +53,8 @@ import {
 import { ChatHistoryError } from '../../api'
 import { resolveWorkspaceId } from '../../helpers/workspaceScope'
 import {
-  applyProgressEvent,
   applySnapshotRows,
-  clearProgressFor,
   isPlaceholderSpawnRow,
-  type SubAgentProgressEvent,
   type SubAgentProgressMap,
 } from '../../helpers/subagentProgress'
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- used in <template> as <Bash> (~line 2507); typescript-eslint doesn't always see template usages via the Vue parser
@@ -74,24 +64,18 @@ import ChatRightSidebar from './chat_right_sidebar/ChatRightSidebar.vue'
 import ChatAppBar from './ChatAppBar.vue'
 import CenterDiffSection from './chat_right_sidebar/CenterDiffSection.vue'
 import { copyTextToClipboard } from './chat_right_sidebar/DiffCommentBox.vue'
-import {
-  centerDiffSectionId,
-  encodePathParam,
-  scrollToSectionElement,
-} from './chat_right_sidebar/parseUnifiedDiff'
+import { centerDiffSectionId } from './chat_right_sidebar/parseUnifiedDiff'
 import type { DiffSelection } from './chat_right_sidebar/parseUnifiedDiff'
 import { useChatRightSidebar } from './chat_right_sidebar/useChatRightSidebar'
 import { useNavigationStore } from '../../stores/navigation'
 import { useAgentErrorStore } from '../../stores/agentError'
 import { useChatViewStore, chatViewModeFrom } from '../../stores/chatView'
 import type { AgentErrorEntry } from '../../stores/agentError'
-import { useInjectCodeViewer, useInjectOpenInCodeEditor } from '@/composables/useCodeEditor'
-import type { CodeViewerView } from '@/composables/useCodeEditor'
+import { useInjectOpenInCodeEditor } from '@/composables/useCodeEditor'
 import CodeViewerStage from './CodeViewerStage.vue'
 import { useRouter, useRoute } from 'vue-router'
-import type { LocationQueryRaw } from 'vue-router'
 import { useWorkspacesStore } from '../../stores/workspaces'
-import { buildAppUrl, isChatRouteStaleForSession } from '../../helpers/appUrl'
+import { buildAppUrl } from '../../helpers/appUrl'
 import AgentErrorCard from '../chat/AgentErrorCard.vue'
 import UserPillRail from '../chat/UserPillRail.vue'
 import ChatScrollSlider from '../chat/ChatScrollSlider.vue'
@@ -306,252 +290,36 @@ const centerDiffScrollRef = ref<HTMLElement | null>(null)
 
 const showCenterDiff = computed(() => centerDiff.value !== null)
 
-// ── Centre-diff view state: two axes, one owner ─────────────────────────── mode          — LAYOUT
-// (unified | split). Global, so it lives in the URL (?diffmode=) with a localStorage fallback for
-// "I always read split".
-const DIFF_MODE_STORAGE_KEY = 'pabrik.centerdiff.mode'
-
-const readStoredDiffMode = (): 'unified' | 'split' => {
-  try {
-    const stored = localStorage.getItem(DIFF_MODE_STORAGE_KEY)
-    if (stored === 'unified' || stored === 'split') return stored
-  } catch {
-    // No storage (private mode / jsdom) — the documented default stands.
-  }
-  return 'unified'
-}
-
-/** Read `?diffmode=` at SETUP time, unlike `syncDiffParam` (a click handler). That makes the read
- * optional-router-safe: ~30 specs mount with no router, where a bare `route.query` would throw
- * inside setup and fail the whole mount. */
-const readDiffModeParam = (): 'unified' | 'split' | null => {
-  const v = route?.query?.diffmode
-  return v === 'unified' || v === 'split' ? v : null
-}
-
-const diffMode = ref<'unified' | 'split'>(readDiffModeParam() ?? readStoredDiffMode())
-const collapsedPaths = reactive(new Set<string>())
-const wholeFilePaths = reactive(new Set<string>())
-
-const collapsedCount = computed(
-  () => centerFiles.value.filter((f) => collapsedPaths.has(f.path)).length,
-)
-/** True when every listed file is collapsed — the state ?diffcollapse=1 names. */
-const allCollapsed = computed(
-  () => centerFiles.value.length > 0 && collapsedCount.value === centerFiles.value.length,
-)
-
-/**  * Write one of the diff view's params, skipping stale writes during a chat switch (the same guard
- * `syncDiffParam` needs: ChatsList replaces the URL at the same time, and a second replace from the
- * dying view corrupts the patch). */
-function syncDiffQuery(mutate: (query: LocationQueryRaw) => void) {
-  // Same optional-router guard as `syncDiffParam`: a ChatView mounted outside
-  // the router tree has no URL to write to.
-  if (!route) return
-  if (route.query.view !== undefined && route.query.view !== 'chat') return
-  const routeSession = route.query.session
-  if (typeof routeSession === 'string' && routeSession !== sessionId.value) return
-  if (isChatRouteStaleForSession(route.path, sessionId.value)) return
-  const query: LocationQueryRaw = { ...route.query }
-  mutate(query)
-  router.replace({ path: route.path, query }).catch(() => {})
-}
-
-const syncCollapseParam = () => {
-  syncDiffQuery((query) => {
-    if (allCollapsed.value) query.diffcollapse = '1'
-    else delete query.diffcollapse
-  })
-}
-
-/** Replace-all rather than per-file: the bulk button is one user gesture, and
- * `?diffcollapse=1` can only mean "all of them". */
-function setAllCollapsed(collapsed: boolean, paths: DiffSelection[] = centerFiles.value) {
-  collapsedPaths.clear()
-  if (collapsed) for (const f of paths) collapsedPaths.add(f.path)
-  syncCollapseParam()
-}
-
-function toggleCollapse(path: string) {
-  if (collapsedPaths.has(path)) collapsedPaths.delete(path)
-  else collapsedPaths.add(path)
-  syncCollapseParam()
-}
-
-/**  * Whole file is per section — 40 whole-file requests and a wall of text is not what "show me this
- * file" means. The untracked case is refused UP FRONT: a new file's diff already IS the whole file,
- * so the control stays locked at "Whole file" and no request is ever made. */
-function toggleWholeFile(path: string) {
-  if (wholeFilePaths.has(path)) wholeFilePaths.delete(path)
-  else wholeFilePaths.add(path)
-}
-
-function setDiffMode(next: 'unified' | 'split') {
-  diffMode.value = next
-  try {
-    localStorage.setItem(DIFF_MODE_STORAGE_KEY, next)
-  } catch {
-    // Storage unavailable — the URL still carries the choice.
-  }
-  syncDiffQuery((query) => {
-    query.diffmode = next
-  })
-}
-
-/** The code viewer's open file, shared by `AppLayout` (which owns the session). Non-null ⇒ this
- * chat renders the file in its center column, exactly where the stacked center diff goes, so the
- * chat-owned right sidebar — the Explorer the user just clicked a file in — stays on screen. */
-const codeViewer = useInjectCodeViewer()
-/**  * Plain (never-null) view model for the template: the injected session unwrapped, or an empty model
- * when there is no provider (unit tests) / no open file. One object, so the template needs no
- * null-narrowing. */
-const codeViewerModel = computed<CodeViewerView>(() => ({
-  file: codeViewer?.file.value ?? null,
-  content: codeViewer?.content.value ?? '',
-  loading: codeViewer?.loading.value ?? false,
-  error: codeViewer?.error.value ?? null,
-  line: codeViewer?.requestedLine.value ?? null,
-  cwd: codeViewer?.cwd.value ?? '',
-  close: () => codeViewer?.close(),
-}))
-const showCodeViewer = computed(() => codeViewerModel.value.file !== null)
-/** Messages + composer are hidden while either center stage is up. */
-const showCenterStage = computed(() => showCenterDiff.value || showCodeViewer.value)
-
-function scrollToCenterFile(path: string) {
-  // Click on an already-loaded file scrolls instead of refetching.
-  currentPath.value = path
-  if (showCenterDiff.value) syncDiffParam(path)
-  // Expand before scrolling: landing on a collapsed section would scroll to a
-  // one-line stub and look like the click did nothing.
-  if (collapsedPaths.has(path)) {
-    collapsedPaths.delete(path)
-    syncCollapseParam()
-  }
-  scrollToSectionElement(path)
-}
-
-function onChatSidebarShowDiff(selection: DiffSelection) {
-  centerDiff.value = selection
-  const idx = centerFiles.value.findIndex((f) => f.path === selection.path)
-  if (idx >= 0) centerFiles.value[idx] = selection
-  else {
-    centerFiles.value.push(selection)
-    syncCenterSpy()
-  }
-  void nextTick(() => scrollToCenterFile(selection.path))
-}
-
-function onChatSidebarShowDiffList(files: DiffSelection[]) {
-  // Union by path, incoming list order wins — the panel just fetched
-  // everything, so its entries are the freshest.
-  const incoming = new Map(files.map((f) => [f.path, f]))
-  const merged = [...files]
-  for (const existing of centerFiles.value) {
-    if (!incoming.has(existing.path)) merged.push(existing)
-  }
-  centerFiles.value = merged
-  syncCenterSpy()
-  // A file that arrived WHILE the bulk state was "all collapsed" must arrive
-  // collapsed too, or the next poll would silently expand one row.
-  if (allCollapsed.value) {
-    for (const f of merged) collapsedPaths.add(f.path)
-  }
-  // Refresh an open selection in place when the list reloads, but never
-  // auto-open from a background list load — refresh must land on chat.
-  if (centerDiff.value) {
-    const refresh = incoming.get(centerDiff.value.path)
-    if (refresh) centerDiff.value = refresh
-  }
-}
-
-function onCenterDiffBack() {
-  centerDiff.value = null
-  centerFiles.value = []
-  syncCenterSpy()
-  currentPath.value = null
-  // Per-file view state dies with the stage, and the bulk param with it.
-  collapsedPaths.clear()
-  wholeFilePaths.clear()
-  syncDiffQuery((query) => {
-    delete query.diffcollapse
-  })
-  stopCenterSpy()
-  // Back exits the diff view: drop the param so reload lands on chat,
-  // not a stale file. The currentPath watcher skips while hidden, so
-  // clear it explicitly here (replace, not push).
-  syncDiffParam(null)
-}
-
-// Scroll-spy: the most-visible section (middle band of the center
-// scroll container) owns currentPath, which syncs to ?diff= below.
-let centerSpy: IntersectionObserver | null = null
-
-function startCenterSpy() {
-  stopCenterSpy()
-  const root = centerDiffScrollRef.value
-  if (!root || typeof IntersectionObserver === 'undefined') return
-  centerSpy = new IntersectionObserver(
-    (entries) => {
-      // Ignore late callbacks after stop (chat switch unmounts the
-      // scroll container mid-navigation; writing currentPath then
-      // would fire a stale router.replace racing ChatsList).
-      if (!centerSpy) return
-      let best: string | null = null
-      let bestRatio = 0
-      for (const entry of entries) {
-        const path = (entry.target as HTMLElement).dataset.path
-        if (!entry.isIntersecting || !path) continue
-        if (entry.intersectionRatio > bestRatio) {
-          bestRatio = entry.intersectionRatio
-          best = path
-        }
-      }
-      if (best) {
-        currentPath.value = best
-        if (showCenterDiff.value) syncDiffParam(best)
-      }
-    },
-    { root, rootMargin: '-40% 0px -55%', threshold: [0, 0.25, 0.5, 0.75, 1] },
-  )
-  for (const el of root.querySelectorAll('[data-testid="center-diff-section"]'))
-    centerSpy.observe(el)
-}
-
-function stopCenterSpy() {
-  centerSpy?.disconnect()
-  centerSpy = null
-}
-
-function syncDiffParam(path: string | null) {
-  // No router = nothing to keep in sync. Unit mounts (and any host that renders ChatView outside
-  // the router tree) have `useRoute() === undefined`, where a bare `route.query` throws from the
-  // currentPath watcher and fails the mount. There is no URL to be stale in that case.
-  if (!route) return
-  // Skip stale writes during chat switch: ChatsList replaces the URL
-  // with the new session at the same time; a second replace from the
-  // dying view races it and corrupts Vue's patch (null vnode).
-  if (route.query.view !== undefined && route.query.view !== 'chat') return
-  const routeSession = route.query.session
-  if (typeof routeSession === 'string' && routeSession !== sessionId.value) return
-  if (isChatRouteStaleForSession(route.path, sessionId.value)) return
-  const query = { ...route.query }
-  if (path) query.diff = encodePathParam(path)
-  else delete query.diff
-  router.replace({ path: route.path, query }).catch(() => {})
-}
-
-// (The old currentPath watcher lived here — every assignment site below now calls syncDiffParam
-// explicitly. Replace, not push — scrolling must not spam history entries.) Start/stop the
-// scroll-spy to match the file list (replaces the old centerFiles.length watcher).
-const syncCenterSpy = () => {
-  if (centerFiles.value.length === 0) stopCenterSpy()
-  else void nextTick(() => startCenterSpy())
-}
-
-function onCenterDiffRetry() {
-  chatSidebarRef.value?.reloadDiff()
-}
+const {
+  codeViewerModel,
+  collapsedCount,
+  collapsedPaths,
+  diffMode,
+  onCenterDiffBack,
+  onCenterDiffRetry,
+  onChatSidebarShowDiff,
+  onChatSidebarShowDiffList,
+  setAllCollapsed,
+  setDiffMode,
+  showCenterStage,
+  showCodeViewer,
+  stopCenterSpy,
+  syncCenterSpy,
+  syncDiffParam,
+  toggleCollapse,
+  toggleWholeFile,
+  wholeFilePaths,
+} = useChatDiffView({
+  router,
+  route,
+  sessionId,
+  chatSidebarRef,
+  centerDiff,
+  centerFiles,
+  currentPath,
+  centerDiffScrollRef,
+  showCenterDiff,
+})
 
 // Re-read the session's worktree binding from the backend.
 async function refreshWorktreeBinding() {
@@ -614,43 +382,13 @@ const isStreaming = ref(false)
 const streamingContent = ref('')
 let streamContentVersion = 0
 
+function bumpStreamContentVersion(): void {
+  streamContentVersion += 1
+}
+
 // Queue state
 const queuedMessages = ref<api.QueuedMessage[]>([])
 
-// Scroll refs We declare an explicit interface for the VirtualScroller instance because
-// `InstanceType<typeof VirtualScroller>` doesn't resolve cleanly for a generic Vue SFC component
-// (the compiler infers a function signature that doesn't satisfy Vue's component-ref constructor.
-interface VirtualScrollerExposed {
-  scrollToIndex: (index: number, behavior?: ScrollBehavior) => void
-  scrollToTop: (behavior?: ScrollBehavior) => void
-  scrollToBottom: (behavior?: ScrollBehavior) => void
-  /** The scrollTop that counts as "the bottom" — the same number `scrollToBottom` is about to use. */
-  bottomScrollTop: () => number
-  /** Where the bottom sat when the stick LAST acted (end of the last measure pass, or the last
-   * `scrollToBottom`), or null before anything positioned the list. A getter on the child, so it
-   * always reads live. */
-  readonly settledBottom?: number | null
-  /**    * Whether a real height has replaced an estimate yet. False while the model is pure
-   * `defaultItemHeight` guesswork, which is exactly the window the scroll-restore must not write
-   * into (see `waitForScrollerMeasured`). */
-  readonly hasMeasuredItems?: boolean
-  scrollToPosition: (scrollTop: number, behavior?: ScrollBehavior) => void
-  scrollToItem: (index: number, behavior?: ScrollBehavior) => void
-  /** Full height-model recompute from the live DOM (append-gap fix). */
-  remeasure: () => void
-  /** Transfer a stored height across an identity swap (shrink fix). */
-  rekeyHeight: (oldKey: string, newKey: string) => boolean
-  beginPreserve: (newItemsCount: number) => void
-  endPreserve: () => Promise<void>
-  preserveScrollPosition: () => Promise<void>
-  containerRef: HTMLElement | null
-  isPreservingScroll: boolean
-  effectiveLoadMoreThreshold: number
-  /** Topmost/bottommost rendered item indices (auto-unwrapped computed). */
-  effectiveRange: { start: number; end: number }
-  sizerHeight?: number
-  modelTotal?: number
-}
 const virtualScrollerRef = ref<VirtualScrollerExposed | null>(null)
 
 // Composer input ref — re-focus after the async mount chain (history + stream snapshot + queued
@@ -884,98 +622,27 @@ const {
   applyChatViewMode: (config) => chatView.setMode(chatViewModeFrom(config)),
 })
 
-// ─── Worktree dropdown + PR dialog ──────────────────────────────────────────── The chat status
-// bar's git branch indicator becomes a clickable button when a worktree is bound (`gitWorktreeCwd`
-// is non-empty).
-const showWorktreeMenu = ref(false)
-const worktreeMenuRef = ref<HTMLElement | null>(null)
-const showCreatePrDialog = ref(false)
-const showCreateWorktreeDialog = ref(false)
-
-const onWorktreeMenuCreatePr = () => {
-  showCreatePrDialog.value = true
-}
-
-const onWorktreeMenuCreateWorktree = () => {
-  showCreateWorktreeDialog.value = true
-}
-
-const onWorktreeMenuViewFolder = () => {
-  // Open the worktree path (or session cwd if no worktree) in the system file manager.
-  // Implementation: use the existing /api/system/folder?path=<worktree> to confirm the directory is
-  // accessible, then emit a window event that the right-sidebar file explorer subscribes to.
-  const path = gitWorktreeCwd.value || sessionCwd.value
-  navigator.clipboard.writeText(path)
-  // TODO: open a folder-explorer modal in a follow-up
-}
-
-const onWorktreeMenuRefresh = () => {
-  // Re-fetch git status from the backend so the chip shows the latest
-  // state immediately (instead of waiting for the next poll tick).
-  checkGitStatus()
-}
-
-const onWorktreeMenuClear = async () => {
-  // Send a system message to the LLM asking it to clear the worktree. The LLM calls
-  // set_git_worktree(clear=true), which removes the directory and clears the binding. The SSE event
-  // updates the UI.
-  if (!sessionId.value) return
-  try {
-    await api.sendChatMessage(
-      sessionId.value,
-      'Please call set_git_worktree with clear=true to remove the current worktree binding.',
-      sessionCwd.value,
-      [],
-      selectedAgent.value ?? undefined,
-      '',
-      [],
-      workspacesStore.activeWorkspace?.id,
-    )
-  } catch (err) {
-    console.error('Failed to send clear-worktree message:', err)
-  }
-}
-
-const onPrCreated = (url: string) => {
-  showCreatePrDialog.value = false
-  // Show a brief toast (use the existing notification pattern)
-  // For v1, just open the PR URL in a new tab
-  window.open(url, '_blank')
-}
-
-const onPrError = (message: string) => {
-  console.error('PR creation failed:', message)
-  // Show a toast with the error
-  // For v1, just log — the dialog stays open with the form intact
-}
-
-const onCreateWorktree = async (path: string) => {
-  if (!sessionId.value) return
-  if (!sessionCwd.value) {
-    console.error('Create worktree: no session cwd available')
-    showCreateWorktreeDialog.value = false
-    return
-  }
-  // The dialog passes the user's absolute path verbatim. The LLM calls
-  // set_git_worktree(path=<path>) which validates (must be absolute, no .., basename matches
-  // [A-Za-z0-9._-]{1,100}) and runs git worktree add.
-  const message = `Please call set_git_worktree with path=${path} to create a new worktree for me.`
-  try {
-    await api.sendChatMessage(
-      sessionId.value,
-      message,
-      sessionCwd.value,
-      [],
-      selectedAgent.value ?? undefined,
-      '',
-      [],
-      workspacesStore.activeWorkspace?.id,
-    )
-  } catch (err) {
-    console.error('Failed to send create-worktree message:', err)
-  }
-  showCreateWorktreeDialog.value = false
-}
+const {
+  onCreateWorktree,
+  onPrCreated,
+  onPrError,
+  onWorktreeMenuClear,
+  onWorktreeMenuCreatePr,
+  onWorktreeMenuCreateWorktree,
+  onWorktreeMenuRefresh,
+  onWorktreeMenuViewFolder,
+  showCreatePrDialog,
+  showCreateWorktreeDialog,
+  showWorktreeMenu,
+  worktreeMenuRef,
+} = useChatWorktree({
+  sessionId,
+  sessionCwd,
+  gitWorktreeCwd,
+  selectedAgent,
+  workspacesStore,
+  checkGitStatus: () => checkGitStatus(),
+})
 
 // ─── Scroll logger ──────────────────────────────────────────────────────────── A dedicated logger
 // for the scroll subsystem. Bound to the active chat so every line is tagged with chatId. See
@@ -1326,11 +993,14 @@ const mergeMessagesById = (current: Message[], incoming: Message[]): Message[] =
 let liveMessageSessionId: string | null = null
 const liveMessageIds = new Set<string>()
 
+function claimLiveMessageSession(sid: string): void {
+  if (liveMessageSessionId === sid) return
+  liveMessageSessionId = sid
+  liveMessageIds.clear()
+}
+
 const rememberLiveMessage = (sid: string, id: string, role: Message['role']): void => {
-  if (liveMessageSessionId !== sid) {
-    liveMessageSessionId = sid
-    liveMessageIds.clear()
-  }
+  claimLiveMessageSession(sid)
   if (role === 'tool') liveMessageIds.add(id)
 }
 
@@ -2381,408 +2051,36 @@ const handleVirtualScroll = (
   previousDirection = direction
 }
 
-// ─── SSE ───────────────────────────────────────────────────────────────────── Bus listener
-// unsubscribes.
-let offLlm: (() => void) | null = null
-let offQueue: (() => void) | null = null
-// Stale-on-wake (cross-tab sharing): fires when this window takes over the
-// shared SSE connection, or returns from a long hidden period, so the visible
-// chat never shows a stale history. See `helpers/sseTabChannel.ts`.
-let offResync: (() => void) | null = null
-
-const persistSseFullRowLocally = (
-  sid: string,
-  event: api.SseEvent,
-  role: Message['role'],
-  messageId: string,
-  timestamp: Date,
-): void => {
-  try {
-    const evtSec = (event as unknown as { created_at?: number }).created_at
-    const createdAt = Number.isFinite(Number(evtSec))
-      ? Number(evtSec)
-      : Math.floor(timestamp.getTime() / 1000)
-    void runSyncVoid(
-      chatEngineDb.putLocal(sid, [
-        toChatMessage(sid, {
-          id: messageId,
-          role,
-          content: event.content || '',
-          created_at: createdAt,
-          tool_name: event.tool_name,
-          diffview_before: event.diffview_before,
-          diffview_after: event.diffview_after,
-          image_url: event.image_url,
-          video_url: event.video_url,
-          finish_reason: event.finish_reason,
-          tool_calls_json: event.tool_calls_json,
-          tool_call_id: event.tool_call_id,
-          is_input: event.is_input,
-          is_output: event.is_output,
-          reasoning_content: event.reasoning_content || undefined,
-        }),
-      ]),
-      'messages.putLocal',
-    )
-  } catch {
-    // Cache writes are advisory; the live message is already updated.
-  }
-}
-
-const connectSse = () => {
-  const sid = sessionId.value
-  if (!sid) return
-  if (liveMessageSessionId !== sid) {
-    liveMessageSessionId = sid
-    liveMessageIds.clear()
-  }
-
-  // Defensive: if a previous connectSse didn't clean up (e.g. mid-mount session change), tear down
-  // before re-registering. The bus's single global EventSource is already open (App.vue opens it
-  // once), so we only need to manage our listener subscriptions here.
-  disconnectSse()
-
-  streamingContent.value = ''
-
-  // App.vue normally installs the bus in its own onMounted, which runs
-  // after a child ChatView mounts. Install lazily here as well so an
-  // early subscription is never silently lost.
-  installSseBus()
-  const bus = useSseBus()
-  // Subscribe FIRST so we don't miss any bus events that arrive between registration and the next
-  // tick.
-  offLlm = bus.on('llm', (event: api.SseEvent) => {
-    if (event.session_id !== sid) return
-
-    if ((event as SubAgentProgressEvent).role === 'subagent_progress') {
-      subAgentProgressMap.value = applyProgressEvent(
-        subAgentProgressMap.value,
-        event as SubAgentProgressEvent,
-      )
-      return
-    }
-
-    if (event.type === 'connected' && event.session_id) {
-      return
-    }
-
-    if (event.type !== 'chunk' && event.type !== 'chunk_final' && event.type !== 'full') {
-      return
-    }
-
-    if (event.type === 'full' && event.is_error) {
-      agentErrorStore.setError(sid, event.content || '', event.id || undefined)
-      nextTick(() => scrollToBottom(false, 'agent-error-card'))
-      return
-    }
-
-    if (event.type === 'chunk' && event.content) {
-      streamingContent.value += event.content
-      streamContentVersion += 1
-      updateStreamingMessage()
-      return
-    }
-
-    if (event.type === 'chunk_final') {
-      if (event.total_tokens) {
-        maxTotalTokens.value = event.total_tokens
-      }
-      if (!event.is_error && agentErrorStore.bySession[sid]) {
-        agentErrorStore.clearForSession(sid)
-      }
-      return
-    }
-
-    const hasRenderableFullPayload = !!(
-      event.content ||
-      event.reasoning_content ||
-      event.tool_call_id ||
-      event.tool_name ||
-      (event.image_url && event.image_url.length > 0) ||
-      (event.video_url && event.video_url.length > 0)
-    )
-    if (event.type === 'full' && event.finish_reason && hasRenderableFullPayload) {
-      if (agentErrorStore.bySession[sid]) {
-        agentErrorStore.clearForSession(sid)
-      }
-      const streamingGroupKey = groupKeyForMessageId(
-        messages.value.find((m) => m.id.startsWith('streaming-'))?.id ?? '',
-      )
-      messages.value = messages.value.filter((m) => !m.id.startsWith('streaming-'))
-
-      const role =
-        (event.role as 'user' | 'assistant' | 'system' | 'tool') ||
-        (event.tool_call_id ? 'tool' : 'assistant')
-
-      if (event.id) {
-        const existingById = messages.value.find((m) => m.id === event.id)
-        if (existingById) {
-          // In-place update — preserve timestamp, refresh all wire fields
-          existingById.content = event.content || ''
-          existingById.role = role
-          existingById.tool_name = event.tool_name
-          existingById.tool_call_id = event.tool_call_id
-          existingById.finish_reason = event.finish_reason
-          existingById.tool_calls_json = event.tool_calls_json
-          existingById.reasoning_content = event.reasoning_content || undefined
-          existingById.diffview_before = event.diffview_before
-          existingById.diffview_after = event.diffview_after
-          existingById.image_urls = splitMediaUrlsWire(event.image_url)
-          existingById.video_urls = splitMediaUrlsWire(event.video_url)
-          existingById.file_attachments = event.file_attachments
-          existingById.is_input = event.is_input
-          existingById.is_output = event.is_output
-          rememberLiveMessage(sid, event.id, role)
-          persistSseFullRowLocally(sid, event, role, event.id, existingById.timestamp)
-          streamingContent.value = ''
-          isStreaming.value = false
-          scrollLogger.markProgrammatic()
-          lastAutoStickAt.value = Date.now()
-          nextTick(() => {
-            if (isAtBottom.value) virtualScrollerRef.value?.remeasure()
-            scrollToBottom(false, 'sse-message-update')
-          })
-          setupCodeBlockCopyButtons()
-          if (
-            role === 'tool' &&
-            event.tool_name === 'spawn_sub_agent' &&
-            event.tool_call_id &&
-            subAgentProgressMap.value[event.tool_call_id]
-          ) {
-            subAgentProgressMap.value = clearProgressFor(
-              subAgentProgressMap.value,
-              event.tool_call_id,
-            )
-          }
-          if (event.total_tokens) {
-            maxTotalTokens.value = event.total_tokens
-          }
-          // Live skills: backend piggybacks session_skills on every llm_full (fresh on tool-result
-          // emit, stale on assistant emit — see handle_tool.zig:459 vs :745). REST remains initial
-          // source. Scoped by the event.session_id !== sid filter at handler entry.
-          if (Array.isArray(event.session_skills))
-            sessionSkills.value = event.session_skills as api.SkillInfo[]
-          maybeRefreshWorktreeBinding(role, event.tool_name)
-          return
-        }
-      }
-
-      const dup = messages.value.find((m) => {
-        if (m.role !== role) return false
-        if ((m.tool_call_id ?? '') !== (event.tool_call_id ?? '')) return false
-        return m.content === (event.content || '')
-      })
-      if (
-        dup &&
-        role !== 'user'
-      ) {
-        return
-      }
-
-      const messageId = event.id || `assistant-${Date.now()}`
-      const messageTimestamp = new Date()
-      rememberLiveMessage(sid, messageId, role)
-      messages.value.push({
-        id: messageId,
-        role: role,
-        content: event.content || '',
-        timestamp: messageTimestamp,
-        tool_name: event.tool_name,
-        diffview_before: event.diffview_before,
-        diffview_after: event.diffview_after,
-        // Decode the `||`-joined wire string the backend sends. A plain `split('|')` would turn
-        // `A||B` into `["A", "", "B"]`, and the empty entry renders as `<img src="">` — a
-        // broken-image icon in the transcript.
-        image_urls: splitMediaUrlsWire(event.image_url),
-        video_urls: splitMediaUrlsWire(event.video_url),
-        file_attachments: event.file_attachments,
-        finish_reason: event.finish_reason,
-        tool_call_id: event.tool_call_id,
-        tool_calls_json: event.tool_calls_json,
-        is_input: event.is_input,
-        is_output: event.is_output,
-        reasoning_content: event.reasoning_content || undefined,
-      })
-      // Write-through: persist the SSE `full` row with its full wire shape
-      // so cached mounts render it identically. Best-effort.
-      persistSseFullRowLocally(sid, event, role, messageId, messageTimestamp)
-      if (streamingGroupKey && event.id) {
-        const newGroupKey = groupKeyForMessageId(event.id)
-        if (newGroupKey && newGroupKey !== streamingGroupKey) {
-          virtualScrollerRef.value?.rekeyHeight(streamingGroupKey, newGroupKey)
-        }
-      }
-      streamingContent.value = ''
-      isStreaming.value = false
-      scrollLogger.markProgrammatic()
-      // One more auto-stick fires (scrollToBottom below) for the final, post-stream assistant
-      // message. Mark the timestamp so the loadMore gate sees the stick as still active during the
-      // tail of the message-complete render frame.
-      lastAutoStickAt.value = Date.now()
-      nextTick(() => {
-        // Recompute the height model BEFORE the auto-stick (append-gap fix): the streaming-* row
-        // was just replaced by the canonical DB row, which re-renders at a DIFFERENT height
-        // (markdown settles, reasoning collapses). nextTick first.
-        if (isAtBottom.value) virtualScrollerRef.value?.remeasure()
-        scrollToBottom(false, 'sse-message-complete')
-      })
-      setupCodeBlockCopyButtons()
-
-      if (
-        role === 'tool' &&
-        event.tool_name === 'spawn_sub_agent' &&
-        event.tool_call_id &&
-        subAgentProgressMap.value[event.tool_call_id]
-      ) {
-        subAgentProgressMap.value = clearProgressFor(subAgentProgressMap.value, event.tool_call_id)
-      }
-
-      if (event.total_tokens) {
-        maxTotalTokens.value = event.total_tokens
-      }
-      // Live skills: backend piggybacks session_skills on every llm_full (fresh on tool-result
-      // emit, stale on assistant emit — see handle_tool.zig:459 vs :745). REST remains initial
-      // source. Scoped by the event.session_id !== sid filter at handler entry.
-      if (Array.isArray(event.session_skills))
-        sessionSkills.value = event.session_skills as api.SkillInfo[]
-      maybeRefreshWorktreeBinding(role, event.tool_name)
-
-      return
-    }
-
-    if (event.reasoning_content && !event.content) {
-      const existingMsg = messages.value.find(
-        (m) => m.role === 'assistant' && m.id.startsWith('streaming-'),
-      )
-      if (existingMsg) {
-        existingMsg.reasoning_content =
-          (existingMsg.reasoning_content || '') + event.reasoning_content
-      } else {
-        messages.value.push({
-          id: `streaming-${Date.now()}`,
-          role: 'assistant',
-          content: '',
-          timestamp: new Date(),
-          reasoning_content: event.reasoning_content,
-        })
-      }
-    }
-  })
-  offQueue = bus.on('queue', (event: api.QueueMessageEvent) => {
-    if (event.session_id !== sid) return
-    if (event.action === 'queued') {
-      queuedMessages.value.push({
-        id: event.id ?? `q-${Date.now()}`,
-        message: event.message,
-      })
-      // A queued turn renders no transcript row — it is only ever a row in the composer's queue
-      // panel — so nothing in `messages` grows and none of the auto-stick triggers fire.
-      followNewestTurn('queue-queued')
-    } else if (event.action === 'deleted') {
-      queuedMessages.value = queuedMessages.value.filter((m) => m.id !== event.id)
-    }
-  })
-  // Stale-on-wake (cross-tab sharing): if this window just took over the shared connection, or
-  // slept through a long hidden period, llm/queue events may have been missed entirely — fetch just
-  // the tail (cursor+asc) and merge it.
-  offResync =
-    bus.onResync?.(() => {
-      if (sessionId.value !== sid) return
-      void (async () => {
-        try {
-          if (messages.value.length === 0) {
-            await loadChatHistory()
-            return
-          }
-          const delta = await runSyncEffect(
-            chatEngineDb.loadDelta(sid, PAGE_SIZE, liveMessageIds),
-            'messages.loadDelta',
-          )
-          if (!delta || sessionId.value !== sid) return
-          applyDeltaExtra(delta.extra)
-          if (delta.items.length > 0) {
-            const fresh = toChatMessages(delta.items.map((i) => i.raw))
-            if (fresh.length > 0) {
-              const liveMessagesAtMerge = currentLiveMessages()
-              messages.value = mergeMessagesById(
-                mergeMessagesById(messages.value, fresh),
-                liveMessagesAtMerge,
-              )
-              if (isAtBottom.value) scrollToBottom(false, 'sse-resync-delta')
-            }
-          }
-        } catch {
-          // Painted messages stand; the next mount retries the tail.
-        }
-      })()
-    }) ?? null
-  // Set isStreaming LAST so external observers (tests, UI) can poll it as a "listeners are wired
-  // up" signal — flipping it before would race with test assertions that fire events into the bus
-  // expecting the listener to be registered.
-  isStreaming.value = true
-}
-
-const disconnectSse = () => {
-  if (offLlm) {
-    offLlm()
-    offLlm = null
-  }
-  if (offResync) {
-    offResync()
-    offResync = null
-  }
-  if (offQueue) {
-    offQueue()
-    offQueue = null
-  }
-  isStreaming.value = false
-  streamingContent.value = ''
-  messages.value = messages.value.filter((m) => !m.id.startsWith('streaming-'))
-}
-
-// Coalesce flag for SSE-driven `scrollToBottom` calls. SSE chunks can fire 20+ times/sec, but we
-// only need one scrollToBottom per animation frame. Without this, the console floods with
-// `scroll-to-bottom-conditional` lines and we do redundant geometry reads.
-let sseScrollPending = false
-
-const updateStreamingMessage = () => {
-  // Every SSE chunk drives an auto-stick via scrollToBottom below (coalesced to one-per-frame).
-  // Mark the timestamp NOW, before the rAF coalesce, so the gate reflects the chunk that just
-  // arrived — not the rAF callback that runs up to 16ms later.
-  lastAutoStickAt.value = Date.now()
-  const existingMsg = messages.value.find(
-    (m) => m.role === 'assistant' && m.id.startsWith('streaming-'),
-  )
-  if (existingMsg) {
-    existingMsg.content = streamingContent.value
-  } else {
-    messages.value.push({
-      id: `streaming-${Date.now()}`,
-      role: 'assistant',
-      content: streamingContent.value,
-      timestamp: new Date(),
-    })
-  }
-  const stripped = stripThinkingTags(streamingContent.value)
-  if (stripped && stripped.trim() !== '') {
-    // Coalesce: SSE chunks can fire 20+ times/sec, but we only need one scrollToBottom per
-    // animation frame. Without this, the console floods with `scroll-to-bottom-conditional` lines
-    // and we do redundant geometry reads.
-    if (!sseScrollPending) {
-      sseScrollPending = true
-      requestAnimationFrame(() => {
-        sseScrollPending = false
-        scrollLogger.markProgrammatic()
-        // Recompute the height model BEFORE scrolling (append-gap fix), but ONLY when the stick is
-        // engaged. A scrolled-up user must not be disturbed: remeasure mutates the sizer, and sizer
-        // mutations during active reading = the bouncing-text bug.
-        if (isAtBottom.value) virtualScrollerRef.value?.remeasure()
-        scrollToBottom(false, 'sse-chunk')
-      })
-    }
-  }
-  nextTick(() => setupCodeBlockCopyButtons())
-}
+const { connectSse, disconnectSse, updateStreamingMessage } = useChatSse({
+  sessionId,
+  messages,
+  queuedMessages,
+  isStreaming,
+  isAtBottom,
+  lastAutoStickAt,
+  maxTotalTokens,
+  sessionSkills,
+  subAgentProgressMap,
+  virtualScrollerRef,
+  agentErrorStore,
+  toChatMessages,
+  mergeMessagesById,
+  rememberLiveMessage,
+  currentLiveMessages,
+  applyDeltaExtra,
+  loadChatHistory,
+  scrollToBottom,
+  followNewestTurn,
+  maybeRefreshWorktreeBinding,
+  setupCodeBlockCopyButtons,
+  claimLiveMessageSession,
+  bumpStreamContentVersion,
+  logger: () => scrollLogger,
+  PAGE_SIZE,
+  streamingContent,
+  groupKeyForMessageId,
+  liveMessageIds,
+})
 
 // ─── Init ──────────────────────────────────────────────────────────────────────
 onMounted(async () => {
