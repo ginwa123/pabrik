@@ -92,8 +92,6 @@ import { useRouter, useRoute } from 'vue-router'
 import type { LocationQueryRaw } from 'vue-router'
 import { useWorkspacesStore } from '../../stores/workspaces'
 import { buildAppUrl, isChatRouteStaleForSession } from '../../helpers/appUrl'
-// 2026-08-25 agent-error-card (task_1787663566535_2): dedicated renderer
-// for agentic-loop error/retry diagnostics (is_error=true SSE events).
 import AgentErrorCard from '../chat/AgentErrorCard.vue'
 import UserPillRail from '../chat/UserPillRail.vue'
 import ChatScrollSlider from '../chat/ChatScrollSlider.vue'
@@ -188,9 +186,6 @@ const isLLMProcessing = computed(() => !!processingState.value[sessionId.value])
 
 // Pagination state
 const messageCursor = ref<string | null>(null)
-// 2026-09-09 user-pill pagination fix: 1000 rows per page defeated pagination (slow TTFB with
-// base64 image_urls + tool JSON, memory spike, VirtualScroller height-estimate blowup). Large pages
-// risk that tradeoff; the load-more threshold drives histories beyond one page.
 const PAGE_SIZE = 1000
 
 // ── Sub-agent peek ──────────────────────────────────────────────── Owns the slide-over panel for
@@ -592,9 +587,6 @@ async function onChatSidebarRefresh() {
   chatSidebarRef.value?.refresh()
 }
 
-// 2026-09-04 subagent-peek P1 fix: the peek lifecycle lives in SubAgentPeekHost (setup scope, keyed
-// by sessionId). Never call useSubAgentPeek inside a computed — lifecycle hooks registered during
-// render are unreliable (fetch fired 0/N times → permanent empty panel).
 function onPeekOpenFull(sessionId: string) {
   nav.closePeek()
   router.replace({ path: '/app', query: { view: 'chat', session: sessionId } })
@@ -737,7 +729,6 @@ const isLastGroup = (index: number) => index === messageGroups.value.length - 1
 // `helpers/autoStickGate.ts` for the gating math.
 const lastAutoStickAt = ref(0)
 
-// contentShift handler (P2, task_1787551495337_9) — replaces the old spacer MutationObserver.
 let spacerRafId: number | null = null
 let lastObservedScrollHeight = 0
 // True while a loadMore preserve window is in flight — contentShift
@@ -758,8 +749,6 @@ const onContentShift = (shift: { topSpacer: number; bottomSpacer: number; total:
     // total height) won't trigger a re-scroll.
     if (newScrollHeight === lastObservedScrollHeight) return
     const delta = newScrollHeight - lastObservedScrollHeight
-    // ── Fix: only stick on GROWTH, not shrink (2026-09-02) ────────── Shrinking is the sizer clamp
-    // itself (modelTotal -> realTotal), not new content.
     if (delta <= 0 || delta < 10) {
       lastObservedScrollHeight = newScrollHeight
       return
@@ -1004,13 +993,8 @@ const showSkillsPopup = ref(false)
 // ids, NOT positional `${groupIndex}-${idx}` pairs.
 const expandedToolIds = ref<Set<string>>(new Set())
 
-// 2026-08-23 spawn-subagent-live-progress: per-tool_call_id map of sub-agent progress rows. Fed by
-// role="subagent_progress" SSE events on the existing `llm` bus channel (no new event_type).
 const subAgentProgressMap = ref<SubAgentProgressMap>({})
 
-// 2026-08-25 agent-error-card (task_1787663566535_2): live-only list of agentic-loop error/retry
-// diagnostics. Fed by `full` SSE events with is_error=true (workflow.zig's 3 diagnostic sites —
-// never persisted, is_skip_db=true).
 const agentErrorStore = useAgentErrorStore()
 const chatView = useChatViewStore()
 // Per-session derived read. Reads from the store (keyed by sessionId) so the card survives ChatView
@@ -1220,9 +1204,6 @@ const jumpToUserGroup = (groupIndex: number, key: string) => {
   })
 }
 
-// ─── Chat History ──────────────────────────────────────────────────────────── 2026-09-04
-// spawn-subagent-refresh-persist (task_1788505292766_1) — rehydrate live sub-agent rows after a
-// (re)load.
 const rehydrateSubAgentProgress = async () => {
   const placeholders = messages.value.filter(isPlaceholderSpawnRow)
   if (placeholders.length === 0) return
@@ -1330,9 +1311,6 @@ const toChatMessages = (
     tool_call_id: msg.tool_call_id,
     is_input: msg.is_input,
     is_output: msg.is_output,
-    // 2026-08-23 hidden-messages fix — carry the thinking model's
-    // reasoning through to the renderer. The backend REST endpoint
-    // already returns it (http_response.zig SessionMessage).
     reasoning_content: msg.reasoning_content || undefined,
   }))
 
@@ -1535,14 +1513,9 @@ const commitOlderPage = async (
     },
   })
   virtualScrollerRef.value?.beginPreserve(newCount)
-  // 2026-09-09 user-pill pagination fix — dedupe: drop pages already present (retry after a failed
-  // endPreserve, overlapping cursor pages, or an SSE `full` echo that landed mid-preserve).
   const seenIds = new Set(messages.value.map((m) => m.id))
   const freshMessages = newMessages.filter((m) => !seenIds.has(m.id))
   messages.value = [...freshMessages.slice().reverse(), ...messages.value]
-  // 2026-09-09 user-pill pagination fix — cursor advance: the NEXT loadMore must continue from THIS
-  // page's cursor, not the initial one. These assignments previously lived only in the initial-load
-  // branch, so every 2nd+ loadMore re-sent the same cursor and re-prepended the same page forever.
   messageCursor.value = page.nextCursor
   hasMoreMessages.value = page.hasMore
   await nextTick()
@@ -1581,9 +1554,6 @@ const commitOlderPage = async (
   lastObservedScrollHeight = virtualScrollerRef.value?.containerRef?.scrollHeight ?? 0
   suppressContentShiftStick = false
 
-  // ── Post-preserve bottom re-validation (task_1787638309623_3) ──────── The suppress window above
-  // SWALLOWED every contentShift event, so if the user was at bottom before the prepend, nothing
-  // re-validated the bottom after `endPreserve` restored the anchor.
   if (wasAtBottom) {
     const c = virtualScrollerRef.value?.containerRef
     if (c) {
@@ -1935,7 +1905,6 @@ const runHistoryLoadAttempt = async () => {
     chatPrProvider.value = data.pr_provider ?? ''
   }
 
-  // 2026-08-07-profile-persist-read.
   if (data.selected_profile_model !== undefined) {
     selectedAgent.value =
       typeof data.selected_profile_model === 'string' ? data.selected_profile_model || null : null
@@ -2019,9 +1988,6 @@ const runHistoryLoadAttempt = async () => {
     }
 
     setupCodeBlockCopyButtons()
-    // 2026-09-04 spawn-subagent-refresh-persist (task_1788505292766_1) — rehydrate live sub-agent
-    // rows after a (re)load. Fire-and-forget: the map update re-renders cards when snapshots land;
-    // failures keep Task 0's "starting…".
     void rehydrateSubAgentProgress()
   } finally {
     isInitialLoad = false
@@ -2368,14 +2334,9 @@ const handleVirtualScroll = (
   // Tight 10px threshold: a chat message is typically 50-100px tall, so reading the last message
   // puts you well outside this window.
   const userScrolledUp = !isProgrammatic && deltaTop < 0
-  // ── Fix: cap retention (2026-09-02) ─────────────────────────────── Previously retained even
-  // with bottom=1730px gap, keeping isAtBottom=true forever and causing every contentShift to stick
-  // even when user is far from bottom. Only retain when gap is small.
   const retainedThroughGrowth =
     previousIsAtBottom && contentGrew && !userScrolledUp && distanceFromBottom < 100
   const nextIsAtBottom = newIsAtBottom || retainedThroughGrowth
-  // ── Deep-dive: isAtBottom decision (2026-09-02) ──────────────────── Log every time the retained
-  // path changes the outcome, or when contentGrew is true (the blinking-loop trigger).
   if (contentGrew || retainedThroughGrowth || newIsAtBottom !== nextIsAtBottom) {
     scrollLogger.info({
       ...ctx,
@@ -2493,8 +2454,6 @@ const connectSse = () => {
   offLlm = bus.on('llm', (event: api.SseEvent) => {
     if (event.session_id !== sid) return
 
-    // 2026-08-23 spawn-subagent-live-progress: route sub-agent progress events into the
-    // per-tool_call_id map and STOP here.
     if ((event as SubAgentProgressEvent).role === 'subagent_progress') {
       subAgentProgressMap.value = applyProgressEvent(
         subAgentProgressMap.value,
@@ -2507,16 +2466,10 @@ const connectSse = () => {
       return
     }
 
-    // 2026-08-23 llm-chunk-streaming: gate on the three event types ChatView actually handles —
-    // `chunk` (append delta), `chunk_final` (token-stream-end marker that updates maxTotalTokens),
-    // and `full` (replace streaming-* row with canonical DB row).
     if (event.type !== 'chunk' && event.type !== 'chunk_final' && event.type !== 'full') {
       return
     }
 
-    // 2026-08-25 agent-error-card (task_1787663566535_2) + 2026-08-25 dedupe
-    // (task_1787668954023_2): agentic-loop diagnostics (retry attempts + TooManyRetries bails)
-    // arrive as `full` events with is_error=true.
     if (event.type === 'full' && event.is_error) {
       agentErrorStore.setError(sid, event.content || '', event.id || undefined)
       nextTick(() => scrollToBottom(false, 'agent-error-card'))
@@ -2524,18 +2477,12 @@ const connectSse = () => {
     }
 
     if (event.type === 'chunk' && event.content) {
-      // 2026-08-23 llm-chunk-streaming: the backend sends RAW DELTAS
-      // (choices[0].delta.content per provider SSE), so APPEND here —
-      // the old `=` replace left only the last fragment visible.
       streamingContent.value += event.content
       streamContentVersion += 1
       updateStreamingMessage()
       return
     }
 
-    // 2026-08-23 llm-chunk-streaming: in-stream final marker emitted by workflow.zig right before
-    // the canonical llm_full row. Carries usage + signals "token stream over" so the typing
-    // indicator can stop early.
     if (event.type === 'chunk_final') {
       if (event.total_tokens) {
         maxTotalTokens.value = event.total_tokens
@@ -2546,9 +2493,6 @@ const connectSse = () => {
       return
     }
 
-    // 2026-08-23 hidden-messages fix — the gate previously required `event.content` to be truthy,
-    // which silently DROPPED every `full` event whose content was empty: tool-result rows
-    // (role='tool', empty raw content.
     const hasRenderableFullPayload = !!(
       event.content ||
       event.reasoning_content ||
@@ -2558,15 +2502,9 @@ const connectSse = () => {
       (event.video_url && event.video_url.length > 0)
     )
     if (event.type === 'full' && event.finish_reason && hasRenderableFullPayload) {
-      // 2026-08-25 task_1787668954023_2: any non-error `full` event that passes the renderable gate
-      // means the agent is alive and producing output — clear the error card so it disappears the
-      // moment the agent recovers from the retry chain.
       if (agentErrorStore.bySession[sid]) {
         agentErrorStore.clearForSession(sid)
       }
-      // 2026-09-06 virtual-scroller shrink fix: capture the streaming group's height key BEFORE the
-      // filter drops the placeholder — the canonical row pushed below has a new DB id (new group
-      // key, no stored height → sizer dip). Transferred after the push.
       const streamingGroupKey = groupKeyForMessageId(
         messages.value.find((m) => m.id.startsWith('streaming-'))?.id ?? '',
       )
@@ -2576,9 +2514,6 @@ const connectSse = () => {
         (event.role as 'user' | 'assistant' | 'system' | 'tool') ||
         (event.tool_call_id ? 'tool' : 'assistant')
 
-      // 2026-09-01 fix: placeholder → final update for the same tool call shares the same `id` (row
-      // id). The placeholder SSE (empty `<data>`) arrives first, then the final SSE (`<results>`)
-      // for the same row.
       if (event.id) {
         const existingById = messages.value.find((m) => m.id === event.id)
         if (existingById) {
@@ -2632,9 +2567,6 @@ const connectSse = () => {
         }
       }
 
-      // 2026-08-23 TOOLS-pill-spam fix — the backend re-emits an SSE for EVERY tool completion via
-      // getLatestMessage(), which (backend bug B1, see handle_tool.zig) often returns the ASSISTANT
-      // tool_calls row instead of the completed tool placeholder.
       const dup = messages.value.find((m) => {
         if (m.role !== role) return false
         if ((m.tool_call_id ?? '') !== (event.tool_call_id ?? '')) return false
@@ -2642,9 +2574,6 @@ const connectSse = () => {
       })
       if (
         dup &&
-        // 2026-08-23: the optimistic-user dedupe that lived here is gone — handleFileInputSubmit no
-        // longer pushes a local placeholder. User echoes arrive fresh with a stable DB id; a
-        // same-content repeat (server re-emit) collapses to one message via the dedupe above.
         role !== 'user'
       ) {
         return
@@ -2669,21 +2598,14 @@ const connectSse = () => {
         file_attachments: event.file_attachments,
         finish_reason: event.finish_reason,
         tool_call_id: event.tool_call_id,
-        // 2026-08-24 (task_1787545088500_6, bug A) — carry the wire field through the SSE
-        // full-event push.
         tool_calls_json: event.tool_calls_json,
         is_input: event.is_input,
         is_output: event.is_output,
-        // 2026-08-23 hidden-messages fix — carry reasoning through so
-        // thinking-only turns render their collapsible section.
         reasoning_content: event.reasoning_content || undefined,
       })
       // Write-through: persist the SSE `full` row with its full wire shape
       // so cached mounts render it identically. Best-effort.
       persistSseFullRowLocally(sid, event, role, messageId, messageTimestamp)
-      // 2026-09-06 virtual-scroller shrink fix: move the streaming group's measured height onto the
-      // canonical row's key so the sizer never dips through the 64px estimate for a frame.
-      // Best-effort — missing keys are a no-op (rekeyHeight guards).
       if (streamingGroupKey && event.id) {
         const newGroupKey = groupKeyForMessageId(event.id)
         if (newGroupKey && newGroupKey !== streamingGroupKey) {
@@ -2706,9 +2628,6 @@ const connectSse = () => {
       })
       setupCodeBlockCopyButtons()
 
-      // 2026-08-23 spawn-subagent-live-progress: when the FINAL spawn_sub_agent tool result row
-      // lands, drop the corresponding live-progress entry so the parsed-envelope view (which lives
-      // in `content`) takes over rendering immediately.
       if (
         role === 'tool' &&
         event.tool_name === 'spawn_sub_agent' &&
@@ -2731,9 +2650,6 @@ const connectSse = () => {
       return
     }
 
-    // 2026-08-23 hidden-messages fix — reasoning chunks used to be console.log-only. Accumulate
-    // them onto the streaming assistant message so the collapsible reasoning section renders live
-    // while a thinking model works (before any final content arrives).
     if (event.reasoning_content && !event.content) {
       const existingMsg = messages.value.find(
         (m) => m.role === 'assistant' && m.id.startsWith('streaming-'),
@@ -2901,9 +2817,6 @@ onMounted(async () => {
     }
 
     await loadChatHistory()
-    // 2026-09-02 stream-resume-on-reselect (task_1787673548905_0) — seed the streaming-*
-    // placeholder with the backend's partial text so subsequent chunk events APPEND to the
-    // recovered content instead of starting from an empty buffer.
     const snapshotStartVersion = streamContentVersion
     try {
       const snap = await api.getStreamSnapshot(sessionId.value)
@@ -3256,18 +3169,6 @@ const compactSession = async () => {
         </button>
         <ChatTranscriptStates v-bind="statesProps" />
 
-        <!-- Virtualized Message List.
-             2026-08-23 fast-scroll responsiveness tuning:
-             - default-item-height 200 -> 64: real rows are ~40-80px
-               (one-line tool cards, short paragraphs). The old 200px
-               estimate made top/bottom spacers 2.5-5x too tall, so a
-               fast fling landed the estimated visible window deep inside
-               spacer territory; content only appeared after measureItems
-               caught up (~3s of blank). A closer estimate keeps the
-               window near the real content from the first frame.
-             - buffer 20 -> 30: cheap insurance for fast scrolls — more
-               pre-rendered rows above/below means the viewport is
-               already populated when the fling stops. -->
         <VirtualScroller
           v-if="!isInitializing && (isLoading || messageGroups.length > 0)"
           ref="virtualScrollerRef"
@@ -3291,11 +3192,6 @@ const compactSession = async () => {
           </template>
         </VirtualScroller>
 
-        <!-- User-pill rail (2026-09-09 chatview user pill): one pill per
-             user group on the right edge; click jumps to that message.
-             Sibling of VirtualScroller inside the relative
-             messagesWrapperRef so it never virtualizes. Hidden when
-             fewer than 2 user groups (nothing to navigate). -->
         <UserPillRail
           v-if="userPills.length >= 2"
           :pills="userPills"
@@ -3312,15 +3208,6 @@ const compactSession = async () => {
              below) — this thumb IS the scrollbar visual. -->
         <ChatScrollSlider :get-container="getChatScrollContainer" />
 
-        <!-- 2026-08-25 agent-error-card (task_1787663566535_2):
-             Agentic-loop error/retry diagnostics. Rendered OUTSIDE the
-             VirtualScroller on purpose — the scroller's height-estimate
-             model only knows about messageGroups rows, and injecting
-             foreign rows desyncs the estimated scroll window (same class
-             of bug as the empty-group note above). These are transient,
-             live-only diagnostics (backend is_skip_db=true), so pinning
-             them at the bottom of the transcript area is correct UX too:
-             the newest error is always visible without scrolling. -->
         <div
           v-if="agentError"
           class="px-4 max-w-[var(--chat-content-max)] mx-auto agent-error-list"
@@ -3813,21 +3700,6 @@ const compactSession = async () => {
       @close="showCreateWorktreeDialog = false"
     />
 
-    <!-- Sub-agent peek panel — slide-over from the right.
-         Renders only when navigationStore.peekPanel is set;
-         teardown happens when ChatView unmounts (route change
-         away from this chat).
-
-         The `!embedded` guard is load-bearing (task_1788604407681_2):
-         the peek panel itself embeds a read-only ChatView for the
-         sub-agent session, and `peekPanel` is GLOBAL store state. An
-         embedded instance that also rendered the host would recurse
-         Host → Panel → ChatView → Host → … forever and the panel
-         would never appear. Exactly one host exists — the one in the
-         outermost non-embedded ChatView. Eye-clicks inside the peek
-         still drill down: they call `nav.openPeek` (kept below on
-         SpawnSubAgent), which swaps the payload the outer host
-         renders (it is `:key`d by sessionId). -->
     <SubAgentPeekHost
       v-if="nav.peekPanel && !embedded"
       :key="nav.peekPanel.sessionId"
