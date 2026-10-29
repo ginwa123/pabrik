@@ -262,17 +262,17 @@
       "count": 2
     }
   },
-  "src/components/tool_outputs/ListDirectory.vue": {
-    "local/no-try-catch": {
-      "count": 1
-    }
-  },
   "src/components/tool_outputs/ListAgents.vue": {
     "local/no-silent-fallback-catch": {
       "count": 2
     },
     "local/no-try-catch": {
       "count": 2
+    }
+  },
+  "src/components/tool_outputs/ListDirectory.vue": {
+    "local/no-try-catch": {
+      "count": 1
     }
   },
   "src/components/tool_outputs/LoadMemory.vue": {
@@ -413,7 +413,7 @@
       "count": 1
     },
     "local/no-try-catch": {
-      "count": 27
+      "count": 25
     }
   },
   "src/components/views/ChatsList.vue": {
@@ -525,20 +525,12 @@
       "count": 4
     }
   },
-  "src/components/workspace/WorkspaceItemTaskCard.vue": {
+  "src/components/views/chat_view/useChatComposerAgents.ts": {
     "local/no-try-catch": {
       "count": 2
     }
   },
-  "src/components/workspace/WorkspaceItemTaskRow.vue": {
-    "local/no-try-catch": {
-      "count": 1
-    }
-  },
-  "src/composables/useChatScrollRestore.ts": {
-    "local/no-silent-fallback-catch": {
-      "count": 1
-    },
+  "src/components/views/chat_view/useChatDiffView.ts": {
     "local/no-try-catch": {
       "count": 2
     }
@@ -551,7 +543,25 @@
       "count": 1
     }
   },
-  "src/components/views/chat_view/useChatComposerAgents.ts": {
+  "src/components/workspace/WorkspaceItemTaskCard.vue": {
+    "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/components/workspace/WorkspaceItemTaskRow.vue": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/composables/useAgentDelete.ts": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/composables/useChatScrollRestore.ts": {
+    "local/no-silent-fallback-catch": {
+      "count": 1
+    },
     "local/no-try-catch": {
       "count": 2
     }
@@ -612,11 +622,6 @@
     },
     "local/no-try-catch": {
       "count": 2
-    }
-  },
-  "src/composables/useAgentDelete.ts": {
-    "local/no-try-catch": {
-      "count": 1
     }
   },
   "src/composables/useSettingsSection.ts": {
