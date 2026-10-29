@@ -1,70 +1,59 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, onUpdated, provide } from 'vue'
+import { ref, computed, onMounted, onUnmounted, provide } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import Sidebar from './shell/Sidebar.vue'
 import GitFileViewer from './git/GitFileViewer.vue'
-import SkillDetail from './shell/SkillDetail.vue'
-import ChatView from './views/ChatView.vue'
-import StandardTaskChatView from './views/StandardTaskChatView.vue'
 import Chats from './views/Chats.vue'
-import DocumentsView from './workspace/DocumentsView.vue'
-import SettingsView from './views/SettingsView.vue'
-import WorkspaceSettingsView from './views/WorkspaceSettingsView.vue'
 import CodeViewerStage from './views/CodeViewerStage.vue'
-import NotificationContainer from './shell/NotificationContainer.vue'
-import SseStatusBadge from './shell/SseStatusBadge.vue'
-import TerminalFooter from './shell/TerminalFooter.vue'
-import KanbanView from './kanban/KanbanView.vue'
 import DesignChatDialog from './design/DesignChatDialog.vue'
-import AgentView from './views/AgentView.vue'
-import type { AgnosticKnowledgeRow, AgnosticSystemPromptRow } from './views/AgentView.vue'
-import RoutineView from './views/RoutineView.vue'
-import AgentChatView from './views/AgentChatView.vue'
 import AgentKnowledgeDialog from './dialogs/AgentKnowledgeDialog.vue'
 import AgentSystemPromptDialog from './dialogs/AgentSystemPromptDialog.vue'
 import AgentKnowledgeDetailDialog from './dialogs/AgentKnowledgeDetailDialog.vue'
 import KanbanColumnEditor from './kanban/KanbanColumnEditor.vue'
 import ConfirmDialog from './dialogs/ConfirmDialog.vue'
-import KanbanSettingsView from './views/KanbanSettingsView.vue'
 import CopyKanbanSpecDialog from './dialogs/CopyKanbanSpecDialog.vue'
-import DesignView from './design/DesignView.vue'
-import UiIcon from './ui/UiIcon.vue'
+import * as api from '../api'
 import { useNavigationStore } from '../stores/navigation'
 import { useTabsStore } from '../stores/tabs'
-import { sameRouteQuery, withTabParam } from '../helpers/tabTarget'
-import { useTabShortcuts } from '../composables/useTabShortcuts'
-import { useWorkspacesStore, type Task as TaskType } from '../stores/workspaces'
+import { useWorkspacesStore } from '../stores/workspaces'
 import { useSidebarStore } from '../stores/sidebar'
-import { useKanbanSseStore } from '../stores/kanbanSse'
-import { useDesignSseStore } from '../stores/designSse'
-import { useDocumentsSseStore } from '../stores/documentsSse'
-import * as api from '../api'
-import type { DesignElement as DesignElementApi } from '../api'
-import { buildToggle } from '../stores/agentToolToggle'
 import {
-  CODE_VIEWER_STATE_KEY,
-  OPEN_IN_CODE_EDITOR_KEY,
-  type CodeViewerState,
-  type OpenInCodeEditorFn,
-  type OpenInCodeEditorOptions,
+  CODE_VIEWER_STATE_KEY, OPEN_IN_CODE_EDITOR_KEY, type CodeViewerState, type OpenInCodeEditorFn,
 } from '../composables/useCodeEditor'
 import { useCodeEditorSession } from '../composables/useCodeEditorSession'
 import { useDesignHandlers } from '../composables/useDesignHandlers'
 import { useCurrentMainView } from '../composables/useCurrentMainView'
-import {
-  buildAppUrl,
-  buildSettingsUrl,
-  buildProjectSettingsUrl,
-  buildTaskAppUrl,
-  isAppPath,
-  normalizeAppPath,
-  parseAppPath,
-  type AppUrlLocation,
-} from '../helpers/appUrl'
-import { openInNewTab } from '../helpers/openInNewTab'
-import { parseItemIdWithChat } from '../helpers/buildItemIdWithChat'
-import { isWorkspaceAgentSection } from '../helpers/configSource'
-import { resolveWorkspaceId } from '../helpers/workspaceScope'
+import { mount as mountFpsOverlay, unmount as unmountFpsOverlay } from '../helpers/fpsOverlay'
+import { parseAppPath } from '../helpers/appUrl'
+import { codeEditorQuery } from './appLayout/codeEditorUrl'
+import { resolveOverlayView, resolvePathView } from './appLayout/appViewResolvers'
+import { useChatSessionCwd } from './appLayout/useChatSessionCwd'
+import { useAppLayoutOverlays } from './appLayout/useAppLayoutOverlays'
+import { useAppLayoutBootUrl } from './appLayout/useAppLayoutBootUrl'
+import { useAppLayoutUrlState } from './appLayout/useAppLayoutUrlState'
+import { useAppLayoutSse } from './appLayout/useAppLayoutSse'
+import { useDesignPanel } from './appLayout/useDesignPanel'
+import { useAgentPanel } from './appLayout/useAgentPanel'
+import { useAgentPrompts } from './appLayout/useAgentPrompts'
+import { useAppLayoutTabs } from './appLayout/useAppLayoutTabs'
+import { useAppLayoutNavigation } from './appLayout/useAppLayoutNavigation'
+import { useKanbanPanel } from './appLayout/useKanbanPanel'
+import { useKanbanCardEvents } from './appLayout/useKanbanCardEvents'
+import { useAppLayoutRouteSync } from './appLayout/useAppLayoutRouteSync'
+import { useAppLayoutPumps } from './appLayout/useAppLayoutPumps'
+import AppSkillOverlay from './appLayout/AppSkillOverlay.vue'
+import AppDocumentsBranch from './appLayout/AppDocumentsBranch.vue'
+import AppKanbanSettingsBranch from './appLayout/AppKanbanSettingsBranch.vue'
+import AppKanbanBoardBranch from './appLayout/AppKanbanBoardBranch.vue'
+import AppKanbanChatBranch from './appLayout/AppKanbanChatBranch.vue'
+import AppDesignBranch from './appLayout/AppDesignBranch.vue'
+import AppAgentViewBranch from './appLayout/AppAgentViewBranch.vue'
+import AppAgentChatBranch from './appLayout/AppAgentChatBranch.vue'
+import AppRoutineBranch from './appLayout/AppRoutineBranch.vue'
+import AppStandardTaskChatBranch from './appLayout/AppStandardTaskChatBranch.vue'
+import AppStandaloneChatBranch from './appLayout/AppStandaloneChatBranch.vue'
+import AppWorkspacePreview from './appLayout/AppWorkspacePreview.vue'
+import AppLayoutChrome from './appLayout/AppLayoutChrome.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -80,727 +69,58 @@ const sidebarStore = useSidebarStore()
 // Ref to Sidebar component
 const sidebarRef = ref<InstanceType<typeof Sidebar> | null>(null)
 
-// Dev-only FPS overlay (desktop scroll-perf plan, Task 5): lets us measure platform rendering fixes
-// (Linux gfx pinning, macOS scheme handler, Windows resize coalescing) in the running app. mount()
-// is a no-op in prod builds; unmount on teardown keeps HMR clean.
-import { mount as mountFpsOverlay, unmount as unmountFpsOverlay } from '../helpers/fpsOverlay'
-onMounted(() => {
-  mountFpsOverlay()
-})
-onUnmounted(() => {
-  unmountFpsOverlay()
-})
-
-// Settings overlay state (now driven by route)
-onMounted(() => {
-  void handleBootUrl()
-})
-
-// Boot URL handling (plan: 2026-09-22-revamp-ui-chats). Canonical paths boot directly from the path
-// (workspace/chat/project restore below).
-async function handleBootUrl(): Promise<void> {
-  const rawQuery = route.query as Record<string, string | undefined>
-  const cleanQuery = (): Record<string, string> => {
-    const out: Record<string, string> = {}
-    for (const [k, v] of Object.entries(rawQuery)) {
-      if (typeof v === 'string' && v.length > 0) out[k] = v
-    }
-    return out
-  }
-
-  // 1. Trailing slash → normalize, continue boot on the normalized path.
-  let path = route.path
-  let query = cleanQuery()
-  if (path !== normalizeAppPath(path) && isAppPath(path)) {
-    path = normalizeAppPath(path)
-    router.replace({ path, query })
-  }
-
-  // 2. Legacy path routes (registered so AppLayout mounts for the rewrite).
-  const legacyChat = /^\/app\/chat\/([^/]+)\/?$/.exec(path)?.[1]
-  const legacyTask = /^\/app\/task\/([^/]+)\/?$/.exec(path)?.[1]
-  if (legacyChat) {
-    await bootLegacyChat(legacyChat, keepTabParam(query))
-    return
-  }
-  if (legacyTask) {
-    await bootLegacyTask(legacyTask, keepTabParam(query))
-    return
-  }
-
-  // 3. Legacy ?view= query URLs on /app → sync rewrite, then fall
-  // through to the canonical boot below with the new values (the
-  // replace does not remount us, so we continue manually).
-  if (normalizeAppPath(path) === '/app' && query.view) {
-    const rewritten = rewriteLegacyQuery(query)
-    if (rewritten) {
-      path = rewritten.path
-      query = rewritten.query
-      router.replace({ path, query })
-    } else if (query.view === 'chat' && query.session) {
-      await bootLegacyChat(query.session, keepTabParam(query))
-      return
-    }
-    // Unknown ?view= values (gitfile/skill/code-editor overlays):
-    // leave the URL alone, boot normally below.
-  }
-
-  // 4. Canonical boot from the (possibly rewritten) path.
-  const parsed = parseAppPath(path)
-  if (parsed.kind === 'chat') {
-    workspacesStore.setActiveWorkspaceItem(null)
-    navigationStore.setActiveChat(parsed.sessionId, navigationStore.activeChatName)
-    fetchChatSessionCwd(parsed.sessionId)
-  } else if (parsed.kind === 'projectChat') {
-    workspacesStore.setActiveTask(parsed.chatTaskId)
-  } else if (parsed.kind === 'doc') {
-    // A document is its own page: drop any chat/project selection so the
-    // sidebar's single-active-row contract holds and the document does
-    // not look like it is "inside" a chat that is no longer on screen.
-    workspacesStore.setActiveWorkspaceItem(null)
-    workspacesStore.setActiveTask(null)
-    navigationStore.setActiveChat('', navigationStore.activeChatName)
-  } else {
-    const q = route.query as Record<string, string | undefined>
-    navigationStore.initFromUrl(
-      (q.session as string | undefined) || undefined,
-      undefined,
-      (q.view as string | undefined) || undefined,
-    )
-  }
-
-  // Prefer the workspace encoded by a workspace/project deep link. A fresh tab may otherwise boot
-  // with the persisted/default workspace, leave the URL-restored item inactive, and render a blank
-  // main view.
-  const preferredWorkspaceId =
-    parsed.kind === 'workspace' ||
-    parsed.kind === 'project' ||
-    parsed.kind === 'projectChat' ||
-    parsed.kind === 'projectAdd' ||
-    parsed.kind === 'projectSettings' ||
-    parsed.kind === 'chat'
-      ? parsed.workspaceId
-      : undefined
-  workspacesStore.initializeFromSystemFolder(preferredWorkspaceId)
-
-  // 5. Overlay restore for deep links. The path boot above adopted the workspace/chat context;
-  // reopen the editor so a reload or shared link lands back on the file instead of silently
-  // dropping it.
-  if (query.view === 'code-editor' && query.file) {
-    if (parsed.kind === 'chat') {
-      await fetchChatSessionCwd(parsed.sessionId)
-    }
-    await codeEditorSession.restoreFromUrl({
-      fileParam: query.file,
-      queryCwd: query.cwd ?? '',
-      fallbackCwd: rightSidebarCwd.value,
-      lineParam: query.line,
-    })
-  }
-}
-
-// The `tab` param is client-only (names the browser tab) — carry it
-// across boot rewrites so a background tab doesn't lose its name.
-function keepTabParam(query: Record<string, string>): Record<string, string> {
-  return query.tab ? { tab: query.tab } : {}
-}
-
-// Legacy standalone chat (path or ?view=chat): resolve the owning
-// workspace via the session-detail endpoint, then boot the chat under
-// its path. Unresolvable → `/app` (fail-closed).
-async function bootLegacyChat(sessionId: string, keep: Record<string, string>): Promise<void> {
-  const wsId = await api.getSessionWorkspaceId(sessionId)
-  // The URL points to a chat: clear any workspace-item active state
-  // in BOTH branches (unresolvable sessions fail closed to `/app`,
-  // but the stale item must still go — same as the old boot branch).
-  workspacesStore.setActiveWorkspaceItem(null)
-  navigationStore.setActiveChat(sessionId, navigationStore.activeChatName)
-  fetchChatSessionCwd(sessionId)
-  if (!wsId) {
-    router.replace({ path: '/app', query: keep })
-    workspacesStore.initializeFromSystemFolder()
-    return
-  }
-  router.replace(buildAppUrl({ workspaceId: wsId, chatSessionId: sessionId, query: keep }))
-  await workspacesStore.initializeFromSystemFolder()
-}
-
-// Legacy task link (/app/task/:tid): resolve the workspace via the session detail (task id ==
-// session id), then locate the parent item in the loaded tree. Parent found → full project-chat
-// path; parent unknown (deleted task) → workspace path (fail-closed, no dialog).
-async function bootLegacyTask(taskId: string, keep: Record<string, string>): Promise<void> {
-  const wsId = await api.getSessionWorkspaceId(taskId)
-  if (!wsId) {
-    router.replace({ path: '/app', query: keep })
-    workspacesStore.initializeFromSystemFolder()
-    return
-  }
-  await workspacesStore.setActiveWorkspace(wsId)
-  await workspacesStore.initializeFromSystemFolder()
-  // Parent discovery runs inside setActiveTask against the loaded tree.
-  workspacesStore.setActiveTask(taskId)
-  const parentItemId = workspacesStore.activeWorkspaceItemId
-  if (parentItemId) {
-    router.replace(
-      buildAppUrl({ workspaceId: wsId, projectId: parentItemId, chatTaskId: taskId, query: keep }),
-    )
-  } else {
-    router.replace(buildAppUrl({ workspaceId: wsId, query: keep }))
-  }
-}
-
-// Sync rewrite for legacy query URLs whose target is fully described
-// by the query itself (no server lookup needed). Returns null when the
-// query needs async resolution (?view=chat) or is not legacy at all.
-function rewriteLegacyQuery(query: Record<string, string>): AppUrlLocation | null {
-  const keepTab = keepTabParam(query)
-  if (query.view === 'task' && query.task) {
-    const rawItemId = query.itemId ?? ''
-    const wsId = query.workspaceId ?? ''
-    if (wsId && rawItemId) {
-      const parsed = parseItemIdWithChat(rawItemId)
-      return buildAppUrl({
-        workspaceId: wsId,
-        projectId: parsed.itemId,
-        chatTaskId: query.task,
-        query: keepTab,
-      })
-    }
-    return null
-  }
-  if (query.view === 'workspace' && query.workspaceId) {
-    const rawItemId = query.itemId ?? ''
-    const parsed = rawItemId ? parseItemIdWithChat(rawItemId) : { itemId: '', chatTaskId: null }
-    const sub: Record<string, string> = { ...keepTab }
-    if (query.pageId) sub.pageId = query.pageId
-    if (query.sorts) sub.sorts = query.sorts
-    if (query.detail) sub.detail = query.detail
-    // Kanban layout (columns | rows). Without this the boot rewrite drops
-    // `?layout=rows` and a shared link / second machine loses row mode.
-    if (query.layout) sub.layout = query.layout
-    if (parsed.itemId) {
-      return buildAppUrl({
-        workspaceId: query.workspaceId,
-        projectId: parsed.itemId,
-        chatTaskId: parsed.chatTaskId ?? undefined,
-        query: sub,
-      })
-    }
-    return buildAppUrl({ workspaceId: query.workspaceId, query: sub })
-  }
-  return null
-}
-
-const toggleSidebar = () => {
-  navigationStore.toggleSidebar()
-}
-
-const handleSidebarResize = (newWidth: number) => {
-  navigationStore.setSidebarWidth(newWidth)
-}
-
-// Standalone-chat URL target (plan: 2026-09-22-revamp-ui-chats). Chats live under their workspace
-// path.
-function chatTarget(sessionId: string): AppUrlLocation {
-  const wsForChat =
-    (currentMainView.value.kind === 'chat' && currentMainView.value.workspaceId) ||
-    (currentMainView.value.kind === 'workspace' && currentMainView.value.workspaceId) ||
-    workspacesStore.activeWorkspaceId ||
-    ''
-  if (wsForChat) return buildAppUrl({ workspaceId: wsForChat, chatSessionId: sessionId })
-  return { path: '/app', query: { view: 'chat', session: sessionId } }
-}
-
 const activeWorkspaceItem = computed(() => workspacesStore.activeWorkspaceItem)
 const activeWorkspace = computed(() => workspacesStore.activeWorkspace)
-
-// Subscribe to /api/kanban/events so live kanban mutations (column create / update / delete /
-// reorder, task move / assign / unassign) refresh the visible board in real time without a manual
-// reload.
-const kanbanSseStore = useKanbanSseStore()
 const activeWorkspaceId = computed(() => activeWorkspace.value?.id ?? '')
-
-// Subscribe to /api/kanban/events on the FIRST truthy activeWorkspaceId and update the client-side
-// filter on every subsequent change.
-const pendingUrlRestore = ref<{
-  workspaceId: string
-  itemId: string
-  pageId: string
-} | null>(
-  (() => {
-    // Path-based URLs first (plan: 2026-09-22-revamp-ui-chats). A
-    // project is a workspace item, so the project path restores
-    // exactly like the old `?view=workspace&itemId=` shape.
-    const parsedPath = parseAppPath(route.path)
-    // `/add` extends the project path, so it restores the same item/pageId —
-    // without this a deep link to the add page renders a blank main view.
-    if (
-      parsedPath.kind === 'project' ||
-      parsedPath.kind === 'projectChat' ||
-      parsedPath.kind === 'projectAdd'
-    ) {
-      const pageId = route.query.pageId as string | undefined
-      return {
-        workspaceId: parsedPath.workspaceId,
-        itemId: parsedPath.projectId,
-        pageId: pageId ?? '',
-      }
-    }
-    if (parsedPath.kind === 'workspace') {
-      return { workspaceId: parsedPath.workspaceId, itemId: '', pageId: '' }
-    }
-    const view = route.query.view as string | undefined
-    const wsId = route.query.workspaceId as string | undefined
-    const rawItemId = route.query.itemId as string | undefined
-    const pageId = route.query.pageId as string | undefined
-    if (view === 'workspace' && wsId) {
-      // SIMPLIFY-URL-BROWSER (2026-08-15): parse the wire-shape itemId (may carry /chat/<taskId>
-      // suffix). pendingUrlRestore only needs the bare id; the chat task id is restored separately
-      // in onMounted above.
-      const parsed = rawItemId ? parseItemIdWithChat(rawItemId) : { itemId: '' }
-      return { workspaceId: wsId, itemId: parsed.itemId, pageId: pageId ?? '' }
-    }
-    return null
-  })(),
-)
-// Keep one restore in flight while the target workspace lazily loads. A seeded workspace can appear
-// in the list before its items arrive; checking that first snapshot would incorrectly clear the
-// pending URL restore and leave a project deep link on the blank Chats view.
-let urlRestoreInFlight = false
-// URL restore (replaces the old workspaces watcher). Runs once from onMounted (covers fixtures
-// seeded before mount) and from the store subscription pump (covers the async
-// initializeFromSystemFolder path). Reads the live list by default so pump callers pass nothing.
-const restoreUrlState = async (wsList = workspacesStore.workspaces) => {
-  if (urlRestoreInFlight) return
-  const pending = pendingUrlRestore.value
-  if (!pending) return
-  if (!wsList || wsList.length === 0) return
-  const targetWorkspace = wsList.find((ws) => ws.id === pending.workspaceId)
-  if (!targetWorkspace) {
-    // Stale URL — clear it so we don't try again on every workspace
-    // update. User will see the empty kanban-state placeholder and
-    // can pick a workspace item manually.
-    pendingUrlRestore.value = null
-    return
-  }
-
-  const itemExists = targetWorkspace.items.some((item) => item.id === pending.itemId)
-  if (!pending.itemId || itemExists) {
-    // Fast path for fixtures and already-loaded items. Keep this
-    // synchronous so callers that seed the store before mount do not
-    // need an extra tick before the selected view renders.
-    void workspacesStore.setActiveWorkspace(pending.workspaceId)
-    if (pending.itemId) {
-      workspacesStore.setActiveWorkspaceItem(pending.itemId)
-      if (pending.pageId) {
-        workspacesStore.setActiveDesignPage(pending.pageId)
-      }
-    }
-    pendingUrlRestore.value = null
-    return
-  }
-
-  // The target workspace is present but its items are still loading.
-  // Wait for the lazy loader before deciding that the deep link is
-  // stale; otherwise a fresh settings popup briefly shows Chats.
-  urlRestoreInFlight = true
-  try {
-    await workspacesStore.setActiveWorkspace(pending.workspaceId)
-    const loadedWorkspace = workspacesStore.workspaces.find((ws) => ws.id === pending.workspaceId)
-    const loadedItemExists =
-      loadedWorkspace?.items.some((item) => item.id === pending.itemId) ?? false
-    if (loadedItemExists) {
-      workspacesStore.setActiveWorkspaceItem(pending.itemId)
-      if (pending.pageId) {
-        workspacesStore.setActiveDesignPage(pending.pageId)
-      }
-    }
-    pendingUrlRestore.value = null
-  } finally {
-    urlRestoreInFlight = false
-  }
-}
-
-// Run once at setup (replicates the old `{ immediate: true }` watcher): with fixtures seeded before
-// mount this restores synchronously, BEFORE initializeFromSystemFolder's seedList replaces the rows
-// (a later call would see the seeded items as "loaded" and skip the fetch, stranding an empty tree.
-void restoreUrlState()
-
-// IMPORTANT (2026-07-28 per-page chat scoping): When the user switches design pages
-// (activeDesignPageId changes in the store, mirrored from DesignView's activePageId sync), we DO
-// NOT swap the active chat task.
-const syncItemToUrl = (oldItemId: string | null) => {
-  const itemId = workspacesStore.activeWorkspaceItemId
-  const pageId = workspacesStore.activeDesignPageId
-  const wsId = workspacesStore.activeWorkspace?.id ?? ''
-  const currentView = route.query.view as string | undefined
-  // FIX (task-url-overwrite, task_1785959660154, 2026-08-06): The URL sync watcher must NOT fire
-  // while Sidebar is in the middle of a task navigation.
-  if (workspacesStore.isNavigatingToTask) return
-  // FIX (chat-click-url-overwrite, task_1787844892180_2, 2026-08-27): Inverse of the
-  // task_1785959660154 race.
-  if (!itemId && oldItemId) return
-  // Only sync when we're on the workspace view — all other views
-  // (chat, settings, gitfile, skill, code-editor) have their
-  // own URL contract and should be preserved.
-  if (currentView !== 'workspace' && currentView !== undefined) return
-
-  // Path-based mirror (plan: 2026-09-22-revamp-ui-chats). Store state maps onto buildAppUrl
-  // targets; the task-chat suffix is preserved from the current URL when the suffixed task is still
-  // the store's live task.
-  const safeItemId = itemId ?? ''
-  // The live task id is read from `activeTaskId` (the raw id), NOT the `activeTask` computed: the
-  // computed resolves the parent item from the loaded tree, which is null when the parent's
-  // workspace hasn't loaded its items yet (lazy loading) or in tests that seed the task id without.
-  const liveTaskId = workspacesStore.activeTaskId ?? workspacesStore.activeTask?.id ?? null
-  const pathParsed = parseAppPath(route.path)
-  const urlChatTask =
-    pathParsed.kind === 'projectChat'
-      ? pathParsed.chatTaskId
-      : parseItemIdWithChat((route.query.itemId as string) ?? '').chatTaskId
-  const chatTaskId = urlChatTask && urlChatTask === liveTaskId ? urlChatTask : undefined
-
-  const sub: Record<string, string> = {}
-  // pageId is design-item-scoped — only include it when the active item is a design. Empty pageId
-  // means "default to first page" and is omitted from the URL to keep the URL clean.
-  if (pageId) {
-    const activeItem = workspacesStore.workspaces
-      .flatMap((ws) => ws.items)
-      .find((it) => it.id === itemId)
-    if (activeItem?.item_type === 'design') {
-      sub.pageId = pageId
-    }
-  }
-  // FIX (kanban-sort-independence, task_1785730557641, 2026-08-06): preserve the per-column `sorts`
-  // query param so the URL survives navigation. Without this, this watcher (which fires on every
-  // workspaceItemId change) would clobber the URL and drop the `sorts=col_X:...` KanbanView wrote.
-  const urlSorts = route.query.sorts as string | undefined
-  if (urlSorts) {
-    sub.sorts = urlSorts
-  }
-  // Preserve the kanban task-detail deep-link (?detail=<taskId>) when staying on the SAME project,
-  // so reactive store updates (e.g. setActiveTask parent-discovery, design page switches) don't
-  // drop the open panel. Dropped when navigating to a different item.
-  const urlDetail = route.query.detail as string | undefined
-  if (urlDetail) {
-    const urlProject =
-      pathParsed.kind === 'project' ||
-      pathParsed.kind === 'projectChat' ||
-      pathParsed.kind === 'projectAdd'
-        ? pathParsed.projectId
-        : parseItemIdWithChat((route.query.itemId as string) ?? '').itemId
-    if (urlProject === safeItemId) {
-      sub.detail = urlDetail
-    }
-  }
-  // The add-task page is the project path + `/add`, its target column in `?column=`. Keep both only
-  // while the URL names the store's own item — otherwise this mirror would replace a `/add` deep
-  // link back to the plain board the moment its item lands (dropping the page the user asked for).
-  const keepAdd = pathParsed.kind === 'projectAdd' && pathParsed.projectId === safeItemId
-  const urlAddColumn = keepAdd ? (route.query.column as string | undefined) : undefined
-  if (urlAddColumn) sub.column = urlAddColumn
-  // A document is its own path, so this mirror never targets one — there
-  // is no `doc` query for a store write to strip.
-  let target: AppUrlLocation | null = null
-  if (wsId && safeItemId) {
-    target = buildAppUrl({
-      workspaceId: wsId,
-      projectId: safeItemId,
-      chatTaskId,
-      addTask: keepAdd && !chatTaskId,
-      query: sub,
-    })
-  } else if (workspacesStore.activeWorkspaceId) {
-    // Standalone workspace selection (no active item): keep the
-    // dropdown's workspaceId in the URL (revamp plan, 2026-09-22).
-    target = buildAppUrl({ workspaceId: workspacesStore.activeWorkspaceId, query: sub })
-  }
-  if (!target) return
-  // No-op when the URL already matches the store state (path + sorts/detail/pageId) — avoids
-  // redundant replaces that would churn history and re-trigger the route watcher. `tab` is
-  // client-only (names the browser tab) and excluded from identity.
-  {
-    const urlQ = route.query as Record<string, unknown>
-    const keys = new Set([...Object.keys(urlQ), ...Object.keys(target.query)])
-    let same = route.path === target.path
-    if (same) {
-      for (const k of keys) {
-        if (k === 'tab') continue
-        const a = typeof urlQ[k] === 'string' ? (urlQ[k] as string) : undefined
-        const b = target.query[k]
-        if ((a ?? undefined) !== (b ?? undefined)) {
-          same = false
-          break
-        }
-      }
-    }
-    if (same) return
-  }
-  router.replace(target)
-}
-
-// ─── Design SSE — mirror the kanban pattern ───────────────────────────── Bus-backed design-event
-// subscription (Chunk 6 of design-mode-redesign plan).
-const designSseStore = useDesignSseStore()
-// Document mutations, from the AGENT TOOLS only (agentic_loop/document_events.zig).
-const documentsSseStore = useDocumentsSseStore()
-// Merged SSE init (replaces the old kanban + design activeWorkspaceId
-// watchers): ONE connection pair for the app lifetime, filter updates on
-// workspace switches. Runs from onMounted + the store subscription pump.
-let didInitSse = false
-const initSseStores = async (newId: string) => {
-  if (!newId) return
-  if (!didInitSse) {
-    didInitSse = true
-    await kanbanSseStore.initKanbanSse(newId)
-    await designSseStore.initDesignSse(newId)
-    await documentsSseStore.initDocumentsSse(newId)
-  } else {
-    await kanbanSseStore.setActiveWorkspaceId(newId)
-    await designSseStore.setActiveWorkspaceId(newId)
-    await documentsSseStore.setActiveWorkspaceId(newId)
-  }
-}
-
-// NEW (Chunk 1, Task 1.3 of design-element-drag-and-drop plan). Extracted handlers so they're
-// directly unit-testable.
-const designHandlers = useDesignHandlers()
-
-onUnmounted(() => {
-  kanbanSseStore.closeKanbanSse()
-  designSseStore.closeDesignSse()
-  documentsSseStore.closeDocumentsSse()
-})
-
-// Computed refs from store
+const activeTask = computed(() => workspacesStore.activeTask)
+// Workspace-item id of the currently-active task. Used by the 3-column kanban|chatview template
+// branch to make sure the chatview and the kanban belong to the same parent — otherwise we'd render
+// a chatview of a non-kanban task alongside an unrelated kanban (visual mess).
+const activeTaskWorkspaceItemId = computed(() => workspacesStore.activeTaskWorkspaceItemId)
 const activeChatId = computed(() => navigationStore.activeChatId)
 const activeChatName = computed(() => navigationStore.activeChatName)
 const sidebarCollapsed = computed(() => navigationStore.sidebarCollapsed)
 const sidebarWidth = computed(() => navigationStore.sidebarWidth)
+const { chatSessionCwd, fetchChatSessionCwd } = useChatSessionCwd(navigationStore)
 
-const handleUpdateChatId = (oldId: string, newId: string) => {
-  if (activeChatId.value === `chat-${oldId}`) {
-    navigationStore.setActiveChat(newId)
+// Right sidebar cwd - show when chat is open OR task is active
+const rightSidebarCwd = computed(() => {
+  if (activeTask.value && activeWorkspaceItem.value?.path) return activeWorkspaceItem.value.path
+  if (navigationStore.activeChatId && navigationStore.activeChatId.startsWith('chat-')) {
+    return chatSessionCwd.value || activeWorkspaceItem.value?.path || ''
   }
-  // Keep the strip's pointer in step: a brand-new chat starts life with the synthetic
-  // `session-<timestamp>` id and gets its real one on the first message, so a tab left keyed on the
-  // old id would be dead — and the route funnel would add a second tab for the same chat.
-  tabsStore.renameChatTab(oldId, newId)
-  sidebarRef.value?.updateChatId(oldId, newId)
-  // Keep the browser URL truthful: a brand-new chat mounts at /app/{ws}/chat/<synthetic-id> and
-  // gets its real id on the first message.
-  try {
-    const chatParsed = parseAppPath(route.path)
-    if (chatParsed.kind === 'chat' && chatParsed.sessionId === oldId) {
-      router.replace(
-        buildAppUrl({
-          workspaceId: chatParsed.workspaceId,
-          chatSessionId: newId,
-          query: { ...(route.query as Record<string, string>) },
-        }),
-      )
-      return
-    }
-    const urlSession = route.query.session as string | undefined
-    const urlView = route.query.view as string | undefined
-    if (urlView === 'chat' && urlSession === oldId) {
-      router.replace({ path: '/app', query: { view: 'chat', session: newId } })
-    }
-  } catch {
-    // Router absent in unit tests — store + tabs already updated.
-  }
-}
+  return ''
+})
+// Effective cwd for the <ChatView> mount. The ChatView child seeds its `sessionCwd` ref from this
+// prop in onMounted (`if (props.cwd) sessionCwd.value = props.cwd`), then sends it as `cwd_session`
+// on every api.sendChatMessage call.
+const effectiveChatCwd = computed(() => chatSessionCwd.value || activeWorkspaceItem.value?.path || '')
 
-const handleNavigate = (
-  view: string,
-  chatName?: string,
-  taskId?: string,
-  workspaceId?: string,
-  itemId?: string,
-  // NEW (design-pages-in-workspace-tree plan, 2026-08-06): the 6th positional arg lets the caller
-  // pin a specific design page when navigating to `view: 'workspace'`. Empty / undefined means "no
-  // page pinned" (DesignView falls back to the first page in the cache).
-  pageId?: string,
-  // NEW (kanban default-URL, 2026-08-06): when the caller navigates to a kanban workspace item, the
-  // Sidebar commits a default `?sorts=col_X:updated_at:desc,...` string here. We mirror it into the
-  // URL so a refresh preserves the user's implicit sort choice.
-  sortsParam?: string,
-) => {
-  if (view.startsWith('chat-')) {
-    const chatSessionId = view.replace(/^chat-/, '')
-    // Clear any workspace-item active state — navigating to a chat wins.
-    workspacesStore.setActiveWorkspaceItem(null)
-    navigationStore.setActiveChat(chatSessionId, chatName)
-    // The new chat URL carries no overlay query, so drop the previous
-    // chat's file synchronously (reconcileRoute also clears on the
-    // next pump — this avoids a one-frame flash of the old file).
-    clearAllOverlays()
-    // Fetch cwd for folder explorer and git
-    fetchChatSessionCwd(chatSessionId)
-    router.push(chatTarget(chatSessionId))
-  } else if (view === 'chat') {
-    // Clear any workspace-item active state — the URL is asserting "no chat selected, no workspace
-    // item selected". Path-based: land on the workspace path (chat list scoped to it) when a
-    // workspace is active, else the landing.
-    workspacesStore.setActiveWorkspaceItem(null)
-    navigationStore.clearActiveChat()
-    chatSessionCwd.value = ''
-    if (workspacesStore.activeWorkspaceId) {
-      router.push(buildAppUrl({ workspaceId: workspacesStore.activeWorkspaceId }))
-    } else {
-      router.push({ path: '/app', query: {} })
-    }
-  } else if (view === 'workspace') {
-    navigationStore.clearAll()
-    // Navigating to the board wins over any open task chat — clear the workspaces task so the
-    // kanban/design/folder view renders instead of the chat. (navigationStore.clearAll only clears
-    // the navigation store's task; the visible chat is gated on workspacesStore.activeTask.
-    workspacesStore.setActiveTask(null)
-    chatSessionCwd.value = ''
-    // When the caller passes (workspaceId, itemId), mirror them into the URL so the
-    // kanban/folder/design item survives a page reload. Without this, the workspace path alone
-    // loses the active item on refresh because `activeWorkspaceItemId` is in-memory only.
-    const sub: Record<string, string> = {}
-    if (pageId) sub.pageId = pageId
-    if (sortsParam) sub.sorts = sortsParam
-    if (workspaceId && itemId) {
-      router.push(buildAppUrl({ workspaceId, projectId: itemId, query: sub }))
-    } else if (workspaceId) {
-      router.push(buildAppUrl({ workspaceId, query: sub }))
-    } else {
-      router.push({ path: '/app', query: sub })
-    }
-  } else if (view === 'settings') {
-    // Settings opens on the workspace the user is IN, with that workspace in the PATH - the same
-    // URL contract every other view uses.
-    let stored: string | null = null
-    try {
-      stored = localStorage.getItem('pabrik-settings-active-tab')
-    } catch (e) {
-      // Storage unreadable (private mode): fall back to the clean URL, which
-      // renders the default section. The fallback cannot render a WRONG
-      // section, only the default.
-      console.warn('[settings] stored tab unreadable, using default', e)
-      stored = null
-    }
-    // The stored key predates Migration 105: the sections it can name are workspace-scoped now, so
-    // it selects a section on the workspace page. Anything else (`general`, an unknown value) is
-    // dropped rather than sent as `?section=` to the workspace page.
-    const settingsWorkspaceId = resolveWorkspaceId(
-      route.params.workspaceId,
-      workspacesStore.activeWorkspace?.id,
-    )
-    router.push(
-      buildSettingsUrl(
-        settingsWorkspaceId,
-        stored && isWorkspaceAgentSection(stored) ? stored : null,
-      ),
-    )
-  }
-}
-
-// Header dropdown workspace switch.
-const handleSelectWorkspace = (workspaceId: string) => {
-  const parsed = parseAppPath(route.path)
-  const alreadyThere =
-    (parsed.kind === 'workspace' && parsed.workspaceId === workspaceId) ||
-    (route.query.view === 'workspace' &&
-      (route.query.workspaceId as string | undefined) === workspaceId)
-  if (alreadyThere) return
-  navigationStore.clearAll()
-  workspacesStore.setActiveTask(null)
-  workspacesStore.setActiveWorkspaceItem(null)
-  chatSessionCwd.value = ''
-  workspacesStore.setActiveWorkspace(workspaceId)
-  router.push(buildAppUrl({ workspaceId }))
-}
-
-// Shared "return to the underlying view" navigation for overlay closes (git viewer, skill viewer,
-// code editor).
-function replaceWithCurrentContext(): void {
-  if (workspacesStore.activeWorkspaceItemId) {
-    // Returning to the board wins over any open task chat — clear the task so the
-    // kanban/design/folder renders instead of the chat. Without this, the URL is bare (no /chat/
-    // suffix) while the chat is still active: board URL + chat content.
-    workspacesStore.setActiveTask(null)
-    const sub: Record<string, string> = {}
-    if (workspacesStore.activeDesignPageId) {
-      const item = workspacesStore.workspaces
-        .flatMap((ws) => ws.items)
-        .find((it) => it.id === workspacesStore.activeWorkspaceItemId)
-      if (item?.item_type === 'design') sub.pageId = workspacesStore.activeDesignPageId
-    }
-    router.replace(
-      buildAppUrl({
-        workspaceId: activeWorkspaceId.value,
-        projectId: workspacesStore.activeWorkspaceItemId,
-        query: sub,
-      }),
-    )
-  } else if (activeTask.value) {
-    // NEW (add-workspace-id-params, 2026-08-06): include workspaceId + itemId + pageId when the
-    // task is attached to a workspace item. Pre-fix this branch wrote only `?view=task&task=X`,
-    // dropping the kanban / design breadcrumb — the user reported this (task_1785774094183).
-    router.replace(
-      buildTaskAppUrl({
-        taskId: activeTask.value.id,
-        activeWorkspaceId: activeWorkspaceId.value,
-        activeWorkspaceItemId: workspacesStore.activeWorkspaceItemId,
-        activeDesignPageId: workspacesStore.activeDesignPageId,
-        activeItemType: workspacesStore.activeWorkspaceItem?.item_type ?? null,
-        currentQuery: route.query,
-      }),
-    )
-  } else if (activeChatId.value.startsWith('chat-')) {
-    const sessionId = activeChatId.value.replace(/^chat-/, '')
-    router.replace(chatTarget(sessionId))
-  } else {
-    router.replace({ path: '/app', query: {} })
-  }
-}
-
-const closeGitViewer = () => {
-  gitViewerFile.value = null
-  gitViewerStaged.value = false
-  // Navigate back to previous view based on state.
-  replaceWithCurrentContext()
-}
-
-// Skill viewer state
-const skillViewerSkill = ref<{ name: string } | null>(null)
-
-const closeSkillViewer = () => {
-  skillViewerSkill.value = null
-  // Navigate back to previous view based on state. Preserve the workspace item (folder / kanban /
-  // design) IDs when the user opened the skill view while on a workspace item — see closeGitViewer
-  // for the same pattern.
-  replaceWithCurrentContext()
-}
+// Dev-only FPS overlay (desktop scroll-perf plan, Task 5): lets us measure platform rendering fixes
+// (Linux gfx pinning, macOS scheme handler, Windows resize coalescing) in the running app. mount()
+// is a no-op in prod builds; unmount on teardown keeps HMR clean.
+onMounted(() => mountFpsOverlay())
+onUnmounted(() => unmountFpsOverlay())
 
 // Code editor session — single source of truth for the open-file flow (file / content / loading /
 // error / requested line / cwd).
 const codeEditorSession = useCodeEditorSession({
   readFile: (cwd, path) => api.readFileContent(cwd, path),
   syncUrl: ({ path, line }) => {
-    // Keep-append: the editor keys merge into the current URL so the workspace/project/chat context
-    // in the path survives a reload.
-    const next: Record<string, string> = {}
-    for (const [k, v] of Object.entries(route.query)) {
-      if (typeof v !== 'string' || v.length === 0) continue
-      if (k === 'view' || k === 'file' || k === 'line' || k === 'cwd') continue
-      next[k] = v
-    }
-    next.view = 'code-editor'
-    next.file = path
-    if (line !== null) {
-      next.line = String(line)
-    }
-    router.replace({
-      path: route.path,
-      query: next,
-    })
+    router.replace({ path: route.path, query: codeEditorQuery(route.query, path, line) })
   },
 })
+
+const overlays = useAppLayoutOverlays({
+  router, route, workspacesStore, currentMainView, codeEditorSession, activeChatId, activeTask,
+  activeWorkspaceId, chatSessionCwd, rightSidebarCwd,
+})
+const {
+  gitViewerFile, gitViewerStaged, skillViewerSkill, closeGitViewer,
+  closeSkillViewer, closeCodeEditor, handleSubmitReview, clearAllOverlays,
+  retryEditorRestore, openInCodeEditor,
+} = overlays
+
 // Template and view bindings keep their names — they alias the
 // session refs (same objects, no duplicated state).
 const codeEditorFile = codeEditorSession.file
@@ -809,38 +129,8 @@ const codeEditorLoading = codeEditorSession.loading
 const codeEditorError = codeEditorSession.error
 const codeEditorRequestedLine = codeEditorSession.requestedLine
 
-const openInCodeEditor: OpenInCodeEditorFn = async (opts: OpenInCodeEditorOptions) => {
-  // Clear other overlays to prevent priority conflicts
-  gitViewerFile.value = null
-  gitViewerStaged.value = false
-  skillViewerSkill.value = null
-  await codeEditorSession.openFile(opts)
-}
-
 // Expose openInCodeEditor to all descendants (tool output components) via inject
 provide<OpenInCodeEditorFn>(OPEN_IN_CODE_EDITOR_KEY, openInCodeEditor)
-
-const closeCodeEditor = () => {
-  codeEditorSession.clear()
-  // Strip only the editor keys so the underlying board/chat URL (path plus pageId/sorts/tab/…)
-  // survives the close. A bare /app editor link (legacy bookmark, fresh reload with no path
-  // context) has nothing to keep — rebuild from the store there.
-  if (parseAppPath(route.path).kind !== 'landing') {
-    const next: Record<string, string> = {}
-    for (const [k, v] of Object.entries(route.query)) {
-      if (typeof v !== 'string' || v.length === 0) continue
-      if (k === 'file' || k === 'line' || k === 'cwd') continue
-      if (k === 'view' && v === 'code-editor') continue
-      next[k] = v
-    }
-    router.replace({ path: route.path, query: next })
-    return
-  }
-  // Navigate back to previous view. Preserve the workspace item (folder / kanban / design) IDs when
-  // the user opened the code editor while on a workspace item — see closeGitViewer for the same
-  // pattern. For design items, also preserve pageId so the active design page survives a reload.
-  replaceWithCurrentContext()
-}
 
 // The open file itself, so a SURFACE can render it: ChatView paints it in its center column next to
 // the chat-owned right sidebar (the user opened the file FROM that sidebar.
@@ -855,59 +145,87 @@ const codeViewerState: CodeViewerState = {
 }
 provide<CodeViewerState>(CODE_VIEWER_STATE_KEY, codeViewerState)
 
-const handleSubmitReview = async (message: string) => {
-  console.log('[AppLayout] Code review submitted:', message)
-  // Navigate to chat view with the review message
-  if (activeChatId.value.startsWith('chat-')) {
-    const sessionId = activeChatId.value.replace(/^chat-/, '')
-    // Send the review message to the active chat session
-    try {
-      await api.sendChatMessage(sessionId, message, rightSidebarCwd.value)
-      console.log('[AppLayout] Review message sent successfully')
-    } catch (err) {
-      console.error('[AppLayout] Failed to send review message:', err)
-    }
-  }
-  // Close the git viewer after submitting
-  closeGitViewer()
-}
+const { handleBootUrl } = useAppLayoutBootUrl({
+  router, route, workspacesStore, navigationStore, codeEditorSession, fetchChatSessionCwd,
+  rightSidebarCwd,
+})
+// Settings overlay state (now driven by route)
+onMounted(() => {
+  void handleBootUrl()
+})
 
-const handleCommentSaved = () => {
-  closeGitViewer()
-}
+const { pendingUrlRestore, restoreUrlState, syncItemToUrl } = useAppLayoutUrlState({
+  router, route, workspacesStore,
+})
 
-// Git file viewer state
-const gitViewerFile = ref<api.GitFileChange | null>(null)
-const gitViewerStaged = ref(false)
+const { initSseStores, closeSse } = useAppLayoutSse()
+onUnmounted(() => closeSse())
 
-// The editor session is global to AppLayout, not per-chat: switching the main context (chat
-// session, task, workspace item, document) must drop any open overlay, otherwise the old file keeps
-// rendering inside the new chat's center column (ChatView reads the same injected refs).
-const clearAllOverlays = () => {
-  gitViewerFile.value = null
-  gitViewerStaged.value = false
-  skillViewerSkill.value = null
-  codeEditorSession.clear()
-}
+// NEW (Chunk 1, Task 1.3 of design-element-drag-and-drop plan). Extracted handlers so they're
+// directly unit-testable.
+const designHandlers = useDesignHandlers()
+const designPanel = useDesignPanel({ workspacesStore, designHandlers, activeWorkspaceItem, activeWorkspace })
+const {
+  activeDesignChatPageName, activeDesignChatTaskId, activeDesignChatTask, designChatDialogOpen,
+} = designPanel
 
-// Chat session cwd for folder explorer and git (fetched from API)
-const chatSessionCwd = ref<string>('')
+const agentPanel = useAgentPanel({ activeWorkspaceItem, activeWorkspace })
+const {
+  agentKnowledge, agentTools, agentSystemPrompts, agentDataLoading, maybeLoadAgentData,
+  agentKnowledgeDialogOpen, agentKnowledgeError, agentKnowledgeBusy, handleAgentAddKnowledge,
+  closeAgentKnowledgeDialog, handleAgentKnowledgeCreate, handleAgentRemoveKnowledge,
+  agentKnowledgeDetailOpen, agentKnowledgeDetailRow, agentKnowledgeDetailBusy,
+  agentKnowledgeDetailError, handleAgentEditKnowledge, closeAgentKnowledgeDetailDialog,
+  handleAgentKnowledgeSave,
+} = agentPanel
 
-const fetchChatSessionCwd = async (sessionId: string) => {
-  chatSessionCwd.value = ''
-  try {
-    // Single lightweight detail read (GET /api/llm/session/:id, no message payload). The old
-    // messages?limit=1 fallback is gone: the detail endpoint reads the sessions row directly, so
-    // cwd is present even for zero-message sessions where the messages JOIN yields no rows.
-    const session = await api.getSession(sessionId)
-    if (session && session.cwd) {
-      chatSessionCwd.value = session.cwd
-      writeSessionCwdCache(session.cwd)
-    }
-  } catch (err) {
-    console.error('Failed to fetch chat session cwd:', err)
-  }
-}
+const promptsPanel = useAgentPrompts({
+  activeWorkspaceItem, agentTools: agentPanel.agentTools,
+  agentSystemPrompts: agentPanel.agentSystemPrompts,
+})
+const {
+  agentSystemPromptDialogOpen, agentSystemPromptRow, agentSystemPromptBusy, agentSystemPromptError,
+  handleAgentAddSystemPrompt, handleAgentEditSystemPrompt, closeAgentSystemPromptDialog,
+  handleAgentSystemPromptCreate, handleAgentSystemPromptSave, handleAgentRemoveSystemPrompt,
+  handleAgentToggleTool, handleAgentToggleToolsBulk,
+} = promptsPanel
+
+const tabs = useAppLayoutTabs({ router, route, workspacesStore, navigationStore, tabsStore })
+
+const navigation = useAppLayoutNavigation({
+  router, route, workspacesStore, navigationStore, tabsStore, sidebarRef, chatSessionCwd,
+  activeChatId, activeWorkspaceItem, activeWorkspaceId, chatTarget: overlays.chatTarget,
+  clearAllOverlays, fetchChatSessionCwd, applyActiveTabToUrl: tabs.applyActiveTabToUrl,
+})
+const { handleNavigate, handleSelectWorkspace, handleUpdateChatId, handleCloseTaskView } = navigation
+
+const kanban = useKanbanPanel({ router, workspacesStore, activeWorkspaceItem, activeWorkspace })
+const { showKanbanColumnEditor, kanbanColumnEditorMode, kanbanColumnEditorInitialName,
+  kanbanColumnEditorInitialDescription, kanbanColumnEditorInitialIsDone, showCopyKanbanSpecDialog,
+  showMoveBlockedConfirm, moveBlockedMessage, handleKanbanMoveTask, handleMoveBlockedConfirm,
+  handleMoveBlockedClose, handleKanbanAddColumn, handleKanbanRequestRenameColumn,
+  handleKanbanRequestDeleteColumn, handleKanbanRenameItem, handleOpenKanbanSettings,
+  handleKanbanSettingsAddColumn, handleKanbanSettingsEditColumn, handleKanbanSettingsDeleteColumn,
+  handleKanbanColumnEditorClose, handleKanbanColumnEditorAdd, handleKanbanColumnEditorRename,
+  handleKanbanColumnEditorDelete, handleOpenCopyKanbanSpec, handleCloseCopyKanbanSpec,
+  handleCopyKanbanSpec } = kanban
+const {
+  handleKanbanRenameColumn, handleKanbanDeleteColumn, handleKanbanReorderColumn,
+  handleKanbanSelectTask, handleKanbanOpenTaskInBackground, handleKanbanOpenTaskDetailInBackground,
+  handleKanbanDeleteTask, handleKanbanRenameTask, handleKanbanPinTask,
+} = useKanbanCardEvents({
+  router, route, workspacesStore, sidebarRef, activeWorkspaceItem, activeWorkspace,
+})
+
+const toggleSidebar = () => navigationStore.toggleSidebar()
+
+const handleSidebarResize = (newWidth: number) => navigationStore.setSidebarWidth(newWidth)
+
+const { syncTaskFromItemId, reconcileRoute } = useAppLayoutRouteSync({
+  route, workspacesStore, navigationStore, tabsStore, codeEditorSession, activeChatId, chatSessionCwd,
+  rightSidebarCwd, gitViewerFile, gitViewerStaged, skillViewerSkill, clearAllOverlays,
+  fetchChatSessionCwd,
+})
 
 // The open document's id, read from the PATH rather than `route.params.documentId`.
 const activeDocumentId = computed(() => {
@@ -924,69 +242,6 @@ const kanbanSettingsItemId = computed(() => {
   return typeof legacy === 'string' ? legacy : ''
 })
 
-const currentView = computed(() => {
-  const path = route.path
-  if (path === '/app/settings') return 'settings'
-  // LEGACY kanban-settings route (/app/kanban/:itemId/settings); the canonical shape is the
-  // workspace-scoped project path, matched below via parseAppPath. Must come BEFORE the
-  // route.query.view fallthrough: the URL has no `view=` param, the path IS the discriminator.
-  if (/^\/app\/kanban\/[^/]+\/settings\/?$/.test(path)) {
-    return 'kanban-settings'
-  }
-  // Workspace settings page, `/app/:workspaceId/settings`. Same shape as the kanban-settings branch
-  // above and for the same reason: the path IS the discriminator, there is no `view=` query param
-  // to read, and it must be resolved before anything below claims a `/app/{id}` path.
-  if (/^\/app\/[^/]+\/settings\/?$/.test(path)) {
-    return 'workspace-settings'
-  }
-  // gitfile view - check only the ref (set synchronously before navigation)
-  if (gitViewerFile.value) {
-    return 'gitfile'
-  }
-  // skill view - check only the ref
-  if (skillViewerSkill.value) {
-    return 'skill'
-  }
-  // code-editor view - the open file wins UNLESS a chat surface can display it itself. See
-  // `chatSurfaceActive`.
-  if (codeEditorFile.value && !chatSurfaceActive.value) return 'code-editor'
-
-  // Path-based contract (plan: 2026-09-22-revamp-ui-chats). Projects are workspace items, so every
-  // project path is the 'workspace' view. The landing renders <Chats> (which now hosts workspace
-  // creation), so it reports 'chat' — same as a bare /app with no query.
-  const parsedPath = parseAppPath(path)
-  // Document page (Migration 095). It is a PAGE, not an overlay: it sits in the same `v-else-if`
-  // chain as every other main view, so the chat behind it is unmounted rather than stacked under.
-  // Checked before the workspace/chat branches so nothing else can claim a doc path.
-  if (parsedPath.kind === 'doc') return 'documents'
-  // Kanban settings page, workspace-scoped: /app/{ws}/projects/{pid}/settings.
-  if (parsedPath.kind === 'projectSettings') return 'kanban-settings'
-  if (
-    parsedPath.kind === 'workspace' ||
-    parsedPath.kind === 'project' ||
-    parsedPath.kind === 'projectChat' ||
-    parsedPath.kind === 'projectAdd'
-  ) {
-    return 'workspace'
-  }
-  if (parsedPath.kind === 'chat' || parsedPath.kind === 'landing') {
-    return 'chat'
-  }
-
-  // SIMPLIFY-URL-BROWSER (2026-08-15): the URL never says `view=task` anymore (legacy URLs are
-  // auto-rewritten on mount). The chat-open state is encoded as /chat/<taskId> on itemId when
-  // view=workspace, so `currentView` returns 'workspace' for both no-chat and chat-open states.
-  const view = (route.query.view as string) || 'chat'
-  return view
-})
-
-const activeTask = computed(() => workspacesStore.activeTask)
-
-// Workspace-item id of the currently-active task. Used by the 3-column kanban|chatview template
-// branch to make sure the chatview and the kanban belong to the same parent — otherwise we'd render
-// a chatview of a non-kanban task alongside an unrelated kanban (visual mess).
-const activeTaskWorkspaceItemId = computed(() => workspacesStore.activeTaskWorkspaceItemId)
-
 /** True when the <main> chain is showing a ChatView surface — i.e. when ChatView owns the center
  * column AND the chat-owned right sidebar (Explorer / Files changed / Terminal). Single source of
  * truth for the three call sites that must agree: 1. */
@@ -997,1361 +252,32 @@ const chatSurfaceActive = computed(() => {
   return activeChatId.value.startsWith('chat-')
 })
 
-// ─── Kanban task chat ──────────────────────────────────────────────────────── The kanban task
-// chat is a normal view in the <main> chain (see the `activeWorkspaceItem.item_type === 'kanban'`
-// branch, which sits BEFORE the KanbanView branch), not a modal. There is therefore no open-state.
-const activeDesignChatPageName = ref<string>('')
-
-// ─── Design chat task FK handle (plan: 2026-08-06-design-chat-as-dialog, bug fix from user report
-// "the chat button keep not popup, chatview") ──── Root cause: the design chat dialog's v-if gate
-// was `activeTask && ... item_type === 'design'`.
-const activeDesignChatTaskId = ref<string>('')
-// The store's `activeTaskId` going falsy clears the design-chat refs so the dialog unmounts.
-const activeDesignChatTask = computed<TaskType | null>(() => {
-  if (!activeDesignChatTaskId.value) return null
-  return {
-    id: activeDesignChatTaskId.value,
-    name: activeDesignChatPageName.value
-      ? `Design Chat: ${activeDesignChatPageName.value}`
-      : 'Design Chat',
-    description: '',
-    taskType: 'standard',
-  } as TaskType
+const currentView = computed(() => {
+  const overlay = resolveOverlayView(route.path, !!gitViewerFile.value, !!skillViewerSkill.value)
+  if (overlay) return overlay
+  // code-editor view - the open file wins UNLESS a chat surface can display it itself. See
+  // `chatSurfaceActive`.
+  if (codeEditorFile.value && !chatSurfaceActive.value) return 'code-editor'
+  return resolvePathView(route.path, route.query.view as string | undefined)
 })
 
-// ─── DesignChatDialog open state (plan: 2026-08-06-design-chat-as-dialog) ──── Same v-model:show
-// pattern the kanban chat modal used to have.
-const designChatDialogOpen = computed({
-  get: () => !!activeDesignChatTaskId.value,
-  // The dialog can only ask to close (it never opens itself). Closing clears
-  // the id, which is what "closed" actually means everywhere else.
-  set: (open: boolean) => {
-    if (!open) activeDesignChatTaskId.value = ''
-  },
+useAppLayoutPumps({
+  route, workspacesStore, navigationStore, activeWorkspaceId, rightSidebarCwd,
+  activeDesignChatTaskId, activeDesignChatPageName, pendingUrlRestore, clearAllOverlays,
+  initSseStores, syncItemToUrl, maybeLoadAgentData, restoreUrlState, retryEditorRestore,
+  syncTaskFromItemId, reconcileRoute, syncFromRoute: tabs.syncFromRoute,
+  isTabsFunnelReady: tabs.isTabsFunnelReady,
 })
-
-// Agent Mode (plan 2026-08-15-agent-mode, task_1786962724740_0): agent chat inline view. Driven by
-// `activeTask` — when the user clicks a chat task under an agent, `activeTaskWorkspaceItemId`
-// equals the agent's item id and `activeTaskWorkspaceItem.item_type` is `'agent'`.
-const agentKnowledge = ref<api.AgentKnowledgeRow[]>([])
-const agentTools = ref<string[]>([])
-// Agent system prompts (Migration 080) — same plain-ref pattern as
-// knowledge above; the GET /agent bundle carries them in one round-trip.
-const agentSystemPrompts = ref<api.AgentSystemPromptRow[]>([])
-
-// True while `loadAgentData` is in flight. AgentView's knowledge and system-prompt panels gate
-// their skeletons on this — without it they render "No knowledge files yet." / "No system prompts
-// yet." during the fetch, which is a false statement about the agent's data.
-const agentDataLoading = ref(false)
-
-// FIX (agent-tools-fetch-on-view): the previous code only fetched `agentTools` inside the
-// `activeTask` watcher.
-async function loadAgentData(agentItemId: string) {
-  agentDataLoading.value = true
-  try {
-    const wsId = activeWorkspace?.value?.id
-    if (!wsId) return
-    const data = await api.getAgent(wsId, agentItemId)
-    agentKnowledge.value = data.knowledge
-    agentTools.value = data.tools
-    // Migration 080: the bundle now carries system_prompts too. Guard
-    // for older binaries that don't include the field yet.
-    agentSystemPrompts.value = data.system_prompts ?? []
-  } catch (e) {
-    console.error('[AppLayout] failed to load agent:', e)
-  } finally {
-    // Cleared on BOTH paths — a failed fetch must not park the
-    // skeleton forever (the panels fall back to their empty states,
-    // which is the honest answer when the request failed).
-    agentDataLoading.value = false
-  }
-}
-
-// Load agent bundle for agent items (replaces the old item-id watcher).
-// AppLayout.agentToolsFetchOnView green) + the store subscription pump
-// (covers in-app navigation to an agent item).
-let lastAgentLoadItemId: string | null = null
-const maybeLoadAgentData = () => {
-  const id = activeWorkspaceItem.value?.id
-  if (!id || activeWorkspaceItem.value?.item_type !== 'agent') return
-  // Fire once per item id (replicates the old watcher, which only fired
-  // on change): setup + onMounted + pump must not triple-fetch.
-  if (id === lastAgentLoadItemId) return
-  lastAgentLoadItemId = id
-  // Fire-and-forget; loadAgentData assigns the refs itself.
-  void loadAgentData(id)
-}
-// Setup-time call (replicates the old immediate watcher): the setup-time
-// restore above already set the item for direct landings.
-maybeLoadAgentData()
-
-// Agent knowledge dialog open state + last-targeted agent id.
-// `activeWorkspaceItem` still being set when the user submits (the
-// user could navigate away mid-dialog).
-const agentKnowledgeDialogOpen = ref(false)
-const agentKnowledgeError = ref<string | null>(null)
-const agentKnowledgeBusy = ref(false)
-
-function openAgentKnowledgeDialog() {
-  if (!activeWorkspaceItem.value || activeWorkspaceItem.value.item_type !== 'agent') return
-  agentKnowledgeError.value = null
-  agentKnowledgeDialogOpen.value = true
-}
-
-async function handleAgentAddKnowledge() {
-  // v1.1 wiring: open the AgentKnowledgeDialog. Submission is handled by
-  // `handleAgentKnowledgeCreate` (the dialog's `create` emit). Keep this as a thin open-dialog shim
-  // so AgentView's emit contract stays stable.
-  openAgentKnowledgeDialog()
-}
-
-function closeAgentKnowledgeDialog() {
-  agentKnowledgeDialogOpen.value = false
-  agentKnowledgeError.value = null
-}
-
-async function handleAgentKnowledgeCreate(filePath: string, label: string, content: string) {
-  const wsId = activeWorkspace?.value?.id
-  const itemId = activeWorkspaceItem.value?.id
-  if (!wsId || !itemId || activeWorkspaceItem.value?.item_type !== 'agent') return
-
-  agentKnowledgeBusy.value = true
-  agentKnowledgeError.value = null
-  try {
-    // The backend expects `agentId` (== workspace_item_id for agents) on `POST
-    // /api/agents/:agentId/knowledge`. AddAgentItem's convention (Migration 076) is that agents.id
-    // == workspace_items.id.
-    const newRow = await api.addAgentKnowledge(itemId, filePath, label, content)
-    // Optimistic append — the GET /agent response won't be re-fetched
-    // until the user navigates away and back. Without this, the new
-    // row is invisible in the UI until a full reload.
-    agentKnowledge.value = [...agentKnowledge.value, newRow]
-    closeAgentKnowledgeDialog()
-  } catch (e) {
-    agentKnowledgeError.value = e instanceof Error ? e.message : 'Failed to add knowledge'
-    // Keep the dialog open so the user can see + retry.
-  } finally {
-    agentKnowledgeBusy.value = false
-  }
-}
-
-async function handleAgentRemoveKnowledge(knowledgeId: string) {
-  const wsId = activeWorkspace?.value?.id
-  const itemId = activeWorkspaceItem.value?.id
-  if (!wsId || !itemId || activeWorkspaceItem.value?.item_type !== 'agent') return
-
-  // Optimistic remove + restore on failure.
-  const previous = agentKnowledge.value
-  agentKnowledge.value = previous.filter((k) => k.id !== knowledgeId)
-  try {
-    await api.deleteAgentKnowledge(itemId, knowledgeId)
-  } catch (e) {
-    // Restore the row so the user can retry.
-    agentKnowledge.value = previous
-    console.error('[AppLayout] failed to remove knowledge:', e)
-  }
-}
-
-// Agent knowledge EDIT dialog (plan 2026-08-22-agent-mode-ui-ux, A2).
-// Same open/busy/error pattern as the add dialog above. `row` is
-// captured at open-time so navigation mid-dialog can't break the save.
-const agentKnowledgeDetailOpen = ref(false)
-const agentKnowledgeDetailRow = ref<api.AgentKnowledgeRow | null>(null)
-const agentKnowledgeDetailBusy = ref(false)
-const agentKnowledgeDetailError = ref<string | null>(null)
-
-function handleAgentEditKnowledge(row: AgnosticKnowledgeRow) {
-  if (!activeWorkspaceItem.value || activeWorkspaceItem.value.item_type !== 'agent') return
-  agentKnowledgeDetailRow.value = row as api.AgentKnowledgeRow
-  agentKnowledgeDetailError.value = null
-  agentKnowledgeDetailOpen.value = true
-}
-
-function closeAgentKnowledgeDetailDialog() {
-  agentKnowledgeDetailOpen.value = false
-  agentKnowledgeDetailError.value = null
-}
-
-async function handleAgentKnowledgeSave(
-  knowledgeId: string,
-  updates: { label: string; file_path?: string; content?: string },
-) {
-  const itemId = activeWorkspaceItem.value?.id
-  if (!itemId || activeWorkspaceItem.value?.item_type !== 'agent') return
-
-  agentKnowledgeDetailBusy.value = true
-  agentKnowledgeDetailError.value = null
-  try {
-    // The dialog always sends both source fields (file_path + content,
-    // one of them '') so a File↔Text mode switch flips the row cleanly.
-    const updated = await api.updateAgentKnowledge(itemId, knowledgeId, updates)
-    // Replace in place so list order is preserved.
-    agentKnowledge.value = agentKnowledge.value.map((k) => (k.id === knowledgeId ? updated : k))
-    closeAgentKnowledgeDetailDialog()
-  } catch (e) {
-    // ApiError carries the backend's JSON body (e.g. {"error":"..."}).
-    // Surface the specific message, not the generic "HTTP 400 Bad
-    // Request" — the user needs to know WHAT was rejected.
-    agentKnowledgeDetailError.value =
-      e instanceof api.ApiError && e.body
-        ? (tryParseErrorBody(e.body) ?? e.message)
-        : e instanceof Error
-          ? e.message
-          : 'Failed to update knowledge'
-    // Keep the dialog open so the user can see + retry.
-  } finally {
-    agentKnowledgeDetailBusy.value = false
-  }
-}
-
-/** Extract the `error` field from a JSON error body, if present. */
-function tryParseErrorBody(body: string): string | null {
-  try {
-    const obj = JSON.parse(body)
-    if (obj && typeof obj === 'object' && typeof obj.error === 'string') {
-      return obj.error
-    }
-    return null
-  } catch {
-    return null
-  }
-}
-
-// ─── Agent System Prompt dialog (Migration 080, plan 2026-08-21-agent-system-prompt) ──
-// Same open/busy/error pattern as the knowledge dialogs above. One
-// dialog serves add (row=null) and edit (row set).
-const agentSystemPromptDialogOpen = ref(false)
-const agentSystemPromptRow = ref<api.AgentSystemPromptRow | null>(null)
-const agentSystemPromptBusy = ref(false)
-const agentSystemPromptError = ref<string | null>(null)
-
-function handleAgentAddSystemPrompt() {
-  if (!activeWorkspaceItem.value || activeWorkspaceItem.value.item_type !== 'agent') return
-  agentSystemPromptRow.value = null
-  agentSystemPromptError.value = null
-  agentSystemPromptDialogOpen.value = true
-}
-
-function handleAgentEditSystemPrompt(row: AgnosticSystemPromptRow) {
-  if (!activeWorkspaceItem.value || activeWorkspaceItem.value.item_type !== 'agent') return
-  agentSystemPromptRow.value = row as api.AgentSystemPromptRow
-  agentSystemPromptError.value = null
-  agentSystemPromptDialogOpen.value = true
-}
-
-function closeAgentSystemPromptDialog() {
-  agentSystemPromptDialogOpen.value = false
-  agentSystemPromptError.value = null
-}
-
-async function handleAgentSystemPromptCreate(title: string, content: string) {
-  const itemId = activeWorkspaceItem.value?.id
-  if (!itemId || activeWorkspaceItem.value?.item_type !== 'agent') return
-
-  agentSystemPromptBusy.value = true
-  agentSystemPromptError.value = null
-  try {
-    // agents.id == workspace_item_id (Migration 076 spec D3).
-    const newRow = await api.addAgentSystemPrompt(itemId, title, content)
-    // Optimistic append — same rationale as knowledge create.
-    agentSystemPrompts.value = [...agentSystemPrompts.value, newRow]
-    closeAgentSystemPromptDialog()
-  } catch (e) {
-    // Surface the backend's specific error message when available.
-    agentSystemPromptError.value =
-      e instanceof api.ApiError && e.body
-        ? (tryParseErrorBody(e.body) ?? e.message)
-        : e instanceof Error
-          ? e.message
-          : 'Failed to add system prompt'
-    // Keep the dialog open so the user can see + retry.
-  } finally {
-    agentSystemPromptBusy.value = false
-  }
-}
-
-async function handleAgentSystemPromptSave(
-  promptId: string,
-  updates: { title: string; content: string },
-) {
-  const itemId = activeWorkspaceItem.value?.id
-  if (!itemId || activeWorkspaceItem.value?.item_type !== 'agent') return
-
-  agentSystemPromptBusy.value = true
-  agentSystemPromptError.value = null
-  try {
-    const updated = await api.updateAgentSystemPrompt(itemId, promptId, updates)
-    // Replace in place so list order is preserved.
-    agentSystemPrompts.value = agentSystemPrompts.value.map((p) =>
-      p.id === promptId ? updated : p,
-    )
-    closeAgentSystemPromptDialog()
-  } catch (e) {
-    agentSystemPromptError.value =
-      e instanceof api.ApiError && e.body
-        ? (tryParseErrorBody(e.body) ?? e.message)
-        : e instanceof Error
-          ? e.message
-          : 'Failed to update system prompt'
-  } finally {
-    agentSystemPromptBusy.value = false
-  }
-}
-
-async function handleAgentRemoveSystemPrompt(promptId: string) {
-  const itemId = activeWorkspaceItem.value?.id
-  if (!itemId || activeWorkspaceItem.value?.item_type !== 'agent') return
-
-  // Optimistic remove + restore on failure.
-  const previous = agentSystemPrompts.value
-  agentSystemPrompts.value = previous.filter((p) => p.id !== promptId)
-  try {
-    await api.deleteAgentSystemPrompt(itemId, promptId)
-  } catch (e) {
-    // Restore the row so the user can retry.
-    agentSystemPrompts.value = previous
-    console.error('[AppLayout] failed to remove system prompt:', e)
-  }
-}
-
-async function handleAgentToggleTool(toolName: string, enabled: boolean) {
-  if (!activeWorkspaceItem.value) return
-  const agentId = activeWorkspaceItem.value.id
-  const { nextLocal, serverPromise } = buildToggle(agentTools.value, toolName, enabled, agentId, {
-    enableAgentTool: api.enableAgentTool,
-    disableAgentTool: api.disableAgentTool,
-    refetchAgentTools: async (id) => {
-      const data = await api.getAgentTools(id)
-      return data.tools
-    },
-  })
-  // Optimistic update.
-  agentTools.value = nextLocal
-  const out = await serverPromise
-  if ('error' in out) {
-    // Revert + log.
-    agentTools.value = enabled
-      ? agentTools.value.filter((n) => n !== toolName)
-      : [...agentTools.value, toolName]
-    console.error('[AppLayout] toggle tool failed:', out.error)
-    return
-  }
-  // Canonical state from server.
-  agentTools.value = out.canonical
-}
-
-/** Bulk-toggle multiple tools at once (fired by AgentView's "Select all" / "Clear" buttons in the
- * Tools panel). */
-async function handleAgentToggleToolsBulk(toolNames: string[], enabled: boolean) {
-  if (!activeWorkspaceItem.value) return
-  const agentId = activeWorkspaceItem.value.id
-  if (toolNames.length === 0) return
-
-  // Optimistic apply.
-  const set = new Set(agentTools.value)
-  for (const n of toolNames) {
-    if (enabled) set.add(n)
-    else set.delete(n)
-  }
-  agentTools.value = Array.from(set)
-
-  try {
-    const ops = toolNames.map(async (n) => {
-      try {
-        if (enabled) await api.enableAgentTool(agentId, n)
-        else await api.disableAgentTool(agentId, n)
-        return { name: n, ok: true as const }
-      } catch (e) {
-        return { name: n, ok: false as const, error: e }
-      }
-    })
-    const results = await Promise.all(ops)
-    const failures = results.filter((r) => !r.ok)
-    if (failures.length > 0) {
-      console.error('[AppLayout] bulk toggle: some tools failed:', failures)
-    }
-    // Re-fetch the canonical list so partial successes + races collapse
-    // into one coherent view. Cheap (one GET).
-    const data = await api.getAgentTools(agentId)
-    agentTools.value = data.tools
-  } catch (e) {
-    console.error('[AppLayout] bulk toggle failed:', e)
-  }
-}
-
-// ─── Browser Back/forward ↔ task chat sync (non-tab mode) ───── Opening a task chat PUSHes
-// `/app?...&itemId=<id>/chat/<taskId>` (Sidebar.handleSelectTask), so browser Back pops the URL
-// back to the board URL.
-const syncTaskFromItemId = () => {
-  let rawItemId: string | undefined
-  try {
-    rawItemId = route.query.itemId as string | undefined
-  } catch {
-    return
-  }
-  try {
-    if (tabsStore.enabled) return
-    if (workspacesStore.isNavigatingToTask) return
-    const parsed = parseItemIdWithChat(rawItemId ?? '')
-    const urlTaskId = parsed.chatTaskId ?? null
-    const activeTaskId = workspacesStore.activeTaskId ?? null
-    if (urlTaskId === activeTaskId) return
-    if (urlTaskId) {
-      workspacesStore.setActiveTask(urlTaskId)
-    } else if (activeTaskId) {
-      workspacesStore.setActiveTask(null)
-      navigationStore.clearActiveChat()
-    }
-  } catch {
-    // Router/store absent in unit tests — nothing to sync.
-  }
-}
-
-// Close the chatview column (the 3-column layout's right pane). Triggered by the ChatView's ✕
-// header button.
-const handleCloseTaskView = () => {
-  // Tab mode: a kanban task chat owns its own tab, so "close the chat" means "close that tab".
-  const closingTab = tabsStore.activeTab
-  const closingChatTaskId = closingTab
-    ? parseItemIdWithChat(closingTab.query.itemId ?? '').chatTaskId
-    : null
-  if (
-    tabsStore.enabled &&
-    activeWorkspaceItem.value?.item_type === 'kanban' &&
-    closingTab?.kind === 'workspace' &&
-    closingChatTaskId
-  ) {
-    workspacesStore.setActiveTask(null)
-    navigationStore.clearActiveChat()
-    // close() activates the right neighbour, else the left. The chat tab was inserted directly
-    // after the board tab, so this lands back on the board. When the chat tab is the ONLY tab,
-    // close() opens a fresh home tab — the browser-like fallback, deliberately not special-cased.
-    tabsStore.close(closingTab.id)
-    applyActiveTabToUrl()
-    return
-  }
-  // CHATVIEW-BUG (fix): setActiveTask(null) does NOT clear the navigation store's active chat
-  // anymore (the unconditional clear broke the chat-nav paths in Sidebar.vue:316-322 and
-  // ChatsList.vue:220-232).
-  workspacesStore.setActiveTask(null)
-  navigationStore.clearActiveChat()
-  // 2026-08-06 (design-chat-as-dialog bug fix): clearing activeTaskId above triggers the watcher at
-  // the top of this block which clears `activeDesignChatTaskId` and `activeDesignChatPageName` —
-  // that's how the dialog unmounts.
-  const wsId = activeWorkspaceId.value
-  const itemId = workspacesStore.activeWorkspaceItemId
-  const pageId = workspacesStore.activeDesignPageId
-  const sub: Record<string, string> = {}
-  if (pageId) sub.pageId = pageId
-  // Restore the kanban per-column sort state (kanban-sort-by plan, 2026-08-06 —
-  // `?sorts=col_x:name:asc,...`). Sidebar's handleSelectTask snapshots the user's sort choice
-  // before navigating into the task view; we read it back here and put it back into the URL.
-  if (workspacesStore.savedSortsParam) {
-    sub.sorts = workspacesStore.savedSortsParam
-    workspacesStore.savedSortsParam = ''
-  }
-  // Restore the kanban layout (columns | rows). Like `sorts`, this is URL-only state, so it is read
-  // back off the current route rather than the store. Without it, opening a task chat and closing
-  // it snapped the board back to column mode.
-  const urlLayout = route.query.layout
-  if (typeof urlLayout === 'string' && urlLayout.length > 0) sub.layout = urlLayout
-  if (wsId && itemId) {
-    router.replace(buildAppUrl({ workspaceId: wsId, projectId: itemId, query: sub }))
-  } else if (wsId) {
-    router.replace(buildAppUrl({ workspaceId: wsId, query: sub }))
-  } else {
-    router.replace({ path: '/app', query: sub })
-  }
-}
-
-// ─── Design 3-column resize (separate from kanban) ───────────────────── Design canvases need
-// significantly more horizontal room than kanbans — a typical Figma-style page is 1440px wide, and
-// DesignView itself contains its own 320px Layers+Properties sidebar at full width.
-type KanbanEditorMode = 'add' | 'rename' | 'delete'
-const showKanbanColumnEditor = ref(false)
-const kanbanColumnEditorMode = ref<KanbanEditorMode>('add')
-const kanbanColumnEditorTargetId = ref<string | null>(null)
-const kanbanColumnEditorInitialName = ref<string>('')
-const kanbanColumnEditorInitialDescription = ref<string>('')
-const kanbanColumnEditorInitialIsDone = ref<boolean>(false)
-
-// Look up the column by id in the active kanban item. Returns
-// undefined if the active item is missing or has no columns — the
-// caller treats that as a no-op.
-const findKanbanColumn = (columnId: string) => {
-  return activeWorkspaceItem.value?.kanban_columns?.find((c) => c.id === columnId)
-}
-
-// + Column on the kanban header: open the editor in 'add' mode.
-const handleKanbanAddColumn = () => {
-  kanbanColumnEditorMode.value = 'add'
-  kanbanColumnEditorTargetId.value = null
-  kanbanColumnEditorInitialName.value = ''
-  showKanbanColumnEditor.value = true
-}
-
-// ⋮ menu "Rename" on a column: open the editor in 'rename' mode,
-// pre-filled with the column's current name and description.
-const handleKanbanRequestRenameColumn = (columnId: string) => {
-  const col = findKanbanColumn(columnId)
-  if (!col) return
-  kanbanColumnEditorMode.value = 'rename'
-  kanbanColumnEditorTargetId.value = columnId
-  kanbanColumnEditorInitialName.value = col.name
-  kanbanColumnEditorInitialDescription.value = col.description ?? ''
-  kanbanColumnEditorInitialIsDone.value = col.is_done ?? false
-  showKanbanColumnEditor.value = true
-}
-
-/** Forward a kanban rename (from either the Settings dialog header pencil or the KanbanView header
- * pencil) to the store. Both children emit `rename-item` with the trimmed new name; the store
- * action optimistic-updates + rolls back on error. */
-const handleKanbanRenameItem = (newName: string) => {
-  if (!activeWorkspaceItem.value) return
-  const ws = activeWorkspace.value
-  if (!ws) return
-  void workspacesStore.updateKanbanItemName(ws.id, activeWorkspaceItem.value.id, newName)
-}
-
-// ⋮ menu "Delete" on a column: open the editor in 'delete' mode
-// (the editor renders the confirmation copy itself).
-const handleKanbanRequestDeleteColumn = (columnId: string) => {
-  const col = findKanbanColumn(columnId)
-  if (!col) return
-  kanbanColumnEditorMode.value = 'delete'
-  kanbanColumnEditorTargetId.value = columnId
-  kanbanColumnEditorInitialName.value = col.name
-  kanbanColumnEditorInitialDescription.value = col.description ?? ''
-  showKanbanColumnEditor.value = true
-}
-
-const handleKanbanColumnEditorClose = () => {
-  showKanbanColumnEditor.value = false
-}
-
-const handleKanbanColumnEditorAdd = (name: string, description: string) => {
-  if (!activeWorkspaceItem.value) return
-  const ws = activeWorkspace.value
-  if (!ws) return
-  void workspacesStore.addKanbanColumn(ws.id, activeWorkspaceItem.value.id, name, description)
-  showKanbanColumnEditor.value = false
-}
-
-const handleKanbanColumnEditorRename = (name: string, description: string, isDone: boolean) => {
-  if (!activeWorkspaceItem.value || !kanbanColumnEditorTargetId.value) return
-  const ws = activeWorkspace.value
-  if (!ws) return
-  void workspacesStore.updateKanbanColumn(
-    ws.id,
-    activeWorkspaceItem.value.id,
-    kanbanColumnEditorTargetId.value,
-    { name, description, is_done: isDone },
-  )
-  showKanbanColumnEditor.value = false
-}
-
-const handleKanbanColumnEditorDelete = () => {
-  if (!activeWorkspaceItem.value || !kanbanColumnEditorTargetId.value) return
-  const ws = activeWorkspace.value
-  if (!ws) return
-  void workspacesStore.deleteKanbanColumn(
-    ws.id,
-    activeWorkspaceItem.value.id,
-    kanbanColumnEditorTargetId.value,
-  )
-  showKanbanColumnEditor.value = false
-}
-
-// ─── Kanban settings page (plan: 2026-09-02-kanban-settings-as-page) ──── The settings UI moved
-// from a centered modal dialog (the deleted KanbanSettingsDialog) to a dedicated full-page route
-// (/app/{workspaceId}/projects/{itemId}/settings).
-const handleOpenKanbanSettings = () => {
-  const itemId = activeWorkspaceItem.value?.id ?? ''
-  const workspaceId = activeWorkspace.value?.id ?? ''
-  if (!itemId) return
-  // The URL names the workspace AND the board, so a reload knows which workspace the board is in.
-  // With no workspace to name, the legacy shape is the only URL available.
-  if (!workspaceId) {
-    router.push({ path: `/app/kanban/${itemId}/settings` })
-    return
-  }
-  router.push(buildProjectSettingsUrl(workspaceId, itemId))
-}
-
-const handleKanbanSettingsAddColumn = (name: string, description: string) => {
-  if (!activeWorkspaceItem.value) return
-  const ws = activeWorkspace.value
-  if (!ws) return
-  void workspacesStore.addKanbanColumn(ws.id, activeWorkspaceItem.value.id, name, description)
-  // Dialog stays open so the user can add more columns in succession.
-}
-
-const handleKanbanSettingsEditColumn = (payload: {
-  columnId: string
-  name: string
-  description: string
-  is_done?: boolean
-}) => {
-  if (!activeWorkspaceItem.value) return
-  const ws = activeWorkspace.value
-  if (!ws) return
-  void workspacesStore.updateKanbanColumn(ws.id, activeWorkspaceItem.value.id, payload.columnId, {
-    name: payload.name,
-    description: payload.description,
-    ...(payload.is_done !== undefined ? { is_done: payload.is_done } : {}),
-  })
-}
-
-const handleKanbanSettingsDeleteColumn = (columnId: string) => {
-  if (!activeWorkspaceItem.value) return
-  const ws = activeWorkspace.value
-  if (!ws) return
-  void workspacesStore.deleteKanbanColumn(ws.id, activeWorkspaceItem.value.id, columnId)
-}
-
-// ─── CopyKanbanSpecDialog ──────────────────────────────────────────────── Per-board "copy columns
-// from another kanban" flow. Triggered by the "Copy spec…" footer button in KanbanSettingsDialog.
-const showCopyKanbanSpecDialog = ref(false)
-
-const handleOpenCopyKanbanSpec = () => {
-  showCopyKanbanSpecDialog.value = true
-}
-
-const handleCloseCopyKanbanSpec = () => {
-  showCopyKanbanSpecDialog.value = false
-}
-
-const handleCopyKanbanSpec = (sourceItemId: string, mode: 'replace' | 'append') => {
-  if (!activeWorkspaceItem.value || !activeWorkspace.value) return
-  void workspacesStore
-    .copyKanbanSpecFrom(activeWorkspace.value.id, activeWorkspaceItem.value.id, sourceItemId, mode)
-    .then(() => {
-      showCopyKanbanSpecDialog.value = false
-    })
-}
-
-// + Add on a column: handled LOCALLY by KanbanView (no longer bubbles up here). KanbanView opens
-// the KanbanTaskDetailDialog in create mode, then calls workspacesStore.addTask + moveTaskToColumn
-// on submit.
-
-
-// Drag-and-drop task move. A 409 opens the "Move anyway" confirm (retry with force=true); any
-// other failure is logged (apiFetch already toasted it). The store mutates only after the API
-// succeeds, so a refused move needs nothing here.
-const showMoveBlockedConfirm = ref(false)
-const moveBlockedMessage = ref('')
-const pendingBlockedMove = ref<{ taskId: string; columnId: string; position: number } | null>(null)
-
-const handleKanbanMoveTask = async (payload: {
-  taskId: string
-  columnId: string
-  position: number
-}) => {
-  if (!activeWorkspaceItem.value) return
-  const ws = activeWorkspace.value
-  if (!ws) return
-  try {
-    await workspacesStore.moveTaskToColumn(
-      ws.id,
-      activeWorkspaceItem.value.id,
-      payload.taskId,
-      payload.columnId,
-      payload.position,
-    )
-  }
-  // eslint-disable-next-line local/no-try-catch -- UI event handler forking on a typed 409 (parseMoveBlockers narrows the unknown into the confirm-dialog path); the non-gate branch logs via console.error
-  catch (err) {
-    const blockers = api.parseMoveBlockers(err)
-    if (blockers) {
-      const names = blockers.map((b) => b.name).filter((n) => n.length > 0)
-      moveBlockedMessage.value =
-        names.length > 0
-          ? `This task is blocked by: ${names.join(', ')}. Move anyway?`
-          : 'This task is blocked by incomplete dependencies. Move anyway?'
-      pendingBlockedMove.value = { ...payload }
-      showMoveBlockedConfirm.value = true
-      return
-    }
-    console.error('[AppLayout] Failed to move kanban task:', err)
-  }
-}
-
-// "Move anyway" confirm: retry the pending move with force=true.
-// Cancel just closes — the store never mutated, so the card
-// already sits in its original column.
-const handleMoveBlockedConfirm = () => {
-  const pending = pendingBlockedMove.value
-  showMoveBlockedConfirm.value = false
-  pendingBlockedMove.value = null
-  if (!pending || !activeWorkspaceItem.value || !activeWorkspace.value) return
-  void workspacesStore
-    .moveTaskToColumn(
-      activeWorkspace.value.id,
-      activeWorkspaceItem.value.id,
-      pending.taskId,
-      pending.columnId,
-      pending.position,
-      true,
-    )
-    .catch((err: unknown) => {
-      console.error('[AppLayout] Failed to force-move kanban task:', err)
-    })
-}
-
-const handleMoveBlockedClose = () => {
-  showMoveBlockedConfirm.value = false
-  pendingBlockedMove.value = null
-}
-
-// "Rename column" emitted from the inline rename input inside <KanbanColumn>. The column lets the
-// user type a new name directly (no modal) and emits this on blur / Enter. Direct store call.
-const handleKanbanRenameColumn = (payload: { columnId: string; name: string }) => {
-  if (!activeWorkspaceItem.value) return
-  const ws = activeWorkspace.value
-  if (!ws) return
-  void workspacesStore.updateKanbanColumn(ws.id, activeWorkspaceItem.value.id, payload.columnId, {
-    name: payload.name,
-  })
-}
-
-// "Delete column" emitted from the column's quick-delete path (the ⋮ menu's "Delete" goes through
-// the editor flow above, but the column may also expose a faster path in a future iteration).
-// Direct store call.
-const handleKanbanDeleteColumn = (columnId: string) => {
-  if (!activeWorkspaceItem.value) return
-  const ws = activeWorkspace.value
-  if (!ws) return
-  void workspacesStore.deleteKanbanColumn(ws.id, activeWorkspaceItem.value.id, columnId)
-}
-
-// Column header drag-and-drop reorder (Trello/Jira UX).
-const handleKanbanReorderColumn = (payload: { columnId: string; targetColumnId: string }) => {
-  if (!activeWorkspaceItem.value) return
-  const ws = activeWorkspace.value
-  if (!ws) return
-  void workspacesStore.reorderKanbanColumn(
-    ws.id,
-    activeWorkspaceItem.value.id,
-    payload.columnId,
-    payload.targetColumnId,
-  )
-}
-
-// Task-level events (select-task, delete-task, rename-task, pin-task) re-emitted by <KanbanColumn>.
-// These all live in Sidebar (because they need access to chatsListRef and the modal state for
-// rename), so we forward them via the exposed methods.
-const handleKanbanSelectTask = (taskId: string) => {
-  sidebarRef.value?.selectTask(taskId)
-}
-
-// Right-click "Open in new tab" on a kanban card. Builds the task
-// chat URL from the card's explicit ids and opens a real browser
-// tab — no store mutation, the board stays put.
-const handleKanbanOpenTaskInBackground = (payload: {
-  workspaceId: string
-  itemId: string
-  taskId: string
-}) => {
-  openInNewTab(
-    router,
-    buildTaskAppUrl({
-      taskId: payload.taskId,
-      activeWorkspaceId: payload.workspaceId || activeWorkspace?.value?.id || null,
-      activeWorkspaceItemId: payload.itemId || null,
-      activeDesignPageId: null,
-      activeItemType: 'kanban',
-      currentQuery: route.query,
-    }),
-  )
-}
-
-// Right-click "Open details in new tab" on a kanban card. Builds the BOARD url (no /chat/ suffix) +
-// ?detail=<taskId> so the new tab loads the kanban with the inline detail panel pre-opened.
-// Preserves sorts/pageId breadcrumb via currentQuery.
-const handleKanbanOpenTaskDetailInBackground = (payload: {
-  workspaceId: string
-  itemId: string
-  taskId: string
-}) => {
-  const pathParsed = parseAppPath(route.path)
-  const wsId =
-    payload.workspaceId ||
-    activeWorkspace?.value?.id ||
-    (pathParsed.kind === 'project' ||
-    pathParsed.kind === 'projectChat' ||
-    pathParsed.kind === 'projectAdd'
-      ? pathParsed.workspaceId
-      : '') ||
-    (route.query.workspaceId as string) ||
-    ''
-  const pathProject =
-    pathParsed.kind === 'project' ||
-    pathParsed.kind === 'projectChat' ||
-    pathParsed.kind === 'projectAdd'
-      ? pathParsed.projectId
-      : ''
-  const bareItemId =
-    payload.itemId ||
-    pathProject ||
-    parseItemIdWithChat((route.query.itemId as string) ?? '').itemId ||
-    activeWorkspaceItem?.value?.id ||
-    ''
-  // Strip any existing /chat/ suffix — the detail tab is the
-  // board, not the chat.
-  const bare = bareItemId.split('/chat/')[0] ?? bareItemId
-  const sub: Record<string, string> = { detail: payload.taskId }
-  const sorts = route.query.sorts
-  if (typeof sorts === 'string' && sorts !== '') sub.sorts = sorts
-  openInNewTab(router, buildAppUrl({ workspaceId: wsId, projectId: bare, query: sub }))
-}
-
-const handleKanbanDeleteTask = (workspaceId: string, itemId: string, taskId: string) => {
-  sidebarRef.value?.deleteTask(workspaceId, itemId, taskId)
-}
-
-const handleKanbanRenameTask = (
-  workspaceId: string,
-  itemId: string,
-  taskId: string,
-  currentName: string,
-) => {
-  sidebarRef.value?.renameTask(workspaceId, itemId, taskId, currentName)
-}
-
-const handleKanbanPinTask = (
-  workspaceId: string,
-  itemId: string,
-  taskId: string,
-  isPinned: boolean,
-) => {
-  sidebarRef.value?.pinTask(workspaceId, itemId, taskId, isPinned)
-}
-
-// ─── Design mode event handlers (Chunk 8 of design-mode-redesign) ──── <DesignView> emits these
-// when the user interacts with the canvas: tabs, layers, properties panel, Monaco editor.
-const handleDesignSelectPage = (_pageId: string) => {
-  // TODO (v2): workspacesStore.setActiveDesignPage(_pageId) once the
-  // store tracks the active page. For now DesignView owns the page
-  // state internally; the parent doesn't need to mirror it.
-  void _pageId
-}
-
-const handleDesignSelectElement = (_elementId: string) => {
-  // TODO (v2): workspacesStore.setActiveDesignElement(_elementId) so
-  // other tabs / the right sidebar can show the element's properties.
-  // For now selection state lives inside DesignView.
-  void _elementId
-}
-
-// NEW: design-mode chat toggle (top-right 💬 button in DesignView).Migration of legacy data:
-// users created before this fix have a single "Design Chat" canonical task (the pre-fix behavior).
-const handleDesignOpenChat = async (payload: {
-  pageId: string
-  pageName: string
-  workspaceItemTaskId: string
-}): Promise<void> => {
-  const ws = activeWorkspace.value
-  const item = activeWorkspaceItem.value
-  if (!ws || !item || item.item_type !== 'design') return
-  if (!payload.pageId || !payload.pageName) return
-  if (!payload.workspaceItemTaskId) return
-
-  // 2026-07-28 FK rewrite: resolve the chat task
-  // via the FK directly.
-  workspacesStore.setActiveTask(payload.workspaceItemTaskId)
-  // 2026-08-06 (plan: design-chat-as-dialog): capture the design page's own name so
-  // DesignChatDialog's header reads "Design Chat: <pageName>". Distinct from the workspace item's
-  // name (which would be the parent design's name like "Design").
-  activeDesignChatPageName.value = payload.pageName
-  // Bug fix (2026-08-06, user report "chat button keep not popup, chatview"): the dialog's v-if was
-  // previously gated on the store's `activeTask` computed, which is null for design items (their
-  // tasks array is empty post-init).
-  activeDesignChatTaskId.value = payload.workspaceItemTaskId
-}
-
-const handleDesignUpdateElement = async (
-  elementId: string,
-  patch: Partial<{
-    x: number
-    y: number
-    width: number
-    height: number
-    rotation: number
-    [k: string]: unknown
-  }>,
-): Promise<void> => {
-  const ws = activeWorkspace.value
-  const item = activeWorkspaceItem.value
-  if (!ws || !item) return
-  // Deprecated back-compat path (PATCH /geometry). New typed events
-  // emit translateElement / resizeElement instead — see below.
-  await designHandlers.updateElement(ws.id, item.id, elementId, patch)
-}
-
-/** NEW (2026-08-06, split-move-resize plan) — handler for the `translateElement` event fired by
- * DesignView during a single-element drag (move mode). Routes to useDesignHandlers.translateElement
- * → POST /translate. */
-const handleDesignTranslateElement = async (
-  elementId: string,
-  dx: number,
-  dy: number,
-): Promise<void> => {
-  const ws = activeWorkspace.value
-  const item = activeWorkspaceItem.value
-  if (!ws || !item) return
-  await designHandlers.translateElement(ws.id, item.id, elementId, dx, dy)
-}
-
-/**  * NEW (2026-08-06, split-move-resize plan) — handler for the `resizeElement` event fired by
- * DesignView during a resize gesture. Routes to useDesignHandlers.resizeElement → POST /resize.
- * Resize never cascades (Figma convention). */
-const handleDesignResizeElement = async (
-  elementId: string,
-  patch: Partial<{
-    x: number
-    y: number
-    width: number
-    height: number
-    rotation: number
-    [k: string]: unknown
-  }>,
-): Promise<void> => {
-  const ws = activeWorkspace.value
-  const item = activeWorkspaceItem.value
-  if (!ws || !item) return
-  await designHandlers.resizeElement(ws.id, item.id, elementId, patch)
-}
-
-const handleDesignDeleteElement = async (elementId: string): Promise<void> => {
-  const ws = activeWorkspace.value
-  const item = activeWorkspaceItem.value
-  if (!ws || !item) return
-  await designHandlers.deleteElement(ws.id, item.id, elementId)
-}
-
-/** NEW (regression fix, 2026-08-14, "design mode, add element manual not working"). */
-const handleDesignCreateElement = async (body: {
-  name: string
-  type: DesignElementApi['type']
-  html: string
-}): Promise<void> => {
-  const ws = activeWorkspace.value
-  const item = activeWorkspaceItem.value
-  if (!ws || !item) return
-  await designHandlers.createElement(ws.id, item.id, body)
-}
-
-// Right sidebar cwd - show when chat is open OR task is active
-const rightSidebarCwd = computed(() => {
-  if (activeTask.value && activeWorkspaceItem.value?.path) {
-    return activeWorkspaceItem.value.path
-  }
-  if (navigationStore.activeChatId && navigationStore.activeChatId.startsWith('chat-')) {
-    return chatSessionCwd.value || activeWorkspaceItem.value?.path || ''
-  }
-  return ''
-})
-
-// Effective cwd for the <ChatView> mount. The ChatView child seeds its `sessionCwd` ref from this
-// prop in onMounted (`if (props.cwd) sessionCwd.value = props.cwd`), then sends it as `cwd_session`
-// on every api.sendChatMessage call.
-const effectiveChatCwd = computed(() => {
-  return chatSessionCwd.value || activeWorkspaceItem.value?.path || ''
-})
-
-// Route-change reconcile (Back/Forward/deep-link drift) — replaces the old path+query watcher; runs
-// from the render pump below.
-const reconcileRoute = async () => {
-  const query = route.query as Record<string, string | undefined>
-  const sessionId = query.session as string
-  const taskId = query.task as string
-  const view = query.view as string
-  const parsed = parseAppPath(route.path)
-
-  // Path chat URL: adopt the chat when drifting (Back/Forward into
-  // a chat from a board, or across chats). Mirrors the legacy
-  // `?view=chat` branch below.
-  const isOverlayView = view === 'gitfile' || view === 'skill' || view === 'code-editor'
-  // Documents (Migration 095) are a PATH shape, so this watcher reads them like any other branch
-  // below.
-  if (parsed.kind === 'chat') {
-    // The path names the workspace too — adopt it, exactly as the project branch below does.
-    // Without this, Back/Forward into a chat left the previous workspace selected in the sidebar
-    // while the URL named another one (task_1791556124905_10).
-    if (workspacesStore.activeWorkspaceId !== parsed.workspaceId) {
-      await workspacesStore.setActiveWorkspace(parsed.workspaceId)
-    }
-    if (activeChatId.value !== `chat-${parsed.sessionId}`) {
-      workspacesStore.setActiveWorkspaceItem(null)
-      navigationStore.setActiveChat(parsed.sessionId, navigationStore.activeChatName)
-    }
-    await fetchChatSessionCwd(parsed.sessionId)
-    // An overlay on a chat path (readable editor link) still needs its restore below — the path
-    // adoption above only rebuilds the cwd context the restore reads from.
-    if (!isOverlayView) {
-      clearAllOverlays()
-      return
-    }
-  } else if (
-    parsed.kind === 'project' ||
-    parsed.kind === 'projectChat' ||
-    parsed.kind === 'projectAdd' ||
-    parsed.kind === 'projectSettings'
-  ) {
-    // Path project URLs: adopt workspace + item, sync the task chat suffix, drop any standalone
-    // chat. `/add` and `/settings` ride the project path, so they adopt the same context — no task
-    // is active on them (wantTaskId stays null), exactly as on the plain board.
-    if (workspacesStore.activeWorkspaceId !== parsed.workspaceId) {
-      await workspacesStore.setActiveWorkspace(parsed.workspaceId)
-    }
-    if (workspacesStore.activeWorkspaceItemId !== parsed.projectId) {
-      workspacesStore.setActiveWorkspaceItem(parsed.projectId)
-    }
-    const wantTaskId = parsed.kind === 'projectChat' ? parsed.chatTaskId : null
-    if ((workspacesStore.activeTaskId ?? null) !== wantTaskId) {
-      workspacesStore.setActiveTask(wantTaskId)
-    }
-    if (navigationStore.activeChatId !== '') {
-      navigationStore.clearActiveChat()
-    }
-    chatSessionCwd.value = ''
-    if (!isOverlayView) {
-      clearAllOverlays()
-      return
-    }
-  } else if (parsed.kind === 'landing' && !view) {
-    if (workspacesStore.activeWorkspaceItemId !== null) {
-      workspacesStore.setActiveWorkspaceItem(null)
-    }
-    if (workspacesStore.activeTaskId !== null) {
-      workspacesStore.setActiveTask(null)
-    }
-    if (navigationStore.activeChatId !== '') {
-      navigationStore.clearActiveChat()
-    }
-    chatSessionCwd.value = ''
-    clearAllOverlays()
-    return
-  } else if (parsed.kind === 'doc') {
-    // A document is its own main view, so the chat / item / task selections must clear — exactly as
-    // `landing` does above.
-    if (workspacesStore.activeWorkspaceItemId !== null) {
-      workspacesStore.setActiveWorkspaceItem(null)
-    }
-    if (workspacesStore.activeTaskId !== null) {
-      workspacesStore.setActiveTask(null)
-    }
-    if (navigationStore.activeChatId !== '') {
-      navigationStore.clearActiveChat()
-    }
-    chatSessionCwd.value = ''
-    clearAllOverlays()
-    return
-  }
-
-  if (view === 'gitfile') {
-    // Restore git file viewer state from URL
-    const filePath = query.file as string
-    const staged = query.staged === '1'
-
-    if (filePath) {
-      // Decode the file path
-      try {
-        const decodedPath = atob(filePath)
-        gitViewerFile.value = {
-          path: decodedPath,
-          index_status: staged ? 'M' : ' ',
-          worktree_status: staged ? ' ' : 'M',
-        }
-        gitViewerStaged.value = staged
-      } catch {
-        // Fallback if decoding fails
-        gitViewerFile.value = {
-          path: filePath,
-          index_status: staged ? 'M' : ' ',
-          worktree_status: staged ? ' ' : 'M',
-        }
-        gitViewerStaged.value = staged
-      }
-    }
-  } else if (view === 'skill') {
-    // Restore skill viewer state from URL
-    const skillName = query.skill as string
-    if (skillName) {
-      skillViewerSkill.value = {
-        name: skillName,
-      }
-    }
-  } else if (view === 'code-editor') {
-    // Restore code editor state from URL (reload, Back/Forward, shared link).
-    const fileParam = query.file as string | undefined
-    const queryCwd = typeof query.cwd === 'string' ? query.cwd : ''
-    if (fileParam) {
-      void codeEditorSession.restoreFromUrl({
-        fileParam,
-        queryCwd,
-        fallbackCwd: rightSidebarCwd.value,
-        lineParam: query.line as string | undefined,
-      })
-    }
-  } else {
-    // No overlay in the URL: drop any open viewer. The full session clear also resets
-    // loadedKey/cwd/loading, so a later deep link with the same file still refetches instead of
-    // hitting the restore echo guard.
-    clearAllOverlays()
-
-    if (view === 'chat' && sessionId) {
-      if (activeChatId.value !== `chat-${sessionId}`) {
-        // URL changed to a different chat — clear any leftover workspace
-        // item active state from a previous view.
-        workspacesStore.setActiveWorkspaceItem(null)
-        navigationStore.setActiveChat(sessionId, navigationStore.activeChatName)
-      }
-      // Fetch cwd for folder explorer and git
-      // Use localStorage cached value if available for immediate use
-      const cachedCwd = localStorage.getItem(`session_cwd_${sessionId}`)
-      if (cachedCwd) {
-        chatSessionCwd.value = cachedCwd
-      }
-      await fetchChatSessionCwd(sessionId)
-      // Cache the cwd for future use
-      if (chatSessionCwd.value) {
-        localStorage.setItem(`session_cwd_${sessionId}`, chatSessionCwd.value)
-      }
-    } else if (view === 'task' && taskId) {
-      // Task is handled by workspacesStore.setActiveTask already called in onMounted
-    } else if (!view || view === 'workspace') {
-      // Clear chat session cwd when not in chat view. We intentionally do NOT blindly clear
-      // activeWorkspaceItemId here: Sidebar's handleSelectItem navigates to this exact URL after
-      // setting the active workspace item (folder or kanban).
-      if (route.path === '/app') {
-        const parsed = parseItemIdWithChat((query.itemId as string | undefined) ?? '')
-        if (!parsed.chatTaskId) {
-          const wantItemId = parsed.itemId || null
-          if (workspacesStore.activeWorkspaceItemId !== wantItemId) {
-            workspacesStore.setActiveWorkspaceItem(wantItemId)
-          }
-          if (workspacesStore.activeTaskId !== null) {
-            workspacesStore.setActiveTask(null)
-          }
-          if (navigationStore.activeChatId !== '') {
-            navigationStore.clearActiveChat()
-          }
-        }
-      }
-      chatSessionCwd.value = ''
-    }
-  }
-}
-
-// Session-cwd localStorage cache (replaces the old chatSessionCwd watcher).
-// Called from fetchChatSessionCwd after every assignment; clearing to ''
-// needs no cache write (the old watcher only wrote truthy cwds).
-const writeSessionCwdCache = (newCwd: string) => {
-  if (newCwd && activeChatId.value) {
-    const sessionId = activeChatId.value.replace(/^chat-/, '')
-    localStorage.setItem(`session_cwd_${sessionId}`, newCwd)
-  }
-}
-
-// Retry the editor restore when the cwd context arrives late.
-const retryEditorRestore = () => {
-  const cwd = rightSidebarCwd.value
-  if (!cwd) return
-  const q = route.query as Record<string, string | undefined>
-  if (q.view !== 'code-editor' || !q.file) return
-  if (codeEditorSession.error.value !== 'No working directory') return
-  void codeEditorSession.restoreFromUrl({
-    fileParam: q.file,
-    queryCwd: typeof q.cwd === 'string' ? q.cwd : '',
-    fallbackCwd: cwd,
-    lineParam: q.line,
-  })
-}
 
 // Expose the design chat open handler so tests can simulate the user clicking the 💬 button in
 // DesignView (which emits `openChat`). In production, this is reached via the DesignView emit chain
 // — tests don't render DesignView because they stub it.
-function mirrorTargetIntoStores(path: string, query: Record<string, string>, chatName?: string) {
-  if (path !== '/app') return
-  const view = query.view ?? 'chat'
-
-  if (view === 'workspace') {
-    const parsed = parseItemIdWithChat(query.itemId ?? '')
-    navigationStore.clearAll()
-    workspacesStore.setActiveTask(parsed.chatTaskId)
-    workspacesStore.setActiveWorkspaceItem(parsed.itemId || null)
-    if (query.pageId) workspacesStore.setActiveDesignPage(query.pageId)
-    return
-  }
-
-  // A chat (with or without a session) wins over any workspace item — the same
-  // sequence the sidebar's chat path performs.
-  workspacesStore.setActiveTask(null)
-  workspacesStore.setActiveWorkspaceItem(null)
-  if (query.session) navigationStore.setActiveChat(query.session, chatName ?? '')
-  else navigationStore.clearAll()
-}
-
-/** Navigate to the active tab's target. Called by the strip after it acts. */
-function applyActiveTabToUrl() {
-  const tab = tabsStore.activeTab
-  if (!tab) return
-  mirrorTargetIntoStores(tab.path, tab.query, tab.title)
-  const query = withTabParam(tab.query, tab.id)
-  if (route.path === tab.path && sameRouteQuery(route.query, query)) return
-  router.replace({ path: tab.path, query })
-}
-
-/** The funnel. Every navigation in the app lands here — sidebar clicks, the chats list,
- * kanban/design chat dialogs, deep links, the Back button — so no call site has to know the tab
- * strip exists, and a view type added later becomes tabbable for free. */
-function syncFromRoute() {
-  // The item's type decides whether a task chat belongs to the item's tab (kanban/design open it as
-  // a dialog inside that view) or gets its own. Only trust it when it describes the item this URL
-  // points at — on a cold boot the tree may not be loaded yet, and the store adopts the tab later.
-  const active = workspacesStore.activeWorkspaceItem
-  const urlItemId = parseItemIdWithChat((route.query.itemId as string) ?? '').itemId
-  const itemType = active && active.id === urlItemId ? (active.item_type ?? null) : null
-  const result = tabsStore.syncFromTarget(route.path, { ...route.query }, itemType)
-  if (result.changed) router.replace({ path: result.path, query: result.query })
-}
-
-let tabsFunnelReady = false
-
-// Registered AFTER the restore block above, and Vue fires `onMounted` hooks
-// in registration order — so a cold boot is already resolved by the time
-// this runs, and it stays synchronous so it cannot shift mount timing.
-onMounted(() => {
-  tabsFunnelReady = true
-  syncFromRoute()
-})
-
-/**  * Shortcuts and the live title feed are window-scoped wiring, so they live here and are torn down
- * with the layout. Every handler re-applies the URL through `applyActiveTabToUrl`, so the shortcut
- * map can never leave the URL pointing at a tab the user is no longer on. */
-const stopTabShortcuts = useTabShortcuts({
-  isEnabled: () => tabsStore.enabled,
-  tabCount: () => tabsStore.tabCount,
-  handlers: {
-    newTab: () => {
-      tabsStore.openHomeTab()
-      applyActiveTabToUrl()
-    },
-    closeTab: () => {
-      tabsStore.close(tabsStore.activeTabId)
-      applyActiveTabToUrl()
-    },
-    reopenTab: () => {
-      tabsStore.reopenLastClosed()
-      applyActiveTabToUrl()
-    },
-    nextTab: () => {
-      tabsStore.next()
-      applyActiveTabToUrl()
-    },
-    previousTab: () => {
-      tabsStore.prev()
-      applyActiveTabToUrl()
-    },
-    selectTab: (index: number) => {
-      tabsStore.activateIndex(index - 1)
-      applyActiveTabToUrl()
-    },
-  },
-})
-
-// The tab title feed is owned by App.vue (it installs the SSE bus), so nothing
-// to unregister here — only the shortcuts, which live in this component.
-onUnmounted(() => {
-  stopTabShortcuts()
-})
-
-// ─── Subscription pumps (replace every watcher removed above) ──────────── Two explicit
-// mechanisms, no reactive watchers: 1.
-let prevPumpItemId: string | null = workspacesStore.activeWorkspaceItemId
-let prevPumpPageId: string | null | undefined = workspacesStore.activeDesignPageId
-let prevPumpCwd = rightSidebarCwd.value ?? ''
-let prevPumpChatId = navigationStore.activeChatId
-navigationStore.$subscribe(() => {
-  const nextChatId = navigationStore.activeChatId
-  if (nextChatId !== prevPumpChatId) {
-    prevPumpChatId = nextChatId
-    // Chat session switched (Sidebar, ChatsList, or handleNavigate all funnel through
-    // setActiveChat).
-    clearAllOverlays()
-  }
-})
-workspacesStore.$subscribe(() => {
-  const wsId = activeWorkspaceId.value
-  if (wsId) void initSseStores(wsId)
-  const itemId = workspacesStore.activeWorkspaceItemId
-  const pageId = workspacesStore.activeDesignPageId
-  if (itemId !== prevPumpItemId || pageId !== prevPumpPageId) {
-    const oldId = prevPumpItemId
-    prevPumpItemId = itemId
-    prevPumpPageId = pageId
-    syncItemToUrl(oldId)
-    maybeLoadAgentData()
-  }
-  if (!workspacesStore.activeTaskId) {
-    if (activeDesignChatTaskId.value !== '' || activeDesignChatPageName.value !== '') {
-      activeDesignChatTaskId.value = ''
-      activeDesignChatPageName.value = ''
-    }
-  }
-  if (pendingUrlRestore.value) void restoreUrlState()
-  const cwd = rightSidebarCwd.value ?? ''
-  if (cwd !== prevPumpCwd) {
-    prevPumpCwd = cwd
-    retryEditorRestore()
-  }
-})
-
-let prevRoutePath: string | null = null
-let prevRouteQuery: unknown = null
-let prevFunnelFullPath: string | null = null
-// Router-absent unit mounts: `route` may be undefined — optional chaining
-// keeps the pump idle instead of throwing (same guard the old watchers
-// carried via their try/catch sources).
-if (route) {
-  prevRoutePath = route.path
-  prevRouteQuery = route.query
-  prevFunnelFullPath = route.fullPath
-}
-onUpdated(() => {
-  if (!route) return
-  const path = route.path
-  const query = route.query
-  const full = route.fullPath
-  if (path !== prevRoutePath || query !== prevRouteQuery) {
-    prevRoutePath = path
-    prevRouteQuery = query
-    prevFunnelFullPath = full
-    syncTaskFromItemId()
-    void reconcileRoute()
-  }
-  if (full !== prevFunnelFullPath) {
-    prevFunnelFullPath = full
-    if (tabsFunnelReady) syncFromRoute()
-  }
-})
-
-// Mount arms (replace the old `{ immediate: true }` watchers): - initSseStores: no-op until the
-// workspace id is truthy; the store pump retries on every later mutation. - restoreUrlState: covers
-// fixtures seeded before mount; the store pump covers the async initializeFromSystemFolder path.
-onMounted(() => {
-  void initSseStores(activeWorkspaceId.value)
-  void restoreUrlState()
-  maybeLoadAgentData()
-})
-
 defineExpose({
-  handleDesignOpenChat,
-  handleDesignCreateElement,
-  applyActiveTabToUrl,
-  mirrorTargetIntoStores,
-  syncFromRoute,
+  handleDesignOpenChat: designPanel.handleDesignOpenChat,
+  handleDesignCreateElement: designPanel.handleDesignCreateElement,
+  applyActiveTabToUrl: tabs.applyActiveTabToUrl,
+  mirrorTargetIntoStores: tabs.mirrorTargetIntoStores,
+  syncFromRoute: tabs.syncFromRoute,
   handleUpdateChatId,
 })
 </script>
@@ -2363,75 +289,27 @@ defineExpose({
          window, not to one column. -->
     <div class="flex flex-1 min-h-0">
     <Sidebar
-      ref="sidebarRef"
-      @navigate="handleNavigate"
-      @select-workspace="handleSelectWorkspace"
-      :collapsed="sidebarCollapsed"
-      :width="sidebarWidth"
-      @toggle-collapse="toggleSidebar"
+      ref="sidebarRef" @navigate="handleNavigate" @select-workspace="handleSelectWorkspace"
+      :collapsed="sidebarCollapsed" :width="sidebarWidth" @toggle-collapse="toggleSidebar"
       @resize="handleSidebarResize"
     />
     <main class="flex-1 flex flex-col overflow-hidden relative">
       <!-- Git File Viewer (shown when view is gitfile) -->
       <GitFileViewer
         v-if="currentView === 'gitfile' && gitViewerFile && rightSidebarCwd"
-        class="absolute inset-0"
-        style="z-index: 10"
-        :cwd="rightSidebarCwd"
-        :file-path="gitViewerFile.path"
+        class="absolute inset-0" style="z-index: 10" :cwd="rightSidebarCwd"
+        :file-path="gitViewerFile.path" :staged="gitViewerStaged"
         :file-name="gitViewerFile.path.split('/').pop() || gitViewerFile.path"
-        :staged="gitViewerStaged"
-        @close="closeGitViewer"
-        @submit-review="handleSubmitReview"
-        @comment-saved="handleCommentSaved"
+        @close="closeGitViewer" @submit-review="handleSubmitReview"
+        @comment-saved="overlays.handleCommentSaved"
       />
 
       <!-- Skill Detail Viewer (shown when view is skill) -->
-      <div
+      <AppSkillOverlay
         v-if="currentView === 'skill' && skillViewerSkill"
-        class="flex-1 flex flex-col overflow-hidden absolute inset-0"
-        style="background-color: var(--semantic-content-bg); z-index: 10"
-      >
-        <!-- Header -->
-        <div
-          class="h-14 flex items-center justify-between px-4 shrink-0"
-          style="border-bottom: 1px solid var(--color-border)"
-        >
-          <div class="flex items-center gap-3">
-            <button
-              @click="closeSkillViewer"
-              class="p-2 rounded-lg hover:opacity-70 transition-opacity"
-              title="Back"
-            >
-              <svg
-                class="w-5 h-5"
-                style="color: var(--semantic-text)"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M15 19l-7-7 7-7"
-                />
-              </svg>
-            </button>
-            <h2 class="text-lead font-semibold" style="color: var(--semantic-text)">
-              <UiIcon name="brain" class="w-4 h-4" /> {{ skillViewerSkill?.name }}
-            </h2>
-          </div>
-        </div>
-        <!-- Skill Detail Content -->
-        <div class="flex-1 overflow-hidden">
-          <SkillDetail
-            :skill-name="skillViewerSkill?.name"
-            @skill-deleted="closeSkillViewer"
-            @error="(msg) => console.error('Skill error:', msg)"
-          />
-        </div>
-      </div>
+        :skill-name="skillViewerSkill?.name"
+        @close="closeSkillViewer"
+      />
 
       <!-- Code viewer — full-surface FALLBACK. `currentView` only resolves
            to 'code-editor' when no ChatView is on screen (see
@@ -2456,66 +334,22 @@ defineExpose({
         />
       </div>
 
-      <!-- Document page (Migration 095). FIRST branch of the main view
-           chain, so it REPLACES whatever was open — the chat is unmounted
-           rather than left mounted underneath.
-
-           This is why it is a `v-else-if` here and not a standalone
-           `v-if` overlay: as an overlay it inherited the path it was
-           opened from, and the chat's floating chrome (z-20/30/31)
-           out-painted its z-index: 10, so the composer dock and scroll
-           slider floated over the document. Being a page removes the
-           overlap by construction instead of relying on a z-index
-           ordering. The GitFileViewer / SkillViewer / code-editor
-           overlays above are still overlays and still need the chat's
-           own stacking containment (`isolation: isolate` on
-           `.chat-column`).
-
-           `:key` forces a fresh mount when the user moves between two
-           documents (Back/Forward keeps the same component mounted, and
-           DocumentsView loads on id change anyway — the key just makes
-           the switch unambiguous). The id comes from the PATH, so a
-           refresh or a shared link restores the same document. -->
-      <DocumentsView
+      <AppDocumentsBranch
         v-else-if="currentView === 'documents' && activeDocumentId"
         :key="'doc-' + activeDocumentId"
         :document-id="activeDocumentId"
       />
-      <!-- Kanban settings page (plan: 2026-09-02-kanban-settings-as-page).
-           Mounted INSIDE the <main> v-else-if chain (BEFORE KanbanView)
-           so the settings page REPLACES the kanban board — no overlay.
-           The :key forces a fresh mount when the user navigates from
-           one kanban's settings to another's (the page re-reads
-           the item id from the URL on mount). -->
-      <KanbanSettingsView
+      <AppKanbanSettingsBranch
         v-else-if="currentView === 'kanban-settings'"
         :key="'kanban-settings-' + kanbanSettingsItemId"
+        :item-id="kanbanSettingsItemId"
         @add-column="handleKanbanSettingsAddColumn"
         @edit-column="handleKanbanSettingsEditColumn"
         @delete-column="handleKanbanSettingsDeleteColumn"
         @rename-item="handleKanbanRenameItem"
         @copy-spec="handleOpenCopyKanbanSpec"
       />
-      <!-- Kanban task chat (inline view, own tab). When a chat task that
-           belongs to THIS kanban item is active, the chat is the main
-           surface. It MUST be a v-else-if in this chain and placed BEFORE
-           the KanbanView branch below — the KanbanView branch only tests
-           `item_type === 'kanban'`, so it would otherwise win the chain and
-           the chat would never render; and a standalone v-if here would
-           start a NEW chain and stack board + chat.
-
-           The chat tab (URL `itemId=I/chat/<taskId>`) and the board tab
-           (bare `itemId=I`) carry different tab keys, so this one branch
-           gives each tab its own body with no extra state. `:key` forces a
-           fresh mount per task, preserving useChatScrollRestore's
-           per-session scroll contract when the user switches cards.
-           `:show-header` renders the shared ChatAppBar (title + ◫ + ✕) so
-           the chat stays closable with tab mode off; the ✕ routes through
-           handleCloseTaskView, which closes the tab when one owns the chat.
-           The other two task-chat modes (AgentChatView below,
-           StandardTaskChatView further down) set the same flag, so all
-           three render the identical bar. -->
-      <ChatView
+      <AppKanbanChatBranch
         v-else-if="
           activeWorkspaceItem &&
           activeWorkspaceItem.item_type === 'kanban' &&
@@ -2523,30 +357,16 @@ defineExpose({
           activeTaskWorkspaceItemId === activeWorkspaceItem.id
         "
         :key="'kanban-chat-' + activeTask.id"
-        :chat-id="activeTask.id"
-        :chat-name="activeTask.name ?? ''"
-        :type="'task'"
+        :task="activeTask"
         :cwd="effectiveChatCwd"
-        :show-header="true"
         @update-chat-id="handleUpdateChatId"
         @close="handleCloseTaskView"
       />
-      <!-- Kanban view (kanban-embed-chatview plan, Task 5). The kanban
-           now owns the chat pane + resize handle internally — the old
-           3-column sibling-of-KanbanView branch (was at lines
-           1716-1814) is GONE. KanbanView renders the full-width board
-           when no task is active (the kanban chat branch above claims the
-           task-active case). The :key on
-           KanbanView forces a fresh mount when the user navigates
-           from one kanban to another (KanbanView fetches columns on
-           mount). `@close-chat` fires when ChatView's close button is
-           clicked — AppLayout handles URL routing + state cleanup. -->
-      <KanbanView
+      <AppKanbanBoardBranch
         v-else-if="activeWorkspaceItem && activeWorkspaceItem.item_type === 'kanban'"
         :key="'kanban-' + activeWorkspaceItem.id"
         :item="activeWorkspaceItem"
         :workspace-id="activeWorkspace?.id ?? ''"
-        :item-id="activeWorkspaceItem.id"
         @move-task="handleKanbanMoveTask"
         @add-column="handleKanbanAddColumn"
         @rename-column="handleKanbanRenameColumn"
@@ -2595,85 +415,21 @@ defineExpose({
         :cwd="activeWorkspaceItem.path ?? ''"
         @close="handleCloseTaskView"
       />
-      <!--
-        SIMPLIFY-URL-BROWSER (2026-08-15): the legacy
-        `<ChatView v-else-if="currentView === 'task' && activeTask">`
-        branch has been removed. Under the new URL scheme the URL
-        never says `view=task` — the chat is always a
-        sub-state of the workspace view. Kanban tasks open via the
-        inline <ChatView> branch (gated on
-        `activeTaskWorkspaceItemId === activeWorkspaceItem.id`),
-        design tasks via DesignChatDialog (gated on
-        `activeDesignChatTaskId`), and standard task chats
-        (folder / memory / chat items) via the inline <ChatView>
-        branch below. The pre-fix "out-of-scope" gap for non-
-        kanban / non-design items is closed by that branch.
-        (2026-09-14: the kanban branch is no longer a modal — see the
-        comment on the kanban chat branch itself.)
-      -->
-      <!--
-        STALE MOUNT removed (kanban-chat-as-dialog plan, 2026-08-06).
-        This <KanbanView> mount was a v-else-if continuation of the
-        chain that started with the kanban chat dialog's v-if.
-        Vue evaluates v-if / v-else-if / v-else within one chain,
-        but that dialog's `v-if` (not `v-else-if`) started a
-        NEW chain — so this mount and the correct mount at line 1655
-        (also a v-else-if but in a different outer chain) both fired
-        when activeWorkspaceItem.item_type === 'kanban' and no chat
-        task was active. Result: the kanban board rendered TWICE,
-        stacked vertically (visible in the user's screenshot 2026-08-06).
-        The correct mount is the one at line 1655 above; this stale
-        copy was a leftover from before the kanban-embed-chatview plan
-        unified AppLayout's main-content chain.
-      -->
-      <!-- Design view (Chunk 8 of design-mode-redesign). Mirrors the
-           single-column kanban branch above: full-bleed render when
-           a design workspace item is active and no chat is open.
-           The :key forces a fresh mount on item switch so the page
-           list re-fetches. DesignView emits page/element mutations
-           which we forward to the workspaces store (or api layer
-           directly for page create — no store action yet).
-
-           2026-08-06 (plan: design-chat-as-dialog): the design chat
-           no longer shares this branch with a side-by-side chat
-           column. The previous 3-column [DesignView | resize-handle |
-           ChatView] layout (added in commit d0a05eb0, 2026-07-14)
-           took ~40-65% of the canvas for ChatView even when
-           "minimised". The chat is now a centred modal dialog
-           (DesignChatDialog) mounted at the AppLayout level above —
-           the canvas stays full-width behind a dimmed+blurred
-           backdrop. The pre-fix data-design-three-column branch,
-           data-design-resize-handle, design-chat-collapse-button,
-           and design-chat-expand-button are GONE with the resize /
-           collapse state machine. -->
-      <DesignView
+      <AppDesignBranch
         v-else-if="activeWorkspaceItem && activeWorkspaceItem.item_type === 'design'"
         :key="'design-' + activeWorkspaceItem.id"
         :item="activeWorkspaceItem"
         :workspace-id="activeWorkspace?.id ?? ''"
-        :item-id="activeWorkspaceItem.id"
-        @select-page="handleDesignSelectPage"
-        @select-element="handleDesignSelectElement"
-        @create-element="handleDesignCreateElement"
-        @update-element="handleDesignUpdateElement"
-        @translate-element="handleDesignTranslateElement"
-        @resize-element="handleDesignResizeElement"
-        @delete-element="handleDesignDeleteElement"
-        @open-chat="handleDesignOpenChat"
+        @select-page="designPanel.handleDesignSelectPage"
+        @select-element="designPanel.handleDesignSelectElement"
+        @create-element="designPanel.handleDesignCreateElement"
+        @update-element="designPanel.handleDesignUpdateElement"
+        @translate-element="designPanel.handleDesignTranslateElement"
+        @resize-element="designPanel.handleDesignResizeElement"
+        @delete-element="designPanel.handleDesignDeleteElement"
+        @open-chat="designPanel.handleDesignOpenChat"
       />
-      <!-- Agent chat (inline, non-dialog): when a chat task is open
-           under an agent item, the chat REPLACES the AgentView config
-           below (same swap semantics as StandardTaskChatView for
-           folder tasks). MUST be v-else-if in this chain and placed
-           BEFORE AgentView — a standalone v-if would start a new
-           chain and render BOTH stacked (config on top, chat
-           squeezed at the bottom). Closing the chat (@close →
-           handleCloseTaskView clears activeTask) falls back to
-           AgentView. AgentChatView no longer hand-rolls a header — it
-           forwards `:show-header` + `@close` to its inner ChatView, so
-           agent mode renders the same shared ChatAppBar as the kanban
-           and standard branches. -->
-      <AgentChatView
+      <AppAgentChatBranch
         v-else-if="
           activeWorkspaceItem &&
           activeWorkspaceItem.item_type === 'agent' &&
@@ -2687,24 +443,11 @@ defineExpose({
         :cwd="activeWorkspaceItem.path ?? ''"
         @close="handleCloseTaskView"
       />
-      <!-- Agent Mode (plan 2026-08-15-agent-mode, task_1786962724740_0):
-           4th workspace-item type. Mounted when item_type='agent'
-           and NO chat task is open (the AgentChatView branch above
-           wins when a task is active). The view is responsible for
-           fetching its own agent data (knowledge + tools) via
-           /api/workspaces/:wsId/items/:itemId/agent.
-           IMPORTANT: this v-else-if must come BEFORE the new
-           standard-task ChatView below (origin/main's blank-chatview
-           fix) so 'agent' items render AgentView, not a plain
-           ChatView. The new ChatView's v-else-if condition
-           (`item_type !== 'kanban' && !== 'design'`) WOULD match
-           'agent' items, so order matters. -->
-      <AgentView
+      <AppAgentViewBranch
         v-else-if="activeWorkspaceItem && activeWorkspaceItem.item_type === 'agent'"
         :key="'agent-' + activeWorkspaceItem.id"
         :item="activeWorkspaceItem"
         :workspace-id="activeWorkspace?.id ?? ''"
-        :item-id="activeWorkspaceItem.id"
         :knowledge="agentKnowledge"
         :tools="agentTools"
         :system-prompts="agentSystemPrompts"
@@ -2713,23 +456,16 @@ defineExpose({
         @remove-knowledge="handleAgentRemoveKnowledge"
         @edit-knowledge="handleAgentEditKnowledge"
         @toggle-tool="handleAgentToggleTool"
-        @toggle-tools-bulk="(names, enabled) => handleAgentToggleToolsBulk(names, enabled)"
+        @toggle-tools-bulk="(names: string[], enabled: boolean) => handleAgentToggleToolsBulk(names, enabled)"
         @add-system-prompt="handleAgentAddSystemPrompt"
         @edit-system-prompt="handleAgentEditSystemPrompt"
         @remove-system-prompt="handleAgentRemoveSystemPrompt"
       />
-      <!-- Workspace routines (Migration 084, plan
-           2026-09-10-workspace-items-routines): mounted when
-           item_type='routine'. The view fetches its own data via
-           GET /api/workspaces/:ws/items/:item/routine. Placed after
-           AgentView — same v-else-if chain position semantics (only
-           one branch renders). -->
-      <RoutineView
+      <AppRoutineBranch
         v-else-if="activeWorkspaceItem && activeWorkspaceItem.item_type === 'routine'"
         :key="'routine-' + activeWorkspaceItem.id"
         :item="activeWorkspaceItem"
         :workspace-id="activeWorkspace?.id ?? ''"
-        :item-id="activeWorkspaceItem.id"
       />
       <!--
         AgentKnowledgeDialog — mounted at the AppLayout level so the
@@ -2777,42 +513,7 @@ defineExpose({
         @create="handleAgentSystemPromptCreate"
         @save="handleAgentSystemPromptSave"
       />
-      <!--
-        Standard task chat (folder / memory / chat items — anything
-        that isn't a kanban, design, OR agent). FIX for blank
-        chatview (task_1787027750097, 2026-08-14): the
-        simplify-url-browser plan (#246) wired the kanban chat
-        and design (DesignChatDialog) chat-open
-        paths but listed "folder tasks … out-of-scope edge case".
-        A user with a chat task on a folder / memory / chat
-        workspace item hit a dead zone: setActiveTask fires,
-        clears activeChatId, and NONE of the v-else-if branches
-        above matched — right pane was blank.
-
-        Render <StandardTaskChatView> with the active task —
-        encapsulates the chat-id / chat-name / :key wiring (see
-        StandardTaskChatView.vue). The wrapper passes the task id
-        as the chat session id (migration 052 invariant: task.id
-        == session.id) and forwards :cwd so sendChatMessage writes
-        the right cwd_session. We pass props explicitly rather
-        than going through navigationStore so this branch doesn't
-        fight the activeTask state the kanban + design branches
-        depend on.
-
-        `@close` routes ChatView's app-bar ✕ through
-        handleCloseTaskView, the same handler the kanban and agent
-        branches use. With `:show-header` set on the wrapper, this mode
-        renders the same shared ChatAppBar as the other two, so the
-        title / ◫ / ✕ sit in the same place in all three.
-
-        Mount order matters: this v-else-if is AFTER AgentView
-        (above), so 'agent' items render AgentView not ChatView.
-        It precedes the standalone `<ChatView v-else-if=
-        "activeChatId.startsWith('chat-')">` branch below, so a
-        folder task lands here even when activeChatId is empty
-        (cleared by setActiveTask).
-      -->
-      <StandardTaskChatView
+      <AppStandardTaskChatBranch
         v-else-if="
           activeWorkspaceItem &&
           activeWorkspaceItem.item_type !== 'kanban' &&
@@ -2825,105 +526,26 @@ defineExpose({
         @update-chat-id="handleUpdateChatId"
         @close="handleCloseTaskView"
       />
-      <!-- Standalone chat (sidebar-opened `chat-<id>` sessions, no task).
-           Renders the same shared ChatAppBar as the kanban / agent /
-           standard branches above, so the title / ◫ / ✕ sit in the
-           same place in every mode. `@close` reuses handleCloseTaskView,
-           which clears both the task and the chat. -->
-      <ChatView
+      <AppStandaloneChatBranch
         v-else-if="activeChatId.startsWith('chat-')"
         :key="activeChatId"
         :chat-id="activeChatId"
         :chat-name="activeChatName"
         :cwd="effectiveChatCwd"
-        :show-header="true"
         @update-chat-id="handleUpdateChatId"
         @close="handleCloseTaskView"
       />
       <Chats v-else-if="currentView === 'chat'" />
-      <!--
-        Workspace folder preview — the "no item selected, pick one"
-        empty-state. Only renders when the user has navigated to
-        `?view=workspace` AND has no active workspace item. If an
-        item is active (kanban / design / folder with memories /
-        etc.), the dedicated branch above handles rendering; we
-        MUST NOT also render the preview or the user sees the
-        workspace name duplicated below the dedicated view
-        (regression confirmed by the user's screenshot on
-        2026-08-06 after the kanban-chat-as-dialog plan removed a
-        stale secondary <KanbanView> mount that was previously
-        acting as an implicit guard).
-
-        The `!activeWorkspaceItem` guard ensures mutual exclusivity
-        with the dedicated branches above. Without it, the chain
-        would still resolve to this branch when currentView is
-        'workspace' even if a kanban/design is active, because
-        the kanban + dialog + chat-view mounts live in different
-        v-if chains (they were refactored to mount in their own
-        chains during the kanban-embed-chatview plan).
-      -->
-      <div
-        v-if="currentView === 'workspace' && !activeWorkspaceItem"
-        class="flex-1 flex flex-col"
-        data-testid="workspace-folder-preview"
-      >
-        <!--
-          The three inner branches (memories view / no-path
-          centered card / workspaces picker) only ever need to
-          render when there IS no active workspace item — the
-          outer v-if already guarantees that. The inner branches
-          previously referenced `activeWorkspaceItem` defensively
-          for type narrowing; we keep them as-is but rely on the
-          outer guard so the inner conditions don't need to
-          re-check. Vue's template type-checker can't infer the
-          type from `v-if` short-circuit across nested v-if/v-else
-          chains, so the inner conditions stay as they were. This
-          is a no-op at runtime since `activeWorkspaceItem` is
-          always null here.
-        -->
-      </div>
+      <AppWorkspacePreview v-if="currentView === 'workspace' && !activeWorkspaceItem" />
     </main>
     </div>
 
-    <!-- The window-level terminal footer: a strip along the bottom of the
-         app, outside every column, carrying the launcher for the live
-         shells (the right sidebar's Terminal tab stays where it is). -->
-    <TerminalFooter
+    <AppLayoutChrome
       :workspaces="workspacesStore.workspaces"
       :active-workspace-id="activeWorkspaceId"
       :cwd="rightSidebarCwd"
+      :view="currentView"
     />
-
-    <!-- Settings page -->
-    <SettingsView v-if="currentView === 'settings'" />
-
-    <!-- Workspace settings page (/app/:workspaceId/settings). Mounted as a
-         sibling of <main> like <SettingsView>, not inside the view chain:
-         which settings SECTION is open is `?section=`, owned by the view. -->
-    <WorkspaceSettingsView v-else-if="currentView === 'workspace-settings'" />
-
-    <!-- Global error notification stack -->
-    <NotificationContainer />
-
-    <!-- Global SSE connection status pill. Renders nothing while the
-         connection is healthy (state === 'open'); surfaces a small
-         "Connecting…" / "Reconnecting…" / "Connection lost" pill in
-         the top-right corner when the bus is in a degraded state.
-         Fixed-positioned so it stays visible regardless of which
-         view (chat / kanban / settings / workspace) is active.
-         `pointer-events-none` keeps the pill visible WITHOUT
-         capturing clicks — the pill overlaps the top-right of every
-         view's chrome (in the kanban 3-column layout it sits on top
-         of ChatView's ✕ close button; in design mode it sits on top
-         of any future top-right toolbar). The pill is purely
-         informational (no controls inside), so passing the click
-         through is the right behavior. -->
-    <div
-      class="fixed top-3 right-3 z-50 pointer-events-none"
-      data-testid="sse-status-badge-container"
-    >
-      <SseStatusBadge />
-    </div>
 
     <!-- Kanban column editor: add / rename / delete a column on the
          currently-active kanban item. Mounted at the AppLayout root
@@ -2936,15 +558,12 @@ defineExpose({
          by the request-add-column / request-rename-column /
          request-delete-column handlers. -->
     <KanbanColumnEditor
-      :show="showKanbanColumnEditor"
-      :mode="kanbanColumnEditorMode"
+      :show="showKanbanColumnEditor" :mode="kanbanColumnEditorMode"
       :initial-name="kanbanColumnEditorInitialName"
       :initial-description="kanbanColumnEditorInitialDescription"
       :initial-is-done="kanbanColumnEditorInitialIsDone"
-      @close="handleKanbanColumnEditorClose"
-      @add="handleKanbanColumnEditorAdd"
-      @rename="handleKanbanColumnEditorRename"
-      @delete="handleKanbanColumnEditorDelete"
+      @close="handleKanbanColumnEditorClose" @add="handleKanbanColumnEditorAdd"
+      @rename="handleKanbanColumnEditorRename" @delete="handleKanbanColumnEditorDelete"
     />
 
     <!--
@@ -2957,21 +576,16 @@ defineExpose({
         (Chunk 4, Task 4.3)
     -->
     <CopyKanbanSpecDialog
-      :show="showCopyKanbanSpecDialog"
-      :workspace-id="activeWorkspace?.id ?? ''"
+      :show="showCopyKanbanSpecDialog" :workspace-id="activeWorkspace?.id ?? ''"
       :target-item-id="activeWorkspaceItem?.id ?? ''"
-      @close="handleCloseCopyKanbanSpec"
-      @copy="handleCopyKanbanSpec"
+      @close="handleCloseCopyKanbanSpec" @copy="handleCopyKanbanSpec"
     />
 
     <!-- Move-gate confirm (kanban task dependencies). Offered when
          the backend refuses a column move with 409 + blockers. -->
     <ConfirmDialog
-      :show="showMoveBlockedConfirm"
-      title="Task is blocked"
-      :message="moveBlockedMessage"
-      confirm-text="Move anyway"
-      @close="handleMoveBlockedClose"
+      :show="showMoveBlockedConfirm" title="Task is blocked" :message="moveBlockedMessage"
+      confirm-text="Move anyway" @close="handleMoveBlockedClose"
       @confirm="handleMoveBlockedConfirm"
     />
   </div>

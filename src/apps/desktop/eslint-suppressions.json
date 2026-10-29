@@ -136,22 +136,49 @@
       "count": 1
     }
   },
-  "src/components/AppLayout.vue": {
-    "local/no-silent-fallback-catch": {
-      "count": 1
-    },
-    "local/no-try-catch": {
-      "count": 17
-    },
-    "max-lines": {
-      "count": 1
-    }
-  },
   "src/components/FilePickerDialog.vue": {
     "local/no-try-catch": {
       "count": 1
     },
     "max-lines": {
+      "count": 1
+    }
+  },
+  "src/components/appLayout/agentErrors.ts": {
+    "local/no-silent-fallback-catch": {
+      "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/appLayout/useAgentPanel.ts": {
+    "local/no-try-catch": {
+      "count": 4
+    }
+  },
+  "src/components/appLayout/useAgentPrompts.ts": {
+    "local/no-try-catch": {
+      "count": 5
+    }
+  },
+  "src/components/appLayout/useAppLayoutNavigation.ts": {
+    "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/components/appLayout/useAppLayoutOverlays.ts": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/appLayout/useAppLayoutRouteSync.ts": {
+    "local/no-try-catch": {
+      "count": 3
+    }
+  },
+  "src/components/appLayout/useChatSessionCwd.ts": {
+    "local/no-try-catch": {
       "count": 1
     }
   },
@@ -271,20 +298,14 @@
   "src/components/kanban/KanbanTaskDetail.vue": {
     "local/no-try-catch": {
       "count": 2
-    },
-    "max-lines": {
-      "count": 1
     }
   },
   "src/components/kanban/KanbanView.vue": {
     "local/no-silent-fallback-catch": {
-      "count": 7
+      "count": 3
     },
     "local/no-try-catch": {
-      "count": 26
-    },
-    "max-lines": {
-      "count": 1
+      "count": 16
     }
   },
   "src/components/kanban/MarkdownDescription.vue": {
@@ -659,10 +680,7 @@
   },
   "src/components/views/chat_right_sidebar/SidebarDiffPanel.vue": {
     "local/no-try-catch": {
-      "count": 17
-    },
-    "max-lines": {
-      "count": 1
+      "count": 5
     }
   },
   "src/components/views/chat_right_sidebar/SidebarDiffView.vue": {
@@ -698,6 +716,16 @@
     }
   },
   "src/components/views/chat_right_sidebar/useChatRightSidebar.ts": {
+    "local/no-try-catch": {
+      "count": 4
+    }
+  },
+  "src/components/views/chat_right_sidebar/useSidebarDiffGitData.ts": {
+    "local/no-try-catch": {
+      "count": 8
+    }
+  },
+  "src/components/views/chat_right_sidebar/useSidebarDiffPrData.ts": {
     "local/no-try-catch": {
       "count": 4
     }
