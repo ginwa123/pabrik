@@ -244,6 +244,29 @@ test "an argument list crosses the seam verbatim, so a flag-shaped value stays a
     try testing.expect(std.mem.indexOf(u8, res.stderr, "--definitely-not-a-git-option") != null);
 }
 
+test "a local run delivers a capture past the guest wire's ceiling, whole" {
+    const allocator = testing.allocator;
+    var repo = try Repo.init(allocator);
+    defer repo.deinit(allocator);
+
+    const blob_bytes = 3 * 1024 * 1024;
+    const blob = try allocator.alloc(u8, blob_bytes);
+    defer allocator.free(blob);
+    for (blob, 0..) |*byte, i| byte.* = @intCast('a' + i % 26);
+    try repo.dir.dir.writeFile(testing.io, .{ .sub_path = "big.bin", .data = blob });
+
+    var hashed = try run(allocator, testing.io, repo.abs, &.{ "hash-object", "-w", "big.bin" }, .{});
+    defer hashed.deinit(allocator);
+    try testing.expect(hashed.ok());
+
+    var read = try run(allocator, testing.io, repo.abs, &.{ "cat-file", "blob", hashed.trimmedStdout() }, .{});
+    defer read.deinit(allocator);
+
+    try testing.expect(read.ok());
+    try testing.expectEqual(blob_bytes, read.stdout.len);
+    try testing.expectEqualSlices(u8, blob, read.stdout);
+}
+
 test "saas mode never answers from the host, even when the host holds that repository" {
     const allocator = testing.allocator;
     var repo = try Repo.init(allocator);
