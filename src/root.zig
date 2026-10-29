@@ -19,7 +19,6 @@ pub const std_options: std.Options = .{
     .http_disable_tls = false,
 };
 
-
 // ─── The App singleton ────────────────────────────────────────────────────
 // The struct and its registry helpers live in `src/app.zig` (that file's
 // header says why).
@@ -275,6 +274,7 @@ pub const gserverz = kabelweb.server;
 pub const ai_mod = @import("ai_workflow/tui/mod.zig");
 pub const event_bus = @import("modules/event_bus/src/event.zig");
 pub const static_files = @import("modules/static_files.zig");
+pub const metrics_mod = @import("modules/metrics/metrics.zig");
 // Boot phases extracted from main.zig (refactor-main-zig): re-exported so
 // the exe module reaches them via pabrikcore.* without @import'ing the
 // files directly (dual-module error — see cleanup_stale_worker above).

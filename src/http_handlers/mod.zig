@@ -58,6 +58,9 @@ pub const previewProxyHandler = @import("preview_proxy.zig").previewProxyHandler
 pub const preview_origin = @import("preview_origin.zig");
 pub const healthHandler = @import("health.zig").healthHandler;
 pub const shutdownHandler = @import("shutdown.zig").shutdownHandler;
+pub const metricsGetHandler = @import("metrics_get.zig").metricsGetHandler;
+pub const metricsMiddleware = @import("metrics_middleware.zig").metricsMiddleware;
+pub const metricsSummaryHandler = @import("metrics_summary_get.zig").metricsSummaryHandler;
 // Opt-in `--auth` (login page + session cookie + middleware).
 pub const authLoginHandler = @import("auth_login.zig").authLoginHandler;
 pub const authLogoutHandler = @import("auth_session.zig").authLogoutHandler;

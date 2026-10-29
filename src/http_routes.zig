@@ -5,34 +5,54 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
 const ai_mod = pabrikcore.ai_mod;
+const metrics_mod = pabrikcore.metrics_mod;
 
-/// The `gs.router.group("")` handle. Every `/api` route registers here so
-/// it picks up `authMiddleware`.
 const Group = gserverz.router.Group;
 const testing = std.testing;
 
 /// Register every route pabrik serves on `gs`. Call this exactly once, after
 /// `GinwaServer.init` and before `listen()`.
 pub fn registerAll(gs: *gserverz.GinwaServer) !void {
-    return registerAllOn(&gs.router);
+    try registerAllOn(&gs.router);
+    try installMetrics(gs);
 }
 
-/// The route table itself.
+fn installMetrics(gs: *gserverz.GinwaServer) !void {
+    const routes = gs.router.routes.items;
+    const patterns = try gs.router.arena.alloc(metrics_mod.Pattern, routes.len);
+    try installMetricsFrom(gs.allocator, gs.io, patterns, routes);
+}
+
+fn installMetricsFrom(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    patterns: []metrics_mod.Pattern,
+    routes: []const gserverz.router.Route,
+) !void {
+    for (routes, patterns) |route, *pattern| {
+        pattern.* = .{ .method = route.method, .path = route.path };
+    }
+    _ = try metrics_mod.install(allocator, io, patterns);
+}
+
 pub fn registerAllOn(router: *gserverz.router.Router) !void {
+    var instrumented = router.group("");
+    try instrumented.use(ai_mod.http_handlers.metricsMiddleware);
+
     // Opt-in `--auth`: all `/api` routes registered via `authed` run
     // `authMiddleware` (401 when no valid `pabrik_session` cookie).
     var authed = router.group("");
+    try authed.use(ai_mod.http_handlers.metricsMiddleware);
     try authed.use(ai_mod.http_handlers.authMiddleware);
 
-    // Order is load-bearing — see the file header. Each function below
-    // registers one domain's routes, verbatim and in the order they were
-    // registered when this table lived inline in `main`.
-    try registerAuthRoutes(router, &authed);
+    // Order is load-bearing: a literal must register before its `:param`
+    // sibling, or `matchRoute` serves the param route for the literal path.
+    try registerAuthRoutes(&instrumented, &authed);
     try registerSessionRoutes(&authed);
     try registerWorkerRoutes(&authed);
     try registerTerminalRoutes(&authed, router);
     try registerStreamRoutes(&authed, router);
-    try registerSystemRoutes(&authed, router);
+    try registerSystemRoutes(&authed, &instrumented);
     try registerMemoryRoutes(&authed);
     try registerConfigRoutes(&authed);
     try registerGitRoutes(&authed);
@@ -48,16 +68,13 @@ pub fn registerAllOn(router: *gserverz.router.Router) !void {
     try registerPreviewRoutes(&authed);
 }
 
-fn registerAuthRoutes(router: *gserverz.router.Router, authed: *Group) !void {
-    try router.post("/api/auth/login", ai_mod.http_handlers.authLoginHandler);
-    try router.post("/api/auth/logout", ai_mod.http_handlers.authLogoutHandler);
-    try router.get("/api/auth/me", ai_mod.http_handlers.authMeHandler);
+fn registerAuthRoutes(instrumented: *Group, authed: *Group) !void {
+    try instrumented.post("/api/auth/login", ai_mod.http_handlers.authLoginHandler);
+    try instrumented.post("/api/auth/logout", ai_mod.http_handlers.authLogoutHandler);
+    try instrumented.get("/api/auth/me", ai_mod.http_handlers.authMeHandler);
     // On `authed`: a password change needs the session it is rotating, so the
     // middleware rejects an expired cookie before the handler re-checks it.
     try authed.post("/api/auth/password", ai_mod.http_handlers.authChangePasswordHandler);
-    // // try authed.get("/api/stream/:session_id/disconnect",
-    // http_handlers.sseDisconnectHandler, .{}); // try
-    // authed.post("/api/stream/:session_id/disconnect",
 }
 
 fn registerSessionRoutes(authed: *Group) !void {
@@ -148,8 +165,10 @@ fn registerStreamRoutes(authed: *Group, router: *gserverz.router.Router) !void {
     try authed.post("/api/bench/seed/sessions", ai_mod.http_handlers.benchSeedSessionsHandler);
 }
 
-fn registerSystemRoutes(authed: *Group, router: *gserverz.router.Router) !void {
-    try router.get("/health", ai_mod.http_handlers.healthHandler);
+fn registerSystemRoutes(authed: *Group, instrumented: *Group) !void {
+    try instrumented.get("/health", ai_mod.http_handlers.healthHandler);
+    try authed.get("/metrics", ai_mod.http_handlers.metricsGetHandler);
+    try authed.get("/api/metrics/summary", ai_mod.http_handlers.metricsSummaryHandler);
     // Skills are NOT registered here.
 
     // Skill Evals — the READ surface for the eval the agent runs on itself.
@@ -801,7 +820,8 @@ test "route table: every /api route except the open ones carries authMiddleware"
         "/api/events",
         "/api/terminal/ws",
     };
-    const want: MiddlewareFn = ai_mod.http_handlers.authMiddleware;
+    const want_metrics: MiddlewareFn = ai_mod.http_handlers.metricsMiddleware;
+    const want_auth: MiddlewareFn = ai_mod.http_handlers.authMiddleware;
 
     var checked: usize = 0;
     for (router.routes.items) |route| {
@@ -812,15 +832,35 @@ test "route table: every /api route except the open ones carries authMiddleware"
         }
         if (is_open) continue;
         checked += 1;
-        if (route.middlewares.len != 1 or route.middlewares[0] != want) {
+        if (route.middlewares.len != 2 or
+            route.middlewares[0] != want_metrics or
+            route.middlewares[1] != want_auth)
+        {
             std.debug.print(
-                "\n!! {s} {s} carries {d} middleware(s), want exactly authMiddleware !!\n",
+                "\n!! {s} {s} carries {d} middleware(s), want metricsMiddleware then authMiddleware !!\n",
                 .{ route.method, route.path, route.middlewares.len },
             );
-            return error.ApiRouteMissingAuthMiddleware;
+            return error.ApiRouteMissingInstrumentationOrAuth;
         }
     }
     try testing.expect(checked > 0);
+}
+
+test "route table: GET /health is instrumented so the probe shows up in metrics" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const router = try buildRouteTable(a);
+
+    const want: MiddlewareFn = ai_mod.http_handlers.metricsMiddleware;
+    for (router.routes.items) |route| {
+        if (!std.mem.eql(u8, route.path, "/health")) continue;
+        if (!std.mem.eql(u8, route.method, "GET")) continue;
+        try testing.expectEqual(@as(usize, 1), route.middlewares.len);
+        try testing.expect(route.middlewares[0] == want);
+        return;
+    }
+    return error.HealthRouteNotRegistered;
 }
 
 test "route table: POST /api/llm/session/reorder_pinned wins over :session_id/pin" {
@@ -887,4 +927,98 @@ test "route table: GET session usage resolves on both prefixes and shadows no si
         return error.SessionDetailRouteNotRegistered;
     };
     try testing.expect(detail.handler == ai_mod.http_handlers.sessionGetHandler);
+}
+
+fn concretePath(a: std.mem.Allocator, pattern: []const u8) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    var segments = std.mem.splitScalar(u8, pattern, '/');
+    var separator = false;
+    while (segments.next()) |segment| {
+        if (separator) try out.append(a, '/');
+        separator = true;
+        if (segment.len > 0 and segment[0] == ':') {
+            try out.append(a, 'x');
+        } else {
+            try out.appendSlice(a, segment);
+        }
+    }
+    return out.toOwnedSlice(a);
+}
+
+test "route table: every route answers with its own metrics template" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var router = try buildRouteTable(a);
+
+    const patterns = try a.alloc(metrics_mod.Pattern, router.routes.items.len);
+    for (router.routes.items, patterns) |route, *pattern| {
+        pattern.* = .{ .method = route.method, .path = route.path };
+    }
+    var index = try metrics_mod.RouteIndex.init(testing.allocator, patterns);
+    defer index.deinit();
+
+    for (router.routes.items) |route| {
+        if (route.route_type != .regular) continue;
+        const concrete = try concretePath(a, route.path);
+        if (!std.mem.eql(u8, route.path, index.resolve(route.method, concrete))) {
+            std.debug.print(
+                "\n!! {s} {s} is served but counted under {s} !!\n",
+                .{ route.method, route.path, index.resolve(route.method, concrete) },
+            );
+            return error.MetricsTemplateDisagreesWithRoute;
+        }
+        const hit = (try resolve(a, &router, route.method, concrete)) orelse {
+            std.debug.print("\n!! {s} {s} resolves to no handler !!\n", .{ route.method, concrete });
+            return error.ConcretePathNotRouted;
+        };
+        if (hit.handler != route.handler) return error.MetricsTemplateShadowed;
+    }
+}
+
+fn respondOk(
+    ctx: gserverz.HttpContext,
+    req: gserverz.HttpRequest,
+    res: gserverz.HttpResponse,
+) anyerror!gserverz.HttpResponse {
+    _ = ctx;
+    _ = req;
+    return res.withBody("");
+}
+
+test "route table: an installed registry labels a served request with its template" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const router = try buildRouteTable(a);
+
+    const patterns = try a.alloc(metrics_mod.Pattern, router.routes.items.len);
+    try installMetricsFrom(testing.allocator, testing.io, patterns, router.routes.items);
+    defer metrics_mod.uninstall(testing.io);
+
+    var chain: gserverz.Router.MiddlewareChain = .{ .middlewares = &.{}, .final_handler = respondOk };
+    const request = gserverz.HttpRequest{
+        .method = "GET",
+        .path = "/api/llm/session/sess_1/messages",
+        .version = "HTTP/1.1",
+        .headers = std.StringHashMap([]const u8).init(a),
+        .body = "",
+        .raw = "",
+        .params = std.StringHashMap([]const u8).init(a),
+        .query = std.StringHashMap([]const u8).init(a),
+        ._client_fd = -1,
+    };
+    _ = try ai_mod.http_handlers.metricsMiddleware(
+        .{ .allocator = a, .io = testing.io },
+        request,
+        gserverz.HttpResponse.init(200, "OK", a),
+        &chain,
+    );
+
+    const body = try metrics_mod.getGlobal().?.render(a);
+    try testing.expect(std.mem.indexOf(
+        u8,
+        body,
+        "http_requests_total{method=\"GET\",route=\"/api/llm/session/:session_id/messages\",status=\"200\"} 1\n",
+    ) != null);
 }
