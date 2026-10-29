@@ -133,5 +133,39 @@ export default defineConfigWithVueTs(
     },
   },
 
+  {
+    name: 'app/file-size-hard',
+    files: ['**/*.{vue,ts,mts,tsx}'],
+    ignores: ['**/*.spec.ts', '**/*.test.ts', '**/*.d.ts'],
+    rules: {
+      'max-lines': ['error', { max: 600 }],
+    },
+  },
+
+  {
+    name: 'app/file-size-hard-tests',
+    files: ['**/*.spec.ts', '**/*.test.ts'],
+    rules: {
+      'max-lines': ['error', { max: 1000 }],
+    },
+  },
+
+  {
+    name: 'app/file-size-hard-types',
+    files: ['**/*.d.ts'],
+    rules: {
+      'max-lines': ['error', { max: 800 }],
+    },
+  },
+
+  {
+    name: 'app/file-size-soft',
+    files: ['**/*.{vue,ts,mts,tsx}'],
+    plugins: { local: localBannedCode },
+    rules: {
+      'local/max-file-lines': 'warn',
+    },
+  },
+
   skipFormatting,
 )
