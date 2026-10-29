@@ -3,6 +3,7 @@ FROM mcr.microsoft.com/windows/nanoserver:ltsc2022
 WORKDIR C:/data
 
 COPY pabrik.exe C:/app/pabrik.exe
+COPY rg-pabrik.exe C:/app/rg-pabrik.exe
 COPY *.dll C:/app/
 
 ENV HOME=C:/data

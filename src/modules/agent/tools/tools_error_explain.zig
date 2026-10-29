@@ -321,7 +321,7 @@ pub fn explain(allocator: std.mem.Allocator, err: anyerror, context: ?[]const u8
         ),
         error.RgNotFound => try allocator.dupe(
             u8,
-            "ripgrep (`rg`) is not installed or not on PATH. Install it, then retry — or use `glob` / `list_directory`, which do not need it.",
+            "ripgrep (`rg`) is missing: pabrik looks for its bundled `rg-pabrik` beside the pabrik binary, then in pabrik's data dir, then `rg` on PATH. Reinstalling pabrik restores the bundled copy; `PABRIK_RG_BIN` points at an existing one. Until then use `glob` / `list_directory`, which do not need it.",
         ),
         error.Timeout => try allocator.dupe(
             u8,

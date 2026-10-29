@@ -251,6 +251,17 @@ jobs:
           $dlls = Get-ChildItem $ctx -Filter "*.dll"
           if ($dlls.Count -lt 1) { throw "no runtime DLLs in the release zip; a bare pabrik.exe cannot load" }
           Write-Host ("staged pabrik.exe + {0} dll(s)" -f $dlls.Count)
+          # ripgrep for the search tool. Dockerfile.windows COPYs rg-pabrik.exe,
+          # so the context must always carry one; a release zip published
+          # before the bundled ripgrep existed is backfilled from the pinned
+          # upstream build rather than failing the image. The name is
+          # rg-pabrik.exe so it never collides with a ripgrep on PATH.
+          $rg = Join-Path $ctx "rg-pabrik.exe"
+          if (-not (Test-Path $rg)) {
+            Write-Host "rg-pabrik.exe not in the release zip; staging the pinned ripgrep"
+            ./scripts/stage-bundled-ripgrep.ps1 -Target "x86_64-windows-gnu" -Dest $rg
+            if (-not (Test-Path $rg)) { throw "could not stage rg-pabrik.exe for the Windows image" }
+          }
           foreach ($name in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "concrt140.dll", "vcomp140.dll")) {
             $source = Join-Path $env:SystemRoot ("System32\" + $name)
             if (Test-Path $source) {

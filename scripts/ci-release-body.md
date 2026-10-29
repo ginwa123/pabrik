@@ -30,6 +30,13 @@ Linux/macOS ship bare binaries, e.g. `pabrik-x86_64-linux-gnu`,
 `pabrik-desktop-aarch64-macos`, plus `pabrik-html-<triple>.tar.gz`
 holding the web UI — `install.sh` extracts it next to the binaries so
 a bare `pabrik` serves /app with no flags.
+Linux/macOS also ship `rg-pabrik-<triple>` — the pinned ripgrep 15.2.0
+build for that triple. `install.sh` drops it next to `pabrik` as
+`rg-pabrik`, and the `search` tool uses it, so no `apt install ripgrep` /
+`brew install ripgrep` is needed. It is deliberately NOT called `rg`:
+that name would replace a ripgrep the user installed (with `--system` the
+destination is /usr/local/bin). A real `rg` on PATH still works, and
+`PABRIK_RG_BIN=/path/to/rg` overrides both.
 macOS also ships `Pabrik-aarch64-macos.zip` holding Pabrik.app
 (pabrik-desktop + pabrik service inside, ad-hoc signed).
 macOS setup (no sudo): extract the zip, move Pabrik.app to
@@ -41,6 +48,9 @@ Windows ships ONE self-contained .zip, e.g.
 pabrik-desktop.exe + pabrik.exe (the desktop auto-spawns
 the service beside itself) plus every runtime DLL
 (libcurl / sqlite3 / ssl / ... + WebView2Loader.dll)
+plus rg-pabrik.exe (the bundled ripgrep `search` needs;
+it is not named rg.exe so it never collides with a
+ripgrep already on PATH)
 plus html/ (the shipped UI, served via --static-dir;
 always present -- the bundle gate fails the job otherwise)
 plus Install-Pabrik.ps1 (the Windows setup script).

@@ -71,6 +71,15 @@ mkdir -p "${DEST_APP}/Contents/MacOS" "${DEST_APP}/Contents/Resources"
 cp "${SRC_DIR}/pabrik-desktop" "${DEST_APP}/Contents/MacOS/pabrik-desktop"
 cp "${SRC_DIR}/pabrik"         "${DEST_APP}/Contents/MacOS/pabrik"
 chmod +x "${DEST_APP}/Contents/MacOS/pabrik-desktop" "${DEST_APP}/Contents/MacOS/pabrik"
+# ripgrep rides beside the binaries so `search` works on a Mac with no rg
+# installed; the runtime resolver looks next to the executable first. The name
+# is `rg-pabrik`, never `rg`, so a Homebrew ripgrep is left alone.
+if [[ -f "${SRC_DIR}/rg-pabrik" ]]; then
+    cp "${SRC_DIR}/rg-pabrik" "${DEST_APP}/Contents/MacOS/rg-pabrik"
+    chmod +x "${DEST_APP}/Contents/MacOS/rg-pabrik"
+else
+    echo "warning: rg-pabrik missing in ${SRC_DIR} -- the bundle carries no bundled ripgrep (search needs rg on PATH)" >&2
+fi
 cp "${PLIST_SRC}" "${DEST_APP}/Contents/Info.plist"
 if [[ -f "${SCRIPT_DIR}/Pabrik.icns" ]]; then
     cp "${SCRIPT_DIR}/Pabrik.icns" "${DEST_APP}/Contents/Resources/Pabrik.icns"
@@ -106,6 +115,10 @@ if [[ -f "${PLIST_BROWSER_SRC}" ]]; then
     cp "${SRC_DIR}/pabrik-desktop" "${DEST_BROWSER_APP}/Contents/MacOS/pabrik-desktop"
     cp "${SRC_DIR}/pabrik"         "${DEST_BROWSER_APP}/Contents/MacOS/pabrik"
     chmod +x "${DEST_BROWSER_APP}/Contents/MacOS/pabrik-desktop" "${DEST_BROWSER_APP}/Contents/MacOS/pabrik"
+    if [[ -f "${SRC_DIR}/rg-pabrik" ]]; then
+        cp "${SRC_DIR}/rg-pabrik" "${DEST_BROWSER_APP}/Contents/MacOS/rg-pabrik"
+        chmod +x "${DEST_BROWSER_APP}/Contents/MacOS/rg-pabrik"
+    fi
     cat > "${DEST_BROWSER_APP}/Contents/MacOS/pabrik-browser" <<'SHIM'
 #!/usr/bin/env bash
 set -euo pipefail

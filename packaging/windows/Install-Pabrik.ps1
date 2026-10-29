@@ -101,6 +101,17 @@ if (-not (Test-Path (Join-Path $binDir "WebView2Loader.dll"))) {
     Write-Warning "WebView2Loader.dll not found in $SourceDir -- the desktop needs the WebView2 Runtime (preinstalled on Win 10+) and its loader beside the exe."
 }
 
+# Bundled ripgrep: `search` spawns rg, so it lands beside pabrik.exe, which
+# is the runtime resolver's first candidate after PABRIK_RG_BIN. Named
+# rg-pabrik.exe on purpose -- a bare rg.exe here would collide with a
+# ripgrep the user installed.
+$rgSrc = Join-Path $SourceDir "rg-pabrik.exe"
+if (Test-Path $rgSrc) {
+    Copy-Item -Force $rgSrc (Join-Path $binDir "rg-pabrik.exe")
+} else {
+    Write-Warning "rg-pabrik.exe not found in $SourceDir -- the search tool will need ripgrep on PATH."
+}
+
 # Persistent html (Windows-only shipped static dir). The desktop
 # prefers %LOCALAPPDATA%\pabrik\html\index.html and serves it via
 # --static-dir -- no per-run temp extraction, survives close/reopen
