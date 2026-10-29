@@ -6,6 +6,7 @@ const AgentToolFunction = schemas.AgentToolFunction;
 const AgentTool = schemas.AgentTool;
 const sanitize = @import("helpers").sanitize;
 const rg_binary_mod = @import("rg_binary.zig");
+const shell_tool = @import("shell.zig");
 
 pub const SearchError = error{
     /// Pattern was an empty string — almost certainly a caller bug, not a
@@ -440,6 +441,7 @@ fn spawnAndCollect(
     rg_binary: []const u8,
     max_output: usize,
     timeout_ns: u64,
+    cancel_hook: ?shell_tool.CancelHook,
 ) !Captured {
     var child = std.process.spawn(io, .{
         .argv = args,
@@ -542,11 +544,20 @@ fn spawnAndCollect(
     // 0.16: keep the inferred width, don't narrow to i64.
     const deadline_ns = std.Io.Timestamp.now(io, .real).nanoseconds + @as(i64, @intCast(timeout_ns));
     var timeout_hit = false;
+    var cancel_hit = false;
     var reader_failed = false;
     while (!(stdout_eof.load(.acquire) and stderr_eof.load(.acquire))) {
         if (stdout_failure.load(.acquire) or stderr_failure.load(.acquire)) {
             reader_failed = true;
             break;
+        }
+        // The Stop button: a search over a large tree is a child process like
+        // any other, and the hook throttles its own database read.
+        if (cancel_hook) |hook| {
+            if (hook.requested()) {
+                cancel_hit = true;
+                break;
+            }
         }
         if (std.Io.Timestamp.now(io, .real).nanoseconds >= deadline_ns) {
             timeout_hit = true;
@@ -573,6 +584,14 @@ fn spawnAndCollect(
     stderr_thread.join();
     threads_joined = true;
 
+    if (cancel_hit) {
+        if (!child_waited) {
+            // `Child.kill` terminates AND reaps in Zig 0.16.
+            child.kill(io);
+            child_waited = true;
+        }
+        return error.Cancelled;
+    }
     if (timeout_hit) {
         if (!child_waited) {
             child.kill(io);
@@ -644,6 +663,20 @@ pub fn executeSearchWith(
     cwd: []const u8,
     input: SearchInput,
     runner: ?Runner,
+) !SearchResult {
+    return executeSearchWithCancel(allocator, io, cwd, input, runner, null);
+}
+
+/// `executeSearchWith` plus the Stop button: the host spawn's wait loop polls
+/// `cancel_hook` and kills ripgrep on a true answer (error.Cancelled). A guest
+/// runner keeps its own deadline — the hook does not cross that boundary.
+pub fn executeSearchWithCancel(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    cwd: []const u8,
+    input: SearchInput,
+    runner: ?Runner,
+    cancel_hook: ?shell_tool.CancelHook,
 ) !SearchResult {
     // === Up-front validation (no ripgrep invocation if any fail) ===
 
@@ -795,7 +828,7 @@ pub fn executeSearchWith(
             .bytes = ran.stdout.len,
             .match_events = countMatchEvents(ran.stdout),
         };
-    } else try spawnAndCollect(allocator, io, args.items, input.cwd orelse cwd, rg_binary, max_output, timeout_ns);
+    } else try spawnAndCollect(allocator, io, args.items, input.cwd orelse cwd, rg_binary, max_output, timeout_ns, cancel_hook);
     defer captured.deinit(allocator);
 
 
@@ -4062,12 +4095,12 @@ fn searchThrough(
     defer if (holder) |*fs| fs.deinit();
     if (holder) |*fs| {
         var guest_runner = GuestRunner{ .fs = fs };
-        return search_tool_mod.executeSearchWith(ctx.allocator, ctx.io, cwd, input, .{
+        return search_tool_mod.executeSearchWithCancel(ctx.allocator, ctx.io, cwd, input, .{
             .ctx = &guest_runner,
             .runFn = GuestRunner.run,
-        });
+        }, null);
     }
-    return search_tool_mod.executeSearch(ctx.allocator, ctx.io, cwd, input);
+    return search_tool_mod.executeSearchWithCancel(ctx.allocator, ctx.io, cwd, input, null, ctx.cancel_hook);
 }
 
 /// Parse the model-provided JSON and normalize zero-valued optional head/tail
@@ -4387,3 +4420,28 @@ test "search JSON parser preserves positive head and tail for strict validation"
     try std.testing.expectEqual(@as(usize, 5), parsed.value.tail.?);
 }
 
+
+// ─── Stop reaches a running ripgrep ────────────────────────────────────────
+
+/// The dispatch probe, faked: the first poll says "cancelled".
+const StopRequested = struct {
+    fn isCancelled(_: *const anyopaque) bool {
+        return true;
+    }
+};
+
+test "search: a cancelled session kills ripgrep instead of waiting out its timeout" {
+    // `/usr` is the only tree in this suite that is reliably too big for rg to
+    // finish before the first poll; elsewhere the child could end on its own
+    // and the test would assert a race.
+    if (@import("builtin").os.tag != .linux) return;
+
+    var state: u8 = 0;
+    const result = executeSearchWithCancel(testing.allocator, testing.io, "/usr", .{
+        .pattern = "pabrik_cancel_probe_never_matches_zzz",
+        .path = ".",
+        .timeout_ms = 60_000,
+    }, null, .{ .ctx = &state, .is_cancelled = StopRequested.isCancelled });
+
+    try testing.expectError(error.Cancelled, result);
+}

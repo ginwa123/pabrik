@@ -16,6 +16,7 @@ const get_current_agent_by_session_id = llm_history.get_current_agent_by_session
 const tool_models = pabrik.tool_models;
 const getLatestMessage = llm_history.getLatestMessage;
 const handle_mcp_tool = @import("handle_mcp_tool.zig");
+const session_cancel_probe = @import("session_cancel_probe.zig");
 const agentic_loop_mod = @import("workflow.zig");
 const wrapToolOutput = agentic_loop_mod.tools.wrapToolOutput;
 const withDurationMs = agentic_loop_mod.tools.withDurationMs;
@@ -451,6 +452,10 @@ fn runPostHookOverride(ctx: ToolContext, tool_name: []const u8, arguments: []con
 /// Dispatch tool execution from registry entry
 /// Calls exec directly and handles auto-save via registry flags
 fn dispatchFromRegistry(ctx: ToolContext, tool_call: agent.ToolCall, exec: tools_equipped.ToolExecFunc) !ToolResult {
+    // Stack-local, not a threadlocal: a nested sub-agent dispatch on this
+    // thread must not clobber the outer probe.
+    var cancel_probe = session_cancel_probe.Probe.init(ctx.db, ctx.session_id, ctx.io);
+
     const ctx_local = tools.ToolExecContext{
         .allocator = ctx.allocator,
         .io = ctx.io,
@@ -480,6 +485,8 @@ fn dispatchFromRegistry(ctx: ToolContext, tool_call: agent.ToolCall, exec: tools
         // The document tools broadcast their mutations over SSE on this bus.
         // A host without one (unit tests) leaves it null and the emit no-ops.
         .event_bus = if (pabrik.getSingleton()) |di| di.event_bus else |_| null,
+        // Only a tool that blocks needs it, and only `command` reads it.
+        .cancel_hook = cancel_probe.hook(),
     };
     const started_ns = std.Io.Timestamp.now(ctx.io, .real).nanoseconds;
     const exec_result = try exec(ctx_local, tool_call);
@@ -2653,4 +2660,133 @@ test "buildWorkerActivityDescription leaves a short argument untouched" {
 
     try std.testing.expectEqualStrings("Tool call: search {\"q\":\"worker\"}", desc);
     try std.testing.expect(!std.mem.endsWith(u8, desc, "…"));
+}
+
+// ============================================================================
+// Stop reaches a running command — end to end, through the real row
+// ============================================================================
+
+fn stopTestDb(allocator: std.mem.Allocator) !struct { db: database.Db, threaded: std.Io.Threaded } {
+    var threaded = std.Io.Threaded.init(allocator, .{});
+    errdefer threaded.deinit();
+    var db: database.Db = .{};
+    errdefer db.deinit();
+    try test_db.openMemory(&db, threaded.io());
+    try db.exec(allocator,
+        \\CREATE TABLE worker (
+        \\    id TEXT PRIMARY KEY,
+        \\    session_id TEXT,
+        \\    working_directory TEXT,
+        \\    last_activity_nano BIGINT,
+        \\    last_activity_description TEXT,
+        \\    cancelled INTEGER DEFAULT 0,
+        \\    user_id TEXT
+        \\)
+    , &.{});
+    return .{ .db = db, .threaded = threaded };
+}
+
+fn stopTestCtx(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    io: std.Io,
+    logger: *logger_mod.Logger,
+    environment: *const std.process.Environ.Map,
+    session_id: []const u8,
+    temperature: *f32,
+    thinking: *bool,
+) ToolContext {
+    return ToolContext{
+        .allocator = allocator,
+        .io = io,
+        .db = db,
+        .logger = logger,
+        .session_id = session_id,
+        .model = "test-model",
+        .cwd = "/tmp",
+        .api_key = "",
+        .base_url = "",
+        // No `command` dispatch ever reaches the MCP branch, and the MCP
+        // branch is the only reader.
+        .config = undefined,
+        .agent_temperature = temperature,
+        .is_thinking = thinking,
+        .environment = environment,
+    };
+}
+
+fn commandCall(arguments: []const u8) agent.ToolCall {
+    return .{ .id = "call_stop_command", .function = .{ .name = "command", .arguments = arguments } };
+}
+
+// The whole Stop path, with no fake hook in it: the flag the endpoint writes
+// into `worker.cancelled` is what has to kill the child.
+test "dispatch: a cancelled session kills its running command" {
+    if (@import("builtin").os.tag == .windows) return;
+
+    const allocator = std.testing.allocator;
+    var s = try stopTestDb(allocator);
+    defer s.db.deinit();
+    defer s.threaded.deinit();
+    try s.db.exec(allocator,
+        \\INSERT INTO worker (id, session_id, last_activity_nano, last_activity_description, cancelled)
+        \\VALUES ('sess_stop', 'sess_stop', 0, '', 1)
+    , &.{});
+
+    var logger = logger_mod.Logger.init(allocator, s.threaded.io(), .{});
+    var env = try secretsEnvMap(allocator);
+    defer env.map.deinit();
+    defer env.tmp.cleanup();
+    var temperature: f32 = 0.4;
+    var thinking: bool = false;
+
+    const ctx = stopTestCtx(allocator, &s.db, s.threaded.io(), &logger, &env.map, "sess_stop", &temperature, &thinking);
+    const result = try dispatchTool(ctx, commandCall("{\"command\":\"sleep 30\",\"cwd\":\"/tmp\",\"timeout\":60}"));
+    defer {
+        freeResolvedSecrets(allocator, result.secrets);
+        allocator.free(result.output);
+    }
+
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, result.output, .{});
+    defer parsed.deinit();
+    const data = parsed.value.object.get("data").?.object;
+    try std.testing.expect(data.get("cancelled").?.bool);
+    try std.testing.expect(!data.get("timeout").?.bool);
+    // SIGKILL, i.e. the process group really was terminated rather than the
+    // call merely giving up on the output pipes.
+    try std.testing.expectEqual(@as(i64, -9), data.get("exit_code").?.integer);
+}
+
+test "dispatch: a session that is NOT cancelled lets the same command finish" {
+    if (@import("builtin").os.tag == .windows) return;
+
+    const allocator = std.testing.allocator;
+    var s = try stopTestDb(allocator);
+    defer s.db.deinit();
+    defer s.threaded.deinit();
+    try s.db.exec(allocator,
+        \\INSERT INTO worker (id, session_id, last_activity_nano, last_activity_description, cancelled)
+        \\VALUES ('sess_live', 'sess_live', 0, '', 0)
+    , &.{});
+
+    var logger = logger_mod.Logger.init(allocator, s.threaded.io(), .{});
+    var env = try secretsEnvMap(allocator);
+    defer env.map.deinit();
+    defer env.tmp.cleanup();
+    var temperature: f32 = 0.4;
+    var thinking: bool = false;
+
+    const ctx = stopTestCtx(allocator, &s.db, s.threaded.io(), &logger, &env.map, "sess_live", &temperature, &thinking);
+    const result = try dispatchTool(ctx, commandCall("{\"command\":\"echo still-running\",\"cwd\":\"/tmp\",\"timeout\":60}"));
+    defer {
+        freeResolvedSecrets(allocator, result.secrets);
+        allocator.free(result.output);
+    }
+
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, result.output, .{});
+    defer parsed.deinit();
+    const data = parsed.value.object.get("data").?.object;
+    try std.testing.expect(!data.get("cancelled").?.bool);
+    try std.testing.expectEqual(@as(i64, 0), data.get("exit_code").?.integer);
+    try std.testing.expect(std.mem.indexOf(u8, data.get("stdout").?.string, "still-running") != null);
 }
