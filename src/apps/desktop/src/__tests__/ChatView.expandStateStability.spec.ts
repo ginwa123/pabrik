@@ -9,6 +9,20 @@ const readChatViewSource = async (): Promise<string> => {
   return fs.readFile(chatviewPath, 'utf8')
 }
 
+const readPresentationSource = async (): Promise<string> => {
+  const fs = await import('node:fs/promises')
+  const path = await import('node:path')
+  const presentationPath = path.resolve(
+    __dirname,
+    '..',
+    'components',
+    'views',
+    'chat_view',
+    'useChatMessagePresentation.ts',
+  )
+  return fs.readFile(presentationPath, 'utf8')
+}
+
 describe('expandedToolIds — stable per-message keys (source contract)', () => {
   it('declares the expandedToolIds ref with a stability comment', async () => {
     const source = await readChatViewSource()
@@ -29,7 +43,7 @@ describe('expandedToolIds — stable per-message keys (source contract)', () => 
   })
 
   it('declares a toolExpandKey helper that prefers msg.id over position', async () => {
-    const source = await readChatViewSource()
+    const source = await readPresentationSource()
     // The helper MUST exist and prioritise msg.id (stable), then
     // tool_call_id (stable across the turn), then a positional
     // fallback (last resort for legacy rows with no id).
@@ -42,7 +56,7 @@ describe('expandedToolIds — stable per-message keys (source contract)', () => 
   })
 
   it('all usages of expandedToolIds route through toolExpandKey', async () => {
-    const source = await readChatViewSource()
+    const source = await readPresentationSource()
     // Find every read of `expandedToolIds`. None of them may use the old
     // positional `${groupIndex}-${idx}` template literal — every read must route through the
     // helper.
@@ -60,7 +74,8 @@ describe('expandedToolIds — stable per-message keys (source contract)', () => 
     // per-message key the helper built, so the key is the message id (or the
     // tool_call_id) and never the array index.
     expect(source).toMatch(/v-for="\(card, idx\) in toolCardsFor\(group, groupIndex\)"/)
-    expect(source).toMatch(/expandKey: toolExpandKey\(msg, groupIndex, idx\)/)
+    const presentation = await readPresentationSource()
+    expect(presentation).toMatch(/expandKey: toolExpandKey\(msg, groupIndex, idx\)/)
     const groupBlock = source.slice(
       source.indexOf('v-for="(card, idx) in toolCardsFor(group, groupIndex)"'),
       source.indexOf('v-for="(card, idx) in toolCardsFor(group, groupIndex)"') + 200,

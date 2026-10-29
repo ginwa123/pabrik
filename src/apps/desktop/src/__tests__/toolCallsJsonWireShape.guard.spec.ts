@@ -7,8 +7,8 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const chatViewSrc = readFileSync(
-  join(here, '../components/views/ChatView.vue'),
+const presentationSrc = readFileSync(
+  join(here, '../components/views/chat_view/useChatMessagePresentation.ts'),
   'utf-8',
 )
 const peekSrc = readFileSync(
@@ -20,9 +20,9 @@ describe('ChatView groupToolNames — tool_calls_json typeof guard', () => {
   it('guards .trim() behind a typeof string check (crash regression)', () => {
     // The old code: `if (msg.tool_calls_json?.trim())` — optional chaining
     // does NOT guard arrays, so an array-shaped value crashed the render.
-    expect(chatViewSrc).not.toMatch(/msg\.tool_calls_json\?\.trim\(\)/)
+    expect(presentationSrc).not.toMatch(/msg\.tool_calls_json\?\.trim\(\)/)
     // The fixed code: explicit typeof check before .trim().
-    expect(chatViewSrc).toMatch(
+    expect(presentationSrc).toMatch(
       /typeof msg\.tool_calls_json === 'string' && msg\.tool_calls_json\.trim\(\)/,
     )
   })
@@ -30,7 +30,7 @@ describe('ChatView groupToolNames — tool_calls_json typeof guard', () => {
   it('guards parseSpawnSubAgentArgs call with a typeof check', () => {
     // findSubAgentArgsForToolGroup walks backwards through groups and
     // JSON.parses tool_calls_json — non-string values must be skipped.
-    expect(chatViewSrc).toMatch(
+    expect(presentationSrc).toMatch(
       /typeof msg\.tool_calls_json !== 'string'\) continue/,
     )
   })

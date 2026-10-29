@@ -410,10 +410,10 @@
   },
   "src/components/views/ChatView.vue": {
     "local/no-silent-fallback-catch": {
-      "count": 2
+      "count": 1
     },
     "local/no-try-catch": {
-      "count": 30
+      "count": 27
     }
   },
   "src/components/views/ChatsList.vue": {
@@ -539,6 +539,19 @@
     "local/no-silent-fallback-catch": {
       "count": 1
     },
+    "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/components/views/chat_view/useChatMessagePresentation.ts": {
+    "local/no-silent-fallback-catch": {
+      "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/views/chat_view/useChatComposerAgents.ts": {
     "local/no-try-catch": {
       "count": 2
     }

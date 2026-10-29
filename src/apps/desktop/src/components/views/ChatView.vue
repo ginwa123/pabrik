@@ -18,19 +18,18 @@ import { useChatScrollRestore } from '../../composables/useChatScrollRestore'
 import {
   stripThinkingTags,
   VirtualScroller,
-  renderResponse,
-  renderStreamingResponse,
   renderMarkdown,
   hasRichBlocks,
   extractRichBlocks,
-  CHAT_HTML_FRAME_RESIZE_SOURCE,
-  autoResizeScript,
-  growFrameToContent,
-  FRAME_NO_SCROLLBAR_STYLE,
-  findSenderFrame,
-  readAutoResizeHeight,
   formatCompactTokens,
 } from '@/helpers'
+import { buildHtmlSrcdoc, onHtmlFrameResize } from '../../helpers/chatHtmlFrame'
+import { useChatComposerAgents } from './chat_view/useChatComposerAgents'
+import {
+  isCompactionMessage,
+  useChatMessagePresentation,
+  type Message,
+} from './chat_view/useChatMessagePresentation'
 import {
   buildScrollContext,
   createScrollLogger,
@@ -64,12 +63,6 @@ import {
 } from '../../helpers/chatHistoryRetry'
 import { ChatHistoryError } from '../../api'
 import { resolveWorkspaceId } from '../../helpers/workspaceScope'
-import { tryUnwrapToolOutput, type UnwrappedToolOutput } from '@/helpers/unwrapToolOutput'
-import {
-  isBackgroundCommandOutput,
-  parseBackgroundCommandOutput,
-  backgroundToShellData,
-} from '@/helpers/isBackgroundCommandOutput'
 import {
   applyProgressEvent,
   applySnapshotRows,
@@ -81,15 +74,8 @@ import {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- used in <template> as <Bash> (~line 2507); typescript-eslint doesn't always see template usages via the Vue parser
 import Bash from '../preview/Bash.vue'
 import ShellTool from '../preview/ShellTool.vue'
-import ToolCard, { type ToolCardData } from '../tool_outputs/ToolCard.vue'
+import ToolCard from '../tool_outputs/ToolCard.vue'
 import CompactToolGroup from '../tool_outputs/compact/CompactToolGroup.vue'
-import {
-  buildCompactChains,
-  foldedNarrationMessageIds,
-  foldedThoughtMessageIds,
-  foldsIntoChain,
-  type CompactChainItem,
-} from '../tool_outputs/compact/chain'
 import SubAgentPeekHost from '../pabrik/SubAgentPeekHost.vue'
 import ChatRightSidebar from './chat_right_sidebar/ChatRightSidebar.vue'
 import ChatAppBar from './ChatAppBar.vue'
@@ -115,25 +101,23 @@ import { useWorkspacesStore } from '../../stores/workspaces'
 import { buildAppUrl, isChatRouteStaleForSession } from '../../helpers/appUrl'
 import CompactionCard from '../preview/CompactionCard.vue'
 import SkillInvocationCard from '../preview/SkillInvocationCard.vue'
-import { hasSkillEnvelope, splitSkillEnvelope } from '../../helpers/skillEnvelope'
 // 2026-08-25 agent-error-card (task_1787663566535_2): dedicated renderer
 // for agentic-loop error/retry diagnostics (is_error=true SSE events).
 import AgentErrorCard from '../chat/AgentErrorCard.vue'
+import { hasSkillEnvelope } from '../../helpers/skillEnvelope'
 import ChatAttachments from '../chat/ChatAttachments.vue'
 import MermaidDiagram from '../chat/MermaidDiagram.vue'
 import PlantUmlDiagram from '../chat/PlantUmlDiagram.vue'
 import D2Diagram from '../chat/D2Diagram.vue'
-import UserPillRail, { type UserPill } from '../chat/UserPillRail.vue'
+import UserPillRail from '../chat/UserPillRail.vue'
 import ChatScrollSlider from '../chat/ChatScrollSlider.vue'
-import { pickActivePillIndex, isPillGroup, estimateViewportEnd } from '../chat/activePill'
+import { pickActivePillIndex, estimateViewportEnd } from '../chat/activePill'
 import SkillsPopup from '../preview/SkillsPopup.vue'
 import BackgroundCommandsPopup from '../preview/BackgroundCommandsPopup.vue'
 import ImagePreview from '../preview/ImagePreview.vue'
 import WorktreeMenu from '../workspace/WorktreeMenu.vue'
 import CreatePrDialog from '../dialogs/CreatePrDialog.vue'
 import CreateWorktreeDialog from '../dialogs/CreateWorktreeDialog.vue'
-import { indexSpawnSubAgentArgs } from '../../helpers/parseSpawnSubAgentArgs'
-import type { SubAgentArgs } from '../../helpers/parseSpawnSubAgentArgs'
 import { ICON_PATHS } from '../ui/icons'
 import UiIcon from '../ui/UiIcon.vue'
 
@@ -166,32 +150,6 @@ const emit = defineEmits<{
 // Check if session is pending (needs creation on first message)
 const isPendingSession = computed(() => props.chatId.startsWith('pending-'))
 const { presetClass: chatWidthClass } = useChatContentWidth()
-
-interface Message {
-  id: string
-  role: 'user' | 'assistant' | 'system' | 'tool'
-  content: string
-  timestamp: Date
-  tool_name?: string
-  diffview_before?: string
-  diffview_after?: string
-  image_urls?: string[]
-  video_urls?: string[]
-  /** The attached files as a JSON array of `{name, mime, bytes}` — metadata only. */
-  file_attachments?: string
-  tool_calls_json?: string
-  finish_reason?: string
-  tool_call_id?: string
-  /**    * JSON-stringified tool input arguments, populated by the same `tryUnwrapToolOutput` pipeline
-   * that fills `unwrappedByMessageId`. Used by cards like `PresentFiles` without re-fetching. */
-  parameters?: string
-  is_input?: boolean
-  is_output?: boolean
-  /**    * Thinking models' chain-of-thought, stored in `llm_history.reasoning_content`. Populated by
-   * loadChatHistory (REST) and the SSE `full` handler; rendered as a collapsible section in the
-   * assistant bubble. */
-  reasoning_content?: string
-}
 
 // Copy code content to clipboard
 const copyCodeContent = async (codeContent: string) => {
@@ -232,125 +190,6 @@ const setupCodeBlockCopyButtons = () => {
       block.appendChild(btn)
     })
   })
-}
-
-/**  * The `<html>` frame is a separate document with a NULL origin, so the app's CSS custom properties
- * do NOT cascade in — theme values are inlined into the srcdoc. The literals below are Kanagawa
- * Dragon fallbacks for no-DOM cases. */
-interface HtmlFramePalette {
-  bg: string
-  fg: string
-  muted: string
-  border: string
-  link: string
-  /** Chip behind `code`/`pre`/table cells — matches the app's
-   *  `.markdown-content pre` (`--color-bg-p1`). */
-  chip: string
-  /** Inline `code` ink — matches the app's `.markdown-content code`
-   *  (`--color-aqua`). */
-  codeInk: string
-}
-
-const HTML_FRAME_PALETTE_FALLBACK: HtmlFramePalette = {
-  bg: '#1D1C19', // --semantic-card-bg
-  fg: '#c5c9c5', // --semantic-text
-  muted: '#a6a69c', // --semantic-text-muted
-  border: '#282727', // --color-border
-  link: '#8ba4b0', // --semantic-link
-  chip: '#282727', // --color-bg-p1
-  codeInk: '#8ea4a2', // --color-aqua
-}
-
-let htmlFramePalette: HtmlFramePalette | null = null
-
-const readCssVar = (name: string, fallback: string): string => {
-  if (typeof window === 'undefined' || typeof getComputedStyle !== 'function') return fallback
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
-  return value || fallback
-}
-
-/** Memoized — the theme is fixed for the app's lifetime and this runs for
- *  every `<html>` block on every assistant render. */
-const resolveHtmlFramePalette = (): HtmlFramePalette => {
-  if (htmlFramePalette) return htmlFramePalette
-  const fallback = HTML_FRAME_PALETTE_FALLBACK
-  htmlFramePalette = {
-    bg: readCssVar('--semantic-card-bg', fallback.bg),
-    fg: readCssVar('--semantic-text', fallback.fg),
-    muted: readCssVar('--semantic-text-muted', fallback.muted),
-    border: readCssVar('--color-border', fallback.border),
-    link: readCssVar('--semantic-link', fallback.link),
-    chip: readCssVar('--color-bg-p1', fallback.chip),
-    codeInk: readCssVar('--color-aqua', fallback.codeInk),
-  }
-  return htmlFramePalette
-}
-
-/** Build the srcdoc document for an html block. Full documents pass through verbatim; fragments get
- * a shell carrying the app's THEME, `color-scheme: dark`, and the auto-resize reporter. */
-const buildHtmlSrcdoc = (block: string): string => {
-  const trimmed = block.trim()
-  if (/<!doctype html|<html[\s>]/i.test(trimmed)) {
-    // Full documents pass through, but still get the no-scrollbar shell
-    // + reporter so they grow to full height instead of clipping behind
-    // the browser's 150px default with an inner scrollbar.
-    const noScrollbar = `<style>${FRAME_NO_SCROLLBAR_STYLE}</style>`
-    const reporter = autoResizeScript(CHAT_HTML_FRAME_RESIZE_SOURCE)
-    if (/<\/body\s*>/i.test(trimmed)) {
-      return trimmed.replace(/<\/body\s*>/i, `${noScrollbar}${reporter}</body>`)
-    }
-    return `${trimmed}${noScrollbar}${reporter}`
-  }
-  const p = resolveHtmlFramePalette()
-  return (
-    '<!DOCTYPE html><html><head><meta charset="utf-8">' +
-    '<style>' +
-    ':root{color-scheme:dark}' +
-    'html,body{margin:0;padding:0}' +
-    `body{font-family:system-ui,sans-serif;background:${p.bg};color:${p.fg};margin:8px}` +
-    `a{color:${p.link}}` +
-    'img{max-width:100%}' +
-    `pre,code,th,td{background:${p.chip}!important;color:${p.fg}!important}` +
-    'code{font-family:ui-monospace,"SF Mono",Menlo,monospace;padding:.1em .3em;border-radius:3px}' +
-    `code{color:${p.codeInk}!important}` +
-    'pre{font-family:ui-monospace,"SF Mono",Menlo,monospace;padding:.6em .8em;' +
-    'border-radius:4px;overflow-x:auto}' +
-    'pre code{background:transparent!important;padding:0}' +
-    `pre code{color:${p.fg}!important}` +
-    'table{border-collapse:collapse}' +
-    `th,td{border:1px solid ${p.border};padding:4px 8px}` +
-    `hr{border:none;border-top:1px solid ${p.border}}` +
-    `blockquote{margin:.6em 0;padding-left:.8em;border-left:3px solid ${p.border};color:${p.muted}}` +
-    FRAME_NO_SCROLLBAR_STYLE +
-    '</style>' +
-    '</head><body>' +
-    trimmed +
-    '</body>' +
-    autoResizeScript(CHAT_HTML_FRAME_RESIZE_SOURCE) +
-    '</html>'
-  )
-}
-
-/**  * The reporter script inside each frame posts its content height; grow the frame to its FULL height
- * (no cap) so no inner scrollbar appears — the outer chat scroller owns scrolling. `contentWindow`
- * identity is the only handle a null-origin sandbox leaves the parent. */
-const onHtmlFrameResize = (event: MessageEvent): void => {
-  const reported = readAutoResizeHeight(event, CHAT_HTML_FRAME_RESIZE_SOURCE)
-  if (reported === null) return
-  const frame = findSenderFrame(document, event, 'iframe.chat-html-frame')
-  if (!frame) return
-  frame.style.height = `${growFrameToContent(reported)}px`
-}
-
-// A compaction handoff: a user-role message carrying the envelope `compactMessageInMemoryNew`
-// writes. JSON since the format change, XML before it, so both prefixes are recognised — the bubble
-// renders a `CompactionCard` instead of a wall of raw document text.
-const isCompactionMessage = (msg: { role: string; content: string } | undefined): boolean => {
-  if (!msg) return false
-  if (msg.role !== 'user') return false
-  const trimmed = msg.content.trimStart()
-  if (trimmed.startsWith('{"compact_messages"')) return true
-  return trimmed.startsWith('<compact_messages>')
 }
 
 // Session ID extracted from props on mount
@@ -1050,111 +889,26 @@ const sidebarBranch = computed(() =>
 const maxTotalTokens = ref(0)
 const maxCapacityTotalTokens = ref(200000)
 
-// ─── Agent selection ───────────────────────────────────────────────────────── Per-session model
-// selection.
-const availableAgents = ref<
-  Array<{ name: string; model: string; base_url: string; url_style: string }>
->([])
-const selectedAgent = ref<string | null>(null)
-// User-chosen default agent from Settings → Agents → "Set active". `null` when no agent
-// is marked active (or no agents configured).
-const activeAgent = ref<string | null>(null)
-const showAgentPicker = ref(false)
-const isUpdatingAgent = ref(false)
-const agentPickerRef = ref<HTMLElement | null>(null)
-
-/** The workspace this chat runs in: the route's, else the app's. The sidebar's
- * Terminal tab starts its shell inside THIS workspace's VM under `--saas`. */
-const chatWorkspaceId = computed<string>(() =>
-  resolveWorkspaceId(route?.params?.workspaceId, workspacesStore.activeWorkspace?.id),
-)
-
-/** The workspace whose agents the picker must list: the route's, else the one the app is in. The
- * picker must offer what actually RUNS here, and a run uses the workspace's config overlay merged
- * over the user config (`session_llm_config.mergedConfigTextFor`). */
-const agentPickerWorkspaceId = chatWorkspaceId
-
-const loadAgents = async () => {
-  try {
-    const wsId = agentPickerWorkspaceId.value
-    const config = wsId ? await api.getWorkspaceConfig(wsId) : await api.getPabrikConfig()
-    const agents = (config.profiles ?? {}) as Record<
-      string,
-      { model?: string; base_url?: string; url_style?: string; enabled?: boolean }
-    >
-    availableAgents.value = Object.entries(agents)
-      .filter(([, p]) => p.enabled !== false)
-      .map(([name, p]) => ({
-        name,
-        model: p.model ?? '',
-        base_url: p.base_url ?? '',
-        url_style: p.url_style ?? '',
-      }))
-    // `active_profile` is the user-chosen default from Settings. Empty
-    // string → null (matches the backend's PUT coercion in
-    // `pabrik_config_put.zig`).
-    const raw = (config as { active_profile?: string | null }).active_profile
-    activeAgent.value = raw && raw.length > 0 ? raw : null
-    // How the chat draws tool calls. The config this chat already fetched
-    // is the effective one (the workspace overlay merged over the user
-    // config), so the mode is the one that runs here.
-    chatView.setMode(chatViewModeFrom(config))
-  } catch (err) {
-    console.error('Failed to load agents:', err)
-    availableAgents.value = []
-    activeAgent.value = null
-  }
-}
-
-// Effective agent the chip / picker reflect — mirrors the backend cascade in
-// `workflow.zig::resolveEffectiveAgent`.
-const effectiveAgent = computed<string | null>(() => {
-  const sel = selectedAgent.value
-  if (sel && sel.length > 0) return sel
-  return activeAgent.value
+const {
+  availableAgents,
+  selectedAgent,
+  activeAgent,
+  showAgentPicker,
+  isUpdatingAgent,
+  agentPickerRef,
+  chatWorkspaceId,
+  loadAgents,
+  effectiveAgent,
+  effectiveProfileUrlStyle,
+  agentChipTooltip,
+  selectAgent,
+  closeOnOutsideClick,
+} = useChatComposerAgents({
+  sessionId,
+  workspaceId: () =>
+    resolveWorkspaceId(route?.params?.workspaceId, workspacesStore.activeWorkspace?.id),
+  applyChatViewMode: (config) => chatView.setMode(chatViewModeFrom(config)),
 })
-
-/// The wire style the effective profile uses — it decides which file types the model can read.
-/// Empty when the profile is unknown; the backend then has the final say.
-const effectiveProfileUrlStyle = computed<string | undefined>(() => {
-  const name = effectiveAgent.value
-  if (!name) return undefined
-  const style = availableAgents.value.find((p) => p.name === name)?.url_style
-  return style && style.length > 0 ? style : undefined
-})
-
-/// Tooltip text reflecting what the backend will actually use. Distinguishes
-/// "explicit per-session choice" from "defaulted to the active agent" so the
-/// user understands the cascade.
-const agentChipTooltip = computed(() => {
-  const sel = selectedAgent.value
-  if (sel && sel.length > 0) return `Using agent: ${sel}`
-  if (activeAgent.value) return `Using active agent: ${activeAgent.value}`
-  return 'Using default (top-level config)'
-})
-
-const selectAgent = async (name: string | null) => {
-  if (isUpdatingAgent.value) return
-  isUpdatingAgent.value = true
-  try {
-    const sid = sessionId.value
-    if (sid) {
-      await api.updateSession(sid, { selectedAgent: name })
-    }
-    selectedAgent.value = name
-  } catch (err) {
-    console.error('Failed to update agent:', err)
-  } finally {
-    isUpdatingAgent.value = false
-    showAgentPicker.value = false
-  }
-}
-
-const closeOnOutsideClick = (e: MouseEvent) => {
-  if (agentPickerRef.value && !agentPickerRef.value.contains(e.target as Node)) {
-    showAgentPicker.value = false
-  }
-}
 
 // ─── Worktree dropdown + PR dialog ──────────────────────────────────────────── The chat status
 // bar's git branch indicator becomes a clickable button when a worktree is bound (`gitWorktreeCwd`
@@ -1306,13 +1060,6 @@ const toggleToolExpanded = (msgId: string) => {
   expandedToolIds.value = newSet
 }
 
-// Stable expand-state key for a tool message. Falls back through:
-//   3. positional `${groupIndex}-${idx}` — last resort for legacy rows
-//      with no id at all; better than nothing, same behaviour as before.
-const toolExpandKey = (msg: Message, groupIndex: number, idx: number): string => {
-  return msg.id || msg.tool_call_id || `pos-${groupIndex}-${idx}`
-}
-
 // Code-editor wiring for the fallback `<DiffView>` rendered for tools that don't have a dedicated
 // component (e.g. legacy tools). When the user clicks a line number in the fallback diff we forward
 // to the in-app editor — but only when we know the target file path.
@@ -1377,110 +1124,31 @@ const stopGitStatusPoll = () => {
   }
 }
 
-// Filter out empty messages for display (check stripped content). 2026-08-23 hidden-messages fix —
-// three exemptions ADDED to the original "drop if stripThinkingTags(content) is empty" rule: 1.
-// `image_urls` populated → KEEP.
-const filteredMessages = computed(() =>
-  messages.value.filter((m) => {
-    // Always keep tool_calls messages even if content is only thinking tags
-    if (m.finish_reason === 'tool_calls') return true
-    // 2026-08-23: image-only user messages must survive the filter —
-    // hasBubbleContent renders their images downstream.
-    if ((m.image_urls?.length ?? 0) > 0) return true
-    // A turn that carries only an attached document renders its chips.
-    if ((m.file_attachments?.length ?? 0) > 0) return true
-    // 2026-08-23: tool results render via dedicated components; never
-    // drop them on empty stripped content.
-    if (m.role === 'tool') return true
-    // 2026-08-23: thinking-only assistant turns (reasoning_content set,
-    // final text empty) still have visible content once the reasoning
-    // section renders.
-    if (m.role === 'assistant' && m.reasoning_content && m.reasoning_content.trim() !== '') {
-      return true
-    }
-    const stripped = stripThinkingTags(m.content)
-    return stripped && stripped.trim() !== ''
-  }),
-)
-
-// Group consecutive messages of the same role together for cleaner display
-interface MessageGroup {
-  role: 'user' | 'assistant' | 'tool'
-  messages: Message[]
-  timestamp: Date
-}
-
-/** Stable identity for a message group (2026-08-26 stable-keys fix). */
-const groupKey = (group: MessageGroup): string =>
-  group.messages[0]?.id ?? `empty-${group.timestamp.getTime()}`
-
-const messageGroups = computed((): MessageGroup[] => {
-  const groups: MessageGroup[] = []
-
-  for (const msg of filteredMessages.value) {
-    const lastGroup = groups[groups.length - 1]
-
-    if (lastGroup && lastGroup.role === msg.role) {
-      lastGroup.messages.push(msg)
-      if (msg.timestamp > lastGroup.timestamp) {
-        lastGroup.timestamp = msg.timestamp
-      }
-    } else {
-      groups.push({
-        role: msg.role as 'user' | 'assistant' | 'tool',
-        messages: [msg],
-        timestamp: msg.timestamp,
-      })
-    }
-  }
-
-  // 2026-08-23 blank-block fix — drop groups with nothing renderable BEFORE the VirtualScroller
-  // ever sees them.
-  return groups.filter((g, i) => hasBubbleContent(g, i))
-})
-
-/** Ready-gate: true while the transcript load is outstanding AND there is nothing for the reader to
- * look at yet. Drives the initializing skeleton and the composer disable. */
-const isInitializing = computed(
-  () =>
-    !isPendingSession.value &&
-    (!sessionId.value || (isRemoteLoadPending.value && messageGroups.value.length === 0)),
-)
-
-/**  * Group key of the group containing a message id (2026-09-06 virtual-scroller shrink fix). Used at
- * the streaming->DB swap site to transfer the measured height to the new key. Null when the message
- * is not in any group (already filtered, empty chat). */
-const groupKeyForMessageId = (messageId: string): string | null => {
-  if (!messageId) return null
-  const g = messageGroups.value.find((grp) => grp.messages.some((m) => m.id === messageId))
-  return g ? groupKey(g) : null
-}
-
-// ── User-pill rail (2026-09-09 chatview user pill) ────────────────────── One pill per user group;
-// click jumps the scroller to that group. Per-group (not per-message) because VirtualScroller items
-// ARE groups — scrollToItem(groupIndex) is exact.
-const userPills = computed((): UserPill[] => {
-  const pills: UserPill[] = []
-  messageGroups.value.forEach((g, i) => {
-    // Real user turns only: bg-output groups are role=user on the wire
-    // but render as tool cards, compaction envelopes are system
-    // artifacts — neither gets a pill (see isPillGroup).
-    const first = g.messages[0]
-    if (!isPillGroup(g.role, isBgOnlyGroup(g), !!first && isCompactionMessage(first))) return
-    // Per message, not on the join: a `/skill-` turn carries the loaded bodies
-    // as a trailing envelope, and the preview is for the human's sentence.
-    let text = ''
-    let skills = 0
-    for (const m of g.messages) {
-      const parts = splitSkillEnvelope(m.content || '')
-      text += (text === '' ? '' : '\n') + parts.text
-      skills += parts.skills.length
-    }
-    const label = text.trim().slice(0, 60) || 'Image'
-    const preview = skills > 0 ? `${label} +${skills} skill${skills === 1 ? '' : 's'}` : label
-    pills.push({ groupIndex: i, key: groupKey(g), preview })
-  })
-  return pills
+const {
+  groupKey,
+  messageGroups,
+  isInitializing,
+  groupKeyForMessageId,
+  userPills,
+  compactChains,
+  visibleReasoning,
+  answeredMessages,
+  toolCardsFor,
+  standaloneCardsFor,
+  renderMessageHtml,
+  isBgUserMsg,
+  bgShellData,
+  isBgOnlyGroup,
+  hasVisibleContent,
+  hasBubbleContent,
+} = useChatMessagePresentation({
+  messages,
+  expandedToolIds,
+  subAgentProgressMap,
+  isPendingSession,
+  sessionId,
+  isRemoteLoadPending,
+  mode: () => chatView.mode,
 })
 
 // Last pill the user jumped to (highlight). Also driven by scroll (see
@@ -1521,239 +1189,6 @@ const jumpToUserGroup = (groupIndex: number, key: string) => {
       }
     })
   })
-}
-
-// Per-message envelope unwrap lookup. Keyed by message id; value is the parsed envelope or null if
-// the content is not a <tool> envelope (legacy or non-tool content). Computed once when messages
-// change so the template can do a cheap O(1) lookup per tool component.
-const unwrappedByMessageId = computed((): Map<string, UnwrappedToolOutput | null> => {
-  const map = new Map<string, UnwrappedToolOutput | null>()
-  for (const m of messages.value) {
-    if (m.role !== 'tool') {
-      map.set(m.id, null)
-      continue
-    }
-    map.set(m.id, tryUnwrapToolOutput(m.content))
-  }
-  return map
-})
-
-// Helper used in the template: get the inner data to pass to a tool-specific component. Returns the
-// original content if the envelope didn't parse (legacy fallback) or if there was an error (the
-// error message is shown via the envelope, not via the inner component's own error path).
-const innerToolData = (m: Message): unknown => {
-  const unwrapped = unwrappedByMessageId.value.get(m.id)
-  if (unwrapped === null || unwrapped === undefined) return m.content // legacy
-  return unwrapped.data ?? m.content // error case: fall back to full content
-}
-
-// Helper used in the template: get the JSON-string tool-call arguments
-// for a tool message. Falls back to '{}' for legacy messages that
-// don't carry the envelope.
-const getParametersForMessage = (m: Message): string => {
-  return unwrappedByMessageId.value.get(m.id)?.parameters ?? '{}'
-}
-
-/** One agent turn's calls, the thoughts between them and the narration on the way to each call,
- * keyed by the group that draws the chain. A turn ends where the agent answers or asks, so only
- * that message keeps its own place in the transcript. */
-const compactChains = computed(
-  (): Map<number, CompactChainItem[]> =>
-    chatView.mode === 'compact' ? buildCompactChains(messageGroups.value, toolCardsFor) : new Map(),
-)
-
-/** The thoughts a chain already draws, so the group that holds them draws none of them twice. */
-const foldedThoughtIds = computed((): Set<string> => foldedThoughtMessageIds(compactChains.value))
-
-/** The narration a chain already draws, so it stops stacking up above the card. */
-const foldedNarrationIds = computed(
-  (): Set<string> => foldedNarrationMessageIds(compactChains.value),
-)
-
-/** The reasoning rows of one assistant group, minus the thoughts a chain drew. */
-const visibleReasoning = (group: MessageGroup): Message[] =>
-  group.messages.filter(
-    (m) =>
-      typeof m.reasoning_content === 'string' &&
-      m.reasoning_content.trim() !== '' &&
-      !foldedThoughtIds.value.has(m.id),
-  )
-
-/** The messages of one assistant group that carry the answer: past the first tool call the agent
- * only narrates, and compact mode draws that narration inside the chain. */
-const answeredMessages = (group: MessageGroup): Message[] =>
-  chatView.mode === 'compact'
-    ? group.messages.filter((m) => !foldedNarrationIds.value.has(m.id))
-    : group.messages
-
-/** Every spawn_sub_agent call of the transcript, keyed by tool_call_id. Built once per transcript
- * change — one parse per assistant message — so a card reads its spawn args instead of walking
- * the transcript. */
-const subAgentArgsByToolCallId = computed((): Map<string, SubAgentArgs[]> => {
-  const index = new Map<string, SubAgentArgs[]>()
-  for (const group of messageGroups.value) {
-    if (group.role !== 'assistant') continue
-    for (const msg of group.messages) {
-      if (typeof msg.tool_calls_json !== 'string') continue
-      for (const [toolCallId, args] of indexSpawnSubAgentArgs(msg.tool_calls_json)) {
-        index.set(toolCallId, args)
-      }
-    }
-  }
-  return index
-})
-
-/** The cards of one tool group, in order. Both views draw the same cards. */
-const toolCardsFor = (group: MessageGroup, groupIndex: number): ToolCardData[] =>
-  group.messages.map((msg, idx) => ({
-    message: msg,
-    content: innerToolData(msg),
-    parameters: getParametersForMessage(msg),
-    expanded: expandedToolIds.value.has(toolExpandKey(msg, groupIndex, idx)),
-    expandKey: toolExpandKey(msg, groupIndex, idx),
-    subAgentProgress: msg.tool_call_id
-      ? (subAgentProgressMap.value[msg.tool_call_id] ?? null)
-      : null,
-    subAgentArgs: msg.tool_call_id
-      ? (subAgentArgsByToolCallId.value.get(msg.tool_call_id) ?? null)
-      : null,
-  }))
-
-/** The calls of one tool group that keep their own card in compact mode: the chain must not
- * swallow something the agent is showing the reader. */
-const standaloneCardsFor = (group: MessageGroup, groupIndex: number): ToolCardData[] =>
-  toolCardsFor(group, groupIndex).filter((card) => !foldsIntoChain(card))
-
-const renderMessageHtml = (msg: Message): string =>
-  msg.id.startsWith('streaming-')
-    ? renderStreamingResponse(msg.content, msg.role, msg.tool_name)
-    : renderResponse(
-        msg.content,
-        msg.role,
-        msg.tool_name,
-        msg.diffview_before,
-        msg.diffview_after,
-        msg.finish_reason,
-        msg.tool_calls_json,
-      )
-
-const isBgUserMsg = (m: { content?: string }): boolean =>
-  !!m.content && isBackgroundCommandOutput(m.content)
-
-const bgShellData = (m: { content?: string }): unknown => {
-  const pr = m.content ? parseBackgroundCommandOutput(m.content) : null
-  return pr ? backgroundToShellData(pr) : (m.content ?? '')
-}
-// A user group made ONLY of background completions renders as a transparent left-aligned tool card,
-// not the blue right bubble (background completions are role=user on the wire, tool-styled in
-// pixels — see helpers/isBackgroundCommandOutput).
-const isBgOnlyGroup = (group: { role: string; messages: { content?: string }[] }): boolean =>
-  group.role === 'user' && group.messages.length > 0 && group.messages.every(isBgUserMsg)
-
-// ─── FIX: Compute tool call names per assistant group ───────────────────────── For each group
-// index, returns the tool names string if the group is an assistant turn that triggered tool calls
-// BUT the tool outputs are NOT shown anywhere in the transcript.
-const groupToolNames = computed((): (string | null)[] => {
-  // Pre-collect every tool_call_id that has a matching tool row in the
-  // transcript. The id set is the single source of truth for "is this
-  // tool call already represented by a structured card?".
-  const renderedToolCallIds = new Set<string>()
-  for (const g of messageGroups.value) {
-    if (g.role !== 'tool') continue
-    for (const m of g.messages) {
-      if (m.tool_call_id) renderedToolCallIds.add(m.tool_call_id)
-    }
-  }
-
-  return messageGroups.value.map((group, i) => {
-    if (group.role !== 'assistant') return null
-
-    // Same-group tool rows (rare but possible when an assistant message
-    // carries tool_calls_json AND a tool result) → no pill needed.
-    const nextGroup = messageGroups.value[i + 1]
-    if (nextGroup?.role === 'tool') {
-      return null
-    }
-
-    // Look for any message in this assistant group whose tool_calls_json
-    // either already has a matching tool row OR yields parseable names.
-    for (const msg of group.messages) {
-      // 2026-08-24 wire-shape fix (task_1787590621966_10): the backend now always serializes
-      // tool_calls_json as a JSON STRING, but older events (or any future array-shaped regression)
-      // must not crash the render.
-      if (typeof msg.tool_calls_json === 'string' && msg.tool_calls_json.trim()) {
-        try {
-          const parsed = JSON.parse(msg.tool_calls_json)
-          // tool_calls_json IS the array directly: [{id, type, function: {name}}]
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.
-            const names = parsed.map((tc: any) => tc.function?.name || tc.name || 'unknown')
-
-            // If EVERY tool call in this group already has a rendered tool row somewhere in the
-            // transcript, the structured cards are the source of truth — suppress the pill entirely.
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; tool_calls_json shape is intentionally opaque.
-            const allRendered = parsed.every((tc: any) => {
-              const id = tc?.id
-              return typeof id === 'string' && renderedToolCallIds.has(id)
-            })
-            if (allRendered) return null
-
-            return names.join(', ')
-          }
-        } catch {}
-      }
-
-      // finish_reason set but tool_calls_json missing/unparseable.
-      if (msg.finish_reason === 'tool_calls') {
-        // We can't match by id here (tool_calls_json is missing), so fall back to the adjacency
-        // heuristic: if a tool group appears ANYWHERE in the transcript after this group, the tool
-        // call was rendered → no pill.
-        let hasLaterTool = false
-        for (let j = i + 1; j < messageGroups.value.length; j++) {
-          if (messageGroups.value[j]?.role === 'tool') {
-            hasLaterTool = true
-            break
-          }
-        }
-        if (hasLaterTool) return null
-        return '...'
-      }
-    }
-
-    return null
-  })
-})
-
-// ─── Bubble Visibility ──────────────────────────────────────────────────────── Check if a message
-// has visible text content (i.e. content that survives stripThinkingTags and is non-empty after
-// trim).
-const hasVisibleContent = (m: Message): boolean => {
-  const stripped = stripThinkingTags(m.content || '')
-  return stripped.trim().length > 0
-}
-
-// Check if a message group has any visible content for its bubble.
-const hasBubbleContent = (group: MessageGroup, groupIndex: number): boolean => {
-  if (group.role === 'user') {
-    return group.messages.some(
-      (m) =>
-        (m.image_urls?.length ?? 0) > 0 ||
-        (m.file_attachments?.length ?? 0) > 0 ||
-        hasVisibleContent(m) ||
-        !!(m.reasoning_content && m.reasoning_content.trim() !== ''),
-    )
-  }
-  if (group.role === 'tool') {
-    return group.messages.length > 0
-  }
-  if (group.role === 'assistant') {
-    const hasToolHeader = groupToolNames.value[groupIndex] !== null
-    const hasReasoning = group.messages.some(
-      (m) => m.reasoning_content && m.reasoning_content.trim() !== '',
-    )
-    return hasToolHeader || hasReasoning || group.messages.some(hasVisibleContent)
-  }
-  return false
 }
 
 // ─── Chat History ──────────────────────────────────────────────────────────── 2026-09-04
