@@ -89,6 +89,15 @@ describe('AskUser — rendering', () => {
     wrapper.unmount()
   })
 
+  it('prints a question code span carrying & as the ampersand the model wrote', () => {
+    const wrapper = mountCard(
+      pendingData({ question: '# Design API — `GET /v1/map-zones?pool_id=CK&zone_id=14`' }),
+    )
+    expect(wrapper.text()).toContain('pool_id=CK&zone_id=14')
+    expect(wrapper.text()).not.toContain('&amp;')
+    wrapper.unmount()
+  })
+
   it('hides the free-text box when the model disallowed it', () => {
     const wrapper = mountCard(pendingData({ allowFreeText: false }))
     expect(wrapper.find('[data-testid="ask-user-freetext"]').exists()).toBe(false)
