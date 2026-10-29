@@ -67,7 +67,7 @@ pub const max_search_timeout_ms: u64 = 3_600_000;
 pub const rg_missing_marker = "ripgrep (rg) is missing";
 
 pub const rg_missing_message = rg_missing_marker ++
-    ": pabrik looks for `rg` beside its own binary, then in its data dir, then on PATH. Reinstall pabrik to restore the bundled rg, or point PABRIK_RG_BIN at an existing one.";
+    ": pabrik looks for its bundled `rg-pabrik` beside its own binary, then in its data dir, then `rg` on PATH. Reinstall pabrik to restore the bundled copy, or point PABRIK_RG_BIN at an existing rg.";
 
 const SearchNanoSleepTimespec = extern struct {
     sec: c_long,
@@ -264,8 +264,8 @@ pub const SearchInput = struct {
     /// clamped to 1h). 0 fails fast with error.Timeout.
     timeout_ms: ?u64 = null,
     /// ripgrep binary override. Null resolves it the way the runtime does:
-    /// `PABRIK_RG_BIN`, then `rg` beside the executable, then the data dir,
-    /// then bare `rg` on PATH. Test hook for the RgNotFound path.
+    /// `PABRIK_RG_BIN`, the bundled `rg-pabrik` beside the executable, the
+    /// data dir, then bare `rg` on PATH.
     rg_binary: ?[]const u8 = null,
 };
 

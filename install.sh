@@ -8,9 +8,12 @@
 # `ci-latest` GitHub release and installs them to $HOME/.local/bin
 # (no sudo) or /usr/local/bin with --system.
 #
-# It also installs `rg-<triple>` as `$BINDIR/rg`: the bundled ripgrep the
-# `search` tool spawns, so no `apt install ripgrep` / `brew install ripgrep`
-# is needed. The runtime finds it beside `pabrik`; PABRIK_RG_BIN overrides.
+# It also installs `rg-pabrik-<triple>` as `$BINDIR/rg-pabrik`: the bundled
+# ripgrep the `search` tool spawns, so no `apt install ripgrep` / `brew install
+# ripgrep` is needed. The name is deliberately not `rg` -- that would replace a
+# ripgrep the user installed, and `--system` writes to /usr/local/bin. The
+# runtime finds the bundle beside `pabrik`; a real `rg` on PATH still works, and
+# PABRIK_RG_BIN overrides both.
 #
 # Env overrides:
 #   PABRIK_VERSION   release tag, default "ci-latest"
@@ -139,13 +142,13 @@ if [[ "${PABRIK_DRY_RUN:-0}" -eq 1 ]]; then
     echo "${BASE_URL}/pabrik-${TRIPLE}"
     echo "${BASE_URL}/pabrik-desktop-${TRIPLE}"
     echo "${BASE_URL}/pabrik-html-${TRIPLE}.tar.gz"
-    echo "${BASE_URL}/rg-${TRIPLE}"
+    echo "${BASE_URL}/rg-pabrik-${TRIPLE}"
     exit 0
 fi
 
 if [[ "$UNINSTALL" -eq 1 ]]; then
     rm -f "$BIN_PABRIK" "$BIN_DESKTOP"
-    rm -f "${BINDIR}/rg"
+    rm -f "${BINDIR}/rg-pabrik"
     rm -rf "${BINDIR}/html"
     rm -f "$HOME/.local/share/applications/pabrik.desktop" "$HOME/.local/share/applications/pabrik-browser.desktop"
     if [[ "$SYSTEM" -eq 1 ]]; then
@@ -226,16 +229,19 @@ install_shipped_ui() {
 }
 
 # ripgrep, beside the pabrik binary, so `search` works on a machine that has
-# no rg of its own. The runtime resolver looks for exactly this path first.
+# no rg of its own. It ships as `rg-pabrik`, NOT `rg`: with --system the
+# destination is /usr/local/bin, and a file called `rg` there would replace a
+# ripgrep the user installed deliberately. The runtime resolver looks for
+# exactly this name first and falls back to a real `rg` on PATH.
 # Best-effort: a release published before the asset existed still installs a
 # working pabrik, and the warning names what is missing.
 install_bundled_rg() {
-    if ! download "${BASE_URL}/rg-${TRIPLE}" "${TMPDIR}/rg" 2>/dev/null; then
+    if ! download "${BASE_URL}/rg-pabrik-${TRIPLE}" "${TMPDIR}/rg-pabrik" 2>/dev/null; then
         echo "warning: no bundled ripgrep asset for ${TRIPLE} -- the search tool needs rg on PATH" >&2
         return 0
     fi
-    install -m 0755 "${TMPDIR}/rg" "${BINDIR}/rg"
-    echo "Installed the bundled ripgrep into ${BINDIR}/rg."
+    install -m 0755 "${TMPDIR}/rg-pabrik" "${BINDIR}/rg-pabrik"
+    echo "Installed the bundled ripgrep into ${BINDIR}/rg-pabrik."
 }
 
 mkdir -p "$BINDIR"

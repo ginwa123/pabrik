@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$Target,
-    [string]$Dest = "zig-out/bin/rg.exe"
+    [string]$Dest = "zig-out/bin/rg-pabrik.exe"
 )
 
 $ErrorActionPreference = "Stop"

@@ -6,7 +6,11 @@ pub const env_override = "PABRIK_RG_BIN";
 const is_windows = builtin.os.tag == .windows;
 
 pub fn exeName() []const u8 {
-    return if (is_windows) "rg.exe" else "rg";
+    return if (is_windows) "rg-pabrik.exe" else "rg-pabrik";
+}
+
+pub fn pathName() []const u8 {
+    return "rg";
 }
 
 pub const Source = enum { override, beside_executable, data_dir, path };
@@ -60,7 +64,7 @@ pub fn pick(
         }
     }
 
-    return .{ .path = try allocator.dupe(u8, "rg"), .source = .path };
+    return .{ .path = try allocator.dupe(u8, pathName()), .source = .path };
 }
 
 pub fn isExecutableFile(path: []const u8) bool {
@@ -172,11 +176,28 @@ test "rg_binary: nothing bundled falls back to the bare name so a PATH ripgrep k
     try expectPicked(.{
         .exe_dir = "/opt/pabrik/bin",
         .data_dir = "/home/u/.local/share/pabrik",
-    }, &.{}, "rg", .path);
+    }, &.{}, pathName(), .path);
 }
 
 test "rg_binary: no directory hints at all falls back to the bare name" {
-    try expectPicked(.{}, &.{}, "rg", .path);
+    try expectPicked(.{}, &.{}, pathName(), .path);
+}
+
+test "rg_binary: a system-named ripgrep beside the executable is not claimed as the bundled copy" {
+    const allocator = std.testing.allocator;
+    const system_rg = try std.fs.path.join(allocator, &.{ "/opt/pabrik/bin", "rg" });
+    defer allocator.free(system_rg);
+    const system_rg_exe = try std.fs.path.join(allocator, &.{ "/opt/pabrik/bin", "rg.exe" });
+    defer allocator.free(system_rg_exe);
+    try expectPicked(.{
+        .exe_dir = "/opt/pabrik/bin",
+        .data_dir = "/home/u/.local/share/pabrik",
+    }, &.{ system_rg, system_rg_exe }, pathName(), .path);
+}
+
+test "rg_binary: the bundled name is not the name a system install uses" {
+    try std.testing.expect(!std.mem.eql(u8, exeName(), pathName()));
+    try std.testing.expect(!std.mem.eql(u8, exeName(), "rg"));
 }
 
 test "rg_binary: an override names the binary directly, bundled or not" {
@@ -191,7 +212,7 @@ test "rg_binary: an empty override is ignored" {
     try expectPicked(.{
         .exe_dir = "/opt/pabrik/bin",
         .override = "",
-    }, &.{}, "rg", .path);
+    }, &.{}, pathName(), .path);
 }
 
 test "rg_binary: an override wins even when a bundled copy exists" {
@@ -252,6 +273,6 @@ test "rg_binary: a file the platform cannot execute does not count as the bundle
         try std.testing.expectEqualStrings(beside, got.path);
     } else {
         try std.testing.expectEqual(Source.path, got.source);
-        try std.testing.expectEqualStrings("rg", got.path);
+        try std.testing.expectEqualStrings(pathName(), got.path);
     }
 }

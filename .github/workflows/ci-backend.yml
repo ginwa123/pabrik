@@ -1376,20 +1376,24 @@ jobs:
       - name: Stage bundled ripgrep (POSIX)
         # The `search` tool spawns ripgrep, and a user machine is not
         # guaranteed to have one. This stages the pinned upstream rg into
-        # zig-out/bin so it ships BESIDE the pabrik binary (install.sh
-        # fetches the published rg-<triple> asset into the same dir the
-        # binaries land in) and the runtime resolver finds it there before
-        # ever consulting PATH.
+        # zig-out/bin as `rg-pabrik` so it ships BESIDE the pabrik binary
+        # (install.sh fetches the published asset into the same dir) and the
+        # runtime resolver finds it there before consulting PATH.
         #
-        # Windows is a separate step: it needs Expand-Archive and its rg.exe
-        # rides inside the existing desktop zip instead of a bare asset.
+        # The name is NOT `rg`: install.sh --system writes to /usr/local/bin,
+        # and a file called `rg` there would replace a ripgrep the user
+        # installed deliberately.
+        #
+        # Windows is a separate step: it needs Expand-Archive and its
+        # rg-pabrik.exe rides inside the existing desktop zip instead of a
+        # bare asset.
         if: runner.os != 'Windows'
         shell: bash
         env:
           TARGET: ${{ inputs.target_zig }}
         run: |
           set -euo pipefail
-          scripts/stage-bundled-ripgrep.sh "$TARGET" zig-out/bin/rg
+          scripts/stage-bundled-ripgrep.sh "$TARGET" zig-out/bin/rg-pabrik
 
       - name: Stage bundled ripgrep (Windows)
         if: runner.os == 'Windows'
@@ -1398,7 +1402,7 @@ jobs:
           TARGET: ${{ inputs.target_zig }}
         run: |
           $ErrorActionPreference = "Stop"
-          ./scripts/stage-bundled-ripgrep.ps1 -Target $env:TARGET -Dest "zig-out/bin/rg.exe"
+          ./scripts/stage-bundled-ripgrep.ps1 -Target $env:TARGET -Dest "zig-out/bin/rg-pabrik.exe"
 
       - name: Stage binaries with target-triple names
         # Replaces the old actions/upload-artifact@v4 step. Artifacts are
@@ -1444,21 +1448,23 @@ jobs:
             echo "✗ no binaries found in zig-out/bin — build step failed?" >&2
             exit 1
           fi
-          # Bundled ripgrep. Named `rg-$TARGET` with NO `pabrik-` prefix on
-          # purpose: the Windows zip step globs `bin-stage/pabrik-*.exe` and
-          # would otherwise mistake a staged rg for the service binary.
-          # Windows needs no separate asset (rg.exe rides inside the desktop
-          # zip), so only the POSIX cells publish one — and the failure is
-          # LOUD: an install whose `search` tool has no rg is the bug this
-          # asset exists to fix.
+          # Bundled ripgrep. Named `rg-pabrik-$TARGET` on purpose: it must not
+          # be published as `rg` (that filename would replace a user's own
+          # ripgrep where install.sh --system writes to /usr/local/bin), and it
+          # must stay out of the `pabrik-*` namespace because the Windows zip
+          # step globs `bin-stage/pabrik-*.exe` and would mistake a staged rg
+          # for the service binary. Windows needs no separate asset (its
+          # rg-pabrik.exe rides inside the desktop zip), so only the POSIX
+          # cells publish one — and the failure is LOUD: an install whose
+          # `search` tool has no rg is the bug this asset exists to fix.
           if [ "${RUNNER_OS:-}" = "Windows" ]; then
-            echo "→ rg.exe ships inside pabrik-desktop-$TARGET.zip (no separate asset)"
-          elif [ -f "zig-out/bin/rg" ]; then
-            cp "zig-out/bin/rg" "$stage/rg-$TARGET"
-            chmod 0755 "$stage/rg-$TARGET"
-            echo "→ staged $stage/rg-$TARGET"
+            echo "→ rg-pabrik.exe ships inside pabrik-desktop-$TARGET.zip (no separate asset)"
+          elif [ -f "zig-out/bin/rg-pabrik" ]; then
+            cp "zig-out/bin/rg-pabrik" "$stage/rg-pabrik-$TARGET"
+            chmod 0755 "$stage/rg-pabrik-$TARGET"
+            echo "→ staged $stage/rg-pabrik-$TARGET"
           else
-            echo "✗ zig-out/bin/rg missing for $TARGET — the install would ship without a bundled ripgrep" >&2
+            echo "✗ zig-out/bin/rg-pabrik missing for $TARGET — the install would ship without a bundled ripgrep" >&2
             exit 1
           fi
           # Shipped UI for installer layouts (Linux/macOS bare binaries
@@ -1546,15 +1552,17 @@ jobs:
           foreach ($dll in $dlls) { Copy-Item $dll.FullName $tmp }
           # Bundled ripgrep. Windows has no `brew install`/`apt install` habit
           # and the search tool spawns rg, so the zip carries it and
-          # Install-Pabrik.ps1 drops it next to pabrik.exe. HARD GATE: a zip
-          # without rg ships a search tool that cannot run.
-          $rgSrc = "zig-out/bin/rg.exe"
+          # Install-Pabrik.ps1 drops it next to pabrik.exe. It is named
+          # rg-pabrik.exe so it can never collide with a ripgrep the user
+          # already has on PATH. HARD GATE: a zip without it ships a search
+          # tool that cannot run.
+          $rgSrc = "zig-out/bin/rg-pabrik.exe"
           if (-not (Test-Path $rgSrc)) {
-            Write-Error "rg.exe missing at $rgSrc -- the zip would ship without a usable search tool; see the Stage bundled ripgrep step log"
+            Write-Error "rg-pabrik.exe missing at $rgSrc -- the zip would ship without a usable search tool; see the Stage bundled ripgrep step log"
             exit 1
           }
-          Copy-Item -Force $rgSrc (Join-Path $tmp "rg.exe")
-          Write-Host "ok rg.exe bundled"
+          Copy-Item -Force $rgSrc (Join-Path $tmp "rg-pabrik.exe")
+          Write-Host "ok rg-pabrik.exe bundled"
           # Setup script: makes the zip a setup package. The user extracts
           # and runs `powershell -ExecutionPolicy Bypass -File
           # Install-Pabrik.ps1` for a user-local install (LOCALAPPDATA, no

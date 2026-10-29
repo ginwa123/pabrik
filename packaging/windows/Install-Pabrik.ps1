@@ -102,12 +102,14 @@ if (-not (Test-Path (Join-Path $binDir "WebView2Loader.dll"))) {
 }
 
 # Bundled ripgrep: `search` spawns rg, so it lands beside pabrik.exe, which
-# is the runtime resolver's first candidate after PABRIK_RG_BIN.
-$rgSrc = Join-Path $SourceDir "rg.exe"
+# is the runtime resolver's first candidate after PABRIK_RG_BIN. Named
+# rg-pabrik.exe on purpose -- a bare rg.exe here would collide with a
+# ripgrep the user installed.
+$rgSrc = Join-Path $SourceDir "rg-pabrik.exe"
 if (Test-Path $rgSrc) {
-    Copy-Item -Force $rgSrc (Join-Path $binDir "rg.exe")
+    Copy-Item -Force $rgSrc (Join-Path $binDir "rg-pabrik.exe")
 } else {
-    Write-Warning "rg.exe not found in $SourceDir -- the search tool will need ripgrep on PATH."
+    Write-Warning "rg-pabrik.exe not found in $SourceDir -- the search tool will need ripgrep on PATH."
 }
 
 # Persistent html (Windows-only shipped static dir). The desktop

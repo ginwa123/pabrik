@@ -10,7 +10,9 @@ stage-bundled-ripgrep.sh --print <pabrik-triple>
 
 Downloads the pinned upstream ripgrep release for the triple, verifies its
 sha256, and extracts the `rg` executable to [dest-binary] (default
-zig-out/bin/rg). Set PABRIK_RG_CACHE to reuse a download directory.
+zig-out/bin/rg-pabrik). The destination name is the caller's: CI writes
+`rg-pabrik` so the shipped copy can never collide with a `rg` the user has.
+Set PABRIK_RG_CACHE to reuse a download directory.
 
 Triples: x86_64-linux-gnu, aarch64-linux-gnu, x86_64-macos, aarch64-macos.
 Windows uses stage-bundled-ripgrep.ps1.
@@ -57,7 +59,7 @@ if [[ "$1" == "--print" ]]; then
 fi
 
 triple="$1"
-dest="${2:-zig-out/bin/rg}"
+dest="${2:-zig-out/bin/rg-pabrik}"
 
 if ! target="$(upstream_target "$triple")"; then
     echo "no bundled ripgrep is published for triple '${triple}'" >&2
