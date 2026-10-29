@@ -60,7 +60,7 @@ pub const set_git_worktree_tool_system_prompt =
     \\  that ref instead of the repo's current HEAD. Omit `base` when the note
     \\  has no `Base:` line.
     \\- `path` MUST NOT contain `..`.
-    \\- The parent directory MUST exist.
+    \\- Missing parent directories are created for you.
     \\- Once set, all subsequent `command`/`read_file`/`write_file` operations run
     \\  inside that worktree.
     \\- Pass `clear=true` to remove the binding before switching or finishing.
@@ -81,7 +81,7 @@ pub const set_git_worktree_tool = AgentTool{
                 .{
                     .name = "path",
                     .type = "string",
-                    .description = "Absolute path to the worktree directory; its parent directory must already exist. Must be absolute, contain no '..' or null bytes, be ≤ 4096 chars, and have a basename matching [A-Za-z0-9._-]{1,100}. Expand a leading `~/` to `$HOME` before calling. Canonical root: `$HOME/.config/pabrik/.worktrees/<task-slug>`, e.g. '/home/you/.config/pabrik/.worktrees/fix-login'.",
+                    .description = "Absolute path to the worktree directory; missing parent directories are created. Must be absolute, contain no '..' or null bytes, be ≤ 4096 chars, and have a basename matching [A-Za-z0-9._-]{1,100}. Expand a leading `~/` to `$HOME` before calling. Canonical root: `$HOME/.config/pabrik/.worktrees/<task-slug>`, e.g. '/home/you/.config/pabrik/.worktrees/fix-login'.",
                 },
                 .{
                     .name = "cwd",
@@ -1112,11 +1112,9 @@ pub fn executeSetGitWorktreeToString(
     if (validatePath(input.path)) |err_msg| {
         return xmlError(allocator, session_id, err_msg);
     }
-    // Parent directory must exist (git won't auto-create it).
-    const parent_path = std.fs.path.dirname(input.path) orelse "/";
-    std.Io.Dir.cwd().access(io, parent_path, .{}) catch {
-        return xmlError(allocator, session_id, "parent directory does not exist");
-    };
+    // No parent check: `git worktree add` creates the leading directories, and
+    // the git that runs here may be the guest's, where a host `access` on the
+    // tenant's own path says nothing.
     const worktree_path = try allocator.dupe(u8, input.path);
     defer allocator.free(worktree_path);
     const branch_owned: ?[]u8 = if (input.branch.len > 0) null else blk: {
@@ -2523,4 +2521,29 @@ test "set_git_worktree: --saas refuses rather than running the tenant's hook on 
         try fx.git(&.{ "-C", fx.repo, "worktree", "add", "-b", "worktree/wt-plain", plain_path });
         try testing.expect(pathExists(sentinel));
     }
+}
+
+test "set_git_worktree: a path whose parents do not exist is created, not refused" {
+    try requireGit();
+    const allocator = testing.allocator;
+    var fx = try GitFixture.init(allocator);
+    defer fx.deinit();
+    var db = try sessionDb(allocator, fx.repo);
+    defer db.deinit();
+
+    const nested = try fx.join(&.{ fx.root, "deeper", "still", "wt-nested" });
+    defer allocator.free(nested);
+    const out = try executeSetGitWorktreeToString(
+        allocator,
+        testing.io,
+        &db.db,
+        fx.repo,
+        "s1",
+        .{ .path = nested, .cwd = fx.repo },
+    );
+    defer allocator.free(out);
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, out, .{});
+    defer parsed.deinit();
+    try testing.expect(parsed.value.object.get("created").?.bool);
+    try testing.expect(pathExists(nested));
 }
