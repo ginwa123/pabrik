@@ -496,9 +496,6 @@
     },
     "local/no-try-catch": {
       "count": 5
-    },
-    "max-lines": {
-      "count": 1
     }
   },
   "src/components/views/AgentView.vue": {
