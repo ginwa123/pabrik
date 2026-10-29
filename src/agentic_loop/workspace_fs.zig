@@ -11,6 +11,7 @@ const runtime_mode = @import("../runtime_mode.zig");
 const workspace_scope = @import("workspace_scope.zig");
 const workspace_vm = @import("workspace_vm.zig");
 const vmd = @import("../vmd/vmd_client.zig");
+const vmd_rpc = @import("../vmd/rpc.zig");
 const vm_wire = @import("vm_wire");
 const proxy_rpc = @import("../vmd/proxy_rpc.zig");
 const policy = @import("../vmd/policy.zig");
@@ -283,18 +284,19 @@ pub const Fs = struct {
         max_output_bytes: usize,
     ) !Exec {
         const cwd_rel = self.relativeDir(abs_cwd) orelse return Error.GuestPathOutsideWorkspace;
+        const budget = @min(max_output_bytes, vmd_rpc.max_output_bytes_limit);
         var client = vmd.Client.init(self.allocator, self.socket);
         const outcome = client.exec(.{
             .workspace_id = self.workspace_id,
             .argv = argv,
             .cwd_rel = cwd_rel,
             .timeout_ms = timeout_ms,
-            .max_output_bytes = max_output_bytes,
+            .max_output_bytes = budget,
         }, null) catch |err| return managerError(err);
         return .{
             .code = outcome.code,
             .timed_out = outcome.timed_out,
-            .truncated = outcome.truncated,
+            .truncated = outcome.truncated or budget < max_output_bytes,
             .stdout = outcome.stdout,
             .stderr = outcome.stderr,
         };
@@ -886,4 +888,153 @@ test "forPath: saas refuses a path no workspace owns, and one with no manager" {
         Error.GuestManagerUnavailable,
         forPath(testing.allocator, &ctx.db, "/proj/a/src"),
     );
+}
+
+const linux = std.os.linux;
+
+const SockaddrUn = extern struct {
+    family: u16,
+    path: [108]u8,
+};
+
+var fake_daemons: u32 = 0;
+
+const FakeDaemon = struct {
+    listener: linux.fd_t,
+    thread: std.Thread,
+    socket: [64]u8 = undefined,
+    socket_len: usize = 0,
+
+    fn start() !FakeDaemon {
+        fake_daemons += 1;
+        var buf: [64]u8 = undefined;
+        const path = try std.fmt.bufPrint(&buf, "/tmp/pabrik-workspace-fs-{d}-{d}.sock", .{ linux.getpid(), fake_daemons });
+        std.Io.Dir.cwd().deleteFile(testing.io, path) catch {};
+
+        var addr = SockaddrUn{ .family = linux.AF.UNIX, .path = undefined };
+        @memset(&addr.path, 0);
+        @memcpy(addr.path[0..path.len], path);
+
+        const fd = linux.socket(linux.AF.UNIX, linux.SOCK.STREAM | linux.SOCK.CLOEXEC, 0);
+        if (linux.errno(fd) != .SUCCESS) return error.SocketFailed;
+        const listener: linux.fd_t = @intCast(fd);
+        errdefer _ = linux.close(listener);
+        if (linux.errno(linux.bind(listener, @ptrCast(&addr), @sizeOf(SockaddrUn))) != .SUCCESS) return error.SocketFailed;
+        if (linux.errno(linux.listen(listener, 4)) != .SUCCESS) return error.SocketFailed;
+
+        var daemon = FakeDaemon{
+            .listener = listener,
+            .thread = try std.Thread.spawn(.{}, answerOneExec, .{listener}),
+        };
+        @memcpy(daemon.socket[0..path.len], path);
+        daemon.socket_len = path.len;
+        return daemon;
+    }
+
+    fn deinit(self: *FakeDaemon) void {
+        _ = linux.close(self.listener);
+        self.thread.join();
+        std.Io.Dir.cwd().deleteFile(testing.io, self.socketPath()) catch {};
+    }
+
+    fn socketPath(self: *const FakeDaemon) []const u8 {
+        return self.socket[0..self.socket_len];
+    }
+};
+
+fn answerOneExec(listener: linux.fd_t) void {
+    const heap = std.heap.page_allocator;
+    const accepted = linux.accept(listener, null, null);
+    if (linux.errno(accepted) != .SUCCESS) return;
+    const conn: linux.fd_t = @intCast(accepted);
+    defer _ = linux.close(conn);
+
+    var header: [4]u8 = undefined;
+    readExactly(conn, &header) catch return;
+    const len = vmd_rpc.framePayloadLen(header) catch return;
+    const body = heap.alloc(u8, len) catch return;
+    defer heap.free(body);
+    readExactly(conn, body) catch return;
+
+    var request = vmd_rpc.decodeRequest(heap, body) catch return;
+    defer request.deinit();
+
+    const reply = if (request.value.max_output_bytes > vmd_rpc.max_output_bytes_limit)
+        vmd_rpc.encodeFailure(heap, request.value.id, .bad_request, "max_output_bytes over the wire limit") catch return
+    else blk: {
+        const said = std.fmt.allocPrint(heap, "budget={d}", .{request.value.max_output_bytes}) catch return;
+        defer heap.free(said);
+        break :blk vmd_rpc.encodeExecResult(heap, request.value.id, .{
+            .code = 0,
+            .timed_out = false,
+            .truncated = false,
+            .stdout = said,
+            .stderr = "",
+        }) catch return;
+    };
+    defer heap.free(reply);
+
+    var out_header: [4]u8 = undefined;
+    vmd_rpc.frameHeader(reply.len, &out_header);
+    writeExactly(conn, &out_header) catch return;
+    writeExactly(conn, reply) catch return;
+}
+
+fn readExactly(fd: linux.fd_t, buf: []u8) !void {
+    var filled: usize = 0;
+    while (filled < buf.len) {
+        const rc = linux.read(fd, buf.ptr + filled, buf.len - filled);
+        if (linux.errno(rc) != .SUCCESS or rc == 0) return error.ShortFrame;
+        filled += rc;
+    }
+}
+
+fn writeExactly(fd: linux.fd_t, bytes: []const u8) !void {
+    var sent: usize = 0;
+    while (sent < bytes.len) {
+        const rc = linux.write(fd, bytes.ptr + sent, bytes.len - sent);
+        if (linux.errno(rc) != .SUCCESS or rc == 0) return error.ShortFrame;
+        sent += rc;
+    }
+}
+
+test "run: a budget the daemon would refuse still runs the command, clamped and reported" {
+    if (@import("builtin").os.tag != .linux) return;
+
+    var daemon = try FakeDaemon.start();
+    defer daemon.deinit();
+
+    var fs = Fs{
+        .allocator = testing.allocator,
+        .workspace_id = @constCast("w1"),
+        .root = @constCast("/proj/a"),
+        .socket = @constCast(daemon.socketPath()),
+    };
+
+    var exec = try fs.run(&.{"git"}, "/proj/a", 1_000, 64 * 1024 * 1024);
+    defer exec.deinit(testing.allocator);
+
+    try testing.expectEqual(@as(i64, 0), exec.code);
+    try testing.expectEqualStrings("budget=1048576", exec.stdout);
+    try testing.expect(exec.truncated);
+}
+
+test "run: a budget inside the ceiling reaches the daemon whole, with no truncation claimed" {
+    if (@import("builtin").os.tag != .linux) return;
+
+    var daemon = try FakeDaemon.start();
+    defer daemon.deinit();
+
+    var fs = Fs{
+        .allocator = testing.allocator,
+        .workspace_id = @constCast("w1"),
+        .root = @constCast("/proj/a"),
+        .socket = @constCast(daemon.socketPath()),
+    };
+
+    var exec = try fs.run(&.{"git"}, "/proj/a", 1_000, 64 * 1024);
+    defer exec.deinit(testing.allocator);
+
+    try testing.expectEqualStrings("budget=65536", exec.stdout);
+    try testing.expect(!exec.truncated);
 }
