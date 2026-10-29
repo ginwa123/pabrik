@@ -59,6 +59,7 @@ const Series = struct {
     route: []const u8,
     bucket_counts: [buckets.len]u64 = [_]u64{0} ** buckets.len,
     sum_ns: u64 = 0,
+    max_ns: u64 = 0,
     count: u64 = 0,
     statuses: StatusCounts = .empty,
 };
@@ -75,6 +76,7 @@ pub const RouteStat = struct {
     errors: u64,
     avg_ms: f64,
     p95_ms: f64,
+    max_ms: f64,
     statuses: []const StatusStat,
 };
 
@@ -105,6 +107,8 @@ pub const Registry = struct {
     }
 
     pub fn deinit(self: *Registry) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         for (self.series.items) |*series| {
             self.allocator.free(series.method);
             self.allocator.free(series.route);
@@ -139,26 +143,33 @@ pub const Registry = struct {
         if (self.in_flight > 0) self.in_flight -= 1;
 
         const route = self.index.resolve(method, path);
-        const entry = try self.by_key.getOrPut(self.allocator, .{ .method = method, .route = route });
-        if (!entry.found_existing) {
+        const series = if (self.by_key.get(.{ .method = method, .route = route })) |index|
+            &self.series.items[index]
+        else blk: {
             const owned_method = try self.allocator.dupe(u8, method);
             errdefer self.allocator.free(owned_method);
             const owned_route = try self.allocator.dupe(u8, route);
             errdefer self.allocator.free(owned_route);
             try self.series.append(self.allocator, .{ .method = owned_method, .route = owned_route });
-            entry.key_ptr.* = .{ .method = owned_method, .route = owned_route };
-            entry.value_ptr.* = self.series.items.len - 1;
-        }
+            errdefer _ = self.series.pop();
+            try self.by_key.put(
+                self.allocator,
+                .{ .method = owned_method, .route = owned_route },
+                self.series.items.len - 1,
+            );
+            break :blk &self.series.items[self.series.items.len - 1];
+        };
 
-        const series = &self.series.items[entry.value_ptr.*];
-        series.count += 1;
-        series.sum_ns += duration_ns;
-        for (buckets, 0..) |bucket, bucket_index| {
-            if (duration_ns <= bucket.upper_ns) series.bucket_counts[bucket_index] += 1;
-        }
         const status_entry = try series.statuses.getOrPut(self.allocator, status);
         if (!status_entry.found_existing) status_entry.value_ptr.* = 0;
         status_entry.value_ptr.* += 1;
+
+        series.count += 1;
+        series.sum_ns += duration_ns;
+        series.max_ns = @max(series.max_ns, duration_ns);
+        for (buckets, 0..) |bucket, bucket_index| {
+            if (duration_ns <= bucket.upper_ns) series.bucket_counts[bucket_index] += 1;
+        }
     }
 
     pub fn render(self: *Registry, allocator: std.mem.Allocator) ![]u8 {
@@ -244,6 +255,7 @@ pub const Registry = struct {
                 else
                     @as(f64, @floatFromInt(series.sum_ns)) / (@as(f64, @floatFromInt(series.count)) * std.time.ns_per_ms),
                 .p95_ms = @as(f64, @floatFromInt(p95UpperBound(series))) / std.time.ns_per_ms,
+                .max_ms = @as(f64, @floatFromInt(series.max_ns)) / std.time.ns_per_ms,
                 .statuses = statuses,
             };
         }
@@ -270,11 +282,12 @@ pub fn getGlobal() ?*Registry {
 
 pub fn uninstall(io: std.Io) void {
     global_mutex.lockUncancelable(io);
-    defer global_mutex.unlock(io);
-    const registry = global_registry orelse return;
+    const detached = global_registry;
+    global_registry = null;
+    global_mutex.unlock(io);
+    const registry = detached orelse return;
     registry.deinit();
     registry.allocator.destroy(registry);
-    global_registry = null;
 }
 
 test "record counts one request under its route template and status" {
@@ -440,4 +453,46 @@ test "summary reports the average, the p95 bucket and the error count of a route
     try std.testing.expectEqual(@as(u64, 1), slow.?.errors);
     try std.testing.expectEqual(@as(usize, 2), slow.?.statuses.len);
     try std.testing.expectEqual(@as(u64, 0), fast.?.errors);
+}
+
+test "render counts a sample slower than the top bucket only in the +Inf bucket" {
+    var registry = try Registry.init(std.testing.allocator, std.testing.io, &.{
+        .{ .method = "GET", .path = "/api/hang" },
+    });
+    defer registry.deinit();
+
+    try registry.record("GET", "/api/hang", 200, 30 * std.time.ns_per_s);
+
+    const body = try registry.render(std.testing.allocator);
+    defer std.testing.allocator.free(body);
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        body,
+        "_bucket{method=\"GET\",route=\"/api/hang\",le=\"10\"} 0\n",
+    ) != null);
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        body,
+        "_bucket{method=\"GET\",route=\"/api/hang\",le=\"+Inf\"} 1\n",
+    ) != null);
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        body,
+        "_sum{method=\"GET\",route=\"/api/hang\"} 30.000000000\n",
+    ) != null);
+}
+
+test "summary reports the slowest sample when the buckets cannot place it" {
+    var registry = try Registry.init(std.testing.allocator, std.testing.io, &.{
+        .{ .method = "GET", .path = "/api/hang" },
+    });
+    defer registry.deinit();
+
+    try registry.record("GET", "/api/hang", 200, 30 * std.time.ns_per_s);
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const stats = try registry.summary(arena.allocator());
+    try std.testing.expectEqual(@as(usize, 1), stats.len);
+    try std.testing.expectApproxEqAbs(@as(f64, 30000), stats[0].max_ms, 0.001);
 }

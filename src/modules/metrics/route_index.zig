@@ -33,9 +33,9 @@ pub const RouteIndex = struct {
         for (patterns) |pattern| {
             const slot = slotFor(pattern.method) orelse continue;
             var node_index: u32 = 0;
-            var segments = std.mem.tokenizeScalar(u8, pattern.path, '/');
+            var segments = std.mem.splitScalar(u8, pattern.path, '/');
             while (segments.next()) |segment| {
-                node_index = try self.child(node_index, segment, segment[0] == ':');
+                node_index = try self.child(node_index, segment, isParam(segment));
             }
             self.nodes.items[node_index].templates[slot] = pattern.path;
         }
@@ -54,7 +54,7 @@ pub const RouteIndex = struct {
     pub fn resolve(self: *const RouteIndex, method: []const u8, path: []const u8) []const u8 {
         const slot = slotFor(method) orelse return unmatched;
         var node_index: u32 = 0;
-        var segments = std.mem.tokenizeScalar(u8, path, '/');
+        var segments = std.mem.splitScalar(u8, path, '/');
         while (segments.next()) |segment| {
             const node = &self.nodes.items[node_index];
             if (node.literals.get(segment)) |literal_child| {
@@ -66,8 +66,8 @@ pub const RouteIndex = struct {
         return self.nodes.items[node_index].templates[slot] orelse unmatched;
     }
 
-    fn child(self: *RouteIndex, parent: u32, segment: []const u8, is_param: bool) !u32 {
-        if (is_param) {
+    fn child(self: *RouteIndex, parent: u32, segment: []const u8, param: bool) !u32 {
+        if (param) {
             if (self.nodes.items[parent].param) |existing| return existing;
             const created = try self.addNode();
             self.nodes.items[parent].param = created;
@@ -87,6 +87,10 @@ pub const RouteIndex = struct {
         return index;
     }
 };
+
+fn isParam(segment: []const u8) bool {
+    return segment.len > 0 and segment[0] == ':';
+}
 
 test "resolve replaces id segments with the template that claims them" {
     var index = try RouteIndex.init(std.testing.allocator, &.{
@@ -139,11 +143,24 @@ test "resolve reports unmatched for an unknown path, method or depth" {
     try std.testing.expectEqualStrings(unmatched, index.resolve("BREW", "/api/session/sess_1/messages"));
 }
 
-test "resolve normalises a trailing slash onto the same template" {
+test "resolve treats a trailing slash as another segment, which no route claims" {
     var index = try RouteIndex.init(std.testing.allocator, &.{
         .{ .method = "GET", .path = "/api/session/:session_id" },
     });
     defer index.deinit();
 
-    try std.testing.expectEqualStrings("/api/session/:session_id", index.resolve("GET", "/api/session/sess_1/"));
+    try std.testing.expectEqualStrings(unmatched, index.resolve("GET", "/api/session/sess_1/"));
+    try std.testing.expectEqualStrings("/api/session/:session_id", index.resolve("GET", "/api/session/sess_1"));
+}
+
+test "resolve lets an empty segment match a param, as the router does" {
+    var index = try RouteIndex.init(std.testing.allocator, &.{
+        .{ .method = "GET", .path = "/api/session/:session_id/usage" },
+    });
+    defer index.deinit();
+
+    try std.testing.expectEqualStrings(
+        "/api/session/:session_id/usage",
+        index.resolve("GET", "/api/session//usage"),
+    );
 }
