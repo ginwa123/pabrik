@@ -50,12 +50,43 @@ describe('renderMarkdownHtml', () => {
     const html = renderMarkdownHtml('Deploy <staging> & "prod"?')
     expect(html).toContain('&lt;staging&gt; &amp; &quot;prod&quot;?')
   })
+
+  it('keeps an ampersand inside an inline code span a single ampersand', () => {
+    const html = renderMarkdownHtml('# Design API — `GET /v1/map-zones?pool_id=CK&zone_id=14`')
+    expect(html).toContain('<code>GET /v1/map-zones?pool_id=CK&amp;zone_id=14</code>')
+    expect(html).not.toContain('&amp;amp;')
+  })
+
+  it('keeps angle brackets inside an inline code span a single pair of angle brackets', () => {
+    const html = renderMarkdownHtml('the return type is `Zone<Result>`')
+    expect(html).toContain('<code>Zone&lt;Result&gt;</code>')
+    expect(html).not.toContain('&amp;lt;')
+  })
+
+  it('keeps an ampersand inside a fenced code block a single ampersand', () => {
+    const html = renderMarkdownHtml('```\nSELECT * FROM z WHERE a = 1 & b = 2;\n```')
+    expect(html).toContain('a = 1 &amp; b = 2;')
+    expect(html).not.toContain('&amp;amp;')
+  })
+
+  it('keeps an ampersand inside a table cell a single ampersand', () => {
+    const html = renderMarkdownHtml('| route | note |\n|---|---|\n| `CK&zone` | mix & match |')
+    expect(html).toContain('<code>CK&amp;zone</code>')
+    expect(html).toContain('mix &amp; match')
+    expect(html).not.toContain('&amp;amp;')
+  })
 })
 
 describe('renderInlineMarkdownHtml', () => {
   it('renders inline emphasis without a block wrapper', () => {
     const html = renderInlineMarkdownHtml('**bold** and `code`')
     expect(html).toBe('<strong>bold</strong> and <code>code</code>')
+  })
+
+  it('keeps an ampersand inside an inline code span a single ampersand', () => {
+    expect(renderInlineMarkdownHtml('`pool_id=CK&zone_id=14`')).toBe(
+      '<code>pool_id=CK&amp;zone_id=14</code>',
+    )
   })
 
   it('leaves plain text as plain text', () => {
