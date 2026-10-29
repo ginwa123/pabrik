@@ -30,6 +30,10 @@ pub const Error = error{
 pub const GuestContext = struct {
     db: ?*database.Db,
     session_id: ?[]const u8,
+    /// The Stop button. It reaches the HOST's wait for the manager's reply —
+    /// it cannot kill the guest's process, which stays bounded by the
+    /// request's own `timeout_ms` that the daemon enforces.
+    cancel_hook: ?shell.CancelHook = null,
 };
 
 /// True when this process runs a session's commands in a workspace VM.
@@ -120,7 +124,10 @@ fn runGuest(
         .cwd_rel = cwd_rel,
         .timeout_ms = timeout_sec * 1000,
         .max_output_bytes = budget,
-    }) catch |err| return managerError(err);
+    }, guestProbe(ctx.cancel_hook)) catch |err| switch (err) {
+        error.Cancelled => return cancelledByUser(allocator, input.command),
+        else => return managerError(err),
+    };
     defer outcome.deinit(allocator);
 
     const stdout = try shapeCapture(allocator, outcome.stdout, max_output, max_lines, "No output produced.");
@@ -188,6 +195,31 @@ fn copyCommandShaped(allocator: std.mem.Allocator, command: []const u8) ![]u8 {
     @memcpy(cut[0..50], command[0..50]);
     @memcpy(cut[50..53], "...");
     return cut;
+}
+
+/// Adapt the tool-side hook to the transport's own probe type (the two are
+/// structurally identical; the dependency arrow only points one way).
+fn guestProbe(hook: ?shell.CancelHook) ?vmd.CancelProbe {
+    const h = hook orelse return null;
+    return .{ .ctx = h.ctx, .is_cancelled = h.is_cancelled };
+}
+
+/// What a stopped guest run reports. `exit_code` is -1, not -9: nothing was
+/// signalled — the host stopped waiting, while the daemon still owns the
+/// command until its `timeout_ms`. Saying SIGKILL here would be a lie the
+/// transcript would carry.
+fn cancelledByUser(allocator: std.mem.Allocator, command: []const u8) !shell.ShellOutput {
+    const stderr = "Cancelled by the user while waiting for the workspace VM. " ++
+        "The guest command keeps running until its own timeout; nothing on the host is waiting for it.";
+    return .{
+        .command = try copyCommandShaped(allocator, command),
+        .stdout = try allocator.dupe(u8, "No output produced. The command was cancelled before it returned."),
+        .stderr = try allocator.dupe(u8, stderr),
+        .exit_code = -1,
+        .truncated = false,
+        .timeout = false,
+        .cancelled = true,
+    };
 }
 
 fn managerError(err: anyerror) anyerror {

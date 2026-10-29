@@ -1,6 +1,7 @@
 const std = @import("std");
 const schemas = @import("schemas.zig");
 const path_validate = @import("helpers").path_validate;
+const shell_tool = @import("shell.zig");
 const invalidPathReason = path_validate.invalidPathReason;
 const AgentTool = schemas.AgentTool;
 const pabrikcore = @import("pabrikcore");
@@ -747,8 +748,18 @@ fn walkDir(
     depth: usize,
     gitignore_ctx: ?*GitignoreContext,
     source: ?DirSource,
+    cancelled: *bool,
 ) void {
     if (opts.max_depth) |max| if (depth >= max) return;
+    // The walk returns void and swallows its own errors, so a cancel is
+    // reported through `cancelled` and turned into `error.Cancelled` by the
+    // caller. Results collected so far are NOT presented as a complete list.
+    if (opts.cancel) |hook| {
+        if (hook.requested()) {
+            cancelled.* = true;
+            return;
+        }
+    }
 
     // One listing, whatever answered it: the loop below cannot tell the two
     // substrates apart, which is the whole point of the seam.
@@ -889,13 +900,13 @@ fn walkDir(
 
                                 var new_patterns: std.ArrayList([]const u8) = .empty;
                                 new_patterns.append(allocator, inner_pattern) catch break;
-                                walkDir(allocator, io, full_path, new_patterns.items, opts, results, depth + 1, gitignore_ctx, source);
+                                walkDir(allocator, io, full_path, new_patterns.items, opts, results, depth + 1, gitignore_ctx, source, cancelled);
                                 new_patterns.deinit(allocator);
                             } else {
                                 // Non-recursive suffix — recurse with it.
                                 var new_patterns: std.ArrayList([]const u8) = .empty;
                                 new_patterns.append(allocator, remaining_pattern) catch break;
-                                walkDir(allocator, io, full_path, new_patterns.items, opts, results, depth + 1, gitignore_ctx, source);
+                                walkDir(allocator, io, full_path, new_patterns.items, opts, results, depth + 1, gitignore_ctx, source, cancelled);
                                 new_patterns.deinit(allocator);
                             }
                         } else {
@@ -903,7 +914,7 @@ fn walkDir(
                             // this directory itself matches; recurse to
                             // check children.
                             if (pat[pat_idx + slash_idx - 1] != '*') {
-                                walkDir(allocator, io, full_path, patterns, opts, results, depth + 1, gitignore_ctx, source);
+                                walkDir(allocator, io, full_path, patterns, opts, results, depth + 1, gitignore_ctx, source, cancelled);
                             }
                         }
                         consumed = true;
@@ -929,7 +940,7 @@ fn walkDir(
             // Fallback recursion with the unconsumed patterns only. This is
             // the single recursion path that PASSES PATTERNS DOWN.
             if (unconsumed.items.len > 0) {
-                walkDir(allocator, io, full_path, unconsumed.items, opts, results, depth + 1, gitignore_ctx, source);
+                walkDir(allocator, io, full_path, unconsumed.items, opts, results, depth + 1, gitignore_ctx, source, cancelled);
             }
         }
         allocator.free(full_path);
@@ -947,6 +958,10 @@ pub const GlobOptions = struct {
     follow: bool = false,
     onlydir: bool = false,
     max_depth: ?usize = null,
+    /// Polled once per directory entry — a walk over a huge tree is the long
+    /// part of `glob`, and it is all in-process, so the Stop button has to be
+    /// asked from inside it.
+    cancel: ?shell_tool.CancelHook = null,
 };
 
 // ============================================================================
@@ -965,6 +980,19 @@ pub fn executeGlobWith(
     io: std.Io,
     input: GlobInput,
     source: ?DirSource,
+) !GlobResult {
+    return executeGlobWithCancel(allocator, io, input, source, null);
+}
+
+/// `executeGlobWith` plus the Stop button. The walk polls the hook once per
+/// directory entry and, on a true answer, abandons the walk and returns
+/// `error.Cancelled` rather than a partial listing that reads as complete.
+pub fn executeGlobWithCancel(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    input: GlobInput,
+    source: ?DirSource,
+    cancel_hook: ?shell_tool.CancelHook,
 ) !GlobResult {
     // ---- Up-front input validation (BEFORE expandBraces / walk) ----
     // Rationale: most "glob found nothing" results today are actually caller
@@ -1039,16 +1067,18 @@ pub fn executeGlobWith(
         .nodir = if (input.file_type) |ft| std.mem.eql(u8, ft, "f") or std.mem.eql(u8, ft, "file") else false,
         .onlydir = if (input.file_type) |ft| std.mem.eql(u8, ft, "d") or std.mem.eql(u8, ft, "directory") else false,
         .max_depth = DEFAULT_MAX_DEPTH,
+        .cancel = cancel_hook,
     };
 
     // Walk directory
     var results: std.ArrayList([]const u8) = .empty;
-    // Free the ArrayList's backing slice on BOTH error and success. The
-    // `defer` fires in both paths (defer runs even on error in Zig).
+    // Declaration ORDER is the cleanup order: defers run in reverse, so the
+    // backing slice is released LAST — iterating it after `deinit` (a slice
+    // that was just freed) is what a cancelled walk used to hit.
+    defer results.deinit(allocator);
     errdefer {
         for (results.items) |r| allocator.free(r);
     }
-    defer results.deinit(allocator);
 
     // Create gitignore context only when respect_ignore_files is true.
     // walkDir's gitignore_ctx slot is already nullable; the if-guards
@@ -1060,7 +1090,11 @@ pub fn executeGlobWith(
     defer if (gitignore_ctx_holder) |*c| c.deinit(allocator);
     const gitignore_ctx: ?*GitignoreContext = if (gitignore_ctx_holder) |*c| c else null;
 
-    walkDir(allocator, io, input.path, expanded, opts, &results, 0, gitignore_ctx, source);
+    var cancelled = false;
+    walkDir(allocator, io, input.path, expanded, opts, &results, 0, gitignore_ctx, source, &cancelled);
+    // `errdefer` above frees every collected match; a cancelled walk has no
+    // answer to give, so it must not fall through to the offset/limit logic.
+    if (cancelled) return error.Cancelled;
 
     // Apply offset and limit. PRE-EXISTING BUG FIX: The dups in
     // `results.items` are owned by SOMEONE.
@@ -2176,13 +2210,13 @@ fn executeGlobThrough(ctx: ToolExecContext, input: glob_tool_mod.GlobInput) !glo
     defer if (holder) |*fs| fs.deinit();
     if (holder) |*fs| {
         var guest_source = GuestSource{ .fs = fs };
-        return glob_tool_mod.executeGlobWith(ctx.allocator, ctx.io, input, .{
+        return glob_tool_mod.executeGlobWithCancel(ctx.allocator, ctx.io, input, .{
             .ctx = &guest_source,
             .listFn = GuestSource.list,
             .readFn = GuestSource.read,
-        });
+        }, null);
     }
-    return glob_tool_mod.executeGlob(ctx.allocator, ctx.io, input);
+    return glob_tool_mod.executeGlobWithCancel(ctx.allocator, ctx.io, input, null, ctx.cancel_hook);
 }
 
 pub fn execGlob(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
@@ -2232,6 +2266,7 @@ pub fn execGlob(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
                 error.InvalidFileType => break :blk "glob file_type must be 'f', 'file', 'd', or 'directory' (or omitted for all types)",
                 error.InvalidMaxResults => break :blk "glob max_results must be > 0 (omit the field or use a positive integer; the default is 100)",
                 error.InvalidBraceExpansion => break :blk "glob pattern has unmatched braces ('{' without '}') — fix the brace expansion syntax",
+                error.Cancelled => break :blk "the user stopped this run — the walk was abandoned and its matches are incomplete",
                 else => {},
             }
             // Fall-through for unrecognised errors: the shared table keeps
@@ -2249,3 +2284,30 @@ pub fn execGlob(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     return ToolExecResult{ .output = output, .output_allocated = true };
 }
 
+
+/// The dispatch probe, faked: the first poll says "cancelled".
+const StopRequested = struct {
+    fn isCancelled(_: *const anyopaque) bool {
+        return true;
+    }
+};
+
+test "glob: a cancelled session abandons the walk instead of returning a partial list" {
+    const allocator = std.testing.allocator;
+    var tree = try setupTempTree(allocator, "cancel_hook");
+    defer {
+        tree.deinit(std.testing.io);
+        allocator.free(tree.root);
+    }
+
+    var state: u8 = 0;
+    const result = executeGlobWithCancel(allocator, std.testing.io, .{
+        .pattern = "**/*.txt",
+        .path = tree.root,
+        .cwd = tree.root,
+    }, null, .{ .ctx = &state, .is_cancelled = StopRequested.isCancelled });
+
+    // `match.txt` exists below the root, so a walk that ignored the hook would
+    // return it: the error is the difference between "stopped" and "empty".
+    try std.testing.expectError(error.Cancelled, result);
+}

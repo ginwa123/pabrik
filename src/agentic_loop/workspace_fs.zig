@@ -290,7 +290,7 @@ pub const Fs = struct {
             .cwd_rel = cwd_rel,
             .timeout_ms = timeout_ms,
             .max_output_bytes = max_output_bytes,
-        }) catch |err| return managerError(err);
+        }, null) catch |err| return managerError(err);
         return .{
             .code = outcome.code,
             .timed_out = outcome.timed_out,

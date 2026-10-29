@@ -13,11 +13,30 @@ pub const Error = error{
     ProtocolViolation,
     Timeout,
     ServerFailure,
+    /// The caller's probe asked to stop while the reply was outstanding. The
+    /// socket is closed, so the daemon's job is left to its own `timeout_ms`;
+    /// nothing on the host waits for it.
+    Cancelled,
 } || rpc.Error;
+
+/// A "should I stop waiting?" callback, erased the same way `shell.CancelHook`
+/// is. Kept local so this transport module stays independent of the tool
+/// modules (and of the import cycle that reaching back into them would make).
+pub const CancelProbe = struct {
+    ctx: *const anyopaque,
+    is_cancelled: *const fn (ctx: *const anyopaque) bool,
+
+    pub fn requested(self: CancelProbe) bool {
+        return self.is_cancelled(self.ctx);
+    }
+};
 
 const unix_af: u32 = 1;
 const sock_stream: u32 = 1;
 const poll_slice_ms: i32 = 200;
+/// The same slice while a cancel probe is attached: 200 ms of latency on a
+/// Stop is felt, 50 ms is not, and a probe-less call keeps the long slice.
+const cancel_poll_slice_ms: i32 = 50;
 /// Extra wall-clock beyond a request's own deadline before the client gives up
 /// on a reply the daemon should already have produced.
 pub const reply_guard_ms: u32 = 15_000;
@@ -412,9 +431,9 @@ pub const Client = struct {
         };
     }
 
-    pub fn exec(self: *Client, request: ExecRequest) !ExecOutcome {
+    pub fn exec(self: *Client, request: ExecRequest, cancel_probe: ?CancelProbe) !ExecOutcome {
         const guard_ms = request.timeout_ms + self.guard_ms;
-        var response = try self.call(.{
+        var response = try self.callCancelable(.{
             .action = .exec,
             .id = self.takeId(),
             .workspace_id = request.workspace_id,
@@ -422,7 +441,7 @@ pub const Client = struct {
             .cwd_rel = request.cwd_rel,
             .timeout_ms = request.timeout_ms,
             .max_output_bytes = request.max_output_bytes,
-        }, guard_ms);
+        }, guard_ms, cancel_probe);
         defer response.deinit();
 
         const failure = switch (response.value) {
@@ -781,6 +800,14 @@ pub const Client = struct {
     }
 
     fn call(self: *Client, request: rpc.Request, guard_ms: u32) !rpc.OwnedResponse {
+        return self.callCancelable(request, guard_ms, null);
+    }
+
+    /// `call`, with the Stop button: `cancel_probe` is asked once per poll slice, and
+    /// a true answer closes the socket and returns `Error.Cancelled`. The
+    /// daemon keeps its own deadline for the guest work, so the host stops
+    /// waiting without leaking anything on this side.
+    fn callCancelable(self: *Client, request: rpc.Request, guard_ms: u32, cancel_probe: ?CancelProbe) !rpc.OwnedResponse {
         const fd = try connectUnix(self.socket_path);
         defer _ = linux.close(fd);
 
@@ -790,12 +817,14 @@ pub const Client = struct {
 
         var header: [4]u8 = undefined;
         var waited_ms: u32 = 0;
+        const slice_ms: i32 = if (cancel_probe != null) cancel_poll_slice_ms else poll_slice_ms;
         while (true) {
+            if (cancel_probe) |p| if (p.requested()) return Error.Cancelled;
             var pfd = [_]linux.pollfd{.{ .fd = fd, .events = linux.POLL.IN, .revents = 0 }};
-            const rc = linux.poll(&pfd, pfd.len, poll_slice_ms);
+            const rc = linux.poll(&pfd, pfd.len, slice_ms);
             if (linux.errno(rc) != .SUCCESS) return Error.IoFailed;
             if (rc > 0) break;
-            waited_ms += @intCast(poll_slice_ms);
+            waited_ms += @intCast(slice_ms);
             if (waited_ms >= guard_ms) return Error.Timeout;
         }
 
@@ -859,4 +888,51 @@ pub fn sendFrame(fd: linux.fd_t, payload: []const u8) !void {
     rpc.frameHeader(payload.len, &header);
     try writeAll(fd, &header);
     try writeAll(fd, payload);
+}
+
+// ─── The Stop button reaches an outstanding exec ───────────────────────────
+
+const testing = std.testing;
+
+/// A probe that asks to stop on its first poll.
+const StopRequested = struct {
+    fn isCancelled(_: *const anyopaque) bool {
+        return true;
+    }
+};
+
+test "exec: a probe that asks to stop gives up on the reply instead of waiting out the guard" {
+    if (@import("builtin").os.tag != .linux) return;
+
+    // A listener that never accepts: the connection sits in the backlog, so
+    // the reply never arrives and `call` would otherwise poll for the whole
+    // request deadline + guard. No thread is needed to prove the host's side.
+    var path_buf: [96]u8 = undefined;
+    const path = try std.fmt.bufPrint(&path_buf, "/tmp/pabrik-vmd-cancel-{d}.sock", .{linux.getpid()});
+    std.Io.Dir.cwd().deleteFile(std.testing.io, path) catch {};
+    defer std.Io.Dir.cwd().deleteFile(std.testing.io, path) catch {};
+
+    var addr = SockaddrUn{ .family = unix_af, .path = undefined };
+    @memset(&addr.path, 0);
+    @memcpy(addr.path[0..path.len], path);
+
+    const fd = linux.socket(linux.AF.UNIX, linux.SOCK.STREAM | linux.SOCK.CLOEXEC, 0);
+    if (linux.errno(fd) != .SUCCESS) return error.SocketFailed;
+    const sock: linux.fd_t = @intCast(fd);
+    defer _ = linux.close(sock);
+    if (linux.errno(linux.bind(sock, @ptrCast(&addr), @sizeOf(SockaddrUn))) != .SUCCESS) return error.SocketFailed;
+    if (linux.errno(linux.listen(sock, 4)) != .SUCCESS) return error.SocketFailed;
+
+    var client = Client.init(testing.allocator, path);
+    var state: u8 = 0;
+
+    const outcome = client.exec(.{
+        .workspace_id = "ws_cancel",
+        .argv = &.{"sleep"},
+        .cwd_rel = ".",
+        .timeout_ms = 60_000,
+        .max_output_bytes = 1024,
+    }, .{ .ctx = &state, .is_cancelled = StopRequested.isCancelled });
+
+    try testing.expectError(Error.Cancelled, outcome);
 }

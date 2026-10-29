@@ -529,7 +529,7 @@ pub fn runWithContext(
 
     // The substrate decision: under `--saas` the executor runs this command in
     // the session's workspace VM, and no host shell is ever spawned for it.
-    var guest = vm_runtime.GuestContext{ .db = db, .session_id = session_id };
+    var guest = vm_runtime.GuestContext{ .db = db, .session_id = session_id, .cancel_hook = cancel_hook };
     const executor = vm_runtime.executorFor(&guest);
     // `cancel_hook` is the Stop button, carried in from the dispatch (see
     // `session_cancel_probe.Probe`): a foreground run polls it inside its wait

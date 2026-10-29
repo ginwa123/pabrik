@@ -625,7 +625,7 @@ fn execCommand(init: std.process.Init, arena: std.mem.Allocator, options: *Optio
         .cwd_rel = options.cwd_rel,
         .timeout_ms = options.timeout_ms,
         .max_output_bytes = options.max_output_bytes,
-    }) catch reportClientError(&client);
+    }, null) catch reportClientError(&client);
     defer outcome.deinit(init.gpa);
 
     writeRaw(1, outcome.stdout);
