@@ -2,6 +2,7 @@
 //! as `git -C <dir> symbolic-ref --short HEAD` without spawning a process.
 
 const std = @import("std");
+const builtin = @import("builtin");
 
 pub const max_ancestor_depth: usize = 32;
 
@@ -19,9 +20,9 @@ const DirProbe = union(enum) {
 };
 
 /// Branch `dir` is checked out on, or null when it has none — detached HEAD,
-/// not a repository, or a relative path. Caller owns a non-null result.
+/// not a repository, or a path this host cannot open.
 pub fn resolve(allocator: std.mem.Allocator, io: std.Io, dir: []const u8) ?[]u8 {
-    if (dir.len == 0 or !std.fs.path.isAbsolute(dir)) return null;
+    if (!resolvablePath(dir)) return null;
 
     var head_buf: [max_head_bytes]u8 = undefined;
     var path: []const u8 = dir;
@@ -37,6 +38,15 @@ pub fn resolve(allocator: std.mem.Allocator, io: std.Io, dir: []const u8) ?[]u8 
         path = parent;
     }
     return null;
+}
+
+/// A path this host can actually open. Windows also calls `\x` and `/x`
+/// absolute, but a drive-less path has no namespace to open: `stat` answers
+/// STATUS_OBJECT_PATH_INVALID, which Zig's Io escalates to a process panic.
+fn resolvablePath(dir: []const u8) bool {
+    if (dir.len == 0 or !std.fs.path.isAbsolute(dir)) return false;
+    if (builtin.os.tag != .windows) return true;
+    return std.fs.path.diskDesignatorWindows(dir).len > 0;
 }
 
 /// One stat decides the shape, and neither branch ever opens a path *through*
