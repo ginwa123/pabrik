@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
+const git_branch = @import("git_branch.zig");
 const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
 const ai_mod = pabrikcore.ai_mod;
@@ -146,20 +147,16 @@ fn useCase(
     var task_responses = std.ArrayList(http_response.WorkspaceItemTaskResponse).empty;
     defer task_responses.deinit(allocator);
 
+    // Kanban-task-git-branch: one lookup per distinct directory per request.
+    var branches = git_branch.Cache.init(allocator, io);
+    defer branches.deinit();
+
     for (result.tasks) |task| {
-        // Compute git_branch for this task's cwd.
-        // Prefer the task's worktree cwd; fall back to the item path.
-        // Empty string when neither is set → no badge on the frontend.
         const cwd = if (task.git_worktree_cwd.len > 0)
             task.git_worktree_cwd
         else
             item_path;
-        const git_branch: ?[]const u8 = blk: {
-            if (cwd.len == 0) break :blk null;
-            const branch = resolveGitBranch(allocator, io, cwd);
-            if (branch.len == 0) break :blk null;
-            break :blk branch;
-        };
+        const branch = if (cwd.len == 0) "" else branches.branch(cwd);
 
         // Migration 111 — this task's dependencies, split into "what I wait
         // for" and "what is still in the way".
@@ -201,9 +198,7 @@ fn useCase(
             // endpoint; the frontend fetches them when the flag is true.
             .is_have_image = task.is_have_image,
             .is_have_video = task.is_have_video,
-            // Kanban-task-git-branch: computed on-demand per task from the
-            // task's cwd (worktree or item path).
-            .git_branch = git_branch,
+            .git_branch = if (branch.len == 0) null else branch,
             // Migration 111 — kanban task dependencies.
             .depends_on = dep_fields.depends_on,
             .blocked_by = dep_fields.blocked_by,
@@ -307,35 +302,4 @@ fn fetchWorkspaceItemPath(
     const row = (try rows.next()) orelse return "";
     defer row.deinit(allocator);
     return try allocator.dupe(u8, row.values[0]);
-}
-
-/// Run `git -C <path> symbolic-ref --short HEAD` and fall back to `git -C
-/// <path> rev-parse --abbrev-ref HEAD` for detached HEAD.
-fn resolveGitBranch(
-    allocator: std.mem.Allocator,
-    io: std.Io,
-    path: []const u8,
-) []const u8 {
-    // Attempt 1: symbolic-ref --short HEAD. Fails on detached HEAD
-    // (returns non-zero exit with a "not a symbolic ref" message).
-    const sym_argv = [_][]const u8{ "git", "-C", path, "symbolic-ref", "--short", "HEAD" };
-    if (std.process.run(allocator, io, .{ .argv = &sym_argv })) |sym_result| {
-        if (sym_result.term.exited == 0) {
-            return std.mem.trim(u8, sym_result.stdout, " \n\r\t");
-        }
-        // Fall through to attempt 2.
-    } else |_| {
-        // Spawn failure (e.g. git not on PATH) — give up silently.
-        return "";
-    }
-
-    // Attempt 2: rev-parse --abbrev-ref HEAD. Works for detached HEAD
-    // too (returns literal "HEAD"), which we map to "" so the
-    // frontend omits the badge.
-    const rev_argv = [_][]const u8{ "git", "-C", path, "rev-parse", "--abbrev-ref", "HEAD" };
-    const rev_result = std.process.run(allocator, io, .{ .argv = &rev_argv }) catch return "";
-    if (rev_result.term.exited != 0) return "";
-    const branch = std.mem.trim(u8, rev_result.stdout, " \n\r\t");
-    if (std.mem.eql(u8, branch, "HEAD")) return "";
-    return branch;
 }

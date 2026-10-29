@@ -701,9 +701,9 @@ const onPinnedDragEnd = () => {
   dragPinnedOverId.value = null
 }
 
-// Empty-refresh resilience. `api.getChats` swallows every transport failure — a rejected fetch, the
-// 15s `apiFetch` timeout aborting a slow request, a non-2xx — and resolves `{ sessions: [], total:
-// 0 }`.
+// Empty-refresh resilience. A rejected fetch, a timed-out request or a non-2xx lands in
+// `api.getChats`'s catch as `{ sessions: [], total: 0, failed: true }`; `loadDelta` turns that flag
+// into a failed Effect, and this backoff is what keeps the RECENT list from settling on zero.
 const LOAD_RETRY_DELAYS_MS = [1_000, 3_000, 8_000, 20_000]
 let loadRetryTimer: ReturnType<typeof setTimeout> | undefined
 let loadRetryAttempt = 0
@@ -769,11 +769,10 @@ const loadChats = async () => {
       chatsTotal.value = delta.total
       clearLoadRetry()
       restoreActiveFromUrl()
-    } else if (cached.length === 0 && isCurrentCtx()) {
-      // Cold miss + a delta that never arrived: the list is already empty,
-      // so there is nothing to protect — leave it empty and let the
-      // apiFetch toast carry the reason.
-      navItems.value = []
+    } else if (isCurrentCtx()) {
+      // A delta that never arrived is a failed revalidate, not an empty
+      // scope: keep whatever is painted and come back for it.
+      scheduleLoadRetry(ctx)
     }
   } catch (err) {
     // A thrown load must not blank painted rows either — same reasoning as

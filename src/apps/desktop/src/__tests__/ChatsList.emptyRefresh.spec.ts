@@ -161,6 +161,37 @@ describe('ChatsList — empty refresh must not blank the RECENT list', () => {
     wrapper.unmount()
   })
 
+  it('retries a failed FIRST load instead of settling on an empty list', async () => {
+    vi.useFakeTimers()
+    let call = 0
+    const spy = vi.spyOn(api, 'getChats').mockImplementation(() => {
+      call += 1
+      const failed = call === 1
+      const sessions = failed ? [] : [makeSession(0)]
+      return Promise.resolve({
+        sessions,
+        has_more: false,
+        next_cursor: null,
+        total: sessions.length,
+        failed,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any)
+    })
+
+    const wrapper = mountChatsList()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(chatRowNames(wrapper)).toHaveLength(0)
+
+    // The failure is treated as a failed refresh, so the first backoff step
+    // (1s) comes back for an answer instead of leaving RECENT at zero.
+    await vi.advanceTimersByTimeAsync(1_000)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(chatRowNames(wrapper).length).toBe(1)
+    expect(spy).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
   it('paints an empty list when the FIRST response is empty, and stops retrying', async () => {
     vi.useFakeTimers()
     const spy = queueGetChats([[]])

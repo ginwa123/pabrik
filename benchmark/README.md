@@ -19,6 +19,7 @@ CONTAINER_ENGINE=podman benchmark/run.sh run                         # same thin
 | --- | --- | --- | --- |
 | `health` | `GET /health` | the HTTP path with no storage at all | `{"status":"ok","timestamp":<ts>}` after the timestamp is masked |
 | `messages` | `GET /api/session/bench/messages` | a SQLite read: the message query, the session row, the profile lookup | the whole body, byte for byte |
+| `sessions` | `GET /api/llm/session?limit=50` | a SQLite list read plus the per-row work behind it: 50 rows, 3 directories | the probed body, byte for byte |
 
 `/api/session/bench/messages` on a fresh `HOME` is an empty inbox, and its body carries no id and
 no timestamp, so nothing needs masking — the entire response is the contract:
@@ -34,6 +35,30 @@ Both are reproducible only because the server starts on a **fresh empty HOME eve
 container's `/pabrik-home` is a tmpfs), so "an empty inbox" is the state, not an accident.
 
 Pick scenarios with `API_BENCH_SCENARIOS=health` or `--scenario messages`; `all` is the default.
+
+## `sessions`: the one ceiling that blocks
+
+The session list is the only route whose cost used to grow with the page it returned: it resolved a
+git branch per row by spawning `git` twice. At limit=50 that was ~150 ms on a fast Linux box and
+12–21 s on a Windows host where every process creation is scanned by antivirus — which blew the
+frontend's 15 s budget and left the sidebar showing zero chats.
+
+So this scenario seeds 50 sessions over 3 directories (`src/http_handlers/bench_seed.zig`, behind
+`PABRIK_BENCH_SEED=1`) and gates it two ways:
+
+| gate | what it catches | limit |
+| --- | --- | --- |
+| `cost.rows` | p50 at `limit=50` over p50 at `limit=5`, measured on the same machine in the same run | 3.0 |
+| `latency.p99_c1` | a fixed per-request collapse | 20 ms |
+
+`cost.rows` is the machine-independent one: a handler that pays per row divides out to ~10 on any
+box, and the fixed one stays near 1 whatever the box costs. Both checks are **enforced without
+`--strict`** (`enforced_performance` on the scenario) — every other performance check here stays
+advisory on purpose, because this one is not a percentage, it is the incident above.
+
+The contract is not a hand-written body: the harness sends one probe request after seeding and adopts
+that body, so the run still fails on a single distinct-body count and on any byte that moves between
+requests. The seed is deterministic (fixed ids and timestamps), so two runs print the same digest.
 
 ## The fixed spec
 

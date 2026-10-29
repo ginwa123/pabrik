@@ -118,6 +118,14 @@ describe('SessionEngineDb delta', () => {
     expect((await run(failing.primeFromCache('ws-fail', 30))).map((r) => r.id)).toEqual(['keep'])
   })
 
+  it('an empty page flagged failed is a failed refresh, not an empty scope', async () => {
+    const eng = engineWith(fetchOk([], { failed: true }))
+
+    const exit = await Effect.runPromise(Effect.exit(eng.loadDelta('ws-flag', 30)))
+
+    expect(exit._tag).toBe('Failure')
+  })
+
   it('removeSession evicts one row and leaves the rest', async () => {
     const eng = engineWith(fetchOk([]))
     await run(
