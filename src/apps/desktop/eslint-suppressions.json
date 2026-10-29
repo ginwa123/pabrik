@@ -413,7 +413,7 @@
       "count": 1
     },
     "local/no-try-catch": {
-      "count": 23
+      "count": 21
     }
   },
   "src/components/views/ChatsList.vue": {
@@ -544,6 +544,11 @@
     }
   },
   "src/components/views/chat_view/useChatSse.ts": {
+    "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/components/views/chat_view/useChatWorktree.ts": {
     "local/no-try-catch": {
       "count": 2
     }
