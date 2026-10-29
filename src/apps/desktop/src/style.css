@@ -213,6 +213,636 @@
   --tag-red-text: #bd3f52;
 }
 
+/* ── GitHub Light (Primer) ──────────────────────────────────────────────
+   White canvas, grey chrome, one blue accent. */
+:root[data-theme='github-light'] {
+  --color-bg-dim: #f6f8fa;
+  --color-bg-gutter: #eaeef2;
+  --color-bg-m3: #f6f8fa;
+  --color-bg-m2: #f6f8fa;
+  --color-bg-m1: #f6f8fa;
+  --color-bg: #ffffff;
+  --color-bg-p1: #f6f8fa;
+  --color-bg-p2: #eaeef2;
+
+  --color-fg: #1f2328;
+  --color-fg-dim: #57606a;
+  --color-fg-reverse: #ffffff;
+
+  --color-gray: #424a53;
+  --color-gray-2: #57606a;
+  --color-gray-3: #6e7781;
+
+  --color-violet: #8250df;
+  --color-aqua: #1b7c83;
+  --color-yellow: #9a6700;
+  --color-blue: #0969da;
+  --color-green: #1a7f37;
+  --color-green-2: #2da44e;
+  --color-pink: #bf3989;
+  --color-orange: #bc4c00;
+  --color-red: #cf222e;
+  --color-ash: #6e7781;
+
+  --color-special: #6e7781;
+  --color-whitespace: #d0d7de;
+  --color-nontext: #d0d7de;
+
+  --color-blue-1: #ddf4ff;
+  --color-blue-2: #b6e3ff;
+
+  --color-border: #d0d7de;
+  --color-border-light: #eaeef2;
+
+  --semantic-sidebar-bg: #f6f8fa;
+  --semantic-sidebar-border: #d0d7de;
+  --semantic-content-bg: #ffffff;
+  --semantic-card-bg: #f6f8fa;
+
+  --semantic-text: #1f2328;
+  --semantic-text-muted: #59636e;
+  --semantic-text-dim: #656d76;
+
+  --semantic-link: #0969da;
+  --semantic-link-hover: #0550ae;
+  --semantic-accent: #0969da;
+  --semantic-accent-hover: #0550ae;
+
+  --semantic-success: #1a7f37;
+  --semantic-warning: #9a6700;
+  --semantic-error: #cf222e;
+  --semantic-info: #0969da;
+
+  --semantic-active-bg: #ddf4ff;
+  --semantic-active-text: #1f2328;
+  --semantic-hover-bg: #f6f8fa;
+  --semantic-hover-text: #1f2328;
+
+  --color-scheme: light;
+  --semantic-on-accent: #ffffff;
+  --hover-bg: rgba(31, 35, 40, 0.06);
+  --hover-bg-strong: #eaeef2;
+
+  --tag-violet-bg: rgba(130, 80, 223, 0.14);
+  --tag-violet-border: rgba(130, 80, 223, 0.4);
+  --tag-violet-text: #8250df;
+  --tag-blue-bg: rgba(9, 105, 218, 0.14);
+  --tag-blue-border: rgba(9, 105, 218, 0.4);
+  --tag-blue-text: #0969da;
+  --tag-green-bg: rgba(26, 127, 55, 0.14);
+  --tag-green-border: rgba(26, 127, 55, 0.4);
+  --tag-green-text: #1a7f37;
+  --tag-yellow-bg: rgba(154, 103, 0, 0.14);
+  --tag-yellow-border: rgba(154, 103, 0, 0.4);
+  --tag-yellow-text: #9a6700;
+  --tag-orange-bg: rgba(188, 76, 0, 0.14);
+  --tag-orange-border: rgba(188, 76, 0, 0.4);
+  --tag-orange-text: #bc4c00;
+  --tag-red-bg: rgba(207, 34, 46, 0.14);
+  --tag-red-border: rgba(207, 34, 46, 0.4);
+  --tag-red-text: #cf222e;
+}
+
+/* ── Atom One Light ─────────────────────────────────────────────────────
+   Warm off-white canvas, soft greys, Atom's violet accent. */
+:root[data-theme='atom-one-light'] {
+  --color-bg-dim: #f0f0f1;
+  --color-bg-gutter: #e5e5e6;
+  --color-bg-m3: #f0f0f1;
+  --color-bg-m2: #f0f0f1;
+  --color-bg-m1: #f0f0f1;
+  --color-bg: #fafafa;
+  --color-bg-p1: #f0f0f1;
+  --color-bg-p2: #e5e5e6;
+
+  --color-fg: #383a42;
+  --color-fg-dim: #696c77;
+  --color-fg-reverse: #ffffff;
+
+  --color-gray: #4f525e;
+  --color-gray-2: #5c5f66;
+  --color-gray-3: #6f7179;
+
+  --color-violet: #a626a4;
+  --color-aqua: #016f9f;
+  --color-yellow: #8f6500;
+  --color-blue: #2f64c8;
+  --color-green: #3f7f3e;
+  --color-green-2: #4a8f49;
+  --color-pink: #b0367c;
+  --color-orange: #986801;
+  --color-red: #ca3b2c;
+  --color-ash: #6f7179;
+
+  --color-special: #6f7179;
+  --color-whitespace: #dcdcdd;
+  --color-nontext: #dcdcdd;
+
+  --color-blue-1: #e5e5e6;
+  --color-blue-2: #d0d2e0;
+
+  --color-border: #dcdcdd;
+  --color-border-light: #e8e8e9;
+
+  --semantic-sidebar-bg: #f0f0f1;
+  --semantic-sidebar-border: #dcdcdd;
+  --semantic-content-bg: #fafafa;
+  --semantic-card-bg: #ffffff;
+
+  --semantic-text: #383a42;
+  --semantic-text-muted: #5c5f66;
+  --semantic-text-dim: #6f7179;
+
+  --semantic-link: #2f64c8;
+  --semantic-link-hover: #1f4fa8;
+  --semantic-accent: #a626a4;
+  --semantic-accent-hover: #8b1f8a;
+
+  --semantic-success: #3f7f3e;
+  --semantic-warning: #8f6500;
+  --semantic-error: #ca3b2c;
+  --semantic-info: #016f9f;
+
+  --semantic-active-bg: #e5e5e6;
+  --semantic-active-text: #383a42;
+  --semantic-hover-bg: #f0f0f1;
+  --semantic-hover-text: #383a42;
+
+  --color-scheme: light;
+  --semantic-on-accent: #ffffff;
+  --hover-bg: rgba(56, 58, 66, 0.06);
+  --hover-bg-strong: #e5e5e6;
+
+  --tag-violet-bg: rgba(166, 38, 164, 0.14);
+  --tag-violet-border: rgba(166, 38, 164, 0.4);
+  --tag-violet-text: #a626a4;
+  --tag-blue-bg: rgba(47, 100, 200, 0.14);
+  --tag-blue-border: rgba(47, 100, 200, 0.4);
+  --tag-blue-text: #2f64c8;
+  --tag-green-bg: rgba(63, 127, 62, 0.14);
+  --tag-green-border: rgba(63, 127, 62, 0.4);
+  --tag-green-text: #3f7f3e;
+  --tag-yellow-bg: rgba(143, 101, 0, 0.14);
+  --tag-yellow-border: rgba(143, 101, 0, 0.4);
+  --tag-yellow-text: #8f6500;
+  --tag-orange-bg: rgba(152, 104, 1, 0.14);
+  --tag-orange-border: rgba(152, 104, 1, 0.4);
+  --tag-orange-text: #986801;
+  --tag-red-bg: rgba(202, 59, 44, 0.14);
+  --tag-red-border: rgba(202, 59, 44, 0.4);
+  --tag-red-text: #ca3b2c;
+}
+
+/* ── One Dark Pro ───────────────────────────────────────────────────────
+   Atom's iconic charcoal-and-pastel layout. */
+:root[data-theme='one-dark-pro'] {
+  --color-bg-dim: #21252b;
+  --color-bg-gutter: #2c313a;
+  --color-bg-m3: #1b1f24;
+  --color-bg-m2: #21252b;
+  --color-bg-m1: #2c313a;
+  --color-bg: #282c34;
+  --color-bg-p1: #2c313a;
+  --color-bg-p2: #3e4451;
+
+  --color-fg: #abb2bf;
+  --color-fg-dim: #9da5b4;
+  --color-fg-reverse: #282c34;
+
+  --color-gray: #8b93a1;
+  --color-gray-2: #9da5b4;
+  --color-gray-3: #9199a8;
+
+  --color-violet: #c678dd;
+  --color-aqua: #56b6c2;
+  --color-yellow: #e5c07b;
+  --color-blue: #61afef;
+  --color-green: #98c379;
+  --color-green-2: #8fbf72;
+  --color-pink: #e06c9f;
+  --color-orange: #d19a66;
+  --color-red: #e06c75;
+  --color-ash: #7f848e;
+
+  --color-special: #828997;
+  --color-whitespace: #3b4048;
+  --color-nontext: #3b4048;
+
+  --color-blue-1: #2c313a;
+  --color-blue-2: #3e4451;
+
+  --color-border: #3b4048;
+  --color-border-light: #4b5263;
+
+  --semantic-sidebar-bg: #21252b;
+  --semantic-sidebar-border: #181a1f;
+  --semantic-content-bg: #282c34;
+  --semantic-card-bg: #2c313a;
+
+  --semantic-text: #abb2bf;
+  --semantic-text-muted: #9da5b4;
+  --semantic-text-dim: #9199a8;
+
+  --semantic-link: #61afef;
+  --semantic-link-hover: #8ac6f2;
+  --semantic-accent: #c678dd;
+  --semantic-accent-hover: #d7a1e8;
+
+  --semantic-success: #98c379;
+  --semantic-warning: #e5c07b;
+  --semantic-error: #e6858d;
+  --semantic-info: #56b6c2;
+
+  --semantic-active-bg: #3e4451;
+  --semantic-active-text: #d7dae0;
+  --semantic-hover-bg: #2c313a;
+  --semantic-hover-text: #d7dae0;
+
+  --color-scheme: dark;
+  --semantic-on-accent: #21252b;
+  --hover-bg: rgba(255, 255, 255, 0.05);
+  --hover-bg-strong: #3e4451;
+
+  --tag-violet-bg: rgba(198, 120, 221, 0.16);
+  --tag-violet-border: rgba(198, 120, 221, 0.42);
+  --tag-violet-text: #c678dd;
+  --tag-blue-bg: rgba(97, 175, 239, 0.16);
+  --tag-blue-border: rgba(97, 175, 239, 0.42);
+  --tag-blue-text: #61afef;
+  --tag-green-bg: rgba(152, 195, 121, 0.16);
+  --tag-green-border: rgba(152, 195, 121, 0.42);
+  --tag-green-text: #98c379;
+  --tag-yellow-bg: rgba(229, 192, 123, 0.16);
+  --tag-yellow-border: rgba(229, 192, 123, 0.42);
+  --tag-yellow-text: #e5c07b;
+  --tag-orange-bg: rgba(209, 154, 102, 0.16);
+  --tag-orange-border: rgba(209, 154, 102, 0.42);
+  --tag-orange-text: #d19a66;
+  --tag-red-bg: rgba(224, 108, 117, 0.16);
+  --tag-red-border: rgba(224, 108, 117, 0.42);
+  --tag-red-text: #e06c75;
+}
+
+/* ── GitHub Dark ────────────────────────────────────────────────────────
+   GitHub's own dark canvas: near-black page, #161b22 chrome, one blue. */
+:root[data-theme='github-dark'] {
+  --color-bg-dim: #161b22;
+  --color-bg-gutter: #21262d;
+  --color-bg-m3: #0d1117;
+  --color-bg-m2: #161b22;
+  --color-bg-m1: #21262d;
+  --color-bg: #0d1117;
+  --color-bg-p1: #161b22;
+  --color-bg-p2: #21262d;
+
+  --color-fg: #e6edf3;
+  --color-fg-dim: #9ea7b3;
+  --color-fg-reverse: #0d1117;
+
+  --color-gray: #7d8590;
+  --color-gray-2: #8b949e;
+  --color-gray-3: #7d8590;
+
+  --color-violet: #bc8cff;
+  --color-aqua: #39c5cf;
+  --color-yellow: #d29922;
+  --color-blue: #58a6ff;
+  --color-green: #3fb950;
+  --color-green-2: #56d364;
+  --color-pink: #f778ba;
+  --color-orange: #db6d28;
+  --color-red: #f85149;
+  --color-ash: #6e7681;
+
+  --color-special: #6e7681;
+  --color-whitespace: #30363d;
+  --color-nontext: #30363d;
+
+  --color-blue-1: #13233a;
+  --color-blue-2: #264f78;
+
+  --color-border: #30363d;
+  --color-border-light: #21262d;
+
+  --semantic-sidebar-bg: #161b22;
+  --semantic-sidebar-border: #30363d;
+  --semantic-content-bg: #0d1117;
+  --semantic-card-bg: #161b22;
+
+  --semantic-text: #e6edf3;
+  --semantic-text-muted: #8b949e;
+  --semantic-text-dim: #7d8590;
+
+  --semantic-link: #58a6ff;
+  --semantic-link-hover: #79c0ff;
+  --semantic-accent: #58a6ff;
+  --semantic-accent-hover: #79c0ff;
+
+  --semantic-success: #3fb950;
+  --semantic-warning: #d29922;
+  --semantic-error: #f85149;
+  --semantic-info: #58a6ff;
+
+  --semantic-active-bg: #21262d;
+  --semantic-active-text: #e6edf3;
+  --semantic-hover-bg: #161b22;
+  --semantic-hover-text: #e6edf3;
+
+  --color-scheme: dark;
+  --semantic-on-accent: #0d1117;
+  --hover-bg: rgba(255, 255, 255, 0.06);
+  --hover-bg-strong: #21262d;
+
+  --tag-violet-bg: rgba(188, 140, 255, 0.16);
+  --tag-violet-border: rgba(188, 140, 255, 0.42);
+  --tag-violet-text: #bc8cff;
+  --tag-blue-bg: rgba(88, 166, 255, 0.16);
+  --tag-blue-border: rgba(88, 166, 255, 0.42);
+  --tag-blue-text: #58a6ff;
+  --tag-green-bg: rgba(63, 185, 80, 0.16);
+  --tag-green-border: rgba(63, 185, 80, 0.42);
+  --tag-green-text: #3fb950;
+  --tag-yellow-bg: rgba(210, 153, 34, 0.16);
+  --tag-yellow-border: rgba(210, 153, 34, 0.42);
+  --tag-yellow-text: #d29922;
+  --tag-orange-bg: rgba(219, 109, 40, 0.16);
+  --tag-orange-border: rgba(219, 109, 40, 0.42);
+  --tag-orange-text: #db6d28;
+  --tag-red-bg: rgba(248, 81, 73, 0.16);
+  --tag-red-border: rgba(248, 81, 73, 0.42);
+  --tag-red-text: #f85149;
+}
+
+/* ── Dracula Official ───────────────────────────────────────────────────
+   The legendary purple dusk, with neon syntax accents. */
+:root[data-theme='dracula'] {
+  --color-bg-dim: #21222c;
+  --color-bg-gutter: #343746;
+  --color-bg-m3: #1e1f29;
+  --color-bg-m2: #21222c;
+  --color-bg-m1: #343746;
+  --color-bg: #282a36;
+  --color-bg-p1: #343746;
+  --color-bg-p2: #44475a;
+
+  --color-fg: #f8f8f2;
+  --color-fg-dim: #c9ccd6;
+  --color-fg-reverse: #282a36;
+
+  --color-gray: #a4a8c4;
+  --color-gray-2: #b6bad0;
+  --color-gray-3: #a4a9bd;
+
+  --color-violet: #bd93f9;
+  --color-aqua: #64d8cb;
+  --color-yellow: #f1fa8c;
+  --color-blue: #8be9fd;
+  --color-green: #50fa7b;
+  --color-green-2: #69ff94;
+  --color-pink: #ff79c6;
+  --color-orange: #ffb86c;
+  --color-red: #ff6e6e;
+  --color-ash: #6272a4;
+
+  --color-special: #6272a4;
+  --color-whitespace: #44475a;
+  --color-nontext: #44475a;
+
+  --color-blue-1: #44475a;
+  --color-blue-2: #5a5f7d;
+
+  --color-border: #44475a;
+  --color-border-light: #52567a;
+
+  --semantic-sidebar-bg: #21222c;
+  --semantic-sidebar-border: #191a21;
+  --semantic-content-bg: #282a36;
+  --semantic-card-bg: #343746;
+
+  --semantic-text: #f8f8f2;
+  --semantic-text-muted: #c3c7d1;
+  --semantic-text-dim: #a4a9bd;
+
+  --semantic-link: #8be9fd;
+  --semantic-link-hover: #b8f2ff;
+  --semantic-accent: #bd93f9;
+  --semantic-accent-hover: #d0b0fb;
+
+  --semantic-success: #50fa7b;
+  --semantic-warning: #f1fa8c;
+  --semantic-error: #ff7f7f;
+  --semantic-info: #8be9fd;
+
+  --semantic-active-bg: #44475a;
+  --semantic-active-text: #f8f8f2;
+  --semantic-hover-bg: #343746;
+  --semantic-hover-text: #f8f8f2;
+
+  --color-scheme: dark;
+  --semantic-on-accent: #21222c;
+  --hover-bg: rgba(255, 255, 255, 0.05);
+  --hover-bg-strong: #44475a;
+
+  --tag-violet-bg: rgba(189, 147, 249, 0.16);
+  --tag-violet-border: rgba(189, 147, 249, 0.42);
+  --tag-violet-text: #bd93f9;
+  --tag-blue-bg: rgba(139, 233, 253, 0.16);
+  --tag-blue-border: rgba(139, 233, 253, 0.42);
+  --tag-blue-text: #8be9fd;
+  --tag-green-bg: rgba(80, 250, 123, 0.16);
+  --tag-green-border: rgba(80, 250, 123, 0.42);
+  --tag-green-text: #50fa7b;
+  --tag-yellow-bg: rgba(241, 250, 140, 0.16);
+  --tag-yellow-border: rgba(241, 250, 140, 0.42);
+  --tag-yellow-text: #f1fa8c;
+  --tag-orange-bg: rgba(255, 184, 108, 0.16);
+  --tag-orange-border: rgba(255, 184, 108, 0.42);
+  --tag-orange-text: #ffb86c;
+  --tag-red-bg: rgba(255, 110, 110, 0.16);
+  --tag-red-border: rgba(255, 110, 110, 0.42);
+  --tag-red-text: #ff6e6e;
+}
+
+/* ── Tokyo Night ────────────────────────────────────────────────────────
+   Deep blue-violet night with a neon city map's accents. */
+:root[data-theme='tokyo-night'] {
+  --color-bg-dim: #16161e;
+  --color-bg-gutter: #292e42;
+  --color-bg-m3: #13131a;
+  --color-bg-m2: #16161e;
+  --color-bg-m1: #1f2335;
+  --color-bg: #1a1b26;
+  --color-bg-p1: #1f2335;
+  --color-bg-p2: #292e42;
+
+  --color-fg: #c0caf5;
+  --color-fg-dim: #a9b1d6;
+  --color-fg-reverse: #1a1b26;
+
+  --color-gray: #9aa5ce;
+  --color-gray-2: #a9b1d6;
+  --color-gray-3: #7f87ab;
+
+  --color-violet: #bb9af7;
+  --color-aqua: #7dcfff;
+  --color-yellow: #e0af68;
+  --color-blue: #7aa2f7;
+  --color-green: #9ece6a;
+  --color-green-2: #b9f27c;
+  --color-pink: #ff4fa3;
+  --color-orange: #ff9e64;
+  --color-red: #f7768e;
+  --color-ash: #737aa2;
+
+  --color-special: #7f87ab;
+  --color-whitespace: #3b4261;
+  --color-nontext: #3b4261;
+
+  --color-blue-1: #292e42;
+  --color-blue-2: #3b4261;
+
+  --color-border: #292e42;
+  --color-border-light: #3b4261;
+
+  --semantic-sidebar-bg: #16161e;
+  --semantic-sidebar-border: #1f2335;
+  --semantic-content-bg: #1a1b26;
+  --semantic-card-bg: #1f2335;
+
+  --semantic-text: #c0caf5;
+  --semantic-text-muted: #a9b1d6;
+  --semantic-text-dim: #9aa5ce;
+
+  --semantic-link: #7aa2f7;
+  --semantic-link-hover: #8db0ff;
+  --semantic-accent: #bb9af7;
+  --semantic-accent-hover: #cbb2f9;
+
+  --semantic-success: #9ece6a;
+  --semantic-warning: #e0af68;
+  --semantic-error: #f7768e;
+  --semantic-info: #7dcfff;
+
+  --semantic-active-bg: #292e42;
+  --semantic-active-text: #c0caf5;
+  --semantic-hover-bg: #1f2335;
+  --semantic-hover-text: #c0caf5;
+
+  --color-scheme: dark;
+  --semantic-on-accent: #1a1b26;
+  --hover-bg: rgba(255, 255, 255, 0.05);
+  --hover-bg-strong: #292e42;
+
+  --tag-violet-bg: rgba(187, 154, 247, 0.16);
+  --tag-violet-border: rgba(187, 154, 247, 0.42);
+  --tag-violet-text: #bb9af7;
+  --tag-blue-bg: rgba(122, 162, 247, 0.16);
+  --tag-blue-border: rgba(122, 162, 247, 0.42);
+  --tag-blue-text: #7aa2f7;
+  --tag-green-bg: rgba(158, 206, 106, 0.16);
+  --tag-green-border: rgba(158, 206, 106, 0.42);
+  --tag-green-text: #9ece6a;
+  --tag-yellow-bg: rgba(224, 175, 104, 0.16);
+  --tag-yellow-border: rgba(224, 175, 104, 0.42);
+  --tag-yellow-text: #e0af68;
+  --tag-orange-bg: rgba(255, 158, 100, 0.16);
+  --tag-orange-border: rgba(255, 158, 100, 0.42);
+  --tag-orange-text: #ff9e64;
+  --tag-red-bg: rgba(247, 118, 142, 0.16);
+  --tag-red-border: rgba(247, 118, 142, 0.42);
+  --tag-red-text: #f7768e;
+}
+
+/* ── Catppuccin (Macchiato) ─────────────────────────────────────────────
+   Creamy pastels on a soft indigo night. */
+:root[data-theme='catppuccin'] {
+  --color-bg-dim: #1e2030;
+  --color-bg-gutter: #363a4f;
+  --color-bg-m3: #181926;
+  --color-bg-m2: #1e2030;
+  --color-bg-m1: #2c3047;
+  --color-bg: #24273a;
+  --color-bg-p1: #2c3047;
+  --color-bg-p2: #363a4f;
+
+  --color-fg: #cad3f5;
+  --color-fg-dim: #b8c0e0;
+  --color-fg-reverse: #24273a;
+
+  --color-gray: #a5adcb;
+  --color-gray-2: #b8c0e0;
+  --color-gray-3: #939ab7;
+
+  --color-violet: #c6a0f6;
+  --color-aqua: #8bd5ca;
+  --color-yellow: #eed49f;
+  --color-blue: #8aadf4;
+  --color-green: #a6da95;
+  --color-green-2: #b9e8a9;
+  --color-pink: #f5bde6;
+  --color-orange: #f5a97f;
+  --color-red: #ed8796;
+  --color-ash: #8087a2;
+
+  --color-special: #8087a2;
+  --color-whitespace: #363a4f;
+  --color-nontext: #363a4f;
+
+  --color-blue-1: #363a4f;
+  --color-blue-2: #494d64;
+
+  --color-border: #363a4f;
+  --color-border-light: #494d64;
+
+  --semantic-sidebar-bg: #1e2030;
+  --semantic-sidebar-border: #181926;
+  --semantic-content-bg: #24273a;
+  --semantic-card-bg: #2c3047;
+
+  --semantic-text: #cad3f5;
+  --semantic-text-muted: #a5adcb;
+  --semantic-text-dim: #939ab7;
+
+  --semantic-link: #8aadf4;
+  --semantic-link-hover: #a5c8ff;
+  --semantic-accent: #c6a0f6;
+  --semantic-accent-hover: #d6bcfa;
+
+  --semantic-success: #a6da95;
+  --semantic-warning: #eed49f;
+  --semantic-error: #ed8796;
+  --semantic-info: #91d7e3;
+
+  --semantic-active-bg: #363a4f;
+  --semantic-active-text: #cad3f5;
+  --semantic-hover-bg: #2c3047;
+  --semantic-hover-text: #cad3f5;
+
+  --color-scheme: dark;
+  --semantic-on-accent: #24273a;
+  --hover-bg: rgba(255, 255, 255, 0.05);
+  --hover-bg-strong: #363a4f;
+
+  --tag-violet-bg: rgba(198, 160, 246, 0.16);
+  --tag-violet-border: rgba(198, 160, 246, 0.42);
+  --tag-violet-text: #c6a0f6;
+  --tag-blue-bg: rgba(138, 173, 244, 0.16);
+  --tag-blue-border: rgba(138, 173, 244, 0.42);
+  --tag-blue-text: #8aadf4;
+  --tag-green-bg: rgba(166, 218, 149, 0.16);
+  --tag-green-border: rgba(166, 218, 149, 0.42);
+  --tag-green-text: #a6da95;
+  --tag-yellow-bg: rgba(238, 212, 159, 0.16);
+  --tag-yellow-border: rgba(238, 212, 159, 0.42);
+  --tag-yellow-text: #eed49f;
+  --tag-orange-bg: rgba(245, 169, 127, 0.16);
+  --tag-orange-border: rgba(245, 169, 127, 0.42);
+  --tag-orange-text: #f5a97f;
+  --tag-red-bg: rgba(237, 135, 150, 0.16);
+  --tag-red-border: rgba(237, 135, 150, 0.42);
+  --tag-red-text: #ed8796;
+}
+
 /* Custom Tailwind theme */
 @theme {
   /* Font families */
