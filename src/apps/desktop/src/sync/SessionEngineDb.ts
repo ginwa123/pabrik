@@ -80,7 +80,13 @@ export class SessionEngineDb extends BaseSyncEngine<SessionRow, SessionCtx> {
   ): Effect.Effect<SessionDelta, SyncRemoteError> {
     const workspaceId = ctx === 'all' ? undefined : ctx
     return Effect.tryPromise({
-      try: () => this.fetchFn('updated_at', 'desc', limit, undefined, workspaceId),
+      try: async () => {
+        const data = await this.fetchFn('updated_at', 'desc', limit, undefined, workspaceId)
+        // `getChats` renders every transport failure as an empty page; read the flag back so an
+        // outage surfaces as a failed refresh instead of a scope with nothing in it.
+        if (data.failed) throw new Error('session list request failed')
+        return data
+      },
       catch: (e) =>
         new SyncRemoteError({
           op: 'sessions.fetchDelta',

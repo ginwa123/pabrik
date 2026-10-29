@@ -427,7 +427,7 @@ pub fn getSessionListWithCursor(
             .last_human_touched_at = try allocator.dupe(u8, row.values[10]),
             // Sidebar git badge - row.values[11] = git_worktree_cwd.
             // git_branch is resolved per request in session_list.zig
-            // (git -C <effective-cwd>), so the DB layer leaves it empty.
+            // (read off <effective-cwd>/.git/HEAD), so the DB layer leaves it empty.
             .git_worktree_cwd = try allocator.dupe(u8, row.values[11]),
             .git_branch = try allocator.dupe(u8, ""),
             // row.values[12] = workspace_item_id, appended after the git
@@ -495,8 +495,8 @@ pub const SessionInfoJson = struct {
     /// uses this path as the tooltip + PR-status cwd.
     git_worktree_cwd: []const u8 = "",
     /// Current git branch for the effective cwd ("" = no badge).
-    /// Computed per request in `session_list.zig` (same `git -C`
-    /// helper as the kanban task badge).
+    /// Computed per request in `session_list.zig` by reading the cwd's
+    /// `.git/HEAD` — the same helper the kanban task badge uses.
     git_branch: []const u8 = "",
     /// The project this session belongs to ("" = not in one). Additive:
     /// a client that has never heard of it ignores the field, and the web
@@ -4532,7 +4532,7 @@ pub const WorkspaceItemTaskInfo = struct {
     /// lister; freed by `deinit`.
     git_worktree_cwd: []u8 = &.{},
 
-    /// Computed `git rev-parse --abbrev-ref HEAD` output for the task's cwd
+    /// The branch the task's cwd has checked out, read from its `.git/HEAD`
     /// (`git_worktree_cwd` or the parent `workspace_items.path`).
     git_branch: ?[]u8 = null,
 

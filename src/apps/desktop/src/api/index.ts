@@ -1496,6 +1496,10 @@ export interface SseEvent {
   is_error?: boolean
 }
 
+/** The session list is the one call whose cost grows with the page it returns, so it gets more
+ * than `apiFetch`'s 15s default before a slow-but-healthy backend reads as "no chats". */
+export const SESSION_LIST_TIMEOUT_MS = 60_000
+
 // List all chat sessions with pagination
 export async function getChats(
   sortBy: 'created_at' | 'updated_at' | 'session_name' | 'agent' = 'created_at',
@@ -1511,6 +1515,8 @@ export async function getChats(
   has_more: boolean
   next_cursor: string | null
   total: number
+  /** True when this empty list is a failed request, not a scope with no sessions. */
+  failed?: boolean
 }> {
   try {
     const params = new URLSearchParams({
@@ -1530,7 +1536,7 @@ export async function getChats(
       has_more?: boolean
       next_cursor?: string | null
       total?: number
-    }>(`/llm/session?${params}`)
+    }>(`/llm/session?${params}`, { timeoutMs: SESSION_LIST_TIMEOUT_MS })
 
     // Fix: handle "undefined" or missing session_id in each session
     if (data.sessions && Array.isArray(data.sessions)) {
@@ -1596,9 +1602,10 @@ export async function getChats(
     }
   } catch (e) {
     // The empty-list shape is a deliberate contract (callers render an empty section instead of
-    // crashing), but it is indistinguishable from "this scope has no sessions".
+    // crashing). `failed` is what keeps a failed request from being read as "this scope has no
+    // sessions" — a caller that ignores it behaves exactly as before.
     console.error('getChats failed; returning an empty list', e)
-    return { sessions: [], has_more: false, next_cursor: null, total: 0 }
+    return { sessions: [], has_more: false, next_cursor: null, total: 0, failed: true }
   }
 }
 

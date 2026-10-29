@@ -478,7 +478,7 @@ pub const WorkspaceItemTaskResponse = struct {
     /// plan, 2026-08-06).
     cwd: []const u8 = "",
 
-    /// Computed `git rev-parse --abbrev-ref HEAD` output for the task's cwd
+    /// The branch the task's cwd has checked out, read from its `.git/HEAD`
     /// (`session.git_worktree_cwd` if bound, otherwise
     /// `workspace_items.path`).
     git_branch: ?[]const u8 = null,

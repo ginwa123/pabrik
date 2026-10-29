@@ -46,7 +46,7 @@ environment:
   API_BENCH_OUT           directory for api-bench.json, api-bench.md, server.log
   API_BENCH_REQUESTS      requests per measured phase, default 2000
   API_BENCH_CONCURRENCY   the concurrency of the cN phase, default 8
-  API_BENCH_SCENARIOS     comma list of scenarios, default all (health, messages)
+  API_BENCH_SCENARIOS     comma list of scenarios, default all (health, messages, sessions)
   API_BENCH_STRICT=1      a performance-gate miss fails the run
   API_BENCH_SERVER_CPUSET empty drops --cpuset-cpus and the profile becomes quota-2cpu
   API_BENCH_CLIENT_CPUSET empty drops --cpuset-cpus and the profile becomes quota-2cpu
@@ -85,7 +85,7 @@ engine           $ENGINE
 image            $IMAGE
 server binary    $PABRIK_BIN
 load generator   $LOADGEN_BIN
-scenarios        $SCENARIOS on 127.0.0.1:$PORT (health = /health, messages = /api/session/bench/messages)
+scenarios        $SCENARIOS on 127.0.0.1:$PORT (health = /health, messages = /api/session/bench/messages, sessions = /api/llm/session?limit=50)
 server container --cpus $SERVER_CPUS --cpuset-cpus ${SERVER_CPUSET:-none} --memory ${MEMORY_MB}m --network none
 client container --cpus $CLIENT_CPUS --cpuset-cpus ${CLIENT_CPUSET:-none} --memory ${CLIENT_MEMORY_MB}m --network container:$SERVER_NAME
 phases           c1 (concurrency 1) and cN (concurrency $CONCURRENCY), $REQUESTS requests each, $WARMUP warmup
@@ -173,6 +173,7 @@ run_bench() {
     --pids-limit 512 \
     --ulimit nofile=65536:65536 \
     --tmpfs /pabrik-home:rw,exec,size=256m \
+    --env PABRIK_BENCH_SEED=1 \
     "$IMAGE" /opt/pabrik/pabrik --port "$PORT" >/dev/null
 
   sleep 0.5

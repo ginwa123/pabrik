@@ -7,6 +7,8 @@ pub const max_response_bytes = 64 * 1024;
 pub const phase_names = [2][]const u8{ "c1", "cN" };
 const zero_digest: [32]u8 = [_]u8{0} ** 32;
 
+pub const Method = enum { get, post };
+
 pub const Scenario = struct {
     name: []const u8,
     route: []const u8,
@@ -14,6 +16,20 @@ pub const Scenario = struct {
     expected: []const u8,
     min_scaling: f64 = 0,
     min_rps: f64 = 0,
+    /// p99 ceiling at concurrency 1, in ms. 0 keeps the global one.
+    max_p99_ms: f64 = 0,
+    /// One request sent before the phases, so a list route has rows to read.
+    seed_route: ?[]const u8 = null,
+    seed_method: Method = .post,
+    /// Adopt the first response as the contract instead of `expected`: a seeded
+    /// list body is long and only its byte-stability is worth pinning.
+    probe_contract: bool = false,
+    /// A second route measured at concurrency 1 and divided into the first
+    /// one's p50, so the machine's speed cancels out of the ratio.
+    reference_route: ?[]const u8 = null,
+    max_cost_ratio: f64 = 0,
+    /// This scenario's performance checks block even without `--strict`.
+    enforced_performance: bool = false,
 };
 
 pub const scenarios = [_]Scenario{
@@ -31,11 +47,26 @@ pub const scenarios = [_]Scenario{
         .min_scaling = 1.0,
         .min_rps = 1000.0,
     },
+    .{
+        .name = "sessions",
+        .route = "/api/llm/session?limit=50",
+        .mask_timestamp = false,
+        .expected = "",
+        .seed_route = "/api/bench/seed/sessions?rows=50",
+        .probe_contract = true,
+        .reference_route = "/api/llm/session?limit=5",
+        .max_cost_ratio = 3.0,
+        .max_p99_ms = 20.0,
+        .min_scaling = 1.0,
+        .min_rps = 1000.0,
+        .enforced_performance = true,
+    },
 };
 
 pub const scenario_pointers = [scenarios.len]*const Scenario{
     &scenarios[0],
     &scenarios[1],
+    &scenarios[2],
 };
 
 pub fn findScenario(name: []const u8) ?*const Scenario {
@@ -395,7 +426,13 @@ pub fn settlePhase(phase: *Phase, expected: []const u8) !void {
     try phaseProblems(phase, expected);
 }
 
-pub fn evaluateGate(gpa: std.mem.Allocator, phases: *const [2]Phase, cfg: *const Config, scenario: *const Scenario) !Gate {
+pub fn evaluateGate(
+    gpa: std.mem.Allocator,
+    phases: *const [2]Phase,
+    cfg: *const Config,
+    scenario: *const Scenario,
+    cost_ratio: f64,
+) !Gate {
     var checks = std.ArrayList(Check).empty;
     errdefer checks.deinit(gpa);
 
@@ -412,6 +449,7 @@ pub fn evaluateGate(gpa: std.mem.Allocator, phases: *const [2]Phase, cfg: *const
 
     const min_scaling = if (scenario.min_scaling > 0) scenario.min_scaling else cfg.min_scaling;
     const min_rps = if (scenario.min_rps > 0) scenario.min_rps else cfg.min_rps;
+    const max_p99 = if (scenario.max_p99_ms > 0) scenario.max_p99_ms else cfg.max_p99_ms;
     const floor = phases[0].latency.throughput_rps;
     const ceiling = phases[1].latency.throughput_rps;
     const scaling = if (floor > 0) round3(ceiling / floor) else 0;
@@ -426,9 +464,9 @@ pub fn evaluateGate(gpa: std.mem.Allocator, phases: *const [2]Phase, cfg: *const
     try checks.append(gpa, .{
         .name = try gpa.dupe(u8, "latency.p99_c1"),
         .kind = "performance",
-        .ok = phases[0].latency.samples > 0 and phases[0].latency.p99_ms <= cfg.max_p99_ms,
+        .ok = phases[0].latency.samples > 0 and phases[0].latency.p99_ms <= max_p99,
         .value = phases[0].latency.p99_ms,
-        .limit = cfg.max_p99_ms,
+        .limit = max_p99,
         .detail = "percentile-99 round trip at concurrency 1, in milliseconds",
     });
     try checks.append(gpa, .{
@@ -440,12 +478,23 @@ pub fn evaluateGate(gpa: std.mem.Allocator, phases: *const [2]Phase, cfg: *const
         .detail = "requests per second at the high-concurrency phase",
     });
 
+    if (scenario.max_cost_ratio > 0) {
+        try checks.append(gpa, .{
+            .name = try gpa.dupe(u8, "cost.rows"),
+            .kind = "performance",
+            .ok = cost_ratio > 0 and cost_ratio <= scenario.max_cost_ratio,
+            .value = cost_ratio,
+            .limit = scenario.max_cost_ratio,
+            .detail = "p50 of the measured route over p50 of its short-page reference, so a slow machine divides out",
+        });
+    }
+
     var verdict_pass = true;
     var enforced = false;
     for (checks.items) |check| {
         if (check.ok) continue;
         verdict_pass = false;
-        if (std.mem.eql(u8, check.kind, "functional") or cfg.strict) enforced = true;
+        if (std.mem.eql(u8, check.kind, "functional") or cfg.strict or scenario.enforced_performance) enforced = true;
     }
     return .{
         .checks = try checks.toOwnedSlice(gpa),
@@ -773,7 +822,7 @@ fn mergePhase(gpa: std.mem.Allocator, phase: *Phase, results: []const WorkerResu
     try settlePhase(phase, contract);
 }
 
-fn runPhase(gpa: std.mem.Allocator, cfg: *const Config, scenario: *const Scenario, payload: []const u8, requests: usize, concurrency: usize) !Phase {
+fn runPhase(gpa: std.mem.Allocator, cfg: *const Config, scenario: *const Scenario, payload: []const u8, requests: usize, concurrency: usize, contract: []const u8) !Phase {
     const counts = try planCounts(gpa, requests, concurrency);
     defer gpa.free(counts);
     const results = try gpa.alloc(WorkerResult, concurrency);
@@ -808,7 +857,7 @@ fn runPhase(gpa: std.mem.Allocator, cfg: *const Config, scenario: *const Scenari
 
     var phase: Phase = .{ .gpa = gpa };
     errdefer phase.deinit();
-    try mergePhase(gpa, &phase, results, requests, scenario.expected);
+    try mergePhase(gpa, &phase, results, requests, contract);
     return phase;
 }
 
@@ -851,14 +900,42 @@ fn calibrate() f64 {
     return round1(@as(f64, @floatFromInt(32)) * 1e9 / @as(f64, @floatFromInt(elapsed)));
 }
 
+fn buildRequest(gpa: std.mem.Allocator, cfg: *const Config, method: Method, route: []const u8) ![]u8 {
+    return switch (method) {
+        .get => std.fmt.allocPrint(gpa, "GET {s} HTTP/1.1\r\nHost: 127.0.0.1:{d}\r\nUser-Agent: pabrik-api-bench/1\r\nAccept: application/json\r\nConnection: keep-alive\r\n\r\n", .{ route, cfg.port }),
+        .post => std.fmt.allocPrint(gpa, "POST {s} HTTP/1.1\r\nHost: 127.0.0.1:{d}\r\nUser-Agent: pabrik-api-bench/1\r\nAccept: application/json\r\nContent-Length: 0\r\nConnection: keep-alive\r\n\r\n", .{ route, cfg.port }),
+    };
+}
+
 fn buildPayload(gpa: std.mem.Allocator, cfg: *const Config, scenario: *const Scenario) ![]u8 {
-    return std.fmt.allocPrint(gpa, "GET {s} HTTP/1.1\r\nHost: 127.0.0.1:{d}\r\nUser-Agent: pabrik-api-bench/1\r\nAccept: application/json\r\nConnection: keep-alive\r\n\r\n", .{ scenario.route, cfg.port });
+    return buildRequest(gpa, cfg, .get, scenario.route);
+}
+
+const OneShot = struct {
+    status: u16,
+    body: []u8,
+};
+
+/// One request on its own connection: the seed a list scenario needs, and the
+/// probe whose body becomes the contract.
+fn requestOnce(gpa: std.mem.Allocator, cfg: *const Config, method: Method, route: []const u8) !OneShot {
+    const payload = try buildRequest(gpa, cfg, method, route);
+    defer gpa.free(payload);
+    const scratch = try gpa.alloc(u8, max_response_bytes);
+    defer gpa.free(scratch);
+
+    var connection: Connection = .{ .gpa = gpa, .port = cfg.port, .timeout_ms = cfg.recv_timeout_ms };
+    defer connection.close();
+    try connection.open();
+    const outcome = try connection.roundTrip(payload, scratch);
+    return .{ .status = outcome.taken.head.status, .body = try gpa.dupe(u8, outcome.taken.body) };
 }
 
 pub const ScenarioResult = struct {
     scenario: *const Scenario,
     phases: [2]Phase,
     gate: Gate,
+    cost_ratio: f64 = 0,
     gpa: std.mem.Allocator,
 
     pub fn deinit(self: *ScenarioResult) void {
@@ -873,8 +950,31 @@ fn runScenario(gpa: std.mem.Allocator, cfg: *const Config, scenario: *const Scen
 
     waitReady(gpa, cfg, payload) catch return error.NotReady;
 
+    if (scenario.seed_route) |seed_route| {
+        const seeded = try requestOnce(gpa, cfg, scenario.seed_method, seed_route);
+        defer gpa.free(seeded.body);
+        if (seeded.status != 200) {
+            std.log.err("{s}: seed {s} answered {d}: {s}", .{ scenario.name, seed_route, seeded.status, seeded.body });
+            return error.SeedFailed;
+        }
+        std.log.info("{s}: seeded through {s}: {s}", .{ scenario.name, seed_route, seeded.body });
+    }
+
+    var contract_owned: ?[]u8 = null;
+    defer if (contract_owned) |body| gpa.free(body);
+    if (scenario.probe_contract) {
+        const probe = try requestOnce(gpa, cfg, .get, scenario.route);
+        defer gpa.free(probe.body);
+        if (probe.status != 200) {
+            std.log.err("{s}: probe {s} answered {d}", .{ scenario.name, scenario.route, probe.status });
+            return error.ProbeFailed;
+        }
+        contract_owned = try gpa.dupe(u8, probe.body);
+    }
+    const contract: []const u8 = contract_owned orelse scenario.expected;
+
     if (cfg.warmup > 0) {
-        var warm = try runPhase(gpa, cfg, scenario, payload, cfg.warmup, @min(cfg.warmup, cfg.concurrency));
+        var warm = try runPhase(gpa, cfg, scenario, payload, cfg.warmup, @min(cfg.warmup, cfg.concurrency), contract);
         const measured = warm.requests;
         const problems = warm.problems.items.len;
         warm.deinit();
@@ -890,9 +990,25 @@ fn runScenario(gpa: std.mem.Allocator, cfg: *const Config, scenario: *const Scen
         .gate = undefined,
         .gpa = gpa,
     };
-    result.phases[0] = try runPhase(gpa, cfg, scenario, payload, cfg.requests, 1);
-    result.phases[1] = try runPhase(gpa, cfg, scenario, payload, cfg.requests, cfg.concurrency);
-    result.gate = try evaluateGate(gpa, &result.phases, cfg, scenario);
+    result.phases[0] = try runPhase(gpa, cfg, scenario, payload, cfg.requests, 1, contract);
+    result.phases[1] = try runPhase(gpa, cfg, scenario, payload, cfg.requests, cfg.concurrency, contract);
+
+    if (scenario.reference_route) |reference_route| {
+        const reference_payload = try buildRequest(gpa, cfg, .get, reference_route);
+        defer gpa.free(reference_payload);
+
+        var reference = try runPhase(gpa, cfg, scenario, reference_payload, cfg.requests, 1, "");
+        defer reference.deinit();
+
+        const head = result.phases[0].latency.p50_ms;
+        const tail = reference.latency.p50_ms;
+        result.cost_ratio = if (tail > 0) round3(head / tail) else 0;
+        std.log.info("{s}: p50 {d:.3} ms at {s} over {d:.3} ms at {s} = {d:.3}", .{
+            scenario.name, head, scenario.route, tail, reference_route, result.cost_ratio,
+        });
+    }
+
+    result.gate = try evaluateGate(gpa, &result.phases, cfg, scenario, result.cost_ratio);
     return result;
 }
 
@@ -1099,7 +1215,8 @@ fn usage(io: std.Io) !void {
         \\                 [--min-rps 2000] [--strict] [--profile name]
         \\                 [--server-cpuset 0,1] [--client-cpuset 2,3] [--memory-mb 2048]
         \\                 [--server-binary-sha256 hex] [--json path] [--markdown path]
-        \\scenarios: health (/health), messages (/api/session/bench/messages)
+        \\scenarios: health (/health), messages (/api/session/bench/messages),
+        \\           sessions (/api/llm/session?limit=50, seeded)
         \\
     ;
     try std.Io.File.writeStreamingAll(std.Io.File.stdout(), io, text);
@@ -1302,7 +1419,7 @@ fn resultFixture(gpa: std.mem.Allocator, scenario: *const Scenario, config: *con
     var result: ScenarioResult = .{ .scenario = scenario, .phases = undefined, .gate = undefined, .gpa = gpa };
     result.phases[0] = try phaseFixture(gpa, bodies, requests, expected, 100.0, p99);
     result.phases[1] = try phaseFixture(gpa, bodies, requests, expected, throughput, p99);
-    result.gate = try evaluateGate(gpa, &result.phases, config, scenario);
+    result.gate = try evaluateGate(gpa, &result.phases, config, scenario, 0);
     return result;
 }
 
@@ -1513,12 +1630,13 @@ test "the health contract needs masking and the inbox does not" {
     try std.testing.expect(!findScenario("messages").?.mask_timestamp);
 }
 
-test "selecting all lists both scenarios once" {
+test "selecting all lists every scenario once" {
     const selected = try selectScenarios(std.testing.allocator, "all,health");
     defer std.testing.allocator.free(selected);
-    try std.testing.expectEqual(@as(usize, 2), selected.len);
+    try std.testing.expectEqual(scenarios.len, selected.len);
     try std.testing.expectEqualStrings("health", selected[0].name);
     try std.testing.expectEqualStrings("messages", selected[1].name);
+    try std.testing.expectEqualStrings("sessions", selected[2].name);
 }
 
 test "a named selection keeps the requested order" {
@@ -1615,7 +1733,7 @@ test "a healthy run passes the gate" {
     var phases = try healthyPhases(std.testing.allocator);
     defer for (&phases) |*phase| phase.deinit();
     var config = healthyConfig(true);
-    var gate = try evaluateGate(std.testing.allocator, &phases, &config, findScenario("health").?);
+    var gate = try evaluateGate(std.testing.allocator, &phases, &config, findScenario("health").?, 0);
     defer gate.deinit();
     try std.testing.expect(gate.verdict_pass);
     try std.testing.expect(!gate.enforced);
@@ -1628,7 +1746,7 @@ test "flat throughput fails scaling but stays advisory" {
     defer for (&phases) |*phase| phase.deinit();
     var config = healthyConfig(false);
     phases[1].latency.throughput_rps = phases[0].latency.throughput_rps;
-    var gate = try evaluateGate(std.testing.allocator, &phases, &config, findScenario("health").?);
+    var gate = try evaluateGate(std.testing.allocator, &phases, &config, findScenario("health").?, 0);
     defer gate.deinit();
     try std.testing.expect(!gate.verdict_pass);
     try std.testing.expect(!gate.enforced);
@@ -1639,7 +1757,7 @@ test "a strict run enforces a performance failure" {
     defer for (&phases) |*phase| phase.deinit();
     var config = healthyConfig(true);
     phases[1].latency.throughput_rps = 1.0;
-    var gate = try evaluateGate(std.testing.allocator, &phases, &config, findScenario("health").?);
+    var gate = try evaluateGate(std.testing.allocator, &phases, &config, findScenario("health").?, 0);
     defer gate.deinit();
     try std.testing.expect(!gate.verdict_pass);
     try std.testing.expect(gate.enforced);
@@ -1654,7 +1772,7 @@ test "a functional failure is enforced without strict" {
     phases[0].problems.clearRetainingCapacity();
     try phaseProblems(&phases[0], expected_body);
     var config = healthyConfig(false);
-    var gate = try evaluateGate(std.testing.allocator, &phases, &config, findScenario("health").?);
+    var gate = try evaluateGate(std.testing.allocator, &phases, &config, findScenario("health").?, 0);
     defer gate.deinit();
     try std.testing.expect(!gate.verdict_pass);
     try std.testing.expect(gate.enforced);
@@ -1665,7 +1783,7 @@ test "a slow p99 fails the latency check" {
     defer for (&phases) |*phase| phase.deinit();
     var config = healthyConfig(true);
     phases[0].latency.p99_ms = 9000.0;
-    var gate = try evaluateGate(std.testing.allocator, &phases, &config, findScenario("health").?);
+    var gate = try evaluateGate(std.testing.allocator, &phases, &config, findScenario("health").?, 0);
     defer gate.deinit();
     try std.testing.expect(!gate.verdict_pass);
     try std.testing.expect(gate.enforced);
@@ -1745,4 +1863,74 @@ test "the digest covers every scenario" {
     const one_digest = try canonicalDigest(std.testing.allocator, &config, &one);
     const two_digest = try canonicalDigest(std.testing.allocator, &config, &two);
     try std.testing.expect(!std.mem.eql(u8, &one_digest, &two_digest));
+}
+
+fn findCheck(gate: *const Gate, name: []const u8) ?*const Check {
+    for (gate.checks) |*check| {
+        if (std.mem.eql(u8, check.name, name)) return check;
+    }
+    return null;
+}
+
+test "a list that pays per row fails cost.rows on any machine speed" {
+    var phases = try healthyPhases(std.testing.allocator);
+    defer for (&phases) |*phase| phase.deinit();
+    var config = healthyConfig(false);
+
+    var gate = try evaluateGate(std.testing.allocator, &phases, &config, findScenario("sessions").?, 9.4);
+    defer gate.deinit();
+
+    try std.testing.expect(!findCheck(&gate, "cost.rows").?.ok);
+    try std.testing.expect(!gate.verdict_pass);
+    try std.testing.expect(gate.enforced);
+}
+
+test "a slow machine that slows both routes equally keeps cost.rows green" {
+    var phases = try healthyPhases(std.testing.allocator);
+    defer for (&phases) |*phase| phase.deinit();
+    var config = healthyConfig(false);
+
+    var gate = try evaluateGate(std.testing.allocator, &phases, &config, findScenario("sessions").?, 1.25);
+    defer gate.deinit();
+
+    try std.testing.expect(findCheck(&gate, "cost.rows").?.ok);
+    try std.testing.expect(gate.verdict_pass);
+}
+
+test "the sessions scenario carries its own p99 ceiling, not the global one" {
+    var phases = try healthyPhases(std.testing.allocator);
+    defer for (&phases) |*phase| phase.deinit();
+    var config = healthyConfig(false);
+    phases[0].latency.p99_ms = 8.0;
+
+    var health_gate = try evaluateGate(std.testing.allocator, &phases, &config, findScenario("health").?, 0);
+    defer health_gate.deinit();
+    try std.testing.expect(!findCheck(&health_gate, "latency.p99_c1").?.ok);
+
+    var sessions_gate = try evaluateGate(std.testing.allocator, &phases, &config, findScenario("sessions").?, 1.0);
+    defer sessions_gate.deinit();
+    try std.testing.expect(findCheck(&sessions_gate, "latency.p99_c1").?.ok);
+}
+
+test "a session list over its ceiling blocks the run without strict" {
+    var phases = try healthyPhases(std.testing.allocator);
+    defer for (&phases) |*phase| phase.deinit();
+    var config = healthyConfig(false);
+    phases[0].latency.p99_ms = 400.0;
+
+    var gate = try evaluateGate(std.testing.allocator, &phases, &config, findScenario("sessions").?, 1.0);
+    defer gate.deinit();
+
+    try std.testing.expect(!gate.verdict_pass);
+    try std.testing.expect(gate.enforced);
+}
+
+test "the sessions scenario keeps its seed, probe and both ceilings" {
+    const sessions = findScenario("sessions").?;
+    try std.testing.expect(sessions.seed_route != null);
+    try std.testing.expect(sessions.probe_contract);
+    try std.testing.expect(sessions.reference_route != null);
+    try std.testing.expect(sessions.max_p99_ms > 0);
+    try std.testing.expect(sessions.max_cost_ratio > 0);
+    try std.testing.expect(sessions.enforced_performance);
 }

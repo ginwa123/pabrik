@@ -15,6 +15,7 @@ pub const SessionListError = error{
 };
 
 const auth_common = @import("auth_common.zig");
+const git_branch = @import("git_branch.zig");
 
 pub const SessionListInput = struct {
     limit: u32,
@@ -101,13 +102,15 @@ fn useCase(
         allocator.free(result.sessions);
     }
 
-    // Sidebar git badge (mirrors the kanban tasks_list.zig badge). Resolve
-    // the current branch per session via `git -C <cwd>` where cwd prefers the
-    // bound worktree path and falls back to the session cwd.
+    // Sidebar git badge (mirrors the kanban tasks_list.zig badge): the branch
+    // of the row's worktree, else of its cwd. Memoised per request — a page
+    // repeats a handful of directories across dozens of rows.
+    var branches = git_branch.Cache.init(allocator, io);
+    defer branches.deinit();
+
     for (result.sessions) |*s| {
         const effective_cwd = if (s.git_worktree_cwd.len > 0) s.git_worktree_cwd else s.cwd;
-        const branch = if (effective_cwd.len == 0) "" else resolveGitBranch(allocator, io, effective_cwd);
-        defer if (branch.len > 0) allocator.free(branch);
+        const branch = branches.branch(effective_cwd);
         allocator.free(s.git_branch);
         s.git_branch = try allocator.dupe(u8, branch);
     }
@@ -397,36 +400,6 @@ test "useCase: workspace scoping is fail-closed and param-absent stays global" {
 // =====================================================================
 // Git branch resolution (sidebar git badge, mirrors tasks_list.zig)
 // =====================================================================
-
-/// Run `git -C <path> symbolic-ref --short HEAD` and fall back to `git -C
-/// <path> rev-parse --abbrev-ref HEAD` for detached HEAD.
-fn resolveGitBranch(
-    allocator: std.mem.Allocator,
-    io: std.Io,
-    path: []const u8,
-) []const u8 {
-    const sym_argv = [_][]const u8{ "git", "-C", path, "symbolic-ref", "--short", "HEAD" };
-    if (std.process.run(allocator, io, .{ .argv = &sym_argv })) |sym_result| {
-        defer allocator.free(sym_result.stdout);
-        defer allocator.free(sym_result.stderr);
-        if (sym_result.term.exited == 0) {
-            const branch = std.mem.trim(u8, sym_result.stdout, " \n\r\t");
-            if (branch.len == 0) return "";
-            return allocator.dupe(u8, branch) catch return "";
-        }
-    } else |_| {
-        return "";
-    }
-    const rev_argv = [_][]const u8{ "git", "-C", path, "rev-parse", "--abbrev-ref", "HEAD" };
-    const rev_result = std.process.run(allocator, io, .{ .argv = &rev_argv }) catch return "";
-    defer allocator.free(rev_result.stdout);
-    defer allocator.free(rev_result.stderr);
-    if (rev_result.term.exited != 0) return "";
-    const branch = std.mem.trim(u8, rev_result.stdout, " \n\r\t");
-    if (branch.len == 0) return "";
-    if (std.mem.eql(u8, branch, "HEAD")) return "";
-    return allocator.dupe(u8, branch) catch return "";
-}
 
 test "useCase: session list wire carries git_worktree_cwd + git_branch (sidebar badge)" {
     var ctx = try setupDb();

@@ -143,6 +143,9 @@ fn registerStreamRoutes(authed: *Group, router: *gserverz.router.Router) !void {
     // 404 when off. Functional UI tests use it to drive the chatview's
     // SSE streaming path without a real LLM.
     try authed.post("/api/dev/sse/emit_llm", ai_mod.http_handlers.devSseEmitLlmHandler);
+    // Benchmark seeding (bench_seed.zig) — gated by PABRIK_BENCH_SEED=1, 404
+    // when off. `benchmark/run.sh` uses it to give the list routes rows to read.
+    try authed.post("/api/bench/seed/sessions", ai_mod.http_handlers.benchSeedSessionsHandler);
 }
 
 fn registerSystemRoutes(authed: *Group, router: *gserverz.router.Router) !void {
