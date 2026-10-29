@@ -12,6 +12,7 @@ const tool_memories_mod = @import("tools/memories.zig");
 
 // Re-export all prompts for easy access
 pub const UniversalRules = prompts.UniversalRules;
+pub const TemporaryFilesRule = prompts.TemporaryFilesRule;
 pub const PromptAutoFix = prompts.PromptAutoFix;
 pub const Agent = prompts.Agent;
 pub const ParallelWork = prompts.ParallelWork;
@@ -1433,8 +1434,22 @@ fn setupPromptDb() !PromptDbCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
+test "TemporaryFilesRule pins every scratch file under <temp>/pabrik/" {
+    const prompt: []const u8 = TemporaryFilesRule;
+
+    try std.testing.expect(contains(prompt, "## Temporary Files"));
+    try std.testing.expect(contains(prompt, "MUST go in a `pabrik` subdirectory"));
+    try std.testing.expect(contains(prompt, "never in the temp root"));
+    try std.testing.expect(contains(prompt, "/tmp/pabrik/*yourfile"));
+    try std.testing.expect(contains(prompt, "$TMPDIR/pabrik/*yourfile"));
+    try std.testing.expect(contains(prompt, "%TEMP%"));
+    try std.testing.expect(contains(prompt, "mkdir -p /tmp/pabrik"));
+    try std.testing.expect(prompt.len <= 400);
+}
+
 /// The mandates, in the order buildMessages must append them.
 const mandate_order = [_][]const u8{
+    TemporaryFilesRule,
     ProgressiveToolRule,
     SkillsToolRule,
     MemoryToolRule,
@@ -1467,7 +1482,7 @@ fn buildSystemPrompt(ctx: *PromptDbCtx, cwd: []const u8, session_id: []const u8,
     return prompt;
 }
 
-test "buildMessages: the eight mandates reach the live prompt, ungated by the tool list" {
+test "buildMessages: the nine mandates reach the live prompt, ungated by the tool list" {
     var ctx = try setupPromptDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();

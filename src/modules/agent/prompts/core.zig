@@ -7,6 +7,14 @@ pub const UniversalRules =
     \\**Language:** Match user's language.
 ;
 
+pub const TemporaryFilesRule =
+    \\## Temporary Files
+    \\Temp files you create MUST go in a `pabrik` subdirectory of the system temp
+    \\dir, never in the temp root: `/tmp/pabrik/*yourfile` (Linux),
+    \\`$TMPDIR/pabrik/*yourfile` (macOS), `%TEMP%\pabrik\*yourfile` (Windows).
+    \\Create it first — `mkdir -p /tmp/pabrik` — then write inside it.
+;
+
 pub const PromptAutoFix =
     \\## Prompt Auto-Fix
     \\If the user's intent is ambiguous — meaning multiple meaningfully different

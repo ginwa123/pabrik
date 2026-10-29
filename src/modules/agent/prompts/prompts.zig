@@ -11,6 +11,7 @@ pub const special = @import("special.zig");
 
 // Re-export for convenience
 pub const UniversalRules = core.UniversalRules;
+pub const TemporaryFilesRule = core.TemporaryFilesRule;
 pub const PromptAutoFix = core.PromptAutoFix;
 pub const ResponseFormatting = core.ResponseFormatting;
 pub const SearchToolRule = core.SearchToolRule;
