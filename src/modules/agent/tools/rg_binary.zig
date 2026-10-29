@@ -204,38 +204,18 @@ test "rg_binary: an override wins even when a bundled copy exists" {
     }, &.{beside}, "/snap/rg", .override);
 }
 
-test "rg_binary: a file beside the executable that cannot be run is not a usable ripgrep" {
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
+test "rg_binary: a file beside the executable is the bundled ripgrep the platform can run" {
     const io = std.testing.io;
     const allocator = std.testing.allocator;
 
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const plain = try tmp.dir.createFile(io, exeName(), .{});
-    plain.close(io);
-
-    const dir_path = try tmp.dir.realPathFileAlloc(io, ".", allocator);
-    defer allocator.free(dir_path);
-
-    const got = try pick(allocator, .{ .exe_dir = dir_path }, null, executableAt);
-    defer got.deinit(allocator);
-
-    try std.testing.expectEqual(Source.path, got.source);
-    try std.testing.expectEqualStrings("rg", got.path);
-}
-
-test "rg_binary: a runnable file beside the executable is the ripgrep that gets picked" {
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
-    const io = std.testing.io;
-    const allocator = std.testing.allocator;
-
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-
-    const runnable = try tmp.dir.createFile(io, exeName(), .{});
-    try runnable.setPermissions(io, @enumFromInt(0o755));
-    runnable.close(io);
+    const created = try tmp.dir.createFile(io, exeName(), .{});
+    if (comptime builtin.os.tag != .windows) {
+        try created.setPermissions(io, @enumFromInt(0o755));
+    }
+    created.close(io);
 
     const dir_path = try tmp.dir.realPathFileAlloc(io, ".", allocator);
     defer allocator.free(dir_path);
@@ -247,4 +227,31 @@ test "rg_binary: a runnable file beside the executable is the ripgrep that gets 
 
     try std.testing.expectEqual(Source.beside_executable, got.source);
     try std.testing.expectEqualStrings(expected, got.path);
+}
+
+test "rg_binary: a file the platform cannot execute does not count as the bundled ripgrep" {
+    const io = std.testing.io;
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const created = try tmp.dir.createFile(io, exeName(), .{});
+    created.close(io);
+
+    const dir_path = try tmp.dir.realPathFileAlloc(io, ".", allocator);
+    defer allocator.free(dir_path);
+    const beside = try expectedBeside(allocator, dir_path);
+    defer allocator.free(beside);
+
+    const got = try pick(allocator, .{ .exe_dir = dir_path }, null, executableAt);
+    defer got.deinit(allocator);
+
+    if (comptime builtin.os.tag == .windows) {
+        try std.testing.expectEqual(Source.beside_executable, got.source);
+        try std.testing.expectEqualStrings(beside, got.path);
+    } else {
+        try std.testing.expectEqual(Source.path, got.source);
+        try std.testing.expectEqualStrings("rg", got.path);
+    }
 }
