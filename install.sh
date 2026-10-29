@@ -8,6 +8,10 @@
 # `ci-latest` GitHub release and installs them to $HOME/.local/bin
 # (no sudo) or /usr/local/bin with --system.
 #
+# It also installs `rg-<triple>` as `$BINDIR/rg`: the bundled ripgrep the
+# `search` tool spawns, so no `apt install ripgrep` / `brew install ripgrep`
+# is needed. The runtime finds it beside `pabrik`; PABRIK_RG_BIN overrides.
+#
 # Env overrides:
 #   PABRIK_VERSION   release tag, default "ci-latest"
 #   PABRIK_REPO      "owner/repo", default "ginwa123/pabrik"
@@ -135,11 +139,13 @@ if [[ "${PABRIK_DRY_RUN:-0}" -eq 1 ]]; then
     echo "${BASE_URL}/pabrik-${TRIPLE}"
     echo "${BASE_URL}/pabrik-desktop-${TRIPLE}"
     echo "${BASE_URL}/pabrik-html-${TRIPLE}.tar.gz"
+    echo "${BASE_URL}/rg-${TRIPLE}"
     exit 0
 fi
 
 if [[ "$UNINSTALL" -eq 1 ]]; then
     rm -f "$BIN_PABRIK" "$BIN_DESKTOP"
+    rm -f "${BINDIR}/rg"
     rm -rf "${BINDIR}/html"
     rm -f "$HOME/.local/share/applications/pabrik.desktop" "$HOME/.local/share/applications/pabrik-browser.desktop"
     if [[ "$SYSTEM" -eq 1 ]]; then
@@ -219,6 +225,19 @@ install_shipped_ui() {
     fi
 }
 
+# ripgrep, beside the pabrik binary, so `search` works on a machine that has
+# no rg of its own. The runtime resolver looks for exactly this path first.
+# Best-effort: a release published before the asset existed still installs a
+# working pabrik, and the warning names what is missing.
+install_bundled_rg() {
+    if ! download "${BASE_URL}/rg-${TRIPLE}" "${TMPDIR}/rg" 2>/dev/null; then
+        echo "warning: no bundled ripgrep asset for ${TRIPLE} -- the search tool needs rg on PATH" >&2
+        return 0
+    fi
+    install -m 0755 "${TMPDIR}/rg" "${BINDIR}/rg"
+    echo "Installed the bundled ripgrep into ${BINDIR}/rg."
+}
+
 mkdir -p "$BINDIR"
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
@@ -251,6 +270,9 @@ if have_cmd cmp && [[ -f "$BIN_PABRIK" ]]; then
         # Refresh the shipped UI anyway: it is a separate asset, and a
         # release can republish it while the binaries stay byte-identical.
         install_shipped_ui
+        # Same reasoning for rg: an install that predates the bundled
+        # ripgrep has an up-to-date binary and still no `search`.
+        install_bundled_rg
         exit 0
     fi
 fi
@@ -259,6 +281,7 @@ install -m 0755 "${TMPDIR}/pabrik" "$BIN_PABRIK"
 if [[ "$WITH_DESKTOP" -eq 1 ]]; then
     install -m 0755 "${TMPDIR}/pabrik-desktop" "$BIN_DESKTOP"
 fi
+install_bundled_rg
 if [[ "$HAD_EXISTING" -eq 1 ]]; then
     echo "Updated existing installation to ${TAG}."
 fi

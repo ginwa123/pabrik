@@ -5,6 +5,7 @@ const ToolParameters = schemas.ToolParameters;
 const AgentToolFunction = schemas.AgentToolFunction;
 const AgentTool = schemas.AgentTool;
 const sanitize = @import("helpers").sanitize;
+const rg_binary_mod = @import("rg_binary.zig");
 
 pub const SearchError = error{
     /// Pattern was an empty string — almost certainly a caller bug, not a
@@ -62,6 +63,11 @@ pub const default_search_timeout_ms: u64 = 30_000;
 /// would overflow the ns conversion below; clamp instead of erroring so
 /// normal calls never fail validation on this field.
 pub const max_search_timeout_ms: u64 = 3_600_000;
+
+pub const rg_missing_marker = "ripgrep (rg) is missing";
+
+pub const rg_missing_message = rg_missing_marker ++
+    ": pabrik looks for `rg` beside its own binary, then in its data dir, then on PATH. Reinstall pabrik to restore the bundled rg, or point PABRIK_RG_BIN at an existing one.";
 
 const SearchNanoSleepTimespec = extern struct {
     sec: c_long,
@@ -257,8 +263,9 @@ pub const SearchInput = struct {
     /// Deadline for one rg invocation in milliseconds (null → 30s default,
     /// clamped to 1h). 0 fails fast with error.Timeout.
     timeout_ms: ?u64 = null,
-    /// ripgrep binary override (null → "rg" from PATH). Test hook for the
-    /// RgNotFound path + escape hatch for boxes where rg lives outside PATH.
+    /// ripgrep binary override. Null resolves it the way the runtime does:
+    /// `PABRIK_RG_BIN`, then `rg` beside the executable, then the data dir,
+    /// then bare `rg` on PATH. Test hook for the RgNotFound path.
     rg_binary: ?[]const u8 = null,
 };
 
@@ -687,7 +694,12 @@ pub fn executeSearchWith(
 
     const snippet_max_chars = input.snippet_max_chars orelse default_snippet_max_chars;
 
-    const rg_binary = input.rg_binary orelse "rg";
+    var resolved_rg: ?rg_binary_mod.Resolution = null;
+    defer if (resolved_rg) |owned| owned.deinit(allocator);
+    const rg_binary = input.rg_binary orelse if (runner == null) bundled: {
+        resolved_rg = try rg_binary_mod.resolveDefault(allocator, io);
+        break :bundled resolved_rg.?.path;
+    } else "rg";
     const timeout_ms = input.timeout_ms orelse default_search_timeout_ms;
     // Fail fast BEFORE spawning (also the deterministic hook for tests).
     if (timeout_ms == 0) return error.Timeout;
@@ -4147,7 +4159,7 @@ pub fn execSearch(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
                     break :blk owned_err_msg.?;
                 },
                 error.Timeout => break :blk "search timed out (30s default) — narrow your search path, use a more specific pattern, or pass a larger timeout_ms",
-                error.RgNotFound => break :blk "ripgrep (rg) is not installed or not on PATH — install it first, then retry the search",
+                error.RgNotFound => break :blk rg_missing_message,
                 else => {},
             }
             const msg = error_explain.explain(ctx.allocator, err, null) catch {
@@ -4274,7 +4286,7 @@ test "TDD: execSearch accepts head=100 with tail=0 and returns a successful matc
     const success = root.get("success").?.bool;
     if (!success) {
         const error_value = root.get("error").?;
-        if (error_value == .string and std.mem.indexOf(u8, error_value.string, "ripgrep (rg) is not installed") != null) return;
+        if (error_value == .string and std.mem.indexOf(u8, error_value.string, rg_missing_marker) != null) return;
     }
 
     try std.testing.expect(success);
@@ -4342,7 +4354,7 @@ test "execSearch returns success for an oversized stdout search with a truncatio
     const root = envelope.value.object;
     if (!root.get("success").?.bool) {
         const error_value = root.get("error").?;
-        if (error_value == .string and std.mem.indexOf(u8, error_value.string, "ripgrep (rg) is not installed") != null) return;
+        if (error_value == .string and std.mem.indexOf(u8, error_value.string, rg_missing_marker) != null) return;
     }
     try std.testing.expect(root.get("success").?.bool);
     try std.testing.expect(root.get("error").? == .null);

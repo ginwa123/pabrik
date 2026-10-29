@@ -1373,6 +1373,33 @@ jobs:
           grep -q "smoke: using installed webapp at .*html" /tmp/desktop-html-check.log             || { echo "✗ desktop did NOT select the bundled html/ (embedded stub?)"; cat /tmp/desktop-html-check.log; exit 1; }
           echo "✓ desktop uses bundled html/ as its webview dir"
 
+      - name: Stage bundled ripgrep (POSIX)
+        # The `search` tool spawns ripgrep, and a user machine is not
+        # guaranteed to have one. This stages the pinned upstream rg into
+        # zig-out/bin so it ships BESIDE the pabrik binary (install.sh
+        # fetches the published rg-<triple> asset into the same dir the
+        # binaries land in) and the runtime resolver finds it there before
+        # ever consulting PATH.
+        #
+        # Windows is a separate step: it needs Expand-Archive and its rg.exe
+        # rides inside the existing desktop zip instead of a bare asset.
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          TARGET: ${{ inputs.target_zig }}
+        run: |
+          set -euo pipefail
+          scripts/stage-bundled-ripgrep.sh "$TARGET" zig-out/bin/rg
+
+      - name: Stage bundled ripgrep (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          TARGET: ${{ inputs.target_zig }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          ./scripts/stage-bundled-ripgrep.ps1 -Target $env:TARGET -Dest "zig-out/bin/rg.exe"
+
       - name: Stage binaries with target-triple names
         # Replaces the old actions/upload-artifact@v4 step. Artifacts are
         # QUOTA-METERED Actions storage and the repo hit the cap
@@ -1415,6 +1442,23 @@ jobs:
           done
           if [ "$staged" -eq 0 ]; then
             echo "✗ no binaries found in zig-out/bin — build step failed?" >&2
+            exit 1
+          fi
+          # Bundled ripgrep. Named `rg-$TARGET` with NO `pabrik-` prefix on
+          # purpose: the Windows zip step globs `bin-stage/pabrik-*.exe` and
+          # would otherwise mistake a staged rg for the service binary.
+          # Windows needs no separate asset (rg.exe rides inside the desktop
+          # zip), so only the POSIX cells publish one — and the failure is
+          # LOUD: an install whose `search` tool has no rg is the bug this
+          # asset exists to fix.
+          if [ "${RUNNER_OS:-}" = "Windows" ]; then
+            echo "→ rg.exe ships inside pabrik-desktop-$TARGET.zip (no separate asset)"
+          elif [ -f "zig-out/bin/rg" ]; then
+            cp "zig-out/bin/rg" "$stage/rg-$TARGET"
+            chmod 0755 "$stage/rg-$TARGET"
+            echo "→ staged $stage/rg-$TARGET"
+          else
+            echo "✗ zig-out/bin/rg missing for $TARGET — the install would ship without a bundled ripgrep" >&2
             exit 1
           fi
           # Shipped UI for installer layouts (Linux/macOS bare binaries
@@ -1500,6 +1544,17 @@ jobs:
           Copy-Item $service.FullName (Join-Path $tmp "pabrik.exe")
           $dlls = Get-ChildItem "zig-out/bin/*.dll" -ErrorAction SilentlyContinue
           foreach ($dll in $dlls) { Copy-Item $dll.FullName $tmp }
+          # Bundled ripgrep. Windows has no `brew install`/`apt install` habit
+          # and the search tool spawns rg, so the zip carries it and
+          # Install-Pabrik.ps1 drops it next to pabrik.exe. HARD GATE: a zip
+          # without rg ships a search tool that cannot run.
+          $rgSrc = "zig-out/bin/rg.exe"
+          if (-not (Test-Path $rgSrc)) {
+            Write-Error "rg.exe missing at $rgSrc -- the zip would ship without a usable search tool; see the Stage bundled ripgrep step log"
+            exit 1
+          }
+          Copy-Item -Force $rgSrc (Join-Path $tmp "rg.exe")
+          Write-Host "ok rg.exe bundled"
           # Setup script: makes the zip a setup package. The user extracts
           # and runs `powershell -ExecutionPolicy Bypass -File
           # Install-Pabrik.ps1` for a user-local install (LOCALAPPDATA, no

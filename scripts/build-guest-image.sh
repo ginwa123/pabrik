@@ -68,7 +68,7 @@ fi
 
 # What every tier gets: a shell, git (a workspace IS a checkout), TLS trust, and
 # the handful of tools a workload and the smoke test reach for.
-base_rpms=(git-core ca-certificates curl nmap-ncat procps-ng iproute tar gzip which)
+base_rpms=(git-core ca-certificates curl nmap-ncat procps-ng iproute tar gzip which ripgrep)
 # What only the dev tier adds: a toolchain, the package manager's friends.
 dev_rpms=(gcc gcc-c++ make python3 nodejs npm vim-enhanced)
 # A Fedora release archive is ~50 MB and the mirrors are not always fast, so the
@@ -303,6 +303,8 @@ run_selftest() {
     "$(manifest_plan "$manifest" base | grep -c 'fedora.*\.oci\.tar\.xz$')"
   check "the base set carries git" "1" "$(tier_rpms base | grep -cx 'git-core')"
   check "the base set carries TLS trust" "1" "$(tier_rpms base | grep -cx 'ca-certificates')"
+  check "the base set carries ripgrep for the search tool" "1" \
+    "$(tier_rpms base | grep -cx 'ripgrep')"
 
   # The image cache is only as good as its key: it has to be a sha256 (so the
   # filename is safe) and it has to change when an input the image depends on
