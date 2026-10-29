@@ -36,17 +36,18 @@ pub fn authEnabled() bool {
 }
 
 const testing = std.testing;
+const test_db = @import("test_db.zig");
 
 test "the console reads the installation the host installed" {
-    var memory_db: database.Db = .{};
-    try memory_db.init(testing.io, ":memory:");
-    defer memory_db.deinit();
+    var fixture: test_db.Fixture = .{};
+    defer fixture.deinit();
+    const memory_db = try fixture.open();
 
     try testing.expect(db() == null);
-    install(&memory_db, true);
+    install(memory_db, true);
     defer uninstall();
 
     try testing.expect(isInstalled());
-    try testing.expect(db() == &memory_db);
+    try testing.expect(db() == memory_db);
     try testing.expect(authEnabled());
 }

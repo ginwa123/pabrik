@@ -7,10 +7,19 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // Same switch and same values as the server's `-Ddb_used`: `sqlite` (the
+    // default) links no libpq, `sqlite,postgres` compiles the postgres backend
+    // in and makes it the one this binary opens.
+    const db_used = b.option(
+        []const u8,
+        "db_used",
+        "Comma-separated database backends to compile: 'sqlite' (default, no libpq), add 'postgres' to also compile postgres (needs libpq)",
+    ) orelse "sqlite";
+
     const databases_dep = b.dependency("databases", .{
         .target = target,
         .optimize = optimize,
-        .db_used = "sqlite",
+        .db_used = db_used,
     });
     const kabelweb_dep = b.dependency("kabelweb", .{
         .target = target,
@@ -18,6 +27,16 @@ pub fn build(b: *std.Build) void {
     });
 
     const databases_mod = databases_dep.module("databases");
+    // The SQL that differs between the two backends. Shared with the server, so
+    // the console and pabrik spell `datetime('now')`/`sqlite_master` the same way.
+    const dialect_mod = b.createModule(.{
+        .root_source_file = b.path("../../dialect.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "databases", .module = databases_mod },
+        },
+    });
     // The session/password primitives are shared with the server, so they
     // live in `src/http_handlers/auth_core.zig`; a module may be rooted
     // outside this folder, an `@import` path may not.
@@ -48,6 +67,7 @@ pub fn build(b: *std.Build) void {
 
     const imports = [_]std.Build.Module.Import{
         .{ .name = "databases", .module = databases_mod },
+        .{ .name = "dialect", .module = dialect_mod },
         .{ .name = "kabelweb", .module = kabelweb_dep.module("kabelweb") },
         .{ .name = "auth_core", .module = auth_core_mod },
         .{ .name = "vmd_manager", .module = manager_mod },

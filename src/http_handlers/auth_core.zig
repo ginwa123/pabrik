@@ -44,6 +44,13 @@ pub const SessionLookup = struct {
     role: []const u8,
 };
 
+/// A session is live while `expires_at` is future and the account can sign in.
+/// This is `dialect.now_stamp_utc`, respelled because this file is its own
+/// module (`auth_core`) and cannot import `dialect.zig`.
+const live_session = " AND s.expires_at > " ++
+    (if (database.backend_is_postgres) "(now() AT TIME ZONE 'UTC')" else "datetime('now')") ++
+    " AND u.is_active = 1";
+
 /// Validate a raw cookie token against `auth_sessions` + `users`, or null
 /// when it is empty, unknown, expired, or the account is switched off.
 pub fn lookupSession(
@@ -58,7 +65,8 @@ pub fn lookupSession(
     var q = db.query(allocator,
         \\SELECT s.user_id, u.email, COALESCE(CAST(u.name AS TEXT), ''), u.role
         \\FROM auth_sessions s JOIN users u ON u.id = s.user_id
-        \\WHERE s.token_hash = ? AND s.expires_at > datetime('now') AND u.is_active = 1
+        \\WHERE s.token_hash = ?
+    ++ live_session
     , &[_][]const u8{hash_hex[0..]}) catch return null;
     defer q.deinit();
     const row = q.next() catch return null;

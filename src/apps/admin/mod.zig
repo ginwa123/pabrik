@@ -4,6 +4,7 @@
 
 pub const admin_common = @import("admin_common.zig");
 pub const runtime = @import("runtime.zig");
+pub const db_target = @import("db_target.zig");
 pub const admin_store = @import("admin_store.zig");
 pub const admin_api = @import("admin_api.zig");
 pub const admin_views = @import("admin_views.zig");
@@ -28,6 +29,7 @@ pub const adminJsHandler = admin_page.adminJsHandler;
 test {
     // The console's own tests, for `zig build test` inside this folder.
     _ = admin_common;
+    _ = db_target;
     _ = admin_store;
     _ = admin_api;
     _ = admin_views;

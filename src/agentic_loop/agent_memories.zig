@@ -123,10 +123,8 @@ pub fn getMemoryById(
     id: []const u8,
     workspace_id: []const u8,
 ) !?MemoryRow {
-    var created_buf: [128]u8 = undefined;
-    var updated_buf: [128]u8 = undefined;
-    const created_expr = try dialect.timestampText(&created_buf, "created_at");
-    const updated_expr = try dialect.timestampText(&updated_buf, "updated_at");
+    const created_expr = dialect.timestampText("created_at");
+    const updated_expr = dialect.timestampText("updated_at");
     const select = try std.fmt.allocPrint(
         allocator,
         "SELECT id, content, tags, COALESCE(CAST(workspace_id AS TEXT), ''), COALESCE({s}, ''), COALESCE({s}, '') " ++

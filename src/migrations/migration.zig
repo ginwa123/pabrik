@@ -2890,10 +2890,9 @@ test "Migration044AddRoutines creates routines table with expected columns" {
     defer alloc.free(last_status);
     try testing.expectEqualStrings("", last_status);
 
-    var last_run_buf: [64]u8 = undefined;
     const last_run_at_sql = try std.fmt.allocPrint(alloc,
         "SELECT COALESCE({s}, '') FROM routines WHERE id = 'r1'",
-        .{try dialect.timestampText(&last_run_buf, "last_run_at")},
+        .{dialect.timestampText("last_run_at")},
     );
     defer alloc.free(last_run_at_sql);
     const last_run_at = try scalarText044(alloc, &ctx.db, last_run_at_sql, &.{});
@@ -10085,13 +10084,11 @@ test "Migration103 stamps both timestamps and refuses a NULL value" {
         \\VALUES ('sec_1', 'ws_1', 'GH', 'ghp_1')
     , &.{});
 
-    var created_buf: [64]u8 = undefined;
-    var updated_buf: [64]u8 = undefined;
     const stamps = try std.fmt.allocPrint(alloc,
         "SELECT COALESCE({s}, ''), COALESCE({s}, '') FROM workspace_secrets WHERE id = 'sec_1'",
         .{
-            try dialect.timestampText(&created_buf, "created_at"),
-            try dialect.timestampText(&updated_buf, "updated_at"),
+            dialect.timestampText("created_at"),
+            dialect.timestampText("updated_at"),
         },
     );
     defer alloc.free(stamps);

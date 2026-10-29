@@ -10,12 +10,17 @@ const admin_api = @import("admin_api.zig");
 const admin_machines = @import("admin_machines.zig");
 const admin_page = @import("admin_page.zig");
 const admin_store = @import("admin_store.zig");
+const db_target = @import("db_target.zig");
 const runtime = @import("runtime.zig");
 
 const default_port: u16 = 8090;
 
 const Options = struct {
     db_path: ?[]const u8 = null,
+    /// `--database` (or `$PABRIK_DATABASE`): null means "the compiled backend".
+    backend: ?[]const u8 = null,
+    /// `--database-conninfo` (or `$PABRIK_DATABASE_CONNINFO`): postgres only.
+    conninfo: ?[]const u8 = null,
     port: u16 = default_port,
     auth_enabled: bool = false,
     /// Where `pabrik-vmd` listens. Absent means "no machines section": this
@@ -27,8 +32,14 @@ fn printUsage() void {
     std.debug.print(
         \\Usage: pabrik-admin [options]
         \\
-        \\  --db <path>     the pabrik database to administer
+        \\  --db <path>     the SQLite database to administer
         \\                  (default: ~/.config/pabrik/agent.db)
+        \\  --database=sqlite|postgres
+        \\                  the backend to open (default: the one this build
+        \\                  compiled in, {s})
+        \\  --database-conninfo=CONNINFO
+        \\                  libpq conninfo or postgres:// URL, postgres only
+        \\                  (default: $PABRIK_DATABASE_CONNINFO)
         \\  --port <n>      the port to listen on (default: {d})
         \\  --auth on|off   off: the local operator owns the installation
         \\                  on:  a pabrik_session cookie decides the owner
@@ -36,7 +47,26 @@ fn printUsage() void {
         \\
         \\Then open http://127.0.0.1:<port>/admin
         \\
-    , .{default_port});
+    , .{ db_target.Backend.compiled().text(), default_port });
+}
+
+/// `--name=value`, or `--name value` when this program already spells its other
+/// flags that way. Null when `arg` is some other flag; `missing` when the flag
+/// is there but carries nothing.
+fn optionValue(
+    it: *std.process.Args.Iterator,
+    arg: []const u8,
+    name: []const u8,
+    missing: anyerror,
+) !?[]const u8 {
+    const value: ?[]const u8 = if (std.mem.eql(u8, arg, name))
+        it.next() orelse return missing
+    else if (arg.len > name.len and std.mem.startsWith(u8, arg, name) and arg[name.len] == '=')
+        arg[name.len + 1 ..]
+    else
+        return null;
+    if (value.?.len == 0) return missing;
+    return value;
 }
 
 fn parseOptions(allocator: std.mem.Allocator, args: std.process.Args) !?Options {
@@ -47,6 +77,16 @@ fn parseOptions(allocator: std.mem.Allocator, args: std.process.Args) !?Options 
 
     while (it.next()) |arg| {
         if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) return null;
+        // The postgres family first: `--database-conninfo` also starts with
+        // `--database`, and `optionValue` only accepts it as its own flag.
+        if (try optionValue(&it, arg, "--database-conninfo", error.ConninfoValueMissing)) |value| {
+            out.conninfo = value;
+            continue;
+        }
+        if (try optionValue(&it, arg, "--database", error.DatabaseValueMissing)) |value| {
+            out.backend = value;
+            continue;
+        }
         if (std.mem.eql(u8, arg, "--db")) {
             out.db_path = it.next() orelse return error.DbValueMissing;
             continue;
@@ -103,19 +143,6 @@ fn defaultVmdSocket(allocator: std.mem.Allocator, environ: *const std.process.En
     return "/tmp/pabrik-vmd.sock";
 }
 
-fn usersTableExists(allocator: std.mem.Allocator, db: *database.Db) bool {
-    var q = db.query(allocator,
-        \\SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'
-    , &.{}) catch return false;
-    defer q.deinit();
-    const row = q.next() catch return false;
-    if (row) |r| {
-        r.deinit(allocator);
-        return true;
-    }
-    return false;
-}
-
 fn registerRoutes(router: *gserverz.router.Router) !void {
     // The page loads without a session — it has to ask who is asking — and each
     // section is a path that renders its own view. The endpoints answer 401/403
@@ -155,23 +182,61 @@ pub fn main(init: std.process.Init) !void {
         return;
     };
 
-    const db_path = if (options.db_path) |given|
-        try allocator.dupe(u8, given)
-    else
-        try defaultDbPath(allocator, io, init.environ_map);
-    defer allocator.free(db_path);
+    // Which backend to open, and where it lives. The flag wins over the
+    // environment, and no choice at all means the backend the build compiled in.
+    const backend = db_target.resolve(options.backend orelse init.environ_map.get(db_target.env_backend)) catch |err| {
+        std.log.err(
+            "pabrik-admin: {s}: this binary opens the {s} backend (rebuild with -Ddb_used={s} for postgres)",
+            .{ @errorName(err), db_target.Backend.compiled().text(), db_target.buildList(.postgres) },
+        );
+        printUsage();
+        return err;
+    };
+
+    // Only one of the two is owned (and only the matching one is non-null):
+    // sqlite needs the file path as a sentinel string, postgres the conninfo.
+    var sqlite_path: ?[:0]u8 = null;
+    defer if (sqlite_path) |path| allocator.free(path);
+    var conninfo: ?[:0]u8 = null;
+    defer if (conninfo) |value| allocator.free(value);
+
+    // What the console says it is connected to, in words, never a password.
+    // The sqlite path is owned here: the banner and any error print it long
+    // after the branch that chose it.
+    var place: []const u8 = "libpq defaults";
+    var sqlite_plain: ?[]const u8 = null;
+    defer if (sqlite_plain) |plain| allocator.free(plain);
+    switch (backend) {
+        .sqlite => {
+            sqlite_plain = if (options.db_path) |given|
+                try allocator.dupe(u8, given)
+            else
+                try defaultDbPath(allocator, io, init.environ_map);
+            sqlite_path = try allocator.dupeZ(u8, sqlite_plain.?);
+            place = sqlite_plain.?;
+        },
+        .postgres => {
+            const given = options.conninfo orelse init.environ_map.get(db_target.env_conninfo) orelse "";
+            conninfo = try allocator.dupeZ(u8, given);
+            if (given.len != 0) place = "the conninfo given";
+        },
+    }
 
     var db: database.Db = .{};
     defer db.deinit();
-    const db_path_z = try allocator.dupeZ(u8, db_path);
-    defer allocator.free(db_path_z);
-    database.open(&db, io, .{ .sqlite_path = db_path_z }) catch |err| {
-        std.log.err("pabrik-admin: cannot open {s}: {s}", .{ db_path, @errorName(err) });
+    const open_config: database.OpenConfig = if (backend == .sqlite)
+        .{ .sqlite_path = sqlite_path.? }
+    else
+        .{ .postgres_conninfo = conninfo.? };
+    database.open(&db, io, open_config) catch |err| {
+        std.log.err("pabrik-admin: cannot open the {s} database ({s}): {s}", .{
+            backend.text(), place, @errorName(err),
+        });
         return err;
     };
-    if (!usersTableExists(allocator, &db)) {
+    if (!try admin_store.tableExists(allocator, &db, "users")) {
         try admin_store.ensureSchema(allocator, &db);
-        std.log.info("pabrik-admin: created the `users` and `auth_sessions` tables in {s}", .{db_path});
+        std.log.info("pabrik-admin: created the `users` and `auth_sessions` tables in {s}", .{place});
     }
 
     runtime.install(&db, options.auth_enabled);
@@ -186,10 +251,11 @@ pub fn main(init: std.process.Init) !void {
     try registerRoutes(&gs.router);
 
     std.debug.print(
-        "pabrik-admin ready\n  console: http://127.0.0.1:{d}/admin\n  database: {s}\n  owner: {s}\n  machines: {s}\n",
+        "pabrik-admin ready\n  console: http://127.0.0.1:{d}/admin\n  database: {s} ({s})\n  owner: {s}\n  machines: {s}\n",
         .{
             options.port,
-            db_path,
+            backend.text(),
+            place,
             if (options.auth_enabled) "the signed-in admin account" else "the local operator (no --auth)",
             if (vmd_socket) |path| path else "no manager socket (accounts only)",
         },

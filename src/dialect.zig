@@ -27,6 +27,14 @@ else
 /// and postgres compares it against its own `now()` rather than a parsed string.
 pub const now_stamp: []const u8 = "CURRENT_TIMESTAMP";
 
+/// "Now" as a UTC `TIMESTAMP` on both engines, so the value does not depend on
+/// the connection's `TimeZone`. Usable as a value and on the right of a
+/// comparison against a `TIMESTAMP` column.
+pub const now_stamp_utc: []const u8 = if (is_postgres)
+    "(now() AT TIME ZONE 'UTC')"
+else
+    "datetime('now')";
+
 /// Column type for an epoch-seconds column: postgres `INTEGER` is 32-bit and
 /// would overflow in 2038, so it gets `BIGINT`.
 pub const epoch_type: []const u8 = if (is_postgres) "BIGINT" else "INTEGER";
@@ -50,10 +58,11 @@ pub fn epochToText(allocator: std.mem.Allocator, expr: []const u8) ![]u8 {
 }
 
 /// A `TIMESTAMP` column rendered as `YYYY-MM-DD HH24:MI:SS` text, so a read
-/// that returns it to Zig gets the same string from either engine.
-pub fn timestampText(buf: []u8, column: []const u8) error{NoSpaceLeft}![]const u8 {
-    if (is_postgres) return std.fmt.bufPrint(buf, "to_char({s}, 'YYYY-MM-DD HH24:MI:SS')", .{column});
-    return std.fmt.bufPrint(buf, "{s}", .{column});
+/// that returns it to Zig gets the same string from either engine. `column` is
+/// a column name, never a bind, so the fragment is fixed at compile time.
+pub fn timestampText(comptime column: []const u8) []const u8 {
+    if (is_postgres) return std.fmt.comptimePrint("to_char({s}, 'YYYY-MM-DD HH24:MI:SS')", .{column});
+    return column;
 }
 
 /// Columns a table's metadata can be read from: sqlite's `sqlite_master` and
@@ -261,11 +270,13 @@ test "the epoch and timestamp fragments are the ones the compiled backend unders
         try testing.expectEqualStrings("BIGINT", epoch_type);
         try testing.expect(!has_fts5);
         try testing.expectEqualStrings("", enable_foreign_keys);
+        try testing.expectEqualStrings("(now() AT TIME ZONE 'UTC')", now_stamp_utc);
     } else {
         try testing.expect(std.mem.indexOf(u8, now_epoch, "strftime") != null);
         try testing.expectEqualStrings("datetime('now')", now_text);
         try testing.expectEqualStrings("INTEGER", epoch_type);
         try testing.expect(has_fts5);
         try testing.expectEqualStrings("PRAGMA foreign_keys = ON", enable_foreign_keys);
+        try testing.expectEqualStrings("datetime('now')", now_stamp_utc);
     }
 }

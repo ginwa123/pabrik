@@ -177,6 +177,8 @@ fn mibLabel(allocator: std.mem.Allocator, mib: u32) ![]const u8 {
 
 const testing = std.testing;
 const admin_common = @import("admin_common.zig");
+const dialect = @import("dialect");
+const test_db = @import("test_db.zig");
 
 fn seedDatabase(allocator: std.mem.Allocator, db: *database.Db) !void {
     try admin_store.ensureSchema(allocator, db);
@@ -199,7 +201,9 @@ fn addUser(
     // NOT NULL: without it, an account with no name cannot be inserted at all.
     try db.exec(allocator,
         \\INSERT INTO users (id, email, name, password_hash, role, is_active, created_at)
-        \\VALUES (?, ?, COALESCE(CAST(? AS TEXT), ''), 'x', ?, ?, datetime('now'))
+        \\VALUES (?, ?, COALESCE(CAST(? AS TEXT), ''), 'x', ?, ?,
+    ++ dialect.now_stamp_utc ++
+        \\)
     , &[_][]const u8{ id, email, name, role, if (active) "1" else "0" });
 }
 
@@ -209,14 +213,14 @@ fn contains(haystack: []const u8, needle: []const u8) bool {
 
 test "the accounts page arrives with its rows, counts and no second section" {
     const alloc = testing.allocator;
-    var db: database.Db = .{};
-    defer db.deinit();
-    try db.init(testing.io, ":memory:");
-    try seedDatabase(alloc, &db);
-    try addUser(alloc, &db, "user_a", "alice@example.com", "Alice", "admin", true);
-    try addUser(alloc, &db, "user_b", "bob@example.com", "", "user", false);
+    var fixture: test_db.Fixture = .{};
+    defer fixture.deinit();
+    const db = try fixture.open();
+    try seedDatabase(alloc, db);
+    try addUser(alloc, db, "user_a", "alice@example.com", "Alice", "admin", true);
+    try addUser(alloc, db, "user_b", "bob@example.com", "", "user", false);
 
-    const html = try renderPage(alloc, &db, .accounts, true);
+    const html = try renderPage(alloc, db, .accounts, true);
     defer alloc.free(html);
 
     // The rows are in the document itself.
@@ -242,12 +246,12 @@ test "the accounts page arrives with its rows, counts and no second section" {
 
 test "the machines page explains a manager it cannot reach, and offers nothing" {
     const alloc = testing.allocator;
-    var db: database.Db = .{};
-    defer db.deinit();
-    try db.init(testing.io, ":memory:");
-    try seedDatabase(alloc, &db);
+    var fixture: test_db.Fixture = .{};
+    defer fixture.deinit();
+    const db = try fixture.open();
+    try seedDatabase(alloc, db);
 
-    const html = try renderPage(alloc, &db, .machines, true);
+    const html = try renderPage(alloc, db, .machines, true);
     defer alloc.free(html);
 
     try testing.expect(contains(html, "id=\"section-machines\""));
@@ -274,13 +278,13 @@ test "the machines page explains a manager it cannot reach, and offers nothing" 
 
 test "a name with markup in it is escaped, not injected" {
     const alloc = testing.allocator;
-    var db: database.Db = .{};
-    defer db.deinit();
-    try db.init(testing.io, ":memory:");
-    try seedDatabase(alloc, &db);
-    try addUser(alloc, &db, "user_x", "x@example.com", "<script>alert(1)</script>", "user", true);
+    var fixture: test_db.Fixture = .{};
+    defer fixture.deinit();
+    const db = try fixture.open();
+    try seedDatabase(alloc, db);
+    try addUser(alloc, db, "user_x", "x@example.com", "<script>alert(1)</script>", "user", true);
 
-    const html = try renderPage(alloc, &db, .accounts, true);
+    const html = try renderPage(alloc, db, .accounts, true);
     defer alloc.free(html);
 
     try testing.expect(contains(html, "&lt;script&gt;alert(1)&lt;/script&gt;"));
@@ -289,14 +293,14 @@ test "a name with markup in it is escaped, not injected" {
 
 test "a visitor who is not the owner gets the frame and the reason, and no data" {
     const alloc = testing.allocator;
-    var db: database.Db = .{};
-    defer db.deinit();
-    try db.init(testing.io, ":memory:");
-    try seedDatabase(alloc, &db);
-    try addUser(alloc, &db, "user_a", "alice@example.com", "Alice", "admin", true);
+    var fixture: test_db.Fixture = .{};
+    defer fixture.deinit();
+    const db = try fixture.open();
+    try seedDatabase(alloc, db);
+    try addUser(alloc, db, "user_a", "alice@example.com", "Alice", "admin", true);
 
     for ([_]Section{ .accounts, .machines }) |section| {
-        const html = try renderPage(alloc, &db, section, false);
+        const html = try renderPage(alloc, db, section, false);
         defer alloc.free(html);
 
         // The notice names the rule; its apostrophe arrives escaped, which is
@@ -393,13 +397,13 @@ test "an account the console cannot explain is still a link to its own row" {
     // The buttons carry the id the script needs; a template change that drops
     // it would leave every row's controls pointing at nothing.
     const alloc = testing.allocator;
-    var db: database.Db = .{};
-    defer db.deinit();
-    try db.init(testing.io, ":memory:");
-    try seedDatabase(alloc, &db);
-    try addUser(alloc, &db, "user_a", "alice@example.com", "Alice", "admin", true);
+    var fixture: test_db.Fixture = .{};
+    defer fixture.deinit();
+    const db = try fixture.open();
+    try seedDatabase(alloc, db);
+    try addUser(alloc, db, "user_a", "alice@example.com", "Alice", "admin", true);
 
-    const html = try renderPage(alloc, &db, .accounts, true);
+    const html = try renderPage(alloc, db, .accounts, true);
     defer alloc.free(html);
 
     try testing.expect(contains(html, "data-action=\"role\" data-user-id=\"user_a\""));

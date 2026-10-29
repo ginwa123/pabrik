@@ -34,11 +34,13 @@ src/apps/admin/
   admin_api.zig   the /api/admin endpoints
   admin_store.zig the reads and writes on `users`
   admin_common.zig who the owner is, and the pure helpers
+  db_target.zig   which backend to open, and where it lives
+  test_db.zig     a fresh database per test, on the compiled backend
   runtime.zig     the database + `--auth` switch the host installs
   mod.zig         the package's public face
   main.zig        `pabrik-admin`, the standalone program
   build.zig       its own build: `zig build run` right here
-  build.zig.zon   the packages it links (SQLite, the HTTP server)
+  build.zig.zon   the packages it links (SQLite/postgres, the HTTP server)
 ```
 
 ## How the data reaches the page
@@ -141,7 +143,7 @@ serves the previous stylesheet.
 
 The console is a program of its own. `pabrik` — the server that runs the
 agents — serves none of it: no `/admin` page, no `/api/admin/*`. It links only
-the SQLite package, the HTTP server package and the manager client, so it
+the `databases` package, the HTTP server package and the manager client, so it
 builds in seconds:
 
 ```bash
@@ -153,14 +155,37 @@ zig build run -- --db ~/.config/pabrik/agent.db --port 8090 \
 ```
 pabrik-admin ready
   console: http://127.0.0.1:8090/admin
-  database: /home/you/.config/pabrik/agent.db
+  database: sqlite (/home/you/.config/pabrik/agent.db)
   owner: the local operator (no --auth)
   machines: /run/user/1000/pabrik-vmd.sock
 ```
 
+SQLite is what a plain `zig build` compiles in, the same default the server
+has. To administer a postgres installation, build the postgres backend in
+(needs libpq headers and the library) and name the connection:
+
+```bash
+cd src/apps/admin
+zig build -Ddb_used=sqlite,postgres
+./zig-out/bin/pabrik-admin \
+  --database=postgres \
+  --database-conninfo='host=localhost port=5433 dbname=pabrik'
+```
+
+The environment works too: `PABRIK_DATABASE` and `PABRIK_DATABASE_CONNINFO`,
+the names the server uses. A password is not read from the console's own
+flags — it comes from the conninfo, `~/.pgpass` or `PGPASSWORD`, exactly as
+libpq supplies it.
+
+One build opens one backend. A postgres build refuses `--db <path>`
+(`BackendNotCompiled`) and a sqlite build refuses `--database=postgres`, so an
+operator never ends up administering a database other than the one named.
+
 | flag | meaning |
 |---|---|
-| `--db <path>` | the database to administer (default `~/.config/pabrik/agent.db`) |
+| `--db <path>` | the SQLite database to administer (default `~/.config/pabrik/agent.db`) |
+| `--database=sqlite\|postgres` | the backend to open (default: the one this build compiled in) |
+| `--database-conninfo=CONNINFO` | libpq conninfo or `postgres://` URL, postgres only (default `$PABRIK_DATABASE_CONNINFO`) |
 | `--port <n>` | the port to listen on (default `8090`) |
 | `--auth on\|off` | off (default): the local operator owns the installation. on: a `pabrik_session` cookie decides the owner |
 | `--vmd-socket <path>` | the manager's socket, so Machines can list and resize. Default, in the same order the server resolves it: `$PABRIK_VMD_SOCKET`, then `$XDG_RUNTIME_DIR/pabrik-vmd.sock`, then `/tmp/pabrik-vmd.sock`. A socket nobody answers on is not fatal: the section names the path it tried |
@@ -171,11 +196,14 @@ you@example.com --password …`), sign in, and the console answers 401/403 to
 anyone else.
 
 Point it at the database pabrik itself uses and it is the same console. Point
-it at a new file and it creates the `users` and `auth_sessions` tables that
-the console needs; start pabrik on that database afterwards and its
-migrations fill in the rest.
+it at a new file — or a fresh postgres database — and it creates the `users`
+and `auth_sessions` tables that the console needs; start pabrik on that
+database afterwards and its migrations fill in the rest.
 
-`zig build test` in that folder runs the console's own 21 tests.
+`zig build test` in that folder runs the console's own 38 tests. A postgres
+build runs them against a throwaway database: `POSTGRES_TEST_CONNINFO='host=…
+port=… dbname=postgres'` names the instance, and without one the tests skip
+unless `PABRIK_DB_TESTS_REQUIRE_SERVER=1` is set.
 
 The folder is a Zig package of its own (`build.zig`, `build.zig.zon`), which
 is why `src/http_handlers/auth_core.zig` exists: the session cookie, the token
@@ -321,7 +349,10 @@ owner first.
 ## The database
 
 `users` (Migration 077) already carries `role`, `is_active`, `email` and
-`password_hash`. The console needs no migration of its own.
+`password_hash`, and `auth_sessions` (Migration 089) carries the cookie's hash
+and its expiry. The console needs no migration of its own: it reads and writes
+the same tables on sqlite and on postgres, and the few statements that differ
+(`datetime('now')`, `sqlite_master`) come from `src/dialect.zig`.
 
 ## The design gate
 
